@@ -598,10 +598,33 @@ with mock.patch.object(os,'lstat',side_effect=lookup):
             lookup_rejected(marker_path,'worker',worker_cmd[4:])
             assert marker_path.read_bytes()==marker_before and not (state/'receipts/LH9996.json').exists()
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
-            run(worker_cmd)
+            residue_code='''import json,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import worker
+marker=Path(sys.argv[1]);original=worker.run_git;events=[]
+def run(args,cwd,**kwargs):
+ result=original(args,cwd,**kwargs)
+ if args[:2]==['reset','--hard'] and args[2]!='HEAD' and not events:
+  target=cwd/'_executor_spike/conflicts'/marker.name
+  target.write_bytes(marker.read_bytes());events.append(str(target))
+ return result
+with mock.patch.object(worker,'run_git',side_effect=run):
+ code=worker.main(sys.argv[2:])
+assert len(events)==1
+raise SystemExit(code)
+'''
+            run([sys.executable,'-I','-c',residue_code,marker_path]+worker_cmd[4:])
+            residue_archives=[p for p in (worker_box/'.git/local-hand-untracked').glob('*/record.json')
+                if json.loads(p.read_text())['relative_path']=='_executor_spike/conflicts/'+conflict_name]
+            assert len(residue_archives)==1
+            assert (residue_archives[0].parent/'payload').read_bytes()==marker_before
+            save('reset-residue-evidence.json',{'archive':str(residue_archives[0]),
+                'sha256':hashlib.sha256(marker_before).hexdigest(),'task_id':'LH9996'})
             actual=json.loads(run(connect+['wait']+common+['--task-file',blocked_path,
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert actual==json.loads(marker_before)
+            checks.append({'case':'installed conflict recovery ignores untracked reset residue','status':'PASS'})
             assert marker_path.read_bytes()==marker_before and not (state/'receipts/LH9996.json').exists()
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
             checks.append({'case':'installed unreadable conflict stops and later restores the replay barrier','status':'PASS'})

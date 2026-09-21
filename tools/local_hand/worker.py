@@ -423,6 +423,10 @@ def sync_mailbox(mailbox: Path, branch: str) -> None:
     admit_remote_tree(mailbox, fetched_commit)
     run_git(["reset", "--hard", fetched_commit], mailbox)
     validate_checkout_control_dirs(mailbox)
+    # Only committed files may qualify as mailbox evidence. Recheck after
+    # reset as well: a leftover local file must not acknowledge publication
+    # or become executable work merely because reset returned success.
+    _preserve_untracked_control_files(mailbox)
 
 
 def _is_push_race(proc) -> bool:
