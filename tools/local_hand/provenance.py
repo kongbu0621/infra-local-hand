@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 from typing import Any
 
 from .config import read_config, exact_keys
@@ -30,6 +31,69 @@ def core_digest() -> str:
     return digest.hexdigest()
 
 
+def _git_blob_oid(path: Path) -> str:
+    """Hash one regular worktree file exactly as Git hashes a blob."""
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise _bad("tracked source entries must be regular files")
+        digest = hashlib.sha1()
+        digest.update(b"blob " + str(info.st_size).encode("ascii") + b"\0")
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        after = path.lstat()
+    except (OSError, ValueError) as exc:
+        raise _bad("cannot read tracked source entry") from exc
+    if (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns) != (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        raise _bad("tracked source changed while it was verified")
+    return digest.hexdigest()
+
+
+def _verify_tracked_tree(root: Path, commit: str) -> None:
+    """Bind every tracked worktree byte to HEAD, including hidden index flags."""
+    tree = run_hardened_git(
+        root,
+        ["ls-tree", "-rz", "-r", commit, "--"],
+        allow_ssh=False,
+        timeout=10,
+        max_stdout=16 * 1024 * 1024,
+        max_stderr=8192,
+        text=False,
+    )
+    if tree.returncode:
+        raise _bad("cannot read committed source tree")
+    seen: set[str] = set()
+    for record in tree.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            mode, kind, raw_blob = header.split()
+            rel_text = raw_path.decode("utf-8")
+        except (UnicodeError, ValueError) as exc:
+            raise _bad("committed source tree is malformed") from exc
+        rel = Path(rel_text)
+        if (kind != b"blob" or mode not in (b"100644", b"100755")
+                or rel.is_absolute() or not rel.parts or ".." in rel.parts
+                or rel_text in seen or not re.fullmatch(r"[0-9a-f]{40}", raw_blob.decode("ascii", "ignore"))):
+            raise _bad("committed source tree contains an unsupported entry")
+        seen.add(rel_text)
+        current = root
+        for part in rel.parts[:-1]:
+            current /= part
+            try:
+                if not stat.S_ISDIR(current.lstat().st_mode):
+                    raise _bad("tracked source parent must be a real directory")
+            except OSError as exc:
+                raise _bad("tracked source parent is unavailable") from exc
+        if _git_blob_oid(root / rel) != raw_blob.decode("ascii"):
+            raise _bad("tracked source differs from committed Git blob: " + rel_text)
+    if not seen:
+        raise _bad("committed source tree is empty")
+
+
 def source_commit(*, require_clean: bool = False) -> str:
     root=Path(__file__).resolve().parents[2]
     if not (root/".git").exists():
@@ -42,8 +106,10 @@ def source_commit(*, require_clean: bool = False) -> str:
         raise _bad("source checkout must be the exact repository root")
     commit=git(["rev-parse","HEAD"])
     if not _COMMIT.fullmatch(commit):raise _bad("invalid source commit")
-    if require_clean and git(["status","--porcelain=v1","--untracked-files=all"]):
-        raise _bad("build requires a clean committed source checkout")
+    if require_clean:
+        if git(["status","--porcelain=v1","--untracked-files=all"]):
+            raise _bad("build requires a clean committed source checkout")
+        _verify_tracked_tree(root, commit)
     return commit
 
 

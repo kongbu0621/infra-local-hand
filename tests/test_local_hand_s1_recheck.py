@@ -134,6 +134,40 @@ class S1RecheckTests(unittest.TestCase):
         result = json.loads((self.state / 'outbox/LH7711.json').read_text())
         self.assertEqual(result, receipt['result'])
 
+    def test_remote_result_repairs_pre_execution_intent_receipt(self):
+        task = self.task('node.status')
+        box = self.mailbox(task)
+        result = worker.result_success(task, self.profile.node_id, {'fixture': True}, worker.build_provenance(self.profile))
+        (box/'_executor_spike/results/LH7711.json').write_text(json.dumps(result))
+        receipt_path = self.state/'receipts/LH7711.json'
+        receipt_path.parent.mkdir(parents=True)
+        receipt_path.write_text(json.dumps({'task_id':task['task_id'],'task_digest':task_digest(task),
+                                            'source':'local_execution_started'}))
+        with mock.patch.object(worker,'validate_worker_mailbox'), mock.patch.object(worker,'publish_outbox'), mock.patch.object(worker,'sync_mailbox'), mock.patch.object(worker,'execute_task') as execute:
+            worker.process_once(box,self.profile.transport_policy.branch,self.profile,self.state)
+            execute.assert_not_called()
+        repaired=json.loads(receipt_path.read_text())
+        self.assertEqual(repaired['source'],'remote_result_recovery')
+        self.assertEqual(repaired['result'],result)
+
+    def test_remote_result_content_conflict_preserves_receipt_and_isolates(self):
+        task = self.task('node.status')
+        box = self.mailbox(task)
+        local = worker.result_success(task,self.profile.node_id,{'source':'local'},worker.build_provenance(self.profile))
+        remote = worker.result_success(task,self.profile.node_id,{'source':'remote'},worker.build_provenance(self.profile))
+        (box/'_executor_spike/results/LH7711.json').write_text(json.dumps(remote))
+        receipt_path=self.state/'receipts/LH7711.json';receipt_path.parent.mkdir(parents=True)
+        receipt_path.write_text(json.dumps({'task_id':task['task_id'],'task_digest':task_digest(task),'result':local}))
+        with mock.patch.object(worker,'validate_worker_mailbox'), mock.patch.object(worker,'publish_outbox'), mock.patch.object(worker,'sync_mailbox'), mock.patch.object(worker,'execute_task') as execute:
+            worker.process_once(box,self.profile.transport_policy.branch,self.profile,self.state)
+            execute.assert_not_called()
+        self.assertEqual(json.loads(receipt_path.read_text())['result'],local)
+        conflicts=list((self.state/'conflicts').glob('CONFLICT-*.json'))
+        self.assertEqual(len(conflicts),1)
+        conflict=json.loads(conflicts[0].read_text())
+        self.assertEqual(conflict['error_code'],'remote_result_content_conflict')
+        self.assertNotEqual(conflict['details']['local_result_sha256'],conflict['details']['remote_result_sha256'])
+
     def test_unknown_task_fields_rejected_on_both_sides_before_write(self):
         for field in ('unknown', 'authorization', 'model', 'shell'):
             task = {**self.task(), field: 'unadmitted'}
