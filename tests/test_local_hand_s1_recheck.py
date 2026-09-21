@@ -96,6 +96,19 @@ class S1RecheckTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), b'before\n')
         self.assertEqual(list(self.repo.glob('.sample.txt.local-hand-*')), [])
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX mode preservation semantics')
+    def test_cas_mode_preservation_failure_has_no_replacement(self):
+        before = self.target.read_bytes()
+        self.target.chmod(0o755)
+        with mock.patch.object(act.os, 'chmod', side_effect=OSError(errno.EPERM, 'injected chmod failure')):
+            with self.assertRaises(LocalHandError) as ctx:
+                worker.execute_task(self.task(), self.profile, self.state)
+        self.assertEqual(ctx.exception.code, 'write_mode_preservation_failed')
+        self.assertEqual(ctx.exception.status, 'failed')
+        self.assertEqual(self.target.read_bytes(), before)
+        self.assertEqual(stat.S_IMODE(self.target.stat().st_mode), 0o755)
+        self.assertEqual(list(self.repo.glob('.sample.txt.local-hand-*')), [])
+
     @unittest.skipIf(os.name == 'nt', 'POSIX directory fsync')
     def test_post_write_indeterminate_receipt_prevents_duplicate_replay(self):
         task = self.task()

@@ -97,3 +97,12 @@ the parent persists logs and verifies every saved digest before declaring PASS.
 Publication requires its separate exact candidate/content/license/governance
 decision. No license grant is inferred from a Public repository shell. S2 live
 cutover and S3 artifact-ledger A2 remain outside this implementation authority.
+
+## GX10 second fault/contract review
+
+The second review found two additional fail-open edges. CAS now requires the
+replacement file's original POSIX mode to be applied and verified before the
+atomic replace, and its final file sync occurs after that metadata change.
+Controller `wait`/`call` now require an explicit three-field expected
+provenance policy before call submission or result acceptance; the CLI no
+longer treats the provenance policy as optional.

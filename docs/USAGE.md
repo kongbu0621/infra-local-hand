@@ -41,6 +41,9 @@ a profile before installation. Controller `init`, `submit`, `wait`, and `call`
 require `--policy FILE`. `build` remains offline. A controller mailbox has a
 create-only admission marker; changing policy requires a newly admitted clone.
 Worker's optional `--mailbox-branch` is an assertion against the profile.
+`wait` and `call` additionally require `--expected-provenance-file`; that file
+must contain the exact admitted `implementation_commit`, `package_digest`, and
+`profile_digest`. A result is never accepted without this source policy.
 
 ## Installation provenance
 

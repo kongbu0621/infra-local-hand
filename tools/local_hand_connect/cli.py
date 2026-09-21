@@ -104,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
         if name in ("wait", "call"):
             command.add_argument("--timeout-seconds", type=float, default=120.0)
             command.add_argument("--poll-seconds", type=float, default=2.0)
-            command.add_argument("--expected-provenance-file", type=Path)
+            command.add_argument("--expected-provenance-file", type=Path, required=True)
     return parser
 
 

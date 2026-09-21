@@ -501,10 +501,17 @@ def validate_expected_provenance(expected: dict[str, Any]) -> dict[str, str]:
     return normalized
 
 
-def _enforce_expected_provenance(result: dict[str, Any], expected: dict[str, Any] | None) -> dict[str, Any]:
+def _require_expected_provenance(expected: dict[str, Any] | None) -> dict[str, str]:
     if expected is None:
-        return result
-    policy = validate_expected_provenance(expected)
+        raise LocalHandError(
+            "controller_provenance_policy_invalid",
+            "wait/call requires expected implementation_commit, package_digest and profile_digest",
+        )
+    return validate_expected_provenance(expected)
+
+
+def _enforce_expected_provenance(result: dict[str, Any], expected: dict[str, Any] | None) -> dict[str, Any]:
+    policy = _require_expected_provenance(expected)
     mismatched_fields = [
         field
         for field in _PROVENANCE_FIELDS
@@ -530,6 +537,7 @@ def _wait_for_result_locked(
 ) -> dict[str, Any]:
     task = _validate_controller_task(task)
     timeout_seconds, poll_seconds = _validate_wait_timing(timeout_seconds, poll_seconds)
+    expected_provenance = _require_expected_provenance(expected_provenance)
     validate_controller_mailbox(mailbox, branch)
     deadline = time.monotonic() + timeout_seconds
     while True:
@@ -585,6 +593,7 @@ def call_task(
     poll_seconds: float = 2.0,
     expected_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    expected_provenance = _require_expected_provenance(expected_provenance)
     mailbox = _resolve_existing_mailbox(mailbox)
     with _controller_mailbox_lock(mailbox):
         _submit_task_locked(mailbox, branch, task)
