@@ -11,13 +11,13 @@
 - Gate decision authority: Owner.
 - Gate adoption exceptions: none.
 - Gate adoption change rule: no automatic upgrade, weakening, revocation, or new exception; Owner decision required.
-- Gate state: **OPEN**.
+- Gate state: **CLOSED for S1 only**.
 - Requirements document: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 - Architecture document: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Implementation plan: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
-- Documentation baseline: the existing documentation-only commit A containing these reviewed versions; exact SHA is supplied in the review record after committing. No self-referential SHA is prewritten.
-- Proposed implementation scope: S1 only, as defined in IMPLEMENTATION_PLAN.md. **Authorized implementation scope: none pending Owner closure.**
-- Owner closure decision: absent. Repository creation and “可以了” acknowledge the Public shell; they are not interpreted as an exact R/A/scope closure.
+- Documentation baseline A: `7246b850ffdc2709e359b09cac99f0fb88bda209`.
+- Authorized implementation scope: S1 only, as defined in IMPLEMENTATION_PLAN.md: isolated extraction, parameterization, packaging and verification. Publication, live-node cutover and artifact-ledger A2 are outside this closure.
+- Owner closure decision B: [S1_OWNER_DECISION.md](docs/governance/S1_OWNER_DECISION.md), local event `S1-OWNER-CLOSURE-20260921-01`; exact Owner text retained. The three documents' DRAFT/OPEN labels describe baseline A before this decision; this record approves those exact versions without changing their semantics.
 - Reopen conditions: material changes to requirements, architecture, phase plan, scope, R/A, accessible source, integrity/equivalence/approval, mandate, authority, exceptions or adoption change rule.
 
 The current executor must read the direct pinned rule. If it cannot, it treats this Gate as OPEN. [The public excerpt](docs/governance/PUBLIC_GATE_CANDIDATE.md) and [its manifest](docs/governance/GATE_SNAPSHOT_MANIFEST.json) are proposals only. S1 may be closed against the readable direct source without claiming that the public excerpt has already been adopted. Public adoption later requires its own accurate baseline and decision if it materially changes adoption evidence.
