@@ -418,6 +418,102 @@ def main():
                 assert again==actual and budget_receipt.read_bytes()==receipt_bytes
                 assert (root/f'budget-{label}-launches').read_bytes()==b'x'
                 checks.append({'case':f'installed {label} validation size failure recovers without replay','status':'PASS'})
+            # Real committed mailbox state must win over interrupted local
+            # creation. Preserve these files as evidence, then resume normally.
+            interrupted=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':'sample.txt',
+                'expected_sha256':hashlib.sha256(b'recovery-sentinel\n').hexdigest(),
+                'content':'precommit-applied\n'},task_id='LH9990')
+            interrupted_path=save('precommit-task.json',interrupted)
+            (controller/'_executor_spike/tasks/LH9990.json').write_bytes(interrupted_path.read_bytes())
+            submission=json.loads(run(connect+['submit']+common+['--task-file',interrupted_path]))
+            assert submission['status']=='submitted',submission
+            assert json.loads(run([git,'--git-dir',bare,'show',policy['branch']+':_executor_spike/tasks/LH9990.json']))==interrupted
+            checks.append({'case':'installed controller resumes local precommit task and really publishes it','status':'PASS'})
+            from local_hand.worker import _persist_result
+            completed=execute_task(interrupted,profile,state)
+            _persist_result(outbox=state/'outbox',receipts=state/'receipts',task=interrupted,result=completed)
+            receipt_bytes=(state/'receipts/LH9990.json').read_bytes()
+            interrupted_result=(state/'outbox/LH9990.json').read_bytes()
+            (worker_box/'_executor_spike/results/LH9990.json').write_bytes(interrupted_result)
+            local_only=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':'sample.txt',
+                'expected_sha256':hashlib.sha256(b'recovery-sentinel\n').hexdigest(),
+                'content':'must-not-execute-local-task'},task_id='LH9989')
+            local_only_path=save('uncommitted-local-task.json',local_only)
+            (worker_box/'_executor_spike/tasks/LH9989.json').write_bytes(local_only_path.read_bytes())
+            (project/'sample.txt').write_bytes(b'recovery-sentinel\n')
+            run(worker_cmd)
+            received=json.loads(run(connect+['wait']+common+['--task-file',interrupted_path,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert received==completed and (state/'receipts/LH9990.json').read_bytes()==receipt_bytes
+            assert not (state/'outbox/LH9990.json').exists()
+            checks.append({'case':'installed worker publishes retained precommit result without replay','status':'PASS'})
+            assert not (state/'receipts/LH9989.json').exists()
+            assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            checks.append({'case':'installed worker does not execute uncommitted local task','status':'PASS'})
+            from local_hand.protocol import result_success
+            fake_task=build_task(profile.node_id,'node.status',{},task_id='LH9988')
+            fake_task_path=save('uncommitted-result-task.json',fake_task)
+            fake_result=save('uncommitted-result.json',result_success(fake_task,profile.node_id,{'local_only':True},identity))
+            (controller/'_executor_spike/results/LH9988.json').write_bytes(fake_result.read_bytes())
+            run(connect+['wait']+common+['--task-file',fake_task_path,'--timeout-seconds','0',
+                '--expected-provenance-file',expected_path],expected=3)
+            assert 'controller_wait_timeout' in (logs/f'{len(records):03}'/'stderr.log').read_text()
+            assert not run([git,'--git-dir',bare,'ls-tree','--name-only',policy['branch'],'--',
+                '_executor_spike/tasks/LH9989.json','_executor_spike/results/LH9989.json',
+                '_executor_spike/results/LH9988.json']).strip()
+            checks.append({'case':'installed controller rejects uncommitted local result as delivery evidence','status':'PASS'})
+            expected_archives={
+                (controller,'_executor_spike/tasks/LH9990.json'):interrupted_path.read_bytes(),
+                (controller,'_executor_spike/results/LH9988.json'):fake_result.read_bytes(),
+                (worker_box,'_executor_spike/tasks/LH9989.json'):local_only_path.read_bytes(),
+                (worker_box,'_executor_spike/results/LH9990.json'):interrupted_result,
+            }
+            for (box,relative),raw in expected_archives.items():
+                found=[]
+                for record_path in (box/'.git/local-hand-untracked').glob('*/record.json'):
+                    item=json.loads(record_path.read_text())
+                    if item['relative_path']==relative:
+                        assert item['sha256']==hashlib.sha256(raw).hexdigest() and item['bytes']==len(raw)
+                        assert (record_path.parent/'payload').read_bytes()==raw
+                        found.append(record_path)
+                assert len(found)==1,(relative,found)
+            checks.append({'case':'installed untracked control evidence retains exact bytes and path manifest','status':'PASS'})
+            fault_code='''import errno,json,os,stat,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import mailbox_safety
+from local_hand.protocol import LocalHandError
+root=Path(sys.argv[1]);(root/'_executor_spike/tasks').mkdir(parents=True)
+events=[]
+for index,operation in enumerate(('write','fsync')):
+ target=root/'_executor_spike/tasks'/f'LH{7100+index}.json'
+ with mock.patch.object(mailbox_safety.os,operation,side_effect=OSError(errno.EIO,'synthetic I/O fault')):
+  try:mailbox_safety.atomic_create_control_file(root,target,b'payload')
+  except LocalHandError as exc:
+   assert exc.status=='indeterminate';events.append({'fault':operation,'code':exc.code,'status':exc.status})
+  else:raise AssertionError('fault was hidden')
+ assert not target.exists() and not list(target.parent.glob('.lh-*.tmp'))
+ mailbox_safety.atomic_create_control_file(root,target,b'payload')
+ assert target.read_bytes()==b'payload'
+original=os.fsync
+def fail_directory(fd):
+ if stat.S_ISDIR(os.fstat(fd).st_mode):raise OSError(errno.EIO,'synthetic directory sync fault')
+ return original(fd)
+target=root/'_executor_spike/tasks/LH7102.json'
+with mock.patch.object(mailbox_safety.os,'fsync',side_effect=fail_directory):
+ try:mailbox_safety.atomic_create_control_file(root,target,b'payload')
+ except LocalHandError as exc:
+  assert exc.status=='indeterminate';events.append({'fault':'directory-fsync','code':exc.code,'status':exc.status})
+ else:raise AssertionError('directory sync failure was hidden')
+assert target.read_bytes()==b'payload' and not list(target.parent.glob('.lh-*.tmp'))
+print(json.dumps(events))
+'''
+            fault_events=json.loads(run([sys.executable,'-I','-c',fault_code,root/'atomic-retry-fixture']))
+            assert len(fault_events)==3
+            for event in fault_events:
+                checks.append({'case':'installed atomic publication fault '+event['fault'],'status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

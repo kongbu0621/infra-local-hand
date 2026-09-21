@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -335,8 +336,52 @@ def _git_state_path(mailbox: Path, name: str) -> Path:
     return p if p.is_absolute() else mailbox / p
 
 
+def _preserve_untracked_control_files(mailbox: Path) -> None:
+    """Keep abandoned local files out of the committed mailbox snapshot.
+
+    reset --hard does not remove untracked files. Preserve them privately before
+    reset so neither controller nor worker can mistake them for remote evidence.
+    Ignore rules are deliberately not applied to this listing.
+    """
+    listing = run_git(["ls-files", "--others", "-z", "--",
+                       "_executor_spike/tasks", "_executor_spike/results",
+                       "_executor_spike/conflicts"], mailbox).stdout
+    for relative in filter(None, listing.split("\0")):
+        target = mailbox / relative
+        validate_control_target(mailbox, target, require_existing=True)
+        raw = read_regular_file_bounded(target, MAX_MAILBOX_CONTROL_BLOB_BYTES, "mailbox_untracked_invalid")
+        digest = hashlib.sha256(raw).hexdigest()
+        archive_root = mailbox / ".git" / "local-hand-untracked"
+        try:
+            for directory in (mailbox / ".git", archive_root):
+                if directory == archive_root and not target_lexists(directory):
+                    directory.mkdir(mode=0o700)
+                st = directory.lstat()
+                reparse = getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+                if not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode) or reparse:
+                    raise LocalHandError("mailbox_untracked_preservation_failed", "archive directory is not a real directory", "indeterminate")
+            _fsync_parent(archive_root)
+            archive = Path(tempfile.mkdtemp(prefix="record-", dir=archive_root))
+            _fsync_parent(archive)
+            write_json_atomic(archive / "record.json", {
+                "relative_path": relative, "bytes": len(raw), "sha256": digest,
+                "reason": "untracked control file is not committed mailbox evidence",
+            })
+            payload = archive / "payload"
+            os.rename(target, payload)
+            if read_regular_file_bounded(payload, MAX_MAILBOX_CONTROL_BLOB_BYTES, "mailbox_untracked_invalid") != raw:
+                raise LocalHandError("mailbox_untracked_preservation_failed", "preserved file changed during move", "indeterminate")
+            with payload.open("rb") as stream:
+                os.fsync(stream.fileno())
+            _fsync_parent(payload)
+            _fsync_parent(target)
+        except OSError as exc:
+            raise LocalHandError("mailbox_untracked_preservation_failed", f"cannot preserve untracked control file: {relative}", "indeterminate") from exc
+
+
 def recover_mailbox_git_state(mailbox: Path) -> None:
     require_mailbox(mailbox); validate_checkout_control_dirs(mailbox)
+    _preserve_untracked_control_files(mailbox)
     for command in (["rebase", "--abort"], ["merge", "--abort"], ["cherry-pick", "--abort"], ["revert", "--abort"]):
         run_git(command, mailbox, check=False)
     for state_dir in ("rebase-merge", "rebase-apply"):

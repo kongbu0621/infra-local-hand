@@ -108,12 +108,12 @@ def _fsync_directory(path: Path) -> None:
         flags |= os.O_DIRECTORY
     try:
         fd = os.open(path, flags)
-    except OSError:
-        return
+    except OSError as exc:
+        raise LocalHandError("mailbox_durability_unconfirmed", "cannot open mailbox directory for synchronization", "indeterminate") from exc
     try:
         os.fsync(fd)
-    except OSError:
-        pass
+    except OSError as exc:
+        raise LocalHandError("mailbox_durability_unconfirmed", "mailbox directory synchronization failed", "indeterminate") from exc
     finally:
         os.close(fd)
 
@@ -159,14 +159,19 @@ def atomic_create_control_file(mailbox: Path, target: Path, data: bytes) -> None
     except OSError as exc:
         raise LocalHandError("mailbox_temp_create_failed", f"cannot create mailbox temp file: {temp.name}", "indeterminate") from exc
     try:
-        view = memoryview(data)
-        written = 0
-        while written < len(view):
-            written += os.write(fd, view[written:])
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    try:
+        try:
+            view = memoryview(data)
+            written = 0
+            while written < len(view):
+                count = os.write(fd, view[written:])
+                if count <= 0:
+                    raise OSError("mailbox write made no progress")
+                written += count
+            os.fsync(fd)
+        except OSError as exc:
+            raise LocalHandError("mailbox_temp_write_failed", "cannot write or synchronize mailbox temporary file", "indeterminate") from exc
+        finally:
+            os.close(fd)
         try:
             # Creating a hard link is an atomic no-overwrite publication on
             # NTFS, APFS and ordinary Linux filesystems.  Unlike os.replace(),
