@@ -18,6 +18,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -42,32 +43,49 @@ def main():
         n=len(records)+1; folder=logs/f'{n:03}';folder.mkdir()
         command=[str(x) for x in argv];start=time.monotonic()
         entry={'argv':command,'cwd':str(cwd),'start_utc':datetime.now(timezone.utc).isoformat()}
-        with (folder/'stdout.log').open('wb') as out,(folder/'stderr.log').open('wb') as err:
-            child=subprocess.Popen(command,cwd=cwd,env={**env,**(override or {})},stdin=subprocess.DEVNULL,
-                                   stdout=out,stderr=err,start_new_session=os.name!='nt')
-            if hasattr(os,'wait4'):
-                while True:
-                    pid,status,usage=os.wait4(child.pid,os.WNOHANG)
-                    if pid:
-                        code=os.waitstatus_to_exitcode(status);child.returncode=code
-                        entry['max_rss_kib']=usage.ru_maxrss;entry['rss_method']='Linux wait4 ru_maxrss';break
-                    if time.monotonic()-start>90:
-                        os.killpg(child.pid,signal.SIGKILL)
-                        _,status,usage=os.wait4(child.pid,0);child.returncode=os.waitstatus_to_exitcode(status)
-                        code=124;entry['timed_out']=True;entry['max_rss_kib']=usage.ru_maxrss;break
-                    time.sleep(.02)
-            else:
-                try:code=child.wait(timeout=90)
-                except subprocess.TimeoutExpired:child.kill();child.wait();code=124
-                entry['max_rss_kib']=None;entry['rss_method']='UNAVAILABLE on this platform in this fixture harness'
-            for stream in (out, err):
-                stream.flush();os.fsync(stream.fileno())
+        child=subprocess.Popen(command,cwd=cwd,env={**env,**(override or {})},stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=os.name!='nt')
+        captures={name: {'data':bytearray(),'observed':0,'error':None} for name in ('stdout.log','stderr.log')}
+        def drain(pipe, capture):
+            try:
+                with pipe:
+                    while block:=pipe.read(65536):
+                        capture['observed']+=len(block)
+                        remaining=32*1024*1024-len(capture['data'])
+                        capture['data'].extend(block[:remaining])
+            except Exception as exc:capture['error']=repr(exc)
+        threads=[threading.Thread(target=drain,args=(pipe,captures[name]),daemon=True)
+                 for name,pipe in (('stdout.log',child.stdout),('stderr.log',child.stderr))]
+        for thread in threads:thread.start()
+        if hasattr(os,'wait4'):
+            while True:
+                pid,status,usage=os.wait4(child.pid,os.WNOHANG)
+                if pid:
+                    code=os.waitstatus_to_exitcode(status);child.returncode=code
+                    entry['max_rss_kib']=usage.ru_maxrss;entry['rss_method']='Linux wait4 ru_maxrss';break
+                if time.monotonic()-start>90:
+                    os.killpg(child.pid,signal.SIGKILL)
+                    _,status,usage=os.wait4(child.pid,0);child.returncode=os.waitstatus_to_exitcode(status)
+                    code=124;entry['timed_out']=True;entry['max_rss_kib']=usage.ru_maxrss;break
+                time.sleep(.02)
+        else:
+            try:code=child.wait(timeout=90)
+            except subprocess.TimeoutExpired:child.kill();child.wait();code=124
+            entry['max_rss_kib']=None;entry['rss_method']='UNAVAILABLE on this platform in this fixture harness'
+        for thread in threads:thread.join(5)
+        incomplete=any(thread.is_alive() for thread in threads)
+        entry['capture_complete']=not incomplete and all(c['error'] is None and c['observed']==len(c['data']) for c in captures.values())
+        entry['capture_method']='parent drains both pipes with 32 MiB per-stream bound; create-only fsynced logs'
+        for name,capture in captures.items():
+            with (folder/name).open('xb') as stream:
+                stream.write(bytes(capture['data']));stream.flush();os.fsync(stream.fileno())
         entry.update(exit_code=code,expected_exit_code=expected,elapsed_seconds=time.monotonic()-start,
                      end_utc=datetime.now(timezone.utc).isoformat(),
                      logs={name:hashlib.sha256((folder/name).read_bytes()).hexdigest() for name in ('stdout.log','stderr.log')})
         with (folder/'command.json').open('x', encoding='utf-8') as stream:
             stream.write(json.dumps(entry,indent=2)+'\n');stream.flush();os.fsync(stream.fileno())
         records.append(entry)
+        if not entry['capture_complete']:raise AssertionError(f'command {n} output capture incomplete')
         if code!=expected:
             raise AssertionError(f'command {n} exit {code} != {expected}: {command!r}\n'+(folder/'stderr.log').read_text(errors='replace')[-4000:])
         return (folder/'stdout.log').read_text(encoding='utf-8')
