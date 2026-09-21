@@ -1,6 +1,8 @@
 # 首次公开发布复核
 
-Latest S1 repair: see [S1_CONFLICT_CHAIN_REVIEW.md](S1_CONFLICT_CHAIN_REVIEW.md) for candidate `8bc59ab653a949c637362879fdbd318cd51b4052`, Owner-directed chain-only validation, and its evidence. Earlier full-suite/CI results below belong to their original commits.
+最新 S1 投递／收据恢复修复：精确候选 `4c58c10f96a3477c06a549795916eb607c6d7f5a`，按 Owner 要求仅运行链路测试，结果见 [S1_DELIVERY_RECOVERY_REVIEW.md](S1_DELIVERY_RECOVERY_REVIEW.md)。下列历史全量测试和 CI 结论仍属于原提交。
+
+Earlier S1 chain repair: see [S1_CONFLICT_CHAIN_REVIEW.md](S1_CONFLICT_CHAIN_REVIEW.md) for candidate `8bc59ab653a949c637362879fdbd318cd51b4052`, Owner-directed chain-only validation, and its evidence. Earlier full-suite/CI results below belong to their original commits.
 
 日期：2026-09-21。复核代码及文档交接基线：`3a8591cf8d175d7ab157aca68ba5bc488c51733a`。随后仅增加本状态记录，不改变冻结产品候选。
 
