@@ -1,6 +1,8 @@
 # 首次公开发布复核
 
-最新 S1 mailbox 提交状态与中断恢复修复：精确候选 `90f86b26876ffa188da4c24338d98d2238cf40fa`，仅执行定向源码和安装态链路；见 [S1_MAILBOX_SNAPSHOT_REVIEW.md](S1_MAILBOX_SNAPSHOT_REVIEW.md)。历史平台和全量测试结论属于原提交。
+最新 S1 精确分支抓取与快照一致性修复：精确候选 `17290e8cbebe5d4e9b590a284c27b68a60ad9217`，仅执行定向源码和安装态链路；见 [S1_FETCH_SNAPSHOT_REVIEW.md](S1_FETCH_SNAPSHOT_REVIEW.md)。历史平台与全量测试结论属于原提交。
+
+此前 S1 mailbox 提交状态与中断恢复修复：精确候选 `90f86b26876ffa188da4c24338d98d2238cf40fa`，仅执行定向源码和安装态链路；见 [S1_MAILBOX_SNAPSHOT_REVIEW.md](S1_MAILBOX_SNAPSHOT_REVIEW.md)。历史平台和全量测试结论属于原提交。
 
 此前 S1 结果尺寸与恢复修复：精确候选 `039935373db49b8b38c555fd00ab22fe21e99ca7`，仅执行定向源码和安装态链路；结果见 [S1_RESULT_BUDGET_REVIEW.md](S1_RESULT_BUDGET_REVIEW.md)。历史平台及全量测试结论属于原提交。
 
