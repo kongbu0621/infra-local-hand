@@ -524,12 +524,93 @@ with mock.patch.object(os,'scandir',side_effect=OSError(errno.EIO,'synthetic out
   events.append({'fault':'outbox-scan','code':exc.code,'status':exc.status})
  else:raise AssertionError('unreadable outbox was mistaken for an empty queue')
 worker.publish_outbox(root,'fixture/mailbox-v1',outbox)
+import hashlib
+pending=outbox/'LH7103.json';pending.write_bytes(b'new invalid evidence')
+quarantine=root/'quarantine';quarantine.mkdir()
+reason='synthetic invalid record'
+prior=quarantine/(pending.name+'.'+hashlib.sha256(reason.encode()).hexdigest()[:12]+'.invalid')
+prior.write_bytes(b'prior invalid evidence')
+original_lstat=os.lstat
+def unreadable_prior(path,*args,**kwargs):
+ if not isinstance(path,int) and Path(path)==prior:raise OSError(errno.EIO,'synthetic metadata fault')
+ return original_lstat(path,*args,**kwargs)
+with mock.patch.object(os,'lstat',side_effect=unreadable_prior):
+ try:worker._quarantine_local_outbox_file(outbox,pending,reason)
+ except LocalHandError as exc:
+  assert exc.code=='path_state_unavailable' and exc.status=='indeterminate'
+  events.append({'fault':'quarantine-lookup','code':exc.code,'status':exc.status})
+ else:raise AssertionError('unreadable prior evidence was overwritten')
+assert prior.read_bytes()==b'prior invalid evidence' and pending.read_bytes()==b'new invalid evidence'
+worker._quarantine_local_outbox_file(outbox,pending,reason)
+assert prior.read_bytes()==b'prior invalid evidence'
+assert prior.with_name(prior.stem+'.1.invalid').read_bytes()==b'new invalid evidence'
 print(json.dumps(events))
 '''
             fault_events=json.loads(run([sys.executable,'-I','-c',fault_code,root/'atomic-retry-fixture']))
-            assert len(fault_events)==4
+            assert len(fault_events)==5
             for event in fault_events:
                 checks.append({'case':'installed atomic publication fault '+event['fault'],'status':'PASS'})
+            # Inject only filesystem metadata errors. The installed entry point,
+            # installation binding, Git transport, receipt and recovery are real.
+            lookup_code='''import errno,os,sys
+from pathlib import Path
+from unittest import mock
+target=Path(sys.argv[1]);mode=sys.argv[2];original=os.lstat
+if mode=='worker':
+ from local_hand.worker import main
+else:
+ from local_hand_connect.cli import main
+def lookup(path,*args,**kwargs):
+ if not isinstance(path,int) and Path(path)==target:raise OSError(errno.EIO,'synthetic metadata lookup fault',os.fspath(path))
+ return original(path,*args,**kwargs)
+with mock.patch.object(os,'lstat',side_effect=lookup):
+ raise SystemExit(main(sys.argv[3:]))
+'''
+            def lookup_rejected(target,mode,argv):
+                output=run([sys.executable,'-I','-c',lookup_code,target,mode]+argv,expected=3)
+                error=(logs/f'{len(records):03}'/'stderr.log').read_text()
+                assert 'path_state_unavailable' in error and 'errno=5' in error
+                if mode=='worker':assert not output
+            receipt_path=state/'receipts/LH9995.json';receipt_before=receipt_path.read_bytes()
+            receipt_result=json.loads(receipt_before)['result']
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            run([git,'-C',seed,'rm','--','_executor_spike/results/LH9995.json'])
+            run([git,'-C',seed,'commit','-qm','synthetic canonical result loss'])
+            run([git,'-C',seed,'push','origin',policy['branch']])
+            lookup_rejected(receipt_path,'worker',worker_cmd[4:])
+            assert receipt_path.read_bytes()==receipt_before
+            assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            assert not (state/'outbox/LH9995.json').exists()
+            run(worker_cmd)
+            actual=json.loads(run(connect+['wait']+common+['--task-file',root/'lost-ack-cas-task.json',
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert actual==receipt_result and receipt_path.read_bytes()==receipt_before
+            assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            checks.append({'case':'installed unreadable receipt stops and later republishes without CAS replay','status':'PASS'})
+            conflict_name=conflict_filename(task_digest(blocked_task))
+            marker_path=state/'conflicts'/conflict_name;marker_before=marker_path.read_bytes()
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            run([git,'-C',seed,'rm','--','_executor_spike/conflicts/'+conflict_name])
+            run([git,'-C',seed,'commit','-qm','synthetic conflict loss before metadata fault'])
+            run([git,'-C',seed,'push','origin',policy['branch']])
+            lookup_rejected(marker_path,'worker',worker_cmd[4:])
+            assert marker_path.read_bytes()==marker_before and not (state/'receipts/LH9996.json').exists()
+            assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            run(worker_cmd)
+            actual=json.loads(run(connect+['wait']+common+['--task-file',blocked_path,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert actual==json.loads(marker_before)
+            assert marker_path.read_bytes()==marker_before and not (state/'receipts/LH9996.json').exists()
+            assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            checks.append({'case':'installed unreadable conflict stops and later restores the replay barrier','status':'PASS'})
+            first_marker=controller/'_executor_spike/conflicts'/conflict_filename(task_digest(first_task))
+            first_wait=['wait']+common+['--task-file',root/'task-0.json',
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]
+            lookup_rejected(first_marker,'controller',first_wait)
+            assert json.loads(run(connect+first_wait))==conflict
+            checks.append({'case':'installed controller does not accept success through an unreadable conflict','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

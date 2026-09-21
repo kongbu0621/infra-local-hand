@@ -73,7 +73,7 @@ def ensure_checkout_control_dirs(mailbox: Path) -> None:
     control_root = _require_real_dir(mailbox / "_executor_spike", root, "mailbox_path_escape")
     for name in sorted(_CONTROL_CHILDREN):
         path = control_root / name
-        if os.path.lexists(path):
+        if target_lexists(path):
             _require_real_dir(path, root, "mailbox_path_escape")
             continue
         try:
@@ -91,7 +91,19 @@ def validate_checkout_control_dirs(mailbox: Path) -> None:
 
 
 def target_lexists(path: Path) -> bool:
-    return os.path.lexists(path)
+    # lexists hides every OSError. An unreadable receipt or conflict marker
+    # must never become permission to execute again or overwrite evidence.
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise LocalHandError(
+            "path_state_unavailable",
+            f"cannot determine path state: {path.name}; errno={exc.errno}",
+            "indeterminate",
+        ) from exc
+    return True
 
 
 def _temporary_control_path(parent: Path, target: Path) -> Path:
