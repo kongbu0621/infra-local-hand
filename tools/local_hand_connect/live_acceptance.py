@@ -372,7 +372,7 @@ def run_live_acceptance(
         "symlink, oversized, non-UTF8 and directory fixtures",
         "validation timeout process-tree and noisy-output fixtures",
         "mailbox/result corruption, worker lock and bootstrap rollback fault injection",
-        "physical Windows HP3080TI R5 conformance",
+        "physical Windows platform conformance",
     ]
     if counts["FAIL"]:
         safe_matrix_status = "failed"
@@ -386,7 +386,7 @@ def run_live_acceptance(
         "safe_matrix_status": safe_matrix_status,
         "acceptance_coverage": "partial",
         "release_ready": False,
-        "release_ready_reason": "This safe GX10 matrix cannot replace mutating/recovery tests or physical Windows Reality.",
+        "release_ready_reason": "This safe matrix cannot replace mutating/recovery tests or physical Windows conformance.",
         "target_node": target_node,
         "repository": repository,
         "started_at": started.isoformat(),
