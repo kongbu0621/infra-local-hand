@@ -222,7 +222,10 @@ def _validate_local_outbox_result(value: Any, result_file: Path) -> dict[str, An
         result = _validate_result_shape(value)
     except LocalHandError as exc:
         raise LocalHandError("local_outbox_invalid", exc.message, "indeterminate") from exc
-    if not _is_conflict_outbox(result_file) and result_file.stem != result["task_id"]:
+    if _is_conflict_outbox(result_file):
+        if result_file.name != conflict_filename(result["task_digest"]) or result["status"] == "succeeded":
+            raise LocalHandError("local_outbox_invalid", "conflict filename/digest or status invalid", "indeterminate")
+    elif result_file.stem != result["task_id"]:
         raise LocalHandError("local_outbox_invalid", "canonical outbox filename/task_id mismatch", "indeterminate")
     return result
 
@@ -432,20 +435,31 @@ def _has_conflict_marker(state_root: Path, task_id: str, digest: str) -> bool:
     return target_lexists(state_root / "conflicts" / _conflict_filename(task_id, digest))
 
 
+def _load_task_conflict(path: Path, task: dict[str, Any], profile: NodeProfile, code: str) -> dict[str, Any]:
+    try:
+        result = validate_remote_result(
+            load_json_bounded(path, MAX_RESULT_JSON_BYTES, code),
+            task["task_id"], str(task.get("action", "")), profile.node_id, task_digest(task),
+        )
+        if result["status"] == "succeeded":
+            raise LocalHandError(code, "conflict record cannot report success", "indeterminate")
+        return result
+    except LocalHandError as exc:
+        raise LocalHandError(code, exc.message, "indeterminate") from exc
+
+
 def _recover_task_conflict(mailbox: Path, branch: str, state_root: Path, outbox: Path,
                            task: dict[str, Any], profile: NodeProfile) -> None:
     """Requeue a durable marker after interruption between marker and outbox."""
     digest = task_digest(task)
     name = _conflict_filename(task["task_id"], digest)
-    saved = validate_remote_result(
-        load_json_bounded(state_root / "conflicts" / name, MAX_RESULT_JSON_BYTES, "local_conflict_invalid"),
-        task["task_id"], str(task.get("action", "")), profile.node_id, digest,
-    )
-    if saved["status"] == "succeeded":
-        raise LocalHandError("local_conflict_invalid", "conflict marker cannot report success", "indeterminate")
+    saved = _load_task_conflict(state_root / "conflicts" / name, task, profile, "local_conflict_invalid")
     target = mailbox / "_executor_spike" / "conflicts" / name
     validate_control_target(mailbox, target)
     if target_lexists(target):
+        remote = _load_task_conflict(target, task, profile, "remote_conflict_invalid")
+        if _result_digest(remote) != _result_digest(saved):
+            raise LocalHandError("remote_conflict_content_conflict", "remote conflict differs from durable marker", "indeterminate")
         return
     pending = outbox / name
     if target_lexists(pending):
@@ -507,6 +521,16 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
         digest = task_digest(task)
         if _has_conflict_marker(state_root, task["task_id"], digest):
             _recover_task_conflict(mailbox, branch, state_root, outbox, task, profile)
+            continue
+        conflict_name = _conflict_filename(task["task_id"], digest)
+        remote_conflict = mailbox / "_executor_spike" / "conflicts" / conflict_name
+        validate_control_target(mailbox, remote_conflict)
+        if target_lexists(remote_conflict):
+            # Remote uncertainty is a replay barrier even with fresh local
+            # state. Persist it before accepting any later mailbox snapshot.
+            existing_conflict = _load_task_conflict(remote_conflict, task, profile, "remote_conflict_invalid")
+            write_json_atomic(conflicts / conflict_name, existing_conflict,
+                              max_bytes=MAX_RESULT_JSON_BYTES, code="result_too_large")
             continue
         receipt_file = receipts/f"{task['task_id']}.json"; remote_result = mailbox/"_executor_spike"/"results"/f"{task['task_id']}.json"
         if receipt_file.exists():

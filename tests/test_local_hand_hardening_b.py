@@ -311,6 +311,145 @@ class LocalHandHardeningBTests(unittest.TestCase):
         self.assertEqual({path.read_bytes() for path in archives}, set(originals))
         self.assertEqual(json.loads((mailbox / "_executor_spike/results/LH0252.json").read_text()), remote)
 
+    def _cas_conflict_fixture(self, task_id="LH0260"):
+        task = self.task(task_id, "fs.write_text_cas", {
+            "repository": "scratch-local-hand", "relative_path": "sample.txt",
+            "expected_sha256": hashlib.sha256(b"before\n").hexdigest(), "content": "must-not-replay\n",
+        })
+        conflict = worker.result_error(task, self.profile.node_id,
+            LocalHandError("outcome_unknown", "fixture interrupted execution", "indeterminate"),
+            worker.build_provenance(self.profile))
+        return task, conflict, worker._conflict_filename(task_id, task_digest(task))
+
+    def test_remote_conflict_prevents_cas_with_fresh_state_and_survives_remote_loss(self):
+        seed, mailbox = self._init_mailbox()
+        task, conflict, name = self._cas_conflict_fixture()
+        later = self.task("LH0261")
+        rel = "_executor_spike/conflicts/" + name
+        self._commit_raw(seed, {
+            "_executor_spike/tasks/LH0260.json": json.dumps(task),
+            "_executor_spike/tasks/LH0261.json": json.dumps(later),
+            rel: json.dumps(conflict),
+        }, "fixture remote conflict before fresh state")
+        state = self.runtime / "fresh-state"
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        self.assertEqual([c.args[0]["task_id"] for c in execute.call_args_list], ["LH0261"])
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+        marker = state / "conflicts" / name
+        preserved = marker.read_bytes()
+        self.assertEqual(json.loads(preserved), conflict)
+        self.assertFalse((state / "receipts/LH0260.json").exists())
+        self.assertFalse((mailbox / "_executor_spike/results/LH0260.json").exists())
+        # A later incomplete mailbox snapshot must not erase the local barrier.
+        self._git(seed, "pull", "--ff-only", "origin", MAILBOX_BRANCH)
+        self._git(seed, "rm", "--", rel)
+        self._git(seed, "commit", "-qm", "fixture remote conflict loss")
+        self._git(seed, "push", "-q", "origin", MAILBOX_BRANCH)
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        execute.assert_not_called()
+        self.assertEqual(marker.read_bytes(), preserved)
+        self.assertEqual((mailbox / rel).read_bytes(), preserved)
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+        head = self._git(mailbox, "rev-parse", "HEAD").stdout
+        worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, head)
+
+    def test_invalid_remote_conflict_blocks_execution_before_any_receipt(self):
+        seed, mailbox = self._init_mailbox()
+        task, conflict, name = self._cas_conflict_fixture()
+        mutations = [
+            {"task_id": "LH0269"}, {"task_digest": "0" * 64}, {"action": "node.status"},
+            {"target_node": "other-node", "node_id": "other-node"},
+            {"status": "succeeded", "error": None, "error_code": None},
+        ]
+        invalid = [json.dumps({**conflict, **m}) for m in mutations]
+        incomplete = dict(conflict); incomplete.pop("package_digest")
+        invalid.extend([json.dumps(incomplete), "{broken"])
+        for index, raw in enumerate(invalid):
+            with self.subTest(index=index):
+                self._commit_raw(seed, {"_executor_spike/tasks/LH0260.json": json.dumps(task),
+                    "_executor_spike/conflicts/" + name: raw}, "fixture invalid conflict")
+                state = self.runtime / f"invalid-{index}"
+                before = self._git(seed, "rev-parse", "HEAD").stdout
+                with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+                    with self.assertRaises(LocalHandError) as raised:
+                        worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+                self.assertEqual(raised.exception.code, "remote_conflict_invalid")
+                self.assertEqual(raised.exception.status, "indeterminate")
+                execute.assert_not_called()
+                self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+                self.assertFalse((state / "receipts/LH0260.json").exists())
+                self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
+                self.assertEqual((mailbox / "_executor_spike/conflicts" / name).read_text(), raw)
+
+    def test_conflict_recovery_rejects_remote_drift_and_preserves_both_records(self):
+        seed, mailbox = self._init_mailbox()
+        task, conflict, name = self._cas_conflict_fixture()
+        for index, mutation in enumerate((
+            {"details": {"changed": True}}, {"package_digest": "0" * 64},
+            {"task_digest": "0" * 64},
+            {"status": "succeeded", "error": None, "error_code": None},
+        )):
+            with self.subTest(index=index):
+                remote = {**conflict, **mutation}
+                raw = json.dumps(remote)
+                self._commit_raw(seed, {"_executor_spike/tasks/LH0260.json": json.dumps(task),
+                    "_executor_spike/conflicts/" + name: raw}, "fixture remote marker drift")
+                state = self.runtime / f"drift-{index}"
+                marker = state / "conflicts" / name
+                worker.write_json_atomic(marker, conflict)
+                preserved = marker.read_bytes()
+                with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+                    with self.assertRaises(LocalHandError) as raised:
+                        worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+                self.assertEqual(raised.exception.status, "indeterminate")
+                self.assertIn(raised.exception.code, ("remote_conflict_invalid", "remote_conflict_content_conflict"))
+                execute.assert_not_called()
+                self.assertEqual(marker.read_bytes(), preserved)
+                self.assertEqual((mailbox / "_executor_spike/conflicts" / name).read_text(), raw)
+                self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+
+    def test_conflict_recovery_accepts_equal_content_with_different_json_format(self):
+        seed, mailbox = self._init_mailbox()
+        task, conflict, name = self._cas_conflict_fixture()
+        raw = json.dumps(conflict, sort_keys=True, separators=(",", ":"))
+        self._commit_raw(seed, {"_executor_spike/tasks/LH0260.json": json.dumps(task),
+            "_executor_spike/conflicts/" + name: raw}, "fixture equivalent conflict")
+        state = self.runtime / "equivalent"
+        marker = state / "conflicts" / name
+        worker.write_json_atomic(marker, conflict)
+        preserved = marker.read_bytes()
+        before = self._git(seed, "rev-parse", "HEAD").stdout
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        execute.assert_not_called()
+        self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
+        self.assertEqual(marker.read_bytes(), preserved)
+        self.assertEqual((mailbox / "_executor_spike/conflicts" / name).read_text(), raw)
+
+    def test_invalid_conflict_outbox_is_quarantined_before_publication(self):
+        seed, mailbox = self._init_mailbox()
+        task, conflict, name = self._cas_conflict_fixture()
+        success = worker.result_success(task, self.profile.node_id, {}, worker.build_provenance(self.profile))
+        for index, (filename, payload) in enumerate((
+            ("CONFLICT-" + "0" * 64 + ".json", conflict), (name, success),
+        )):
+            with self.subTest(index=index):
+                outbox = self.runtime / f"bad-outbox-{index}" / "outbox"
+                path = outbox / filename
+                worker.write_json_atomic(path, payload)
+                raw = path.read_bytes()
+                before = self._git(mailbox, "rev-parse", "HEAD").stdout
+                worker.publish_outbox(mailbox, MAILBOX_BRANCH, outbox)
+                self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
+                self.assertFalse(path.exists())
+                retained = list((outbox.parent / "quarantine").glob("*.invalid"))
+                self.assertEqual(len(retained), 1)
+                self.assertEqual(retained[0].read_bytes(), raw)
+                self.assertFalse((mailbox / "_executor_spike/conflicts" / filename).exists())
+
     def test_malformed_local_outbox_is_quarantined_not_published(self) -> None:
         _,mailbox=self._init_mailbox(); outbox=self.runtime/"out"; outbox.mkdir(parents=True); bad={"schema_version":"local-hand-result/v1","task_id":"../../bad","task_digest":"a"*64,"target_node":"test-node","action":"node.status","status":"succeeded"}; (outbox/"LH0204.json").write_text(json.dumps(bad))
         worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse((outbox/"LH0204.json").exists())

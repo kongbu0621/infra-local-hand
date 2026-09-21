@@ -233,6 +233,58 @@ def main():
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert actual==conflict,actual
             checks.append({'case':'matching conflict takes precedence over canonical success','status':'PASS'})
+            # A conflict with no local receipt must stop the real installed
+            # worker before CAS, and become a durable recovery barrier.
+            blocked_task=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':'sample.txt',
+                'expected_sha256':hashlib.sha256(b'after-controller-result\n').hexdigest(),
+                'content':'must-not-replay'},task_id='LH9996')
+            blocked_path=save('remote-conflict-cas-task.json',blocked_task)
+            blocked=result_error(blocked_task,profile.node_id,
+                LocalHandError('outcome_unknown','synthetic prior uncertainty','indeterminate'),identity)
+            run(connect+['submit']+common+['--task-file',blocked_path])
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            rel='_executor_spike/conflicts/'+conflict_filename(task_digest(blocked_task))
+            remote_path=seed/rel
+            remote_path.write_text(json.dumps(blocked,sort_keys=True)+'\n')
+            run([git,'-C',seed,'add','--',rel]);run([git,'-C',seed,'commit','-qm','synthetic CAS conflict'])
+            run([git,'-C',seed,'push','origin',policy['branch']])
+            run(worker_cmd)
+            received=json.loads(run(connect+['wait']+common+['--task-file',blocked_path,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert received==blocked,received
+            assert (project/'sample.txt').read_bytes()==b'after-controller-result\n'
+            assert not (state/'receipts/LH9996.json').exists()
+            assert not (worker_box/'_executor_spike/results/LH9996.json').exists()
+            marker=state/'conflicts'/remote_path.name;marker_bytes=marker.read_bytes()
+            assert json.loads(marker_bytes)==blocked
+            checks.append({'case':'remote conflict blocks installed CAS without a local receipt','status':'PASS'})
+
+            run([git,'-C',seed,'rm','--',rel]);run([git,'-C',seed,'commit','-qm','synthetic conflict loss'])
+            run([git,'-C',seed,'push','origin',policy['branch']]);run(worker_cmd)
+            received=json.loads(run(connect+['wait']+common+['--task-file',blocked_path,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert received==blocked and marker.read_bytes()==marker_bytes
+            assert (worker_box/rel).read_bytes()==marker_bytes
+            assert (project/'sample.txt').read_bytes()==b'after-controller-result\n'
+            checks.append({'case':'restart republishes lost remote conflict without CAS replay','status':'PASS'})
+
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            remote_bytes=remote_path.read_bytes()
+            remote_path.write_text(json.dumps({**blocked,'details':{'changed':True}})+'\n')
+            run([git,'-C',seed,'add','--',rel]);run([git,'-C',seed,'commit','-qm','synthetic conflict drift'])
+            run([git,'-C',seed,'push','origin',policy['branch']]);run(worker_cmd,expected=3)
+            assert marker.read_bytes()==marker_bytes
+            assert (worker_box/rel).read_bytes()==remote_path.read_bytes()
+            assert (project/'sample.txt').read_bytes()==b'after-controller-result\n'
+            checks.append({'case':'installed worker reports indeterminate for remote conflict drift','status':'PASS'})
+            remote_path.write_bytes(remote_bytes)
+            run([git,'-C',seed,'add','--',rel]);run([git,'-C',seed,'commit','-qm','restore synthetic conflict'])
+            run([git,'-C',seed,'push','origin',policy['branch']]);run(worker_cmd)
+            assert marker.read_bytes()==marker_bytes
+            checks.append({'case':'restored conflict resumes clean polling without replay','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})
