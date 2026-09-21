@@ -150,7 +150,7 @@ class ConfigurationTests(unittest.TestCase):
         (target/'local_hand/worker.py').write_text('changed\n')
         with mock.patch.object(provenance,'source_commit',return_value='a'*40) as clean:
             with self.assertRaises(LocalHandError):provenance.write_build_metadata(target,artifact_kind='wheel')
-        clean.assert_called_once_with(require_clean=True)
+        clean.assert_called_once_with(require_clean=True, _allow_build_outputs=True)
         self.assertFalse((target/'local_hand/_build_metadata.json').exists())
 
     def test_build_rejects_ignored_or_hidden_payload_not_in_commit(self):
@@ -187,6 +187,35 @@ class ConfigurationTests(unittest.TestCase):
             with self.assertRaises(LocalHandError) as ctx:
                 provenance.source_commit(require_clean=True)
         self.assertEqual(ctx.exception.code,'provenance_mismatch')
+
+    def test_clean_build_identity_rejects_ignored_build_configuration(self):
+        source=self.root/'ignored-build-input';package=source/'tools/local_hand';package.mkdir(parents=True)
+        (package/'provenance.py').write_text('# source identity fixture\n')
+        (source/'.gitignore').write_text('setup.cfg\n')
+        def git(*args):return subprocess.check_output(['git','-C',str(source),*args])
+        git('init','-q');git('config','user.name','fixture');git('config','user.email','fixture@example.invalid')
+        git('add','.');git('commit','-qm','fixed build input')
+        (source/'setup.cfg').write_text('[bdist_wheel]\nuniversal = 1\n')
+        self.assertEqual(git('status','--porcelain'),b'')
+        with mock.patch.object(provenance,'__file__',str(package/'provenance.py')):
+            with self.assertRaises(LocalHandError) as ctx:
+                provenance.source_commit(require_clean=True)
+        self.assertEqual(ctx.exception.code,'provenance_mismatch')
+
+    def test_clean_build_identity_allows_only_known_generated_ignored_files(self):
+        source=self.root/'generated-build-files';package=source/'tools/local_hand';package.mkdir(parents=True)
+        (package/'provenance.py').write_text('# source identity fixture\n')
+        (source/'.gitignore').write_text('__pycache__/\n.pytest_cache/\n*.egg-info/\n')
+        def git(*args):return subprocess.check_output(['git','-C',str(source),*args])
+        git('init','-q');git('config','user.name','fixture');git('config','user.email','fixture@example.invalid')
+        git('add','.');git('commit','-qm','fixed build input')
+        (package/'__pycache__').mkdir();(package/'__pycache__/provenance.cpython-312.pyc').write_bytes(b'cache')
+        (source/'.pytest_cache/v/cache').mkdir(parents=True);(source/'.pytest_cache/v/cache/nodeids').write_text('[]')
+        egg=source/'tools/infra_local_hand.egg-info';egg.mkdir()
+        for name in ('PKG-INFO','SOURCES.txt','dependency_links.txt','entry_points.txt','top_level.txt'):
+            (egg/name).write_text('generated\n')
+        with mock.patch.object(provenance,'__file__',str(package/'provenance.py')):
+            self.assertEqual(provenance.source_commit(require_clean=True),git('rev-parse','HEAD').decode().strip())
 
 
 if __name__=='__main__':unittest.main()

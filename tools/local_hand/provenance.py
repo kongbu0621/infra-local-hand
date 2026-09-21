@@ -51,7 +51,7 @@ def _git_blob_oid(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _verify_tracked_tree(root: Path, commit: str) -> None:
+def _verify_tracked_tree(root: Path, commit: str) -> set[str]:
     """Bind every tracked worktree byte to HEAD, including hidden index flags."""
     tree = run_hardened_git(
         root,
@@ -92,9 +92,65 @@ def _verify_tracked_tree(root: Path, commit: str) -> None:
             raise _bad("tracked source differs from committed Git blob: " + rel_text)
     if not seen:
         raise _bad("committed source tree is empty")
+    return seen
 
 
-def source_commit(*, require_clean: bool = False) -> str:
+_SETUPTOOLS_EGG_INFO = frozenset({
+    "tools/infra_local_hand.egg-info/PKG-INFO",
+    "tools/infra_local_hand.egg-info/SOURCES.txt",
+    "tools/infra_local_hand.egg-info/dependency_links.txt",
+    "tools/infra_local_hand.egg-info/entry_points.txt",
+    "tools/infra_local_hand.egg-info/top_level.txt",
+})
+
+
+def _ignored_path_is_generated(rel: Path, tracked: set[str], *, allow_build_outputs: bool) -> bool:
+    text = rel.as_posix()
+    if text.startswith(".pytest_cache/"):
+        return True
+    if rel.parent.name == "__pycache__" and rel.suffix in (".pyc", ".pyo"):
+        source = rel.parent.parent / (rel.name.split(".", 1)[0] + ".py")
+        return source.as_posix() in tracked
+    if text in _SETUPTOOLS_EGG_INFO:
+        return True
+    if allow_build_outputs and len(rel.parts) == 4 and rel.parts[:2] == ("build", "lib"):
+        return rel.parts[2] in ("local_hand", "local_hand_connect") and rel.suffix in (".py", ".sh", ".ps1")
+    return False
+
+
+def _verify_ignored_tree(root: Path, tracked: set[str], *, allow_build_outputs: bool) -> None:
+    """Reject ignored inputs except narrowly identified generated files."""
+    result = run_hardened_git(
+        root,
+        ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
+        allow_ssh=False,
+        timeout=10,
+        max_stdout=16 * 1024 * 1024,
+        max_stderr=8192,
+        text=False,
+    )
+    if result.returncode:
+        raise _bad("cannot enumerate ignored source entries")
+    for raw_path in result.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        try:
+            rel_text = raw_path.decode("utf-8")
+        except UnicodeError as exc:
+            raise _bad("ignored source entry is not UTF-8") from exc
+        rel = Path(rel_text)
+        if rel.is_absolute() or not rel.parts or ".." in rel.parts:
+            raise _bad("ignored source entry has an unsafe path")
+        try:
+            if not stat.S_ISREG((root / rel).lstat().st_mode):
+                raise _bad("ignored generated entries must be regular files")
+        except OSError as exc:
+            raise _bad("ignored source entry is unavailable") from exc
+        if not _ignored_path_is_generated(rel, tracked, allow_build_outputs=allow_build_outputs):
+            raise _bad("build source contains an ignored non-generated entry: " + rel_text)
+
+
+def source_commit(*, require_clean: bool = False, _allow_build_outputs: bool = False) -> str:
     root=Path(__file__).resolve().parents[2]
     if not (root/".git").exists():
         raise _bad("neither build metadata nor an exact source checkout is available")
@@ -109,7 +165,8 @@ def source_commit(*, require_clean: bool = False) -> str:
     if require_clean:
         if git(["status","--porcelain=v1","--untracked-files=all"]):
             raise _bad("build requires a clean committed source checkout")
-        _verify_tracked_tree(root, commit)
+        tracked = _verify_tracked_tree(root, commit)
+        _verify_ignored_tree(root, tracked, allow_build_outputs=_allow_build_outputs)
     return commit
 
 
@@ -129,7 +186,7 @@ def payload_hashes(root: Path) -> dict[str,str]:
 
 def write_build_metadata(root: Path, *, artifact_kind: str) -> dict[str,Any]:
     if artifact_kind not in ("wheel","source-staging"):raise _bad("unsupported artifact kind")
-    commit=source_commit(require_clean=True)
+    commit=source_commit(require_clean=True, _allow_build_outputs=True)
     hashes=payload_hashes(root)
     source_root=Path(__file__).resolve().parent.parent
     # A clean status can hide ignored files or skip-worktree changes. Bind the

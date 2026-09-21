@@ -343,7 +343,12 @@ def _route_outbox_target(mailbox: Path, result_file: Path) -> Path:
 
 def _quarantine_local_outbox_file(outbox: Path, result_file: Path, reason: str) -> None:
     q = outbox.parent / "quarantine"; q.mkdir(parents=True, exist_ok=True)
-    dest = q / f"{result_file.name}.{hashlib.sha256(reason.encode()).hexdigest()[:12]}.invalid"
+    stem = f"{result_file.name}.{hashlib.sha256(reason.encode()).hexdigest()[:12]}"
+    dest = q / f"{stem}.invalid"
+    index = 1
+    while target_lexists(dest):
+        dest = q / f"{stem}.{index}.invalid"
+        index += 1
     try: os.replace(result_file, dest); _fsync_parent(dest)
     except OSError as exc: raise LocalHandError("local_outbox_quarantine_failed", f"cannot quarantine {result_file.name}", "indeterminate") from exc
 
