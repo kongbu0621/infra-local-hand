@@ -94,9 +94,10 @@ tree memory. No numerical resource budget is invented.
 The installed harness drains stdout/stderr concurrently through bounded pipes;
 the parent persists logs and verifies every saved digest before declaring PASS.
 
-Publication was separately authorized for exact candidate b763bd6 and its
-governance excerpt; see governance/PUBLICATION_OWNER_DECISION.md. The Owner
-decided not to add a license. Disclosure does not approve equivalence/adoption. S2 live
+Publication was separately authorized first for exact original candidate
+b763bd6 and later for repaired candidate 1e2f9dc to be pushed directly to
+`main`; see the two Owner decisions under `docs/governance/`. The Owner decided
+not to add a license. Disclosure does not approve equivalence/adoption. S2 live
 cutover and S3 artifact-ledger A2 remain outside this implementation authority.
 
 ## GX10 second fault/contract review
