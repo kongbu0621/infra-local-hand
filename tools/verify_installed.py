@@ -149,6 +149,15 @@ def main():
                          f'while not Path({str(heartbeat)!r}).exists() and time.monotonic()<end:time.sleep(.01)\n')
             profile_data['repositories']['demo']['validations']['early-parent']={
                 'argv':[sys.executable,'-I','-c',parent_code],'timeout_seconds':1,'replay_safe':True}
+            for label, exit_code in (('failed',7),('succeeded',0)):
+                launches_path=root/f'budget-{label}-launches'
+                code=('import sys\nfrom pathlib import Path\n'
+                      f'with Path({str(launches_path)!r}).open("ab") as out:out.write(b"x")\n'
+                      'sys.stdout.buffer.write(bytes(1024*1024));sys.stdout.flush()\n'
+                      'sys.stderr.buffer.write(bytes(1024*1024));sys.stderr.flush()\n'
+                      f'raise SystemExit({exit_code})\n')
+                profile_data['repositories']['demo']['validations']['budget-'+label]={
+                    'argv':[sys.executable,'-I','-c',code],'timeout_seconds':5,'replay_safe':True}
         profile_path=save('profile.json',profile_data);profile=load_profile(profile_path)
         identity={'implementation_commit':implementation_commit(),'package_digest':core_digest(),'profile_digest':profile.profile_sha256}
         expected_path=save('expected-provenance.json',identity)
@@ -387,6 +396,28 @@ def main():
             assert again==actual and lifetime_receipt.read_bytes()==receipt_bytes
             assert launches.read_bytes()==b'x' and heartbeat.read_bytes()==pulse
             checks.append({'case':'failed validation receipt reconciles without relaunching descendant','status':'PASS'})
+            for label, task_id, status in (('failed','LH9992','failed'),('succeeded','LH9991','indeterminate')):
+                budget_task=save(f'budget-{label}-task.json',build_task(profile.node_id,'validation.run_profile',{
+                    'repository':'demo','profile':'budget-'+label},task_id=task_id))
+                run(connect+['submit']+common+['--task-file',budget_task]);run(worker_cmd)
+                actual=json.loads(run(connect+['wait']+common+['--task-file',budget_task,
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                assert actual['status']==status and actual['error_code']=='result_too_large',actual
+                summary=actual['details']
+                assert summary['original_status']==label and summary['original_details_omitted']
+                assert summary['original_error_code']==('validation_failed' if label=='failed' else None)
+                assert summary['original_result_json_bytes']>summary['result_limit_bytes']
+                assert len(summary['original_result_sha256'])==64 and 'stdout' not in summary
+                budget_receipt=state/'receipts'/f'{task_id}.json';receipt_bytes=budget_receipt.read_bytes()
+                assert json.loads(receipt_bytes)['result']==actual
+                assert (root/f'budget-{label}-launches').read_bytes()==b'x'
+                checks.append({'case':f'installed {label} validation JSON expansion produces a bounded durable result','status':'PASS'})
+                run(connect+['submit']+common+['--task-file',budget_task]);run(worker_cmd)
+                again=json.loads(run(connect+['wait']+common+['--task-file',budget_task,
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                assert again==actual and budget_receipt.read_bytes()==receipt_bytes
+                assert (root/f'budget-{label}-launches').read_bytes()==b'x'
+                checks.append({'case':f'installed {label} validation size failure recovers without replay','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

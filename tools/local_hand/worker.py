@@ -191,6 +191,40 @@ def _validate_result_shape(value: Any) -> dict[str, Any]:
     return value
 
 
+def _bounded_execution_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Make a local execution outcome persistable without losing replay safety.
+
+    Stream byte limits do not bound JSON size: control characters expand when
+    encoded. Keep known failure states, but never turn a successful execution
+    into an execution failure merely because its full Result cannot be sent.
+    Ingress validation remains strict; malformed envelopes are not repaired.
+    """
+    try:
+        return _validate_result_shape(result)
+    except LocalHandError as exc:
+        if exc.code != "result_too_large":
+            raise
+    original = _json_bytes(result)
+    original_code = result["error_code"]
+    summary = {
+        "original_status": result["status"],
+        "original_error_code": original_code[:128] if original_code is not None else None,
+        "original_error_code_truncated": original_code is not None and len(original_code) > 128,
+        "original_details_omitted": True,
+        "original_result_json_bytes": len(original),
+        "original_result_sha256": hashlib.sha256(original).hexdigest(),
+        "result_limit_bytes": MAX_RESULT_JSON_BYTES,
+    }
+    reduced = {**result,
+               "status": "indeterminate" if result["status"] == "succeeded" else result["status"],
+               "error_code": "result_too_large",
+               "error": "serialized Result exceeds the publication limit; original details omitted; do not replay execution",
+               "details": summary}
+    # Identity/provenance fields are never truncated to manufacture a valid
+    # result. If even this envelope cannot fit, keep the existing failure path.
+    return _validate_result_shape(reduced)
+
+
 def validate_remote_result(
     value: Any,
     expected_task_id: str,
@@ -261,7 +295,7 @@ def execute_task(task: dict[str, Any], profile: NodeProfile, state_root: Path | 
     elif action == "git.diff": details = observe.git_diff(profile, params["repository"])
     elif action == "validation.run_profile": details = validate.run_profile(profile, params["repository"], params["profile"])
     else: raise LocalHandError("unreachable", "unreachable action", "failed")
-    result = result_success(task, profile.node_id, details, provenance); _validate_result_shape(result); return result
+    return _bounded_execution_result(result_success(task, profile.node_id, details, provenance))
 
 
 def run_git(args: list[str], cwd: Path, *, check: bool = True, max_stdout: int = MAX_MAILBOX_GIT_OUTPUT_BYTES):
@@ -491,7 +525,7 @@ def _quarantine_task_conflict(*, state_root: Path, outbox: Path, task: dict[str,
 
 
 def _persist_result(*, outbox: Path, receipts: Path, task: dict[str, Any], result: dict[str, Any]) -> None:
-    digest = task_digest(task); _validate_result_shape(result)
+    digest = task_digest(task); result = _bounded_execution_result(result)
     write_json_atomic(outbox / f"{task['task_id']}.json", result, max_bytes=MAX_RESULT_JSON_BYTES, code="result_too_large")
     write_json_atomic(receipts / f"{task['task_id']}.json", {"task_id":task["task_id"],"task_digest":digest,"status":result["status"],"result":result}, max_bytes=MAX_RECEIPT_JSON_BYTES, code="receipt_too_large")
 
