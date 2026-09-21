@@ -134,6 +134,21 @@ def main():
                       'transport_policy':policy,'repositories':{'demo':{'path':'demo','single_writer':True,'validations':{
                           'echo':{'argv':[sys.executable,'-I','-c','print("INSTALLED_VALIDATION_OK")'],'timeout_seconds':5,'replay_safe':True},
                           'fail':{'argv':[sys.executable,'-I','-c','raise SystemExit(7)'],'timeout_seconds':5,'replay_safe':True}}}}}
+        if os.name != 'nt':
+            # A finite descendant outlives its launcher and inherits both pipes.
+            # Bind the fixed profile before installation; never modify it later.
+            heartbeat=root/'lifetime-heartbeat'
+            launches=root/'lifetime-launches'
+            child_code=('import time\nfrom pathlib import Path\nend=time.monotonic()+12\n'
+                        f'with Path({str(heartbeat)!r}).open("ab",buffering=0) as out:\n'
+                        ' while time.monotonic()<end:\n  out.write(b"x");time.sleep(.03)\n')
+            parent_code=('import subprocess,sys,time\nfrom pathlib import Path\n'
+                         f'with Path({str(launches)!r}).open("ab") as out:out.write(b"x")\n'
+                         f'subprocess.Popen([sys.executable,"-I","-c",{child_code!r}])\n'
+                         'end=time.monotonic()+2\n'
+                         f'while not Path({str(heartbeat)!r}).exists() and time.monotonic()<end:time.sleep(.01)\n')
+            profile_data['repositories']['demo']['validations']['early-parent']={
+                'argv':[sys.executable,'-I','-c',parent_code],'timeout_seconds':1,'replay_safe':True}
         profile_path=save('profile.json',profile_data);profile=load_profile(profile_path)
         identity={'implementation_commit':implementation_commit(),'package_digest':core_digest(),'profile_digest':profile.profile_sha256}
         expected_path=save('expected-provenance.json',identity)
@@ -352,6 +367,26 @@ def main():
             assert not missing_receipt.exists() and (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
             assert not (worker_box/'_executor_spike/results/LH9994.json').exists()
             checks.append({'case':'installed worker preserves dangling receipt and rejects CAS replay','status':'PASS'})
+            lifetime_task=save('lifetime-task.json',build_task(profile.node_id,'validation.run_profile',{
+                'repository':'demo','profile':'early-parent'},task_id='LH9993'))
+            run(connect+['submit']+common+['--task-file',lifetime_task]);run(worker_cmd)
+            actual=json.loads(run(connect+['wait']+common+['--task-file',lifetime_task,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert actual['status']=='failed' and actual['error_code']=='validation_timeout',actual
+            details=actual['details']
+            assert details['timed_out'] and details['termination_confirmed'] and details['pipes_closed'],details
+            assert details['termination_scope']=='process_tree' and details['duration_seconds']<8,details
+            pulse=heartbeat.read_bytes();time.sleep(.15)
+            assert pulse and heartbeat.read_bytes()==pulse and launches.read_bytes()==b'x'
+            lifetime_receipt=state/'receipts/LH9993.json';receipt_bytes=lifetime_receipt.read_bytes()
+            assert json.loads(receipt_bytes)['result']==actual
+            checks.append({'case':'installed parent exit remains subject to timeout and descendant cleanup','status':'PASS'})
+            run(connect+['submit']+common+['--task-file',lifetime_task]);run(worker_cmd)
+            again=json.loads(run(connect+['wait']+common+['--task-file',lifetime_task,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert again==actual and lifetime_receipt.read_bytes()==receipt_bytes
+            assert launches.read_bytes()==b'x' and heartbeat.read_bytes()==pulse
+            checks.append({'case':'failed validation receipt reconciles without relaunching descendant','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

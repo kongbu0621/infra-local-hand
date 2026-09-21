@@ -7,9 +7,9 @@ import signal
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
+from .bounded_io import CaptureState as _CaptureState, drain_pipe_bounded
 from .paths import NodeProfile, repository_root
 from .protocol import LocalHandError
 
@@ -42,32 +42,9 @@ def _filtered_env() -> dict[str, str]:
     return env
 
 
-@dataclass
-class _CaptureState:
-    data: bytearray = field(default_factory=bytearray)
-    observed_bytes: int = 0
-    too_large: bool = False
-    error: str | None = None
-
-
-def _drain_bounded(stream: BinaryIO, state: _CaptureState) -> None:
+def _drain_bounded(stream: BinaryIO, state: _CaptureState, stop: threading.Event) -> None:
     """Continuously drain a child pipe while retaining at most MAX_OUTPUT_BYTES."""
-    try:
-        while True:
-            chunk = stream.read(64 * 1024)
-            if not chunk:
-                return
-            state.observed_bytes += len(chunk)
-            remaining = MAX_OUTPUT_BYTES - len(state.data)
-            if remaining > 0:
-                state.data.extend(chunk[:remaining])
-            if len(chunk) > max(remaining, 0) or state.observed_bytes > MAX_OUTPUT_BYTES:
-                state.too_large = True
-    except (OSError, ValueError) as exc:
-        # ValueError is possible when the controlling thread closes a pipe after
-        # the bounded join deadline. Treat that as capture failure unless the
-        # reader had already reached EOF and exited normally.
-        state.error = f"{type(exc).__name__}: {exc}"
+    drain_pipe_bounded(stream, state, MAX_OUTPUT_BYTES, stop)
 
 
 def _decoded_capture(state: _CaptureState) -> str:
@@ -158,15 +135,6 @@ def _terminate_tree(proc: subprocess.Popen[Any]) -> tuple[int | None, bool, str]
     return exit_code, _wait_posix_group_gone(pgid, KILL_GRACE_SECONDS), method
 
 
-def _close_pipe(stream: BinaryIO | None) -> None:
-    if stream is None:
-        return
-    try:
-        stream.close()
-    except OSError:
-        pass
-
-
 def run_profile(profile: NodeProfile, repository: str, profile_id: str) -> dict[str, Any]:
     repo = repository_root(profile, repository)
     repo_spec = profile.repositories[repository]
@@ -216,40 +184,37 @@ def run_profile(profile: NodeProfile, repository: str, profile_id: str) -> dict[
     assert proc.stdout is not None and proc.stderr is not None
     stdout_state = _CaptureState()
     stderr_state = _CaptureState()
-    stdout_thread = threading.Thread(target=_drain_bounded, args=(proc.stdout, stdout_state), daemon=True)
-    stderr_thread = threading.Thread(target=_drain_bounded, args=(proc.stderr, stderr_state), daemon=True)
+    capture_stop = threading.Event()
+    stdout_thread = threading.Thread(target=_drain_bounded, args=(proc.stdout, stdout_state, capture_stop), daemon=True)
+    stderr_thread = threading.Thread(target=_drain_bounded, args=(proc.stderr, stderr_state, capture_stop), daemon=True)
     stdout_thread.start()
     stderr_thread.start()
 
     try:
-        try:
-            exit_code = proc.wait(timeout=spec.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            termination_scope = "process_tree"
-            exit_code, termination_confirmed, termination_method = _terminate_tree(proc)
+        deadline = started + spec.timeout_seconds
+        while (proc.poll() is None or stdout_thread.is_alive() or stderr_thread.is_alive()
+               or (os.name != "nt" and _posix_group_exists(proc.pid))):
+            if time.monotonic() >= deadline:
+                timed_out = True
+                termination_scope = "process_tree"
+                exit_code, termination_confirmed, termination_method = _terminate_tree(proc)
+                break
+            time.sleep(0.02)
+        else:
+            exit_code = proc.returncode
 
         stdout_thread.join(CAPTURE_JOIN_SECONDS)
         stderr_thread.join(CAPTURE_JOIN_SECONDS)
         capture_confirmed = not stdout_thread.is_alive() and not stderr_thread.is_alive()
-        if not capture_confirmed:
-            # Break any unexpected blocked read, then require both reader threads
-            # to terminate. Closing a pipe here is a failure signal, not success.
-            _close_pipe(proc.stdout)
-            _close_pipe(proc.stderr)
-            stdout_thread.join(0.2)
-            stderr_thread.join(0.2)
-            capture_confirmed = not stdout_thread.is_alive() and not stderr_thread.is_alive()
-
         duration = time.monotonic() - started
         stdout = _decoded_capture(stdout_state)
         stderr = _decoded_capture(stderr_state)
     finally:
-        # Popen does not automatically close parent-side PIPE objects when only
-        # wait() is used. Always close them explicitly to avoid descriptor leaks
-        # in the long-running Local Hand service.
-        _close_pipe(proc.stdout)
-        _close_pipe(proc.stderr)
+        # Readers own their pipes. A controller-side close can itself block;
+        # cancellation is bounded and cannot promote incomplete capture to PASS.
+        capture_stop.set()
+        stdout_thread.join(CAPTURE_JOIN_SECONDS)
+        stderr_thread.join(CAPTURE_JOIN_SECONDS)
 
     if not termination_confirmed:
         raise LocalHandError(

@@ -7,6 +7,7 @@ stdout/stderr are drained continuously while retained bytes stay bounded.
 from __future__ import annotations
 
 import os
+import selectors
 import signal
 import stat
 import subprocess
@@ -123,10 +124,32 @@ def directory_usage_bounded(path: Path, *, max_bytes: int, max_entries: int, cod
     return total_entries, total_bytes
 
 
-def _drain(stream: BinaryIO, state: CaptureState, limit: int) -> None:
+def drain_pipe_bounded(
+    stream: BinaryIO, state: CaptureState, limit: int, stop: threading.Event,
+) -> None:
+    """Own, drain and close one pipe; cancellation must never become clean EOF.
+
+    POSIX pipe reads are nonblocking so an inherited writer cannot strand the
+    reader during cleanup. Only this reader closes its stream: closing a
+    BufferedReader from the controlling thread can block on the read lock.
+    """
+    selector = None
     try:
-        while True:
-            chunk = stream.read(64 * 1024)
+        if os.name != "nt":
+            fd = stream.fileno()
+            os.set_blocking(fd, False)
+            selector = selectors.DefaultSelector()
+            selector.register(fd, selectors.EVENT_READ)
+        while not stop.is_set():
+            if selector is not None:
+                if not selector.select(0.05):
+                    continue
+                try:
+                    chunk = os.read(fd, 64 * 1024)
+                except BlockingIOError:
+                    continue
+            else:
+                chunk = stream.read(64 * 1024)
             if not chunk:
                 return
             state.observed_bytes += len(chunk)
@@ -135,8 +158,16 @@ def _drain(stream: BinaryIO, state: CaptureState, limit: int) -> None:
                 state.data.extend(chunk[:remaining])
             if state.observed_bytes > limit:
                 state.too_large = True
+        state.error = "capture cancelled before EOF"
     except (OSError, ValueError) as exc:
         state.error = f"{type(exc).__name__}: {exc}"
+    finally:
+        if selector is not None:
+            selector.close()
+        try:
+            stream.close()
+        except (OSError, ValueError) as exc:
+            state.error = f"{type(exc).__name__}: {exc}"
 
 
 def _posix_group_exists(pgid: int) -> bool:
@@ -254,15 +285,19 @@ def run_process_bounded(
 
     assert proc.stdout is not None and proc.stderr is not None
     out_state, err_state = CaptureState(), CaptureState()
-    out_thread = threading.Thread(target=_drain, args=(proc.stdout, out_state, max_stdout), daemon=True)
-    err_thread = threading.Thread(target=_drain, args=(proc.stderr, err_state, max_stderr), daemon=True)
+    capture_stop = threading.Event()
+    out_thread = threading.Thread(target=drain_pipe_bounded, args=(proc.stdout, out_state, max_stdout, capture_stop), daemon=True)
+    err_thread = threading.Thread(target=drain_pipe_bounded, args=(proc.stderr, err_state, max_stderr, capture_stop), daemon=True)
     out_thread.start()
     err_thread.start()
 
     stop_reason: str | None = None
     deadline = time.monotonic() + timeout
     try:
-        while proc.poll() is None:
+        # The root exiting does not finish its process group or inherited pipes.
+        # Keep the same deadline until all three completion boundaries agree.
+        while (proc.poll() is None or out_thread.is_alive() or err_thread.is_alive()
+               or (os.name != "nt" and _posix_group_exists(proc.pid))):
             if out_state.too_large or err_state.too_large:
                 stop_reason = "output"
                 break
@@ -286,14 +321,9 @@ def run_process_bounded(
         if out_thread.is_alive() or err_thread.is_alive() or out_state.error or err_state.error:
             raise LocalHandError(f"{code_prefix}_capture_unconfirmed", "output capture did not terminate cleanly", "indeterminate")
     finally:
-        try:
-            proc.stdout.close()
-        except OSError:
-            pass
-        try:
-            proc.stderr.close()
-        except OSError:
-            pass
+        capture_stop.set()
+        out_thread.join(2)
+        err_thread.join(2)
 
     if stop_reason == "timeout":
         raise LocalHandError(f"{code_prefix}_timeout", f"command timed out after {timeout:.0f}s", "failed")
