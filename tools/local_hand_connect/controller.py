@@ -447,7 +447,16 @@ def _submit_task_locked(mailbox: Path, branch: str, task: dict[str, Any]) -> dic
             ],
             mailbox,
         )
-        pushed = run_git(["push", "origin", f"HEAD:{branch}"], mailbox, check=False)
+        try:
+            pushed = run_git(["push", "origin", f"HEAD:{branch}"], mailbox, check=False)
+        except LocalHandError as exc:
+            # A local timeout/capture error cannot prove the task was not
+            # delivered. Keep its identity and do not automatically resubmit.
+            raise LocalHandError(
+                "controller_publish_failed",
+                f"task delivery unconfirmed: {exc.code}: {exc.message}",
+                "indeterminate",
+            ) from exc
         if pushed.returncode == 0:
             return {
                 "operation": "submit",

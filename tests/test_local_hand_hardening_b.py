@@ -450,6 +450,89 @@ class LocalHandHardeningBTests(unittest.TestCase):
                 self.assertEqual(retained[0].read_bytes(), raw)
                 self.assertFalse((mailbox / "_executor_spike/conflicts" / filename).exists())
 
+    @unittest.skipIf(os.name == "nt", "POSIX dangling-link fixture")
+    def test_dangling_receipt_is_preserved_and_blocks_cas_replay(self):
+        seed, mailbox = self._init_mailbox()
+        task, _, name = self._cas_conflict_fixture("LH0270")
+        later = self.task("LH0271")
+        self._commit_raw(seed, {"_executor_spike/tasks/LH0270.json": json.dumps(task),
+            "_executor_spike/tasks/LH0271.json": json.dumps(later)}, "fixture broken receipt")
+        state = self.runtime / "broken-receipt"
+        receipt = state / "receipts/LH0270.json"
+        receipt.parent.mkdir(parents=True)
+        missing = state / "missing-receipt-payload.json"
+        receipt.symlink_to(missing)
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        self.assertEqual([c.args[0]["task_id"] for c in execute.call_args_list], ["LH0271"])
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+        self.assertTrue(receipt.is_symlink())
+        self.assertEqual(receipt.readlink(), missing)
+        self.assertFalse(missing.exists())
+        conflict = json.loads((mailbox / "_executor_spike/conflicts" / name).read_text())
+        self.assertEqual(conflict["status"], "indeterminate")
+        self.assertEqual(conflict["error_code"], "local_receipt_invalid")
+        self.assertEqual(conflict["task_digest"], task_digest(task))
+        self.assertFalse((mailbox / "_executor_spike/results/LH0270.json").exists())
+        head = self._git(mailbox, "rev-parse", "HEAD").stdout
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        execute.assert_not_called()
+        self.assertTrue(receipt.is_symlink())
+        self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, head)
+
+    def _verify_worker_lost_push_ack(self, seed, mailbox, task_id, error_code):
+        self._git(seed, "pull", "--ff-only", "origin", MAILBOX_BRANCH)
+        (self.repo / "sample.txt").write_bytes(b"before\n")
+        task = self.task(task_id, "fs.write_text_cas", {"repository": "scratch-local-hand",
+            "relative_path": "sample.txt", "expected_sha256": hashlib.sha256(b"before\n").hexdigest(),
+            "content": "executed-once\n"})
+        self._commit_raw(seed, {f"_executor_spike/tasks/{task_id}.json": json.dumps(task)}, "fixture publication uncertainty")
+        state = self.runtime / "push-ack-state"
+        real_run = worker.run_git
+        def lose_ack(args, *rest, **kwargs):
+            result = real_run(args, *rest, **kwargs)
+            if args[0] == "push":
+                self.assertEqual(result.returncode, 0)
+                if error_code is None:
+                    return subprocess.CompletedProcess(result.args, 128, result.stdout, "fixture: acknowledgement lost")
+                raise LocalHandError(error_code, "fixture: acknowledgement lost after remote accepted push", "failed")
+            return result
+        with mock.patch.object(worker, "run_git", side_effect=lose_ack):
+            with self.assertRaises(LocalHandError) as raised:
+                worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        self.assertEqual(raised.exception.code, "mailbox_publish_failed")
+        self.assertEqual(raised.exception.status, "indeterminate")
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"executed-once\n")
+        pending = state / f"outbox/{task_id}.json"
+        receipt_path = state / f"receipts/{task_id}.json"
+        receipt_bytes = receipt_path.read_bytes()
+        receipt = json.loads(receipt_bytes)
+        remote = self._git(self.root, "--git-dir", str(self.root / "mailbox-origin.git"),
+            "show", f"{MAILBOX_BRANCH}:_executor_spike/results/{task_id}.json").stdout
+        self.assertEqual(json.loads(remote), receipt["result"])
+        self.assertEqual(json.loads(pending.read_bytes()), receipt["result"])
+        self.assertEqual(receipt["result"]["status"], "succeeded")
+        before = self._git(mailbox, "rev-parse", "HEAD").stdout
+        (self.repo / "sample.txt").write_bytes(b"external-change-after-delivery\n")
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        execute.assert_not_called()
+        self.assertFalse(pending.exists())
+        self.assertEqual(receipt_path.read_bytes(), receipt_bytes)
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"external-change-after-delivery\n")
+        self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
+
+    def test_worker_nonzero_push_after_delivery_is_indeterminate_and_recovers(self):
+        seed, mailbox = self._init_mailbox()
+        self._verify_worker_lost_push_ack(seed, mailbox, "LH0272", None)
+
+    def test_worker_push_exceptions_after_delivery_are_indeterminate_and_recover(self):
+        seed, mailbox = self._init_mailbox()
+        for index, code in enumerate(("git_timeout", "git_output_too_large")):
+            with self.subTest(code=code):
+                self._verify_worker_lost_push_ack(seed, mailbox, f"LH{273+index:04}", code)
+
     def test_malformed_local_outbox_is_quarantined_not_published(self) -> None:
         _,mailbox=self._init_mailbox(); outbox=self.runtime/"out"; outbox.mkdir(parents=True); bad={"schema_version":"local-hand-result/v1","task_id":"../../bad","task_digest":"a"*64,"target_node":"test-node","action":"node.status","status":"succeeded"}; (outbox/"LH0204.json").write_text(json.dumps(bad))
         worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse((outbox/"LH0204.json").exists())

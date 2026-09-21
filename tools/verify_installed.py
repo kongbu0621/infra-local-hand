@@ -161,11 +161,20 @@ def main():
                 run([git,'clone','-q','--branch',policy['branch'],str(bare),str(box)])
                 run([git,'-C',box,'remote','set-url','origin',policy['remote_url']])
             shim_code=root/'ssh-fixture.py'
-            shim_code.write_text('import os,shlex,sys\n'
+            delayed_push=root/'ssh-fixture-delay-next-push'
+            delivered_push=root/'ssh-fixture-delivered'
+            shim_code.write_text('import os,shlex,sys,subprocess,time\nfrom pathlib import Path\n'
                 'if "-G" in sys.argv: raise SystemExit(0)\n'
                 'command=shlex.split(sys.argv[-1])\n'
                 'if "git@example.invalid" not in sys.argv or len(command)!=2 or command[0] not in ("git-upload-pack","git-receive-pack") or command[1]!="fixtures/mailbox.git": raise SystemExit(91)\n'
-                f'os.execv({git!r},[{git!r},command[0].removeprefix("git-"),{str(bare)!r}])\n')
+                f'argv=[{git!r},command[0].removeprefix("git-"),{str(bare)!r}]\n'
+                f'flag=Path({str(delayed_push)!r})\n'
+                'if command[0]=="git-receive-pack" and flag.exists():\n'
+                ' flag.unlink()\n code=subprocess.call(argv)\n'
+                ' if code: raise SystemExit(code)\n'
+                f' Path({str(delivered_push)!r}).write_text("remote accepted push\\n")\n'
+                ' time.sleep(15)\n raise SystemExit(0)\n'
+                f'os.execv({git!r},argv)\n')
             shim=root/'ssh-fixture';shim.write_text('#!/bin/sh\nexec '+shlex.quote(sys.executable)+' '+shlex.quote(str(shim_code))+' "$@"\n');shim.chmod(0o700)
             key=root/'fixture-key';known=root/'fixture-known-hosts';key.write_text('fixture, not a credential\n');known.write_text('fixture, no network used\n')
             instance=str(uuid.uuid4());record=root/'install-record.json'
@@ -285,6 +294,64 @@ def main():
             run([git,'-C',seed,'push','origin',policy['branch']]);run(worker_cmd)
             assert marker.read_bytes()==marker_bytes
             checks.append({'case':'restored conflict resumes clean polling without replay','status':'PASS'})
+            # Real local Git accepts the push; the fixture then delays SSH
+            # completion past the admitted Git timeout. No product mocks.
+            uncertain_task=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':'sample.txt',
+                'expected_sha256':hashlib.sha256(b'after-controller-result\n').hexdigest(),
+                'content':'delivered-once\n'},task_id='LH9995')
+            uncertain_path=save('lost-ack-cas-task.json',uncertain_task)
+            delayed_push.write_text('delay exactly the next synthetic receive-pack\n')
+            run(connect+['submit']+common+['--task-file',uncertain_path],expected=3,
+                override={'LOCAL_HAND_GIT_TIMEOUT_SECONDS':'2'})
+            stderr=(logs/f'{len(records):03}'/'stderr.log').read_text()
+            assert 'controller_publish_failed' in stderr and 'git_timeout' in stderr,stderr
+            assert delivered_push.is_file() and not delayed_push.exists()
+            delivered_push.rename(root/'controller-push-delivered.txt')
+            remote_task=json.loads(run([git,'--git-dir',bare,'show',policy['branch']+':_executor_spike/tasks/LH9995.json']))
+            assert remote_task==uncertain_task
+            checks.append({'case':'installed controller reports indeterminate after delivered push times out','status':'PASS'})
+
+            delayed_push.write_text('delay exactly the next synthetic receive-pack\n')
+            run(worker_cmd,expected=3,override={'LOCAL_HAND_GIT_TIMEOUT_SECONDS':'2'})
+            stderr=(logs/f'{len(records):03}'/'stderr.log').read_text()
+            assert 'mailbox_publish_failed' in stderr and 'git_timeout' in stderr,stderr
+            assert delivered_push.is_file() and not delayed_push.exists()
+            delivered_push.rename(root/'worker-push-delivered.txt')
+            assert (project/'sample.txt').read_bytes()==b'delivered-once\n'
+            receipt_path=state/'receipts/LH9995.json';receipt_bytes=receipt_path.read_bytes()
+            saved=json.loads(receipt_bytes)['result']
+            assert saved['status']=='succeeded'
+            assert json.loads((state/'outbox/LH9995.json').read_text())==saved
+            remote_result=json.loads(run([git,'--git-dir',bare,'show',policy['branch']+':_executor_spike/results/LH9995.json']))
+            assert remote_result==saved
+            checks.append({'case':'installed worker retains successful result and outbox after delivered push timeout','status':'PASS'})
+
+            (project/'sample.txt').write_bytes(b'recovery-sentinel\n')
+            run(worker_cmd)
+            actual=json.loads(run(connect+['wait']+common+['--task-file',uncertain_path,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert actual==saved and receipt_path.read_bytes()==receipt_bytes
+            assert not (state/'outbox/LH9995.json').exists()
+            run(connect+['submit']+common+['--task-file',uncertain_path]);run(worker_cmd)
+            assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            checks.append({'case':'restart and same-task reconciliation preserve delivery result without replay','status':'PASS'})
+
+            broken_task=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':'sample.txt',
+                'expected_sha256':hashlib.sha256(b'recovery-sentinel\n').hexdigest(),
+                'content':'must-not-replay'},task_id='LH9994')
+            broken_path=save('broken-receipt-cas-task.json',broken_task)
+            broken_receipt=state/'receipts/LH9994.json';missing_receipt=state/'absent-receipt-payload.json'
+            broken_receipt.symlink_to(missing_receipt)
+            run(connect+['submit']+common+['--task-file',broken_path]);run(worker_cmd)
+            actual=json.loads(run(connect+['wait']+common+['--task-file',broken_path,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert actual['status']=='indeterminate' and actual['error_code']=='local_receipt_invalid',actual
+            assert broken_receipt.is_symlink() and broken_receipt.readlink()==missing_receipt
+            assert not missing_receipt.exists() and (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            assert not (worker_box/'_executor_spike/results/LH9994.json').exists()
+            checks.append({'case':'installed worker preserves dangling receipt and rejects CAS replay','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

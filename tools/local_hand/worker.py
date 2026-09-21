@@ -417,10 +417,17 @@ def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
             rel = target.relative_to(mailbox).as_posix()
             run_git(["add", "--", rel], mailbox)
             run_git(["-c","user.name=local-hand","-c","user.email=local-hand@local.invalid","-c","commit.gpgsign=false","commit","-m",f"local-hand-result-{result_file.stem}"], mailbox)
-            push = run_git(["push","origin",f"HEAD:{branch}"], mailbox, check=False)
+            try:
+                push = run_git(["push","origin",f"HEAD:{branch}"], mailbox, check=False)
+            except LocalHandError as exc:
+                # The remote may have accepted the commit before a timeout or
+                # capture failure. Keep the outbox for reconciliation.
+                raise LocalHandError("mailbox_publish_failed",
+                                     f"result delivery unconfirmed: {exc.code}: {exc.message}",
+                                     "indeterminate") from exc
             if push.returncode == 0: result_file.unlink(); break
             if not _is_push_race(push) or attempt == MAILBOX_PUSH_ATTEMPTS:
-                raise LocalHandError("mailbox_publish_failed", f"mailbox push failed ({push.returncode}) attempt={attempt}", "failed")
+                raise LocalHandError("mailbox_publish_failed", f"mailbox push failed ({push.returncode}) attempt={attempt}; delivery unconfirmed", "indeterminate")
 
 
 def _trusted_local_identity(task_file: Path, task: Any, profile: NodeProfile) -> bool:
@@ -533,7 +540,7 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
                               max_bytes=MAX_RESULT_JSON_BYTES, code="result_too_large")
             continue
         receipt_file = receipts/f"{task['task_id']}.json"; remote_result = mailbox/"_executor_spike"/"results"/f"{task['task_id']}.json"
-        if receipt_file.exists():
+        if target_lexists(receipt_file):
             try: receipt = _validate_receipt(load_json_bounded(receipt_file, MAX_RECEIPT_JSON_BYTES, "local_receipt_invalid"), task, profile)
             except LocalHandError as exc:
                 _quarantine_task_conflict(state_root=state_root,outbox=outbox,task=task,profile=profile,code="local_receipt_invalid",message="durable local receipt is malformed/invalid",observed_digest=None,status="indeterminate",extra_details={"receipt_validation_error":exc.message}); publish_outbox(mailbox,branch,outbox); continue

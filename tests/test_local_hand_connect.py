@@ -309,6 +309,36 @@ class LocalHandConnectTests(unittest.TestCase):
                 controller.submit_task(self.mailbox, self.branch, conflicting)
         self.assertEqual(ctx.exception.code, "controller_task_id_conflict")
 
+    def test_submit_lost_ack_is_indeterminate_and_same_task_reconciles_without_push(self):
+        for index, code in enumerate((None, "git_timeout", "git_output_too_large")):
+            with self.subTest(code=code):
+                task = self._task(task_id=f"LH{9300+index}")
+                real_run = controller.run_git
+                def lose_ack(args, *rest, **kwargs):
+                    result = real_run(args, *rest, **kwargs)
+                    if args[0] == "push":
+                        self.assertEqual(result.returncode, 0)
+                        if code is None:
+                            return subprocess.CompletedProcess(result.args, 128, result.stdout, "fixture: lost push acknowledgement")
+                        raise LocalHandError(code, "fixture: lost acknowledgement after delivery", "failed")
+                    return result
+                with mock.patch.dict(os.environ, self.env, clear=False):
+                    with mock.patch.object(controller, "run_git", side_effect=lose_ack):
+                        with self.assertRaises(LocalHandError) as raised:
+                            controller.submit_task(self.mailbox, self.branch, task)
+                    self.assertEqual(raised.exception.code, "controller_publish_failed")
+                    self.assertEqual(raised.exception.status, "indeterminate")
+                    remote = json.loads(self._git(self.root, "--git-dir", str(self.remote), "show",
+                        f"{self.branch}:_executor_spike/tasks/{task['task_id']}.json").stdout)
+                    self.assertEqual(remote, task)
+                    before = self._git(self.root, "--git-dir", str(self.remote), "rev-parse", self.branch).stdout
+                    with mock.patch.object(controller, "run_git", wraps=real_run) as observed:
+                        result = controller.submit_task(self.mailbox, self.branch, task)
+                    self.assertEqual(result["status"], "already_present")
+                    self.assertEqual(result["task_digest"], task_digest(task))
+                    self.assertFalse(any(c.args[0][0] == "push" for c in observed.call_args_list))
+                    self.assertEqual(self._git(self.root, "--git-dir", str(self.remote), "rev-parse", self.branch).stdout, before)
+
     def test_wait_accepts_only_exact_result_identity_and_provenance(self) -> None:
         task = self._task(task_id="LH9002")
         with mock.patch.dict(os.environ, self.env, clear=False):
