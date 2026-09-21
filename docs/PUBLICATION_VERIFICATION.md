@@ -1,6 +1,8 @@
 # 首次公开发布复核
 
-最新 S1 进程生命周期修复：精确候选 `ab1801c0966585e0dbb1ac7f3cdd5776eff4919c`，仅执行定向源码与安装态链路；结果见 [S1_PROCESS_LIFETIME_REVIEW.md](S1_PROCESS_LIFETIME_REVIEW.md)。历史全量测试和平台结论属于原提交。
+最新 S1 结果尺寸与恢复修复：精确候选 `039935373db49b8b38c555fd00ab22fe21e99ca7`，仅执行定向源码和安装态链路；结果见 [S1_RESULT_BUDGET_REVIEW.md](S1_RESULT_BUDGET_REVIEW.md)。历史平台及全量测试结论属于原提交。
+
+此前 S1 进程生命周期修复：精确候选 `ab1801c0966585e0dbb1ac7f3cdd5776eff4919c`，仅执行定向源码与安装态链路；结果见 [S1_PROCESS_LIFETIME_REVIEW.md](S1_PROCESS_LIFETIME_REVIEW.md)。历史全量测试和平台结论属于原提交。
 
 此前 S1 投递／收据恢复修复：精确候选 `4c58c10f96a3477c06a549795916eb607c6d7f5a`，按 Owner 要求仅运行链路测试，结果见 [S1_DELIVERY_RECOVERY_REVIEW.md](S1_DELIVERY_RECOVERY_REVIEW.md)。下列历史全量测试和 CI 结论仍属于原提交。
 
