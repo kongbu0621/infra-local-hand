@@ -448,7 +448,7 @@ def _submit_task_locked(mailbox: Path, branch: str, task: dict[str, Any]) -> dic
             mailbox,
         )
         try:
-            pushed = run_git(["push", "origin", f"HEAD:{branch}"], mailbox, check=False)
+            pushed = run_git(["push", "origin", f"HEAD:refs/heads/{branch}"], mailbox, check=False)
         except LocalHandError as exc:
             # A local timeout/capture error cannot prove the task was not
             # delivered. Keep its identity and do not automatically resubmit.

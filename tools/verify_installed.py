@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import signal
@@ -213,6 +214,12 @@ def main():
             connect=[sys.executable,'-I','-m','local_hand_connect.cli']
             common=['--mailbox-repo',controller,'--policy',policy_path]
             run(connect+['init']+common)
+            # The complete installed chain must work without a configured
+            # tracking mapping or an origin/<branch> reference.
+            for box in (controller,worker_box):
+                run([git,'-C',box,'config','--unset-all','remote.origin.fetch'])
+                run([git,'-C',box,'update-ref','-d','refs/remotes/origin/'+policy['branch']])
+            checks.append({'case':'installed transport fixtures have no tracking mapping or reference','status':'PASS'})
             worker_cmd=[sys.executable,'-I','-m','local_hand.worker','--profile',profile_path,'--mailbox-repo',worker_box,'--state-root',state,'--once']
             actions=[('node.status',{},'succeeded'),('repo.audit',{'repository':'demo'},'succeeded'),
                      ('fs.list',{'repository':'demo'},'succeeded'),('fs.read_text',{'repository':'demo','relative_path':'sample.txt'},'succeeded'),
@@ -508,10 +515,19 @@ with mock.patch.object(mailbox_safety.os,'fsync',side_effect=fail_directory):
   assert exc.status=='indeterminate';events.append({'fault':'directory-fsync','code':exc.code,'status':exc.status})
  else:raise AssertionError('directory sync failure was hidden')
 assert target.read_bytes()==b'payload' and not list(target.parent.glob('.lh-*.tmp'))
+from local_hand import worker
+outbox=root/'outbox';outbox.mkdir()
+with mock.patch.object(os,'scandir',side_effect=OSError(errno.EIO,'synthetic outbox scan fault')),mock.patch.object(os,'listdir',side_effect=OSError(errno.EIO,'synthetic outbox scan fault')):
+ try:worker.publish_outbox(root,'fixture/mailbox-v1',outbox)
+ except LocalHandError as exc:
+  assert exc.code=='local_outbox_unreadable' and exc.status=='indeterminate'
+  events.append({'fault':'outbox-scan','code':exc.code,'status':exc.status})
+ else:raise AssertionError('unreadable outbox was mistaken for an empty queue')
+worker.publish_outbox(root,'fixture/mailbox-v1',outbox)
 print(json.dumps(events))
 '''
             fault_events=json.loads(run([sys.executable,'-I','-c',fault_code,root/'atomic-retry-fixture']))
-            assert len(fault_events)==3
+            assert len(fault_events)==4
             for event in fault_events:
                 checks.append({'case':'installed atomic publication fault '+event['fault'],'status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
@@ -528,6 +544,28 @@ print(json.dumps(events))
             finally:payload.write_bytes(original)
             checks.append({'case':'installed payload tamper rejected','status':'PASS'})
             run(worker_cmd)
+            initial_head=run([git,'--git-dir',bare,'rev-list','--max-parents=0','refs/heads/'+policy['branch']]).strip()
+            assert re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}',initial_head)
+            run([git,'--git-dir',bare,'update-ref','refs/tags/'+policy['branch'],initial_head])
+            tagged_task=save('same-name-tag-task.json',build_task(profile.node_id,'node.status',{},task_id='LH9987'))
+            submitted=json.loads(run(connect+['submit']+common+['--task-file',tagged_task]))
+            assert submitted['status']=='submitted'
+            run(worker_cmd)
+            tagged_result=json.loads(run(connect+['wait']+common+['--task-file',tagged_task,
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert tagged_result['status']=='succeeded' and tagged_result['task_id']=='LH9987'
+            assert json.loads((state/'receipts/LH9987.json').read_text())['result']==tagged_result
+            checks.append({'case':'installed controller and worker use the branch despite a same-named tag','status':'PASS'})
+            admitted_head=run([git,'--git-dir',bare,'rev-parse','refs/heads/'+policy['branch']]).strip()
+            assert re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}',admitted_head) and admitted_head!=initial_head
+            (root/'admitted-head-before-removal.txt').write_text(admitted_head+'\n')
+            run([git,'--git-dir',bare,'update-ref','-d','refs/heads/'+policy['branch']])
+            run(worker_cmd,expected=2)
+            assert "couldn't find remote ref refs/heads/"+policy['branch'] in (logs/f'{len(records):03}'/'stderr.log').read_text()
+            run(connect+['wait']+common+['--task-file',tagged_task,'--timeout-seconds','0',
+                '--expected-provenance-file',expected_path],expected=2)
+            assert "couldn't find remote ref refs/heads/"+policy['branch'] in (logs/f'{len(records):03}'/'stderr.log').read_text()
+            checks.append({'case':'installed controller and worker reject a missing branch despite cached results and a same-named tag','status':'PASS'})
         for number, record in enumerate(records, 1):
             for name, digest in record['logs'].items():
                 assert hashlib.sha256((logs/f'{number:03}'/name).read_bytes()).hexdigest()==digest, f'command {number} evidence digest changed: {name}'

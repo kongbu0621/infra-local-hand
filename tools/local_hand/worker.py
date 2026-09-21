@@ -394,11 +394,17 @@ def recover_mailbox_git_state(mailbox: Path) -> None:
 
 
 def sync_mailbox(mailbox: Path, branch: str) -> None:
+    branch = validate_branch(branch)
     recover_mailbox_git_state(mailbox)
-    run_git(["fetch", "--depth=1", "--no-tags", f"--filter=blob:limit={MAX_MAILBOX_CONTROL_BLOB_BYTES}", "origin", branch], mailbox)
-    remote_ref = f"origin/{branch}"
-    admit_remote_tree(mailbox, remote_ref)
-    run_git(["reset", "--hard", remote_ref], mailbox)
+    # Configured tracking refs may be absent or stale. Fetch the admitted
+    # branch explicitly, then bind admission and checkout to this one commit.
+    # A same-named tag must never substitute for a missing branch.
+    run_git(["fetch", "--depth=1", "--no-tags", "--refmap=", f"--filter=blob:limit={MAX_MAILBOX_CONTROL_BLOB_BYTES}", "origin", f"refs/heads/{branch}"], mailbox)
+    fetched_commit = run_git(["rev-parse", "--verify", "FETCH_HEAD^{commit}"], mailbox).stdout.strip()
+    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", fetched_commit) is None:
+        raise LocalHandError("mailbox_fetch_invalid", "fetched mailbox commit identity is invalid", "indeterminate")
+    admit_remote_tree(mailbox, fetched_commit)
+    run_git(["reset", "--hard", fetched_commit], mailbox)
     validate_checkout_control_dirs(mailbox)
 
 
@@ -469,7 +475,13 @@ def _publish_conflict_from_invalid_remote(outbox: Path, local: dict[str, Any], e
 
 
 def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
-    for result_file in sorted(outbox.glob("*.json")):
+    # Path.glob can suppress directory I/O errors and make an unreadable
+    # queue appear empty. Publication/recovery must stop on that uncertainty.
+    try:
+        pending = sorted(path for path in outbox.iterdir() if path.match("*.json"))
+    except OSError as exc:
+        raise LocalHandError("local_outbox_unreadable", "cannot enumerate pending local results", "indeterminate") from exc
+    for result_file in pending:
         try: local = _validate_local_outbox_result(load_json_bounded(result_file, MAX_RESULT_JSON_BYTES, "local_outbox_invalid"), result_file)
         except LocalHandError as exc: _quarantine_local_outbox_file(outbox, result_file, exc.message); continue
         for attempt in range(1, MAILBOX_PUSH_ATTEMPTS + 1):
@@ -497,7 +509,7 @@ def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
             run_git(["add", "--", rel], mailbox)
             run_git(["-c","user.name=local-hand","-c","user.email=local-hand@local.invalid","-c","commit.gpgsign=false","commit","-m",f"local-hand-result-{result_file.stem}"], mailbox)
             try:
-                push = run_git(["push","origin",f"HEAD:{branch}"], mailbox, check=False)
+                push = run_git(["push","origin",f"HEAD:refs/heads/{branch}"], mailbox, check=False)
             except LocalHandError as exc:
                 # The remote may have accepted the commit before a timeout or
                 # capture failure. Keep the outbox for reconciliation.
