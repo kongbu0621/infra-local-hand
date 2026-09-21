@@ -1,0 +1,399 @@
+{
+  "schema": "infra-local-hand-approved-publication/v1",
+  "candidate_commit": "b763bd6714721d22278086db559fa3f6684aad7b",
+  "candidate_tree": "0dbf04548f42bbb3693524ae5bd8adedeecd2de1",
+  "commits": [
+    "7246b850ffdc2709e359b09cac99f0fb88bda209",
+    "48730d037a1d5c50e8380a60d5b8399e90e1e01c",
+    "100462dcc07577e4123c4018a84b0e1997e1ab09",
+    "468797f1e5a877b930ca19450c7f390adfc6d271",
+    "58a531caf212ca1cce5475a5df2ac3cd53f310c6",
+    "ba9c61fbac253dbcb37739b1a6563d7ce82a4187",
+    "b763bd6714721d22278086db559fa3f6684aad7b"
+  ],
+  "bundle_path": ".publication/source.bundle",
+  "bundle_sha256": "25d46d01f77923351d91b3c2a408eeae5a3cc1705f9ca2f0b4d50fcbf92546c2",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "mode": "100644",
+      "git_blob": "60e38b5210458f90ef06ca1022b8ead826c15329",
+      "sha256": "016957a5abd88143bb22cf36e387247c9e0e9a39a2dd6432bb2353ca301a7e0d",
+      "size": 99
+    },
+    {
+      "path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "mode": "100644",
+      "git_blob": "4cad3f3a529d00b5e01094ab65858bd3cc100ca4",
+      "sha256": "30ce69a7a0079f28439f2607196ddd5c68ca664b9e8f92ce25b1edca67beb06e",
+      "size": 35568
+    },
+    {
+      "path": ".gitignore",
+      "mode": "100644",
+      "git_blob": "5e6e4751aad748a29fafd969497bf092bbba1952",
+      "sha256": "073083574e57584ac8a7b10a36d03c68ae6bd9941f50a2f4c4e9ddc6e3fe79c0",
+      "size": 70
+    },
+    {
+      "path": "AGENTS.md",
+      "mode": "100644",
+      "git_blob": "63ff89e9c89dfaef8a740852fb752e1c32e814ac",
+      "sha256": "958fff5f628d5ed65b45a0aed5067c0ce5f74b9969deb02cea386b6f602e593b",
+      "size": 4661
+    },
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "git_blob": "3595a038a13c2dd5acaad80db3eb418496c82645",
+      "sha256": "77a12835bfb5dc9b10d9e29ceba228c0606b6f169663f6f80a995c8c7d410249",
+      "size": 1953
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "mode": "100644",
+      "git_blob": "1a4b659976355c13e5898bbe277e345887ac34b8",
+      "sha256": "e2af052d022962645d03bcad410ca0b78b0693b95f4cccc1048a6a58ae827fa0",
+      "size": 7883
+    },
+    {
+      "path": "docs/EXTRACTION_BYTES_MANIFEST.json",
+      "mode": "100644",
+      "git_blob": "eb60847c717b98c74362c936fc80a73f35da61c7",
+      "sha256": "3458f677c641306325da3eafb8e265c139bcafcfbf15b6cb224e732b8a15b7d5",
+      "size": 6931
+    },
+    {
+      "path": "docs/FORMATION_AND_MIGRATION.md",
+      "mode": "100644",
+      "git_blob": "88c004e5abdabd3d5581555e6bd88d377dccc918",
+      "sha256": "2785bb6baba68df3e4146183ddf641ad32686a06a2e9f89d5f5f5242e1cf15eb",
+      "size": 8810
+    },
+    {
+      "path": "docs/IMPLEMENTATION_PLAN.md",
+      "mode": "100644",
+      "git_blob": "52893b71cd79fb09e671351f12e303562b777cb7",
+      "sha256": "11613d1be19965bfb59f59767995a7899178a46ee30407911d13bca54bfa6449",
+      "size": 9058
+    },
+    {
+      "path": "docs/REQUIREMENTS.md",
+      "mode": "100644",
+      "git_blob": "4443f5f8cad794033c854cc5a2b94ba6d43892c4",
+      "sha256": "835be30ea7baf28aa7ea1b4e930ae9e4d389ae06782edb9b8fdb390c3c188649",
+      "size": 6082
+    },
+    {
+      "path": "docs/S1_IMPLEMENTATION_NOTES.md",
+      "mode": "100644",
+      "git_blob": "9d2f72eecd5626b9a5d26297062649d4dfd2b2d7",
+      "sha256": "5c27e51be5bee703378a90ec4d9dc90b1e915ae549c193e35e24150df68bb873",
+      "size": 4800
+    },
+    {
+      "path": "docs/SOURCE_SELECTION.json",
+      "mode": "100644",
+      "git_blob": "bd66366bea560ecf3bbbb1fbc09235cf0919ef02",
+      "sha256": "709141af681f5398acf488616db0318d5660c85289a154311fb68a9cd02072df",
+      "size": 16278
+    },
+    {
+      "path": "docs/USAGE.md",
+      "mode": "100644",
+      "git_blob": "681f8432c84b5e17e3c2306e9b134a7977afbf53",
+      "sha256": "87b7f14624250d9f7f67d91c058d1e155aa112564904dfbf810761ac0309343d",
+      "size": 3702
+    },
+    {
+      "path": "docs/governance/GATE_SNAPSHOT_MANIFEST.json",
+      "mode": "100644",
+      "git_blob": "aa6d38179b31ce9fa37bc1013ece4e620332bffe",
+      "sha256": "12af0c042a758a742472c9fd5c6608bc916fe4976756f7d46873e16687d7e2c2",
+      "size": 3651
+    },
+    {
+      "path": "docs/governance/PUBLIC_GATE_CANDIDATE.md",
+      "mode": "100644",
+      "git_blob": "c2ff97fe5dc3f32dea9c4ae027b3ba5e68894872",
+      "sha256": "de15f5d961e92bdd58f042831d6ad49587146669b5ac6f08eedeb3976811a420",
+      "size": 7453
+    },
+    {
+      "path": "docs/governance/S1_OWNER_DECISION.md",
+      "mode": "100644",
+      "git_blob": "0f53c0d4e3585063683c095fdc2e54dc1b76a1c4",
+      "sha256": "d4ad52328a1cb6ab291685c0cf85346be8fcab05b4dd39debf516179ab8b1829",
+      "size": 1680
+    },
+    {
+      "path": "pyproject.toml",
+      "mode": "100644",
+      "git_blob": "221184ad54f5bcdfd10d2c9f8b1d53c9d83b21e7",
+      "sha256": "8d506c688de17b6db643d611851ccb8d788df95831c5a673bbd0a865bafc932b",
+      "size": 749
+    },
+    {
+      "path": "requirements-build.txt",
+      "mode": "100644",
+      "git_blob": "3aa48fd20f2f437e98b0502dab3b0252815c9f57",
+      "sha256": "3d5cb1f383a0e9064aced781734d83acb89ee0b9b9d4161001f5c6dbd879d94d",
+      "size": 239
+    },
+    {
+      "path": "setup.py",
+      "mode": "100644",
+      "git_blob": "8f38685b97c53780ca1d97355481fe469da16c00",
+      "sha256": "b779d210b6e40a17d47d18f00cb9fdd15cfaaf0e4aafe3e27ddae670831a9ccf",
+      "size": 592
+    },
+    {
+      "path": "tests/config_fixtures.py",
+      "mode": "100644",
+      "git_blob": "a34a3807730e8de212a77e24fa9bf83578cf1243",
+      "sha256": "3f598a36b84cce42faa5ba8e390280e80c4a6e2617f936dce27824cdb06d72c9",
+      "size": 485
+    },
+    {
+      "path": "tests/test_local_hand_bootstrap_cwd_boundary.py",
+      "mode": "100644",
+      "git_blob": "89a5f477b743818c129598e401625d04b6ac0b78",
+      "sha256": "38d2f31209305a1bc45967abc5477ffaa8afa7b0745ae765039dba4c46a45af3",
+      "size": 9602
+    },
+    {
+      "path": "tests/test_local_hand_configuration.py",
+      "mode": "100644",
+      "git_blob": "4dacb7f83b4c0442d6ddceb2e8bc62f26e12ce78",
+      "sha256": "25bfa67c7bee6df37e8a176f98beeb179af4edd5e707683b03371dad490941fd",
+      "size": 11350
+    },
+    {
+      "path": "tests/test_local_hand_connect.py",
+      "mode": "100644",
+      "git_blob": "76e00a474f68c65fdc9a19c91faf4b93845a3843",
+      "sha256": "6353774d88033950bccfc64d370e14e6edf2663cb340bed8b99289b5c93b8ba9",
+      "size": 22293
+    },
+    {
+      "path": "tests/test_local_hand_hardening_b.py",
+      "mode": "100644",
+      "git_blob": "58f5f4da0a7705cf26c99e7ad492b946cc15b65a",
+      "sha256": "42582d0355a5e34cac0b80c6b86b96a31af8572e8cea8915f544843cb6804ea7",
+      "size": 22010
+    },
+    {
+      "path": "tests/test_local_hand_hardening_d.py",
+      "mode": "100644",
+      "git_blob": "0f772e682c69781ff7ff70c7885907159834b5dc",
+      "sha256": "6caad09ade68ce993cac0a150cacaf72e5b6b21a8e119f59fc9217cb04695335",
+      "size": 28288
+    },
+    {
+      "path": "tests/test_local_hand_hardening_d2.py",
+      "mode": "100644",
+      "git_blob": "c75b1e89718ea1a32782aa43e251badd3f7f2506",
+      "sha256": "0fdef065ec6e5e2b5a9c89fe7a990d3a4d5b5c2dc08d72fd35d657e157a0b832",
+      "size": 19371
+    },
+    {
+      "path": "tests/test_local_hand_live_acceptance.py",
+      "mode": "100644",
+      "git_blob": "616f7fb20d8034efb8e44bdad3b26b34d677f7df",
+      "sha256": "2e0a30d53d0d4f09a4e12533744a51d679764cf5230df79ee5c6840178811b95",
+      "size": 10673
+    },
+    {
+      "path": "tests/test_local_hand_seed_and_hooks_boundary.py",
+      "mode": "100644",
+      "git_blob": "9f791663c3d0bb32b8548ead2a06f7242667c81f",
+      "sha256": "a0878f435b90c22f7855411dc6bc6b74c99cf6cba392f54b029d774db7addbc1",
+      "size": 3523
+    },
+    {
+      "path": "tests/test_local_hand_windows_path_budget.py",
+      "mode": "100644",
+      "git_blob": "42d16fbb044c52445f37f5b64ec2800c53315189",
+      "sha256": "8a8f39822f2a13687c09f56e29bd798a5f5fdb5aba0abe1b5a41f5e4e39f2df0",
+      "size": 3703
+    },
+    {
+      "path": "tests/test_local_hand_worker.py",
+      "mode": "100644",
+      "git_blob": "bd8b68a6f13df298038a4180b054471466aaf0ec",
+      "sha256": "d7070ddd2427329a543c3b01c1da630c186e78004b8791ad674dcaf62cb55d96",
+      "size": 35958
+    },
+    {
+      "path": "tools/local_hand/__init__.py",
+      "mode": "100644",
+      "git_blob": "cc42bc35aa1404e531ebd1543d16b9405429a4a3",
+      "sha256": "ec8b4616f7924f2aa97134ca34855e650b2938fce4414700212f08c77506987f",
+      "size": 31
+    },
+    {
+      "path": "tools/local_hand/act.py",
+      "mode": "100644",
+      "git_blob": "23bef760ee621ed2b688628be9f3218fae469c99",
+      "sha256": "94410d58a0eb1a341a4c6296f932e0b2a9f7fc32af8323309767753b821ba07b",
+      "size": 8614
+    },
+    {
+      "path": "tools/local_hand/bootstrap_linux.sh",
+      "mode": "100644",
+      "git_blob": "aa805cdfd5fe9590ae53963b06e4de8cbd42480c",
+      "sha256": "1d715f77083f22d98f2db195eba7ea6e0b179769125470ec41943c6ac1dc5ed1",
+      "size": 34358
+    },
+    {
+      "path": "tools/local_hand/bootstrap_safety.py",
+      "mode": "100644",
+      "git_blob": "9f6c34637d40f059570ab1d34b2ea46aefd97eb1",
+      "sha256": "8d00f06c415751d9d579e911aa9b52e4dcbe6801f8b390697ac131e3566fdf7c",
+      "size": 12589
+    },
+    {
+      "path": "tools/local_hand/bootstrap_windows.ps1",
+      "mode": "100644",
+      "git_blob": "4c38410c827f3cf96e18dbe5af8be2f1b88941bb",
+      "sha256": "601a89ef9127c1e22eef3abf5cb598c87ba294be414ba521fcac5b19239558c3",
+      "size": 30405
+    },
+    {
+      "path": "tools/local_hand/bounded_io.py",
+      "mode": "100644",
+      "git_blob": "e7273fae5f07951bd20fce55f26b9327e96e5bb2",
+      "sha256": "6489a360885e606ad7f9b513e1b7597f111ba61b620934c25680c0dc5779ae48",
+      "size": 11468
+    },
+    {
+      "path": "tools/local_hand/config.py",
+      "mode": "100644",
+      "git_blob": "dfa29aea8543977c3f45ae4d0db1437d2be1039f",
+      "sha256": "49a347ad96e95dfa253a949fecbe07a9c36908c343bd3c3c8f38e9bb4cb0a8d0",
+      "size": 9576
+    },
+    {
+      "path": "tools/local_hand/git_safety.py",
+      "mode": "100644",
+      "git_blob": "c28780fc091f830457838962a1e76bfc9d48a8a8",
+      "sha256": "9eeb1513afc472948a81ef77f6871d1d2f1d5d5cb744c510cac26e1b175d9c27",
+      "size": 8710
+    },
+    {
+      "path": "tools/local_hand/installation.py",
+      "mode": "100644",
+      "git_blob": "6129db512b0093b656307db3d7d04dfbaab8d49a",
+      "sha256": "15553b21199a4c803175b3053b1d7316dcbd961b73ced43c1dd417826359bde3",
+      "size": 7084
+    },
+    {
+      "path": "tools/local_hand/mailbox_safety.py",
+      "mode": "100644",
+      "git_blob": "91ed7dcf84f59a82f2cb5f03e2f5a13fa00eb7fa",
+      "sha256": "b6200b9c6f3ced0bbd4ce46279899017e26f2f0cb9fe62f886c14f2a116a7253",
+      "size": 11520
+    },
+    {
+      "path": "tools/local_hand/observe.py",
+      "mode": "100644",
+      "git_blob": "5c13d6f189bd7c872588fa989fee2d5e78b58f16",
+      "sha256": "bad8b04912cd4f167ae931e36bffba4109251b164ceaa0271414fb8a04bb170f",
+      "size": 10036
+    },
+    {
+      "path": "tools/local_hand/paths.py",
+      "mode": "100644",
+      "git_blob": "f54e7170eef06638d1605c58a028427f893a656f",
+      "sha256": "5e209bccae6d6e92441acc5213bdec3b95159a37918ec8925e6f675b3a995f31",
+      "size": 14026
+    },
+    {
+      "path": "tools/local_hand/protocol.py",
+      "mode": "100644",
+      "git_blob": "3bde1131f66be8d1d20912f187fda1f8df020359",
+      "sha256": "216371fcab141ceb7a7a21a14bdde282bf32d98e52c963ac34cd1314e09e18be",
+      "size": 3515
+    },
+    {
+      "path": "tools/local_hand/provenance.py",
+      "mode": "100644",
+      "git_blob": "d2a9f717e037d8b96c05d2fc9a176c305765dc8d",
+      "sha256": "3cc9804d426cbf0f6e7e8d63e90522a8ac303e67a6f434f0db7557304569e85a",
+      "size": 6475
+    },
+    {
+      "path": "tools/local_hand/runtime_lock.py",
+      "mode": "100644",
+      "git_blob": "a100294c0ff2f4ccb00a3835deadbc1027ddf3bc",
+      "sha256": "b85aba980143bc84ac4e92a7e57cdf270eb783a1eb9ccf6d5744535b124c5a31",
+      "size": 2040
+    },
+    {
+      "path": "tools/local_hand/validate.py",
+      "mode": "100644",
+      "git_blob": "38611e1365decbc4e36b778631945187a5421006",
+      "sha256": "82e1d88e0796dbbe91eb8aaaf95fdbab5197f82e8ad05fc1a20d6ac829e63aa5",
+      "size": 11447
+    },
+    {
+      "path": "tools/local_hand/windows_acl.ps1",
+      "mode": "100644",
+      "git_blob": "32a57ef11c818b674be528d9e9e0f6543e71a9d0",
+      "sha256": "0c30f087a5e9b631f17b0a52339998e583a98befe88376cbcbbc5ada156fdd33",
+      "size": 4994
+    },
+    {
+      "path": "tools/local_hand/windows_runner.py",
+      "mode": "100644",
+      "git_blob": "6d5350e1971ef88463a7c6936fd48a25e875284c",
+      "sha256": "666b0eb7a573cdd801d91d10a30c4eecefaa4305fe45c9ce76ad52659967fe18",
+      "size": 3824
+    },
+    {
+      "path": "tools/local_hand/worker.py",
+      "mode": "100644",
+      "git_blob": "1c6ba81971eb68f1e7eceba29cf1ccbffa70c06c",
+      "sha256": "d086e45aeff55fddb34c07408c3a4cae3d59f42e16bdd21abb2512fbabaf05b4",
+      "size": 29641
+    },
+    {
+      "path": "tools/local_hand_connect/__init__.py",
+      "mode": "100644",
+      "git_blob": "b74910cf979a6a470c50fd2a2dc11c8d5e06f6ba",
+      "sha256": "b9500b7bb43fc858a9454682a38b73bcb36e4bbae2e80ffcca12226f906bc810",
+      "size": 569
+    },
+    {
+      "path": "tools/local_hand_connect/cli.py",
+      "mode": "100644",
+      "git_blob": "0bd86859bef9eaf939f5a0a987ed8b488843bcd2",
+      "sha256": "2e4fde0cab663c52b4272011915748b27de2b3935295b718ce6a6f21169ad4c2",
+      "size": 6054
+    },
+    {
+      "path": "tools/local_hand_connect/controller.py",
+      "mode": "100644",
+      "git_blob": "ffa1290d249d71e065f16631e5ff0b081165c3e0",
+      "sha256": "279d7857508d8afedc004f9b549c710035dfabef726695b93a4a578f9022fe15",
+      "size": 28100
+    },
+    {
+      "path": "tools/local_hand_connect/live_acceptance.py",
+      "mode": "100644",
+      "git_blob": "b6165ef302a83caf19c8a4fcb9ff117bd901a733",
+      "sha256": "42a89799fbdf34ef7c418286d4ebde6b1dece8009e5b2e291b1693009cd5c3ad",
+      "size": 22401
+    },
+    {
+      "path": "tools/verify_installed.py",
+      "mode": "100644",
+      "git_blob": "5522780ab1c3b1856aaf2a8fb1f5ed80a3794e34",
+      "sha256": "6ce22d8d00c07a7bd76290f792b58848bfea196b149cfd8ebd9749004a8dea52",
+      "size": 16988
+    }
+  ],
+  "sop_history_included": false,
+  "raw_machine_evidence_included": false,
+  "license_added": false
+}
