@@ -2,7 +2,7 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前状态：Owner 已批准公开 S1 候选 `b763bd6` 及治理摘录，暂不添加许可证。** 云端 Linux 隔离验证已完成；GX10 本机验收待执行，Windows 延后。新版现役服务切换和 artifact-ledger A2 尚未完成。准确发布范围见 [Owner 公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)。
+**当前状态：Owner 已批准公开 S1 候选 `b763bd6` 及治理摘录，暂不添加许可证。** 云端 Linux 隔离验证已完成；GX10 本机验收待执行，Windows 延后。新版现役服务切换和 artifact-ledger A2 尚未完成。准确发布范围见 [Owner 公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)。 首轮 GitHub CI：Linux 通过；Windows 为 1 failed、129 passed、9 skipped，留待 Windows 轮处理，详见 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 
 **GX10 开始入口：** clone 本仓库后，在本地 Codex 中输入“读取 `docs/GX10_S1_RUNBOOK.md`，执行全部 GX10 S1 验收；有问题直接修复复验，保留全部环境和证据，Windows 延后”。任务书固定到完整候选 SHA，并使用新 checkout、独立 build/runtime venv。
 

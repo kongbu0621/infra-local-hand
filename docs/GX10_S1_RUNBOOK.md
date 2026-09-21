@@ -1,6 +1,6 @@
 # GX10 S1：从 Git 仓库完成本机验收
 
-Owner 已要求 Windows 延后、先运行 GX10。本轮执行已授权的 S1 Linux/aarch64 隔离构建、wheel 安装和验证；Windows 保持 DEFERRED / UNVERIFIED。先完成本轮，再以实际结果衔接 S2 服务切换和 artifact-ledger A2。
+Owner 已要求 Windows 延后、先运行 GX10。本轮执行已授权的 S1 Linux/aarch64 隔离构建、wheel 安装和验证；Windows 实机验收保持 DEFERRED / UNVERIFIED。首轮 Windows GitHub CI 已观察到 1 项失败、9 项跳过，见 [发布复核](PUBLICATION_VERIFICATION.md)，不得把它写成通过。先完成本轮，再以实际结果衔接 S2 服务切换和 artifact-ledger A2。
 
 给 GX10 本地 Codex：读取本文件后立即执行，有具体问题直接修复并复验，不只输出计划。保留已有 checkout、venv、服务和全部证据。新建目录均须唯一，存在即拒绝；失败产物不得覆盖或删除。不要把隔离 fixture 通过写成现役服务通过。
 
