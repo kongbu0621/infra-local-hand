@@ -28,6 +28,8 @@ from local_hand.protocol import (
     MAX_TASK_JSON_BYTES,
     TASK_ID_RE,
     TASK_SCHEMA,
+    TASK_FIELDS as _TASK_FIELDS,
+    validate_result_contract,
     LocalHandError,
     conflict_filename,
     task_digest,
@@ -47,25 +49,6 @@ MAX_CONFLICT_FILES = 4096
 MAX_SLEEP_SLICE_SECONDS = 60.0
 _THREAD_LOCK = threading.Lock()
 _PROVENANCE_FIELDS = ("implementation_commit", "package_digest", "profile_digest")
-_TASK_FIELDS = frozenset({"schema_version", "task_id", "target_node", "action", "params"})
-_RESULT_FIELDS = frozenset(
-    {
-        "schema_version",
-        "task_id",
-        "task_digest",
-        "target_node",
-        "node_id",
-        "action",
-        "worker_version",
-        "implementation_commit",
-        "package_digest",
-        "profile_digest",
-        "status",
-        "details",
-        "error_code",
-        "error",
-    }
-)
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40,64}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -150,6 +133,10 @@ def _validate_controller_result(
     value: Any,
     task: dict[str, Any],
 ) -> dict[str, Any]:
+    try:
+        validate_result_contract(value)
+    except LocalHandError as exc:
+        raise LocalHandError("controller_result_shape_invalid", exc.message, "indeterminate") from exc
     result = validate_remote_result(
         value,
         task["task_id"],
@@ -157,30 +144,6 @@ def _validate_controller_result(
         task["target_node"],
         task_digest(task),
     )
-    if set(result) != _RESULT_FIELDS or not isinstance(result.get("details"), dict):
-        raise LocalHandError(
-            "controller_result_shape_invalid",
-            "Result v1 must contain the exact envelope and structured details",
-            "indeterminate",
-        )
-    succeeded = result["status"] == "succeeded"
-    error_code = result.get("error_code")
-    error = result.get("error")
-    if succeeded:
-        valid_error = error_code is None and error is None
-    else:
-        valid_error = (
-            isinstance(error_code, str)
-            and bool(error_code)
-            and isinstance(error, str)
-            and bool(error)
-        )
-    if not valid_error:
-        raise LocalHandError(
-            "controller_result_shape_invalid",
-            "Result v1 status/error fields are inconsistent",
-            "indeterminate",
-        )
     return result
 
 

@@ -34,6 +34,24 @@ directory fsync failures now propagate rather than being silently ignored.
 This is deliberately conservative, including a crash before the side effect.
 It does not claim filesystem/power-loss certification or Windows durability.
 
+## GX10 recheck correction
+
+Fault injection against the original `b763bd6714721d22278086db559fa3f6684aad7b`
+candidate found that CAS could report success after directory synchronization
+failed, or report failed/rejected when post-replacement read-back failed. Once
+replacement has occurred, these failures now return indeterminate; persisted
+receipts retain that result and prevent duplicate execution. Pre-write rejection
+and the existing read-back mismatch behavior remain unchanged.
+
+The recheck also found that worker Task/Result ingress accepted envelope fields
+that the controller rejected. Worker Tasks now enforce the existing five-field
+contract after target filtering. Both sides share the existing fourteen-field
+Result shape and status/error consistency checks. This corrects implementation
+of the approved v1 contract; it adds no action or permission and does not extend
+the deferred strict-JSON, nested-root or multi-controller scope. The original
+candidate and the corrected commit require separate evidence and fresh build
+and runtime environments. Machine evidence remains outside this repository.
+
 ## Configuration and artifact identity
 
 Worker, controller and both bootstraps use the shared strict JSON admission

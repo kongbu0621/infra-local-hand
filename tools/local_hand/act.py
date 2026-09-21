@@ -200,10 +200,21 @@ def fs_write_text_cas(
                         os.fsync(dir_fd)
                     finally:
                         os.close(dir_fd)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    raise LocalHandError(
+                        "write_durability_unconfirmed",
+                        f"atomic write occurred but directory synchronization failed: {relative_path}",
+                        "indeterminate",
+                    ) from exc
 
-            read_back = _read_cas_target(target)
+            try:
+                read_back = _read_cas_target(target)
+            except (OSError, LocalHandError) as exc:
+                raise LocalHandError(
+                    "write_readback_unconfirmed",
+                    f"atomic write occurred but read-back could not be completed: {relative_path}",
+                    "indeterminate",
+                ) from exc
             read_back_hash = _sha256(read_back)
             if read_back != desired or read_back_hash != desired_hash:
                 raise LocalHandError(

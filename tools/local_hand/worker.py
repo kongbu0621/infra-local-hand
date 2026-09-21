@@ -31,7 +31,7 @@ from .provenance import core_digest, implementation_commit
 from .installation import verify_record
 from .protocol import (
     CAPABILITIES, MAX_RESULT_JSON_BYTES, MAX_TASK_ID_DIGITS, MAX_TASK_JSON_BYTES,
-    RESULT_SCHEMA, RESULT_STATUSES, TASK_SCHEMA,
+    RESULT_SCHEMA, RESULT_STATUSES, TASK_SCHEMA, TASK_FIELDS, validate_result_contract,
     TASK_ID_RE, LocalHandError, conflict_filename, result_error, result_success, task_digest,
 )
 from .runtime_lock import worker_instance_lock
@@ -136,6 +136,8 @@ def _validate_task_contract(task: dict[str, Any]) -> None:
     if not isinstance(params, dict):
         raise LocalHandError("invalid_params", "params must be an object")
     _validate_action_params(action, params)
+    if set(task) != TASK_FIELDS:
+        raise LocalHandError("invalid_task", "Task v1 requires exactly schema_version, task_id, target_node, action and params")
 
 
 def _validate_action_params(action: str, params: dict[str, Any]) -> None:
@@ -165,6 +167,7 @@ def validate_task(task: Any) -> dict[str, Any]:
 
 
 def _validate_result_shape(value: Any) -> dict[str, Any]:
+    validate_result_contract(value)
     if not isinstance(value, dict) or value.get("schema_version") != RESULT_SCHEMA:
         raise LocalHandError("result_invalid", "result schema/object invalid", "indeterminate")
     task_id, digest = value.get("task_id"), value.get("task_digest")
