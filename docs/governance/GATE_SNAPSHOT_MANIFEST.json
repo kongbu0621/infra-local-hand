@@ -1,0 +1,84 @@
+{
+  "status": "DISCLOSURE_APPROVED_NOT_ADOPTED",
+  "effective_adoption": "Direct pinned private companion source in AGENTS.md. This manifest is not used to claim Gate closure.",
+  "source_repository": "kongbu0621/engineering-sop",
+  "source_commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "source": [
+    {
+      "path": "docs/workflow/program-repository-documentation-gate.md",
+      "git_blob_sha": "f5f349a732c35eda71b32ec43f928dd4db5b0ebf",
+      "sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5",
+      "verification": "Fetched at pinned commit; saved bytes matched source Git blob SHA."
+    }
+  ],
+  "snapshot": [
+    {
+      "path": "docs/governance/PUBLIC_GATE_CANDIDATE.md",
+      "sha256": "e19ef75f06376a7bacc969bac996f57a6003a8389519a6dec3f7c4e076ae6bc2"
+    }
+  ],
+  "equivalence_mode": "proposed Owner-approved excerpt / transformation",
+  "owner_approval_reference": "docs/governance/PUBLICATION_OWNER_DECISION.md (event LOCAL-HAND-PUBLICATION-20260921-01)",
+  "owner_approval_status": "Public disclosure approved by Owner event LOCAL-HAND-PUBLICATION-20260921-01; equivalence/adoption remain PENDING.",
+  "transformations": [
+    "Rewritten compactly in Chinese, preserving applicable normative semantics.",
+    "Omitted upstream PR chronology, maturity narrative repetition and relative links into private SOP.",
+    "Removed example owner-specific approval strings; preserved mandatory source repository and full commit SHA.",
+    "Summarized related applicable boundary/evidence obligations without claiming to adopt or supersede all SOP rules.",
+    "Publication status header updated after explicit disclosure approval; normative excerpt body unchanged."
+  ],
+  "coverage": [
+    {
+      "source_sections": [
+        "Purpose",
+        "Principle",
+        "1. 策划层面的需求文档",
+        "2. 程序层面的技术架构设计文档",
+        "3. 实际落地技术方案文档",
+        "Traceability",
+        "Boundaries"
+      ],
+      "snapshot_section": "1",
+      "claim": "Three independently authoritative documents, required contents, observable traceability, conflict handling and scope."
+    },
+    {
+      "source_sections": [
+        "Mandatory cross-project adoption"
+      ],
+      "snapshot_section": "2",
+      "claim": "Owner mandate/Provisional status, adoption minimum fields, pinned accessible integrity, snapshot manifest, privacy and limited exceptions."
+    },
+    {
+      "source_sections": [
+        "Gate state declaration",
+        "Gate closure"
+      ],
+      "snapshot_section": "3",
+      "claim": "Default OPEN, Owner-only closure and evidence, exact R/A/scope, independent A/C/D, history preservation and all closure preconditions."
+    },
+    {
+      "source_sections": [
+        "Before closure",
+        "Feasibility spike"
+      ],
+      "snapshot_section": "4",
+      "claim": "Allowed read-only/documentation work; no forward code exception; operational containment limits and separate spike closure."
+    },
+    {
+      "source_sections": [
+        "Document evolution",
+        "Relationship to existing SOP",
+        "Revision conditions"
+      ],
+      "snapshot_section": "5",
+      "claim": "Automatic affected-scope reopening, no authority from facts, supersession tracking, related obligations/conflicts and maturity change."
+    }
+  ],
+  "remaining_checks": [
+    "Owner verifies and approves equivalence/adoption if a future source switch is proposed.",
+    "Any future adoption switch records a new accurate documentation baseline and required Owner closure; approval to disclose alone does not close Gate."
+  ],
+  "sync_authority": "Owner only; no automatic upgrades or weakening.",
+  "sync_responsibility": "Repository maintainer proposes a newly pinned source, complete digest/coverage manifest and document changes for Owner review; executor verifies bytes and keeps affected scope OPEN.",
+  "approved_original_snapshot_sha256": "de15f5d961e92bdd58f042831d6ad49587146669b5ac6f08eedeb3976811a420"
+}

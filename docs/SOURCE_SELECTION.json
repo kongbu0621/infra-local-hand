@@ -1,0 +1,372 @@
+{
+  "manifest_kind": "documentation_source_selection_not_runtime_configuration",
+  "status": "PROPOSED_NO_IMPLEMENTATION_IMPORTED",
+  "source_repository": "kongbu0621/engineering-sop",
+  "source_commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "source_tree_query_complete": true,
+  "git_blob_sha_algorithm": "Git SHA-1 over blob header and original bytes; not raw-content SHA-256",
+  "source_history_transfer": false,
+  "catch_all_rule": "Any path not listed is excluded from extraction. Private evidence, credentials, deployments and tools/controlled_executor remain excluded.",
+  "files": [
+    {
+      "source_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "git_blob_sha": "d052582f5979a47ca853ce53c8444b24f9046990",
+      "source_size_bytes": 32183,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": ".github/workflows/local-hand-v0-1-validation.yml"
+    },
+    {
+      "source_path": "docs/experiments/local-hand/ACCEPTANCE.md",
+      "git_blob_sha": "be69c304906b6390aec39acb68fa8341843afd98",
+      "source_size_bytes": 28555,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/ARCHITECTURE.md",
+      "git_blob_sha": "bcc17ecbb56409a4c568648121c4c9fe4f6ae034",
+      "source_size_bytes": 14074,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/CONNECT.md",
+      "git_blob_sha": "4168c2f219ac939084c883483fba68d2a3de9ce8",
+      "source_size_bytes": 7524,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/DESIGN_FREEZE.md",
+      "git_blob_sha": "3218716ba40dc9f7327404ed3306e09c25160406",
+      "source_size_bytes": 15900,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/GX10_UBUNTU.md",
+      "git_blob_sha": "8bb1900d08043559c89c4b0735a17d6f58723a6f",
+      "source_size_bytes": 5613,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/HARDENING_B.md",
+      "git_blob_sha": "75f0d09361264912ada87f163a127a6866830e72",
+      "source_size_bytes": 6640,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/LIVE_ACCEPTANCE.md",
+      "git_blob_sha": "4bbc2547fb5811283b62ec58d43ceea8f73a9eb7",
+      "source_size_bytes": 3428,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "docs/experiments/local-hand/REQUIREMENTS.md",
+      "git_blob_sha": "d79efc8d4aeef6db470cd5927201e984bcefd1ff",
+      "source_size_bytes": 14779,
+      "disposition": "reference_only_rewrite_product_docs",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "tests/test_local_hand_bootstrap_cwd_boundary.py",
+      "git_blob_sha": "89a5f477b743818c129598e401625d04b6ac0b78",
+      "source_size_bytes": 9602,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_bootstrap_cwd_boundary.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_connect.py",
+      "git_blob_sha": "a9a02beaa57f1b75535ef12ea0c4607eb70980cf",
+      "source_size_bytes": 22017,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_connect.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_hardening_b.py",
+      "git_blob_sha": "f3f67ad5a36b574adcdbd025bdaa1e8461b7ca10",
+      "source_size_bytes": 21845,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_hardening_b.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_hardening_d.py",
+      "git_blob_sha": "25a2a78c7fc51eb9551c22755647dd33b48d33df",
+      "source_size_bytes": 27997,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_hardening_d.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_hardening_d2.py",
+      "git_blob_sha": "d3a4c0ca4d4e75740716d1669119e05e8b67e04b",
+      "source_size_bytes": 19152,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_hardening_d2.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_linux_cutover.py",
+      "git_blob_sha": "2ecb8b2262d5afdbe4755a532302f0ca06c1f13b",
+      "source_size_bytes": 153417,
+      "disposition": "exclude_private_machine_migration",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "tests/test_local_hand_live_acceptance.py",
+      "git_blob_sha": "1306dbf77d252b2c854d5deff9a78cf800b7c6ae",
+      "source_size_bytes": 10638,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_live_acceptance.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_seed_and_hooks_boundary.py",
+      "git_blob_sha": "9f791663c3d0bb32b8548ead2a06f7242667c81f",
+      "source_size_bytes": 3523,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_seed_and_hooks_boundary.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_windows_path_budget.py",
+      "git_blob_sha": "42d16fbb044c52445f37f5b64ec2800c53315189",
+      "source_size_bytes": 3703,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_windows_path_budget.py"
+    },
+    {
+      "source_path": "tests/test_local_hand_worker.py",
+      "git_blob_sha": "2677064433018fe698a671f301642eda01af350d",
+      "source_size_bytes": 32380,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tests/test_local_hand_worker.py"
+    },
+    {
+      "source_path": "tools/local_hand/__init__.py",
+      "git_blob_sha": "cc42bc35aa1404e531ebd1543d16b9405429a4a3",
+      "source_size_bytes": 31,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/__init__.py"
+    },
+    {
+      "source_path": "tools/local_hand/act.py",
+      "git_blob_sha": "23bef760ee621ed2b688628be9f3218fae469c99",
+      "source_size_bytes": 8614,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/act.py"
+    },
+    {
+      "source_path": "tools/local_hand/bootstrap_linux.sh",
+      "git_blob_sha": "8eabea959c0810265876cec7ade8107fb8feb10b",
+      "source_size_bytes": 34206,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/bootstrap_linux.sh"
+    },
+    {
+      "source_path": "tools/local_hand/bootstrap_safety.py",
+      "git_blob_sha": "9f6c34637d40f059570ab1d34b2ea46aefd97eb1",
+      "source_size_bytes": 12589,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/bootstrap_safety.py"
+    },
+    {
+      "source_path": "tools/local_hand/bootstrap_windows.ps1",
+      "git_blob_sha": "a6e35d2b7a2d9a26fc132f651673c3bbd64c34e9",
+      "source_size_bytes": 29122,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/bootstrap_windows.ps1"
+    },
+    {
+      "source_path": "tools/local_hand/bounded_io.py",
+      "git_blob_sha": "e7273fae5f07951bd20fce55f26b9327e96e5bb2",
+      "source_size_bytes": 11468,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/bounded_io.py"
+    },
+    {
+      "source_path": "tools/local_hand/git_safety.py",
+      "git_blob_sha": "c28780fc091f830457838962a1e76bfc9d48a8a8",
+      "source_size_bytes": 8710,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/git_safety.py"
+    },
+    {
+      "source_path": "tools/local_hand/linux_cutover.py",
+      "git_blob_sha": "7e1a6bece0f1b1cd2cf90e0e15a770e04f56bad8",
+      "source_size_bytes": 95423,
+      "disposition": "exclude_private_machine_migration",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": null
+    },
+    {
+      "source_path": "tools/local_hand/mailbox_safety.py",
+      "git_blob_sha": "91ed7dcf84f59a82f2cb5f03e2f5a13fa00eb7fa",
+      "source_size_bytes": 11520,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/mailbox_safety.py"
+    },
+    {
+      "source_path": "tools/local_hand/observe.py",
+      "git_blob_sha": "5c13d6f189bd7c872588fa989fee2d5e78b58f16",
+      "source_size_bytes": 10036,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/observe.py"
+    },
+    {
+      "source_path": "tools/local_hand/paths.py",
+      "git_blob_sha": "b12f2c66ed42ccf3f770305f398a1645364cdef5",
+      "source_size_bytes": 14133,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/paths.py"
+    },
+    {
+      "source_path": "tools/local_hand/protocol.py",
+      "git_blob_sha": "3bde1131f66be8d1d20912f187fda1f8df020359",
+      "source_size_bytes": 3515,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/protocol.py"
+    },
+    {
+      "source_path": "tools/local_hand/runtime_lock.py",
+      "git_blob_sha": "a100294c0ff2f4ccb00a3835deadbc1027ddf3bc",
+      "source_size_bytes": 2040,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/runtime_lock.py"
+    },
+    {
+      "source_path": "tools/local_hand/validate.py",
+      "git_blob_sha": "38611e1365decbc4e36b778631945187a5421006",
+      "source_size_bytes": 11447,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/validate.py"
+    },
+    {
+      "source_path": "tools/local_hand/windows_acl.ps1",
+      "git_blob_sha": "32a57ef11c818b674be528d9e9e0f6543e71a9d0",
+      "source_size_bytes": 4994,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/windows_acl.ps1"
+    },
+    {
+      "source_path": "tools/local_hand/windows_runner.py",
+      "git_blob_sha": "e85fa4985e8b2896c5ae975cc7f0a3f8ad177e08",
+      "source_size_bytes": 3628,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/windows_runner.py"
+    },
+    {
+      "source_path": "tools/local_hand/worker.py",
+      "git_blob_sha": "0902966c022a6846e24f69b464c336797bc71d9d",
+      "source_size_bytes": 28395,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand/worker.py"
+    },
+    {
+      "source_path": "tools/local_hand_connect/__init__.py",
+      "git_blob_sha": "b74910cf979a6a470c50fd2a2dc11c8d5e06f6ba",
+      "source_size_bytes": 569,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand_connect/__init__.py"
+    },
+    {
+      "source_path": "tools/local_hand_connect/cli.py",
+      "git_blob_sha": "463a29b851b1cd78f65c935a12a9892bf069e55b",
+      "source_size_bytes": 5838,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand_connect/cli.py"
+    },
+    {
+      "source_path": "tools/local_hand_connect/controller.py",
+      "git_blob_sha": "9e303e8f5f959a5dfc1eb1f70c16c4fb90954a53",
+      "source_size_bytes": 26945,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand_connect/controller.py"
+    },
+    {
+      "source_path": "tools/local_hand_connect/live_acceptance.py",
+      "git_blob_sha": "e114af0459f101ce2b480a870b1faa40b69dd545",
+      "source_size_bytes": 22197,
+      "disposition": "candidate_extract_and_adapt",
+      "raw_sha256": null,
+      "raw_sha256_status": "compute_from_verified_source_bytes_before_extraction",
+      "destination_path": "tools/local_hand_connect/live_acceptance.py"
+    }
+  ]
+}

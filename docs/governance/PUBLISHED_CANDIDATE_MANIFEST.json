@@ -11,7 +11,6 @@
     "ba9c61fbac253dbcb37739b1a6563d7ce82a4187",
     "b763bd6714721d22278086db559fa3f6684aad7b"
   ],
-  "bundle_path": ".publication/source.bundle",
   "bundle_sha256": "25d46d01f77923351d91b3c2a408eeae5a3cc1705f9ca2f0b4d50fcbf92546c2",
   "files": [
     {
@@ -395,5 +394,7 @@
   ],
   "sop_history_included": false,
   "raw_machine_evidence_included": false,
-  "license_added": false
+  "license_added": false,
+  "bundle_path_in_import_commit": ".publication/source.bundle",
+  "scope": "Unmodified 54-file candidate at D; current main may add publication bookkeeping and this GX10 runbook."
 }
