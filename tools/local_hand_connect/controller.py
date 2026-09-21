@@ -480,7 +480,14 @@ def _matching_conflict(mailbox: Path, task: dict[str, Any]) -> dict[str, Any] | 
         return None
     validate_control_target(mailbox, path, require_existing=True)
     value = load_json_bounded(path, MAX_RESULT_JSON_BYTES, "controller_conflict_invalid")
-    return _validate_controller_result(value, task)
+    result = _validate_controller_result(value, task)
+    if result["status"] == "succeeded":
+        raise LocalHandError(
+            "controller_conflict_invalid",
+            "a conflict record cannot report task success",
+            "indeterminate",
+        )
+    return result
 
 
 def validate_expected_provenance(expected: dict[str, Any]) -> dict[str, str]:
@@ -542,6 +549,11 @@ def _wait_for_result_locked(
     deadline = time.monotonic() + timeout_seconds
     while True:
         sync_mailbox(mailbox, branch)
+        # A persisted conflict qualifies the canonical result. Check it first
+        # so a prior success cannot hide known uncertainty in this same snapshot.
+        conflict = _matching_conflict(mailbox, task)
+        if conflict is not None:
+            return _enforce_expected_provenance(conflict, expected_provenance)
         result_path = mailbox / "_executor_spike" / "results" / f"{task['task_id']}.json"
         validate_control_target(mailbox, result_path)
         if target_lexists(result_path):
@@ -550,9 +562,6 @@ def _wait_for_result_locked(
                 _validate_controller_result(value, task),
                 expected_provenance,
             )
-        conflict = _matching_conflict(mailbox, task)
-        if conflict is not None:
-            return _enforce_expected_provenance(conflict, expected_provenance)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise LocalHandError(
@@ -594,6 +603,9 @@ def call_task(
     expected_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     expected_provenance = _require_expected_provenance(expected_provenance)
+    # A call publishes before waiting. Reject unusable wait parameters before
+    # publication, while it is still certain that this call sent no task.
+    timeout_seconds, poll_seconds = _validate_wait_timing(timeout_seconds, poll_seconds)
     mailbox = _resolve_existing_mailbox(mailbox)
     with _controller_mailbox_lock(mailbox):
         _submit_task_locked(mailbox, branch, task)

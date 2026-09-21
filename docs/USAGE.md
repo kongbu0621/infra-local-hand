@@ -44,6 +44,10 @@ Worker's optional `--mailbox-branch` is an assertion against the profile.
 `wait` and `call` additionally require `--expected-provenance-file`; that file
 must contain the exact admitted `implementation_commit`, `package_digest`, and
 `profile_digest`. A result is never accepted without this source policy.
+`call` rejects invalid wait timing before submitting a task. When the fetched
+mailbox contains both a canonical result and a conflict for the exact task
+digest, `wait`/`call` validate and return the conflict first. Invalid conflict
+identity, provenance, or a conflict claiming success fails closed.
 
 ## Installation provenance
 

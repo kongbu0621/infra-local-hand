@@ -359,7 +359,12 @@ def _result_digest(result: dict[str, Any]) -> str:
 
 def _quarantine_local_result_conflict(outbox: Path, result_file: Path, local: dict[str, Any], remote: dict[str, Any]) -> None:
     q = outbox.parent / "quarantine"; q.mkdir(parents=True, exist_ok=True)
-    dest = q / f"{result_file.name}.{_result_digest(local)}.{_result_digest(remote)}.conflict"
+    stem = f"{result_file.name}.{_result_digest(local)}.{_result_digest(remote)}"
+    dest = q / f"{stem}.conflict"
+    index = 1
+    while target_lexists(dest):
+        dest = q / f"{stem}.{index}.conflict"
+        index += 1
     try: os.replace(result_file, dest); _fsync_parent(dest)
     except OSError as exc: raise LocalHandError("local_outbox_quarantine_failed", f"cannot quarantine {result_file.name}", "indeterminate") from exc
 
@@ -427,6 +432,33 @@ def _has_conflict_marker(state_root: Path, task_id: str, digest: str) -> bool:
     return target_lexists(state_root / "conflicts" / _conflict_filename(task_id, digest))
 
 
+def _recover_task_conflict(mailbox: Path, branch: str, state_root: Path, outbox: Path,
+                           task: dict[str, Any], profile: NodeProfile) -> None:
+    """Requeue a durable marker after interruption between marker and outbox."""
+    digest = task_digest(task)
+    name = _conflict_filename(task["task_id"], digest)
+    saved = validate_remote_result(
+        load_json_bounded(state_root / "conflicts" / name, MAX_RESULT_JSON_BYTES, "local_conflict_invalid"),
+        task["task_id"], str(task.get("action", "")), profile.node_id, digest,
+    )
+    if saved["status"] == "succeeded":
+        raise LocalHandError("local_conflict_invalid", "conflict marker cannot report success", "indeterminate")
+    target = mailbox / "_executor_spike" / "conflicts" / name
+    validate_control_target(mailbox, target)
+    if target_lexists(target):
+        return
+    pending = outbox / name
+    if target_lexists(pending):
+        existing = _validate_local_outbox_result(
+            load_json_bounded(pending, MAX_RESULT_JSON_BYTES, "local_outbox_invalid"), pending,
+        )
+        if _result_digest(existing) != _result_digest(saved):
+            raise LocalHandError("local_conflict_invalid", "pending conflict differs from durable marker", "indeterminate")
+    else:
+        write_json_atomic(pending, saved, max_bytes=MAX_RESULT_JSON_BYTES, code="result_too_large")
+    publish_outbox(mailbox, branch, outbox)
+
+
 def _quarantine_task_conflict(*, state_root: Path, outbox: Path, task: dict[str, Any], profile: NodeProfile, code: str, message: str, observed_digest: str | None, status: str = "rejected", extra_details: dict[str, Any] | None = None) -> None:
     digest = task_digest(task); marker = _conflict_marker_path(state_root, task["task_id"], digest, observed_digest)
     if marker.exists(): return
@@ -473,7 +505,9 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
         except LocalHandError: continue
         if not _trusted_local_identity(task_file, task, profile): continue
         digest = task_digest(task)
-        if _has_conflict_marker(state_root, task["task_id"], digest): continue
+        if _has_conflict_marker(state_root, task["task_id"], digest):
+            _recover_task_conflict(mailbox, branch, state_root, outbox, task, profile)
+            continue
         receipt_file = receipts/f"{task['task_id']}.json"; remote_result = mailbox/"_executor_spike"/"results"/f"{task['task_id']}.json"
         if receipt_file.exists():
             try: receipt = _validate_receipt(load_json_bounded(receipt_file, MAX_RECEIPT_JSON_BYTES, "local_receipt_invalid"), task, profile)

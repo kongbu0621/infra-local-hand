@@ -128,3 +128,18 @@ result have the same task digest but different complete content, the worker
 keeps the local receipt, quarantines any local outbox original, and emits a
 conflict record with hashes of both results. It does not replay the action or
 overwrite either side's canonical evidence.
+
+## Post-GX10 conflict recovery review
+
+The follow-up corrects four remaining edges within R04/R07 and S1 verification:
+call timing admission precedes publication; a matching conflict takes precedence
+over a canonical success at the controller; a durable conflict marker rebuilds
+its missing outbox after interruption; and repeated result collisions retain
+each original byte stream in distinct quarantine files. A success-shaped conflict
+is rejected. These changes keep Task/Result v1, the eight actions, the original
+rule/document baselines and the deployment boundary unchanged.
+
+The review adds five regression tests and two installed CLI checks. The existing
+exact-conflict lookup fixture now uses an indeterminate conflict instead of
+calling a success result a conflict. See S1_FOLLOWUP_REVIEW.md for reproducible
+findings and the separate cloud/GX10 verification status.

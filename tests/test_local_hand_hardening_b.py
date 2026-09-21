@@ -256,6 +256,61 @@ class LocalHandHardeningBTests(unittest.TestCase):
         task=self.task("LH0203"); valid=worker.result_success(task,"test-node",{},worker.build_provenance(self.profile)); forged=dict(valid); forged["action"]="git.status"
         with self.assertRaises(LocalHandError): worker.validate_remote_result(forged,"LH0203","node.status","test-node",task_digest(task))
 
+    def test_conflict_marker_recovers_after_outbox_write_failure_without_replay(self) -> None:
+        seed, mailbox = self._init_mailbox()
+        task, later = self.task("LH0250"), self.task("LH0251")
+        self._commit_raw(seed, {
+            "_executor_spike/tasks/LH0250.json": json.dumps(task),
+            "_executor_spike/tasks/LH0251.json": json.dumps(later),
+            "_executor_spike/results/LH0250.json": "{invalid fixture result\n",
+        }, "fixture recovery interruption")
+        state = self.runtime / "state"
+        original_write = worker.write_json_atomic
+
+        def fail_outbox(path, *args, **kwargs):
+            if path.parent == state / "outbox" and path.name.startswith("CONFLICT-"):
+                raise OSError("injected outbox persistence failure")
+            return original_write(path, *args, **kwargs)
+
+        with mock.patch.object(worker, "write_json_atomic", side_effect=fail_outbox):
+            with self.assertRaises(OSError):
+                worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+        name = worker._conflict_filename(task["task_id"], task_digest(task))
+        marker = state / "conflicts" / name
+        preserved = marker.read_bytes()
+        with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+            self.assertEqual([call.args[0]["task_id"] for call in execute.call_args_list], [later["task_id"]])
+        worker.sync_mailbox(mailbox, MAILBOX_BRANCH)
+        self.assertEqual(marker.read_bytes(), preserved)
+        self.assertEqual(json.loads((mailbox / "_executor_spike/conflicts" / name).read_text()), json.loads(preserved))
+        self.assertFalse((state / "receipts/LH0250.json").exists())
+        self.assertEqual(json.loads((mailbox / "_executor_spike/results/LH0251.json").read_text())["status"], "succeeded")
+        before = self._git(mailbox, "rev-parse", "HEAD").stdout
+        with mock.patch.object(worker, "execute_task") as execute:
+            worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
+            execute.assert_not_called()
+        self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
+        self.assertEqual(marker.read_bytes(), preserved)
+
+    def test_repeated_result_collision_retains_each_original_byte_stream(self) -> None:
+        seed, mailbox = self._init_mailbox()
+        task = self.task("LH0252")
+        identity = worker.build_provenance(self.profile)
+        remote = worker.result_success(task, self.profile.node_id, {"origin": "remote"}, identity)
+        local = worker.result_success(task, self.profile.node_id, {"origin": "local"}, identity)
+        self._commit_raw(seed, {"_executor_spike/results/LH0252.json": json.dumps(remote)}, "fixture collision")
+        outbox = self.runtime / "outbox"
+        outbox.mkdir(parents=True)
+        originals = (json.dumps(local, indent=2).encode(), json.dumps(local, separators=(",", ":")).encode())
+        for raw in originals:
+            (outbox / "LH0252.json").write_bytes(raw)
+            worker.publish_outbox(mailbox, MAILBOX_BRANCH, outbox)
+        archives = list((outbox.parent / "quarantine").glob("LH0252.json.*.conflict"))
+        self.assertEqual(len(archives), 2)
+        self.assertEqual({path.read_bytes() for path in archives}, set(originals))
+        self.assertEqual(json.loads((mailbox / "_executor_spike/results/LH0252.json").read_text()), remote)
+
     def test_malformed_local_outbox_is_quarantined_not_published(self) -> None:
         _,mailbox=self._init_mailbox(); outbox=self.runtime/"out"; outbox.mkdir(parents=True); bad={"schema_version":"local-hand-result/v1","task_id":"../../bad","task_digest":"a"*64,"target_node":"test-node","action":"node.status","status":"succeeded"}; (outbox/"LH0204.json").write_text(json.dumps(bad))
         worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse((outbox/"LH0204.json").exists())

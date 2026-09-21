@@ -100,6 +100,7 @@ def main():
         from local_hand.config import PROFILE_SCHEMA,TRANSPORT_SCHEMA
         from local_hand.provenance import implementation_commit,core_digest,build_metadata
         from local_hand.paths import load_profile
+        from local_hand.protocol import LocalHandError, conflict_filename, result_error, task_digest
         from local_hand.worker import execute_task
         from local_hand_connect.controller import build_task
         assert sys.prefix!=sys.base_prefix,'runtime must be a dedicated venv'
@@ -204,6 +205,34 @@ def main():
                                         '--expected-provenance-file',expected_path],expected=3)
             assert not (state/'receipts'/'LH9998.json').exists()
             checks.append({'case':'wrong target ignored; timeout remains indeterminate','status':'PASS'})
+            invalid_call=save('invalid-call.json',build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':'sample.txt',
+                'expected_sha256':hashlib.sha256(b'after-controller-result\n').hexdigest(),
+                'content':'must-not-publish'},task_id='LH9997'))
+            run(connect+['call']+common+['--task-file',invalid_call,'--timeout-seconds','nan',
+                                        '--expected-provenance-file',expected_path],expected=2)
+            assert not run([git,'--git-dir',bare,'ls-tree','--name-only',policy['branch'],'--',
+                            '_executor_spike/tasks/LH9997.json']).strip()
+            assert (project/'sample.txt').read_bytes()==b'after-controller-result\n'
+            checks.append({'case':'invalid call timing rejected before task publication','status':'PASS'})
+
+            # Publish a synthetic conflict next to the already successful first
+            # task. A real installed controller must not hide that uncertainty.
+            first_task=json.loads((root/'task-0.json').read_text())
+            conflict=result_error(first_task,profile.node_id,
+                                  LocalHandError('remote_result_content_conflict','synthetic collision','indeterminate'),identity)
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            conflict_path=seed/'_executor_spike/conflicts'/conflict_filename(task_digest(first_task))
+            with conflict_path.open('x',encoding='utf-8') as stream:
+                stream.write(json.dumps(conflict,sort_keys=True)+'\n')
+            run([git,'-C',seed,'add','--',conflict_path.relative_to(seed).as_posix()])
+            run([git,'-C',seed,'commit','-qm','synthetic result conflict'])
+            run([git,'-C',seed,'push','origin',policy['branch']])
+            actual=json.loads(run(connect+['wait']+common+['--task-file',root/'task-0.json',
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            assert actual==conflict,actual
+            checks.append({'case':'matching conflict takes precedence over canonical success','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

@@ -16,7 +16,7 @@ sys.path.insert(0, str(TOOLS_ROOT))
 
 from local_hand.config import parse_transport
 from config_fixtures import transport
-from local_hand.protocol import LocalHandError, result_success, task_digest
+from local_hand.protocol import LocalHandError, result_error, result_success, task_digest
 from local_hand_connect import controller
 from local_hand_connect.cli import main as connect_main
 
@@ -161,10 +161,10 @@ class LocalHandConnectTests(unittest.TestCase):
 
     def test_controller_finds_exact_digest_bound_conflict(self) -> None:
         task = self._task(task_id="LH9017")
-        result = result_success(
+        result = result_error(
             task,
             task["target_node"],
-            {"quarantined": True},
+            LocalHandError("remote_result_content_conflict", "fixture conflict", "indeterminate"),
             {
                 "implementation_commit": "a" * 40,
                 "package_digest": "b" * 64,
@@ -436,6 +436,59 @@ class LocalHandConnectTests(unittest.TestCase):
                             expected_provenance=self.expected_provenance,
                         )
                 self.assertEqual(ctx.exception.code, "controller_wait_invalid")
+
+    def test_call_rejects_invalid_timing_before_publishing_any_task(self) -> None:
+        before = self._git(self.root, "--git-dir", str(self.remote), "rev-parse", self.branch).stdout
+        for index, (timeout, poll) in enumerate((
+            (float("nan"), 1), (float("inf"), 1), (-1, 1), (True, 1),
+            (1, float("nan")), (1, float("inf")), (1, 0), (1, -1), (1, False),
+        )):
+            task = self._task(task_id=f"LH{9300 + index}")
+            with self.subTest(timeout=timeout, poll=poll), mock.patch.dict(os.environ, self.env):
+                with self.assertRaises(LocalHandError) as ctx:
+                    controller.call_task(self.mailbox, self.branch, task,
+                                         timeout_seconds=timeout, poll_seconds=poll,
+                                         expected_provenance=self.expected_provenance)
+                self.assertEqual(ctx.exception.code, "controller_wait_invalid")
+                self.assertFalse((self.mailbox / "_executor_spike/tasks" / f"{task['task_id']}.json").exists())
+                self.assertEqual(self._git(self.root, "--git-dir", str(self.remote), "rev-parse", self.branch).stdout, before)
+
+    def _publish_conflict_beside_success(self, task, conflict) -> None:
+        self._publish_result(task)
+        publisher = self.root / f"publisher-{task['task_id']}"
+        path = publisher / "_executor_spike/conflicts" / controller.conflict_filename(task_digest(task))
+        path.write_text(json.dumps(conflict), encoding="utf-8")
+        self._git(publisher, "add", "_executor_spike/conflicts")
+        self._git(publisher, "commit", "-m", "fixture conflict")
+        self._git(publisher, "push", "origin", self.branch)
+
+    def test_wait_returns_matching_conflict_instead_of_canonical_success(self) -> None:
+        task = self._task(task_id="LH9401")
+        conflict = result_error(task, task["target_node"],
+                                LocalHandError("remote_result_content_conflict", "fixture collision", "indeterminate"),
+                                self.expected_provenance)
+        self._publish_conflict_beside_success(task, conflict)
+        with mock.patch.dict(os.environ, self.env):
+            actual = controller.wait_for_result(self.mailbox, self.branch, task, timeout_seconds=0,
+                                                expected_provenance=self.expected_provenance)
+        self.assertEqual(actual, conflict)
+
+    def test_wait_cannot_hide_invalid_conflict_behind_canonical_success(self) -> None:
+        for index, mutation in enumerate((
+            {"package_digest": "e" * 64}, {"task_digest": "f" * 64},
+            {"details": None}, {"status": "succeeded", "error_code": None, "error": None},
+        )):
+            task = self._task(task_id=f"LH{9410 + index}")
+            conflict = result_error(task, task["target_node"],
+                                    LocalHandError("remote_result_content_conflict", "fixture collision", "indeterminate"),
+                                    self.expected_provenance)
+            conflict.update(mutation)
+            self._publish_conflict_beside_success(task, conflict)
+            with self.subTest(mutation=mutation), mock.patch.dict(os.environ, self.env):
+                with self.assertRaises(LocalHandError) as ctx:
+                    controller.wait_for_result(self.mailbox, self.branch, task, timeout_seconds=0,
+                                               expected_provenance=self.expected_provenance)
+                self.assertEqual(ctx.exception.status, "indeterminate")
 
     def test_cli_build_refuses_output_overwrite(self) -> None:
         params = self.root / "params.json"
