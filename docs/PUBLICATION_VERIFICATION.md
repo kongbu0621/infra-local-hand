@@ -41,3 +41,12 @@ Linux CI 运行于 GitHub hosted runner，验证的是发布基线的代码，�
 GX10 隔离验收以原始输入 `b763bd6714721d22278086db559fa3f6684aad7b` 开始，发现缺陷后保留失败轮次并形成修复链。最终修复候选为 `1e2f9dce87e57c34a35fe3a6a75a8c784181ba83`，tree `12190df12ec03c120e397b6f6606168cce337197`。Owner 随后明确要求将其提交并直接推送主干，不使用功能分支；决定副本见 [Q6_MAIN_PUBLICATION_OWNER_DECISION.md](governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md)。
 
 该授权不改变三份批准文档基线 A，不批准上传实机原始证据，也不表示 Windows、现役服务切换、S2 或 artifact-ledger A2 已完成。完整机器日志、wheel 和 evidence ZIP 继续只保留在 GX10 本地。
+
+
+## S1 后续修复与验证
+
+Owner 要求继续修复并全部提交推送后，形成新的产品候选
+`03a78e2b27463b049a81fd9eaffa8478faa8a6b3`。其四项修复、云端独立
+源码/wheel/安装态验证、GitHub CI 和新的 GX10 复验输入见
+[S1_FOLLOWUP_REVIEW.md](S1_FOLLOWUP_REVIEW.md)。
+原始候选、GX10 修复候选与本轮候选的身份及平台证据分别保留。
