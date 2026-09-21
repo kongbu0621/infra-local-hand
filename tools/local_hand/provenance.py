@@ -66,10 +66,30 @@ def write_build_metadata(root: Path, *, artifact_kind: str) -> dict[str,Any]:
     commit=source_commit(require_clean=True)
     hashes=payload_hashes(root)
     source_root=Path(__file__).resolve().parent.parent
+    # A clean status can hide ignored files or skip-worktree changes. Bind the
+    # copied bytes to immutable Git blobs, not just the current working tree.
+    tree=run_hardened_git(source_root.parent,
+        ["ls-tree","-rz",commit,"--","tools/local_hand","tools/local_hand_connect"],
+        allow_ssh=False,timeout=10,max_stdout=1024*1024,max_stderr=8192,text=False)
+    if tree.returncode:raise _bad("cannot read committed payload tree")
+    committed={}
+    for record in tree.stdout.split(b"\0"):
+        if not record:continue
+        header,raw_path=record.split(b"\t",1)
+        mode,kind,blob=header.split()
+        path=Path(raw_path.decode("utf-8"))
+        if len(path.parts)!=3 or path.suffix not in (".py",".sh",".ps1"):continue
+        if mode not in (b"100644",b"100755") or kind!=b"blob":raise _bad("committed payload must use regular files")
+        committed[Path(*path.parts[1:]).as_posix()]=blob.decode("ascii")
+    if artifact_kind=="wheel" and set(hashes)!=set(committed):
+        raise _bad("wheel payload file set differs from committed source")
     for rel,digest in hashes.items():
         source=source_root/rel
         if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest()!=digest:
             raise _bad("staged payload differs from clean source: "+rel)
+        raw=(root/rel).read_bytes()
+        blob=hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\0"+raw).hexdigest()
+        if committed.get(rel)!=blob:raise _bad("staged payload differs from committed Git blob: "+rel)
     metadata={"schema_version":BUILD_SCHEMA,"product_version":VERSION,"source_commit":commit,
               "artifact_kind":artifact_kind,"files":hashes}
     path=root/"local_hand"/METADATA_NAME

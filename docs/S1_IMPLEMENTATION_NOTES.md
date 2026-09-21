@@ -43,6 +43,9 @@ Legacy profiles and implicit deployment defaults are rejected.
 
 A wheel is built only from a clean source commit. Its metadata binds that
 commit and hashes both Python packages plus the shipped platform scripts.
+The build also compares the exact payload file set and bytes against committed
+Git blobs, rejecting ignored extras and changes hidden by skip-worktree. LF
+checkout attributes preserve these bytes across platforms.
 The historical core package_digest algorithm is unchanged and has narrower
 coverage. An installation record additionally binds the retained wheel hash,
 metadata hash, raw profile hash, Python, Git/SSH/key/known_hosts paths,
@@ -70,6 +73,8 @@ Command records retain argv, cwd, UTC times, duration, exit status, log hashes
 and measured RSS where supported. Linux wait4 ru_maxrss is a peak statistic
 for the reaped child and its waited descendants, not simultaneous aggregate
 tree memory. No numerical resource budget is invented.
+The installed harness drains stdout/stderr concurrently through bounded pipes;
+the parent persists logs and verifies every saved digest before declaring PASS.
 
 Publication requires its separate exact candidate/content/license/governance
 decision. No license grant is inferred from a Public repository shell. S2 live

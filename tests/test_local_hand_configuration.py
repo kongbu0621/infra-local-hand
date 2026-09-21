@@ -144,5 +144,25 @@ class ConfigurationTests(unittest.TestCase):
         clean.assert_called_once_with(require_clean=True)
         self.assertFalse((target/'local_hand/_build_metadata.json').exists())
 
+    def test_build_rejects_ignored_or_hidden_payload_not_in_commit(self):
+        for scenario in ('ignored-file', 'skip-worktree'):
+            with self.subTest(scenario=scenario):
+                source=self.root/scenario;package=source/'tools/local_hand';package.mkdir(parents=True)
+                (package/'worker.py').write_text('# committed worker\n')
+                (package/'provenance.py').write_text('# source identity fixture\n')
+                (source/'.gitignore').write_text('ignored.py\n')
+                def git(*args):return subprocess.check_output(['git','-C',str(source),*args])
+                git('init','-q');git('config','user.name','fixture');git('config','user.email','fixture@example.invalid')
+                git('add','.');git('commit','-qm','fixed fixture')
+                if scenario=='ignored-file':(package/'ignored.py').write_text('# not committed\n')
+                else:
+                    git('update-index','--skip-worktree','tools/local_hand/worker.py')
+                    (package/'worker.py').write_text('# hidden working-tree change\n')
+                self.assertEqual(git('status','--porcelain'),b'')
+                target=self.root/(scenario+'-staged');shutil.copytree(source/'tools',target)
+                with mock.patch.object(provenance,'__file__',str(package/'provenance.py')):
+                    with self.assertRaises(LocalHandError):provenance.write_build_metadata(target,artifact_kind='wheel')
+                self.assertFalse((target/'local_hand/_build_metadata.json').exists())
+
 
 if __name__=='__main__':unittest.main()
