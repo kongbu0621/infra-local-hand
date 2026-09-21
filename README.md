@@ -2,7 +2,9 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前状态：独立仓库文档候选，Documentation Gate OPEN。** 本目录尚不包含新产品实现；Public 仓库已创建，源码发布、GX10 新版部署及 artifact-ledger A2 验收尚未完成。
+**当前状态：S1 实现候选；S1 开工 Gate 已按 Owner 决策关闭。** 本地实现和独立 wheel 验证在进行中；这不代表跨平台验收完成。Public 仓库已创建，源码发布、真实节点新版部署及 artifact-ledger A2 验收尚未完成。
+
+安装和接口变化见 [使用说明](docs/USAGE.md)，抽取、恢复修复和验收边界见 [S1 实现说明](docs/S1_IMPLEMENTATION_NOTES.md)。
 
 Local Hand 接收有限、结构化的任务，在本机授权的仓库和验证配置内执行，并返回与任务及运行版本绑定的结果。首阶段保持可信单控制端、scratch／非敏感数据范围，支持 Linux 和 Windows 的共同语义。现有系统已有运行证据，抽取和参数化后的新版本需要重新验证。
 

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infra-local-hand"
+version = "0.1.0a1"
+description = "Bounded local execution with correlated task results and evidence"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+local-hand-worker = "local_hand.worker:main"
+local-hand-connect = "local_hand_connect.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "tools"}
+packages = ["local_hand", "local_hand_connect"]
+
+[tool.setuptools.package-data]
+local_hand = ["*.sh", "*.ps1", "_build_metadata.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tools", "tests"]
+filterwarnings = ["error"]
+addopts = "-p no:cacheprovider"
