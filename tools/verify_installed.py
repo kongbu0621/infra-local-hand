@@ -60,10 +60,14 @@ def main():
                 try:code=child.wait(timeout=90)
                 except subprocess.TimeoutExpired:child.kill();child.wait();code=124
                 entry['max_rss_kib']=None;entry['rss_method']='UNAVAILABLE on this platform in this fixture harness'
+            for stream in (out, err):
+                stream.flush();os.fsync(stream.fileno())
         entry.update(exit_code=code,expected_exit_code=expected,elapsed_seconds=time.monotonic()-start,
                      end_utc=datetime.now(timezone.utc).isoformat(),
                      logs={name:hashlib.sha256((folder/name).read_bytes()).hexdigest() for name in ('stdout.log','stderr.log')})
-        (folder/'command.json').write_text(json.dumps(entry,indent=2)+'\n');records.append(entry)
+        with (folder/'command.json').open('x', encoding='utf-8') as stream:
+            stream.write(json.dumps(entry,indent=2)+'\n');stream.flush();os.fsync(stream.fileno())
+        records.append(entry)
         if code!=expected:
             raise AssertionError(f'command {n} exit {code} != {expected}: {command!r}\n'+(folder/'stderr.log').read_text(errors='replace')[-4000:])
         return (folder/'stdout.log').read_text(encoding='utf-8')
@@ -195,12 +199,17 @@ def main():
             finally:payload.write_bytes(original)
             checks.append({'case':'installed payload tamper rejected','status':'PASS'})
             run(worker_cmd)
+        for number, record in enumerate(records, 1):
+            for name, digest in record['logs'].items():
+                assert hashlib.sha256((logs/f'{number:03}'/name).read_bytes()).hexdigest()==digest, f'command {number} evidence digest changed: {name}'
+        checks.append({'case':'all retained command log digests revalidated','status':'PASS'})
         report['status']='PASS'
     except BaseException as exc:
         report.update(status='FAIL',error=f'{type(exc).__name__}: {exc}')
         raise
     finally:
-        (root/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+        with (root/'report.json').open('x', encoding='utf-8') as stream:
+            stream.write(json.dumps(report,ensure_ascii=False,indent=2)+'\n');stream.flush();os.fsync(stream.fileno())
         print(json.dumps({'status':report['status'],'checks':len(checks),'commands':len(records),'report':str(root/'report.json')}))
 
 
