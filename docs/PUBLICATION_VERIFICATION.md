@@ -34,4 +34,10 @@
 
 Windows 失败用例为 `tests/test_local_hand_configuration.py::ConfigurationTests::test_linux_bootstrap_rejects_bad_profile_before_filesystem_mutation`，实际断言为 `invalid_profile` 未出现在捕获的空 stderr 中。此处记录观察结果，不把它推断为已定位的根因。Owner 已要求 Windows 延后；本次不修改冻结候选来处理 Windows，也不把跨平台状态写成 PASS。
 
-Linux CI 运行于 GitHub hosted runner，验证的是发布基线的代码，不能代替 GX10 Linux/aarch64 实机。下一步在 GX10 clone 本仓库，由本地 Codex 按 [GX10 S1 任务书](GX10_S1_RUNBOOK.md) 构建准确候选 D，使用全部新的 checkout/build/runtime/evidence 目录并保留证据。
+Linux CI 运行于 GitHub hosted runner，验证的是发布基线的代码，不能代替 GX10 Linux/aarch64 实机。随后已在 GX10 按 [GX10 S1 任务书](GX10_S1_RUNBOOK.md) 从准确候选 D 开始，使用全部新的 checkout/build/runtime/evidence 目录执行验收；发现的失败和修复没有改写原始候选身份。
+
+## GX10 修复候选主干发布
+
+GX10 隔离验收以原始输入 `b763bd6714721d22278086db559fa3f6684aad7b` 开始，发现缺陷后保留失败轮次并形成修复链。最终修复候选为 `1e2f9dce87e57c34a35fe3a6a75a8c784181ba83`，tree `12190df12ec03c120e397b6f6606168cce337197`。Owner 随后明确要求将其提交并直接推送主干，不使用功能分支；决定副本见 [Q6_MAIN_PUBLICATION_OWNER_DECISION.md](governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md)。
+
+该授权不改变三份批准文档基线 A，不批准上传实机原始证据，也不表示 Windows、现役服务切换、S2 或 artifact-ledger A2 已完成。完整机器日志、wheel 和 evidence ZIP 继续只保留在 GX10 本地。

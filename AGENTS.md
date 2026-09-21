@@ -2,7 +2,7 @@
 
 ## Publication and GX10 handoff
 
-Owner approved public disclosure of exact candidate `b763bd6714721d22278086db559fa3f6684aad7b` and its governance excerpt, with no license added and no SOP history or raw machine evidence. See [PUBLICATION_OWNER_DECISION.md](docs/governance/PUBLICATION_OWNER_DECISION.md). This is a separate disclosure decision, not a replacement for the S1 closure below. Disclosure is approved; equivalence/adoption of the excerpt remains pending. For the already authorized GX10 S1 verification use [GX10_S1_RUNBOOK.md](docs/GX10_S1_RUNBOOK.md), retaining the exact candidate and fresh environments. Windows is deferred.
+Owner approved public disclosure of exact original candidate `b763bd6714721d22278086db559fa3f6684aad7b` and its governance excerpt, with no license added and no SOP history or raw machine evidence. See [PUBLICATION_OWNER_DECISION.md](docs/governance/PUBLICATION_OWNER_DECISION.md). After the authorized GX10 S1 verification found and repaired defects, Owner separately directed repaired candidate `1e2f9dce87e57c34a35fe3a6a75a8c784181ba83` to be committed and pushed directly to `main`; see [Q6_MAIN_PUBLICATION_OWNER_DECISION.md](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md). These are disclosure decisions, not replacements for the S1 closure below. Equivalence/adoption of the public governance excerpt remains pending. Windows is deferred.
 
 ## Program Repository Documentation Gate
 
