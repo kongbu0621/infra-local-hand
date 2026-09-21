@@ -1,0 +1,679 @@
+name: Local Hand v0.1 Validation
+
+on:
+  pull_request:
+    paths:
+      - "tools/local_hand/**"
+      - "tools/local_hand_connect/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "requirements-build.txt"
+      - "tools/verify_installed.py"
+      - ".github/workflows/local-hand-v0-1-validation.yml"
+  push:
+    branches:
+      - "main"
+    paths:
+      - "tools/local_hand/**"
+      - "tools/local_hand_connect/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "requirements-build.txt"
+      - "tools/verify_installed.py"
+      - ".github/workflows/local-hand-v0-1-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-hand-v0-1-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  classify-change:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runtime_changed: ${{ steps.classify.outputs.runtime_changed }}
+      compared_range: ${{ steps.classify.outputs.compared_range }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: classify
+        name: Classify verification scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXACT_SHA: ${{ github.sha }}
+          EXACT_REF: ${{ github.ref }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          event_name = os.environ["EVENT_NAME"]
+          if event_name in {"push", "workflow_dispatch"}:
+              exact_ref = os.environ["EXACT_REF"]
+              if exact_ref != "refs/heads/main":
+                  raise SystemExit(
+                      f"{event_name} must target refs/heads/main, got {exact_ref}"
+                  )
+              compared = f"exact-commit:{os.environ['EXACT_SHA']}"
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write("runtime_changed=true\n")
+                  out.write(f"compared_range={compared}\n")
+              print("runtime_changed= True")
+              print("compared_range=", compared)
+              raise SystemExit(0)
+
+          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+          action = event.get("action", "")
+          before = event.get("before")
+          after = event.get("after") or os.environ["PR_HEAD_SHA"]
+          names = []
+          runtime = True  # fail-safe: classifier uncertainty means verify, never silently skip.
+          compared = "classifier-fallback-runtime=true"
+
+          try:
+              if action == "synchronize" and before and after:
+                  subprocess.run(["git", "cat-file", "-e", f"{before}^{{commit}}"], check=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  subprocess.run(["git", "cat-file", "-e", f"{after}^{{commit}}"], check=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  base, head = before, after
+              else:
+                  base_ref = f"refs/remotes/origin/{os.environ['PR_BASE_REF']}"
+                  head = os.environ["PR_HEAD_SHA"]
+                  base = subprocess.check_output(["git", "merge-base", base_ref, head], text=True).strip()
+              names = subprocess.check_output(["git", "diff", "--name-only", base, head], text=True).splitlines()
+              runtime = any(
+                  name.startswith("tools/local_hand/")
+                  or name.startswith("tools/local_hand_connect/")
+                  or name.startswith("tests/")
+                  or name in {"pyproject.toml", "setup.py", "requirements-build.txt", "tools/verify_installed.py"}
+                  or name == ".github/workflows/local-hand-v0-1-validation.yml"
+                  for name in names
+              )
+              compared = f"{base}..{head}"
+          except Exception as exc:
+              print(f"classifier uncertainty -> runtime_changed=true: {type(exc).__name__}: {exc}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"runtime_changed={'true' if runtime else 'false'}\n")
+              out.write(f"compared_range={compared}\n")
+          print("classified files:")
+          for name in names:
+              print(name)
+          print("runtime_changed=", runtime)
+          print("compared_range=", compared)
+          PY
+
+  semantic-core:
+    needs: classify-change
+    if: needs.classify-change.outputs.runtime_changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install isolated build and test dependencies
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys, uuid
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / ("local-hand-s1-" + uuid.uuid4().hex)
+          root.mkdir()
+          build = root / "build-venv"
+          subprocess.run([sys.executable, "-m", "venv", str(build)], check=True)
+          python = build / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+          subprocess.run([str(python), "-m", "pip", "install", "-r", "requirements-build.txt"], check=True)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write(f"LOCAL_HAND_BUILD_PYTHON={python}\nLOCAL_HAND_VERIFY_ROOT={root}\n")
+      - name: Validate exact checked-out commit identity
+        if: github.event_name != 'pull_request'
+        shell: python
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          import os
+          import subprocess
+
+          actual = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          expected = os.environ["EXPECTED_SHA"]
+          if actual != expected:
+              raise SystemExit(f"checkout mismatch: {actual} != {expected}")
+      - name: Compile Local Hand shared core and tests
+        shell: python
+        run: |
+          import os, subprocess
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tests"], check=True)
+      - name: Run all Local Hand semantic and hardening tests
+        shell: python
+        run: |
+          import os, subprocess
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q"], check=True)
+      - name: Build and verify an independently installed wheel
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          source = pathlib.Path.cwd()
+          root = pathlib.Path(os.environ["LOCAL_HAND_VERIFY_ROOT"])
+          build_python = os.environ["LOCAL_HAND_BUILD_PYTHON"]
+          subprocess.run([build_python, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(root / "dist")], check=True)
+          wheels = list((root / "dist").glob("*.whl"))
+          assert len(wheels) == 1
+          runtime = root / "runtime-venv"
+          subprocess.run([sys.executable, "-m", "venv", str(runtime)], check=True)
+          python = runtime / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+          subprocess.run([str(python), "-m", "pip", "install", "--no-deps", str(wheels[0])], check=True)
+          subprocess.run([str(python), "-I", str(source / "tools/verify_installed.py"), "--wheel", str(wheels[0]), "--run-root", str(root / "installed-acceptance")], cwd=root, check=True)
+      - name: Validate PR whitespace and diff boundary
+        if: runner.os == 'Linux' && github.event_name == 'pull_request'
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git cat-file -e "${PR_HEAD_SHA}^{commit}"
+          git rev-parse --verify "refs/remotes/origin/${PR_BASE_REF}^{commit}"
+          MERGE_BASE="$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" "${PR_HEAD_SHA}")"
+          test -n "${MERGE_BASE}"
+          git diff --check "${MERGE_BASE}...${PR_HEAD_SHA}"
+      - name: Validate Linux bootstrap syntax
+        if: runner.os == 'Linux'
+        run: bash -n tools/local_hand/bootstrap_linux.sh
+      - name: Prove Linux repeat-bootstrap smoke identity
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          RUN_USER=nobody
+          RUN_GROUP="$(id -gn "$RUN_USER")"
+          PROBE_ROOT="$(mktemp -d)"
+          case "$PROBE_ROOT" in
+            /tmp/tmp.*) ;;
+            *) echo "unexpected probe root: $PROBE_ROOT" >&2; exit 1 ;;
+          esac
+          sudo chgrp "$RUN_GROUP" "$PROBE_ROOT"
+          chmod 0710 "$PROBE_ROOT"
+          cleanup_probe() {
+            sudo chmod -R u+rwx "$PROBE_ROOT" 2>/dev/null || true
+            sudo rm -rf -- "$PROBE_ROOT"
+          }
+          trap cleanup_probe EXIT
+
+          CALLER_CWD="$PROBE_ROOT/caller"
+          STAGE_ROOT="$PROBE_ROOT/stage"
+          STAGE_WORKER_ROOT="$STAGE_ROOT/worker"
+          STAGE_PACKAGE_ROOT="$STAGE_WORKER_ROOT/local_hand"
+          STAGE_PROFILE="$STAGE_ROOT/node-profile.json"
+          PROJECTS_ROOT="$PROBE_ROOT/projects"
+          TARGET_REPO="$PROJECTS_ROOT/probe"
+
+          install -d -m0700 "$CALLER_CWD"
+          install -d -m0700 "$STAGE_ROOT"
+          install -d -m0700 "$STAGE_WORKER_ROOT"
+          cp -R tools/local_hand "$STAGE_PACKAGE_ROOT"
+          find "$STAGE_WORKER_ROOT" -type d -exec chmod 0755 {} +
+          find "$STAGE_WORKER_ROOT" -type f -exec chmod 0644 {} +
+
+          sudo install -d -m0700 -o "$RUN_USER" -g "$RUN_GROUP" \
+            "$PROJECTS_ROOT" "$TARGET_REPO" "$TARGET_REPO/.git"
+
+          python3 - "$STAGE_PROFILE" "$PROJECTS_ROOT" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          profile, projects = sys.argv[1:]
+          Path(profile).write_text(json.dumps({
+              "profile_schema": "local-hand-profile/v2",
+              "transport_policy": {"schema_version":"local-hand-git-mailbox/v1", "remote_url":"git@example.invalid:fixtures/mailbox.git", "allowed_remote_urls":["git@example.invalid:fixtures/mailbox.git"], "branch":"fixture/mailbox-v1"},
+              "node_id": "linux-bootstrap-probe",
+              "projects_root": projects,
+              "repositories": {
+                  "probe": {
+                      "path": "probe",
+                      "single_writer": True,
+                      "validations": {},
+                  }
+              },
+          }), encoding="utf-8")
+          PY
+          sudo chgrp -R "$RUN_GROUP" "$STAGE_ROOT"
+          sudo chmod -R u=rwX,g=rX,o= "$STAGE_ROOT"
+
+          if (
+            cd "$CALLER_CWD"
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$STAGE_WORKER_ROOT" \
+              python3 - "$STAGE_PROFILE" <<'PY' >/dev/null 2>&1
+          from pathlib import Path
+          import sys
+          from local_hand.paths import load_profile, repository_root
+          profile = load_profile(Path(sys.argv[1]))
+          repository_root(profile, "probe")
+          PY
+          ); then
+            echo "invoking user unexpectedly crossed the service-only project boundary" >&2
+            exit 1
+          fi
+
+          (
+            cd "$CALLER_CWD"
+            cd /
+            sudo -u "$RUN_USER" env -i HOME=/tmp PATH=/usr/bin:/bin \
+              PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$STAGE_WORKER_ROOT" \
+              python3 - "$STAGE_PROFILE" <<'PY'
+          from pathlib import Path
+          import sys
+          from local_hand.paths import load_profile, repository_root
+          from local_hand.worker import _package_digest
+          profile = load_profile(Path(sys.argv[1]))
+          assert repository_root(profile, "probe")
+          assert len(_package_digest()) == 64
+          PY
+          )
+          printf '%s\n' 'LINUX_REPEAT_BOOTSTRAP_SMOKE_IDENTITY=PASS'
+      - name: Validate Windows bootstrap parses
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($path in @('tools/local_hand/bootstrap_windows.ps1', 'tools/local_hand/windows_acl.ps1')) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$null,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+          }
+      - name: Prove Windows PowerShell 5.1 is rejected explicitly
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $rejected = $false
+          try {
+            & .\tools\local_hand\bootstrap_windows.ps1 -ProfileSource probe.json -StateRoot probe-state -NodeId probe -RepositoryName probe -RepositoryPath probe
+          } catch {
+            if ($_.Exception.Message -notlike '*requires PowerShell 7 or newer*') { throw }
+            $rejected = $true
+          }
+          if (-not $rejected) { throw 'Windows PowerShell 5.1 was not rejected' }
+      - name: Execute PowerShell 7 startup contract without mutation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $rejected = $false
+          try {
+            & .\tools\local_hand\bootstrap_windows.ps1 -ProfileSource probe.json -StateRoot probe-state -NodeId probe -RepositoryName probe -RepositoryPath probe -ServiceAccount invalid
+          } catch {
+            if ($_.Exception.Message -notlike '*requires ServiceAccount=NT AUTHORITY\LOCAL SERVICE*') { throw }
+            $rejected = $true
+          }
+          if (-not $rejected) { throw 'PowerShell 7 startup contract did not execute' }
+      - name: Validate Windows exact ACL replacement
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:RUNNER_TEMP ("local-hand-acl-probe-" + [guid]::NewGuid().ToString("N"))
+          $probeFile = Join-Path $probeRoot 'owner-marker.json'
+          New-Item -ItemType Directory -Path $probeRoot | Out-Null
+          [IO.File]::WriteAllText($probeFile, '{}', (New-Object Text.UTF8Encoding($false)))
+          try {
+            $acl = Get-Acl -LiteralPath $probeRoot
+            $everyone = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
+            $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+            $unexpected = [System.Security.AccessControl.FileSystemAccessRule]::new(
+              $everyone,
+              [System.Security.AccessControl.FileSystemRights]::FullControl,
+              $inheritance,
+              [System.Security.AccessControl.PropagationFlags]::None,
+              [System.Security.AccessControl.AccessControlType]::Allow
+            )
+            [void]$acl.AddAccessRule($unexpected)
+            Set-Acl -LiteralPath $probeRoot -AclObject $acl
+
+            . (Resolve-Path 'tools/local_hand/windows_acl.ps1')
+            Set-LocalHandExactDirectoryAcl $probeRoot ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) $true
+            Set-LocalHandExactFileAcl $probeFile ([System.Security.AccessControl.FileSystemRights]::Read)
+
+            foreach ($path in @($probeRoot, $probeFile)) {
+              $actualAcl = Get-Acl -LiteralPath $path
+              $actualSids = @($actualAcl.Access | ForEach-Object {
+                $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+              })
+              if (-not $actualAcl.AreAccessRulesProtected -or $actualSids.Count -ne 3 -or $actualSids -contains 'S-1-1-0') {
+                throw "exact DACL probe retained unexpected ACEs: $path :: $($actualSids -join ',')"
+              }
+            }
+            Write-Output 'exact Windows directory/file DACL replacement and read-back verified'
+          } finally {
+            Remove-Item $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Prove exact command-scoped Git trust under Local Service
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:ProgramData ("LocalHand-Git-Trust-Probe-" + [guid]::NewGuid().ToString("N"))
+          $repoRoot = Join-Path $probeRoot 'mailbox'
+          $hooksRoot = Join-Path $probeRoot 'disabled-hooks'
+          $resultRoot = Join-Path $probeRoot 'result'
+          $unsafeLog = Join-Path $resultRoot 'unsafe.txt'
+          $safeLog = Join-Path $resultRoot 'safe.txt'
+          $summaryPath = Join-Path $resultRoot 'summary.txt'
+          $runnerPath = Join-Path $probeRoot 'probe.ps1'
+          $taskName = "LocalHand-Git-Trust-CI-" + [guid]::NewGuid().ToString("N")
+          $git = (Get-Command git -ErrorAction Stop).Source
+          function Quote-Ps([string]$value) { return "'" + $value.Replace("'", "''") + "'" }
+
+          New-Item -ItemType Directory -Path $repoRoot,$hooksRoot,$resultRoot | Out-Null
+          try {
+            & $git -C $repoRoot init -q
+            if ($LASTEXITCODE -ne 0) { throw 'failed to initialize Git ownership probe' }
+            & $git -C $repoRoot config user.name 'Local Hand CI'
+            & $git -C $repoRoot config user.email 'local-hand@example.invalid'
+            [IO.File]::WriteAllText((Join-Path $repoRoot 'probe.txt'), "probe\n", [Text.UTF8Encoding]::new($false))
+            & $git -C $repoRoot add probe.txt
+            & $git -C $repoRoot commit -qm base
+            if ($LASTEXITCODE -ne 0) { throw 'failed to commit Git ownership probe' }
+            $expectedHead = (& $git -C $repoRoot rev-parse HEAD | Out-String).Trim()
+
+            . (Resolve-Path 'tools/local_hand/windows_acl.ps1')
+            Set-LocalHandExactDirectoryAcl $probeRoot ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) $true
+            Set-LocalHandExactDirectoryAcl $repoRoot ([System.Security.AccessControl.FileSystemRights]::Modify) $true
+            Set-LocalHandExactDirectoryAcl $hooksRoot ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) $true
+            Set-LocalHandExactDirectoryAcl $resultRoot ([System.Security.AccessControl.FileSystemRights]::Modify) $true
+
+            $safeDirectory = $repoRoot.Replace('\','/')
+            $script = @(
+              '$ErrorActionPreference=''Continue'''
+              '$env:GIT_CONFIG_NOSYSTEM=''1'''
+              '$env:GIT_CONFIG_GLOBAL=''NUL'''
+              "& $(Quote-Ps $git) --no-pager -c $(Quote-Ps ('core.hooksPath=' + $hooksRoot)) -C $(Quote-Ps $repoRoot) rev-parse HEAD *>&1 | Out-File -LiteralPath $(Quote-Ps $unsafeLog) -Encoding utf8"
+              '$unsafeExit=$LASTEXITCODE'
+              "& $(Quote-Ps $git) --no-pager -c $(Quote-Ps ('safe.directory=' + $safeDirectory)) -c $(Quote-Ps ('core.hooksPath=' + $hooksRoot)) -C $(Quote-Ps $repoRoot) rev-parse HEAD *>&1 | Out-File -LiteralPath $(Quote-Ps $safeLog) -Encoding utf8"
+              '$safeExit=$LASTEXITCODE'
+              "@(`$unsafeExit,`$safeExit) | Set-Content -LiteralPath $(Quote-Ps $summaryPath) -Encoding utf8"
+              'if($unsafeExit -eq 0 -or $safeExit -ne 0){exit 1}'
+              'exit 0'
+            ) -join "`r`n"
+            [IO.File]::WriteAllText($runnerPath, $script, [Text.UTF8Encoding]::new($false))
+            Set-LocalHandExactFileAcl $runnerPath ([System.Security.AccessControl.FileSystemRights]::Read)
+
+            $action = New-ScheduledTaskAction -Execute (Get-Process -Id $PID).Path -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runnerPath`""
+            $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
+            $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
+            $principal = New-ScheduledTaskPrincipal -UserId 'LOCALSERVICE' -LogonType ServiceAccount -RunLevel Limited
+            Register-ScheduledTask -TaskPath '\' -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+            Start-ScheduledTask -TaskPath '\' -TaskName $taskName
+
+            $deadline = (Get-Date).AddSeconds(20)
+            do {
+              Start-Sleep -Milliseconds 250
+            } while (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf) -and (Get-Date) -lt $deadline)
+            if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
+              $taskInfo = Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName
+              throw "Local Service Git trust probe produced no result: $($taskInfo.LastTaskResult)"
+            }
+
+            $summary = @(Get-Content -LiteralPath $summaryPath)
+            $unsafeText = Get-Content -LiteralPath $unsafeLog -Raw
+            $safeText = (Get-Content -LiteralPath $safeLog -Raw).Trim()
+            if ($summary.Count -ne 2 -or [int]$summary[0] -eq 0 -or [int]$summary[1] -ne 0) {
+              throw "unexpected ownership probe exits: $($summary -join ',')"
+            }
+            if ($unsafeText -notlike '*detected dubious ownership*') {
+              throw "unscoped Git did not fail for the expected ownership reason: $unsafeText"
+            }
+            if ($safeText -ne $expectedHead) {
+              throw "exact safe.directory did not read the expected repository: $safeText"
+            }
+            Write-Output 'Local Service accepted only the exact command-scoped safe.directory'
+          } finally {
+            Stop-ScheduledTask -TaskPath '\' -TaskName $taskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskPath '\' -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+            Remove-Item $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Prove Local Service accepts runtime private-key ACL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Match the production parent-path trust boundary. LOCAL SERVICE cannot
+          # necessarily traverse GitHub runner-temporary parents such as D:\a\_temp.
+          $probeRoot = Join-Path $env:ProgramData ("LocalHand-Key-Probe-" + [guid]::NewGuid().ToString("N"))
+          $sourceRoot = Join-Path $env:RUNNER_TEMP ("local-hand-key-source-" + [guid]::NewGuid().ToString("N"))
+          $sourceKey = Join-Path $sourceRoot 'mailbox_ed25519'
+          $runtimeKey = Join-Path $probeRoot 'mailbox_id'
+          $resultRoot = Join-Path $probeRoot 'result'
+          $resultPath = Join-Path $resultRoot 'probe.txt'
+          $runnerPath = Join-Path $probeRoot 'probe.ps1'
+          $taskName = "LocalHand-Key-CI-" + [guid]::NewGuid().ToString("N")
+          New-Item -ItemType Directory -Path $sourceRoot, $probeRoot, $resultRoot | Out-Null
+          try {
+            & ssh-keygen -q -t ed25519 -N '' -f $sourceKey
+            if ($LASTEXITCODE -ne 0) { throw "could not generate provisioning key: $LASTEXITCODE" }
+            $public = (& ssh-keygen -y -f $sourceKey 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $public.StartsWith('ssh-ed25519 ')) {
+              throw 'provisioning key is not accepted under bootstrap identity'
+            }
+
+            Copy-Item $sourceKey $runtimeKey
+            . (Resolve-Path 'tools/local_hand/windows_acl.ps1')
+            Set-LocalHandExactDirectoryAcl $probeRoot ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) $true
+            Set-LocalHandExactDirectoryAcl $resultRoot ([System.Security.AccessControl.FileSystemRights]::Modify) $true
+            Set-LocalHandRuntimePrivateKeyAcl $runtimeKey
+            $runtimeOwner = (Get-Acl -LiteralPath $runtimeKey).Owner
+            $runtimeOwnerSid = [System.Security.Principal.NTAccount]::new($runtimeOwner).Translate([System.Security.Principal.SecurityIdentifier]).Value
+            if ($runtimeOwnerSid -ne 'S-1-5-32-544') { throw "runtime key owner is not Administrators: $runtimeOwnerSid" }
+
+            $probeScript = @"
+          `$ErrorActionPreference = 'Stop'
+          try {
+            `$output = @(& '$((Get-Command ssh-keygen).Source)' -y -f '$runtimeKey' 2>&1)
+            `$rc = `$LASTEXITCODE
+          } catch {
+            `$output = @(`$_.Exception.ToString())
+            `$rc = 97
+          }
+          try {
+            [IO.File]::WriteAllText('$resultPath', (`$rc.ToString() + [Environment]::NewLine + (`$output -join [Environment]::NewLine)), [Text.UTF8Encoding]::new(`$false))
+          } catch {
+            exit 98
+          }
+          exit `$rc
+          "@
+            [IO.File]::WriteAllText($runnerPath, $probeScript, [Text.UTF8Encoding]::new($false))
+            Get-Content -LiteralPath $runnerPath | Write-Output
+            Set-LocalHandExactFileAcl $runnerPath ([System.Security.AccessControl.FileSystemRights]::Read)
+            $powerShell = (Get-Process -Id $PID).Path
+            $action = New-ScheduledTaskAction -Execute $powerShell -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runnerPath`""
+            $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
+            $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
+            # Use the ScheduledTasks module's documented service-account ID.
+            $principal = New-ScheduledTaskPrincipal -UserId 'LOCALSERVICE' -LogonType ServiceAccount -RunLevel Limited
+            & wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true
+            Register-ScheduledTask -TaskPath '\' -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+            Start-ScheduledTask -TaskPath '\' -TaskName $taskName
+            $deadline = (Get-Date).AddSeconds(20)
+            do {
+              Start-Sleep -Milliseconds 250
+            } while (-not (Test-Path -LiteralPath $resultPath -PathType Leaf) -and (Get-Date) -lt $deadline)
+            if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+              $task = Get-ScheduledTask -TaskPath '\' -TaskName $taskName
+              $taskInfo = Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName
+              $task | Format-List * | Out-String | Write-Output
+              $taskInfo | Format-List * | Out-String | Write-Output
+              Export-ScheduledTask -TaskPath '\' -TaskName $taskName | Write-Output
+              & wevtutil qe Microsoft-Windows-TaskScheduler/Operational /c:30 /rd:true /f:text | Write-Output
+              throw "Local Service private-key probe produced no result: state=$($task.State), lastResult=$($taskInfo.LastTaskResult)"
+            }
+            $result = @(Get-Content -LiteralPath $resultPath)
+            if ($result.Count -lt 2 -or $result[0] -ne '0' -or -not $result[1].StartsWith('ssh-ed25519 ')) {
+              throw "Local Service rejected runtime private-key ACL: $($result -join ' | ')"
+            }
+            Write-Output 'Local Service accepted exact runtime private-key owner/DACL'
+          } finally {
+            Stop-ScheduledTask -TaskPath '\' -TaskName $taskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskPath '\' -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+            Remove-Item $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $sourceRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Validate Windows runner propagates native worker exit code
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:RUNNER_TEMP ("local-hand-runner-probe-" + [guid]::NewGuid().ToString("N"))
+          New-Item -ItemType Directory -Path $probeRoot | Out-Null
+          $fakePython = Join-Path $probeRoot 'fake-python.cmd'
+          $runnerPath = Join-Path $probeRoot 'generated-runner.ps1'
+          [IO.File]::WriteAllText($fakePython, "@echo off`r`nexit /b 37`r`n", (New-Object Text.UTF8Encoding($false)))
+          $oldPythonPath = $env:PYTHONPATH
+          try {
+            $env:PYTHONPATH = (Resolve-Path 'tools').Path
+            & python -m local_hand.windows_runner `
+              --output $runnerPath `
+              --home (Join-Path $probeRoot 'home') `
+              --worker-root (Join-Path $probeRoot 'worker') `
+              --profile (Join-Path $probeRoot 'node-profile.json') `
+              --mailbox (Join-Path $probeRoot 'mailbox') `
+              --branch 'fixture/mailbox-v1' `
+              --runtime (Join-Path $probeRoot 'runtime') `
+              --python $fakePython `
+              --git (Get-Command git).Source `
+              --ssh (Get-Command ssh).Source `
+              --commit ('0' * 40) `
+              --install-instance-id ([guid]::NewGuid().ToString()) `
+              --install-record (Join-Path $probeRoot 'install-record.json') `
+              --mailbox-uses-ssh '1' `
+              --mailbox-key (Join-Path $probeRoot 'mailbox_id') `
+              --known-hosts (Join-Path $probeRoot 'known_hosts')
+            if ($LASTEXITCODE -ne 0) {
+              throw "production Windows runner renderer failed: $LASTEXITCODE"
+            }
+          } finally {
+            if ($null -eq $oldPythonPath) {
+              Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+            } else {
+              $env:PYTHONPATH = $oldPythonPath
+            }
+          }
+          $generated = Get-Content -Raw $runnerPath
+          foreach ($required in @('$workerExitCode=$LASTEXITCODE', 'exit [int]$workerExitCode')) {
+            if (-not $generated.Contains($required)) {
+              throw "production-generated runner is missing exit propagation: $required"
+            }
+          }
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            $runnerPath,
+            [ref]$null,
+            [ref]$parseErrors
+          )
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+          $powerShell = (Get-Process -Id $PID).Path
+          $startInfo = [Diagnostics.ProcessStartInfo]::new()
+          $startInfo.FileName = $powerShell
+          $startInfo.UseShellExecute = $false
+          foreach ($argument in @('-NoProfile', '-NonInteractive', '-File', $runnerPath)) {
+            [void]$startInfo.ArgumentList.Add($argument)
+          }
+          $process = [Diagnostics.Process]::Start($startInfo)
+          $process.WaitForExit()
+          $observed = $process.ExitCode
+          if ($observed -ne 37) {
+            throw "production-generated runner expected exit 37, observed $observed"
+          }
+          Write-Output "production-generated runner propagated expected code: $observed"
+
+          $taskName = "LocalHand-CI-" + [guid]::NewGuid().ToString("N")
+          try {
+            $taskAction = New-ScheduledTaskAction -Execute $powerShell -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runnerPath`""
+            $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
+            $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
+            $taskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+            Register-ScheduledTask -TaskPath '\' -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal -Force | Out-Null
+            Start-ScheduledTask -TaskPath '\' -TaskName $taskName
+            $deadline = (Get-Date).AddSeconds(20)
+            $taskResult = $null
+            do {
+              Start-Sleep -Milliseconds 250
+              $taskResult = (Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName).LastTaskResult
+            } while ($taskResult -ne 37 -and (Get-Date) -lt $deadline)
+            if ($taskResult -ne 37) {
+              throw "Scheduled Task did not observe production runner exit 37; observed $taskResult"
+            }
+            Start-Sleep -Seconds 3
+            if ((Get-ScheduledTask -TaskPath '\' -TaskName $taskName).State -eq 'Running') {
+              throw 'failed runner remained Running beyond bootstrap stabilization window'
+            }
+            Write-Output 'Scheduled Task observed exit 37 and bootstrap health would reject the stopped worker'
+          } finally {
+            Stop-ScheduledTask -TaskPath '\' -TaskName $taskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskPath '\' -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+          }
+          exit 0
+      - name: Validate Windows Junction roots fail closed
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:RUNNER_TEMP ("local-hand-junction-probe-" + [guid]::NewGuid().ToString("N"))
+          $realRoot = Join-Path $probeRoot 'real'
+          $junctionRoot = Join-Path $probeRoot 'junction'
+          New-Item -ItemType Directory -Path $realRoot -Force | Out-Null
+          New-Item -ItemType Junction -Path $junctionRoot -Target $realRoot | Out-Null
+
+          $startInfo = [Diagnostics.ProcessStartInfo]::new()
+          $startInfo.FileName = (Get-Command python).Source
+          $startInfo.UseShellExecute = $false
+          $startInfo.RedirectStandardOutput = $true
+          $startInfo.RedirectStandardError = $true
+          $startInfo.Environment['PYTHONPATH'] = (Resolve-Path 'tools').Path
+          foreach ($argument in @(
+            '-m', 'local_hand.bootstrap_safety', 'validate-roots',
+            '--state-root', (Join-Path $junctionRoot 'state'),
+            '--projects-root', (Join-Path $junctionRoot 'state\projects')
+          )) {
+            [void]$startInfo.ArgumentList.Add($argument)
+          }
+          $process = [Diagnostics.Process]::Start($startInfo)
+          $standardOutput = $process.StandardOutput.ReadToEnd()
+          $standardError = $process.StandardError.ReadToEnd()
+          $process.WaitForExit()
+          $combined = $standardOutput + $standardError
+          if ($process.ExitCode -ne 2 -or -not $combined.Contains('bootstrap_root_reparse_rejected')) {
+            throw "Junction root was not rejected as expected; exit=$($process.ExitCode) output=$combined"
+          }
+          Write-Output 'Windows Junction root rejected with bootstrap_root_reparse_rejected'
+          exit 0
+      - name: Preserve isolated acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: local-hand-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.LOCAL_HAND_VERIFY_ROOT }}/dist/*.whl
+            ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/commands/
+            ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/report.json
+          if-no-files-found: warn
