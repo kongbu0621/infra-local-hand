@@ -611,6 +611,58 @@ with mock.patch.object(os,'lstat',side_effect=lookup):
             lookup_rejected(first_marker,'controller',first_wait)
             assert json.loads(run(connect+first_wait))==conflict
             checks.append({'case':'installed controller does not accept success through an unreadable conflict','status':'PASS'})
+            persistence_code='''import errno,os,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import worker
+task_id,stage,phase=sys.argv[1:4];original=worker.write_json_atomic
+def injected(path,value,**kwargs):
+ selected=path.name==task_id+'.json' and ((stage=='intent' and path.parent.name=='receipts' and 'result' not in value) or (stage=='outbox' and path.parent.name=='outbox') or (stage=='receipt' and path.parent.name=='receipts' and 'result' in value))
+ if selected:
+  owner,method=(worker,'_fsync_parent') if phase=='after-replace' else (os,'write')
+  with mock.patch.object(owner,method,side_effect=OSError(errno.ENOSPC,'synthetic persistence failure')):
+   return original(path,value,**kwargs)
+ return original(path,value,**kwargs)
+with mock.patch.object(worker,'write_json_atomic',side_effect=injected):
+ raise SystemExit(worker.main(sys.argv[4:]))
+'''
+            persistence_cases=[('intent','before-replace'),('outbox','before-replace'),
+                ('receipt','before-replace'),('outbox','after-replace'),('receipt','after-replace')]
+            persistence_evidence=[]
+            for index,(stage,phase) in enumerate(persistence_cases):
+                task_id=f'LH{9600+index}'
+                relative=f'persistence-{task_id}.txt';target=project/relative;target.write_bytes(b'before\n')
+                task=build_task(profile.node_id,'fs.write_text_cas',{'repository':'demo','relative_path':relative,
+                    'expected_sha256':hashlib.sha256(b'before\n').hexdigest(),'content':'after\n'},task_id=task_id)
+                task_path=save(f'persistence-{task_id}-task.json',task)
+                run(connect+['submit']+common+['--task-file',task_path])
+                output=run([sys.executable,'-I','-c',persistence_code,task_id,stage,phase]+worker_cmd[4:],expected=3)
+                error=(logs/f'{len(records):03}'/'stderr.log').read_text()
+                expected_code='local_state_durability_unconfirmed' if phase=='after-replace' else 'local_state_write_failed'
+                assert not output and expected_code in error and 'errno=28' in error
+                receipt=state/'receipts'/f'{task_id}.json';pending=state/'outbox'/f'{task_id}.json'
+                assert target.read_bytes()==(b'before\n' if stage=='intent' else b'after\n')
+                assert receipt.exists()==(stage!='intent')
+                retained=stage=='receipt' or phase=='after-replace'
+                assert pending.exists()==retained
+                item={'task_id':task_id,'stage':stage,'phase':phase,'error_code':expected_code,
+                    'failed_command':len(records),'file_after_failure_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),
+                    'receipt_after_failure':json.loads(receipt.read_text()) if receipt.exists() else None,
+                    'outbox_after_failure':json.loads(pending.read_text()) if pending.exists() else None}
+                if retained:assert item['outbox_after_failure']['status']=='succeeded'
+                if stage!='intent':target.write_bytes(b'recovery-sentinel\n')
+                run(worker_cmd)
+                result=json.loads(run(connect+['wait']+common+['--task-file',task_path,
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                expected_status='indeterminate' if stage=='outbox' and phase=='before-replace' else 'succeeded'
+                assert result['status']==expected_status
+                if expected_status=='indeterminate':assert result['error_code']=='outcome_unknown'
+                assert json.loads(receipt.read_text())['result']==result and not pending.exists()
+                assert target.read_bytes()==(b'after\n' if stage=='intent' else b'recovery-sentinel\n')
+                item.update(result=result,file_after_recovery_sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+                persistence_evidence.append(item)
+                checks.append({'case':f'installed state persistence recovery {stage} {phase}','status':'PASS'})
+            save('persistence-recovery-evidence.json',persistence_evidence)
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

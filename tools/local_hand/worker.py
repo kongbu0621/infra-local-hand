@@ -93,22 +93,39 @@ def _json_bytes(value: Any, max_bytes: int | None = None, code: str = "json_too_
 
 def write_json_atomic(path: Path, value: Any, *, max_bytes: int | None = None, code: str = "json_too_large") -> None:
     data = _json_bytes(value, max_bytes, code)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.local-hand-", dir=str(path.parent))
-    temp = Path(temp_name)
+    fd = -1
+    temp: Path | None = None
+    replaced = False
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.local-hand-", dir=str(path.parent))
+        temp = Path(temp_name)
         view = memoryview(data)
         written = 0
         while written < len(view):
-            written += os.write(fd, view[written:])
+            count = os.write(fd, view[written:])
+            if count <= 0:
+                raise OSError("local state write made no progress")
+            written += count
         os.fsync(fd)
-        os.close(fd); fd = -1
+        # A close error may still have released the descriptor. Relinquish
+        # ownership before closing so cleanup cannot close a reused number.
+        closing_fd, fd = fd, -1
+        os.close(closing_fd)
         os.replace(temp, path)
+        replaced = True
         _fsync_parent(path)
+    except OSError as exc:
+        raise LocalHandError(
+            "local_state_durability_unconfirmed" if replaced else "local_state_write_failed",
+            f"cannot confirm durable local state: {path.name}; errno={exc.errno}",
+            "indeterminate",
+        ) from exc
     finally:
         if fd >= 0:
-            os.close(fd)
-        if temp.exists():
+            try: os.close(fd)
+            except OSError: pass
+        if temp is not None:
             try: temp.unlink()
             except OSError: pass
 

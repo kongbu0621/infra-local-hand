@@ -484,9 +484,12 @@ class LocalHandCoreTests(unittest.TestCase):
                 raise OSError('fixture: directory persistence unavailable')
             return real_fsync(fd)
         with mock.patch.object(worker, 'publish_outbox'), mock.patch.object(worker, 'sync_mailbox'), mock.patch.object(worker.os, 'fsync', side_effect=fail_directory), mock.patch.object(worker, 'execute_task') as execute:
-            with self.assertRaises(OSError):
+            with self.assertRaises(LocalHandError) as raised:
                 worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, self.runtime)
             execute.assert_not_called()
+        self.assertEqual(raised.exception.code, 'local_state_durability_unconfirmed')
+        self.assertEqual(raised.exception.status, 'indeterminate')
+        self.assertEqual(json.loads((self.runtime/'receipts/LH8803.json').read_text())['source'], 'local_execution_started')
 
     def test_worker_startup_rejects_invalid_absolute_runtime_binding_before_lock(self) -> None:
         state = self.root / "startup-state"
