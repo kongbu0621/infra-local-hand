@@ -1,5 +1,7 @@
 # 首次公开发布复核
 
+Latest S1 repair: see [S1_CONFLICT_CHAIN_REVIEW.md](S1_CONFLICT_CHAIN_REVIEW.md) for candidate `8bc59ab653a949c637362879fdbd318cd51b4052`, Owner-directed chain-only validation, and its evidence. Earlier full-suite/CI results below belong to their original commits.
+
 日期：2026-09-21。复核代码及文档交接基线：`3a8591cf8d175d7ab157aca68ba5bc488c51733a`。随后仅增加本状态记录，不改变冻结产品候选。
 
 ## 发布与来源
