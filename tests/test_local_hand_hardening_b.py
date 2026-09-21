@@ -258,7 +258,11 @@ class LocalHandHardeningBTests(unittest.TestCase):
 
     def test_malformed_local_outbox_is_quarantined_not_published(self) -> None:
         _,mailbox=self._init_mailbox(); outbox=self.runtime/"out"; outbox.mkdir(parents=True); bad={"schema_version":"local-hand-result/v1","task_id":"../../bad","task_digest":"a"*64,"target_node":"test-node","action":"node.status","status":"succeeded"}; (outbox/"LH0204.json").write_text(json.dumps(bad))
-        worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse((outbox/"LH0204.json").exists()); self.assertEqual(len(list((outbox.parent/"quarantine").glob("LH0204.json.*.invalid"))),1)
+        worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse((outbox/"LH0204.json").exists())
+        second=dict(bad);second["action"]="git.status";(outbox/"LH0204.json").write_text(json.dumps(second))
+        worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox)
+        quarantined=list((outbox.parent/"quarantine").glob("LH0204.json.*.invalid"))
+        self.assertEqual(len(quarantined),2);self.assertEqual({path.read_text() for path in quarantined},{json.dumps(bad),json.dumps(second)})
 
     def test_validation_output_is_resource_bounded_while_drained(self) -> None:
         old=validate.MAX_OUTPUT_BYTES; validate.MAX_OUTPUT_BYTES=1024

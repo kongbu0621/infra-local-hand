@@ -34,6 +34,24 @@ directory fsync failures now propagate rather than being silently ignored.
 This is deliberately conservative, including a crash before the side effect.
 It does not claim filesystem/power-loss certification or Windows durability.
 
+## GX10 recheck correction
+
+Fault injection against the original `b763bd6714721d22278086db559fa3f6684aad7b`
+candidate found that CAS could report success after directory synchronization
+failed, or report failed/rejected when post-replacement read-back failed. Once
+replacement has occurred, these failures now return indeterminate; persisted
+receipts retain that result and prevent duplicate execution. Pre-write rejection
+and the existing read-back mismatch behavior remain unchanged.
+
+The recheck also found that worker Task/Result ingress accepted envelope fields
+that the controller rejected. Worker Tasks now enforce the existing five-field
+contract after target filtering. Both sides share the existing fourteen-field
+Result shape and status/error consistency checks. This corrects implementation
+of the approved v1 contract; it adds no action or permission and does not extend
+the deferred strict-JSON, nested-root or multi-controller scope. The original
+candidate and the corrected commit require separate evidence and fresh build
+and runtime environments. Machine evidence remains outside this repository.
+
 ## Configuration and artifact identity
 
 Worker, controller and both bootstraps use the shared strict JSON admission
@@ -80,3 +98,32 @@ Publication was separately authorized for exact candidate b763bd6 and its
 governance excerpt; see governance/PUBLICATION_OWNER_DECISION.md. The Owner
 decided not to add a license. Disclosure does not approve equivalence/adoption. S2 live
 cutover and S3 artifact-ledger A2 remain outside this implementation authority.
+
+## GX10 second fault/contract review
+
+The second review found two additional fail-open edges. CAS now requires the
+replacement file's original POSIX mode to be applied and verified before the
+atomic replace, and its final file sync occurs after that metadata change.
+Controller `wait`/`call` now require an explicit three-field expected
+provenance policy before call submission or result acceptance; the CLI no
+longer treats the provenance policy as optional.
+
+## GX10 build and recovery provenance review
+
+A later adversarial build probe demonstrated that `git status` alone can call
+a checkout clean while an index `skip-worktree` bit hides a changed build
+configuration file. Build admission now hashes every tracked regular worktree
+file as a Git blob and compares it with the exact HEAD tree, in addition to the
+existing status and staged-package checks. Consequently, build-controlling
+files and package payload are both bound to the commit stamped into the wheel.
+
+Expected-provenance policy files now use the same strict JSON decoder as other
+new deployment configuration, so duplicate keys and non-finite constants fail
+closed. This does not change the explicitly deferred Task/Result v1 parser.
+
+Recovery now completes an execution-intent receipt from an already validated,
+digest-bound canonical remote result. If a durable local result and the remote
+result have the same task digest but different complete content, the worker
+keeps the local receipt, quarantines any local outbox original, and emits a
+conflict record with hashes of both results. It does not replay the action or
+overwrite either side's canonical evidence.

@@ -31,8 +31,8 @@ from .provenance import core_digest, implementation_commit
 from .installation import verify_record
 from .protocol import (
     CAPABILITIES, MAX_RESULT_JSON_BYTES, MAX_TASK_ID_DIGITS, MAX_TASK_JSON_BYTES,
-    RESULT_SCHEMA, RESULT_STATUSES, TASK_SCHEMA,
-    TASK_ID_RE, LocalHandError, conflict_filename, result_error, result_success, task_digest,
+    RESULT_SCHEMA, RESULT_STATUSES, TASK_SCHEMA, TASK_FIELDS, validate_result_contract,
+    TASK_ID_RE, LocalHandError, canonical_json, conflict_filename, result_error, result_success, task_digest,
 )
 from .runtime_lock import worker_instance_lock
 
@@ -136,6 +136,8 @@ def _validate_task_contract(task: dict[str, Any]) -> None:
     if not isinstance(params, dict):
         raise LocalHandError("invalid_params", "params must be an object")
     _validate_action_params(action, params)
+    if set(task) != TASK_FIELDS:
+        raise LocalHandError("invalid_task", "Task v1 requires exactly schema_version, task_id, target_node, action and params")
 
 
 def _validate_action_params(action: str, params: dict[str, Any]) -> None:
@@ -165,6 +167,7 @@ def validate_task(task: Any) -> dict[str, Any]:
 
 
 def _validate_result_shape(value: Any) -> dict[str, Any]:
+    validate_result_contract(value)
     if not isinstance(value, dict) or value.get("schema_version") != RESULT_SCHEMA:
         raise LocalHandError("result_invalid", "result schema/object invalid", "indeterminate")
     task_id, digest = value.get("task_id"), value.get("task_digest")
@@ -340,14 +343,33 @@ def _route_outbox_target(mailbox: Path, result_file: Path) -> Path:
 
 def _quarantine_local_outbox_file(outbox: Path, result_file: Path, reason: str) -> None:
     q = outbox.parent / "quarantine"; q.mkdir(parents=True, exist_ok=True)
-    dest = q / f"{result_file.name}.{hashlib.sha256(reason.encode()).hexdigest()[:12]}.invalid"
+    stem = f"{result_file.name}.{hashlib.sha256(reason.encode()).hexdigest()[:12]}"
+    dest = q / f"{stem}.invalid"
+    index = 1
+    while target_lexists(dest):
+        dest = q / f"{stem}.{index}.invalid"
+        index += 1
+    try: os.replace(result_file, dest); _fsync_parent(dest)
+    except OSError as exc: raise LocalHandError("local_outbox_quarantine_failed", f"cannot quarantine {result_file.name}", "indeterminate") from exc
+
+
+def _result_digest(result: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(result).encode("utf-8")).hexdigest()
+
+
+def _quarantine_local_result_conflict(outbox: Path, result_file: Path, local: dict[str, Any], remote: dict[str, Any]) -> None:
+    q = outbox.parent / "quarantine"; q.mkdir(parents=True, exist_ok=True)
+    dest = q / f"{result_file.name}.{_result_digest(local)}.{_result_digest(remote)}.conflict"
     try: os.replace(result_file, dest); _fsync_parent(dest)
     except OSError as exc: raise LocalHandError("local_outbox_quarantine_failed", f"cannot quarantine {result_file.name}", "indeterminate") from exc
 
 
 def _publish_conflict_from_collision(outbox: Path, local: dict[str, Any], remote: dict[str, Any]) -> None:
+    digest_collision = remote["task_digest"] != local["task_digest"]
+    code = "remote_result_digest_conflict" if digest_collision else "remote_result_content_conflict"
+    label = "digest" if digest_collision else "content"
     conflict = dict(local)
-    conflict.update({"status":"indeterminate","error_code":"remote_result_digest_conflict","error":f"remote result digest conflict for {local['task_id']}","details":{"local_task_digest":local.get("task_digest"),"remote_task_digest":remote.get("task_digest"),"local_result_status":local.get("status"),"remote_result_status":remote.get("status")}})
+    conflict.update({"status":"indeterminate","error_code":code,"error":f"remote result {label} conflict for {local['task_id']}","details":{"local_task_digest":local.get("task_digest"),"remote_task_digest":remote.get("task_digest"),"local_result_sha256":_result_digest(local),"remote_result_sha256":_result_digest(remote),"local_result_status":local.get("status"),"remote_result_status":remote.get("status")}})
     _validate_result_shape(conflict)
     write_json_atomic(outbox / _conflict_filename(local["task_id"], local["task_digest"], str(remote.get("task_digest") or "")), conflict, max_bytes=MAX_RESULT_JSON_BYTES, code="result_too_large")
 
@@ -366,11 +388,22 @@ def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
         for attempt in range(1, MAILBOX_PUSH_ATTEMPTS + 1):
             sync_mailbox(mailbox, branch); target = _route_outbox_target(mailbox, result_file); validate_control_target(mailbox, target)
             if target_lexists(target):
-                if _is_conflict_outbox(result_file): result_file.unlink(); break
+                if _is_conflict_outbox(result_file):
+                    local_bytes = read_regular_file_bounded(result_file, MAX_RESULT_JSON_BYTES, "local_outbox_invalid")
+                    remote_bytes = read_regular_file_bounded(target, MAX_RESULT_JSON_BYTES, "remote_result_invalid")
+                    if local_bytes == remote_bytes: result_file.unlink()
+                    else: _quarantine_local_outbox_file(outbox, result_file, "remote conflict record differs")
+                    break
                 try: remote = _load_remote_result(target, result_file.stem, local.get("action"), local.get("target_node"))
-                except LocalHandError as exc: _publish_conflict_from_invalid_remote(outbox, local, exc); result_file.unlink(); break
-                if remote["task_digest"] != local["task_digest"]: _publish_conflict_from_collision(outbox, local, remote)
-                result_file.unlink(); break
+                except LocalHandError as exc:
+                    _publish_conflict_from_invalid_remote(outbox, local, exc)
+                    _quarantine_local_outbox_file(outbox, result_file, "canonical remote result is invalid")
+                    break
+                if remote["task_digest"] != local["task_digest"] or _result_digest(remote) != _result_digest(local):
+                    _publish_conflict_from_collision(outbox, local, remote)
+                    _quarantine_local_result_conflict(outbox, result_file, local, remote)
+                else: result_file.unlink()
+                break
             data = read_regular_file_bounded(result_file, MAX_RESULT_JSON_BYTES, "local_outbox_invalid")
             atomic_create_control_file(mailbox, target, data)
             rel = target.relative_to(mailbox).as_posix()
@@ -448,7 +481,24 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
                 _quarantine_task_conflict(state_root=state_root,outbox=outbox,task=task,profile=profile,code="local_receipt_invalid",message="durable local receipt is malformed/invalid",observed_digest=None,status="indeterminate",extra_details={"receipt_validation_error":exc.message}); publish_outbox(mailbox,branch,outbox); continue
             if target_lexists(remote_result):
                 existing = _load_remote_or_quarantine(remote_result=remote_result,task=task,profile=profile,state_root=state_root,outbox=outbox)
-                if existing is None: publish_outbox(mailbox,branch,outbox)
+                if existing is None:
+                    publish_outbox(mailbox,branch,outbox)
+                elif receipt.get("result") is None:
+                    # A crash can leave only the pre-execution intent while the
+                    # canonical result was published. Complete the local audit
+                    # record from that already digest-bound remote result.
+                    write_json_atomic(receipt_file,{"task_id":task["task_id"],"task_digest":digest,
+                                      "source":"remote_result_recovery","result":existing},
+                                      max_bytes=MAX_RECEIPT_JSON_BYTES,code="receipt_too_large")
+                elif _result_digest(receipt["result"]) != _result_digest(existing):
+                    _quarantine_task_conflict(state_root=state_root,outbox=outbox,task=task,profile=profile,
+                                              code="remote_result_content_conflict",
+                                              message="remote result content differs from durable local receipt",
+                                              observed_digest=existing["task_digest"],status="indeterminate",
+                                              extra_details={"local_result_sha256":_result_digest(receipt["result"]),
+                                                             "remote_result_sha256":_result_digest(existing),
+                                                             "canonical_result_preserved":True})
+                    publish_outbox(mailbox,branch,outbox)
                 continue
             saved = receipt.get("result")
             if isinstance(saved, dict):

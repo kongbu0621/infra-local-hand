@@ -689,6 +689,25 @@ class LocalHandCoreTests(unittest.TestCase):
         self.assertEqual(conflict["status"], "indeterminate")
         self.assertEqual(conflict["error_code"], "remote_result_digest_conflict")
 
+    def test_publish_outbox_same_digest_content_conflict_preserves_local_result(self) -> None:
+        seed, mailbox = self._init_mailbox()
+        task = self.task("node.status", {}, task_id="LH0105")
+        remote_result = worker.result_success(task,"test-node",{"source":"remote"},worker.build_provenance(self.profile))
+        self._mailbox_commit(seed,{"_executor_spike/results/LH0105.json":remote_result},"remote result")
+        worker.sync_mailbox(mailbox,MAILBOX_BRANCH)
+        outbox=self.runtime/"publish-content-collision-outbox"
+        local_result=worker.result_success(task,"test-node",{"source":"local"},worker.build_provenance(self.profile))
+        worker.write_json_atomic(outbox/"LH0105.json",local_result)
+        worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox)
+        self.assertFalse((outbox/"LH0105.json").exists())
+        quarantined=list((outbox.parent/"quarantine").glob("LH0105.json.*.conflict"))
+        self.assertEqual(len(quarantined),1)
+        self.assertEqual(json.loads(quarantined[0].read_text()),local_result)
+        conflict_path=outbox/worker._conflict_filename("LH0105",task_digest(task),task_digest(task))
+        conflict=json.loads(conflict_path.read_text())
+        self.assertEqual(conflict["error_code"],"remote_result_content_conflict")
+        self.assertNotEqual(conflict["details"]["local_result_sha256"],conflict["details"]["remote_result_sha256"])
+
 
 if __name__ == "__main__":
     unittest.main()

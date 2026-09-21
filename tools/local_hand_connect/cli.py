@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from local_hand.bounded_io import read_regular_file_bounded
-from local_hand.config import load_transport
+from local_hand.config import load_transport, strict_json
 from local_hand.protocol import MAX_TASK_JSON_BYTES, LocalHandError
 
 from .controller import (
@@ -38,13 +38,14 @@ def _expected_provenance(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
     try:
-        value = json.loads(read_regular_file_bounded(path, 16 * 1024, "controller_provenance_policy_invalid").decode("utf-8"))
-    except LocalHandError:
-        raise
-    except Exception as exc:
+        raw = read_regular_file_bounded(path, 16 * 1024, "controller_provenance_policy_invalid")
+        value = strict_json(raw)
+    except LocalHandError as exc:
+        if exc.code == "controller_provenance_policy_invalid":
+            raise
         raise LocalHandError(
             "controller_provenance_policy_invalid",
-            "expected provenance file is not valid UTF-8 JSON",
+            "expected provenance file must be strict UTF-8 JSON",
         ) from exc
     if not isinstance(value, dict):
         raise LocalHandError("controller_provenance_policy_invalid", "expected provenance file must contain an object")
@@ -104,7 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
         if name in ("wait", "call"):
             command.add_argument("--timeout-seconds", type=float, default=120.0)
             command.add_argument("--poll-seconds", type=float, default=2.0)
-            command.add_argument("--expected-provenance-file", type=Path)
+            command.add_argument("--expected-provenance-file", type=Path, required=True)
     return parser
 
 

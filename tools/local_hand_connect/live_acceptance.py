@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from local_hand.bounded_io import read_regular_file_bounded
-from local_hand.config import load_transport
+from local_hand.config import load_transport, strict_json
 from local_hand.protocol import LocalHandError
 
 from .controller import (
@@ -411,11 +411,14 @@ def _load_expected_provenance(path: Path) -> dict[str, Any]:
             16 * 1024,
             "controller_provenance_policy_invalid",
         )
-        value = json.loads(raw.decode("utf-8"))
-    except LocalHandError:
-        raise
-    except Exception as exc:
-        raise LocalHandError("controller_provenance_policy_invalid", f"cannot read expected provenance: {exc}") from exc
+        value = strict_json(raw)
+    except LocalHandError as exc:
+        if exc.code == "controller_provenance_policy_invalid":
+            raise
+        raise LocalHandError(
+            "controller_provenance_policy_invalid",
+            "expected provenance file must be strict UTF-8 JSON",
+        ) from exc
     if not isinstance(value, dict):
         raise LocalHandError("controller_provenance_policy_invalid", "expected provenance must be an object")
     return validate_expected_provenance(value)

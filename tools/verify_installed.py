@@ -200,7 +200,8 @@ def main():
             checks.append({'case':'restart and duplicate task do not replay CAS','status':'PASS'})
             wrong=save('wrong-target.json',build_task('other-node','node.status',{},task_id='LH9998'))
             run(connect+['submit']+common+['--task-file',wrong]);run(worker_cmd)
-            run(connect+['wait']+common+['--task-file',wrong,'--timeout-seconds','0'],expected=3)
+            run(connect+['wait']+common+['--task-file',wrong,'--timeout-seconds','0',
+                                        '--expected-provenance-file',expected_path],expected=3)
             assert not (state/'receipts'/'LH9998.json').exists()
             checks.append({'case':'wrong target ignored; timeout remains indeterminate','status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')

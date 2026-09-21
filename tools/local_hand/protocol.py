@@ -21,6 +21,12 @@ MAX_TEXT_BYTES = 1024 * 1024
 MAX_TASK_JSON_BYTES = 8 * 1024 * 1024
 MAX_RESULT_JSON_BYTES = 8 * 1024 * 1024
 RESULT_STATUSES = frozenset({"succeeded", "failed", "rejected", "stale", "indeterminate"})
+TASK_FIELDS = frozenset({"schema_version", "task_id", "target_node", "action", "params"})
+RESULT_FIELDS = frozenset({
+    "schema_version", "task_id", "task_digest", "target_node", "node_id", "action",
+    "worker_version", "implementation_commit", "package_digest", "profile_digest",
+    "status", "details", "error_code", "error",
+})
 
 CAPABILITIES = (
     "node.status",
@@ -42,6 +48,21 @@ class LocalHandError(RuntimeError):
 
     def __str__(self) -> str:
         return self.message
+
+
+def validate_result_contract(value: Any) -> None:
+    """The same exact Result v1 shape applies at worker and controller ingress."""
+    if not isinstance(value, dict) or set(value) != RESULT_FIELDS or not isinstance(value.get("details"), dict):
+        raise LocalHandError("result_invalid", "Result v1 requires the exact envelope and structured details", "indeterminate")
+    status = value["status"]
+    if not isinstance(status, str) or status not in RESULT_STATUSES:
+        raise LocalHandError("result_invalid", "Result v1 status invalid", "indeterminate")
+    if status == "succeeded":
+        valid_error = value["error_code"] is None and value["error"] is None
+    else:
+        valid_error = all(isinstance(value[key], str) and bool(value[key]) for key in ("error_code", "error"))
+    if not valid_error:
+        raise LocalHandError("result_invalid", "Result v1 status/error fields are inconsistent", "indeterminate")
 
 
 def conflict_filename(digest: str) -> str:

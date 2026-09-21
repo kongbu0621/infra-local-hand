@@ -24,6 +24,11 @@ from local_hand_connect.cli import main as connect_main
 @unittest.skipUnless(shutil.which("git") and shutil.which("ssh"), "Git and SSH executables required")
 class LocalHandConnectTests(unittest.TestCase):
     branch = "fixture/mailbox-v1"
+    expected_provenance = {
+        "implementation_commit": "a" * 40,
+        "package_digest": "b" * 64,
+        "profile_digest": "c" * 64,
+    }
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -198,6 +203,7 @@ class LocalHandConnectTests(unittest.TestCase):
                     task,
                     timeout_seconds=1e300,
                     poll_seconds=1e300,
+                    expected_provenance=self.expected_provenance,
                 )
         self.assertEqual(ctx.exception.code, "test_stop")
         sleep.assert_called_once_with(controller.MAX_SLEEP_SLICE_SECONDS)
@@ -308,11 +314,7 @@ class LocalHandConnectTests(unittest.TestCase):
         with mock.patch.dict(os.environ, self.env, clear=False):
             controller.submit_task(self.mailbox, self.branch, task)
         self._publish_result(task)
-        expected = {
-            "implementation_commit": "a" * 40,
-            "package_digest": "b" * 64,
-            "profile_digest": "c" * 64,
-        }
+        expected = self.expected_provenance
         with mock.patch.dict(os.environ, self.env, clear=False):
             result = controller.wait_for_result(
                 self.mailbox,
@@ -375,6 +377,7 @@ class LocalHandConnectTests(unittest.TestCase):
                     task,
                     timeout_seconds=1,
                     poll_seconds=0.01,
+                    expected_provenance=self.expected_provenance,
                 )
         self.assertEqual(ctx.exception.code, "remote_result_invalid")
 
@@ -391,6 +394,7 @@ class LocalHandConnectTests(unittest.TestCase):
                     task,
                     timeout_seconds=1,
                     poll_seconds=0.01,
+                    expected_provenance=self.expected_provenance,
                 )
         self.assertEqual(ctx.exception.code, "controller_result_shape_invalid")
         self.assertEqual(ctx.exception.status, "indeterminate")
@@ -406,6 +410,7 @@ class LocalHandConnectTests(unittest.TestCase):
                     task,
                     timeout_seconds=0,
                     poll_seconds=0.01,
+                    expected_provenance=self.expected_provenance,
                 )
         self.assertEqual(ctx.exception.code, "controller_wait_timeout")
         self.assertEqual(ctx.exception.status, "indeterminate")
@@ -428,6 +433,7 @@ class LocalHandConnectTests(unittest.TestCase):
                             task,
                             timeout_seconds=timeout,
                             poll_seconds=poll,
+                            expected_provenance=self.expected_provenance,
                         )
                 self.assertEqual(ctx.exception.code, "controller_wait_invalid")
 
@@ -446,6 +452,14 @@ class LocalHandConnectTests(unittest.TestCase):
         self.assertEqual(connect_main(args), 0)
         self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["task_id"], "LH9010")
         self.assertEqual(connect_main(args), 2)
+
+    def test_call_without_expected_provenance_rejects_before_submit(self) -> None:
+        task = self._task(task_id="LH9018")
+        with mock.patch.object(controller, "_submit_task_locked") as submit:
+            with self.assertRaises(LocalHandError) as ctx:
+                controller.call_task(self.mailbox, self.branch, task)
+        self.assertEqual(ctx.exception.code, "controller_provenance_policy_invalid")
+        submit.assert_not_called()
 
     def test_runtime_neutral_port_has_git_mailbox_implementation(self) -> None:
         adapter = controller.GitMailboxControllerAdapter(

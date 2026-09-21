@@ -167,11 +167,22 @@ def fs_write_text_cas(
             with os.fdopen(fd, "wb") as handle:
                 handle.write(desired)
                 handle.flush()
+                # Atomic replacement swaps the inode. Preserve and verify the
+                # admitted target's mode before the replacement is visible;
+                # otherwise mkstemp's 0600 mode could be reported as success.
+                try:
+                    os.chmod(temp_path, original_mode)
+                    if os.name != "nt" and stat.S_IMODE(os.fstat(handle.fileno()).st_mode) != original_mode:
+                        raise OSError("replacement mode did not match the original target")
+                except OSError as exc:
+                    raise LocalHandError(
+                        "write_mode_preservation_failed",
+                        f"cannot preserve write target mode before atomic replacement: {relative_path}",
+                        "failed",
+                    ) from exc
+                # Sync after chmod so content and replacement metadata share
+                # the same pre-publication durability barrier.
                 os.fsync(handle.fileno())
-            try:
-                os.chmod(temp_path, original_mode)
-            except OSError:
-                pass
 
             pre_replace_target = safe_existing_path(repo, relative_path, expect="file")
             if pre_replace_target.parent != parent:
@@ -200,10 +211,21 @@ def fs_write_text_cas(
                         os.fsync(dir_fd)
                     finally:
                         os.close(dir_fd)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    raise LocalHandError(
+                        "write_durability_unconfirmed",
+                        f"atomic write occurred but directory synchronization failed: {relative_path}",
+                        "indeterminate",
+                    ) from exc
 
-            read_back = _read_cas_target(target)
+            try:
+                read_back = _read_cas_target(target)
+            except (OSError, LocalHandError) as exc:
+                raise LocalHandError(
+                    "write_readback_unconfirmed",
+                    f"atomic write occurred but read-back could not be completed: {relative_path}",
+                    "indeterminate",
+                ) from exc
             read_back_hash = _sha256(read_back)
             if read_back != desired or read_back_hash != desired_hash:
                 raise LocalHandError(
