@@ -4,6 +4,7 @@ import errno
 import json
 import os
 from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 from local_hand import bounded_io,git_safety,worker
@@ -12,6 +13,31 @@ from test_local_hand_state_lookup_chain import StateLookupChainTests
 
 @unittest.skipIf(os.name=='nt','POSIX Git Trace2 fixture; Windows deferred')
 class MaintenanceChainTests(unittest.TestCase):
+    def test_fixture_and_receive_pack_do_not_start_automatic_maintenance(self):
+        # Trace the actual failing chain, including setup, fixture-only Git
+        # commands and the local remote of hardened controller/worker pushes.
+        with tempfile.TemporaryDirectory() as folder:
+            trace = Path(folder) / 'fixture-trace.jsonl'
+            original = git_safety.sanitized_git_env
+            def environment(**kwargs):
+                return {**original(**kwargs), 'GIT_TRACE2_EVENT': str(trace)}
+            with mock.patch.dict(os.environ, {'GIT_TRACE2_EVENT': str(trace)}), \
+                    mock.patch.object(git_safety, 'sanitized_git_env', side_effect=environment):
+                case = StateLookupChainTests()
+                try:
+                    case.setUp()
+                    case.test_conflict_lookup_error_never_executes_blocked_task()
+                finally:
+                    self.assertTrue(case.doCleanups())
+            events = [json.loads(line) for line in trace.read_text().splitlines()]
+        starts = [event['argv'] for event in events if event.get('event') == 'start']
+        self.assertTrue(any(Path(argv[0]).name == 'git-receive-pack' for argv in starts))
+        self.assertTrue(any('push' in argv and 'maintenance.auto=false' in argv for argv in starts))
+        self.assertTrue(any('fetch' in argv for argv in starts))
+        children = [event['argv'] for event in events if event.get('event') == 'child_start'
+                    and any(arg in ('maintenance', 'gc') for arg in event.get('argv', []))]
+        self.assertFalse(children, f'fixture maintenance can outlive teardown: {children}')
+
     def test_fetch_does_not_launch_automatic_maintenance(self):
         c=StateLookupChainTests();c.setUp();self.addCleanup(c.doCleanups)
         for name,value in (('maintenance.auto','true'),('maintenance.autoDetach','false'),('gc.autoPackLimit','1')):

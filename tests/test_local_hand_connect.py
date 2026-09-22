@@ -55,6 +55,11 @@ class LocalHandConnectTests(unittest.TestCase):
         self.remote_allowlist.start()
         self.policy = parse_transport(transport(self.branch, self.remote_url))
         self._git(self.root, "init", "--bare", str(self.remote))
+        # file:// receive-pack does not inherit the client's command-scoped
+        # Git config. Keep this disposable remote's writers synchronous with
+        # the test; detached housekeeping otherwise races TemporaryDirectory.
+        for name, value in (("maintenance.auto", "false"), ("gc.auto", "0"), ("receive.autoGC", "false")):
+            self._git(self.root, "--git-dir", str(self.remote), "config", "--local", name, value)
         self._git(self.root, "clone", self.remote_url, str(self.seed))
         self._git(self.seed, "config", "user.name", "fixture")
         self._git(self.seed, "config", "user.email", "fixture@example.invalid")
@@ -81,7 +86,7 @@ class LocalHandConnectTests(unittest.TestCase):
     @staticmethod
     def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [shutil.which("git") or "git", *args],
+            [shutil.which("git") or "git", "-c", "maintenance.auto=false", "-c", "gc.auto=0", *args],
             cwd=cwd,
             check=True,
             text=True,
