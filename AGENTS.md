@@ -69,7 +69,10 @@ is superseded by the [design recheck](docs/a2-execution/DESIGN_RECHECK.md).
 That scope's subsequent proposed baseline `bc54edc503a6a88aaca1d98276e403b9d97c6743`
 is superseded by the [third design-chain review](docs/a2-execution/DESIGN_CHAIN_REVIEW.md),
 which closes input/output discovery, local revocation/startup and blocking storage-I/O design gaps.
-The new proposed documentation baseline A is `231fa26807dca0c411a3972930434750944c0983`,
+The subsequent proposed baseline `231fa26807dca0c411a3972930434750944c0983`
+is superseded by the [recovery-contract review](docs/a2-execution/RECOVERY_CONTRACT_REVIEW.md),
+which fixes reconciliation request identity/cancellation and separates preflight from business execution intent.
+The new proposed documentation baseline A is `79f73faedcd9cde4164b0d1625782dae27db6c2f`,
 under the same R recorded above.
 This changes only the proposed A2 execution scope; the S2 proposed baseline above is unchanged.
 This registration is OPEN bookkeeping, not an Owner decision or CLOSED record.
