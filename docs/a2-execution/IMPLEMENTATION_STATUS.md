@@ -1,7 +1,7 @@
 # E1–E3 实现候选状态
 
 本文件记录实现事实，不替代已批准的三层文档。整体状态为 **E1 尚有受监督启动准备及 NAS provider 代码缺口、E3 环境验收 BLOCKED**；
-本轮是实现检查点，未达到 E1–E3 全部出口。准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)及[后续复查](E1_E3_RECHECK.md)。批准基线 A 为
+本轮是实现检查点，未达到 E1–E3 全部出口。准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)及[第二轮复核](E1_E3_RECHECK_2.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
 `367632126c1930983a06b1854f63789448633148`。三份权威文档保留批准时原文。
@@ -28,7 +28,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | --- | --- |
 | E1 受监督启动准备 | `_start` 尚在 broker 进程内进行可能阻塞的目录、配额及计划文件操作；后台线程不能证明有限停止。`SystemdManager.support()` 固定返回 `SUPERVISED_BOOTSTRAP_NOT_IMPLEMENTED`，即使其他主机条件齐备也拒绝生产启动。这是缺口的安全封堵，不是实现完成 |
 | E3 真实独立进程监督 | 当前隔离宿主无已委派 systemd/cgroup，不能完成子孙进程、延迟启动、broker 崩溃及真实 quota 的集成验收。合成 manager 测试不替代此项，候选不可标记可部署 |
-| 真实 Unix maintenance transport | 当前宿主拒绝 Unix socket 创建（EPERM），两项实际 transport 测试明确跳过。独立 Linux CI 源码汇总为 505 通过、1 跳过，但未逐项输出跳过原因；不靠总数宣称完整生产传输验收。独立 TCP/SDK 测试不替代 Unix socket |
+| 真实 Unix maintenance transport | 当前宿主拒绝 Unix socket 创建（EPERM），两项实际 transport 测试明确跳过。各准确候选的独立 Linux CI 结果见对应复核记录；未逐项输出的跳过原因不靠汇总数量推断，也不据此宣称完整生产传输验收。独立 TCP/SDK 测试不替代 Unix socket |
 | NAS 运行时 | 网络归档硬配额适配器尚未实现。虽然固定四参数调用、前置证据依赖和挂载身份检查已有实现，`ledger.nas.roundtrip` 明确 `UNSUPPORTED`，Plugin 不提交该类型 |
 | E4 | 真实当前客户端 OAuth、私有 MCP 连接及工具结果到可下载文件的宿主桥接未执行。16 MiB 合成证据下载属于 E2 客户端组件验证 |
 | E5 / S2 | 未安装到 GX10、未停止或切换旧服务；S2 仍按独立 OPEN 基线管理 |
