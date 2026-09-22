@@ -207,7 +207,16 @@ def _validate_result_shape(value: Any) -> dict[str, Any]:
     for field in ("package_digest", "profile_digest"):
         if not isinstance(value.get(field), str) or DIGEST_RE.fullmatch(value[field]) is None:
             raise LocalHandError("result_invalid", f"result {field} invalid", "indeterminate")
-    _json_bytes(value, MAX_RESULT_JSON_BYTES, "result_too_large")
+    try:
+        _json_bytes(value, MAX_RESULT_JSON_BYTES, "result_too_large")
+    except UnicodeEncodeError as exc:
+        # Escaped JSON can contain lone surrogates even though its input bytes
+        # were valid UTF-8. Route invalid Results through the same quarantine
+        # and replay barriers as other malformed evidence; never rewrite text
+        # to invent a different Result or let it poison unrelated queue work.
+        raise LocalHandError(
+            "result_invalid", "Result cannot be represented as UTF-8 JSON", "indeterminate",
+        ) from exc
     return value
 
 

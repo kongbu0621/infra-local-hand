@@ -1060,6 +1060,98 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                 'repeat_worker_command':digest_repeat_command,
                 'command_numbers':list(range(digest_start+1,len(records)+1))})
             checks.append({'case':'installed invalid UTF-8 task identity isolation and valid Unicode CAS without replay','status':'PASS'})
+            # Escaped surrogate text is valid input JSON but cannot be emitted
+            # as a Result's UTF-8 bytes. Exercise all persisted ingress routes
+            # with the installed worker, retaining the original malformed data.
+            from local_hand.protocol import result_success
+            encoding_start=len(records)
+            encoding_tasks=[];encoding_originals={};encoding_targets=[]
+            for task_id in ('LH1020','LH1021','LH1022'):
+                target=project/f'result-encoding-{task_id}.txt'
+                with target.open('xb') as stream:stream.write(b'before\n')
+                task=build_task(profile.node_id,'fs.write_text_cas',{
+                    'repository':'demo','relative_path':target.name,
+                    'expected_sha256':hashlib.sha256(b'before\n').hexdigest(),
+                    'content':'完成😀\n'},task_id=task_id)
+                encoding_tasks.append(task);encoding_targets.append(target)
+                save(f'encoding-{task_id}-task.json',task)
+            bad_remote=result_success(encoding_tasks[0],profile.node_id,{'value':'\ud800'},identity)
+            bad_saved=result_success(encoding_tasks[1],profile.node_id,{'nested':['\udfff']},identity)
+            bad_pending=result_success(encoding_tasks[0],profile.node_id,{'\udfff':'invalid key'},identity)
+            remote_raw=(json.dumps(bad_remote,ensure_ascii=True)+'\n').encode('ascii')
+            receipt_raw=(json.dumps({'task_id':'LH1021','task_digest':task_digest(encoding_tasks[1]),
+                                    'result':bad_saved},ensure_ascii=True)+'\n').encode('ascii')
+            pending_raw=(json.dumps(bad_pending,ensure_ascii=True)+'\n').encode('ascii')
+            invalid_receipt_path=state/'receipts/LH1021.json'
+            invalid_outbox_path=state/'outbox/LH1020.json'
+            with invalid_receipt_path.open('xb') as stream:stream.write(receipt_raw)
+            with invalid_outbox_path.open('xb') as stream:stream.write(pending_raw)
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            for task in encoding_tasks:
+                relative=f"_executor_spike/tasks/{task['task_id']}.json"
+                raw=(root/f"encoding-{task['task_id']}-task.json").read_bytes()
+                (seed/relative).write_bytes(raw);encoding_originals[relative]=hashlib.sha256(raw).hexdigest()
+            invalid_remote_relative='_executor_spike/results/LH1020.json'
+            with (seed/invalid_remote_relative).open('xb') as stream:stream.write(remote_raw)
+            run([git,'-C',seed,'add','--','_executor_spike/tasks',invalid_remote_relative])
+            run([git,'-C',seed,'commit','-qm','fixture invalid Result encoding and healthy CAS'])
+            run([git,'-C',seed,'push','origin','HEAD:refs/heads/'+policy['branch']])
+            run(connect+['wait']+common+['--task-file',root/'encoding-LH1020-task.json',
+                '--timeout-seconds','0','--expected-provenance-file',expected_path],expected=3)
+            encoding_reject_command=len(records)
+            rejection=(logs/f'{len(records):03}'/'stderr.log').read_text()
+            assert 'remote_result_invalid' in rejection and 'Traceback' not in rejection
+            run(worker_cmd);encoding_worker_command=len(records)
+            encoding_results={}
+            for task in encoding_tasks:
+                result=json.loads(run(connect+['wait']+common+['--task-file',root/f"encoding-{task['task_id']}-task.json",
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                assert result['task_digest']==task_digest(task) and result['task_id']==task['task_id']
+                assert all(result[k]==v for k,v in identity.items())
+                encoding_results[task['task_id']]=result
+            assert encoding_results['LH1020']['status']=='indeterminate'
+            assert encoding_results['LH1020']['error_code']=='remote_result_invalid'
+            assert encoding_results['LH1021']['status']=='indeterminate'
+            assert encoding_results['LH1021']['error_code']=='local_receipt_invalid'
+            assert encoding_results['LH1022']['status']=='succeeded'
+            assert encoding_results['LH1022']['details']['already_applied'] is False
+            assert [p.read_bytes() for p in encoding_targets]==[b'before\n',b'before\n','完成😀\n'.encode('utf-8')]
+            assert (worker_box/invalid_remote_relative).read_bytes()==remote_raw
+            assert invalid_receipt_path.read_bytes()==receipt_raw
+            preserved_pending=[p for p in (state/'quarantine').iterdir()
+                               if p.name.startswith('LH1020.json.') and p.name.endswith('.invalid')]
+            assert len(preserved_pending)==1 and preserved_pending[0].read_bytes()==pending_raw
+            for task in encoding_tasks:assert not os.path.lexists(state/'outbox'/f"{task['task_id']}.json")
+            encoding_barriers={}
+            for task in encoding_tasks[:2]:
+                path=state/'conflicts'/conflict_filename(task_digest(task))
+                encoding_barriers[str(path.relative_to(root))]=hashlib.sha256(path.read_bytes()).hexdigest()
+            good_receipt=state/'receipts/LH1022.json';good_result=worker_box/'_executor_spike/results/LH1022.json'
+            for path in (good_receipt,good_result):
+                encoding_barriers[str(path.relative_to(root))]=hashlib.sha256(path.read_bytes()).hexdigest()
+            encoding_targets[2].write_bytes(b'before\n')
+            run(worker_cmd);encoding_repeat_command=len(records)
+            assert all(p.read_bytes()==b'before\n' for p in encoding_targets)
+            assert invalid_receipt_path.read_bytes()==receipt_raw
+            assert (worker_box/invalid_remote_relative).read_bytes()==remote_raw
+            assert preserved_pending[0].read_bytes()==pending_raw
+            assert all(hashlib.sha256((root/p).read_bytes()).hexdigest()==h for p,h in encoding_barriers.items())
+            assert all(hashlib.sha256((worker_box/p).read_bytes()).hexdigest()==h for p,h in encoding_originals.items())
+            save('result-encoding-evidence.json',{'results':encoding_results,'task_blob_sha256':encoding_originals,
+                'remote_result_sha256':hashlib.sha256(remote_raw).hexdigest(),
+                'invalid_receipt_sha256':hashlib.sha256(receipt_raw).hexdigest(),
+                'quarantined_outbox':str(preserved_pending[0].relative_to(root)),
+                'quarantined_outbox_sha256':hashlib.sha256(pending_raw).hexdigest(),
+                'barriers_before_and_after_sha256':encoding_barriers,
+                'target_paths':[str(p.relative_to(root)) for p in encoding_targets],
+                'target_after_repeat_sha256':[hashlib.sha256(p.read_bytes()).hexdigest() for p in encoding_targets],
+                'controller_rejection_command':encoding_reject_command,
+                'worker_command':encoding_worker_command,'repeat_command':encoding_repeat_command,
+                'command_numbers':list(range(encoding_start+1,len(records)+1))})
+            for label in ('typed controller rejection','remote malformed Result barrier',
+                          'invalid outbox preservation','invalid receipt and later CAS without replay'):
+                checks.append({'case':'installed Result encoding '+label,'status':'PASS'})
             # Command exit zero means a valid business Result was retrieved;
             # its rejected/indeterminate status remains a separate assertion.
             contract_evidence=[]
