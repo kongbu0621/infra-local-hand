@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Hand 准入预检"
+  short_description: "核对已授权目标、接口版本和可见引用，保持当前执行范围与部署绑定"
+  default_prompt: "使用 $local-hand-preflight 核对已批准的 Local Hand 连接和可用作业。"

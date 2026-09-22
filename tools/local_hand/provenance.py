@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import marshal
 import os
 from pathlib import Path
 import re
 import stat
+import sys
 from typing import Any
 
 from .config import read_config, exact_keys
@@ -16,7 +19,8 @@ from .protocol import LocalHandError
 
 METADATA_NAME = "_build_metadata.json"
 BUILD_SCHEMA = "infra-local-hand-build/v1"
-VERSION = "0.1.0a1"
+VERSION = "0.2.0a1"
+PAYLOAD_PACKAGES = ("local_hand", "local_hand_connect", "local_hand_jobs", "local_hand_mcp")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -100,6 +104,7 @@ _SETUPTOOLS_EGG_INFO = frozenset({
     "tools/infra_local_hand.egg-info/SOURCES.txt",
     "tools/infra_local_hand.egg-info/dependency_links.txt",
     "tools/infra_local_hand.egg-info/entry_points.txt",
+    "tools/infra_local_hand.egg-info/requires.txt",
     "tools/infra_local_hand.egg-info/top_level.txt",
 })
 
@@ -114,7 +119,7 @@ def _ignored_path_is_generated(rel: Path, tracked: set[str], *, allow_build_outp
     if text in _SETUPTOOLS_EGG_INFO:
         return True
     if allow_build_outputs and len(rel.parts) == 4 and rel.parts[:2] == ("build", "lib"):
-        return rel.parts[2] in ("local_hand", "local_hand_connect") and rel.suffix in (".py", ".sh", ".ps1")
+        return rel.parts[2] in PAYLOAD_PACKAGES and rel.suffix in (".py", ".sh", ".ps1")
     return False
 
 
@@ -195,7 +200,7 @@ def payload_hashes(root: Path) -> dict[str,str]:
     entries admitted here. This is drift detection, not an OS trust boundary.
     """
     files={}
-    for package in ("local_hand","local_hand_connect"):
+    for package in PAYLOAD_PACKAGES:
         folder=root/package
         try:
             mode = _payload_mode(folder)
@@ -226,6 +231,66 @@ def payload_hashes(root: Path) -> dict[str,str]:
     return files
 
 
+def full_payload_digest(root: Path | None = None) -> str:
+    """Hash the complete four-package release, independently of its metadata.
+
+    ``core_digest`` retains its v1 worker meaning. A job-service admission must
+    use this digest as well as the pinned source commit and actual entrypoint.
+    Source-staging for the legacy worker may deliberately contain fewer packages;
+    it is never sufficient to admit the new job service.
+    """
+    root = Path(__file__).resolve().parent.parent if root is None else Path(root)
+    hashes = payload_hashes(root)
+    for package in PAYLOAD_PACKAGES:
+        if package + "/__init__.py" not in hashes:
+            raise _bad("full release package is missing: " + package)
+    _verify_full_payload_bytecode(root)
+    document = {"schema_version": "infra-local-hand-full-payload/v1", "files": hashes}
+    return hashlib.sha256(json.dumps(document, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=True).encode("ascii")).hexdigest()
+
+
+def _verify_full_payload_bytecode(root: Path) -> None:
+    """Admit generated caches only when their executable code matches source.
+
+    Cache filenames alone do not bind executed bytecode. The full job release
+    additionally compares its current-interpreter caches with fresh compilation;
+    hashes stay independent of generated caches. This is still drift detection,
+    not a substitute for protecting the interpreter and installation before load.
+    """
+    if sys.pycache_prefix is not None:
+        raise _bad("external bytecode cache roots are not admitted for job services")
+    tag = re.escape(sys.implementation.cache_tag)
+    pattern = re.compile(r"(.+)\." + tag + r"(?:\.opt-([12]))?\.pyc")
+    for package in PAYLOAD_PACKAGES:
+        cache = root / package / "__pycache__"
+        if not cache.exists():
+            continue
+        for path in cache.iterdir():
+            match = pattern.fullmatch(path.name)
+            if match is None:
+                raise _bad("release contains bytecode for an unadmitted interpreter")
+            source = root / package / (match[1] + ".py")
+            try:
+                # A bounded fresh compilation avoids executing/unmarshalling an
+                # untrusted code object from the cache being checked.
+                raw = source.read_bytes()
+                relative = source.relative_to(root).as_posix()
+                filenames = (str(source), "tools/" + relative, relative)
+                variants = []
+                for filename in filenames:
+                    compiled = compile(raw, filename, "exec", dont_inherit=True,
+                                       optimize=int(match[2] or "0"))
+                    variants.append(marshal.dumps(compiled))
+                if path.stat().st_size not in {len(item) + 16 for item in variants}:
+                    raise _bad("release bytecode size differs from compiled source")
+                actual = path.read_bytes()
+                if actual[:4] != importlib.util.MAGIC_NUMBER or actual[16:] not in variants:
+                    raise _bad("release bytecode differs from compiled source")
+            except (OSError, SyntaxError, ValueError) as exc:
+                raise _bad("cannot bind release bytecode to source") from exc
+
+
 def write_build_metadata(root: Path, *, artifact_kind: str) -> dict[str,Any]:
     if artifact_kind not in ("wheel","source-staging"):raise _bad("unsupported artifact kind")
     commit=source_commit(require_clean=True, _allow_build_outputs=True)
@@ -234,7 +299,7 @@ def write_build_metadata(root: Path, *, artifact_kind: str) -> dict[str,Any]:
     # A clean status can hide ignored files or skip-worktree changes. Bind the
     # copied bytes to immutable Git blobs, not just the current working tree.
     tree=run_hardened_git(source_root.parent,
-        ["ls-tree","-rz",commit,"--","tools/local_hand","tools/local_hand_connect"],
+        ["ls-tree","-rz",commit,"--",*("tools/" + package for package in PAYLOAD_PACKAGES)],
         allow_ssh=False,timeout=10,max_stdout=1024*1024,max_stderr=8192,text=False)
     if tree.returncode:raise _bad("cannot read committed payload tree")
     committed={}

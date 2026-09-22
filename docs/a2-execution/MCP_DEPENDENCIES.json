@@ -1,0 +1,242 @@
+{
+  "distributions": [
+    {
+      "license_metadata": "MIT",
+      "name": "annotated-types",
+      "project": "https://pypi.org/project/annotated-types/0.8.0/",
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "version": "0.8.0",
+      "wheel": "annotated_types-0.8.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "anyio",
+      "project": "https://pypi.org/project/anyio/4.15.1/",
+      "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+      "version": "4.15.1",
+      "wheel": "anyio-4.15.1-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "attrs",
+      "project": "https://pypi.org/project/attrs/26.1.0/",
+      "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+      "version": "26.1.0",
+      "wheel": "attrs-26.1.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT-0",
+      "name": "cffi",
+      "project": "https://pypi.org/project/cffi/2.1.1/",
+      "sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+      "version": "2.1.1",
+      "wheel": "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "click",
+      "project": "https://pypi.org/project/click/8.5.0/",
+      "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+      "version": "8.5.0",
+      "wheel": "click-8.5.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "Apache-2.0 OR BSD-3-Clause",
+      "name": "cryptography",
+      "project": "https://pypi.org/project/cryptography/50.0.1/",
+      "sha256": "51afcfceb15597cf2635068e4ac9a56b2abde622edde17f37d85fd7b5306497a",
+      "version": "50.0.1",
+      "wheel": "cryptography-50.0.1-cp311-abi3-manylinux_2_34_x86_64.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "h11",
+      "project": "https://pypi.org/project/h11/0.16.0/",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "version": "0.16.0",
+      "wheel": "h11-0.16.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "httpcore2",
+      "project": "https://pypi.org/project/httpcore2/2.13.0/",
+      "sha256": "35ae5be347aa40467b4a5dc032ac67ebb6d27189fc97e8cebcf99616f6a1bb9e",
+      "version": "2.13.0",
+      "wheel": "httpcore2-2.13.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "httpx2",
+      "project": "https://pypi.org/project/httpx2/2.13.0/",
+      "sha256": "fc12720cedf72faa26cca6b4ca394e05c894e7d7933fc45cafe767960804e49a",
+      "version": "2.13.0",
+      "wheel": "httpx2-2.13.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "idna",
+      "project": "https://pypi.org/project/idna/3.20/",
+      "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+      "version": "3.20",
+      "wheel": "idna-3.20-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "jsonschema",
+      "project": "https://pypi.org/project/jsonschema/4.26.0/",
+      "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+      "version": "4.26.0",
+      "wheel": "jsonschema-4.26.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "jsonschema-specifications",
+      "project": "https://pypi.org/project/jsonschema-specifications/2025.9.1/",
+      "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+      "version": "2025.9.1",
+      "wheel": "jsonschema_specifications-2025.9.1-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "mcp",
+      "project": "https://pypi.org/project/mcp/2.2.0/",
+      "sha256": "bde982589473a060ae145e3406e9a5333fe538c97229ba841f5a7f92be004f81",
+      "version": "2.2.0",
+      "wheel": "mcp-2.2.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "mcp-types",
+      "project": "https://pypi.org/project/mcp-types/2.2.0/",
+      "sha256": "ea476b73ee86709ab5abc9452385ed36cc05907e582355622e294595c9a04f13",
+      "version": "2.2.0",
+      "wheel": "mcp_types-2.2.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "Apache-2.0",
+      "name": "opentelemetry-api",
+      "project": "https://pypi.org/project/opentelemetry-api/1.44.0/",
+      "sha256": "94b98c893a91b88657eaac1e3ba89618cdb85be6918196705354f34728b2cdef",
+      "version": "1.44.0",
+      "wheel": "opentelemetry_api-1.44.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "pycparser",
+      "project": "https://pypi.org/project/pycparser/3.0/",
+      "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+      "version": "3.0",
+      "wheel": "pycparser-3.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "pydantic",
+      "project": "https://pypi.org/project/pydantic/2.13.5/",
+      "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+      "version": "2.13.5",
+      "wheel": "pydantic-2.13.5-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "pydantic_core",
+      "project": "https://pypi.org/project/pydantic_core/2.46.5/",
+      "sha256": "0fc5be0abd4a407e200d844b404e33639a554e7bd0d448e7b9ae181be4789ac2",
+      "version": "2.46.5",
+      "wheel": "pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "PyJWT",
+      "project": "https://pypi.org/project/PyJWT/2.14.0/",
+      "sha256": "ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc",
+      "version": "2.14.0",
+      "wheel": "pyjwt-2.14.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "Apache-2.0",
+      "name": "python-multipart",
+      "project": "https://pypi.org/project/python-multipart/0.0.32/",
+      "sha256": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23",
+      "version": "0.0.32",
+      "wheel": "python_multipart-0.0.32-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "referencing",
+      "project": "https://pypi.org/project/referencing/0.37.0/",
+      "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+      "version": "0.37.0",
+      "wheel": "referencing-0.37.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "rpds-py",
+      "project": "https://pypi.org/project/rpds-py/2026.6.3/",
+      "sha256": "ecabd69db66de867690f9797f2f8fa27ba501bbc24540cbdbdc649cd15888ba6",
+      "version": "2026.6.3",
+      "wheel": "rpds_py-2026.6.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "sse-starlette",
+      "project": "https://pypi.org/project/sse-starlette/3.4.11/",
+      "sha256": "c7b2244bdff016fe7f64e10075e89a3e6bbf899649cc89b0fe884b5545042453",
+      "version": "3.4.11",
+      "wheel": "sse_starlette-3.4.11-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "starlette",
+      "project": "https://pypi.org/project/starlette/1.6.0/",
+      "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c",
+      "version": "1.6.0",
+      "wheel": "starlette-1.6.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "truststore",
+      "project": "https://pypi.org/project/truststore/0.10.4/",
+      "sha256": "adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981",
+      "version": "0.10.4",
+      "wheel": "truststore-0.10.4-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "MIT",
+      "name": "typing-inspection",
+      "project": "https://pypi.org/project/typing-inspection/0.4.4/",
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "version": "0.4.4",
+      "wheel": "typing_inspection-0.4.4-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "PSF-2.0",
+      "name": "typing_extensions",
+      "project": "https://pypi.org/project/typing_extensions/4.16.0/",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "version": "4.16.0",
+      "wheel": "typing_extensions-4.16.0-py3-none-any.whl"
+    },
+    {
+      "license_metadata": "BSD-3-Clause",
+      "name": "uvicorn",
+      "project": "https://pypi.org/project/uvicorn/0.53.0/",
+      "sha256": "e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e",
+      "version": "0.53.0",
+      "wheel": "uvicorn-0.53.0-py3-none-any.whl"
+    }
+  ],
+  "lock": "requirements-mcp-linux-x86_64-py312.lock",
+  "notes": [
+    "Optional adapter dependencies only; base project dependencies remain empty.",
+    "License values are recorded from downloaded wheel metadata; upstream license files remain in their distributions.",
+    "This dependency inventory grants no new license for infra-local-hand.",
+    "Other platforms require their own complete reviewed wheel hash lock."
+  ],
+  "schema_version": "local-hand-mcp-dependencies/v1",
+  "target": {
+    "architecture": "x86_64",
+    "implementation": "CPython",
+    "os": "Linux",
+    "python": "3.12"
+  }
+}

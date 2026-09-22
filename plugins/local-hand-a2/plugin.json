@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "local-hand-a2",
+  "version": "0.1.0",
+  "description": "通过已准入的 Local Hand 后端执行受限 A2 作业、核对状态并取回私有证据。公开包尚未配置实际连接。",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Local Hand A2",
+        "shortDescription": "受限作业、故障核对与私有证据交付",
+        "capabilities": ["Read", "Write"],
+        "defaultPrompt": ["核对已批准的 Local Hand 连接、目标与作业范围。"]
+      }
+    }
+  }
+}

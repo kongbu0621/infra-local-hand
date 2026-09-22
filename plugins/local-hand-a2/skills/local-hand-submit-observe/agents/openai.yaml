@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Hand 提交与观察"
+  short_description: "以稳定作业身份提交受限任务，保留回执并有界查询执行与证据状态"
+  default_prompt: "使用 $local-hand-submit-observe 提交已授权作业并查询准确状态。"

@@ -4,19 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "infra-local-hand"
-version = "0.1.0a1"
+version = "0.2.0a1"
 description = "Bounded local execution with correlated task results and evidence"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+mcp = ["mcp==2.2.0", "PyJWT[crypto]==2.14.0"]
+
 [project.scripts]
 local-hand-worker = "local_hand.worker:main"
 local-hand-connect = "local_hand_connect.cli:main"
+local-hand-broker = "local_hand_jobs.cli:broker_main"
+local-hand-jobs = "local_hand_jobs.cli:main"
+local-hand-mcp = "local_hand_mcp.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "tools"}
-packages = ["local_hand", "local_hand_connect"]
+packages = ["local_hand", "local_hand_connect", "local_hand_jobs", "local_hand_mcp"]
 
 [tool.setuptools.package-data]
 local_hand = ["*.sh", "*.ps1", "_build_metadata.json"]

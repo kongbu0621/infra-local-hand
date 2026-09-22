@@ -5,6 +5,11 @@ on:
     paths:
       - "tools/local_hand/**"
       - "tools/local_hand_connect/**"
+      - "tools/local_hand_jobs/**"
+      - "tools/local_hand_mcp/**"
+      - "plugins/local-hand-a2/**"
+      - "tools/build_plugin.py"
+      - "requirements-mcp-linux-x86_64-py312.lock"
       - "tests/**"
       - "pyproject.toml"
       - "setup.py"
@@ -17,6 +22,11 @@ on:
     paths:
       - "tools/local_hand/**"
       - "tools/local_hand_connect/**"
+      - "tools/local_hand_jobs/**"
+      - "tools/local_hand_mcp/**"
+      - "plugins/local-hand-a2/**"
+      - "tools/build_plugin.py"
+      - "requirements-mcp-linux-x86_64-py312.lock"
       - "tests/**"
       - "pyproject.toml"
       - "setup.py"
@@ -97,6 +107,10 @@ jobs:
               runtime = any(
                   name.startswith("tools/local_hand/")
                   or name.startswith("tools/local_hand_connect/")
+                  or name.startswith("tools/local_hand_jobs/")
+                  or name.startswith("tools/local_hand_mcp/")
+                  or name.startswith("plugins/local-hand-a2/")
+                  or name in {"tools/build_plugin.py", "requirements-mcp-linux-x86_64-py312.lock"}
                   or name.startswith("tests/")
                   or name in {"pyproject.toml", "setup.py", "requirements-build.txt", "tools/verify_installed.py"}
                   or name == ".github/workflows/local-hand-v0-1-validation.yml"
@@ -145,6 +159,13 @@ jobs:
           subprocess.run([str(python), "-m", "pip", "install", "-r", "requirements-build.txt"], check=True)
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
               f.write(f"LOCAL_HAND_BUILD_PYTHON={python}\nLOCAL_HAND_VERIFY_ROOT={root}\n")
+      - name: Install hash-locked optional MCP dependencies for Linux verification
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import os, subprocess
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pip", "install", "--require-hashes",
+                          "-r", "requirements-mcp-linux-x86_64-py312.lock"], check=True)
       - name: Validate exact checked-out commit identity
         if: github.event_name != 'pull_request'
         shell: python
@@ -164,12 +185,28 @@ jobs:
         shell: python
         run: |
           import os, subprocess
-          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tests"], check=True)
-      - name: Run all Local Hand semantic and hardening tests
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp", "plugins", "tests"], check=True)
+      - name: Run platform-scoped source tests (A2 jobs are Linux only)
         shell: python
         run: |
           import os, subprocess
-          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q"], check=True)
+          command = [os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q"]
+          if os.name == "nt":
+              # Preserve all previous Windows S1 coverage. New job/Plugin tests
+              # require Unix ownership and are not Windows acceptance evidence.
+              command += ["--ignore-glob=tests/test_local_hand_jobs_*.py",
+                          "--ignore-glob=tests/test_local_hand_mcp_*.py",
+                          "--ignore=tests/test_local_hand_plugin.py"]
+          subprocess.run(command, check=True)
+      - name: Build separately sealed unconfigured Plugin (Linux)
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import os, pathlib, subprocess
+          target = pathlib.Path(os.environ["LOCAL_HAND_VERIFY_ROOT"]) / "local-hand-a2-plugin.zip"
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "tools/build_plugin.py",
+                          "--output", str(target)], check=True)
+          print("Source/packaging checks do not close real cgroup, E4 connection, GX10 or NAS gates.")
       - name: Build and verify an independently installed wheel
         shell: python
         run: |
@@ -674,6 +711,7 @@ jobs:
           name: local-hand-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/dist/*.whl
+            ${{ env.LOCAL_HAND_VERIFY_ROOT }}/local-hand-a2-plugin.zip
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/commands/
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/report.json
           if-no-files-found: warn

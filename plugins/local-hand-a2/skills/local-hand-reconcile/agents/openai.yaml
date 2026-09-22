@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Hand 故障核对"
+  short_description: "按稳定核对身份调查已有作业，区分取消目标并保留未知状态屏障"
+  default_prompt: "使用 $local-hand-reconcile 核对原作业状态，保留副作用与缺失事实。"

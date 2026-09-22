@@ -1,0 +1,369 @@
+"""Deterministic synthetic supervisor tests; no physical cgroup claims."""
+from __future__ import annotations
+
+import copy
+from pathlib import Path
+import sys
+import tempfile
+import time
+import threading
+import unittest
+import uuid
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from local_hand_jobs.broker import Broker
+from local_hand_jobs.contract import JobError, Principal, request_digest
+from local_hand_jobs.state import StateStore
+
+
+class PolicyFixture:
+    generation = 1
+    limits = {"max_queued": 20, "max_running": 2, "retained_bytes": 100000,
+              "ledger_emergency_bytes": 1000, "requests_per_minute": 30}
+    profiles = {"fixture": {"budgets": {"reconcile": {"reservation_bytes": 1000}}}}
+
+    def authorize(self, principal, scope, request=None, owner=None):
+        if scope not in principal.scopes or (owner is not None and owner != principal.principal_id):
+            raise JobError("UNAUTHORIZED", "Fixture grant does not permit access")
+
+    def expected(self, _):
+        return {"node_id": "synthetic-node", "install_uuid": "11111111-1111-4111-8111-111111111111",
+                "deployment_epoch": 1, "profile_digest": "1" * 64,
+                "policy_digest": "2" * 64, "registry_digest": "3" * 64}
+
+    def capabilities(self, principal, cursor=None, page_size=100):
+        return {"authority_id": "fixture", "profiles": [{"profile_ref": "fixture", "expected": self.expected(None)}]}
+
+
+class RegistryFixture:
+    def resolve(self, request, policy, *, principal=None):
+        return {"kind": request["kind"], "profile_ref": request["profile_ref"],
+                "resource_ids": ["same-physical-root"], "reservation_bytes": 1000,
+                "inputs": request["inputs"], "budgets": {"wall_seconds": 30}}
+
+
+class SupervisorFixture:
+    def __init__(self):
+        self.starts, self.stops = [], []
+        self.proofs = {}
+
+    def start(self, parent, execution_id, plan):
+        self.starts.append((parent, execution_id, copy.deepcopy(plan)))
+        return {"execution_id": execution_id, "phase": plan["phase"]}
+
+    def inspect(self, handle):
+        return self.proofs.get(handle["execution_id"], {"state": "RUNNING"})
+
+    def stop(self, handle):
+        self.stops.append(handle["execution_id"])
+        return self.proofs.get(handle["execution_id"], {"state": "UNKNOWN"})
+
+    def finish(self, execution_id, **kwargs):
+        self.proofs[execution_id] = {"state": "EXITED", "future_start_blocked": True,
+            "tree_exited": True, "effects_checked": True, "exit_code": 0,
+            "facts": {"inputs_stable": True}, **kwargs}
+
+
+class DeferredDeliverySupervisor(SupervisorFixture):
+    """The final manager delivery is deliberately delayed after queue acceptance."""
+    def set_start_guard(self, guard):
+        self.guard = guard
+        self.delivered = []
+
+    def deliver(self, execution_id):
+        def launch():
+            self.delivered.append(execution_id)
+            return {"synthetic_manager_delivery": execution_id}
+        return self.guard(execution_id, launch)
+
+
+class BrokerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db = StateStore(Path(self.temp.name) / "ledger.sqlite", "authority", "ledger", initialize=True)
+        self.addCleanup(self.db.close)
+        self.policy, self.runner = PolicyFixture(), SupervisorFixture()
+        self.broker = Broker(self.db, self.policy, RegistryFixture(), self.runner)
+        self.owner = Principal("owner", frozenset("lh:" + scope for scope in
+            ("inspect", "submit", "read", "cancel", "reconcile", "evidence")))
+        self.request = self.make_request()
+
+    def make_request(self):
+        req = {"schema_version": "lh-job-v1", "operation_id": str(uuid.uuid4()),
+               "kind": "host.inspect", "profile_ref": "fixture", "expected": self.policy.expected(None),
+               "inputs": {}, "expires_at": int(time.time()) + 120}
+        req["request_digest"] = request_digest(req)
+        return req
+
+    def submit(self):
+        return self.broker.call("lh_job_submit", self.request, self.owner)
+
+    def status(self):
+        return self.broker.call("lh_job_status", {"operation_id": self.request["operation_id"]}, self.owner)
+
+    def cancel(self, target=None):
+        return self.broker.call("lh_job_cancel", {"operation_id": self.request["operation_id"],
+            "expected_request_digest": self.request["request_digest"], "target": target or {"kind": "job"}}, self.owner)
+
+    def reconcile(self, identity):
+        return self.broker.call("lh_job_reconcile", {"operation_id": self.request["operation_id"],
+            "expected_request_digest": self.request["request_digest"], "reconcile_id": identity}, self.owner)
+
+    def assertCode(self, code, function):
+        with self.assertRaises(JobError) as raised:
+            function()
+        self.assertEqual(code, raised.exception.code)
+
+    def test_ack_loss_dedup_and_cross_principal_conflict(self):
+        first = self.submit()
+        self.policy.generation += 1
+        self.assertEqual(first, self.submit())
+        changed = dict(self.request, expires_at=self.request["expires_at"] + 1)
+        changed["request_digest"] = request_digest(changed)
+        self.assertCode("CONFLICT", lambda: self.broker.call("lh_job_submit", changed, self.owner))
+        outsider = Principal("outsider", self.owner.scopes)
+        self.assertCode("UNAUTHORIZED", lambda: self.broker.call("lh_job_submit", self.request, outsider))
+        self.assertFalse(self.runner.starts)
+
+    def test_preflight_and_business_have_distinct_intents(self):
+        self.submit(); self.broker.tick()
+        self.assertEqual("preflight", self.runner.starts[0][2]["phase"])
+        preflight = self.runner.starts[0][1]
+        self.runner.finish(preflight)
+        self.broker.tick()
+        self.assertEqual("PREFLIGHT_COMPLETE", self.status()["phase"])
+        self.assertEqual("PENDING", self.status()["outcome"])
+        self.broker.tick()
+        self.assertEqual("business", self.runner.starts[1][2]["phase"])
+        self.runner.finish(self.runner.starts[1][1])
+        self.broker.tick()
+        self.assertEqual("SUCCEEDED", self.status()["outcome"])
+        self.assertEqual("STAGING", self.status()["evidence"])
+        self.assertEqual({}, self.status()["outputs"])
+
+    def test_cancel_queued_prevents_start_and_releases_only_proven_resources(self):
+        self.submit(); result = self.cancel(); self.broker.tick()
+        self.assertEqual("CANCELLED", result["outcome"])
+        self.assertFalse(self.runner.starts)
+        self.request = self.make_request()
+        self.submit()
+
+    def test_delayed_launch_cancel_unknown_holds_barrier(self):
+        self.submit(); self.broker.tick(); self.cancel(); self.broker.tick()
+        self.assertEqual("UNKNOWN", self.status()["outcome"])
+        self.assertTrue(self.runner.stops)
+        next_request = self.make_request()
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", next_request, self.owner))
+        self.broker.tick()
+        self.assertEqual(1, len(self.runner.starts))
+
+    def test_incomplete_exited_observation_keeps_polling_original_execution(self):
+        self.submit(); self.broker.tick()
+        identity = self.runner.starts[0][1]
+        self.runner.finish(identity, tree_exited=False)
+        self.broker.tick()
+        self.assertEqual("UNKNOWN", self.status()["outcome"])
+        self.assertEqual(1, len(self.broker._active))
+        self.runner.finish(identity)
+        self.broker.tick()
+        self.assertEqual("PREFLIGHT_COMPLETE", self.status()["phase"])
+        self.assertFalse(self.broker._active)
+
+    def test_unchanged_uncertainty_poll_does_not_exhaust_event_budget(self):
+        self.submit(); self.broker.tick()
+        self.runner.proofs[self.runner.starts[0][1]] = {"state": "UNKNOWN"}
+        self.broker.tick()
+        seq = self.status()["event_seq"]
+        for _ in range(20):
+            self.broker.tick()
+        self.assertEqual(seq, self.status()["event_seq"])
+
+    def test_revoke_and_generation_change_block_before_business(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick()
+        answer = self.broker.revoke("owner")
+        self.assertTrue(answer["new_admission_closed"])
+        self.broker.tick()
+        self.assertEqual(1, len(self.runner.starts))
+        self.assertCode("UNAUTHORIZED", self.status)
+
+    def test_durable_cancel_fences_final_delayed_manager_delivery(self):
+        runner = DeferredDeliverySupervisor()
+        self.broker = Broker(self.db, self.policy, RegistryFixture(), runner)
+        self.submit(); self.broker.tick()
+        ready, release = threading.Event(), threading.Event()
+        results = []
+        def delayed():
+            ready.set()
+            if release.wait(2):
+                results.append(runner.deliver(runner.starts[0][1]))
+        thread = threading.Thread(target=delayed)
+        thread.start()
+        self.assertTrue(ready.wait(1))
+        self.cancel()  # The database COMMIT precedes delivery, not merely Runner.stop.
+        release.set(); thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual([None], results)
+        self.assertEqual([], runner.delivered)
+
+    def test_durable_revocation_fences_final_delivery(self):
+        runner = DeferredDeliverySupervisor()
+        broker = Broker(self.db, self.policy, RegistryFixture(), runner)
+        broker.call("lh_job_submit", self.make_request(), self.owner); broker.tick()
+        broker.revoke("owner")
+        self.assertIsNone(runner.deliver(runner.starts[0][1]))
+        self.assertFalse(runner.delivered)
+
+    def test_changed_generation_fences_final_delivery(self):
+        runner = DeferredDeliverySupervisor()
+        broker = Broker(self.db, self.policy, RegistryFixture(), runner)
+        broker.call("lh_job_submit", self.make_request(), self.owner); broker.tick()
+        self.policy.generation += 1
+        self.assertIsNone(runner.deliver(runner.starts[0][1]))
+        self.assertFalse(runner.delivered)
+
+    def test_final_delivery_requires_the_exact_persisted_intent(self):
+        runner = DeferredDeliverySupervisor()
+        self.broker = Broker(self.db, self.policy, RegistryFixture(), runner)
+        self.submit(); self.broker.tick()
+        self.assertIsNone(runner.deliver("invented-execution"))
+        self.assertEqual([], runner.delivered)
+        expected = runner.starts[0][1]
+        self.assertEqual({"synthetic_manager_delivery": expected}, runner.deliver(expected))
+        self.assertIsNone(runner.deliver(expected))
+        self.assertEqual([expected], runner.delivered)
+
+    def test_recovery_does_not_replay_intent(self):
+        self.submit(); self.broker.tick()
+        replacement = SupervisorFixture()
+        second = Broker(self.db, self.policy, RegistryFixture(), replacement)
+        second.recover(); second.tick()
+        status = second.status(self.request["operation_id"], self.owner)
+        self.assertEqual("UNKNOWN", status["outcome"])
+        self.assertFalse(replacement.starts)
+
+    def test_recovery_reattaches_original_acknowledged_manager_identity(self):
+        class ReconnectingSupervisor(SupervisorFixture):
+            def __init__(self):
+                super().__init__()
+                self.attached = []
+            def reattach(self, handle, plan):
+                self.attached.append((handle, plan))
+                return handle
+        self.submit(); self.broker.tick()
+        execution = self.runner.starts[0][1]
+        self.runner.proofs[execution] = {"state": "RUNNING", "recovery_handle": {
+            "execution_id": execution, "manager": {"launch_acked": True, "boot_id": "synthetic-boot"}}}
+        self.broker.tick()
+        replacement = ReconnectingSupervisor()
+        second = Broker(self.db, self.policy, RegistryFixture(), replacement)
+        second.recover()
+        self.assertFalse(replacement.starts)
+        self.assertEqual(execution, replacement.attached[0][0]["execution_id"])
+        self.assertEqual("synthetic-boot", replacement.attached[0][0]["manager"]["boot_id"])
+        replacement.finish(execution)
+        second.tick(); second.tick()
+        self.assertFalse(replacement.starts)  # Recovered preflight never auto-runs business.
+        self.assertEqual("UNKNOWN", second.status(self.request["operation_id"], self.owner)["outcome"])
+
+    def test_cancel_before_seal_preserves_unknown_business_effects_and_lease(self):
+        self.broker.evidence = SimpleNamespace(root=Path(self.temp.name) / "artifacts")
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[1][1], effects_checked=False,
+            collectors_stopped=True, writers_stopped=True,
+            result={"business_started": True, "side_effects": "POSSIBLY_PARTIAL",
+                    "evidence_snapshot": {"root": str(Path(self.temp.name) / "raw"), "members": []}})
+        self.broker.tick()
+        self.assertEqual("AWAITING_SEAL", self.status()["phase"])
+        self.cancel(); self.broker.tick()
+        result = self.status()
+        self.assertEqual("UNKNOWN", result["outcome"])
+        self.assertEqual("POSSIBLY_PARTIAL", result["side_effects"])
+        self.assertTrue(result["business_started"])
+        self.assertEqual(2, len(self.runner.starts))
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", self.make_request(), self.owner))
+
+    def test_business_rechecks_frozen_registry_plan(self):
+        class ChangingRegistry(RegistryFixture):
+            digest = "a" * 64
+            def resolve(self, *args, **kwargs):
+                return dict(super().resolve(*args, **kwargs), plan_digest=self.digest)
+        registry = ChangingRegistry()
+        self.broker.registry = registry
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick()
+        registry.digest = "b" * 64
+        self.broker.tick()
+        self.assertEqual("UNKNOWN", self.status()["outcome"])
+        self.assertEqual(1, len(self.runner.starts))
+
+    def test_restart_before_business_does_not_turn_old_preflight_into_new_start(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick()
+        replacement = SupervisorFixture()
+        second = Broker(self.db, self.policy, RegistryFixture(), replacement)
+        second.recover(); second.tick()
+        self.assertFalse(replacement.starts)
+
+    def test_no_reconcile_helper_over_unresolved_original_tree(self):
+        self.submit(); self.broker.tick(); self.cancel(); self.broker.tick()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity); self.broker.tick()
+        self.assertEqual(1, len(self.runner.starts))
+        round_status = self.broker.status(self.request["operation_id"], self.owner, identity)
+        self.assertEqual("UNKNOWN", round_status["outcome"])
+
+    def test_reconcile_stable_identity_and_targeted_cancel(self):
+        self.submit(); self.cancel()
+        identity = str(uuid.uuid4())
+        first = self.reconcile(identity)
+        self.assertEqual(first, self.reconcile(identity))
+        self.cancel()  # Retrying business cancellation must not cancel the new round.
+        status = self.broker.status(self.request["operation_id"], self.owner, identity)
+        self.assertFalse(status["cancel_requested"])
+        self.assertCode("RESOURCE_BUSY", lambda: self.reconcile(str(uuid.uuid4())))
+        result = self.cancel({"kind": "reconcile", "reconcile_id": identity})
+        self.assertEqual("CANCELLED", result["outcome"])
+        self.broker.call("lh_job_submit", self.make_request(), self.owner)
+
+    def test_readonly_reconcile_exit_does_not_release_unknown_business_effects(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[1][1], effects_checked=False)
+        self.broker.tick()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity); self.broker.tick()
+        self.runner.finish(self.runner.starts[-1][1], result={"original_outcome": "UNKNOWN"})
+        self.broker.tick()
+        self.assertEqual("UNKNOWN", self.status()["outcome"])
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", self.make_request(), self.owner))
+
+    def test_missing_cancel_is_not_a_tombstone_or_execution_proof(self):
+        self.assertCode("NOT_FOUND", self.cancel)
+        self.submit()
+        self.assertFalse(self.status()["cancel_requested"])
+
+    def test_retained_capacity_is_not_reclaimed_by_cancel(self):
+        self.policy.limits = dict(self.policy.limits, retained_bytes=2000)
+        self.submit(); self.cancel()
+        self.request = self.make_request()
+        self.assertCode("LIMIT_EXCEEDED", self.submit)
+
+    def test_unhealthy_db_cannot_report_missing(self):
+        self.db.healthy = False
+        self.assertCode("IO_UNCERTAIN", self.status)
+
+    def test_immutable_identity_and_events(self):
+        self.submit()
+        self.assertCode("IO_UNCERTAIN", lambda: self._delete())
+
+    def _delete(self):
+        with self.db.transaction() as tx:
+            tx.execute("DELETE FROM operations")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Hand 证据交付"
+  short_description: "经已认证回调分块取回私有证据，核验完整文件与封存清单后交付"
+  default_prompt: "使用 $local-hand-evidence 取回并校验已封存的原作业证据。"
