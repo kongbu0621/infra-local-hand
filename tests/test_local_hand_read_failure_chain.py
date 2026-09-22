@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import unittest
 from unittest import mock
-from local_hand import bounded_io, worker
+from local_hand import bounded_io, mailbox_safety, worker
 from local_hand.protocol import LocalHandError, conflict_filename, task_digest
 from local_hand_connect import controller
 from test_local_hand_state_lookup_chain import StateLookupChainTests
@@ -112,7 +112,7 @@ class ReadFailureChainTests(unittest.TestCase):
         self.assertEqual(pending.read_bytes(),saved);self.assertEqual(receipt.read_bytes(),intent)
         self._no_false_conflict(task)
         self._process()
-        self.assertFalse(pending.exists())
+        self.assertFalse(mailbox_safety.target_lexists(pending))
         self.assertEqual(json.loads(receipt.read_text())['result'],result)
         actual=controller.wait_for_result(c.f.mailbox,c.f.branch,task,timeout_seconds=0,expected_provenance=worker.build_provenance(c.profile))
         self.assertEqual(actual,result);self.assertEqual(actual['status'],'succeeded')
@@ -136,7 +136,7 @@ class ReadFailureChainTests(unittest.TestCase):
         self.assertEqual(pending.read_bytes(),saved);self._no_false_conflict(task)
         self.assertEqual(list((c.state/'outbox').iterdir()),[pending])
         worker.publish_outbox(c.f.mailbox,c.f.branch,c.state/'outbox')
-        self.assertFalse(pending.exists());self.assertEqual(target.read_bytes(),saved)
+        self.assertFalse(mailbox_safety.target_lexists(pending));self.assertEqual(target.read_bytes(),saved)
 
     def test_controller_wait_read_failure_preserves_evidence_and_retries(self):
         c=self.c;task=c._submit('LH9805');self._process()

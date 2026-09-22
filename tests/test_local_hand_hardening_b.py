@@ -16,7 +16,7 @@ from unittest import mock
 TOOLS_ROOT = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS_ROOT))
 
-from local_hand import act, git_safety, observe, validate, worker
+from local_hand import act, git_safety, mailbox_safety, observe, validate, worker
 from local_hand.paths import load_profile, repository_target
 from config_fixtures import profile_v2
 from local_hand.protocol import LocalHandError, MAX_TASK_JSON_BYTES, MAX_TEXT_BYTES, task_digest
@@ -518,7 +518,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
         with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
             worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
         execute.assert_not_called()
-        self.assertFalse(pending.exists())
+        self.assertFalse(mailbox_safety.target_lexists(pending))
         self.assertEqual(receipt_path.read_bytes(), receipt_bytes)
         self.assertEqual((self.repo / "sample.txt").read_bytes(), b"external-change-after-delivery\n")
         self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
@@ -535,7 +535,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
 
     def test_malformed_local_outbox_is_quarantined_not_published(self) -> None:
         _,mailbox=self._init_mailbox(); outbox=self.runtime/"out"; outbox.mkdir(parents=True); bad={"schema_version":"local-hand-result/v1","task_id":"../../bad","task_digest":"a"*64,"target_node":"test-node","action":"node.status","status":"succeeded"}; (outbox/"LH0204.json").write_text(json.dumps(bad))
-        worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse((outbox/"LH0204.json").exists())
+        worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox); self.assertFalse(mailbox_safety.target_lexists(outbox/"LH0204.json"))
         second=dict(bad);second["action"]="git.status";(outbox/"LH0204.json").write_text(json.dumps(second))
         worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox)
         quarantined=list((outbox.parent/"quarantine").glob("LH0204.json.*.invalid"))

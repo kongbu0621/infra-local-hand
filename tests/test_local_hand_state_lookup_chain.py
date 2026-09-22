@@ -123,7 +123,7 @@ class StateLookupChainTests(unittest.TestCase):
         self._assert_unavailable(raised.exception)
         self.assertEqual(pending.read_bytes(), saved)
         worker.publish_outbox(self.f.mailbox, self.f.branch, self.state/'outbox')
-        self.assertFalse(pending.exists())
+        self.assertFalse(mailbox_safety.target_lexists(pending))
         self.assertEqual(target.read_bytes(), saved)
 
     def test_quarantine_lookup_error_does_not_overwrite_prior_evidence(self):

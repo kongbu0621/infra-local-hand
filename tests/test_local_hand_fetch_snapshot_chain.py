@@ -10,7 +10,7 @@ from unittest import mock
 
 import test_local_hand_connect as connect_fixtures
 from config_fixtures import profile_v2
-from local_hand import worker
+from local_hand import mailbox_safety, worker
 from local_hand.paths import load_profile
 from local_hand.protocol import LocalHandError
 from local_hand_connect import controller
@@ -159,6 +159,6 @@ class FetchSnapshotChainTests(unittest.TestCase):
         self.assertEqual(pending.read_bytes(), pending_bytes)
         self.assertEqual(receipt.read_bytes(), receipt_bytes)
         worker.process_once(self.f.mailbox, self.f.branch, self.profile, self.state)
-        self.assertFalse(pending.exists())
+        self.assertFalse(mailbox_safety.target_lexists(pending))
         self.assertEqual(receipt.read_bytes(), receipt_bytes)
         self.assertEqual((self.repo / 'sample.txt').read_bytes(), b'recovery-sentinel\n')

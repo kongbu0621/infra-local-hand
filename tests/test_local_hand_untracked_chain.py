@@ -126,7 +126,7 @@ class UntrackedMailboxChainTests(unittest.TestCase):
         remote=self.f._git(self.f.root,'--git-dir',str(self.f.remote),'show',self.f.branch+':'+rel).stdout
         self.assertEqual(json.loads(remote),result)
         self.assertEqual((self.state/'receipts/LH9303.json').read_bytes(),receipt)
-        self.assertFalse((self.state/'outbox/LH9303.json').exists())
+        self.assertFalse(mailbox_safety.target_lexists(self.state/'outbox/LH9303.json'))
         self.assertEqual((self.repo/'sample.txt').read_bytes(),b'recovery-sentinel\n')
         self._assert_preserved(rel,raw)
 

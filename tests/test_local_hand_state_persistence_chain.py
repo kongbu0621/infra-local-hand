@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from test_local_hand_state_lookup_chain import StateLookupChainTests
-from local_hand import worker
+from local_hand import mailbox_safety, worker
 from local_hand.protocol import LocalHandError
 from local_hand_connect import controller
 
@@ -132,7 +132,7 @@ class StatePersistenceChainTests(unittest.TestCase):
         self.assertFalse(list((c.state/'receipts').glob('.*.local-hand-*')))
         if stage == 'intent':
             self.assertFalse(receipt.exists())
-            self.assertFalse(outbox.exists())
+            self.assertFalse(mailbox_safety.target_lexists(outbox))
             self.assertEqual((c.repo/'sample.txt').read_bytes(), b'before\n')
             with mock.patch.object(worker, 'execute_task', wraps=worker.execute_task) as execute:
                 worker.process_once(c.f.mailbox, c.f.branch, c.profile, c.state)
@@ -142,7 +142,7 @@ class StatePersistenceChainTests(unittest.TestCase):
             self.assertEqual((c.repo/'sample.txt').read_bytes(), b'after\n')
             self.assertTrue(receipt.exists())
             payload_retained = stage == 'receipt' or after_replace
-            self.assertEqual(outbox.exists(), payload_retained)
+            self.assertEqual(mailbox_safety.target_lexists(outbox), payload_retained)
             if payload_retained:
                 self.assertEqual(json.loads(outbox.read_text())['status'], 'succeeded')
             # A new execution would be observable even for the same CAS input.
@@ -157,7 +157,7 @@ class StatePersistenceChainTests(unittest.TestCase):
         if expected == 'indeterminate':
             self.assertEqual(result['error_code'], 'outcome_unknown')
         self.assertEqual(json.loads(receipt.read_text())['result'], result)
-        self.assertFalse(outbox.exists())
+        self.assertFalse(mailbox_safety.target_lexists(outbox))
 
     def test_failed_intent_write_stops_before_execution_then_retries_once(self):
         self._persistence_recovery('LH9600', 'intent')

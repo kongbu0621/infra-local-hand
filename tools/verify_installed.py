@@ -24,6 +24,20 @@ import time
 import uuid
 
 
+def _entry_exists_strict(path: Path) -> bool:
+    """Return whether a directory entry exists without hiding lookup errors."""
+    path = Path(path)
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise AssertionError(
+            f"cannot determine directory-entry state: {path}; errno={exc.errno}"
+        ) from exc
+    return True
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--wheel',required=True,type=Path)
@@ -237,13 +251,13 @@ with mock.patch.object(owner, '_write_create_only', side_effect=injected_writer)
             publication_evidence=[]
             controller_marker=controller/'.git/local-hand-connect.json'
             init_args=['init']+common
-            assert not controller_marker.exists()
+            assert not _entry_exists_strict(controller_marker)
             failed_stdout=run([sys.executable,'-I','-c',controller_write_failure_code,'marker']+init_args,expected=3)
             failed_command=len(records)
             failure=json.loads((logs/f'{failed_command:03}'/'stderr.log').read_text())
             assert not failed_stdout and failure['error_code']=='controller_file_write_failed' and failure['status']=='indeterminate',failure
             assert 'errno=28' in failure['error'],failure
-            failed_target_absent=not controller_marker.exists()
+            failed_target_absent=not _entry_exists_strict(controller_marker)
             assert failed_target_absent
             admitted=json.loads(run(connect+init_args));healthy_command=len(records)
             marker_bytes=controller_marker.read_bytes()
@@ -264,13 +278,13 @@ with mock.patch.object(owner, '_write_create_only', side_effect=injected_writer)
             controller_output=root/'controller-output-task.json'
             build_args=['build','--target-node',profile.node_id,'--action','node.status',
                         '--task-id','LH9850','--output',controller_output]
-            assert not controller_output.exists()
+            assert not _entry_exists_strict(controller_output)
             failed_stdout=run([sys.executable,'-I','-c',controller_write_failure_code,'output']+build_args,expected=3)
             failed_command=len(records)
             failure=json.loads((logs/f'{failed_command:03}'/'stderr.log').read_text())
             assert not failed_stdout and failure['error_code']=='controller_file_write_failed' and failure['status']=='indeterminate',failure
             assert 'errno=28' in failure['error'],failure
-            failed_target_absent=not controller_output.exists()
+            failed_target_absent=not _entry_exists_strict(controller_output)
             assert failed_target_absent
             assert not run(connect+build_args)
             healthy_command=len(records)
@@ -321,6 +335,19 @@ print(json.dumps(results))
                 run([git,'-C',box,'update-ref','-d','refs/remotes/origin/'+policy['branch']])
             checks.append({'case':'installed transport fixtures have no tracking mapping or reference','status':'PASS'})
             worker_cmd=[sys.executable,'-I','-m','local_hand.worker','--profile',profile_path,'--mailbox-repo',worker_box,'--state-root',state,'--once']
+            outbox_recovery_evidence=[]
+            def outbox_recovery_snapshot(task_id,business_file,phase):
+                def file_state(path):
+                    present=_entry_exists_strict(path)
+                    if not present:return {'present':False}
+                    raw=path.read_bytes()
+                    return {'present':True,'relative_path':str(path.relative_to(root)),
+                            'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+                return {'task_id':task_id,'phase':phase,'after_command':len(records),
+                    'business_file':file_state(business_file),
+                    'receipt':file_state(state/'receipts'/f'{task_id}.json'),
+                    'remote_result':file_state(worker_box/'_executor_spike/results'/f'{task_id}.json'),
+                    'pending':file_state(state/'outbox'/f'{task_id}.json')}
             actions=[('node.status',{},'succeeded'),('repo.audit',{'repository':'demo'},'succeeded'),
                      ('fs.list',{'repository':'demo'},'succeeded'),('fs.read_text',{'repository':'demo','relative_path':'sample.txt'},'succeeded'),
                      ('git.status',{'repository':'demo'},'succeeded'),('git.diff',{'repository':'demo'},'succeeded'),
@@ -343,7 +370,7 @@ print(json.dumps(results))
             run(connect+['submit']+common+['--task-file',wrong]);run(worker_cmd)
             run(connect+['wait']+common+['--task-file',wrong,'--timeout-seconds','0',
                                         '--expected-provenance-file',expected_path],expected=3)
-            assert not (state/'receipts'/'LH9998.json').exists()
+            assert not _entry_exists_strict(state/'receipts'/'LH9998.json')
             checks.append({'case':'wrong target ignored; timeout remains indeterminate','status':'PASS'})
             invalid_call=save('invalid-call.json',build_task(profile.node_id,'fs.write_text_cas',{
                 'repository':'demo','relative_path':'sample.txt',
@@ -395,8 +422,8 @@ print(json.dumps(results))
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert received==blocked,received
             assert (project/'sample.txt').read_bytes()==b'after-controller-result\n'
-            assert not (state/'receipts/LH9996.json').exists()
-            assert not (worker_box/'_executor_spike/results/LH9996.json').exists()
+            assert not _entry_exists_strict(state/'receipts/LH9996.json')
+            assert not _entry_exists_strict(worker_box/'_executor_spike/results/LH9996.json')
             marker=state/'conflicts'/remote_path.name;marker_bytes=marker.read_bytes()
             assert json.loads(marker_bytes)==blocked
             checks.append({'case':'remote conflict blocks installed CAS without a local receipt','status':'PASS'})
@@ -437,7 +464,7 @@ print(json.dumps(results))
                 override={'LOCAL_HAND_GIT_TIMEOUT_SECONDS':'2'})
             stderr=(logs/f'{len(records):03}'/'stderr.log').read_text()
             assert 'controller_publish_failed' in stderr and 'git_timeout' in stderr,stderr
-            assert delivered_push.is_file() and not delayed_push.exists()
+            assert delivered_push.is_file() and not _entry_exists_strict(delayed_push)
             delivered_push.rename(root/'controller-push-delivered.txt')
             remote_task=json.loads(run([git,'--git-dir',bare,'show',policy['branch']+':_executor_spike/tasks/LH9995.json']))
             assert remote_task==uncertain_task
@@ -447,7 +474,7 @@ print(json.dumps(results))
             run(worker_cmd,expected=3,override={'LOCAL_HAND_GIT_TIMEOUT_SECONDS':'2'})
             stderr=(logs/f'{len(records):03}'/'stderr.log').read_text()
             assert 'mailbox_publish_failed' in stderr and 'git_timeout' in stderr,stderr
-            assert delivered_push.is_file() and not delayed_push.exists()
+            assert delivered_push.is_file() and not _entry_exists_strict(delayed_push)
             delivered_push.rename(root/'worker-push-delivered.txt')
             assert (project/'sample.txt').read_bytes()==b'delivered-once\n'
             receipt_path=state/'receipts/LH9995.json';receipt_bytes=receipt_path.read_bytes()
@@ -456,6 +483,8 @@ print(json.dumps(results))
             assert json.loads((state/'outbox/LH9995.json').read_text())==saved
             remote_result=json.loads(run([git,'--git-dir',bare,'show',policy['branch']+':_executor_spike/results/LH9995.json']))
             assert remote_result==saved
+            lost_ack_before=outbox_recovery_snapshot('LH9995',project/'sample.txt','delivered-timeout')
+            assert lost_ack_before['pending']['present']
             checks.append({'case':'installed worker retains successful result and outbox after delivered push timeout','status':'PASS'})
 
             (project/'sample.txt').write_bytes(b'recovery-sentinel\n')
@@ -463,9 +492,17 @@ print(json.dumps(results))
             actual=json.loads(run(connect+['wait']+common+['--task-file',uncertain_path,
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert actual==saved and receipt_path.read_bytes()==receipt_bytes
-            assert not (state/'outbox/LH9995.json').exists()
+            assert not _entry_exists_strict(state/'outbox/LH9995.json')
+            lost_ack_recovered=outbox_recovery_snapshot('LH9995',project/'sample.txt','first-recovery')
             run(connect+['submit']+common+['--task-file',uncertain_path]);run(worker_cmd)
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            lost_ack_repeated=outbox_recovery_snapshot('LH9995',project/'sample.txt','repeat-submit-worker')
+            for field in ('receipt','remote_result'):
+                assert lost_ack_before[field]['sha256']==lost_ack_recovered[field]['sha256']==lost_ack_repeated[field]['sha256']
+            assert lost_ack_recovered['business_file']['sha256']==lost_ack_repeated['business_file']['sha256']
+            assert not lost_ack_recovered['pending']['present'] and not lost_ack_repeated['pending']['present']
+            outbox_recovery_evidence.append({'case':'delivered-push-timeout','task_id':'LH9995',
+                'snapshots':[lost_ack_before,lost_ack_recovered,lost_ack_repeated]})
             checks.append({'case':'restart and same-task reconciliation preserve delivery result without replay','status':'PASS'})
 
             broken_task=build_task(profile.node_id,'fs.write_text_cas',{
@@ -480,8 +517,8 @@ print(json.dumps(results))
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert actual['status']=='indeterminate' and actual['error_code']=='local_receipt_invalid',actual
             assert broken_receipt.is_symlink() and broken_receipt.readlink()==missing_receipt
-            assert not missing_receipt.exists() and (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
-            assert not (worker_box/'_executor_spike/results/LH9994.json').exists()
+            assert not _entry_exists_strict(missing_receipt) and (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
+            assert not _entry_exists_strict(worker_box/'_executor_spike/results/LH9994.json')
             checks.append({'case':'installed worker preserves dangling receipt and rejects CAS replay','status':'PASS'})
             lifetime_task=save('lifetime-task.json',build_task(profile.node_id,'validation.run_profile',{
                 'repository':'demo','profile':'early-parent'},task_id='LH9993'))
@@ -554,9 +591,9 @@ print(json.dumps(results))
             received=json.loads(run(connect+['wait']+common+['--task-file',interrupted_path,
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert received==completed and (state/'receipts/LH9990.json').read_bytes()==receipt_bytes
-            assert not (state/'outbox/LH9990.json').exists()
+            assert not _entry_exists_strict(state/'outbox/LH9990.json')
             checks.append({'case':'installed worker publishes retained precommit result without replay','status':'PASS'})
-            assert not (state/'receipts/LH9989.json').exists()
+            assert not _entry_exists_strict(state/'receipts/LH9989.json')
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
             checks.append({'case':'installed worker does not execute uncommitted local task','status':'PASS'})
             from local_hand.protocol import result_success
@@ -681,7 +718,7 @@ with mock.patch.object(os,'lstat',side_effect=lookup):
             lookup_rejected(receipt_path,'worker',worker_cmd[4:])
             assert receipt_path.read_bytes()==receipt_before
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
-            assert not (state/'outbox/LH9995.json').exists()
+            assert not _entry_exists_strict(state/'outbox/LH9995.json')
             run(worker_cmd)
             actual=json.loads(run(connect+['wait']+common+['--task-file',root/'lost-ack-cas-task.json',
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
@@ -696,7 +733,7 @@ with mock.patch.object(os,'lstat',side_effect=lookup):
             run([git,'-C',seed,'commit','-qm','synthetic conflict loss before metadata fault'])
             run([git,'-C',seed,'push','origin',policy['branch']])
             lookup_rejected(marker_path,'worker',worker_cmd[4:])
-            assert marker_path.read_bytes()==marker_before and not (state/'receipts/LH9996.json').exists()
+            assert marker_path.read_bytes()==marker_before and not _entry_exists_strict(state/'receipts/LH9996.json')
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
             residue_code='''import json,sys
 from pathlib import Path
@@ -725,7 +762,7 @@ raise SystemExit(code)
                 '--timeout-seconds','0','--expected-provenance-file',expected_path]))
             assert actual==json.loads(marker_before)
             checks.append({'case':'installed conflict recovery ignores untracked reset residue','status':'PASS'})
-            assert marker_path.read_bytes()==marker_before and not (state/'receipts/LH9996.json').exists()
+            assert marker_path.read_bytes()==marker_before and not _entry_exists_strict(state/'receipts/LH9996.json')
             assert (project/'sample.txt').read_bytes()==b'recovery-sentinel\n'
             checks.append({'case':'installed unreadable conflict stops and later restores the replay barrier','status':'PASS'})
             first_marker=controller/'_executor_spike/conflicts'/conflict_filename(task_digest(first_task))
@@ -765,13 +802,13 @@ with mock.patch.object(worker,'write_json_atomic',side_effect=injected):
                 assert not output and expected_code in error and 'errno=28' in error
                 receipt=state/'receipts'/f'{task_id}.json';pending=state/'outbox'/f'{task_id}.json'
                 assert target.read_bytes()==(b'before\n' if stage=='intent' else b'after\n')
-                assert receipt.exists()==(stage!='intent')
+                assert _entry_exists_strict(receipt)==(stage!='intent')
                 retained=stage=='receipt' or phase=='after-replace'
-                assert pending.exists()==retained
+                assert _entry_exists_strict(pending)==retained
                 item={'task_id':task_id,'stage':stage,'phase':phase,'error_code':expected_code,
                     'failed_command':len(records),'file_after_failure_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),
-                    'receipt_after_failure':json.loads(receipt.read_text()) if receipt.exists() else None,
-                    'outbox_after_failure':json.loads(pending.read_text()) if pending.exists() else None}
+                    'receipt_after_failure':json.loads(receipt.read_text()) if _entry_exists_strict(receipt) else None,
+                    'outbox_after_failure':json.loads(pending.read_text()) if _entry_exists_strict(pending) else None}
                 if retained:assert item['outbox_after_failure']['status']=='succeeded'
                 if stage!='intent':target.write_bytes(b'recovery-sentinel\n')
                 run(worker_cmd)
@@ -780,7 +817,7 @@ with mock.patch.object(worker,'write_json_atomic',side_effect=injected):
                 expected_status='indeterminate' if stage=='outbox' and phase=='before-replace' else 'succeeded'
                 assert result['status']==expected_status
                 if expected_status=='indeterminate':assert result['error_code']=='outcome_unknown'
-                assert json.loads(receipt.read_text())['result']==result and not pending.exists()
+                assert json.loads(receipt.read_text())['result']==result and not _entry_exists_strict(pending)
                 assert target.read_bytes()==(b'after\n' if stage=='intent' else b'recovery-sentinel\n')
                 item.update(result=result,file_after_recovery_sha256=hashlib.sha256(target.read_bytes()).hexdigest())
                 persistence_evidence.append(item)
@@ -855,12 +892,24 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                 result=json.loads(run(connect+['wait']+common+['--task-file',task_path,
                     '--timeout-seconds','0','--expected-provenance-file',expected_path]))
                 assert result['status']=='succeeded' and json.loads(receipt.read_text())['result']==result
-                assert not pending.exists()
-                assert not (state/'conflicts'/conflict_filename(task_digest(task))).exists()
+                assert not _entry_exists_strict(pending)
+                assert not _entry_exists_strict(state/'conflicts'/conflict_filename(task_digest(task)))
                 assert target_file.read_bytes()==(b'after\n' if kind=='task' else b'recovery-sentinel\n')
                 item.update(result=result,file_after_recovery_sha256=hashlib.sha256(target_file.read_bytes()).hexdigest())
+                if kind=='remote-ack':
+                    remote_ack_recovered=outbox_recovery_snapshot(task_id,target_file,'first-recovery')
+                    run(worker_cmd)
+                    remote_ack_repeated=outbox_recovery_snapshot(task_id,target_file,'repeat-worker')
+                    for field in ('business_file','receipt','remote_result'):
+                        assert remote_ack_recovered[field]['sha256']==remote_ack_repeated[field]['sha256']
+                    assert not remote_ack_recovered['pending']['present'] and not remote_ack_repeated['pending']['present']
+                    item['repeat_worker_command']=len(records)
+                    outbox_recovery_evidence.append({'case':'remote-ack-read-failure','task_id':task_id,
+                        'snapshots':[remote_ack_recovered,remote_ack_repeated]})
+                    checks.append({'case':'installed remote-ack recovery repeat poll preserves all barriers','status':'PASS'})
                 read_evidence.append(item)
                 checks.append({'case':'installed payload read failure recovery '+kind,'status':'PASS'})
+            save('outbox-recovery-evidence.json',{'cases':outbox_recovery_evidence})
             for operation in ('wait','submit'):
                 target=controller/'_executor_spike'/('results' if operation=='wait' else 'tasks')/f'{task_id}.json'
                 argv=[operation]+common+['--task-file',task_path]
@@ -920,7 +969,7 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                 if item['task_id']=='LH1008':
                     assert result_value['status']=='rejected' and result_value['error_code']=='action_not_allowlisted'
                 else:assert result_value==admission_result
-                assert not os.path.lexists(state/'outbox'/name)
+                assert not _entry_exists_strict(state/'outbox'/name)
                 admission_completed[item['task_id']]={'result':result_value,
                     'receipt_before_sha256':hashlib.sha256(receipt_raw).hexdigest(),
                     'result_before_sha256':hashlib.sha256(result_raw).hexdigest()}
@@ -932,13 +981,13 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                     assert (worker_box/saved['relative_path']).read_bytes()==raw
                     assert (controller/saved['relative_path']).read_bytes()==raw
                     name=item['task_id']+'.json';conflict=conflict_filename(task_digest(item))
-                    assert not os.path.lexists(state/'conflicts'/conflict)
+                    assert not _entry_exists_strict(state/'conflicts'/conflict)
                     for box in (worker_box,controller):
-                        assert not os.path.lexists(box/'_executor_spike/conflicts'/conflict)
+                        assert not _entry_exists_strict(box/'_executor_spike/conflicts'/conflict)
                     if item['task_id'] in admission_invalid:
                         for location in (state/'receipts'/name,state/'outbox'/name,
                                          worker_box/'_executor_spike/results'/name,controller/'_executor_spike/results'/name):
-                            assert not os.path.lexists(location),(item['task_id'],str(location))
+                            assert not _entry_exists_strict(location),(item['task_id'],str(location))
             admission_unchanged()
             # A second CAS would turn this sentinel back into after\n.
             admission_target.write_bytes(b'before\n')
@@ -951,7 +1000,7 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                 saved['result_after_sha256']=hashlib.sha256((worker_box/'_executor_spike/results'/name).read_bytes()).hexdigest()
                 assert saved['receipt_before_sha256']==saved['receipt_after_sha256']
                 assert saved['result_before_sha256']==saved['result_after_sha256']
-                assert not os.path.lexists(state/'outbox'/name)
+                assert not _entry_exists_strict(state/'outbox'/name)
             assert len(records)-admission_start==8
             save('admission-evidence.json',{'tasks':admission_originals,'invalid_task_ids':admission_invalid,
                 'completed':admission_completed,'valid_result':admission_result,
@@ -1027,7 +1076,7 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                         name=item['task_id']+'.json'
                         for location in (state/'receipts'/name,state/'outbox'/name,
                                          worker_box/'_executor_spike/results'/name,controller/'_executor_spike/results'/name):
-                            assert not os.path.lexists(location),(item['task_id'],str(location))
+                            assert not _entry_exists_strict(location),(item['task_id'],str(location))
                 assert digest_conflict_snapshot()==digest_conflicts_before
             digest_unchanged()
             digest_target.write_bytes(digest_before)
@@ -1035,7 +1084,7 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
             assert digest_target.read_bytes()==digest_before
             assert digest_receipt.read_bytes()==digest_receipt_before
             assert digest_remote_result.read_bytes()==digest_result_before
-            assert not os.path.lexists(state/'outbox/LH1012.json')
+            assert not _entry_exists_strict(state/'outbox/LH1012.json')
             digest_unchanged()
             digest_committed_head=run([git,'--git-dir',bare,'rev-parse','refs/heads/'+policy['branch']]).strip()
             digest_head_command=len(records)
@@ -1122,7 +1171,7 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
             preserved_pending=[p for p in (state/'quarantine').iterdir()
                                if p.name.startswith('LH1020.json.') and p.name.endswith('.invalid')]
             assert len(preserved_pending)==1 and preserved_pending[0].read_bytes()==pending_raw
-            for task in encoding_tasks:assert not os.path.lexists(state/'outbox'/f"{task['task_id']}.json")
+            for task in encoding_tasks:assert not _entry_exists_strict(state/'outbox'/f"{task['task_id']}.json")
             encoding_barriers={}
             for task in encoding_tasks[:2]:
                 path=state/'conflicts'/conflict_filename(task_digest(task))
@@ -1167,7 +1216,7 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                     'expected_sha256':expected_digest,'content':content},task_id=task_id)
                 task_path=save(f'contract-{task_id}-task.json',task)
                 receipt=state/'receipts'/f'{task_id}.json'
-                assert not receipt.exists()
+                assert not _entry_exists_strict(receipt)
                 before=cas_file.read_bytes();commands={}
                 response=json.loads(run(connect+['submit']+common+['--task-file',task_path]))
                 commands['submit']=len(records);assert response['status']=='submitted'
@@ -1216,7 +1265,7 @@ with mock.patch.object(observe,'list_directory_bounded',side_effect=listing):
                 if label=='directory-entry-healthy':os.mkfifo(project/'observation-channel')
                 task=build_task(profile.node_id,'fs.list',{'repository':'demo'},task_id=task_id)
                 task_path=save(f'contract-{task_id}-task.json',task)
-                receipt=state/'receipts'/f'{task_id}.json';assert not receipt.exists()
+                receipt=state/'receipts'/f'{task_id}.json';assert not _entry_exists_strict(receipt)
                 before=cas_file.read_bytes();commands={}
                 response=json.loads(run(connect+['submit']+common+['--task-file',task_path]))
                 commands['submit']=len(records);assert response['status']=='submitted'

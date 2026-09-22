@@ -7,7 +7,7 @@ import os
 import unittest
 from unittest import mock
 
-from local_hand import worker
+from local_hand import mailbox_safety, worker
 from local_hand.protocol import conflict_filename, task_digest
 from test_local_hand_state_lookup_chain import StateLookupChainTests
 
@@ -89,7 +89,10 @@ class TaskAdmissionChainTests(unittest.TestCase):
             with self.subTest(action=task.get("action", "<missing>")):
                 name = task["task_id"] + ".json"
                 self.assertFalse((c.state / "receipts" / name).exists(), "invalid identity gained a receipt")
-                self.assertFalse((c.state / "outbox" / name).exists(), "invalid identity gained a Result")
+                self.assertFalse(
+                    mailbox_safety.target_lexists(c.state / "outbox" / name),
+                    "invalid identity gained a Result",
+                )
                 self.assertFalse((c.f.mailbox / "_executor_spike/results" / name).exists(), "invalid identity gained a remote Result")
                 conflict = conflict_filename(task_digest(task))
                 self.assertFalse((c.state / "conflicts" / conflict).exists())

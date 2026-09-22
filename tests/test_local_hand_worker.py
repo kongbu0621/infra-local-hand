@@ -16,7 +16,7 @@ from unittest import mock
 TOOLS_ROOT = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS_ROOT))
 
-from local_hand import act, observe, validate, worker
+from local_hand import act, mailbox_safety, observe, validate, worker
 from local_hand.paths import load_profile
 from config_fixtures import profile_v2
 from local_hand.protocol import LocalHandError, task_digest
@@ -678,7 +678,7 @@ class LocalHandCoreTests(unittest.TestCase):
         )
         worker.write_json_atomic(outbox / "LH0104.json", incoming_result)
         worker.publish_outbox(mailbox, MAILBOX_BRANCH, outbox)
-        self.assertFalse((outbox / "LH0104.json").exists())
+        self.assertFalse(mailbox_safety.target_lexists(outbox / "LH0104.json"))
         conflict_name = worker._conflict_filename(
             "LH0104", task_digest(incoming), task_digest(original)
         )
@@ -702,7 +702,7 @@ class LocalHandCoreTests(unittest.TestCase):
         local_result=worker.result_success(task,"test-node",{"source":"local"},worker.build_provenance(self.profile))
         worker.write_json_atomic(outbox/"LH0105.json",local_result)
         worker.publish_outbox(mailbox,MAILBOX_BRANCH,outbox)
-        self.assertFalse((outbox/"LH0105.json").exists())
+        self.assertFalse(mailbox_safety.target_lexists(outbox/"LH0105.json"))
         quarantined=list((outbox.parent/"quarantine").glob("LH0105.json.*.conflict"))
         self.assertEqual(len(quarantined),1)
         self.assertEqual(json.loads(quarantined[0].read_text()),local_result)
