@@ -37,6 +37,12 @@ def verify_wheel(path: Path, metadata: dict) -> str:
     def identity(info):
         return (info.st_dev,info.st_ino,info.st_mode,info.st_nlink,
                 info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+    def named_identity():
+        # Use the same API for both handles. On CPython 3.12 Windows, path
+        # stat's ctime means creation time while fstat retains change time.
+        named=os.open(path,os.O_RDONLY|getattr(os,"O_NONBLOCK",0))
+        try:return identity(os.fstat(named))
+        finally:os.close(named)
     try:
         # Inspect and hash the same open artifact. Reopening by name after ZIP
         # validation could bind an installation to unrelated replacement bytes.
@@ -44,7 +50,7 @@ def verify_wheel(path: Path, metadata: dict) -> str:
             before=os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) or before.st_size>limit:
                 raise _bad("wheel exceeds installation artifact bound or is not regular")
-            if identity(path.stat())!=identity(before):raise _bad("wheel changed during verification")
+            if named_identity()!=identity(before):raise _bad("wheel changed during verification")
             with zipfile.ZipFile(stream) as archive:
                 names=archive.namelist()
                 if len(names)!=len(set(names)) or sum(i.file_size for i in archive.infolist())>32*1024*1024:
@@ -66,8 +72,9 @@ def verify_wheel(path: Path, metadata: dict) -> str:
                 count+=len(chunk)
                 if count>limit:raise _bad("wheel exceeds installation artifact bound")
                 digest.update(chunk)
+            current_named=named_identity()
             if (count!=before.st_size or identity(os.fstat(stream.fileno()))!=identity(before)
-                    or identity(path.stat())!=identity(before)):
+                    or current_named!=identity(before)):
                 raise _bad("wheel changed during verification")
             return digest.hexdigest()
     except (OSError,ValueError,zipfile.BadZipFile,KeyError) as exc:raise _bad("invalid wheel artifact") from exc

@@ -357,6 +357,41 @@ with zipfile.ZipFile(wheel) as archive:
 '''
         self.command([sys.executable, "-I", "-c", script, installed / "installation.py", wheel])
 
+    def test_retained_wheel_allows_distinct_path_and_descriptor_timestamp_semantics(self):
+        self.build()
+        wheel = next(self.output.glob("*.whl"))
+        installed = self.root / "installed" / "local_hand"
+        installed.mkdir(parents=True)
+        with zipfile.ZipFile(wheel) as archive:
+            (installed / "_build_metadata.json").write_bytes(archive.read("local_hand/_build_metadata.json"))
+        script = r'''
+from pathlib import Path
+import hashlib
+import json
+import sys
+from types import SimpleNamespace
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+from local_hand import installation
+installation.__file__ = sys.argv[1]
+wheel = Path(sys.argv[2])
+metadata = json.loads((Path(sys.argv[1]).parent / '_build_metadata.json').read_bytes())
+expected = hashlib.sha256(wheel.read_bytes()).hexdigest()
+original = Path.stat
+def named_stat(path, *args, **kwargs):
+    actual = original(path, *args, **kwargs)
+    if path == wheel:
+        fields = {name: getattr(actual, name) for name in dir(actual) if name.startswith('st_')}
+        # CPython 3.12 Windows path stat reports birth time in this slot,
+        # whereas fstat reports FILE_BASIC_INFO.ChangeTime. Neither changed.
+        fields['st_ctime_ns'] -= 1000
+        return SimpleNamespace(**fields)
+    return actual
+with patch.object(Path, 'stat', named_stat):
+    assert installation.verify_wheel(wheel, metadata) == expected
+'''
+        self.command([sys.executable, "-I", "-c", script, installed / "installation.py", wheel])
+
 
 @unittest.skipUnless(sys.platform == "linux", "Plugin publication is Linux-only; wheel identity remains cross-platform")
 class PluginBuildIdentityTests(BuildFixture):
