@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +16,7 @@ from local_hand.protocol import LocalHandError
 
 from .controller import (
     GitMailboxControllerAdapter,
+    _write_create_only,
     build_task,
     render_json,
     validate_expected_provenance,
@@ -434,47 +434,20 @@ def _wrong_provenance(expected: dict[str, Any]) -> dict[str, Any]:
 
 def _write_report(path: Path, report: dict[str, Any]) -> None:
     data = (render_json(report) + "\n").encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
     try:
-        fd = os.open(path, flags, 0o600)
-    except OSError as exc:
-        raise LocalHandError(
-            "acceptance_report_write_failed",
-            f"cannot create acceptance report: {path}",
-            "indeterminate",
-        ) from exc
-    write_error: OSError | None = None
-    try:
-        view = memoryview(data)
-        written = 0
-        while written < len(view):
-            chunk = os.write(fd, view[written:])
-            if chunk <= 0:
-                raise OSError("acceptance report write made no progress")
-            written += chunk
-        os.fsync(fd)
-    except OSError as exc:
-        write_error = exc
-    finally:
-        try:
-            os.close(fd)
-        except OSError as exc:
-            if write_error is None:
-                write_error = exc
-    if write_error is not None:
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise LocalHandError(
-            "acceptance_report_write_failed",
-            f"cannot durably write acceptance report: {path}",
-            "indeterminate",
-        ) from write_error
+        _write_create_only(
+            path,
+            data,
+            exists_code="acceptance_report_write_failed",
+            exists_message=f"cannot create acceptance report: {path}",
+        )
+    except LocalHandError as exc:
+        code = (
+            "acceptance_report_durability_unconfirmed"
+            if exc.code == "controller_file_durability_unconfirmed"
+            else "acceptance_report_write_failed"
+        )
+        raise LocalHandError(code, exc.message, "indeterminate") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:

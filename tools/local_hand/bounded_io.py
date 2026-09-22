@@ -268,6 +268,55 @@ def _kill_tree(proc: subprocess.Popen[bytes], *, root_exit_is_confirmation: bool
     return _wait_posix_group_gone(pgid, 3.0)
 
 
+def start_bounded_capture(
+    proc: subprocess.Popen[bytes], out_state: CaptureState, err_state: CaptureState,
+    *, max_stdout: int, max_stderr: int, code_prefix: str,
+) -> tuple[threading.Thread, threading.Thread, threading.Event]:
+    """Start both pipe owners, containing the child if either reader cannot start."""
+    assert proc.stdout is not None and proc.stderr is not None
+    stop = threading.Event()
+    readers: list[tuple[threading.Thread, BinaryIO]] = []
+    try:
+        for stream, state, limit in ((proc.stdout, out_state, max_stdout),
+                                     (proc.stderr, err_state, max_stderr)):
+            reader = threading.Thread(
+                target=drain_pipe_bounded, args=(stream, state, limit, stop), daemon=True,
+            )
+            readers.append((reader, stream))
+            reader.start()
+    except (RuntimeError, OSError) as exc:
+        # Starting a subprocess transfers lifetime ownership before either
+        # reader exists. A thread resource failure must not abandon that child.
+        terminated = _kill_tree(proc)
+        proc.poll()
+        stop.set()
+        owned_streams = set()
+        for reader, stream in readers:
+            if reader.ident is not None:
+                owned_streams.add(stream)
+                reader.join(2)
+        for stream in (proc.stdout, proc.stderr):
+            if stream not in owned_streams:
+                # No reader ever acquired this stream, so closing it cannot
+                # block on another thread's BufferedReader lock.
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
+        if not terminated:
+            raise LocalHandError(
+                f"{code_prefix}_termination_unconfirmed",
+                "output reader could not start and process-tree termination was not confirmed",
+                "indeterminate",
+            ) from exc
+        raise LocalHandError(
+            f"{code_prefix}_capture_start_failed",
+            "output reader could not start; process tree was terminated and capture is incomplete",
+            "indeterminate",
+        ) from exc
+    return readers[0][0], readers[1][0], stop
+
+
 def run_process_bounded(
     argv: Sequence[str],
     *,
@@ -303,11 +352,10 @@ def run_process_bounded(
 
     assert proc.stdout is not None and proc.stderr is not None
     out_state, err_state = CaptureState(), CaptureState()
-    capture_stop = threading.Event()
-    out_thread = threading.Thread(target=drain_pipe_bounded, args=(proc.stdout, out_state, max_stdout, capture_stop), daemon=True)
-    err_thread = threading.Thread(target=drain_pipe_bounded, args=(proc.stderr, err_state, max_stderr, capture_stop), daemon=True)
-    out_thread.start()
-    err_thread.start()
+    out_thread, err_thread, capture_stop = start_bounded_capture(
+        proc, out_state, err_state, max_stdout=max_stdout,
+        max_stderr=max_stderr, code_prefix=code_prefix,
+    )
 
     stop_reason: str | None = None
     deadline = time.monotonic() + timeout

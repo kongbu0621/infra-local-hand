@@ -963,6 +963,103 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                 'worker_command':admission_worker_command,'wait_command':admission_wait_command,
                 'repeat_worker_command':admission_repeat_command})
             checks.append({'case':'installed malformed action isolation and later CAS without replay','status':'PASS'})
+            digest_start=len(records)
+            digest_target=project/'unicode-digest-cas.txt'
+            digest_before=b'before\n';digest_after='完成😀\n'.encode('utf-8')
+            with digest_target.open('xb') as stream:stream.write(digest_before)
+            digest_tasks=[];digest_originals={}
+            digest_high=build_task(profile.node_id,'node.status',{},task_id='LH1010')
+            digest_high['params']={'invalid':'\ud800'};digest_tasks.append(digest_high)
+            digest_low=build_task(profile.node_id,'node.status',{},task_id='LH1011')
+            digest_low['action']='\udfff';digest_tasks.append(digest_low)
+            digest_valid=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':digest_target.name,
+                'expected_sha256':hashlib.sha256(digest_before).hexdigest(),
+                'content':digest_after.decode('utf-8')},task_id='LH1012')
+            digest_tasks.append(digest_valid)
+            digest_invalid_ids=['LH1010','LH1011']
+            for item in digest_tasks[:-1]:
+                try:task_digest(item)
+                except LocalHandError as exc:assert exc.code=='task_digest_invalid'
+                else:raise AssertionError('lone surrogate gained a canonical UTF-8 identity')
+            def digest_conflict_snapshot():
+                snapshot={}
+                for directory in (state/'conflicts',state/'outbox',
+                                  worker_box/'_executor_spike/conflicts',controller/'_executor_spike/conflicts'):
+                    for path in sorted(directory.glob('CONFLICT-*.json')):
+                        snapshot[str(path.relative_to(root))]=hashlib.sha256(path.read_bytes()).hexdigest()
+                return snapshot
+            digest_conflicts_before=digest_conflict_snapshot()
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            for item in digest_tasks:
+                # ASCII JSON escapes retain the exact invalid decoded values;
+                # save() never invents a replacement canonical task digest.
+                source=save(f"digest-{item['task_id']}-task.json",item)
+                raw=source.read_bytes();relative=f"_executor_spike/tasks/{item['task_id']}.json"
+                (seed/relative).write_bytes(raw)
+                digest_originals[item['task_id']]={'task':item,'source_file':source.name,
+                    'relative_path':relative,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
+                    'task_digest':None if item['task_id'] in digest_invalid_ids else task_digest(item),
+                    'identity_error':'task_digest_invalid' if item['task_id'] in digest_invalid_ids else None}
+            run([git,'-C',seed,'add','--','_executor_spike/tasks'])
+            run([git,'-C',seed,'commit','-qm','fixture invalid UTF-8 task identities and valid Unicode CAS'])
+            run([git,'-C',seed,'push','origin','HEAD:refs/heads/'+policy['branch']])
+            run(worker_cmd);digest_worker_command=len(records)
+            assert digest_target.read_bytes()==digest_after
+            digest_result=json.loads(run(connect+['wait']+common+['--task-file',root/'digest-LH1012-task.json',
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            digest_wait_command=len(records)
+            assert digest_result['status']=='succeeded' and digest_result['task_digest']==task_digest(digest_valid)
+            assert digest_result['task_id']=='LH1012' and digest_result['action']=='fs.write_text_cas'
+            assert digest_result['target_node']==profile.node_id
+            assert all(digest_result[k]==v for k,v in identity.items())
+            digest_receipt=state/'receipts/LH1012.json'
+            digest_remote_result=worker_box/'_executor_spike/results/LH1012.json'
+            digest_receipt_before=digest_receipt.read_bytes();digest_result_before=digest_remote_result.read_bytes()
+            assert json.loads(digest_receipt_before)['result']==digest_result==json.loads(digest_result_before)
+            def digest_unchanged():
+                for item in digest_tasks:
+                    saved=digest_originals[item['task_id']];raw=(root/saved['source_file']).read_bytes()
+                    assert hashlib.sha256(raw).hexdigest()==saved['sha256']
+                    for box in (worker_box,controller):assert (box/saved['relative_path']).read_bytes()==raw
+                    if item['task_id'] in digest_invalid_ids:
+                        name=item['task_id']+'.json'
+                        for location in (state/'receipts'/name,state/'outbox'/name,
+                                         worker_box/'_executor_spike/results'/name,controller/'_executor_spike/results'/name):
+                            assert not os.path.lexists(location),(item['task_id'],str(location))
+                assert digest_conflict_snapshot()==digest_conflicts_before
+            digest_unchanged()
+            digest_target.write_bytes(digest_before)
+            run(worker_cmd);digest_repeat_command=len(records)
+            assert digest_target.read_bytes()==digest_before
+            assert digest_receipt.read_bytes()==digest_receipt_before
+            assert digest_remote_result.read_bytes()==digest_result_before
+            assert not os.path.lexists(state/'outbox/LH1012.json')
+            digest_unchanged()
+            digest_committed_head=run([git,'--git-dir',bare,'rev-parse','refs/heads/'+policy['branch']]).strip()
+            digest_head_command=len(records)
+            for item in digest_tasks:
+                saved=digest_originals[item['task_id']]
+                raw=run([git,'--git-dir',bare,'show',digest_committed_head+':'+saved['relative_path']]).encode('utf-8')
+                assert raw==(root/saved['source_file']).read_bytes()
+                saved['committed_blob_read_command']=len(records)
+            assert len(records)-digest_start==12
+            save('digest-admission-evidence.json',{'tasks':digest_originals,'invalid_task_ids':digest_invalid_ids,
+                'valid_result':digest_result,'receipt':json.loads(digest_receipt_before),
+                'receipt_before_sha256':hashlib.sha256(digest_receipt_before).hexdigest(),
+                'receipt_after_sha256':hashlib.sha256(digest_receipt.read_bytes()).hexdigest(),
+                'result_before_sha256':hashlib.sha256(digest_result_before).hexdigest(),
+                'result_after_sha256':hashlib.sha256(digest_remote_result.read_bytes()).hexdigest(),
+                'conflicts_before':digest_conflicts_before,'conflicts_after':digest_conflict_snapshot(),
+                'target_relative_path':str(digest_target.relative_to(root)),
+                'target_after_execution_sha256':hashlib.sha256(digest_after).hexdigest(),
+                'target_after_repeat_sha256':hashlib.sha256(digest_target.read_bytes()).hexdigest(),
+                'committed_head':digest_committed_head,'head_command':digest_head_command,
+                'worker_command':digest_worker_command,'wait_command':digest_wait_command,
+                'repeat_worker_command':digest_repeat_command,
+                'command_numbers':list(range(digest_start+1,len(records)+1))})
+            checks.append({'case':'installed invalid UTF-8 task identity isolation and valid Unicode CAS without replay','status':'PASS'})
             # Command exit zero means a valid business Result was retrieved;
             # its rejected/indeterminate status remains a separate assertion.
             contract_evidence=[]
@@ -1114,6 +1211,20 @@ raise SystemExit(code)
                     'final_file_sha256':hashlib.sha256(target_file.read_bytes()).hexdigest()})
                 checks.append({'case':'installed FIFO replacement refusal and new-task recovery '+action,'status':'PASS'})
             save('reader-race-evidence.json',reader_race_evidence)
+            capture_start_program='"""Installed-only capture startup fault chain. Invoke: python -I FILE NEW_ROOT."""\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport signal\nimport subprocess\nimport sys\nimport threading\nimport time\nfrom unittest import mock\n\nfrom local_hand import bounded_io, validate\nfrom local_hand.paths import load_profile\nfrom local_hand.protocol import LocalHandError\n\nroot = Path(sys.argv[1])\nroot.mkdir(parents=True, exist_ok=False)\nevidence = []\nfor runner in ("generic", "validation"):\n    for fail_at in (1, 2):\n        case_root = root / (runner + "-reader-" + str(fail_at))\n        repo = case_root / "projects/demo"\n        repo.mkdir(parents=True)\n        subprocess.run([os.environ.get("LOCAL_HAND_GIT_EXECUTABLE", "git"), "init", "-q", str(repo)], check=True)\n        child_script = repo / "finite-child.py"\n        child_script.write_text(\n            "from pathlib import Path\\nimport time\\n"\n            "end=time.monotonic()+5\\n"\n            "with Path(\'heartbeat\').open(\'ab\',buffering=0) as out:\\n"\n            " while time.monotonic()<end:\\n"\n            "  out.write(b\'x\');time.sleep(.02)\\n"\n        )\n        healthy_argv = [sys.executable, "-I", "-c", "print(\'capture-recovered\')"]\n        profile_path = case_root / "profile.json"\n        profile_path.write_text(json.dumps({\n            "profile_schema": "local-hand-profile/v2",\n            "node_id": "capture-start-fixture", "projects_root": str(repo.parent),\n            "transport_policy": {"schema_version": "local-hand-git-mailbox/v1",\n                "remote_url": "git@example.invalid:fixtures/mailbox.git",\n                "allowed_remote_urls": ["git@example.invalid:fixtures/mailbox.git"],\n                "branch": "fixture/mailbox-v1"},\n            "repositories": {"demo": {"path": "demo", "single_writer": True,\n                "validations": {\n                    "fault": {"argv": [sys.executable, "-I", str(child_script)], "timeout_seconds": 2, "replay_safe": True},\n                    "healthy": {"argv": healthy_argv, "timeout_seconds": 2, "replay_safe": True}}}}}))\n        profile = load_profile(profile_path)\n        children = []\n        real_popen = subprocess.Popen\n        real_start = threading.Thread.start\n        calls = [0]\n\n        def tracked_popen(*args, **kwargs):\n            child = real_popen(*args, **kwargs)\n            children.append(child)\n            return child\n\n        def start(thread):\n            calls[0] += 1\n            if calls[0] == fail_at:\n                deadline = time.monotonic() + 1\n                while not (repo / "heartbeat").exists() and time.monotonic() < deadline:\n                    time.sleep(.01)\n                raise RuntimeError("can\'t start new thread")\n            return real_start(thread)\n\n        started = time.monotonic()\n        fault = None\n        try:\n            with mock.patch.object(subprocess, "Popen", side_effect=tracked_popen), mock.patch.object(threading.Thread, "start", start):\n                try:\n                    if runner == "generic":\n                        bounded_io.run_process_bounded([sys.executable, "-I", str(child_script)], cwd=repo,\n                            env=dict(os.environ), timeout=2, max_stdout=1024, max_stderr=1024,\n                            code_prefix="capture_probe", text=True)\n                    else:\n                        validate.run_profile(profile, "demo", "fault")\n                except LocalHandError as error:\n                    fault = {"code": error.code, "status": error.status, "message": error.message}\n            assert len(children) == 1 and (repo / "heartbeat").exists()\n            child = children[0]\n            prefix = "capture_probe" if runner == "generic" else "validation"\n            assert fault and fault["code"] == prefix + "_capture_start_failed" and fault["status"] == "indeterminate", fault\n            assert child.poll() is not None, "child still running"\n            assert child.stdout.closed and child.stderr.closed\n            before = (repo / "heartbeat").read_bytes()\n            time.sleep(.08)\n            after = (repo / "heartbeat").read_bytes()\n            assert before == after\n            if runner == "generic":\n                healthy = bounded_io.run_process_bounded(healthy_argv, cwd=repo, env=dict(os.environ),\n                    timeout=2, max_stdout=1024, max_stderr=1024, code_prefix="capture_probe", text=True)\n                healthy_result = {"exit_code": healthy.returncode, "stdout": healthy.stdout, "stderr": healthy.stderr}\n            else:\n                healthy_result = validate.run_profile(profile, "demo", "healthy")\n            assert healthy_result["exit_code"] == 0 and healthy_result["stdout"] == "capture-recovered\\n"\n            evidence.append({"runner": runner, "failed_reader": fail_at,\n                "argv": [sys.executable, "-I", str(child_script)], "pid": child.pid,\n                "returncode": child.returncode, "fault": fault,\n                "stdout_closed": child.stdout.closed, "stderr_closed": child.stderr.closed,\n                "heartbeat_path": str(repo / "heartbeat"), "heartbeat_bytes": len(after),\n                "heartbeat_before_sha256": hashlib.sha256(before).hexdigest(),\n                "heartbeat_after_sha256": hashlib.sha256(after).hexdigest(),\n                "healthy_argv": healthy_argv, "healthy_result": healthy_result,\n                "elapsed_seconds": time.monotonic() - started})\n        finally:\n            for child in children:\n                if child.poll() is None:\n                    try:\n                        os.killpg(child.pid, signal.SIGKILL)\n                    except ProcessLookupError:\n                        pass\n                child.wait(timeout=3)\n                for stream in (child.stdout, child.stderr):\n                    if not stream.closed:\n                        stream.close()\n\nassert len(evidence) == 4\nprint(json.dumps({"cases": evidence, "module": bounded_io.__file__, "python": sys.executable}, sort_keys=True))\n'
+            capture_start_evidence=json.loads(run([sys.executable,'-I','-c',capture_start_program,root/'capture-start']))
+            capture_start_evidence['command']=len(records)
+            assert len(capture_start_evidence['cases'])==4
+            save('capture-start-evidence.json',capture_start_evidence)
+            for item in capture_start_evidence['cases']:
+                checks.append({'case':f"installed capture startup cleanup {item['runner']} reader {item['failed_reader']}",'status':'PASS'})
+            report_publication_program='import errno,json,os,sys\nfrom pathlib import Path\nfrom unittest import mock\nfrom local_hand.protocol import LocalHandError\nfrom local_hand_connect import controller,live_acceptance\n\nroot=Path(sys.argv[1]);root.mkdir()\noriginal=os.write;value={\'status\':\'partial\',\'message\':\'完整证据\'};evidence=[]\ntarget=root/\'visibility.json\';observations=[]\ndef short(fd,data):\n count=original(fd,data[:3]);observations.append(target.read_bytes().hex() if target.exists() else None);return count\nwith mock.patch.object(os,\'write\',side_effect=short):live_acceptance._write_report(target,value)\nassert len(observations)>1 and all(item is None for item in observations)\nassert json.loads(target.read_bytes())==value\nevidence.append({\'case\':\'partial-output-invisible\',\'file\':target.name,\'observations\':observations,\'result\':json.loads(target.read_bytes())})\ntarget=root/\'winner.json\';winner=b\'{"owner":"concurrent publisher"}\\n\'\ndef failed(fd,data):\n original(fd,data[:3])\n if target.exists():target.unlink()\n target.write_bytes(winner)\n raise OSError(errno.ENOSPC,\'synthetic report disk full\')\ntry:\n with mock.patch.object(os,\'write\',side_effect=failed):live_acceptance._write_report(target,value)\nexcept LocalHandError as exc:\n assert exc.code==\'acceptance_report_write_failed\' and exc.status==\'indeterminate\'\n assert target.read_bytes()==winner\n evidence.append({\'case\':\'concurrent-output-preserved\',\'file\':target.name,\'error_code\':exc.code,\'status\':exc.status,\'result\':json.loads(winner)})\nelse:raise AssertionError(\'partial report write accepted\')\ntarget=root/\'durability.json\'\ntry:\n with mock.patch.object(controller,\'_sync_publication_directory\',side_effect=OSError(errno.EIO,\'synthetic directory sync failure\')):\n  live_acceptance._write_report(target,value)\nexcept LocalHandError as exc:\n assert exc.code==\'acceptance_report_durability_unconfirmed\' and exc.status==\'indeterminate\'\n assert json.loads(target.read_bytes())==value\n evidence.append({\'case\':\'complete-output-durability-unconfirmed\',\'file\':target.name,\'error_code\':exc.code,\'status\':exc.status,\'result\':value})\nelse:raise AssertionError(\'directory durability failure accepted\')\nfor item in evidence:\n path=root/item[\'file\'];raw=path.read_bytes()\n import hashlib\n item.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())\n try:live_acceptance._write_report(path,{\'status\':\'failed\'})\n except LocalHandError as exc:assert exc.code==\'acceptance_report_write_failed\' and exc.status==\'indeterminate\'\n else:raise AssertionError(\'published report overwritten\')\n assert path.read_bytes()==raw\nassert sorted(p.name for p in root.iterdir())==[\'durability.json\',\'visibility.json\',\'winner.json\']\nprint(json.dumps({\'status\':\'PASS\',\'cases\':evidence},ensure_ascii=False))\n'
+            report_publication_evidence=json.loads(run([sys.executable,'-I','-c',report_publication_program,root/'report-publication']))
+            report_publication_evidence['command']=len(records)
+            assert report_publication_evidence['status']=='PASS' and len(report_publication_evidence['cases'])==3
+            save('report-publication-evidence.json',report_publication_evidence)
+            for item in report_publication_evidence['cases']:
+                checks.append({'case':'installed evidence report '+item['case'],'status':'PASS'})
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})

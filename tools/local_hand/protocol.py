@@ -77,7 +77,13 @@ def canonical_json(value: Any) -> str:
 
 
 def task_digest(task: dict[str, Any]) -> str:
-    return hashlib.sha256(canonical_json(task).encode("utf-8")).hexdigest()
+    try:
+        encoded = canonical_json(task).encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # JSON escapes can decode to a lone surrogate, which has no canonical
+        # UTF-8 spelling. Never replace or escape it to invent another identity.
+        raise LocalHandError("task_digest_invalid", "Task has no canonical UTF-8 identity") from exc
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _base_result(

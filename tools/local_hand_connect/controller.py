@@ -56,7 +56,10 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _json_bytes(value: Any, maximum: int, code: str) -> bytes:
-    data = (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    try:
+        data = (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise LocalHandError("controller_json_invalid", "object cannot be represented as UTF-8 JSON") from exc
     if len(data) > maximum:
         raise LocalHandError(code, f"serialized JSON exceeds {maximum} bytes")
     return data

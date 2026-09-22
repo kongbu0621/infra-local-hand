@@ -5,11 +5,10 @@ import os
 import re
 import signal
 import subprocess
-import threading
 import time
-from typing import Any, BinaryIO
+from typing import Any
 
-from .bounded_io import CaptureState as _CaptureState, drain_pipe_bounded
+from .bounded_io import CaptureState as _CaptureState, start_bounded_capture
 from .paths import NodeProfile, repository_root
 from .protocol import LocalHandError
 
@@ -40,11 +39,6 @@ def _filtered_env() -> dict[str, str]:
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONNOUSERSITE"] = "1"
     return env
-
-
-def _drain_bounded(stream: BinaryIO, state: _CaptureState, stop: threading.Event) -> None:
-    """Continuously drain a child pipe while retaining at most MAX_OUTPUT_BYTES."""
-    drain_pipe_bounded(stream, state, MAX_OUTPUT_BYTES, stop)
 
 
 def _decoded_capture(state: _CaptureState) -> str:
@@ -184,11 +178,10 @@ def run_profile(profile: NodeProfile, repository: str, profile_id: str) -> dict[
     assert proc.stdout is not None and proc.stderr is not None
     stdout_state = _CaptureState()
     stderr_state = _CaptureState()
-    capture_stop = threading.Event()
-    stdout_thread = threading.Thread(target=_drain_bounded, args=(proc.stdout, stdout_state, capture_stop), daemon=True)
-    stderr_thread = threading.Thread(target=_drain_bounded, args=(proc.stderr, stderr_state, capture_stop), daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
+    stdout_thread, stderr_thread, capture_stop = start_bounded_capture(
+        proc, stdout_state, stderr_state, max_stdout=MAX_OUTPUT_BYTES,
+        max_stderr=MAX_OUTPUT_BYTES, code_prefix="validation",
+    )
 
     try:
         deadline = started + spec.timeout_seconds

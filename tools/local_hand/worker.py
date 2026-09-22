@@ -658,7 +658,15 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
         except FileReadUnavailable: raise
         except LocalHandError: continue
         if not _trusted_local_identity(task_file, task, profile): continue
-        digest = task_digest(task)
+        try:
+            digest = task_digest(task)
+        except LocalHandError as exc:
+            if exc.code != "task_digest_invalid":
+                raise
+            # Preserve the committed bytes, but no Result or receipt can bind
+            # an identity that has no canonical UTF-8 digest. Continue to later
+            # tasks without fabricating a digest or blocking the whole queue.
+            continue
         if _has_conflict_marker(state_root, task["task_id"], digest):
             _recover_task_conflict(mailbox, branch, state_root, outbox, task, profile)
             continue
