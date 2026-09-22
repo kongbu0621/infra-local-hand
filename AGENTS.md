@@ -48,8 +48,9 @@ S2 is **OPEN**. Its proposed requirements, architecture and implementation plan 
 [READINESS.md](docs/s2/READINESS.md) records the newly verified old-deployment
 read-only mailbox results and unresolved live inventory. The existing S1 R/A/B/C
 record above remains scoped to S1. No S2 closure decision or authorized implementation
-scope is recorded. The exact S2 documentation baseline will be recorded after its
-commit exists; future closure must use that full SHA and an explicit scope.
+scope is recorded. The proposed S2 documentation baseline A is
+`8cb081d9cdf316fd4eb80f5811078d1804d6be3f`; future closure must use that full SHA
+and an explicit scope. This baseline record keeps S2 OPEN and is not a closure commit.
 The downstream goal is artifact-ledger GX10 A2; a possible MCP adapter is an option
 to assess, not an automatic expansion of action, repository or host permissions.
 
