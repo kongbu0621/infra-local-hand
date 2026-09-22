@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import act, observe, validate
-from .bounded_io import read_regular_file_bounded
+from .bounded_io import FileReadUnavailable, read_regular_file_bounded
 from .git_safety import assert_no_execution_filters, run_hardened_git, sanitized_git_env, validate_runtime_bindings
 from .mailbox_safety import (
     MAX_MAILBOX_CONTROL_BLOB_BYTES,
@@ -64,6 +64,8 @@ def load_json_bounded(path: Path, max_bytes: int, code: str) -> Any:
     try:
         raw = read_regular_file_bounded(path, max_bytes, code)
         return json.loads(raw.decode("utf-8"))
+    except FileReadUnavailable as exc:
+        raise FileReadUnavailable("json_read_unavailable", exc.message, "indeterminate") from exc
     except LocalHandError as exc:
         raise LocalHandError(code, exc.message, "indeterminate") from exc
     except Exception as exc:
@@ -504,6 +506,7 @@ def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
         raise LocalHandError("local_outbox_unreadable", "cannot enumerate pending local results", "indeterminate") from exc
     for result_file in pending:
         try: local = _validate_local_outbox_result(load_json_bounded(result_file, MAX_RESULT_JSON_BYTES, "local_outbox_invalid"), result_file)
+        except FileReadUnavailable: raise
         except LocalHandError as exc: _quarantine_local_outbox_file(outbox, result_file, exc.message); continue
         for attempt in range(1, MAILBOX_PUSH_ATTEMPTS + 1):
             sync_mailbox(mailbox, branch); target = _route_outbox_target(mailbox, result_file); validate_control_target(mailbox, target)
@@ -515,6 +518,7 @@ def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
                     else: _quarantine_local_outbox_file(outbox, result_file, "remote conflict record differs")
                     break
                 try: remote = _load_remote_result(target, result_file.stem, local.get("action"), local.get("target_node"))
+                except FileReadUnavailable: raise
                 except LocalHandError as exc:
                     _publish_conflict_from_invalid_remote(outbox, local, exc)
                     _quarantine_local_outbox_file(outbox, result_file, "canonical remote result is invalid")
@@ -563,6 +567,8 @@ def _load_task_conflict(path: Path, task: dict[str, Any], profile: NodeProfile, 
         if result["status"] == "succeeded":
             raise LocalHandError(code, "conflict record cannot report success", "indeterminate")
         return result
+    except FileReadUnavailable:
+        raise
     except LocalHandError as exc:
         raise LocalHandError(code, exc.message, "indeterminate") from exc
 
@@ -612,6 +618,8 @@ def _load_remote_or_quarantine(*, remote_result: Path, task: dict[str, Any], pro
     digest = task_digest(task)
     try:
         existing = _load_remote_result(remote_result, task["task_id"], str(task.get("action","")), profile.node_id)
+    except FileReadUnavailable:
+        raise
     except LocalHandError as exc:
         _quarantine_task_conflict(state_root=state_root,outbox=outbox,task=task,profile=profile,code="remote_result_invalid",message="canonical remote result is malformed/invalid",observed_digest=None,status="indeterminate",extra_details={"remote_validation_error":exc.message,"canonical_result_preserved":True}); return None
     if existing["task_digest"] != digest:
@@ -635,6 +643,7 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
     publish_outbox(mailbox, branch, outbox); sync_mailbox(mailbox, branch)
     for task_file in bounded_task_files(mailbox):
         try: task = load_json_bounded(task_file, MAX_TASK_JSON_BYTES, "task_file_invalid")
+        except FileReadUnavailable: raise
         except LocalHandError: continue
         if not _trusted_local_identity(task_file, task, profile): continue
         digest = task_digest(task)
@@ -654,6 +663,7 @@ def process_once(mailbox: Path, branch: str, profile: NodeProfile, state_root: P
         receipt_file = receipts/f"{task['task_id']}.json"; remote_result = mailbox/"_executor_spike"/"results"/f"{task['task_id']}.json"
         if target_lexists(receipt_file):
             try: receipt = _validate_receipt(load_json_bounded(receipt_file, MAX_RECEIPT_JSON_BYTES, "local_receipt_invalid"), task, profile)
+            except FileReadUnavailable: raise
             except LocalHandError as exc:
                 _quarantine_task_conflict(state_root=state_root,outbox=outbox,task=task,profile=profile,code="local_receipt_invalid",message="durable local receipt is malformed/invalid",observed_digest=None,status="indeterminate",extra_details={"receipt_validation_error":exc.message}); publish_outbox(mailbox,branch,outbox); continue
             if target_lexists(remote_result):

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Protocol, runtime_checkable
 
-from local_hand.bounded_io import list_directory_bounded, read_regular_file_bounded
+from local_hand.bounded_io import FileReadUnavailable, list_directory_bounded, read_regular_file_bounded
 from local_hand.config import TransportPolicy, parse_transport, strict_json, validate_branch
 from local_hand.mailbox_safety import atomic_create_control_file, target_lexists, validate_control_target
 from local_hand.protocol import (
@@ -399,6 +399,8 @@ def _same_task(existing_path: Path, task: dict[str, Any]) -> bool:
     try:
         existing = load_json_bounded(existing_path, MAX_TASK_JSON_BYTES, "controller_remote_task_invalid")
         existing = _validate_controller_task(existing)
+    except FileReadUnavailable:
+        raise
     except LocalHandError as exc:
         raise LocalHandError("controller_remote_task_invalid", exc.message, "indeterminate") from exc
     return task_digest(existing) == task_digest(task)

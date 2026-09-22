@@ -20,6 +20,10 @@ from typing import BinaryIO, Sequence
 from .protocol import LocalHandError
 
 
+class FileReadUnavailable(LocalHandError):
+    """An OS read failure is uncertainty, not proof of invalid file content."""
+
+
 @dataclass
 class CaptureState:
     data: bytearray = field(default_factory=bytearray)
@@ -38,7 +42,7 @@ def _lstat_regular(path: Path, code: str) -> os.stat_result:
     try:
         st = path.lstat()
     except OSError as exc:
-        raise LocalHandError(code, f"cannot lstat regular file {path.name}: {exc}", "indeterminate") from exc
+        raise FileReadUnavailable(code, f"cannot lstat regular file {path.name}; errno={exc.errno}", "indeterminate") from exc
     if stat.S_ISLNK(st.st_mode) or _is_reparse(st):
         raise LocalHandError(code, f"symlink/reparse file rejected: {path.name}", "indeterminate")
     if not stat.S_ISREG(st.st_mode):
@@ -57,7 +61,8 @@ def read_regular_file_bounded(path: Path, limit: int, code: str) -> bytes:
     try:
         fd = os.open(path, flags)
     except OSError as exc:
-        raise LocalHandError(code, f"cannot open regular file {path.name}: {exc}", "indeterminate") from exc
+        raise FileReadUnavailable(code, f"cannot open regular file {path.name}; errno={exc.errno}", "indeterminate") from exc
+    read_completed = False
     try:
         after = os.fstat(fd)
         if not stat.S_ISREG(after.st_mode) or _is_reparse(after):
@@ -73,8 +78,17 @@ def read_regular_file_bounded(path: Path, limit: int, code: str) -> bytes:
             chunks.append(chunk)
             remaining -= len(chunk)
         data = b"".join(chunks)
+        read_completed = True
+    except OSError as exc:
+        raise FileReadUnavailable(code, f"cannot read regular file {path.name}; errno={exc.errno}", "indeterminate") from exc
     finally:
-        os.close(fd)
+        try:
+            os.close(fd)
+        except OSError as exc:
+            # Close once; a failed close can already have released this fd.
+            # Preserve an earlier read/validation error if cleanup also fails.
+            if read_completed:
+                raise FileReadUnavailable(code, f"cannot close regular file {path.name}; errno={exc.errno}", "indeterminate") from exc
     if len(data) > limit:
         raise LocalHandError(code, f"file exceeds {limit} bytes: {path.name}", "indeterminate")
     return data

@@ -686,6 +686,92 @@ with mock.patch.object(worker,'write_json_atomic',side_effect=injected):
                 persistence_evidence.append(item)
                 checks.append({'case':f'installed state persistence recovery {stage} {phase}','status':'PASS'})
             save('persistence-recovery-evidence.json',persistence_evidence)
+            read_code='''import errno,os,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import worker
+target=Path(sys.argv[1]);mode=sys.argv[2];original=worker.read_regular_file_bounded
+def read(path,*args,**kwargs):
+ if path==target:
+  with mock.patch.object(os,'read',side_effect=OSError(errno.EIO,'synthetic payload read failure')):
+   return original(path,*args,**kwargs)
+ return original(path,*args,**kwargs)
+if mode=='worker':main=worker.main
+else:
+ from local_hand_connect.cli import main
+with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
+ raise SystemExit(main(sys.argv[3:]))
+'''
+            def state_view():
+                view={}
+                for namespace in ('receipts','outbox','conflicts','quarantine'):
+                    for path in (state/namespace).rglob('*'):
+                        relative=path.relative_to(state).as_posix()
+                        if path.is_symlink():view[relative]={'link':str(path.readlink())}
+                        elif path.is_file():
+                            raw=path.read_bytes();view[relative]={'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
+                return view
+            def rejected_read(target,mode,argv,task_id,kind,file_path):
+                before=state_view();file_before=file_path.read_bytes()
+                head_before=run([git,'--git-dir',bare,'rev-parse','refs/heads/'+policy['branch']]).strip()
+                stdout=run([sys.executable,'-I','-c',read_code,target,mode]+argv,expected=3)
+                failed_command=len(records)
+                error=(logs/f'{failed_command:03}'/'stderr.log').read_text()
+                assert not stdout and 'json_read_unavailable' in error and 'errno=5' in error
+                head_after=run([git,'--git-dir',bare,'rev-parse','refs/heads/'+policy['branch']]).strip()
+                after=state_view()
+                assert before==after and file_path.read_bytes()==file_before and head_before==head_after
+                return {'task_id':task_id,'case':kind,'mode':mode,'target':str(target),
+                    'failed_command':failed_command,'state_before':before,'state_after':after,
+                    'remote_before':head_before,'remote_after':head_after,
+                    'file_before_sha256':hashlib.sha256(file_before).hexdigest(),
+                    'file_after_failure_sha256':hashlib.sha256(file_path.read_bytes()).hexdigest()}
+            read_evidence=[]
+            for index,kind in enumerate(('task','receipt','outbox','remote-result','remote-ack')):
+                task_id=f'LH{9800+index}';target_file=project/f'read-{task_id}.txt';target_file.write_bytes(b'before\n')
+                task=build_task(profile.node_id,'fs.write_text_cas',{'repository':'demo','relative_path':target_file.name,
+                    'expected_sha256':hashlib.sha256(b'before\n').hexdigest(),'content':'after\n'},task_id=task_id)
+                task_path=save(f'read-{task_id}-task.json',task)
+                run(connect+['submit']+common+['--task-file',task_path])
+                receipt=state/'receipts'/f'{task_id}.json';pending=state/'outbox'/f'{task_id}.json'
+                canonical=worker_box/'_executor_spike/results'/f'{task_id}.json'
+                if kind=='outbox':
+                    run([sys.executable,'-I','-c',persistence_code,task_id,'receipt','before-replace']+worker_cmd[4:],expected=3)
+                    error=(logs/f'{len(records):03}'/'stderr.log').read_text()
+                    assert 'local_state_write_failed' in error and 'errno=28' in error
+                    assert json.loads(receipt.read_text())['source']=='local_execution_started'
+                    assert json.loads(pending.read_text())['status']=='succeeded'
+                elif kind!='task':run(worker_cmd)
+                if kind!='task':
+                    assert target_file.read_bytes()==b'after\n';target_file.write_bytes(b'recovery-sentinel\n')
+                if kind=='remote-result':
+                    (root/f'read-{task_id}-receipt-before-removal.json').write_bytes(receipt.read_bytes())
+                    receipt.unlink()
+                elif kind=='remote-ack':pending.write_bytes(canonical.read_bytes())
+                target={'task':worker_box/'_executor_spike/tasks'/f'{task_id}.json','receipt':receipt,
+                    'outbox':pending,'remote-result':canonical,'remote-ack':canonical}[kind]
+                item=rejected_read(target,'worker',worker_cmd[4:],task_id,kind,target_file)
+                run(worker_cmd)
+                result=json.loads(run(connect+['wait']+common+['--task-file',task_path,
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                assert result['status']=='succeeded' and json.loads(receipt.read_text())['result']==result
+                assert not pending.exists()
+                assert not (state/'conflicts'/conflict_filename(task_digest(task))).exists()
+                assert target_file.read_bytes()==(b'after\n' if kind=='task' else b'recovery-sentinel\n')
+                item.update(result=result,file_after_recovery_sha256=hashlib.sha256(target_file.read_bytes()).hexdigest())
+                read_evidence.append(item)
+                checks.append({'case':'installed payload read failure recovery '+kind,'status':'PASS'})
+            for operation in ('wait','submit'):
+                target=controller/'_executor_spike'/('results' if operation=='wait' else 'tasks')/f'{task_id}.json'
+                argv=[operation]+common+['--task-file',task_path]
+                if operation=='wait':argv+=['--timeout-seconds','0','--expected-provenance-file',expected_path]
+                item=rejected_read(target,'controller',argv,task_id,'controller-'+operation,target_file)
+                response=json.loads(run(connect+argv))
+                assert response==result if operation=='wait' else response['status']=='already_present'
+                item.update(response=response,file_after_recovery_sha256=hashlib.sha256(target_file.read_bytes()).hexdigest())
+                read_evidence.append(item)
+                checks.append({'case':'installed controller payload read failure '+operation,'status':'PASS'})
+            save('read-failure-evidence.json',read_evidence)
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})
