@@ -66,8 +66,12 @@ Scope `LH-A2-EXEC-MCP-v1` is **OPEN**. Its authoritative documents are
 [implementation plan](docs/a2-execution/IMPLEMENTATION_PLAN.md).
 The previous proposed baseline `9cc628c9679e1530a2be3c7e7efec829d559d438`
 is superseded by the [design recheck](docs/a2-execution/DESIGN_RECHECK.md).
-The new proposed documentation baseline A is `bc54edc503a6a88aaca1d98276e403b9d97c6743`,
+That scope's subsequent proposed baseline `bc54edc503a6a88aaca1d98276e403b9d97c6743`
+is superseded by the [third design-chain review](docs/a2-execution/DESIGN_CHAIN_REVIEW.md),
+which closes input/output discovery, local revocation/startup and blocking storage-I/O design gaps.
+The new proposed documentation baseline A is `231fa26807dca0c411a3972930434750944c0983`,
 under the same R recorded above.
+This changes only the proposed A2 execution scope; the S2 proposed baseline above is unchanged.
 This registration is OPEN bookkeeping, not an Owner decision or CLOSED record.
 The proposed first closure is E1–E3 only: isolated job broker, fixed job catalog,
 MCP adapter, shared-broker maintenance CLI, Plugin packaging, client evidence assembly and synthetic verification.
