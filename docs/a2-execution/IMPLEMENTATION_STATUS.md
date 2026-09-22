@@ -1,7 +1,7 @@
 # E1–E3 实现候选状态
 
 本文件记录实现事实，不替代已批准的三层文档。整体状态为 **E1 尚有受监督启动准备及 NAS provider 代码缺口、E3 环境验收 BLOCKED**；
-本轮是实现检查点，未达到 E1–E3 全部出口。准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)及[第四轮复核](E1_E3_RECHECK_4.md)。批准基线 A 为
+本轮是实现检查点，未达到 E1–E3 全部出口。准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)及[第五轮复核](E1_E3_RECHECK_5.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
 `367632126c1930983a06b1854f63789448633148`。三份权威文档保留批准时原文。
