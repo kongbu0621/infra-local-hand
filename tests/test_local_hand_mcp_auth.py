@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from local_hand_jobs.contract import JobError
@@ -86,6 +87,13 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.issuer.verifier.principal(first), self.issuer.verifier.principal(second))
         self.assertEqual("project-owner", self.issuer.verifier.principal(first).principal_id)
         self.assertEqual(1, len(self.issuer.calls))
+
+    async def test_expired_in_process_authentication_cannot_authorize_a_new_call(self):
+        access = await self.issuer.verifier.authenticate(self.issuer.token())
+        with patch("local_hand_mcp.auth.time.time", return_value=access.expires_at + 1):
+            with self.assertRaises(JobError) as caught:
+                self.issuer.verifier.principal(access)
+        self.assertEqual(caught.exception.code, "UNAUTHORIZED")
 
     async def test_negative_issuer_audience_time_subject_scope_and_client(self):
         now = int(time.time())

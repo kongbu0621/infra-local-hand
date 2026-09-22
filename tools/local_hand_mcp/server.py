@@ -166,6 +166,13 @@ class _StrictBody:
         except TimeoutError:
             return await _json_error(send, 408, "LIMIT_EXCEEDED", "Request body deadline exceeded")
         try:
+            # Reading the body can outlive the token authenticated at the HTTP
+            # boundary. Expiry must close new admission, not cancel old jobs.
+            self.verifier.principal(get_access_token())
+        except JobError:
+            return await _json_error(send, 401, "UNAUTHORIZED", "Authentication expired before dispatch",
+                                     challenge=self.verifier.config.challenge())
+        try:
             payload = strict_loads(bytes(body))
             validate_rpc(payload)
         except (JobError, ValueError, TypeError):
@@ -224,10 +231,13 @@ def create_app(broker, verifier):
 
     async def call_tool(context, params):
         try:
-            principal = verifier.principal(get_access_token())
+            access_token = get_access_token()
+            principal = verifier.principal(access_token)
             arguments = validate_tool_args(params.name, params.arguments or {})
             if TOOL_SCOPES[params.name] not in principal.scopes:
                 raise JobError("UNAUTHORIZED", "The current token does not grant this tool")
+            limits = getattr(getattr(broker, "policy", None), "limits", {})
+            control_seconds = min(CONTROL_SECONDS, limits.get("control_response_seconds", CONTROL_SECONDS))
             try:
                 async with asyncio.timeout(0.1):
                     await slots.acquire()
@@ -236,11 +246,24 @@ def create_app(broker, verifier):
 
             async def invoke():
                 try:
-                    return await asyncio.to_thread(broker.call, params.name, arguments, principal)
+                    def dispatch():
+                        # The executor queue can also outlive authentication.
+                        # Recheck at delivery, before the broker sees the call.
+                        current = verifier.principal(access_token)
+                        return broker.call(params.name, arguments, current)
+                    return await asyncio.to_thread(dispatch)
                 finally:
                     slots.release()
 
-            task = asyncio.create_task(invoke())
+            invocation = invoke()
+            try:
+                task = asyncio.create_task(invocation)
+            except BaseException:
+                # Nothing reached the broker; neither an unawaited coroutine
+                # nor a reserved control slot may survive this failed start.
+                invocation.close()
+                slots.release()
+                raise
             pending.add(task)
 
             def consume(done):
@@ -252,7 +275,7 @@ def create_app(broker, verifier):
 
             task.add_done_callback(consume)
             try:
-                output = await asyncio.wait_for(asyncio.shield(task), CONTROL_SECONDS)
+                output = await asyncio.wait_for(asyncio.shield(task), control_seconds)
             except TimeoutError:
                 return result_error("IO_UNCERTAIN", "Receipt is uncertain; query or resend the original identity")
             result = types.CallToolResult(

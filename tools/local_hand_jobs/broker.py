@@ -250,11 +250,20 @@ class Broker:
         return [self.policy.generation, tx.execute("SELECT value FROM counters WHERE key='generation'").fetchone()[0]]
 
     def _release(self, tx, row, proof):
+        # Business and observation rounds share the parent's resource owner.
+        # A late result cannot delete another admitted round's reservation.
+        for item in tx.execute("SELECT id FROM operations WHERE namespace='reconcile' AND parent=?", (row["parent"],)):
+            if row["namespace"] == "reconcile" and item["id"] == row["id"]:
+                continue
+            other = self.state.get("reconcile", item["id"], tx)
+            if other["record"]["lifecycle"] != "TERMINAL":
+                return
         if row["namespace"] == "reconcile":
             parent = self.state.get("job", row["parent"], tx)
             original = parent["record"].get("exit_proof") or {}
-            if parent["record"]["outcome"] == "UNKNOWN" or not all(original.get(name) is True for name in (
-                    "future_start_blocked", "tree_exited", "effects_checked")):
+            if (parent["record"]["lifecycle"] in ("ACCEPTED", "RUNNING")
+                    or parent["record"]["outcome"] == "UNKNOWN" or not all(original.get(name) is True for name in (
+                    "future_start_blocked", "tree_exited", "effects_checked"))):
                 return  # Observing original files is not proof of original side effects.
         self.resources.release(tx, row["parent"], future_start_blocked=proof.get("future_start_blocked"),
                                tree_exited=proof.get("tree_exited"), effects_checked=proof.get("effects_checked"))
@@ -387,6 +396,10 @@ class Broker:
                 principal = Principal(row["principal"], frozenset(row["record"]["principal_scopes"]))
                 parent = row if namespace == "job" else self.state.get("job", row["parent"], tx)
                 if phase == "reconcile":
+                    # Admission may precede a late parent result which still
+                    # needs its own evidence helper. Keep this round queued.
+                    if parent["record"]["lifecycle"] in ("ACCEPTED", "RUNNING"):
+                        return
                     previous = parent["record"].get("exit_proof") or {}
                     if previous.get("future_start_blocked") is not True or previous.get("tree_exited") is not True:
                         raise JobError("IO_UNCERTAIN", "Prior execution must have independent exit proof before another helper")

@@ -56,6 +56,8 @@ class RunnerTests(unittest.TestCase):
             execution = {"roots": roots, "budgets": limits, "python": sys.executable,
                 "writable": list(roots.values()), "readonly": [], "environment": {"PATH": "/usr/bin:/bin"}}
             manager = AdmittedManager({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
+            self.addCleanup(setattr, manager, "inspect", lambda handle: {
+                **runner._unknown("fixture observation complete"), "terminal_observation": True})
             delivered = threading.Event()
             def guard(identity, launch):
                 launch()
@@ -76,6 +78,80 @@ class RunnerTests(unittest.TestCase):
                 self.assertFalse(proof["future_start_blocked"])
                 self.assertFalse(proof["tree_exited"])
                 self.assertFalse(proof["effects_checked"])
+
+    def test_transient_observer_error_retains_handle_and_cancel_control(self):
+        class UncertainOnce(DelayedManager):
+            def __init__(self):
+                super().__init__()
+                self.observations = 0
+            def inspect(self, handle):
+                self.observations += 1
+                if self.observations == 1:
+                    raise runner.RunnerError("IO_UNCERTAIN", "one unavailable manager read")
+                return super().inspect(handle)
+            def stop(self, handle):
+                super().stop(handle)
+                self.exit = True
+        manager = UncertainOnce(); manager.gate.set()
+        supervisor = runner.Runner(manager)
+        handle = supervisor.start("job", "transient-observer-business", {"phase": "business"})
+        self.addCleanup(setattr, manager, "exit", True)
+        await_state(supervisor, handle, "RUNNING")
+        supervisor.stop(handle)
+        proof = await_state(supervisor, handle, "EXITED")
+        self.assertTrue(proof["tree_exited"])
+        self.assertEqual(manager.launches, 1)
+        self.assertGreater(manager.stops, 0)
+
+    def test_transient_stop_error_is_retried_without_restarting_execution(self):
+        class StopUncertainOnce(DelayedManager):
+            def stop(self, handle):
+                super().stop(handle)
+                if self.stops == 1:
+                    raise runner.RunnerError("IO_UNCERTAIN", "one unavailable stop receipt")
+                self.exit = True
+        manager = StopUncertainOnce(); manager.gate.set()
+        supervisor = runner.Runner(manager)
+        handle = supervisor.start("job", "transient-stop-business", {"phase": "business"})
+        self.addCleanup(setattr, manager, "exit", True)
+        await_state(supervisor, handle, "RUNNING")
+        supervisor.stop(handle)
+        proof = await_state(supervisor, handle, "EXITED")
+        self.assertTrue(proof["future_start_blocked"])
+        self.assertEqual(manager.launches, 1)
+        self.assertGreaterEqual(manager.stops, 2)
+
+    def test_delivery_exception_keeps_original_manager_handle_cancellable(self):
+        class Receipt:
+            returncode = 0
+            def poll(self): return 0
+        class DeliveredManager(runner.SystemdManager):
+            def _admit(self, plan): return runner._plain(plan["execution"]), {}
+            def inspect(self, handle):
+                return {**runner._unknown(), "state": "EXITED" if handle["stop_requested"] else "RUNNING",
+                        "tree_exited": handle["stop_requested"], "future_start_blocked": handle["stop_requested"]}
+            def stop(self, handle): handle["stop_requested"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            roots = {name: str(Path(directory) / name) for name in ("work", "temporary", "evidence")}
+            limits = {"wall_seconds": 30, "terminate_grace_seconds": 2, "cpu_seconds": 30,
+                "memory_bytes": 1024**2, "processes": 8, "temporary_bytes": 1024**2,
+                "nas_bytes": 0, "log_bytes": 1024, "reservation_bytes": 4 * 1024**2}
+            execution = {"roots": roots, "budgets": limits, "python": sys.executable,
+                "writable": list(roots.values()), "readonly": [], "environment": {"PATH": "/usr/bin:/bin"}}
+            manager = DeliveredManager({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
+            def uncertain_receipt(identity, launch):
+                launch()
+                raise runner.RunnerError("IO_UNCERTAIN", "receipt failed after manager delivery")
+            manager.set_start_guard(uncertain_receipt)
+            supervisor = runner.Runner(manager)
+            with patch.object(runner.subprocess, "Popen", return_value=Receipt()) as launch:
+                handle = supervisor.start("job", "delivered-no-receipt-business", {"execution": execution, "phase": "business"})
+                await_state(supervisor, handle, "RUNNING")
+                supervisor.stop(handle)
+                proof = await_state(supervisor, handle, "EXITED")
+                self.assertTrue(proof["future_start_blocked"])
+                self.assertEqual(proof["recovery_handle"]["execution_id"], handle["execution_id"])
+                launch.assert_called_once()
 
     def test_delayed_start_cancel_remains_responsive_and_blocks_future_spawn(self):
         manager = DelayedManager(); supervisor = runner.Runner(manager)
@@ -175,6 +251,48 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(observed["truncated"])
             self.assertEqual(observed["outcome"], "FAILED")
             self.assertLessEqual(sum(Path(root, "noisy." + kind).stat().st_size for kind in ("stdout", "stderr")), 1024)
+
+    def test_reconcile_missing_original_root_never_proves_effects_checked(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            roots = {name: str(root / name) for name in ("work", "temporary", "evidence")}
+            for path in roots.values(): Path(path).mkdir()
+            plan = {"phase": "reconcile", "execution_id": "missing-root-reconcile",
+                    "kind": "ledger.test.source", "roots": roots,
+                    "observed_roots": {"work": str(root / "missing-original")},
+                    "environment": runner.ledger_jobs.clean_environment(roots["temporary"]),
+                    "parent_mount_namespace": "original-namespace",
+                    "result_path": str(root / "evidence" / "result.json")}
+            mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
+            # This is a helper-unit fixture, not real cgroup/bootstrap acceptance.
+            with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
+                    patch.object(os, "readlink", return_value="private-namespace"), \
+                    patch.object(os, "access", return_value=False), patch.object(runner, "_mount_for", return_value=mount), \
+                    patch.object(runner, "_verify_cgroup_limits", return_value={}):
+                code = runner._helper(plan)
+            result = json.loads(Path(plan["result_path"]).read_text())
+            self.assertEqual(code, 1)
+            self.assertEqual(result["outcome"], "FAILED")
+            self.assertFalse(result["effects_checked"])
+            self.assertNotIn("observed_files", result.get("result", {}))
+
+    def test_prepared_inventory_scan_error_cannot_claim_complete_readonly_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "wheel.whl").write_bytes(b"fixture wheel")
+            hidden = root / "runtime-venv"; hidden.mkdir()
+            (hidden / "unseen.py").write_bytes(b"must be inventoried")
+            plan = {"prepared": {"root": str(root), "wheel": str(root / "wheel.whl")},
+                    "source": {"blobs": {}}}
+            scan = os.scandir
+            def unavailable(path):
+                if Path(path) == hidden:
+                    raise PermissionError("injected runtime inventory failure")
+                return scan(path)
+            with patch.object(os, "scandir", side_effect=unavailable):
+                with self.assertRaises(runner.ledger_jobs.LedgerPlanError):
+                    runner._inventory_prepared(plan)
 
     def test_empty_group_does_not_prove_unacknowledged_start_cancelled(self):
         class Pending:

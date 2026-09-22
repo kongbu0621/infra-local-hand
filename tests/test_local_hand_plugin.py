@@ -145,6 +145,78 @@ class WorkflowTests(unittest.TestCase):
         self.assert_error("CONFLICT", self.client.reserve_job, "inspect", kind="ledger.prepare",
                           profile_ref="fixture", inputs={"source_ref": "source", "build_cache_ref": "cache"})
 
+    def test_journal_directory_replacement_cannot_reserve_a_new_identity(self):
+        original = self.reserve()
+        old = self.client.journal.with_name("old-journal")
+        self.client.journal.rename(old)
+        self.client.journal.mkdir(mode=0o700)
+        self.assert_error("IO_UNCERTAIN", self.reserve)
+        preserved = json.loads((old / self.client._record_name("job", "inspect")).read_text())
+        self.assertEqual(original, preserved)
+        self.assertEqual(list(self.client.journal.iterdir()), [])
+
+    def test_identity_publication_never_unlinks_a_concurrent_staging_replacement(self):
+        replacements = []
+        publish_name = "_publish_create_only" if hasattr(workflow, "_publish_create_only") else None
+        original = getattr(workflow, publish_name) if publish_name else workflow.os.link
+        def publish(source, target, **kwargs):
+            result = original(source, target, **kwargs)
+            path = self.client.journal / Path(source).name
+            if path.exists():
+                path.unlink()
+            path.write_bytes(b"concurrent file")
+            replacements.append(path)
+            return result
+        target = workflow if publish_name else workflow.os
+        with patch.object(target, publish_name or "link", side_effect=publish):
+            self.reserve()
+        self.assertEqual(1, len(replacements))
+        self.assertTrue(replacements[0].exists(), "publication removed a concurrent file")
+        self.assertEqual(b"concurrent file", replacements[0].read_bytes())
+
+    def test_published_identity_cannot_be_replaced_before_readback(self):
+        original = workflow.os.fsync
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        changed = []
+        def sync(fd):
+            result = original(fd)
+            if not changed and path.exists() and workflow.stat.S_ISDIR(os.fstat(fd).st_mode):
+                record = json.loads(path.read_text())
+                record["request"]["operation_id"] = str(workflow.uuid.uuid4())
+                record["request"]["request_digest"] = workflow.request_digest(record["request"])
+                replacement = path.with_suffix(".replacement")
+                replacement.write_text(json.dumps(record))
+                replacement.chmod(0o600)
+                replacement.replace(path)
+                changed.append(record)
+            return result
+        with patch.object(workflow.os, "fsync", side_effect=sync):
+            self.assert_error("IO_UNCERTAIN", self.reserve)
+        self.assertEqual(1, len(changed))
+        self.assertEqual(changed[0], json.loads(path.read_text()))
+
+    def test_published_identity_cannot_be_rewritten_in_place_before_readback(self):
+        original = workflow.os.fsync
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        changed = []
+        def sync(fd):
+            result = original(fd)
+            if not changed and path.exists() and workflow.stat.S_ISDIR(os.fstat(fd).st_mode):
+                before = path.stat()
+                record = json.loads(path.read_text())
+                record["request"]["operation_id"] = str(workflow.uuid.uuid4())
+                record["request"]["request_digest"] = workflow.request_digest(record["request"])
+                path.write_text(json.dumps(record))
+                after = path.stat()
+                self.assertEqual((before.st_dev, before.st_ino), (after.st_dev, after.st_ino))
+                changed.append(record)
+            return result
+        with patch.object(workflow.os, "fsync", side_effect=sync):
+            self.assert_error("IO_UNCERTAIN", self.reserve)
+        self.assertEqual(1, len(changed))
+        self.assertEqual(changed[0], json.loads(path.read_text()))
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+
     def test_unknown_input_is_not_translated_to_a_path(self):
         self.assert_error("UNAUTHORIZED", self.client.reserve_job, "prepare", kind="ledger.prepare",
                           profile_ref="fixture", inputs={"source_ref": "/private/source", "build_cache_ref": "cache"})

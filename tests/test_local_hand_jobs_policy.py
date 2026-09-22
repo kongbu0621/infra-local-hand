@@ -94,6 +94,14 @@ class PolicyAndRegistryTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(JobError):
                 Policy(config)
 
+    def test_prepared_bindings_cannot_inject_control_plane_provenance(self):
+        for name, value in (("expected", {"node_id": "foreign-node"}),
+                            ("local_hand_source_commit", "f" * 40),
+                            ("script_blobs", {})):
+            prepared = self.prepared()
+            prepared["bindings"][name] = value
+            with self.subTest(name=name), self.assertRaises(JobError):
+                self.registry.register_prepared("prepared", prepared)
     def test_all_capacity_limits_and_job_budgets_are_finite_and_reserved_for_peak(self):
         for field in self.config["limits"]:
             for value in (True, 0, -1, None, float("inf")):

@@ -194,11 +194,30 @@ class ClientTests(unittest.TestCase):
             artifact, BoundedFileWriter(directory, max_bytes=4)))
         self.assertEqual(list(directory.iterdir()), [])
 
+    def test_client_member_budget_must_be_a_finite_positive_integer(self):
+        for value in (True, 0, -1, float("inf"), 2**53):
+            with self.subTest(value=value):
+                self.assertCode("LIMIT_EXCEEDED", lambda: EvidenceClient(lambda *args: None, max_members=value))
+
     def test_external_seal_mismatch_rejected(self):
         fixture, artifact = self.fixture()
         changed = dict(artifact, seal_sha256="0" * 64)
         self.assertCode("CONFLICT", lambda: EvidenceClient(fixture.callback).download(
             changed, BoundedFileWriter(self.root / "client")))
+
+    def test_archive_descriptor_cannot_skip_zip_checks_by_changing_its_role(self):
+        artifact, callback = self.synthetic_archive(unsafe_name="../escape")
+        artifact["role"] = "manifest"
+        directory = self.root / "role-confusion"
+        self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+            artifact, BoundedFileWriter(directory)))
+        self.assertFalse(list(directory.glob("download-*/evidence.json")))
+
+    def test_download_descriptor_must_bind_the_reconciliation_in_the_external_seal(self):
+        fixture, artifact = self.fixture()
+        artifact = dict(artifact, reconcile_id="e013f084-1e57-4c43-8edc-361a363d658d")
+        self.assertCode("CONFLICT", lambda: EvidenceClient(fixture.callback).download(
+            artifact, BoundedFileWriter(self.root / "wrong-round")))
 
     def synthetic_archive(self, *, unsafe_name=None, symlink=False, duplicate=False,
                           extra=False, bad_member_digest=False, expand=False,

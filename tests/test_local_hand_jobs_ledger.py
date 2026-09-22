@@ -136,10 +136,37 @@ class LedgerPlanTests(unittest.TestCase):
         manifest = {"allowed.py": hashlib.sha256(b"approved").hexdigest()}
         real = os.scandir
         def denied(path):
-            if Path(path) == hidden: raise PermissionError("fixture scan denied")
+            matches = os.fstat(path).st_ino == hidden.stat().st_ino if isinstance(path, int) else Path(path) == hidden
+            if matches: raise PermissionError("fixture scan denied")
             return real(path)
         with patch.object(os, "scandir", side_effect=denied):
             with self.assertRaises(jobs.LedgerPlanError): jobs.verify_manifest(root, manifest)
+
+    def test_manifest_rejects_directory_swap_and_late_extra_member(self):
+        for mutation in ("directory-swap", "extra-member"):
+            with self.subTest(mutation=mutation):
+                root = self.root / mutation; root.mkdir()
+                child = root / "pkg"; child.mkdir()
+                outside = self.root / (mutation + "-outside"); outside.mkdir()
+                data = b"admitted payload"
+                (child / "module.py").write_bytes(data)
+                (outside / "module.py").write_bytes(data)
+                manifest = {"pkg/module.py": hashlib.sha256(data).hexdigest()}
+                read = jobs._regular_bytes
+                injected = False
+                def mutate_before_read(path, *args, **kwargs):
+                    nonlocal injected
+                    if Path(path).name == "module.py" and not injected:
+                        injected = True
+                        if mutation == "directory-swap":
+                            child.rename(root / "detached")
+                            child.symlink_to(outside, target_is_directory=True)
+                        else:
+                            (root / "late-extra.py").write_bytes(b"unadmitted")
+                    return read(path, *args, **kwargs)
+                with patch.object(jobs, "_regular_bytes", side_effect=mutate_before_read):
+                    with self.assertRaises(jobs.LedgerPlanError): jobs.verify_manifest(root, manifest)
+                self.assertTrue(injected)
 
     def test_copy_is_independent_and_exact_git_blob_checked(self):
         source = self.root / "source"; source.mkdir()

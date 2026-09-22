@@ -119,7 +119,9 @@ def _ignored_path_is_generated(rel: Path, tracked: set[str], *, allow_build_outp
     if text in _SETUPTOOLS_EGG_INFO:
         return True
     if allow_build_outputs and len(rel.parts) == 4 and rel.parts[:2] == ("build", "lib"):
-        return rel.parts[2] in PAYLOAD_PACKAGES and rel.suffix in (".py", ".sh", ".ps1")
+        return (rel.parts[2] in PAYLOAD_PACKAGES and rel.suffix in (".py", ".sh", ".ps1")) or (
+            rel.parts[2:] == ("local_hand", METADATA_NAME)
+        )
     return False
 
 
@@ -291,9 +293,12 @@ def _verify_full_payload_bytecode(root: Path) -> None:
                 raise _bad("cannot bind release bytecode to source") from exc
 
 
-def write_build_metadata(root: Path, *, artifact_kind: str) -> dict[str,Any]:
+def write_build_metadata(root: Path, *, artifact_kind: str,
+                         expected_source_commit: str | None = None) -> dict[str,Any]:
     if artifact_kind not in ("wheel","source-staging"):raise _bad("unsupported artifact kind")
     commit=source_commit(require_clean=True, _allow_build_outputs=True)
+    if expected_source_commit is not None and commit != expected_source_commit:
+        raise _bad("source commit changed after build identity was frozen")
     hashes=payload_hashes(root)
     source_root=Path(__file__).resolve().parent.parent
     # A clean status can hide ignored files or skip-worktree changes. Bind the
@@ -325,6 +330,8 @@ def write_build_metadata(root: Path, *, artifact_kind: str) -> dict[str,Any]:
     path=root/"local_hand"/METADATA_NAME
     with path.open("x",encoding="utf-8",newline="\n") as f:
         f.write(json.dumps(metadata,sort_keys=True,indent=2)+"\n");f.flush();os.fsync(f.fileno())
+    if source_commit(require_clean=True, _allow_build_outputs=True) != commit:
+        raise _bad("source commit changed while build metadata was written")
     return metadata
 
 

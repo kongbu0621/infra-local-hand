@@ -7,6 +7,7 @@ Its journal belongs to the private client workspace, never the public package.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,7 @@ from local_hand_jobs.contract import (
     JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
     request_digest, strict_loads, validate_submit, validate_tool_args,
 )
+from local_hand_jobs.evidence import EvidenceError, _publish_create_only
 
 
 def _copy(value):
@@ -48,10 +50,13 @@ class Workflow:
                             "kind": "host.inspect", "profile_ref": profile, "expected": expected,
                             "inputs": {}, "expires_at": 0})
         self.journal = Path(journal).absolute()
+        if self.journal.parent.resolve() != self.journal.parent:
+            _fail("UNAUTHORIZED", "Client journal ancestors must not be linked")
         self.journal.mkdir(mode=0o700, parents=False, exist_ok=True)
         st = self.journal.lstat()
         if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
             _fail("UNAUTHORIZED", "Client journal must be a private owned directory")
+        self._journal_identity = (st.st_dev, st.st_ino)
         self._profiles = {}
         self._execution_support = {}
 
@@ -91,37 +96,61 @@ class Workflow:
             _fail("CONFLICT", "Tool receipt belongs to a different job or reconciliation")
         return result
 
-    def _read(self, name):
+    def _check_journal(self, directory):
+        opened, named = os.fstat(directory), self.journal.lstat()
+        if (self.journal.parent.resolve() != self.journal.parent
+                or any(not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid()
+                       or st.st_mode & 0o077 or (st.st_dev, st.st_ino) != self._journal_identity
+                       for st in (opened, named))):
+            _fail("IO_UNCERTAIN", "Client journal directory identity changed")
+
+    @contextmanager
+    def _journal_directory(self):
+        directory = None
         try:
-            fd = os.open(self.journal / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        except FileNotFoundError:
-            return None
-        except OSError:
-            _fail("IO_UNCERTAIN", "Cannot inspect the existing client identity")
-        with os.fdopen(fd, "rb") as stream:
-            st = os.fstat(stream.fileno())
-            maximum = self.contract["client_limits"]["max_record_bytes"]
-            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink != 1 or st.st_mode & 0o077 or st.st_size > maximum:
-                _fail("IO_UNCERTAIN", "Client identity has invalid ownership or type")
+            directory = os.open(self.journal, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            self._check_journal(directory)
+            yield directory
+            self._check_journal(directory)
+        except EvidenceError as error:
+            _fail(error.code, "Client identity publication is unavailable")
+        except (OSError, RuntimeError):
+            _fail("IO_UNCERTAIN", "Client journal identity or durability is unresolved")
+        finally:
+            if directory is not None:
+                os.close(directory)
+
+    def _read(self, name, expected_identity=None):
+        with self._journal_directory() as directory:
             try:
-                raw = stream.read(maximum + 1)
-                if len(raw) > maximum:
-                    _fail("IO_UNCERTAIN", "Client identity exceeds its read budget")
-                record = strict_loads(raw)
-            except (JobError, ValueError, UnicodeError):
-                _fail("IO_UNCERTAIN", "Client identity is incomplete")
-            try:
-                # A prior create-only publish may have reached the filesystem
-                # while its directory fsync failed. A readable record alone
-                # does not discharge that durability uncertainty on retry.
-                os.fsync(stream.fileno())
-                directory = os.open(self.journal, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            except FileNotFoundError:
+                if expected_identity is not None:
+                    _fail("IO_UNCERTAIN", "Published client identity disappeared")
+                return None
+            with os.fdopen(fd, "rb") as stream:
+                st = os.fstat(stream.fileno())
+                if expected_identity is not None and (st.st_dev, st.st_ino) != expected_identity:
+                    _fail("IO_UNCERTAIN", "Published client identity was replaced")
+                maximum = self.contract["client_limits"]["max_record_bytes"]
+                if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink != 1 or st.st_mode & 0o077 or st.st_size > maximum:
+                    _fail("IO_UNCERTAIN", "Client identity has invalid ownership or type")
                 try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-            except OSError:
-                _fail("IO_UNCERTAIN", "Existing client identity durability is uncertain")
+                    raw = stream.read(maximum + 1)
+                    if len(raw) > maximum:
+                        _fail("IO_UNCERTAIN", "Client identity exceeds its read budget")
+                    record = strict_loads(raw)
+                except (JobError, ValueError, UnicodeError):
+                    _fail("IO_UNCERTAIN", "Client identity is incomplete")
+                # Retrying a prior uncertain publish must reestablish durability
+                # for the same named file and directory, not a replacement.
+                os.fsync(stream.fileno())
+                os.fsync(directory)
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
+                                          item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+                if any(identity(item) != identity(st) for item in
+                       (os.fstat(stream.fileno()), os.stat(name, dir_fd=directory, follow_symlinks=False))):
+                    _fail("IO_UNCERTAIN", "Client identity changed while being read")
         if not isinstance(record, dict) or record.get("authority_id") != self.admission["authority_id"]:
             _fail("CONFLICT", "Client identity belongs to a different authority")
         return record
@@ -131,28 +160,29 @@ class Workflow:
         raw = canonical_bytes(record)
         if len(raw) > self.contract["client_limits"]["max_record_bytes"]:
             _fail("LIMIT_EXCEEDED", "Client identity exceeds local record budget")
-        staging = self.journal / (".pending-" + str(uuid.uuid4()))
-        try:
-            fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        staging = Path(".pending-" + str(uuid.uuid4()))
+        expected_identity = None
+        with self._journal_directory() as directory:
+            fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
             with os.fdopen(fd, "wb") as stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
+                created = os.fstat(stream.fileno())
             try:
-                os.link(staging, self.journal / name, follow_symlinks=False)
+                _publish_create_only(staging, Path(name), source_dir_fd=directory, destination_dir_fd=directory)
             except FileExistsError:
-                pass
-            staging.unlink()
-            dirfd = os.open(self.journal, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                os.fsync(dirfd)
-            finally:
-                os.close(dirfd)
-        except OSError:
-            # Preserve a possible published identity. Its uncertain durability
-            # never authorizes a tool submission in this attempt.
-            _fail("IO_UNCERTAIN", "Client identity persistence could not be confirmed")
-        return self._read(name)
+                pass  # Preserve staging residue; never unlink a possibly replaced entry.
+            else:
+                expected_identity = (created.st_dev, created.st_ino)
+                published = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                if (published.st_dev, published.st_ino) != (created.st_dev, created.st_ino):
+                    _fail("IO_UNCERTAIN", "Client identity changed during publication")
+            os.fsync(directory)
+        saved = self._read(name, expected_identity=expected_identity)
+        if saved is None or (expected_identity is not None and saved != record):
+            _fail("IO_UNCERTAIN", "Published client identity content changed")
+        return saved
 
     def preflight(self):
         self._profiles = {}

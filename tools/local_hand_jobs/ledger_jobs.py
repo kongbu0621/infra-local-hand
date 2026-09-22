@@ -146,8 +146,13 @@ def build_plan(request, profile, prepared=None, prerequisites=()):
             "retention": "EPHEMERAL_BY_UPSTREAM_TOOL" if kind in ("ledger.test.installed_local", "ledger.test.resources") else "JOB_FILES_RETAINED"}
 
 
-def _regular_bytes(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+def _file_identity(value):
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_nlink,
+            value.st_uid, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+
+def _regular_bytes(path, *, dir_fd=None):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     try:
         before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
@@ -158,7 +163,8 @@ def _regular_bytes(path):
             if not chunk: break
             chunks.append(chunk)
         after = os.fstat(fd)
-        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        entry = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+        if _file_identity(before) != _file_identity(after) or _file_identity(after) != _file_identity(entry):
             raise LedgerPlanError("input changed while observed")
         return b"".join(chunks)
     finally:
@@ -195,32 +201,69 @@ def verify_manifest(root, manifest, *, git_blobs=False, exact=True, links=None):
     links = links or {}
     found_links = {}
     found = {}
-    def unreadable(_):
-        raise LedgerPlanError("input inventory cannot be completely observed")
-    for directory, dirs, files in os.walk(root, followlinks=False, onerror=unreadable):
-        for name in dirs[:]:
-            candidate = Path(directory) / name
-            if candidate.is_symlink():
-                relative = candidate.relative_to(root).as_posix()
-                target = os.readlink(candidate)
-                if links.get(relative) != target or target != "lib" or name != "lib64":
+    descriptors, ancestors, directories, entries = [], [], [], []
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    def names_at(descriptor):
+        try:
+            with os.scandir(descriptor) as scan:
+                return sorted(entry.name for entry in scan)
+        except OSError as error:
+            raise LedgerPlanError("input inventory cannot be completely observed") from error
+    def visit(descriptor, prefix):
+        before = os.fstat(descriptor)
+        names = names_at(descriptor)
+        directories.append((descriptor, before, names))
+        for name in names:
+            relative = prefix + name
+            observed = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            # Only top-level source Git metadata is outside the blob inventory.
+            if git_blobs and relative == ".git":
+                if stat.S_ISLNK(observed.st_mode): raise LedgerPlanError("linked source metadata")
+                continue
+            entries.append((descriptor, name, observed))
+            if stat.S_ISDIR(observed.st_mode):
+                child = os.open(name, flags, dir_fd=descriptor)
+                descriptors.append(child)
+                if _file_identity(os.fstat(child)) != _file_identity(observed):
+                    raise LedgerPlanError("input directory changed while observed")
+                visit(child, relative + "/")
+            elif stat.S_ISLNK(observed.st_mode) and relative in links:
+                target = os.readlink(name, dir_fd=descriptor)
+                if (links[relative] != target or target != "lib" or name != "lib64"
+                        or not stat.S_ISDIR(os.stat(target, dir_fd=descriptor, follow_symlinks=False).st_mode)):
                     raise LedgerPlanError("linked input directory")
                 found_links[relative] = target
-                dirs.remove(name)
-        # Only a source checkout's top-level Git metadata is outside its blob
-        # inventory. Build caches and complete installed payload have no such hole.
-        if git_blobs and Path(directory) == root:
-            dirs[:] = [name for name in dirs if name != ".git"]
-        for name in files:
-            rel = (Path(directory) / name).relative_to(root).as_posix()
-            if git_blobs and rel == ".git": continue
-            if rel not in manifest:
-                if exact: raise LedgerPlanError("unadmitted input file")
-                continue
-            raw = _regular_bytes(root / rel)
-            digest = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() if git_blobs else hashlib.sha256(raw).hexdigest()
-            if digest != manifest[rel]: raise LedgerPlanError("input byte binding mismatch")
-            found[rel] = digest
+            else:
+                if relative not in manifest:
+                    if exact or stat.S_ISLNK(observed.st_mode):
+                        raise LedgerPlanError("unadmitted input file")
+                    continue
+                raw = _regular_bytes(name, dir_fd=descriptor)
+                digest = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() if git_blobs else hashlib.sha256(raw).hexdigest()
+                if digest != manifest[relative]: raise LedgerPlanError("input byte binding mismatch")
+                found[relative] = digest
+    try:
+        descriptor = os.open(root.anchor, flags)
+        descriptors.append(descriptor)
+        # Pin every ancestor; O_NOFOLLOW on the final file alone does not bind it.
+        for component in root.parts[1:]:
+            child = os.open(component, flags, dir_fd=descriptor)
+            descriptors.append(child)
+            ancestors.append((descriptor, component, child))
+            descriptor = child
+        visit(descriptor, "")
+        for parent, name, observed in entries:
+            if _file_identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != _file_identity(observed):
+                raise LedgerPlanError("input entry changed while observed")
+        for descriptor, observed, names in directories:
+            if names_at(descriptor) != names or _file_identity(os.fstat(descriptor)) != _file_identity(observed):
+                raise LedgerPlanError("input inventory changed while observed")
+        for parent, name, child in ancestors:
+            entry, opened = os.stat(name, dir_fd=parent, follow_symlinks=False), os.fstat(child)
+            if (entry.st_dev, entry.st_ino, entry.st_mode) != (opened.st_dev, opened.st_ino, opened.st_mode):
+                raise LedgerPlanError("input ancestor changed while observed")
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
     if found != manifest or found_links != links: raise LedgerPlanError("missing input file or link")
     return hashlib.sha256(json.dumps(found, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

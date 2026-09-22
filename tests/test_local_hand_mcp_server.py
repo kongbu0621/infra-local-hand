@@ -11,6 +11,7 @@ import socket
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -146,11 +147,70 @@ class ServerTests(unittest.TestCase):
         self.rpc("tools/call", params)
         self.assertEqual(self.broker.calls[0][2], self.broker.calls[1][2])
 
+    def test_token_expiring_during_body_read_cannot_reach_the_broker(self):
+        expiry = int(time.time()) + 2
+        headers = {**self.headers, "Authorization": "Bearer " + self.issuer.token(claims={"exp": expiry})}
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "lh_capabilities", "arguments": {}}}).encode()
+
+        async def slow_body():
+            yield body[:1]  # Middleware has verified the still-valid signature.
+            await asyncio.sleep(max(0, expiry - time.time()) + 0.05)
+            yield body[1:]
+
+        async def invoke():
+            return await self.client.client.post("/mcp", content=slow_body(), headers=headers)
+
+        response = self.client.portal.call(invoke)
+        self.assertEqual(response.status_code, 401, response.text)
+        self.assertEqual(response.json()["error"]["code"], "UNAUTHORIZED")
+        self.assertIn('error="invalid_token"', response.headers["www-authenticate"])
+        self.assertEqual([], self.broker.calls)
+
+    def test_token_expiring_in_executor_queue_cannot_reach_the_broker(self):
+        expiry = int(time.time()) + 2
+        headers = {**self.headers, "Authorization": "Bearer " + self.issuer.token(claims={"exp": expiry})}
+        to_thread = asyncio.to_thread
+        async def delayed_dispatch(function, *args, **kwargs):
+            if getattr(function, "__name__", "") == "dispatch":
+                await asyncio.sleep(max(0, expiry - time.time()) + 0.05)
+            return await to_thread(function, *args, **kwargs)
+        with mock.patch("local_hand_mcp.server.asyncio.to_thread", side_effect=delayed_dispatch):
+            response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}}, headers=headers)
+        result = response.json()["result"]
+        self.assertTrue(result["isError"], response.text)
+        self.assertEqual(result["structuredContent"]["error"]["code"], "UNAUTHORIZED")
+        self.assertIn("mcp/www_authenticate", result["_meta"])
+        self.assertEqual([], self.broker.calls)
+
     def test_response_budget_rejects_large_result(self):
         self.broker.output = {"raw": "x" * 524288}
         response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
         self.assertEqual("LIMIT_EXCEEDED", response.json()["result"]["structuredContent"]["error"]["code"])
         self.assertLess(len(response.content), 2048)
+
+    def test_control_task_start_failure_does_not_exhaust_unused_slots(self):
+        from local_hand_mcp.server import MAX_CONTROL_REQUESTS
+        create_task = asyncio.create_task
+        rejected = []
+        def fail_dispatch(coroutine, *args, **kwargs):
+            if (getattr(getattr(coroutine, "cr_code", None), "co_name", None) == "invoke"
+                    and coroutine.cr_frame.f_globals.get("__name__") == "local_hand_mcp.server"):
+                rejected.append(coroutine)
+                raise RuntimeError("synthetic event-loop task creation failure")
+            return create_task(coroutine, *args, **kwargs)
+        try:
+            with mock.patch("local_hand_mcp.server.asyncio.create_task", side_effect=fail_dispatch):
+                for _ in range(MAX_CONTROL_REQUESTS):
+                    response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
+                    self.assertEqual("IO_UNCERTAIN", response.json()["result"]["structuredContent"]["error"]["code"])
+        finally:
+            for coroutine in rejected:
+                coroutine.close()
+        self.assertEqual([], self.broker.calls)
+        response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
+        self.assertFalse(response.json()["result"]["isError"], response.text)
+        self.assertEqual(len(self.broker.calls), 1)
 
     def test_host_origin_and_duplicate_credentials_rejected(self):
         response = self.rpc("tools/list", headers={**self.headers, "Host": "attacker.example"})
@@ -182,6 +242,27 @@ class ServerTests(unittest.TestCase):
             finally:
                 release.set()
             self.assertTrue(completed.wait(timeout=2))
+        self.assertEqual(1, len(self.broker.calls))
+
+    def test_private_control_budget_tightens_the_adapter_reply_deadline(self):
+        self.broker.policy = SimpleNamespace(limits={"control_response_seconds": 1})
+        release, completed = threading.Event(), threading.Event()
+        original = self.broker.call
+        def delayed(*args):
+            release.wait(timeout=3)
+            result = original(*args)
+            completed.set()
+            return result
+        with mock.patch.object(self.broker, "call", side_effect=delayed):
+            started = time.monotonic()
+            try:
+                response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
+                self.assertLess(time.monotonic() - started, 2)
+                self.assertEqual("IO_UNCERTAIN", response.json()["result"]["structuredContent"]["error"]["code"])
+                self.assertFalse(completed.is_set())
+            finally:
+                release.set()
+            self.assertTrue(completed.wait(timeout=1))
         self.assertEqual(1, len(self.broker.calls))
 
     def test_real_loopback_listener_uses_the_same_signed_transport(self):

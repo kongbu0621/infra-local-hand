@@ -106,6 +106,8 @@ class Registry:
         bindings = fact.get("bindings", {})
         if not isinstance(bindings, dict):
             raise JobError("NOT_SEALED", "Prepared artifact bindings are incomplete")
+        if set(bindings) - {"source_commit", *_BINDINGS}:
+            raise JobError("CONFLICT", "Prepared bindings contain non-payload provenance fields")
         # The prepared payload and execution provenance both expose these
         # values. Never let preflight consume one identity while the eventual
         # seal records a different value from the nested binding map.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import socket
@@ -11,16 +12,34 @@ import stat
 import struct
 import sys
 import threading
+import time
 
-from .contract import JobError, Principal, MAX_REQUEST_BYTES, strict_loads
+from .contract import JobError, Principal, MAX_REQUEST_BYTES, MAX_SAFE_INTEGER, strict_loads
 
 MAX_RESPONSE_BYTES = 512 * 1024
 
 
-def _receive(connection, length):
+def _deadline(connection, deadline):
+    if deadline is None:
+        return
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise JobError("IO_UNCERTAIN", "Local transport deadline expired; retain the original ID")
+    connection.settimeout(remaining)
+
+
+def _seconds(value):
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 60:
+        raise JobError("INVALID_REQUEST", "Local transport requires a finite response budget")
+    return value
+
+
+def _receive(connection, length, *, deadline=None):
     chunks = []
     while length:
+        _deadline(connection, deadline)
         part = connection.recv(min(length, 65536))
+        _deadline(connection, deadline)
         if not part:
             raise JobError("IO_UNCERTAIN", "Local transport ended before its response")
         chunks.append(part)
@@ -28,18 +47,77 @@ def _receive(connection, length):
     return b"".join(chunks)
 
 
-def _read_frame(connection, limit):
-    size = struct.unpack("!I", _receive(connection, 4))[0]
+def _read_frame(connection, limit, *, deadline=None):
+    size = struct.unpack("!I", _receive(connection, 4, deadline=deadline))[0]
     if size > limit:
         raise JobError("LIMIT_EXCEEDED", "Local transport frame exceeds its limit")
-    return _receive(connection, size)
+    return _receive(connection, size, deadline=deadline)
 
 
-def _send_frame(connection, value):
+def _send_frame(connection, value, *, deadline=None, limit=MAX_RESPONSE_BYTES):
     raw = json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    if len(raw) > MAX_RESPONSE_BYTES:
+    if len(raw) > limit:
         raise JobError("LIMIT_EXCEEDED", "Local transport response exceeds its limit")
+    _deadline(connection, deadline)
     connection.sendall(struct.pack("!I", len(raw)) + raw)
+
+
+def _response(raw):
+    """Decode bounded responses without losing keys; finite timestamps are valid.
+
+    Request decoding deliberately rejects floats and has a smaller byte limit,
+    so it cannot be reused for evidence chunks or status observation times.
+    """
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+
+    def integer(text):
+        if len(text.lstrip("-")) > 16 or abs(int(text)) > MAX_SAFE_INTEGER:
+            raise ValueError("unsafe integer")
+        return int(text)
+
+    def number(text):
+        value = float(text)
+        if not math.isfinite(value):
+            raise ValueError("nonfinite number")
+        return value
+
+    try:
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise ValueError("oversized response")
+        value = json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=unique,
+                           parse_int=integer, parse_float=number, parse_constant=number)
+        pending = [(value, 0)]
+        while pending:
+            item, depth = pending.pop()
+            if depth > 16:
+                raise ValueError("response nesting exceeds its bound")
+            if isinstance(item, dict):
+                pending.extend((part, depth + 1) for pair in item.items() for part in pair)
+            elif isinstance(item, list):
+                pending.extend((part, depth + 1) for part in item)
+            elif isinstance(item, str) and any(0xD800 <= ord(char) <= 0xDFFF for char in item):
+                raise ValueError("invalid Unicode")
+        if type(value) is not dict or set(value) not in ({"result"}, {"error"}):
+            raise ValueError("invalid response envelope")
+        if "result" in value:
+            if type(value["result"]) is not dict:
+                raise ValueError("invalid tool result")
+        else:
+            error = value["error"]
+            if (type(error) is not dict or not {"code", "message"} <= error.keys()
+                    or error.keys() - {"code", "message", "details"}
+                    or not isinstance(error["code"], str) or not isinstance(error["message"], str)
+                    or ("details" in error and not isinstance(error["details"], dict))):
+                raise ValueError("invalid error result")
+        return value
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        raise JobError("IO_UNCERTAIN", "Local response is ambiguous or invalid; retain the original ID") from None
 
 
 class MaintenanceServer:
@@ -50,12 +128,18 @@ class MaintenanceServer:
             raise JobError("UNSUPPORTED", "Authenticated Unix peers are unavailable")
         self.broker, self.path = broker, Path(socket_path)
         self.peer_map = dict(peer_map)
-        self.response_seconds = response_seconds
+        limits = getattr(getattr(broker, "policy", None), "limits", {})
+        self.response_seconds = min(_seconds(response_seconds),
+                                    limits.get("control_response_seconds", response_seconds))
+        if type(max_clients) is not int or not 1 <= max_clients <= 32:
+            raise JobError("INVALID_REQUEST", "Local transport client capacity is invalid")
         self._closed = threading.Event()
         self._slots = threading.BoundedSemaphore(max_clients)
         self._listener = None
         self._identity = None
         self._thread = None
+        self._connections = set()
+        self._connection_lock = threading.Lock()
 
     def start(self):
         parent = self.path.parent
@@ -96,47 +180,69 @@ class MaintenanceServer:
             if not self._slots.acquire(blocking=False):
                 connection.close()
                 continue
+            with self._connection_lock:
+                if self._closed.is_set():
+                    connection.close()
+                    self._slots.release()
+                    continue
+                self._connections.add(connection)
             try:
                 threading.Thread(target=self._handle, args=(connection,), daemon=True).start()
             except Exception:
                 try:
                     connection.close()
                 finally:
+                    with self._connection_lock:
+                        self._connections.discard(connection)
                     self._slots.release()
 
     def _handle(self, connection):
+        deadline = time.monotonic() + self.response_seconds
         try:
-            connection.settimeout(self.response_seconds)
+            _deadline(connection, deadline)
             credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
             _, uid, _ = struct.unpack("3i", credentials)
             principal = self.peer_map.get(uid)
             if not isinstance(principal, Principal):
                 raise JobError("UNAUTHORIZED", "OS peer has no admitted principal")
-            request = strict_loads(_read_frame(connection, MAX_REQUEST_BYTES))
+            request = strict_loads(_read_frame(connection, MAX_REQUEST_BYTES, deadline=deadline))
             if type(request) is not dict or set(request) != {"tool", "arguments"} or not isinstance(request["tool"], str):
                 raise JobError("INVALID_REQUEST", "Local request must name only tool and arguments")
+            if self._closed.is_set():
+                raise JobError("IO_UNCERTAIN", "Maintenance transport closed before dispatch")
+            _deadline(connection, deadline)
             result = self.broker.call(request["tool"], request["arguments"], principal)
-            _send_frame(connection, {"result": result})
+            _send_frame(connection, {"result": result}, deadline=deadline)
         except JobError as error:
             try:
-                _send_frame(connection, {"error": error.as_dict()})
+                _send_frame(connection, {"error": error.as_dict()}, deadline=deadline)
             except (OSError, JobError):
                 pass
         except (OSError, ValueError, TypeError):
             try:
-                _send_frame(connection, {"error": {"code": "IO_UNCERTAIN", "message": "Local request outcome is unresolved"}})
+                _send_frame(connection, {"error": {"code": "IO_UNCERTAIN", "message": "Local request outcome is unresolved"}}, deadline=deadline)
             except (OSError, JobError):
                 pass
         finally:
             try:
                 connection.close()
             finally:
+                with self._connection_lock:
+                    self._connections.discard(connection)
                 self._slots.release()
 
     def close(self):
         self._closed.set()
         if self._listener is not None:
             self._listener.close()
+        with self._connection_lock:
+            connections = tuple(self._connections)
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
         if (self._thread is not None and self._thread.ident is not None
                 and self._thread is not threading.current_thread()):
             self._thread.join(timeout=1)
@@ -151,12 +257,14 @@ class MaintenanceServer:
 def request(socket_path, tool, arguments, *, timeout=2):
     """The client has no subprocess, ledger, policy, or execution fallback."""
     connection = None
+    deadline = time.monotonic() + _seconds(timeout)
     try:
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        connection.settimeout(timeout)
+        _deadline(connection, deadline)
         connection.connect(str(socket_path))
-        _send_frame(connection, {"tool": tool, "arguments": arguments})
-        result = json.loads(_read_frame(connection, MAX_RESPONSE_BYTES))
+        _send_frame(connection, {"tool": tool, "arguments": arguments}, deadline=deadline, limit=MAX_REQUEST_BYTES)
+        result = _response(_read_frame(connection, MAX_RESPONSE_BYTES, deadline=deadline))
+        _deadline(connection, deadline)
         if "error" in result:
             error = result["error"]
             raise JobError(error["code"], error["message"], error.get("details"))
@@ -211,6 +319,7 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         raise JobError("IO_UNCERTAIN", "Registered authority identity is unavailable") from exc
     authority = AuthorityLock(anchor_path, authority_id=policy.authority_id,
                               ledger_id=ledger_id, state_root=policy.broker_root)
+    state = None
     try:
         if initialize:
             marker = Path(policy.authority_root) / "ledger.initialized"
@@ -235,7 +344,6 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
                      for row in state.all(tx) for handle in row["record"].get("handles", {}).values()]
         inventory = manager.scan(units)
         if inventory.get("status") != "READY":
-            state.close()
             raise JobError("IO_UNCERTAIN", "Supervisor inventory has orphaned or unresolved executions")
         broker = Broker(state, policy, Registry(), Runner(manager))
         def no_direct_seal(_):
@@ -252,7 +360,11 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         broker.authority_lock = authority
         return broker
     except BaseException:
-        authority.close()
+        try:
+            if state is not None:
+                state.close()
+        finally:
+            authority.close()
         raise
 
 

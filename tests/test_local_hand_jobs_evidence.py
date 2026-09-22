@@ -251,6 +251,26 @@ class EvidenceTests(unittest.TestCase):
         self.assertCode("CONFLICT", lambda: self.fixture.store.read_chunk(
             artifact["artifact_id"], artifact["size"] + 1, 1, artifact["sha256"], principal="reader"))
 
+    def test_archive_budget_stops_writing_before_the_staging_file_exceeds_its_limit(self):
+        (self.fixture.source / "stdout.log").write_bytes(b"x" * 65536)
+        self.fixture.store.max_artifact_bytes = 1024
+        self.assertCode("LIMIT_EXCEEDED", lambda: self.fixture.store.seal(OP))
+        self.assertFalse(self.fixture.registered)
+        archives = list(self.fixture.store.root.glob("staging-*/evidence.zip"))
+        self.assertTrue(archives)
+        self.assertTrue(all(path.stat().st_size <= 1024 for path in archives),
+                        "an artifact budget must bound writes, not only the final size check")
+
+    def test_manifest_rechecks_revocation_after_reading_the_registered_catalog(self):
+        self.fixture.sealed()
+        original = self.fixture.store._record
+        def revoke_after_observation(seal_id):
+            result = original(seal_id)
+            self.fixture.authorized = False
+            return result
+        with mock.patch.object(self.fixture.store, "_record", side_effect=revoke_after_observation):
+            self.assertCode("UNAUTHORIZED", lambda: self.fixture.store.manifest(OP, principal="reader"))
+
     def test_every_chunk_rechecks_authorization_and_artifact_bytes(self):
         artifact = self.fixture.sealed()
         self.fixture.callback("lh_evidence_read_chunk", {"artifact_id": artifact["artifact_id"],

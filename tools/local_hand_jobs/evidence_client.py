@@ -48,7 +48,8 @@ def _descriptor(artifact: dict, maximum: int) -> dict:
             or any(c not in "0123456789abcdef" for c in artifact["sha256"])):
         raise EvidenceError("CONFLICT", "invalid evidence descriptor")
     _safe_name(artifact["artifact_id"])
-    if "/" in artifact["artifact_id"]:
+    if ("/" in artifact["artifact_id"]
+            or artifact["artifact_id"].rpartition(".")[2] != artifact["role"]):
         raise EvidenceError("CONFLICT", "invalid artifact identifier")
     return {k: artifact[k] for k in ("artifact_id", "role", "size", "sha256")}
 
@@ -297,8 +298,9 @@ class EvidenceClient:
 
     def __init__(self, authenticated_tool_callback: Callable[[str, dict], dict], *,
                  chunk_size: int = DEFAULT_CHUNK, max_members: int = 10000):
-        if type(chunk_size) is not int or not 1 <= chunk_size <= MAX_CHUNK:
-            raise EvidenceError("LIMIT_EXCEEDED", "invalid download chunk budget")
+        if (type(chunk_size) is not int or not 1 <= chunk_size <= MAX_CHUNK
+                or type(max_members) is not int or not 1 <= max_members <= 2**53 - 1):
+            raise EvidenceError("LIMIT_EXCEEDED", "invalid download budget")
         self.callback = authenticated_tool_callback
         self.chunk_size = chunk_size
         self.max_members = max_members
@@ -333,7 +335,8 @@ class EvidenceClient:
     def _seal(self, artifact: dict) -> dict:
         digest = artifact.get("seal_sha256")
         seal_id = artifact.get("seal_id")
-        if not isinstance(digest, str) or len(digest) != 64 or not isinstance(seal_id, str):
+        if (not isinstance(digest, str) or len(digest) != 64 or not isinstance(seal_id, str)
+                or artifact.get("artifact_id") != seal_id + ".zip"):
             raise EvidenceError("CONFLICT", "external seal binding is missing")
         raw, total = self._chunk(seal_id + ".seal", digest, 0, DEFAULT_CHUNK)
         if total != len(raw) or total > DEFAULT_CHUNK or _hash(raw) != digest:
@@ -342,6 +345,7 @@ class EvidenceClient:
         if (seal.get("schema_version") != "lh-evidence-seal-v1"
                 or seal.get("seal_id") != seal_id or seal.get("complete") is not True
                 or seal.get("operation_id") != artifact.get("operation_id")
+                or seal.get("reconcile_id") != artifact.get("reconcile_id")
                 or seal.get("event_seq") != artifact.get("event_seq")):
             raise EvidenceError("CONFLICT", "external seal identity mismatch")
         try:

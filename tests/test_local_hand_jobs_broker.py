@@ -550,6 +550,65 @@ class BrokerTests(unittest.TestCase):
         self.assertFalse(replacement.starts)
         self.assertIsNone(restored.status(self.request["operation_id"], self.owner)["exit_proof"])
 
+    def _queue_round_before_late_business_exit(self, *, snapshot=False):
+        if snapshot:
+            self.broker.evidence = SimpleNamespace(root=Path(self.temp.name) / "artifacts")
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        execution = self.runner.starts[1][1]
+        self.runner.proofs[execution] = {"state": "UNKNOWN"}
+        self.broker.tick()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity)
+        result = {"evidence_snapshot": {"root": str(Path(self.temp.name) / "raw"), "members": []}} if snapshot else {}
+        self.runner.finish(execution, collectors_stopped=True, writers_stopped=True, result=result)
+        return identity
+
+    def test_late_business_exit_keeps_already_admitted_round_lease(self):
+        identity = self._queue_round_before_late_business_exit()
+        self.broker.tick()
+        self.assertEqual("SUCCEEDED", self.status()["outcome"])
+        round_status = self.broker.status(self.request["operation_id"], self.owner, identity)
+        self.assertEqual("RUNNING", round_status["lifecycle"],
+                         "late parent completion must preserve the admitted round's reservation")
+        self.assertEqual("reconcile", self.runner.starts[-1][2]["phase"])
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", self.make_request(), self.owner))
+        self.runner.finish(self.runner.starts[-1][1]); self.broker.tick()
+        self.broker.call("lh_job_submit", self.make_request(), self.owner)
+
+    def test_late_business_sealing_serializes_already_admitted_round(self):
+        identity = self._queue_round_before_late_business_exit(snapshot=True)
+        self.broker.tick()
+        self.assertEqual("AWAITING_SEAL", self.status()["phase"])
+        self.assertEqual("QUEUED", self.broker.status(self.request["operation_id"], self.owner, identity)["phase"],
+                         "the late parent's evidence still owns the shared execution boundary")
+        self.broker.tick()
+        self.assertEqual(["preflight", "business", "evidence"], [start[2]["phase"] for start in self.runner.starts])
+        frozen = self.runner.starts[-1][2]["evidence_snapshot"]
+        self.runner.finish(self.runner.starts[-1][1], collectors_stopped=True, writers_stopped=True,
+            result={"seal_record": {"operation_id": self.request["operation_id"], "seal_id": str(uuid.uuid4()),
+                "seal_sha256": "a" * 64, "event_seq": frozen["event_seq"],
+                "bindings": frozen["bindings"], "complete": True}})
+        self.broker.tick()
+        self.assertEqual("SEALED", self.status()["evidence"])
+        self.assertEqual("reconcile", self.runner.starts[-1][2]["phase"])
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", self.make_request(), self.owner))
+
+    def test_cancel_admitted_round_during_late_parent_sealing_keeps_parent_lease(self):
+        identity = self._queue_round_before_late_business_exit(snapshot=True)
+        complete = self.broker._complete
+        def cancel_after_parent_exit(namespace, operation, proof):
+            complete(namespace, operation, proof)
+            if namespace == "job":
+                # Deterministic API interleaving after the parent's completion
+                # transaction and before the coordinator reaches the queued round.
+                self.cancel({"kind": "reconcile", "reconcile_id": identity})
+        with mock.patch.object(self.broker, "_complete", side_effect=cancel_after_parent_exit):
+            self.broker.tick()
+        self.assertEqual("AWAITING_SEAL", self.status()["phase"])
+        self.assertEqual("CANCELLED", self.broker.status(self.request["operation_id"], self.owner, identity)["outcome"])
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", self.make_request(), self.owner))
+
     def _delete(self):
         with self.db.transaction() as tx:
             tx.execute("DELETE FROM operations")

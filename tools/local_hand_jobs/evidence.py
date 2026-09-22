@@ -195,6 +195,27 @@ def _publish_create_only(source: Path, destination: Path, *,
         raise OSError(error, "create-only publication failed")
 
 
+class _BoundedArchive:
+    """Apply the archive limit to every write, including ZIP directory records."""
+
+    def __init__(self, stream, maximum: int):
+        self.stream, self.maximum = stream, maximum
+
+    def write(self, data):
+        if self.stream.tell() + len(data) > self.maximum:
+            raise EvidenceError("LIMIT_EXCEEDED", "archive byte budget exceeded")
+        return self.stream.write(data)
+
+    def seek(self, *args):
+        return self.stream.seek(*args)
+
+    def tell(self):
+        return self.stream.tell()
+
+    def flush(self):
+        return self.stream.flush()
+
+
 @dataclass(frozen=True)
 class QuiescenceProof:
     execution_id: str
@@ -400,7 +421,8 @@ class EvidenceStore:
                 archive_path = stage / _ROLES["zip"]
                 archive_fd = os.open(archive_path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
                 with os.fdopen(archive_fd, "w+b") as archive_stream:
-                    with zipfile.ZipFile(archive_stream, "w", compression=zipfile.ZIP_STORED,
+                    with zipfile.ZipFile(_BoundedArchive(archive_stream, self.max_artifact_bytes),
+                                         "w", compression=zipfile.ZIP_STORED,
                                          allowZip64=True) as archive:
                         for name in snapshot.members:
                             digest = hashlib.sha256()
@@ -634,6 +656,7 @@ class EvidenceStore:
                   "catalog_digest": version, "artifacts": page, "next_cursor": next_cursor}
         if len(_json(result)) > MAX_RESPONSE:
             raise EvidenceError("LIMIT_EXCEEDED", "evidence response budget exceeded")
+        self._auth(principal, operation_id)
         return result
 
     def read_chunk(self, artifact_id: str, offset: int = 0, length: int = DEFAULT_CHUNK,

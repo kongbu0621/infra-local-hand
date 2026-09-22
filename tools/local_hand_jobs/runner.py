@@ -151,15 +151,42 @@ class Runner:
                              exit_code=None, result={"outcome": "CANCELLED", "business_started": False, "helper_started": False}, missing=[])
                 with item.lock: item.proof = proof
                 return
-            handle = (self.manager.reattach(item.handle, item.plan, item.cancel) if item.plan.get("_reattach")
-                      else self.manager.start(item.handle, item.plan, item.cancel))
+            delivery_error = None
+            try:
+                handle = (self.manager.reattach(item.handle, item.plan, item.cancel) if item.plan.get("_reattach")
+                          else self.manager.start(item.handle, item.plan, item.cancel))
+            except Exception as error:
+                # A manager can retain a delivered request even when returning
+                # its receipt failed. Adopt only that exact in-memory identity;
+                # never retry start or reinterpret the exception as no-start.
+                if isinstance(error, _NoStartError) or item.plan.get("_reattach"):
+                    raise
+                recover = getattr(self.manager, "_retained_delivery", None)
+                handle = recover(item.handle) if recover is not None else None
+                if handle is None:
+                    raise
+                delivery_error = getattr(error, "code", "IO_UNCERTAIN")
             item.manager_handle = handle
             item.launch_complete = True
             while True:
-                if item.cancel.is_set(): self.manager.stop(handle)
-                proof = self.manager.inspect(handle)
+                try:
+                    if item.cancel.is_set(): self.manager.stop(handle)
+                    proof = self.manager.inspect(handle)
+                except RunnerError as error:
+                    # A missing observation or stop acknowledgement says nothing
+                    # about the execution's lifetime. Keep its original handle
+                    # and observer alive so later cancellation still reaches it.
+                    proof = _unknown(str(error))
+                    proof["result"] = {"outcome": "UNKNOWN", "error": error.code}
+                except Exception:
+                    proof = _unknown("manager observation is uncertain")
+                    if delivery_error is not None:
+                        proof["result"] = {"outcome": "UNKNOWN", "error": delivery_error}
                 if hasattr(self.manager, "export_handle"):
-                    proof["recovery_handle"] = self.manager.export_handle(handle)
+                    try:
+                        proof["recovery_handle"] = self.manager.export_handle(handle)
+                    except Exception:
+                        proof = _unknown("manager recovery identity is uncertain")
                 with item.lock: item.proof = _plain(proof)
                 if proof.get("state") == "EXITED" and proof.get("future_start_blocked") and proof.get("tree_exited"):
                     return
@@ -466,6 +493,14 @@ class SystemdManager:
         return {**{key: value for key, value in handle["identity"].items() if key != "manager"},
                 "manager": {key: handle.get(key) for key in fields}}
 
+    def _retained_delivery(self, identity):
+        """Read only the original request receipt after a delivery exception."""
+        handle = self._runs.get(identity.get("unit"))
+        if (handle is not None and handle.get("delivery_attempted") is True
+                and Runner._same_handle(handle.get("identity", {}), identity)):
+            return handle
+        return None
+
     def reattach(self, identity, plan, cancel_event):
         support = self.support()
         if not support["supported"]:
@@ -636,11 +671,25 @@ def _interpreter_temp_check(python, plan, directory):
     if observation["outcome"] != "SUCCEEDED": raise ledger_jobs.LedgerPlanError("actual interpreter temporary binding failed")
 
 
+def _checked_walk(root, *, topdown=True):
+    """Missing or unreadable owned trees are not successful empty observations."""
+    root = Path(root)
+    if root.resolve() != root or root.is_symlink() or not root.is_dir():
+        raise ledger_jobs.LedgerPlanError("owned inventory root is unavailable")
+    original = root.stat()
+    def unreadable(_):
+        raise ledger_jobs.LedgerPlanError("owned inventory cannot be completely observed")
+    yield from os.walk(root, topdown=topdown, followlinks=False, onerror=unreadable)
+    current = root.stat()
+    if root.resolve() != root or (original.st_dev, original.st_ino) != (current.st_dev, current.st_ino):
+        raise ledger_jobs.LedgerPlanError("owned inventory root changed")
+
+
 def _inventory_prepared(plan):
     prepared = dict(plan["prepared"])
     root = Path(prepared["root"])
     files, links = {}, {}
-    for directory, dirs, names in os.walk(root, followlinks=False):
+    for directory, dirs, names in _checked_walk(root):
         for name in dirs[:]:
             path = Path(directory) / name
             if path.is_symlink():
@@ -654,7 +703,7 @@ def _inventory_prepared(plan):
     prepared.update(files=files, links=links, wheel_digest=hashlib.sha256(ledger_jobs._regular_bytes(prepared["wheel"])).hexdigest(),
                     source_blobs=plan["source"]["blobs"], readonly_enforced=True, sealed=False)
     # Keep both venvs exactly where installed, freeze instead of copying them.
-    for directory, dirs, names in os.walk(root, topdown=False, followlinks=False):
+    for directory, dirs, names in _checked_walk(root, topdown=False):
         for name in names:
             path = Path(directory) / name
             path.chmod(stat.S_IMODE(path.stat().st_mode) & ~0o222)
@@ -756,7 +805,7 @@ def _helper(plan):
                 observations = {}
                 for label, root in plan["observed_roots"].items():
                     facts = {}
-                    for directory, dirs, names in os.walk(root, followlinks=False):
+                    for directory, dirs, names in _checked_walk(root):
                         for name in dirs:
                             if (Path(directory) / name).is_symlink():
                                 if name == "lib64" and os.readlink(Path(directory) / name) == "lib": continue
@@ -828,7 +877,7 @@ def _helper(plan):
     output["bindings"]["environment_fingerprint"] = output["facts"].get("environment_fingerprint")
     target = Path(plan["result_path"])
     members = []
-    for parent, dirs, names in os.walk(evidence, followlinks=False):
+    for parent, dirs, names in _checked_walk(evidence):
         if any((Path(parent) / name).is_symlink() for name in dirs):
             raise ledger_jobs.LedgerPlanError("linked evidence directory")
         members.extend((Path(parent) / name).relative_to(evidence).as_posix() for name in names)
