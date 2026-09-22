@@ -213,7 +213,84 @@ def main():
             checks.append({'case':'installation record create-only','status':'PASS'})
             connect=[sys.executable,'-I','-m','local_hand_connect.cli']
             common=['--mailbox-repo',controller,'--policy',policy_path]
-            run(connect+['init']+common)
+            # Both installed create-only entry points must remain retryable
+            # after a partial write; inject only while their writer is active.
+            controller_write_failure_code = '''import errno, os, sys
+from unittest import mock
+from local_hand_connect import cli, controller
+owner = controller if sys.argv[1] == 'marker' else cli
+original_writer = owner._write_create_only
+def injected_writer(*args, **kwargs):
+    original_write = os.write
+    calls = 0
+    def partial_then_full(fd, data):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return original_write(fd, data[:3])
+        raise OSError(errno.ENOSPC, 'synthetic controller partial write then disk full')
+    with mock.patch.object(os, 'write', side_effect=partial_then_full):
+        return original_writer(*args, **kwargs)
+with mock.patch.object(owner, '_write_create_only', side_effect=injected_writer):
+    raise SystemExit(cli.main(sys.argv[2:]))
+'''
+            publication_evidence=[]
+            controller_marker=controller/'.git/local-hand-connect.json'
+            init_args=['init']+common
+            assert not controller_marker.exists()
+            failed_stdout=run([sys.executable,'-I','-c',controller_write_failure_code,'marker']+init_args,expected=3)
+            failed_command=len(records)
+            failure=json.loads((logs/f'{failed_command:03}'/'stderr.log').read_text())
+            assert not failed_stdout and failure['error_code']=='controller_file_write_failed' and failure['status']=='indeterminate',failure
+            assert 'errno=28' in failure['error'],failure
+            failed_target_absent=not controller_marker.exists()
+            assert failed_target_absent
+            admitted=json.loads(run(connect+init_args));healthy_command=len(records)
+            marker_bytes=controller_marker.read_bytes()
+            assert json.loads(marker_bytes)==admitted
+            assert admitted['mailbox_root']==str(controller) and admitted['transport_policy']==policy
+            assert not run(connect+init_args,expected=2)
+            duplicate_command=len(records)
+            repeated=json.loads((logs/f'{duplicate_command:03}'/'stderr.log').read_text())
+            assert repeated['error_code']=='controller_mailbox_already_initialized',repeated
+            assert controller_marker.read_bytes()==marker_bytes
+            publication_evidence.append({'case':'marker','path':str(controller_marker),
+                'failed_command':failed_command,'healthy_command':healthy_command,'duplicate_command':duplicate_command,
+                'failed_target_absent':failed_target_absent,'failure':failure,'duplicate':repeated,
+                'bytes':len(marker_bytes),'sha256':hashlib.sha256(marker_bytes).hexdigest(),
+                'content':marker_bytes.decode('utf-8')})
+            checks.append({'case':'installed controller init partial-write failure retries without overwriting admission','status':'PASS'})
+
+            controller_output=root/'controller-output-task.json'
+            build_args=['build','--target-node',profile.node_id,'--action','node.status',
+                        '--task-id','LH9850','--output',controller_output]
+            assert not controller_output.exists()
+            failed_stdout=run([sys.executable,'-I','-c',controller_write_failure_code,'output']+build_args,expected=3)
+            failed_command=len(records)
+            failure=json.loads((logs/f'{failed_command:03}'/'stderr.log').read_text())
+            assert not failed_stdout and failure['error_code']=='controller_file_write_failed' and failure['status']=='indeterminate',failure
+            assert 'errno=28' in failure['error'],failure
+            failed_target_absent=not controller_output.exists()
+            assert failed_target_absent
+            assert not run(connect+build_args)
+            healthy_command=len(records)
+            output_bytes=controller_output.read_bytes()
+            from local_hand.worker import validate_task
+            output_task=validate_task(json.loads(output_bytes))
+            assert output_task['task_id']=='LH9850' and output_task['target_node']==profile.node_id
+            assert output_task['action']=='node.status' and output_task['params']=={}
+            assert not run(connect+build_args,expected=2)
+            duplicate_command=len(records)
+            repeated=json.loads((logs/f'{duplicate_command:03}'/'stderr.log').read_text())
+            assert repeated['error_code']=='controller_output_exists',repeated
+            assert controller_output.read_bytes()==output_bytes
+            publication_evidence.append({'case':'output','path':str(controller_output),
+                'failed_command':failed_command,'healthy_command':healthy_command,'duplicate_command':duplicate_command,
+                'failed_target_absent':failed_target_absent,'failure':failure,'duplicate':repeated,
+                'bytes':len(output_bytes),'sha256':hashlib.sha256(output_bytes).hexdigest(),
+                'content':output_bytes.decode('utf-8'),'task':output_task,'submitted':False})
+            checks.append({'case':'installed CLI build partial-write failure retries without overwriting Task output','status':'PASS'})
+            save('controller-publication-evidence.json',publication_evidence)
             maintenance_code='''import json,sys
 from pathlib import Path
 from unittest import mock
@@ -795,6 +872,248 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
                 read_evidence.append(item)
                 checks.append({'case':'installed controller payload read failure '+operation,'status':'PASS'})
             save('read-failure-evidence.json',read_evidence)
+            # Invalid action identities stay byte-for-byte in the committed
+            # mailbox; they cannot manufacture Result v1 identities or block CAS.
+            admission_start=len(records)
+            admission_target=project/'admission-cas.txt';admission_target.write_bytes(b'before\n')
+            admission_tasks=[];admission_invalid=[];admission_originals={}
+            for index,action in enumerate(('',None,[],{},0,42,False)):
+                item=build_task(profile.node_id,'node.status',{},task_id=f'LH{1000+index}')
+                item['action']=action;admission_tasks.append(item);admission_invalid.append(item['task_id'])
+            item=build_task(profile.node_id,'node.status',{},task_id='LH1007');del item['action']
+            admission_tasks.append(item);admission_invalid.append(item['task_id'])
+            admission_unknown=build_task(profile.node_id,'node.status',{},task_id='LH1008')
+            admission_unknown['action']='unsupported.fixture.action';admission_tasks.append(admission_unknown)
+            admission_valid=build_task(profile.node_id,'fs.write_text_cas',{
+                'repository':'demo','relative_path':admission_target.name,
+                'expected_sha256':hashlib.sha256(b'before\n').hexdigest(),'content':'after\n'},task_id='LH1009')
+            admission_tasks.append(admission_valid)
+            run([git,'-C',seed,'fetch','origin',policy['branch']])
+            run([git,'-C',seed,'reset','--hard','FETCH_HEAD'])
+            for item in admission_tasks:
+                item_path=save(f"admission-{item['task_id']}-task.json",item)
+                item_raw=item_path.read_bytes();relative=f"_executor_spike/tasks/{item['task_id']}.json"
+                (seed/relative).write_bytes(item_raw)
+                admission_originals[item['task_id']]={'task':item,'source_file':item_path.name,
+                    'relative_path':relative,'bytes':len(item_raw),'sha256':hashlib.sha256(item_raw).hexdigest(),
+                    'task_digest':task_digest(item)}
+            run([git,'-C',seed,'add','--','_executor_spike/tasks'])
+            run([git,'-C',seed,'commit','-qm','fixture unrepresentable action identities and later CAS'])
+            run([git,'-C',seed,'push','origin','HEAD:refs/heads/'+policy['branch']])
+            run(worker_cmd);admission_worker_command=len(records)
+            assert admission_target.read_bytes()==b'after\n'
+            admission_result=json.loads(run(connect+['wait']+common+['--task-file',root/'admission-LH1009-task.json',
+                '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+            admission_wait_command=len(records)
+            assert admission_result['status']=='succeeded' and admission_result['task_digest']==task_digest(admission_valid)
+            admission_completed={}
+            for item in (admission_unknown,admission_valid):
+                name=item['task_id']+'.json';receipt_path=state/'receipts'/name
+                result_path=worker_box/'_executor_spike/results'/name
+                receipt_raw=receipt_path.read_bytes();result_raw=result_path.read_bytes()
+                receipt_value=json.loads(receipt_raw);result_value=json.loads(result_raw)
+                assert receipt_value['result']==result_value
+                assert receipt_value['task_id']==item['task_id'] and receipt_value['task_digest']==task_digest(item)
+                assert result_value['task_id']==item['task_id'] and result_value['task_digest']==task_digest(item)
+                assert result_value['action']==item['action'] and result_value['target_node']==profile.node_id
+                assert all(result_value[k]==v for k,v in identity.items())
+                if item['task_id']=='LH1008':
+                    assert result_value['status']=='rejected' and result_value['error_code']=='action_not_allowlisted'
+                else:assert result_value==admission_result
+                assert not os.path.lexists(state/'outbox'/name)
+                admission_completed[item['task_id']]={'result':result_value,
+                    'receipt_before_sha256':hashlib.sha256(receipt_raw).hexdigest(),
+                    'result_before_sha256':hashlib.sha256(result_raw).hexdigest()}
+            def admission_unchanged():
+                for item in admission_tasks:
+                    saved=admission_originals[item['task_id']]
+                    raw=(root/saved['source_file']).read_bytes()
+                    assert hashlib.sha256(raw).hexdigest()==saved['sha256']
+                    assert (worker_box/saved['relative_path']).read_bytes()==raw
+                    assert (controller/saved['relative_path']).read_bytes()==raw
+                    name=item['task_id']+'.json';conflict=conflict_filename(task_digest(item))
+                    assert not os.path.lexists(state/'conflicts'/conflict)
+                    for box in (worker_box,controller):
+                        assert not os.path.lexists(box/'_executor_spike/conflicts'/conflict)
+                    if item['task_id'] in admission_invalid:
+                        for location in (state/'receipts'/name,state/'outbox'/name,
+                                         worker_box/'_executor_spike/results'/name,controller/'_executor_spike/results'/name):
+                            assert not os.path.lexists(location),(item['task_id'],str(location))
+            admission_unchanged()
+            # A second CAS would turn this sentinel back into after\n.
+            admission_target.write_bytes(b'before\n')
+            run(worker_cmd);admission_repeat_command=len(records)
+            assert admission_target.read_bytes()==b'before\n'
+            admission_unchanged()
+            for item in (admission_unknown,admission_valid):
+                name=item['task_id']+'.json';saved=admission_completed[item['task_id']]
+                saved['receipt_after_sha256']=hashlib.sha256((state/'receipts'/name).read_bytes()).hexdigest()
+                saved['result_after_sha256']=hashlib.sha256((worker_box/'_executor_spike/results'/name).read_bytes()).hexdigest()
+                assert saved['receipt_before_sha256']==saved['receipt_after_sha256']
+                assert saved['result_before_sha256']==saved['result_after_sha256']
+                assert not os.path.lexists(state/'outbox'/name)
+            assert len(records)-admission_start==8
+            save('admission-evidence.json',{'tasks':admission_originals,'invalid_task_ids':admission_invalid,
+                'completed':admission_completed,'valid_result':admission_result,
+                'unknown_result':admission_completed['LH1008']['result'],
+                'target_relative_path':str(admission_target.relative_to(root)),
+                'target_after_execution_sha256':hashlib.sha256(b'after\n').hexdigest(),
+                'target_after_repeat_sha256':hashlib.sha256(admission_target.read_bytes()).hexdigest(),
+                'command_numbers':list(range(admission_start+1,len(records)+1)),
+                'worker_command':admission_worker_command,'wait_command':admission_wait_command,
+                'repeat_worker_command':admission_repeat_command})
+            checks.append({'case':'installed malformed action isolation and later CAS without replay','status':'PASS'})
+            # Command exit zero means a valid business Result was retrieved;
+            # its rejected/indeterminate status remains a separate assertion.
+            contract_evidence=[]
+            cas_file=project/'contract-cas.txt'
+            with cas_file.open('xb') as stream:stream.write(b'before\n')
+            invalid_receipt=None
+            for task_id,label,expected_digest,content,status in (
+                ('LH9860','invalid-cas-digest','+'+'0'*63,'before\n','rejected'),
+                ('LH9861','uppercase-cas-digest',hashlib.sha256(b'before\n').hexdigest().upper(),'after\n','succeeded'),
+            ):
+                task=build_task(profile.node_id,'fs.write_text_cas',{
+                    'repository':'demo','relative_path':cas_file.name,
+                    'expected_sha256':expected_digest,'content':content},task_id=task_id)
+                task_path=save(f'contract-{task_id}-task.json',task)
+                receipt=state/'receipts'/f'{task_id}.json'
+                assert not receipt.exists()
+                before=cas_file.read_bytes();commands={}
+                response=json.loads(run(connect+['submit']+common+['--task-file',task_path]))
+                commands['submit']=len(records);assert response['status']=='submitted'
+                run(worker_cmd);commands['worker']=len(records)
+                result=json.loads(run(connect+['wait']+common+['--task-file',task_path,
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                commands['wait']=len(records)
+                raw=receipt.read_bytes();saved_receipt=json.loads(raw)
+                assert saved_receipt['result']==result and result['status']==status
+                assert result['task_id']==task_id and result['task_digest']==task_digest(task)
+                assert all(result[key]==value for key,value in identity.items())
+                if label=='invalid-cas-digest':
+                    assert result['error_code']=='invalid_expected_sha256'
+                    assert cas_file.read_bytes()==before==b'before\n'
+                    invalid_receipt=raw
+                else:
+                    assert result['error_code'] is None and result['details']['already_applied'] is False
+                    assert cas_file.read_bytes()==b'after\n'
+                    assert (state/'receipts/LH9860.json').read_bytes()==invalid_receipt
+                contract_evidence.append({'case':label,'task':task,'result':result,'commands':commands,
+                    'file':str(cas_file),'file_before_sha256':hashlib.sha256(before).hexdigest(),
+                    'file_after_sha256':hashlib.sha256(cas_file.read_bytes()).hexdigest(),
+                    'receipt_before':None,'receipt_after':saved_receipt,
+                    'receipt_after_sha256':hashlib.sha256(raw).hexdigest()})
+                checks.append({'case':'installed action contract '+label,'status':'PASS'})
+            contract_evidence[0]['receipt_after_healthy_cas_sha256']=hashlib.sha256(
+                (state/'receipts/LH9860.json').read_bytes()).hexdigest()
+            list_fault_code='''import errno,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import observe,worker
+target=Path(sys.argv[1]);original=observe.list_directory_bounded
+class FaultEntry:
+ def __init__(self,entry):self.entry=entry;self.name=entry.name
+ def is_symlink(self):return self.entry.is_symlink()
+ def is_dir(self,**kwargs):raise OSError(errno.EIO,'synthetic directory entry metadata failure')
+ def is_file(self,**kwargs):return self.entry.is_file(**kwargs)
+def listing(path,*args,**kwargs):
+ entries=original(path,*args,**kwargs)
+ return [FaultEntry(entry) if Path(entry.path)==target else entry for entry in entries]
+with mock.patch.object(observe,'list_directory_bounded',side_effect=listing):
+ raise SystemExit(worker.main(sys.argv[2:]))
+'''
+            uncertain_receipt=None
+            for task_id,label in (('LH9862','directory-entry-io'),('LH9863','directory-entry-healthy')):
+                if label=='directory-entry-healthy':os.mkfifo(project/'observation-channel')
+                task=build_task(profile.node_id,'fs.list',{'repository':'demo'},task_id=task_id)
+                task_path=save(f'contract-{task_id}-task.json',task)
+                receipt=state/'receipts'/f'{task_id}.json';assert not receipt.exists()
+                before=cas_file.read_bytes();commands={}
+                response=json.loads(run(connect+['submit']+common+['--task-file',task_path]))
+                commands['submit']=len(records);assert response['status']=='submitted'
+                if label=='directory-entry-io':
+                    run([sys.executable,'-I','-c',list_fault_code,cas_file]+worker_cmd[4:])
+                else:run(worker_cmd)
+                commands['worker']=len(records)
+                result=json.loads(run(connect+['wait']+common+['--task-file',task_path,
+                    '--timeout-seconds','0','--expected-provenance-file',expected_path]))
+                commands['wait']=len(records)
+                raw=receipt.read_bytes();saved_receipt=json.loads(raw)
+                assert saved_receipt['result']==result and cas_file.read_bytes()==before==b'after\n'
+                assert result['task_id']==task_id and result['task_digest']==task_digest(task)
+                assert all(result[key]==value for key,value in identity.items())
+                if label=='directory-entry-io':
+                    assert result['status']=='indeterminate' and result['error_code']=='directory_entry_unavailable'
+                    assert 'errno=5' in result['error'];uncertain_receipt=raw
+                else:
+                    assert result['status']=='succeeded' and result['error_code'] is None
+                    observed={entry['name']:entry['kind'] for entry in result['details']['entries']}
+                    assert observed['contract-cas.txt']=='file' and observed['observation-channel']=='other'
+                    assert (state/'receipts/LH9862.json').read_bytes()==uncertain_receipt
+                    assert (state/'receipts/LH9860.json').read_bytes()==invalid_receipt
+                contract_evidence.append({'case':label,'task':task,'result':result,'commands':commands,
+                    'file':str(cas_file),'file_before_sha256':hashlib.sha256(before).hexdigest(),
+                    'file_after_sha256':hashlib.sha256(cas_file.read_bytes()).hexdigest(),
+                    'receipt_before':None,'receipt_after':saved_receipt,
+                    'receipt_after_sha256':hashlib.sha256(raw).hexdigest()})
+                checks.append({'case':'installed action contract '+label,'status':'PASS'})
+            contract_evidence[2]['receipt_after_healthy_observation_sha256']=hashlib.sha256(
+                (state/'receipts/LH9862.json').read_bytes()).hexdigest()
+            save('contract-boundary-evidence.json',contract_evidence)
+            fifo_code='''import os,signal,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import worker
+target=Path(sys.argv[1]);original=os.open;swapped=False
+class ReaderDeadline(Exception):pass
+def deadline(*_):raise ReaderDeadline('bounded reader blocked in FIFO open')
+def race(path,*args,**kwargs):
+ global swapped
+ if not isinstance(path,int) and Path(path)==target and not swapped:
+  target.unlink();os.mkfifo(target);swapped=True
+ return original(path,*args,**kwargs)
+signal.signal(signal.SIGALRM,deadline);signal.alarm(5)
+try:
+ with mock.patch.object(os,'open',side_effect=race):code=worker.main(sys.argv[2:])
+ assert swapped and target.is_fifo()
+finally:signal.alarm(0)
+raise SystemExit(code)
+'''
+            reader_race_evidence=[]
+            for offset,action in enumerate(('fs.read_text','fs.write_text_cas')):
+                task_id=f'LH{9864+offset}';healthy_id=f'LH{9866+offset}'
+                target_file=project/f'fifo-{task_id}.txt';target_file.write_bytes(b'before\n')
+                params={'repository':'demo','relative_path':target_file.name}
+                if action=='fs.write_text_cas':params.update(expected_sha256=hashlib.sha256(b'before\n').hexdigest(),content='after\n')
+                task=build_task(profile.node_id,action,params,task_id=task_id)
+                task_path=save(f'fifo-{task_id}-task.json',task)
+                run(connect+['submit']+common+['--task-file',task_path])
+                run([sys.executable,'-I','-c',fifo_code,target_file]+worker_cmd[4:]);fault_command=len(records)
+                assert target_file.is_fifo(),'reader replaced the raced FIFO'
+                result=json.loads(run(connect+['wait']+common+['--task-file',task_path,'--timeout-seconds','0',
+                    '--expected-provenance-file',expected_path]))
+                assert result['status']=='indeterminate' and 'not a regular file' in result['error'],result
+                assert result['error_code']==('write_source_invalid' if action=='fs.write_text_cas' else 'read_too_large')
+                receipt=state/'receipts'/f'{task_id}.json';saved_receipt=receipt.read_bytes()
+                assert json.loads(saved_receipt)['result']==result
+                # Only replace this synthetic FIFO after recording its rejection.
+                target_file.unlink();target_file.write_bytes(b'before\n')
+                healthy=build_task(profile.node_id,action,params,task_id=healthy_id)
+                healthy_path=save(f'fifo-{healthy_id}-task.json',healthy)
+                run(connect+['submit']+common+['--task-file',healthy_path]);run(worker_cmd)
+                recovered=json.loads(run(connect+['wait']+common+['--task-file',healthy_path,'--timeout-seconds','0',
+                    '--expected-provenance-file',expected_path]))
+                assert recovered['status']=='succeeded'
+                assert target_file.read_bytes()==(b'after\n' if action=='fs.write_text_cas' else b'before\n')
+                assert receipt.read_bytes()==saved_receipt
+                assert json.loads((state/'receipts'/f'{healthy_id}.json').read_bytes())['result']==recovered
+                reader_race_evidence.append({'case':action,'fault_task':task,'fault_result':result,'healthy_task':healthy,
+                    'healthy_result':recovered,'fault_command':fault_command,'fifo_preserved_after_failure':True,
+                    'fault_receipt_before_sha256':hashlib.sha256(saved_receipt).hexdigest(),
+                    'fault_receipt_after_sha256':hashlib.sha256(receipt.read_bytes()).hexdigest(),
+                    'final_file_sha256':hashlib.sha256(target_file.read_bytes()).hexdigest()})
+                checks.append({'case':'installed FIFO replacement refusal and new-task recovery '+action,'status':'PASS'})
+            save('reader-race-evidence.json',reader_race_evidence)
             original=profile_path.read_bytes();profile_path.write_bytes(original+b'\n')
             run(worker_cmd,expected=3);profile_path.write_bytes(original)
             run(worker_cmd,expected=3,override={'LOCAL_HAND_IMPLEMENTATION_COMMIT':'0'*40})
@@ -808,6 +1127,46 @@ with mock.patch.object(worker,'read_regular_file_bounded',side_effect=read):
             try:payload.write_bytes(original+b'\n');run(worker_cmd,expected=3)
             finally:payload.write_bytes(original)
             checks.append({'case':'installed payload tamper rejected','status':'PASS'})
+            shadow=payload.parent/'observe'
+            retained_shadow=root/'shadow-payload'
+            assert not retained_shadow.exists() and not retained_shadow.is_symlink()
+            shadow_before=state_view();source_before=payload.read_bytes()
+            shadow_evidence={'original_file':str(payload),'shadow_directory':str(shadow),
+                'retained_directory':str(retained_shadow),'state_before':shadow_before,
+                'original_sha256_before':hashlib.sha256(source_before).hexdigest(),'commands':{}}
+            shadow_probe='''import json,sys
+from pathlib import Path
+from local_hand import observe,provenance
+from local_hand.protocol import LocalHandError
+loaded=Path(observe.__file__)
+assert loaded==Path(sys.argv[1])/'__init__.py',str(loaded)
+try:provenance.build_metadata()
+except LocalHandError as exc:
+ print(json.dumps({'loaded_path':str(loaded),'error_code':exc.code,'status':exc.status,'error':exc.message}))
+ raise SystemExit(3)
+raise AssertionError('shadow package retained the original payload identity')
+'''
+            shadow.mkdir()
+            try:
+                with (shadow/'__init__.py').open('x') as stream:
+                    stream.write('def node_status(profile):\n return {"fixture_shadow": True}\n')
+                probe=json.loads(run([sys.executable,'-I','-c',shadow_probe,shadow],expected=3))
+                shadow_evidence['commands']['probe']=len(records)
+                assert probe['status']=='indeterminate' and probe['error_code']=='provenance_mismatch'
+                shadow_evidence['probe']=probe
+                run(worker_cmd,expected=3);shadow_evidence['commands']['worker']=len(records)
+                error=(logs/f'{len(records):03}'/'stderr.log').read_text()
+                assert 'provenance_mismatch' in error
+                shadow_evidence['worker_error']=error
+                shadow_evidence['state_after']=state_view()
+                shadow_evidence['original_sha256_after']=hashlib.sha256(payload.read_bytes()).hexdigest()
+                assert shadow_evidence['state_after']==shadow_before and payload.read_bytes()==source_before
+            finally:
+                # Keep all generated shadow bytecode as evidence, while removing
+                # only this invocation's newly created package from runtime.
+                shadow.rename(retained_shadow)
+                save('shadow-evidence.json',shadow_evidence)
+            checks.append({'case':'installed same-name import package cannot retain bound payload identity','status':'PASS'})
             run(worker_cmd)
             initial_head=run([git,'--git-dir',bare,'rev-list','--max-parents=0','refs/heads/'+policy['branch']]).strip()
             assert re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}',initial_head)

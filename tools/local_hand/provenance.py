@@ -170,16 +170,58 @@ def source_commit(*, require_clean: bool = False, _allow_build_outputs: bool = F
     return commit
 
 
+def _payload_mode(path: Path) -> int:
+    info = path.lstat()
+    if getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+        raise _bad("payload entries must not be reparse points")
+    return info.st_mode
+
+
+def _verify_payload_cache(cache: Path, sources: set[str]) -> None:
+    """Allow normal bytecode filenames without admitting another import tree."""
+    for entry in cache.iterdir():
+        if not stat.S_ISREG(_payload_mode(entry)) or not any(
+            re.fullmatch(re.escape(stem) + r"\.[A-Za-z0-9_-]+(?:\.opt-[0-9]+)?\.pyc", entry.name)
+            for stem in sources
+        ):
+            raise _bad("payload bytecode cache contains an unsupported entry")
+
+
 def payload_hashes(root: Path) -> dict[str,str]:
+    """Verify the packaged flat layout as well as its recorded source bytes.
+
+    An extra import package or extension can shadow an unchanged .py file.
+    Generated metadata and normal bytecode caches are the only non-payload
+    entries admitted here. This is drift detection, not an OS trust boundary.
+    """
     files={}
     for package in ("local_hand","local_hand_connect"):
         folder=root/package
-        if not folder.is_dir():continue
-        for path in sorted(folder.iterdir()):
-            if path.suffix not in (".py",".sh",".ps1"):
-                continue
-            if path.is_symlink() or not path.is_file():raise _bad("payload entries must be regular files")
-            files[path.relative_to(root).as_posix()]=hashlib.sha256(path.read_bytes()).hexdigest()
+        try:
+            mode = _payload_mode(folder)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise _bad("cannot inspect payload package") from exc
+        if not stat.S_ISDIR(mode):
+            raise _bad("payload package must be a real directory")
+        try:
+            entries = sorted(folder.iterdir())
+            sources = {entry.stem for entry in entries if entry.suffix == ".py"}
+            for path in entries:
+                mode = _payload_mode(path)
+                if path.name == "__pycache__" and stat.S_ISDIR(mode):
+                    _verify_payload_cache(path, sources)
+                    continue
+                if not stat.S_ISREG(mode):
+                    raise _bad("payload entries must be regular files in the flat package layout")
+                if package == "local_hand" and path.name == METADATA_NAME:
+                    continue
+                if path.suffix not in (".py",".sh",".ps1"):
+                    raise _bad("payload package contains an unbound entry: " + path.name)
+                files[path.relative_to(root).as_posix()]=hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise _bad("cannot inspect payload entry") from exc
     if "local_hand/worker.py" not in files:raise _bad("worker payload is missing")
     return files
 

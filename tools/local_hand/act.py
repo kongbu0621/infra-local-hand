@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -108,12 +109,8 @@ def fs_write_text_cas(
     *,
     lease_root: Path | None = None,
 ) -> dict[str, Any]:
-    if not isinstance(expected_sha256, str) or len(expected_sha256) != 64:
+    if not isinstance(expected_sha256, str) or re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256) is None:
         raise LocalHandError("invalid_expected_sha256", "expected_sha256 must be a 64-character hex digest")
-    try:
-        int(expected_sha256, 16)
-    except ValueError as exc:
-        raise LocalHandError("invalid_expected_sha256", "expected_sha256 must be hexadecimal") from exc
     if not isinstance(content, str):
         raise LocalHandError("invalid_content", "content must be a string")
     try:

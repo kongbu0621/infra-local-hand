@@ -547,7 +547,19 @@ def publish_outbox(mailbox: Path, branch: str, outbox: Path) -> None:
 
 
 def _trusted_local_identity(task_file: Path, task: Any, profile: NodeProfile) -> bool:
-    return isinstance(task, dict) and task.get("target_node") == profile.node_id and isinstance(task.get("task_id"), str) and TASK_ID_RE.fullmatch(task["task_id"]) is not None and task["task_id"] == task_file.stem
+    # Result v1 must retain a nonempty string action from the original Task.
+    # Missing, empty or non-string actions cannot be represented faithfully;
+    # leave those committed bytes untouched rather than inventing an identity.
+    # Unknown nonempty strings still reach validation and a rejected Result.
+    return (
+        isinstance(task, dict)
+        and task.get("target_node") == profile.node_id
+        and isinstance(task.get("task_id"), str)
+        and TASK_ID_RE.fullmatch(task["task_id"]) is not None
+        and task["task_id"] == task_file.stem
+        and isinstance(task.get("action"), str)
+        and bool(task["action"])
+    )
 
 
 def _conflict_marker_path(state_root: Path, task_id: str, digest: str, observed_digest: str | None = None) -> Path:

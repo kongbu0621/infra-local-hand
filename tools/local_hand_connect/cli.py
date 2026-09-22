@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,7 @@ from local_hand.protocol import MAX_TASK_JSON_BYTES, LocalHandError
 
 from .controller import (
     GitMailboxControllerAdapter,
+    _write_create_only,
     build_task,
     load_task_file,
     render_json,
@@ -58,22 +58,12 @@ def _write_output(path: str, value: Any) -> None:
         sys.stdout.write(rendered)
         return
     target = Path(path)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    try:
-        fd = os.open(target, flags, 0o600)
-    except FileExistsError as exc:
-        raise LocalHandError("controller_output_exists", f"refusing to overwrite output: {target}") from exc
-    try:
-        data = rendered.encode("utf-8")
-        view = memoryview(data)
-        written = 0
-        while written < len(view):
-            written += os.write(fd, view[written:])
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    _write_create_only(
+        target,
+        rendered.encode("utf-8"),
+        exists_code="controller_output_exists",
+        exists_message=f"refusing to overwrite output: {target}",
+    )
 
 
 def _mailbox_args(parser: argparse.ArgumentParser) -> None:

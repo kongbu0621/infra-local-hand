@@ -54,6 +54,10 @@ def read_regular_file_bounded(path: Path, limit: int, code: str) -> bytes:
     """Read at most ``limit+1`` bytes from a non-symlink regular file."""
     before = _lstat_regular(path, code)
     flags = os.O_RDONLY
+    # A regular file may become a FIFO after lstat. Open without waiting for
+    # a writer, then reject any non-regular descriptor in the fstat check.
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
     if hasattr(os, "O_BINARY"):
         flags |= os.O_BINARY
     if hasattr(os, "O_NOFOLLOW"):

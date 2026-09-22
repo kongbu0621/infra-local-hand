@@ -6,12 +6,14 @@ Result that is bound to the exact task digest, action, and target node.
 """
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
 import re
 import secrets
 import stat
+import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -298,24 +300,76 @@ def _controller_mailbox_lock(mailbox: Path):
             handle.close()
 
 
-def _write_create_only(path: Path, data: bytes) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+def _sync_publication_directory(directory: Path) -> None:
+    if os.name == "nt":
+        return
+    fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
-        fd = os.open(path, flags, 0o600)
-    except FileExistsError as exc:
-        raise LocalHandError("controller_mailbox_already_initialized", f"marker already exists: {path}") from exc
-    try:
-        view = memoryview(data)
-        written = 0
-        while written < len(view):
-            written += os.write(fd, view[written:])
         os.fsync(fd)
-    finally:
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    else:
         os.close(fd)
+
+
+def _write_create_only(
+    path: Path,
+    data: bytes,
+    *,
+    exists_code: str = "controller_mailbox_already_initialized",
+    exists_message: str | None = None,
+) -> None:
+    """Publish complete bytes without overwriting an existing admission/output."""
+    occupied = exists_message or f"marker already exists: {path}"
+    if target_lexists(path):
+        raise LocalHandError(exists_code, occupied)
+    temporary: Path | None = None
+    published = False
+    try:
+        fd, name = tempfile.mkstemp(prefix=".local-hand-connect-", suffix=".tmp", dir=path.parent)
+        temporary = Path(name)
+        try:
+            view = memoryview(data)
+            written = 0
+            while written < len(view):
+                count = os.write(fd, view[written:])
+                if count <= 0:
+                    raise OSError(errno.EIO, "controller file write made no progress")
+                written += count
+            os.fsync(fd)
+        except BaseException:
+            # close() may have released the descriptor even when it raises;
+            # never retry it or replace the primary write/sync failure.
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
+        else:
+            os.close(fd)
+        try:
+            os.link(temporary, path)
+        except FileExistsError as exc:
+            raise LocalHandError(exists_code, occupied) from exc
+        published = True
+        _sync_publication_directory(path.parent)
+    except OSError as exc:
+        code = "controller_file_durability_unconfirmed" if published else "controller_file_write_failed"
+        message = "complete controller file published; directory durability unconfirmed" if published else "cannot publish complete controller file"
+        raise LocalHandError(code, f"{message}: {path.name}; errno={exc.errno}", "indeterminate") from exc
+    finally:
+        # Only this invocation's exclusive temporary name is ours to remove.
+        # The final name can belong to another initializer, or already be the
+        # complete publication whose directory synchronization just failed.
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
 
 
 def initialize_controller_mailbox(

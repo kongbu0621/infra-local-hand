@@ -201,8 +201,12 @@ def fs_list(profile: NodeProfile, repository: str, relative_path: str = ".") -> 
                 kind = "file"
             else:
                 kind = "other"
-        except OSError:
-            kind = "other"
+        except OSError as exc:
+            raise LocalHandError(
+                "directory_entry_unavailable",
+                f"cannot inspect directory entry {entry.name}; errno={exc.errno}",
+                "indeterminate",
+            ) from exc
         result.append({"name": entry.name, "kind": kind})
     return {"repository": repository, "relative_path": relative_path, "entries": result}
 
