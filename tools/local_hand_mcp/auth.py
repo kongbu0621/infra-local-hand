@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass
+import hashlib
 import json
 import re
 import time
@@ -182,8 +183,10 @@ class JWTVerifier:
         self.config = config
         self._http_transport = http_transport
         self._clock = clock
-        self._keys: dict[str, Any] = {}
-        self._valid_until = 0.0
+        # One immutable publication binds keys to their deadline. principal()
+        # reads this from an executor thread while async refresh publishes a
+        # new snapshot; it must never combine old keys with a new deadline.
+        self._key_cache: tuple[Mapping[str, Any], float] = (MappingProxyType({}), 0.0)
         self._refresh_after = 0.0
         self._lock = asyncio.Lock()
 
@@ -243,8 +246,9 @@ class JWTVerifier:
         now = self._clock()
         async with self._lock:
             now = self._clock()
-            needs_refresh = now >= self._valid_until or (
-                kid not in self._keys and now >= self._refresh_after
+            cached_keys, valid_until = self._key_cache
+            needs_refresh = now >= valid_until or (
+                kid not in cached_keys and now >= self._refresh_after
             )
             if needs_refresh:
                 # Failed refreshes neither keep expired keys nor trigger an
@@ -273,19 +277,23 @@ class JWTVerifier:
                         if (alg == "RS256" and (key.key_type != "RSA" or not 2048 <= key.key.key_size <= 8192)
                                 or alg == "ES256" and (key.key_type != "EC" or key.key.curve.name != "secp256r1")):
                             raise _deny()
-                        keys[key_id] = key
-                    self._keys = keys
-                    self._valid_until = self._clock() + self.config.jwks_ttl_seconds
+                        # Bind in-process authentication to this exact trusted
+                        # public-key document, not merely to a reusable kid.
+                        fingerprint = hashlib.sha256(json.dumps(
+                            item, sort_keys=True, separators=(",", ":"), allow_nan=False,
+                        ).encode("utf-8")).hexdigest()
+                        keys[key_id] = (key, fingerprint)
+                    self._key_cache = (MappingProxyType(keys), self._clock() + self.config.jwks_ttl_seconds)
                 except Exception:
-                    self._keys = {}
-                    self._valid_until = 0.0
+                    self._key_cache = (MappingProxyType({}), 0.0)
                     raise _deny() from None
-            if self._clock() >= self._valid_until:
+            cached_keys, valid_until = self._key_cache
+            if self._clock() >= valid_until:
                 raise _deny()
-            key = self._keys.get(kid)
-            if key is None or key.algorithm_name != algorithm:
+            entry = cached_keys.get(kid)
+            if entry is None or entry[0].algorithm_name != algorithm:
                 raise _deny()
-            return key
+            return entry
 
     @staticmethod
     def _token_object(part: str) -> dict[str, Any]:
@@ -312,7 +320,7 @@ class JWTVerifier:
                 or header.get("typ", "JWT") not in ("JWT", "at+jwt")
                 or any(name in header for name in ("crit", "jku", "x5u", "jwk", "x5c", "b64"))):
             raise _deny()
-        key = await self._key(header["kid"], header["alg"])
+        key, fingerprint = await self._key(header["kid"], header["alg"])
         try:
             claims = jwt.decode(
                 token, key=key, algorithms=list(self.config.algorithms),
@@ -345,7 +353,8 @@ class JWTVerifier:
             if not accepted_scopes:
                 raise _deny()
             return AccessToken(token=token, client_id=self.config.client_id, scopes=accepted_scopes,
-                               expires_at=claims["exp"], resource=self.config.resource, subject=subject)
+                               expires_at=claims["exp"], resource=self.config.resource, subject=subject,
+                               claims={"local_hand_jwks": {"kid": header["kid"], "sha256": fingerprint}})
         except Exception:
             raise _deny() from None
 
@@ -363,5 +372,20 @@ class JWTVerifier:
                 or access_token.expires_at + self.config.clock_skew_seconds <= time.time()
                 or access_token.client_id != self.config.client_id
                 or access_token.resource != self.config.resource):
+            raise _deny()
+        # The HTTP body and the executor queue can outlive a JWKS refresh.
+        # Never revive a removed/replaced/failed/expired signing admission from
+        # an earlier SDK access object. This check does no network I/O in the
+        # broker thread; an expired cache requires a newly authenticated HTTP
+        # request, still using the original operation identity when retrying.
+        claims = access_token.claims
+        binding = claims.get("local_hand_jwks") if isinstance(claims, dict) else None
+        if (not isinstance(binding, dict) or set(binding) != {"kid", "sha256"}
+                or not isinstance(binding["kid"], str) or not isinstance(binding["sha256"], str)):
+            raise _deny()
+        cached_keys, valid_until = self._key_cache
+        entry = cached_keys.get(binding["kid"])
+        if (entry is None or entry[1] != binding["sha256"]
+                or self._clock() >= valid_until):
             raise _deny()
         return Principal(self.config.subject_map[access_token.subject], frozenset(access_token.scopes))

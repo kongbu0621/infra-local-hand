@@ -142,6 +142,8 @@ class MaintenanceServer:
         self._connection_lock = threading.Lock()
 
     def start(self):
+        if self._listener is not None or self._closed.is_set():
+            raise JobError("CONFLICT", "Maintenance listener is already started or closed")
         parent = self.path.parent
         listener = None
         try:
@@ -153,13 +155,20 @@ class MaintenanceServer:
             # bind is create-only; an existing socket/file is never unlinked.
             listener.bind(str(self.path))
             self._listener = listener
-            self.path.chmod(0o600)
             info = self.path.lstat()
             self._identity = (info.st_dev, info.st_ino)
+            self.path.chmod(0o600)
             listener.listen(16)
         except OSError as exc:
-            if listener is not None:
+            if listener is not None and self._listener is None:
                 listener.close()
+            # bind may have created our entry before chmod/listen failed.
+            # Reuse identity-checked cleanup; unknown identity or a concurrent
+            # replacement is retained, never blindly unlinked on startup.
+            try:
+                self.close()
+            except OSError:
+                pass  # Cleanup uncertainty remains an unsuccessful startup.
             raise JobError("IO_UNCERTAIN", "Maintenance socket could not be established") from exc
         try:
             self._thread = threading.Thread(target=self._serve, daemon=True, name="local-hand-maintenance")

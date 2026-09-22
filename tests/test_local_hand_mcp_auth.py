@@ -95,6 +95,40 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
                 self.issuer.verifier.principal(access)
         self.assertEqual(caught.exception.code, "UNAUTHORIZED")
 
+    async def test_in_process_authentication_rechecks_current_jwks_admission(self):
+        # A body/dispatch queue may outlive the key used by SDK authentication.
+        # No new broker call may use a stale verification after current JWKS
+        # admission expires, fails, removes a key, or changes the same kid.
+        for change in ("expired", "removed", "same-kid-replaced", "refresh-failed"):
+            with self.subTest(change=change):
+                issuer = SyntheticIssuer()
+                token = issuer.token()
+                access = await issuer.verifier.authenticate(token)
+                if change == "expired":
+                    issuer.now += issuer.config.jwks_ttl_seconds + 1
+                else:
+                    issuer.now += issuer.config.refresh_cooldown_seconds + 1
+                    issuer.keys = [issuer.other_key]
+                    if change == "same-kid-replaced":
+                        issuer.keys = [{**issuer.other_key, "kid": "key-one"}]
+                        issuer.now += issuer.config.jwks_ttl_seconds
+                    elif change == "refresh-failed":
+                        issuer.status = 503
+                    # Trigger the refresh with a genuine signed token; the
+                    # old access object remains alive in another request.
+                    await issuer.verifier.verify_token(issuer.token(
+                        private=issuer.other_private, headers={"kid": "key-two"}))
+                    self.assertIsNone(await issuer.verifier.verify_token(token))
+                with self.assertRaises(JobError) as caught:
+                    issuer.verifier.principal(access)
+                self.assertEqual(caught.exception.code, "UNAUTHORIZED")
+
+    async def test_unchanged_key_refresh_preserves_in_process_authentication(self):
+        access = await self.issuer.verifier.authenticate(self.issuer.token())
+        self.issuer.now += self.issuer.config.jwks_ttl_seconds + 1
+        renewed = await self.issuer.verifier.authenticate(self.issuer.token())
+        self.assertEqual(self.issuer.verifier.principal(access), self.issuer.verifier.principal(renewed))
+
     async def test_negative_issuer_audience_time_subject_scope_and_client(self):
         now = int(time.time())
         for claims in ({"iss": "https://other.example"}, {"aud": "another-resource"},

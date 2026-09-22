@@ -386,12 +386,28 @@ class Broker:
                 return  # Polling the same uncertainty is not a new durable observation.
             self.state.update(tx, namespace, identity, "EXECUTION_UNCERTAIN", changes)
 
+    def _execution_slots(self, tx):
+        # Losing a start acknowledgement or a recovery attachment does not
+        # prove that a supervised process has stopped. Keep those durable
+        # intents in the deployment-wide budget even without a live observer.
+        owners = set(self._active)
+        for row in self.state.all(tx):
+            record = row["record"]
+            phase = record["phase"].lower()
+            proof = record.get("exit_proof") or {}
+            if phase in record.get("handles", {}) and not (
+                    proof.get("future_start_blocked") is True and proof.get("tree_exited") is True):
+                owners.add((row["namespace"], row["id"]))
+        return len(owners)
+
     def _start(self, namespace, identity, phase):
         # Slow preflight facts are produced by the runner; no filesystem access here.
         with self.fence:
             with self.state.transaction() as tx:
                 row = self.state.get(namespace, identity, tx)
                 if row is None or row["record"]["cancel_requested"]:
+                    return
+                if self._execution_slots(tx) >= self.policy.limits["max_running"]:
                     return
                 principal = Principal(row["principal"], frozenset(row["record"]["principal_scopes"]))
                 parent = row if namespace == "job" else self.state.get("job", row["parent"], tx)
@@ -617,8 +633,6 @@ class Broker:
                                           "phase": "CANCELLED_BEFORE_BUSINESS", "side_effects": record["side_effects"]})
                     if effects_checked:
                         self._release(tx, row, {"future_start_blocked": True, "tree_exited": True, "effects_checked": True})
-                continue
-            if len(self._active) >= self.policy.limits["max_running"]:
                 continue
             phase = ("evidence" if record["phase"] == "AWAITING_SEAL" else "reconcile" if key[0] == "reconcile" else
                      "business" if record["phase"] == "PREFLIGHT_COMPLETE" else "preflight")

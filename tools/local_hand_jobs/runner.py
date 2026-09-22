@@ -616,18 +616,19 @@ class SystemdManager:
 def _capture_stage(stage, directory, limit, remaining):
     """Drain both pipes independently; truncate storage, continue draining."""
     start = time.monotonic()
-    process = subprocess.Popen(stage["argv"], cwd=stage["cwd"], env=stage["env"],
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    selector = selectors.DefaultSelector()
+    process = selector = None
     totals, retained, streams = {}, {}, {}
     exceeded = False
     drain_deadline = None
-    for name, pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
-        os.set_blocking(pipe.fileno(), False)
-        selector.register(pipe, selectors.EVENT_READ, name)
-        streams[name] = (Path(directory) / (stage["name"] + "." + name)).open("xb")
-        totals[name] = retained[name] = 0
     try:
+        process = subprocess.Popen(stage["argv"], cwd=stage["cwd"], env=stage["env"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        selector = selectors.DefaultSelector()
+        for name, pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
+            os.set_blocking(pipe.fileno(), False)
+            selector.register(pipe, selectors.EVENT_READ, name)
+            streams[name] = (Path(directory) / (stage["name"] + "." + name)).open("xb")
+            totals[name] = retained[name] = 0
         while selector.get_map():
             if time.monotonic() - start > remaining:
                 exceeded = True
@@ -652,10 +653,31 @@ def _capture_stage(stage, directory, limit, remaining):
         try: code = process.wait(timeout=0.1)
         except subprocess.TimeoutExpired: code = None
     finally:
-        pending_pipes = bool(selector.get_map())
-        for key in list(selector.get_map().values()): key.fileobj.close()
-        selector.close()
-        for stream in streams.values(): stream.flush(); os.fsync(stream.fileno()); stream.close()
+        pending_pipes = selector is not None and bool(selector.get_map())
+        original_error = sys.exc_info()[0] is not None
+        cleanup_error = None
+        def cleanup(action):
+            nonlocal cleanup_error
+            try: action()
+            except BaseException as error:
+                if cleanup_error is None: cleanup_error = error
+        if process is not None:
+            # Setup and storage failures must not strand this direct child.
+            # Only the manager's later cgroup proof covers its descendants.
+            if process.poll() is None:
+                def kill_child():
+                    try: process.kill()
+                    except ProcessLookupError: pass
+                cleanup(kill_child)
+            cleanup(lambda: process.wait(timeout=0.2))
+            for pipe in (process.stdout, process.stderr):
+                if pipe is not None: cleanup(pipe.close)
+        if selector is not None: cleanup(selector.close)
+        for stream in streams.values():
+            cleanup(stream.flush)
+            cleanup(lambda stream=stream: os.fsync(stream.fileno()))
+            cleanup(stream.close)
+        if cleanup_error is not None and not original_error: raise cleanup_error
     return {"name": stage["name"], "exit_code": code, "elapsed_seconds": time.monotonic() - start,
             "bytes_seen": totals, "bytes_retained": retained,
             "bytes_discarded": {k: totals[k] - retained[k] for k in totals},

@@ -51,7 +51,7 @@ with patch.object(owner, attribute, boundary):
 '''
 
 
-class BuildIdentityTests(unittest.TestCase):
+class BuildFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="lh-build-identity-")
         self.addCleanup(self.temp.cleanup)
@@ -62,6 +62,7 @@ class BuildIdentityTests(unittest.TestCase):
         # fixture; the caller's dirty checkout and other tests remain untouched.
         for name in ("setup.py", "pyproject.toml", ".gitattributes", ".gitignore"):
             shutil.copyfile(_SOURCE / name, self.repo / name)
+        shutil.copytree(_SOURCE / "plugins", self.repo / "plugins", ignore=shutil.ignore_patterns("__pycache__"))
         (self.repo / "README.md").write_bytes(b"# Fixture release A\n\nREADME_FROM_A\n")
         for package in _PACKAGES:
             target = self.repo / "tools" / package
@@ -69,6 +70,7 @@ class BuildIdentityTests(unittest.TestCase):
             for source in (_SOURCE / "tools" / package).iterdir():
                 if source.suffix in (".py", ".sh", ".ps1"):
                     shutil.copyfile(source, target / source.name)
+        shutil.copyfile(_SOURCE / "tools/build_plugin.py", self.repo / "tools/build_plugin.py")
         self.environment = os.environ.copy()
         for key in tuple(self.environment):
             if key.startswith("GIT_") or key in ("PYTHONPATH", "PYTHONHOME"):
@@ -157,6 +159,8 @@ class BuildIdentityTests(unittest.TestCase):
         self.assertEqual(len(matches), 1)
         return matches[0]
 
+
+class BuildIdentityTests(BuildFixture):
     def test_clean_wheel_preserves_source_and_distribution_identity(self):
         self.build()
         identity, metadata = self.wheel_identity()
@@ -203,11 +207,217 @@ class BuildIdentityTests(unittest.TestCase):
         self.assertIn("prepared metadata differs", result.stderr)
         self.assertEqual(list(self.output.glob("*.whl")), [])
 
+    def test_prepared_metadata_changed_during_wheel_assembly_is_rejected(self):
+        metadata = self.prepare_metadata()
+        script = r'''
+from pathlib import Path
+import sys
+from unittest.mock import patch
+import setuptools.build_meta as backend
+from setuptools.command.build_py import build_py
+original = build_py.run
+metadata_root, wheel_output = Path(sys.argv[1]), sys.argv[2]
+def mutate(self):
+    result = original(self)
+    with (metadata_root / 'METADATA').open('a', encoding='utf-8') as stream:
+        stream.write('\nUNBOUND_DURING_BUILD\n')
+    print('PREPARED_METADATA_CHANGED', flush=True)
+    return result
+with patch.object(build_py, 'run', mutate):
+    backend.build_wheel(wheel_output, metadata_directory=str(metadata_root))
+'''
+        result = self.command([sys.executable, "-I", "-c", script, metadata, self.output], succeeds=False)
+        self.assertIn("PREPARED_METADATA_CHANGED", result.stdout)
+        self.assertIn("wheel distribution metadata differs", result.stderr)
+
+    def test_installed_copy_changed_after_payload_verification_is_rejected(self):
+        script = r'''
+from pathlib import Path
+import runpy
+import sys
+from unittest.mock import patch
+from setuptools.command.install_lib import install_lib
+original = install_lib.run
+def mutate(self):
+    result = original(self)
+    with (Path(self.install_dir) / 'local_hand/worker.py').open('a', encoding='utf-8') as stream:
+        stream.write('\nUNBOUND_AFTER_COPY = True\n')
+    print('INSTALLED_COPY_CHANGED', flush=True)
+    return result
+sys.argv = ['setup.py', 'bdist_wheel', '--dist-dir', sys.argv[1]]
+with patch.object(install_lib, 'run', mutate):
+    runpy.run_path('setup.py', run_name='__main__')
+'''
+        result = self.command([sys.executable, "-I", "-c", script, self.output], succeeds=False)
+        self.assertIn("INSTALLED_COPY_CHANGED", result.stdout)
+        self.assertIn("wheel payload differs", result.stderr)
+
+    def assert_distribution_copy_rejected(self, member):
+        script = r'''
+from pathlib import Path
+import runpy
+import sys
+from unittest.mock import patch
+from wheel.wheelfile import WheelFile
+original = WheelFile.write_files
+member, destination = sys.argv[1:]
+def mutate(self, base_dir):
+    target = next(Path(base_dir).glob('*.dist-info/' + member))
+    with target.open('a', encoding='utf-8') as stream:
+        stream.write('\nUNBOUND_DISTRIBUTION_METADATA\n')
+    print('DISTRIBUTION_COPY_CHANGED', flush=True)
+    return original(self, base_dir)
+sys.argv = ['setup.py', 'bdist_wheel', '--dist-dir', destination]
+with patch.object(WheelFile, 'write_files', mutate):
+    runpy.run_path('setup.py', run_name='__main__')
+'''
+        result = self.command([sys.executable, "-I", "-c", script, member, self.output], succeeds=False)
+        self.assertIn("DISTRIBUTION_COPY_CHANGED", result.stdout)
+        self.assertIn("wheel distribution metadata differs", result.stderr)
+
+    def test_generated_metadata_changed_during_archive_creation_is_rejected(self):
+        self.assert_distribution_copy_rejected("METADATA")
+
+    def test_generated_entrypoints_changed_during_archive_creation_are_rejected(self):
+        self.assert_distribution_copy_rejected("entry_points.txt")
+
+    def test_retained_wheel_cannot_add_unbound_import_package(self):
+        self.build()
+        wheel = next(self.output.glob("*.whl"))
+        installed = self.root / "installed" / "local_hand"
+        installed.mkdir(parents=True)
+        with zipfile.ZipFile(wheel) as archive:
+            (installed / "_build_metadata.json").write_bytes(archive.read("local_hand/_build_metadata.json"))
+        with zipfile.ZipFile(wheel, "a") as archive:
+            archive.writestr("local_hand/worker/__init__.py", "UNBOUND_IMPORT_PACKAGE = True\n")
+        script = r'''
+from pathlib import Path
+import json
+import sys
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+from local_hand import installation
+from local_hand.protocol import LocalHandError
+installation.__file__ = sys.argv[1]
+metadata = json.loads((Path(sys.argv[1]).parent / '_build_metadata.json').read_bytes())
+try:
+    installation.verify_wheel(Path(sys.argv[2]), metadata)
+except LocalHandError as exc:
+    assert exc.code == 'installation_mismatch', exc.code
+    assert 'unbound' in str(exc), str(exc)
+else:
+    raise AssertionError('retained wheel accepted an unbound import package')
+'''
+        self.command([sys.executable, "-I", "-c", script, installed / "installation.py", wheel])
+
     def test_skip_build_cannot_bypass_payload_verification(self):
         result = self.command([sys.executable, "-I", "setup.py", "bdist_wheel", "--skip-build",
                                "--dist-dir", self.output], succeeds=False)
         self.assertIn("wheel must verify its source build", result.stderr)
         self.assertEqual(list(self.output.glob("*.whl")), [])
+
+
+@unittest.skipUnless(sys.platform == "linux", "Plugin publication is Linux-only; wheel identity remains cross-platform")
+class PluginBuildIdentityTests(BuildFixture):
+    def plugin_probe(self, boundary):
+        script = r'''
+from pathlib import Path
+import json
+import sys
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+import build_plugin
+output = Path(sys.argv[1]) / 'plugin.zip'
+boundary = sys.argv[2]
+replacements = []
+name = '_publish_create_only' if hasattr(build_plugin, '_publish_create_only') else None
+owner = build_plugin if name else build_plugin.os
+name = name or 'link'
+original = getattr(owner, name)
+def publish(source, target, **kwargs):
+    result = original(source, target, **kwargs)
+    path = Path(sys.argv[1]) / Path(source if boundary == 'staging' else target).name
+    if path.exists():
+        path.unlink()
+    path.write_bytes(b'CONCURRENT_REPLACEMENT')
+    replacements.append(path)
+    return result
+with patch.object(owner, name, publish):
+    try:
+        result = build_plugin.build(output)
+    except (ValueError, OSError) as exc:
+        if boundary != 'output':
+            raise
+        print('PUBLICATION_REJECTED=' + str(exc))
+    else:
+        if boundary == 'output':
+            raise AssertionError('build accepted a replaced output: ' + json.dumps(result))
+assert len(replacements) == 1
+assert replacements[0].exists(), 'build deleted a concurrent staging replacement'
+assert replacements[0].read_bytes() == b'CONCURRENT_REPLACEMENT'
+'''
+        return self.command([sys.executable, "-I", "-c", script, self.output, boundary])
+
+    def test_plugin_publication_preserves_replaced_staging_entry(self):
+        self.plugin_probe("staging")
+
+    def test_plugin_publication_rejects_replaced_output(self):
+        self.plugin_probe("output")
+
+    def test_plugin_final_readback_rejects_in_place_rewrite_with_restored_mtime(self):
+        script = r'''
+from pathlib import Path
+import os
+import sys
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+import build_plugin
+output = Path(sys.argv[1]) / 'plugin.zip'
+original = build_plugin.hashlib.file_digest
+calls = 0
+changed = None
+def mutate(stream, digest):
+    global calls, changed
+    result = original(stream, digest)
+    calls += 1
+    if calls == 2:
+        before = output.stat()
+        changed = b'!' + output.read_bytes()[1:]
+        output.write_bytes(changed)
+        os.utime(output, ns=(before.st_atime_ns, before.st_mtime_ns))
+        after = output.stat()
+        assert (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) == (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        assert before.st_ctime_ns != after.st_ctime_ns
+    return result
+with patch.object(build_plugin.hashlib, 'file_digest', mutate):
+    try:
+        build_plugin.build(output)
+    except ValueError as exc:
+        assert 'changed' in str(exc), str(exc)
+    else:
+        raise AssertionError('build accepted an output rewritten after final hashing')
+assert changed is not None and output.read_bytes() == changed
+'''
+        self.command([sys.executable, "-I", "-c", script, self.output])
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
+    def test_plugin_output_cannot_enter_source_through_linked_parent(self):
+        linked = self.root / "linked-output"
+        linked.symlink_to(self.repo, target_is_directory=True)
+        script = r'''
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+import build_plugin
+try:
+    build_plugin.build(Path(sys.argv[1]))
+except ValueError:
+    pass
+else:
+    raise AssertionError('build published inside its source tree through a symlink')
+assert not (Path.cwd() / 'plugin.zip').exists()
+'''
+        self.command([sys.executable, "-I", "-c", script, linked / "plugin.zip"])
 
 
 if __name__ == "__main__":

@@ -170,7 +170,7 @@ class _StrictBody:
             # boundary. Expiry must close new admission, not cancel old jobs.
             self.verifier.principal(get_access_token())
         except JobError:
-            return await _json_error(send, 401, "UNAUTHORIZED", "Authentication expired before dispatch",
+            return await _json_error(send, 401, "UNAUTHORIZED", "Authentication is no longer current before dispatch",
                                      challenge=self.verifier.config.challenge())
         try:
             payload = strict_loads(bytes(body))

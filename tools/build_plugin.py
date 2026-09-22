@@ -7,12 +7,13 @@ import json
 import os
 from pathlib import Path
 import stat
-import tempfile
+import uuid
 import zipfile
 
 from local_hand.provenance import source_commit
 from local_hand.git_safety import run_hardened_git
 from local_hand.protocol import LocalHandError
+from local_hand_jobs.evidence import EvidenceError, _publish_create_only
 
 
 def build(output: Path) -> dict:
@@ -57,11 +58,19 @@ def build(output: Path) -> dict:
         raise ValueError("Public Plugin must not contain a private endpoint mapping")
     files["DISTRIBUTION.json"] = (json.dumps(manifest, ensure_ascii=True, sort_keys=True, indent=2) + "\n").encode()
     output = output.absolute()
+    if output.parent.resolve() != output.parent:
+        raise ValueError("Build output ancestors must not be linked")
     if root == output.parent or root in output.parents:
         raise ValueError("Build output must be outside the committed source tree")
-    descriptor, temporary = tempfile.mkstemp(prefix=".plugin-build-", dir=output.parent)
+    directory = os.open(output.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    temporary = Path(".plugin-build-" + str(uuid.uuid4()))
+    descriptor = None
     try:
-        with os.fdopen(descriptor, "wb") as stream:
+        parent_identity = os.fstat(directory)
+        descriptor = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=directory)
+        with os.fdopen(descriptor, "w+b") as stream:
+            descriptor = None  # stream owns the descriptor from this point.
             with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
                 for name, raw in sorted(files.items()):
                     info = zipfile.ZipInfo("local-hand-a2/" + name, date_time=(1980, 1, 1, 0, 0, 0))
@@ -70,17 +79,36 @@ def build(output: Path) -> dict:
                     archive.writestr(info, raw)
             stream.flush()
             os.fsync(stream.fileno())
-        # Create-only publication; no replacement of another build's artifact.
-        os.link(temporary, output)
-        directory = os.open(output.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
+            stream.seek(0)
+            expected_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            created = os.fstat(stream.fileno())
+            # Atomic create-only rename consumes only our staging entry. On any
+            # failure preserve residue instead of unlinking a concurrent file.
+            _publish_create_only(temporary, Path(output.name),
+                                 source_dir_fd=directory, destination_dir_fd=directory)
             os.fsync(directory)
-        finally:
-            os.close(directory)
+            # rename may change ctime. Freeze its new value before the final
+            # read; a same-inode rewrite with restored mtime must still fail.
+            published = os.fstat(stream.fileno())
+            stream.seek(0)
+            actual_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_size, item.st_mtime_ns)
+            stable = lambda item: (*identity(item), item.st_ctime_ns, item.st_nlink)
+            if (actual_digest != expected_digest
+                    or identity(published) != identity(created)
+                    or any(stable(item) != stable(published) for item in
+                           (os.fstat(stream.fileno()), os.stat(output.name, dir_fd=directory, follow_symlinks=False)))):
+                raise ValueError("Published Plugin output changed")
+            named_parent = output.parent.lstat()
+            if (output.parent.resolve() != output.parent or not stat.S_ISDIR(named_parent.st_mode)
+                    or (named_parent.st_dev, named_parent.st_ino) != (parent_identity.st_dev, parent_identity.st_ino)):
+                raise ValueError("Plugin output directory changed")
     finally:
-        os.unlink(temporary)
-    return {"path": str(output), "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
-            "size": output.stat().st_size, "source_commit": commit,
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
+    return {"path": str(output), "sha256": expected_digest,
+            "size": created.st_size, "source_commit": commit,
             "members": len(files), "connection_state": manifest["connection_state"]}
 
 
@@ -91,7 +119,7 @@ def main(argv=None):
     try:
         print(json.dumps(build(args.output), sort_keys=True))
         return 0
-    except (OSError, ValueError, LocalHandError) as error:
+    except (OSError, ValueError, LocalHandError, EvidenceError) as error:
         parser.exit(2, f"Plugin build failed: {error}\n")
 
 

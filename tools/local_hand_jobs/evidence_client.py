@@ -254,7 +254,6 @@ class BoundedFileWriter:
         if not self._completed:
             _publish_create_only(Path(self.partial.name), Path(self.final.name),
                                  source_dir_fd=directory, destination_dir_fd=directory)
-            os.fsync(directory)
             # Renaming changes ctime.  Rehash the published descriptor and require
             # the same inode, then check the directory binding before returning it.
             self._fd = self._close_descriptor(self._fd)
@@ -264,6 +263,13 @@ class BoundedFileWriter:
             if (final_stat.st_dev, final_stat.st_ino) != identity[:2]:
                 raise EvidenceError("CONFLICT", "evidence replaced at publication")
             self._verify_descriptor(fd)
+            os.fsync(fd)
+        # A retained final file may be from a rename whose directory fsync failed.
+        # Retry the durability boundary on completed downloads as well as new ones;
+        # syncing the child alone does not persist its name in the private root.
+        os.fsync(directory)
+        with _open_root(self.root, self.owner) as root:
+            os.fsync(root)
         self._assert_bound()
         return self.final
 

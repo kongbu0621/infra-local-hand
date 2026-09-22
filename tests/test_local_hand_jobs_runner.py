@@ -252,6 +252,60 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(observed["outcome"], "FAILED")
             self.assertLessEqual(sum(Path(root, "noisy." + kind).stat().st_size for kind in ("stdout", "stderr")), 1024)
 
+    def test_capture_setup_failure_reaps_direct_child_and_closes_both_pipes(self):
+        import subprocess
+        actual_popen = subprocess.Popen
+        for fault in ("stdout", "stderr", "selector"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as root:
+                stage = {"name": "setup", "argv": [sys.executable, "-I", "-c", "import time;time.sleep(60)"],
+                         "cwd": root, "env": {"PATH": "/usr/bin:/bin"}}
+                if fault != "selector":
+                    Path(root, "setup." + fault).write_bytes(b"preserve prior evidence")
+                children = []
+                def launch(*args, **kwargs):
+                    child = actual_popen(*args, **kwargs)
+                    children.append(child)
+                    return child
+                try:
+                    with patch.object(runner.subprocess, "Popen", side_effect=launch):
+                        if fault == "selector":
+                            with patch.object(runner.selectors, "DefaultSelector", side_effect=OSError("selector unavailable")):
+                                with self.assertRaises(OSError): runner._capture_stage(stage, root, 1024, 2)
+                        else:
+                            with self.assertRaises(FileExistsError): runner._capture_stage(stage, root, 1024, 2)
+                    self.assertEqual(len(children), 1)
+                    self.assertIsNotNone(children[0].poll(), "setup failure left the stage running")
+                    self.assertTrue(children[0].stdout.closed)
+                    self.assertTrue(children[0].stderr.closed)
+                    if fault != "selector":
+                        self.assertEqual(Path(root, "setup." + fault).read_bytes(), b"preserve prior evidence")
+                finally:
+                    for child in children:
+                        if child.poll() is None: child.kill()
+                        child.wait(timeout=2)
+                        child.stdout.close(); child.stderr.close()
+
+    def test_capture_log_sync_failure_closes_every_retained_stream(self):
+        with tempfile.TemporaryDirectory() as root:
+            stage = {"name": "sync", "argv": [sys.executable, "-I", "-c", "import os;os.write(1,b'out');os.write(2,b'err')"],
+                     "cwd": root, "env": {"PATH": "/usr/bin:/bin"}}
+            actual_open = Path.open
+            streams = []
+            def opened(path, *args, **kwargs):
+                stream = actual_open(path, *args, **kwargs)
+                streams.append(stream)
+                return stream
+            try:
+                with patch.object(Path, "open", opened), patch.object(os, "fsync", side_effect=OSError("evidence sync unavailable")):
+                    with self.assertRaisesRegex(OSError, "evidence sync unavailable"):
+                        runner._capture_stage(stage, root, 1024, 2)
+                self.assertEqual(len(streams), 2)
+                self.assertTrue(all(stream.closed for stream in streams))
+                self.assertEqual(Path(root, "sync.stdout").read_bytes(), b"out")
+                self.assertEqual(Path(root, "sync.stderr").read_bytes(), b"err")
+            finally:
+                for stream in streams: stream.close()
+
     def test_reconcile_missing_original_root_never_proves_effects_checked(self):
         import json
         with tempfile.TemporaryDirectory() as root:

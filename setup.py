@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sys
+import zipfile
 
 from setuptools import setup
 from setuptools.command.bdist_wheel import bdist_wheel
@@ -51,10 +52,52 @@ class VerifiedDistInfo(dist_info):
 
 
 class VerifiedWheel(bdist_wheel):
+    def write_wheelfile(self, wheelfile_base, *args, **kwargs):
+        super().write_wheelfile(wheelfile_base, *args, **kwargs)
+        # Freeze setuptools' finished distribution output before WheelFile
+        # consumes it, for normal builds as well as prepared-metadata hooks.
+        folder = Path(wheelfile_base)
+        files = _metadata_files(folder)
+        identity = folder / DIST_IDENTITY
+        if identity.exists():
+            if identity.is_symlink() or not identity.is_file():
+                raise LocalHandError("provenance_mismatch", "wheel metadata identity is not regular", "indeterminate")
+            files[DIST_IDENTITY] = hashlib.sha256(identity.read_bytes()).hexdigest()
+        self.verified_distribution = {"prefix": folder.name + "/", "files": files}
+
+    def _verify_output(self, path, prepared_identity):
+        """Bind the actual archive, after setuptools copied its verified inputs."""
+        built = self.get_finalized_command("build_py").verified_metadata
+        metadata_name = "local_hand/_build_metadata.json"
+        metadata_bytes = (json.dumps(built, sort_keys=True, indent=2) + "\n").encode("utf-8")
+        try:
+            with zipfile.ZipFile(path) as archive:
+                names = archive.namelist()
+                payload_names = set(built["files"]) | {metadata_name}
+                if len(names) != len(set(names)) or archive.read(metadata_name) != metadata_bytes:
+                    raise ValueError("wheel payload differs from its verified build")
+                metadata_root = self.verified_distribution["prefix"]
+                metadata_names = {metadata_root + name for name in self.verified_distribution["files"]}
+                if set(names) != payload_names | metadata_names | {metadata_root + "RECORD"}:
+                    raise ValueError("wheel payload differs from its verified build")
+                for name, digest in built["files"].items():
+                    if hashlib.sha256(archive.read(name)).hexdigest() != digest:
+                        raise ValueError("wheel payload differs from its verified build")
+                for name, digest in self.verified_distribution["files"].items():
+                    if hashlib.sha256(archive.read(metadata_root + name)).hexdigest() != digest:
+                        raise ValueError("wheel distribution metadata differs from its verified build")
+                if prepared_identity is not None:
+                    for name, digest in prepared_identity["files"].items():
+                        if hashlib.sha256(archive.read(metadata_root + name)).hexdigest() != digest:
+                            raise ValueError("wheel distribution metadata differs from its verified build")
+        except (OSError, KeyError, ValueError, zipfile.BadZipFile) as exc:
+            raise LocalHandError("provenance_mismatch", str(exc), "indeterminate") from exc
+
     def run(self):
         _check_source(require_clean=True)
         if self.skip_build:
             raise LocalHandError("provenance_mismatch", "wheel must verify its source build", "indeterminate")
+        prepared_identity = None
         if self.dist_info_dir:
             path = Path(self.dist_info_dir) / DIST_IDENTITY
             try:
@@ -64,20 +107,27 @@ class VerifiedWheel(bdist_wheel):
                 expected = {"source_commit": BUILD_SOURCE_COMMIT, "files": _metadata_files(self.dist_info_dir)}
                 if identity != expected:
                     raise ValueError("prepared metadata identity differs")
+                prepared_identity = identity
             except (OSError, ValueError) as exc:
                 raise LocalHandError("provenance_mismatch", "prepared metadata differs from frozen build identity", "indeterminate") from exc
+        previous = len(self.distribution.dist_files)
         super().run()
         # At this point dist/ contains an output artifact, so check HEAD without
         # treating the newly written wheel as an unadmitted source input.
         _check_source()
+        outputs = [path for kind, _, path in self.distribution.dist_files[previous:] if kind == "bdist_wheel"]
+        if len(outputs) != 1:
+            raise LocalHandError("provenance_mismatch", "wheel output identity is unresolved", "indeterminate")
+        self._verify_output(outputs[0], prepared_identity)
 
 
 class VerifiedBuild(build_py):
     def run(self):
         _check_source(require_clean=True)
         super().run()
-        write_build_metadata(Path(self.build_lib).resolve(), artifact_kind="wheel",
-                             expected_source_commit=BUILD_SOURCE_COMMIT)
+        self.verified_metadata = write_build_metadata(
+            Path(self.build_lib).resolve(), artifact_kind="wheel",
+            expected_source_commit=BUILD_SOURCE_COMMIT)
 
 
 setup(cmdclass={"build_py": VerifiedBuild, "dist_info": VerifiedDistInfo, "bdist_wheel": VerifiedWheel})

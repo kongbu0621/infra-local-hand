@@ -154,6 +154,45 @@ class ClientTests(unittest.TestCase):
                 EvidenceClient(fixture.callback).download(artifact, BoundedFileWriter(self.root / "client"))
         self.assertEqual(collided[0].read_bytes(), b"another writer owns this")
 
+    def _publication_sync_failure_requires_successful_recovery(self, target):
+        fixture, artifact = self.fixture()
+        directory = self.root / "client"
+        directory.mkdir(mode=0o700)
+        real_sync = os.fsync
+        failures = []
+        zip_offsets = []
+        def callback(tool, arguments):
+            if arguments["artifact_id"].endswith(".zip"):
+                zip_offsets.append(arguments["offset"])
+            return fixture.callback(tool, arguments)
+        def fail_after_publication(fd):
+            path = Path(os.readlink(Path("/proc/self/fd") / str(fd)))
+            final = list(directory.glob("download-*/evidence.zip"))
+            if final and path == (directory if target == "root" else final[0].parent):
+                failures.append(path)
+                raise OSError("fixture publication persistence failure")
+            real_sync(fd)
+        client = EvidenceClient(callback)
+        with mock.patch.object(evidence_client.os, "fsync", side_effect=fail_after_publication):
+            with self.assertRaisesRegex(OSError, "publication persistence failure"):
+                client.download(artifact, BoundedFileWriter(directory))
+            final = next(directory.glob("download-*/evidence.zip"))
+            self.assertEqual(_hash(final.read_bytes()), artifact["sha256"])
+            previous_chunks = list(zip_offsets)
+            # Existing bytes alone do not prove the failed publication durable.
+            with self.assertRaisesRegex(OSError, "publication persistence failure"):
+                client.download(artifact, BoundedFileWriter(directory))
+            self.assertEqual(zip_offsets, previous_chunks)
+        self.assertEqual(len(failures), 2)
+        self.assertEqual(client.download(artifact, BoundedFileWriter(directory)), final)
+        self.assertEqual(zip_offsets, previous_chunks)
+
+    def test_resumed_final_retries_failed_publication_directory_sync(self):
+        self._publication_sync_failure_requires_successful_recovery("download")
+
+    def test_final_publication_persists_download_entry_in_private_root(self):
+        self._publication_sync_failure_requires_successful_recovery("root")
+
     def test_parent_replacement_during_validation_never_returns_foreign_bytes(self):
         payload = b"expected validated bytes"
         artifact = {"artifact_id": "fixture.manifest", "role": "manifest",

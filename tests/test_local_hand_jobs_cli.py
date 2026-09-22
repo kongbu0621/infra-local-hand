@@ -4,6 +4,7 @@ import os
 import json
 from pathlib import Path
 import socket
+import stat
 import struct
 import sys
 import tempfile
@@ -107,6 +108,78 @@ class CliTests(unittest.TestCase):
         server._thread = threading.Thread(target=lambda: None)
         server.close()
         server._listener.close.assert_called_once()
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_startup_chmod_failure_removes_only_its_socket(self):
+        # A real socket-type inode and injected listener failure test startup
+        # ownership cleanup without claiming a real AF_UNIX transport roundtrip.
+        listener = Mock()
+        listener.bind.side_effect = lambda path: os.mknod(path, stat.S_IFSOCK | 0o600)
+        server = MaintenanceServer(self.broker, self.path, {})
+        with patch("local_hand_jobs.cli.socket.socket", return_value=listener), \
+                patch.object(Path, "chmod", side_effect=OSError("synthetic chmod failure")):
+            with self.assertRaises(JobError) as caught:
+                server.start()
+        self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+        self.assertFalse(self.path.exists(), "An owned failed-start socket blocks the next broker")
+        listener.close.assert_called_once()
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_startup_listen_failure_removes_only_its_socket(self):
+        listener = Mock()
+        listener.bind.side_effect = lambda path: os.mknod(path, stat.S_IFSOCK | 0o600)
+        listener.listen.side_effect = OSError("synthetic listen failure")
+        server = MaintenanceServer(self.broker, self.path, {})
+        with patch("local_hand_jobs.cli.socket.socket", return_value=listener):
+            with self.assertRaises(JobError) as caught:
+                server.start()
+        self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+        self.assertFalse(self.path.exists(), "An owned failed-start socket blocks the next broker")
+        listener.close.assert_called_once()
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_startup_failure_preserves_a_replacement_entry(self):
+        listener = Mock()
+        listener.bind.side_effect = lambda path: os.mknod(path, stat.S_IFSOCK | 0o600)
+        def replace_then_fail(_):
+            self.path.unlink()
+            self.path.write_text("concurrent replacement")
+            raise OSError("synthetic listen failure after replacement")
+        listener.listen.side_effect = replace_then_fail
+        server = MaintenanceServer(self.broker, self.path, {})
+        with patch("local_hand_jobs.cli.socket.socket", return_value=listener):
+            with self.assertRaises(JobError):
+                server.start()
+        self.assertEqual("concurrent replacement", self.path.read_text())
+        listener.close.assert_called_once()
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_second_start_preserves_the_running_listener(self):
+        listener, replacement = Mock(), Mock()
+        listener.bind.side_effect = lambda path: os.mknod(path, stat.S_IFSOCK | 0o600)
+        replacement.bind.side_effect = OSError("already bound")
+        server = MaintenanceServer(self.broker, self.path, {})
+        with patch("local_hand_jobs.cli.socket.socket", side_effect=[listener, replacement]) as factory, \
+                patch("local_hand_jobs.cli.threading.Thread", return_value=Mock(ident=1)):
+            server.start()
+            try:
+                with self.assertRaises(JobError) as caught:
+                    server.start()
+                self.assertEqual("CONFLICT", caught.exception.code)
+                self.assertEqual(1, factory.call_count)
+                listener.close.assert_not_called()
+                self.assertTrue(stat.S_ISSOCK(self.path.lstat().st_mode))
+            finally:
+                server.close()
+
+    def test_closed_server_cannot_create_a_new_listener(self):
+        server = MaintenanceServer(self.broker, self.path, {})
+        server.close()
+        with patch("local_hand_jobs.cli.socket.socket") as factory:
+            with self.assertRaises(JobError) as caught:
+                server.start()
+        self.assertEqual("CONFLICT", caught.exception.code)
+        factory.assert_not_called()
 
     def test_slow_frame_cannot_renew_the_server_deadline(self):
         elapsed = [0.0]

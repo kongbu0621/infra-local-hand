@@ -192,7 +192,9 @@ jobs:
         shell: python
         run: |
           import os, subprocess
-          command = [os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q"]
+          # Retain each skip reason so platform coverage is auditable from the
+          # exact run, rather than inferred from an aggregate skipped count.
+          command = [os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q", "-rs"]
           if os.name == "nt":
               # Preserve all previous Windows S1 coverage. New job/Plugin tests
               # require Unix ownership and are not Windows acceptance evidence.

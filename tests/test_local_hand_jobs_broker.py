@@ -366,6 +366,58 @@ class BrokerTests(unittest.TestCase):
         self.request = self.make_request()
         self.assertCode("LIMIT_EXCEEDED", self.submit)
 
+    def test_unacknowledged_launch_retains_global_execution_capacity(self):
+        class IndependentRegistry(RegistryFixture):
+            def resolve(self, request, policy, **kwargs):
+                return dict(super().resolve(request, policy, **kwargs),
+                            resource_ids=[request["operation_id"]])
+        class LostAcknowledgement(SupervisorFixture):
+            def start(self, *args):
+                super().start(*args)
+                raise OSError("synthetic receipt loss after launch delivery")
+        self.policy.limits = dict(self.policy.limits, max_running=1)
+        runner = LostAcknowledgement()
+        self.broker = Broker(self.db, self.policy, IndependentRegistry(), runner)
+        self.submit(); self.broker.tick()
+        self.assertEqual("UNKNOWN", self.status()["outcome"])
+        self.assertFalse(self.broker._active)
+        following = self.make_request()
+        self.broker.call("lh_job_submit", following, self.owner)
+        self.broker.tick()
+        self.assertEqual(1, len(runner.starts),
+                         "an unresolved durable launch still consumes the global execution budget")
+        self.assertEqual("QUEUED", self.broker.status(following["operation_id"], self.owner)["phase"])
+
+    def test_failed_recovery_attachment_retains_global_execution_capacity(self):
+        class IndependentRegistry(RegistryFixture):
+            def resolve(self, request, policy, **kwargs):
+                return dict(super().resolve(request, policy, **kwargs),
+                            resource_ids=[request["operation_id"]])
+        class FailedAttachment(SupervisorFixture):
+            def reattach(self, handle, plan):
+                raise OSError("synthetic temporary manager lookup failure")
+        self.policy.limits = dict(self.policy.limits, max_running=1)
+        registry = IndependentRegistry()
+        self.broker = Broker(self.db, self.policy, registry, self.runner)
+        self.submit(); self.broker.tick()
+        replacement = FailedAttachment()
+        recovered = Broker(self.db, self.policy, registry, replacement)
+        recovered.recover()
+        self.assertFalse(recovered._active)
+        following = self.make_request()
+        recovered.call("lh_job_submit", following, self.owner)
+        recovered.tick()
+        self.assertFalse(replacement.starts,
+                         "an unobserved pre-crash process must not free its global execution slot")
+        self.assertEqual("QUEUED", recovered.status(following["operation_id"], self.owner)["phase"])
+        # Reattaching and independently proving the old tree's exit releases
+        # the concurrency slot, without replaying the original business job.
+        replacement.reattach = lambda handle, plan: handle
+        replacement.finish(self.runner.starts[0][1])
+        recovered.recover(); recovered.tick()
+        self.assertEqual([following["operation_id"]], [item[0] for item in replacement.starts])
+        self.assertEqual("UNKNOWN", recovered.status(self.request["operation_id"], self.owner)["outcome"])
+
     def test_unhealthy_db_cannot_report_missing(self):
         self.db.healthy = False
         self.assertCode("IO_UNCERTAIN", self.status)

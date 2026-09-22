@@ -183,6 +183,44 @@ class ServerTests(unittest.TestCase):
         self.assertIn("mcp/www_authenticate", result["_meta"])
         self.assertEqual([], self.broker.calls)
 
+    def test_removed_signing_key_during_body_read_cannot_reach_the_broker(self):
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "lh_capabilities", "arguments": {}}}).encode()
+
+        async def rotate_during_body():
+            yield body[:1]  # SDK accepted key-one for this HTTP request.
+            self.issuer.now += self.issuer.config.refresh_cooldown_seconds + 1
+            self.issuer.keys = [self.issuer.other_key]
+            await self.issuer.verifier.authenticate(self.issuer.token(
+                private=self.issuer.other_private, headers={"kid": "key-two"}))
+            yield body[1:]
+
+        async def invoke():
+            return await self.client.client.post("/mcp", content=rotate_during_body(), headers=self.headers)
+
+        response = self.client.portal.call(invoke)
+        self.assertEqual(401, response.status_code, response.text)
+        self.assertEqual("UNAUTHORIZED", response.json()["error"]["code"])
+        self.assertEqual([], self.broker.calls)
+
+    def test_removed_signing_key_in_executor_queue_cannot_reach_the_broker(self):
+        to_thread = asyncio.to_thread
+
+        async def rotate_before_dispatch(function, *args, **kwargs):
+            if getattr(function, "__name__", "") == "dispatch":
+                self.issuer.now += self.issuer.config.refresh_cooldown_seconds + 1
+                self.issuer.keys = [self.issuer.other_key]
+                await self.issuer.verifier.authenticate(self.issuer.token(
+                    private=self.issuer.other_private, headers={"kid": "key-two"}))
+            return await to_thread(function, *args, **kwargs)
+
+        with mock.patch("local_hand_mcp.server.asyncio.to_thread", side_effect=rotate_before_dispatch):
+            response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
+        result = response.json()["result"]
+        self.assertTrue(result["isError"], response.text)
+        self.assertEqual("UNAUTHORIZED", result["structuredContent"]["error"]["code"])
+        self.assertEqual([], self.broker.calls)
+
     def test_response_budget_rejects_large_result(self):
         self.broker.output = {"raw": "x" * 524288}
         response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})

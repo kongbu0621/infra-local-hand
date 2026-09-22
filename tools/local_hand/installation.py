@@ -38,6 +38,13 @@ def verify_wheel(path: Path, metadata: dict) -> str:
             names=archive.namelist()
             if len(names)!=len(set(names)) or sum(i.file_size for i in archive.infolist())>32*1024*1024:
                 raise _bad("wheel has duplicate entries or excessive expanded size")
+            payload=set(metadata["files"])|{"local_hand/_build_metadata.json"}
+            distribution="infra_local_hand-"+metadata["product_version"]+".dist-info/"
+            if any(name not in payload and not (
+                    name.startswith(distribution) and name[len(distribution):]
+                    and all(part not in ("", ".", "..") for part in name.split("/"))
+                    and "\\" not in name) for name in names):
+                raise _bad("wheel contains an unbound payload entry")
             expected=(Path(__file__).parent/"_build_metadata.json").read_bytes()
             if archive.read("local_hand/_build_metadata.json")!=expected:raise _bad("wheel metadata differs from installed package")
             for name,digest in metadata["files"].items():
