@@ -7,6 +7,8 @@ Owner approved public disclosure of exact original candidate `b763bd6714721d2227
 
 The subsequent capture-start containment, UTF-8 Task identity and acceptance-report publication repairs are recorded in [S1_STARTUP_IDENTITY_REVIEW.md](docs/S1_STARTUP_IDENTITY_REVIEW.md), with full source testing, installed-chain evidence and independent audit.
 
+The subsequent Result UTF-8 containment review is recorded in [S1_RESULT_ENCODING_REVIEW.md](docs/S1_RESULT_ENCODING_REVIEW.md), with full source testing, retained failed installation attempts and explicit publication status.
+
 ## Program Repository Documentation Gate
 
 - Gate rule status: Provisional.

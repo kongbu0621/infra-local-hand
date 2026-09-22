@@ -1,6 +1,8 @@
 # 首次公开发布复核
 
-最新 S1 捕获启动、任务身份与报告发布修复：精确候选 `bc678a6c23924dcb3963daec2f6670b4a2cfdbe2`；全量源码 291 passed / 0 skipped、89 项安装态检查 / 280 条命令及三份独立审计通过。见 [S1_STARTUP_IDENTITY_REVIEW.md](S1_STARTUP_IDENTITY_REVIEW.md)。云端验证不替代 GX10 实机；历史未决归因继续保留。
+最新 S1 Result UTF-8 发布候选为 `89d6b8d807287396d4bac102d5fa8057558c3c7e`，与本地首候选 `e52ed11` 具有完全相同的源码树；发布候选全量 297 passed / 0 skipped，安装态 93 checks / 291 commands 通过。精确验证结果、两次失败轮次、一次环境中断和新的 GX10 S1 输入见 [S1_RESULT_ENCODING_REVIEW.md](S1_RESULT_ENCODING_REVIEW.md)；未决观察继续保留。
+
+此前 S1 捕获启动、任务身份与报告发布修复：精确候选 `bc678a6c23924dcb3963daec2f6670b4a2cfdbe2`；全量源码 291 passed / 0 skipped、89 项安装态检查 / 280 条命令及三份独立审计通过。见 [S1_STARTUP_IDENTITY_REVIEW.md](S1_STARTUP_IDENTITY_REVIEW.md)。云端验证不替代 GX10 实机；历史未决归因继续保留。
 
 此前 S1 输入、发布与安装载荷边界修复：精确候选 `da2e82d41be88ada97b6a852f8e8c7e8ba6143d4`；42 条源码链路、全量源码 279 passed / 0 skipped、81 项安装态检查 / 266 条命令通过。见 [S1_BOUNDARY_REVIEW.md](S1_BOUNDARY_REVIEW.md)。平台范围及历史未决归因分别保留。
 
