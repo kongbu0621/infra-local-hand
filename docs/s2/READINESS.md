@@ -40,6 +40,7 @@ Result 又按固定 Git commit 回读，内容与 blob 身份一致。
 | 所有 controller、手工 Worker、service/cgroup、子进程与重启来源 | 本轮未完整枚举 | 经批准的主机管理入口；阻塞单 writer 证明 |
 | 新运行账户、独立目录、精确 profile、unit 与 controller 绑定 | 尚未生成运行配置 | 在 S2 相应 scope closure 后准备，准确值留在私有 manifest |
 | A2 项目接纳与有限作业执行契约 | 尚未批准部署 | 依据准确 A2 runbook 单独限定；不借现有 validation 绕过 |
+| 新 broker authority/epoch/账本、MCP/CLI 准入冻结与双协议回退 | 文档已补齐约束；实现与现场绑定未验证 | E5 与 S2 协同验收；三项 v1 健康不代替新 broker 结果 |
 
 现有八动作没有任意 shell/systemctl；仓库内读取也不能跨到部署或运行状态目录。
 没有发现已准入、可完成上述主机盘点的入口，因此这些项目仍为 **UNVERIFIED**。

@@ -40,6 +40,19 @@ Ledger 固定输入 `6bd6acfbe5c35d581891eb87275e1173e17848fc`；验收脚本也
 构建／运行解释器分离，固定源码树与脚本字节、构建依赖、wheel、完整安装 payload 和真实解释器。
 `--source-commit` 是调用者传入声明，不是 Git 证明；`-I` 也不能证明外部验收脚本的来源。
 prepared artifact 必须成功封存、属于当前准入且未被改写；下游再次校验，不接受任意 wheel。
+prepared 保存固定源码、wheel、构建/安装证据及原位置的 build/runtime venv 绑定；不复制或移动 venv 冒充新安装。
+测试使用核对过 Git blobs 的独立可写源码副本，解释器和已安装包只读复用准确 prepared 绑定；
+副本的来源摘要与生成物分别记账，测试不得重新安装或改写 prepared 本体。
+
+作业依赖由 registry 固定且由 broker 强制检查，不能只靠插件提示执行顺序。
+prepare 成功只证明准备和安装链；它本身不允许直接进入 NAS。
+NAS 首次准入及 spawn 前必须核对：当前 host/profile 与存储准入、prepare、源码/编译、四项资源专项、
+installed_local 的必需证据均存在、结论合格且 SEALED。证据绑定同一 source/wheel/prepared/runtime，
+同一目标环境指纹和 registry 规定的有效期；接受时将证据 ID/摘要固定进执行计划。
+缺失、UNKNOWN、未覆盖、候选或环境不符、超期、同一必需项存在更新的失败/未决记录，均拒绝 NAS。
+普通 discovery 明确跳过的专项须由对应专跑补齐，不能把 SKIP 计作 PASS；资源测试的 LOGIC_ONLY
+可满足逻辑测试前置项，但不能满足真实文件系统、挂载或 NAS 门槛。客户端不能提交自称 PASS 的字段。
+诊断可单独发起新测试 job，结果仍受同一证据依赖规则约束；新增测试不解除已有 UNKNOWN 资源屏障。
 
 固定调用模板如下；`build-python`、`runtime-python`、source、wheel 和各 parent 均由 broker
 按准入映射生成 argv 元素，不经 shell 展开，也不是客户端可提交字符串。源码调用的 cwd 是受控源码副本，
@@ -63,24 +76,62 @@ A2 资源测试中的文件系统分类模拟必须保留 `LOGIC_ONLY` 标记，
 Ledger 构建工具版本依其固定 runbook，不能套用 Local Hand 自身 `requirements-build.txt`。
 只在对应固定测试环境显式设置 `PYTHONPATH=src` 和所需 `A2_RESOURCE_TESTS=1`；
 不放宽旧 validation 的环境过滤。`TMPDIR`、`TMP`、`TEMP` 统一指向本 job 的受控临时根，
-避免测试默认写到系统临时目录。默认干净环境，无 GitHub、SSH、OAuth、Tunnel 密钥。
+且每种实际解释器启动预检的 `tempfile.gettempdir()` 必须绑定该目录。
+Python 在候选临时目录不可用时会尝试系统临时目录和 cwd，因此仅设置环境变量不是防回落措施。
+作业的 OS 文件系统隔离须禁止写入该 job 专属根以外的回落路径；cwd 回落也须被识别并拒绝作为有效验收。
+临时根缺失、只读、满盘或绑定变化即停止并记失败，不把写到另一目录的测试计作通过。
+默认干净环境，无 GitHub、SSH、OAuth、Tunnel 密钥。
 运行账户仅可写专属工作／证据根与准入合成 NAS 根；固定源的 build/tests 本身是受信代码执行，
 这不是任意恶意代码的沙箱。部署隔离与网络限制须由 OS/账户实际落实并验收。
 
 ## AX-A03 提交、身份与授权（R01/R03/R05/R08）
 
-`lh-job-v1` 请求必含：`operation_id`（客户端生成 UUID）、`kind`、`profile_ref`、
-`expected`（node、install UUID、deployment epoch、profile digest、policy digest、registry digest）、
-类型对应的逻辑输入、请求有效期及 `request_digest`。所有字段固定 schema；拒绝多余字段。
-拒绝重复 JSON key、非法 UTF-8／未配对 surrogate、浮点／NaN、超长／超深输入和不支持版本。
-规范化规则固定为 UTF-8、键排序、无额外空白、不做 Unicode 归一化；只允许 schema 定义类型。
-digest 对除自身外的完整规范请求计算 SHA-256；broker 独立重算。
+提交 envelope 只允许下表字段，全部必填；每层对象均拒绝额外 key。逻辑引用不直接解析为路径。
+
+| 字段 | v1 类型与规则 |
+| --- | --- |
+| `schema_version` | 字符串常量 `lh-job-v1` |
+| `operation_id` | 客户端生成的规范小写 UUID v4，带连字符 |
+| `kind` | A02 六种枚举之一 |
+| `profile_ref` | 准入的 ASCII 逻辑引用 |
+| `expected` | 必含 `node_id`、`install_uuid`、`deployment_epoch`、`profile_digest`、`policy_digest`、`registry_digest` |
+| `inputs` | 仅含相应 kind 下表规定的逻辑输入，不含任意命令或路径 |
+| `expires_at` | UTC Unix 秒整数；只限制首次准入，不是正在运行作业的结束时间 |
+| `request_digest` | 对下述规范字节的 SHA-256，64 位小写十六进制 |
+
+`expected.node_id` 和所有 ref 匹配 `[a-z0-9][a-z0-9._-]{0,127}`；安装 UUID 为规范小写带连字符 UUID。
+deployment_epoch 为正整数，expires_at 为非负整数，两者不超过 `2^53-1`；布尔值不是整数。
+三个 digest 为 64 位小写十六进制。inputs 的全部必填键为：
+
+| kind | inputs 的准确键 |
+| --- | --- |
+| `host.inspect` | 空对象 |
+| `ledger.prepare` | `source_ref`、`build_cache_ref` |
+| `ledger.test.source` | `prepared_ref` |
+| `ledger.test.resources` | `prepared_ref`、`suite`（A02 四种 suite） |
+| `ledger.test.installed_local` | `prepared_ref` |
+| `ledger.nas.roundtrip` | `prepared_ref`、`storage_ref` |
+
+首版 envelope 无数组、null、浮点或自由文本字段。
+人类可读的 Unicode 名称保留在 profile 的展示元数据，不进入上述逻辑标识符。
+
+在 JSON-RPC/HTTP 原始解码边界拒绝重复 key、非法 UTF-8、未配对 surrogate、NaN、超深/超量请求；
+SDK 已解析 dict 后才检查无法发现被覆盖的重复 key。首版单请求体上限 64 KiB、嵌套上限 8；
+提交 envelope 规范字节上限 16 KiB。没有能保证严格原始解码的传输实现不得用于提交。
+规范化先验证类型/范围，再移除顶层 request_digest，递归按 ASCII 键排序，整数用十进制无前导零，
+对象用逗号/冒号无空白，字符串按 JSON 编码，UTF-8 无 BOM/尾部换行；不改大小写、不归一化 Unicode。
+其字节等价于 Python `json.dumps(..., sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False).encode('utf-8')`。
+合法字符串均为上面规定的 ASCII 枚举/标识符，无引号、反斜线、斜线或控制字符，避免跨语言转义差异。
+broker 独立重算 SHA-256；客户端只能使用相同版本契约。E1 固定跨 Python/JavaScript 的规范字节与摘要向量。
 
 认证主体不由请求指定。授权使用服务端映射的稳定 project/owner principal，不以短期 token 字节
 作为身份。账本将 operation_id、request digest、principal 和解析后不可变执行计划 digest 绑定。
 跨主体不得认领已有 id；同主体同 id 同 digest 返回原记录，异 digest 返回冲突；不覆盖。
 请求过期只阻止首次准入；已有记录仍可按授权查询，过期或断线不取消正在运行的作业。
 UI／MCP 请求 id 是传输身份，不能作为 operation_id。未确认提交回执必须用原 id 查询或原请求重送。
+处理顺序为认证和当前读取/提交授权、严格解码与摘要校验、原 id 查重、首次准入条件。
+有权重取的已有相同请求先返回原记录，不因它所记旧 epoch 或原 expires_at 过期而重新执行或丢失查询能力；
+主体被撤销时仍拒绝访问。新 id 才走全部当前部署、前置证据和资源检查。
 
 创建意图前及实际 spawn 前都核对预期部署、当前策略、固定输入、授权和资源租约。
 排队期间变更策略或撤销准入则拒绝启动；运行中撤销阻止新读取／新作业，并按部署预设的受控停止策略处理，
@@ -102,7 +153,10 @@ broker 启动先校验登记并取得锚点锁，不能以第二 state root 另�
 相关 job 串行化；测试产生独立工作副本，prepared 本体不可写。两个 adapter 或 CLI 无独立 executor。
 租约超时只触发观察，不授权抢占；需证明原进程树已停止、原 epoch 已被围栏隔离且副作用已核对。
 恢复时先扫描登记的 cgroup 和账本：孤儿、损坏、冲突、I/O 不明均阻止相关资源继续执行。
-id 与防重放记录不随证据清理过期；本版不自动 GC 或删除失败现场。
+id 与防重放记录不随证据清理过期；broker 本版不自动 GC，不删除作业根、日志、账本和残留失败现场。
+此承诺不改变固定上游测试的内部行为：A1 installed walkthrough 和资源套件会自行清理 TemporaryDirectory
+等夹具，失败时也可能清理。证据清单须标记 `EPHEMERAL_BY_UPSTREAM_TOOL`、记录覆盖限制，
+不能把这类夹具宣称为已完整保留；TMPDIR 配置或强杀不保证保留。要求保留全部失败前夹具须另立 Ledger 工具基线。
 
 三种状态独立呈现：生命周期（ACCEPTED/RUNNING/RECONCILE_REQUIRED/TERMINAL）、
 执行结果（PENDING/SUCCEEDED/FAILED/CANCELLED/UNKNOWN）、证据（STAGING/SEALED/DURABILITY_UNKNOWN/FAILED）。
@@ -117,9 +171,18 @@ UNKNOWN 不因查询超时转 FAILED；程序 exit 0 不自动把证据写成 SE
 监督器独立于 MCP 连接；broker 异常退出仍由进程管理器控制子进程树，重启前核对存活任务。
 每类作业固定 wall-time、终止宽限、CPU、RSS、进程数、临时磁盘、NAS 和日志上界；
 预算值在 profile 中经准入冻结并纳入 digest，缺失／无限值拒绝准入。不能从 1 GiB 测试文件推断 RSS 上限。
+除单 job 外，部署策略还固定总排队数、运行并发数、各主体请求速率、累计保留字节和账本应急容量；
+接受 job 与 reconcile 前事务化预留容量，封存预算计入原件、工作副本、ZIP 临时文件及最终文件并存的峰值。
+reconcile 有独立有限时间/进程/磁盘/日志预算和单作业互斥，同一快照的重复核对复用原记录。
+控制账本的预留空间与作业数据配额隔离；容量不足返回 LIMIT_EXCEEDED，拒绝新工作并受控停止必要的 writer，
+不靠删除历史证据继续运行。I/O 或配额保证失效仍按 UNKNOWN/持久化不明处理，不能承诺磁盘永不耗尽。
 stdout/stderr 独立排空并写私有文件；超限仍排空并执行受控停止，记录截断位置和丢弃计数，不把截断当完整证据。
 
-cancel 是持久化取消请求；按进程归属 TERM → 限时 → KILL，并核对整个 cgroup 退出。
+cancel 是持久化取消请求；每作业的启动预留与取消在同一 broker 启动围栏下串行化。
+cancel 的持久点之后不允许新增启动；spawn 前必须检查取消标志和启动预留。
+对已经交给进程管理器但尚未获得回执的启动请求，必须按唯一 job unit/启动身份核对并阻断未来启动，
+不能因为当前 cgroup 为空就判断不会再启动。按进程归属 TERM → 限时 → KILL，
+确认全部已排队启动被撤销且整个进程树退出后，才给确定取消结论和释放资源；否则 UNKNOWN 且保留屏障。
 只有证明未 spawn 才可说明“未执行”；执行过但没有业务副作用仍属于已执行。
 停止后的 NAS/文件事实另记，取消不是撤销。
 reconcile 只读取原作业账本与归属路径、核对已发布对象，并保存核对证据；
@@ -180,7 +243,12 @@ manifest 默认每页 100 项；chunk 默认 64 KiB，最大 256 KiB，单次 JS
 这些是拟议应用边界，不是平台保证。客户端必须实际重组文件并验证总大小、全件 SHA-256、成员清单，
 支持原 artifact/offset 重取；连接中断不重跑作业。授权撤销后逐块拒绝；artifact_id 不是 bearer secret。
 E2 包含客户端文件重组与核验组件／流程，工具编排直接把 chunk 写入专属临时文件，不把 base64 逐块铺入模型上下文，
-完成后交付实际文件链接。它只消费证据接口，不新增主机执行或绕过认证路径。
+完成后交付实际文件链接。宿主向组件提供“已认证的工具调用回调”和“有界本地文件 writer”两个能力；
+下载器不自行建立第二条 HTTP 登录路径，不读取/导出 ChatGPT OAuth、Tunnel 或 GitHub 凭据。
+E2 使用合成回调和 writer 验证；E4 必须证明当前 Work 能将原始 chunk 结果直接交给 writer。
+普通 structuredContent 可进入模型上下文，`_meta` 隐藏也不等于自动保存文件；不能据此假定桥接已存在。
+只发布大小/全件摘要/成员均匹配的最终文件；断点记录绑定 artifact/摘要/已校验偏移，私有临时文件不覆盖既有文件。
+它只消费证据接口，不新增主机执行或绕过认证路径。
 E4 必须通过至少 16 MiB 非高压缩率 ZIP 的当前客户端取回与中断续传；仅拿到哈希或截图不算交付。
 若当前客户端无法可靠重组并交付文件，该项 BLOCKED，另行设计受认证文件通道；不偷偷改用公开 URL。
 Tunnel 不被假设为任意二进制 HTTP 代理。本版不提供公共下载地址或任意预签名 URL 工具。
@@ -194,6 +262,15 @@ HTTPS 备选须冻结 TLS、路由和准入范围，不能因 Tunnel 不可用�
 
 远程用户认证采用受支持的 OAuth 授权码 + PKCE S256；每次调用验证 issuer、audience、有效期、
 scope 和归属，精确 redirect URI。Tunnel 的机器凭据与用户授权分离；不以共享静态 key 冒充用户 OAuth。
+首版选用签名 JWT access token；MCP adapter 使用成熟验证库，按受信 issuer 配置的 JWKS 和
+固定算法白名单先验签，再验证 `iss/aud/exp/nbf`、scope 和本地主体准入。拒绝 unsigned、算法降级、
+未知 kid、伪签名及 token 自带的任意 jku/x5u；禁止仅解码 claims 后放行。
+密钥来源、缓存期限/轮换、时钟误差上界在准入配置中固定；无法取得可验证密钥时拒绝，不能跳过验签。
+首版不接收 opaque token；需要 introspection 时另行明确受信服务及故障策略，不把未知 token 当 JWT 已验证。
+“立即撤销”指 broker 本地主体/grant 的撤销；issuer 独立撤销的传播方式与最坏时延须在 E4 验证和披露，
+没有同步能力时不能声称断开账户即令所有已发 JWT 瞬间失效。凭据有效性和每次业务授权分别检查。
+adapter 的已验证主体通过进程内受信上下文交给 broker；维护 CLI 的主体从受保护 socket 的 OS peer 身份映射，
+不接受请求自填 principal、转发的未验证用户头或以 unit 账户的全权限覆盖用户授权。
 发布 protected-resource metadata 与授权服务器 discovery，逐工具声明 `securitySchemes` 的 oauth2/scopes。
 HTTP 未认证响应包含 401／`WWW-Authenticate`；工具级认证错误含 `_meta["mcp/www_authenticate"]`，
 其 challenge 含标准 error/error_description。缺发现或挑战信息不能算当前客户端 OAuth 接入完成。
@@ -214,7 +291,11 @@ E1 冻结支持的注册方式（CIMD、DCR 或预定义 client），E4 才填�
 
 ## AX-A09 交付来源及后续切换（R10/R11/R12）
 
-新增 job 与 adapter 不静默改变现有八动作或核心依赖；MCP 可选依赖／独立环境单独冻结。
+新增 job 与 adapter 不静默改变现有八动作或核心依赖。选择同仓同发布版本中的独立 Python 包：
+job 核心使用标准库，MCP adapter 使用可选 `mcp` extra（官方 Python SDK 与签名验证依赖）；
+无 extra 时 worker/controller/job 核心可独立安装，调用 MCP 入口明确报告缺依赖。
+MCP adapter 与 broker 的认证/准入在同一服务进程内协作，维护 CLI 只调用该 broker 的本地接口。
+各部署仍各用独立 venv；Plugin 为单独打包的版本化资产，不隐式安装主机包。具体落点见实施方案。
 构建清单覆盖 worker/controller/jobs/adapter 与包外固定执行工具，Plugin 单独封存。
 现有 `core_digest` 仅覆盖 `local_hand/*.py`，不能作为新执行链的完整证明。
 安装记录绑定完整发布清单及真实启动入口；回退保留新 job 账本，即使旧版不能读取也不允许重放。

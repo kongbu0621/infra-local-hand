@@ -53,7 +53,10 @@ Git/SSH/key/known_hosts 绑定、install UUID、元数据及原 wheel 摘要。
 Task v1 没有部署版本、install UUID、epoch 或有效期字段。
 controller 的 expected provenance 在读取 Result 后核验，不能阻止错误版本先执行 Task。
 因此必须实际冻结全部生产者、停止旧 Worker 及其子进程、核对自动重启来源，才可启动新实例。
-后续若设计 mailbox/MCP 双入口，必须共用任务身份、执行租约及恢复账本，不能各自执行一次。
+首版新 job 的 MCP 与 CLI 共用 broker 账本；旧 mailbox v1 保持独立，不桥接新 job。
+维护窗口同时冻结 v1 生产者和 broker 新作业准入，查询/证据读取按当前权限可保留。
+如发现已有 job、排队启动、核对 writer 或 UNKNOWN 屏障，先核对、停止并封存；
+不能只排空 v1 outbox 就开始切换。未来 job mailbox adapter 才需共用新 job 身份和账本。
 
 ## S2-A04 全账本迁移与防重放
 
@@ -72,6 +75,12 @@ controller 的 expected provenance 在读取 Result 后核验，不能阻止错�
 真实旧 schema、完整账本和新旧读取兼容性尚待确认；验证应使用隔离副本。
 发现不兼容、缺失、悬空链接、冲突或 I/O 不确定时阻塞迁移；需要转换器则先修订范围并完成 closure。
 
+新 job 账本不转换为 v1 receipt。首次 broker 安装只有证明相应 authority 从未执行 job 才可初始化空账本；
+E4 测试后端的合成身份/账本不能直接导入真实 GX10 冒充历史。存在既有真实 authority 时按其事件/租约/
+证据原样恢复，并保持 UNKNOWN 资源屏障；升级或新安装 UUID 不能清空历史。
+broker 准入在 v1 切换期间关闭，epoch 仅由部署管理入口在唯一 writer 证明后改变；
+已接受的旧 epoch 排队 job 不因升级自动重投或执行，按原身份核对结案。
+
 ## S2-A05 回退保持执行事实
 
 对应 S2-R06/R08。回退不倒退 mailbox 历史，也不以旧 state 快照覆盖新实例产生的事实。
@@ -84,6 +93,10 @@ controller 的 expected provenance 在读取 Result 后核验，不能阻止错�
 
 即便新实例仅执行只读健康 Task，也须保留其 receipt/Result 和来源记录。
 旧版不能理解新屏障时不恢复消费；回退只有服务、绑定、账本和目标状态均核对后才算完成。
+整个 E5 的回退先关闭新 MCP/CLI submit、cancel 后续启动并停止所有新 broker/runner/Worker 的进程树，
+分别保留 job 账本与 v1 账本。旧 Worker 无法读取 job 屏障，不向它迁入伪 receipt；
+若其可写资源与未决/已变更 job 重叠则继续停止；交叉资源只有核对完成、风险解除且具备准确恢复决定
+才恢复已准入旧功能。已证明无交叉的资源按原回退准入恢复，UNKNOWN 继续保持维护态。
 
 ## S2-A06 实施入口与验收边界
 
@@ -99,3 +112,6 @@ A2 接纳设计及受限能力实现可在独立授权 scope 中与 S2 准备协
 选定的新候选完成 E1–E3 与当前客户端 E4 后统一部署，再进入真实 A2；
 S2 不等待真实 A2 验收先完成，也不把新能力的隔离测试写成 S2 closure。
 真实 A2 作业只进入已验收且明确准入的部署；主机/NAS/证据交付能力各自记录实际状态。
+新 broker 的观察包含 authority/epoch、真实 cgroup、全局容量、认证/准入和有界证据取回；
+只开放私有 manifest 中单一健康操作者的固定 host.inspect，且须有 E5 对该作业的明确授权。
+NAS 和 Ledger 执行准入继续关闭直到 E6。旧 v1 与新 job 的验收结论分别列出。
