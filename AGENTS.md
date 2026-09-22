@@ -22,7 +22,7 @@ The GX10 S1 physical-host revalidation defined by [GX10_S1_89D6B8D_RUNBOOK.md](d
 - Gate decision authority: Owner.
 - Gate adoption exceptions: none.
 - Gate adoption change rule: no automatic upgrade, weakening, revocation, or new exception; Owner decision required.
-- Gate state: **CLOSED for S1 only**.
+- Gate state: **CLOSED for S1 under this declaration**; later scopes have separate declarations below.
 - Requirements document: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 - Architecture document: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Implementation plan: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
@@ -60,7 +60,7 @@ GitHub Connector, restricted-job MCP and Plugin; permissions do not follow from 
 
 ### A2 execution, MCP and Plugin preparation
 
-Scope `LH-A2-EXEC-MCP-v1` is **OPEN**. Its authoritative documents are
+Scope `LH-A2-EXEC-MCP-v1` is **CLOSED for E1–E3 only**. Its authoritative documents are
 [requirements](docs/a2-execution/REQUIREMENTS.md),
 [architecture](docs/a2-execution/ARCHITECTURE.md) and
 [implementation plan](docs/a2-execution/IMPLEMENTATION_PLAN.md).
@@ -72,25 +72,29 @@ which closes input/output discovery, local revocation/startup and blocking stora
 The subsequent proposed baseline `231fa26807dca0c411a3972930434750944c0983`
 is superseded by the [recovery-contract review](docs/a2-execution/RECOVERY_CONTRACT_REVIEW.md),
 which fixes reconciliation request identity/cancellation and separates preflight from business execution intent.
-The new proposed documentation baseline A is `79f73faedcd9cde4164b0d1625782dae27db6c2f`,
+The approved documentation baseline A is `79f73faedcd9cde4164b0d1625782dae27db6c2f`,
 under the same R recorded above.
 The subsequent [baseline confirmation review](docs/a2-execution/BASELINE_CONFIRMATION_REVIEW.md)
 found no further required design changes; the three authoritative documents and A remain unchanged.
 That review is evidence only, not an Owner closure decision or implementation verification.
-This changes only the proposed A2 execution scope; the S2 proposed baseline above is unchanged.
-This registration is OPEN bookkeeping, not an Owner decision or CLOSED record.
-The proposed first closure is E1–E3 only: isolated job broker, fixed job catalog,
+Owner closure decision B: [A2_EXEC_E1_E3_OWNER_DECISION.md](docs/governance/A2_EXEC_E1_E3_OWNER_DECISION.md),
+event `LH-A2-EXEC-MCP-E1-E3-CLOSURE-20260922-01`; exact Owner reply and its immediately preceding
+baseline/scope request are retained. R remains `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`.
+This separate CLOSED registration is C; it contains no implementation and does not change A's three documents.
+Their DRAFT/OPEN labels describe the accurate pre-approval baseline. Implementation must descend from C.
+The authorized closure is E1–E3 only: isolated job broker, fixed job catalog,
 MCP adapter, shared-broker maintenance CLI, Plugin packaging, client evidence assembly and synthetic verification.
 E4 actual client/private connection, E5 GX10/S2 deployment and E6 real NAS A2 acceptance
-are not included. Neither S1 closure nor Owner's request to complete this design is
-an implementation closure for the new scope. No new code/dependencies/configuration yet.
+are not included. Earlier design requests did not close this scope; the subsequent retained Owner decision does.
+S2 remains OPEN at its separate baseline. E3's real isolated cgroup integration must be proven before
+claiming a deployable candidate; unsupported environments do not turn that check into PASS.
 Preserve the already CLOSED Ledger A2 body scope; do not require it to be approved again.
 
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
 - Preserve source provenance and historical evidence; do not copy private history or raw machine evidence into the Public repository.
-- Existing authorized implementation remains limited to the eight documented actions. The separate new job protocol proposed above requires its own accurate closure before implementation; it does not extend Task v1. A model, adapter, task, tool capability or test PASS grants no extra authority.
+- Existing Task v1 remains limited to the eight documented actions. The separately CLOSED E1–E3 scope above authorizes isolated implementation of the new job protocol; it does not extend Task v1 or authorize live deployment. A model, adapter, task, tool capability or test PASS grants no extra authority.
 - Keep user/node identity, repositories, mailbox, executable paths and credentials out of source defaults. Configuration admission must retain allowlists and fail-closed checks.
 - Preserve existing environments and the active deployment. S1 uses new isolated directories and synthetic fixtures; it does not submit live tasks or switch a service.
 - Record real command outcomes, versions, commit and artifact digests. Never convert SKIP, unsupported, timeout or incomplete evidence into PASS.
