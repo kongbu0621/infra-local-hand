@@ -1,6 +1,6 @@
 # 面向 Artifact Ledger A2 的能力核对
 
-日期：2026-09-22。状态：**只读核对与方案选项；没有新增执行权限或 MCP 实现**。
+日期：2026-09-22。状态：**只读核对与已提出路线；没有新增执行权限或 MCP 实现**。
 
 ## 目标与准确输入
 
@@ -49,7 +49,7 @@ A `29ae340addde172781aa2199f864dbb25ea29ccc` 的
 
 ## Mailbox 与 MCP 的选择
 
-Owner 已支持在更有利于 A2 时采用 MCP。MCP 提供工具／资源接口；实际权限、
+Owner 已要求有用的 Connector、MCP、Plugin 都纳入设计。MCP 提供工具／资源接口；实际权限、
 固定可执行内容和持久恢复仍由后端与部署约束决定，不能由协议名称推导。
 参见 [MCP 架构规范](https://modelcontextprotocol.io/specification/2025-11-25/architecture)。
 
@@ -57,11 +57,14 @@ Owner 已支持在更有利于 A2 时采用 MCP。MCP 提供工具／资源接�
 | --- | --- | --- |
 | 继续 GitHub mailbox | 已完成四项真实只读闭环，保留 Task/Result 与提交历史 | 有轮询及 Git 成本；二进制证据需另有私有传输；当前准备继续使用 |
 | MCP 包装相同八动作 | 可统一工具发现和结构化调用 | 不填补上表主机、安装、NAS 副作用和证据传输缺口，不应作为 A2 已可执行的依据 |
-| 受限作业后端 + 可选 MCP 接口 | 可针对 A2 提供作业状态、核对、受限取消和证据读取 | 需要正式设计、鉴权、可达性、持久任务身份及部署验收；尚未实现或验证当前客户端接入 |
+| 受限作业后端 + MCP + Plugin | 针对 A2 提供作业状态、核对、受限取消、证据读取与统一流程 | 已补齐三层设计，仍需准确 closure、实现、鉴权与部署验收；尚未验证当前客户端接入 |
 
-建议：继续用已工作的 mailbox 做现有准入准备；先冻结 A2 受限作业契约，
-再决定是否增加 MCP。若增加，两种入口必须共用同一任务身份、执行租约和恢复账本，
-不能形成两套会重复执行 NAS 作业的后台。此处是设计建议，不是新增开工授权。
+具体选择：复用 GitHub Connector 和旧 v1 mailbox；新 job 只通过 MCP 或同一 broker 的维护 CLI。
+首版不增加新 job mailbox 桥接，不在 MCP 失败时回退旧 validation 执行 NAS；
+MCP 与 CLI 共用任务身份、准入、租约和账本。旧 writer 与新作业的资源交叉另行排除。
+Plugin 打包工作流程和工具兼容版本。见 [需求](../a2-execution/REQUIREMENTS.md)、
+[架构与七项接口](../a2-execution/ARCHITECTURE.md)、[实施验收](../a2-execution/IMPLEMENTATION_PLAN.md)。
+`LH-A2-EXEC-MCP-v1` 首批拟议 E1–E3 仅隔离实现，仍为 OPEN；真实接入、GX10 切换、A2 分阶段验收。
 
 ## 新作业契约必须回答的问题
 

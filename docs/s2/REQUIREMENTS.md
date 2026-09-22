@@ -1,7 +1,7 @@
 # GX10 S2 需求：现役迁移与可核对回退
 
 - Authority：Owner；状态：DRAFT / **S2 Documentation Gate OPEN**。
-- 产品设计与拟构建输入：`e6412a1a38e91906355fbd9ec21974993449d743`。
+- 已复核产品前身：`e6412a1a38e91906355fbd9ec21974993449d743`；最终构建输入在新作业候选验收后固定。
 - 规则 R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，采用来源与限制见根 `AGENTS.md`。
 - 本组文档不改变 S1 文档基线、既有 closure 或八动作权限。
 - Owner 本轮同意方案和只读准备；尚未对本组三文档既有 commit 作 S2 closure。
@@ -65,12 +65,16 @@ manifest 必须具有版本、摘要、采集时间、证据引用和审查状�
 A2 的准确输入和既有 closure 见 [A2_CAPABILITY_MAP.md](A2_CAPABILITY_MAP.md)。
 保留 Ledger 本体 `A2-snapshot-nas-restore-v0.1` S1–S5 已有 CLOSED，不重复要求其开工批准。
 Local Hand 项目接纳、主机操作、NAS 副作用和私有二进制证据交付仍须独立限定。
-现有 mailbox 继续支持准入操作；Owner 支持评估有益于 A2 的 MCP 路线。
-MCP 是可选入口，不自动增加动作、账户权限或豁免恢复账本；新后端/adapter 另行明确 scope。
+现有 GitHub Connector/mailbox 继续支持旧准入操作；Owner 要求将 Connector、MCP、Plugin
+都纳入有用的设计。具体路线见 [新作业需求](../a2-execution/REQUIREMENTS.md)：复用 Connector，
+新 MCP 接入唯一作业后端，Plugin 打包流程；首版不把新作业桥接进旧 mailbox。
+新 scope `LH-A2-EXEC-MCP-v1` 仍为 OPEN，不自动增加动作、账户权限或豁免恢复账本。
 
 S2 出口是可证明的新部署和回退能力，加上明确的 A2 后续路径。
 实际 A2 作业执行、NAS 配置、生产数据、Windows 和 Git Authority 均不由本 S2 方案批准。
 主机入口、状态兼容和单 writer 的未决项不阻塞方案审查，但阻塞真实切换。
 A2 方面，切换前须冻结足以覆盖能力缺口的接纳、作业和证据交付路径及对应授权计划；
 缺少这条具体路径阻塞切换。其实现和部署验收可在独立 scope 中分阶段进行，
-不要求先把全部 A2 实现完成才能完成 S2，也不把规划写成已具备能力。
+不要求先把全部 A2 实机验收完成才能完成 S2，也不把规划写成已具备能力。
+部署选择为新作业 E1–E3 验证后的准确候选，并先通过 E4 当前客户端接入；
+不先对 e6412a1 单独切换一次，再为新 jobs 重复切换。新增源码不继承 S1 的测试结论。

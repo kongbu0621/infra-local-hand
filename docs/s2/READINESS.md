@@ -48,9 +48,9 @@ Result 又按固定 Git commit 回读，内容与 blob 身份一致。
 ## 本轮决策依据
 
 - 已有邮箱继续用于准入范围内操作；无需让 Owner 人工转抄任务和结果。
-- Owner 随后明确支持在更有利于 A2 时评估 MCP。接入方式与后端执行能力分别评估；
-  单独增加 MCP 包装不改变项目 allowlist、动作和主机权限。
-- A2 准确输入、既有授权、八动作缺口及 MCP 选项见 [A2 能力映射](A2_CAPABILITY_MAP.md)。
+- Owner 随后要求将有用的 Connector、MCP、Plugin 全部纳入设计。已补齐
+  [A2 新作业三层方案](../a2-execution/REQUIREMENTS.md)，准入和主机权限仍由后端与实际部署执行。
+- A2 准确输入、既有授权、八动作缺口及具体路线见 [A2 能力映射](A2_CAPABILITY_MAP.md)。
 - 实现仅有 state-root / controller-clone 局部锁，不能证明独立新旧部署互斥。
   Task v1 也没有部署 epoch/version fence；Result 来源核验发生在执行之后。
 - 新 state 不能从空目录直接扫描历史 mailbox。迁移必须覆盖全部防重放证据，
@@ -61,7 +61,8 @@ Result 又按固定 Git commit 回读，内容与 blob 身份一致。
 
 ## 下一次可执行范围
 
-先完成 S2 三层文档交叉审查和 A2 能力映射，形成既有完整 commit 作为文档基线。
+本次补齐新作业、MCP 和 Plugin 三层文档，并同步 S2 部署候选与路线；形成新的准确文档基线。
+建议下一批仅关闭 `LH-A2-EXEC-MCP-v1` 的 E1–E3 隔离实现，S2 继续 OPEN。
 当前未知项不阻塞编写和审查方案，但阻塞真实服务切换；不得把未知项标成已冻结。
 新实施入口、配置、迁移或 MCP 开发均须先有对应准确基线与 scope 的 Owner closure，
 按根 `AGENTS.md` 保留 R → A → B → C → D。

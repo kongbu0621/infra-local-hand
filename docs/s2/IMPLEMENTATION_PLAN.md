@@ -2,7 +2,7 @@
 
 - Authority：Owner；状态：DRAFT / **S2 Documentation Gate OPEN**。
 - 规则 R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`；S1 的 A/C 和 closure 保留不变。
-- 产品构建候选：`e6412a1a38e91906355fbd9ec21974993449d743`，不追随可变 main。
+- 已复核前身：`e6412a1a38e91906355fbd9ec21974993449d743`；最终候选取新作业 E1–E3 验收固定提交 D，不追随可变 main。
 - S2 文档基线 A：本组三文档提交后由实际完整 SHA 定位，不预写自身 commit。
 - 当前授权：方案与既有能力下的只读准备；S2 实施、runtime 配置、迁移和切换尚未授权。
 
@@ -24,22 +24,25 @@ Owner 本轮“按照建议进行”只支持上述准备，不被补写成尚�
 需取得主机只读管理入口，补齐 unit/drop-ins、解释器、运行包、profile 原始字节、安装绑定、
 state 账本、所有生产者和自动重启来源。无法读取项不得填空或由 S1 历史记录代替。
 将私有 manifest 字段、旧版兼容验证方法、部署步骤、失败保留和回退操作明确到可执行程度。
-任何新增管理入口、作业后端或 MCP adapter 的 scope 与文档基线单独声明，不自动包含在本计划。
+新增作业后端、MCP adapter 和 Plugin 的 scope 与文档基线见
+[A2 执行实施方案](../a2-execution/IMPLEMENTATION_PLAN.md)，不自动包含在 S2 closure。
+该方案 E1–E3 仅隔离实现；E4 验证当前客户端，再在 E5 与本 S2 统一部署验收。
+首次主机管理入口仍须实际取得，新 MCP 不负责安装自己。
 真实切换前确认 A2 后续路线能够覆盖缺口，避免只升级八动作后仍依赖手工终端完成 A2。
 未知项的清单可以随准备文档提交，但仍阻塞对应实施或真实切换。
 
 ## S2-P03 独立构建与 staging（对应 scope CLOSED 后）
 
-1. 在唯一新 checkout 固定 e6412a1，确认工作区与完整 payload 对应 Git blobs。
+1. 在唯一新 checkout 固定 E1–E3 已验收的准确候选 D，确认工作区与完整 payload 对应 Git blobs。
 2. 使用该提交 `requirements-build.txt` 建立独立 build venv，构建并保留原 wheel。
 3. 在新 runtime venv 安装，从源码目录外核对实际 Python、包位置、metadata 和依赖。
 4. 记录真实 wheel SHA-256、source commit、完整 payload 与 core digest；不要求 ZIP 容器字节复现。
 5. 使用隔离 fixture/mailbox/profile/state 验证新安装，不能启动面向现役 mailbox 的 staging Worker。
-6. 既有安装验收基准为 94 checks / 292 commands；记录实际结果和变化原因，不机械用数量替代覆盖。
+6. 既有 S1 安装验收历史为 94 checks / 292 commands；新候选含 jobs/adapter/Plugin，按新矩阵记录实际覆盖与结果，不机械沿用旧计数。
 7. 在隔离副本验证真实旧 receipt/result/conflict 的读取兼容及迁移防重放，再验证反向回退兼容。
 
-e6412a1 的产品代码与 S1 受测候选等价不代表新 wheel 的安装来源已经验收。
-先验证新的构建和安装链，仅为具体差异或风险扩大测试；不无理由重复全部源码测试。
+e6412a1 的 S1 等价关系不适用于新增代码；D 的源码和安装证据必须对应 D 的完整发布内容。
+复用 E3 对准确 D 的已有充分证据，补齐 GX10 平台、私有绑定和切换差异；不无理由重复云端检查。
 本步骤不得就地覆盖旧 venv、依赖、profile、安装记录、unit 或 state。
 
 ## S2-P04 冻结投递、排空与切换前封存

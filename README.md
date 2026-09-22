@@ -22,3 +22,8 @@ Local Hand 接收有限、结构化的任务，在本机授权的仓库和验证
 当前可执行规则来源是固定版本的 Private companion source，见 AGENTS.md。治理摘录已获准公开，尚未获得等价采用批准，不替代该来源。公开决定暂不添加许可证；固定候选已完成无需私有实现依赖的云端安装验证。
 
 S1 的交付对象是可安装、可验证的通用候选包。S2 才切换真实节点；S3 才接入 artifact-ledger 的 A2 验收。各阶段的证据和授权独立记录。
+
+面向 A2 的后续设计已补齐：复用 GitHub Connector，新 MCP 接入受限作业后端，Plugin 打包操作流程。
+见 [需求](docs/a2-execution/REQUIREMENTS.md)、[架构与接口](docs/a2-execution/ARCHITECTURE.md)、
+[实施与验收](docs/a2-execution/IMPLEMENTATION_PLAN.md)。当前 **Gate OPEN，尚未实现**；
+首批拟议范围仅 E1–E3 隔离开发。真实接入、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 A2 验收分别满足后续门槛。

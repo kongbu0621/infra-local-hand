@@ -1,7 +1,7 @@
 # GX10 S2 架构：部署身份、单 writer 与任务账本
 
 - Authority：Owner；状态：DRAFT / **S2 Documentation Gate OPEN**。
-- 适用产品基线：`e6412a1a38e91906355fbd9ec21974993449d743`。
+- 已复核前身：`e6412a1a38e91906355fbd9ec21974993449d743`；新增实现候选另行固定和验证。
 - 上游需求：[REQUIREMENTS.md](REQUIREMENTS.md)；实施映射：[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
 - 本文描述 S2 约束与选型，不创建部署配置、迁移器或新执行能力。
 
@@ -15,13 +15,15 @@ controller 通过已准入 mailbox 提交 Task；Worker 依据固定 profile 执
 旧通道能执行什么以真实回执和 allowlist 为准，见 [READINESS.md](READINESS.md)。
 `node.status` 不提供完整 systemd、部署路径或 state 盘点；仓库读取不得跨到主机配置目录。
 没有经准入的主机管理入口时保持阻塞，不通过写验证脚本扩大八动作语义。
-新增 MCP 或受限作业后端的边界与选择见 [A2_CAPABILITY_MAP.md](A2_CAPABILITY_MAP.md)。
+新增 MCP、唯一作业后端与 Plugin 的具体方案见 [A2 架构](../a2-execution/ARCHITECTURE.md)。
+旧 v1 和新 job 不桥接；新锁不能约束旧 Worker，真实部署须停止交叉资源 writer 或证明资源隔离。
 
 ## S2-A02 独立安装与来源绑定
 
 新旧 checkout、build/runtime venv、安装目录、state 和 mailbox clone 独立；旧环境保留。
-拟部署 wheel 从准确 e6412a1 完整提交构建，使用该提交固定的构建依赖。
-后续文档提交不自动改变构建输入，也不冒充已经测试的新产品实现。
+拟部署 wheel 从新作业 E1–E3 验收固定的完整实现提交 D 构建，使用 D 固定的构建依赖。
+e6412a1 保留为已复核前身，不再作为默认最终切换输入；D 在实现完成前不得预填。
+文档提交不冒充已测试实现，新增 jobs/adapter/Plugin 必须单独纳入完整来源和安装验证。
 对应 S2-R01/R02/R05。
 
 完整 wheel payload、构建元数据、安装记录和运行入口共同证明来源。
@@ -94,5 +96,6 @@ Worker 轮询错误会被记录后继续循环，`active` 不代表业务健康�
 验收以准确来源的端到端只读结果、进程/重启状态、严格目录检查和连续观察共同判定。
 不可用项目明确标记 UNAVAILABLE；S1 未查明的云端 outbox 异常不能在 S2 无复现时宣布归因。
 A2 接纳设计及受限能力实现可在独立授权 scope 中与 S2 准备协调推进；
-S2 切换前冻结覆盖缺口的具体路径与授权计划，不要求 A2 全部实现先完成。
+选定的新候选完成 E1–E3 与当前客户端 E4 后统一部署，再进入真实 A2；
+S2 不等待真实 A2 验收先完成，也不把新能力的隔离测试写成 S2 closure。
 真实 A2 作业只进入已验收且明确准入的部署；主机/NAS/证据交付能力各自记录实际状态。
