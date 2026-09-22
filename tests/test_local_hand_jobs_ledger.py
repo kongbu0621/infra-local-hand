@@ -188,6 +188,55 @@ class LedgerPlanTests(unittest.TestCase):
         copied.write_text("new local test product")
         self.assertEqual((source / "main.py").read_bytes(), data)
 
+    def test_manifest_directory_close_failure_attempts_every_descriptor_once(self):
+        import stat
+        root = self.root / "payload"; root.mkdir()
+        nested = root / "nested"; nested.mkdir()
+        (nested / "data").write_bytes(b"approved")
+        manifest = {"nested/data": hashlib.sha256(b"approved").hexdigest()}
+        actual_open, actual_close = os.open, os.close
+        opened, attempts = [], []
+        def tracked_open(*args, **kwargs):
+            descriptor = actual_open(*args, **kwargs)
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode): opened.append(descriptor)
+            return descriptor
+        def failed_first_directory_close(descriptor):
+            if descriptor in opened:
+                attempts.append(descriptor)
+                actual_close(descriptor)
+                if len(attempts) == 1: raise OSError("directory close acknowledgement unavailable")
+            else:
+                actual_close(descriptor)
+        try:
+            with patch.object(os, "open", side_effect=tracked_open), \
+                    patch.object(os, "close", side_effect=failed_first_directory_close):
+                try:
+                    jobs.verify_manifest(root, manifest)
+                except Exception as error:
+                    observed_error = error
+                else:
+                    self.fail("uncertain descriptor close unexpectedly succeeded")
+            print(json.dumps({"directory_descriptors": len(opened), "close_attempts": len(attempts),
+                              "error": type(observed_error).__name__}, sort_keys=True))
+            self.assertEqual(attempts, list(reversed(opened)))
+            self.assertEqual(len(set(attempts)), len(attempts))
+            self.assertIsInstance(observed_error, jobs.LedgerPlanError)
+            self.assertEqual((nested / "data").read_bytes(), b"approved")
+            # A simultaneous validation failure retains its original meaning,
+            # while the same close failure still cannot skip the other FDs.
+            opened.clear(); attempts.clear()
+            with patch.object(os, "open", side_effect=tracked_open), \
+                    patch.object(os, "close", side_effect=failed_first_directory_close):
+                with self.assertRaisesRegex(jobs.LedgerPlanError, "input byte binding mismatch") as failed:
+                    jobs.verify_manifest(root, {"nested/data": "0" * 64})
+            self.assertEqual(attempts, list(reversed(opened)))
+            self.assertEqual(failed.exception.__notes__, ["input inventory descriptor cleanup was incomplete"])
+        finally:
+            for descriptor in opened:
+                try: os.fstat(descriptor)
+                except OSError: continue
+                actual_close(descriptor)
+
     def test_temp_fallback_fails_and_does_not_count_as_binding(self):
         good = self.root / "tmp"; good.mkdir()
         with patch.dict(os.environ, {"TMPDIR": str(good), "TMP": str(good), "TEMP": str(good)}, clear=True):
@@ -196,6 +245,25 @@ class LedgerPlanTests(unittest.TestCase):
                 with self.assertRaises(jobs.LedgerPlanError): jobs.check_temp_binding(str(good))
         with self.assertRaises(jobs.LedgerPlanError): jobs.check_temp_binding(str(self.root / "absent"))
         tempfile.tempdir = None
+
+    def test_manifest_cleanup_failure_is_not_hidden_by_a_callers_handled_error(self):
+        import stat
+        root = self.root / "ambient-payload"; root.mkdir()
+        (root / "data").write_bytes(b"approved")
+        manifest = {"data": hashlib.sha256(b"approved").hexdigest()}
+        actual_close = os.close
+        def failed_directory_close(descriptor):
+            directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            actual_close(descriptor)
+            if directory: raise OSError("directory close acknowledgement unavailable")
+        try:
+            raise LookupError("unrelated caller recovery")
+        except LookupError as ambient:
+            with patch.object(os, "close", side_effect=failed_directory_close):
+                with self.assertRaises(jobs.LedgerPlanError):
+                    jobs.verify_manifest(root, manifest)
+            self.assertFalse(hasattr(ambient, "__notes__"))
+        self.assertEqual((root / "data").read_bytes(), b"approved")
 
     def test_resource_skips_and_wrong_counts_never_pass(self):
         for text in ("Ran 8 tests in 1s\n\nOK (skipped=1)\n", "Ran 7 tests in 1s\n\nOK\n", ""):

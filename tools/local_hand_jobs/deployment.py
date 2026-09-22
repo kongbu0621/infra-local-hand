@@ -18,7 +18,8 @@ from .contract import JobError
 def _entrypoint(value: str | os.PathLike[str]) -> Path:
     try:
         path = Path(value)
-        if not path.is_absolute() or ".." in path.parts or str(path) != os.fspath(value):
+        if (not path.is_absolute() or str(path).startswith("//")
+                or ".." in path.parts or str(path) != os.fspath(value)):
             raise ValueError
         # resolve() alone would hide a replaced symlink component.
         for parent in reversed(path.parents):

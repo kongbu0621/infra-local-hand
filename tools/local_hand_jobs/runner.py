@@ -310,6 +310,7 @@ class SystemdManager:
         process = None
         selector = selectors.DefaultSelector()
         captured = bytearray()
+        original_error = None
         try:
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -330,15 +331,29 @@ class SystemdManager:
             returncode = process.wait(timeout=max(0.01, deadline - time.monotonic()))
             return subprocess.CompletedProcess(command, returncode, bytes(captured))
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise RunnerError("IO_UNCERTAIN", "process manager observation did not complete") from error
+            original_error = RunnerError("IO_UNCERTAIN", "process manager observation did not complete")
+            raise original_error from error
+        except BaseException as error:
+            original_error = error
+            raise
         finally:
-            selector.close()
+            cleanup_error = None
+            def cleanup(action):
+                nonlocal cleanup_error
+                try: action()
+                except BaseException as error:
+                    if cleanup_error is None: cleanup_error = error
             if process is not None:
                 if process.poll() is None:
-                    process.kill()
-                    try: process.wait(timeout=0.2)
-                    except subprocess.TimeoutExpired: pass
-                process.stdout.close()
+                    cleanup(process.kill)
+                cleanup(lambda: process.wait(timeout=0.2))
+                cleanup(process.stdout.close)
+            cleanup(selector.close)
+            if cleanup_error is not None:
+                if original_error is not None:
+                    original_error.add_note("manager client cleanup was incomplete")
+                else:
+                    raise RunnerError("IO_UNCERTAIN", "manager client cleanup was incomplete") from cleanup_error
 
     def _admit(self, plan):
         support = self.support()
@@ -626,6 +641,7 @@ def _capture_stage(stage, directory, limit, remaining):
     totals, retained, streams = {}, {}, {}
     exceeded = False
     drain_deadline = None
+    original_error = None
     try:
         process = subprocess.Popen(stage["argv"], cwd=stage["cwd"], env=stage["env"],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -660,9 +676,11 @@ def _capture_stage(stage, directory, limit, remaining):
                 drain_deadline = time.monotonic() + 2  # descendants may retain a pipe
         try: code = process.wait(timeout=0.1)
         except subprocess.TimeoutExpired: code = None
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
         pending_pipes = selector is not None and bool(selector.get_map())
-        original_error = sys.exc_info()[0] is not None
         cleanup_error = None
         def cleanup(action):
             nonlocal cleanup_error
@@ -685,7 +703,7 @@ def _capture_stage(stage, directory, limit, remaining):
             cleanup(stream.flush)
             cleanup(lambda stream=stream: os.fsync(stream.fileno()))
             cleanup(stream.close)
-        if cleanup_error is not None and not original_error: raise cleanup_error
+        if cleanup_error is not None and original_error is None: raise cleanup_error
     return {"name": stage["name"], "exit_code": code, "elapsed_seconds": time.monotonic() - start,
             "bytes_seen": totals, "bytes_retained": retained,
             "bytes_discarded": {k: totals[k] - retained[k] for k in totals},

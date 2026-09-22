@@ -139,6 +139,149 @@ class ClientTests(unittest.TestCase):
         second = BoundedFileWriter(self.root / "client")
         self.assertCode("RESOURCE_BUSY", lambda: second.prepare(artifact))
 
+    def test_writer_close_failure_releases_all_descriptors_and_resumes_same_prefix(self):
+        payload = b"durable prefix and remaining evidence"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        writer = BoundedFileWriter(self.root / "client")
+        writer.prepare(artifact)
+        writer.write(0, payload[:8])
+        held = [writer._fd, writer._journal, writer._lock, writer._directory_fd]
+        real_close, attempted = os.close, []
+        def fail_after_close(fd):
+            attempted.append(fd)
+            real_close(fd)
+            if fd == held[0]:
+                raise OSError("fixture partial close failed after release")
+        try:
+            with mock.patch.object(evidence_client.os, "close", side_effect=fail_after_close):
+                with self.assertRaises(Exception) as raised:
+                    writer.close()
+            self.assertEqual(attempted, held)
+            self.assertIsInstance(raised.exception, EvidenceError)
+            self.assertEqual(raised.exception.code, "IO_UNCERTAIN")
+            writer.close()
+            resumed = BoundedFileWriter(writer.root)
+            self.addCleanup(resumed.close)
+            self.assertEqual(resumed.prepare(artifact), 8)
+            resumed.write(8, payload[8:])
+            self.assertEqual(resumed.finish(lambda _: None).read_bytes(), payload)
+        finally:
+            # Retain the baseline failure while avoiding leaked fixture locks.
+            for attribute in ("_fd", "_journal", "_lock", "_directory_fd"):
+                fd = getattr(writer, attribute)
+                setattr(writer, attribute, None)
+                if fd is not None and fd not in attempted:
+                    real_close(fd)
+
+    def test_publication_close_failure_does_not_close_reused_descriptor(self):
+        fixture, artifact = self.fixture()
+        writer = BoundedFileWriter(self.root / "client")
+        real_close, reused, zip_offsets, partial_fds = os.close, [], [], []
+        def callback(tool, arguments):
+            if arguments["artifact_id"].endswith(".zip"):
+                zip_offsets.append(arguments["offset"])
+                if not partial_fds:
+                    partial_fds.append(writer._fd)
+            return fixture.callback(tool, arguments)
+        def fail_after_close(fd):
+            real_close(fd)
+            if partial_fds and fd == partial_fds[0] and writer.final.exists() and not reused:
+                sentinel = os.open(os.devnull, os.O_RDONLY)
+                if sentinel != fd:
+                    os.dup2(sentinel, fd)
+                    real_close(sentinel)
+                reused.append(fd)
+                raise OSError("fixture published partial close failed after release")
+        try:
+            with mock.patch.object(evidence_client.os, "close", side_effect=fail_after_close):
+                with self.assertRaises(Exception) as raised:
+                    EvidenceClient(callback).download(artifact, writer)
+            self.assertEqual(len(reused), 1)
+            os.fstat(reused[0])
+            self.assertIsInstance(raised.exception, EvidenceError)
+            self.assertEqual(raised.exception.code, "IO_UNCERTAIN")
+            previous = list(zip_offsets)
+            final = EvidenceClient(callback).download(artifact, BoundedFileWriter(writer.root))
+            self.assertEqual(_hash(final.read_bytes()), artifact["sha256"])
+            self.assertEqual(zip_offsets, previous)
+        finally:
+            for fd in reused:
+                try:
+                    real_close(fd)
+                except OSError:
+                    pass
+
+    def test_download_cleanup_failure_preserves_original_interruption(self):
+        fixture, artifact = self.fixture(os.urandom(200000))
+        writer = BoundedFileWriter(self.root / "client")
+        real_close, attempted, held = os.close, [], []
+        def callback(tool, arguments):
+            if arguments["artifact_id"].endswith(".zip") and arguments["offset"] > 0:
+                held.extend([writer._fd, writer._journal, writer._lock, writer._directory_fd])
+                raise ConnectionError("fixture original interruption")
+            return fixture.callback(tool, arguments)
+        def fail_after_close(fd):
+            if fd in held:
+                attempted.append(fd)
+            real_close(fd)
+            if held and fd == held[1]:
+                raise OSError("fixture checkpoint close failed after release")
+        try:
+            with mock.patch.object(evidence_client.os, "close", side_effect=fail_after_close):
+                with self.assertRaises(Exception) as raised:
+                    EvidenceClient(callback).download(artifact, writer)
+            self.assertIsInstance(raised.exception, ConnectionError)
+            self.assertEqual(attempted, held)
+            self.assertIn("Evidence writer descriptor cleanup also failed", raised.exception.__notes__)
+            final = EvidenceClient(fixture.callback).download(artifact, BoundedFileWriter(writer.root))
+            self.assertEqual(_hash(final.read_bytes()), artifact["sha256"])
+        finally:
+            for attribute in ("_fd", "_journal", "_lock", "_directory_fd"):
+                fd = getattr(writer, attribute)
+                setattr(writer, attribute, None)
+                if fd is not None and fd not in attempted:
+                    real_close(fd)
+
+    def test_cleanup_does_not_suppress_failure_for_unrelated_ambient_exception(self):
+        payload = b"fixture evidence"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        for mode in ("close", "context", "download"):
+            with self.subTest(mode=mode):
+                writer = BoundedFileWriter(self.root / mode)
+                lock_fd = []
+                if mode != "download":
+                    writer.prepare(artifact)
+                    writer.write(0, payload)
+                    lock_fd.append(writer._lock)
+                def callback(tool, arguments):
+                    lock_fd.append(writer._lock)
+                    return {"artifact_id": artifact["artifact_id"], "sha256": artifact["sha256"],
+                            "offset": 0, "length": len(payload), "total_size": len(payload),
+                            "eof": True, "chunk_sha256": _hash(payload),
+                            "data_base64": base64.b64encode(payload).decode()}
+                real_close = os.close
+                def fail_after_close(fd):
+                    real_close(fd)
+                    if fd in lock_fd:
+                        raise OSError("fixture lock close failed after release")
+                ambient = LookupError("already handled unrelated caller failure")
+                try:
+                    raise ambient
+                except LookupError:
+                    with mock.patch.object(evidence_client.os, "close", side_effect=fail_after_close):
+                        with self.assertRaises(EvidenceError) as raised:
+                            if mode == "download":
+                                EvidenceClient(callback).download(artifact, writer)
+                            elif mode == "context":
+                                with writer:
+                                    pass
+                            else:
+                                writer.close()
+                    self.assertEqual(raised.exception.code, "IO_UNCERTAIN")
+                    self.assertFalse(hasattr(ambient, "__notes__"))
+
     def test_writer_refuses_foreign_existing_final(self):
         fixture, artifact = self.fixture()
         real = evidence_client._publish_create_only

@@ -12,7 +12,6 @@ from pathlib import Path
 import re
 import shutil
 import stat
-import sys
 import tempfile
 
 SOURCE_COMMIT = "6bd6acfbe5c35d581891eb87275e1173e17848fc"
@@ -243,6 +242,7 @@ def verify_manifest(root, manifest, *, git_blobs=False, exact=True, links=None):
                 digest = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() if git_blobs else hashlib.sha256(raw).hexdigest()
                 if digest != manifest[relative]: raise LedgerPlanError("input byte binding mismatch")
                 found[relative] = digest
+    original_error = None
     try:
         descriptor = os.open(root.anchor, flags)
         descriptors.append(descriptor)
@@ -263,8 +263,20 @@ def verify_manifest(root, manifest, *, git_blobs=False, exact=True, links=None):
             entry, opened = os.stat(name, dir_fd=parent, follow_symlinks=False), os.fstat(child)
             if (entry.st_dev, entry.st_ino, entry.st_mode) != (opened.st_dev, opened.st_ino, opened.st_mode):
                 raise LedgerPlanError("input ancestor changed while observed")
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
-        for descriptor in reversed(descriptors): os.close(descriptor)
+        cleanup_error = None
+        for descriptor in reversed(descriptors):
+            try: os.close(descriptor)
+            except OSError as error:
+                if cleanup_error is None: cleanup_error = error
+        if cleanup_error is not None:
+            if original_error is not None:
+                original_error.add_note("input inventory descriptor cleanup was incomplete")
+            else:
+                raise LedgerPlanError("input inventory descriptor cleanup was incomplete") from cleanup_error
     if found != manifest or found_links != links: raise LedgerPlanError("missing input file or link")
     return hashlib.sha256(json.dumps(found, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

@@ -347,6 +347,19 @@ class RunnerTests(unittest.TestCase):
             finally:
                 for stream in streams: stream.close()
 
+    def test_capture_cleanup_failure_is_not_hidden_by_a_callers_handled_error(self):
+        with tempfile.TemporaryDirectory() as root:
+            stage = {"name": "ambient", "argv": [sys.executable, "-I", "-c", "print('complete')"],
+                     "cwd": root, "env": {"PATH": "/usr/bin:/bin"}}
+            try:
+                raise LookupError("unrelated caller recovery")
+            except LookupError as ambient:
+                with patch.object(os, "fsync", side_effect=OSError("stage log sync unavailable")):
+                    with self.assertRaisesRegex(OSError, "stage log sync unavailable"):
+                        runner._capture_stage(stage, root, 1024, 2)
+                self.assertFalse(hasattr(ambient, "__notes__"))
+            self.assertEqual(Path(root, "ambient.stdout").read_text(), "complete\n")
+
     def test_reconcile_missing_original_root_never_proves_effects_checked(self):
         import json
         with tempfile.TemporaryDirectory() as root:
@@ -569,6 +582,78 @@ class RunnerTests(unittest.TestCase):
         with patch.object(subprocess, "Popen", side_effect=noisy):
             with self.assertRaisesRegex(runner.RunnerError, "manager output exceeds bound"):
                 runner.SystemdManager()._command("list-units", "lhj-*.service")
+
+    def test_manager_selector_close_failure_still_reaps_direct_child(self):
+        import json, subprocess
+        actual_popen = subprocess.Popen
+        selector = runner.selectors.DefaultSelector()
+        actual_close = selector.close
+        children = []
+        def launch(*args, **kwargs):
+            child = actual_popen([sys.executable, "-I", "-c", "import time;time.sleep(60)"], **kwargs)
+            children.append(child)
+            return child
+        def failed_close():
+            actual_close()
+            raise OSError("selector close acknowledgement unavailable")
+        try:
+            with patch.object(runner.subprocess, "Popen", side_effect=launch), \
+                    patch.object(runner.selectors, "DefaultSelector", return_value=selector), \
+                    patch.object(selector, "close", side_effect=failed_close) as closed:
+                try:
+                    runner.SystemdManager()._command("show", "fixture.service", timeout=.05)
+                except Exception as error:
+                    observed_error = error
+                else:
+                    self.fail("timed out manager command unexpectedly succeeded")
+            facts = {"error": type(observed_error).__name__, "child_running": children[0].poll() is None,
+                     "stdout_closed": children[0].stdout.closed, "selector_close_calls": closed.call_count}
+            print(json.dumps(facts, sort_keys=True))
+            self.assertFalse(facts["child_running"], "selector cleanup failure stranded the direct manager client")
+            self.assertTrue(facts["stdout_closed"])
+            self.assertEqual(facts["selector_close_calls"], 1)
+            self.assertIsInstance(observed_error, runner.RunnerError)
+            self.assertEqual(observed_error.code, "IO_UNCERTAIN")
+            self.assertIn("manager observation timeout", str(observed_error))
+        finally:
+            for child in children:
+                if child.poll() is None: child.kill()
+                child.wait(timeout=2)
+                child.stdout.close()
+            actual_close()
+
+    def test_manager_cleanup_failure_is_not_hidden_by_a_callers_handled_error(self):
+        import subprocess
+        actual_popen = subprocess.Popen
+        selector = runner.selectors.DefaultSelector()
+        actual_close = selector.close
+        children = []
+        def launch(*args, **kwargs):
+            child = actual_popen([sys.executable, "-I", "-c", "print('complete')"], **kwargs)
+            children.append(child)
+            return child
+        def failed_close():
+            actual_close()
+            raise OSError("selector close acknowledgement unavailable")
+        try:
+            try:
+                raise LookupError("unrelated caller recovery")
+            except LookupError as ambient:
+                with patch.object(runner.subprocess, "Popen", side_effect=launch), \
+                        patch.object(runner.selectors, "DefaultSelector", return_value=selector), \
+                        patch.object(selector, "close", side_effect=failed_close):
+                    with self.assertRaises(runner.RunnerError) as failed:
+                        runner.SystemdManager()._command("show", "fixture.service")
+                self.assertEqual(failed.exception.code, "IO_UNCERTAIN")
+                self.assertFalse(hasattr(ambient, "__notes__"))
+            self.assertEqual(children[0].poll(), 0)
+            self.assertTrue(children[0].stdout.closed)
+        finally:
+            for child in children:
+                if child.poll() is None: child.kill()
+                child.wait(timeout=2)
+                child.stdout.close()
+            actual_close()
 
     def test_final_manager_delivery_requires_durable_guard_and_honors_denial(self):
         class PreparedManager(runner.SystemdManager):

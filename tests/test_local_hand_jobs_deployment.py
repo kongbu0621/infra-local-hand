@@ -80,6 +80,16 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaises(JobError):
             self.verify(expected_entrypoint=str(folder / "cli.py"), actual_entrypoint=str(folder / "cli.py"))
 
+    def test_double_slash_release_identity_cannot_be_admitted(self):
+        # Python can preserve // in both the imported module's __file__ and
+        # the service entry file, while POSIX resolves the same file bytes.
+        alias = "/" + self.entry
+        with mock.patch.object(provenance, "__file__", "/" + provenance.__file__):
+            with self.assertRaises(JobError) as raised:
+                self.verify(expected_entrypoint=alias, actual_entrypoint=alias)
+        self.assertEqual(raised.exception.code, "PROVENANCE_MISMATCH")
+        self.assertEqual(self.verify()["execution_entrypoint"], self.entry)
+
     def test_missing_package_cannot_be_hidden_in_metadata(self):
         shutil.rmtree(self.root / "local_hand_mcp")
         self.stamp()

@@ -181,11 +181,16 @@ def drain_pipe_bounded(
         state.error = f"{type(exc).__name__}: {exc}"
     finally:
         if selector is not None:
-            selector.close()
+            try:
+                selector.close()
+            except (OSError, ValueError) as exc:
+                # A selector cleanup failure must not skip the owned pipe or
+                # let an exited reader appear to have completed cleanly.
+                state.error = state.error or f"{type(exc).__name__}: {exc}"
         try:
             stream.close()
         except (OSError, ValueError) as exc:
-            state.error = f"{type(exc).__name__}: {exc}"
+            state.error = state.error or f"{type(exc).__name__}: {exc}"
 
 
 def _posix_group_exists(pgid: int) -> bool:

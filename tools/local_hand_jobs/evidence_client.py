@@ -166,8 +166,8 @@ class BoundedFileWriter:
                 os.fsync(directory)
                 self._assert_bound()
                 return self.offset
-        except Exception:
-            self.close()
+        except Exception as failure:
+            self._close(failure)
             raise
 
     def _assert_bound(self) -> None:
@@ -257,8 +257,14 @@ class BoundedFileWriter:
                                  source_dir_fd=directory, destination_dir_fd=directory)
             # Renaming changes ctime.  Rehash the published descriptor and require
             # the same inode, then check the directory binding before returning it.
-            self._fd = self._close_descriptor(self._fd)
             self._completed = True
+            fd, self._fd = self._fd, None
+            try:
+                os.close(fd)
+            except OSError:
+                # close may have released fd before reporting failure.  Keep the
+                # published file and never retry a possibly reused descriptor.
+                raise EvidenceError("IO_UNCERTAIN", "published evidence descriptor cleanup unresolved") from None
         with _open_member(directory, self.final.name, self.owner, self.max_bytes) as fd:
             final_stat = os.fstat(fd)
             if (final_stat.st_dev, final_stat.st_ino) != identity[:2]:
@@ -277,24 +283,32 @@ class BoundedFileWriter:
                 raise EvidenceError("CONFLICT", "evidence changed during persistence")
         return self.final
 
-    @staticmethod
-    def _close_descriptor(fd: int | None) -> None:
-        if fd is not None:
-            os.close(fd)
-        return None
-
     def close(self) -> None:
+        self._close()
+
+    def _close(self, failure: BaseException | None = None) -> None:
+        close_failed = False
         for attribute in ("_fd", "_journal", "_lock", "_directory_fd"):
             fd = getattr(self, attribute, None)
             if fd is not None:
-                os.close(fd)
                 setattr(self, attribute, None)
+                try:
+                    os.close(fd)
+                except OSError:
+                    # Attempt every held descriptor once, even after a failure.
+                    # Retrying close is unsafe if its number has been reused.
+                    close_failed = True
+        if close_failed:
+            if failure is not None:
+                failure.add_note("Evidence writer descriptor cleanup also failed")
+            else:
+                raise EvidenceError("IO_UNCERTAIN", "evidence writer descriptor cleanup unresolved")
 
     def __enter__(self):
         return self
 
-    def __exit__(self, *_):
-        self.close()
+    def __exit__(self, _type, exception, _traceback):
+        self._close(exception)
 
 
 class EvidenceClient:
@@ -436,7 +450,14 @@ class EvidenceClient:
                                       descriptor["size"])
                 writer.write(offset, data)
                 offset += len(data)
-            return writer.finish(lambda path: self._validate_zip(path, artifact, seal, writer.max_bytes)
-                                 if seal is not None else None)
-        finally:
+            final = writer.finish(lambda path: self._validate_zip(path, artifact, seal, writer.max_bytes)
+                                  if seal is not None else None)
+        except BaseException as failure:
+            try:
+                writer.close()
+            except Exception:
+                failure.add_note("Evidence writer descriptor cleanup also failed")
+            raise
+        else:
             writer.close()
+            return final

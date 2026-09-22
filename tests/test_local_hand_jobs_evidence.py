@@ -377,6 +377,31 @@ class EvidenceTests(unittest.TestCase):
         self.assertIsInstance(errors[0], EvidenceError)
         self.assertEqual(errors[0].code, "IO_UNCERTAIN")
 
+    def test_ancestry_cleanup_failure_is_not_hidden_by_a_callers_handled_exception(self):
+        root = self.fixture.store.root
+        target = (root.stat().st_dev, root.stat().st_ino)
+        real_close = os.close
+        failures, injected = [], []
+        def fail_root_close(descriptor):
+            before = os.fstat(descriptor)
+            real_close(descriptor)
+            if (before.st_dev, before.st_ino) == target:
+                injected.append(True)
+                raise OSError("fixture ancestry close error after release")
+        try:
+            raise LookupError("fixture caller is handling an unrelated exception")
+        except LookupError as ambient:
+            with mock.patch.object(evidence.os, "close", side_effect=fail_root_close):
+                try:
+                    evidence._sync_directory_ancestry(root, os.geteuid())
+                except Exception as error:
+                    failures.append(error)
+            self.assertEqual((len(failures), getattr(ambient, "__notes__", [])), (1, []),
+                "Cleanup failure belongs to this operation, not the caller's unrelated exception")
+        self.assertEqual(injected, [True])
+        self.assertIsInstance(failures[0], EvidenceError)
+        self.assertEqual(failures[0].code, "IO_UNCERTAIN")
+
     def test_store_lock_close_error_is_structured_and_never_retried(self):
         import fcntl
         real_lock, real_close = fcntl.flock, os.close
@@ -397,6 +422,96 @@ class EvidenceTests(unittest.TestCase):
         # A close error does not undo the already registered publication.
         self.assertEqual(len(self.fixture.registered), 1)
         self.assertTrue(self.fixture.store.manifest(OP, principal="reader")["artifacts"])
+
+    def test_root_traversal_close_failure_releases_new_child_without_retry(self):
+        real_open, real_close = os.open, os.close
+        opened, attempts, released, failures = [], [], [], []
+        def record_open(*args, **kwargs):
+            descriptor = real_open(*args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+        def fail_first_close(descriptor):
+            attempts.append(descriptor)
+            real_close(descriptor)
+            released.append(descriptor)
+            if descriptor == opened[0]:
+                raise OSError("fixture root traversal close error after release")
+        with mock.patch.object(evidence.os, "open", side_effect=record_open), \
+                mock.patch.object(evidence.os, "close", side_effect=fail_first_close):
+            try:
+                evidence._root_descriptor(self.fixture.source, os.geteuid())
+            except Exception as error:
+                failures.append(error)
+        leaked = [descriptor for descriptor in opened if descriptor not in released]
+        for descriptor in leaked:
+            real_close(descriptor)
+        self.assertEqual(leaked, [], "Traversal must release the child opened before its parent close failed")
+        self.assertEqual(len(attempts), len(set(attempts)), "An uncertain parent close must not be retried")
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], EvidenceError)
+        self.assertEqual(failures[0].code, "IO_UNCERTAIN")
+
+    def test_member_close_failure_still_releases_its_directory(self):
+        root_fd = evidence._root_descriptor(self.fixture.source, os.geteuid())
+        self.addCleanup(os.close, root_fd)
+        real_open, real_dup, real_close = os.open, os.dup, os.close
+        opened, attempts, released, failures = [], [], [], []
+        def record_open(*args, **kwargs):
+            descriptor = real_open(*args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+        def record_dup(descriptor):
+            duplicate = real_dup(descriptor)
+            opened.append(duplicate)
+            return duplicate
+        def fail_file_close(descriptor):
+            attempts.append(descriptor)
+            before = os.fstat(descriptor)
+            real_close(descriptor)
+            released.append(descriptor)
+            if not evidence.stat.S_ISDIR(before.st_mode):
+                raise OSError("fixture member close error after release")
+        with mock.patch.object(evidence.os, "open", side_effect=record_open), \
+                mock.patch.object(evidence.os, "dup", side_effect=record_dup), \
+                mock.patch.object(evidence.os, "close", side_effect=fail_file_close):
+            try:
+                with evidence._open_member(root_fd, "stdout.log", os.geteuid(), 1024) as descriptor:
+                    self.assertEqual(os.read(descriptor, 1024), b"retained command output\n")
+            except Exception as error:
+                failures.append(error)
+        leaked = [descriptor for descriptor in opened if descriptor not in released]
+        for descriptor in leaked:
+            real_close(descriptor)
+        self.assertEqual(leaked, [], "A member close failure must still release its directory")
+        self.assertEqual(len(attempts), len(set(attempts)))
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], EvidenceError)
+        self.assertEqual(failures[0].code, "IO_UNCERTAIN")
+
+    def test_cleanup_failure_preserves_the_primary_root_or_member_error(self):
+        root_fd = evidence._root_descriptor(self.fixture.source, os.geteuid())
+        self.addCleanup(os.close, root_fd)
+        real_close = os.close
+        for kind in ("root", "member"):
+            with self.subTest(kind=kind):
+                primary = EvidenceError("CONFLICT", "fixture primary observation failure")
+                active, attempts = [], []
+                def fail_cleanup(descriptor):
+                    real_close(descriptor)
+                    if active:
+                        attempts.append(descriptor)
+                        raise OSError("fixture cleanup error after release")
+                context = (evidence._open_root(self.fixture.source, os.geteuid()) if kind == "root"
+                    else evidence._open_member(root_fd, "stdout.log", os.geteuid(), 1024))
+                with mock.patch.object(evidence.os, "close", side_effect=fail_cleanup):
+                    with self.assertRaises(EvidenceError) as raised:
+                        with context:
+                            active.append(True)
+                            raise primary
+                self.assertIs(raised.exception, primary)
+                self.assertEqual(len(attempts), 1 if kind == "root" else 2)
+                self.assertEqual(len(attempts), len(set(attempts)))
+                self.assertIn("Evidence descriptor cleanup also failed", primary.__notes__)
 
     def test_create_only_collision_retains_concurrent_file(self):
         real = evidence._publish_create_only

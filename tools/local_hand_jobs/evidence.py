@@ -18,7 +18,6 @@ from pathlib import Path, PurePosixPath
 import re
 import secrets
 import stat
-import sys
 import uuid
 import zipfile
 from typing import Any, Callable, Iterator
@@ -77,6 +76,24 @@ def _regular(st: os.stat_result, owner: int, maximum: int) -> None:
         raise EvidenceError("CONFLICT", "evidence member type, ownership or size changed")
 
 
+def _close_descriptors(*descriptors: int | None, failure: BaseException | None = None) -> None:
+    """Attempt each owned descriptor once, preserving any primary failure."""
+    close_failed = False
+    for descriptor in descriptors:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                # close may have released the descriptor before reporting failure.
+                # Do not retry a number that another thread could already reuse.
+                close_failed = True
+    if close_failed:
+        if failure is not None:
+            failure.add_note("Evidence descriptor cleanup also failed")
+        else:
+            raise EvidenceError("IO_UNCERTAIN", "evidence descriptor cleanup unresolved")
+
+
 def _root_descriptor(root: Path, owner: int) -> int:
     """Reject symlinks at every component, including ancestors of the admitted root."""
     if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
@@ -89,12 +106,12 @@ def _root_descriptor(root: Path, owner: int) -> int:
         for component in root.parts[1:]:
             nxt = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                           dir_fd=fd)
-            os.close(fd)
-            fd = nxt
+            previous, fd = fd, nxt
+            _close_descriptors(previous)
         _directory(os.fstat(fd), owner)
         return fd
-    except BaseException:
-        os.close(fd)
+    except BaseException as failure:
+        _close_descriptors(fd, failure=failure)
         raise
 
 
@@ -110,6 +127,7 @@ def _sync_directory_ancestry(root: Path, owner: int) -> None:
     if not root.is_absolute() or ".." in root.parts:
         raise EvidenceError("CONFLICT", "root must be an admitted absolute directory")
     descriptors = []
+    failure = None
     try:
         descriptors.append(os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
         for component in root.parts[1:]:
@@ -125,8 +143,10 @@ def _sync_directory_ancestry(root: Path, owner: int) -> None:
                     or (opened.st_dev, opened.st_ino) != (named.st_dev, named.st_ino)):
                 raise EvidenceError("CONFLICT", "evidence directory ancestry changed")
         _directory(os.fstat(descriptors[-1]), owner)
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        failure = sys.exc_info()[1]
         close_failed = False
         for descriptor in reversed(descriptors):
             try:
@@ -145,6 +165,7 @@ def _sync_directory_ancestry(root: Path, owner: int) -> None:
 @contextmanager
 def _open_root(root: Path, owner: int) -> Iterator[int]:
     fd = _root_descriptor(root, owner)
+    failure = None
     try:
         yield fd
         current = _root_descriptor(root, owner)
@@ -152,10 +173,16 @@ def _open_root(root: Path, owner: int) -> Iterator[int]:
             original, entry = os.fstat(fd), os.fstat(current)
             if (original.st_dev, original.st_ino) != (entry.st_dev, entry.st_ino):
                 raise EvidenceError("CONFLICT", "evidence root replaced during access")
-        finally:
-            os.close(current)
+        except BaseException as error:
+            _close_descriptors(current, failure=error)
+            raise
+        else:
+            _close_descriptors(current)
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        os.close(fd)
+        _close_descriptors(fd, failure=failure)
 
 
 @contextmanager
@@ -163,17 +190,18 @@ def _open_member(root_fd: int, name: str, owner: int, maximum: int) -> Iterator[
     components = _safe_name(name).split("/")
     directory = os.dup(root_fd)
     file_fd = None
+    failure = None
     try:
         for component in components[:-1]:
             nxt = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                           dir_fd=directory)
             try:
                 _directory(os.fstat(nxt), owner)
-            except Exception:
-                os.close(nxt)
+            except BaseException as error:
+                _close_descriptors(nxt, failure=error)
                 raise
-            os.close(directory)
-            directory = nxt
+            previous, directory = directory, nxt
+            _close_descriptors(previous)
         file_fd = os.open(components[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                           dir_fd=directory)
         _regular(os.fstat(file_fd), owner, maximum)
@@ -183,10 +211,11 @@ def _open_member(root_fd: int, name: str, owner: int, maximum: int) -> Iterator[
         entry = os.stat(components[-1], dir_fd=directory, follow_symlinks=False)
         if _same(entry) != _same(os.fstat(file_fd)):
             raise EvidenceError("CONFLICT", "evidence member replaced during read")
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        if file_fd is not None:
-            os.close(file_fd)
-        os.close(directory)
+        _close_descriptors(file_fd, directory, failure=failure)
 
 
 def _read(fd: int, maximum: int) -> bytes:
