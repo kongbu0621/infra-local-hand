@@ -28,5 +28,6 @@ S1 的交付对象是可安装、可验证的通用候选包。S2 才切换真�
 [实施与验收](docs/a2-execution/IMPLEMENTATION_PLAN.md)。Owner 已批准准确基线的 **E1–E3 隔离实现**，
 独立开工记录为 `367632126c1930983a06b1854f63789448633148`。
 `0.2.0a1` 增加受限作业后端、可选 MCP adapter 和独立 Plugin；
-[当前实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md) 明确未完成的真实 cgroup 和 NAS 配额门槛。
+[当前实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md) 和 [首轮验证记录](docs/a2-execution/E1_E3_VERIFICATION.md)
+分别记录 NAS provider 代码缺口、真实 cgroup 等环境阻塞及准确测试结果。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。
