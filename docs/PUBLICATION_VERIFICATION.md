@@ -1,6 +1,8 @@
 # 首次公开发布复核
 
-最新 S1 内容读取失败与 Git 自动维护修复：精确候选 `3caf3721ee6b9a08517506d0cb124f5a239f2c43`；25 条源码节点、71 项安装态检查 / 227 条命令通过。首次 pack 扫描失败及历史未决归因保留；见 [S1_READ_FAILURE_REVIEW.md](S1_READ_FAILURE_REVIEW.md)。历史平台和全量结论属于原提交。
+最新 S1 输入、发布与安装载荷边界修复：精确候选 `da2e82d41be88ada97b6a852f8e8c7e8ba6143d4`；42 条源码链路、全量源码 279 passed / 0 skipped、81 项安装态检查 / 266 条命令通过。见 [S1_BOUNDARY_REVIEW.md](S1_BOUNDARY_REVIEW.md)。平台范围及历史未决归因分别保留。
+
+此前 S1 内容读取失败与 Git 自动维护修复：精确候选 `3caf3721ee6b9a08517506d0cb124f5a239f2c43`；25 条源码节点、71 项安装态检查 / 227 条命令通过。首次 pack 扫描失败及历史未决归因保留；见 [S1_READ_FAILURE_REVIEW.md](S1_READ_FAILURE_REVIEW.md)。历史平台和全量结论属于原提交。
 
 此前 S1 持久化及恢复收尾修复：精确候选 `215ad61a7c9d88baffe7f2cab4d45ea8e6ff21a3`；25 条源码节点、63 项安装态检查通过，首轮失败及未决归因保留。见 [S1_STATE_PERSISTENCE_REVIEW.md](S1_STATE_PERSISTENCE_REVIEW.md)。历史平台及全量结论属于原提交。
 
