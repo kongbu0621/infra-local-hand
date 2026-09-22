@@ -19,7 +19,7 @@ Owner“补齐一下”和“都设计进去”作为设计要求记录，不转
 | 阶段 | 交付与限制 | 出口 |
 | --- | --- | --- |
 | E1 固定契约与作业核心 | 独立 job schema/registry、SQLite 账本、同一 broker CLI、来源与预算检查、进程监督、封存与核对；冻结依赖和完整构建来源 | 原 id 防重放、未知不重跑、资源互斥和证据持久化故障测试通过 |
-| E2 MCP 与 Plugin | 七项工具、逐请求认证、发现/挑战/PKCE 首次链接与再授权、固定 schema、结构化错误、分块传输与客户端文件重组核验、四类技能；loopback 与合成 issuer 测试 | adapter 不直接执行、CLI 无旁路、插件不自动投递、大小和权限边界通过 |
+| E2 MCP 与 Plugin | 七项工具、逐请求认证、发现/挑战/PKCE 首次链接与再授权、固定 schema、准入引用发现与 prepared 输出衔接、结构化错误、分块传输与客户端文件重组核验、四类技能；loopback 与合成 issuer 测试 | adapter 不直接执行、CLI 无旁路、插件不自动投递、完整接口链和权限边界通过 |
 | E3 隔离发布候选 | 全源码／编译、wheel 干净安装、完整 payload 检查、Plugin 验证、固定 Ledger 程序的 fixture 集成和独立复审 | 准确候选 commit、wheel/插件摘要、验收矩阵、失败证据和部署候选说明 |
 | E4 当前客户端私有接入 | 在已准入测试后端注册连接、OAuth、Tunnel 或 HTTPS，私有 Plugin 安装和完整文件取回 | 实际当前客户端的发现／授权／提交／查询／撤销／重连及 16 MiB ZIP 交付证据 |
 | E5 GX10 与 S2 | 经真实主机管理入口安装候选，冻结私有 manifest、进程委派、现场预算和挂载观察；按 S2 迁移旧八动作并验收新 broker | 真实来源、单 writer、账本保留、受限操作、重启恢复、观察与回退证明 |
@@ -39,7 +39,7 @@ E4 可以使用专门测试主机，无须先切换 GX10；E5 在 E4 验证入�
 | --- | --- |
 | `tools/local_hand_jobs/contract.py`、`registry.py`、`policy.py` | 严格 schema/canonical、固定六种作业/前置证据、来源和授权；不依赖 MCP SDK |
 | `tools/local_hand_jobs/broker.py`、`state.py`、`resources.py` | `local-hand-broker` 本地服务入口、唯一准入 API、SQLite 事务/事件、authority 锚点、容量/资源租约、原 id 去重 |
-| `tools/local_hand_jobs/runner.py`、`ledger_jobs.py` | 启动/取消围栏、固定程序映射、进程管理器监督与 Ledger 证据判据；无任意 shell |
+| `tools/local_hand_jobs/runner.py`、`ledger_jobs.py` | 启动/取消/撤销围栏、固定程序映射、进程管理器监督、阻塞 I/O helper 与 Ledger 证据判据；无任意 shell |
 | `tools/local_hand_jobs/evidence.py`、`evidence_client.py` | 静止封存/有界读取；客户端以宿主回调重组文件，不获取宿主 token |
 | `tools/local_hand_jobs/cli.py` | `local-hand-jobs` 维护入口，只用受保护本地 socket 调用同一 broker |
 | `tools/local_hand_mcp/server.py`、`auth.py` | `local-hand-mcp` 服务入口、原始请求解码、官方 Python SDK Streamable HTTP、JWT 验签及进程内主体上下文；所有执行交给 broker |
@@ -67,6 +67,9 @@ E1 选择并锁定实际 SDK 与成熟 JWT 验签库的完整版本/摘要，记
    可按平台 marker 分别锁定，不用浮动 `latest`。新增依赖的许可证记录不改变本仓库许可证决策。
 5. 数据库意图／spawn、退出／状态、证据 rename/fsync／seal 的每个交界模拟崩溃、I/O 失败和响应丢失。
    测试确认副作用未知时租约不释放给新作业，重启和原请求重投不再次执行。
+   撤销/策略代次与延迟启动共用围栏；挂起预检/哈希/reconcile helper 时控制面仍能按有限预算响应，
+   不在数据库写事务或启动围栏内等待外部 I/O，不把超时或 KILL 当退出证明。
+   原业务取消后仍可按当前授权启动固定只读核对，核对自身受停止/撤销约束，不能启动原业务程序。
 6. 进程监督在隔离环境中验证子孙进程、PID 复用、日志满额和取消；若环境没有委派 cgroup，
    单元模拟只能记录为模拟，真实 cgroup 集成列为 E3 的未完成项，不得用普通进程组冒充等价 PASS。
    具备条件的隔离 Linux runner 应补齐此项后才标记“可部署候选”。
@@ -79,16 +82,16 @@ E1 选择并锁定实际 SDK 与成熟 JWT 验签库的完整版本/摘要，记
 
 | ID | 需求 → 架构 | E1–E3 必测 | 后续真实验收 |
 | --- | --- | --- | --- |
-| AX-V01 | R01/R06/R10 → A02/A03/A09 | 伪来源/替换工具/prepared 漂移/错部署拒绝；NAS 缺必需证据、异候选/环境、更新失败或未决均拒绝，客户端不能自报 PASS | E5 全链来源；E6 真实先决证据绑定，不是只比 core |
+| AX-V01 | R01/R06/R10 → A02/A03/A07/A09 | 伪来源/替换工具/prepared 漂移/错部署拒绝；发现值不符私有目标/authority 或 STALE 时不自动改绑重投；NAS 缺必需证据、异候选/环境、更新失败或未决均拒绝 | E4 连接与目标绑定；E5 全链来源；E6 真实先决证据绑定 |
 | AX-V02 | R02/R08 → A01/A02/A03 | 未知字段/自由命令/路径拒绝；原始 JSON 重复 key、超深/Unicode/大整数/布尔冒整数负例；Python/JS 摘要向量；临时根失效/回落、全局队列/容量上限；CLI 同权限 | E5 账户/网络/临时目录隔离及预算实际生效 |
 | AX-V03 | R03 → A03/A04 | 同 id 同 digest 去重、异内容冲突、跨主体拒绝、接受响应丢失、过期与重连；意图后崩溃不重放 | E4 客户端断线与 token 更新仍沿用原作业；E5 重启保留账本 |
-| AX-V04 | R04 → A04/A05 | 排队取消、intent/spawn 间取消、延迟启动回执及重启；退出/状态交界、PID 复用、broker 死亡、cancel/完成竞争；UNKNOWN 不续跑 | E5 已排队启动撤销与实际 cgroup/监督器证据，停止不声明 NAS 回滚 |
+| AX-V04 | R04 → A04/A05 | 排队取消、intent/spawn 间取消、延迟启动回执及重启；退出/状态交界、PID 复用、broker 死亡、cancel/完成竞争；挂起预检/核对 helper 时 status 可返回、cancel 可持久受理，UNKNOWN 不续跑或释放资源 | E5 已排队启动撤销与实际 cgroup/监督器证据；E6 隔离真实存储故障下控制面可用性 |
 | AX-V05 | R05/R11 → A01/A04/A09 | 两入口同账本；同一 authority 拒绝第二根；同资源不同引用/新 id 不能越过 UNKNOWN；租约过期/旧 epoch 不抢占、换安装不清身份 | E5 全部旧 writer 与生产者枚举；资源重叠先停旧 |
 | AX-V06 | R06 → A02/A06 | NAS 不可用不回落本地；专属 parent、丢 stdout 定位、零/多候选 UNKNOWN；发现新增/替换/链接停删并记录部分状态 | E6 跨阶段稳定挂载绑定门槛、真实挂载/独立回读、只删合成本地副本、独立恢复及 SQL/Blob 核对 |
 | AX-V07 | R07 → A04/A07 | writer 存活拒绝完整 seal；固定事件/成员、半写与并发不覆盖、fsync/DB 不明、ZIP 安全；上游自清理标记；封存峰值容量不足不删旧证据 | E4 真实 ZIP/seal/manifest 校验与保留范围说明 |
 | AX-V08 | R02/R07/R09 → A05/A07/A08 | 分页/chunk/错偏移与摘要/断线；宿主回调→writer 不取 token；多作业及重复 reconcile 配额、日志截断、磁盘满停止 | E4 当前 Work 原始结果接桥、≥16 MiB ZIP 实际取回，无能力则 BLOCKED |
-| AX-V09 | R08/R09 → A03/A07/A08 | 首链/再授权；伪签名/alg=none/错alg/kid/iss/aud/exp/nbf/不受信密钥/opaque token拒绝，密钥服务失败不降级；本地撤销/越权拒绝 | E4 用户授权、Tunnel/HTTPS、本地逐块撤销及 issuer 撤销实际传播界限 |
-| AX-V10 | R09/R10 → A08/A09 | 插件版本/contract 不符阻止提交、无私有ID/secret/hooks、核心无 MCP 依赖也可安装 | E4 私有连接映射和当前客户端支持；公网目录上架不在验收内 |
+| AX-V09 | R08/R09 → A03/A05/A07/A08 | 首链/再授权；伪签名/alg=none/错alg/kid/iss/aud/exp/nbf/不受信密钥/opaque token拒绝，密钥服务失败不降级；本地撤销/策略变更在 intent/延迟启动边界阻断旧预留，分别记录准入关闭与停止结果；越权拒绝 | E4 用户授权、Tunnel/HTTPS、本地逐块撤销及 issuer 撤销实际传播界限 |
+| AX-V10 | R09/R10 → A07/A08/A09 | 仅用私有准入 fixture 和接口返回完成发现/inspect/prepare/测试/证据交付；目录按主体过滤、分页版本不混用、sealed prepared_ref 稳定且失败无可执行引用；插件版本/contract 不符阻止提交，无私有ID/secret/hooks，核心无 MCP 依赖可安装 | E4 私有连接映射、完整实际接口链和当前客户端支持；公网目录上架不在验收内 |
 | AX-V11 | R11 → A04/A09 | 旧 v1 行为保持、历史 Task 不因新 job 重放；双协议冻结/回退先停所有新入口/排队启动/进程树，保留两账本 | E5 S2 全账本迁移和新 job 独立屏障；旧版读不懂则阻塞相关资源 |
 | AX-V12 | R12 → A06/A09 | fixture/模拟/真集成分列，FAILED/SKIP/UNKNOWN 不算 PASS，证据未保存不等于没副作用 | E6 Ledger T01–T15 分项结论、Python/SQLite/FS 实测、未完成故障项保留 |
 
@@ -102,7 +105,7 @@ E1 选择并锁定实际 SDK 与成熟 JWT 验签库的完整版本/摘要，记
 | --- | --- | --- |
 | 实际当前客户端开发者模式、插件安装面、组织 Tunnel Read/Manage/Use、工作区关联 | 未验证；订阅等级不作证明 | E4 注册前；Tunnel 不可用则评估受认证 HTTPS，不能擅自开放 |
 | JWT issuer/JWKS/算法/时钟/缓存、client 注册/redirect/audience、主体/scope、本地与 issuer 撤销策略 | 尚未冻结 | E4；测试 issuer 不可用于真实准入；issuer 撤销时延须实测 |
-| MCP/Tunnel/gateway 运行位置、网络、TLS、密钥保管、连接技术 ID | 尚未冻结 | E4；仅保存在私有 manifest，不写公共插件 |
+| MCP/Tunnel/gateway 运行位置、网络、TLS、密钥保管、连接技术 ID、可信 authority 与准确允许目标/部署绑定 | 尚未冻结 | E4；仅保存在私有 manifest，不写公共插件；不从首次发现结果自动信任新目标 |
 | GX10 已授权且可调用的首次管理入口、运行账户、目录和进程委派 | 旧八动作不能提供；尚未找到替代入口 | E5 准备；可用本机已授权执行会话或受限管理通道，不能让 MCP 自装 |
 | 全部旧服务/手工进程/生产者、状态账本、配置及回退点 | 仅完成旧通道四项只读核对 | E5 按 S2 READINESS 补齐、冻结、静止快照 |
 | 本地 FS 与 NAS 真实挂载、端点、root、存储配置、账号最小权限、精确删除范围和跨阶段稳定绑定机制 | 未冻结；固定脚本不提供全阶段初始 mount fence | E5 观察、E6 准入；稳定绑定不能证明则 BLOCKED；不允许网络FS/tmpfs/overlay 冒充支持的本地 FS |

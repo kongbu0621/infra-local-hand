@@ -136,6 +136,7 @@ UI／MCP 请求 id 是传输身份，不能作为 operation_id。未确认提交
 创建意图前及实际 spawn 前都核对预期部署、当前策略、固定输入、授权和资源租约。
 排队期间变更策略或撤销准入则拒绝启动；运行中撤销阻止新读取／新作业，并按部署预设的受控停止策略处理，
 不把 token 到期解释为业务撤销或成功取消。调用者不能选择 state root、提升 epoch 或设置自己的预算。
+启动预留绑定服务端授权/策略代次，本地撤销与代次变更复用 A05 的启动围栏；只在准入时鉴权不够。
 epoch 由受保护部署记录管理；安装 UUID 改变也不能绕开旧账本。管理员清空账本不属于正常恢复途径。
 
 ## AX-A04 账本、资源锁与崩溃（R03/R04/R05/R11）
@@ -178,6 +179,16 @@ reconcile 有独立有限时间/进程/磁盘/日志预算和单作业互斥，�
 不靠删除历史证据继续运行。I/O 或配额保证失效仍按 UNKNOWN/持久化不明处理，不能承诺磁盘永不耗尽。
 stdout/stderr 独立排空并写私有文件；超限仍排空并执行受控停止，记录截断位置和丢弃计数，不把截断当完整证据。
 
+同进程 adapter/broker 的控制路径不得直接等待可能阻塞的挂载访问、内容全量哈希或 NAS 核对。
+这些预检、证据计算和 reconcile 工作统一进入受监督 helper/runner，先登记意图、归属和有限预算，
+纳入同一资源租约、启动围栏与进程树退出核对；不能以“还未启动主程序”为由绕过监督。
+控制面只持久排队、短时回执和读取本地账本，不持有 SQLite 写事务或启动/取消围栏等待外部 I/O。
+submit/cancel/reconcile 的回执表示持久受理，不保证操作已完成；status 报告观察时间、阶段与未决事实。
+在本地账本健康的前提下，存储 helper 挂起时 status 仍可返回，取消仍可持久受理；
+helper 超时或发送 KILL 不证明退出，无法证实停止时保持 UNKNOWN、容量占用与资源屏障，不反复新建 helper。
+E1 冻结并验证控制请求的有限响应预算；本地账本本身 I/O/持久化失败则明确报不明，不承诺所有故障下可用。
+Linux hard NFS 请求可无限重试；不能以改成 soft、只在线程外包一层超时或超时后忘掉后台工作来满足边界。
+
 cancel 是持久化取消请求；每作业的启动预留与取消在同一 broker 启动围栏下串行化。
 cancel 的持久点之后不允许新增启动；spawn 前必须检查取消标志和启动预留。
 对已经交给进程管理器但尚未获得回执的启动请求，必须按唯一 job unit/启动身份核对并阻断未来启动，
@@ -185,8 +196,14 @@ cancel 的持久点之后不允许新增启动；spawn 前必须检查取消标�
 确认全部已排队启动被撤销且整个进程树退出后，才给确定取消结论和释放资源；否则 UNKNOWN 且保留屏障。
 只有证明未 spawn 才可说明“未执行”；执行过但没有业务副作用仍属于已执行。
 停止后的 NAS/文件事实另记，取消不是撤销。
+本地主体/grant 撤销与策略代次变更也在同一围栏内持久化并失效旧启动预留；之后不再授权新的启动。
+已提交进程管理器的延迟请求按上面的未来启动阻断规则处理，不能让先前成功的鉴权继续启动固定业务程序。
+管理回执分别记录新准入已关闭、排队启动已封阻/仍不明、运行中停止状态；撤销已登记不等于进程已停止。
+无法确认延迟启动已阻断时保留 UNKNOWN/资源屏障并继续受控停止，不回报“全部撤销完成”。
 reconcile 只读取原作业账本与归属路径、核对已发布对象，并保存核对证据；
 允许在独立核对 scratch 做只读来源的内容校验，不重新发布、不执行原程序、不删除原作业文件。
+核对使用独立执行身份、该次核对的取消状态及预算，引用原作业并复用其资源屏障、当前授权和启动围栏。
+原业务作业已取消不阻止获准的固定只读核对；新的撤销/停止仍覆盖核对 helper，绝不据此重启原业务程序。
 调用 reconcile 需要独立权限；不能因它主要是读取就把它标成无写入。
 
 ## AX-A06 Ledger NAS 的具体恢复边界（R04/R06/R12）
@@ -197,7 +214,7 @@ reconcile 只读取原作业账本与归属路径、核对已发布对象，并�
 丢失 stdout 时只在该专属 parent 中核对唯一候选、OWNED.json、snapshot-reference 与内容摘要；
 零个或多个候选、权限错误、归属不明均保持 UNKNOWN，不能猜 run-id 或用新 id 再跑。
 
-真实执行前后由 broker 观察本地 FS、NAS 挂载 ID、类型、源/目标、archive 根与配置摘要。
+真实执行前后由 broker 调度 A05 的受监督观察，记录本地 FS、NAS 挂载 ID、类型、源/目标、archive 根与配置摘要。
 固定库内部的 Directory 检查绑定其当次打开的 mount；脚本没有各阶段 hook，也没有把初始
 endpoints 的 mount ID 作为所有后续独立进程的统一 fence。后台观察不能替代这个跨阶段边界。
 E6 准入另须证明受保护的稳定挂载绑定／私有挂载命名空间等机制，或经 Ledger 新基线提供阶段 fence；
@@ -217,11 +234,11 @@ E6 准入另须证明受保护的稳定挂载绑定／私有挂载命名空间�
 
 | 工具 | 输入／输出要点 | 权限与提示 |
 | --- | --- | --- |
-| `lh_capabilities` | 支持版本、工具 schema digest、准入 kind、脱敏部署与可用预算 | `lh:inspect`；readOnly |
+| `lh_capabilities` | 分页游标 → 支持版本、工具 schema digest、authority、按 profile 分组的完整 expected、获准 kind/逻辑输入引用及可用预算 | `lh:inspect` + 各引用可见性；readOnly |
 | `lh_job_submit` | 完整固定请求 → operation_id、digest、接受状态 | `lh:submit` + kind/resource grant；非 readOnly，按副作用保守声明 destructive |
-| `lh_job_status` | operation_id → 三维状态、阶段、事件序号和缺口 | `lh:read` + 归属；readOnly |
+| `lh_job_status` | operation_id → 三维状态、阶段、事件序号、观察时间、缺口及封存输出引用 | `lh:read` + 归属；readOnly |
 | `lh_job_cancel` | operation_id、期望 request digest → 取消请求及实际结果 | `lh:cancel` + 归属；非 readOnly |
-| `lh_job_reconcile` | operation_id、期望 request digest → 原作业核对记录 | `lh:reconcile` + 归属；非 readOnly |
+| `lh_job_reconcile` | operation_id、期望 request digest → 持久受理的核对记录/进度引用；完成后按原作业查询 | `lh:reconcile` + 归属；非 readOnly |
 | `lh_evidence_manifest` | operation_id、分页游标 → 已封存 artifact 清单与 seal | `lh:evidence` + 归属；readOnly |
 | `lh_evidence_read_chunk` | artifact_id、offset、length、期望摘要 → base64、范围、块摘要、全件摘要 | `lh:evidence` + 归属；readOnly |
 
@@ -229,6 +246,21 @@ E6 准入另须证明受保护的稳定挂载绑定／私有挂载命名空间�
 STALE_DEPLOYMENT、UNSUPPORTED、RESOURCE_BUSY、NOT_SEALED、LIMIT_EXCEEDED、IO_UNCERTAIN；
 不得把错误包装为成功空结果。异常文本脱敏，不在错误中返回私有路径或 token。
 状态接口只给有界进度与计数；完整原始日志走封存产物，不把日志塞进模型上下文。
+
+capabilities 的目录只含当前主体可见且获准使用的 profile/source/build-cache/storage/prepared 逻辑引用，
+逐项关联适用 kind、profile 及必要的兼容绑定，不返回私有路径或其他主体的资源。每页最多 100 条，
+服从 512 KiB 响应上限；游标绑定主体与目录/策略版本，变化后明确失效，不能拼接不同版本当同一快照。
+每个 profile 返回 A03 的全部六项 expected；发现只帮助构造请求，不授予权限或替代执行前校验。
+客户端私有连接准入记录固定可信 broker authority、允许目标和准确部署绑定；先核对再采用发现结果。
+陌生 authority、目标变化、未准入的 epoch/digest 或 STALE_DEPLOYMENT 均停止提交，
+不能自动接受返回的新绑定、改写旧请求摘要或换 id 重投；已有作业仍按原 id 和当前读取授权查询。
+
+ledger.prepare 只有在执行成功且完整证据 SEALED 后，status 的版本化 outputs 才返回稳定 prepared_ref，
+连同 source/wheel/installed-payload/runtime 绑定摘要、来源 operation_id 和 seal 引用；封存 manifest 记录相同绑定。
+失败或持久化不明时不得返回可供执行的 prepared_ref；重复查询不得生成新引用。
+后续客户端直接用该引用构造固定测试请求，后端仍核验归属、准入与真实字节，不能把引用本身当授权。
+E1–E3 须仅凭私有准入 fixture 与七项接口完成发现 → inspect → prepare → 固定测试 → 证据交付，
+不依靠人工从日志中抄出内部 ID 或路径；E4 在真实当前客户端复验。
 
 完整证据封存前须证明作业进程树、采集器和相关文件 writer 已停止，冻结账本事件序号与成员集合，
 并核对文件读取前后稳定性。无法证明静止时保留 STAGING，或单独封存带 partial/cutoff 标签的诊断快照；
@@ -267,7 +299,8 @@ scope 和归属，精确 redirect URI。Tunnel 的机器凭据与用户授权分
 未知 kid、伪签名及 token 自带的任意 jku/x5u；禁止仅解码 claims 后放行。
 密钥来源、缓存期限/轮换、时钟误差上界在准入配置中固定；无法取得可验证密钥时拒绝，不能跳过验签。
 首版不接收 opaque token；需要 introspection 时另行明确受信服务及故障策略，不把未知 token 当 JWT 已验证。
-“立即撤销”指 broker 本地主体/grant 的撤销；issuer 独立撤销的传播方式与最坏时延须在 E4 验证和披露，
+“立即撤销”指 broker 本地主体/grant 的新准入和启动授权立即关闭；排队封阻与运行中停止分别按 A05 记账。
+issuer 独立撤销的传播方式与最坏时延须在 E4 验证和披露，
 没有同步能力时不能声称断开账户即令所有已发 JWT 瞬间失效。凭据有效性和每次业务授权分别检查。
 adapter 的已验证主体通过进程内受信上下文交给 broker；维护 CLI 的主体从受保护 socket 的 OS peer 身份映射，
 不接受请求自填 principal、转发的未验证用户头或以 unit 账户的全权限覆盖用户授权。
@@ -312,5 +345,6 @@ S2 的全生产者冻结、旧任务迁移、单 writer、观察与回退要求�
 - [OAuth 鉴权](https://developers.openai.com/plugins/build/auth)
 - [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
 - [ChatGPT 连接验收](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+- [Linux NFS 挂载与超时语义](https://man7.org/linux/man-pages/man5/nfs.5.html)
 - [Ledger A2 运行手册](https://github.com/kongbu0621/infra-artifact-ledger/blob/6707a1b521c9c4718674620e6c584656bd434e4c/docs/A2_RUNBOOK.md)
 - [Ledger A2 验收矩阵](https://github.com/kongbu0621/infra-artifact-ledger/blob/6707a1b521c9c4718674620e6c584656bd434e4c/docs/a2/ACCEPTANCE.md)
