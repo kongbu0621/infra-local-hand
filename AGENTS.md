@@ -49,8 +49,9 @@ S2 is **OPEN**. Its proposed requirements, architecture and implementation plan 
 read-only mailbox results and unresolved live inventory. The existing S1 R/A/B/C
 record above remains scoped to S1. No S2 closure decision or authorized implementation
 scope is recorded. The earlier proposed S2 baseline
-`8cb081d9cdf316fd4eb80f5811078d1804d6be3f` is superseded by this documented route update;
-the new exact existing baseline will be registered after this documentation commit.
+`8cb081d9cdf316fd4eb80f5811078d1804d6be3f` is superseded by this documented route update.
+The new proposed S2 documentation baseline A is
+`9cc628c9679e1530a2be3c7e7efec829d559d438`; any S2 closure must identify that exact A and its scope.
 S2 remains OPEN. This record is not a closure commit.
 The downstream goal is artifact-ledger GX10 A2. The route now includes a reused
 GitHub Connector, restricted-job MCP and Plugin; permissions do not follow from those names.
@@ -61,7 +62,9 @@ Scope `LH-A2-EXEC-MCP-v1` is **OPEN**. Its authoritative documents are
 [requirements](docs/a2-execution/REQUIREMENTS.md),
 [architecture](docs/a2-execution/ARCHITECTURE.md) and
 [implementation plan](docs/a2-execution/IMPLEMENTATION_PLAN.md).
-The exact documentation baseline A will be registered after this documentation commit.
+The proposed exact documentation baseline A is
+`9cc628c9679e1530a2be3c7e7efec829d559d438`, under the same R recorded above.
+This registration is OPEN bookkeeping, not an Owner decision or CLOSED record.
 The proposed first closure is E1–E3 only: isolated job broker, fixed job catalog,
 MCP adapter, shared-broker maintenance CLI, Plugin packaging and synthetic verification.
 E4 actual client/private connection, E5 GX10/S2 deployment and E6 real NAS A2 acceptance
