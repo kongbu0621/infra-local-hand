@@ -74,6 +74,9 @@ is superseded by the [recovery-contract review](docs/a2-execution/RECOVERY_CONTR
 which fixes reconciliation request identity/cancellation and separates preflight from business execution intent.
 The new proposed documentation baseline A is `79f73faedcd9cde4164b0d1625782dae27db6c2f`,
 under the same R recorded above.
+The subsequent [baseline confirmation review](docs/a2-execution/BASELINE_CONFIRMATION_REVIEW.md)
+found no further required design changes; the three authoritative documents and A remain unchanged.
+That review is evidence only, not an Owner closure decision or implementation verification.
 This changes only the proposed A2 execution scope; the S2 proposed baseline above is unchanged.
 This registration is OPEN bookkeeping, not an Owner decision or CLOSED record.
 The proposed first closure is E1–E3 only: isolated job broker, fixed job catalog,
