@@ -127,7 +127,8 @@ class Registry:
         # These fields are still independently byte-checked by runner preflight.
         for name in ("root", "source_root", "build_python", "runtime_python", "wheel"):
             value = fact.get(name)
-            if not isinstance(value, str) or not value.startswith("/") or ".." in Path(value).parts or str(Path(value)) != value:
+            if (not isinstance(value, str) or not value.startswith("/") or value.startswith("//")
+                    or ".." in Path(value).parts or str(Path(value)) != value):
                 raise JobError("NOT_SEALED", "Prepared artifact path binding is incomplete")
             if name != "root" and Path(fact["root"]) not in Path(value).parents:
                 raise JobError("NOT_SEALED", "Prepared artifact paths escaped their immutable root")

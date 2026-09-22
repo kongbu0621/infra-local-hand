@@ -252,6 +252,26 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(observed["outcome"], "FAILED")
             self.assertLessEqual(sum(Path(root, "noisy." + kind).stat().st_size for kind in ("stdout", "stderr")), 1024)
 
+    def test_expired_stage_budget_cannot_start_a_side_effecting_program(self):
+        import subprocess
+        actual_popen = subprocess.Popen
+        for remaining in (0, -1):
+            with self.subTest(remaining=remaining), tempfile.TemporaryDirectory() as root:
+                stage = {"name": "expired", "argv": [sys.executable, "-I", "-c",
+                    "import pathlib;pathlib.Path('effect').write_text('executed')"],
+                    "cwd": root, "env": {"PATH": "/usr/bin:/bin"}}
+                # A child may run while its launching thread is descheduled.
+                # Waiting here makes that normal scheduling window deterministic.
+                def delivered(*args, **kwargs):
+                    child = actual_popen(*args, **kwargs)
+                    child.wait(timeout=2)
+                    return child
+                with patch.object(runner.subprocess, "Popen", side_effect=delivered) as launch:
+                    with self.assertRaisesRegex(runner.ledger_jobs.LedgerPlanError, "budget exhausted"):
+                        runner._capture_stage(stage, root, 1024, remaining)
+                    launch.assert_not_called()
+                self.assertFalse(Path(root, "effect").exists())
+
     def test_pipe_eof_does_not_end_the_childs_remaining_execution_budget(self):
         with tempfile.TemporaryDirectory() as root:
             stage = {"name": "closed-output", "argv": [sys.executable, "-I", "-c",
@@ -460,11 +480,86 @@ class RunnerTests(unittest.TestCase):
                         self.assertEqual(proof["state"], "EXITED")
                         self.assertTrue(proof["tree_exited"])
                         self.assertFalse(proof["effects_checked"])
+                        self.assertFalse(proof["helper_result_verified"])
                         self.assertEqual(proof["facts"], {})
                         self.assertEqual(proof["result"], {"outcome": "UNKNOWN"})
                         self.assertTrue(proof["missing"])
                 path.write_text(json.dumps(dict(foreign, execution_id="execution-fixture")))
-                self.assertTrue(manager.inspect(handle)["effects_checked"])
+                proof = manager.inspect(handle)
+                self.assertTrue(proof["effects_checked"])
+                self.assertTrue(proof["helper_result_verified"])
+                path.write_text(json.dumps(dict(foreign, execution_id="execution-fixture", outcome="UNKNOWN")))
+                handle["stop_requested"] = True
+                proof = manager.inspect(handle)
+                self.assertTrue(proof["helper_result_verified"])
+                self.assertEqual(proof["result"]["outcome"], "UNKNOWN")
+
+    def test_business_result_survives_helper_result_directory_sync_failure(self):
+        import json, subprocess
+        class Receipt:
+            returncode = 0
+            def poll(self): return 0
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            roots = {name: str(root / name) for name in ("work", "temporary", "evidence")}
+            for path in roots.values(): Path(path).mkdir()
+            environment = runner.ledger_jobs.clean_environment(roots["temporary"])
+            target = root / "evidence" / "result.json"
+            plan = {"phase": "business", "execution_id": "durable-result-business",
+                "kind": "ledger.test.source", "roots": roots, "prepared": {},
+                "environment": environment, "parent_mount_namespace": "original-namespace",
+                "result_path": str(target), "budgets": {"log_bytes": 1024, "wall_seconds": 10},
+                "stages": [{"name": "fixed-fixture", "argv": [sys.executable, "-I", "-c",
+                    "import pathlib;pathlib.Path('business-complete').write_text('done')"],
+                    "cwd": roots["work"], "env": environment}]}
+            evidence_identity = (target.parent.stat().st_dev, target.parent.stat().st_ino)
+            actual_fsync = os.fsync
+            sync_failed = False
+            def failed_result_directory_sync(descriptor):
+                nonlocal sync_failed
+                info = os.fstat(descriptor)
+                if (info.st_dev, info.st_ino) == evidence_identity:
+                    sync_failed = True
+                    raise OSError("result directory durability unavailable")
+                return actual_fsync(descriptor)
+            mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
+            # Only host admission and upstream input preparation are simulated;
+            # the business child, result bytes and failed fsync are exercised.
+            with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
+                    patch.object(os, "readlink", return_value="private-namespace"), \
+                    patch.object(os, "access", return_value=False), patch.object(runner, "_mount_for", return_value=mount), \
+                    patch.object(runner, "_verify_cgroup_limits", return_value={}), \
+                    patch.object(runner.ledger_jobs, "verify_inputs", return_value={"inputs_stable": True}), \
+                    patch.object(runner.ledger_jobs, "copy_verified_source"), \
+                    patch.object(os, "fsync", side_effect=failed_result_directory_sync):
+                with self.assertRaisesRegex(OSError, "result directory durability unavailable"):
+                    runner._helper(plan)
+            self.assertTrue(sync_failed)
+            self.assertEqual((root / "work" / "business-complete").read_text(), "done")
+            candidate = json.loads(target.read_text())
+            self.assertEqual(candidate["outcome"], "SUCCEEDED")
+            self.assertTrue(candidate["effects_checked"])
+            manager = runner.SystemdManager()
+            unit = "lhj-result-fixture.service"
+            handle = {"unit": unit, "boot_id": "boot-fixture", "result_path": str(target),
+                "cgroup_parent": "/sys/fs/cgroup/admitted", "launch": Receipt(), "launch_acked": True,
+                "stop_acked": False, "stop_requested": False, "started": time.monotonic(), "deadline": 10,
+                "invocation_id": "a" * 32, "execution_id": plan["execution_id"], "cancel_before_launch": False}
+            show = ("LoadState=loaded\nActiveState=failed\nSubState=failed\nControlGroup=/admitted/" + unit +
+                    "\nInvocationID=" + "a" * 32 + "\nJob=\nExecMainCode=1\nExecMainStatus=1\nResult=exit-code\n")
+            original_read = Path.read_text
+            def observation(path, *args, **kwargs):
+                if str(path) == "/proc/sys/kernel/random/boot_id": return "boot-fixture"
+                if str(path).endswith("/cgroup.events"): return "populated 0\n"
+                return original_read(path, *args, **kwargs)
+            with patch.object(Path, "read_text", observation), patch.object(manager, "_command",
+                    return_value=subprocess.CompletedProcess([], 0, show.encode())):
+                proof = manager.inspect(handle)
+            self.assertTrue(proof.get("helper_result_verified"))
+            self.assertEqual(proof["exit_code"], 1)
+            self.assertEqual(proof["result"]["outcome"], "SUCCEEDED")
+            self.assertTrue(proof["effects_checked"])
+            self.assertEqual(proof["result"]["execution_id"], plan["execution_id"])
 
     def test_manager_capture_enforces_limit_while_reading(self):
         import subprocess

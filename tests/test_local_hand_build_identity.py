@@ -392,6 +392,120 @@ with patch.object(Path, 'stat', named_stat):
 '''
         self.command([sys.executable, "-I", "-c", script, installed / "installation.py", wheel])
 
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "mkfifo"), "requires a real POSIX FIFO")
+    def test_retained_wheel_initial_open_rejects_fifo_without_waiting(self):
+        script = r'''
+from pathlib import Path
+import os
+import signal
+import sys
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+from local_hand import installation
+from local_hand.protocol import LocalHandError
+wheel = Path(sys.argv[1]) / 'retained.whl'
+wheel.write_bytes(b'original wheel entry')
+installation._absolute_file(str(wheel))
+saved = wheel.with_suffix('.saved')
+wheel.rename(saved)
+os.mkfifo(wheel)
+def expired(*args):
+    raise AssertionError('initial retained-wheel open waited for a FIFO writer')
+signal.signal(signal.SIGALRM, expired)
+signal.alarm(2)
+try:
+    try:
+        installation.verify_wheel(wheel, {})
+    except LocalHandError as exc:
+        assert exc.code == 'installation_mismatch', exc.code
+    else:
+        raise AssertionError('accepted a non-regular retained wheel')
+finally:
+    signal.alarm(0)
+assert saved.read_bytes() == b'original wheel entry'
+assert wheel.lstat().st_ino != saved.lstat().st_ino
+'''
+        self.command([sys.executable, "-I", "-c", script, self.root])
+
+    def test_startup_rejects_retained_wheel_replaced_during_read(self):
+        from config_fixtures import profile_v2
+        self.build()
+        wheel = next(self.output.glob("*.whl"))
+        installed = self.root / "installed"
+        with zipfile.ZipFile(wheel) as archive:
+            archive.extractall(installed)
+        profile = self.root / "profile.json"
+        profile.write_text(json.dumps(profile_v2({"node_id": "synthetic-installation",
+            "projects_root": str(self.root / "projects"),
+            "repositories": {"demo": {"path": "demo", "single_writer": True, "validations": {}}}})), encoding="utf-8")
+        script = r'''
+from pathlib import Path
+import io
+import os
+import sys
+import uuid
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+from local_hand import installation
+from local_hand.paths import load_profile
+from local_hand.protocol import LocalHandError
+profile_path, wheel = map(Path, sys.argv[2:])
+root = profile_path.parent
+bindings = {}
+for key, variable in installation.ENV_PATHS.items():
+    value = root / ('binding-' + key)
+    value.write_bytes(b'synthetic binding; never executed')
+    bindings[key] = str(value)
+    os.environ[variable] = str(value)
+instance = str(uuid.uuid4())
+record = root / 'install-record.json'
+state, mailbox = root / 'state', root / 'mailbox'
+installation.create_record(profile_path, record, install_instance_id=instance,
+                           bindings=bindings, state_root=state, mailbox_root=mailbox, wheel=wheel)
+os.environ['LOCAL_HAND_INSTALL_INSTANCE_ID'] = instance
+os.environ['LOCAL_HAND_INSTALL_RECORD'] = str(record)
+profile = load_profile(profile_path)
+installation.verify_record(profile, profile_path, state_root=state, mailbox_root=mailbox)
+before = wheel.stat()
+saved = wheel.with_suffix('.saved')
+changed = False
+original_open = io.open
+class ReadBoundary:
+    def __init__(self, stream): self.stream = stream
+    def __getattr__(self, name): return getattr(self.stream, name)
+    def __enter__(self): return self
+    def __exit__(self, *args): return self.stream.__exit__(*args)
+    def read(self, *args, **kwargs):
+        global changed
+        data = self.stream.read(*args, **kwargs)
+        if data and not changed:
+            changed = True
+            if os.name == 'nt':
+                # Windows may deny renaming an open file; exercise actual
+                # same-inode byte replacement there, retaining the original.
+                saved.write_bytes(wheel.read_bytes())
+            else:
+                wheel.rename(saved)
+            wheel.write_bytes(b'concurrent replacement retained')
+        return data
+def opened(*args, **kwargs):
+    stream = original_open(*args, **kwargs)
+    info = os.fstat(stream.fileno())
+    if (info.st_dev, info.st_ino) == (before.st_dev, before.st_ino):
+        return ReadBoundary(stream)
+    return stream
+with patch.object(io, 'open', opened):
+    try:
+        installation.verify_record(profile, profile_path, state_root=state, mailbox_root=mailbox)
+    except LocalHandError as exc:
+        assert exc.code == 'installation_mismatch', exc.code
+    else:
+        raise AssertionError('startup accepted bytes detached from the current retained wheel')
+assert changed
+assert wheel.read_bytes() == b'concurrent replacement retained'
+assert saved.is_file() and record.is_file()
+'''
+        self.command([sys.executable, "-I", "-c", script, installed, profile, wheel])
+
 
 @unittest.skipUnless(sys.platform == "linux", "Plugin publication is Linux-only; wheel identity remains cross-platform")
 class PluginBuildIdentityTests(BuildFixture):

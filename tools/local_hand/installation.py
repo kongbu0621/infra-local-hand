@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -46,7 +47,11 @@ def verify_wheel(path: Path, metadata: dict) -> str:
     try:
         # Inspect and hash the same open artifact. Reopening by name after ZIP
         # validation could bind an installation to unrelated replacement bytes.
-        with path.open("rb") as stream:
+        # The named entry can become a FIFO after the earlier path admission.
+        # Let binary open retain ownership/cleanup of the returned descriptor;
+        # its flags also preserve Windows binary-mode semantics.
+        with io.open(path,"rb",opener=lambda name,flags:
+                     os.open(name,flags|getattr(os,"O_NONBLOCK",0))) as stream:
             before=os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) or before.st_size>limit:
                 raise _bad("wheel exceeds installation artifact bound or is not regular")
@@ -126,7 +131,7 @@ def verify_record(profile: NodeProfile, profile_path: Path, *, state_root: Path,
     wheel_path=record["wheel_path"]
     if metadata["artifact_kind"]=="wheel" and wheel_path is None:raise _bad("wheel binding missing")
     if wheel_path is not None:
-        if hashlib.sha256(Path(_absolute_file(wheel_path)).read_bytes()).hexdigest()!=record["wheel_sha256"]:
+        if verify_wheel(Path(_absolute_file(wheel_path)),metadata)!=record["wheel_sha256"]:
             raise _bad("retained wheel digest changed")
     elif record["wheel_sha256"] is not None:raise _bad("inconsistent artifact binding")
 

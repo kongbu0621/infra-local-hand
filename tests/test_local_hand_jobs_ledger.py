@@ -100,6 +100,13 @@ class LedgerPlanTests(unittest.TestCase):
         self.profile["storage"]["stable_mount_binding"] = False
         with self.assertRaises(jobs.LedgerPlanError): self.plan("ledger.nas.roundtrip")
 
+    def test_double_leading_separator_cannot_alias_admitted_plan_paths(self):
+        for value in ("//fixture/work", "//fixture/python", "//fixture/prepared"):
+            with self.subTest(value=value):
+                with self.assertRaises(jobs.LedgerPlanError): jobs._path(value)
+        for value in ("/fixture/work", "/fixture/python", "/fixture/prepared"):
+            self.assertEqual(jobs._path(value), value)
+
     def test_replaced_bytes_extra_files_and_symlink_inputs_rejected(self):
         source = self.root / "source"; source.mkdir()
         path = source / "module.py"; path.write_bytes(b"trusted\n")

@@ -67,7 +67,7 @@ def _positive(value: Any, allow_zero: bool = False) -> None:
 
 
 def _path(value: Any) -> str:
-    if type(value) is not str or not value.startswith("/") or "\x00" in value:
+    if type(value) is not str or not value.startswith("/") or value.startswith("//") or "\x00" in value:
         raise _bad()
     path = Path(value)
     if ".." in path.parts or str(path) != value or value == "/":
@@ -208,6 +208,7 @@ class Policy:
                         if (type(binding["source"]) is not str or not 1 <= len(binding["source"]) <= 1024
                                 or any(ord(char) < 32 for char in binding["source"])
                                 or type(binding["root"]) is not str or not binding["root"].startswith("/")
+                                or binding["root"].startswith("//")
                                 or str(Path(binding["root"])) != binding["root"] or ".." in Path(binding["root"]).parts
                                 or binding["type"] not in ("nfs", "nfs4", "cifs")):
                             raise _bad()

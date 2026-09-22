@@ -324,6 +324,43 @@ else:
         self.assertEqual([args["operation_id"] for name, args in self.host.calls if name == "lh_job_submit"],
                          [original["request"]["operation_id"]])
 
+    def test_journal_close_failure_releases_both_directories_and_preserves_identity(self):
+        original = self.reserve()
+        real_open, real_close = os.open, os.close
+        for failed_directory in (self.client.journal, self.client.journal.parent):
+            with self.subTest(failed_directory=failed_directory.name):
+                opened, closed, errors = [], [], []
+                failed_identity = failed_directory.stat()
+                def record_open(*args, **kwargs):
+                    descriptor = real_open(*args, **kwargs)
+                    if workflow.stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                        opened.append(descriptor)
+                    return descriptor
+                def fail_close(descriptor):
+                    current = os.fstat(descriptor)
+                    real_close(descriptor)
+                    closed.append(descriptor)
+                    if (current.st_dev, current.st_ino) == (failed_identity.st_dev, failed_identity.st_ino):
+                        raise OSError("synthetic directory close failure after release")
+                with patch.object(workflow.os, "open", side_effect=record_open), patch.object(workflow.os, "close", side_effect=fail_close):
+                    try:
+                        self.client.submit("inspect")
+                    except Exception as error:
+                        errors.append(error)
+                leaked = [descriptor for descriptor in opened if descriptor not in closed]
+                for descriptor in leaked:
+                    real_close(descriptor)
+                self.assertEqual([], leaked, "A close error must not skip closing the other directory")
+                self.assertEqual(2, len(opened))
+                self.assertEqual(1, len(errors))
+                self.assertIsInstance(errors[0], JobError)
+                self.assertEqual("IO_UNCERTAIN", errors[0].code)
+                self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+                self.assertEqual(original, self.reserve())
+        self.client.submit("inspect")
+        self.assertEqual([args["operation_id"] for name, args in self.host.calls if name == "lh_job_submit"],
+                         [original["request"]["operation_id"]])
+
     def test_identity_readback_covers_blocking_parent_commit(self):
         self.reserve()
         real_fsync = os.fsync

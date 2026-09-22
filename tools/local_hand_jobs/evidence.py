@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 import re
 import secrets
 import stat
+import sys
 import uuid
 import zipfile
 from typing import Any, Callable, Iterator
@@ -125,8 +126,20 @@ def _sync_directory_ancestry(root: Path, owner: int) -> None:
                 raise EvidenceError("CONFLICT", "evidence directory ancestry changed")
         _directory(os.fstat(descriptors[-1]), owner)
     finally:
+        failure = sys.exc_info()[1]
+        close_failed = False
         for descriptor in reversed(descriptors):
-            os.close(descriptor)
+            try:
+                os.close(descriptor)
+            except OSError:
+                # A failing close may already have released this descriptor.
+                # Never retry it; still attempt every other held ancestor once.
+                close_failed = True
+        if close_failed:
+            if failure is not None:
+                failure.add_note("Evidence ancestry descriptor cleanup also failed")
+            else:
+                raise EvidenceError("IO_UNCERTAIN", "evidence ancestry descriptor cleanup unresolved")
 
 
 @contextmanager
@@ -360,6 +373,7 @@ class EvidenceStore:
         visited = 0
         def walk(directory: int, prefix: str = "") -> None:
             nonlocal visited
+            original = _same(os.fstat(directory))
             with os.scandir(directory) as iterator:
                 for entry in iterator:
                     visited += 1
@@ -375,6 +389,9 @@ class EvidenceStore:
                             if _same(os.fstat(nxt)) != _same(st):
                                 raise EvidenceError("CONFLICT", "evidence directory changed")
                             walk(nxt, name + "/")
+                            named = os.stat(entry.name, dir_fd=directory, follow_symlinks=False)
+                            if _same(named) != _same(st) or _same(os.fstat(nxt)) != _same(st):
+                                raise EvidenceError("CONFLICT", "evidence directory replaced during inventory")
                         finally:
                             os.close(nxt)
                     else:
@@ -382,6 +399,8 @@ class EvidenceStore:
                         result[name] = _same(st)
                         if len(result) > self.max_members:
                             raise EvidenceError("LIMIT_EXCEEDED", "too many evidence members")
+            if original != _same(os.fstat(directory)):
+                raise EvidenceError("CONFLICT", "evidence directory changed during inventory")
         walk(root_fd)
         return result
 
@@ -425,6 +444,29 @@ class EvidenceStore:
         return self._seal(snapshot.operation_id, register=False)
 
     def _seal(self, operation_id: str, *, register: bool) -> dict:
+        # All helper instances share the same admitted store. Hold its verified
+        # root open and serialize the capacity check through publication, without
+        # waiting on another helper or adding a new persistent lock entry.
+        try:
+            import fcntl
+        except ImportError:
+            raise EvidenceError("UNSUPPORTED", "evidence store locking unavailable") from None
+        try:
+            with _open_root(self.root, self.owner) as directory:
+                try:
+                    fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise EvidenceError("RESOURCE_BUSY", "evidence store publication already active") from None
+                return self._seal_locked(operation_id, register=register, store_fd=directory)
+        except OSError:
+            raise EvidenceError("IO_UNCERTAIN", "evidence store lock or identity unavailable") from None
+
+    def _check_store_lock(self, store_fd: int, current_fd: int) -> None:
+        locked, current = os.fstat(store_fd), os.fstat(current_fd)
+        if (locked.st_dev, locked.st_ino) != (current.st_dev, current.st_ino):
+            raise EvidenceError("CONFLICT", "evidence store root detached from publication lock")
+
+    def _seal_locked(self, operation_id: str, *, register: bool, store_fd: int) -> dict:
         snapshot = self._snapshot(operation_id)
         virtual_members = {
             BROKER_EVENTS_NAME: _json({"schema_version": "lh-evidence-events-v1",
@@ -438,8 +480,15 @@ class EvidenceStore:
         destination = self.root / seal_id
         published = False
         try:
-            if sum(1 for _ in self.root.iterdir()) >= self.max_seals * 2:
-                raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit reached")
+            with _open_root(self.root, self.owner) as current:
+                self._check_store_lock(store_fd, current)
+            # An earlier failed attempt can leave only its staging directory.
+            # Account for both new entries before writing, and stop the scan as
+            # soon as the finite retained-entry budget is exhausted.
+            with os.scandir(self.root) as retained:
+                for count, _ in enumerate(retained, 1):
+                    if count + 2 > self.max_seals * 2:
+                        raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit reached")
             stage.mkdir(mode=0o700)
             entries = []
             total = 0
@@ -543,7 +592,8 @@ class EvidenceStore:
             self._sync_directory(destination)
             self._sync_directory(stage)
             self._sync_directory(self.root)
-            with _open_root(self.root, self.owner):
+            with _open_root(self.root, self.owner) as current:
+                self._check_store_lock(store_fd, current)
                 _sync_directory_ancestry(self.root, self.owner)
                 if _file_digest(destination / _ROLES["seal"]) != (len(seal_bytes), _hash(seal_bytes)):
                     raise EvidenceError("CONFLICT", "published seal differs from snapshot")

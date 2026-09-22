@@ -131,6 +131,45 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with self.assertRaises(JobError):
             Policy(config)
 
+    def test_double_slash_roots_cannot_bypass_path_admission(self):
+        # POSIX Path preserves exactly two leading slashes, while Linux may
+        # resolve them to the same object as the corresponding single slash.
+        self.assertTrue(Path("/" + str(self.root)).samefile(self.root))
+        accepted = []
+        for value in ("//", "/" + self.config["broker_root"],
+                      "/" + self.config["forbidden_roots"][0],
+                      "/" + self.config["profiles"]["fixture"]["sources"]["source"]["root"]):
+            config = copy.deepcopy(self.config)
+            config["profiles"]["fixture"]["work_root"] = value
+            try:
+                Policy(config)
+            except JobError as error:
+                self.assertEqual("UNAUTHORIZED", error.code)
+            else:
+                accepted.append(value)
+        self.assertEqual([], accepted, "Noncanonical root aliases must be rejected before overlap checks")
+
+    def test_double_slash_mount_and_prepared_bindings_are_rejected(self):
+        accepted = []
+        config = copy.deepcopy(self.config)
+        config["profiles"]["fixture"]["storages"]["storage"]["stable_mount_binding"]["root"] = "//"
+        try:
+            Policy(config)
+        except JobError as error:
+            self.assertEqual("UNAUTHORIZED", error.code)
+        else:
+            accepted.append("mount root")
+        prepared = self.prepared()
+        for field in ("root", "source_root", "build_python", "runtime_python", "wheel"):
+            prepared[field] = "/" + prepared[field]
+        try:
+            self.registry.register_prepared("prepared", prepared)
+        except JobError as error:
+            self.assertEqual("NOT_SEALED", error.code)
+        else:
+            accepted.append("prepared paths")
+        self.assertEqual([], accepted, "Identity bindings must use one canonical absolute root spelling")
+
     def test_archive_aliases_cannot_claim_independent_resource_ids(self):
         for alias in ("same-path", "same-mount-object"):
             config = copy.deepcopy(self.config)

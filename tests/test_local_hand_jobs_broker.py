@@ -717,6 +717,103 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual("CANCELLED", self.broker.status(self.request["operation_id"], self.owner, identity)["outcome"])
         self.assertCode("RESOURCE_BUSY", lambda: self.broker.call("lh_job_submit", self.make_request(), self.owner))
 
+    def test_verified_business_result_survives_helper_failure_and_late_cancel(self):
+        for outcome, helper_exit, cancel in (("SUCCEEDED", 1, False), ("FAILED", 0, False),
+                                              ("SUCCEEDED", 1, True), ("SUCCEEDED", 0, True)):
+            with self.subTest(outcome=outcome, helper_exit=helper_exit, cancel=cancel), ExitStack() as cleanup:
+                folder = cleanup.enter_context(tempfile.TemporaryDirectory())
+                state = StateStore(Path(folder) / "ledger.sqlite", "authority", "ledger", initialize=True)
+                cleanup.callback(state.close)
+                runner = SupervisorFixture()
+                broker = Broker(state, self.policy, RegistryFixture(), runner,
+                                SimpleNamespace(root=Path(folder) / "artifacts"))
+                request = self.make_request()
+                broker.submit(request, self.owner); broker.tick()
+                runner.finish(runner.starts[0][1]); broker.tick(); broker.tick()
+                execution = runner.starts[1][1]
+                runner.finish(execution, exit_code=helper_exit, helper_result_verified=True,
+                    collectors_stopped=True, writers_stopped=True,
+                    result={"execution_id": execution, "outcome": outcome, "business_started": True,
+                            "evidence_snapshot": {"root": str(Path(folder) / "raw"), "members": []}})
+                if cancel:
+                    broker.cancel(request["operation_id"], request["request_digest"], {"kind": "job"}, self.owner)
+                broker.tick()
+                status = broker.status(request["operation_id"], self.owner)
+                self.assertEqual(outcome, status["outcome"], "a helper exit or later stop request cannot rewrite a verified business result")
+                self.assertEqual(helper_exit, status["exit_proof"]["exit_code"])
+                self.assertEqual(cancel, status["cancel_requested"])
+                self.assertEqual("EXITED" if cancel else "AWAITING_SEAL", status["phase"])
+                if helper_exit != (0 if outcome == "SUCCEEDED" else 1):
+                    self.assertEqual("DURABILITY_UNKNOWN", status["evidence"])
+                    self.assertTrue(status["gaps"])
+                self.assertEqual(2, len(runner.starts), "observation cannot replay the business")
+                if not cancel:
+                    broker.tick()
+                    self.assertEqual("evidence", runner.starts[-1][2]["phase"])
+                    frozen = runner.starts[-1][2]["evidence_snapshot"]
+                    runner.finish(runner.starts[-1][1], collectors_stopped=True, writers_stopped=True,
+                        result={"seal_record": {"operation_id": request["operation_id"], "seal_id": str(uuid.uuid4()),
+                            "seal_sha256": "a" * 64, "event_seq": frozen["event_seq"],
+                            "bindings": frozen["bindings"], "complete": True}})
+                    broker.tick()
+                    sealed = broker.status(request["operation_id"], self.owner)
+                    self.assertEqual(outcome, sealed["outcome"])
+                    self.assertEqual("SEALED", sealed["evidence"])
+                    self.assertFalse(sealed["gaps"], "a confirmed seal resolves this publication gap")
+                    self.assertEqual(helper_exit, state.get("job", request["operation_id"])["record"]["business_exit_proof"]["exit_code"])
+
+    def test_verified_reconcile_result_is_separate_from_helper_and_parent(self):
+        self.broker.evidence = SimpleNamespace(root=Path(self.temp.name) / "artifacts")
+        self.submit(); self.cancel()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity); self.broker.tick()
+        execution = self.runner.starts[0][1]
+        self.runner.finish(execution, exit_code=1, helper_result_verified=True,
+            collectors_stopped=True, writers_stopped=True,
+            result={"execution_id": execution, "outcome": "SUCCEEDED",
+                    "evidence_snapshot": {"root": str(Path(self.temp.name) / "raw"), "members": []}})
+        self.broker.tick()
+        status = self.broker.status(self.request["operation_id"], self.owner, identity)
+        self.assertEqual("SUCCEEDED", status["outcome"])
+        self.assertEqual("DURABILITY_UNKNOWN", status["evidence"])
+        self.assertEqual("CANCELLED", self.status()["outcome"])
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.submit(self.make_request(), self.owner))
+
+    def test_verified_result_needs_exact_binding_and_checked_effects(self):
+        cases = (("foreign", "SUCCEEDED", True), (None, "SUCCEEDED", True),
+                 ("same", "INVALID", True), ("same", "UNKNOWN", True),
+                 ("same", "SUCCEEDED", False))
+        for binding, outcome, checked in cases:
+            with self.subTest(binding=binding, outcome=outcome, checked=checked), ExitStack() as cleanup:
+                folder = cleanup.enter_context(tempfile.TemporaryDirectory())
+                state = StateStore(Path(folder) / "ledger.sqlite", "authority", "ledger", initialize=True)
+                cleanup.callback(state.close)
+                runner = SupervisorFixture()
+                broker = Broker(state, self.policy, RegistryFixture(), runner)
+                request = self.make_request()
+                broker.submit(request, self.owner); broker.tick()
+                runner.finish(runner.starts[0][1]); broker.tick(); broker.tick()
+                execution = runner.starts[1][1]
+                result = {"outcome": outcome}
+                if binding is not None:
+                    result["execution_id"] = execution if binding == "same" else "another-execution"
+                runner.finish(execution, helper_result_verified=True, effects_checked=checked, result=result)
+                broker.tick()
+                status = broker.status(request["operation_id"], self.owner)
+                self.assertEqual("UNKNOWN", status["outcome"])
+                self.assertEqual("RECONCILE_REQUIRED", status["lifecycle"])
+                self.assertCode("RESOURCE_BUSY", lambda: broker.submit(self.make_request(), self.owner))
+                self.assertEqual(2, len(runner.starts))
+
+    def test_unverified_result_does_not_override_failed_helper_exit(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        execution = self.runner.starts[1][1]
+        self.runner.finish(execution, exit_code=1,
+                           result={"execution_id": execution, "outcome": "SUCCEEDED"})
+        self.broker.tick()
+        self.assertEqual("FAILED", self.status()["outcome"])
+
     def _delete(self):
         with self.db.transaction() as tx:
             tx.execute("DELETE FROM operations")

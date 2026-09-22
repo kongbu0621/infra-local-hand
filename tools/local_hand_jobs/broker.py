@@ -25,6 +25,9 @@ def thaw(value):
     return value
 
 
+REPORT_DURABILITY_GAP = "Verified business result retained; helper exit leaves report durability unresolved"
+
+
 SCOPES = {
     "lh_capabilities": "lh:inspect", "lh_job_submit": "lh:submit",
     "lh_job_status": "lh:read", "lh_job_cancel": "lh:cancel",
@@ -562,16 +565,36 @@ class Broker:
             result = thaw(proof.get("result", {}))
             outcome = ("CANCELLED" if record["cancel_requested"] else
                        "SUCCEEDED" if proof.get("exit_code") == 0 else "FAILED") if effects_checked else "UNKNOWN"
+            publication_uncertain = False
+            if record["phase"] in ("BUSINESS", "RECONCILE") and proof.get("helper_result_verified") is True:
+                # Only the trusted manager can attest a stable result from the
+                # exact execution. Its business observation survives a later
+                # helper/report failure or a stop request received after work.
+                handle = record.get("handles", {}).get(record["phase"].lower(), {})
+                bound = (result.get("execution_id") == handle.get("execution_id")
+                         and isinstance(result.get("execution_id"), str)
+                         and result.get("outcome") in ("SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN"))
+                effects_checked = effects_checked and bound and result["outcome"] != "UNKNOWN"
+                outcome = result["outcome"] if effects_checked else "UNKNOWN"
+                proof = dict(proof, effects_checked=effects_checked)
+                if not bound:
+                    result = {}  # Foreign or malformed output cannot supply a seal snapshot.
+                elif effects_checked:
+                    expected_exit = 0 if outcome == "SUCCEEDED" else 1
+                    publication_uncertain = proof.get("exit_code") != expected_exit
             snapshot = result.get("evidence_snapshot")
             will_seal = self.evidence is not None and isinstance(snapshot, dict) and not record["cancel_requested"]
             self.state.update(tx, namespace, identity, "EXECUTION_EXIT", {
                 "phase": "AWAITING_SEAL" if will_seal else "EXITED",
                 "lifecycle": "RUNNING" if will_seal else "TERMINAL" if effects_checked else "RECONCILE_REQUIRED",
                 "outcome": outcome, "exit_proof": thaw(proof), "runner_result": result,
+                "evidence": "DURABILITY_UNKNOWN" if publication_uncertain else record["evidence"],
                 "business_started": result.get("business_started", record["business_started"]),
                 "helper_started": True if record["helper_started"] is True else result.get("helper_started", True),
                 "side_effects": result.get("side_effects", "CHECKED" if effects_checked else "UNOBSERVED"),
-                "gaps": [] if effects_checked else ["Side effects require independent reconciliation"]})
+                "gaps": ([REPORT_DURABILITY_GAP]
+                         if publication_uncertain else [] if effects_checked else
+                         ["Side effects require independent reconciliation"])})
             if will_seal:
                 updated = self.state.get(namespace, identity, tx)["record"]
                 proof_fields = {"execution_id": record["handles"][record["phase"].lower()]["execution_id"],
@@ -707,7 +730,8 @@ class Broker:
         if any(item["seal_id"] == seal["seal_id"] for item in seals):
             raise JobError("CONFLICT", "Seal identity already exists")
         seals.append(dict(thaw(seal), evidence_state="SEALED"))
-        changes = {"evidence": "SEALED", "seals": seals, "outputs": {}}
+        changes = {"evidence": "SEALED", "seals": seals, "outputs": {},
+                   "gaps": [gap for gap in row["record"].get("gaps", []) if gap != REPORT_DURABILITY_GAP]}
         result = row["record"].get("runner_result", {})
         if namespace == "job" and row["request"]["kind"] == "ledger.prepare" and row["record"]["outcome"] == "SUCCEEDED":
             facts = result.get("prepared")

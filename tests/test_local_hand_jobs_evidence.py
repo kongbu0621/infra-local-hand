@@ -1,10 +1,12 @@
 """Real files and crash-boundary checks for private evidence publication."""
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest import mock
 import zipfile
@@ -141,6 +143,42 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(self.fixture.registered)
         self.assertEqual((self.fixture.source / "stdout.log").read_bytes(), b"changed source directory")
 
+    def test_nested_source_replacement_during_final_inventory_cannot_register(self):
+        nested = self.fixture.source / "nested"
+        nested.mkdir(mode=0o700)
+        (self.fixture.source / "stdout.log").rename(nested / "stdout.log")
+        self.fixture.snapshot = replace(self.fixture.snapshot, members=("nested/stdout.log",))
+        original = os.scandir
+        scans, replaced = [], []
+        retained = self.root / "retained-nested"
+
+        class ReplaceBeforeScanCloses:
+            def __init__(inner, iterator):
+                inner.iterator = iterator
+            def __enter__(inner):
+                return inner.iterator.__enter__()
+            def __exit__(inner, *args):
+                nested.rename(retained)
+                nested.mkdir(mode=0o700)
+                (nested / "stdout.log").write_bytes(b"replacement source bytes")
+                replaced.append(True)
+                return inner.iterator.__exit__(*args)
+
+        def replace_on_final_scan(path):
+            iterator = original(path)
+            if isinstance(path, int) and Path(os.readlink(Path("/proc/self/fd") / str(path))) == nested:
+                scans.append(True)
+                if len(scans) == 2:
+                    return ReplaceBeforeScanCloses(iterator)
+            return iterator
+
+        with mock.patch.object(evidence.os, "scandir", side_effect=replace_on_final_scan):
+            self.assertCode("CONFLICT", lambda: self.fixture.store.seal(OP))
+        self.assertEqual(replaced, [True])
+        self.assertFalse(self.fixture.registered)
+        self.assertEqual((nested / "stdout.log").read_bytes(), b"replacement source bytes")
+        self.assertEqual((retained / "stdout.log").read_bytes(), b"retained command output\n")
+
     def test_symlink_hardlink_fifo_and_directory_alias_rejected(self):
         source = self.fixture.source / "stdout.log"
         source.unlink()
@@ -158,6 +196,83 @@ class EvidenceTests(unittest.TestCase):
         self.fixture.store.max_source_bytes = 4
         self.assertCode("CONFLICT", lambda: self.fixture.store.seal(OP))
         self.assertTrue((self.fixture.source / "stdout.log").is_file())
+
+    def test_retained_failed_stage_reserves_space_for_both_new_directories(self):
+        self.fixture.store.max_seals = 1
+        with mock.patch.object(self.fixture.store, "_inventory", side_effect=OSError("fixture scan failure")):
+            self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
+        retained = list(self.fixture.store.root.iterdir())
+        self.assertEqual(len(retained), 1)
+        self.assertTrue(retained[0].name.startswith("staging-"))
+        self.assertCode("LIMIT_EXCEEDED", lambda: self.fixture.store.seal(OP))
+        self.assertEqual(list(self.fixture.store.root.iterdir()), retained)
+        self.assertFalse(self.fixture.registered)
+
+    def test_shared_store_rejects_concurrent_seal_without_consuming_capacity(self):
+        self.fixture.store.max_seals = 1
+        other = EvidenceStore(self.fixture.store.root, snapshot_provider=lambda _: self.fixture.snapshot,
+            register_seal=self.fixture.register,
+            is_registered=lambda identity, digest: self.fixture.registered.get(identity) == digest,
+            max_seals=1)
+        entered, release = threading.Event(), threading.Event()
+        original = self.fixture.store._inventory
+        def hold_first_inventory(directory):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError("fixture concurrent seal did not release its first helper")
+            return original(directory)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with mock.patch.object(self.fixture.store, "_inventory", side_effect=hold_first_inventory):
+                future = pool.submit(self.fixture.store.seal, OP)
+                try:
+                    self.assertTrue(entered.wait(5))
+                    retained = list(self.fixture.store.root.iterdir())
+                    self.assertCode("RESOURCE_BUSY", lambda: other.seal(OP))
+                    self.assertEqual(list(self.fixture.store.root.iterdir()), retained)
+                finally:
+                    release.set()
+                record = future.result(timeout=5)
+        self.assertEqual(record["evidence_state"], "SEALED")
+        self.assertEqual(len(self.fixture.registered), 1)
+        self.assertEqual(len(list(self.fixture.store.root.iterdir())), 2)
+        self.assertCode("LIMIT_EXCEEDED", lambda: other.seal(OP))
+
+    def test_store_root_replacement_cannot_register_under_a_detached_lock(self):
+        for stage in ("snapshot", "publication"):
+            with self.subTest(stage=stage):
+                case = self.root / stage
+                case.mkdir(mode=0o700)
+                fixture = EvidenceFixture(case)
+                retained = case / "retained-store"
+                changed = []
+                def replace_store_root():
+                    fixture.store.root.rename(retained)
+                    fixture.store.root.mkdir(mode=0o700)
+                    for entry in retained.iterdir():
+                        entry.rename(fixture.store.root / entry.name)
+                    changed.append(True)
+                if stage == "snapshot":
+                    original = fixture.store.snapshot_provider
+                    def snapshot(operation):
+                        result = original(operation)
+                        if not changed:
+                            replace_store_root()
+                        return result
+                    target, replacement = "snapshot_provider", snapshot
+                else:
+                    original = fixture.store._sync_directory
+                    def sync(path):
+                        original(path)
+                        if path == fixture.store.root and not changed:
+                            replace_store_root()
+                    target, replacement = "_sync_directory", sync
+                with mock.patch.object(fixture.store, target, side_effect=replacement):
+                    self.assertCode("CONFLICT" if stage == "snapshot" else "IO_UNCERTAIN",
+                                    lambda: fixture.store.seal(OP))
+                self.assertEqual(changed, [True])
+                self.assertFalse(fixture.registered, "Detached root lock cannot authorize registration")
+                self.assertTrue(retained.is_dir())
+                self.assertEqual((fixture.source / "stdout.log").read_bytes(), b"retained command output\n")
 
     def test_registration_failure_never_opens_published_bytes_even_after_restart(self):
         def fail(_):
@@ -231,6 +346,57 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(self.fixture.registered)
         self.assertTrue(list(self.fixture.store.root.glob("*/evidence.zip")))
         self.assertCode("NOT_SEALED", lambda: self.fixture.store.manifest(OP, principal="reader"))
+
+    def test_ancestry_close_failure_attempts_every_descriptor_once(self):
+        root = self.fixture.store.root
+        real_open, real_close = os.open, os.close
+        opened, closed, errors = [], [], []
+        target = (root.stat().st_dev, root.stat().st_ino)
+        def record_open(*args, **kwargs):
+            descriptor = real_open(*args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+        def close_after_release(descriptor):
+            current = os.fstat(descriptor)
+            real_close(descriptor)
+            closed.append(descriptor)
+            if (current.st_dev, current.st_ino) == target:
+                raise OSError("fixture ancestry close error after release")
+        with mock.patch.object(evidence.os, "open", side_effect=record_open), \
+                mock.patch.object(evidence.os, "close", side_effect=close_after_release):
+            try:
+                evidence._sync_directory_ancestry(root, os.geteuid())
+            except Exception as error:
+                errors.append(error)
+        leaked = [descriptor for descriptor in opened if descriptor not in closed]
+        for descriptor in leaked:
+            real_close(descriptor)
+        self.assertEqual(leaked, [], "A close error must not leak earlier ancestor descriptors")
+        self.assertEqual(len(closed), len(set(closed)), "An uncertain close must not be retried")
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], EvidenceError)
+        self.assertEqual(errors[0].code, "IO_UNCERTAIN")
+
+    def test_store_lock_close_error_is_structured_and_never_retried(self):
+        import fcntl
+        real_lock, real_close = fcntl.flock, os.close
+        root_descriptor, close_calls = [], []
+        def record_lock(descriptor, flags):
+            root_descriptor.append(descriptor)
+            return real_lock(descriptor, flags)
+        def fail_root_close(descriptor):
+            real_close(descriptor)
+            if root_descriptor and descriptor == root_descriptor[0]:
+                close_calls.append(descriptor)
+                raise OSError("fixture store lock close error after release")
+        with mock.patch.object(fcntl, "flock", side_effect=record_lock), \
+                mock.patch.object(evidence.os, "close", side_effect=fail_root_close):
+            self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
+        self.assertEqual(len(root_descriptor), 1)
+        self.assertEqual(close_calls, root_descriptor)
+        # A close error does not undo the already registered publication.
+        self.assertEqual(len(self.fixture.registered), 1)
+        self.assertTrue(self.fixture.store.manifest(OP, principal="reader")["artifacts"])
 
     def test_create_only_collision_retains_concurrent_file(self):
         real = evidence._publish_create_only

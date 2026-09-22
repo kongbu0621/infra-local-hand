@@ -605,9 +605,11 @@ class SystemdManager:
             result = {}
         exit_code = int(values["ExecMainStatus"]) if values.get("ExecMainCode") == "1" and values.get("ExecMainStatus", "").isdigit() else None
         outcome = result.get("outcome", "UNKNOWN")
-        if handle["stop_requested"] and outcome == "UNKNOWN": outcome = "CANCELLED"
         return {"state": "EXITED", "future_start_blocked": True, "tree_exited": True,
                 "collectors_stopped": True, "writers_stopped": True, "effects_checked": result.get("effects_checked", False),
+                # The business result is a separately verified observation;
+                # helper exit can fail later while persisting that result.
+                "helper_result_verified": bool(result),
                 "exit_code": exit_code, "facts": result.get("facts", {}), "result": {**result, "outcome": outcome},
                 "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group},
                 "missing": [] if result else ["helper result unavailable; side effects require reconciliation"]}
@@ -615,6 +617,10 @@ class SystemdManager:
 
 def _capture_stage(stage, directory, limit, remaining):
     """Drain both pipes independently; truncate storage, continue draining."""
+    if remaining <= 0:
+        # The prior stage or interpreter check may already have spent the job's
+        # remaining budget. Terminating after Popen cannot undo a child's work.
+        raise ledger_jobs.LedgerPlanError("stage wall budget exhausted before launch")
     start = time.monotonic()
     process = selector = None
     totals, retained, streams = {}, {}, {}

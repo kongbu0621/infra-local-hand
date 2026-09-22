@@ -36,7 +36,7 @@ class LedgerPlanError(ValueError):
 def _path(value):
     if not isinstance(value, str) or not value.startswith("/") or "\x00" in value:
         raise LedgerPlanError("admitted absolute path required")
-    if str(Path(value)) != value or ".." in Path(value).parts:
+    if value.startswith("//") or str(Path(value)) != value or ".." in Path(value).parts:
         raise LedgerPlanError("noncanonical admitted path")
     return value
 

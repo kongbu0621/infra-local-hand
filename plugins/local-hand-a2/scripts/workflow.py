@@ -126,10 +126,17 @@ class Workflow:
         except (OSError, RuntimeError):
             _fail("IO_UNCERTAIN", "Client journal identity or durability is unresolved")
         finally:
-            if directory is not None:
-                os.close(directory)
-            if parent is not None:
-                os.close(parent)
+            close_failed = False
+            for descriptor in (directory, parent):
+                if descriptor is not None:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        # The failing close may already have released its FD.
+                        # Do not retry it, but still release the other directory.
+                        close_failed = True
+            if close_failed:
+                _fail("IO_UNCERTAIN", "Client journal directory close is unresolved")
 
     def _read(self, name, expected_identity=None):
         with self._journal_directory() as (directory, parent):
