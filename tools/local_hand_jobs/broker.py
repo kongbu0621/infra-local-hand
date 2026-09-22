@@ -70,15 +70,40 @@ class Broker:
         prepared = record.get("prepared_facts")
         if prepared and record["evidence"] == "SEALED" and record["outcome"] == "SUCCEEDED":
             self.registry.register_prepared(prepared["prepared_ref"], prepared)
-            if prepared.get("expected") == thaw(self.policy.expected(prepared["profile_ref"])):
+            try:
+                current_expected = thaw(self.policy.expected(prepared["profile_ref"]))
+            except JobError as error:
+                if error.code != "UNAUTHORIZED":
+                    raise
+                # Retiring a profile closes new use/discovery, not access to the
+                # authoritative history or recovery of unrelated operations.
+                current_expected = None
+            if prepared.get("expected") == current_expected:
                 self.policy.register_prepared_reference(prepared["prepared_ref"], owner=prepared["owner"],
                                                         profile_ref=prepared["profile_ref"])
         bindings = record.get("runner_result", {}).get("bindings", plan.get("execution", {}).get("bindings", {}))
         seals = record.get("seals", [])
+        observation_seq, observed_at = record["event_seq"], record["observed_at"]
+        if record["evidence"] == "SEALED":
+            # Cancellation/administrative events do not constitute a new PASS
+            # observation. Derive its ordering from immutable seal registration,
+            # and its freshness from the actual frozen execution observation.
+            with self.state.transaction() as tx:
+                sealed = tx.execute("SELECT seq,observed_at FROM events WHERE namespace='job' AND id=? "
+                                    "AND kind='EVIDENCE_SEALED' ORDER BY seq DESC LIMIT 1", (row["id"],)).fetchone()
+                if sealed is None:
+                    raise JobError("IO_UNCERTAIN", "Sealed observation has no durable registration event")
+                observation_seq, observed_at = sealed["seq"], sealed["observed_at"]
+                if seals:
+                    observed = tx.execute("SELECT observed_at FROM events WHERE namespace='job' AND id=? AND seq=?",
+                                          (row["id"], seals[-1]["event_seq"])).fetchone()
+                    if observed is None:
+                        raise JobError("IO_UNCERTAIN", "Seal has no original execution observation")
+                    observed_at = observed["observed_at"]
         self.registry.register_evidence({
             "evidence_id": f"{row['id']}-{record['event_seq']}", "operation_id": row["id"], "kind": row["request"]["kind"],
             "profile_ref": row["request"]["profile_ref"], "owner": row["principal"],
-            "observed_at": int(record["observed_at"]), "event_seq": record["event_seq"], "outcome": record["outcome"],
+            "observed_at": int(observed_at), "event_seq": observation_seq, "outcome": record["outcome"],
             "evidence_state": record["evidence"], "prepared_ref": row["request"]["inputs"].get("prepared_ref", "prepared-" + row["id"]),
             "suite": row["request"]["inputs"].get("suite"), "expected": row["request"]["expected"],
             "bindings": bindings, "coverage": record.get("runner_result", {}).get("coverage", "PASS"),
@@ -269,6 +294,10 @@ class Broker:
                 if old["parent"] != operation_id or old["digest"] != expected_request_digest:
                     raise JobError("CONFLICT", "Reconciliation ID binds another request")
                 return self._view(old)
+            # A new observation consumes capacity and may launch a helper. Its
+            # current profile/input grant must hold before durable admission;
+            # retrieving an existing observation retains the original identity.
+            self._authorize(principal, "lh:reconcile", request=parent["request"], tx=tx)
             if parent["record"]["lifecycle"] in ("ACCEPTED", "RUNNING"):
                 raise JobError("RESOURCE_BUSY", "Business execution has not become quiescent")
             for row in self.state.all(tx):
@@ -315,10 +344,15 @@ class Broker:
             for row in self.state.all(tx):
                 record = row["record"]
                 if record["lifecycle"] != "TERMINAL" and record["phase"] != "QUEUED":
-                    self.state.update(tx, row["namespace"], row["id"], "RECOVERY_BARRIER", {
+                    changes = {
                         "lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN",
                         "recovered": True,
-                        "gaps": ["Persisted execution intent requires independent launch and exit proof"]})
+                        "gaps": ["Persisted execution intent requires independent launch and exit proof"]}
+                    if record["phase"] in ("PREFLIGHT", "BUSINESS", "RECONCILE", "EVIDENCE"):
+                        # Older ledgers could carry the previous phase's proof
+                        # through a new intent. Reobserve this exact execution.
+                        changes["exit_proof"] = None
+                    self.state.update(tx, row["namespace"], row["id"], "RECOVERY_BARRIER", changes)
                     phase = record["phase"].lower()
                     handle = record.get("handles", {}).get(phase)
                     if handle is not None:
@@ -374,6 +408,7 @@ class Broker:
                 handles[phase] = {"execution_id": execution_id, "intent_only": True}
                 self.state.update(tx, namespace, identity, "EXECUTION_INTENT", {
                     "phase": phase.upper(), "lifecycle": "RUNNING", "handles": handles,
+                    "exit_proof": None,
                     "business_started": None if phase == "business" else row["record"]["business_started"],
                     "helper_started": row["record"]["helper_started"] if row["record"]["helper_started"] is True or phase == "business" else None})
                 plan = dict(row["plan"], phase=phase, execution_id=execution_id)
@@ -386,11 +421,13 @@ class Broker:
             # The runner enqueues locally; its manager provides the delayed-launch fence.
             self._execution_owners[execution_id] = (namespace, identity)
             handle = self.runner.start(row["parent"], execution_id, plan)
+            # A failed acknowledgement COMMIT must still leave the accepted
+            # execution reachable by the ledger-failure controlled-stop path.
+            self._active[(namespace, identity)] = handle
             with self.state.transaction() as tx:
                 saved = self.state.get(namespace, identity, tx)["record"]["handles"]
                 saved[phase] = thaw(handle)
                 self.state.update(tx, namespace, identity, "LAUNCH_ENQUEUED", {"handles": saved})
-            self._active[(namespace, identity)] = handle
 
     def _guard_start(self, execution_id, launch):
         """Serialize final fixed manager delivery with durable cancel/revocation.
@@ -453,10 +490,14 @@ class Broker:
                 if publication is None:
                     publication = result.get("evidence_publication")
                 if (proof.get("exit_code") != 0 or not isinstance(publication, dict)
+                        or publication.get("complete") is not True
+                        or publication.get("operation_id") != row["parent"]
+                        or publication.get("reconcile_id") != (identity if namespace == "reconcile" else None)
                         or proof.get("collectors_stopped") is not True or proof.get("writers_stopped") is not True):
                     self.state.update(tx, namespace, identity, "EVIDENCE_UNCERTAIN", {
                         "phase": "EXITED", "lifecycle": "RECONCILE_REQUIRED", "evidence": "DURABILITY_UNKNOWN",
                         "outcome": record.get("business_outcome", "UNKNOWN"),
+                        "exit_proof": thaw(proof),
                         "gaps": ["Supervised evidence publication is not durably confirmed"]})
                     return
                 self.state.update(tx, namespace, identity, "EVIDENCE_HELPER_EXIT", {
@@ -614,6 +655,10 @@ class Broker:
         row = self.state.get(namespace, identity, tx)
         if row is None:
             raise JobError("NOT_FOUND", "Seal has no operation")
+        if row["parent"] != seal["operation_id"]:
+            raise JobError("CONFLICT", "Seal operation differs from its reconciliation parent")
+        if seal.get("complete") is not True:
+            raise JobError("NOT_SEALED", "Seal publication is incomplete")
         if row["record"]["phase"] != "EXITED":
             raise JobError("NOT_SEALED", "Operation writers have not become quiescent")
         frozen = row["record"].get("frozen_snapshot", {})
@@ -647,3 +692,30 @@ class Broker:
             return any(seal.get("seal_id") == seal_id and
                        (seal.get("sha256") == digest or seal.get("seal_sha256") == digest)
                        for row in self.state.all(tx) for seal in row["record"].get("seals", []))
+
+    def list_seals(self, operation_id):
+        """Trusted bounded evidence lookup; transport authorization is separate.
+
+        Registered seals, including reconciliation observations, come only from
+        this ledger. An absent or corrupt artifact must not disappear from this
+        list merely because its on-disk publication is incomplete.
+        """
+        with self.state.transaction() as tx:
+            if self.state.get("job", operation_id, tx) is None:
+                raise JobError("NOT_FOUND", "No matching record in the healthy ledger")
+            refs, seen = [], set()
+            identities = tx.execute("SELECT namespace,id FROM operations WHERE parent=? ORDER BY rowid LIMIT 1001",
+                                    (operation_id,)).fetchall()
+            if len(identities) > 1000:
+                raise JobError("LIMIT_EXCEEDED", "Operation observation inventory exceeds its budget")
+            for namespace, identity in identities:
+                row = self.state.get(namespace, identity, tx)
+                for seal in row["record"].get("seals", []):
+                    if len(refs) >= 1000:
+                        raise JobError("LIMIT_EXCEEDED", "Registered seal inventory exceeds its budget")
+                    seal_id, digest = seal.get("seal_id"), seal.get("seal_sha256")
+                    if not isinstance(seal_id, str) or not isinstance(digest, str) or seal_id in seen:
+                        raise JobError("IO_UNCERTAIN", "Registered seal identity is unresolved")
+                    refs.append({"seal_id": seal_id, "seal_sha256": digest})
+                    seen.add(seal_id)
+            return refs

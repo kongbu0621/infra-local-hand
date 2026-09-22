@@ -113,6 +113,34 @@ class LedgerPlanTests(unittest.TestCase):
         (source / "extra").unlink(); path.unlink(); path.symlink_to(self.root / "outside")
         with self.assertRaises(OSError): jobs.verify_manifest(source, manifest)
 
+    def test_git_name_does_not_hide_extra_cache_or_prepared_payload(self):
+        root = self.root / "payload"; root.mkdir()
+        (root / "allowed.py").write_bytes(b"approved")
+        manifest = {"allowed.py": hashlib.sha256(b"approved").hexdigest()}
+        hidden = root / ".git"; hidden.mkdir()
+        (hidden / "unadmitted.py").write_bytes(b"extra bytes")
+        with self.assertRaises(jobs.LedgerPlanError): jobs.verify_manifest(root, manifest)
+        git_manifest = {"allowed.py": hashlib.sha1(b"blob 8\0approved").hexdigest()}
+        # The exact source checkout root has an explicit Git metadata exception.
+        jobs.verify_manifest(root, git_manifest, git_blobs=True)
+        nested = root / "package"; nested.mkdir()
+        (nested / ".git").mkdir()
+        (nested / ".git" / "unadmitted.py").write_bytes(b"extra bytes")
+        with self.assertRaises(jobs.LedgerPlanError): jobs.verify_manifest(root, git_manifest, git_blobs=True)
+
+    def test_inventory_scan_error_is_not_an_empty_directory(self):
+        root = self.root / "payload"; root.mkdir()
+        (root / "allowed.py").write_bytes(b"approved")
+        hidden = root / "unreadable"; hidden.mkdir()
+        (hidden / "unadmitted.py").write_bytes(b"extra")
+        manifest = {"allowed.py": hashlib.sha256(b"approved").hexdigest()}
+        real = os.scandir
+        def denied(path):
+            if Path(path) == hidden: raise PermissionError("fixture scan denied")
+            return real(path)
+        with patch.object(os, "scandir", side_effect=denied):
+            with self.assertRaises(jobs.LedgerPlanError): jobs.verify_manifest(root, manifest)
+
     def test_copy_is_independent_and_exact_git_blob_checked(self):
         source = self.root / "source"; source.mkdir()
         data = b"print('fixture')\n"; (source / "main.py").write_bytes(data)

@@ -137,6 +137,36 @@ class PolicyAndRegistryTests(unittest.TestCase):
             with self.subTest(alias=alias), self.assertRaises(JobError):
                 Policy(config)
 
+    def test_execution_roots_cannot_overlap_broker_or_authority_storage(self):
+        for control in ("broker_root", "authority_root"):
+            for field in ("work_root", "evidence_root", "temporary_root", "archive_root"):
+                for relation in ("equal", "child", "parent"):
+                    config = copy.deepcopy(self.config)
+                    profile = config["profiles"]["fixture"]
+                    target = profile["storages"]["storage"] if field == "archive_root" else profile
+                    if relation == "parent":
+                        config[control] = target[field] + "/control"
+                    else:
+                        target[field] = config[control] + ("/jobs" if relation == "child" else "")
+                    with self.subTest(control=control, field=field, relation=relation), self.assertRaises(JobError):
+                        Policy(config)
+
+    def test_archive_and_profile_work_aliases_require_one_shared_lease(self):
+        for field in ("work_root", "evidence_root", "temporary_root"):
+            config = copy.deepcopy(self.config)
+            second = copy.deepcopy(config["profiles"]["fixture"])
+            for name in ("work_root", "evidence_root", "temporary_root"):
+                second[name] += "-other"
+            second["resource_ids"] = ["other-work"]
+            second["storages"] = {}
+            config["profiles"]["other"] = second
+            storage = config["profiles"]["fixture"]["storages"]["storage"]
+            storage["archive_root"] = second[field]
+            with self.subTest(field=field), self.assertRaises(JobError):
+                Policy(config)
+            second["resource_ids"].append(storage["resource_id"])
+            Policy(config)  # Both job plans now necessarily acquire this lease.
+
     def test_writable_root_cannot_enclose_fixed_source_or_interpreter(self):
         for field in ("python", "source"):
             config = copy.deepcopy(self.config)
@@ -278,6 +308,18 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with self.assertRaises(JobError) as raised:
             Registry(prepared_lookup=lambda _: stale).resolve(request, self.policy, principal=self.owner)
         self.assertEqual(raised.exception.code, "STALE_DEPLOYMENT")
+
+    def test_prepared_repeated_provenance_fields_cannot_disagree(self):
+        for name in ("source_commit", "source_digest", "wheel_digest", "installed_payload_digest",
+                     "runtime_digest", "environment_fingerprint"):
+            fact = self.prepared()
+            if name == "source_commit":
+                fact["bindings"][name] = "0" * 40
+            else:
+                fact[name] = "0" * 64
+            with self.subTest(name=name), self.assertRaises(JobError) as raised:
+                self.registry.register_prepared("prepared", fact)
+            self.assertEqual(raised.exception.code, "CONFLICT")
 
     def test_resources_use_exact_a1_main_entry_and_explicit_a2_enable_flag(self):
         self.registry.register_prepared("prepared", self.prepared())

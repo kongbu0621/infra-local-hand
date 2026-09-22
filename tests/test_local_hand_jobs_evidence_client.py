@@ -143,14 +143,49 @@ class ClientTests(unittest.TestCase):
         fixture, artifact = self.fixture()
         real = evidence_client._publish_create_only
         collided = []
-        def collide(source, destination):
-            destination.write_bytes(b"another writer owns this")
-            collided.append(destination)
-            return real(source, destination)
+        def collide(source, destination, **kwargs):
+            directory = Path("/proc/self/fd") / str(kwargs["destination_dir_fd"])
+            foreign = directory / destination
+            foreign.write_bytes(b"another writer owns this")
+            collided.append(foreign.resolve())
+            return real(source, destination, **kwargs)
         with mock.patch.object(evidence_client, "_publish_create_only", side_effect=collide):
             with self.assertRaises(FileExistsError):
                 EvidenceClient(fixture.callback).download(artifact, BoundedFileWriter(self.root / "client"))
         self.assertEqual(collided[0].read_bytes(), b"another writer owns this")
+
+    def test_parent_replacement_during_validation_never_returns_foreign_bytes(self):
+        payload = b"expected validated bytes"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        writer = BoundedFileWriter(self.root / "client")
+        self.addCleanup(writer.close)
+        writer.prepare(artifact)
+        writer.write(0, payload)
+        def replace_parent(path):
+            self.assertEqual(path.read_bytes(), payload)
+            writer.directory.rename(self.root / "retained-original")
+            writer.directory.mkdir(mode=0o700)
+            writer.partial.write_bytes(b"UNVERIFIED-REPLACEMENT")
+        self.assertCode("CONFLICT", lambda: writer.finish(replace_parent))
+        self.assertFalse(writer.final.exists())
+        self.assertEqual(writer.partial.read_bytes(), b"UNVERIFIED-REPLACEMENT")
+        self.assertEqual((self.root / "retained-original" / "partial.bin").read_bytes(), payload)
+
+    def test_parent_replacement_between_chunks_stops_original_writer(self):
+        payload = b"expected validated bytes"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        writer = BoundedFileWriter(self.root / "client")
+        self.addCleanup(writer.close)
+        writer.prepare(artifact)
+        writer.write(0, payload[:8])
+        writer.directory.rename(self.root / "retained-original")
+        writer.directory.mkdir(mode=0o700)
+        writer.partial.write_bytes(b"foreign")
+        self.assertCode("CONFLICT", lambda: writer.write(8, payload[8:]))
+        self.assertEqual((self.root / "retained-original" / "partial.bin").read_bytes(), payload[:8])
+        self.assertEqual(writer.partial.read_bytes(), b"foreign")
 
     def test_writer_budget_does_not_create_download(self):
         fixture, artifact = self.fixture()
@@ -166,14 +201,17 @@ class ClientTests(unittest.TestCase):
             changed, BoundedFileWriter(self.root / "client")))
 
     def synthetic_archive(self, *, unsafe_name=None, symlink=False, duplicate=False,
-                          extra=False, bad_member_digest=False, expand=False):
+                          extra=False, bad_member_digest=False, expand=False,
+                          manifest_changes=None, seal_changes=None):
         seal_id = "2f6f5c74-20eb-4c59-b692-e690e8449e5b"
         name = unsafe_name or "payload.bin"
         payload = b"data" * (10000 if expand else 1)
         manifest = {"schema_version": "lh-evidence-manifest-v1", "operation_id": OP,
                     "seal_id": seal_id, "event_seq": 7, "complete": True,
+                    "bindings": {}, "reconcile_id": None, "previous_seal_id": None,
                     "members": [{"name": name, "size": len(payload),
                                  "sha256": "0" * 64 if bad_member_digest else _hash(payload)}]}
+        manifest.update(manifest_changes or {})
         manifest_raw = _json(manifest)
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -198,10 +236,12 @@ class ClientTests(unittest.TestCase):
                     "operation_id": OP, "event_seq": 7}
         seal = {"schema_version": "lh-evidence-seal-v1", "operation_id": OP,
                 "seal_id": seal_id, "event_seq": 7, "complete": True,
+                "bindings": {}, "reconcile_id": None, "previous_seal_id": None,
                 "member_count": 3 if duplicate or extra else 2,
                 "artifacts": [{k: artifact[k] for k in ("artifact_id", "role", "size", "sha256")},
                               {"artifact_id": seal_id + ".manifest", "role": "manifest",
                                "size": len(manifest_raw), "sha256": _hash(manifest_raw)}]}
+        seal.update(seal_changes or {})
         seal_raw = _json(seal)
         artifact["seal_sha256"] = _hash(seal_raw)
         def callback(tool, arguments):
@@ -213,6 +253,16 @@ class ClientTests(unittest.TestCase):
                     "chunk_sha256": _hash(chunk), "data_base64": base64.b64encode(chunk).decode(),
                     "eof": offset + len(chunk) == len(raw)}
         return artifact, callback
+
+    def test_external_seal_and_manifest_must_agree_on_candidate_and_reconciliation(self):
+        for field, first, second in (("bindings", {"source_digest": "a" * 64}, {"source_digest": "b" * 64}),
+                ("reconcile_id", "fixture-first", "fixture-second"),
+                ("previous_seal_id", "fixture-first", "fixture-second")):
+            with self.subTest(field=field):
+                artifact, callback = self.synthetic_archive(manifest_changes={field: first},
+                                                              seal_changes={field: second})
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(self.root / field)))
 
     def test_correct_full_sha_does_not_bypass_zip_member_validation(self):
         cases = ({"unsafe_name": "../escape"}, {"unsafe_name": "/absolute"},

@@ -77,8 +77,12 @@ class MaintenanceServer:
             if listener is not None:
                 listener.close()
             raise JobError("IO_UNCERTAIN", "Maintenance socket could not be established") from exc
-        self._thread = threading.Thread(target=self._serve, daemon=True, name="local-hand-maintenance")
-        self._thread.start()
+        try:
+            self._thread = threading.Thread(target=self._serve, daemon=True, name="local-hand-maintenance")
+            self._thread.start()
+        except Exception as exc:
+            self.close()
+            raise JobError("IO_UNCERTAIN", "Maintenance listener thread could not be started") from exc
         return self
 
     def _serve(self):
@@ -92,7 +96,13 @@ class MaintenanceServer:
             if not self._slots.acquire(blocking=False):
                 connection.close()
                 continue
-            threading.Thread(target=self._handle, args=(connection,), daemon=True).start()
+            try:
+                threading.Thread(target=self._handle, args=(connection,), daemon=True).start()
+            except Exception:
+                try:
+                    connection.close()
+                finally:
+                    self._slots.release()
 
     def _handle(self, connection):
         try:
@@ -118,14 +128,17 @@ class MaintenanceServer:
             except (OSError, JobError):
                 pass
         finally:
-            connection.close()
-            self._slots.release()
+            try:
+                connection.close()
+            finally:
+                self._slots.release()
 
     def close(self):
         self._closed.set()
         if self._listener is not None:
             self._listener.close()
-        if self._thread is not None:
+        if (self._thread is not None and self._thread.ident is not None
+                and self._thread is not threading.current_thread()):
             self._thread.join(timeout=1)
         try:
             info = self.path.lstat()
@@ -232,7 +245,8 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
                 broker._row(tx, "job", operation_id, principal, "lh:evidence")
         broker.evidence = EvidenceStore(Path(policy.broker_root) / "artifacts",
             snapshot_provider=no_direct_seal, register_seal=broker.register_seal,
-            is_registered=broker.is_registered, authorize=authorize_evidence,
+            is_registered=broker.is_registered, list_seals=broker.list_seals,
+            authorize=authorize_evidence,
             max_source_bytes=policy.limits["retained_bytes"],
             max_artifact_bytes=policy.limits["retained_bytes"])
         broker.authority_lock = authority

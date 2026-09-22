@@ -37,6 +37,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
         self._git(self.repo, "config", "user.email", "test@example.invalid")
         self._git(self.repo, "config", "user.name", "Local Hand Hardening")
         (self.repo / "sample.txt").write_text("before\n", encoding="utf-8")
+        self.sample_bytes = (self.repo / "sample.txt").read_bytes()
         self._git(self.repo, "add", "."); self._git(self.repo, "commit", "-qm", "baseline")
         profile = {
             "node_id": "test-node",
@@ -314,7 +315,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
     def _cas_conflict_fixture(self, task_id="LH0260"):
         task = self.task(task_id, "fs.write_text_cas", {
             "repository": "scratch-local-hand", "relative_path": "sample.txt",
-            "expected_sha256": hashlib.sha256(b"before\n").hexdigest(), "content": "must-not-replay\n",
+            "expected_sha256": hashlib.sha256(self.sample_bytes).hexdigest(), "content": "must-not-replay\n",
         })
         conflict = worker.result_error(task, self.profile.node_id,
             LocalHandError("outcome_unknown", "fixture interrupted execution", "indeterminate"),
@@ -335,7 +336,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
         with mock.patch.object(worker, "execute_task", wraps=worker.execute_task) as execute:
             worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
         self.assertEqual([c.args[0]["task_id"] for c in execute.call_args_list], ["LH0261"])
-        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), self.sample_bytes)
         marker = state / "conflicts" / name
         preserved = marker.read_bytes()
         self.assertEqual(json.loads(preserved), conflict)
@@ -351,7 +352,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
         execute.assert_not_called()
         self.assertEqual(marker.read_bytes(), preserved)
         self.assertEqual((mailbox / rel).read_bytes(), preserved)
-        self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+        self.assertEqual((self.repo / "sample.txt").read_bytes(), self.sample_bytes)
         head = self._git(mailbox, "rev-parse", "HEAD").stdout
         worker.process_once(mailbox, MAILBOX_BRANCH, self.profile, state)
         self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, head)
@@ -379,7 +380,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, "remote_conflict_invalid")
                 self.assertEqual(raised.exception.status, "indeterminate")
                 execute.assert_not_called()
-                self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+                self.assertEqual((self.repo / "sample.txt").read_bytes(), self.sample_bytes)
                 self.assertFalse((state / "receipts/LH0260.json").exists())
                 self.assertEqual(self._git(mailbox, "rev-parse", "HEAD").stdout, before)
                 self.assertEqual((mailbox / "_executor_spike/conflicts" / name).read_text(), raw)
@@ -409,7 +410,7 @@ class LocalHandHardeningBTests(unittest.TestCase):
                 execute.assert_not_called()
                 self.assertEqual(marker.read_bytes(), preserved)
                 self.assertEqual((mailbox / "_executor_spike/conflicts" / name).read_text(), raw)
-                self.assertEqual((self.repo / "sample.txt").read_bytes(), b"before\n")
+                self.assertEqual((self.repo / "sample.txt").read_bytes(), self.sample_bytes)
 
     def test_conflict_recovery_accepts_equal_content_with_different_json_format(self):
         seed, mailbox = self._init_mailbox()

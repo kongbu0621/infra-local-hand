@@ -44,6 +44,39 @@ def await_state(supervisor, handle, expected):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_unsupported_after_manager_delivery_is_not_no_start_proof(self):
+        class AdmittedManager(runner.SystemdManager):
+            def _admit(self, plan):
+                return runner._plain(plan["execution"]), {}
+        with tempfile.TemporaryDirectory() as directory:
+            roots = {name: str(Path(directory) / name) for name in ("work", "temporary", "evidence")}
+            limits = {"wall_seconds": 30, "terminate_grace_seconds": 2, "cpu_seconds": 30,
+                "memory_bytes": 1024**2, "processes": 8, "temporary_bytes": 1024**2,
+                "nas_bytes": 0, "log_bytes": 1024, "reservation_bytes": 4 * 1024**2}
+            execution = {"roots": roots, "budgets": limits, "python": sys.executable,
+                "writable": list(roots.values()), "readonly": [], "environment": {"PATH": "/usr/bin:/bin"}}
+            manager = AdmittedManager({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
+            delivered = threading.Event()
+            def guard(identity, launch):
+                launch()
+                delivered.set()
+                raise runner.RunnerError("UNSUPPORTED", "fixture failure after manager delivery")
+            manager.set_start_guard(guard)
+            supervisor = runner.Runner(manager)
+            with patch.object(runner.subprocess, "Popen", return_value=object()) as launch:
+                handle = supervisor.start("job", "post-delivery-business", {"execution": execution, "phase": "business"})
+                self.assertTrue(delivered.wait(1))
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline:
+                    proof = supervisor.inspect(handle)
+                    if proof["result"].get("error") == "UNSUPPORTED": break
+                    time.sleep(.01)
+                launch.assert_called_once()
+                self.assertEqual(proof["state"], "UNKNOWN")
+                self.assertFalse(proof["future_start_blocked"])
+                self.assertFalse(proof["tree_exited"])
+                self.assertFalse(proof["effects_checked"])
+
     def test_delayed_start_cancel_remains_responsive_and_blocks_future_spawn(self):
         manager = DelayedManager(); supervisor = runner.Runner(manager)
         before = time.monotonic()
@@ -120,6 +153,17 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(proof["result"]["error"], "UNSUPPORTED")
         self.assertEqual(proof["result"]["outcome"], "FAILED")
         self.assertFalse(proof["result"]["business_started"])
+
+    def test_bootstrap_gap_blocks_even_an_otherwise_supported_host(self):
+        manager = runner.SystemdManager({"uid": 1000, "slice": "admitted.slice",
+            "cgroup": "/sys/fs/cgroup/admitted.slice"})
+        with patch.object(runner.sys, "platform", "linux"), patch.object(os, "geteuid", return_value=1000), \
+                patch.object(Path, "read_text", return_value="systemd\n"), \
+                patch.object(Path, "is_file", return_value=True), patch.object(os, "access", return_value=True):
+            support = manager.support()
+        self.assertFalse(support["supported"])
+        self.assertEqual(support["status"], "UNSUPPORTED")
+        self.assertEqual(support["reasons"], ["SUPERVISED_BOOTSTRAP_NOT_IMPLEMENTED"])
 
     def test_limited_capture_drains_stdout_stderr_and_retains_truncation(self):
         with tempfile.TemporaryDirectory() as root:

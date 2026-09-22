@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -38,6 +39,7 @@ class HostCallback:
         self.fail_submit_once = False
         self.fail_reconcile_once = False
         self.status = {"lifecycle": "RUNNING", "outcome": "PENDING", "evidence": "STAGING"}
+        self.requests = {}
 
     def __call__(self, tool, args):
         self.calls.append((tool, copy.deepcopy(args)))
@@ -49,9 +51,15 @@ class HostCallback:
         if tool == "lh_job_reconcile" and self.fail_reconcile_once:
             self.fail_reconcile_once = False
             raise TimeoutError("synthetic reconcile response loss")
-        if tool == "lh_job_status":
-            return copy.deepcopy(self.status)
-        return {"accepted": True, **args}
+        if tool == "lh_job_submit":
+            self.requests[args["operation_id"]] = copy.deepcopy(args)
+        result = {"operation_id": args["operation_id"],
+                  "request_digest": args.get("request_digest", args.get("expected_request_digest",
+                      self.requests.get(args["operation_id"], {}).get("request_digest")))}
+        reconcile = args.get("reconcile_id", args.get("target", {}).get("reconcile_id"))
+        if reconcile is not None:
+            result["reconcile_id"] = reconcile
+        return {**result, **copy.deepcopy(self.status)} if tool == "lh_job_status" else {"accepted": True, **result}
 
 
 class PluginDistributionTests(unittest.TestCase):
@@ -109,7 +117,9 @@ class WorkflowTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def reserve(self, key="inspect"):
-        return self.client.reserve_job(key, kind="host.inspect", profile_ref="fixture", inputs={})
+        record = self.client.reserve_job(key, kind="host.inspect", profile_ref="fixture", inputs={})
+        self.host.requests[record["request"]["operation_id"]] = copy.deepcopy(record["request"])
+        return record
 
     def assert_error(self, code, fn, *args, **kwargs):
         with self.assertRaises(JobError) as caught:
@@ -163,6 +173,35 @@ class WorkflowTests(unittest.TestCase):
         self.assert_error("IO_UNCERTAIN", self.reserve)
         self.assertEqual(path.read_bytes(), b"{")
         self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+
+    def test_duplicate_persisted_request_keys_cannot_rebind_the_intent(self):
+        record = self.reserve()
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        raw = json.dumps(record)[0:-1] + ', "request": ' + json.dumps(record["request"]) + "}"
+        path.write_text(raw)
+        self.assert_error("IO_UNCERTAIN", self.reserve)
+        self.assertEqual(path.read_text(), raw)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO boundary unavailable")
+    def test_fifo_identity_cannot_block_client_control(self):
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        os.mkfifo(path, 0o600)
+        probe = """import importlib.util,json,pathlib,sys
+spec=importlib.util.spec_from_file_location('workflow_probe',sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+client=module.Workflow(lambda *args: {},pathlib.Path(sys.argv[2]),json.loads(sys.argv[3]))
+try:
+    client.reserve_job('inspect',kind='host.inspect',profile_ref='fixture',inputs={})
+except module.JobError as exc:
+    assert exc.code == 'IO_UNCERTAIN', exc.code
+else:
+    raise AssertionError('FIFO was accepted')
+"""
+        environment = dict(os.environ, PYTHONPATH=str(ROOT / "tools"), PYTHONDONTWRITEBYTECODE="1")
+        result = subprocess.run([sys.executable, "-c", probe, str(PLUGIN / "scripts/workflow.py"),
+                                 str(self.client.journal), json.dumps(self.admission)],
+                                env=environment, capture_output=True, timeout=2)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
 
     def test_failed_directory_commit_is_reconfirmed_before_resubmission(self):
         real_fsync = os.fsync
@@ -257,6 +296,41 @@ class WorkflowTests(unittest.TestCase):
         result = self.client.observe(reconcile_key="observe")
         self.assertEqual(result["target"]["reconcile_id"], record["arguments"]["reconcile_id"])
         self.assertEqual(sum(tool == "lh_job_status" for tool, _ in self.host.calls), 1)
+
+    def test_misrouted_status_cannot_complete_a_different_job_or_round(self):
+        self.reserve()
+        self.client.reserve_reconcile("observe", "inspect")
+        self.host.status.update(lifecycle="TERMINAL", outcome="SUCCEEDED", evidence="SEALED")
+        for mode in ("operation", "digest", "round", "missing"):
+            def wrong(tool, args):
+                result = self.host(tool, args)
+                if mode == "operation":
+                    result["operation_id"] = "00000000-0000-4000-8000-000000000000"
+                elif mode == "digest":
+                    result["request_digest"] = "0" * 64
+                elif mode == "round":
+                    result["reconcile_id"] = "00000000-0000-4000-8000-000000000000"
+                else:
+                    del result["operation_id"]
+                return result
+            self.client.call = wrong
+            for target in ({"job_key": "inspect"}, {"reconcile_key": "observe"}):
+                with self.subTest(mode=mode, target=target):
+                    self.assert_error("IO_UNCERTAIN" if mode == "missing" else "CONFLICT",
+                                      self.client.observe, **target)
+
+    def test_misrouted_submit_and_cancel_receipts_are_not_accepted(self):
+        self.reserve()
+        self.client.reserve_reconcile("observe", "inspect")
+        def wrong(tool, args):
+            result = self.host(tool, args)
+            result["request_digest"] = "0" * 64
+            return result
+        self.client.call = wrong
+        for action, key in ((self.client.submit, "inspect"), (self.client.cancel_job, "inspect"),
+                            (self.client.reconcile, "observe"), (self.client.cancel_reconcile, "observe")):
+            with self.subTest(action=action.__name__):
+                self.assert_error("CONFLICT", action, key)
 
     def test_prepared_reference_requires_success_and_seal(self):
         for evidence in ("STAGING", "DURABILITY_UNKNOWN", "FAILED"):

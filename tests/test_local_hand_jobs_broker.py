@@ -9,6 +9,8 @@ import time
 import threading
 import unittest
 import uuid
+import sqlite3
+from unittest import mock
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -76,6 +78,18 @@ class DeferredDeliverySupervisor(SupervisorFixture):
             self.delivered.append(execution_id)
             return {"synthetic_manager_delivery": execution_id}
         return self.guard(execution_id, launch)
+
+
+class CatalogFixture(RegistryFixture):
+    def __init__(self):
+        self.observations = {}
+        self.prepared = {}
+
+    def register_evidence(self, fact):
+        self.observations[fact["operation_id"]] = copy.deepcopy(fact)
+
+    def register_prepared(self, ref, fact):
+        self.prepared[ref] = copy.deepcopy(fact)
 
 
 class BrokerTests(unittest.TestCase):
@@ -359,6 +373,182 @@ class BrokerTests(unittest.TestCase):
     def test_immutable_identity_and_events(self):
         self.submit()
         self.assertCode("IO_UNCERTAIN", lambda: self._delete())
+
+    def test_terminal_cancel_does_not_refresh_sealed_observation_after_restart(self):
+        registry = CatalogFixture()
+        self.broker.registry = registry
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[1][1]); self.broker.tick()
+        self.broker.register_seal({"operation_id": self.request["operation_id"],
+            "seal_id": "synthetic-seal", "seal_sha256": "a" * 64,
+            "event_seq": self.status()["event_seq"], "complete": True})
+        before = copy.deepcopy(registry.observations[self.request["operation_id"]])
+        with mock.patch("local_hand_jobs.state.time.time", return_value=before["observed_at"] + 7200):
+            self.cancel()
+        restored = CatalogFixture()
+        Broker(self.db, self.policy, restored, SupervisorFixture())
+        after = restored.observations[self.request["operation_id"]]
+        self.assertEqual(before["observed_at"], after["observed_at"], "cancel is not a fresh storage observation")
+        self.assertEqual(before["event_seq"], after["event_seq"], "old PASS must not outrank a later failed run")
+        self.assertEqual("SEALED", after["evidence_state"])
+
+    def test_retired_profile_does_not_block_restore_of_historical_prepared_evidence(self):
+        self.submit()
+        with self.db.transaction() as tx:
+            self.db.update(tx, "job", self.request["operation_id"], "EVIDENCE_SEALED", {
+                "lifecycle": "TERMINAL", "phase": "EXITED", "outcome": "SUCCEEDED", "evidence": "SEALED",
+                "prepared_facts": {"prepared_ref": "synthetic-prepared", "owner": "owner",
+                    "profile_ref": "retired", "expected": self.request["expected"]}})
+        class CurrentPolicy(PolicyFixture):
+            def expected(self, profile):
+                if profile == "retired":
+                    raise JobError("UNAUTHORIZED", "Profile was removed")
+                return super().expected(profile)
+            def register_prepared_reference(self, *args, **kwargs):
+                raise AssertionError("Retired prepared output must not enter current discovery")
+        registry = CatalogFixture()
+        restored = Broker(self.db, CurrentPolicy(), registry, SupervisorFixture())
+        self.assertIn("synthetic-prepared", registry.prepared)
+        self.assertEqual("SUCCEEDED", restored.status(self.request["operation_id"], self.owner)["outcome"])
+
+    def test_launch_ack_storage_failure_keeps_accepted_handle_for_controlled_stop(self):
+        self.submit()
+        update = self.db.update
+        def fail_ack(tx, namespace, identity, event, changes):
+            if event == "LAUNCH_ENQUEUED":
+                raise sqlite3.OperationalError("synthetic disk full while persisting launch acknowledgement")
+            return update(tx, namespace, identity, event, changes)
+        with mock.patch.object(self.db, "update", side_effect=fail_ack):
+            self.assertCode("IO_UNCERTAIN", lambda: self.broker._start("job", self.request["operation_id"], "preflight"))
+        self.assertFalse(self.db.healthy)
+        self.assertEqual(1, len(self.runner.starts))
+        self.assertIn(("job", self.request["operation_id"]), self.broker._active,
+                      "DB failure must not lose the newly accepted supervisor handle")
+
+    def test_new_reconcile_requires_current_request_grant_but_retry_preserves_identity(self):
+        self.submit(); self.cancel()
+        identity = str(uuid.uuid4())
+        original = self.reconcile(identity)
+        authorized = self.policy.authorize
+        def grant_removed(principal, scope, request=None, owner=None):
+            authorized(principal, scope, request=request, owner=owner)
+            if request is not None:
+                raise JobError("UNAUTHORIZED", "Synthetic profile grant was removed")
+        self.policy.authorize = grant_removed
+        self.assertEqual(original, self.reconcile(identity))
+        self.cancel({"kind": "reconcile", "reconcile_id": identity})
+        new_identity = str(uuid.uuid4())
+        self.assertCode("UNAUTHORIZED", lambda: self.reconcile(new_identity))
+        self.assertIsNone(self.db.get("reconcile", new_identity))
+        with self.db.transaction() as tx:
+            self.assertEqual(0, tx.execute("SELECT count(*) FROM leases").fetchone()[0])
+
+    def test_committed_but_lost_admission_ack_preserves_id_capacity_and_barrier(self):
+        connection = self.db._db
+        class LostCommitReceipt:
+            def __getattr__(self, name):
+                return getattr(connection, name)
+            def execute(self, sql, *args):
+                result = connection.execute(sql, *args)
+                if sql == "COMMIT" and connection.execute("SELECT count(*) FROM operations").fetchone()[0]:
+                    raise sqlite3.OperationalError("synthetic lost receipt after durable commit")
+                return result
+        self.db._db = LostCommitReceipt()
+        self.assertCode("IO_UNCERTAIN", self.submit)
+        self.assertFalse(self.db.healthy)
+        self.assertFalse(self.runner.starts)
+        reopened = StateStore(self.db.path, "authority", "ledger")
+        self.addCleanup(reopened.close)
+        restored = Broker(reopened, self.policy, RegistryFixture(), SupervisorFixture())
+        self.policy.generation += 1
+        self.policy.limits = dict(self.policy.limits, retained_bytes=2000)
+        with mock.patch("local_hand_jobs.broker.time.time", return_value=self.request["expires_at"] + 1):
+            result = restored.call("lh_job_submit", self.request, self.owner)
+        self.assertEqual(self.request["operation_id"], result["operation_id"])
+        with reopened.transaction() as tx:
+            self.assertEqual(1, tx.execute("SELECT count(*) FROM operations").fetchone()[0])
+            self.assertEqual(1000, tx.execute("SELECT sum(reserved_bytes) FROM operations").fetchone()[0])
+            self.assertEqual(1, tx.execute("SELECT count(*) FROM leases").fetchone()[0])
+
+    def test_authoritative_seal_list_includes_rounds_and_keeps_missing_registration_distinct(self):
+        self.submit(); self.cancel()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity)
+        job_seal = {"seal_id": str(uuid.uuid4()), "seal_sha256": "a" * 64}
+        round_seal = {"seal_id": str(uuid.uuid4()), "seal_sha256": "b" * 64}
+        with self.db.transaction() as tx:
+            self.db.update(tx, "job", self.request["operation_id"], "SYNTHETIC_REGISTRATION", {"seals": [job_seal]})
+            self.db.update(tx, "reconcile", identity, "SYNTHETIC_REGISTRATION", {"seals": [round_seal]})
+        self.assertEqual([job_seal, round_seal], self.broker.list_seals(self.request["operation_id"]))
+        self.assertCode("NOT_FOUND", lambda: self.broker.list_seals(str(uuid.uuid4())))
+        self.db.healthy = False
+        self.assertCode("IO_UNCERTAIN", lambda: self.broker.list_seals(self.request["operation_id"]))
+
+    def test_evidence_completion_cannot_register_a_foreign_operation_publication(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[1][1]); self.broker.tick()
+        foreign_operation = self.request["operation_id"]
+        foreign_event = self.status()["event_seq"]
+        self.request = self.make_request()
+        self.broker.evidence = SimpleNamespace(root=Path(self.temp.name) / "artifacts")
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[2][1]); self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[3][1], collectors_stopped=True, writers_stopped=True,
+            result={"evidence_snapshot": {"root": str(Path(self.temp.name) / "raw"), "members": []}})
+        self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[4][1], collectors_stopped=True, writers_stopped=True,
+            result={"seal_record": {"operation_id": foreign_operation, "seal_id": str(uuid.uuid4()),
+                                  "seal_sha256": "a" * 64, "event_seq": foreign_event, "complete": True}})
+        self.broker.tick()
+        self.assertEqual("STAGING", self.broker.status(foreign_operation, self.owner)["evidence"])
+        self.assertEqual("DURABILITY_UNKNOWN", self.status()["evidence"])
+        self.assertFalse(self.broker.list_seals(foreign_operation))
+        self.assertEqual(True, self.status()["exit_proof"]["tree_exited"])
+
+    def test_unknown_business_cannot_use_old_preflight_exit_to_start_reconcile(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        execution = self.runner.starts[1][1]
+        self.runner.proofs[execution] = {"state": "UNKNOWN"}
+        self.broker.tick()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity); self.broker.tick()
+        self.assertEqual(2, len(self.runner.starts), "prior preflight exit cannot prove business exit")
+        self.assertIsNone(self.status()["exit_proof"])
+        self.assertEqual("UNKNOWN", self.broker.status(self.request["operation_id"], self.owner, identity)["outcome"])
+
+    def test_unknown_evidence_helper_cannot_use_old_business_exit_to_start_reconcile(self):
+        self.broker.evidence = SimpleNamespace(root=Path(self.temp.name) / "artifacts")
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        self.runner.finish(self.runner.starts[1][1], collectors_stopped=True, writers_stopped=True,
+            result={"evidence_snapshot": {"root": str(Path(self.temp.name) / "raw"), "members": []}})
+        self.broker.tick(); self.broker.tick()
+        self.runner.proofs[self.runner.starts[2][1]] = {"state": "UNKNOWN"}
+        self.broker.tick()
+        identity = str(uuid.uuid4())
+        self.reconcile(identity); self.broker.tick()
+        self.assertEqual(3, len(self.runner.starts), "business exit cannot prove evidence helper exit")
+        self.assertIsNone(self.status()["exit_proof"])
+        self.assertEqual("UNKNOWN", self.broker.status(self.request["operation_id"], self.owner, identity)["outcome"])
+
+    def test_recovery_invalidates_legacy_previous_phase_exit_proof(self):
+        self.submit(); self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1]); self.broker.tick(); self.broker.tick()
+        # Existing d500384 ledgers retained the previous phase's proof here.
+        with self.db.transaction() as tx:
+            self.db.update(tx, "job", self.request["operation_id"], "SYNTHETIC_LEGACY_STATE", {
+                "exit_proof": {"future_start_blocked": True, "tree_exited": True, "effects_checked": True}})
+        replacement = SupervisorFixture()
+        restored = Broker(self.db, self.policy, RegistryFixture(), replacement)
+        restored.recover()
+        identity = str(uuid.uuid4())
+        restored.reconcile(self.request["operation_id"], self.request["request_digest"], identity, self.owner)
+        restored.tick()
+        self.assertFalse(replacement.starts)
+        self.assertIsNone(restored.status(self.request["operation_id"], self.owner)["exit_proof"])
 
     def _delete(self):
         with self.db.transaction() as tx:

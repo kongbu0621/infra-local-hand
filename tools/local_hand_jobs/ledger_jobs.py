@@ -195,7 +195,9 @@ def verify_manifest(root, manifest, *, git_blobs=False, exact=True, links=None):
     links = links or {}
     found_links = {}
     found = {}
-    for directory, dirs, files in os.walk(root, followlinks=False):
+    def unreadable(_):
+        raise LedgerPlanError("input inventory cannot be completely observed")
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=unreadable):
         for name in dirs[:]:
             candidate = Path(directory) / name
             if candidate.is_symlink():
@@ -205,10 +207,13 @@ def verify_manifest(root, manifest, *, git_blobs=False, exact=True, links=None):
                     raise LedgerPlanError("linked input directory")
                 found_links[relative] = target
                 dirs.remove(name)
-        dirs[:] = [name for name in dirs if name != ".git"]
+        # Only a source checkout's top-level Git metadata is outside its blob
+        # inventory. Build caches and complete installed payload have no such hole.
+        if git_blobs and Path(directory) == root:
+            dirs[:] = [name for name in dirs if name != ".git"]
         for name in files:
             rel = (Path(directory) / name).relative_to(root).as_posix()
-            if rel == ".git": continue
+            if git_blobs and rel == ".git": continue
             if rel not in manifest:
                 if exact: raise LedgerPlanError("unadmitted input file")
                 continue

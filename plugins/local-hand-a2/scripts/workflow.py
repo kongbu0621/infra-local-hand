@@ -18,7 +18,7 @@ import uuid
 
 from local_hand_jobs.contract import (
     JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
-    request_digest, validate_submit, validate_tool_args,
+    request_digest, strict_loads, validate_submit, validate_tool_args,
 )
 
 
@@ -81,9 +81,19 @@ class Workflow:
             _fail("INVALID_REQUEST", "Use an explicit bounded client intent key")
         return kind + "-" + hashlib.sha256(key.encode("ascii")).hexdigest() + ".json"
 
+    def _invoke_bound(self, tool, arguments, digest, reconcile_id=None):
+        result = self._invoke(tool, arguments)
+        if "operation_id" not in result or "request_digest" not in result or (
+                reconcile_id is not None and "reconcile_id" not in result):
+            _fail("IO_UNCERTAIN", "Tool receipt omitted the original identity binding")
+        if (result["operation_id"] != arguments["operation_id"] or result["request_digest"] != digest
+                or result.get("reconcile_id") != reconcile_id):
+            _fail("CONFLICT", "Tool receipt belongs to a different job or reconciliation")
+        return result
+
     def _read(self, name):
         try:
-            fd = os.open(self.journal / name, os.O_RDONLY | os.O_NOFOLLOW)
+            fd = os.open(self.journal / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         except FileNotFoundError:
             return None
         except OSError:
@@ -94,8 +104,11 @@ class Workflow:
             if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink != 1 or st.st_mode & 0o077 or st.st_size > maximum:
                 _fail("IO_UNCERTAIN", "Client identity has invalid ownership or type")
             try:
-                record = json.loads(stream.read(maximum + 1))
-            except (ValueError, UnicodeError):
+                raw = stream.read(maximum + 1)
+                if len(raw) > maximum:
+                    _fail("IO_UNCERTAIN", "Client identity exceeds its read budget")
+                record = strict_loads(raw)
+            except (JobError, ValueError, UnicodeError):
                 _fail("IO_UNCERTAIN", "Client identity is incomplete")
             try:
                 # A prior create-only publish may have reached the filesystem
@@ -229,7 +242,7 @@ class Workflow:
         if request["kind"] not in profile.get("allowed_kinds", []):
             _fail("UNAUTHORIZED", "The discovered grant does not allow this job")
         self._require_supported(request["kind"])
-        return self._invoke("lh_job_submit", request)
+        return self._invoke_bound("lh_job_submit", request, request["request_digest"])
 
     def _job(self, key):
         record = self._read(self._record_name("job", key))
@@ -261,33 +274,39 @@ class Workflow:
         return record["arguments"]
 
     def reconcile(self, key):
-        return self._invoke("lh_job_reconcile", self._reconcile(key))
+        args = self._reconcile(key)
+        return self._invoke_bound("lh_job_reconcile", args, args["expected_request_digest"], args["reconcile_id"])
 
     def cancel_job(self, key):
         request = self._job(key)["request"]
-        return self._invoke("lh_job_cancel", {"operation_id": request["operation_id"],
-                            "expected_request_digest": request["request_digest"], "target": {"kind": "job"}})
+        return self._invoke_bound("lh_job_cancel", {"operation_id": request["operation_id"],
+                            "expected_request_digest": request["request_digest"], "target": {"kind": "job"}},
+                            request["request_digest"])
 
     def cancel_reconcile(self, key):
         args = self._reconcile(key)
-        return self._invoke("lh_job_cancel", {"operation_id": args["operation_id"],
+        return self._invoke_bound("lh_job_cancel", {"operation_id": args["operation_id"],
                             "expected_request_digest": args["expected_request_digest"],
-                            "target": {"kind": "reconcile", "reconcile_id": args["reconcile_id"]}})
+                            "target": {"kind": "reconcile", "reconcile_id": args["reconcile_id"]}},
+                            args["expected_request_digest"], args["reconcile_id"])
 
     def observe(self, *, job_key=None, reconcile_key=None):
         if (job_key is None) == (reconcile_key is None):
             _fail("INVALID_REQUEST", "Select one exact job or reconciliation identity")
         if job_key is not None:
-            args = {"operation_id": self._job(job_key)["request"]["operation_id"]}
+            request = self._job(job_key)["request"]
+            args = {"operation_id": request["operation_id"]}
+            digest = request["request_digest"]
         else:
             saved = self._reconcile(reconcile_key)
             args = {key: saved[key] for key in ("operation_id", "reconcile_id")}
+            digest = saved["expected_request_digest"]
         limits = self.contract["client_limits"]
         started, latest = self.clock(), None
         for index in range(limits["max_poll_calls"]):
             if self.clock() - started >= limits["max_observe_seconds"]:
                 break
-            latest = self._invoke("lh_job_status", args)
+            latest = self._invoke_bound("lh_job_status", args, digest, args.get("reconcile_id"))
             if latest.get("lifecycle") in ("TERMINAL", "RECONCILE_REQUIRED"):
                 break
             remaining = limits["max_observe_seconds"] - (self.clock() - started)

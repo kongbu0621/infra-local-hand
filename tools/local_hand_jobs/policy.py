@@ -230,6 +230,20 @@ class Policy:
             raise _bad()
         if any(_overlap(root, source) for root in writable for source in readonly):
             raise _bad()
+        # Execution writers must never include either authoritative control
+        # root, even when a private profile mistakenly assigns the same path.
+        execution_roots = [root for roots, _ in profile_roots for root in roots]
+        execution_roots.extend(root for root, _, _ in archives)
+        if any(_overlap(root, control) for root in execution_roots
+               for control in (config["broker_root"], config["authority_root"])):
+            raise _bad()
+        # An archive alias can overlap a different profile's local working
+        # storage. Both kinds of job must acquire the archive's same lease;
+        # checking only archive/archive and work/work pairs misses this case.
+        for archive_root, archive_id, _ in archives:
+            for roots, resource_ids in profile_roots:
+                if any(_overlap(archive_root, root) for root in roots) and archive_id not in resource_ids:
+                    raise _bad()
         for index, (left_root, left_id, left_binding) in enumerate(archives):
             for right_root, right_id, right_binding in archives[index + 1:]:
                 same_mount_object = (left_binding["source"], left_binding["root"], left_binding["type"],

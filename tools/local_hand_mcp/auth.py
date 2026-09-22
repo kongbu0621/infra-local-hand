@@ -196,14 +196,22 @@ class JWTVerifier:
                     timeout=self.config.request_timeout_seconds, follow_redirects=False,
                     trust_env=False, transport=self._http_transport,
                 ) as client:
-                    async with client.stream("GET", url, headers={"Accept": "application/json"}) as response:
+                    async with client.stream("GET", url, headers={
+                        "Accept": "application/json", "Accept-Encoding": "identity",
+                    }) as response:
                         if response.status_code != 200:
                             raise _deny()
+                        # Bound bytes before a decoder can inflate a tiny
+                        # response into an arbitrarily large in-memory chunk.
+                        # A server ignoring identity negotiation is rejected.
+                        if any(value.strip().lower() != "identity" for value in
+                               response.headers.get_list("content-encoding")):
+                            raise _deny()
                         body = bytearray()
-                        async for chunk in response.aiter_bytes():
-                            body.extend(chunk)
-                            if len(body) > MAX_AUTH_DOCUMENT:
+                        async for chunk in response.aiter_bytes(chunk_size=4096):
+                            if len(body) + len(chunk) > MAX_AUTH_DOCUMENT:
                                 raise _deny()
+                            body.extend(chunk)
             decoded = strict_loads(bytes(body))
             if not isinstance(decoded, dict):
                 raise _deny()

@@ -39,6 +39,10 @@ class RunnerError(RuntimeError):
         self.code = code
 
 
+class _NoStartError(RunnerError):
+    """Internal manager proof that no delivery was attempted, not an error-code inference."""
+
+
 def _plain(value):
     if isinstance(value, Mapping): return {k: _plain(v) for k, v in value.items()}
     if isinstance(value, (tuple, list)): return [_plain(v) for v in value]
@@ -166,7 +170,7 @@ class Runner:
             proof = _unknown(str(error))
             proof["result"] = {"outcome": "UNKNOWN", "error": error.code}
             # UNSUPPORTED before submitting anything is a proved no-start case.
-            if error.code == "UNSUPPORTED" and not item.launch_complete and not item.plan.get("_reattach"):
+            if isinstance(error, _NoStartError) and not item.launch_complete and not item.plan.get("_reattach"):
                 proof.update(state="EXITED", future_start_blocked=True, tree_exited=True,
                              collectors_stopped=True, writers_stopped=True, effects_checked=True,
                              result={"outcome": "FAILED", "error": "UNSUPPORTED", "business_started": False, "helper_started": False}, missing=[])
@@ -243,7 +247,11 @@ class SystemdManager:
         self._start_guard = callback
 
     def support(self):
-        reasons = []
+        # _start still performs directory/plan/quota I/O before the supervised
+        # unit exists. A Python observer thread is not an independently stoppable
+        # bootstrap execution. Block production even on an otherwise capable host
+        # until that boundary has an admitted, persistent implementation.
+        reasons = ["SUPERVISED_BOOTSTRAP_NOT_IMPLEMENTED"]
         if sys.platform != "linux": reasons.append("Linux is required")
         try:
             if Path("/proc/1/comm").read_text().strip() != "systemd": reasons.append("PID 1 is not systemd")
@@ -366,6 +374,16 @@ class SystemdManager:
         return execution, quotas
 
     def start(self, identity, plan, cancel_event):
+        try:
+            return self._start(identity, plan, cancel_event)
+        except RunnerError as error:
+            handle = self._runs.get(identity["unit"])
+            delivery_attempted = handle is not None and (handle.get("delivery_attempted") or handle.get("launch") is not None)
+            if error.code == "UNSUPPORTED" and not delivery_attempted:
+                raise _NoStartError(error.code, str(error)) from error
+            raise
+
+    def _start(self, identity, plan, cancel_event):
         plan = dict(plan, execution_id=identity["execution_id"])
         execution, quotas = self._admit(plan)
         unit = identity["unit"]
@@ -414,7 +432,7 @@ class SystemdManager:
                   "cancel_event": cancel_event, "launch": None, "launch_acked": False, "stop_acked": False,
                   "stop_requested": False, "started": time.monotonic(), "deadline": limits["wall_seconds"],
                   "invocation_id": None, "execution_id": identity["execution_id"], "cancel_before_launch": False,
-                  "identity": dict(identity), "recovered": False}
+                  "identity": dict(identity), "recovered": False, "delivery_attempted": False}
         self._runs[unit] = handle
         if cancel_event.is_set():
             handle["cancel_before_launch"] = True
@@ -428,6 +446,8 @@ class SystemdManager:
         def deliver():
             if cancel_event.is_set():
                 return None
+            # Mark before Popen: an exception does not prove no process was created.
+            handle["delivery_attempted"] = True
             handle["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, env={"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": "/run/user/" + str(os.geteuid())})
             return handle["launch"]

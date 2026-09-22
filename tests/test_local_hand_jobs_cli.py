@@ -7,8 +7,9 @@ import socket
 import struct
 import sys
 import tempfile
+import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from local_hand_jobs.cli import MaintenanceServer, request, _read_frame, create_broker
@@ -86,6 +87,25 @@ class CliTests(unittest.TestCase):
         with patch("local_hand_jobs.cli.sys.platform", "win32"), self.assertRaises(JobError) as raised:
             create_broker("not-read", actual_entrypoint="not-read")
         self.assertEqual("UNSUPPORTED", raised.exception.code)
+
+    def test_handler_thread_start_failure_releases_connection_and_slot(self):
+        server = MaintenanceServer(self.broker, self.path, {}, max_clients=1)
+        connection = Mock()
+        server._listener = Mock()
+        server._listener.accept.side_effect = [(connection, None), OSError("listener stopped")]
+        with patch("local_hand_jobs.cli.threading.Thread.start", side_effect=RuntimeError("no thread capacity")):
+            server._serve()
+        connection.close.assert_called_once()
+        self.assertTrue(server._slots.acquire(blocking=False))
+        self.assertEqual(2, server._listener.accept.call_count)
+        self.assertFalse(self.broker.calls)
+
+    def test_close_after_listener_thread_failed_to_start(self):
+        server = MaintenanceServer(self.broker, self.path, {})
+        server._listener = Mock()
+        server._thread = threading.Thread(target=lambda: None)
+        server.close()
+        server._listener.close.assert_called_once()
 
     def handle(self, raw, peers=None):
         server = MaintenanceServer(self.broker, self.path, peers if peers is not None else {os.geteuid(): self.principal})

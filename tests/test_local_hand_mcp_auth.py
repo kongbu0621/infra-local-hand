@@ -168,6 +168,52 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             await self.issuer.verifier.authenticate(self.issuer.token())
         self.assertNotIn("issuer.example", str(caught.exception))
 
+    async def test_compressed_issuer_documents_are_rejected_before_inflation(self):
+        import gzip
+        import httpx2
+
+        observed = []
+
+        class CompressedBody(httpx2.AsyncByteStream):
+            async def __aiter__(self):
+                observed.append("body-consumed")
+                yield gzip.compress(json.dumps(self.issuer.metadata).encode())
+
+        # Capture the fixture without making the response object a buffered
+        # response: the real client must decide from headers before decoding.
+        body = CompressedBody()
+        body.issuer = self.issuer
+        transport = httpx2.MockTransport(lambda request: httpx2.Response(
+            200, headers={"Content-Encoding": "gzip"}, stream=body))
+        verifier = JWTVerifier(self.issuer.config, http_transport=transport)
+        with self.assertRaises(JobError):
+            await verifier.validate_issuer_metadata()
+        self.assertEqual([], observed)
+
+    async def test_issuer_document_stream_has_a_finite_read_bound(self):
+        import httpx2
+        from local_hand_mcp.auth import MAX_AUTH_DOCUMENT
+
+        observed = []
+
+        class EndlessBody(httpx2.AsyncByteStream):
+            async def __aiter__(self):
+                while True:
+                    observed.append(1024)
+                    yield b" " * 1024
+
+        requested = []
+
+        def respond(request):
+            requested.append(request.headers.get("Accept-Encoding"))
+            return httpx2.Response(200, stream=EndlessBody())
+
+        verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(respond))
+        with self.assertRaises(JobError):
+            await verifier.validate_issuer_metadata()
+        self.assertEqual(["identity"], requested)
+        self.assertLessEqual(sum(observed), MAX_AUTH_DOCUMENT + 4096)
+
     def test_private_config_and_untrusted_locations(self):
         for changes in ({"algorithms": ["none"]}, {"jwks_uri": "file:///secret"},
                         {"issuer": "http://remote.example"}, {"registration": "dynamic"},

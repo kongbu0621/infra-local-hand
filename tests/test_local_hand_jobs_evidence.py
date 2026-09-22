@@ -124,6 +124,23 @@ class EvidenceTests(unittest.TestCase):
         self.assertCode("CONFLICT", lambda: self.fixture.store.seal(OP))
         self.assertFalse(self.fixture.registered)
 
+    def test_source_directory_replacement_cannot_register_a_stale_snapshot(self):
+        original = self.fixture.store._inventory
+        calls = 0
+        def replace_after_final_inventory(fd):
+            nonlocal calls
+            calls += 1
+            result = original(fd)
+            if calls == 2:
+                self.fixture.source.rename(self.root / "retained-original")
+                self.fixture.source.mkdir(mode=0o700)
+                (self.fixture.source / "stdout.log").write_bytes(b"changed source directory")
+            return result
+        with mock.patch.object(self.fixture.store, "_inventory", side_effect=replace_after_final_inventory):
+            self.assertCode("CONFLICT", lambda: self.fixture.store.seal(OP))
+        self.assertFalse(self.fixture.registered)
+        self.assertEqual((self.fixture.source / "stdout.log").read_bytes(), b"changed source directory")
+
     def test_symlink_hardlink_fifo_and_directory_alias_rejected(self):
         source = self.fixture.source / "stdout.log"
         source.unlink()
@@ -173,6 +190,16 @@ class EvidenceTests(unittest.TestCase):
                 destination.write_bytes(b"replacement")
         with mock.patch.object(evidence, "_publish_create_only", side_effect=replacement):
             self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
+        self.assertFalse(self.fixture.registered)
+
+    def test_staging_archive_replacement_cannot_become_the_authenticated_archive(self):
+        original = self.fixture.store._write
+        def replace_completed_archive(path, data):
+            original(path, data)
+            if path.name == "manifest.json":
+                (path.parent / "evidence.zip").write_bytes(b"not the generated archive")
+        with mock.patch.object(self.fixture.store, "_write", side_effect=replace_completed_archive):
+            self.assertCode("CONFLICT", lambda: self.fixture.store.seal(OP))
         self.assertFalse(self.fixture.registered)
 
     def test_directory_fsync_failure_has_no_registration(self):
@@ -280,6 +307,27 @@ class EvidenceTests(unittest.TestCase):
         self.fixture.store.seal(OP)
         self.assertCode("CONFLICT", lambda: self.fixture.store.manifest(OP, principal="reader",
                        cursor=first["next_cursor"]))
+
+    def test_registered_index_isolated_from_incomplete_or_unrelated_publications(self):
+        artifact = self.fixture.sealed()
+        self.fixture.store.list_seals = lambda _: [{"seal_id": identity, "seal_sha256": digest}
+                for identity, digest in self.fixture.registered.items()]
+        pending = self.fixture.store.root / "cc61bb0c-ea6b-4058-a2a1-ab5e92ed134c"
+        pending.mkdir(mode=0o700)
+        unrelated = self.fixture.store.root / "b065541e-2a1b-416a-86b1-80f5e740f8dc"
+        unrelated.mkdir(mode=0o700)
+        (unrelated / "seal.json").write_bytes(b"corrupt unrelated publication")
+        page = self.fixture.store.manifest(OP, principal="reader")
+        self.assertEqual(page["artifacts"][0], artifact)
+        self.assertCode("NOT_FOUND", lambda: self.fixture.store.owner_of(pending.name + ".zip"))
+
+    def test_registered_index_never_hides_missing_or_changed_registered_seal(self):
+        artifact = self.fixture.sealed()
+        self.fixture.store.list_seals = lambda _: [{"seal_id": artifact["seal_id"],
+                                                    "seal_sha256": artifact["seal_sha256"]}]
+        path = self.fixture.store.root / artifact["seal_id"] / "seal.json"
+        path.unlink()
+        self.assertCode("NOT_FOUND", lambda: self.fixture.store.manifest(OP, principal="reader"))
 
     def test_default_manifest_page_at_most_100(self):
         for _ in range(34):

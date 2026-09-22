@@ -1,6 +1,6 @@
 # E1–E3 实现候选状态
 
-本文件记录实现事实，不替代已批准的三层文档。整体状态为 **E1 尚有 NAS provider 代码缺口、E3 环境验收 BLOCKED**；
+本文件记录实现事实，不替代已批准的三层文档。整体状态为 **E1 尚有受监督启动准备及 NAS provider 代码缺口、E3 环境验收 BLOCKED**；
 本轮是实现检查点，未达到 E1–E3 全部出口。准确提交与结果见 [验证记录](E1_E3_VERIFICATION.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
@@ -13,7 +13,7 @@ Owner 决定及准确范围见 [开工决定](../governance/A2_EXEC_E1_E3_OWNER_
 | --- | --- |
 | 协议与准入 | `local_hand_jobs.contract/policy/registry`；六类固定作业、七接口、严格原始 JSON、规范摘要、主体/目标/资源准入、有限预算及固定 Ledger 输入 |
 | 持久后端 | `state/resources/broker`；单一 authority 锚、SQLite 意图和事件、资源屏障、稳定业务/核对 ID、精确取消、撤权和重启后原身份观察 |
-| 进程监督 | `runner/ledger_jobs`；固定 systemd/cgroup 单元、预检与业务分阶段、原位置 venv、受控副本、输出上界、独立封存 helper；不能证明归属或退出时保留 UNKNOWN |
+| 进程监督 | `runner/ledger_jobs`；固定单元和分阶段状态、输出上界、独立封存 helper 已有实现；不能证明归属或退出时保留 UNKNOWN。启动前目录/配额/计划文件 I/O 尚未进入独立监督边界，生产入口明确拒绝启用 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |
@@ -26,6 +26,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 
 | 项目 | 准确状态 |
 | --- | --- |
+| E1 受监督启动准备 | `_start` 尚在 broker 进程内进行可能阻塞的目录、配额及计划文件操作；后台线程不能证明有限停止。`SystemdManager.support()` 固定返回 `SUPERVISED_BOOTSTRAP_NOT_IMPLEMENTED`，即使其他主机条件齐备也拒绝生产启动。这是缺口的安全封堵，不是实现完成 |
 | E3 真实独立进程监督 | 当前隔离宿主无已委派 systemd/cgroup，不能完成子孙进程、延迟启动、broker 崩溃及真实 quota 的集成验收。合成 manager 测试不替代此项，候选不可标记可部署 |
 | 真实 Unix maintenance transport | 当前宿主拒绝 Unix socket 创建（EPERM）。主体映射与协议使用合成 peer 验证；对应实际 transport 测试明确跳过。独立 TCP/SDK 测试不替代 Unix socket |
 | NAS 运行时 | 网络归档硬配额适配器尚未实现。虽然固定四参数调用、前置证据依赖和挂载身份检查已有实现，`ledger.nas.roundtrip` 明确 `UNSUPPORTED`，Plugin 不提交该类型 |
@@ -34,7 +35,9 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | E6 | 未执行真实 GX10 → NAS → GX10 A2，不把 Linux 合成文件或逻辑测试当 NAS 证据 |
 
 本实现保留硬约束；没有跳过认证、配额、进程树证明或挂载检查的运行时开关。
-NAS 配额适配与真实 cgroup 验收必须补齐，不能靠改一个配置布尔值宣称支持。
+受监督启动准备、NAS 配额适配与真实 cgroup 验收必须补齐，不能靠改一个配置布尔值宣称支持。
+启动准备修复须先明确已有可写根的准入、分配和持久消费身份；不得借此开放 profile 父目录写权，
+也不得把线程超时当作进程树退出证明。
 宿主执行的账户、解释器、安装和准入配置须在服务加载前由受信部署侧保护；包摘要是漂移检测，
 不能从已被任意篡改的解释器或正在执行的恶意进程中建立信任。
 

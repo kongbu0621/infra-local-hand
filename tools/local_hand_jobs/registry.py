@@ -104,6 +104,14 @@ class Registry:
         if not isinstance(fact.get("expected"), dict) or fact["expected"] != request["expected"]:
             raise JobError("STALE_DEPLOYMENT", "Prepared artifact admission binding is no longer current")
         bindings = fact.get("bindings", {})
+        if not isinstance(bindings, dict):
+            raise JobError("NOT_SEALED", "Prepared artifact bindings are incomplete")
+        # The prepared payload and execution provenance both expose these
+        # values. Never let preflight consume one identity while the eventual
+        # seal records a different value from the nested binding map.
+        for name in ("source_commit", *_BINDINGS):
+            if name in fact and name in bindings and fact[name] != bindings[name]:
+                raise JobError("CONFLICT", "Prepared artifact has conflicting provenance bindings")
         if fact.get("source_commit", bindings.get("source_commit")) != SOURCE_COMMIT:
             raise JobError("UNSUPPORTED", "Prepared artifact is not the fixed Ledger source")
         for name in _BINDINGS:

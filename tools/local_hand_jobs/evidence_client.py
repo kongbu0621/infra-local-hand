@@ -82,6 +82,7 @@ class BoundedFileWriter:
         self._lock = None
         self._fd = None
         self._journal = None
+        self._directory_fd = None
         self._completed = False
         self.offset = 0
 
@@ -89,6 +90,7 @@ class BoundedFileWriter:
         if self._lock is not None:
             raise EvidenceError("CONFLICT", "writer is already active")
         self.artifact = _descriptor(artifact, self.max_bytes)
+        self._completed = False
         key = _hash(_json(self.artifact))
         self.directory = self.root / ("download-" + key)
         self.directory.mkdir(mode=0o700, exist_ok=True)
@@ -96,6 +98,7 @@ class BoundedFileWriter:
         self.final = self.directory / ("evidence.zip" if self.artifact["role"] == "zip" else "evidence.json")
         try:
             with _open_root(self.directory, self.owner) as directory:
+                self._directory_fd = os.dup(directory)
                 self._lock = os.open("lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
                                      0o600, dir_fd=directory)
                 _regular(os.fstat(self._lock), self.owner, 0)
@@ -159,10 +162,32 @@ class BoundedFileWriter:
                 os.ftruncate(self._journal, len(complete))
                 os.lseek(self._journal, 0, os.SEEK_END)
                 os.fsync(directory)
+                self._assert_bound()
                 return self.offset
         except Exception:
             self.close()
             raise
+
+    def _assert_bound(self) -> None:
+        """The lock, writable descriptors and named private directory stay one object."""
+        if self._directory_fd is None:
+            raise EvidenceError("CONFLICT", "evidence writer directory is not active")
+        try:
+            with _open_root(self.directory, self.owner) as current:
+                old, new = os.fstat(self._directory_fd), os.fstat(current)
+                if (old.st_dev, old.st_ino) != (new.st_dev, new.st_ino):
+                    raise EvidenceError("CONFLICT", "evidence writer directory replaced")
+            for name, fd, maximum in (("lock", self._lock, 0),
+                    ("partial.bin", self._fd, self.max_bytes),
+                    ("checkpoints.jsonl", self._journal, 4 * 1024 * 1024)):
+                if fd is not None:
+                    original = os.fstat(fd)
+                    _regular(original, self.owner, maximum)
+                    entry = os.stat(name, dir_fd=self._directory_fd, follow_symlinks=False)
+                    if _same(original) != _same(entry):
+                        raise EvidenceError("CONFLICT", "evidence writer member replaced")
+        except OSError:
+            raise EvidenceError("CONFLICT", "evidence writer binding unavailable") from None
 
     @staticmethod
     def _write_all(fd: int, data: bytes) -> None:
@@ -192,6 +217,7 @@ class BoundedFileWriter:
                 or not isinstance(data, bytes) or not 0 < len(data) <= MAX_CHUNK
                 or offset + len(data) > self.artifact["size"]):
             raise EvidenceError("CONFLICT", "invalid bounded evidence write")
+        self._assert_bound()
         _regular(os.fstat(self._fd), self.owner, self.max_bytes)
         if os.fstat(self._fd).st_size != offset:
             raise EvidenceError("CONFLICT", "partial evidence changed")
@@ -204,27 +230,50 @@ class BoundedFileWriter:
             raise EvidenceError("LIMIT_EXCEEDED", "checkpoint journal budget exceeded")
         self._write_all(self._journal, checkpoint)
         os.fsync(self._journal)
+        self._assert_bound()
 
     def finish(self, validator: Callable[[Path], None]) -> Path:
         if self._lock is None or self.offset != self.artifact["size"]:
             raise EvidenceError("CONFLICT", "evidence download is incomplete")
+        self._assert_bound()
         path = self.final if self._completed else self.partial
-        with _open_root(self.directory, self.owner) as directory:
-            with _open_member(directory, path.name, self.owner, self.max_bytes) as fd:
-                self._verify_descriptor(fd)
-                identity = _same(os.fstat(fd))
-            validator(path)
-            with _open_member(directory, path.name, self.owner, self.max_bytes) as fd:
-                if _same(os.fstat(fd)) != identity:
-                    raise EvidenceError("CONFLICT", "evidence changed while validating")
-            if not self._completed:
-                _publish_create_only(self.partial, self.final)
-                os.fsync(directory)
-                self._completed = True
+        directory = self._directory_fd
+        with _open_member(directory, path.name, self.owner, self.max_bytes) as fd:
+            self._verify_descriptor(fd)
+            identity = _same(os.fstat(fd))
+            # This host writer already requires Linux (flock and renameat2).  Give
+            # the validator the pinned file, so a parent rename cannot redirect it.
+            pinned_path = Path("/proc/self/fd") / str(fd)
+            if not pinned_path.exists():
+                raise EvidenceError("UNSUPPORTED", "descriptor-backed validation unavailable")
+            validator(pinned_path)
+            if _same(os.fstat(fd)) != identity:
+                raise EvidenceError("CONFLICT", "evidence changed while validating")
+            self._assert_bound()
+        if not self._completed:
+            _publish_create_only(Path(self.partial.name), Path(self.final.name),
+                                 source_dir_fd=directory, destination_dir_fd=directory)
+            os.fsync(directory)
+            # Renaming changes ctime.  Rehash the published descriptor and require
+            # the same inode, then check the directory binding before returning it.
+            self._fd = self._close_descriptor(self._fd)
+            self._completed = True
+        with _open_member(directory, self.final.name, self.owner, self.max_bytes) as fd:
+            final_stat = os.fstat(fd)
+            if (final_stat.st_dev, final_stat.st_ino) != identity[:2]:
+                raise EvidenceError("CONFLICT", "evidence replaced at publication")
+            self._verify_descriptor(fd)
+        self._assert_bound()
         return self.final
 
+    @staticmethod
+    def _close_descriptor(fd: int | None) -> None:
+        if fd is not None:
+            os.close(fd)
+        return None
+
     def close(self) -> None:
-        for attribute in ("_fd", "_journal", "_lock"):
+        for attribute in ("_fd", "_journal", "_lock", "_directory_fd"):
             fd = getattr(self, attribute, None)
             if fd is not None:
                 os.close(fd)
@@ -332,6 +381,9 @@ class EvidenceClient:
                         or manifest.get("operation_id") != seal["operation_id"]
                         or manifest.get("seal_id") != seal["seal_id"]
                         or manifest.get("event_seq") != seal["event_seq"]
+                        or not isinstance(manifest.get("bindings"), dict)
+                        or any(manifest.get(field) != seal.get(field) for field in
+                               ("bindings", "reconcile_id", "previous_seal_id"))
                         or manifest.get("complete") is not True):
                     raise EvidenceError("CONFLICT", "archive manifest identity mismatch")
                 members = manifest["members"]

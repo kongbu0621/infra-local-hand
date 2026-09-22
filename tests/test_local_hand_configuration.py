@@ -131,14 +131,27 @@ class ConfigurationTests(unittest.TestCase):
             marker['transport_policy']['branch']='changed/branch';path.write_text(json.dumps(marker))
             with self.assertRaises(LocalHandError):controller.validate_controller_mailbox(mailbox,policy.branch)
 
-    @unittest.skipUnless(shutil.which('bash'),'Bash unavailable')
-    def test_linux_bootstrap_rejects_bad_profile_before_filesystem_mutation(self):
+    @unittest.skipUnless(os.name == 'nt' or shutil.which('bash'),'Bash unavailable')
+    def test_native_bootstrap_rejects_bad_profile_before_filesystem_mutation(self):
         self.data['transport_policy']['remote_url']='https://example.invalid/rejected.git'
         state=self.root/'new-state'
-        script=Path(__file__).resolve().parents[1]/'tools/local_hand/bootstrap_linux.sh'
-        result=subprocess.run(['bash',str(script),'--profile',str(self.write()),'--repository-name','demo',
-                               '--run-user','fixture','--state-root',str(state)],capture_output=True,text=True)
-        self.assertNotEqual(result.returncode,0);self.assertIn('invalid_profile',result.stderr)
+        scripts=Path(__file__).resolve().parents[1]/'tools/local_hand'
+        profile=self.write()
+        if os.name == 'nt':
+            # A Windows bash.exe can be a WSL launcher without a distribution.
+            # Exercise this platform's actual bootstrap, including profile admission.
+            shell=shutil.which('pwsh')
+            self.assertIsNotNone(shell, 'Windows bootstrap verification requires PowerShell 7')
+            command=[shell,'-NoProfile','-NonInteractive','-File',str(scripts/'bootstrap_windows.ps1'),
+                     '-ProfileSource',str(profile),'-RepositoryName','demo','-StateRoot',str(state)]
+        else:
+            command=['bash',str(scripts/'bootstrap_linux.sh'),'--profile',str(profile),
+                     '--repository-name','demo','--run-user','fixture','--state-root',str(state)]
+        environment=os.environ.copy()
+        environment['PATH']=str(Path(sys.executable).parent)+os.pathsep+environment.get('PATH','')
+        result=subprocess.run(command,capture_output=True,text=True,env=environment,timeout=30)
+        self.assertNotEqual(result.returncode,0, result.stdout)
+        self.assertIn('invalid_profile',result.stderr, result.stdout)
         self.assertFalse(state.exists())
 
     def test_environment_commit_cannot_override_checkout(self):
@@ -204,8 +217,11 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_clean_build_identity_allows_only_known_generated_ignored_files(self):
         source=self.root/'generated-build-files';package=source/'tools/local_hand';package.mkdir(parents=True)
-        (package/'provenance.py').write_text('# source identity fixture\n')
-        (source/'.gitignore').write_text('__pycache__/\n.pytest_cache/\n*.egg-info/\n')
+        # Match the real repository's byte-preserving checkout policy. Both Git's
+        # normal writer and the hardened reader must observe the committed bytes.
+        (source/'.gitattributes').write_bytes(b'* text=auto eol=lf\n')
+        (package/'provenance.py').write_bytes(b'# source identity fixture\n')
+        (source/'.gitignore').write_bytes(b'__pycache__/\n.pytest_cache/\n*.egg-info/\n')
         def git(*args):return subprocess.check_output(['git','-C',str(source),*args])
         git('init','-q');git('config','user.name','fixture');git('config','user.email','fixture@example.invalid')
         git('add','.');git('commit','-qm','fixed build input')

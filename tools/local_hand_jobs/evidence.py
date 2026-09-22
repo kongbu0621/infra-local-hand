@@ -76,8 +76,7 @@ def _regular(st: os.stat_result, owner: int, maximum: int) -> None:
         raise EvidenceError("CONFLICT", "evidence member type, ownership or size changed")
 
 
-@contextmanager
-def _open_root(root: Path, owner: int) -> Iterator[int]:
+def _root_descriptor(root: Path, owner: int) -> int:
     """Reject symlinks at every component, including ancestors of the admitted root."""
     if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
         raise EvidenceError("UNSUPPORTED", "no-follow directory access unavailable")
@@ -92,7 +91,24 @@ def _open_root(root: Path, owner: int) -> Iterator[int]:
             os.close(fd)
             fd = nxt
         _directory(os.fstat(fd), owner)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+@contextmanager
+def _open_root(root: Path, owner: int) -> Iterator[int]:
+    fd = _root_descriptor(root, owner)
+    try:
         yield fd
+        current = _root_descriptor(root, owner)
+        try:
+            original, entry = os.fstat(fd), os.fstat(current)
+            if (original.st_dev, original.st_ino) != (entry.st_dev, entry.st_ino):
+                raise EvidenceError("CONFLICT", "evidence root replaced during access")
+        finally:
+            os.close(current)
     finally:
         os.close(fd)
 
@@ -146,12 +162,14 @@ def _read(fd: int, maximum: int) -> bytes:
     return data
 
 
-def _file_digest(path: Path) -> tuple[int, str]:
+def _file_digest(path: Path, *, expected_identity: tuple[int, ...] | None = None) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
     with _open_root(path.parent, os.geteuid()) as directory:
         with _open_member(directory, path.name, os.geteuid(), 2**53 - 1) as fd:
             before = os.fstat(fd)
+            if expected_identity is not None and _same(before) != expected_identity:
+                raise EvidenceError("CONFLICT", "generated evidence replaced before hashing")
             while block := os.read(fd, DEFAULT_CHUNK):
                 size += len(block)
                 if size > before.st_size:
@@ -162,7 +180,8 @@ def _file_digest(path: Path) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-def _publish_create_only(source: Path, destination: Path) -> None:
+def _publish_create_only(source: Path, destination: Path, *,
+                         source_dir_fd: int = -100, destination_dir_fd: int = -100) -> None:
     """Linux atomic rename without replacement; no racy unlink of a staging entry."""
     libc = ctypes.CDLL(None, use_errno=True)
     rename = getattr(libc, "renameat2", None)
@@ -171,7 +190,7 @@ def _publish_create_only(source: Path, destination: Path) -> None:
     rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
                        ctypes.c_uint]
     rename.restype = ctypes.c_int
-    if rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1) != 0:
+    if rename(source_dir_fd, os.fsencode(source), destination_dir_fd, os.fsencode(destination), 1) != 0:
         error = ctypes.get_errno()
         raise OSError(error, "create-only publication failed")
 
@@ -218,6 +237,7 @@ class EvidenceStore:
     def __init__(self, root: Path, *, snapshot_provider: Callable[[str], FrozenSnapshot],
                  register_seal: Callable[[dict], None],
                  is_registered: Callable[[str, str], bool],
+                 list_seals: Callable[[str], list[dict]] | None = None,
                  authorize: Callable[[Any, str], None] | None = None,
                  max_members: int = 10000, max_source_bytes: int = 256 * 1024 * 1024,
                  max_artifact_bytes: int = 272 * 1024 * 1024,
@@ -233,6 +253,7 @@ class EvidenceStore:
         self.snapshot_provider = snapshot_provider
         self.register_seal = register_seal
         self.is_registered = is_registered
+        self.list_seals = list_seals
         self.authorize = authorize
         self.max_members = max_members
         self.max_source_bytes = max_source_bytes
@@ -420,10 +441,11 @@ class EvidenceStore:
                         archive.writestr(info, manifest_bytes)
                     archive_stream.flush()
                     os.fsync(archive_stream.fileno())
+                    generated_archive_identity = _same(os.fstat(archive_stream.fileno()))
                 if inventory != self._inventory(root_fd) or snapshot != self._snapshot(operation_id):
                     raise EvidenceError("CONFLICT", "frozen evidence state changed during seal")
             self._write(stage / _ROLES["manifest"], manifest_bytes)
-            zip_size, zip_digest = _file_digest(archive_path)
+            zip_size, zip_digest = _file_digest(archive_path, expected_identity=generated_archive_identity)
             if zip_size > self.max_artifact_bytes:
                 raise EvidenceError("LIMIT_EXCEEDED", "archive byte budget exceeded")
             artifacts = [{"artifact_id": seal_id + ".zip", "role": "zip", "size": zip_size,
@@ -539,9 +561,33 @@ class EvidenceStore:
             raise EvidenceError("LIMIT_EXCEEDED", "invalid manifest page size")
         records = []
         try:
-            paths = list(self.root.iterdir())
-            if len(paths) > self.max_seals * 2:
-                raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit exceeded")
+            if self.list_seals is not None:
+                indexed = self.list_seals(operation_id)
+                if not isinstance(indexed, list) or len(indexed) > self.max_seals:
+                    raise EvidenceError("LIMIT_EXCEEDED", "registered evidence catalog exceeds budget")
+                identities = set()
+                for item in indexed:
+                    if (not isinstance(item, dict) or not isinstance(item.get("seal_id"), str)
+                            or item["seal_id"] in identities
+                            or not isinstance(item.get("seal_sha256"), str)
+                            or not re.fullmatch(r"[a-f0-9]{64}", item["seal_sha256"])):
+                        raise EvidenceError("CONFLICT", "registered evidence catalog is invalid")
+                    record = self._record(item["seal_id"])
+                    if (record["operation_id"] != operation_id
+                            or record["seal_sha256"] != item["seal_sha256"]):
+                        raise EvidenceError("CONFLICT", "registered evidence binding differs")
+                    identities.add(item["seal_id"])
+                    records.append(record)
+                paths = []
+            else:
+                # Synthetic standalone stores may lack the broker index.  Keep
+                # their conservative scan bounded; production supplies list_seals.
+                paths = []
+                with os.scandir(self.root) as entries:
+                    for entry in entries:
+                        if len(paths) >= self.max_seals * 2:
+                            raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit exceeded")
+                        paths.append(Path(entry.name))
             for path in paths:
                 if path.name.startswith("staging-"):
                     continue
