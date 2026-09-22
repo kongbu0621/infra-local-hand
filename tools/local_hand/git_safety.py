@@ -175,6 +175,11 @@ def hardened_git_prefix(repo: Path) -> list[str]:
         "-c", f"safe.directory={safe_directory}",
         "-c", f"core.hooksPath={hooks}",
         "-c", "core.fsmonitor=false",
+        # Automatic housekeeping may detach and rewrite object packs while
+        # mailbox admission is measuring the same repository. Keep it out of
+        # controlled operations; do not weaken quota checks on moving files.
+        "-c", "maintenance.auto=false",
+        "-c", "gc.auto=0",
         "-c", "submodule.recurse=false",
         "-c", "credential.helper=",
         # Never allow Git's ext:: remote-helper protocol to turn a repository

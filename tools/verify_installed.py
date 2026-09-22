@@ -214,6 +214,29 @@ def main():
             connect=[sys.executable,'-I','-m','local_hand_connect.cli']
             common=['--mailbox-repo',controller,'--policy',policy_path]
             run(connect+['init']+common)
+            maintenance_code='''import json,sys
+from pathlib import Path
+from unittest import mock
+from local_hand import git_safety,worker
+root=Path(sys.argv[1]);branch=sys.argv[2];original=git_safety.sanitized_git_env;results=[]
+for box in (root/'controller',root/'worker-mailbox'):
+ for key,value in (('maintenance.auto','true'),('maintenance.autoDetach','false'),('gc.autoPackLimit','1')):
+  worker.run_git(['config','--local',key,value],box)
+ trace=root/(box.name+'-maintenance-trace.jsonl')
+ def environment(**kwargs):return {**original(**kwargs),'GIT_TRACE2_EVENT':str(trace)}
+ with mock.patch.object(git_safety,'sanitized_git_env',side_effect=environment):
+  worker.sync_mailbox(box,branch)
+ events=[json.loads(line) for line in trace.read_text().splitlines()]
+ assert any(e.get('event')=='start' and 'fetch' in e.get('argv',[]) for e in events)
+ unwanted=[e['argv'] for e in events if e.get('event')=='child_start' and any(v in e.get('argv',[]) for v in ('maintenance','gc'))]
+ assert not unwanted,unwanted
+ assert worker.run_git(['config','--local','--get','maintenance.auto'],box).stdout.strip()=='true'
+ results.append({'mailbox':str(box),'trace':str(trace),'events':len(events),'unwanted_children':unwanted,'local_auto_remains_true':True})
+print(json.dumps(results))
+'''
+            maintenance=json.loads(run([sys.executable,'-I','-c',maintenance_code,root,policy['branch']]))
+            save('maintenance-evidence.json',maintenance)
+            checks.append({'case':'installed Git operations suppress implicit maintenance without changing local policy','status':'PASS'})
             # The complete installed chain must work without a configured
             # tracking mapping or an origin/<branch> reference.
             for box in (controller,worker_box):
