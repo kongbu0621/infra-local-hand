@@ -39,6 +39,22 @@ Before closure, documentation, read-only inspection and isolated checks of exist
 
 ## Project constraints
 
+### S2 preparation status
+
+S2 is **OPEN**. Its proposed requirements, architecture and implementation plan are
+[docs/s2/REQUIREMENTS.md](docs/s2/REQUIREMENTS.md),
+[docs/s2/ARCHITECTURE.md](docs/s2/ARCHITECTURE.md) and
+[docs/s2/IMPLEMENTATION_PLAN.md](docs/s2/IMPLEMENTATION_PLAN.md).
+[READINESS.md](docs/s2/READINESS.md) records the newly verified old-deployment
+read-only mailbox results and unresolved live inventory. The existing S1 R/A/B/C
+record above remains scoped to S1. No S2 closure decision or authorized implementation
+scope is recorded. The exact S2 documentation baseline will be recorded after its
+commit exists; future closure must use that full SHA and an explicit scope.
+The downstream goal is artifact-ledger GX10 A2; a possible MCP adapter is an option
+to assess, not an automatic expansion of action, repository or host permissions.
+
+### Continuing constraints
+
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
 - Preserve source provenance and historical evidence; do not copy private history or raw machine evidence into the Public repository.
 - Implement only the eight documented actions. A model, adapter, task, tool capability or test PASS grants no extra authority.
