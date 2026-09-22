@@ -9,7 +9,7 @@ The subsequent capture-start containment, UTF-8 Task identity and acceptance-rep
 
 The subsequent Result UTF-8 containment review is recorded in [S1_RESULT_ENCODING_REVIEW.md](docs/S1_RESULT_ENCODING_REVIEW.md), with full source testing, retained failed installation attempts and explicit publication status.
 
-For the next GX10 S1 physical-host revalidation, use [GX10_S1_89D6B8D_RUNBOOK.md](docs/GX10_S1_89D6B8D_RUNBOOK.md). It fixes the product input at `89d6b8d807287396d4bac102d5fa8057558c3c7e`, preserves the older runbook as history, and requires the GX10-local executor; publication of this task is not evidence of physical execution.
+The GX10 S1 physical-host revalidation defined by [GX10_S1_89D6B8D_RUNBOOK.md](docs/GX10_S1_89D6B8D_RUNBOOK.md) has now completed. Its sanitized result, repaired candidate identity, Public-main byte-equivalence mapping, evidence seal digests and retained limits are recorded in [GX10_S1_89D6B8D_REVALIDATION.md](docs/GX10_S1_89D6B8D_REVALIDATION.md). Raw machine evidence remains private. This result does not authorize live cutover, S2 or artifact-ledger A2.
 
 ## Program Repository Documentation Gate
 
