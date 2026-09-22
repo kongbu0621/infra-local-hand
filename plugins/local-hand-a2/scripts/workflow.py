@@ -57,6 +57,8 @@ class Workflow:
         if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
             _fail("UNAUTHORIZED", "Client journal must be a private owned directory")
         self._journal_identity = (st.st_dev, st.st_ino)
+        parent = self.journal.parent.stat()
+        self._journal_parent_identity = (parent.st_dev, parent.st_ino)
         self._profiles = {}
         self._execution_support = {}
 
@@ -106,11 +108,18 @@ class Workflow:
 
     @contextmanager
     def _journal_directory(self):
-        directory = None
+        directory = parent = None
         try:
-            directory = os.open(self.journal, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            parent = os.open(self.journal.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            def check_parent():
+                if any(not stat.S_ISDIR(st.st_mode) or (st.st_dev, st.st_ino) != self._journal_parent_identity
+                       for st in (os.fstat(parent), self.journal.parent.lstat())):
+                    _fail("IO_UNCERTAIN", "Client journal parent identity changed")
+            check_parent()
+            directory = os.open(self.journal.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
             self._check_journal(directory)
-            yield directory
+            yield directory, parent
+            check_parent()
             self._check_journal(directory)
         except EvidenceError as error:
             _fail(error.code, "Client identity publication is unavailable")
@@ -119,9 +128,11 @@ class Workflow:
         finally:
             if directory is not None:
                 os.close(directory)
+            if parent is not None:
+                os.close(parent)
 
     def _read(self, name, expected_identity=None):
-        with self._journal_directory() as directory:
+        with self._journal_directory() as (directory, parent):
             try:
                 fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
             except FileNotFoundError:
@@ -146,6 +157,10 @@ class Workflow:
                 # for the same named file and directory, not a replacement.
                 os.fsync(stream.fileno())
                 os.fsync(directory)
+                # The journal can have just been created, or an earlier parent
+                # commit can have failed. Keep this verified file open through
+                # every durability barrier before checking its final identity.
+                os.fsync(parent)
                 identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
                                           item.st_size, item.st_mtime_ns, item.st_ctime_ns)
                 if any(identity(item) != identity(st) for item in
@@ -162,7 +177,7 @@ class Workflow:
             _fail("LIMIT_EXCEEDED", "Client identity exceeds local record budget")
         staging = Path(".pending-" + str(uuid.uuid4()))
         expected_identity = None
-        with self._journal_directory() as directory:
+        with self._journal_directory() as (directory, parent):
             fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
             with os.fdopen(fd, "wb") as stream:
                 stream.write(raw)
@@ -179,6 +194,7 @@ class Workflow:
                 if (published.st_dev, published.st_ino) != (created.st_dev, created.st_ino):
                     _fail("IO_UNCERTAIN", "Client identity changed during publication")
             os.fsync(directory)
+            os.fsync(parent)
         saved = self._read(name, expected_identity=expected_identity)
         if saved is None or (expected_identity is not None and saved != record):
             _fail("IO_UNCERTAIN", "Published client identity content changed")

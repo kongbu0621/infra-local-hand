@@ -629,7 +629,9 @@ def _capture_stage(stage, directory, limit, remaining):
             selector.register(pipe, selectors.EVENT_READ, name)
             streams[name] = (Path(directory) / (stage["name"] + "." + name)).open("xb")
             totals[name] = retained[name] = 0
-        while selector.get_map():
+        # EOF only ends capture for that pipe; a fixed program may close both
+        # outputs before finishing its own work. Keep its existing wall budget.
+        while selector.get_map() or process.poll() is None:
             if time.monotonic() - start > remaining:
                 exceeded = True
             if exceeded and drain_deadline is None:

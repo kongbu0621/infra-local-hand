@@ -184,7 +184,8 @@ def bounded_regular_bytes(path, maximum):
             raw.extend(chunk)
             if len(raw) > maximum: raise LedgerPlanError("input exceeds byte bound")
         after = os.fstat(descriptor)
-        if (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        entry = os.stat(path, follow_symlinks=False)
+        if _file_identity(before) != _file_identity(after) or _file_identity(after) != _file_identity(entry):
             raise LedgerPlanError("bounded input changed during read")
         return bytes(raw)
     finally:

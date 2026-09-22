@@ -193,6 +193,78 @@ class ClientTests(unittest.TestCase):
     def test_final_publication_persists_download_entry_in_private_root(self):
         self._publication_sync_failure_requires_successful_recovery("root")
 
+    def test_auto_created_private_root_ancestry_is_durable_before_completed_download(self):
+        fixture, artifact = self.fixture()
+        real_sync = os.fsync
+        for ancestor in ("parent", "grandparent"):
+            with self.subTest(ancestor=ancestor):
+                directory = self.root / ancestor / "created-middle" / "private-root"
+                target = directory.parent if ancestor == "parent" else directory.parent.parent
+                attempts, zip_offsets = [], []
+                def callback(tool, arguments):
+                    if arguments["artifact_id"].endswith(".zip"):
+                        zip_offsets.append(arguments["offset"])
+                    return fixture.callback(tool, arguments)
+                def fail_ancestor(fd):
+                    if Path(os.readlink(Path("/proc/self/fd") / str(fd))) == target:
+                        attempts.append(True)
+                        raise OSError("fixture private root ancestry persistence failure")
+                    real_sync(fd)
+                client = EvidenceClient(callback)
+                with mock.patch.object(evidence_client.os, "fsync", side_effect=fail_ancestor):
+                    with self.assertRaisesRegex(OSError, "root ancestry persistence failure"):
+                        client.download(artifact, BoundedFileWriter(directory))
+                    previous = list(zip_offsets)
+                    # mkdir(exist_ok=True) is not proof a prior failed chain is durable.
+                    with self.assertRaisesRegex(OSError, "root ancestry persistence failure"):
+                        client.download(artifact, BoundedFileWriter(directory))
+                    self.assertEqual(previous, zip_offsets)
+                self.assertEqual(len(attempts), 2)
+                final = client.download(artifact, BoundedFileWriter(directory))
+                self.assertEqual(_hash(final.read_bytes()), artifact["sha256"])
+                self.assertEqual(previous, zip_offsets)
+
+    def _final_mutation_during_sync_is_rejected(self, resumed):
+        payload = b"expected verified evidence"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        for target in ("file", "download", "root"):
+            with self.subTest(target=target, resumed=resumed):
+                directory = self.root / (target + ("-resumed" if resumed else "-new"))
+                writer = BoundedFileWriter(directory)
+                self.addCleanup(writer.close)
+                writer.prepare(artifact)
+                writer.write(0, payload)
+                if resumed:
+                    writer.finish(lambda _: None)
+                    writer.close()
+                    writer = BoundedFileWriter(directory)
+                    self.addCleanup(writer.close)
+                    self.assertEqual(writer.prepare(artifact), len(payload))
+                original_sync = os.fsync
+                changed = []
+                target_path = {"file": writer.final, "download": writer.directory,
+                               "root": writer.root}[target]
+                def mutate_after_hash(fd):
+                    path = Path(os.readlink(Path("/proc/self/fd") / str(fd)))
+                    if not changed and path == target_path:
+                        before = writer.final.stat()
+                        writer.final.write_bytes(b"x" * len(payload))
+                        os.utime(writer.final, ns=(before.st_atime_ns, before.st_mtime_ns))
+                        changed.append(writer.final.stat().st_ino)
+                        self.assertEqual(changed[-1], before.st_ino)
+                    original_sync(fd)
+                with mock.patch.object(evidence_client.os, "fsync", side_effect=mutate_after_hash):
+                    self.assertCode("CONFLICT", lambda: writer.finish(lambda _: None))
+                self.assertEqual(len(changed), 1)
+                self.assertEqual(writer.final.read_bytes(), b"x" * len(payload))
+
+    def test_new_final_keeps_verified_identity_through_all_durability_barriers(self):
+        self._final_mutation_during_sync_is_rejected(False)
+
+    def test_resumed_final_keeps_verified_identity_through_all_durability_barriers(self):
+        self._final_mutation_during_sync_is_rejected(True)
+
     def test_parent_replacement_during_validation_never_returns_foreign_bytes(self):
         payload = b"expected validated bytes"
         artifact = {"artifact_id": "fixture.manifest", "role": "manifest",

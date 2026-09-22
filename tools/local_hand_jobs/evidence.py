@@ -97,6 +97,38 @@ def _root_descriptor(root: Path, owner: int) -> int:
         raise
 
 
+def _sync_directory_ancestry(root: Path, owner: int) -> None:
+    """Persist an automatically created root's whole named directory chain.
+
+    A retry cannot infer durability from exist_ok=True: an earlier attempt may
+    have stopped after creating any ancestor. Hold no-follow descriptors and
+    check every parent/child binding after synchronization, without changing or
+    deleting any ancestor. This is a durability request, not a power-loss proof.
+    """
+    root = Path(root)
+    if not root.is_absolute() or ".." in root.parts:
+        raise EvidenceError("CONFLICT", "root must be an admitted absolute directory")
+    descriptors = []
+    try:
+        descriptors.append(os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
+        for component in root.parts[1:]:
+            descriptors.append(os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                       dir_fd=descriptors[-1]))
+        _directory(os.fstat(descriptors[-1]), owner)
+        for descriptor in reversed(descriptors):
+            os.fsync(descriptor)
+        for index, component in enumerate(root.parts[1:], 1):
+            opened = os.fstat(descriptors[index])
+            named = os.stat(component, dir_fd=descriptors[index - 1], follow_symlinks=False)
+            if (not stat.S_ISDIR(named.st_mode)
+                    or (opened.st_dev, opened.st_ino) != (named.st_dev, named.st_ino)):
+                raise EvidenceError("CONFLICT", "evidence directory ancestry changed")
+        _directory(os.fstat(descriptors[-1]), owner)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
 @contextmanager
 def _open_root(root: Path, owner: int) -> Iterator[int]:
     fd = _root_descriptor(root, owner)
@@ -511,13 +543,15 @@ class EvidenceStore:
             self._sync_directory(destination)
             self._sync_directory(stage)
             self._sync_directory(self.root)
-            if _file_digest(destination / _ROLES["seal"]) != (len(seal_bytes), _hash(seal_bytes)):
-                raise EvidenceError("CONFLICT", "published seal differs from snapshot")
-            with _open_root(destination, self.owner) as directory:
-                for role, identity in identities.items():
-                    with _open_member(directory, _ROLES[role], self.owner, self.max_artifact_bytes) as fd:
-                        if list(_same(os.fstat(fd))) != identity:
-                            raise EvidenceError("CONFLICT", "published identity changed before registration")
+            with _open_root(self.root, self.owner):
+                _sync_directory_ancestry(self.root, self.owner)
+                if _file_digest(destination / _ROLES["seal"]) != (len(seal_bytes), _hash(seal_bytes)):
+                    raise EvidenceError("CONFLICT", "published seal differs from snapshot")
+                with _open_root(destination, self.owner) as directory:
+                    for role, identity in identities.items():
+                        with _open_member(directory, _ROLES[role], self.owner, self.max_artifact_bytes) as fd:
+                            if list(_same(os.fstat(fd))) != identity:
+                                raise EvidenceError("CONFLICT", "published identity changed before registration")
             record = dict(seal, seal_sha256=_hash(seal_bytes),
                           evidence_state="SEALED" if register else "STAGING")
             if not register:

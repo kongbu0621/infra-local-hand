@@ -315,6 +315,48 @@ else:
         self.assertIn("wheel must verify its source build", result.stderr)
         self.assertEqual(list(self.output.glob("*.whl")), [])
 
+    def test_retained_wheel_rewritten_after_payload_checks_is_rejected(self):
+        self.build()
+        wheel = next(self.output.glob("*.whl"))
+        installed = self.root / "installed" / "local_hand"
+        installed.mkdir(parents=True)
+        with zipfile.ZipFile(wheel) as archive:
+            (installed / "_build_metadata.json").write_bytes(archive.read("local_hand/_build_metadata.json"))
+        script = r'''
+from pathlib import Path
+import json
+import sys
+import zipfile
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+from local_hand import installation
+from local_hand.protocol import LocalHandError
+installation.__file__ = sys.argv[1]
+wheel = Path(sys.argv[2])
+metadata = json.loads((Path(sys.argv[1]).parent / '_build_metadata.json').read_bytes())
+original = zipfile.ZipFile.__exit__
+changed = False
+def mutate(self, *args):
+    global changed
+    result = original(self, *args)
+    if not changed:
+        changed = True
+        with zipfile.ZipFile(wheel, 'a') as modified:
+            modified.writestr('local_hand/worker/__init__.py', 'UNBOUND_AFTER_VERIFICATION = True\n')
+    return result
+with patch.object(zipfile.ZipFile, '__exit__', mutate):
+    try:
+        installation.verify_wheel(wheel, metadata)
+    except LocalHandError as exc:
+        assert exc.code == 'installation_mismatch', exc.code
+    else:
+        raise AssertionError('verification recorded a digest of subsequently changed wheel bytes')
+assert changed
+with zipfile.ZipFile(wheel) as archive:
+    assert 'local_hand/worker/__init__.py' in archive.namelist()
+'''
+        self.command([sys.executable, "-I", "-c", script, installed / "installation.py", wheel])
+
 
 @unittest.skipUnless(sys.platform == "linux", "Plugin publication is Linux-only; wheel identity remains cross-platform")
 class PluginBuildIdentityTests(BuildFixture):

@@ -203,6 +203,30 @@ class LedgerPlanTests(unittest.TestCase):
             with self.assertRaises(jobs.LedgerPlanError): jobs.bounded_regular_bytes(path, 99)
         self.assertEqual(jobs.bounded_regular_bytes(path, 100), b"x" * 100)
 
+    def test_bounded_read_rejects_a_replaced_named_entry(self):
+        owned = self.root / "owned"; owned.mkdir()
+        path = owned / "result.json"
+        path.write_bytes(b'{"outcome":"SUCCEEDED"}')
+        replacement = self.root / "replacement"; replacement.mkdir()
+        (replacement / "result.json").write_bytes(b'{"outcome":"FAILED"}')
+        original_read = os.read
+        changed = False
+        def replaced_after_read(descriptor, maximum):
+            nonlocal changed
+            raw = original_read(descriptor, maximum)
+            if raw and not changed:
+                changed = True
+                # Directory replacement leaves the opened file's own metadata
+                # untouched while changing the bytes at the claimed pathname.
+                owned.rename(self.root / "detached")
+                replacement.rename(owned)
+            return raw
+        with patch.object(os, "read", side_effect=replaced_after_read):
+            with self.assertRaises(jobs.LedgerPlanError):
+                jobs.bounded_regular_bytes(path, 1024)
+        self.assertTrue(changed)
+        self.assertEqual(path.read_bytes(), b'{"outcome":"FAILED"}')
+
     def test_missing_and_ambiguous_nas_stdout_recovery_remains_unknown(self):
         root = self.root / "exclusive"; root.mkdir()
         self.assertEqual(jobs.discover_nas_run(root)["outcome"], "UNKNOWN")

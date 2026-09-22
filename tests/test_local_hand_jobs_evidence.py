@@ -212,6 +212,26 @@ class EvidenceTests(unittest.TestCase):
             self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
         self.assertFalse(self.fixture.registered)
 
+    def test_auto_created_store_ancestry_must_be_durable_before_registration(self):
+        self.fixture.store = EvidenceStore(self.root / "created-parent" / "created-middle" / "private-store",
+            snapshot_provider=lambda _: self.fixture.snapshot, register_seal=self.fixture.register,
+            is_registered=lambda identity, digest: self.fixture.registered.get(identity) == digest,
+            authorize=self.fixture.authorize)
+        target = self.fixture.store.root.parent.parent
+        original = os.fsync
+        attempts = []
+        def fail_ancestor(fd):
+            if Path(os.readlink(Path("/proc/self/fd") / str(fd))) == target:
+                attempts.append(True)
+                raise OSError("fixture store ancestry persistence failure")
+            original(fd)
+        with mock.patch.object(evidence.os, "fsync", side_effect=fail_ancestor):
+            self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
+        self.assertTrue(attempts)
+        self.assertFalse(self.fixture.registered)
+        self.assertTrue(list(self.fixture.store.root.glob("*/evidence.zip")))
+        self.assertCode("NOT_SEALED", lambda: self.fixture.store.manifest(OP, principal="reader"))
+
     def test_create_only_collision_retains_concurrent_file(self):
         real = evidence._publish_create_only
         collided = []

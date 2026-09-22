@@ -19,7 +19,8 @@ from typing import Any, Callable, Protocol
 
 from .evidence import (DEFAULT_CHUNK, MAX_CHUNK, MAX_RESPONSE, MANIFEST_NAME,
                        EvidenceError, _hash, _integer, _json, _open_member, _open_root,
-                       _publish_create_only, _read, _regular, _safe_name, _same)
+                       _publish_create_only, _read, _regular, _safe_name, _same,
+                       _sync_directory_ancestry)
 
 
 def _decode_json(raw: bytes) -> dict:
@@ -264,13 +265,16 @@ class BoundedFileWriter:
                 raise EvidenceError("CONFLICT", "evidence replaced at publication")
             self._verify_descriptor(fd)
             os.fsync(fd)
-        # A retained final file may be from a rename whose directory fsync failed.
-        # Retry the durability boundary on completed downloads as well as new ones;
-        # syncing the child alone does not persist its name in the private root.
-        os.fsync(directory)
-        with _open_root(self.root, self.owner) as root:
-            os.fsync(root)
-        self._assert_bound()
+            # A retained final file may be from a rename whose directory fsync
+            # failed. Retry all durability barriers for completed downloads too,
+            # while retaining the verified file and its full identity: fsync can
+            # block long enough for a same-inode rewrite or entry replacement.
+            os.fsync(directory)
+            with _open_root(self.root, self.owner):
+                _sync_directory_ancestry(self.root, self.owner)
+            self._assert_bound()
+            if _same(os.fstat(fd)) != _same(final_stat):
+                raise EvidenceError("CONFLICT", "evidence changed during persistence")
         return self.final
 
     @staticmethod

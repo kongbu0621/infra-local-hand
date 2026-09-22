@@ -252,6 +252,27 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(observed["outcome"], "FAILED")
             self.assertLessEqual(sum(Path(root, "noisy." + kind).stat().st_size for kind in ("stdout", "stderr")), 1024)
 
+    def test_pipe_eof_does_not_end_the_childs_remaining_execution_budget(self):
+        with tempfile.TemporaryDirectory() as root:
+            stage = {"name": "closed-output", "argv": [sys.executable, "-I", "-c",
+                "import os,pathlib,time;os.close(1);os.close(2);time.sleep(.35);pathlib.Path('completed').write_text('done')"],
+                "cwd": root, "env": {"PATH": "/usr/bin:/bin"}}
+            observed = runner._capture_stage(stage, root, 1024, 2)
+            self.assertEqual(observed["outcome"], "SUCCEEDED")
+            self.assertEqual(observed["exit_code"], 0)
+            self.assertEqual(Path(root, "completed").read_text(), "done")
+            self.assertFalse(observed["drain_incomplete"])
+
+    def test_pipe_eof_does_not_disable_the_childs_execution_deadline(self):
+        with tempfile.TemporaryDirectory() as root:
+            stage = {"name": "closed-output-timeout", "argv": [sys.executable, "-I", "-c",
+                "import os,time;os.close(1);os.close(2);time.sleep(60)"],
+                "cwd": root, "env": {"PATH": "/usr/bin:/bin"}}
+            observed = runner._capture_stage(stage, root, 1024, .15)
+            self.assertEqual(observed["outcome"], "FAILED")
+            self.assertTrue(observed["truncated"])
+            self.assertLess(observed["elapsed_seconds"], 3)
+
     def test_capture_setup_failure_reaps_direct_child_and_closes_both_pipes(self):
         import subprocess
         actual_popen = subprocess.Popen

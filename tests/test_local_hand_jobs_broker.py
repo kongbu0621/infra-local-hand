@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import ExitStack
 from pathlib import Path
 import sys
 import tempfile
@@ -601,6 +602,61 @@ class BrokerTests(unittest.TestCase):
         restored.tick()
         self.assertFalse(replacement.starts)
         self.assertIsNone(restored.status(self.request["operation_id"], self.owner)["exit_proof"])
+
+    def test_recovery_preserves_confirmed_business_outcome_across_seal_states(self):
+        for phase in ("AWAITING_SEAL", "EVIDENCE", "EXITED"):
+            for outcome, exit_code in (("SUCCEEDED", 0), ("FAILED", 1), ("UNKNOWN", 0)):
+                with self.subTest(phase=phase, outcome=outcome), ExitStack() as cleanup:
+                    folder = cleanup.enter_context(tempfile.TemporaryDirectory())
+                    state = StateStore(Path(folder) / "ledger.sqlite", "authority", "ledger", initialize=True)
+                    cleanup.callback(state.close)
+                    runner = SupervisorFixture()
+                    evidence = SimpleNamespace(root=Path(folder) / "artifacts")
+                    broker = Broker(state, self.policy, RegistryFixture(), runner, evidence)
+                    request = self.make_request()
+                    broker.submit(request, self.owner); broker.tick()
+                    runner.finish(runner.starts[0][1]); broker.tick(); broker.tick()
+                    runner.finish(runner.starts[1][1], exit_code=exit_code,
+                        effects_checked=outcome != "UNKNOWN",
+                        collectors_stopped=True, writers_stopped=True,
+                        result={"business_started": True,
+                                "evidence_snapshot": {"root": str(Path(folder) / "raw"), "members": []}})
+                    broker.tick()
+                    if phase != "AWAITING_SEAL":
+                        broker.tick()
+                    if phase == "EXITED":
+                        runner.finish(runner.starts[-1][1], exit_code=1,
+                                      collectors_stopped=True, writers_stopped=True)
+                        broker.tick()
+                    before = broker.status(request["operation_id"], self.owner)
+                    self.assertEqual(outcome, before["outcome"])
+                    self.assertEqual(phase, before["phase"])
+                    replacement = SupervisorFixture()  # No recovery attachment proof.
+                    restored = Broker(state, self.policy, RegistryFixture(), replacement, evidence)
+                    restored.recover()
+                    after = restored.status(request["operation_id"], self.owner)
+                    self.assertEqual(outcome, after["outcome"],
+                                     "lost seal supervision must not erase a durable business result")
+                    self.assertEqual(phase, after["phase"])
+                    self.assertEqual("RECONCILE_REQUIRED", after["lifecycle"])
+                    self.assertEqual({}, after["outputs"])
+                    self.assertFalse(replacement.starts)
+                    if phase in ("EVIDENCE", "EXITED"):
+                        self.assertEqual("DURABILITY_UNKNOWN", after["evidence"])
+                    self.assertEqual(2 if phase == "AWAITING_SEAL" else 3, len(runner.starts))
+                    if phase == "EVIDENCE":
+                        self.assertIsNone(after["exit_proof"], "a business proof cannot prove helper exit")
+                    restored.recover()
+                    self.assertEqual(outcome, restored.status(request["operation_id"], self.owner)["outcome"])
+                    self.assertCode("RESOURCE_BUSY", lambda: restored.submit(self.make_request(), self.owner))
+                    if phase == "AWAITING_SEAL":
+                        self.policy.generation += 1
+                        restored.tick()  # Current admission rejects the new evidence helper.
+                        rejected = restored.status(request["operation_id"], self.owner)
+                        self.assertEqual(outcome, rejected["outcome"])
+                        self.assertEqual("STAGING", rejected["evidence"])
+                        self.assertEqual("AWAITING_SEAL", rejected["phase"])
+                        self.assertFalse(replacement.starts)
 
     def _queue_round_before_late_business_exit(self, *, snapshot=False):
         if snapshot:

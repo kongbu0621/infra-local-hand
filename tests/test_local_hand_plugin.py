@@ -277,10 +277,13 @@ else:
 
     def test_failed_directory_commit_is_reconfirmed_before_resubmission(self):
         real_fsync = os.fsync
-        calls = [0]
+        failed = []
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        journal = self.client.journal.stat()
         def fail_directory_once(fd):
-            calls[0] += 1
-            if calls[0] == 2:
+            current = os.fstat(fd)
+            if not failed and path.exists() and (current.st_dev, current.st_ino) == (journal.st_dev, journal.st_ino):
+                failed.append(True)
                 raise OSError("synthetic directory persistence failure")
             return real_fsync(fd)
         with patch.object(workflow.os, "fsync", side_effect=fail_directory_once):
@@ -293,6 +296,57 @@ else:
         self.assertEqual(self.reserve()["request"]["operation_id"], published_id)
         self.client.submit("inspect")
         self.assertEqual([args["operation_id"] for name, args in self.host.calls if name == "lh_job_submit"], [published_id])
+
+    def test_journal_parent_commit_is_required_before_submission_and_retry(self):
+        real_fsync = os.fsync
+        parent = self.client.journal.parent.stat()
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        attempted = []
+        def fail_parent_after_publication(fd):
+            current = os.fstat(fd)
+            if path.exists() and (current.st_dev, current.st_ino) == (parent.st_dev, parent.st_ino):
+                attempted.append(True)
+                raise OSError("synthetic journal parent persistence failure")
+            return real_fsync(fd)
+        with patch.object(workflow.os, "fsync", side_effect=fail_parent_after_publication):
+            self.assert_error("IO_UNCERTAIN", self.reserve)
+        original = json.loads(path.read_bytes())
+        restarted = workflow.Workflow(self.host, self.client.journal, self.admission, sleep=lambda _: None)
+        restarted.preflight()
+        with patch.object(workflow.os, "fsync", side_effect=fail_parent_after_publication):
+            self.assert_error("IO_UNCERTAIN", restarted.reserve_job, "inspect",
+                              kind="host.inspect", profile_ref="fixture", inputs={})
+            self.assert_error("IO_UNCERTAIN", restarted.submit, "inspect")
+        self.assertEqual(3, len(attempted))
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+        self.assertEqual(original, restarted.reserve_job("inspect", kind="host.inspect", profile_ref="fixture", inputs={}))
+        restarted.submit("inspect")
+        self.assertEqual([args["operation_id"] for name, args in self.host.calls if name == "lh_job_submit"],
+                         [original["request"]["operation_id"]])
+
+    def test_identity_readback_covers_blocking_parent_commit(self):
+        self.reserve()
+        real_fsync = os.fsync
+        parent = self.client.journal.parent.stat()
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        changed = []
+        def rewrite_during_parent_commit(fd):
+            result = real_fsync(fd)
+            current = os.fstat(fd)
+            if not changed and (current.st_dev, current.st_ino) == (parent.st_dev, parent.st_ino):
+                original = path.stat()
+                record = json.loads(path.read_bytes())
+                record["request"]["operation_id"] = str(workflow.uuid.uuid4())
+                record["request"]["request_digest"] = workflow.request_digest(record["request"])
+                path.write_bytes(workflow.canonical_bytes(record))
+                os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+                changed.append(record)
+            return result
+        with patch.object(workflow.os, "fsync", side_effect=rewrite_during_parent_commit):
+            self.assert_error("IO_UNCERTAIN", self.client.submit, "inspect")
+        self.assertEqual(1, len(changed))
+        self.assertEqual(changed[0], json.loads(path.read_bytes()))
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
 
     def test_untrusted_authority_and_changed_expected_stop_submission(self):
         self.reserve()

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 import uuid
 import zipfile
@@ -32,25 +33,44 @@ def _absolute_file(value: str) -> str:
 
 
 def verify_wheel(path: Path, metadata: dict) -> str:
-    if path.stat().st_size > 64*1024*1024:raise _bad("wheel exceeds installation artifact bound")
+    limit=64*1024*1024
+    def identity(info):
+        return (info.st_dev,info.st_ino,info.st_mode,info.st_nlink,
+                info.st_size,info.st_mtime_ns,info.st_ctime_ns)
     try:
-        with zipfile.ZipFile(path) as archive:
-            names=archive.namelist()
-            if len(names)!=len(set(names)) or sum(i.file_size for i in archive.infolist())>32*1024*1024:
-                raise _bad("wheel has duplicate entries or excessive expanded size")
-            payload=set(metadata["files"])|{"local_hand/_build_metadata.json"}
-            distribution="infra_local_hand-"+metadata["product_version"]+".dist-info/"
-            if any(name not in payload and not (
-                    name.startswith(distribution) and name[len(distribution):]
-                    and all(part not in ("", ".", "..") for part in name.split("/"))
-                    and "\\" not in name) for name in names):
-                raise _bad("wheel contains an unbound payload entry")
-            expected=(Path(__file__).parent/"_build_metadata.json").read_bytes()
-            if archive.read("local_hand/_build_metadata.json")!=expected:raise _bad("wheel metadata differs from installed package")
-            for name,digest in metadata["files"].items():
-                if hashlib.sha256(archive.read(name)).hexdigest()!=digest:raise _bad("wheel payload differs from installed package")
-    except (zipfile.BadZipFile,KeyError) as exc:raise _bad("invalid wheel artifact") from exc
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+        # Inspect and hash the same open artifact. Reopening by name after ZIP
+        # validation could bind an installation to unrelated replacement bytes.
+        with path.open("rb") as stream:
+            before=os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size>limit:
+                raise _bad("wheel exceeds installation artifact bound or is not regular")
+            if identity(path.stat())!=identity(before):raise _bad("wheel changed during verification")
+            with zipfile.ZipFile(stream) as archive:
+                names=archive.namelist()
+                if len(names)!=len(set(names)) or sum(i.file_size for i in archive.infolist())>32*1024*1024:
+                    raise _bad("wheel has duplicate entries or excessive expanded size")
+                payload=set(metadata["files"])|{"local_hand/_build_metadata.json"}
+                distribution="infra_local_hand-"+metadata["product_version"]+".dist-info/"
+                if any(name not in payload and not (
+                        name.startswith(distribution) and name[len(distribution):]
+                        and all(part not in ("", ".", "..") for part in name.split("/"))
+                        and "\\" not in name) for name in names):
+                    raise _bad("wheel contains an unbound payload entry")
+                expected=(Path(__file__).parent/"_build_metadata.json").read_bytes()
+                if archive.read("local_hand/_build_metadata.json")!=expected:raise _bad("wheel metadata differs from installed package")
+                for name,digest in metadata["files"].items():
+                    if hashlib.sha256(archive.read(name)).hexdigest()!=digest:raise _bad("wheel payload differs from installed package")
+            stream.seek(0)
+            digest=hashlib.sha256();count=0
+            while chunk:=stream.read(min(1024*1024,limit+1-count)):
+                count+=len(chunk)
+                if count>limit:raise _bad("wheel exceeds installation artifact bound")
+                digest.update(chunk)
+            if (count!=before.st_size or identity(os.fstat(stream.fileno()))!=identity(before)
+                    or identity(path.stat())!=identity(before)):
+                raise _bad("wheel changed during verification")
+            return digest.hexdigest()
+    except (OSError,ValueError,zipfile.BadZipFile,KeyError) as exc:raise _bad("invalid wheel artifact") from exc
 
 
 def create_record(profile_path: Path, output: Path, *, install_instance_id: str,

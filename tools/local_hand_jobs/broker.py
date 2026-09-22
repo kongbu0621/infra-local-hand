@@ -357,6 +357,15 @@ class Broker:
                         "lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN",
                         "recovered": True,
                         "gaps": ["Persisted execution intent requires independent launch and exit proof"]}
+                    if (record["phase"] in ("AWAITING_SEAL", "EVIDENCE", "EXITED")
+                            and "business_outcome" in record):
+                        # The original execution was already observed and
+                        # frozen before sealing. Recovery uncertainty belongs
+                        # to the evidence helper, not that durable result.
+                        changes.update(outcome=record["business_outcome"],
+                                       gaps=["Business result retained; evidence publication requires recovery"])
+                    if record["phase"] == "EVIDENCE":
+                        changes["evidence"] = "DURABILITY_UNKNOWN"
                     if record["phase"] in ("PREFLIGHT", "BUSINESS", "RECONCILE", "EVIDENCE"):
                         # Older ledgers could carry the previous phase's proof
                         # through a new intent. Reobserve this exact execution.
@@ -379,10 +388,13 @@ class Broker:
     def _unknown(self, namespace, identity, gap):
         with self.state.transaction() as tx:
             row = self.state.get(namespace, identity, tx)
+            record = row["record"]
             changes = {"lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN", "gaps": [gap]}
-            if row["record"]["phase"] == "EVIDENCE":
-                changes.update(outcome=row["record"].get("business_outcome", "UNKNOWN"), evidence="DURABILITY_UNKNOWN")
-            if all(row["record"].get(name) == value for name, value in changes.items()):
+            if record["phase"] in ("AWAITING_SEAL", "EVIDENCE", "EXITED") and "business_outcome" in record:
+                changes["outcome"] = record["business_outcome"]
+            if record["phase"] == "EVIDENCE":
+                changes["evidence"] = "DURABILITY_UNKNOWN"
+            if all(record.get(name) == value for name, value in changes.items()):
                 return  # Polling the same uncertainty is not a new durable observation.
             self.state.update(tx, namespace, identity, "EXECUTION_UNCERTAIN", changes)
 
