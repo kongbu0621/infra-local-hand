@@ -133,7 +133,8 @@ UI／MCP 请求 id 是传输身份，不能作为 operation_id。未确认提交
 有权重取的已有相同请求先返回原记录，不因它所记旧 epoch 或原 expires_at 过期而重新执行或丢失查询能力；
 主体被撤销时仍拒绝访问。新 id 才走全部当前部署、前置证据和资源检查。
 
-创建意图前及实际 spawn 前都核对预期部署、当前策略、固定输入、授权和资源租约。
+创建业务执行意图前及业务实际 spawn 前都核对预期部署、当前策略、固定输入、授权和资源租约。
+需要读取存储的固定输入核验先按 A05 登记独立受限预检意图；预检的许可不等于业务执行许可。
 排队期间变更策略或撤销准入则拒绝启动；运行中撤销阻止新读取／新作业，并按部署预设的受控停止策略处理，
 不把 token 到期解释为业务撤销或成功取消。调用者不能选择 state root、提升 epoch 或设置自己的预算。
 启动预留绑定服务端授权/策略代次，本地撤销与代次变更复用 A05 的启动围栏；只在准入时鉴权不够。
@@ -174,7 +175,8 @@ UNKNOWN 不因查询超时转 FAILED；程序 exit 0 不自动把证据写成 SE
 预算值在 profile 中经准入冻结并纳入 digest，缺失／无限值拒绝准入。不能从 1 GiB 测试文件推断 RSS 上限。
 除单 job 外，部署策略还固定总排队数、运行并发数、各主体请求速率、累计保留字节和账本应急容量；
 接受 job 与 reconcile 前事务化预留容量，封存预算计入原件、工作副本、ZIP 临时文件及最终文件并存的峰值。
-reconcile 有独立有限时间/进程/磁盘/日志预算和单作业互斥，同一快照的重复核对复用原记录。
+reconcile 有独立有限时间/进程/磁盘/日志预算和单作业互斥，同一 reconcile_id 的重试复用原记录。
+显式新 id 才申请新的观察；原业务事件序号或路径集合未变，不足以把旧观察当成当前事实。
 控制账本的预留空间与作业数据配额隔离；容量不足返回 LIMIT_EXCEEDED，拒绝新工作并受控停止必要的 writer，
 不靠删除历史证据继续运行。I/O 或配额保证失效仍按 UNKNOWN/持久化不明处理，不能承诺磁盘永不耗尽。
 stdout/stderr 独立排空并写私有文件；超限仍排空并执行受控停止，记录截断位置和丢弃计数，不把截断当完整证据。
@@ -182,6 +184,11 @@ stdout/stderr 独立排空并写私有文件；超限仍排空并执行受控停
 同进程 adapter/broker 的控制路径不得直接等待可能阻塞的挂载访问、内容全量哈希或 NAS 核对。
 这些预检、证据计算和 reconcile 工作统一进入受监督 helper/runner，先登记意图、归属和有限预算，
 纳入同一资源租约、启动围栏与进程树退出核对；不能以“还未启动主程序”为由绕过监督。
+意图分为受限辅助观察和固定业务执行：先从本地受保护准入映射核对 helper、目标、授权、预算及租约，
+登记辅助意图后执行只读来源的预检；预检完成、事实绑定准确输入/资源后，才在围栏内复核当前代次、
+取消、租约及事实有效性，登记业务意图并启动固定业务程序。慢字节检查始终在围栏外。
+绑定受 A02 的不可变输入与 A06 的稳定挂载边界保护；失效或不明拒绝业务启动，不能用旧摘要代替保护。
+状态分别记录辅助观察已执行与业务是否启动；仅有预检进程时不能笼统报告“完全未执行”。
 控制面只持久排队、短时回执和读取本地账本，不持有 SQLite 写事务或启动/取消围栏等待外部 I/O。
 submit/cancel/reconcile 的回执表示持久受理，不保证操作已完成；status 报告观察时间、阶段与未决事实。
 在本地账本健康的前提下，存储 helper 挂起时 status 仍可返回，取消仍可持久受理；
@@ -194,7 +201,7 @@ cancel 的持久点之后不允许新增启动；spawn 前必须检查取消标�
 对已经交给进程管理器但尚未获得回执的启动请求，必须按唯一 job unit/启动身份核对并阻断未来启动，
 不能因为当前 cgroup 为空就判断不会再启动。按进程归属 TERM → 限时 → KILL，
 确认全部已排队启动被撤销且整个进程树退出后，才给确定取消结论和释放资源；否则 UNKNOWN 且保留屏障。
-只有证明未 spawn 才可说明“未执行”；执行过但没有业务副作用仍属于已执行。
+只有证明业务未 spawn 才可说明“业务未执行”，辅助观察执行情况另列；执行过但没有业务副作用仍属于已执行。
 停止后的 NAS/文件事实另记，取消不是撤销。
 本地主体/grant 撤销与策略代次变更也在同一围栏内持久化并失效旧启动预留；之后不再授权新的启动。
 已提交进程管理器的延迟请求按上面的未来启动阻断规则处理，不能让先前成功的鉴权继续启动固定业务程序。
@@ -204,6 +211,7 @@ reconcile 只读取原作业账本与归属路径、核对已发布对象，并�
 允许在独立核对 scratch 做只读来源的内容校验，不重新发布、不执行原程序、不删除原作业文件。
 核对使用独立执行身份、该次核对的取消状态及预算，引用原作业并复用其资源屏障、当前授权和启动围栏。
 原业务作业已取消不阻止获准的固定只读核对；新的撤销/停止仍覆盖核对 helper，绝不据此重启原业务程序。
+同一原作业最多一个活动核对；旧核对的启动/退出不明时不准入新的核对，资源屏障保持。
 调用 reconcile 需要独立权限；不能因它主要是读取就把它标成无写入。
 
 ## AX-A06 Ledger NAS 的具体恢复边界（R04/R06/R12）
@@ -236,16 +244,34 @@ E6 准入另须证明受保护的稳定挂载绑定／私有挂载命名空间�
 | --- | --- | --- |
 | `lh_capabilities` | 分页游标 → 支持版本、工具 schema digest、authority、按 profile 分组的完整 expected、获准 kind/逻辑输入引用及可用预算 | `lh:inspect` + 各引用可见性；readOnly |
 | `lh_job_submit` | 完整固定请求 → operation_id、digest、接受状态 | `lh:submit` + kind/resource grant；非 readOnly，按副作用保守声明 destructive |
-| `lh_job_status` | operation_id → 三维状态、阶段、事件序号、观察时间、缺口及封存输出引用 | `lh:read` + 归属；readOnly |
-| `lh_job_cancel` | operation_id、期望 request digest → 取消请求及实际结果 | `lh:cancel` + 归属；非 readOnly |
-| `lh_job_reconcile` | operation_id、期望 request digest → 持久受理的核对记录/进度引用；完成后按原作业查询 | `lh:reconcile` + 归属；非 readOnly |
+| `lh_job_status` | operation_id、可选 reconcile_id → 原业务或准确核对轮次的三维状态、阶段、事件序号、观察时间、缺口及封存输出引用 | `lh:read` + 归属；readOnly |
+| `lh_job_cancel` | operation_id、期望 request digest、target → 指定业务或核对的持久取消请求及实际结果 | `lh:cancel` + 目标归属/准入；非 readOnly |
+| `lh_job_reconcile` | operation_id、期望原 request digest、reconcile_id → 持久受理的该轮核对记录/进度引用 | `lh:reconcile` + 归属；非 readOnly |
 | `lh_evidence_manifest` | operation_id、分页游标 → 已封存 artifact 清单与 seal | `lh:evidence` + 归属；readOnly |
 | `lh_evidence_read_chunk` | artifact_id、offset、length、期望摘要 → base64、范围、块摘要、全件摘要 | `lh:evidence` + 归属；readOnly |
 
 提示属性是客户端体验信息，授权始终由后端执行。统一错误区分 UNAUTHORIZED、CONFLICT、
-STALE_DEPLOYMENT、UNSUPPORTED、RESOURCE_BUSY、NOT_SEALED、LIMIT_EXCEEDED、IO_UNCERTAIN；
+STALE_DEPLOYMENT、UNSUPPORTED、RESOURCE_BUSY、NOT_FOUND、NOT_SEALED、LIMIT_EXCEEDED、IO_UNCERTAIN；
 不得把错误包装为成功空结果。异常文本脱敏，不在错误中返回私有路径或 token。
 状态接口只给有界进度与计数；完整原始日志走封存产物，不把日志塞进模型上下文。
+
+reconcile_id 是客户端生成的小写 UUID v4，使用独立于业务 operation_id 的命名空间。
+首次受理将它与原 operation_id、原 request_digest、主体和服务端固定的观察起点/执行计划绑定，
+在任何核对 helper 启动前持久保存。先鉴权并查该 id，再决定是否产生新观察；
+同 id 同绑定只返回原记录，即使该轮已完成或业务已取消，不能刷新观察起点或再次启动。
+同 id 异父作业/摘要冲突，跨主体拒绝；新 id 经当次授权、单作业互斥和预算检查才成为新一轮观察，
+不能解除旧 UNKNOWN helper 或资源屏障。核对结果和 seal 追加记录，不覆盖旧轮次。
+status 不带 reconcile_id 时返回原业务状态及有界的活动/最近核对引用；带该字段时返回该准确轮次，
+含其独立取消状态、已知副作用和证据引用。保存的旧 reconcile_id 始终可按当前权限直接查询。
+cancel 的 target 是严格二选一对象：`kind=job` 时无其他字段；`kind=reconcile` 时必含 reconcile_id。
+不指定目标或附多余字段拒绝；不得推断“最新一次”。job 目标控制原业务执行身份及附属 helper，
+包括预检和证据计算，但不包括独立核对身份；
+重复旧业务取消不会误停后来获准的核对；reconcile 目标只停止指定轮次，仍需未来启动阻断及退出证明。
+Plugin 对业务和核对都保存稳定 id，回执丢失先查询或同 id 重送，绝不因超时自动生成新 id。
+NOT_FOUND 只表示本次健康账本查询未有该记录；I/O 不明不能返回 NOT_FOUND。
+尚在传输的请求仍可能稍后受理，因此不能据此换 id 重投或宣称从未执行。
+本版 cancel 对尚无记录的目标返回 NOT_FOUND/取消未受理，不创建新的取消 tombstone；
+客户端继续按原 id 查询，发现受理后再取消。没有持久取消屏障时绝不报告取消完成。
 
 capabilities 的目录只含当前主体可见且获准使用的 profile/source/build-cache/storage/prepared 逻辑引用，
 逐项关联适用 kind、profile 及必要的兼容绑定，不返回私有路径或其他主体的资源。每页最多 100 条，
