@@ -4,6 +4,7 @@
 NAS 已有固定只读查询与响应校验，但实际查询、写入身份和限定网络尚未准入。结果读取已迁入独立受监督进程，真实阻塞 I/O、恢复和取消仍待 E3 实测；本轮未达到 E1–E3 全部出口。
 实现边界见 [受监督启动与结果读取](SUPERVISED_BOOTSTRAP.md)和 [NAS 配额准入](NAS_QUOTA_ADMISSION.md)。上一检查点准确源码 `4be98b8`、运行结果、保留的本地安装失败和产物身份见 [启动准备验证报告](E1_BOOTSTRAP_VERIFICATION.md)，不转记为新增实现的验证。
 当前结果读取与 NAS 查询合同的准确源码、测试和证据摘要见 [本轮验证报告](E1_RESULT_READER_VERIFICATION.md)。
+后续 E3 准备核查确认了两项实现缺口：真实宿主测试仍为占位，且当前 project-quota 查询与固定 upstream 隔离权限模型冲突；不能仅换到 systemd 主机就完成验收。事实、来源和待验证范围见 [E3 实现缺口](E3_IMPLEMENTATION_GAPS.md)，当前可执行的只读盘点及后续场景见 [宿主验收准备](E3_HOST_ACCEPTANCE_RUNBOOK.md)。
 历史准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)、[第五轮复核](E1_E3_RECHECK_5.md)、[第六轮复核](E1_E3_RECHECK_6.md)、[第七轮复核](E1_E3_RECHECK_7.md)、[第八轮复核](E1_E3_RECHECK_8.md)、[第九轮复核](E1_E3_RECHECK_9.md)、[第十轮复核](E1_E3_RECHECK_10.md)及 [fd55 中断交付恢复](E1_E3_RECOVERY_FD55C07.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
@@ -31,16 +32,18 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | 项目 | 准确状态 |
 | --- | --- |
 | E1 受监督执行 | 已有私有 root allocation、三个固定单元、受监督配额／计划发布与结果读取、三次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
-| E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。真实委派账户、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的验收仍待完成；合成 manager 测试不替代此项 |
+| E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。现有实机用例仍为 SKIP/FAIL 占位，尚缺完整 host fixture/harness；委派、namespace、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的真实验收未完成 |
+| 本地 project quota | 固定 Linux/systemd 源码显示，当前 PRJQUOTA 查询的 host capability 要求与 `PrivateUsers=yes` 冲突，`PrivateDevices=yes` 还可能影响设备定位；目标内核、准确失败点与 errno 待实测。现实现未保存 quotactl errno。预建配额不能单独消除此实现障碍；不通过提权或放宽隔离解决 |
+| E3 只读准备 | 独立 `tools/probe_e3_host.py` 仅收集有界宿主事实；exit 0 不表示支持，生产／E3／业务授权始终为 false，不执行 quota syscall、不访问传入 mount target。未有当前绑定目标主机的执行证据时，不将开发环境报告转记为目标实测 |
 | helper 结果读取 | 新 v3 将文件读取迁入独立只读 reader unit，父端仅处理有界匿名管道；旧布局不补授 reader 预算、不回退直接读盘。重启丢失管道不重读，结果保留 UNKNOWN；原三 unit 退出可独立记录，允许新显式 reconcile，旧 local CLI 停止仍不冒充已证明。真实 E3 尚未验收 |
 | 真实 Unix maintenance transport | 宿主限制和各准确候选结果按对应验证报告分别记账；独立 TCP/SDK 测试不替代 Unix socket |
-| NAS 运行时 | `nas_quota` 已有固定 CIFS 只读请求、准确响应与身份／时间校验，结果始终 LOGIC_ONLY；实际 collector、写入身份、凭据及限定网络未准入。`ledger.nas.roundtrip` 和真实查询仍明确 UNSUPPORTED，Plugin 不提交该类型 |
+| NAS 运行时 | `nas_quota` 已有固定 CIFS 只读请求、准确响应与身份／时间校验，结果始终 LOGIC_ONLY；实际 collector、写入身份、凭据及限定网络未准入。`ledger.nas.roundtrip` 和真实查询仍明确 UNSUPPORTED，Plugin 不提交该类型。现场事实按 [私有输入工作表](NAS_PRIVATE_INPUT_WORKSHEET.md) 收集，填写不启用查询 |
 | E4 | 真实当前客户端 OAuth、私有 MCP 连接及工具结果到可下载文件的宿主桥接未执行。16 MiB 合成证据下载属于 E2 客户端组件验证 |
 | E5 / S2 | 未安装到 GX10、未停止或切换旧服务；S2 仍按独立 OPEN 基线管理 |
 | E6 | 未执行真实 GX10 → NAS → GX10 A2，不把 Linux 合成文件或逻辑测试当 NAS 证据 |
 
 本实现保留硬约束；没有跳过认证、配额、进程树证明或挂载检查的运行时开关。
-启动准备的真实监督验证、NAS 配额适配与真实 cgroup 验收必须补齐，不能靠改一个配置布尔值宣称支持。
+本地 quota 查询机制与真实 host harness 须先补齐，再完成启动准备、结果读取和真实 cgroup 验收；NAS 配额适配仍单列未完成，不能靠改一个配置布尔值宣称支持。
 私有 root slot 由受信部署侧预先创建、绑定账户与硬配额；broker 只消费已声明身份，不能自动扩池、回收或重新分配已用 slot。
 Bootstrap、helper 与 result_reader 共享原阶段绝对截止时间；新 v3 的 CPU 三分固定且不退款，旧 v2 原分额不改。不会因排队、切换子阶段或重启而续额。
 不能把线程超时当作进程树退出证明，也不能把新增启动准备隔离解释成所有存储观察已具备有限停止保证。
