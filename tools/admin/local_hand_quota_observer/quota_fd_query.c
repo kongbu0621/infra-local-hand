@@ -17,10 +17,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 #include <unistd.h>
+#include "quota_syscall_filter.h"
 
 enum { ROOT_FD = 3, MAX_CALLS = 16, OUTPUT_BYTES = 4096 };
 _Static_assert(sizeof(struct fsxattr) == 28, "unsupported fsxattr ABI");
@@ -37,6 +39,7 @@ struct report {
     unsigned quota_calls;
     bool root_seen, fs_seen, project_seen, state_seen, quota_seen, hard_bytes_valid;
     bool root_after_seen, project_after_seen, state_after_seen;
+    bool no_new_privs, filter_installed;
     struct stat root;
     struct statfs fs;
     struct fsxattr project;
@@ -77,8 +80,8 @@ static void query(struct report *r, unsigned int command, unsigned int id,
 {
 #ifdef SYS_quotactl_fd
     r->quota_calls++;
-    OBSERVE(r, label, syscall(SYS_quotactl_fd, (unsigned int)ROOT_FD,
-                             command, id, output));
+    OBSERVE(r, label, syscall(SYS_quotactl_fd, (unsigned long)ROOT_FD,
+                             (unsigned long)command, (unsigned long)id, output));
 #else
     (void)command; (void)id; (void)output; (void)label;
     fail(r, "UNSUPPORTED", "QUOTACTL_FD_ABI_UNAVAILABLE", 3);
@@ -92,9 +95,22 @@ static bool enforced(const struct fs_quota_statv *state)
            (state->qs_flags & required) == required;
 }
 
+static int stat_root(struct stat *value)
+{
+#if LH_QUOTA_FILTER_AVAILABLE
+    /* Avoid libc fstat implementations that use path-capable newfstatat. */
+    return (int)syscall(SYS_fstat, (unsigned long)ROOT_FD, value);
+#else
+    (void)value; errno = ENOSYS; return -1;
+#endif
+}
+
 static void inspect(struct report *r)
 {
-    OBSERVE(r, "fstat.before", fstat(ROOT_FD, &r->root));
+#if !LH_QUOTA_FILTER_AVAILABLE
+    fail(r, "UNSUPPORTED", "RESTRICTION_ABI_UNAVAILABLE", 3); return;
+#endif
+    OBSERVE(r, "fstat.before", stat_root(&r->root));
     if (!succeeded(r)) { fail(r, "REJECTED", "ROOT_STAT_FAILED", 2); return; }
     r->root_seen = true;
     if (!S_ISDIR(r->root.st_mode)) {
@@ -118,8 +134,13 @@ static void inspect(struct report *r)
     if (!r->project.fsx_projid || !(r->project.fsx_xflags & FS_XFLAG_PROJINHERIT)) {
         fail(r, "REJECTED", "INHERITED_PROJECT_REQUIRED", 2); return;
     }
-#ifndef SYS_quotactl_fd
-    fail(r, "UNSUPPORTED", "QUOTACTL_FD_ABI_UNAVAILABLE", 3); return;
+#if LH_QUOTA_FILTER_AVAILABLE
+    OBSERVE(r, "prctl.no_new_privs", prctl(PR_SET_NO_NEW_PRIVS, 1UL, 0UL, 0UL, 0UL));
+    if (!succeeded(r)) { fail(r, "UNSUPPORTED", "NO_NEW_PRIVS_FAILED", 3); return; }
+    r->no_new_privs = true;
+    OBSERVE(r, "seccomp.install", quota_filter_install(r->project.fsx_projid));
+    if (!succeeded(r)) { fail(r, "UNSUPPORTED", "SYSCALL_FILTER_FAILED", 3); return; }
+    r->filter_installed = true;
 #endif
     r->state.qs_version = FS_QSTATV_VERSION1;
     query(r, QCMD((unsigned int)Q_XGETQSTATV, PRJQUOTA), 0, &r->state, "quotactl_fd.state.before");
@@ -151,7 +172,7 @@ static void inspect(struct report *r)
         r->project_after.fsx_xflags != r->project.fsx_xflags) {
         fail(r, "IO_UNCERTAIN", "PROJECT_CHANGED", 4); return;
     }
-    OBSERVE(r, "fstat.after", fstat(ROOT_FD, &r->root_after));
+    OBSERVE(r, "fstat.after", stat_root(&r->root_after));
     if (!succeeded(r)) { fail(r, "IO_UNCERTAIN", "ROOT_RECHECK_FAILED", 4); return; }
     r->root_after_seen = true;
     if (r->root_after.st_dev != r->root.st_dev || r->root_after.st_ino != r->root.st_ino ||
@@ -177,12 +198,17 @@ static int emit(const struct report *r)
     if (n < 0 || (size_t)n >= sizeof(buf) - used) return 70; \
     used += (size_t)n; \
 } while (0)
-    APPEND("{\"schema\":\"local-hand-quota-abi/v1\",\"status\":\"%s\",\"code\":\"%s\","
+    APPEND("{\"schema\":\"local-hand-quota-abi/v2\",\"status\":\"%s\",\"code\":\"%s\","
            "\"real_e3_accepted\":false,\"production_supported\":false,\"admission_proven\":false,"
            "\"quota_syscall_attempts\":%u,\"uid\":%ju,\"euid\":%ju,\"root_fd\":3,"
            "\"abi\":{\"fsxattr_bytes\":%zu,\"dqblk_bytes\":%zu,\"qstatv_bytes\":%zu},",
            r->status, r->code, r->quota_calls, (uintmax_t)getuid(), (uintmax_t)geteuid(),
            sizeof(struct fsxattr), sizeof(struct if_dqblk), sizeof(struct fs_quota_statv));
+    APPEND("\"restriction\":{\"profile\":\"quota-fd-readonly/v1\",\"no_new_privs\":%s,"
+           "\"filter_installed\":%s,\"project_id\":",
+           r->no_new_privs ? "true" : "false", r->filter_installed ? "true" : "false");
+    if (r->filter_installed) APPEND("%u", r->project.fsx_projid); else APPEND("null");
+    APPEND("},");
     APPEND("\"root\":");
     if (r->root_seen) APPEND("{\"device\":%ju,\"inode\":%ju,\"uid\":%ju,\"gid\":%ju,\"mode\":%ju}",
                            (uintmax_t)r->root.st_dev, (uintmax_t)r->root.st_ino,
@@ -245,5 +271,5 @@ int main(int argc, char **argv)
             }
         }
     }
-    return emit(&r);
+    _exit(emit(&r)); /* No libc teardown syscalls after the restrictive filter. */
 }

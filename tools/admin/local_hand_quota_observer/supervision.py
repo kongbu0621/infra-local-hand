@@ -76,6 +76,10 @@ class UnitObservation:
     collectors_stopped: bool
     exec_main_code: int | None
     exec_main_status: int | None
+    # Explicit evidence source: a fixed dedicated ancestor can prove recursive
+    # emptiness after systemd prunes the leaf. Its identity is verified by the
+    # trusted manager adapter; absence of either directory is never populated=0.
+    empty_cgroup: str | None = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +204,8 @@ class QueryMonitor:
         flags = (observation.delivery_settled, observation.admission_fenced, observation.job_empty,
                  observation.unit_terminal, observation.cgroup_empty, observation.collectors_stopped)
         require(all(type(flag) is bool for flag in flags), "UNIT_FACT_TYPE")
+        require(observation.empty_cgroup in (None, binding.cgroup, binding.manifest.cgroup_parent),
+                "EMPTY_CGROUP_CHANGED")
         for number in (observation.exec_main_code, observation.exec_main_status):
             if number is not None:
                 integer(number, 0, 2**31 - 1)

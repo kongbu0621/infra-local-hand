@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 #include <unistd.h>
@@ -75,11 +76,26 @@ long __wrap_syscall(long number, ...)
 #ifndef SYS_quotactl_fd
     (void)number; _exit(99);
 #else
-    if (number != SYS_quotactl_fd) _exit(99);
     va_list args; va_start(args, number);
-    unsigned int fd = va_arg(args, unsigned int);
-    unsigned int command = va_arg(args, unsigned int);
-    unsigned int id = va_arg(args, unsigned int);
+    if (number == SYS_fstat) {
+        unsigned long fd = va_arg(args, unsigned long);
+        struct stat *value = va_arg(args, struct stat *);
+        va_end(args); return __wrap_fstat((int)fd, value);
+    }
+    if (number == SYS_seccomp) {
+        extern long __real_syscall(long, ...);
+        unsigned long operation = va_arg(args, unsigned long);
+        unsigned long flags = va_arg(args, unsigned long);
+        void *program = va_arg(args, void *);
+        va_end(args);
+        if (is("filter_error")) return error(EINVAL);
+        /* Real filter installation; only quota/root calls remain simulated. */
+        return __real_syscall(number, operation, flags, program);
+    }
+    if (number != SYS_quotactl_fd) _exit(99);
+    unsigned long fd = va_arg(args, unsigned long);
+    unsigned long command = va_arg(args, unsigned long);
+    unsigned long id = va_arg(args, unsigned long);
     void *out = va_arg(args, void *);
     va_end(args); fixed_fd((int)fd);
     if (command == QCMD((unsigned int)Q_XGETQSTATV, PRJQUOTA)) {
@@ -107,6 +123,20 @@ long __wrap_syscall(long number, ...)
     if (is("stale_errno")) errno = EINTR;  /* Success must preserve rc independently. */
     return 0;
 #endif
+}
+
+int __wrap_prctl(int option, ...)
+{
+    extern int __real_prctl(int, ...);
+    va_list args; va_start(args, option);
+    unsigned long arg2 = va_arg(args, unsigned long);
+    unsigned long arg3 = va_arg(args, unsigned long);
+    unsigned long arg4 = va_arg(args, unsigned long);
+    unsigned long arg5 = va_arg(args, unsigned long);
+    va_end(args);
+    if (option != PR_SET_NO_NEW_PRIVS || arg2 != 1 || arg3 || arg4 || arg5) _exit(99);
+    if (is("nnp_error")) return error(EACCES);
+    return __real_prctl(option, arg2, arg3, arg4, arg5);
 }
 
 int __wrap_close(int fd)

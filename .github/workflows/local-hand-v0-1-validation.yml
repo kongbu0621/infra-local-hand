@@ -7,6 +7,7 @@ on:
       - "tools/local_hand_connect/**"
       - "tools/local_hand_jobs/**"
       - "tools/local_hand_mcp/**"
+      - "tools/admin/local_hand_quota_observer/**"
       - "plugins/local-hand-a2/**"
       - "tools/build_plugin.py"
       - "tools/probe_e3_host.py"
@@ -25,6 +26,7 @@ on:
       - "tools/local_hand_connect/**"
       - "tools/local_hand_jobs/**"
       - "tools/local_hand_mcp/**"
+      - "tools/admin/local_hand_quota_observer/**"
       - "plugins/local-hand-a2/**"
       - "tools/build_plugin.py"
       - "tools/probe_e3_host.py"
@@ -111,6 +113,7 @@ jobs:
                   or name.startswith("tools/local_hand_connect/")
                   or name.startswith("tools/local_hand_jobs/")
                   or name.startswith("tools/local_hand_mcp/")
+                  or name.startswith("tools/admin/local_hand_quota_observer/")
                   or name.startswith("plugins/local-hand-a2/")
                   or name in {"tools/build_plugin.py", "tools/probe_e3_host.py", "requirements-mcp-linux-x86_64-py312.lock"}
                   or name.startswith("tests/")

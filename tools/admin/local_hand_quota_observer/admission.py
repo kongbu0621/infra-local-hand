@@ -205,12 +205,13 @@ def decode_manifest(raw, expected_digest):
 
 
 SUCCESS_CALLS = ("fstat.before", "fcntl.getfl", "fstatfs", "ioctl.fsgetxattr.before",
+                 "prctl.no_new_privs", "seccomp.install",
                  "quotactl_fd.state.before", "quotactl_fd.getquota", "ioctl.fsgetxattr.after",
                  "fstat.after", "quotactl_fd.state.after", "close.root")
 REPORT_FIELDS = ("schema", "status", "code", "real_e3_accepted", "production_supported",
                  "admission_proven", "quota_syscall_attempts", "uid", "euid", "root_fd", "abi",
                  "root", "filesystem_magic", "project", "enforcement", "quota", "root_after",
-                 "project_after", "enforcement_after", "calls")
+                 "project_after", "enforcement_after", "calls", "restriction")
 
 
 def match_report(raw, manifest, slot):
@@ -222,13 +223,17 @@ def match_report(raw, manifest, slot):
     require(slot in manifest.slots, "FOREIGN_SLOT")
     require(type(raw) is bytes and raw.endswith(b"\n"), "INCOMPLETE_REPORT")
     value = fields(strict_json(raw, MAX_REPORT_BYTES, depth=4), REPORT_FIELDS)
-    require(value["schema"] == "local-hand-quota-abi/v1", "REPORT_VERSION")
+    require(value["schema"] == "local-hand-quota-abi/v2", "REPORT_VERSION")
     require(value["status"] == "OBSERVED" and value["code"] == "QUOTA_FACTS_OBSERVED", "QUERY_FAILED")
     for flag in ("real_e3_accepted", "production_supported", "admission_proven"):
         require(value[flag] is False, "UNSUPPORTED_CLAIM")
     require(integer(value["uid"], 0, 2**32 - 2) == manifest.query_uid
             and integer(value["euid"], 0, 2**32 - 2) == manifest.query_euid, "QUERY_UID")
     require(integer(value["root_fd"]) == 3 and integer(value["quota_syscall_attempts"]) == 3, "QUERY_SHAPE")
+    restriction = fields(value["restriction"], ("profile", "no_new_privs", "filter_installed", "project_id"))
+    require(restriction["profile"] == "quota-fd-readonly/v1"
+            and restriction["no_new_privs"] is True and restriction["filter_installed"] is True
+            and integer(restriction["project_id"], 1, 2**32 - 1) == slot.project_id, "QUERY_RESTRICTION")
     abi = fields(value["abi"], ("fsxattr_bytes", "dqblk_bytes", "qstatv_bytes"))
     require(tuple(integer(abi[key], 1, 1024) for key in
                   ("fsxattr_bytes", "dqblk_bytes", "qstatv_bytes")) == manifest.abi, "ABI_CHANGED")

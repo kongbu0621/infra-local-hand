@@ -53,7 +53,7 @@ def report(manifest=None):
     slot = manifest.slots[0]
     root = dict(vars(slot.root))
     return {
-        "schema": "local-hand-quota-abi/v1", "status": "OBSERVED", "code": "QUOTA_FACTS_OBSERVED",
+        "schema": "local-hand-quota-abi/v2", "status": "OBSERVED", "code": "QUOTA_FACTS_OBSERVED",
         "real_e3_accepted": False, "production_supported": False, "admission_proven": False,
         "quota_syscall_attempts": 3, "uid": manifest.query_uid, "euid": manifest.query_euid, "root_fd": 3,
         "abi": dict(zip(("fsxattr_bytes", "dqblk_bytes", "qstatv_bytes"), manifest.abi)),
@@ -61,6 +61,8 @@ def report(manifest=None):
         "project": {"id": 73, "xflags": 0x200}, "project_after": {"id": 73, "xflags": 0x200},
         "enforcement": {"version": 1, "flags": 0x30}, "enforcement_after": {"version": 1, "flags": 0x30},
         "quota": {"valid_mask": 63, "hard_blocks_1024": 123, "hard_bytes": 123 * 1024},
+        "restriction": {"profile": "quota-fd-readonly/v1", "no_new_privs": True,
+                        "filter_installed": True, "project_id": 73},
         "calls": [{"name": name, "rc": 0, "errno": 0} for name in a.SUCCESS_CALLS]}
 
 
@@ -167,7 +169,9 @@ class AdmissionTests(unittest.TestCase):
             lambda x: x.update(admission_proven=True), lambda x: x.update(quota_syscall_attempts=4),
             lambda x: x["calls"][5].update(rc=-1, errno=1), lambda x: x["calls"].pop(),
             lambda x: x["calls"][1].update(rc=0x200000), lambda x: x["calls"][0].update(rc=True),
-            lambda x: x.update(extra="unexpected"), lambda x: x.update(schema="local-hand-quota-abi/v2"),
+            lambda x: x.update(extra="unexpected"), lambda x: x.update(schema="local-hand-quota-abi/v1"),
+            lambda x: x["restriction"].update(filter_installed=False),
+            lambda x: x["restriction"].update(project_id=74),
         )
         for index, change in enumerate(changes):
             value = deepcopy(good)
@@ -216,7 +220,8 @@ class MonitorTests(unittest.TestCase):
     def test_identity_change_is_sticky_even_if_later_restored(self):
         bound = binding()
         for changes in ({"boot_id": "9" * 36}, {"unit": bound.unit + "extra"}, {"cgroup": "/other"},
-                        {"invocation_id": "b" * 32}, {"observed_ns": NOW - 1}, {"job_empty": 1}):
+                        {"invocation_id": "b" * 32}, {"observed_ns": NOW - 1}, {"job_empty": 1},
+                        {"empty_cgroup": "/other.slice"}):
             with self.subTest(changes=changes):
                 monitor = s.QueryMonitor(bound)
                 monitor.inspect(observation(bound, cgroup_empty=False), now_ns=NOW)

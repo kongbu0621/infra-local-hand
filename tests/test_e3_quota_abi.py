@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,74 @@ SOURCE = ROOT / "tools/admin/local_hand_quota_observer/quota_fd_query.c"
 SHIM = ROOT / "tests/fixtures/quota_query_syscalls.c"
 FLAGS = ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wconversion", "-Wformat=2",
          "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2"]
+
+# This test-only driver either exports the real BPF or checks harmless denied
+# syscalls in its own short-lived process. It never invokes allowed quota calls.
+FILTER_DRIVER = r'''
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/prctl.h>
+#include "quota_syscall_filter.h"
+int main(int argc, char **argv)
+{
+#if !LH_QUOTA_FILTER_AVAILABLE
+    (void)argc; (void)argv; return 77;
+#else
+    if (argc == 2) {
+        if (prctl(PR_SET_NO_NEW_PRIVS, 1UL, 0UL, 0UL, 0UL) || quota_filter_install(73)) return 78;
+        errno = 0;
+        long rc;
+        if (!strcmp(argv[1], "getppid")) rc = syscall(SYS_getppid);
+        else if (!strcmp(argv[1], "openat"))
+            rc = syscall(SYS_openat, -1L, "nonexistent", (unsigned long)O_RDONLY, 0UL);
+        else if (!strcmp(argv[1], "close-other-fd")) rc = syscall(SYS_close, 2UL);
+        else if (!strcmp(argv[1], "write-stderr")) rc = syscall(SYS_write, 2UL, "", 0UL);
+        else _exit(79);
+        int saved = errno;
+        _exit(rc == -1 && saved == EPERM ? 0 : 80);
+    }
+    struct sock_filter rules[LH_QUOTA_FILTER_MAX];
+    unsigned short count = quota_filter_build(rules, 73);
+    printf("{\"arch\":%u,\"syscalls\":{\"quotactl_fd\":%u,\"ioctl\":%u,\"fstat\":%u,"
+           "\"close\":%u,\"write\":%u,\"getuid\":%u,\"geteuid\":%u,\"exit\":%u,"
+           "\"exit_group\":%u,\"openat\":%u,\"mount\":%u,\"execve\":%u,"
+           "\"quotactl\":%u,\"clone\":%u,\"seccomp\":%u,\"prctl\":%u},"
+           "\"commands\":{\"state\":%u,\"get\":%u,\"set\":%u,\"quotaoff\":%u,"
+           "\"user_get\":%u,\"getxattr\":%u,\"setxattr\":%u},\"rules\":[",
+           LH_QUOTA_AUDIT_ARCH, SYS_quotactl_fd, SYS_ioctl, SYS_fstat, SYS_close, SYS_write,
+           SYS_getuid, SYS_geteuid, SYS_exit, SYS_exit_group, SYS_openat, SYS_mount, SYS_execve,
+           SYS_quotactl, SYS_clone, SYS_seccomp, SYS_prctl,
+           QCMD((unsigned int)Q_XGETQSTATV, PRJQUOTA), QCMD((unsigned int)Q_GETQUOTA, PRJQUOTA),
+           QCMD((unsigned int)Q_SETQUOTA, PRJQUOTA), QCMD((unsigned int)Q_QUOTAOFF, PRJQUOTA),
+           QCMD((unsigned int)Q_GETQUOTA, USRQUOTA), (unsigned int)FS_IOC_FSGETXATTR,
+           (unsigned int)FS_IOC_FSSETXATTR);
+    for (unsigned short i = 0; i < count; i++)
+        printf("%s[%u,%u,%u,%u]", i ? "," : "", rules[i].code, rules[i].jt, rules[i].jf, rules[i].k);
+    puts("]}"); return 0;
+#endif
+}
+'''
+
+
+def evaluate_bpf(rules, number, arch, args):
+    """Tiny interpreter for this generated cBPF instruction subset, no syscalls."""
+    packet = struct.pack("<IIQ6Q", number & 0xffffffff, arch, 0, *(args + [0] * (6 - len(args))))
+    pc, accumulator = 0, 0
+    for _ in range(len(rules)):
+        code, true_skip, false_skip, value = rules[pc]
+        pc += 1
+        if code == 0x20:  # BPF_LD | BPF_W | BPF_ABS
+            accumulator = struct.unpack_from("<I", packet, value)[0]
+        elif code == 0x15:  # BPF_JMP | BPF_JEQ | BPF_K
+            pc += true_skip if accumulator == value else false_skip
+        elif code == 0x25:  # BPF_JMP | BPF_JGT | BPF_K
+            pc += true_skip if accumulator > value else false_skip
+        elif code == 0x06:  # BPF_RET | BPF_K
+            return value
+        else:
+            raise AssertionError(f"Unsupported BPF opcode {code}")
+    raise AssertionError("Filter did not terminate")
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Q1 ABI primitive is Linux-only")
@@ -32,14 +101,22 @@ class QuotaABITests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         cls.real = Path(cls.temp.name) / "query"
         cls.fake = Path(cls.temp.name) / "query-simulated"
+        cls.filter_driver = Path(cls.temp.name) / "filter-driver"
+        driver_source = Path(cls.temp.name) / "filter-driver.c"
+        driver_source.write_text(FILTER_DRIVER)
         cls.build_commands = []
         for output, extra in [(cls.real, []), (cls.fake, [str(SHIM)] + [
-                "-Wl,--wrap=" + name for name in ("fstat", "fcntl", "fstatfs", "ioctl", "syscall", "close")])]:
+                "-Wl,--wrap=" + name for name in ("fstat", "fcntl", "fstatfs", "ioctl", "syscall", "close", "prctl")])]:
             command = [cc, *FLAGS, str(SOURCE), *extra, "-o", str(output)]
             cls.build_commands.append(command)
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
             if result.returncode:
                 raise AssertionError("Native build failed:\n" + result.stdout + result.stderr)
+        command = [cc, *FLAGS, "-I", str(SOURCE.parent), str(driver_source), "-o", str(cls.filter_driver)]
+        cls.build_commands.append(command)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise AssertionError("Filter test driver build failed:\n" + result.stdout + result.stderr)
 
     def invoke(self, case=None, args=()):
         env = {"PATH": os.defpath, "LANG": "C", "LC_ALL": "C"}
@@ -51,7 +128,7 @@ class QuotaABITests(unittest.TestCase):
         self.assertLess(len(result.stdout), 4096)
         self.assertTrue(result.stdout.endswith(b"\n"))
         body = json.loads(result.stdout)
-        self.assertEqual(body["schema"], "local-hand-quota-abi/v1")
+        self.assertEqual(body["schema"], "local-hand-quota-abi/v2")
         for flag in ("admission_proven", "real_e3_accepted", "production_supported"):
             self.assertIs(body[flag], False)
         self.assertLessEqual(len(body["calls"]), 16)
@@ -93,6 +170,11 @@ class QuotaABITests(unittest.TestCase):
                 self.assertEqual(body["enforcement_after"], body["enforcement"])
                 self.assertEqual(body["project"]["id"], 73)
                 self.assertEqual(body["quota_syscall_attempts"], 3)
+                self.assertEqual(body["restriction"], {
+                    "profile": "quota-fd-readonly/v1", "no_new_privs": True,
+                    "filter_installed": True, "project_id": 73})
+                self.assertEqual([c["name"] for c in body["calls"]][4:6],
+                                 ["prctl.no_new_privs", "seccomp.install"])
                 self.assertEqual(body["calls"][-1]["name"], "close.root")
                 call = next(c for c in body["calls"] if c["name"] == "quotactl_fd.getquota")
                 self.assertEqual(call["errno"], errno.EINTR if case == "stale_errno" else 0)
@@ -120,6 +202,63 @@ class QuotaABITests(unittest.TestCase):
                 self.assertEqual((code, body["code"]), (3, reason))
                 self.assertEqual(body["quota_syscall_attempts"], 1)
                 self.assertIsNone(body["quota"])
+
+    def test_restriction_setup_failure_cannot_query_quota(self):
+        for case, name, expected_errno in [("nnp_error", "prctl.no_new_privs", errno.EACCES),
+                                          ("filter_error", "seccomp.install", errno.EINVAL)]:
+            with self.subTest(case=case):
+                code, body = self.invoke(case)
+                self.assertEqual(code, 3)
+                self.assertEqual(body["quota_syscall_attempts"], 0)
+                self.assertEqual(body["restriction"]["no_new_privs"], case == "filter_error")
+                self.assertIs(body["restriction"]["filter_installed"], False)
+                self.assertIsNone(body["restriction"]["project_id"])
+                self.assertIn({"name": name, "rc": -1, "errno": expected_errno}, body["calls"])
+
+    def test_filter_logic_exact_read_operations_arch_and_argument_widths(self):
+        process = subprocess.run([str(self.filter_driver)], capture_output=True, check=True, timeout=5)
+        payload = json.loads(process.stdout)
+        calls, commands, arch = payload["syscalls"], payload["commands"], payload["arch"]
+        allow, deny, kill = 0x7fff0000, 0x00050000 | errno.EPERM, 0x80000000
+
+        def evaluate(name, args, architecture=arch, number=None):
+            return evaluate_bpf(payload["rules"], calls[name] if number is None else number, architecture, args)
+
+        allowed = [("quotactl_fd", [3, commands["state"], 0]),
+                   ("quotactl_fd", [3, commands["get"], 73]),
+                   ("ioctl", [3, commands["getxattr"]]), ("fstat", [3]), ("close", [3]),
+                   ("write", [1, 0, 0]), ("write", [1, 0, 4096])]
+        allowed += [(name, []) for name in ("getuid", "geteuid", "exit", "exit_group")]
+        for name, args in allowed:
+            with self.subTest(name=name, args=args):
+                self.assertEqual(evaluate(name, args), allow)
+                self.assertEqual(evaluate(name, args, architecture=0), kill)
+                self.assertEqual(evaluate(name, args, number=calls[name] | 0x40000000), deny)
+        denied = [("quotactl_fd", [3, commands["get"], 0]),
+                  ("quotactl_fd", [3, commands["get"], 74]),
+                  ("quotactl_fd", [3, commands["state"], 73]),
+                  ("quotactl_fd", [2, commands["get"], 73]),
+                  ("ioctl", [3, commands["setxattr"]]), ("ioctl", [2, commands["getxattr"]]),
+                  ("fstat", [2]), ("close", [1]), ("write", [2, 0, 0]), ("write", [1, 0, 4097])]
+        denied += [("quotactl_fd", [3, commands[command], 73]) for command in ("set", "quotaoff", "user_get")]
+        # Every constrained scalar rejects high-half and sign-extended aliases.
+        for name, args in allowed[:5]:
+            for index in range(len(args)):
+                for high in (1, 0xffffffff):
+                    changed = args.copy()
+                    changed[index] |= high << 32
+                    denied.append((name, changed))
+        denied += [("write", [1 | (1 << 32), 0, 0]), ("write", [1, 0, 1 << 32])]
+        denied += [(name, []) for name in ("openat", "mount", "execve", "quotactl", "clone", "seccomp", "prctl")]
+        for name, args in denied:
+            with self.subTest(name=name, args=args):
+                self.assertEqual(evaluate(name, args), deny)
+
+    def test_real_filter_rejects_harmless_forbidden_syscalls(self):
+        for operation in ("getppid", "openat", "close-other-fd", "write-stderr"):
+            with self.subTest(operation=operation):
+                result = subprocess.run([str(self.filter_driver), operation], capture_output=True, timeout=5)
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
 
     def test_logic_only_errno_is_retained_and_query_is_not_retried(self):
         for case, expected in [("quota_eperm", errno.EPERM), ("quota_ero_fs", errno.EROFS),
