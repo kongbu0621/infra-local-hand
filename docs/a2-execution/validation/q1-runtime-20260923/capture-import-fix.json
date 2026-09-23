@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_e3_quota_runtime_capture.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "methods": 14,
+  "skipped": 0,
+  "test_source_sha256": "ded07adc0c409d07a936a270435700749e8d4fad318051ce38c963d414580db3",
+  "log": "capture-import-fix.log",
+  "log_sha256": "0345bacfce152d9007cf08cff17617b06e3c5bc237cd309a89b858943baffebd",
+  "real_Windows_execution": false,
+  "source_commit": "d117cbe1aca7a29fa3ea2c84b653ff3ddec669e1",
+  "source_tree": "a2994dae2c43b6d9bcf4887227f89237f6237344"
+}

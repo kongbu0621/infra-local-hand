@@ -1,0 +1,13 @@
+{
+  "source_commit": "3b309c220f04b39f8acb8630888341a8629c667d",
+  "run_id": 35900165257,
+  "job_id": 107314040571,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35900165257",
+  "platform": "windows-latest",
+  "failed_step": "Run platform-scoped source tests (A2 jobs are Linux only)",
+  "failure": "NameError: NOW is not defined while collecting Linux-only capture tests",
+  "evidence": "ci-first-windows-failure.log",
+  "evidence_kind": "verbatim excerpt; original job log retained by GitHub",
+  "excerpt_sha256": "124b7d97b85e5dcf8f3a65ed753456678e69b38655a31c74b727b847f564d833",
+  "not_a_runtime_quota_failure": true
+}

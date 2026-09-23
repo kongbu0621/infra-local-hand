@@ -82,3 +82,21 @@ tree `18520329f04a92c556c345928af09858c9d79bac`；
    Q1 的永久意图 journal 不替代这些出口，也不启用现有生产路径。
 
 下一步准备准确隔离 fixture 配置与 Q1 实测交接，当前不操作 GX10、不重复旧库存探针。
+
+## 发布后 Windows 收集修复
+
+首次远端 CI 对 `3b309c220f04b39f8acb8630888341a8629c667d` 的 Windows source-test 步骤失败：
+Linux 专用测试的类定义默认参数 `now_ns=NOW` 在 skip 生效前求值，但常量只在 Linux 分支导入。
+这不是 quota 运行失败，不能因此忽略 Windows 收集错误。
+
+修复源码 `d117cbe1aca7a29fa3ea2c84b653ff3ddec669e1`、tree
+`a2994dae2c43b6d9bcf4887227f89237f6237344` 仅移动测试的可移植 fixture 导入；
+查询器实现与已测 `39e7bcb` 相同。Linux 受影响的 14 项方法重新通过，0 跳过。
+真实 Windows 及全量 CI 以修复后准确提交的远端运行另行核对，不把本地模拟平台当实测。
+
+- [首次 CI 失败原文摘录](validation/q1-runtime-20260923/ci-first-windows-failure.log)及
+  [准确 run/job/提交记录](validation/q1-runtime-20260923/ci-first-windows-failure.json)。
+- [修复后定向日志](validation/q1-runtime-20260923/capture-import-fix.log)及
+  [命令/退出码/文件摘要](validation/q1-runtime-20260923/capture-import-fix.json)。
+
+首个 Linux CI 尚未作为完成证据使用；新提交可能按既有 concurrency 策略取消旧运行。

@@ -1,0 +1,19 @@
+2026-09-23T18:07:02.1715939Z =================================== ERRORS ====================================
+2026-09-23T18:07:02.1716735Z ___________ ERROR collecting tests/test_e3_quota_runtime_capture.py ___________
+2026-09-23T18:07:02.1717495Z tests\test_e3_quota_runtime_capture.py:172: in <module>
+2026-09-23T18:07:02.1718103Z     class UnitCommandTests(unittest.TestCase):
+2026-09-23T18:07:02.1718725Z tests\test_e3_quota_runtime_capture.py:180: in UnitCommandTests
+2026-09-23T18:07:02.1719350Z     control_dir="/synthetic/control", now_ns=NOW):
+2026-09-23T18:07:02.1719843Z                                              ^^^
+2026-09-23T18:07:02.1720284Z E   NameError: name 'NOW' is not defined
+2026-09-23T18:07:02.1720865Z !!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+2026-09-23T18:07:02.1721431Z 1 error in 0.86s
+2026-09-23T18:07:02.2117904Z Traceback (most recent call last):
+2026-09-23T18:07:02.2127878Z   File "D:\a\_temp\fd11b7a7-563c-4146-ab4d-32136c2f8a2f.py", line 11, in <module>
+2026-09-23T18:07:02.2128450Z     subprocess.run(command, check=True)
+2026-09-23T18:07:02.2128987Z   File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\subprocess.py", line 571, in run
+2026-09-23T18:07:02.2330609Z     raise CalledProcessError(retcode, process.args,
+2026-09-23T18:07:02.2333926Z subprocess.CalledProcessError: Command '['D:\\a\\_temp\\local-hand-s1-44f4e23fd7264ef2aeab27526e80d05b\\build-venv\\Scripts\\python.exe', '-m', 'pytest', '-q', '-rs', '--ignore-glob=tests/test_local_hand_jobs_*.py', '--ignore-glob=tests/test_local_hand_mcp_*.py', '--ignore=tests/test_local_hand_plugin.py']' returned non-zero exit status 2.
+2026-09-23T18:07:02.2412015Z ##[error]Process completed with exit code 1.
+2026-09-23T18:07:02.2703682Z ##[group]Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+2026-09-23T18:07:02.2704167Z with:
