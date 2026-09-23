@@ -90,27 +90,30 @@ S2 remains OPEN at its separate baseline. E3's real isolated cgroup integration 
 claiming a deployable candidate; unsupported environments do not turn that check into PASS.
 Preserve the already CLOSED Ledger A2 body scope; do not require it to be approved again.
 
-### Proposed E3 quota and real-harness change
+### E3 quota and real-harness change
 
-Scope `LH-E3-QUOTA-HARNESS-v1` is **OPEN**. Its authoritative change documents are
+Scope `LH-E3-QUOTA-HARNESS-v1` is **CLOSED for the isolated development scope below**. Its authoritative change documents are
 [requirements](docs/a2-execution/e3-quota-harness/REQUIREMENTS.md),
 [architecture](docs/a2-execution/e3-quota-harness/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/e3-quota-harness/IMPLEMENTATION_PLAN.md).
 R, mandate, Owner authority, accessible source, integrity, exceptions and change rules remain those above.
-The proposed documentation baseline A is `415327ebdcc251bb055da9931a7a88990f750b7a`.
-Its exact document digests, proposed scope and pending decision are recorded in
+The approved documentation baseline A is `415327ebdcc251bb055da9931a7a88990f750b7a`.
+Its exact document digests and pre-approval scope registration are recorded in
 [E3_QUOTA_HARNESS_BASELINE.md](docs/governance/E3_QUOTA_HARNESS_BASELINE.md).
-No Owner closure decision B or CLOSED record C exists for this change.
-The proposed implementation scope is an isolated, fixed-object administrative quota observer, its bounded
+Owner closure decision B is retained in
+[E3_QUOTA_HARNESS_OWNER_DECISION.md](docs/governance/E3_QUOTA_HARNESS_OWNER_DECISION.md),
+event `LH-E3-QUOTA-HARNESS-CLOSURE-20260923-01`. This separate bookkeeping-only commit is C;
+implementation must descend from it. A's three documents remain byte-identical, including their historical OPEN labels.
+The authorized implementation scope is an isolated, fixed-object administrative quota observer, its bounded
 unprivileged client, internal receipt/budget binding and a test-only real three-unit harness on an
 explicitly supplied isolated fixture. Host provisioning, GX10 service installation/cutover and E4–E6
-are not authorized by this proposal.
+are not authorized by this closure.
 
 The current quota-query permission conflict and missing real harness are confirmed implementation gaps;
 the proposal adds a host-privileged trusted component and changes how bootstrap obtains quota facts.
-That affected architecture/implementation scope is OPEN under the existing change-control rule.
-Do not implement that component, its executable prototype/configuration, the new receipt route or the
-associated test-admission path before exact R/A/scope closure and a separate C.
+That affected scope was reopened and is now separately closed by the retained Owner decision at the exact R/A.
+Follow Q1 feasibility, Q2 binding/budget, Q3 normal chain and Q4 faults/recovery in order;
+missing real fixtures remain BLOCKED and cannot be replaced by simulated PASS.
 The previous A/B/C remains historical and valid for clearly unaffected E1–E3 work; its three original
 documents remain unchanged. This proposal does not reopen S1 or Ledger A2 and does not erase past evidence.
 Production `E3_SUPERVISION_UNVERIFIED` remains. Accurate host inputs are currently NOT_PREPARED;

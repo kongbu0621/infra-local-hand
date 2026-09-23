@@ -1,5 +1,8 @@
 # E3 quota/harness 变更基线与待决范围
 
+后续记录：Owner 已接受本页固定的 R/A/范围，见 [开工决定](E3_QUOTA_HARNESS_OWNER_DECISION.md)。
+下面保留批准前的准确提议状态；当前 CLOSED 声明见根 AGENTS。本页不冒充实现或实机验收。
+
 - Authority：Owner；日期：2026-09-23；Gate：**OPEN**。
 - scope：`LH-E3-QUOTA-HARNESS-v1`。
 - R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，固定直接来源和完整性见根 AGENTS。
