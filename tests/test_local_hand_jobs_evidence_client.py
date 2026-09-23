@@ -649,6 +649,27 @@ class ClientTests(unittest.TestCase):
                     "eof": offset + len(chunk) == len(raw)}
         return artifact, callback
 
+    def test_download_identity_requires_strings_without_python_numeric_aliases(self):
+        cases = (("operation_id", True, 1), ("operation_id", 1.0, 1),
+                 ("operation_id", None, None), ("operation_id", "", ""),
+                 ("reconcile_id", True, 1), ("reconcile_id", 1.0, 1),
+                 ("reconcile_id", "", ""))
+        for index, (field, advertised, sealed) in enumerate(cases):
+            with self.subTest(field=field, advertised=advertised, sealed=sealed):
+                artifact, callback = self.synthetic_archive(
+                    manifest_changes={field: sealed}, seal_changes={field: sealed})
+                artifact[field] = advertised
+                directory = self.root / ("identity-types-" + str(index))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertEqual(list(directory.iterdir()), [])
+        reconcile = "c89f01cc-7aac-4b27-9e1a-4c28e5d7d0f7"
+        artifact, callback = self.synthetic_archive(
+            manifest_changes={"reconcile_id": reconcile}, seal_changes={"reconcile_id": reconcile})
+        artifact["reconcile_id"] = reconcile
+        final = EvidenceClient(callback).download(artifact, BoundedFileWriter(self.root / "valid-round"))
+        self.assertEqual(_hash(final.read_bytes()), artifact["sha256"])
+
     def test_malformed_deflate_is_a_structured_conflict(self):
         def corrupt(raw):
             with zipfile.ZipFile(io.BytesIO(raw)) as archive:

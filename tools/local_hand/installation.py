@@ -11,6 +11,7 @@ import stat
 import sys
 import uuid
 import zipfile
+import zlib
 
 from .config import read_config, exact_keys
 from .paths import load_profile, NodeProfile
@@ -31,6 +32,46 @@ def _absolute_file(value: str) -> str:
     if not p.is_absolute() or not p.is_file():raise _bad("installation binding must name an existing absolute file")
     # Do not resolve the executable symlink: venv Python has a distinct identity.
     return str(p.absolute())
+
+
+def _verify_member_compression(stream, info: zipfile.ZipInfo) -> None:
+    """Check complete member expansion using the already retained wheel handle.
+
+    ZipExtFile trusts the declared output length and may stop before DEFLATE EOF.
+    Validate that length independently, with bounded input and output chunks,
+    before any payload digest can admit a declared prefix of a larger stream.
+    """
+    if info.flag_bits & 1:
+        raise _bad("encrypted wheel member is unsupported")
+    if info.compress_type == zipfile.ZIP_STORED:
+        if info.compress_size != info.file_size:
+            raise _bad("stored wheel member size mismatch")
+        return
+    if info.compress_type != zipfile.ZIP_DEFLATED:
+        raise _bad("unsupported wheel member compression")
+    stream.seek(info.header_offset)
+    header = stream.read(30)
+    if len(header) != 30 or header[:4] != b"PK\x03\x04":
+        raise _bad("invalid wheel member header")
+    stream.seek(int.from_bytes(header[26:28], "little") +
+                int.from_bytes(header[28:30], "little"), os.SEEK_CUR)
+    decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+    remaining, produced = info.compress_size, 0
+    while remaining:
+        block = stream.read(min(65536, remaining))
+        if not block:
+            raise _bad("compressed wheel member is truncated")
+        remaining -= len(block)
+        while block:
+            output = decoder.decompress(block, min(65536, info.file_size - produced + 1))
+            produced += len(output)
+            if produced > info.file_size:
+                raise _bad("wheel member exceeds declared expanded size")
+            if decoder.unused_data or decoder.eof and remaining:
+                raise _bad("compressed wheel member has trailing data")
+            block = decoder.unconsumed_tail
+    if not decoder.eof or produced != info.file_size:
+        raise _bad("compressed wheel member is incomplete")
 
 
 def verify_wheel(path: Path, metadata: dict) -> str:
@@ -73,9 +114,23 @@ def verify_wheel(path: Path, metadata: dict) -> str:
                         and "\\" not in name) for name in names):
                     raise _bad("wheel contains an unbound payload entry")
                 expected=(Path(__file__).parent/"_build_metadata.json").read_bytes()
-                if archive.read("local_hand/_build_metadata.json")!=expected:raise _bad("wheel metadata differs from installed package")
-                for name,digest in metadata["files"].items():
-                    if hashlib.sha256(archive.read(name)).hexdigest()!=digest:raise _bad("wheel payload differs from installed package")
+                if not payload.issubset(names):raise _bad("wheel is missing an installed payload entry")
+                for info in archive.infolist():
+                    _verify_member_compression(stream,info)
+                    member_digest=hashlib.sha256();member_size=0;metadata_chunks=[]
+                    is_metadata=info.filename=="local_hand/_build_metadata.json"
+                    with archive.open(info) as member:
+                        while chunk:=member.read(65536):
+                            member_size+=len(chunk)
+                            if member_size>info.file_size:raise _bad("wheel member exceeds declared expanded size")
+                            member_digest.update(chunk)
+                            if is_metadata:metadata_chunks.append(chunk)
+                    if member_size!=info.file_size:raise _bad("wheel member length mismatch")
+                    if is_metadata and b"".join(metadata_chunks)!=expected:
+                        raise _bad("wheel metadata differs from installed package")
+                    if (info.filename in metadata["files"] and
+                            member_digest.hexdigest()!=metadata["files"][info.filename]):
+                        raise _bad("wheel payload differs from installed package")
             stream.seek(0)
             digest=hashlib.sha256();count=0
             while chunk:=stream.read(min(1024*1024,limit+1-count)):
@@ -87,7 +142,10 @@ def verify_wheel(path: Path, metadata: dict) -> str:
                     or current_named!=identity(before)):
                 raise _bad("wheel changed during verification")
             return digest.hexdigest()
-    except (OSError,ValueError,zipfile.BadZipFile,KeyError) as exc:raise _bad("invalid wheel artifact") from exc
+    except LocalHandError:
+        raise
+    except (OSError,ValueError,zipfile.BadZipFile,KeyError,RuntimeError,zlib.error) as exc:
+        raise _bad("invalid wheel artifact") from exc
 
 
 def create_record(profile_path: Path, output: Path, *, install_instance_id: str,

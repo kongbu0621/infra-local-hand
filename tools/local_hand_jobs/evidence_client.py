@@ -416,8 +416,12 @@ class EvidenceClient:
     def _seal(self, artifact: dict) -> dict:
         digest = artifact.get("seal_sha256")
         seal_id = artifact.get("seal_id")
+        operation_id = artifact.get("operation_id")
+        reconcile_id = artifact.get("reconcile_id")
         if (not isinstance(digest, str) or len(digest) != 64 or not isinstance(seal_id, str)
-                or artifact.get("artifact_id") != seal_id + ".zip"):
+                or artifact.get("artifact_id") != seal_id + ".zip"
+                or not isinstance(operation_id, str) or not operation_id
+                or reconcile_id is not None and (not isinstance(reconcile_id, str) or not reconcile_id)):
             raise EvidenceError("CONFLICT", "external seal binding is missing")
         raw, total = self._chunk(seal_id + ".seal", digest, 0, DEFAULT_CHUNK)
         if total != len(raw) or total > DEFAULT_CHUNK or _hash(raw) != digest:
@@ -425,8 +429,10 @@ class EvidenceClient:
         seal = _decode_json(raw)
         if (seal.get("schema_version") != "lh-evidence-seal-v1"
                 or seal.get("seal_id") != seal_id or seal.get("complete") is not True
-                or seal.get("operation_id") != artifact.get("operation_id")
-                or seal.get("reconcile_id") != artifact.get("reconcile_id")
+                # A required operation and optional reconciliation are string
+                # identities, not Python values where true, 1 and 1.0 compare equal.
+                or seal.get("operation_id") != operation_id
+                or seal.get("reconcile_id") != reconcile_id
                 or not _integer(seal.get("event_seq"), 2**53 - 1)
                 or not _integer(artifact.get("event_seq"), 2**53 - 1)
                 or seal.get("event_seq") != artifact.get("event_seq")):

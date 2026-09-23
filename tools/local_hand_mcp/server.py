@@ -13,6 +13,7 @@ import importlib.metadata
 import json
 from pathlib import Path
 import sys
+import threading
 from urllib.parse import urlsplit
 
 from local_hand_jobs.contract import JobError, TOOL_SCHEMAS, TOOL_SCOPES, strict_loads, validate_tool_args
@@ -201,6 +202,7 @@ def create_app(broker, verifier):
 
     pending: set[asyncio.Task] = set()
     slots = asyncio.Semaphore(MAX_CONTROL_REQUESTS)
+    closing = threading.Event()
     output_validators = {name: Draft202012Validator(schema) for name, schema in _OUTPUT_SCHEMAS.items()}
 
     def result_error(code: str, message: str):
@@ -231,6 +233,8 @@ def create_app(broker, verifier):
 
     async def call_tool(context, params):
         try:
+            if closing.is_set():
+                raise JobError("IO_UNCERTAIN", "MCP transport has closed admission")
             access_token = get_access_token()
             principal = verifier.principal(access_token)
             arguments = validate_tool_args(params.name, params.arguments or {})
@@ -250,6 +254,8 @@ def create_app(broker, verifier):
                         # The executor queue can also outlive authentication.
                         # Recheck at delivery, before the broker sees the call.
                         current = verifier.principal(access_token)
+                        if closing.is_set():
+                            raise JobError("IO_UNCERTAIN", "MCP transport closed before dispatch")
                         return broker.call(params.name, arguments, current)
                     return await asyncio.to_thread(dispatch)
                 finally:
@@ -332,9 +338,18 @@ def create_app(broker, verifier):
 
     @asynccontextmanager
     async def lifespan(current):
-        await verifier.validate_issuer_metadata()
-        async with sdk_lifespan(current):
-            yield
+        try:
+            await verifier.validate_issuer_metadata()
+            async with sdk_lifespan(current):
+                try:
+                    yield
+                finally:
+                    # Refuse executor-queued calls before SDK teardown. Calls
+                    # already delivered to the broker retain their identity and
+                    # occupied capacity; transport shutdown is not job cancel.
+                    closing.set()
+        finally:
+            closing.set()
         # The broker owns acceptance and job lifetime. Process-manager recovery
         # remains authoritative when transport shutdown interrupts pending I/O.
 

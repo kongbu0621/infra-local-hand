@@ -80,12 +80,16 @@ class Workflow:
             raise
         finally:
             _close_descriptors(directory, parent, failure=failure)
-        self._profiles = {}
-        self._execution_support = {}
+        self._invalidate_preflight()
 
     @property
     def execution_support(self):
         return _copy(self._execution_support)
+
+    def _invalidate_preflight(self):
+        self._profiles = {}
+        self._execution_support = {}
+        self._preflight_verified = False
 
     def _require_supported(self, kind):
         status = self._execution_support.get(kind, {}).get("status")
@@ -94,7 +98,12 @@ class Workflow:
 
     def _invoke(self, tool, arguments):
         validate_tool_args(tool, arguments)
-        result = self.call(tool, _copy(arguments))
+        try:
+            result = self.call(tool, _copy(arguments))
+        except JobError as error:
+            if error.code == "STALE_DEPLOYMENT":
+                self._invalidate_preflight()
+            raise
         if not isinstance(result, dict):
             _fail("IO_UNCERTAIN", "Host callback did not return a structured tool result")
         try:
@@ -110,6 +119,8 @@ class Workflow:
             code = error.get("code") if isinstance(error, dict) else None
             if not isinstance(code, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code) is None:
                 code = "IO_UNCERTAIN"
+            if code == "STALE_DEPLOYMENT":
+                self._invalidate_preflight()
             _fail(code, "The authenticated tool returned an error")
         return result
 
@@ -263,8 +274,7 @@ class Workflow:
         return saved
 
     def preflight(self):
-        self._profiles = {}
-        self._execution_support = {}
+        self._invalidate_preflight()
         if (self.contract["job_schema_version"] != SCHEMA_VERSION or
                 self.contract["tool_schema_digest"] != TOOL_SCHEMA_DIGEST or
                 hashlib.sha256(canonical_bytes(self.contract["tools"])).hexdigest() != TOOL_SCHEMA_DIGEST):
@@ -314,6 +324,7 @@ class Workflow:
             if cursor is None:
                 self._profiles = profiles
                 self._execution_support = support
+                self._preflight_verified = True
                 return _copy(profiles)
             if not isinstance(cursor, str) or not cursor or cursor in seen:
                 _fail("IO_UNCERTAIN", "Capability pagination did not progress")
@@ -377,6 +388,7 @@ class Workflow:
         arguments = {"operation_id": request["operation_id"],
                      "expected_request_digest": request["request_digest"]}
         if record is None:
+            self._require_reconcile_preflight()
             record = self._save(name, {"authority_id": self.admission["authority_id"],
                                      "arguments": {**arguments, "reconcile_id": str(uuid.uuid4())}})
         actual = record.get("arguments", {})
@@ -394,7 +406,15 @@ class Workflow:
 
     def reconcile(self, key):
         args = self._reconcile(key)
+        self._require_reconcile_preflight()
         return self._invoke_bound("lh_job_reconcile", args, args["expected_request_digest"], args["reconcile_id"])
+
+    def _require_reconcile_preflight(self):
+        # A reconciliation may start a new helper. Unlike status/cancel or
+        # retrieving an existing local identity, it must not bypass a failed
+        # authority/contract check. Retry still uses the original durable id.
+        if not self._preflight_verified:
+            _fail("STALE_DEPLOYMENT", "Verify the admitted authority and contract before reconciliation")
 
     def cancel_job(self, key):
         request = self._job(key)["request"]

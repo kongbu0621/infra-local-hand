@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import importlib.util
 import io
@@ -303,6 +304,36 @@ class ServerTests(unittest.TestCase):
                 release.set()
             self.assertTrue(completed.wait(timeout=1))
         self.assertEqual(1, len(self.broker.calls))
+
+    def test_lifespan_closes_executor_queue_admission_before_teardown(self):
+        occupied, release = threading.Event(), threading.Event()
+        executor = ThreadPoolExecutor(max_workers=1)
+
+        def occupy():
+            occupied.set()
+            release.wait(timeout=5)
+
+        blocker = executor.submit(occupy)
+        self.assertTrue(occupied.wait(timeout=1))
+        try:
+            async def use_bounded_executor():
+                asyncio.get_running_loop().set_default_executor(executor)
+            self.client.portal.call(use_bounded_executor)
+            with mock.patch("local_hand_mcp.server.CONTROL_SECONDS", 0.01):
+                response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
+            self.assertEqual("IO_UNCERTAIN", response.json()["result"]["structuredContent"]["error"]["code"])
+            self.assertEqual([], self.broker.calls)
+            self.client.portal.call(self.client.stop.set)
+            self.client.future.result(timeout=2)
+            release.set()
+            blocker.result(timeout=2)
+            # A barrier queued behind dispatch proves that the worker ran.
+            executor.submit(lambda: None).result(timeout=2)
+            self.client.portal.call(asyncio.sleep, 0.01)
+            self.assertEqual([], self.broker.calls)
+        finally:
+            release.set()
+            executor.shutdown()
 
     def test_service_teardown_attempts_every_resource_and_preserves_body_error(self):
         for body_fails in (False, True):

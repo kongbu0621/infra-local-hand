@@ -400,6 +400,44 @@ class LedgerPlanTests(unittest.TestCase):
             with self.assertRaises(jobs.LedgerPlanError): jobs.bounded_regular_bytes(path, 99)
         self.assertEqual(jobs.bounded_regular_bytes(path, 100), b"x" * 100)
 
+    def test_regular_reads_reject_incomplete_bytes_even_when_metadata_is_stable(self):
+        path = self.root / "complete-result.json"
+        prefix = b'{"outcome":"SUCCEEDED"}'
+        raw = prefix + b" CORRUPTED SUFFIX"
+        path.write_bytes(raw)
+        readers = (jobs._regular_bytes, lambda path: jobs.bounded_regular_bytes(path, 1024))
+        for reader in readers:
+            with self.subTest(reader=reader.__name__):
+                for chunks in ([prefix, b""], [b""], [raw + b"EXTRA", b""]):
+                    with patch.object(os, "read", side_effect=chunks):
+                        with self.assertRaises(jobs.LedgerPlanError): reader(path)
+                # Multiple legitimate short reads are complete once their bytes
+                # match the unchanged descriptor size; do not require one read.
+                with patch.object(os, "read", side_effect=[raw[:3], raw[3:], b""]):
+                    self.assertEqual(reader(path), raw)
+
+    def test_regular_read_cleanup_preserves_primary_error_and_closes_once(self):
+        path = self.root / "read-cleanup"; path.write_bytes(b"input")
+        readers = (jobs._regular_bytes, lambda path: jobs.bounded_regular_bytes(path, 1024))
+        actual_close = os.close
+        for reader in readers:
+            for failure in (OSError("input read failed"), KeyboardInterrupt("read interrupted"), None):
+                with self.subTest(reader=reader.__name__, failure=type(failure).__name__):
+                    closed = []
+                    cleanup_error = OSError("close acknowledgement missing")
+                    def close_then_fail(descriptor):
+                        closed.append(descriptor)
+                        actual_close(descriptor)
+                        raise cleanup_error
+                    with patch.object(os, "close", side_effect=close_then_fail), \
+                            patch.object(os, "read", side_effect=failure if failure is not None else [b"input", b""]):
+                        with self.assertRaises(BaseException) as observed: reader(path)
+                    self.assertIs(observed.exception, failure if failure is not None else cleanup_error)
+                    if failure is not None:
+                        self.assertIn("input descriptor cleanup was incomplete", failure.__notes__)
+                    self.assertEqual(len(closed), 1)
+                    with self.assertRaises(OSError): os.fstat(closed[0])
+
     def test_bounded_read_rejects_a_replaced_named_entry(self):
         owned = self.root / "owned"; owned.mkdir()
         path = owned / "result.json"

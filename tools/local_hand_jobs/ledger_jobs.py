@@ -150,8 +150,18 @@ def _file_identity(value):
             value.st_uid, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
 
 
+def _close_input(descriptor, original_error):
+    try:
+        os.close(descriptor)
+    except BaseException:
+        if original_error is None:
+            raise
+        original_error.add_note("input descriptor cleanup was incomplete")
+
+
 def _regular_bytes(path, *, dir_fd=None):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+    original_error = None
     try:
         before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
@@ -163,15 +173,21 @@ def _regular_bytes(path, *, dir_fd=None):
             chunks.append(chunk)
         after = os.fstat(fd)
         entry = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
-        if _file_identity(before) != _file_identity(after) or _file_identity(after) != _file_identity(entry):
+        raw = b"".join(chunks)
+        if (len(raw) != before.st_size or _file_identity(before) != _file_identity(after)
+                or _file_identity(after) != _file_identity(entry)):
             raise LedgerPlanError("input changed while observed")
-        return b"".join(chunks)
+        return raw
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
-        os.close(fd)
+        _close_input(fd, original_error)
 
 
 def bounded_regular_bytes(path, maximum):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    original_error = None
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > maximum:
@@ -184,11 +200,15 @@ def bounded_regular_bytes(path, maximum):
             if len(raw) > maximum: raise LedgerPlanError("input exceeds byte bound")
         after = os.fstat(descriptor)
         entry = os.stat(path, follow_symlinks=False)
-        if _file_identity(before) != _file_identity(after) or _file_identity(after) != _file_identity(entry):
+        if (len(raw) != before.st_size or _file_identity(before) != _file_identity(after)
+                or _file_identity(after) != _file_identity(entry)):
             raise LedgerPlanError("bounded input changed during read")
         return bytes(raw)
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
-        os.close(descriptor)
+        _close_input(descriptor, original_error)
 
 
 def verify_manifest(root, manifest, *, git_blobs=False, exact=True, links=None):

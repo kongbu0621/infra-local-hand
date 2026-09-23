@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -15,6 +16,22 @@ from .contract import JobError
 
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _unique_pairs(items):
+    value = {}
+    for key, item in items:
+        if key in value:
+            raise ValueError("Ambiguous ledger JSON member")
+        value[key] = item
+    return value
+
+
+def _finite_number(text):
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError("Non-finite ledger JSON number")
+    return value
 
 
 class StateStore:
@@ -156,10 +173,16 @@ class StateStore:
         result = dict(row)
         try:
             for name in ("request", "plan", "record"):
-                result[name] = json.loads(result.pop(name + "_json"))
+                # Match the unambiguous, finite JSON produced by encoded().
+                # Silent duplicate-key replacement or float overflow must not
+                # turn damaged persistent state into a trusted observation.
+                result[name] = json.loads(result.pop(name + "_json"),
+                                          object_pairs_hook=_unique_pairs,
+                                          parse_constant=_finite_number,
+                                          parse_float=_finite_number)
                 if not isinstance(result[name], dict):
                     raise ValueError
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, RecursionError) as exc:
             self.healthy = False
             raise JobError("IO_UNCERTAIN", "Ledger record integrity is unresolved") from exc
         return result

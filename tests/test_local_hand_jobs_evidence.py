@@ -718,6 +718,56 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(collided[0].read_bytes(), b"concurrent owner bytes")
         self.assertFalse(self.fixture.registered)
 
+    def test_nested_inventory_cleanup_preserves_primary_and_closes_each_descriptor_once(self):
+        nested = self.fixture.source / "nested" / "inner"
+        nested.mkdir(parents=True, mode=0o700)
+        (nested / "payload").write_bytes(b"retained original bytes")
+        real_open, real_close, real_regular = os.open, os.close, evidence._regular
+        for kind in ("conflict", "budget", "io", "healthy"):
+            with self.subTest(kind=kind):
+                primary = {"conflict": EvidenceError("CONFLICT", "primary conflict"),
+                    "budget": EvidenceError("LIMIT_EXCEEDED", "primary budget"),
+                    "io": OSError("primary read failure"), "healthy": None}[kind]
+                opened, closed = [], []
+                def open_directory(name, *args, **kwargs):
+                    descriptor = real_open(name, *args, **kwargs)
+                    if name in ("nested", "inner"):
+                        opened.append(descriptor)
+                    return descriptor
+                def close_directory(descriptor):
+                    real_close(descriptor)
+                    if descriptor in opened:
+                        closed.append(descriptor)
+                        raise OSError("cleanup error after descriptor release")
+                def observe_regular(*args):
+                    if len(opened) == 2 and primary is not None:
+                        raise primary
+                    return real_regular(*args)
+                root_fd = evidence._root_descriptor(self.fixture.source, os.geteuid())
+                caught = None
+                try:
+                    with mock.patch.object(evidence.os, "open", side_effect=open_directory), \
+                            mock.patch.object(evidence.os, "close", side_effect=close_directory), \
+                            mock.patch.object(evidence, "_regular", side_effect=observe_regular):
+                        try:
+                            self.fixture.store._inventory(root_fd)
+                        except Exception as error:
+                            caught = error
+                finally:
+                    os.close(root_fd)
+                self.assertEqual(len(opened), 2)
+                self.assertEqual(closed, list(reversed(opened)))
+                if primary is not None:
+                    self.assertIs(caught, primary)
+                    self.assertEqual(primary.__notes__, ["Evidence descriptor cleanup also failed"] * 2)
+                else:
+                    self.assertIsInstance(caught, EvidenceError)
+                    self.assertEqual(caught.code, "IO_UNCERTAIN")
+                for descriptor in opened:
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptor)
+                self.assertEqual((nested / "payload").read_bytes(), b"retained original bytes")
+
     def test_appended_seal_never_modifies_original(self):
         first = self.fixture.store.seal(OP)
         original = (self.fixture.store.root / first["seal_id"] / "evidence.zip").read_bytes()

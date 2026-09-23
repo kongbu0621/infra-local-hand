@@ -465,6 +465,7 @@ class EvidenceStore:
                         _directory(st, self.owner)
                         nxt = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                       dir_fd=directory)
+                        failure = None
                         try:
                             if _same(os.fstat(nxt)) != _same(st):
                                 raise EvidenceError("CONFLICT", "evidence directory changed")
@@ -472,8 +473,11 @@ class EvidenceStore:
                             named = os.stat(entry.name, dir_fd=directory, follow_symlinks=False)
                             if _same(named) != _same(st) or _same(os.fstat(nxt)) != _same(st):
                                 raise EvidenceError("CONFLICT", "evidence directory replaced during inventory")
+                        except BaseException as error:
+                            failure = error
+                            raise
                         finally:
-                            os.close(nxt)
+                            _close_descriptors(nxt, failure=failure)
                     else:
                         _regular(st, self.owner, self.max_source_bytes)
                         result[name] = _same(st)

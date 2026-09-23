@@ -711,7 +711,7 @@ def _capture_stage(stage, directory, limit, remaining):
             "outcome": "SUCCEEDED" if code == 0 and not exceeded and not pending_pipes else "FAILED"}
 
 
-def _interpreter_temp_check(python, plan, directory):
+def _interpreter_temp_check(python, plan, directory, *, log_limit=None, remaining=10, observations=None):
     # The Ledger interpreters need not have Local Hand installed. Keep this
     # independent probe standard-library-only, with the same failure semantics.
     code = ("import os,pathlib,tempfile\n"
@@ -753,8 +753,11 @@ def _interpreter_temp_check(python, plan, directory):
         "        else: raise cleanup_error\n")
     stage = {"name": "temp-" + hashlib.sha256(python.encode()).hexdigest()[:12],
              "argv": [python, "-I", "-c", code], "cwd": plan["roots"]["work"], "env": plan["environment"]}
-    observation = _capture_stage(stage, directory, min(16384, plan["budgets"]["log_bytes"]), 10)
+    if log_limit is None: log_limit = plan["budgets"]["log_bytes"]
+    observation = _capture_stage(stage, directory, min(16384, log_limit), min(10, remaining))
+    if observations is not None: observations.append(observation)
     if observation["outcome"] != "SUCCEEDED": raise ledger_jobs.LedgerPlanError("actual interpreter temporary binding failed")
+    return observation
 
 
 def _checked_walk(root, *, topdown=True):
@@ -836,12 +839,21 @@ def _verify_storage_namespace(plan):
 
 
 def _helper(plan):
+    started = time.monotonic()
+    remaining_logs = plan["budgets"]["log_bytes"]
     phase = plan["phase"]
     output = {"execution_id": plan["execution_id"], "outcome": "FAILED", "effects_checked": False,
               "business_started": False, "helper_started": True, "facts": {}, "stages": [], "retention": plan.get("retention")}
     work, evidence = Path(plan["roots"]["work"]), Path(plan["roots"]["evidence"])
     directory = evidence / (phase + "-" + hashlib.sha256(plan["execution_id"].encode()).hexdigest()[:16])
     directory.mkdir(mode=0o700)
+    def remaining_time():
+        return plan["budgets"]["wall_seconds"] - (time.monotonic() - started)
+    def check_interpreter(python):
+        nonlocal remaining_logs
+        observation = _interpreter_temp_check(python, plan, directory,
+            log_limit=remaining_logs, remaining=remaining_time(), observations=output["stages"])
+        remaining_logs -= sum(observation["bytes_retained"].values())
     try:
         # Verify that requested namespace settings actually became effective.
         # systemd documents that user-manager mount isolation needs PrivateUsers.
@@ -865,7 +877,7 @@ def _helper(plan):
         if phase == "preflight":
             output["facts"].update(ledger_jobs.verify_inputs(plan))
             interpreters = [plan["python"]] if plan["kind"] in ("host.inspect", "ledger.prepare") else [plan["prepared"]["build_python"], plan["prepared"]["runtime_python"]]
-            for python in sorted(set(interpreters)): _interpreter_temp_check(python, plan, directory)
+            for python in sorted(set(interpreters)): check_interpreter(python)
             output.update(outcome="SUCCEEDED", effects_checked=True)
         elif phase == "evidence":
             from local_hand_jobs.evidence import EvidenceStore, FrozenSnapshot, QuiescenceProof
@@ -915,14 +927,12 @@ def _helper(plan):
             else:
                 output["business_started"] = True
                 ledger_jobs.copy_verified_source(plan)
-                start = time.monotonic()
-                remaining_logs = plan["budgets"]["log_bytes"]
                 checked = set()
                 for stage in plan["stages"]:
                     python = stage["argv"][0]
                     if python not in checked:
-                        _interpreter_temp_check(python, plan, directory); checked.add(python)
-                    observed = _capture_stage(stage, directory, remaining_logs, plan["budgets"]["wall_seconds"] - (time.monotonic() - start))
+                        check_interpreter(python); checked.add(python)
+                    observed = _capture_stage(stage, directory, remaining_logs, remaining_time())
                     output["stages"].append(observed)
                     remaining_logs -= sum(observed["bytes_retained"].values())
                     if observed["outcome"] != "SUCCEEDED": break

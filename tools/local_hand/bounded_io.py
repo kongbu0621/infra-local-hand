@@ -82,6 +82,14 @@ def read_regular_file_bounded(path: Path, limit: int, code: str) -> bytes:
             chunks.append(chunk)
             remaining -= len(chunk)
         data = b"".join(chunks)
+        final = os.fstat(fd)
+        identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
+                                 info.st_mtime_ns, info.st_ctime_ns)
+        if identity(after) != identity(final) or len(data) != min(after.st_size, limit + 1):
+            # A short EOF or in-place change is not invalid JSON/content. In
+            # particular, worker recovery must retain its uncertainty barrier
+            # rather than quarantine a partially observed authoritative file.
+            raise FileReadUnavailable(code, f"regular file read is incomplete or changed: {path.name}", "indeterminate")
         read_completed = True
     except OSError as exc:
         raise FileReadUnavailable(code, f"cannot read regular file {path.name}; errno={exc.errno}", "indeterminate") from exc

@@ -126,6 +126,43 @@ class ResourceTests(unittest.TestCase):
             StateStore(self.db.path, "authority", "ledger")
         self.db.path.chmod(0o600)
 
+    def test_ambiguous_or_nonfinite_ledger_json_closes_admission(self):
+        payloads = ['{"outcome":"UNKNOWN","outcome":"SUCCEEDED"}',
+                    '{"facts":{"stable":false,"stable":true}}']
+        payloads.extend('{"observed_at":' + item + '}'
+                        for item in ('NaN', 'Infinity', '-Infinity', '1e400', '-1e400'))
+        for index, payload in enumerate(payloads):
+            with self.subTest(payload=payload):
+                state = StateStore(self.root / f"damaged-{index}.sqlite", "authority", "ledger", initialize=True)
+                try:
+                    with state.transaction() as tx:
+                        state.insert(tx, "job", "id", "id", "owner", "a" * 64, {}, {}, 1000)
+                        # The normal encoder rejects these values. Simulate
+                        # damaged persisted TEXT, not an allowed state update.
+                        tx.execute("UPDATE operations SET record_json=?", (payload,))
+                    with self.assertRaises(JobError) as raised:
+                        state.get("job", "id")
+                    self.assertEqual("IO_UNCERTAIN", raised.exception.code)
+                    self.assertFalse(state.healthy)
+                    with self.assertRaises(JobError) as missing:
+                        state.get("job", "missing")
+                    self.assertEqual("IO_UNCERTAIN", missing.exception.code)
+                finally:
+                    state.close()
+
+    def test_ledger_decoder_recursion_failure_is_storage_uncertainty(self):
+        with self.db.transaction() as tx:
+            self.db.insert(tx, "job", "id", "id", "owner", "a" * 64, {}, {}, 1000)
+            self.db.update(tx, "job", "id", "OBSERVED", {"facts": {"duration": 1.125}})
+        self.assertEqual(1.125, self.db.get("job", "id")["record"]["facts"]["duration"])
+        failure = RecursionError("synthetic decoder budget exhaustion")
+        with mock.patch("local_hand_jobs.state.json.loads", side_effect=failure):
+            with self.assertRaises(JobError) as raised:
+                self.db.get("job", "id")
+        self.assertEqual("IO_UNCERTAIN", raised.exception.code)
+        self.assertIs(failure, raised.exception.__cause__)
+        self.assertFalse(self.db.healthy)
+
     def test_hardlinked_authority_anchor_is_not_an_independent_lock(self):
         anchor = self.root / "anchor"
         anchor.write_text(json.dumps({"authority_id": "authority", "ledger_id": "ledger", "state_root": str(self.root)}))

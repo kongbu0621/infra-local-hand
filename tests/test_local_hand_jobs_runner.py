@@ -1,4 +1,6 @@
 """Trusted DI simulations are distinguished from real cgroup integration."""
+import contextlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -43,7 +45,75 @@ def await_state(supervisor, handle, expected):
     raise AssertionError(supervisor.inspect(handle))
 
 
+@contextlib.contextmanager
+def helper_budget_fixture(phase):
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        roots = {name: str(root / name) for name in ("work", "temporary", "evidence")}
+        for path in roots.values(): Path(path).mkdir()
+        environment = runner.ledger_jobs.clean_environment(roots["temporary"])
+        target = root / "evidence" / "result.json"
+        plan = {"phase": phase, "execution_id": "budget-" + phase, "kind": "ledger.test.source",
+            "roots": roots, "prepared": {"build_python": sys.executable,
+                "runtime_python": str(Path(sys.executable).resolve())},
+            "environment": environment, "parent_mount_namespace": "original-namespace",
+            "result_path": str(target), "budgets": {"log_bytes": 10, "wall_seconds": 10},
+            "stages": [{"name": "business-output", "argv": [sys.executable, "-I", "-c",
+                "import os;os.write(1,b'1234567890')"], "cwd": roots["work"], "env": environment}]}
+        # Use distinct names even when the test interpreter is not a venv.
+        alternate = root / "other-python"
+        alternate.symlink_to(Path(sys.executable).resolve())
+        plan["prepared"]["runtime_python"] = str(alternate)
+        mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
+        with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
+                patch.object(os, "readlink", return_value="private-namespace"), \
+                patch.object(os, "access", return_value=False), \
+                patch.object(runner, "_mount_for", return_value=mount), \
+                patch.object(runner, "_verify_cgroup_limits", return_value={}), \
+                patch.object(runner.ledger_jobs, "verify_inputs", return_value={"inputs_stable": True}), \
+                patch.object(runner.ledger_jobs, "copy_verified_source"):
+            yield plan, target
+
+
 class RunnerTests(unittest.TestCase):
+    def test_helper_probe_logs_share_preflight_and_business_log_budget(self):
+        for phase in ("preflight", "business"):
+            for limit in (10, 20):
+                with self.subTest(phase=phase, limit=limit), helper_budget_fixture(phase) as (plan, target):
+                    plan["budgets"]["log_bytes"] = limit
+                    capture = runner._capture_stage
+                    def noisy_probe(stage, *args):
+                        if stage["name"].startswith("temp-"):
+                            stage = dict(stage, argv=list(stage["argv"]))
+                            stage["argv"][-1] += "\nos.write(1,b'1234567890')\n"
+                        return capture(stage, *args)
+                    with patch.object(runner, "_capture_stage", side_effect=noisy_probe):
+                        code = runner._helper(plan)
+                    logs = list(target.parent.rglob("*.stdout")) + list(target.parent.rglob("*.stderr"))
+                    self.assertEqual(len(logs), 4)
+                    self.assertEqual(sum(path.stat().st_size for path in logs), limit)
+                    result = json.loads(target.read_text())
+                    self.assertEqual(len(result["stages"]), 2)
+                    self.assertEqual(sum(sum(stage["bytes_retained"].values()) for stage in result["stages"]), limit)
+                    self.assertEqual(any(stage["truncated"] for stage in result["stages"]), limit == 10)
+                    self.assertEqual(result["outcome"], "SUCCEEDED" if limit == 20 else "FAILED")
+                    self.assertEqual(code, 0 if limit == 20 else 1)
+
+    def test_helper_cannot_launch_probe_after_input_checks_exhaust_wall_budget(self):
+        for phase in ("preflight", "business"):
+            with self.subTest(phase=phase), helper_budget_fixture(phase) as (plan, target):
+                clock = [0.0]
+                def slow_inputs(plan):
+                    clock[0] = 11.0
+                    return {"inputs_stable": True}
+                with patch.object(runner.time, "monotonic", side_effect=lambda: clock[0]), \
+                        patch.object(runner.ledger_jobs, "verify_inputs", side_effect=slow_inputs), \
+                        patch.object(runner.subprocess, "Popen", side_effect=AssertionError("expired launch")) as launched:
+                    code = runner._helper(plan)
+                launched.assert_not_called()
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(target.read_text())["outcome"], "FAILED")
+
     def test_unsupported_after_manager_delivery_is_not_no_start_proof(self):
         class AdmittedManager(runner.SystemdManager):
             def _admit(self, plan):
@@ -467,6 +537,7 @@ class RunnerTests(unittest.TestCase):
             for path in roots.values(): Path(path).mkdir()
             plan = {"phase": "reconcile", "execution_id": "missing-root-reconcile",
                     "kind": "ledger.test.source", "roots": roots,
+                    "budgets": {"log_bytes": 1024, "wall_seconds": 10},
                     "observed_roots": {"work": str(root / "missing-original")},
                     "environment": runner.ledger_jobs.clean_environment(roots["temporary"]),
                     "parent_mount_namespace": "original-namespace",

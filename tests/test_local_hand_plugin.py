@@ -663,6 +663,71 @@ else:
         self.client.reserve_reconcile("observe", "one")
         self.assert_error("CONFLICT", self.client.reserve_reconcile, "observe", "two")
 
+    def test_failed_preflight_blocks_new_reconciliation_and_resubmission(self):
+        self.reserve()
+        original = self.client.reserve_reconcile("existing", "inspect")
+        self.host.status["lifecycle"] = "TERMINAL"
+        for field, value in (("authority_id", "other-authority"),
+                             ("tool_schema_digest", "d" * 64)):
+            with self.subTest(field=field):
+                previous = self.host.page[field]
+                self.host.page[field] = value
+                self.assert_error("STALE_DEPLOYMENT" if field == "authority_id" else "UNSUPPORTED",
+                                  self.client.preflight)
+                count = len(self.host.calls)
+                self.assert_error("STALE_DEPLOYMENT", self.client.reserve_reconcile, "new", "inspect")
+                self.assert_error("STALE_DEPLOYMENT", self.client.reconcile, "existing")
+                self.assertEqual(count, len(self.host.calls))
+                self.assertFalse((self.client.journal / self.client._record_name("reconcile", "new")).exists())
+                self.assertEqual(original, self.client.reserve_reconcile("existing", "inspect"))
+                self.client.observe(reconcile_key="existing")
+                self.client.cancel_reconcile("existing")
+                self.host.page[field] = previous
+                self.client.preflight()
+                result = self.client.reconcile("existing")
+                self.assertEqual(original["arguments"]["reconcile_id"], result["reconcile_id"])
+
+    def test_restarted_client_verifies_preflight_before_reconciliation(self):
+        self.reserve()
+        original = self.client.reserve_reconcile("existing", "inspect")
+        restarted = workflow.Workflow(self.host, self.client.journal, self.admission, sleep=lambda _: None)
+        self.assertEqual(original, restarted.reserve_reconcile("existing", "inspect"))
+        self.assert_error("STALE_DEPLOYMENT", restarted.reserve_reconcile, "new", "inspect")
+        self.assert_error("STALE_DEPLOYMENT", restarted.reconcile, "existing")
+        restarted.preflight()
+        self.assertEqual(original["arguments"]["reconcile_id"], restarted.reconcile("existing")["reconcile_id"])
+
+    def test_stale_tool_error_revokes_cached_write_admission_until_preflight(self):
+        original = self.reserve()
+        round_record = self.client.reserve_reconcile("existing", "inspect")
+        for structured in (True, False):
+            with self.subTest(structured=structured):
+                def stale(*_):
+                    if structured:
+                        return {"error": {"code": "STALE_DEPLOYMENT"}}
+                    raise JobError("STALE_DEPLOYMENT", "Synthetic stale deployment")
+                self.client.call = stale
+                self.assert_error("STALE_DEPLOYMENT", self.client.submit, "inspect")
+                self.client.call = self.host
+                count = len(self.host.calls)
+                self.assert_error("UNAUTHORIZED", self.client.reserve_job, "new",
+                                  kind="host.inspect", profile_ref="fixture", inputs={})
+                self.assert_error("STALE_DEPLOYMENT", self.client.submit, "inspect")
+                self.assert_error("STALE_DEPLOYMENT", self.client.reserve_reconcile, "new", "inspect")
+                self.assert_error("STALE_DEPLOYMENT", self.client.reconcile, "existing")
+                self.assertEqual(count, len(self.host.calls))
+                self.assertEqual({}, self.client.execution_support)
+                self.assertFalse((self.client.journal / self.client._record_name("job", "new")).exists())
+                self.assertFalse((self.client.journal / self.client._record_name("reconcile", "new")).exists())
+                self.assertEqual(original, self.reserve())
+                self.assertEqual(round_record, self.client.reserve_reconcile("existing", "inspect"))
+                self.client.observe(job_key="inspect")
+                self.client.cancel_job("inspect")
+                self.client.cancel_reconcile("existing")
+                self.client.preflight()
+                self.assertEqual(round_record["arguments"]["reconcile_id"],
+                                 self.client.reconcile("existing")["reconcile_id"])
+
     def test_polling_budget_does_not_change_unknown_or_resubmit(self):
         self.reserve()
         self.host.status["outcome"] = "UNKNOWN"
