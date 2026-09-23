@@ -294,7 +294,9 @@ class LedgerPlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "probe close acknowledgement unavailable"):
                     jobs.check_temp_binding(str(root))
             self.assertFalse(hasattr(ambient, "__notes__"))
-        self.assertEqual(len(closed), 1)
+        # Both the probe and its retained parent descriptor are released once.
+        self.assertEqual(len(closed), 2)
+        self.assertEqual(len(set(closed)), 2)
         self.assertEqual(list(root.iterdir()), [])
         with self.assertRaises(OSError): os.fstat(closed[0])
 
@@ -317,6 +319,73 @@ class LedgerPlanTests(unittest.TestCase):
         self.assertIs(observed, primary)
         self.assertEqual(list(root.iterdir()), [])
         self.assertEqual(primary.__notes__, ["temporary probe cleanup was incomplete"])
+
+    def test_temp_probe_is_anonymous_and_cannot_unlink_concurrent_file(self):
+        root = self.root / "probe-swap"; root.mkdir()
+        actual_fsync = os.fsync
+        replacement = root / "concurrent-owner"
+        def replace_probe(descriptor):
+            actual_fsync(descriptor)
+            self.assertEqual(os.fstat(descriptor).st_nlink, 0)
+            self.assertEqual(list(root.iterdir()), [])
+            replacement.write_bytes(b"concurrent-owner-data")
+        with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                patch.object(os, "fsync", side_effect=replace_probe), \
+                patch.object(os, "unlink", side_effect=AssertionError("anonymous probe must not unlink")):
+            result = jobs.check_temp_binding(str(root))
+        self.assertEqual(result["inode"], root.stat().st_ino)
+        self.assertEqual(replacement.read_bytes(), b"concurrent-owner-data")
+
+    def test_temp_probe_replaced_directory_cannot_bind_or_delete_replacement(self):
+        for mutation in ("before-create", "after-write"):
+            with self.subTest(mutation=mutation):
+                root = self.root / mutation; root.mkdir()
+                detached = self.root / (mutation + "-retained")
+                opened, synced = os.open, os.fsync
+                replacement = None
+                def replace_directory():
+                    nonlocal replacement
+                    root.rename(detached); root.mkdir()
+                    replacement = root / "concurrent-owner"
+                    replacement.write_bytes(b"concurrent-owner-data")
+                def open_probe(path, flags, *args, **kwargs):
+                    if flags & os.O_TMPFILE == os.O_TMPFILE:
+                        replace_directory()
+                    return opened(path, flags, *args, **kwargs)
+                def sync_probe(descriptor):
+                    synced(descriptor)
+                    replace_directory()
+                with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                        patch.object(os, "open", side_effect=open_probe if mutation == "before-create" else opened), \
+                        patch.object(os, "fsync", side_effect=sync_probe if mutation == "after-write" else synced):
+                    with self.assertRaisesRegex(jobs.LedgerPlanError, "root changed"):
+                        jobs.check_temp_binding(str(root))
+                self.assertEqual(replacement.read_bytes(), b"concurrent-owner-data")
+                self.assertEqual(list(detached.iterdir()), [])
+
+    def test_temp_probe_unsupported_anonymous_inode_never_uses_named_fallback(self):
+        import errno
+        root = self.root / "anonymous-unavailable"; root.mkdir()
+        original_open = os.open
+        opened = []
+        def reject_anonymous(path, flags, *args, **kwargs):
+            self.assertFalse(flags & os.O_CREAT, "named fallback must not be attempted")
+            if flags & os.O_TMPFILE == os.O_TMPFILE:
+                raise OSError(errno.EOPNOTSUPP, "fixture anonymous files unavailable")
+            descriptor = original_open(path, flags, *args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+        with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                patch.object(os, "open", side_effect=reject_anonymous):
+            with self.assertRaisesRegex(jobs.LedgerPlanError, "anonymous temporary probe is unavailable"):
+                jobs.check_temp_binding(str(root))
+        self.assertEqual(len(opened), 1)
+        with self.assertRaises(OSError): os.fstat(opened[0])
+        with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                patch.object(os, "O_TMPFILE", None):
+            with self.assertRaisesRegex(jobs.LedgerPlanError, "anonymous temporary probe is unsupported"):
+                jobs.check_temp_binding(str(root))
+        self.assertEqual(list(root.iterdir()), [])
 
     def test_resource_skips_and_wrong_counts_never_pass(self):
         for text in ("Ran 8 tests in 1s\n\nOK (skipped=1)\n", "Ran 7 tests in 1s\n\nOK\n", ""):

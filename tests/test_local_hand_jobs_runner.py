@@ -304,6 +304,53 @@ class RunnerTests(unittest.TestCase):
                     runner._interpreter_temp_check(sys.executable, plan, root)
             self.assertEqual(list(temporary.iterdir()), [])
 
+    def test_actual_interpreter_anonymous_probe_retains_concurrent_files(self):
+        for mutation in ("file", "directory", "before-create", "unsupported"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                temporary = root / "temporary"; temporary.mkdir()
+                plan = {"roots": {"work": str(root), "temporary": str(temporary)},
+                        "environment": runner.ledger_jobs.clean_environment(str(temporary)),
+                        "budgets": {"log_bytes": 16384}}
+                capture = runner._capture_stage
+                def inject(stage, *args):
+                    stage = dict(stage, argv=list(stage["argv"]))
+                    if mutation in ("before-create", "unsupported"):
+                        injection = (
+                            "import os,pathlib\noriginal_open=os.open\n"
+                            "def replace_before_create(path,flags,*args,**kwargs):\n"
+                            "    if flags & os.O_TMPFILE == os.O_TMPFILE:\n"
+                            "        root=pathlib.Path(os.environ['TMPDIR'])\n"
+                            + ("        raise OSError('anonymous file capability unavailable')\n" if mutation == "unsupported" else
+                               "        root.rename(root.parent/'retained-original'); root.mkdir()\n"
+                               "        (root/'concurrent-owner').write_bytes(b'concurrent-owner-data')\n")
+                            +
+                            "    return original_open(path,flags,*args,**kwargs)\n"
+                            "os.open=replace_before_create\n")
+                    else:
+                        injection = (
+                            "import os,pathlib\noriginal_fsync=os.fsync\n"
+                            "def replace_after_sync(fd):\n"
+                            "    original_fsync(fd)\n"
+                            "    root=pathlib.Path(os.environ['TMPDIR'])\n"
+                            "    assert os.fstat(fd).st_nlink==0 and list(root.iterdir())==[]\n"
+                            + ("" if mutation == "file" else
+                               "    root.rename(root.parent/'retained-original'); root.mkdir()\n")
+                            + "    (root/'concurrent-owner').write_bytes(b'concurrent-owner-data')\n"
+                            + "os.fsync=replace_after_sync\n")
+                    stage["argv"][-1] = injection + stage["argv"][-1]
+                    return capture(stage, *args)
+                with patch.object(runner, "_capture_stage", side_effect=inject):
+                    if mutation == "file":
+                        runner._interpreter_temp_check(sys.executable, plan, root)
+                    else:
+                        with self.assertRaises(runner.ledger_jobs.LedgerPlanError):
+                            runner._interpreter_temp_check(sys.executable, plan, root)
+                expected = [] if mutation == "unsupported" else [b"concurrent-owner-data"]
+                self.assertEqual([p.read_bytes() for p in temporary.iterdir()], expected)
+                if mutation in ("directory", "before-create"):
+                    self.assertEqual(list((root / "retained-original").iterdir()), [])
+
     def test_expired_stage_budget_cannot_start_a_side_effecting_program(self):
         import subprocess
         actual_popen = subprocess.Popen

@@ -13,6 +13,7 @@ import struct
 import sys
 import threading
 import time
+import uuid
 
 from .contract import JobError, Principal, MAX_REQUEST_BYTES, MAX_SAFE_INTEGER, strict_loads
 
@@ -124,7 +125,7 @@ class MaintenanceServer:
     """Only protected OS peer mappings can introduce a Principal."""
 
     def __init__(self, broker, socket_path, peer_map, *, response_seconds=2, max_clients=16):
-        if not hasattr(socket, "SO_PEERCRED"):
+        if not hasattr(socket, "SO_PEERCRED") or not hasattr(os, "O_PATH"):
             raise JobError("UNSUPPORTED", "Authenticated Unix peers are unavailable")
         self.broker, self.path = broker, Path(socket_path)
         self.peer_map = dict(peer_map)
@@ -137,6 +138,9 @@ class MaintenanceServer:
         self._slots = threading.BoundedSemaphore(max_clients)
         self._listener = None
         self._identity = None
+        self._parent_identity = None
+        self._cleanup_recovery = None
+        self._startup_recovery = None
         self._thread = None
         self._connections = set()
         self._connection_lock = threading.Lock()
@@ -152,14 +156,11 @@ class MaintenanceServer:
                 raise JobError("UNAUTHORIZED", "Maintenance directory is not private")
             listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             listener.settimeout(0.2)
-            # bind is create-only; an existing socket/file is never unlinked.
-            listener.bind(str(self.path))
             self._listener = listener
-            info = self.path.lstat()
-            self._identity = (info.st_dev, info.st_ino)
-            self.path.chmod(0o600)
+            self._bind_owned_socket(listener)
             listener.listen(16)
-        except OSError as exc:
+            self._check_named_socket()
+        except (OSError, JobError) as exc:
             if listener is not None and self._listener is None:
                 try:
                     listener.close()
@@ -170,8 +171,10 @@ class MaintenanceServer:
             # replacement is retained, never blindly unlinked on startup.
             try:
                 self.close()
-            except OSError:
+            except (OSError, JobError):
                 pass  # Cleanup uncertainty remains an unsuccessful startup.
+            if isinstance(exc, JobError):
+                raise
             raise JobError("IO_UNCERTAIN", "Maintenance socket could not be established") from exc
         try:
             self._thread = threading.Thread(target=self._serve, daemon=True, name="local-hand-maintenance")
@@ -179,10 +182,108 @@ class MaintenanceServer:
         except Exception as exc:
             try:
                 self.close()
-            except OSError:
+            except (OSError, JobError):
                 pass  # Retain the original startup failure after all cleanup.
             raise JobError("IO_UNCERTAIN", "Maintenance listener thread could not be started") from exc
         return self
+
+    def _bind_owned_socket(self, listener):
+        """Create in an exclusive private stage, then publish without overwrite."""
+        from .evidence import _root_descriptor, _publish_create_only, _close_descriptors
+        parent = stage = None
+        stage_name = None
+        identity = None
+        failure = None
+        body_failed = False
+        try:
+            parent = _root_descriptor(self.path.parent, os.geteuid())
+            info = os.fstat(parent)
+            if info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                raise OSError("Maintenance publication directory is not private")
+            self._parent_identity = (info.st_dev, info.st_ino)
+            candidate = ".maintenance-start-" + uuid.uuid4().hex
+            os.mkdir(candidate, 0o700, dir_fd=parent)
+            stage_name = candidate
+            self._startup_recovery = self.path.parent / stage_name
+            stage = os.open(stage_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            # AF_UNIX's address limit applies to this short descriptor alias,
+            # not to the length of the private random staging directory.
+            staged_path = Path("/proc/self/fd", str(stage), "entry")
+            listener.bind(str(staged_path))
+            info = os.stat("entry", dir_fd=stage, follow_symlinks=False)
+            if not stat.S_ISSOCK(info.st_mode):
+                raise OSError("Maintenance staging did not create a socket")
+            identity = (info.st_dev, info.st_ino)
+            self._set_socket_permissions(staged_path, identity=identity)
+            self._check_named_parent()
+            _publish_create_only(Path("entry"), Path(self.path.name), source_dir_fd=stage,
+                                 destination_dir_fd=parent)
+            self._identity = identity
+            self._check_named_socket()
+        except BaseException as exc:
+            failure = exc
+            body_failed = True
+            raise
+        finally:
+            if stage is not None:
+                try:
+                    info = os.stat("entry", dir_fd=stage, follow_symlinks=False)
+                    if identity == (info.st_dev, info.st_ino) and stat.S_ISSOCK(info.st_mode):
+                        os.unlink("entry", dir_fd=stage)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    if failure is None:
+                        failure = exc
+            if stage_name is not None:
+                try:
+                    os.rmdir(stage_name, dir_fd=parent)
+                    self._startup_recovery = None
+                except OSError as exc:
+                    if failure is None:
+                        failure = exc
+            _close_descriptors(stage, parent, failure=failure)
+            if failure is not None and not body_failed:
+                raise failure
+
+    def _check_named_parent(self):
+        info = self.path.parent.lstat()
+        if (self._parent_identity != (info.st_dev, info.st_ino) or not stat.S_ISDIR(info.st_mode)
+                or info.st_uid != os.geteuid() or info.st_mode & 0o077
+                or self.path.parent.resolve() != self.path.parent):
+            raise OSError("Maintenance socket publication directory changed")
+
+    def _check_named_socket(self):
+        self._check_named_parent()
+        info = self.path.lstat()
+        if self._identity != (info.st_dev, info.st_ino) or not stat.S_ISSOCK(info.st_mode):
+            raise OSError("Maintenance socket endpoint identity changed")
+
+    def _set_socket_permissions(self, path=None, *, identity=None):
+        # AF_UNIX's socket FD is not the pathname inode. Pin the latter with
+        # Linux O_PATH and change only that object through the kernel FD link;
+        # path-based chmod would follow a concurrently substituted symlink.
+        # Missing /proc support rejects startup rather than falling back to
+        # a pathname operation. The service already requires Linux /proc.
+        path = self.path if path is None else Path(path)
+        identity = self._identity if identity is None else identity
+        descriptor = os.open(path, os.O_PATH | os.O_NOFOLLOW)
+        failed = True
+        try:
+            info = os.fstat(descriptor)
+            if identity != (info.st_dev, info.st_ino) or not stat.S_ISSOCK(info.st_mode):
+                raise OSError("Maintenance socket identity changed before setting permissions")
+            Path("/proc/self/fd", str(descriptor)).chmod(0o600)
+            current = path.lstat()
+            if identity != (current.st_dev, current.st_ino) or not stat.S_ISSOCK(current.st_mode):
+                raise OSError("Maintenance socket identity changed while setting permissions")
+            failed = False
+        finally:
+            try:
+                os.close(descriptor)
+            except OSError:
+                if not failed:
+                    raise
 
     def _serve(self):
         while not self._closed.is_set():
@@ -283,22 +384,114 @@ class MaintenanceServer:
                 and self._thread is not threading.current_thread()):
             attempt(lambda: self._thread.join(timeout=1))
 
-        def remove_owned_entry():
-            try:
-                info = self.path.lstat()
-                if self._identity == (info.st_dev, info.st_ino) and stat.S_ISSOCK(info.st_mode):
-                    self.path.unlink()
-            except FileNotFoundError:
-                pass
-
-        attempt(remove_owned_entry)
+        attempt(self._remove_owned_entry)
         if failure is not None:
             raise failure
+
+    def _remove_owned_entry(self):
+        """Inspect the atomically captured entry before deleting it.
+
+        A named lstat followed by unlink can delete a concurrent replacement.
+        The private quarantine is exclusively owned by this cleanup operation;
+        arbitrary same-UID mutation inside it is outside that ownership model.
+        """
+        if self._identity is None:
+            return
+        from .evidence import _root_descriptor, _publish_create_only, _close_descriptors
+
+        parent = quarantine = None
+        quarantine_name = None
+        failure = None
+        expected = self._identity
+        try:
+            parent = _root_descriptor(self.path.parent, os.geteuid())
+            info = os.fstat(parent)
+            if info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                raise JobError("IO_UNCERTAIN", "Maintenance cleanup directory is no longer private")
+            try:
+                info = os.stat(self.path.name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                self._identity = None
+                return
+            if expected != (info.st_dev, info.st_ino) or not stat.S_ISSOCK(info.st_mode):
+                self._identity = None
+                return
+            candidate = ".maintenance-cleanup-" + uuid.uuid4().hex
+            os.mkdir(candidate, 0o700, dir_fd=parent)
+            quarantine_name = candidate
+            self._cleanup_recovery = self.path.parent / quarantine_name
+            quarantine = os.open(quarantine_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            _publish_create_only(Path(self.path.name), Path("entry"), source_dir_fd=parent,
+                                 destination_dir_fd=quarantine)
+            self._identity = None  # Never claim a later entry under this name.
+            captured = os.stat("entry", dir_fd=quarantine, follow_symlinks=False)
+            if expected == (captured.st_dev, captured.st_ino) and stat.S_ISSOCK(captured.st_mode):
+                os.unlink("entry", dir_fd=quarantine)
+            else:
+                try:
+                    _publish_create_only(Path("entry"), Path(self.path.name), source_dir_fd=quarantine,
+                                         destination_dir_fd=parent)
+                except (OSError, JobError):
+                    # The captured object stays private if its old name is now
+                    # occupied or restoration is uncertain. No overwrite or
+                    # automatic retry may discard either concurrent object.
+                    self._record_cleanup_recovery(quarantine, expected, captured)
+                    raise JobError("IO_UNCERTAIN", "Maintenance cleanup retained a concurrent entry for trusted recovery") from None
+                raise JobError("IO_UNCERTAIN", "Maintenance cleanup restored a concurrent replacement")
+        except OSError as exc:
+            failure = JobError("IO_UNCERTAIN", "Maintenance socket cleanup is unresolved")
+            raise failure from exc
+        except BaseException as exc:
+            failure = exc
+            raise
+        finally:
+            if quarantine_name is not None:
+                try:
+                    # rmdir cannot erase a retained entry or recovery record.
+                    os.rmdir(quarantine_name, dir_fd=parent)
+                    self._cleanup_recovery = None
+                except OSError as exc:
+                    if failure is None:
+                        failure = JobError("IO_UNCERTAIN", "Maintenance cleanup retained private recovery material")
+                        failure.__cause__ = exc
+                        try:
+                            _close_descriptors(quarantine, parent, failure=failure)
+                        finally:
+                            raise failure
+            _close_descriptors(quarantine, parent, failure=failure)
+
+    def _record_cleanup_recovery(self, directory, expected, captured):
+        """Best-effort private location record; failure never removes the entry."""
+        descriptor = None
+        try:
+            raw = json.dumps({"socket_path": str(self.path), "entry": "entry",
+                              "expected_identity": expected,
+                              "captured_identity": [captured.st_dev, captured.st_ino],
+                              "status": "TRUSTED_RECOVERY_REQUIRED"}, sort_keys=True).encode()
+            descriptor = os.open("recovery.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                 0o600, dir_fd=directory)
+            view = memoryview(raw)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("Incomplete private cleanup recovery record")
+                view = view[written:]
+            os.fsync(descriptor)
+            os.fsync(directory)
+        except (OSError, ValueError):
+            pass
+        finally:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
 
 
 def request(socket_path, tool, arguments, *, timeout=2):
     """The client has no subprocess, ledger, policy, or execution fallback."""
     connection = None
+    failed = True
     deadline = time.monotonic() + _seconds(timeout)
     try:
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -310,12 +503,20 @@ def request(socket_path, tool, arguments, *, timeout=2):
         if "error" in result:
             error = result["error"]
             raise JobError(error["code"], error["message"], error.get("details"))
+        failed = False
         return result["result"]
     except OSError as exc:
         raise JobError("IO_UNCERTAIN", "Local request outcome is unresolved; retain the original ID") from exc
     finally:
         if connection is not None:
-            connection.close()
+            try:
+                connection.close()
+            except OSError as exc:
+                # Closing a socket can report an error after releasing it.
+                # Preserve a refusal/transport failure already in flight, and
+                # never let a raw cleanup error escape the client contract.
+                if not failed:
+                    raise JobError("IO_UNCERTAIN", "Local transport cleanup is unresolved; retain the original ID") from exc
 
 
 def create_broker(policy_path, *, actual_entrypoint, initialize=False):

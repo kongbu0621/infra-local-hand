@@ -30,6 +30,8 @@ class AuthorityLock:
             raw = os.read(descriptor, 8193)
             if len(raw) > 8192:
                 raise JobError("CONFLICT", "Invalid authority registration")
+            if len(raw) != info.st_size:
+                raise JobError("IO_UNCERTAIN", "Authority registration was not read completely")
             expected = {"authority_id": authority_id, "ledger_id": ledger_id,
                         "state_root": str(Path(state_root).absolute())}
             if json.loads(raw) != expected:

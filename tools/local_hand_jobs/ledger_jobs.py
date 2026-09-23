@@ -289,19 +289,44 @@ def check_temp_binding(expected):
     tempfile.tempdir = None
     if Path(tempfile.gettempdir()) != path:
         raise LedgerPlanError("Python temporary directory fallback detected")
-    probe_fd, probe_name = tempfile.mkstemp(dir=path)
+    observed = path.stat(follow_symlinks=False)
+    identity = lambda info: (info.st_dev, info.st_ino, info.st_mode)
+    root_identity = identity(observed)
+    directory_fd = probe_fd = None
     original_error = None
     try:
+        directory_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        def check_root():
+            if (identity(os.fstat(directory_fd)) != root_identity or path.resolve() != path
+                    or identity(path.stat(follow_symlinks=False)) != root_identity):
+                raise LedgerPlanError("temporary root changed during probe")
+        check_root()
+        # An anonymous inode has no cleanup name that another writer can
+        # replace between an identity observation and unlink. Do not fall back
+        # to a named probe when this Linux filesystem capability is unavailable.
+        anonymous = getattr(os, "O_TMPFILE", None)
+        if anonymous is None:
+            raise LedgerPlanError("anonymous temporary probe is unsupported")
+        try:
+            probe_fd = os.open(".", anonymous | os.O_RDWR, 0o600, dir_fd=directory_fd)
+        except OSError as error:
+            raise LedgerPlanError("anonymous temporary probe is unavailable") from error
+        if os.fstat(probe_fd).st_nlink != 0:
+            raise LedgerPlanError("temporary probe is not anonymous")
         payload = b"lh-temp-binding\n"
         if os.write(probe_fd, payload) != len(payload):
             raise LedgerPlanError("temporary binding probe write was incomplete")
         os.fsync(probe_fd)
+        check_root()
     except BaseException as error:
         original_error = error
         raise
     finally:
         cleanup_error = None
-        for action in (lambda: os.close(probe_fd), lambda: os.unlink(probe_name)):
+        actions = []
+        if probe_fd is not None: actions.append(lambda: os.close(probe_fd))
+        if directory_fd is not None: actions.append(lambda: os.close(directory_fd))
+        for action in actions:
             try: action()
             except BaseException as error:
                 if cleanup_error is None: cleanup_error = error
@@ -310,7 +335,7 @@ def check_temp_binding(expected):
                 original_error.add_note("temporary probe cleanup was incomplete")
             else:
                 raise cleanup_error
-    return {"temporary": str(path), "device": path.stat().st_dev, "inode": path.stat().st_ino}
+    return {"temporary": str(path), "device": observed.st_dev, "inode": observed.st_ino}
 
 
 def verify_inputs(plan):

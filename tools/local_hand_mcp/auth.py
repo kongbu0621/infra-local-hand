@@ -175,7 +175,7 @@ class AuthConfig:
                 raw = source.read(MAX_AUTH_DOCUMENT + 1)
                 after = os.fstat(source.fileno())
                 current = item.lstat()
-                if (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                if len(raw) != before.st_size or (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                     after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
                 ) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino) or ancestors() != admitted_ancestors:
                     raise ValueError("Authorization configuration changed while reading")

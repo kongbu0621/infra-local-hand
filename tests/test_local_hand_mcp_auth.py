@@ -332,6 +332,21 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 parent.chmod(0o700)
 
+    def test_auth_config_rejects_short_read_of_a_valid_prefix(self):
+        raw = json.dumps(self.issuer.configuration).encode()
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "auth.json"
+            path.write_bytes(raw + b" invalid trailing bytes")
+            path.chmod(0o600)
+            real_fdopen = os.fdopen
+            def read_only_prefix(fd, *args, **kwargs):
+                source = real_fdopen(fd, *args, **kwargs)
+                source.read = lambda limit: raw
+                return source
+            with patch("os.fdopen", side_effect=read_only_prefix):
+                with self.assertRaises(ValueError):
+                    AuthConfig.from_file(str(path))
+
     def test_failed_file_wrapper_closes_untransferred_auth_descriptor(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "auth.json"

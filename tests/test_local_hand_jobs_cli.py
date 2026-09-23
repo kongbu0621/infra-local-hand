@@ -258,6 +258,208 @@ class CliTests(unittest.TestCase):
         self.assertEqual("concurrent replacement", self.path.read_text())
         listener.close.assert_called_once()
 
+    @unittest.skipUnless(hasattr(os, "O_PATH"), "Socket inode protection requires Linux O_PATH")
+    def test_startup_socket_permissions_are_bound_to_the_owned_inode(self):
+        for moment in ("open", "chmod"):
+            for replacement in ("symlink", "regular", "socket"):
+                with self.subTest(moment=moment, replacement=replacement), tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    path, saved, victim = root / "broker.sock", root / "saved.sock", root / "foreign"
+                    victim.write_text("unrelated")
+                    victim.chmod(0o644)
+                    listener = Mock()
+                    os.mknod(path, stat.S_IFSOCK | 0o644)
+                    real_open, real_chmod, changed = os.open, Path.chmod, []
+
+                    def replace():
+                        path.rename(saved)  # Keep the original inode alive.
+                        if replacement == "symlink":
+                            path.symlink_to(victim)
+                        elif replacement == "regular":
+                            path.write_text("replacement")
+                            real_chmod(path, 0o644)
+                        else:
+                            os.mknod(path, stat.S_IFSOCK | 0o644)
+                        changed.append(True)
+
+                    def open_after_change(value, *args, **kwargs):
+                        if moment == "open" and Path(value) == path:
+                            replace()
+                        return real_open(value, *args, **kwargs)
+
+                    def chmod_after_change(item, *args, **kwargs):
+                        if moment == "chmod" and (item == path or item.parent == Path("/proc/self/fd")):
+                            replace()
+                        return real_chmod(item, *args, **kwargs)
+
+                    server = MaintenanceServer(self.broker, path, {})
+                    info = path.stat()
+                    server._identity = (info.st_dev, info.st_ino)
+                    server._listener = listener
+                    with patch("local_hand_jobs.cli.socket.socket", return_value=listener), \
+                            patch("os.open", side_effect=open_after_change), \
+                            patch.object(Path, "chmod", chmod_after_change):
+                        with self.assertRaises(OSError):
+                            server._set_socket_permissions()
+                    server.close()
+                    self.assertEqual([True], changed)
+                    self.assertEqual(0o644, stat.S_IMODE(victim.stat().st_mode))
+                    self.assertEqual(0o644, stat.S_IMODE(path.stat().st_mode))
+                    self.assertEqual(0o600 if moment == "chmod" else 0o644,
+                                     stat.S_IMODE(saved.stat().st_mode))
+                    listener.close.assert_called_once()
+
+    def test_private_socket_parent_refusal_retains_its_original_code(self):
+        root = Path(self.temp.name)
+        root.chmod(0o755)
+        try:
+            with self.assertRaises(JobError) as caught:
+                MaintenanceServer(self.broker, self.path, {}).start()
+            self.assertEqual("UNAUTHORIZED", caught.exception.code)
+            self.assertFalse(self.path.exists())
+        finally:
+            root.chmod(0o700)
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_cleanup_captures_and_restores_a_postcheck_replacement(self):
+        for replacement in ("regular", "symlink", "socket"):
+            with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                path, old, foreign = root / "broker.sock", root / "old.sock", root / "foreign"
+                foreign.write_text("unrelated")
+                os.mknod(path, stat.S_IFSOCK | 0o600)
+                server = MaintenanceServer(self.broker, path, {})
+                info = path.lstat()
+                server._identity = (info.st_dev, info.st_ino)
+                real_stat, changed = os.stat, []
+                def stat_then_replace(value, *args, **kwargs):
+                    info = real_stat(value, *args, **kwargs)
+                    if value == path.name and kwargs.get("dir_fd") is not None and not changed:
+                        path.rename(old)
+                        if replacement == "regular":
+                            path.write_text("replacement")
+                        elif replacement == "symlink":
+                            path.symlink_to(foreign)
+                        else:
+                            os.mknod(path, stat.S_IFSOCK | 0o644)
+                        changed.append(True)
+                    return info
+                with patch("os.stat", side_effect=stat_then_replace):
+                    with self.assertRaises(JobError) as caught:
+                        server.close()
+                self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+                self.assertEqual([True], changed)
+                identity = path.lstat()
+                server.close()
+                self.assertEqual((identity.st_dev, identity.st_ino), (path.lstat().st_dev, path.lstat().st_ino))
+                self.assertEqual("unrelated", foreign.read_text())
+                self.assertTrue(stat.S_ISSOCK(old.lstat().st_mode))
+                self.assertFalse(list(root.glob(".maintenance-cleanup-*")))
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_cleanup_restore_conflict_retains_both_entries_and_private_record(self):
+        from local_hand_jobs import evidence
+        os.mknod(self.path, stat.S_IFSOCK | 0o600)
+        server = MaintenanceServer(self.broker, self.path, {})
+        info = self.path.lstat()
+        server._identity = (info.st_dev, info.st_ino)
+        old = self.path.with_name("old.sock")
+        real_publish, calls = evidence._publish_create_only, []
+        def publish(source, destination, **kwargs):
+            calls.append(str(source))
+            if len(calls) == 1:
+                self.path.rename(old)
+                self.path.write_text("first concurrent object")
+            elif len(calls) == 2:
+                self.path.write_text("second concurrent object")
+            return real_publish(source, destination, **kwargs)
+        with patch.object(evidence, "_publish_create_only", side_effect=publish):
+            with self.assertRaises(JobError) as caught:
+                server.close()
+        self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+        self.assertNotIn(str(self.path), str(caught.exception))
+        self.assertEqual("second concurrent object", self.path.read_text())
+        recovery = server._cleanup_recovery
+        self.assertEqual("first concurrent object", (recovery / "entry").read_text())
+        record = json.loads((recovery / "recovery.json").read_text())
+        self.assertEqual("TRUSTED_RECOVERY_REQUIRED", record["status"])
+        self.assertEqual(str(self.path), record["socket_path"])
+        server.close()
+        self.assertEqual("first concurrent object", (recovery / "entry").read_text())
+        self.assertEqual("second concurrent object", self.path.read_text())
+
+    @unittest.skipUnless(hasattr(os, "O_PATH"), "Socket staging requires Linux O_PATH")
+    def test_staged_bind_never_adopts_or_overwrites_a_concurrent_named_entry(self):
+        for replacement in ("regular", "symlink", "socket"):
+            with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                path, target = root / "broker.sock", root / "foreign"
+                target.write_text("unrelated")
+                target.chmod(0o644)
+                listener, bound = Mock(), []
+                def bind(value):
+                    self.assertTrue(str(value).startswith("/proc/self/fd/"))
+                    os.mknod(value, stat.S_IFSOCK | 0o644)
+                    bound.append(os.stat(value).st_ino)
+                    if replacement == "regular":
+                        path.write_text("concurrent")
+                        path.chmod(0o644)
+                    elif replacement == "symlink":
+                        path.symlink_to(target)
+                    else:
+                        os.mknod(path, stat.S_IFSOCK | 0o644)
+                listener.bind.side_effect = bind
+                server = MaintenanceServer(self.broker, path, {})
+                with patch("local_hand_jobs.cli.socket.socket", return_value=listener), \
+                        patch("local_hand_jobs.cli.threading.Thread") as thread:
+                    with self.assertRaises(JobError) as caught:
+                        server.start()
+                self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+                self.assertEqual(1, len(bound))
+                self.assertIsNone(server._identity)
+                self.assertEqual(0o644, stat.S_IMODE(path.stat().st_mode))
+                self.assertEqual("unrelated", target.read_text())
+                self.assertFalse(list(root.glob(".maintenance-start-*")))
+                thread.assert_not_called()
+                listener.close.assert_called_once()
+
+    @unittest.skipUnless(hasattr(os, "O_PATH"), "Socket inode protection requires Linux O_PATH")
+    def test_socket_permission_failure_has_no_path_fallback_and_releases_descriptor(self):
+        for failure in ("proc", "close", "both"):
+            with self.subTest(failure=failure):
+                listener = Mock()
+                listener.bind.side_effect = lambda value: os.mknod(value, stat.S_IFSOCK | 0o600)
+                server = MaintenanceServer(self.broker, self.path, {})
+                real_chmod, real_close, closed = Path.chmod, os.close, []
+                primary = FileNotFoundError("synthetic missing proc FD link")
+
+                def chmod(item, *args, **kwargs):
+                    self.assertEqual(Path("/proc/self/fd"), item.parent)
+                    if failure in {"proc", "both"}:
+                        raise primary
+                    return real_chmod(item, *args, **kwargs)
+
+                def close(descriptor):
+                    owned_socket = stat.S_ISSOCK(os.fstat(descriptor).st_mode)
+                    real_close(descriptor)
+                    if owned_socket:
+                        closed.append(descriptor)
+                    if owned_socket and failure in {"close", "both"}:
+                        raise OSError("synthetic descriptor close failure")
+
+                with patch("local_hand_jobs.cli.socket.socket", return_value=listener), \
+                        patch.object(Path, "chmod", chmod), patch("os.close", side_effect=close):
+                    with self.assertRaises(JobError) as caught:
+                        server.start()
+                self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+                if failure in {"proc", "both"}:
+                    self.assertIs(primary, caught.exception.__cause__)
+                self.assertEqual(1, len(closed))
+                with self.assertRaises(OSError):
+                    os.fstat(closed[0])
+                self.assertFalse(self.path.exists())
+                listener.close.assert_called_once()
+
     @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
     def test_second_start_preserves_the_running_listener(self):
         listener, replacement = Mock(), Mock()
@@ -334,6 +536,25 @@ class CliTests(unittest.TestCase):
                 request(self.path, "lh_job_status", {}, timeout=2)
         self.assertEqual(caught.exception.code, "IO_UNCERTAIN")
         self.assertLessEqual(elapsed[0], 2.4)
+
+    def test_client_cleanup_preserves_refusal_and_contains_close_failure(self):
+        for raw, code in ((b'{"error":{"code":"UNAUTHORIZED","message":"revoked"}}', "UNAUTHORIZED"),
+                          (b'{"result":{"outcome":"UNKNOWN"}}', "IO_UNCERTAIN"),
+                          (b'{"result":{},"result":{}}', "IO_UNCERTAIN")):
+            with self.subTest(raw=raw):
+                connection = SyntheticPeerConnection(raw)
+                connection.connect = Mock()
+                connection.close = Mock(side_effect=OSError("synthetic close failure"))
+                with patch("local_hand_jobs.cli.socket.socket", return_value=connection):
+                    # A previously handled caller exception must not suppress
+                    # a cleanup failure after a successful transport result.
+                    try:
+                        raise ValueError("unrelated caller failure")
+                    except ValueError:
+                        with self.assertRaises(JobError) as caught:
+                            request(self.path, "lh_job_status", {})
+                self.assertEqual(code, caught.exception.code)
+                connection.close.assert_called_once()
 
     def test_response_json_is_unambiguous_and_envelope_is_exact(self):
         for raw in (b'{"result":{"outcome":"FAILED"},"result":{"outcome":"SUCCEEDED"}}',

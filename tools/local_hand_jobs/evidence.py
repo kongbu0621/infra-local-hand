@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import asdict, dataclass, field
 import hashlib
 import hmac
@@ -189,6 +189,31 @@ def _open_root(root: Path, owner: int, *, create: bool = False) -> Iterator[int]
             raise
         else:
             _close_descriptors(current)
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        _close_descriptors(fd, failure=failure)
+
+
+def _check_child_directory(parent_fd: int, name: str, fd: int, owner: int) -> None:
+    original = os.fstat(fd)
+    named = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    _directory(original, owner)
+    _directory(named, owner)
+    if (original.st_dev, original.st_ino) != (named.st_dev, named.st_ino):
+        raise EvidenceError("CONFLICT", "evidence publication directory replaced")
+
+
+@contextmanager
+def _open_child_directory(parent_fd: int, name: str, owner: int) -> Iterator[int]:
+    """Retain a publication directory under the already admitted parent."""
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+    failure = None
+    try:
+        _directory(os.fstat(fd), owner)
+        yield fd
+        _check_child_directory(parent_fd, name, fd, owner)
     except BaseException as error:
         failure = error
         raise
@@ -393,7 +418,7 @@ class EvidenceStore:
                 or not snapshot.quiescence.complete
                 or snapshot.event_seq != snapshot.quiescence.event_seq):
             raise EvidenceError("NOT_SEALED", "complete writer and execution stop proof required")
-        if (len(snapshot.members) + 2 > self.max_members
+        if (len(snapshot.members) + 3 > self.max_members
                 or len(set(snapshot.members)) != len(snapshot.members)):
             raise EvidenceError("LIMIT_EXCEEDED", "invalid evidence member count")
         for member in snapshot.members:
@@ -460,8 +485,9 @@ class EvidenceStore:
         return result
 
     @staticmethod
-    def _write(path: Path, data: bytes) -> None:
-        with _open_root(path.parent, os.geteuid()) as directory:
+    def _write(path: Path, data: bytes, *, directory_fd: int | None = None) -> None:
+        with (_open_root(path.parent, os.geteuid()) if directory_fd is None
+              else nullcontext(directory_fd)) as directory:
             fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                          0o600, dir_fd=directory)
             failure = None
@@ -538,146 +564,152 @@ class EvidenceStore:
         destination = self.root / seal_id
         published = False
         try:
-            with _open_root(self.root, self.owner) as current:
-                self._check_store_lock(store_fd, current)
-            # An earlier failed attempt can leave only its staging directory.
-            # Account for both new entries before writing, and stop the scan as
-            # soon as the finite retained-entry budget is exhausted.
-            with os.scandir(store_fd) as retained:
-                for count, _ in enumerate(retained, 1):
-                    if count + 2 > self.max_seals * 2:
-                        raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit reached")
-            os.mkdir(stage.name, mode=0o700, dir_fd=store_fd)
-            entries = []
-            total = 0
-            with _open_root(stage, self.owner) as stage_fd, \
-                    _open_root(snapshot.root, self.owner) as root_fd:
-                inventory = self._inventory(root_fd)
-                if set(inventory) != set(snapshot.members):
-                    raise EvidenceError("CONFLICT", "frozen evidence membership changed")
-                total = sum(value[5] for value in inventory.values()) + sum(map(len, virtual_members.values()))
-                if total > self.max_source_bytes:
-                    raise EvidenceError("LIMIT_EXCEEDED", "evidence byte budget exceeded")
-                archive_path = stage / _ROLES["zip"]
-                archive_fd = os.open(archive_path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                                     0o600, dir_fd=stage_fd)
-                try:
-                    archive_stream = os.fdopen(archive_fd, "w+b")
-                except BaseException as failure:
-                    _close_descriptors(archive_fd, failure=failure)
-                    raise
-                with archive_stream:
-                    with zipfile.ZipFile(_BoundedArchive(archive_stream, self.max_artifact_bytes),
-                                         "w", compression=zipfile.ZIP_STORED,
-                                         allowZip64=True) as archive:
-                        for name in snapshot.members:
-                            digest = hashlib.sha256()
-                            copied = 0
-                            info = zipfile.ZipInfo(name)
+            with ExitStack() as directories:
+                with _open_root(self.root, self.owner) as current:
+                    self._check_store_lock(store_fd, current)
+                # An earlier failed attempt can leave only its staging directory.
+                # Account for both new entries before writing, and stop the scan as
+                # soon as the finite retained-entry budget is exhausted.
+                with os.scandir(store_fd) as retained:
+                    for count, _ in enumerate(retained, 1):
+                        if count + 2 > self.max_seals * 2:
+                            raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit reached")
+                os.mkdir(stage.name, mode=0o700, dir_fd=store_fd)
+                entries = []
+                total = 0
+                stage_fd = directories.enter_context(_open_child_directory(store_fd, stage.name, self.owner))
+                with _open_root(snapshot.root, self.owner) as root_fd:
+                    inventory = self._inventory(root_fd)
+                    if set(inventory) != set(snapshot.members):
+                        raise EvidenceError("CONFLICT", "frozen evidence membership changed")
+                    total = sum(value[5] for value in inventory.values()) + sum(map(len, virtual_members.values()))
+                    if total > self.max_source_bytes:
+                        raise EvidenceError("LIMIT_EXCEEDED", "evidence byte budget exceeded")
+                    archive_path = stage / _ROLES["zip"]
+                    archive_fd = os.open(archive_path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                         0o600, dir_fd=stage_fd)
+                    try:
+                        archive_stream = os.fdopen(archive_fd, "w+b")
+                    except BaseException as failure:
+                        _close_descriptors(archive_fd, failure=failure)
+                        raise
+                    with archive_stream:
+                        with zipfile.ZipFile(_BoundedArchive(archive_stream, self.max_artifact_bytes),
+                                             "w", compression=zipfile.ZIP_STORED,
+                                             allowZip64=True) as archive:
+                            for name in snapshot.members:
+                                digest = hashlib.sha256()
+                                copied = 0
+                                info = zipfile.ZipInfo(name)
+                                info.external_attr = (stat.S_IFREG | 0o600) << 16
+                                with _open_member(root_fd, name, self.owner, self.max_source_bytes) as source:
+                                    original = os.fstat(source)
+                                    if _same(original) != inventory[name]:
+                                        raise EvidenceError("CONFLICT", "frozen evidence member changed")
+                                    with archive.open(info, "w", force_zip64=True) as output:
+                                        while block := os.read(source, DEFAULT_CHUNK):
+                                            copied += len(block)
+                                            if copied > original.st_size:
+                                                raise EvidenceError("CONFLICT", "evidence member grew")
+                                            digest.update(block)
+                                            output.write(block)
+                                    if copied != original.st_size or _same(original) != _same(os.fstat(source)):
+                                        raise EvidenceError("CONFLICT", "evidence member changed during seal")
+                                entries.append({"name": name, "size": copied, "sha256": digest.hexdigest()})
+                            for name, data in virtual_members.items():
+                                info = zipfile.ZipInfo(name)
+                                info.external_attr = (stat.S_IFREG | 0o600) << 16
+                                archive.writestr(info, data)
+                                entries.append({"name": name, "size": len(data), "sha256": _hash(data)})
+                            manifest = {"schema_version": "lh-evidence-manifest-v1",
+                                        "operation_id": operation_id, "seal_id": seal_id,
+                                        "event_seq": snapshot.event_seq, "complete": True,
+                                        "reconcile_id": snapshot.reconcile_id,
+                                        "previous_seal_id": snapshot.previous_seal_id,
+                                        "bindings": snapshot.bindings, "members": entries,
+                                        "coverage": "members excludes MANIFEST.json; external seal binds archive and manifest"}
+                            manifest_bytes = _json(manifest)
+                            if len(manifest_bytes) > 4 * 1024 * 1024:
+                                raise EvidenceError("LIMIT_EXCEEDED", "manifest byte budget exceeded")
+                            info = zipfile.ZipInfo(MANIFEST_NAME)
                             info.external_attr = (stat.S_IFREG | 0o600) << 16
-                            with _open_member(root_fd, name, self.owner, self.max_source_bytes) as source:
-                                original = os.fstat(source)
-                                if _same(original) != inventory[name]:
-                                    raise EvidenceError("CONFLICT", "frozen evidence member changed")
-                                with archive.open(info, "w", force_zip64=True) as output:
-                                    while block := os.read(source, DEFAULT_CHUNK):
-                                        copied += len(block)
-                                        if copied > original.st_size:
-                                            raise EvidenceError("CONFLICT", "evidence member grew")
-                                        digest.update(block)
-                                        output.write(block)
-                                if copied != original.st_size or _same(original) != _same(os.fstat(source)):
-                                    raise EvidenceError("CONFLICT", "evidence member changed during seal")
-                            entries.append({"name": name, "size": copied, "sha256": digest.hexdigest()})
-                        for name, data in virtual_members.items():
-                            info = zipfile.ZipInfo(name)
-                            info.external_attr = (stat.S_IFREG | 0o600) << 16
-                            archive.writestr(info, data)
-                            entries.append({"name": name, "size": len(data), "sha256": _hash(data)})
-                        manifest = {"schema_version": "lh-evidence-manifest-v1",
-                                    "operation_id": operation_id, "seal_id": seal_id,
-                                    "event_seq": snapshot.event_seq, "complete": True,
-                                    "reconcile_id": snapshot.reconcile_id,
-                                    "previous_seal_id": snapshot.previous_seal_id,
-                                    "bindings": snapshot.bindings, "members": entries,
-                                    "coverage": "members excludes MANIFEST.json; external seal binds archive and manifest"}
-                        manifest_bytes = _json(manifest)
-                        if len(manifest_bytes) > 4 * 1024 * 1024:
-                            raise EvidenceError("LIMIT_EXCEEDED", "manifest byte budget exceeded")
-                        info = zipfile.ZipInfo(MANIFEST_NAME)
-                        info.external_attr = (stat.S_IFREG | 0o600) << 16
-                        archive.writestr(info, manifest_bytes)
-                    archive_stream.flush()
-                    os.fsync(archive_stream.fileno())
-                    generated_archive_identity = _same(os.fstat(archive_stream.fileno()))
-                if inventory != self._inventory(root_fd) or snapshot != self._snapshot(operation_id):
-                    raise EvidenceError("CONFLICT", "frozen evidence state changed during seal")
-            self._write(stage / _ROLES["manifest"], manifest_bytes)
-            zip_size, zip_digest = _file_digest(archive_path, expected_identity=generated_archive_identity)
-            if zip_size > self.max_artifact_bytes:
-                raise EvidenceError("LIMIT_EXCEEDED", "archive byte budget exceeded")
-            artifacts = [{"artifact_id": seal_id + ".zip", "role": "zip", "size": zip_size,
-                          "sha256": zip_digest},
-                         {"artifact_id": seal_id + ".manifest", "role": "manifest",
-                          "size": len(manifest_bytes), "sha256": _hash(manifest_bytes)}]
-            seal = {"schema_version": "lh-evidence-seal-v1", "seal_id": seal_id,
-                    "operation_id": operation_id, "event_seq": snapshot.event_seq,
-                    "reconcile_id": snapshot.reconcile_id, "previous_seal_id": snapshot.previous_seal_id,
-                    "bindings": snapshot.bindings, "complete": True,
-                    "member_count": len(entries) + 1, "artifacts": artifacts}
-            self._sync_directory(stage)
-            # Both the directory and every published member are create-only.
-            os.mkdir(destination.name, mode=0o700, dir_fd=store_fd)
-            published = True
-            for role in ("zip", "manifest"):
-                _publish_create_only(stage / _ROLES[role], destination / _ROLES[role])
-            self._sync_directory(destination)
-            self._sync_directory(stage)
-            self._sync_directory(self.root)
-            identities = {}
-            with _open_root(destination, self.owner) as directory:
-                for artifact in artifacts:
-                    role = artifact["role"]
-                    with _open_member(directory, _ROLES[role], self.owner, self.max_artifact_bytes) as fd:
-                        identity = _same(os.fstat(fd))
-                        if _file_digest(destination / _ROLES[role]) != (artifact["size"], artifact["sha256"]):
-                            raise EvidenceError("CONFLICT", "published evidence differs from snapshot")
-                        if identity != _same(os.fstat(fd)):
-                            raise EvidenceError("CONFLICT", "published evidence changed while binding identity")
-                        identities[role] = list(identity)
-            # Persist the identity after atomic publication, which can change ctime.
-            # The DB-authenticated external seal carries this binding across restart.
-            seal["artifact_identities"] = identities
-            seal_bytes = _json(seal)
-            if len(seal_bytes) > DEFAULT_CHUNK:
-                raise EvidenceError("LIMIT_EXCEEDED", "external seal byte budget exceeded")
-            self._write(stage / _ROLES["seal"], seal_bytes)
-            self._sync_directory(stage)
-            _publish_create_only(stage / _ROLES["seal"], destination / _ROLES["seal"])
-            self._sync_directory(destination)
-            self._sync_directory(stage)
-            self._sync_directory(self.root)
-            with _open_root(self.root, self.owner) as current:
-                self._check_store_lock(store_fd, current)
-                _sync_directory_ancestry(self.root, self.owner)
-                if _file_digest(destination / _ROLES["seal"]) != (len(seal_bytes), _hash(seal_bytes)):
-                    raise EvidenceError("CONFLICT", "published seal differs from snapshot")
+                            archive.writestr(info, manifest_bytes)
+                        archive_stream.flush()
+                        os.fsync(archive_stream.fileno())
+                        generated_archive_identity = _same(os.fstat(archive_stream.fileno()))
+                    if inventory != self._inventory(root_fd) or snapshot != self._snapshot(operation_id):
+                        raise EvidenceError("CONFLICT", "frozen evidence state changed during seal")
+                self._write(stage / _ROLES["manifest"], manifest_bytes, directory_fd=stage_fd)
+                zip_size, zip_digest = _file_digest(archive_path, expected_identity=generated_archive_identity)
+                if zip_size > self.max_artifact_bytes:
+                    raise EvidenceError("LIMIT_EXCEEDED", "archive byte budget exceeded")
+                artifacts = [{"artifact_id": seal_id + ".zip", "role": "zip", "size": zip_size,
+                              "sha256": zip_digest},
+                             {"artifact_id": seal_id + ".manifest", "role": "manifest",
+                              "size": len(manifest_bytes), "sha256": _hash(manifest_bytes)}]
+                seal = {"schema_version": "lh-evidence-seal-v1", "seal_id": seal_id,
+                        "operation_id": operation_id, "event_seq": snapshot.event_seq,
+                        "reconcile_id": snapshot.reconcile_id, "previous_seal_id": snapshot.previous_seal_id,
+                        "bindings": snapshot.bindings, "complete": True,
+                        "member_count": len(entries) + 1, "artifacts": artifacts}
+                self._sync_directory(stage)
+                # Both the directory and every published member are create-only.
+                os.mkdir(destination.name, mode=0o700, dir_fd=store_fd)
+                published = True
+                destination_fd = directories.enter_context(_open_child_directory(store_fd, destination.name, self.owner))
+                for role in ("zip", "manifest"):
+                    _publish_create_only(Path(_ROLES[role]), Path(_ROLES[role]),
+                                         source_dir_fd=stage_fd, destination_dir_fd=destination_fd)
+                self._sync_directory(destination)
+                self._sync_directory(stage)
+                self._sync_directory(self.root)
+                identities = {}
                 with _open_root(destination, self.owner) as directory:
-                    for role, identity in identities.items():
+                    for artifact in artifacts:
+                        role = artifact["role"]
                         with _open_member(directory, _ROLES[role], self.owner, self.max_artifact_bytes) as fd:
-                            if list(_same(os.fstat(fd))) != identity:
-                                raise EvidenceError("CONFLICT", "published identity changed before registration")
-            record = dict(seal, seal_sha256=_hash(seal_bytes),
-                          evidence_state="SEALED" if register else "STAGING")
-            if not register:
-                record["publication_state"] = "PUBLISHED_UNREGISTERED"
-                record["artifacts"] = list(artifacts) + [{"artifact_id": seal_id + ".seal",
-                    "role": "seal", "size": len(seal_bytes), "sha256": _hash(seal_bytes)}]
-                return record
-            self.register_seal(record)
-            if not self.is_registered(seal_id, record["seal_sha256"]):
-                raise EvidenceError("IO_UNCERTAIN", "seal registration not durable")
-            return self._record(seal_id)
+                            identity = _same(os.fstat(fd))
+                            if _file_digest(destination / _ROLES[role]) != (artifact["size"], artifact["sha256"]):
+                                raise EvidenceError("CONFLICT", "published evidence differs from snapshot")
+                            if identity != _same(os.fstat(fd)):
+                                raise EvidenceError("CONFLICT", "published evidence changed while binding identity")
+                            identities[role] = list(identity)
+                # Persist the identity after atomic publication, which can change ctime.
+                # The DB-authenticated external seal carries this binding across restart.
+                seal["artifact_identities"] = identities
+                seal_bytes = _json(seal)
+                if len(seal_bytes) > DEFAULT_CHUNK:
+                    raise EvidenceError("LIMIT_EXCEEDED", "external seal byte budget exceeded")
+                self._write(stage / _ROLES["seal"], seal_bytes, directory_fd=stage_fd)
+                self._sync_directory(stage)
+                _publish_create_only(Path(_ROLES["seal"]), Path(_ROLES["seal"]),
+                                     source_dir_fd=stage_fd, destination_dir_fd=destination_fd)
+                self._sync_directory(destination)
+                self._sync_directory(stage)
+                self._sync_directory(self.root)
+                with _open_root(self.root, self.owner) as current:
+                    self._check_store_lock(store_fd, current)
+                    _sync_directory_ancestry(self.root, self.owner)
+                    if _file_digest(destination / _ROLES["seal"]) != (len(seal_bytes), _hash(seal_bytes)):
+                        raise EvidenceError("CONFLICT", "published seal differs from snapshot")
+                    with _open_root(destination, self.owner) as directory:
+                        for role, identity in identities.items():
+                            with _open_member(directory, _ROLES[role], self.owner, self.max_artifact_bytes) as fd:
+                                if list(_same(os.fstat(fd))) != identity:
+                                    raise EvidenceError("CONFLICT", "published identity changed before registration")
+                    _check_child_directory(store_fd, stage.name, stage_fd, self.owner)
+                    _check_child_directory(store_fd, destination.name, destination_fd, self.owner)
+                record = dict(seal, seal_sha256=_hash(seal_bytes),
+                              evidence_state="SEALED" if register else "STAGING")
+                if not register:
+                    record["publication_state"] = "PUBLISHED_UNREGISTERED"
+                    record["artifacts"] = list(artifacts) + [{"artifact_id": seal_id + ".seal",
+                        "role": "seal", "size": len(seal_bytes), "sha256": _hash(seal_bytes)}]
+                    return record
+                self.register_seal(record)
+                if not self.is_registered(seal_id, record["seal_sha256"]):
+                    raise EvidenceError("IO_UNCERTAIN", "seal registration not durable")
+                return self._record(seal_id)
         except EvidenceError:
             if published:
                 raise EvidenceError("IO_UNCERTAIN", "evidence publication durability unknown") from None

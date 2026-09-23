@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from local_hand_jobs.contract import JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, TOOL_SCHEMAS
+from local_hand_jobs.contract import JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, TOOL_SCHEMAS, canonical_bytes
 
 PLUGIN = ROOT / "plugins" / "local-hand-a2"
 spec = importlib.util.spec_from_file_location("local_hand_plugin_workflow", PLUGIN / "scripts" / "workflow.py")
@@ -144,6 +144,89 @@ class WorkflowTests(unittest.TestCase):
         self.reserve()
         self.assert_error("CONFLICT", self.client.reserve_job, "inspect", kind="ledger.prepare",
                           profile_ref="fixture", inputs={"source_ref": "source", "build_cache_ref": "cache"})
+
+    def test_callback_serialization_failures_are_structured_and_do_not_break_retry(self):
+        recursive = []
+        recursive.append(recursive)
+        deep = 0
+        for _ in range(10000):
+            deep = [deep]
+        for value in (float("nan"), float("inf"), object(), recursive, deep):
+            with self.subTest(value_type=type(value).__name__):
+                self.client.call = lambda *_: {"payload": value}
+                self.assert_error("IO_UNCERTAIN", self.client.preflight)
+                self.assertEqual({}, self.client._profiles)
+        self.client.call = self.host
+        self.client.preflight()
+        original = self.reserve()
+        self.client.submit("inspect")
+        self.assertEqual(original, self.reserve())
+
+    def test_malformed_error_receipts_preserve_structured_failure(self):
+        for value in (None, [], True, "failure", {"code": []}, {"code": True}, {"code": ""}):
+            with self.subTest(error=value):
+                self.client.call = lambda *_: {"error": value}
+                self.assert_error("IO_UNCERTAIN", self.client._invoke, "lh_capabilities", {})
+        self.client.call = lambda *_: {"error": {"code": "UNAUTHORIZED"}}
+        self.assert_error("UNAUTHORIZED", self.client._invoke, "lh_capabilities", {})
+
+    def test_preflight_deployment_epoch_identity_is_type_exact(self):
+        for value in (True, 1.0):
+            with self.subTest(epoch=value):
+                self.host.page["profiles"][0]["expected"]["deployment_epoch"] = value
+                self.assert_error("STALE_DEPLOYMENT", self.client.preflight)
+                self.assert_error("UNAUTHORIZED", self.reserve)
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+
+    def test_preflight_grants_require_exact_reference_lists(self):
+        cases = (("allowed_kinds", "host.inspection"), ("allowed_kinds", {"host.inspect": False}),
+                 ("allowed_kinds", ["host.inspect", "host.inspect"]),
+                 ("source_refs", "source"), ("build_cache_refs", [[]]),
+                 ("prepared_refs", [1]), ("storage_refs", None))
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                original = copy.deepcopy(self.host.page["profiles"][0])
+                self.host.page["profiles"][0][field] = value
+                try:
+                    self.assert_error("IO_UNCERTAIN", self.client.preflight)
+                    self.assert_error("UNAUTHORIZED", self.reserve)
+                finally:
+                    self.host.page["profiles"][0] = original
+
+    def test_preflight_invalid_profile_reference_fails_structurally(self):
+        for value in ([], {}, None, "fixture\n"):
+            with self.subTest(reference=value):
+                self.host.page["profiles"][0]["profile_ref"] = value
+                self.assert_error("IO_UNCERTAIN", self.client.preflight)
+                self.assertEqual({}, self.client._profiles)
+
+    def test_journal_short_read_cannot_hide_trailing_corruption(self):
+        original = self.reserve()
+        path = self.client.journal / self.client._record_name("job", "inspect")
+        prefix = canonical_bytes(original)
+        path.write_bytes(prefix + b"CORRUPT")
+        real_fdopen = workflow.os.fdopen
+        class ShortReader:
+            def __init__(self, stream):
+                self.stream = stream
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+            def __getattr__(self, name):
+                return getattr(self.stream, name)
+            def read(self, *args):
+                return prefix
+        def short_reader(fd, mode, *args, **kwargs):
+            stream = real_fdopen(fd, mode, *args, **kwargs)
+            return ShortReader(stream) if mode == "rb" else stream
+        with patch.object(workflow.os, "fdopen", side_effect=short_reader):
+            self.assert_error("IO_UNCERTAIN", self.client.submit, "inspect")
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+        self.assertEqual(prefix + b"CORRUPT", path.read_bytes())
+        path.write_bytes(prefix)
+        self.client.submit("inspect")
+        self.assertEqual(original, self.reserve())
 
     def test_journal_directory_replacement_cannot_reserve_a_new_identity(self):
         original = self.reserve()

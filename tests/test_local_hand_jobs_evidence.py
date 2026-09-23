@@ -176,6 +176,74 @@ class EvidenceTests(unittest.TestCase):
             self.fixture.store._write(alias / "manifest.json", b"private evidence")
         self.assertEqual(list(unrelated.iterdir()), [])
 
+    def test_plain_directory_replacement_never_receives_private_metadata(self):
+        for parent in ("store", "stage"):
+            for phase in ("manifest.json", "seal.json"):
+                with self.subTest(parent=parent, phase=phase):
+                    case = self.root / (parent + "-" + phase)
+                    case.mkdir(mode=0o700)
+                    fixture = EvidenceFixture(case)
+                    original = fixture.store._write
+                    replaced = []
+                    def replace_before_write(path, data, **kwargs):
+                        if path.name == phase and not replaced:
+                            target = fixture.store.root if parent == "store" else path.parent
+                            retained = case / "retained-original"
+                            target.rename(retained)
+                            target.mkdir(mode=0o700)
+                            (target / "sentinel").write_bytes(b"concurrent owner")
+                            if parent == "store":
+                                for child in retained.iterdir():
+                                    (target / child.name).mkdir(mode=0o700)
+                            replaced.append(target)
+                        return original(path, data, **kwargs)
+                    with mock.patch.object(fixture.store, "_write", side_effect=replace_before_write):
+                        with self.assertRaises(EvidenceError):
+                            fixture.store.seal(OP)
+                    self.assertEqual(len(replaced), 1)
+                    self.assertFalse(fixture.registered)
+                    self.assertEqual(sorted(str(path.relative_to(replaced[0]))
+                        for path in replaced[0].rglob("*") if path.is_file()), ["sentinel"])
+                    self.assertEqual((replaced[0] / "sentinel").read_bytes(), b"concurrent owner")
+                    retained_metadata = list((case / "retained-original").rglob("*.json"))
+                    if parent == "stage" and phase == "seal.json":
+                        # The anchored rename can already have moved the owned
+                        # seal into the original destination before rejection.
+                        retained_metadata += list(fixture.store.root.glob("*/seal.json"))
+                    self.assertTrue(retained_metadata,
+                                    "Keep private metadata in owned staging or destination")
+
+    def test_plain_destination_replacement_never_receives_private_artifacts(self):
+        original = evidence._publish_create_only
+        replaced = []
+        def replace_before_publication(source, destination, **kwargs):
+            if not replaced:
+                target = next(path for path in self.fixture.store.root.iterdir()
+                              if not path.name.startswith("staging-"))
+                retained = self.root / "retained-destination"
+                target.rename(retained)
+                target.mkdir(mode=0o700)
+                (target / "sentinel").write_bytes(b"concurrent owner")
+                replaced.append(target)
+            return original(source, destination, **kwargs)
+        with mock.patch.object(evidence, "_publish_create_only", side_effect=replace_before_publication):
+            self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
+        self.assertFalse(self.fixture.registered)
+        self.assertEqual([path.name for path in replaced[0].iterdir()], ["sentinel"])
+        self.assertEqual((replaced[0] / "sentinel").read_bytes(), b"concurrent owner")
+        self.assertTrue((self.root / "retained-destination" / "evidence.zip").is_file())
+
+    def test_archive_member_budget_includes_all_generated_members(self):
+        self.fixture.store.max_members = 3
+        self.assertCode("LIMIT_EXCEEDED", lambda: self.fixture.store.seal(OP))
+        self.assertFalse(self.fixture.registered)
+        self.assertEqual(list(self.fixture.store.root.iterdir()), [])
+        self.fixture.store.max_members = 4
+        record = self.fixture.store.seal(OP)
+        self.assertEqual(record["member_count"], 4)
+        with zipfile.ZipFile(self.fixture.store.root / record["seal_id"] / "evidence.zip") as archive:
+            self.assertEqual(len(archive.infolist()), self.fixture.store.max_members)
+
     def test_publication_rejects_symlinked_parent_without_moving_private_bytes(self):
         unrelated = self.root / "unrelated"
         unrelated.mkdir(mode=0o700)
@@ -420,18 +488,19 @@ class EvidenceTests(unittest.TestCase):
 
     def test_published_replacement_before_registration_remains_closed(self):
         real = evidence._publish_create_only
-        def replacement(source, destination):
-            real(source, destination)
+        def replacement(source, destination, **kwargs):
+            real(source, destination, **kwargs)
             if destination.name == "evidence.zip":
-                destination.write_bytes(b"replacement")
+                directory = Path(os.readlink(Path("/proc/self/fd") / str(kwargs["destination_dir_fd"])))
+                (directory / destination).write_bytes(b"replacement")
         with mock.patch.object(evidence, "_publish_create_only", side_effect=replacement):
             self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
         self.assertFalse(self.fixture.registered)
 
     def test_staging_archive_replacement_cannot_become_the_authenticated_archive(self):
         original = self.fixture.store._write
-        def replace_completed_archive(path, data):
-            original(path, data)
+        def replace_completed_archive(path, data, **kwargs):
+            original(path, data, **kwargs)
             if path.name == "manifest.json":
                 (path.parent / "evidence.zip").write_bytes(b"not the generated archive")
         with mock.patch.object(self.fixture.store, "_write", side_effect=replace_completed_archive):
@@ -637,11 +706,13 @@ class EvidenceTests(unittest.TestCase):
     def test_create_only_collision_retains_concurrent_file(self):
         real = evidence._publish_create_only
         collided = []
-        def concurrent(source, destination):
+        def concurrent(source, destination, **kwargs):
             if not collided:
-                destination.write_bytes(b"concurrent owner bytes")
-                collided.append(destination)
-            return real(source, destination)
+                directory = Path(os.readlink(Path("/proc/self/fd") / str(kwargs["destination_dir_fd"])))
+                target = directory / destination
+                target.write_bytes(b"concurrent owner bytes")
+                collided.append(target)
+            return real(source, destination, **kwargs)
         with mock.patch.object(evidence, "_publish_create_only", side_effect=concurrent):
             self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
         self.assertEqual(collided[0].read_bytes(), b"concurrent owner bytes")

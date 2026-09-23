@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 import zipfile
+import zlib
 
 from local_hand_jobs import evidence_client
 from local_hand_jobs.evidence import EvidenceError, _json, _hash
@@ -587,10 +588,12 @@ class ClientTests(unittest.TestCase):
     def synthetic_archive(self, *, unsafe_name=None, symlink=False, duplicate=False,
                           extra=False, bad_member_digest=False, expand=False,
                           manifest_changes=None, seal_changes=None,
-                          archive_transform=None, seal_transform=None):
+                          archive_transform=None, seal_transform=None,
+                          payload=None, compression=zipfile.ZIP_DEFLATED, streaming=False):
         seal_id = "2f6f5c74-20eb-4c59-b692-e690e8449e5b"
         name = unsafe_name or "payload.bin"
-        payload = b"data" * (10000 if expand else 1)
+        if payload is None:
+            payload = b"data" * (10000 if expand else 1)
         manifest = {"schema_version": "lh-evidence-manifest-v1", "operation_id": OP,
                     "seal_id": seal_id, "event_seq": 7, "complete": True,
                     "bindings": {}, "reconcile_id": None, "previous_seal_id": None,
@@ -598,11 +601,14 @@ class ClientTests(unittest.TestCase):
                                  "sha256": "0" * 64 if bad_member_digest else _hash(payload)}]}
         manifest.update(manifest_changes or {})
         manifest_raw = _json(manifest)
-        output = io.BytesIO()
+        class StreamingOutput(io.BytesIO):
+            def seek(self, *_args):
+                raise io.UnsupportedOperation("fixture non-seekable ZIP output")
+        output = StreamingOutput() if streaming else io.BytesIO()
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             info = zipfile.ZipInfo(name)
             info.external_attr = ((stat.S_IFLNK if symlink else stat.S_IFREG) | 0o600) << 16
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = compression
             archive.writestr(info, payload)
             info = zipfile.ZipInfo("MANIFEST.json")
             info.external_attr = (stat.S_IFREG | 0o600) << 16
@@ -642,6 +648,81 @@ class ClientTests(unittest.TestCase):
                     "chunk_sha256": _hash(chunk), "data_base64": base64.b64encode(chunk).decode(),
                     "eof": offset + len(chunk) == len(raw)}
         return artifact, callback
+
+    def test_malformed_deflate_is_a_structured_conflict(self):
+        def corrupt(raw):
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                info = archive.infolist()[0]
+                start = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+            changed = bytearray(raw)
+            changed[start] = 6  # Reserved deflate block type.
+            return bytes(changed)
+        artifact, callback = self.synthetic_archive(archive_transform=corrupt)
+        directory = self.root / "malformed-deflate"
+        self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+            artifact, BoundedFileWriter(directory)))
+        self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_compressed_stream_must_end_exactly_at_the_declared_boundary(self):
+        for delta in (-1, 1):
+            with self.subTest(compressed_size_delta=delta):
+                def alter_boundary(raw):
+                    changed = bytearray(raw)
+                    central = raw.index(b"PK\x01\x02")
+                    size = int.from_bytes(raw[central + 20:central + 24], "little")
+                    declared = (size + delta).to_bytes(4, "little")
+                    changed[central + 20:central + 24] = declared
+                    changed[18:22] = declared
+                    return bytes(changed)
+                artifact, callback = self.synthetic_archive(archive_transform=alter_boundary)
+                directory = self.root / ("deflate-boundary-" + str(delta))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_deflated_empty_large_and_data_descriptor_members_remain_compatible(self):
+        for index, payload in enumerate((b"", b"x" * 200000, os.urandom(150000))):
+            for streaming in (False, True):
+                with self.subTest(size=len(payload), streaming=streaming):
+                    artifact, callback = self.synthetic_archive(payload=payload, streaming=streaming)
+                    final = EvidenceClient(callback).download(artifact, BoundedFileWriter(
+                        self.root / ("deflate-valid-" + str(index) + "-" + str(streaming))))
+                    self.assertEqual(_hash(final.read_bytes()), artifact["sha256"])
+                    with zipfile.ZipFile(final) as archive:
+                        self.assertEqual(archive.read("payload.bin"), payload)
+                        self.assertEqual(bool(archive.getinfo("payload.bin").flag_bits & 8), streaming)
+
+    def test_declared_prefix_cannot_hide_stored_or_deflated_member_content(self):
+        prefix = b"data"
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            with self.subTest(compression=compression):
+                def shrink(raw):
+                    changed = bytearray(raw)
+                    central = raw.index(b"PK\x01\x02")
+                    for start in (14, central + 16):
+                        changed[start:start + 4] = zlib.crc32(prefix).to_bytes(4, "little")
+                    for start in (22, central + 24):
+                        changed[start:start + 4] = len(prefix).to_bytes(4, "little")
+                    return bytes(changed)
+                artifact, callback = self.synthetic_archive(payload=prefix * 16384,
+                    compression=compression, archive_transform=shrink,
+                    manifest_changes={"members": [{"name": "payload.bin", "size": len(prefix),
+                                                    "sha256": _hash(prefix)}]})
+                directory = self.root / ("hidden-content-" + str(compression))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_unbounded_alternative_codecs_are_rejected_before_decompression(self):
+        for compression in (zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA):
+            with self.subTest(compression=compression):
+                artifact, callback = self.synthetic_archive(compression=compression)
+                directory = self.root / ("unsupported-compression-" + str(compression))
+                with mock.patch.object(zipfile, "_get_decompressor", side_effect=AssertionError(
+                        "unsupported member codec must not be constructed")):
+                    self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                        artifact, BoundedFileWriter(directory)))
+                self.assertFalse(list(directory.glob("download-*/evidence.zip")))
 
     def test_zip_original_member_name_cannot_hide_a_nul_suffix(self):
         def insert_nul(raw):

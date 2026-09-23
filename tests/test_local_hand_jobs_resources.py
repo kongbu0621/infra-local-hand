@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -53,6 +54,67 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual("IO_UNCERTAIN", raised.exception.code)
         self.assertFalse((self.root / "missing.sqlite").exists())
 
+    def test_ledger_removed_between_lookup_and_connect_is_not_recreated(self):
+        path = self.root / "removed.sqlite"
+        StateStore(path, "authority", "ledger", initialize=True).close()
+        real_connect = sqlite3.connect
+        def disappear(*args, **kwargs):
+            path.rename(self.root / "original.sqlite")
+            return real_connect(*args, **kwargs)
+        with mock.patch("local_hand_jobs.state.sqlite3.connect", side_effect=disappear):
+            with self.assertRaises(JobError) as raised:
+                StateStore(path, "authority", "ledger")
+        self.assertEqual("IO_UNCERTAIN", raised.exception.code)
+        self.assertFalse(path.exists())
+        self.assertTrue((self.root / "original.sqlite").is_file())
+
+    def test_ledger_uri_escapes_query_and_fragment_characters(self):
+        path = self.root / "ledger ?mode=memory#%25.sqlite"
+        with self.subTest("initialize"):
+            StateStore(path, "authority", "ledger", initialize=True).close()
+        with self.subTest("reopen"):
+            StateStore(path, "authority", "ledger").close()
+        self.assertTrue(path.is_file())
+
+    def test_failed_ledger_constructor_closes_connection_and_preserves_primary(self):
+        path = self.root / "construction.sqlite"
+        StateStore(path, "authority", "ledger", initialize=True).close()
+        real_connect = sqlite3.connect
+        cases = [(KeyboardInterrupt("interrupted integrity check"), False),
+                 (JobError("IO_UNCERTAIN", "original identity failure"), True),
+                 (sqlite3.DatabaseError("original database failure"), True)]
+        for primary, close_failure in cases:
+            with self.subTest(type(primary).__name__):
+                connections = []
+                class Connection:
+                    def __init__(self, *args, **kwargs):
+                        self.raw = real_connect(*args, **kwargs)
+                        self.closed = False
+                        connections.append(self)
+                    def execute(self, sql):
+                        if sql == "PRAGMA quick_check":
+                            raise primary
+                        return self.raw.execute(sql)
+                    def close(self):
+                        self.raw.close()
+                        self.closed = True
+                        if close_failure:
+                            raise OSError(5, "secondary cleanup failure")
+                try:
+                    error_type = JobError if isinstance(primary, sqlite3.Error) else type(primary)
+                    with mock.patch("local_hand_jobs.state.sqlite3.connect", Connection):
+                        with self.assertRaises(error_type) as raised:
+                            StateStore(path, "authority", "ledger")
+                    if isinstance(primary, sqlite3.Error):
+                        self.assertEqual("IO_UNCERTAIN", raised.exception.code)
+                        self.assertIs(primary, raised.exception.__cause__)
+                    else:
+                        self.assertIs(primary, raised.exception)
+                    self.assertTrue(connections[0].closed)
+                finally:
+                    for connection in connections:
+                        connection.raw.close()
+
     def test_linked_or_public_ledger_is_not_admitted(self):
         linked = self.root / "linked.sqlite"
         os.link(self.db.path, linked)
@@ -86,6 +148,18 @@ class ResourceTests(unittest.TestCase):
         anchor.write_text(json.dumps({"authority_id": "authority", "ledger_id": "ledger", "state_root": str(self.root)}))
         anchor.chmod(0o600)
         return anchor, {"authority_id": "authority", "ledger_id": "ledger", "state_root": self.root}
+
+    def test_authority_short_read_does_not_admit_a_valid_json_prefix(self):
+        anchor, kwargs = self._authority()
+        valid_prefix = anchor.read_bytes()
+        anchor.write_bytes(valid_prefix + b" invalid registration suffix")
+        real_read = os.read
+        def short_read(descriptor, count):
+            return real_read(descriptor, min(count, len(valid_prefix)))
+        with mock.patch("local_hand_jobs.resources.os.read", side_effect=short_read):
+            with self.assertRaises(JobError) as raised:
+                AuthorityLock(anchor, **kwargs)
+        self.assertEqual("IO_UNCERTAIN", raised.exception.code)
 
     def test_authority_close_error_cannot_close_a_reused_descriptor(self):
         anchor, kwargs = self._authority()

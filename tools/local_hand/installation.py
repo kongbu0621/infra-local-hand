@@ -57,6 +57,11 @@ def verify_wheel(path: Path, metadata: dict) -> str:
                 raise _bad("wheel exceeds installation artifact bound or is not regular")
             if named_identity()!=identity(before):raise _bad("wheel changed during verification")
             with zipfile.ZipFile(stream) as archive:
+                # ZipInfo truncates names at NUL (and may normalize separators).
+                # Admission must bind the actual stored name, not an alias that
+                # happens to match an allowed installed payload path.
+                if any(info.orig_filename!=info.filename for info in archive.infolist()):
+                    raise _bad("wheel member name differs from its stored spelling")
                 names=archive.namelist()
                 if len(names)!=len(set(names)) or sum(i.file_size for i in archive.infolist())>32*1024*1024:
                     raise _bad("wheel has duplicate entries or excessive expanded size")

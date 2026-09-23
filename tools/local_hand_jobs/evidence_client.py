@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import stat
 import zipfile
+import zlib
 from typing import Any, Callable, Protocol
 
 from .evidence import (DEFAULT_CHUNK, MAX_CHUNK, MAX_RESPONSE, MANIFEST_NAME,
@@ -55,6 +56,47 @@ def _descriptor(artifact: dict, maximum: int) -> dict:
             or artifact["artifact_id"].rpartition(".")[2] != artifact["role"]):
         raise EvidenceError("CONFLICT", "invalid artifact identifier")
     return {k: artifact[k] for k in ("artifact_id", "role", "size", "sha256")}
+
+
+def _validate_compression(path: Path, info: zipfile.ZipInfo) -> None:
+    """Verify the complete stored/deflated member without trusting declared EOF.
+
+    ZipExtFile stops at the declared uncompressed size and can accept a truncated
+    deflate stream if the available prefix has the expected CRC. Its other codecs
+    also do not all offer a bounded decompression call. The producer uses stored
+    members; retain deflate compatibility with explicit input and output bounds.
+    """
+    if info.compress_type == zipfile.ZIP_STORED:
+        if info.compress_size != info.file_size:
+            raise EvidenceError("CONFLICT", "stored member size mismatch")
+        return
+    if info.compress_type != zipfile.ZIP_DEFLATED:
+        raise EvidenceError("CONFLICT", "unsupported evidence member compression")
+    with path.open("rb") as raw:
+        raw.seek(info.header_offset)
+        header = raw.read(30)
+        if len(header) != 30 or header[:4] != b"PK\x03\x04":
+            raise EvidenceError("CONFLICT", "invalid archive member header")
+        name_size = int.from_bytes(header[26:28], "little")
+        extra_size = int.from_bytes(header[28:30], "little")
+        raw.seek(name_size + extra_size, os.SEEK_CUR)
+        decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+        remaining, produced = info.compress_size, 0
+        while remaining:
+            block = raw.read(min(DEFAULT_CHUNK, remaining))
+            if not block:
+                raise EvidenceError("CONFLICT", "compressed evidence member is truncated")
+            remaining -= len(block)
+            while block:
+                output = decoder.decompress(block, min(DEFAULT_CHUNK, info.file_size - produced + 1))
+                produced += len(output)
+                if produced > info.file_size:
+                    raise EvidenceError("CONFLICT", "compressed member exceeded declared size")
+                if decoder.unused_data or decoder.eof and remaining:
+                    raise EvidenceError("CONFLICT", "compressed member has trailing data")
+                block = decoder.unconsumed_tail
+        if not decoder.eof or produced != info.file_size:
+            raise EvidenceError("CONFLICT", "compressed evidence member is incomplete")
 
 
 class BoundedWriter(Protocol):
@@ -430,6 +472,8 @@ class EvidenceClient:
                     raise EvidenceError("LIMIT_EXCEEDED", "archive expansion budget exceeded")
                 if archive.getinfo(MANIFEST_NAME).file_size > 4 * 1024 * 1024:
                     raise EvidenceError("LIMIT_EXCEEDED", "archive manifest too large")
+                for info in infos:
+                    _validate_compression(path, info)
                 raw = archive.read(MANIFEST_NAME)
                 manifests = [a for a in seal["artifacts"] if a["role"] == "manifest"]
                 if (len(manifests) != 1 or manifests[0]["sha256"] != _hash(raw)
@@ -471,7 +515,7 @@ class EvidenceClient:
                         raise EvidenceError("CONFLICT", "archive member digest mismatch")
         except EvidenceError:
             raise
-        except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, RuntimeError):
+        except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, RuntimeError, zlib.error):
             raise EvidenceError("CONFLICT", "archive verification failed") from None
 
     def download(self, artifact: dict, writer: BoundedWriter) -> Path:

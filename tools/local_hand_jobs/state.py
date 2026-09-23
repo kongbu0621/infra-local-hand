@@ -30,6 +30,7 @@ class StateStore:
         self.lock = threading.RLock()
         self.healthy = True
         self._db = None
+        failed = True
         try:
             parent = self.path.parent.lstat()
             if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.geteuid()
@@ -51,8 +52,11 @@ class StateStore:
                     raise JobError("IO_UNCERTAIN", "The registered ledger type or ownership is unproven")
             finally:
                 os.close(descriptor)
-            self._db = sqlite3.connect(str(self.path), timeout=0.5, isolation_level=None,
-                                       check_same_thread=False)
+            # initialize already created its entry explicitly. Even a removal
+            # between the identity check and SQLite open must not create a
+            # replacement ledger during ordinary recovery.
+            self._db = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True,
+                                       timeout=0.5, isolation_level=None, check_same_thread=False)
             identity_after = self.path.lstat()
             if (identity_before.st_ino, identity_before.st_dev) != (identity_after.st_ino, identity_after.st_dev):
                 raise JobError("IO_UNCERTAIN", "Ledger entry changed while opening")
@@ -68,16 +72,21 @@ class StateStore:
                 "schema": "1", "authority_id": authority_id, "ledger_id": ledger_id,
             }:
                 raise JobError("IO_UNCERTAIN", "Ledger identity or integrity is unproven")
-        except JobError:
-            if self._db is not None:
-                self._db.close()
-            self.healthy = False
-            raise
+            failed = False
         except (OSError, sqlite3.Error) as exc:
-            if self._db is not None:
-                self._db.close()
-            self.healthy = False
             raise JobError("IO_UNCERTAIN", "Ledger initialization or lookup failed") from exc
+        finally:
+            if failed:
+                self.healthy = False
+                connection, self._db = self._db, None
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except BaseException:
+                        # Failed construction has not transferred ownership.
+                        # Cleanup must not replace the primary failure, even
+                        # when initialization was interrupted before validation.
+                        pass
 
     def _create(self):
         self._db.executescript("""

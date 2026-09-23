@@ -18,7 +18,7 @@ from typing import Callable
 import uuid
 
 from local_hand_jobs.contract import (
-    JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
+    JobError, KINDS, REF_PATTERN, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
     request_digest, strict_loads, validate_submit, validate_tool_args,
 )
 from local_hand_jobs.evidence import EvidenceError, _close_descriptors, _publish_create_only
@@ -97,12 +97,21 @@ class Workflow:
         result = self.call(tool, _copy(arguments))
         if not isinstance(result, dict):
             _fail("IO_UNCERTAIN", "Host callback did not return a structured tool result")
-        if len(canonical_bytes(result)) > self.contract["client_limits"]["max_response_bytes"]:
+        try:
+            raw = canonical_bytes(result)
+        except (TypeError, ValueError, RecursionError):
+            _fail("IO_UNCERTAIN", "Host callback returned an invalid JSON tool result")
+        if len(raw) > self.contract["client_limits"]["max_response_bytes"]:
             _fail("LIMIT_EXCEEDED", "Tool response exceeds client budget")
+        # Inspect the same detached bytes whose response budget was checked.
+        result = json.loads(raw)
         if result.get("ok") is False or "error" in result:
             error = result.get("error", {})
-            _fail(error.get("code", "IO_UNCERTAIN"), "The authenticated tool returned an error")
-        return _copy(result)
+            code = error.get("code") if isinstance(error, dict) else None
+            if not isinstance(code, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code) is None:
+                code = "IO_UNCERTAIN"
+            _fail(code, "The authenticated tool returned an error")
+        return result
 
     def _record_name(self, kind, key):
         if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,127}", key):
@@ -193,8 +202,8 @@ class Workflow:
                     _fail("IO_UNCERTAIN", "Client identity has invalid ownership or type")
                 try:
                     raw = stream.read(maximum + 1)
-                    if len(raw) > maximum:
-                        _fail("IO_UNCERTAIN", "Client identity exceeds its read budget")
+                    if len(raw) != st.st_size or len(raw) > maximum:
+                        _fail("IO_UNCERTAIN", "Client identity read is incomplete or exceeds its budget")
                     record = strict_loads(raw)
                 except (JobError, ValueError, UnicodeError):
                     _fail("IO_UNCERTAIN", "Client identity is incomplete")
@@ -283,10 +292,21 @@ class Workflow:
                 if not isinstance(profile, dict):
                     _fail("IO_UNCERTAIN", "Malformed profile in capability catalog")
                 ref = profile.get("profile_ref")
+                if not isinstance(ref, str) or re.fullmatch(REF_PATTERN, ref) is None:
+                    _fail("IO_UNCERTAIN", "Malformed profile reference in capability catalog")
                 if ref not in self.admission["profiles"]:
                     continue  # Visible alternatives are not privately admitted targets.
-                if profile.get("expected") != self.admission["profiles"][ref]:
+                # JSON true, 1 and 1.0 have different deployment identities;
+                # Python mapping equality alone silently treats them as equal.
+                if canonical_bytes(profile.get("expected")) != canonical_bytes(self.admission["profiles"][ref]):
                     _fail("STALE_DEPLOYMENT", "Discovered deployment does not match private admission")
+                for field in ("allowed_kinds", "source_refs", "build_cache_refs", "storage_refs", "prepared_refs"):
+                    values = profile.get(field)
+                    if (not isinstance(values, list)
+                            or any(not isinstance(value, str) or re.fullmatch(REF_PATTERN, value) is None for value in values)
+                            or len(set(values)) != len(values)
+                            or (field == "allowed_kinds" and not set(values) <= set(KINDS))):
+                        _fail("IO_UNCERTAIN", "Malformed grant directory in capability catalog")
                 if ref in profiles:
                     _fail("IO_UNCERTAIN", "Duplicate profile in capability catalog")
                 profiles[ref] = profile
