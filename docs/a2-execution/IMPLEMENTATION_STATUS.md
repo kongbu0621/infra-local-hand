@@ -21,7 +21,8 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 非阻塞管道采集，以及启动/排队/cgroup/采集器均结束后才接受结果的判定。
 25 项定向测试通过，包括真实匿名管道和 native emitter 联合验证；OS 观察仍为逻辑 fixture，
 真实 quota syscall 为 0。尚未连接真实 manager、持久请求账本、保护配置读取和权限过滤，
-因此没有完成管理服务装配或实机准入；未进入 Q2/Q3。详细边界见 [管理侧 README](../../tools/admin/local_hand_quota_observer/README.md)。
+因此没有完成管理服务装配或实机准入；未进入 Q2/Q3。准确源码 `ec2fac0`、分类验证和证据摘要见
+[Q1 固定对象与监督判定验证](E3_QUOTA_Q1_MONITOR_VERIFICATION.md)，详细接口边界见 [管理侧 README](../../tools/admin/local_hand_quota_observer/README.md)。
 
 ## 已实现的代码
 
