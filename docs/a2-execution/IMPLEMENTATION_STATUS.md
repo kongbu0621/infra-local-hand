@@ -17,6 +17,11 @@ Owner 决定及准确范围见 [开工决定](../governance/A2_EXEC_E1_E3_OWNER_
 
 quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f92717019b`；
 准确测试、原始编译失败及私有证据摘要见 [Q1 原语验证报告](E3_QUOTA_Q1_VERIFICATION.md)。
+后续 Q1 检查点新增固定对象配置校验与独立退出判定核心：有界不可变 manifest、严格原语事实匹配、
+非阻塞管道采集，以及启动/排队/cgroup/采集器均结束后才接受结果的判定。
+25 项定向测试通过，包括真实匿名管道和 native emitter 联合验证；OS 观察仍为逻辑 fixture，
+真实 quota syscall 为 0。尚未连接真实 manager、持久请求账本、保护配置读取和权限过滤，
+因此没有完成管理服务装配或实机准入；未进入 Q2/Q3。详细边界见 [管理侧 README](../../tools/admin/local_hand_quota_observer/README.md)。
 
 ## 已实现的代码
 
@@ -27,6 +32,7 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 | 启动根分配 | `bootstrap_roots`；私有有限预建 slot 池、准确目录身份、与执行意图同事务的永久消费；preflight/business 仅在同一操作内共享原分配，其他阶段消费独立 slot，不开放 profile 父目录写权 |
 | 进程监督 | `runner/bootstrap/result_reader/ledger_jobs`；新阶段依次使用 bootstrap、helper、result_reader 三个固定 unit，每次交付有独立持久意图和启动围栏；启动根身份、硬配额和计划发布在 bootstrap 内进行，helper 写入前再验根身份。结果文件由只读 reader 读取，observer 只收有界非阻塞管道；生产入口仍固定拒绝启用 |
 | Q1 内部 quota ABI | 独立管理侧开发目录中的原生 FD 查询原语，固定观察调用、errno/前后身份和有界 JSON；不接受路径或修改动作，未安装、未提权、未接入 broker，不在默认 wheel/Plugin 中。模拟成功不是宿主准入，完整 observer 仍待实现 |
+| Q1 固定对象与结果判定 | `admin/local_hand_quota_observer/admission.py`、`supervision.py`；不可变配置映射、原执行/截止时间绑定、有限非阻塞采集、独立进程退出事实与原语回包分别核对。仅内部逻辑组件，未提供真实 manager 或持久防重，未授予作业执行 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |

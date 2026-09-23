@@ -163,6 +163,28 @@ class QuotaABITests(unittest.TestCase):
                 if case == "enforcement_changed":
                     self.assertNotEqual(body["enforcement"], body["enforcement_after"])
 
+    def test_logic_only_native_wire_matches_pinned_monitor_contract(self):
+        # Exercise the compiled native emitter, not only handwritten JSON. The
+        # syscall shim remains LOGIC_ONLY; no host quota syscall is performed.
+        from test_e3_quota_monitor import decode, encoded, fixture, binding, observation, NOW
+        from admin.local_hand_quota_observer import supervision
+
+        for case in ("ext4", "xfs", "stale_errno", "quota_eperm", "close_error"):
+            with self.subTest(case=case):
+                code, body = self.invoke(case)
+                configuration = fixture()
+                configuration.update(query_uid=os.getuid(), query_euid=os.geteuid())
+                if case == "xfs":
+                    configuration["slots"][0]["filesystem"] = "xfs"
+                bound = binding(decode(configuration))
+                monitor = supervision.QueryMonitor(bound)
+                monitor.feed(encoded(body), now_ns=NOW)
+                monitor.eof(now_ns=NOW)
+                result = monitor.inspect(observation(bound, exec_main_status=code), now_ns=NOW)
+                self.assertEqual(result.status, "OBSERVED" if code == 0 else "UNKNOWN")
+                self.assertEqual(json.loads(monitor.raw_prefix), body)
+                self.assertFalse(result.admission_proven or result.real_e3_accepted or result.production_supported)
+
 
 if __name__ == "__main__":
     unittest.main()
