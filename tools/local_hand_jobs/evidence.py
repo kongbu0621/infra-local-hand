@@ -174,10 +174,14 @@ def _sync_directory_ancestry(root: Path, owner: int) -> None:
 
 
 @contextmanager
-def _open_root(root: Path, owner: int, *, create: bool = False) -> Iterator[int]:
+def _open_root(root: Path, owner: int, *, create: bool = False, identity: dict | None = None) -> Iterator[int]:
     fd = _root_descriptor(root, owner, create=create)
     failure = None
     try:
+        if identity is not None:
+            info = os.fstat(fd)
+            if (info.st_dev, info.st_ino, info.st_uid) != (identity["device"], identity["inode"], identity["uid"]):
+                raise EvidenceError("CONFLICT", "evidence root differs from its admitted identity")
         yield fd
         current = _root_descriptor(root, owner)
         try:
@@ -388,13 +392,19 @@ class EvidenceStore:
                  authorize: Callable[[Any, str], None] | None = None,
                  max_members: int = 10000, max_source_bytes: int = 256 * 1024 * 1024,
                  max_artifact_bytes: int = 272 * 1024 * 1024,
-                 max_seals: int = 1000, owner_uid: int | None = None):
+                 max_seals: int = 1000, owner_uid: int | None = None,
+                 root_identity: dict | None = None):
         self.root = Path(root).absolute()
         if any(type(v) is not int or not 0 < v <= 2**53 - 1 for v in
                (max_members, max_source_bytes, max_artifact_bytes, max_seals)):
             raise EvidenceError("LIMIT_EXCEEDED", "invalid evidence store budget")
         self.owner = os.geteuid() if owner_uid is None else owner_uid
-        with _open_root(self.root, self.owner, create=True):
+        if root_identity is not None and (type(root_identity) is not dict or set(root_identity) != {"device", "inode", "uid"}
+                or any(type(value) is not int or value < 0 for value in root_identity.values())
+                or root_identity["uid"] != self.owner or root_identity["inode"] == 0):
+            raise EvidenceError("CONFLICT", "evidence root identity is malformed")
+        self.root_identity = None if root_identity is None else dict(root_identity)
+        with _open_root(self.root, self.owner, create=self.root_identity is None, identity=self.root_identity):
             pass
         self.snapshot_provider = snapshot_provider
         self.register_seal = register_seal
@@ -406,6 +416,15 @@ class EvidenceStore:
         self.max_artifact_bytes = max_artifact_bytes
         self.max_seals = max_seals
         self._cursor_key = secrets.token_bytes(32)
+
+    @contextmanager
+    def _open_store(self, seal_id=None):
+        with _open_root(self.root, self.owner, identity=self.root_identity) as root_fd:
+            if seal_id is None:
+                yield root_fd
+            else:
+                with _open_child_directory(root_fd, seal_id, self.owner) as directory:
+                    yield directory
 
     def _auth(self, principal: Any, operation_id: str) -> None:
         if self.authorize is not None:
@@ -540,7 +559,7 @@ class EvidenceStore:
         except ImportError:
             raise EvidenceError("UNSUPPORTED", "evidence store locking unavailable") from None
         try:
-            with _open_root(self.root, self.owner) as directory:
+            with self._open_store() as directory:
                 try:
                     fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
@@ -569,7 +588,7 @@ class EvidenceStore:
         published = False
         try:
             with ExitStack() as directories:
-                with _open_root(self.root, self.owner) as current:
+                with self._open_store() as current:
                     self._check_store_lock(store_fd, current)
                 # An earlier failed attempt can leave only its staging directory.
                 # Account for both new entries before writing, and stop the scan as
@@ -691,7 +710,7 @@ class EvidenceStore:
                 self._sync_directory(destination)
                 self._sync_directory(stage)
                 self._sync_directory(self.root)
-                with _open_root(self.root, self.owner) as current:
+                with self._open_store() as current:
                     self._check_store_lock(store_fd, current)
                     _sync_directory_ancestry(self.root, self.owner)
                     if _file_digest(destination / _ROLES["seal"]) != (len(seal_bytes), _hash(seal_bytes)):
@@ -726,7 +745,7 @@ class EvidenceStore:
         try:
             if str(uuid.UUID(seal_id)) != seal_id:
                 raise ValueError
-            with _open_root(self.root / seal_id, self.owner) as directory:
+            with self._open_store(seal_id) as directory:
                 with _open_member(directory, _ROLES["seal"], self.owner, DEFAULT_CHUNK) as fd:
                     data = _read(fd, DEFAULT_CHUNK)
             digest = _hash(data)
@@ -863,7 +882,7 @@ class EvidenceStore:
         if offset > artifact["size"]:
             raise EvidenceError("CONFLICT", "evidence offset exceeds size")
         try:
-            with _open_root(self.root / seal_id, self.owner) as root_fd:
+            with self._open_store(seal_id) as root_fd:
                 with _open_member(root_fd, _ROLES[role], self.owner, self.max_artifact_bytes) as fd:
                     original = os.fstat(fd)
                     if original.st_size != artifact["size"]:

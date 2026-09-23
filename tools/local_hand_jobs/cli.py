@@ -521,6 +521,50 @@ def request(socket_path, tool, arguments, *, timeout=2):
                     raise JobError("IO_UNCERTAIN", "Local transport cleanup is unresolved; retain the original ID") from exc
 
 
+def _known_manager_units(rows):
+    """Derive both unit names from durable identities, never manager payloads."""
+    from .bootstrap_roots import validate_grant
+    units = set()
+    for row in rows:
+        record = row["record"]
+        for phase, handle in record.get("handles", {}).items():
+            execution_id = f"{row['namespace']}-{row['id']}-{phase}"
+            if (phase not in ("preflight", "business", "evidence", "reconcile")
+                    or handle.get("execution_id") != execution_id):
+                raise JobError("IO_UNCERTAIN", "Durable manager execution identity is unresolved")
+            unit = "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"
+            if handle.get("unit", unit) != unit:
+                raise JobError("IO_UNCERTAIN", "Durable manager unit differs from its execution identity")
+            units.add(unit)
+            allocation = record.get("bootstrap_grants", {}).get(phase)
+            if allocation is not None:
+                validate_grant(allocation, execution_id=execution_id, phase=phase,
+                    operation_id=row["parent"], namespace=row["namespace"], record_id=row["id"])
+                units.add("lhj-" + hashlib.sha256((execution_id + ":bootstrap").encode()).hexdigest() + ".service")
+            elif handle.get("manager", {}).get("version") == 2:
+                raise JobError("IO_UNCERTAIN", "Bootstrap manager receipt lacks its durable root allocation")
+    return sorted(units)
+
+
+def _admitted_evidence_store(policy):
+    """One broker publishes to one exact preprovisioned shared evidence store."""
+    from .bootstrap_roots import validate_root
+    bindings = []
+    for profile in policy.config.get("profiles", {}).values():
+        if "bootstrap_slots" not in profile:
+            continue
+        value = profile.get("bootstrap_evidence_store")
+        if value is None:
+            raise JobError("UNSUPPORTED", "Bootstrap profiles require an admitted evidence store")
+        bindings.append(validate_root(dict(value)))
+    if not bindings:
+        return Path(policy.broker_root) / "artifacts", None
+    if any(value != bindings[0] for value in bindings[1:]):
+        raise JobError("UNSUPPORTED", "Bootstrap profiles must bind the same exact evidence store")
+    binding = bindings[0]
+    return Path(binding["path"]), {key: binding[key] for key in ("device", "inode", "uid")}
+
+
 def create_broker(policy_path, *, actual_entrypoint, initialize=False):
     """Both service entrypoints use this production-only composition root.
 
@@ -538,6 +582,7 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
     from .state import StateStore
     from .evidence import EvidenceStore
     policy = Policy.from_file(policy_path)
+    evidence_root, evidence_identity = _admitted_evidence_store(policy)
     verify_release(expected_source_commit=policy.source_commit,
                    expected_payload_digest=policy.installed_payload_digest,
                    expected_entrypoint=policy.execution_entrypoint,
@@ -585,8 +630,7 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         state = StateStore(Path(policy.broker_root) / "jobs.sqlite", policy.authority_id,
                            ledger_id, initialize=initialize)
         with state.transaction() as tx:
-            units = [handle.get("unit", "lhj-" + hashlib.sha256(handle["execution_id"].encode()).hexdigest() + ".service")
-                     for row in state.all(tx) for handle in row["record"].get("handles", {}).values()]
+            units = _known_manager_units(state.all(tx))
         inventory = manager.scan(units)
         if inventory.get("status") != "READY":
             raise JobError("IO_UNCERTAIN", "Supervisor inventory has orphaned or unresolved executions")
@@ -596,12 +640,12 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         def authorize_evidence(principal, operation_id):
             with broker.state.transaction() as tx:
                 broker._row(tx, "job", operation_id, principal, "lh:evidence")
-        broker.evidence = EvidenceStore(Path(policy.broker_root) / "artifacts",
+        broker.evidence = EvidenceStore(evidence_root,
             snapshot_provider=no_direct_seal, register_seal=broker.register_seal,
             is_registered=broker.is_registered, list_seals=broker.list_seals,
             authorize=authorize_evidence,
             max_source_bytes=policy.limits["retained_bytes"],
-            max_artifact_bytes=policy.limits["retained_bytes"])
+            max_artifact_bytes=policy.limits["retained_bytes"], root_identity=evidence_identity)
         broker.authority_lock = authority
         return broker
     except BaseException:

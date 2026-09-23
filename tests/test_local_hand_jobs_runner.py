@@ -77,6 +77,42 @@ def budgeted_plan(plan, *, operation_id="fixture", record_id=None, now=None):
 
 
 @contextlib.contextmanager
+def admitted_bootstrap_plan(plan, directory):
+    """Consume real precreated roots in a private ledger for manager fixtures.
+
+    The manager remains a trusted OS simulation; root identity and one-use
+    consumption use the same allocator as the broker, not a fabricated grant.
+    """
+    from local_hand_jobs import bootstrap_roots
+    from local_hand_jobs.state import StateStore
+
+    execution, grant = plan["execution"], plan["budget_grant"]
+    execution["operation_id"] = grant["operation_id"]
+    slot = {"slot_id": "runner-fixture", "roots": {}}
+    for name, value in execution["roots"].items():
+        path = Path(value)
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        info = path.stat()
+        slot["roots"][name] = {"path": str(path), "device": info.st_dev,
+                                "inode": info.st_ino, "uid": info.st_uid}
+    state_root = Path(directory) / "admission-state"
+    state_root.mkdir(mode=0o700)
+    state = StateStore(state_root / "roots.sqlite3", "fixture-authority", "fixture-ledger", initialize=True)
+    try:
+        with state.transaction() as tx:
+            row = state.insert(tx, grant["namespace"], grant["record_id"], grant["operation_id"],
+                               "fixture-owner", "fixture-digest", {}, plan,
+                               execution["budgets"]["reservation_bytes"])
+            if plan["phase"] == "business":
+                bootstrap_roots.reserve(state, tx, row, "preflight", [slot])
+            allocation = bootstrap_roots.reserve(state, tx, row, plan["phase"], [slot])
+        plan["bootstrap_allocation"] = allocation
+        yield plan
+    finally:
+        state.close()
+
+
+@contextlib.contextmanager
 def helper_budget_fixture(phase):
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
@@ -237,7 +273,8 @@ class RunnerTests(unittest.TestCase):
     def test_manager_final_delivery_caps_deadline_and_reserves_stop_grace(self):
         class Prepared(runner.SystemdManager):
             def _admit(self, plan): return runner._plain(plan["execution"]), {}
-        for elapsed in (0, 27, 29, 30):
+        # The phase now starts at durable reservation, not delayed delivery.
+        for elapsed in (0, 7, 9, 10):
             with self.subTest(elapsed=elapsed), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 roots = {key: str(root / key) for key in ("work", "temporary", "evidence")}
@@ -248,13 +285,15 @@ class RunnerTests(unittest.TestCase):
                 identity = {"job_key": "fixture", "phase": "business", "execution_id": plan["execution_id"],
                             "unit": "lhj-test-budget.service"}
                 manager = Prepared({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
-                def guard(execution_id, launch):
+                def guard(execution_id, launch, *, stage):
+                    self.assertEqual(stage, "bootstrap")
                     clock["boottime_ns"] += elapsed * runner.budget.NANOSECONDS
                     return launch()
                 manager.set_start_guard(guard)
-                with patch.object(runner.budget, "current_clock", side_effect=lambda: dict(clock)), \
+                with admitted_bootstrap_plan(plan, folder), \
+                        patch.object(runner.budget, "current_clock", side_effect=lambda: dict(clock)), \
                         patch.object(runner.subprocess, "Popen", return_value=object()) as launched:
-                    if elapsed >= 29:
+                    if elapsed >= 9:
                         with self.assertRaises(runner._NoStartError) as failure:
                             manager.start(identity, plan, threading.Event())
                         self.assertEqual(failure.exception.code, "LIMIT_EXCEEDED")
@@ -265,8 +304,10 @@ class RunnerTests(unittest.TestCase):
                                   for item in launched.call_args.args[0] if item.startswith("--property="))
                 self.assertEqual(properties["RuntimeMaxSec"], "9000000us" if elapsed == 0 else "2000000us")
                 self.assertEqual(properties["TimeoutStopSec"], "1")
-                self.assertEqual(properties["CPUQuota"], "30.000000%")
-                self.assertLessEqual(handle["phase_deadline_boottime_ns"] + runner.budget.NANOSECONDS,
+                self.assertEqual(properties["CPUQuota"], "10.000000%")
+                self.assertEqual(properties["LimitCPU"], "1")
+                self.assertEqual(handle["bootstrap"]["phase_deadline_boottime_ns"], 109_000_000_000)
+                self.assertLessEqual(handle["bootstrap"]["phase_deadline_boottime_ns"] + runner.budget.NANOSECONDS,
                                      plan["budget_grant"]["deadline_boottime_ns"])
 
     def test_cpu_quota_is_floored_and_rejects_unrepresentable_small_rates(self):
@@ -329,7 +370,7 @@ class RunnerTests(unittest.TestCase):
                 with patch.object(runner.budget, "current_clock", return_value=clock), \
                         patch.object(Path, "read_text", read), \
                         patch.object(manager, "_command", return_value=subprocess.CompletedProcess([], 0, show.encode())), \
-                        patch.object(manager, "stop", return_value=runner._unknown()) as stop:
+                        patch.object(manager, "_stop_unit", return_value=runner._unknown()) as stop:
                     proof = manager.inspect(handle)
                 stop.assert_called_once_with(handle)
                 self.assertFalse(proof["future_start_blocked"])
@@ -390,14 +431,16 @@ class RunnerTests(unittest.TestCase):
             self.addCleanup(setattr, manager, "inspect", lambda handle: {
                 **runner._unknown("fixture observation complete"), "terminal_observation": True})
             delivered = threading.Event()
-            def guard(identity, launch):
+            def guard(identity, launch, *, stage):
+                self.assertEqual(stage, "bootstrap")
                 launch()
                 delivered.set()
                 raise runner.RunnerError("UNSUPPORTED", "fixture failure after manager delivery")
             manager.set_start_guard(guard)
             supervisor = runner.Runner(manager)
-            with patch.object(runner.subprocess, "Popen", return_value=object()) as launch:
-                plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job")
+            plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job")
+            with admitted_bootstrap_plan(plan, directory), \
+                    patch.object(runner.subprocess, "Popen", return_value=object()) as launch:
                 handle = supervisor.start("job", plan["execution_id"], plan)
                 self.assertTrue(delivered.wait(1))
                 deadline = time.monotonic() + 1
@@ -460,9 +503,10 @@ class RunnerTests(unittest.TestCase):
         class DeliveredManager(runner.SystemdManager):
             def _admit(self, plan): return runner._plain(plan["execution"]), {}
             def inspect(self, handle):
-                return {**runner._unknown(), "state": "EXITED" if handle["stop_requested"] else "RUNNING",
-                        "tree_exited": handle["stop_requested"], "future_start_blocked": handle["stop_requested"]}
-            def stop(self, handle): handle["stop_requested"] = True
+                stopped = handle["bootstrap"]["stop_requested"]
+                return {**runner._unknown(), "state": "EXITED" if stopped else "RUNNING",
+                        "tree_exited": stopped, "future_start_blocked": stopped}
+            def stop(self, handle): handle["bootstrap"]["stop_requested"] = True
         with tempfile.TemporaryDirectory() as directory:
             roots = {name: str(Path(directory) / name) for name in ("work", "temporary", "evidence")}
             limits = {"wall_seconds": 30, "terminate_grace_seconds": 2, "cpu_seconds": 30,
@@ -471,19 +515,23 @@ class RunnerTests(unittest.TestCase):
             execution = {"roots": roots, "budgets": limits, "python": sys.executable,
                 "writable": list(roots.values()), "readonly": [], "environment": {"PATH": "/usr/bin:/bin"}}
             manager = DeliveredManager({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
-            def uncertain_receipt(identity, launch):
+            def uncertain_receipt(identity, launch, *, stage):
+                self.assertEqual(stage, "bootstrap")
                 launch()
                 raise runner.RunnerError("IO_UNCERTAIN", "receipt failed after manager delivery")
             manager.set_start_guard(uncertain_receipt)
             supervisor = runner.Runner(manager)
-            with patch.object(runner.subprocess, "Popen", return_value=Receipt()) as launch:
-                plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job")
+            plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job")
+            with admitted_bootstrap_plan(plan, directory), \
+                    patch.object(runner.subprocess, "Popen", return_value=Receipt()) as launch:
                 handle = supervisor.start("job", plan["execution_id"], plan)
                 await_state(supervisor, handle, "RUNNING")
                 supervisor.stop(handle)
                 proof = await_state(supervisor, handle, "EXITED")
                 self.assertTrue(proof["future_start_blocked"])
                 self.assertEqual(proof["recovery_handle"]["execution_id"], handle["execution_id"])
+                self.assertEqual(proof["recovery_handle"]["manager"]["version"], 2)
+                self.assertIsNone(supervisor._executions[handle["execution_id"]].manager_handle["helper"])
                 launch.assert_called_once()
 
     def test_delayed_start_cancel_remains_responsive_and_blocks_future_spawn(self):
@@ -563,7 +611,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(proof["result"]["outcome"], "FAILED")
         self.assertFalse(proof["result"]["business_started"])
 
-    def test_bootstrap_gap_blocks_even_an_otherwise_supported_host(self):
+    def test_unverified_e3_blocks_even_an_otherwise_supported_host(self):
         manager = runner.SystemdManager({"uid": 1000, "slice": "admitted.slice",
             "cgroup": "/sys/fs/cgroup/admitted.slice"})
         with patch.object(runner.sys, "platform", "linux"), patch.object(os, "geteuid", return_value=1000), \
@@ -572,7 +620,7 @@ class RunnerTests(unittest.TestCase):
             support = manager.support()
         self.assertFalse(support["supported"])
         self.assertEqual(support["status"], "UNSUPPORTED")
-        self.assertEqual(support["reasons"], ["SUPERVISED_BOOTSTRAP_NOT_IMPLEMENTED"])
+        self.assertEqual(support["reasons"], ["E3_SUPERVISION_UNVERIFIED"])
 
     def test_limited_capture_drains_stdout_stderr_and_retains_truncation(self):
         with tempfile.TemporaryDirectory() as root:
@@ -846,17 +894,20 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(proof["tree_exited"])
 
     def test_nas_quota_is_explicitly_unsupported_not_boolean_admitted(self):
-        import subprocess
         class AdmittedManagerProbe(runner.SystemdManager):
             def support(self): return {"supported": True}
-            def _command(self, *args, **kwargs):
-                return subprocess.CompletedProcess([], 0, b"/fixture\n")
         manager = AdmittedManagerProbe({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture", "uid": 1000})
-        execution = {"storage": {"archive_root": "/synthetic/archive", "stable_mount_binding": {
-            "source": "synthetic-nas", "root": "/synthetic", "type": "nfs", "device": 123, "inode": 456}}}
-        with patch.object(Path, "resolve", lambda path: path), patch.object(os, "access", return_value=True):
-            with self.assertRaisesRegex(runner.RunnerError, "network archive hard quota adapter is not implemented"):
-                manager._admit({"execution": execution})
+        with tempfile.TemporaryDirectory() as directory:
+            roots = {name: str(Path(directory) / name) for name in ("work", "temporary", "evidence")}
+            execution = {"roots": roots, "writable": list(roots.values()), "readonly": [],
+                "storage": {"archive_root": "/synthetic/archive", "stable_mount_binding": {
+                    "source": "synthetic-nas", "root": "/synthetic", "type": "nfs", "device": 123, "inode": 456}}}
+            plan = budgeted_plan({"execution": execution, "phase": "business"})
+            with admitted_bootstrap_plan(plan, directory), \
+                    patch.object(manager, "_command", side_effect=AssertionError("NAS rejection must precede launch")) as command:
+                with self.assertRaisesRegex(runner.RunnerError, "network archive hard quota adapter is not implemented"):
+                    manager._admit(plan)
+                command.assert_not_called()
 
     def test_manager_requires_recursive_exit_and_no_queued_job(self):
         import json, subprocess
@@ -1110,7 +1161,8 @@ class RunnerTests(unittest.TestCase):
                 in_fence = [False]
                 guard_calls = []
                 if mode != "missing":
-                    def guard(execution_id, launch):
+                    def guard(execution_id, launch, *, stage):
+                        self.assertEqual(stage, "bootstrap")
                         guard_calls.append(execution_id)
                         in_fence[0] = True
                         try:
@@ -1121,10 +1173,15 @@ class RunnerTests(unittest.TestCase):
                     manager.set_start_guard(guard)
                 receipt = object()
                 def delivered(*args, **kwargs):
+                    import hashlib
                     self.assertTrue(in_fence[0])
-                    self.assertIn("--unit=lhj-guard-fixture.service", args[0])
+                    expected_unit = "lhj-" + hashlib.sha256((plan["execution_id"] + ":bootstrap").encode()).hexdigest() + ".service"
+                    self.assertIn("--unit=" + expected_unit, args[0])
+                    self.assertIn("--bootstrap", args[0])
+                    self.assertNotIn("--helper", args[0])
                     return receipt
-                with patch.object(runner.subprocess, "Popen", side_effect=delivered) as launch:
+                with admitted_bootstrap_plan(plan, directory), \
+                        patch.object(runner.subprocess, "Popen", side_effect=delivered) as launch:
                     if mode == "missing":
                         with self.assertRaisesRegex(runner.RunnerError, "startup guard is not bound"):
                             manager.start(identity, plan, cancel)
@@ -1134,8 +1191,9 @@ class RunnerTests(unittest.TestCase):
                         self.assertEqual(guard_calls, [plan["execution_id"]])
                         if mode == "authorized":
                             launch.assert_called_once()
-                            self.assertIs(handle["launch"], receipt)
-                            self.assertFalse(handle["cancel_before_launch"])
+                            self.assertIs(handle["bootstrap"]["launch"], receipt)
+                            self.assertFalse(handle["bootstrap"]["cancel_before_launch"])
+                            self.assertIsNone(handle["helper"])
                         else:
                             launch.assert_not_called()
                             self.assertTrue(manager.inspect(handle)["future_start_blocked"])

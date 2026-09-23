@@ -118,8 +118,10 @@ class Policy:
         try:
             config = json.loads(json.dumps(config, allow_nan=False))
             self._validate(config)
-        except JobError:
-            raise
+        except JobError as error:
+            if error.code == "UNAUTHORIZED":
+                raise
+            raise _bad() from None
         except (ValueError, TypeError, OverflowError, RecursionError):
             raise _bad() from None
         self.config = freeze(config)
@@ -171,13 +173,18 @@ class Policy:
         for ref, profile in config["profiles"].items():
             _ref(ref)
             _keys(profile, {"work_root", "evidence_root", "temporary_root", "python", "sources", "build_caches",
-                "storages", "budgets", "resource_ids"}, {"execution_admission", "display_name"})
+                "storages", "budgets", "resource_ids"}, {"execution_admission", "display_name",
+                "bootstrap_slots", "bootstrap_evidence_store"})
             for field in ("work_root", "evidence_root", "temporary_root", "python"):
                 _path(profile[field])
             roots = [profile[field] for field in ("work_root", "evidence_root", "temporary_root")]
             if any(_overlap(left, right) for index, left in enumerate(roots) for right in roots[index + 1:]):
                 raise _bad()
             writable.extend(roots)
+            if "bootstrap_evidence_store" in profile:
+                from .bootstrap_roots import validate_root
+                binding = validate_root(profile["bootstrap_evidence_store"])
+                writable.append(binding["path"])
             readonly.append(profile["python"])
             _refs(profile["resource_ids"])
             if not profile["resource_ids"]:
@@ -243,6 +250,8 @@ class Policy:
         # root, even when a private profile mistakenly assigns the same path.
         execution_roots = [root for roots, _ in profile_roots for root in roots]
         execution_roots.extend(root for root, _, _ in archives)
+        execution_roots.extend(profile["bootstrap_evidence_store"]["path"]
+                               for profile in config["profiles"].values() if "bootstrap_evidence_store" in profile)
         if any(_overlap(root, control) for root in execution_roots
                for control in (config["broker_root"], config["authority_root"])):
             raise _bad()
@@ -302,6 +311,46 @@ class Policy:
             _path(manager["cgroup"])
             if not manager["cgroup"].startswith("/sys/fs/cgroup/"):
                 raise _bad()
+        # Bootstrap pools are private deployment admission, never caller paths.
+        # Validate declared identities without touching any mounted directory.
+        from .bootstrap_roots import validate_root, validate_slots
+        slot_roots, stores, store_resources = [], [], []
+        uid = config.get("process_manager", {}).get("uid")
+        for profile in config["profiles"].values():
+            if "bootstrap_slots" in profile:
+                slots = validate_slots(profile["bootstrap_slots"], expected_uid=uid,
+                    parent_roots={name: profile[name + "_root"] for name in ("work", "evidence", "temporary")},
+                    forbidden_roots=[*forbidden, config["broker_root"], config["authority_root"], *readonly])
+                slot_roots.extend(root for slot in slots for root in slot["roots"].values())
+            if "bootstrap_evidence_store" in profile:
+                if "bootstrap_slots" not in profile:
+                    raise _bad()
+                store = validate_root(profile["bootstrap_evidence_store"], expected_uid=uid)
+                # A retained evidence store is separate from every job/NAS
+                # writable tree; otherwise sealing could bypass that tree's
+                # lease and mutate a different operation's retained files.
+                if any(_overlap(store["path"], path) for roots, _ in profile_roots for path in roots):
+                    raise _bad()
+                if any(_overlap(store["path"], path) for path, _, _ in archives):
+                    raise _bad()
+                stores.append(store)
+                store_resources.append(set(profile["resource_ids"]))
+        for index, root in enumerate(slot_roots):
+            for other in [*slot_roots[index + 1:], *stores]:
+                if (_overlap(root["path"], other["path"])
+                        or (root["device"], root["inode"]) == (other["device"], other["inode"])):
+                    raise _bad()
+        for root in [*slot_roots, *stores]:
+            if any((root["device"], root["inode"]) == (binding["device"], binding["inode"])
+                   for _, _, binding in archives):
+                raise _bad()
+        for index, store in enumerate(stores):
+            for other_index in range(index + 1, len(stores)):
+                other = stores[other_index]
+                same_inode = (store["device"], store["inode"]) == (other["device"], other["inode"])
+                if _overlap(store["path"], other["path"]) or same_inode:
+                    if (store != other or not store_resources[index] & store_resources[other_index]):
+                        raise _bad()
 
     @classmethod
     def from_file(cls, path: str | Path) -> "Policy":

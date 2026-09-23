@@ -13,7 +13,7 @@ import threading
 import time
 
 from .contract import JobError, Principal, validate_submit, validate_tool_args
-from . import budget
+from . import bootstrap_roots, budget
 from .resources import ResourceManager
 from .state import encoded
 
@@ -395,6 +395,22 @@ class Broker:
                             pass
                         else:
                             plan.update(budget_grant=grant, budgets=grant["limits"])
+                        allocation = record.get("bootstrap_grants", {}).get(phase)
+                        if allocation is not None:
+                            # Original consumption only; recovery never reserves
+                            # another slot or invents missing preparation state.
+                            plan["bootstrap_allocation"] = thaw(allocation)
+                            if phase == "evidence":
+                                plan["evidence_snapshot"] = thaw(record.get("frozen_snapshot", {}))
+                                retained = allocation.get("retained_paths", [])
+                                if len(retained) == 1:
+                                    plan["evidence_store_root"] = retained[0]
+                        plan["delivery_intents"] = thaw(record.get("delivery_intents", []))
+                        if row["namespace"] == "reconcile":
+                            parent = self.state.get("job", row["parent"], tx)
+                            original = parent["record"].get("bootstrap_grants", {}).get("preflight")
+                            if original is not None:
+                                plan["observed_roots"] = thaw(original["roots"])
                         reconnect.append(((row["namespace"], row["id"]), handle, plan))
         for key, handle, plan in reconnect:
             if hasattr(self.runner, "reattach"):
@@ -511,9 +527,9 @@ class Broker:
         evidence_id = f"{row['namespace']}-{row['id']}-evidence"
         history = tx.execute("SELECT seq,kind,data_json FROM events WHERE namespace=? AND id=? "
                              "AND kind IN ('EXECUTION_INTENT','LAUNCH_ENQUEUED','MANAGER_DELIVERY_INTENT') "
-                             "ORDER BY seq LIMIT 10", keys).fetchall()
-        if len(history) > 9:
-            return False  # At most three fixed phases, one event of each kind.
+                             "ORDER BY seq LIMIT 13", keys).fetchall()
+        if len(history) > 12:
+            return False  # Three phases; one intent/enqueue and up to two fixed deliveries each.
         intents = []
         for event in history:
             data = json.loads(event["data_json"])
@@ -525,7 +541,9 @@ class Broker:
                     return False
                 intents.append(event["seq"])
             elif event["seq"] < recovery["seq"] and (
-                    "evidence" in data.get("handles", {}) or evidence_id in data.get("delivery_intents", [])):
+                    "evidence" in data.get("handles", {}) or any(
+                        item == evidence_id or item in (evidence_id + ":bootstrap", evidence_id + ":helper")
+                        for item in data.get("delivery_intents", []))):
                 return False
         return len(intents) == (1 if intent_committed else 0)
 
@@ -573,6 +591,18 @@ class Broker:
                 handles = row["record"]["handles"]
                 if phase in handles:
                     raise JobError("CONFLICT", "Execution intent cannot be replayed")
+                profile = self.policy.profiles[parent["request"]["profile_ref"]]
+                allocation = None
+                if "bootstrap_slots" in profile:
+                    extras = None
+                    if phase == "evidence":
+                        store = thaw(profile.get("bootstrap_evidence_store"))
+                        if (store is None or self.evidence is None
+                                or store["path"] != str(self.evidence.root)):
+                            raise JobError("UNSUPPORTED", "Evidence writer has no exact bootstrap admission")
+                        extras = {"evidence_store": store}
+                    allocation = bootstrap_roots.reserve(self.state, tx, row, phase,
+                        thaw(profile["bootstrap_slots"]), extra_roots=extras)
                 handles[phase] = {"execution_id": execution_id, "intent_only": True}
                 self.state.update(tx, namespace, identity, "EXECUTION_INTENT", {
                     "phase": phase.upper(), "lifecycle": "RUNNING", "handles": handles,
@@ -582,8 +612,13 @@ class Broker:
                     "helper_started": row["record"]["helper_started"] if row["record"]["helper_started"] is True or phase == "business" else None})
                 plan = dict(row["plan"], phase=phase, execution_id=execution_id,
                             budget_grant=grant, budgets=grant["limits"])
+                if allocation is not None:
+                    plan["bootstrap_allocation"] = allocation
                 if namespace == "reconcile":
                     plan["execution"] = dict(plan.get("execution", {}), budgets=grant["limits"])
+                    original = parent["record"].get("bootstrap_grants", {}).get("preflight")
+                    if original is not None:
+                        plan["observed_roots"] = thaw(original["roots"])
                 plan["preflight_facts"] = row["record"].get("facts", {})
                 if phase == "evidence":
                     plan["evidence_snapshot"] = row["record"]["frozen_snapshot"]
@@ -599,13 +634,16 @@ class Broker:
                 saved[phase] = thaw(handle)
                 self.state.update(tx, namespace, identity, "LAUNCH_ENQUEUED", {"handles": saved})
 
-    def _guard_start(self, execution_id, launch):
+    def _guard_start(self, execution_id, launch, *, stage=None, bootstrap_proof=None):
         """Serialize final fixed manager delivery with durable cancel/revocation.
 
         Manager preparation and observation occur outside this fence. The callback
         is only the already fixed, short local Popen request, never a manager wait.
         Returning None proves this particular delivery was not issued.
         """
+        if stage not in (None, "bootstrap", "helper") or (stage != "helper" and bootstrap_proof is not None):
+            raise JobError("IO_UNCERTAIN", "Unknown manager delivery substage")
+        delivery_id = execution_id if stage is None else execution_id + ":" + stage
         with self.fence:
             owner = self._execution_owners.get(execution_id)
             if owner is None:
@@ -623,10 +661,33 @@ class Broker:
                 if record.get("recovered") and not (
                         phase == "evidence" and self._first_recovered_evidence(tx, row, intent_committed=True)):
                     return None
-                if execution_id in record.get("delivery_intents", []):
+                delivered = record.get("delivery_intents", [])
+                if (execution_id in delivered or delivery_id in delivered
+                        or (stage is None and any(item.startswith(execution_id + ":") for item in delivered))):
                     return None  # A prior delivery intent is never issued a second time.
+                if stage == "bootstrap" and execution_id + ":helper" in delivered:
+                    return None
+                if stage == "helper":
+                    if execution_id + ":bootstrap" not in delivered:
+                        raise JobError("IO_UNCERTAIN", "Helper lacks its durable preparation intent")
+                    proof = thaw(bootstrap_proof)
+                    if (type(proof) is not dict or proof.get("execution_id") != execution_id
+                            or proof.get("unit") != "lhj-" + hashlib.sha256((execution_id + ":bootstrap").encode()).hexdigest() + ".service"
+                            or proof.get("state") != "EXITED" or type(proof.get("exit_code")) is not int
+                            or proof["exit_code"] != 0
+                            or not all(proof.get(key) is True for key in ("future_start_blocked", "tree_exited",
+                                "collectors_stopped", "writers_stopped", "effects_checked"))
+                            or type(proof.get("result")) is not dict
+                            or proof["result"].get("bootstrap_prepared") is not True):
+                        raise JobError("IO_UNCERTAIN", "Preparation completion is not proven")
                 grant = budget.stored_grant(row, phase)
-                if budget.remaining_ns(grant) <= grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS:
+                if stage is not None:
+                    allocation = record.get("bootstrap_grants", {}).get(phase)
+                    bootstrap_roots.validate_grant(allocation, execution_id=execution_id,
+                        phase=phase, operation_id=row["parent"], namespace=namespace, record_id=identity)
+                    bootstrap_roots.assert_reserved(tx, allocation)
+                remaining = budget.remaining_ns(grant) if stage is None else budget.phase_remaining_ns(grant)
+                if remaining <= grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS:
                     raise JobError("LIMIT_EXCEEDED", "Operation has no runtime left after its required stop grace")
                 parent = row if namespace == "job" else self.state.get("job", row["parent"], tx)
                 if record["generation"] != self._generation(tx) or parent["request"]["expected"] != thaw(self.policy.expected(parent["request"]["profile_ref"])):
@@ -649,8 +710,11 @@ class Broker:
                         raise
                     if current.get("plan_digest") != row["plan"].get("plan_digest"):
                         return None
+                if stage == "helper":
+                    prepared = dict(record.get("bootstrap_completed", {}), **{phase: proof})
+                    self.state.update(tx, namespace, identity, "BOOTSTRAP_COMPLETE", {"bootstrap_completed": prepared})
                 self.state.update(tx, namespace, identity, "MANAGER_DELIVERY_INTENT", {
-                    "delivery_intents": [*record.get("delivery_intents", []), execution_id]})
+                    "delivery_intents": [*delivered, delivery_id]})
             return launch()
 
     def _complete(self, namespace, identity, proof):

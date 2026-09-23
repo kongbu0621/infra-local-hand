@@ -27,11 +27,11 @@ import time
 from typing import Mapping
 
 if __package__:
-    from . import budget, ledger_jobs
+    from . import bootstrap, bootstrap_roots, budget, ledger_jobs
     from .contract import JobError
 else:  # fixed -I script entry: importing only this installed sibling
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from local_hand_jobs import budget, ledger_jobs
+    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs
     from local_hand_jobs.contract import JobError
 
 
@@ -227,7 +227,7 @@ def _mount_for(path):
     return max(candidates, key=lambda item: len(item["target"]))
 
 
-def _verify_project_quota(path, byte_limit):
+def _verify_project_quota(path, byte_limit, *, expected_identity=None):
     """Require a real inherited kernel project hard quota, not a config bool."""
     mount = _mount_for(path)
     if mount["type"] not in ("ext4", "xfs"):
@@ -238,6 +238,11 @@ def _verify_project_quota(path, byte_limit):
     descriptor = os.open(existing, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     original_error = None
     try:
+        if expected_identity is not None:
+            info = os.fstat(descriptor)
+            if (str(existing) != str(path) or (info.st_dev, info.st_ino, info.st_uid) != (
+                    expected_identity["device"], expected_identity["inode"], expected_identity["uid"])):
+                raise RunnerError("IO_UNCERTAIN", "Quota observation belongs to another root identity")
         fsx = bytearray(28)
         fcntl.ioctl(descriptor, 0x801C581F, fsx, True)  # FS_IOC_FSGETXATTR
         flags, _, _, project_id, _ = struct.unpack("=IIIII", fsx[:20])
@@ -262,7 +267,7 @@ def _verify_project_quota(path, byte_limit):
 
 def _runtime_microseconds(grant, now=None):
     """Reserve the full stop grace inside the phase/operation wall envelope."""
-    remaining = budget.remaining_ns(grant, now=now)
+    remaining = budget.phase_remaining_ns(grant, now=now)
     limits = grant["limits"]
     runtime = min(limits["wall_seconds"] * budget.NANOSECONDS, remaining)
     runtime -= limits["terminate_grace_seconds"] * budget.NANOSECONDS
@@ -314,11 +319,10 @@ class SystemdManager:
         self._start_guard = callback
 
     def support(self):
-        # _start still performs directory/plan/quota I/O before the supervised
-        # unit exists. A Python observer thread is not an independently stoppable
-        # bootstrap execution. Block production even on an otherwise capable host
-        # until that boundary has an admitted, persistent implementation.
-        reasons = ["SUPERVISED_BOOTSTRAP_NOT_IMPLEMENTED"]
+        # Both launch stages are implemented, but this candidate has no real
+        # delegated-host integration evidence. No configuration switch promotes
+        # synthetic manager tests into production support.
+        reasons = ["E3_SUPERVISION_UNVERIFIED"]
         if sys.platform != "linux": reasons.append("Linux is required")
         try:
             if Path("/proc/1/comm").read_text().strip() != "systemd": reasons.append("PID 1 is not systemd")
@@ -396,64 +400,46 @@ class SystemdManager:
                     raise RunnerError("IO_UNCERTAIN", "manager client cleanup was incomplete") from cleanup_error
 
     def _admit(self, plan):
+        """Pure plan admission; writable storage is touched only by bootstrap."""
         support = self.support()
-        if not support["supported"]: raise RunnerError("UNSUPPORTED", "; ".join(support["reasons"]))
+        if not support["supported"]:
+            raise RunnerError("UNSUPPORTED", "; ".join(support["reasons"]))
         config = self.configuration
-        slice_name = config.get("slice", "")
-        delegate = config.get("cgroup", "")
-        if not re.fullmatch(r"[a-z0-9-]+\.slice", slice_name) or not delegate.startswith("/sys/fs/cgroup/"):
+        if (not re.fullmatch(r"[a-z0-9-]+\.slice", config.get("slice", "")) or
+                not config.get("cgroup", "").startswith("/sys/fs/cgroup/")):
             raise RunnerError("UNSUPPORTED", "invalid predelegated slice admission")
-        delegation = Path(delegate)
-        if delegation.resolve() != delegation or not os.access(delegation / "cgroup.procs", os.W_OK):
-            raise RunnerError("UNSUPPORTED", "cgroup delegation unavailable")
-        shown = self._command("show", slice_name, "--property=ControlGroup", "--value")
-        if shown.returncode or shown.stdout.decode().strip() != delegate[len("/sys/fs/cgroup"):]:
-            raise RunnerError("UNSUPPORTED", "slice and delegated cgroup differ")
         execution = _plain(plan.get("execution", plan))
         if plan.get("budgets"):
             execution["budgets"] = _plain(plan["budgets"])
-        if plan.get("phase") == "reconcile":
-            suffix = hashlib.sha256(plan["execution_id"].encode()).hexdigest()[:16]
-            original_roots = dict(execution["roots"])
-            execution["roots"] = {key: path + "-observe-" + suffix for key, path in original_roots.items()}
+        phase = plan.get("phase", "business")
+        allocation = bootstrap_roots.validate_grant(_plain(plan.get("bootstrap_allocation")),
+            execution_id=plan["execution_id"], phase=phase, operation_id=execution["operation_id"])
+        original_roots = _plain(plan.get("observed_roots", execution["roots"]))
+        execution = bootstrap_roots.bind_execution(execution, allocation)
+        if phase == "reconcile":
             execution["observed_roots"] = original_roots
-            execution["writable"] = list(execution["roots"].values())
             execution["readonly"] = execution.get("readonly", []) + list(original_roots.values())
             execution["environment"] = ledger_jobs.clean_environment(execution["roots"]["temporary"])
             if execution.get("storage"):
                 execution["observed_storage"] = execution.pop("storage")
                 execution["readonly"].append(execution["observed_storage"]["archive_root"])
-        if plan.get("phase") == "evidence":
-            snapshot = plan.get("evidence_snapshot")
-            store_root = plan.get("evidence_store_root")
-            if not isinstance(snapshot, dict) or not isinstance(store_root, str):
-                raise RunnerError("UNSUPPORTED", "trusted evidence snapshot is missing")
-            suffix = hashlib.sha256(plan["execution_id"].encode()).hexdigest()[:16]
-            original_readonly = execution.get("readonly", [])
-            execution["roots"] = {key: path + "-seal-" + suffix for key, path in execution["roots"].items()}
-            execution["writable"] = list(execution["roots"].values()) + [store_root]
-            execution["readonly"] = original_readonly + [snapshot["root"]]
+        if phase == "evidence":
+            snapshot, store_root = plan.get("evidence_snapshot"), plan.get("evidence_store_root")
+            if (not isinstance(snapshot, dict) or not isinstance(store_root, str)
+                    or allocation["retained_paths"] != [store_root]):
+                raise RunnerError("UNSUPPORTED", "trusted evidence snapshot and store allocation are required")
+            execution["readonly"] = execution.get("readonly", []) + [snapshot["root"]]
             execution["environment"] = ledger_jobs.clean_environment(execution["roots"]["temporary"])
             execution["evidence_snapshot"], execution["evidence_store_root"] = snapshot, store_root
             execution["broker_events"] = _plain(plan.get("broker_events", snapshot.get("broker_events", [])))
             execution["storage"] = {}
         if execution.get("storage"):
-            binding = execution["storage"].get("stable_mount_binding")
-            if not isinstance(binding, dict) or set(binding) != {"source", "root", "type", "device", "inode"}:
-                raise RunnerError("UNSUPPORTED", "exact NAS namespace binding required")
-            # Network filesystem server quotas cannot be proved using a local
-            # boolean. This kernel query fails closed unless the OS exposes an
-            # enforceable quota for this exact admitted writable archive root.
             raise RunnerError("UNSUPPORTED", "network archive hard quota adapter is not implemented; NAS execution is blocked")
-        budgets = execution["budgets"]
-        quotas = {name: _verify_project_quota(path, budgets["temporary_bytes"] if name == "temporary" else budgets["reservation_bytes"])
-                  for name, path in execution["roots"].items()}
-        for path in set(execution["writable"]) - set(execution["roots"].values()):
-            quotas[path] = _verify_project_quota(path, budgets["reservation_bytes"])
-        distinct = {(item["mount"]["source"], item["project_id"]): item["hard_bytes"] for item in quotas.values()}
-        if sum(distinct.values()) > budgets["reservation_bytes"]:
-            raise RunnerError("UNSUPPORTED", "combined hard quotas exceed the reserved peak capacity")
-        return execution, quotas
+        execution["writable"] = list(allocation["paths"])
+        if any(re.search(r"[\s\\%$]", path) for path in execution["writable"] + execution.get("readonly", [])):
+            raise RunnerError("UNSUPPORTED", "systemd path admission requires unambiguous paths")
+        execution["bootstrap_allocation"] = allocation
+        return execution, {}
 
     def start(self, identity, plan, cancel_event):
         try:
@@ -465,113 +451,302 @@ class SystemdManager:
                 raise _NoStartError(error.code, str(error)) from error
             raise
 
-    def _start(self, identity, plan, cancel_event):
-        plan = dict(plan, execution_id=identity["execution_id"])
-        execution, quotas = self._admit(plan)
-        grant = _plain(plan.get("budget_grant"))
+    @staticmethod
+    def _bootstrap_unit(execution_id):
+        return "lhj-" + hashlib.sha256((execution_id + ":bootstrap").encode()).hexdigest() + ".service"
+
+    def _properties(self, execution, stage):
+        limits = budget.substage_limits(execution["budget_grant"], stage)
+        return {"Slice": self.configuration["slice"], "Type": "exec", "KillMode": "control-group",
+            "SendSIGKILL": "yes", "RemainAfterExit": "yes", "RuntimeMaxSec": "1us",
+            "TimeoutStopSec": str(limits["terminate_grace_seconds"]), "MemoryMax": str(limits["memory_bytes"]),
+            "TasksMax": str(limits["processes"]), "CPUQuota": _cpu_quota(limits), "CPUQuotaPeriodSec": "1ms",
+            "LimitCPU": str(limits["cpu_seconds"]), "LimitFSIZE": str(limits["temporary_bytes"]),
+            "NoNewPrivileges": "yes", "ProtectSystem": "strict", "ProtectHome": "read-only",
+            "PrivateUsers": "yes", "PrivateMounts": "yes", "PrivateNetwork": "yes", "PrivateDevices": "yes",
+            "RestrictSUIDSGID": "yes", "ProtectKernelTunables": "yes", "ProtectKernelModules": "yes",
+            "ProtectControlGroups": "yes", "RestrictNamespaces": "yes", "LockPersonality": "yes", "UMask": "0077",
+            "InaccessiblePaths": "/tmp /var/tmp /dev/shm /run/dbus /run/user/" + str(os.geteuid()),
+            "StandardOutput": "null", "StandardError": "null",
+            "ReadWritePaths": " ".join(execution["writable"]),
+            "ReadOnlyPaths": " ".join(execution.get("readonly", []))}
+
+    def _new_stage(self, handle, stage):
+        identity, execution = handle["identity"], handle["execution"]
+        unit = self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else identity["unit"]
+        return {"unit": unit, "boot_id": execution["budget_grant"]["boot_id"],
+            "result_path": execution["result_path"], "cgroup_parent": self.configuration["cgroup"],
+            "cancel_event": handle["cancel_event"], "launch": None, "launch_acked": False,
+            "stop_acked": False, "stop_requested": False, "started": time.monotonic(),
+            "deadline": execution["budgets"]["wall_seconds"], "invocation_id": None,
+            "execution_id": identity["execution_id"], "cancel_before_launch": False,
+            "identity": dict(identity, unit=unit), "recovered": False, "delivery_attempted": False,
+            "budget_grant": execution["budget_grant"],
+            "phase_deadline_boottime_ns": execution["phase_deadline_boottime_ns"], "stage": stage}
+
+    def _deliver_stage(self, handle, stage, *, bootstrap_proof=None):
         try:
-            budget.validate_grant(grant, execution_id=identity["execution_id"], phase=identity["phase"],
-                                  operation_id=identity["job_key"], budgets=execution["budgets"])
-            runtime_us = _runtime_microseconds(grant)
+            return self._deliver_stage_impl(handle, stage, bootstrap_proof=bootstrap_proof)
         except JobError as error:
             raise RunnerError(error.code, str(error)) from error
-        quota = _cpu_quota(grant["limits"])
-        unit = identity["unit"]
-        if unit in self._runs: raise RunnerError("CONFLICT", "manager identity reuse")
-        for root in execution["roots"].values():
-            path = Path(root)
-            path.mkdir(mode=0o700, parents=False, exist_ok=True)
-            if path.resolve() != path or not path.is_dir() or path.stat().st_uid != os.geteuid():
-                raise RunnerError("UNSUPPORTED", "job root ownership mismatch")
-        execution = dict(execution)
-        execution["phase"] = plan.get("phase", "business")
-        execution["execution_id"] = identity["execution_id"]
-        execution["budget_grant"] = grant
-        execution["runtime_cap_us"] = runtime_us
-        execution["unit"] = identity["unit"]
-        execution["quota_observation"] = quotas
-        execution["parent_mount_namespace"] = os.readlink("/proc/self/ns/mnt")
-        evidence = Path(execution["roots"]["evidence"])
-        suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
-        plan_path = evidence / ("plan-" + suffix + ".json")
-        result_path = evidence / ("result-" + suffix + ".json")
-        execution["result_path"] = str(result_path)
-        raw = json.dumps(execution, sort_keys=True, separators=(",", ":")).encode()
-        with plan_path.open("xb") as stream:
-            os.chmod(plan_path, 0o400); stream.write(raw); stream.flush(); os.fsync(stream.fileno())
-        limits = execution["budgets"]
-        properties = {"Slice": self.configuration["slice"], "Type": "exec", "KillMode": "control-group",
-            "SendSIGKILL": "yes", "RemainAfterExit": "yes", "RuntimeMaxSec": str(runtime_us) + "us",
-            "TimeoutStopSec": str(limits["terminate_grace_seconds"]), "MemoryMax": str(limits["memory_bytes"]),
-            "TasksMax": str(limits["processes"]), "CPUQuota": quota, "CPUQuotaPeriodSec": "1ms", "LimitCPU": str(limits["cpu_seconds"]),
-            "LimitFSIZE": str(limits["temporary_bytes"]), "NoNewPrivileges": "yes", "ProtectSystem": "strict",
-            "ProtectHome": "read-only", "PrivateUsers": "yes", "PrivateMounts": "yes", "PrivateNetwork": "yes", "PrivateDevices": "yes", "RestrictSUIDSGID": "yes",
-            "ProtectKernelTunables": "yes", "ProtectKernelModules": "yes", "ProtectControlGroups": "yes",
-            "RestrictNamespaces": "yes", "LockPersonality": "yes", "UMask": "0077",
-            "InaccessiblePaths": "/tmp /var/tmp /dev/shm /run/dbus /run/user/" + str(os.geteuid()), "StandardOutput": "null", "StandardError": "null",
-            "ReadWritePaths": " ".join(execution["writable"]), "ReadOnlyPaths": " ".join(execution.get("readonly", []))}
-        if execution.get("storage"):
-            archive = execution["storage"]["archive_root"]
-            properties["PrivateMounts"] = "yes"
-            properties["BindPaths"] = archive + ":" + archive
-        if any(re.search(r"[\s\\]", p) for p in execution["writable"] + execution.get("readonly", [])):
-            raise RunnerError("UNSUPPORTED", "systemd path admission requires unambiguous paths")
-        command = ["/usr/bin/systemd-run", "--user", "--quiet", "--unit=" + unit]
+
+    def _deliver_stage_impl(self, handle, stage, *, bootstrap_proof=None):
+        execution = handle["execution"]
+        part = handle[stage] = self._new_stage(handle, stage)
+        properties = self._properties(execution, stage)
+        command = ["/usr/bin/systemd-run", "--user", "--quiet", "--unit=" + part["unit"],
+                   "--description=Local-Hand-supervised-" + stage]
         command.extend("--property=" + key + "=" + value for key, value in properties.items() if value)
-        command.extend(["--", execution["python"], "-I", str(Path(__file__).resolve()), "--helper", str(plan_path)])
-        handle = {"unit": unit, "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
-                  "result_path": str(result_path), "cgroup_parent": self.configuration["cgroup"],
-                  "cancel_event": cancel_event, "launch": None, "launch_acked": False, "stop_acked": False,
-                  "stop_requested": False, "started": time.monotonic(), "deadline": limits["wall_seconds"],
-                  "invocation_id": None, "execution_id": identity["execution_id"], "cancel_before_launch": False,
-                  "identity": dict(identity), "recovered": False, "delivery_attempted": False,
-                  "budget_grant": grant, "phase_deadline_boottime_ns": None}
-        self._runs[unit] = handle
-        if cancel_event.is_set():
-            handle["cancel_before_launch"] = True
-            return handle
-        # The last request delivery shares the broker's durable cancellation
-        # and policy-generation fence. There is no event-only production path.
-        # Popen enqueues the fixed manager client; it never waits for systemd's
-        # acceptance. An already delivered client still needs delayed-start proof.
+        script = str(Path(__file__).absolute())
+        if any(re.search(r"[\s\\%$]", path) for path in (script, execution["python"])):
+            raise RunnerError("UNSUPPORTED", "systemd executable paths must not contain specifiers")
+        if stage == "bootstrap":
+            payload = {"execution": execution, "allocation": execution["bootstrap_allocation"]}
+            command.extend(["--", execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)])
+        else:
+            command.extend(["--", execution["python"], "-I", script, "--helper", handle["plan_path"]])
+        environment = {"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": "/run/user/" + str(os.geteuid())}
+        bootstrap.check_argv(command, environment)
         if self._start_guard is None:
             raise RunnerError("UNSUPPORTED", "the durable broker startup guard is not bound")
         def deliver():
-            if cancel_event.is_set():
+            if handle["cancel_event"].is_set():
                 return None
-            # Preparation and broker queueing never renew the durable deadline.
-            # The absolute grant also reaches the helper because systemd may
-            # activate a delivered unit later than this final delivery fence.
-            try:
-                now = budget.current_clock()
-                final_us = min(runtime_us, _runtime_microseconds(grant, now=now))
-            except JobError as error:
-                raise RunnerError(error.code, str(error)) from error
+            final_us = min(_runtime_microseconds(execution["budget_grant"]),
+                _deadline_remaining((execution["budget_grant"], execution["phase_deadline_boottime_ns"])) // 1000)
+            if final_us <= 0:
+                raise JobError("LIMIT_EXCEEDED", "No bounded launch runtime remains")
             for index, argument in enumerate(command):
                 if argument.startswith("--property=RuntimeMaxSec="):
                     command[index] = "--property=RuntimeMaxSec=" + str(final_us) + "us"
-            handle["phase_deadline_boottime_ns"] = now["boottime_ns"] + final_us * 1000
-            # Mark before Popen: an exception does not prove no process was created.
-            handle["delivery_attempted"] = True
-            handle["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, env={"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": "/run/user/" + str(os.geteuid())})
-            return handle["launch"]
+            # The durable guard records each unique stage before entering here.
+            # Neither a Popen exception nor a lost return proves no delivery.
+            handle["delivery_attempted"] = part["delivery_attempted"] = True
+            part["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, env=environment)
+            return part["launch"]
         try:
-            accepted = self._start_guard(identity["execution_id"], deliver)
+            options = {"stage": stage}
+            if stage == "helper": options["bootstrap_proof"] = bootstrap_proof
+            accepted = self._start_guard(handle["identity"]["execution_id"], deliver, **options)
         except JobError as error:
             raise RunnerError(error.code, str(error)) from error
         except OSError as error:
             raise RunnerError("IO_UNCERTAIN", "manager launch acknowledgement missing") from error
         if accepted is None:
-            if handle["launch"] is not None:
+            if part["delivery_attempted"]:
                 raise RunnerError("IO_UNCERTAIN", "startup guard returned no receipt after manager delivery")
-            handle["cancel_before_launch"] = True
+            part["cancel_before_launch"] = True
+        return part
+
+    def _start(self, identity, plan, cancel_event):
+        plan = dict(plan, execution_id=identity["execution_id"])
+        try:
+            execution, _ = self._admit(plan)
+            allocation = bootstrap_roots.validate_grant(_plain(plan.get("bootstrap_allocation")),
+                execution_id=identity["execution_id"], phase=identity["phase"], operation_id=identity["job_key"])
+            grant = _plain(plan.get("budget_grant"))
+            budget.validate_grant(grant, execution_id=identity["execution_id"], phase=identity["phase"],
+                                  operation_id=identity["job_key"], budgets=execution["budgets"])
+            runtime_us = _runtime_microseconds(grant)
+            budget.substage_limits(grant, "bootstrap")
+            budget.substage_limits(grant, "helper")
+        except JobError as error:
+            raise RunnerError(error.code, str(error)) from error
+        if identity["unit"] in self._runs:
+            raise RunnerError("CONFLICT", "manager identity reuse")
+        execution = dict(execution, phase=identity["phase"], execution_id=identity["execution_id"],
+            operation_id=identity["job_key"], budget_grant=grant, bootstrap_allocation=allocation,
+            runtime_cap_us=runtime_us, unit=identity["unit"],
+            bootstrap_unit=self._bootstrap_unit(identity["execution_id"]),
+            parent_mount_namespace=os.readlink("/proc/self/ns/mnt"),
+            phase_deadline_boottime_ns=budget.phase_deadline_ns(grant) - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS)
+        suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
+        execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
+        handle = {"version": 2, "unit": identity["unit"], "identity": dict(identity), "execution": execution,
+            "plan_path": str(Path(execution["roots"]["evidence"]) / bootstrap.plan_name(identity["execution_id"])),
+            "cancel_event": cancel_event, "bootstrap": None, "helper": None, "stage": "bootstrap",
+            "delivery_attempted": False, "recovered": False, "helper_attempted": False,
+            "bootstrap_proof": None, "transition_error": None}
+        self._runs[identity["unit"]] = handle
+        self._deliver_stage(handle, "bootstrap")
         return handle
 
+    @staticmethod
+    def _export_unit(handle):
+        if handle is None:
+            return None
+        fields = ("unit", "boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked",
+                  "invocation_id", "execution_id", "phase_deadline_boottime_ns", "delivery_attempted")
+        return {key: handle.get(key) for key in fields}
+
     def export_handle(self, handle):
+        if handle.get("version") == 2:
+            return {**handle["identity"], "manager": {"version": 2, "stage": handle["stage"],
+                "bootstrap": self._export_unit(handle["bootstrap"]), "helper": self._export_unit(handle["helper"]),
+                "allocation_digest": handle["execution"]["bootstrap_allocation"]["grant_digest"]}}
         fields = ("boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked", "invocation_id", "execution_id", "phase_deadline_boottime_ns")
         return {**{key: value for key, value in handle["identity"].items() if key != "manager"},
                 "manager": {key: handle.get(key) for key in fields}}
+
+    def _bootstrap_terminal(self, handle, proof, outcome, error=None):
+        result = {"outcome": outcome, "business_started": False,
+                  "helper_started": not handle["bootstrap"].get("cancel_before_launch", False),
+                  "bootstrap_prepared": proof.get("result", {}).get("bootstrap_prepared", False)}
+        if error is not None:
+            result["error"] = error
+        # Zero here would describe preparation, not completion of this logical
+        # phase. The broker must not promote a refused helper to SUCCEEDED.
+        return {**proof, "exit_code": 1, "result": result,
+                "bootstrap_exit_proof": _plain(proof)}
+
+    def inspect(self, handle):
+        if handle.get("version") != 2:
+            return self._inspect_unit(handle)
+        def observe(part):
+            try:
+                return self._inspect_unit(part)
+            except RunnerError as error:
+                return _unknown(str(error))
+            except Exception:
+                return _unknown("original stage observation is uncertain")
+        first = observe(handle["bootstrap"])
+        first_exited = (first.get("state") == "EXITED" and first.get("future_start_blocked") is True
+                        and first.get("tree_exited") is True)
+        if handle.get("recovered"):
+            # A missing saved receipt cannot prove the old broker did not deliver
+            # the deterministic helper unit. Observe that original identity only;
+            # never resume the transition or manufacture a new start.
+            second = observe(handle["helper"])
+            if not first_exited:
+                return _unknown("bootstrap exit is unresolved; helper identity was independently observed")
+            if second.get("state") == "EXITED":
+                second["effects_checked"] = (second.get("effects_checked") is True and
+                    first.get("result", {}).get("bootstrap_prepared") is True)
+            return second
+        if not first_exited:
+            if handle["helper"] is not None:
+                # One failing manager observation cannot starve the other unit's
+                # budget/exit checks once its delivery may have happened.
+                observe(handle["helper"])
+            return first
+        if first.get("result", {}).get("bootstrap_prepared") is not True:
+            return self._bootstrap_terminal(handle, first,
+                "CANCELLED" if first.get("result", {}).get("outcome") == "CANCELLED" else "FAILED")
+        handle["bootstrap_proof"] = first
+        if handle["transition_error"] is not None and (
+                handle["helper"] is None or not handle["helper"].get("delivery_attempted")):
+            return self._bootstrap_terminal(handle, first, "FAILED", handle["transition_error"])
+        if handle["helper"] is None:
+            if handle["cancel_event"].is_set():
+                return self._bootstrap_terminal(handle, first, "CANCELLED")
+            if handle["helper_attempted"]:
+                return self._bootstrap_terminal(handle, first, "FAILED", handle["transition_error"] or "IO_UNCERTAIN")
+            # Set before validation/delivery. Any exception is observed under the
+            # original identities, never by repeating this transition.
+            handle["helper_attempted"] = True
+            try:
+                self._deliver_stage(handle, "helper", bootstrap_proof=first)
+            except RunnerError as error:
+                handle["transition_error"] = error.code
+                if handle["helper"] is not None and handle["helper"].get("delivery_attempted"):
+                    raise
+                return self._bootstrap_terminal(handle, first, "FAILED", error.code)
+            handle["stage"] = "helper"
+        second = observe(handle["helper"])
+        if handle["helper"].get("cancel_before_launch"):
+            return self._bootstrap_terminal(handle, first, "CANCELLED")
+        return second
+
+    def stop(self, handle):
+        if handle.get("version") != 2:
+            return self._stop_unit(handle)
+        handle["cancel_event"].set()
+        failure = None
+        for part in (handle["bootstrap"], handle["helper"]):
+            if part is not None:
+                try:
+                    self._stop_unit(part)
+                except BaseException as error:
+                    if failure is None:
+                        failure = error
+                    else:
+                        failure.add_note("Additional stage stop failure: " + type(error).__name__)
+        if failure is not None:
+            raise failure
+        return _unknown("original bootstrap and helper identities are being stopped")
+
+    def reattach(self, identity, plan, cancel_event):
+        saved = identity.get("manager", {})
+        if not saved and plan.get("bootstrap_allocation") is not None:
+            # The broker may die before receiving the first manager observation.
+            # Both deterministic identities still need observation, not replay.
+            saved = {"version": 2, "stage": "UNKNOWN", "bootstrap": None, "helper": None,
+                     "allocation_digest": plan["bootstrap_allocation"]["grant_digest"]}
+        if saved.get("version") != 2:
+            if plan.get("bootstrap_allocation") is not None:
+                raise RunnerError("IO_UNCERTAIN", "New bootstrap execution has an incompatible recovery receipt")
+            return self._reattach_legacy(identity, plan, cancel_event)
+        support = self.support()
+        if not support["supported"]:
+            raise RunnerError("IO_UNCERTAIN", "original manager cannot be observed on this host")
+        # Recovery does not authorize launch preparation. Rebuild only durable
+        # root/unit identities, without demanding transient evidence snapshots,
+        # current registry inputs, or a newly usable execution environment.
+        allocation = bootstrap_roots.validate_grant(_plain(plan["bootstrap_allocation"]),
+            execution_id=identity["execution_id"], phase=identity["phase"], operation_id=identity["job_key"])
+        execution = bootstrap_roots.bind_execution(_plain(plan.get("execution", plan)), allocation)
+        if plan.get("budgets"):
+            execution["budgets"] = _plain(plan["budgets"])
+        if saved.get("allocation_digest") != allocation["grant_digest"]:
+            raise RunnerError("IO_UNCERTAIN", "recovery root allocation differs")
+        original_grant = _plain(plan.get("budget_grant"))
+        grant = original_grant
+        try:
+            budget.validate_grant(grant, execution_id=identity["execution_id"], phase=identity["phase"],
+                                  operation_id=identity["job_key"], budgets=execution["budgets"])
+            deadline = budget.phase_deadline_ns(grant) - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS
+        except JobError:
+            # Broken timing never grants runtime and cannot disable observation
+            # or stopping of independently preserved boot/unit identities.
+            grant, deadline = None, None
+        execution = dict(execution, budget_grant=grant, bootstrap_allocation=allocation,
+                         phase_deadline_boottime_ns=deadline)
+        suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
+        execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
+        handle = {"version": 2, "unit": identity["unit"], "identity": {key: value for key, value in identity.items() if key != "manager"},
+            "execution": execution, "cancel_event": cancel_event, "stage": saved.get("stage"),
+            "delivery_attempted": True, "recovered": True, "helper_attempted": True,
+            "bootstrap_proof": None, "transition_error": None}
+        for stage in ("bootstrap", "helper"):
+            prior = saved.get(stage)
+            unit = self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else identity["unit"]
+            original_boot = original_grant.get("boot_id") if isinstance(original_grant, dict) else None
+            if not isinstance(original_boot, str) or re.fullmatch(budget.UUID_PATTERN, original_boot) is None:
+                original_boot = None
+            part = {"unit": unit, "identity": dict(identity, unit=unit), "boot_id": original_boot,
+                "result_path": execution["result_path"], "cgroup_parent": self.configuration["cgroup"],
+                "cancel_event": cancel_event, "launch": None, "launch_acked": False, "stop_acked": False,
+                "stop_requested": False, "invocation_id": None, "execution_id": identity["execution_id"],
+                "cancel_before_launch": False, "recovered": True, "budget_grant": grant,
+                "phase_deadline_boottime_ns": deadline, "stage": stage}
+            if prior is not None:
+                if (prior.get("unit") != part["unit"] or prior.get("result_path") != part["result_path"] or
+                        prior.get("execution_id") != identity["execution_id"] or
+                        prior.get("cgroup_parent") != self.configuration["cgroup"] or
+                        (original_boot is not None and prior.get("boot_id") != original_boot)):
+                    raise RunnerError("IO_UNCERTAIN", "recovery stage identity differs")
+                part.update({key: prior.get(key) for key in ("boot_id", "invocation_id")})
+                if (not isinstance(part["boot_id"], str) or re.fullmatch(budget.UUID_PATTERN, part["boot_id"]) is None):
+                    raise RunnerError("IO_UNCERTAIN", "recovery boot identity differs")
+                part["launch_acked"] = prior.get("launch_acked") is True
+                part["stop_acked"] = prior.get("stop_acked") is True
+            part["recovered"] = True
+            # No valid saved runtime can renew an expired phase grant.
+            part["budget_grant"] = grant
+            handle[stage] = part
+        self._runs[identity["unit"]] = handle
+        return handle
 
     def _retained_delivery(self, identity):
         """Read only the original request receipt after a delivery exception."""
@@ -581,7 +756,7 @@ class SystemdManager:
             return handle
         return None
 
-    def reattach(self, identity, plan, cancel_event):
+    def _reattach_legacy(self, identity, plan, cancel_event):
         support = self.support()
         if not support["supported"]:
             raise RunnerError("IO_UNCERTAIN", "original manager cannot be observed on this host")
@@ -626,8 +801,10 @@ class SystemdManager:
         self._runs[identity["unit"]] = handle
         return handle
 
-    def stop(self, handle):
+    def _stop_unit(self, handle):
         handle["stop_requested"] = True
+        if not handle.get("boot_id"):
+            return _unknown("original boot identity is unavailable; stop not retargeted")
         if handle.get("boot_id") and Path("/proc/sys/kernel/random/boot_id").read_text().strip() != handle["boot_id"]:
             return _unknown("original boot identity differs; stop not retargeted")
         if handle.get("invocation_id"):
@@ -644,7 +821,7 @@ class SystemdManager:
             handle["stop_acked"] = result.returncode == 0
         return _unknown("stop accepted; awaiting job and tree exit proof")
 
-    def inspect(self, handle):
+    def _inspect_unit(self, handle):
         if handle["cancel_before_launch"]:
             return {**_unknown(), "state": "EXITED", "future_start_blocked": True, "tree_exited": True,
                 "collectors_stopped": True, "writers_stopped": True, "effects_checked": True, "missing": [],
@@ -693,9 +870,23 @@ class SystemdManager:
                 expired = handle.get("recovered") or time.monotonic() - handle["started"] > handle["deadline"]
             if idle or expired:
                 handle["stop_requested"] = True
-                self.stop(handle)
+                self._stop_unit(handle)
             return {**_unknown(), "state": "RUNNING" if not idle else "UNKNOWN",
                     "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group}}
+        if handle.get("stage") == "bootstrap":
+            exit_code = int(values["ExecMainStatus"]) if values.get("ExecMainCode") == "1" and values.get("ExecMainStatus", "").isdigit() else None
+            prepared = exit_code == 0
+            # The fixed bootstrap entry returns zero only after its admitted
+            # root/quota checks, create-only plan publication, fsync and final
+            # root-binding/deadline checks. No result/plan storage read occurs in
+            # the observer thread; failed/partial preparation keeps its barrier.
+            return {"state": "EXITED", "future_start_blocked": True, "tree_exited": True,
+                "collectors_stopped": True, "writers_stopped": True, "effects_checked": prepared,
+                "exit_code": exit_code, "execution_id": handle["execution_id"], "unit": handle["unit"],
+                "facts": {}, "result": {"outcome": "SUCCEEDED" if prepared else "FAILED",
+                    "bootstrap_prepared": prepared, "business_started": False, "helper_started": True},
+                "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group},
+                "missing": [] if prepared else ["bootstrap preparation failed; partial files remain allocated"]}
         result = {}
         try:
             raw = ledger_jobs.bounded_regular_bytes(handle["result_path"], 1024 * 1024)
@@ -949,7 +1140,14 @@ def _helper(plan):
         if type(cap) is not int or cap <= 0:
             raise JobError("IO_UNCERTAIN", "Helper runtime cap is malformed")
         runtime_us = min(runtime_us, cap)
-    deadline = (grant, now["boottime_ns"] + runtime_us * 1000)
+    fixed_deadline = budget.phase_deadline_ns(grant) - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS
+    if "phase_deadline_boottime_ns" in plan:
+        supplied_deadline = plan["phase_deadline_boottime_ns"]
+        if type(supplied_deadline) is not int or supplied_deadline != fixed_deadline:
+            raise JobError("IO_UNCERTAIN", "Helper phase deadline differs from its original grant")
+    deadline = (grant, min(fixed_deadline, now["boottime_ns"] + runtime_us * 1000))
+    if "bootstrap_allocation" in plan:
+        bootstrap.verify_roots(plan)
     started = time.monotonic()
     remaining_logs = plan["budgets"]["log_bytes"]
     phase = plan["phase"]
@@ -976,7 +1174,10 @@ def _helper(plan):
         if any(os.access(path, os.W_OK) for path in ("/tmp", "/var/tmp", "/dev/shm")):
             raise ledger_jobs.LedgerPlanError("unbounded fallback write path remains accessible")
         os.environ.clear(); os.environ.update(plan["environment"])
-        output["facts"]["cgroup_limits"] = _verify_cgroup_limits(plan)
+        supervision = plan
+        if "bootstrap_allocation" in plan:
+            supervision = dict(plan, budgets=budget.substage_limits(grant, "helper"))
+        output["facts"]["cgroup_limits"] = _verify_cgroup_limits(supervision)
         output["facts"]["temporary"] = ledger_jobs.check_temp_binding(plan["roots"]["temporary"])
         import platform, sqlite3
         environment = {"python": platform.python_version(), "sqlite": sqlite3.sqlite_version,
@@ -1003,7 +1204,9 @@ def _helper(plan):
                 raise RuntimeError("only the broker can register a durable seal")
             store = EvidenceStore(Path(plan["evidence_store_root"]), snapshot_provider=lambda operation: snapshot,
                 register_seal=forbidden_register, is_registered=lambda *args: False,
-                max_source_bytes=plan["budgets"]["reservation_bytes"])
+                max_source_bytes=plan["budgets"]["reservation_bytes"],
+                **({"root_identity": plan["bootstrap_allocation"]["paths"][plan["evidence_store_root"]]}
+                   if "bootstrap_allocation" in plan else {}))
             output["seal_record"] = store.publish_only(snapshot)
             output.update(outcome="SUCCEEDED", effects_checked=True)
         elif phase == "reconcile":
@@ -1119,8 +1322,12 @@ def _helper(plan):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Private fixed runner helper; not a caller command interface")
-    parser.add_argument("--helper", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--helper")
+    mode.add_argument("--bootstrap")
     args = parser.parse_args(argv)
+    if args.bootstrap is not None:
+        return bootstrap.prepare(bootstrap.decode_payload(args.bootstrap))
     path = Path(args.helper)
     if not path.is_absolute() or path.is_symlink(): return 2
     raw = ledger_jobs.bounded_regular_bytes(path, 4 * 1024 * 1024)

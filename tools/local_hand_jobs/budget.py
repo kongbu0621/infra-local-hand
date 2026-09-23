@@ -154,6 +154,44 @@ def remaining_seconds(grant, now=None):
     return remaining_ns(grant, now) / NANOSECONDS
 
 
+def phase_deadline_ns(grant):
+    """The phase end is fixed at reservation, including its final stop grace.
+
+    Internal preparation, manager queueing and the actual helper all consume
+    this same interval. A later subprocess may never renew a phase's wall cap.
+    """
+    validate_grant(grant)
+    return min(grant["deadline_boottime_ns"],
+               grant["reserved_boottime_ns"] + grant["limits"]["wall_seconds"] * NANOSECONDS)
+
+
+def phase_remaining_ns(grant, now=None):
+    now = current_clock() if now is None else now
+    remaining_ns(grant, now=now)  # Includes the boot identity/clock checks.
+    remaining = phase_deadline_ns(grant) - now["boottime_ns"]
+    if remaining <= 0:
+        raise BudgetExhausted("Execution phase wall deadline is exhausted")
+    return remaining
+
+
+def substage_limits(grant, stage):
+    """Fixed, non-refundable CPU shares inside an already reserved phase.
+
+    The units run sequentially and share storage and a single absolute wall
+    envelope. Bootstrap stdout/stderr are null; only the helper gets a log
+    capture. Its existing log allowance is therefore not granted twice.
+    """
+    validate_grant(grant)
+    if stage not in ("bootstrap", "helper"):
+        raise _invalid("Unknown fixed execution substage")
+    limits = dict(grant["limits"])
+    preparation = limits["cpu_seconds"] // 2
+    if preparation < 1:
+        raise BudgetExhausted("Phase CPU budget cannot fund preparation and its helper")
+    limits["cpu_seconds"] = preparation if stage == "bootstrap" else limits["cpu_seconds"] - preparation
+    return limits
+
+
 def _validate_state(row, state):
     namespace, identity, parent = row["namespace"], row["id"], row["parent"]
     original = row["plan"]["budgets"]
