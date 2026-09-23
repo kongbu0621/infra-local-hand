@@ -37,6 +37,8 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 输出仅为 `CONFIG_CONSISTENT/OFFLINE_ONLY`，无宿主观察、ticket 或资源保留。
 准确输入及后续实测步骤见 [Q1 fixture 交接](E3_QUOTA_Q1_FIXTURE_HANDOFF.md)。
 准确源码 `c0b817b`、130 项定向验证及仓库内日志见 [离线配置验证记录](E3_QUOTA_Q1_FIXTURE_VERIFICATION.md)。
+发布后准确 `fbae913` 的 Linux/Windows CI 均通过；源码分别 1017/222 项通过、1/277 项跳过，
+默认 wheel 安装分别 94/10 项检查通过；真实 E3 跳过和管理侧安装未覆盖在报告中保留。
 实际输入仍 NOT_PREPARED；Q1 实机与 E3 仍 BLOCKED，未进入 Q2。
 
 ## 已实现的代码

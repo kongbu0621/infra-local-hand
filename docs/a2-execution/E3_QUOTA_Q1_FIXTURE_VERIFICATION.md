@@ -60,3 +60,27 @@ runtime 的 manager/clock 等事实仍是 LOGIC_ONLY；真实临时文件/匿名
 再固定实际 Q1 运行与停止入口，验证原普通身份结果和管理侧结果。
 当前仍没有完整一键 Q1 实机验收入口；Q1 的真实 ABI/权限/根绑定/enforcement/停止出口通过前，
 不推进 Q2 接口整合或 Q3/Q4 真实三单元验收，不解除 `E3_SUPERVISION_UNVERIFIED`。
+
+## 发布后准确 main CI
+
+准确被测提交 `fbae9133bf924edee71ac71c61d35eda75900b46`，
+[运行 35920369590](https://github.com/kongbu0621/infra-local-hand/actions/runs/35920369590)
+已 completed / success。该提交与上面的源码检查点之间仅有报告/证据文档变更。
+本节及 CI 摘要另作后续纯文档提交，不改被测源码或测试。
+
+| 平台 | 源码通过 | 源码跳过 | 独立安装检查 | 命令数 |
+| --- | ---: | ---: | ---: | ---: |
+| Linux | 1017 | 1 | 94 / PASS | 292 |
+| Windows | 222 | 277 | 10 / PASS | 10 |
+
+Linux 唯一跳过项是实际 systemd/cgroup integration，原文明确包含
+`E3_SUPERVISION_UNVERIFIED` 和专用身份/manager 准入未交付。
+Windows 的 277 个跳过中包括本轮 13 个 Linux 专用 CLI 用例；新增 11 个纯配置方法已执行通过。
+CI 成功不代表 Windows quota 支持或 E3 完成。安装验证针对默认 wheel，
+**不覆盖管理侧 observer 的实际安装、权限或 quota 单元**。
+
+- [准确 run/job/step 状态、时间与计数](validation/q1-fixture-20260923/ci-final.json)。
+- [Linux 原文结果与跳过原因摘录](validation/q1-fixture-20260923/ci-linux-summary.log)。
+- [Windows 原文结果与跳过原因摘录](validation/q1-fixture-20260923/ci-windows-summary.log)。
+
+以上日志文件是原始完成 job 日志的逐字摘录，不是完整日志；完整日志由准确 GitHub run 提供。
