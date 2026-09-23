@@ -2,7 +2,7 @@
 
 本文件记录实现事实，不替代已批准的三层文档。整体状态为 **受监督启动准备已有隔离实现、E1 整体未完成、E3 实机验收 BLOCKED、候选不可部署**；
 NAS provider 仍有代码缺口，原有 helper 结果读取也仍有待实机验证的阻塞边界。本轮是实现检查点，未达到 E1–E3 全部出口。
-新增实现边界见 [受监督启动准备](SUPERVISED_BOOTSTRAP.md)，准确源码、运行结果和产物身份由后续验证报告固定；本页不预填尚未完成的最终数量或提交。
+新增实现边界见 [受监督启动准备](SUPERVISED_BOOTSTRAP.md)，准确源码 `4be98b8`、运行结果、保留的本地安装失败和产物身份见 [本轮验证报告](E1_BOOTSTRAP_VERIFICATION.md)。
 历史准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)、[第五轮复核](E1_E3_RECHECK_5.md)、[第六轮复核](E1_E3_RECHECK_6.md)、[第七轮复核](E1_E3_RECHECK_7.md)、[第八轮复核](E1_E3_RECHECK_8.md)、[第九轮复核](E1_E3_RECHECK_9.md)、[第十轮复核](E1_E3_RECHECK_10.md)及 [fd55 中断交付恢复](E1_E3_RECOVERY_FD55C07.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
@@ -32,7 +32,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | E1 受监督启动准备 | 已有私有 root allocation、bootstrap/helper 双单元、受监督配额／计划发布、两次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
 | E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。真实委派账户、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的验收仍待完成；合成 manager 测试不替代此项 |
 | helper 结果读取 | 原有 `_inspect_unit` 在 observer 线程中读取已退出 helper 的结果文件；长度上界不能证明存储调用有时间上界。本轮未把这条既有读取迁入独立受监督进程，不能宣称所有 storage I/O 已受监督；真实 E3 须验证阻塞时取消与受控停止是否仍可达 |
-| 真实 Unix maintenance transport | 旧隔离宿主曾因 `EPERM` 跳过真实 Unix socket 测试，历史结论只属于相应报告。当前宿主及本次准确源码结果由后续验证记录填写，不沿用旧限制或从总跳过数推断；独立 TCP/SDK 测试不替代 Unix socket |
+| 真实 Unix maintenance transport | 本轮准确源码在当前宿主因 AF_UNIX 限制跳过两项；Linux CI 的这两项通过，仅剩真实 E3 跳过。两种环境分别记账；独立 TCP/SDK 测试不替代 Unix socket |
 | NAS 运行时 | 网络归档硬配额适配器尚未实现。虽然固定四参数调用、前置证据依赖和挂载身份检查已有实现，`ledger.nas.roundtrip` 明确 `UNSUPPORTED`，Plugin 不提交该类型 |
 | E4 | 真实当前客户端 OAuth、私有 MCP 连接及工具结果到可下载文件的宿主桥接未执行。16 MiB 合成证据下载属于 E2 客户端组件验证 |
 | E5 / S2 | 未安装到 GX10、未停止或切换旧服务；S2 仍按独立 OPEN 基线管理 |
@@ -88,4 +88,4 @@ Plugin 不隐式安装 Python 包，不创建真实 endpoint，不提供第二�
 
 CI 保留既有 Windows S1 测试；新 job/Plugin 的当前实现与测试范围为 Linux。
 Linux CI 安装冻结 MCP 依赖并构建独立 Plugin。CI 源码/安装测试通过也不自动关闭上述实机门槛。
-准确候选提交、最终测试数量和产物摘要由随后提交的验证记录固定，不把旧候选计数沿用给新实现。
+准确候选提交、最终测试数量、产物摘要及失败记录见 [本轮验证报告](E1_BOOTSTRAP_VERIFICATION.md)，不把旧候选计数沿用给新实现。

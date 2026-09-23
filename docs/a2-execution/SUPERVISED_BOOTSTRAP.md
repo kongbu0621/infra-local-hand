@@ -1,6 +1,6 @@
 # E1 受监督启动准备：内部实现边界
 
-本说明记录已批准 E1–E3 范围内的内部实现检查点，不修改需求、架构和实施方案的批准原文，不新增公开 Task／七工具参数或生产部署授权。准确候选提交、测试结果和构建产物由后续验证报告固定，此处不预填最终成绩。
+本说明记录已批准 E1–E3 范围内的内部实现检查点，不修改需求、架构和实施方案的批准原文，不新增公开 Task／七工具参数或生产部署授权。准确候选提交、测试结果和构建产物见 [本轮验证报告](E1_BOOTSTRAP_VERIFICATION.md)。
 
 **当前仍不可部署。** `SystemdManager.support()` 固定返回含 `E3_SUPERVISION_UNVERIFIED` 的 `UNSUPPORTED`；没有配置开关把合成测试变成真实 E3 验收。NAS 硬配额 provider 仍缺失，E1 整体和 E1–E3 全部出口都未完成。完整状态见 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
 
@@ -111,4 +111,4 @@ Phase 的 CPU 预算固定分为 bootstrap 的向下取整一半，以及 helper
 
 真实 E3 至少仍需核对：部署账户与 slice/cgroup 委派、两个 unit 的 namespace/资源约束、真实配额、子孙进程和延迟启动、每个交付／回执窗口的 broker 崩溃、阻塞准备 I/O，以及上述结果读取阻塞时取消与受控停止是否仍可达。未确认未来启动已阻断及完整进程树退出时继续 UNKNOWN。若真实证据推翻实现假设，应按既有变更规则修正，不改验收目标。
 
-旧宿主的 Unix socket `EPERM` 只保留在原报告；本次宿主是否支持及准确源码运行结果随后独立记录。E4 当前客户端连接／文件桥接、E5 GX10/S2 切换、E6 真实 NAS 恢复不由本说明完成或扩大授权。`E3_SUPERVISION_UNVERIFIED` 保持固定生产封堵。
+本次当前宿主的 AF_UNIX 限制和 Linux CI 的准确源码结果已在 [验证报告](E1_BOOTSTRAP_VERIFICATION.md) 分别记录。E4 当前客户端连接／文件桥接、E5 GX10/S2 切换、E6 真实 NAS 恢复不由本说明完成或扩大授权。`E3_SUPERVISION_UNVERIFIED` 保持固定生产封堵。
