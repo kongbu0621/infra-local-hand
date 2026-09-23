@@ -8,7 +8,7 @@ NAS 已有固定只读查询与响应校验，但实际查询、写入身份和�
 只读准备检查点的准确源码 `287f6b9`、18 项定向验证、准确 main CI 及私有证据摘要见 [准备验证报告](E3_PREPARATION_VERIFICATION.md)；云端 BLOCKED 不转记为目标宿主验收。
 随后修复了只读探针对合法 nsfs root 的解析误判；准确源码 `88b78b6`、22 项探针验证、准确 main CI 与重测交接见 [nsfs 修复验证](E3_NSFS_REPAIR_VERIFICATION.md)。两份原始宿主 ZIP 已独立核验，固定源码的现场解析修复通过，详见 [GX10 重测证据核验](GX10_E3_NSFS_RETEST_VERIFICATION.md)；整体 readiness 仍为 INCOMPLETE。
 最新一次性输入确认包已独立核验：六项专用 E3 输入为 **NOT_PREPARED**，原 13 组命令和 5 个非零退出码均保留，详见 [输入确认核验](GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md)。现场盘点在此结束，不重复无目标探针。
-下一步的 [quota/harness 三层变更方案](e3-quota-harness/REQUIREMENTS.md) 已获 Owner 批准，scope `LH-E3-QUOTA-HARNESS-v1` 在 A `415327ebdcc251bb055da9931a7a88990f750b7a` 下仅对隔离开发 CLOSED，见 [开工决定](../governance/E3_QUOTA_HARNESS_OWNER_DECISION.md)。当前登记提交只记录批准，未新增该实现或宿主配置；Q1 实测仍依赖专用 fixture。
+下一步的 [quota/harness 三层变更方案](e3-quota-harness/REQUIREMENTS.md) 已获 Owner 批准，scope `LH-E3-QUOTA-HARNESS-v1` 在 A `415327ebdcc251bb055da9931a7a88990f750b7a` 下仅对隔离开发 CLOSED，见 [开工决定](../governance/E3_QUOTA_HARNESS_OWNER_DECISION.md)。独立 C 为 `5a4ea852091db06549a876e42bbd5f95d5869d3b`。随后完成了 [Q1 原生查询原语](../../tools/admin/local_hand_quota_observer/README.md)：准确 FD 查询、原 rc/errno 和前后身份事实；9 项定向测试、33 个 UBSan 模拟场景通过，真实 quota syscall 执行数为 0。管理服务/准入/监督装配和 Q1 实机验证尚未完成，未进入 Q2/Q3。
 历史准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)、[第五轮复核](E1_E3_RECHECK_5.md)、[第六轮复核](E1_E3_RECHECK_6.md)、[第七轮复核](E1_E3_RECHECK_7.md)、[第八轮复核](E1_E3_RECHECK_8.md)、[第九轮复核](E1_E3_RECHECK_9.md)、[第十轮复核](E1_E3_RECHECK_10.md)及 [fd55 中断交付恢复](E1_E3_RECOVERY_FD55C07.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
@@ -23,6 +23,7 @@ Owner 决定及准确范围见 [开工决定](../governance/A2_EXEC_E1_E3_OWNER_
 | 持久后端 | `state/resources/broker`；单一 authority 锚、SQLite 意图和事件、资源屏障、稳定业务/核对 ID、精确取消、撤权和重启后原身份观察 |
 | 启动根分配 | `bootstrap_roots`；私有有限预建 slot 池、准确目录身份、与执行意图同事务的永久消费；preflight/business 仅在同一操作内共享原分配，其他阶段消费独立 slot，不开放 profile 父目录写权 |
 | 进程监督 | `runner/bootstrap/result_reader/ledger_jobs`；新阶段依次使用 bootstrap、helper、result_reader 三个固定 unit，每次交付有独立持久意图和启动围栏；启动根身份、硬配额和计划发布在 bootstrap 内进行，helper 写入前再验根身份。结果文件由只读 reader 读取，observer 只收有界非阻塞管道；生产入口仍固定拒绝启用 |
+| Q1 内部 quota ABI | 独立管理侧开发目录中的原生 FD 查询原语，固定观察调用、errno/前后身份和有界 JSON；不接受路径或修改动作，未安装、未提权、未接入 broker，不在默认 wheel/Plugin 中。模拟成功不是宿主准入，完整 observer 仍待实现 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |
@@ -37,7 +38,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | --- | --- |
 | E1 受监督执行 | 已有私有 root allocation、三个固定单元、受监督配额／计划发布与结果读取、三次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
 | E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。现有实机用例仍为 SKIP/FAIL 占位，尚缺完整 host fixture/harness；委派、namespace、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的真实验收未完成 |
-| 本地 project quota | 固定 Linux/systemd 源码显示，当前 PRJQUOTA 查询的 host capability 要求与 `PrivateUsers=yes` 冲突，`PrivateDevices=yes` 还可能影响设备定位；目标内核、准确失败点与 errno 待实测。现实现未保存 quotactl errno。预建配额不能单独消除此实现障碍；不为普通作业提权或放宽隔离。独立管理侧观察机制已获隔离开发批准，尚未实施或实机验收 |
+| 本地 project quota | 现有生产路径仍有 host capability 与单元隔离冲突，尚未接入新机制。管理侧 Q1 原生 ABI 原语已实现并保留 errno，云端只执行不调用 quota 的真实负例和明确模拟的查询分支；没有目标主机 quota 结果。独立 observer、准入/监督及真实 enforcement 验证仍未完成，不能据此启用生产 |
 | E3 只读准备 | 独立探针的 nsfs 修复已完成现场重测；原始 mountinfo 未归档，不声称云端重放。随后一次性输入确认的 44 成员 ZIP 已独立核验，六项专用账户/manager/slice/cgroup/隔离/委派输入为 NOT_PREPARED；slots/quota/store 仍 UNVERIFIED。只读库存阶段结束，整体 E3 仍未验收 |
 | helper 结果读取 | 新 v3 将文件读取迁入独立只读 reader unit，父端仅处理有界匿名管道；旧布局不补授 reader 预算、不回退直接读盘。重启丢失管道不重读，结果保留 UNKNOWN；原三 unit 退出可独立记录，允许新显式 reconcile，旧 local CLI 停止仍不冒充已证明。真实 E3 尚未验收 |
 | 真实 Unix maintenance transport | 宿主限制和各准确候选结果按对应验证报告分别记账；独立 TCP/SDK 测试不替代 Unix socket |

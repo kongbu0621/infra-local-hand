@@ -8,7 +8,7 @@
 
 2026-09-23 后续状态：本次 GX10 只读盘点和[一次性输入确认](GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md)
 已经结束，准确输入为 NOT_PREPARED。以下只读步骤作为通用参考保留，不是再次执行请求。
-下一步先处理 [quota/harness 变更方案](e3-quota-harness/IMPLEMENTATION_PLAN.md)；新增受信组件的范围为 OPEN。
+下一步先处理 [quota/harness 变更方案](e3-quota-harness/IMPLEMENTATION_PLAN.md)；新增受信组件已单独获准隔离开发，实机装配未就绪。
 未具备准确实现与专用 fixture 时，不进入 H01–H13，也不自动采用已有桌面或 S1 服务账户。
 
 ## 1. 两类活动与判断标准

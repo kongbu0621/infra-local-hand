@@ -9,7 +9,8 @@
 
 后续进展：GX10 的 nsfs 修复已完成实机重测；[一次性输入确认](GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md)
 结论为 NOT_PREPARED，结束重复盘点。[quota/harness 变更方案](e3-quota-harness/REQUIREMENTS.md)
-已明确推荐独立管理侧观察组件及真实测试入口，但尚未批准或实现；新的受信边界按根 AGENTS 的 OPEN 范围处理。
+已明确推荐独立管理侧观察组件及真实测试入口，并已按根 AGENTS 单独取得隔离开发 closure。
+目前仅完成 [Q1 原生 ABI 原语](../../tools/admin/local_hand_quota_observer/README.md)；完整 observer 和实机验收尚未完成。
 下面保留本次缺口核查时的事实与候选方向，不能把后续提案理解为缺口已修复。
 
 ## 1. 当前真实测试没有可执行验收主体
