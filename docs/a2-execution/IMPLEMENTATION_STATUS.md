@@ -6,6 +6,7 @@ NAS 已有固定只读查询与响应校验，但实际查询、写入身份和�
 当前结果读取与 NAS 查询合同的准确源码、测试和证据摘要见 [本轮验证报告](E1_RESULT_READER_VERIFICATION.md)。
 后续 E3 准备核查确认了两项实现缺口：真实宿主测试仍为占位，且当前 project-quota 查询与固定 upstream 隔离权限模型冲突；不能仅换到 systemd 主机就完成验收。事实、来源和待验证范围见 [E3 实现缺口](E3_IMPLEMENTATION_GAPS.md)，当前可执行的只读盘点及后续场景见 [宿主验收准备](E3_HOST_ACCEPTANCE_RUNBOOK.md)。
 只读准备检查点的准确源码 `287f6b9`、18 项定向验证、准确 main CI 及私有证据摘要见 [准备验证报告](E3_PREPARATION_VERIFICATION.md)；云端 BLOCKED 不转记为目标宿主验收。
+随后修复了只读探针对合法 nsfs root 的解析误判；准确源码 `88b78b6`、22 项探针验证、准确 main CI 与重测交接见 [nsfs 修复验证](E3_NSFS_REPAIR_VERIFICATION.md)。原始宿主 ZIP 和修复后的现场重测仍待独立核验。
 历史准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)、[第五轮复核](E1_E3_RECHECK_5.md)、[第六轮复核](E1_E3_RECHECK_6.md)、[第七轮复核](E1_E3_RECHECK_7.md)、[第八轮复核](E1_E3_RECHECK_8.md)、[第九轮复核](E1_E3_RECHECK_9.md)、[第十轮复核](E1_E3_RECHECK_10.md)及 [fd55 中断交付恢复](E1_E3_RECOVERY_FD55C07.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
