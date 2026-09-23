@@ -522,7 +522,7 @@ def request(socket_path, tool, arguments, *, timeout=2):
 
 
 def _known_manager_units(rows):
-    """Derive both unit names from durable identities, never manager payloads."""
+    """Derive every unit from the durable layout, never arbitrary saved names."""
     from .bootstrap_roots import validate_grant
     units = set()
     for row in rows:
@@ -536,12 +536,19 @@ def _known_manager_units(rows):
             if handle.get("unit", unit) != unit:
                 raise JobError("IO_UNCERTAIN", "Durable manager unit differs from its execution identity")
             units.add(unit)
+            version = handle.get("supervision_version")
+            if version is not None and (type(version) is not int or version not in (2, 3)):
+                raise JobError("IO_UNCERTAIN", "Durable supervision layout is unresolved")
+            if handle.get("manager", {}).get("version") == 3 and version != 3:
+                raise JobError("IO_UNCERTAIN", "Result reader receipt lacks its original three-stage intent")
             allocation = record.get("bootstrap_grants", {}).get(phase)
             if allocation is not None:
                 validate_grant(allocation, execution_id=execution_id, phase=phase,
                     operation_id=row["parent"], namespace=row["namespace"], record_id=row["id"])
                 units.add("lhj-" + hashlib.sha256((execution_id + ":bootstrap").encode()).hexdigest() + ".service")
-            elif handle.get("manager", {}).get("version") == 2:
+                if version == 3:
+                    units.add("lhj-" + hashlib.sha256((execution_id + ":result_reader").encode()).hexdigest() + ".service")
+            elif version in (2, 3) or handle.get("manager", {}).get("version") in (2, 3):
                 raise JobError("IO_UNCERTAIN", "Bootstrap manager receipt lacks its durable root allocation")
     return sorted(units)
 

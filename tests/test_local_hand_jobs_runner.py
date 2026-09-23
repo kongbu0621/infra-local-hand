@@ -947,70 +947,54 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(manager.inspect(handle)["state"], "UNKNOWN")
 
     def test_manager_discards_foreign_and_nonobject_results_after_proven_exit(self):
-        import json, subprocess
-        class Receipt:
-            returncode = 0
-            def poll(self): return 0
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "result.json"
-            manager = runner.SystemdManager()
-            unit = "lhj-result-fixture.service"
-            handle = {"unit": unit, "boot_id": "boot-fixture", "result_path": str(path),
-                "cgroup_parent": "/sys/fs/cgroup/admitted", "launch": Receipt(), "launch_acked": True,
-                "stop_acked": False, "stop_requested": False, "started": time.monotonic(), "deadline": 10,
-                "invocation_id": "a" * 32, "execution_id": "execution-fixture", "cancel_before_launch": False}
-            show = ("LoadState=loaded\nActiveState=active\nSubState=exited\nControlGroup=/admitted/" + unit +
-                    "\nInvocationID=" + "a" * 32 + "\nJob=\nExecMainCode=1\nExecMainStatus=0\nResult=success\n")
-            original_read = Path.read_text
-            def observation(path, *args, **kwargs):
-                if str(path) == "/proc/sys/kernel/random/boot_id": return "boot-fixture"
-                if str(path).endswith("/cgroup.events"): return "populated 0\n"
-                return original_read(path, *args, **kwargs)
-            foreign = {"execution_id": "another-execution", "outcome": "SUCCEEDED", "effects_checked": True,
-                       "facts": {"inputs_stable": True}, "prepared": {"root": "/foreign"}}
-            malformed = dict(foreign, execution_id="execution-fixture", facts=[])
-            with patch.object(Path, "read_text", observation), patch.object(manager, "_command",
-                    return_value=subprocess.CompletedProcess([], 0, show.encode())):
-                for candidate in (foreign, [], None, "foreign", 7, {}, malformed):
-                    with self.subTest(candidate=candidate):
-                        path.write_text(json.dumps(candidate))
-                        proof = manager.inspect(handle)
-                        self.assertEqual(proof["state"], "EXITED")
-                        self.assertTrue(proof["tree_exited"])
-                        self.assertFalse(proof["effects_checked"])
-                        self.assertFalse(proof["helper_result_verified"])
-                        self.assertEqual(proof["facts"], {})
-                        self.assertEqual(proof["result"], {"outcome": "UNKNOWN"})
-                        self.assertTrue(proof["missing"])
-                path.write_text(json.dumps(dict(foreign, execution_id="execution-fixture")))
-                proof = manager.inspect(handle)
-                self.assertTrue(proof["effects_checked"])
-                self.assertTrue(proof["helper_result_verified"])
-                path.write_text(json.dumps(dict(foreign, execution_id="execution-fixture", outcome="UNKNOWN")))
-                handle["stop_requested"] = True
-                proof = manager.inspect(handle)
-                self.assertTrue(proof["helper_result_verified"])
-                self.assertEqual(proof["result"]["outcome"], "UNKNOWN")
+        import json
+        from test_local_hand_jobs_result_reader_runner import reader_lifecycle
+        for kind in ("foreign", "array", "null", "string", "number", "empty", "wrong-facts", "valid", "unknown"):
+            with self.subTest(kind=kind), reader_lifecycle() as flow:
+                flow.inspect()
+                candidate = flow.value()
+                if kind == "foreign": candidate["execution_id"] = "another-execution"
+                elif kind == "array": candidate = []
+                elif kind == "null": candidate = None
+                elif kind == "string": candidate = "foreign"
+                elif kind == "number": candidate = 7
+                elif kind == "empty": candidate = {}
+                elif kind == "wrong-facts": candidate["facts"] = []
+                elif kind == "unknown":
+                    candidate["outcome"] = "UNKNOWN"
+                    flow.handle["helper"]["stop_requested"] = True
+                path = Path(flow.handle["execution"]["result_path"])
+                path.write_text(json.dumps(candidate))
+                path.chmod(0o600)
+                # Actual reader validates the file and emits actual framed IPC;
+                # only systemd/namespace/cgroup admission is simulated.
+                proof = flow.read_existing_file()
+                self.assertEqual(proof["state"], "EXITED")
+                self.assertTrue(proof["tree_exited"])
+                if kind in ("valid", "unknown"):
+                    self.assertTrue(proof["effects_checked"])
+                    self.assertTrue(proof["helper_result_verified"])
+                    self.assertEqual(proof["result"], candidate)
+                else:
+                    self.assertFalse(proof["effects_checked"])
+                    self.assertFalse(proof["helper_result_verified"])
+                    self.assertEqual(proof["facts"], {})
+                    self.assertEqual(proof["result"]["outcome"], "UNKNOWN")
+                    self.assertTrue(proof["result"]["helper_started"])
+                    self.assertTrue(proof["missing"])
 
     def test_business_result_survives_helper_result_directory_sync_failure(self):
-        import json, subprocess
-        class Receipt:
-            returncode = 0
-            def poll(self): return 0
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            roots = {name: str(root / name) for name in ("work", "temporary", "evidence")}
-            for path in roots.values(): Path(path).mkdir()
-            environment = runner.ledger_jobs.clean_environment(roots["temporary"])
-            target = root / "evidence" / "result.json"
-            plan = {"phase": "business", "execution_id": "durable-result-business",
-                "kind": "ledger.test.source", "roots": roots, "prepared": {},
-                "environment": environment, "parent_mount_namespace": "original-namespace",
-                "result_path": str(target), "budgets": {"log_bytes": 1024, "wall_seconds": 10},
-                "stages": [{"name": "fixed-fixture", "argv": [sys.executable, "-I", "-c",
+        import json
+        from test_local_hand_jobs_result_reader_runner import reader_lifecycle
+        with reader_lifecycle(phase="business", helper_exit=1) as flow:
+            plan = flow.handle["execution"]
+            roots = plan["roots"]
+            environment = plan["environment"]
+            target = Path(plan["result_path"])
+            plan.update(kind="ledger.test.source", prepared={}, stages=[{
+                "name": "fixed-fixture", "argv": [sys.executable, "-I", "-c",
                     "import pathlib;pathlib.Path('business-complete').write_text('done')"],
-                    "cwd": roots["work"], "env": environment}]}
-            budgeted_plan(plan)
+                "cwd": roots["work"], "env": environment}])
             evidence_identity = (target.parent.stat().st_dev, target.parent.stat().st_ino)
             actual_fsync = os.fsync
             sync_failed = False
@@ -1022,38 +1006,25 @@ class RunnerTests(unittest.TestCase):
                     raise OSError("result directory durability unavailable")
                 return actual_fsync(descriptor)
             mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
-            # Only host admission and upstream input preparation are simulated;
-            # the business child, result bytes and failed fsync are exercised.
+            # Host admission and input preparation are synthetic; business child,
+            # result file, directory fsync failure and reader IPC are exercised.
             with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
                     patch.object(os, "readlink", return_value="private-namespace"), \
                     patch.object(os, "access", return_value=False), patch.object(runner, "_mount_for", return_value=mount), \
                     patch.object(runner, "_verify_cgroup_limits", return_value={}), \
+                    patch.object(runner.bootstrap, "verify_roots"), \
                     patch.object(runner.ledger_jobs, "verify_inputs", return_value={"inputs_stable": True}), \
                     patch.object(runner.ledger_jobs, "copy_verified_source"), \
                     patch.object(os, "fsync", side_effect=failed_result_directory_sync):
                 with self.assertRaisesRegex(OSError, "result directory durability unavailable"):
                     runner._helper(plan)
             self.assertTrue(sync_failed)
-            self.assertEqual((root / "work" / "business-complete").read_text(), "done")
+            self.assertEqual((Path(roots["work"]) / "business-complete").read_text(), "done")
             candidate = json.loads(target.read_text())
             self.assertEqual(candidate["outcome"], "SUCCEEDED")
             self.assertTrue(candidate["effects_checked"])
-            manager = runner.SystemdManager()
-            unit = "lhj-result-fixture.service"
-            handle = {"unit": unit, "boot_id": "boot-fixture", "result_path": str(target),
-                "cgroup_parent": "/sys/fs/cgroup/admitted", "launch": Receipt(), "launch_acked": True,
-                "stop_acked": False, "stop_requested": False, "started": time.monotonic(), "deadline": 10,
-                "invocation_id": "a" * 32, "execution_id": plan["execution_id"], "cancel_before_launch": False}
-            show = ("LoadState=loaded\nActiveState=failed\nSubState=failed\nControlGroup=/admitted/" + unit +
-                    "\nInvocationID=" + "a" * 32 + "\nJob=\nExecMainCode=1\nExecMainStatus=1\nResult=exit-code\n")
-            original_read = Path.read_text
-            def observation(path, *args, **kwargs):
-                if str(path) == "/proc/sys/kernel/random/boot_id": return "boot-fixture"
-                if str(path).endswith("/cgroup.events"): return "populated 0\n"
-                return original_read(path, *args, **kwargs)
-            with patch.object(Path, "read_text", observation), patch.object(manager, "_command",
-                    return_value=subprocess.CompletedProcess([], 0, show.encode())):
-                proof = manager.inspect(handle)
+            flow.inspect()
+            proof = flow.read_existing_file()
             self.assertTrue(proof.get("helper_result_verified"))
             self.assertEqual(proof["exit_code"], 1)
             self.assertEqual(proof["result"]["outcome"], "SUCCEEDED")

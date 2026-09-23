@@ -1,8 +1,8 @@
 # E1–E3 实现候选状态
 
-本文件记录实现事实，不替代已批准的三层文档。整体状态为 **受监督启动准备已有隔离实现、E1 整体未完成、E3 实机验收 BLOCKED、候选不可部署**；
-NAS provider 仍有代码缺口，原有 helper 结果读取也仍有待实机验证的阻塞边界。本轮是实现检查点，未达到 E1–E3 全部出口。
-新增实现边界见 [受监督启动准备](SUPERVISED_BOOTSTRAP.md)，准确源码 `4be98b8`、运行结果、保留的本地安装失败和产物身份见 [本轮验证报告](E1_BOOTSTRAP_VERIFICATION.md)。
+本文件记录实现事实，不替代已批准的三层文档。整体状态为 **受监督启动准备和结果读取已有隔离实现、E1 整体未完成、E3 实机验收 BLOCKED、候选不可部署**；
+NAS 已有固定只读查询与响应校验，但实际查询、写入身份和限定网络尚未准入。结果读取已迁入独立受监督进程，真实阻塞 I/O、恢复和取消仍待 E3 实测；本轮未达到 E1–E3 全部出口。
+实现边界见 [受监督启动与结果读取](SUPERVISED_BOOTSTRAP.md)和 [NAS 配额准入](NAS_QUOTA_ADMISSION.md)。上一检查点准确源码 `4be98b8`、运行结果、保留的本地安装失败和产物身份见 [启动准备验证报告](E1_BOOTSTRAP_VERIFICATION.md)，不转记为新增实现的验证。
 历史准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)、[第五轮复核](E1_E3_RECHECK_5.md)、[第六轮复核](E1_E3_RECHECK_6.md)、[第七轮复核](E1_E3_RECHECK_7.md)、[第八轮复核](E1_E3_RECHECK_8.md)、[第九轮复核](E1_E3_RECHECK_9.md)、[第十轮复核](E1_E3_RECHECK_10.md)及 [fd55 中断交付恢复](E1_E3_RECOVERY_FD55C07.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
@@ -16,7 +16,7 @@ Owner 决定及准确范围见 [开工决定](../governance/A2_EXEC_E1_E3_OWNER_
 | 协议与准入 | `local_hand_jobs.contract/policy/registry`；六类固定作业、七接口、严格原始 JSON、规范摘要、主体/目标/资源准入、有限预算及固定 Ledger 输入 |
 | 持久后端 | `state/resources/broker`；单一 authority 锚、SQLite 意图和事件、资源屏障、稳定业务/核对 ID、精确取消、撤权和重启后原身份观察 |
 | 启动根分配 | `bootstrap_roots`；私有有限预建 slot 池、准确目录身份、与执行意图同事务的永久消费；preflight/business 仅在同一操作内共享原分配，其他阶段消费独立 slot，不开放 profile 父目录写权 |
-| 进程监督 | `runner/bootstrap/ledger_jobs`；每个阶段先独立 bootstrap unit，再按退出证明与第二次 durable guard 交付 helper unit；启动根身份、硬配额和计划文件发布在 bootstrap 内进行，helper 写入前再验根身份。归属或退出不明时保留 UNKNOWN，生产入口仍固定拒绝启用 |
+| 进程监督 | `runner/bootstrap/result_reader/ledger_jobs`；新阶段依次使用 bootstrap、helper、result_reader 三个固定 unit，每次交付有独立持久意图和启动围栏；启动根身份、硬配额和计划发布在 bootstrap 内进行，helper 写入前再验根身份。结果文件由只读 reader 读取，observer 只收有界非阻塞管道；生产入口仍固定拒绝启用 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |
@@ -29,11 +29,11 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 
 | 项目 | 准确状态 |
 | --- | --- |
-| E1 受监督启动准备 | 已有私有 root allocation、bootstrap/helper 双单元、受监督配额／计划发布、两次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
+| E1 受监督执行 | 已有私有 root allocation、三个固定单元、受监督配额／计划发布与结果读取、三次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
 | E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。真实委派账户、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的验收仍待完成；合成 manager 测试不替代此项 |
-| helper 结果读取 | 原有 `_inspect_unit` 在 observer 线程中读取已退出 helper 的结果文件；长度上界不能证明存储调用有时间上界。本轮未把这条既有读取迁入独立受监督进程，不能宣称所有 storage I/O 已受监督；真实 E3 须验证阻塞时取消与受控停止是否仍可达 |
-| 真实 Unix maintenance transport | 本轮准确源码在当前宿主因 AF_UNIX 限制跳过两项；Linux CI 的这两项通过，仅剩真实 E3 跳过。两种环境分别记账；独立 TCP/SDK 测试不替代 Unix socket |
-| NAS 运行时 | 网络归档硬配额适配器尚未实现。虽然固定四参数调用、前置证据依赖和挂载身份检查已有实现，`ledger.nas.roundtrip` 明确 `UNSUPPORTED`，Plugin 不提交该类型 |
+| helper 结果读取 | 新 v3 将文件读取迁入独立只读 reader unit，父端仅处理有界匿名管道；旧布局不补授 reader 预算、不回退直接读盘。重启丢失管道不重读，结果保留 UNKNOWN；原三 unit 退出可独立记录，允许新显式 reconcile，旧 local CLI 停止仍不冒充已证明。真实 E3 尚未验收 |
+| 真实 Unix maintenance transport | 宿主限制和各准确候选结果按对应验证报告分别记账；独立 TCP/SDK 测试不替代 Unix socket |
+| NAS 运行时 | `nas_quota` 已有固定 CIFS 只读请求、准确响应与身份／时间校验，结果始终 LOGIC_ONLY；实际 collector、写入身份、凭据及限定网络未准入。`ledger.nas.roundtrip` 和真实查询仍明确 UNSUPPORTED，Plugin 不提交该类型 |
 | E4 | 真实当前客户端 OAuth、私有 MCP 连接及工具结果到可下载文件的宿主桥接未执行。16 MiB 合成证据下载属于 E2 客户端组件验证 |
 | E5 / S2 | 未安装到 GX10、未停止或切换旧服务；S2 仍按独立 OPEN 基线管理 |
 | E6 | 未执行真实 GX10 → NAS → GX10 A2，不把 Linux 合成文件或逻辑测试当 NAS 证据 |
@@ -41,7 +41,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 本实现保留硬约束；没有跳过认证、配额、进程树证明或挂载检查的运行时开关。
 启动准备的真实监督验证、NAS 配额适配与真实 cgroup 验收必须补齐，不能靠改一个配置布尔值宣称支持。
 私有 root slot 由受信部署侧预先创建、绑定账户与硬配额；broker 只消费已声明身份，不能自动扩池、回收或重新分配已用 slot。
-Bootstrap 与 helper 共享自阶段持久预留时刻起算的绝对截止时间，CPU 为固定不退款分额；不会因排队、切换子阶段或重启而续额。
+Bootstrap、helper 与 result_reader 共享原阶段绝对截止时间；新 v3 的 CPU 三分固定且不退款，旧 v2 原分额不改。不会因排队、切换子阶段或重启而续额。
 不能把线程超时当作进程树退出证明，也不能把新增启动准备隔离解释成所有存储观察已具备有限停止保证。
 宿主执行的账户、解释器、安装和准入配置须在服务加载前由受信部署侧保护；包摘要是漂移检测，
 不能从已被任意篡改的解释器或正在执行的恶意进程中建立信任。
@@ -88,4 +88,4 @@ Plugin 不隐式安装 Python 包，不创建真实 endpoint，不提供第二�
 
 CI 保留既有 Windows S1 测试；新 job/Plugin 的当前实现与测试范围为 Linux。
 Linux CI 安装冻结 MCP 依赖并构建独立 Plugin。CI 源码/安装测试通过也不自动关闭上述实机门槛。
-准确候选提交、最终测试数量、产物摘要及失败记录见 [本轮验证报告](E1_BOOTSTRAP_VERIFICATION.md)，不把旧候选计数沿用给新实现。
+各验证报告分别绑定准确候选提交、最终测试数量、产物摘要及失败记录，不把旧候选计数沿用给新实现。

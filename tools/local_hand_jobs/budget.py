@@ -174,21 +174,29 @@ def phase_remaining_ns(grant, now=None):
     return remaining
 
 
-def substage_limits(grant, stage):
+def substage_limits(grant, stage, *, supervision_version=2):
     """Fixed, non-refundable CPU shares inside an already reserved phase.
 
     The units run sequentially and share storage and a single absolute wall
     envelope. Bootstrap stdout/stderr are null; only the helper gets a log
-    capture. Its existing log allowance is therefore not granted twice.
+    capture. Its existing log allowance is therefore not granted twice. The
+    result reader transports only separately bounded private result metadata.
     """
     validate_grant(grant)
-    if stage not in ("bootstrap", "helper"):
+    if type(supervision_version) is not int or supervision_version not in (2, 3):
+        raise _invalid("Unknown fixed supervision budget version")
+    stages = ("bootstrap", "helper") if supervision_version == 2 else ("bootstrap", "helper", "result_reader")
+    if stage not in stages:
         raise _invalid("Unknown fixed execution substage")
     limits = dict(grant["limits"])
-    preparation = limits["cpu_seconds"] // 2
+    preparation = limits["cpu_seconds"] // len(stages)
     if preparation < 1:
-        raise BudgetExhausted("Phase CPU budget cannot fund preparation and its helper")
-    limits["cpu_seconds"] = preparation if stage == "bootstrap" else limits["cpu_seconds"] - preparation
+        raise BudgetExhausted("Phase CPU budget cannot fund every fixed supervision substage")
+    # Version 2 keeps its original two allocations. Version 3 is fixed before
+    # any delivery: reader and preparation each receive floor(total / 3), and
+    # the business helper receives the remainder. No observed usage is refunded.
+    limits["cpu_seconds"] = (limits["cpu_seconds"] - preparation * (len(stages) - 1)
+                              if stage == "helper" else preparation)
     return limits
 
 

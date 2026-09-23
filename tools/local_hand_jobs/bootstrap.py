@@ -161,7 +161,8 @@ def prepare(payload):
     if any(os.access(path, os.W_OK) for path in ("/tmp", "/var/tmp", "/dev/shm")):
         raise JobError("UNSUPPORTED", "Bootstrap fallback write path remains accessible")
     runner._verify_cgroup_limits(dict(execution, unit=execution["bootstrap_unit"],
-        budgets=budget.substage_limits(execution["budget_grant"], "bootstrap")))
+        budgets=budget.substage_limits(execution["budget_grant"], "bootstrap",
+            supervision_version=execution.get("supervision_version", 2))))
     descriptors = {}
     try:
         for path, identity in allocation["paths"].items():

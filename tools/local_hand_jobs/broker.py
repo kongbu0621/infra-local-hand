@@ -147,7 +147,7 @@ class Broker:
         for key in ("handles", "facts", "principal_scopes", "generation", "runner_result"):
             result.pop(key, None)
         for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents",
-                    "execution_budget", "budget_grant"):
+                    "execution_budget", "budget_grant", "bootstrap_grants", "bootstrap_completed", "helper_completed"):
             result.pop(key, None)
         result["seal_refs"] = [{"seal_id": item["seal_id"], "seal_sha256": item.get("seal_sha256")}
                                for item in result.pop("seals", [])]
@@ -400,6 +400,8 @@ class Broker:
                             # Original consumption only; recovery never reserves
                             # another slot or invents missing preparation state.
                             plan["bootstrap_allocation"] = thaw(allocation)
+                            if "supervision_version" in handle:
+                                plan["supervision_version"] = handle["supervision_version"]
                             if phase == "evidence":
                                 plan["evidence_snapshot"] = thaw(record.get("frozen_snapshot", {}))
                                 retained = allocation.get("retained_paths", [])
@@ -527,22 +529,28 @@ class Broker:
         evidence_id = f"{row['namespace']}-{row['id']}-evidence"
         history = tx.execute("SELECT seq,kind,data_json FROM events WHERE namespace=? AND id=? "
                              "AND kind IN ('EXECUTION_INTENT','LAUNCH_ENQUEUED','MANAGER_DELIVERY_INTENT') "
-                             "ORDER BY seq LIMIT 13", keys).fetchall()
-        if len(history) > 12:
-            return False  # Three phases; one intent/enqueue and up to two fixed deliveries each.
+                             "ORDER BY seq LIMIT 16", keys).fetchall()
+        if len(history) > 15:
+            return False  # Three phases; one intent/enqueue and up to three fixed deliveries each.
+        expected_intent = {"execution_id": evidence_id, "intent_only": True}
+        version = record.get("handles", {}).get("evidence", {}).get("supervision_version")
+        if version is not None:
+            if type(version) is not int or version != 3:
+                return False
+            expected_intent["supervision_version"] = version
         intents = []
         for event in history:
             data = json.loads(event["data_json"])
             if event["kind"] == "EXECUTION_INTENT" and data.get("phase") == "EVIDENCE":
                 if (not intent_committed or event["seq"] <= recovery["seq"]
                         or data.get("execution_budget") != record.get("execution_budget")
-                        or data.get("handles", {}).get("evidence") !=
-                            {"execution_id": evidence_id, "intent_only": True}):
+                        or data.get("handles", {}).get("evidence") != expected_intent):
                     return False
                 intents.append(event["seq"])
             elif event["seq"] < recovery["seq"] and (
                     "evidence" in data.get("handles", {}) or any(
-                        item == evidence_id or item in (evidence_id + ":bootstrap", evidence_id + ":helper")
+                        item == evidence_id or item in (evidence_id + ":bootstrap", evidence_id + ":helper",
+                                                       evidence_id + ":result_reader")
                         for item in data.get("delivery_intents", []))):
                 return False
         return len(intents) == (1 if intent_committed else 0)
@@ -594,6 +602,9 @@ class Broker:
                 profile = self.policy.profiles[parent["request"]["profile_ref"]]
                 allocation = None
                 if "bootstrap_slots" in profile:
+                    # Reject an unfundable three-unit envelope before consuming
+                    # any permanent root slot or committing execution intent.
+                    budget.substage_limits(grant, "bootstrap", supervision_version=3)
                     extras = None
                     if phase == "evidence":
                         store = thaw(profile.get("bootstrap_evidence_store"))
@@ -604,6 +615,10 @@ class Broker:
                     allocation = bootstrap_roots.reserve(self.state, tx, row, phase,
                         thaw(profile["bootstrap_slots"]), extra_roots=extras)
                 handles[phase] = {"execution_id": execution_id, "intent_only": True}
+                if allocation is not None:
+                    # This immutable intent fixes the CPU split and the complete
+                    # unit inventory even if the first manager receipt is lost.
+                    handles[phase]["supervision_version"] = 3
                 self.state.update(tx, namespace, identity, "EXECUTION_INTENT", {
                     "phase": phase.upper(), "lifecycle": "RUNNING", "handles": handles,
                     "execution_budget": execution_budget,
@@ -614,6 +629,7 @@ class Broker:
                             budget_grant=grant, budgets=grant["limits"])
                 if allocation is not None:
                     plan["bootstrap_allocation"] = allocation
+                    plan["supervision_version"] = 3
                 if namespace == "reconcile":
                     plan["execution"] = dict(plan.get("execution", {}), budgets=grant["limits"])
                     original = parent["record"].get("bootstrap_grants", {}).get("preflight")
@@ -632,16 +648,20 @@ class Broker:
             with self.state.transaction() as tx:
                 saved = self.state.get(namespace, identity, tx)["record"]["handles"]
                 saved[phase] = thaw(handle)
+                if allocation is not None:
+                    saved[phase]["supervision_version"] = 3
                 self.state.update(tx, namespace, identity, "LAUNCH_ENQUEUED", {"handles": saved})
 
-    def _guard_start(self, execution_id, launch, *, stage=None, bootstrap_proof=None):
+    def _guard_start(self, execution_id, launch, *, stage=None, bootstrap_proof=None, helper_proof=None):
         """Serialize final fixed manager delivery with durable cancel/revocation.
 
         Manager preparation and observation occur outside this fence. The callback
         is only the already fixed, short local Popen request, never a manager wait.
         Returning None proves this particular delivery was not issued.
         """
-        if stage not in (None, "bootstrap", "helper") or (stage != "helper" and bootstrap_proof is not None):
+        if (stage not in (None, "bootstrap", "helper", "result_reader")
+                or (stage != "helper" and bootstrap_proof is not None)
+                or (stage != "result_reader" and helper_proof is not None)):
             raise JobError("IO_UNCERTAIN", "Unknown manager delivery substage")
         delivery_id = execution_id if stage is None else execution_id + ":" + stage
         with self.fence:
@@ -665,7 +685,10 @@ class Broker:
                 if (execution_id in delivered or delivery_id in delivered
                         or (stage is None and any(item.startswith(execution_id + ":") for item in delivered))):
                     return None  # A prior delivery intent is never issued a second time.
-                if stage == "bootstrap" and execution_id + ":helper" in delivered:
+                if stage == "bootstrap" and any(execution_id + ":" + later in delivered
+                                                 for later in ("helper", "result_reader")):
+                    return None
+                if stage == "helper" and execution_id + ":result_reader" in delivered:
                     return None
                 if stage == "helper":
                     if execution_id + ":bootstrap" not in delivered:
@@ -681,6 +704,38 @@ class Broker:
                             or proof["result"].get("bootstrap_prepared") is not True):
                         raise JobError("IO_UNCERTAIN", "Preparation completion is not proven")
                 grant = budget.stored_grant(row, phase)
+                if stage == "result_reader":
+                    if (type(handle.get("supervision_version")) is not int
+                            or handle["supervision_version"] != 3
+                            or execution_id + ":bootstrap" not in delivered
+                            or execution_id + ":helper" not in delivered):
+                        raise JobError("IO_UNCERTAIN", "Result reader has no original three-stage reservation")
+                    intent = tx.execute("SELECT data_json FROM events WHERE namespace=? AND id=? "
+                                        "AND kind='EXECUTION_INTENT' ORDER BY seq DESC LIMIT 1",
+                                        (namespace, identity)).fetchone()
+                    intent_data = json.loads(intent["data_json"]) if intent else {}
+                    if (intent_data.get("phase") != record["phase"]
+                            or intent_data.get("handles", {}).get(phase) !=
+                                {"execution_id": execution_id, "intent_only": True, "supervision_version": 3}):
+                        raise JobError("IO_UNCERTAIN", "Result reader reservation differs from immutable execution intent")
+                    budget.substage_limits(grant, "result_reader", supervision_version=3)
+                    proof = thaw(helper_proof)
+                    helper_unit = "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"
+                    manager_root = getattr(self.policy, "config", {}).get("process_manager", {}).get("cgroup", "")
+                    expected_group = manager_root.removeprefix("/sys/fs/cgroup") + "/" + helper_unit
+                    if (type(proof) is not dict or proof.get("execution_id") != execution_id
+                            or proof.get("unit") != helper_unit
+                            or proof.get("state") != "EXITED"
+                            or not all(proof.get(key) is True for key in ("future_start_blocked", "tree_exited",
+                                                                       "collectors_stopped", "writers_stopped"))
+                            or type(proof.get("identity")) is not dict
+                            or not manager_root.startswith("/sys/fs/cgroup/")
+                            or proof["identity"].get("cgroup") != expected_group
+                            or proof["identity"].get("boot_id") != grant["boot_id"]
+                            or type(proof["identity"].get("invocation_id")) is not str
+                            or len(proof["identity"]["invocation_id"]) != 32
+                            or any(ch not in "0123456789abcdef" for ch in proof["identity"]["invocation_id"])):
+                        raise JobError("IO_UNCERTAIN", "Original helper exit is not proven for result reading")
                 if stage is not None:
                     allocation = record.get("bootstrap_grants", {}).get(phase)
                     bootstrap_roots.validate_grant(allocation, execution_id=execution_id,
@@ -713,6 +768,9 @@ class Broker:
                 if stage == "helper":
                     prepared = dict(record.get("bootstrap_completed", {}), **{phase: proof})
                     self.state.update(tx, namespace, identity, "BOOTSTRAP_COMPLETE", {"bootstrap_completed": prepared})
+                if stage == "result_reader":
+                    observed = dict(record.get("helper_completed", {}), **{phase: proof})
+                    self.state.update(tx, namespace, identity, "HELPER_EXIT_OBSERVED", {"helper_completed": observed})
                 self.state.update(tx, namespace, identity, "MANAGER_DELIVERY_INTENT", {
                     "delivery_intents": [*delivered, delivery_id]})
             return launch()
@@ -748,7 +806,8 @@ class Broker:
                 if original.get("effects_checked") is True:
                     self._release(tx, row, original)
                 return
-            if record["phase"] == "PREFLIGHT" and not record["cancel_requested"] and proof.get("exit_code") == 0:
+            if (record["phase"] == "PREFLIGHT" and not record["cancel_requested"]
+                    and proof.get("exit_code") == 0 and proof.get("effects_checked") is True):
                 facts = thaw(proof.get("facts", {}))
                 if facts.get("inputs_stable") is not True:
                     raise JobError("IO_UNCERTAIN", "Preflight returned no stable input proof")

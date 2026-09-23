@@ -27,11 +27,11 @@ import time
 from typing import Mapping
 
 if __package__:
-    from . import bootstrap, bootstrap_roots, budget, ledger_jobs
+    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, result_reader
     from .contract import JobError
 else:  # fixed -I script entry: importing only this installed sibling
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs
+    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, result_reader
     from local_hand_jobs.contract import JobError
 
 
@@ -92,6 +92,8 @@ class Runner:
             raise RunnerError("UNSUPPORTED", "unknown fixed execution phase")
         identity = {"job_key": str(job_key), "execution_id": execution_id, "phase": phase,
                     "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        if "supervision_version" in frozen:
+            identity["supervision_version"] = frozen["supervision_version"]
         with self._lock:
             if execution_id in self._executions:
                 raise RunnerError("CONFLICT", "an execution identity is never started twice")
@@ -319,7 +321,7 @@ class SystemdManager:
         self._start_guard = callback
 
     def support(self):
-        # Both launch stages are implemented, but this candidate has no real
+        # All fixed launch stages are implemented, but this candidate has no real
         # delegated-host integration evidence. No configuration switch promotes
         # synthetic manager tests into production support.
         reasons = ["E3_SUPERVISION_UNVERIFIED"]
@@ -455,9 +457,14 @@ class SystemdManager:
     def _bootstrap_unit(execution_id):
         return "lhj-" + hashlib.sha256((execution_id + ":bootstrap").encode()).hexdigest() + ".service"
 
+    @staticmethod
+    def _result_reader_unit(execution_id):
+        return "lhj-" + hashlib.sha256((execution_id + ":result_reader").encode()).hexdigest() + ".service"
+
     def _properties(self, execution, stage):
-        limits = budget.substage_limits(execution["budget_grant"], stage)
-        return {"Slice": self.configuration["slice"], "Type": "exec", "KillMode": "control-group",
+        limits = budget.substage_limits(execution["budget_grant"], stage,
+            supervision_version=execution.get("supervision_version", 2))
+        properties = {"Slice": self.configuration["slice"], "Type": "exec", "KillMode": "control-group",
             "SendSIGKILL": "yes", "RemainAfterExit": "yes", "RuntimeMaxSec": "1us",
             "TimeoutStopSec": str(limits["terminate_grace_seconds"]), "MemoryMax": str(limits["memory_bytes"]),
             "TasksMax": str(limits["processes"]), "CPUQuota": _cpu_quota(limits), "CPUQuotaPeriodSec": "1ms",
@@ -470,10 +477,18 @@ class SystemdManager:
             "StandardOutput": "null", "StandardError": "null",
             "ReadWritePaths": " ".join(execution["writable"]),
             "ReadOnlyPaths": " ".join(execution.get("readonly", []))}
+        if stage == "result_reader":
+            # Its only output is the inherited anonymous pipe. No job root is
+            # writable, and no follow-up result file is read by this process.
+            properties.pop("StandardOutput")
+            properties["ReadWritePaths"] = ""
+            properties["ReadOnlyPaths"] = " ".join(sorted(set(execution.get("readonly", []) + execution["writable"])))
+        return properties
 
     def _new_stage(self, handle, stage):
         identity, execution = handle["identity"], handle["execution"]
-        unit = self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else identity["unit"]
+        unit = (self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else
+                self._result_reader_unit(identity["execution_id"]) if stage == "result_reader" else identity["unit"])
         return {"unit": unit, "boot_id": execution["budget_grant"]["boot_id"],
             "result_path": execution["result_path"], "cgroup_parent": self.configuration["cgroup"],
             "cancel_event": handle["cancel_event"], "launch": None, "launch_acked": False,
@@ -484,18 +499,20 @@ class SystemdManager:
             "budget_grant": execution["budget_grant"],
             "phase_deadline_boottime_ns": execution["phase_deadline_boottime_ns"], "stage": stage}
 
-    def _deliver_stage(self, handle, stage, *, bootstrap_proof=None):
+    def _deliver_stage(self, handle, stage, *, bootstrap_proof=None, helper_proof=None):
         try:
-            return self._deliver_stage_impl(handle, stage, bootstrap_proof=bootstrap_proof)
+            return self._deliver_stage_impl(handle, stage, bootstrap_proof=bootstrap_proof, helper_proof=helper_proof)
         except JobError as error:
             raise RunnerError(error.code, str(error)) from error
 
-    def _deliver_stage_impl(self, handle, stage, *, bootstrap_proof=None):
+    def _deliver_stage_impl(self, handle, stage, *, bootstrap_proof=None, helper_proof=None):
         execution = handle["execution"]
         part = handle[stage] = self._new_stage(handle, stage)
         properties = self._properties(execution, stage)
         command = ["/usr/bin/systemd-run", "--user", "--quiet", "--unit=" + part["unit"],
                    "--description=Local-Hand-supervised-" + stage]
+        if stage == "result_reader":
+            command.append("--pipe")
         command.extend("--property=" + key + "=" + value for key, value in properties.items() if value)
         script = str(Path(__file__).absolute())
         if any(re.search(r"[\s\\%$]", path) for path in (script, execution["python"])):
@@ -503,8 +520,19 @@ class SystemdManager:
         if stage == "bootstrap":
             payload = {"execution": execution, "allocation": execution["bootstrap_allocation"]}
             command.extend(["--", execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)])
-        else:
+        elif stage == "helper":
             command.extend(["--", execution["python"], "-I", script, "--helper", handle["plan_path"]])
+        else:
+            helper_identity = dict(helper_proof["identity"], unit=helper_proof["unit"], exit_code=helper_proof["exit_code"])
+            payload = {key: _plain(execution[key]) for key in ("execution_id", "phase", "operation_id",
+                "budget_grant", "budgets", "supervision_version", "bootstrap_allocation",
+                "parent_mount_namespace", "phase_deadline_boottime_ns", "runtime_cap_us")}
+            payload.update(reader_unit=part["unit"], unit=part["unit"], helper_identity=helper_identity,
+                           result_name=Path(execution["result_path"]).name)
+            part["reader"] = result_reader.PipeReader(execution["execution_id"], execution["phase"], part["unit"], helper_identity)
+            part.update(pipe_error=None, pipe_closed=False, client_stopped=False, pipe_nonblocking=False)
+            command.extend(["--", execution["python"], "-I", "-B", script,
+                            "--result-reader", result_reader.encode_payload(payload)])
         environment = {"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": "/run/user/" + str(os.geteuid())}
         bootstrap.check_argv(command, environment)
         if self._start_guard is None:
@@ -522,12 +550,17 @@ class SystemdManager:
             # The durable guard records each unique stage before entering here.
             # Neither a Popen exception nor a lost return proves no delivery.
             handle["delivery_attempted"] = part["delivery_attempted"] = True
-            part["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            part["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE if stage == "result_reader" else subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, env=environment)
+            if stage == "result_reader":
+                os.set_blocking(part["launch"].stdout.fileno(), False)
+                part["pipe_nonblocking"] = True
             return part["launch"]
         try:
             options = {"stage": stage}
             if stage == "helper": options["bootstrap_proof"] = bootstrap_proof
+            if stage == "result_reader": options["helper_proof"] = helper_proof
             accepted = self._start_guard(handle["identity"]["execution_id"], deliver, **options)
         except JobError as error:
             raise RunnerError(error.code, str(error)) from error
@@ -541,6 +574,10 @@ class SystemdManager:
 
     def _start(self, identity, plan, cancel_event):
         plan = dict(plan, execution_id=identity["execution_id"])
+        supervision_version = plan.get("supervision_version", 2)
+        if type(supervision_version) is not int or supervision_version not in (2, 3):
+            raise RunnerError("UNSUPPORTED", "Unknown durable supervision version")
+        identity = dict(identity, supervision_version=supervision_version)
         try:
             execution, _ = self._admit(plan)
             allocation = bootstrap_roots.validate_grant(_plain(plan.get("bootstrap_allocation")),
@@ -549,25 +586,26 @@ class SystemdManager:
             budget.validate_grant(grant, execution_id=identity["execution_id"], phase=identity["phase"],
                                   operation_id=identity["job_key"], budgets=execution["budgets"])
             runtime_us = _runtime_microseconds(grant)
-            budget.substage_limits(grant, "bootstrap")
-            budget.substage_limits(grant, "helper")
+            for stage in (("bootstrap", "helper", "result_reader") if supervision_version == 3 else ("bootstrap", "helper")):
+                budget.substage_limits(grant, stage, supervision_version=supervision_version)
         except JobError as error:
             raise RunnerError(error.code, str(error)) from error
         if identity["unit"] in self._runs:
             raise RunnerError("CONFLICT", "manager identity reuse")
         execution = dict(execution, phase=identity["phase"], execution_id=identity["execution_id"],
             operation_id=identity["job_key"], budget_grant=grant, bootstrap_allocation=allocation,
-            runtime_cap_us=runtime_us, unit=identity["unit"],
+            runtime_cap_us=runtime_us, unit=identity["unit"], supervision_version=supervision_version,
             bootstrap_unit=self._bootstrap_unit(identity["execution_id"]),
             parent_mount_namespace=os.readlink("/proc/self/ns/mnt"),
             phase_deadline_boottime_ns=budget.phase_deadline_ns(grant) - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS)
         suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
         execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
-        handle = {"version": 2, "unit": identity["unit"], "identity": dict(identity), "execution": execution,
+        handle = {"version": supervision_version, "unit": identity["unit"], "identity": dict(identity), "execution": execution,
             "plan_path": str(Path(execution["roots"]["evidence"]) / bootstrap.plan_name(identity["execution_id"])),
             "cancel_event": cancel_event, "bootstrap": None, "helper": None, "stage": "bootstrap",
             "delivery_attempted": False, "recovered": False, "helper_attempted": False,
-            "bootstrap_proof": None, "transition_error": None}
+            "bootstrap_proof": None, "transition_error": None,
+            "result_reader": None, "reader_attempted": False, "helper_proof": None, "reader_error": None}
         self._runs[identity["unit"]] = handle
         self._deliver_stage(handle, "bootstrap")
         return handle
@@ -581,9 +619,10 @@ class SystemdManager:
         return {key: handle.get(key) for key in fields}
 
     def export_handle(self, handle):
-        if handle.get("version") == 2:
-            return {**handle["identity"], "manager": {"version": 2, "stage": handle["stage"],
+        if handle.get("version") in (2, 3):
+            return {**handle["identity"], "manager": {"version": handle["version"], "stage": handle["stage"],
                 "bootstrap": self._export_unit(handle["bootstrap"]), "helper": self._export_unit(handle["helper"]),
+                **({"result_reader": self._export_unit(handle["result_reader"])} if handle["version"] == 3 else {}),
                 "allocation_digest": handle["execution"]["bootstrap_allocation"]["grant_digest"]}}
         fields = ("boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked", "invocation_id", "execution_id", "phase_deadline_boottime_ns")
         return {**{key: value for key, value in handle["identity"].items() if key != "manager"},
@@ -601,11 +640,26 @@ class SystemdManager:
                 "bootstrap_exit_proof": _plain(proof)}
 
     def inspect(self, handle):
-        if handle.get("version") != 2:
+        if handle.get("version") not in (2, 3):
             return self._inspect_unit(handle)
         def observe(part):
             try:
-                return self._inspect_unit(part)
+                if part is None:
+                    return _unknown("stage has not been delivered")
+                if part.get("stage") == "result_reader" and not part.get("recovered"):
+                    self._drain_reader(part)
+                proof = self._inspect_unit(part)
+                if part.get("reader") is not None and proof.get("identity"):
+                    try:
+                        part["reader"].bind_reader(proof["identity"])
+                    except (JobError, ValueError) as error:
+                        part["pipe_error"] = str(error)
+                        self._stop_unit(part)
+                if part.get("reader") is not None and self._stage_exited(proof):
+                    if not self._finish_reader_transport(part):
+                        return {**proof, "state": "UNKNOWN", "collectors_stopped": False,
+                                "missing": ["reader unit exited; its local collector has not stopped"]}
+                return proof
             except RunnerError as error:
                 return _unknown(str(error))
             except Exception:
@@ -618,8 +672,22 @@ class SystemdManager:
             # the deterministic helper unit. Observe that original identity only;
             # never resume the transition or manufacture a new start.
             second = observe(handle["helper"])
+            third = observe(handle["result_reader"]) if handle["version"] == 3 else None
             if not first_exited:
-                return _unknown("bootstrap exit is unresolved; helper identity was independently observed")
+                return _unknown("bootstrap exit is unresolved; all original stage identities were independently observed")
+            if third is not None:
+                if not self._stage_exited(second) or not self._stage_exited(third):
+                    return _unknown("original helper or result reader exit is unresolved; recovery never redelivers")
+                # The fixed systemd-run client issues StartTransientUnit once
+                # and then only observes. After all three accepted units have
+                # no queued job and empty trees, a lost pipe cannot undo those
+                # exit facts. Its local client may remain, so collector exit
+                # stays unproven; no seal/result success may be inferred. This
+                # still permits a separately authorized reconciliation round.
+                return {**self._unavailable_result(second,
+                            "result transport was lost on restart; local collector exit is unproven and no reader replay is authorized"),
+                        "collectors_stopped": False, "helper_exit_proof": second,
+                        "result_reader_exit_proof": third}
             if second.get("state") == "EXITED":
                 second["effects_checked"] = (second.get("effects_checked") is True and
                     first.get("result", {}).get("bootstrap_prepared") is True)
@@ -629,6 +697,8 @@ class SystemdManager:
                 # One failing manager observation cannot starve the other unit's
                 # budget/exit checks once its delivery may have happened.
                 observe(handle["helper"])
+            if handle.get("result_reader") is not None:
+                observe(handle["result_reader"])
             return first
         if first.get("result", {}).get("bootstrap_prepared") is not True:
             return self._bootstrap_terminal(handle, first,
@@ -656,14 +726,134 @@ class SystemdManager:
         second = observe(handle["helper"])
         if handle["helper"].get("cancel_before_launch"):
             return self._bootstrap_terminal(handle, first, "CANCELLED")
+        if handle["version"] == 3:
+            return self._inspect_result_reader(handle, second, observe)
         return second
 
+    @staticmethod
+    def _stage_exited(proof):
+        return (proof.get("state") == "EXITED" and all(proof.get(key) is True for key in
+            ("future_start_blocked", "tree_exited", "collectors_stopped", "writers_stopped")))
+
+    @staticmethod
+    def _unavailable_result(helper_proof, reason):
+        return {**helper_proof, "effects_checked": False, "helper_result_verified": False,
+                "result": {"outcome": "UNKNOWN", "helper_started": True}, "facts": {}, "missing": [reason]}
+
+    def _drain_reader(self, part, *, terminal=False):
+        """Read only a nonblocking anonymous pipe, with a fixed per-tick bound."""
+        launch = part.get("launch")
+        if launch is None or getattr(launch, "stdout", None) is None or part.get("pipe_closed"):
+            return True
+        if not part.get("pipe_nonblocking"):
+            # Setup may fail after Popen. Never read a pipe whose nonblocking
+            # mode was not established, even while retaining its unit receipt.
+            part["pipe_error"] = "nonblocking result transport was not established"
+            return True
+        maximum = result_reader.MAX_TRANSPORT_BYTES + 1 if terminal else 65536
+        drained = 0
+        while drained < maximum:
+            try:
+                chunk = os.read(launch.stdout.fileno(), min(65536, maximum - drained))
+            except BlockingIOError:
+                return True
+            except OSError as error:
+                part["pipe_error"] = "result pipe observation failed: " + type(error).__name__
+                return True
+            if not chunk:
+                return True
+            drained += len(chunk)
+            if part.get("pipe_error") is None:
+                try:
+                    part["reader"].feed(chunk)
+                except (JobError, ValueError) as error:
+                    part["pipe_error"] = str(error)
+        if terminal:
+            part["pipe_error"] = "result transport exceeded its fixed bound"
+        return False
+
+    def _finish_reader_transport(self, part):
+        """After unit exit, stop only its local waiting client and seal memory."""
+        if part.get("pipe_closed"):
+            return True
+        launch = part.get("launch")
+        if launch is None or getattr(launch, "stdout", None) is None:
+            part["pipe_error"] = "result transport receipt is missing"
+            return False
+        try:
+            # --pipe waits for inactive/failed. RemainAfterExit deliberately
+            # retains active/exited identity, so client exit is not our ACK.
+            if launch.poll() is None:
+                try:
+                    launch.kill()
+                except ProcessLookupError:
+                    pass
+                if launch.poll() is None:
+                    return False
+            part["client_stopped"] = True
+            self._drain_reader(part, terminal=True)
+            launch.stdout.close()
+            part["pipe_closed"] = True
+            if part.get("pipe_error") is None:
+                try:
+                    part["reader"].finish()
+                except (JobError, ValueError) as error:
+                    part["pipe_error"] = str(error)
+            return True
+        except (OSError, ValueError) as error:
+            part["pipe_error"] = "result transport cleanup failed: " + type(error).__name__
+            return False
+
+    def _inspect_result_reader(self, handle, helper_proof, observe):
+        part = handle.get("result_reader")
+        if not self._stage_exited(helper_proof):
+            if part is not None:
+                observe(part)
+            return helper_proof
+        handle["helper_proof"] = helper_proof
+        if part is not None and not part.get("delivery_attempted") and handle.get("reader_error"):
+            return self._unavailable_result(helper_proof, "result reader refused: " + handle["reader_error"])
+        if part is None:
+            if handle["cancel_event"].is_set():
+                return self._unavailable_result(helper_proof, "cancelled before result observation; no new reader is authorized")
+            if handle.get("reader_attempted"):
+                return self._unavailable_result(helper_proof, handle.get("reader_error") or "result reader was not delivered")
+            handle["reader_attempted"] = True
+            try:
+                part = self._deliver_stage(handle, "result_reader", helper_proof=helper_proof)
+            except RunnerError as error:
+                handle["reader_error"] = error.code
+                part = handle.get("result_reader")
+                if part is not None and part.get("delivery_attempted"):
+                    raise
+                return self._unavailable_result(helper_proof, "result reader refused: " + error.code)
+            handle["stage"] = "result_reader"
+        if part.get("cancel_before_launch"):
+            return self._unavailable_result(helper_proof, "result reader startup guard refused delivery")
+        third = observe(part)
+        if part.get("pipe_error") and not self._stage_exited(third):
+            self._stop_unit(part)
+        if not self._stage_exited(third):
+            return third
+        if not self._finish_reader_transport(part):
+            return _unknown("result reader exited; its local collector has not stopped")
+        if third.get("exit_code") != 0 or part.get("pipe_error"):
+            return self._unavailable_result(helper_proof, part.get("pipe_error") or "result reader did not exit successfully")
+        result = part["reader"].result
+        if not isinstance(result, dict):
+            return self._unavailable_result(helper_proof, "result reader did not return a complete verified result")
+        # Reader success proves observation, not successful execution. Retain
+        # the original helper exit code even when its final fsync failed.
+        return {**helper_proof, "effects_checked": result.get("effects_checked", False),
+            "helper_result_verified": True, "result": result, "facts": result.get("facts", {}), "missing": [],
+            "result_reader_exit_proof": third}
+
     def stop(self, handle):
-        if handle.get("version") != 2:
+        if handle.get("version") not in (2, 3):
             return self._stop_unit(handle)
         handle["cancel_event"].set()
         failure = None
-        for part in (handle["bootstrap"], handle["helper"]):
+        for part in (handle["bootstrap"], handle["helper"], handle.get("result_reader")):
             if part is not None:
                 try:
                     self._stop_unit(part)
@@ -674,19 +864,24 @@ class SystemdManager:
                         failure.add_note("Additional stage stop failure: " + type(error).__name__)
         if failure is not None:
             raise failure
-        return _unknown("original bootstrap and helper identities are being stopped")
+        return _unknown("all original supervised stage identities are being stopped")
 
     def reattach(self, identity, plan, cancel_event):
         saved = identity.get("manager", {})
+        version = plan.get("supervision_version", 2)
+        if type(version) is not int or version not in (2, 3):
+            raise RunnerError("IO_UNCERTAIN", "Recovery supervision version is unavailable")
         if not saved and plan.get("bootstrap_allocation") is not None:
             # The broker may die before receiving the first manager observation.
             # Both deterministic identities still need observation, not replay.
-            saved = {"version": 2, "stage": "UNKNOWN", "bootstrap": None, "helper": None,
+            saved = {"version": version, "stage": "UNKNOWN", "bootstrap": None, "helper": None, "result_reader": None,
                      "allocation_digest": plan["bootstrap_allocation"]["grant_digest"]}
-        if saved.get("version") != 2:
+        if saved.get("version") not in (2, 3):
             if plan.get("bootstrap_allocation") is not None:
                 raise RunnerError("IO_UNCERTAIN", "New bootstrap execution has an incompatible recovery receipt")
             return self._reattach_legacy(identity, plan, cancel_event)
+        if saved["version"] != version or identity.get("supervision_version", version) != version:
+            raise RunnerError("IO_UNCERTAIN", "Recovery cannot change an original supervision version")
         support = self.support()
         if not support["supported"]:
             raise RunnerError("IO_UNCERTAIN", "original manager cannot be observed on this host")
@@ -710,17 +905,20 @@ class SystemdManager:
             # Broken timing never grants runtime and cannot disable observation
             # or stopping of independently preserved boot/unit identities.
             grant, deadline = None, None
-        execution = dict(execution, budget_grant=grant, bootstrap_allocation=allocation,
+        execution = dict(execution, budget_grant=grant, bootstrap_allocation=allocation, supervision_version=version,
                          phase_deadline_boottime_ns=deadline)
         suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
         execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
-        handle = {"version": 2, "unit": identity["unit"], "identity": {key: value for key, value in identity.items() if key != "manager"},
+        handle = {"version": version, "unit": identity["unit"], "identity": {key: value for key, value in identity.items() if key != "manager"},
             "execution": execution, "cancel_event": cancel_event, "stage": saved.get("stage"),
             "delivery_attempted": True, "recovered": True, "helper_attempted": True,
-            "bootstrap_proof": None, "transition_error": None}
-        for stage in ("bootstrap", "helper"):
+            "bootstrap_proof": None, "transition_error": None, "result_reader": None,
+            "reader_attempted": True, "helper_proof": None, "reader_error": None}
+        handle["identity"]["supervision_version"] = version
+        for stage in (("bootstrap", "helper", "result_reader") if version == 3 else ("bootstrap", "helper")):
             prior = saved.get(stage)
-            unit = self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else identity["unit"]
+            unit = (self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else
+                    self._result_reader_unit(identity["execution_id"]) if stage == "result_reader" else identity["unit"])
             original_boot = original_grant.get("boot_id") if isinstance(original_grant, dict) else None
             if not isinstance(original_boot, str) or re.fullmatch(budget.UUID_PATTERN, original_boot) is None:
                 original_boot = None
@@ -812,7 +1010,18 @@ class SystemdManager:
             if observed.returncode or observed.stdout.decode().strip() != handle["invocation_id"]:
                 return _unknown("original invocation differs; stop not retargeted")
         launch = handle["launch"]
-        if not handle.get("recovered") and (launch is None or launch.poll() is None):
+        if handle.get("stage") == "result_reader" and not handle.get("invocation_id"):
+            observed = self._command("show", handle["unit"], "--property=InvocationID,ControlGroup")
+            values = dict(line.split("=", 1) for line in observed.stdout.decode().splitlines() if "=" in line)
+            invocation, group = values.get("InvocationID", ""), values.get("ControlGroup", "")
+            cgroup = Path("/sys/fs/cgroup" + group)
+            if (observed.returncode or re.fullmatch(r"[0-9a-f]{32}", invocation) is None or not group or
+                    not str(cgroup).startswith(handle["cgroup_parent"] + "/") or cgroup.name != handle["unit"]):
+                return _unknown("original result reader start has not been observed; stop not retargeted")
+            handle["invocation_id"] = invocation
+            handle["launch_acked"] = True
+        if (handle.get("stage") != "result_reader" and not handle.get("recovered")
+                and (launch is None or launch.poll() is None)):
             return _unknown("manager start request remains in flight")
         # Ordered after launch completion. systemctl stop --no-block would not
         # prove queued start cancellation, so observe only after completed stop.
@@ -829,7 +1038,7 @@ class SystemdManager:
         if Path("/proc/sys/kernel/random/boot_id").read_text().strip() != handle["boot_id"]:
             return _unknown("boot identity changed; reconcile durable ownership")
         launch = handle["launch"]
-        if not handle.get("recovered"):
+        if not handle.get("recovered") and handle.get("stage") != "result_reader":
             if launch is None or launch.poll() is None:
                 return _unknown("manager start request has not been acknowledged")
             handle["launch_acked"] = launch.returncode == 0
@@ -847,6 +1056,11 @@ class SystemdManager:
         cgroup = Path("/sys/fs/cgroup" + group)
         if not group or not str(cgroup).startswith(expected_prefix) or cgroup.name != handle["unit"]:
             return _unknown("cgroup ownership differs from execution")
+        if handle.get("stage") == "result_reader":
+            # --pipe waits for service termination; a still-running client is
+            # neither a pending delivery nor proof the service remains alive.
+            # Bind the accepted deterministic unit itself before observing it.
+            handle["launch_acked"] = True
         try:
             events = dict(line.split() for line in (cgroup / "cgroup.events").read_text().splitlines())
             # populated is recursive, and is not interchangeable with cgroup.procs.
@@ -887,29 +1101,15 @@ class SystemdManager:
                     "bootstrap_prepared": prepared, "business_started": False, "helper_started": True},
                 "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group},
                 "missing": [] if prepared else ["bootstrap preparation failed; partial files remain allocated"]}
-        result = {}
-        try:
-            raw = ledger_jobs.bounded_regular_bytes(handle["result_path"], 1024 * 1024)
-            candidate = json.loads(raw)
-            if type(candidate) is not dict or candidate.get("execution_id") != handle["execution_id"]:
-                raise ValueError("helper identity differs")
-            if (candidate.get("outcome") not in ("SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN") or
-                    type(candidate.get("effects_checked", False)) is not bool or
-                    type(candidate.get("facts", {})) is not dict):
-                raise ValueError("helper result shape differs")
-            result = candidate
-        except (OSError, ValueError):
-            result = {}
         exit_code = int(values["ExecMainStatus"]) if values.get("ExecMainCode") == "1" and values.get("ExecMainStatus", "").isdigit() else None
-        outcome = result.get("outcome", "UNKNOWN")
+        # Legacy grants have no reader allocation. They remain observable and
+        # stoppable, but cannot fall back to unbounded result storage I/O here.
         return {"state": "EXITED", "future_start_blocked": True, "tree_exited": True,
-                "collectors_stopped": True, "writers_stopped": True, "effects_checked": result.get("effects_checked", False),
-                # The business result is a separately verified observation;
-                # helper exit can fail later while persisting that result.
-                "helper_result_verified": bool(result),
-                "exit_code": exit_code, "facts": result.get("facts", {}), "result": {**result, "outcome": outcome},
+                "collectors_stopped": True, "writers_stopped": True, "effects_checked": False,
+                "helper_result_verified": False, "execution_id": handle["execution_id"], "unit": handle["unit"],
+                "exit_code": exit_code, "facts": {}, "result": {"outcome": "UNKNOWN"},
                 "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group},
-                "missing": [] if result else ["helper result unavailable; side effects require reconciliation"]}
+                "missing": ["unit exit alone does not verify the helper result"]}
 
 
 def _capture_stage(stage, directory, limit, remaining, deadline=None):
@@ -1151,7 +1351,7 @@ def _helper(plan):
     started = time.monotonic()
     remaining_logs = plan["budgets"]["log_bytes"]
     phase = plan["phase"]
-    output = {"execution_id": plan["execution_id"], "outcome": "FAILED", "effects_checked": False,
+    output = {"execution_id": plan["execution_id"], "phase": plan["phase"], "outcome": "FAILED", "effects_checked": False,
               "business_started": False, "helper_started": True, "facts": {}, "stages": [], "retention": plan.get("retention")}
     work, evidence = Path(plan["roots"]["work"]), Path(plan["roots"]["evidence"])
     directory = evidence / (phase + "-" + hashlib.sha256(plan["execution_id"].encode()).hexdigest()[:16])
@@ -1176,7 +1376,8 @@ def _helper(plan):
         os.environ.clear(); os.environ.update(plan["environment"])
         supervision = plan
         if "bootstrap_allocation" in plan:
-            supervision = dict(plan, budgets=budget.substage_limits(grant, "helper"))
+            supervision = dict(plan, budgets=budget.substage_limits(grant, "helper",
+                supervision_version=plan.get("supervision_version", 2)))
         output["facts"]["cgroup_limits"] = _verify_cgroup_limits(supervision)
         output["facts"]["temporary"] = ledger_jobs.check_temp_binding(plan["roots"]["temporary"])
         import platform, sqlite3
@@ -1325,9 +1526,12 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--helper")
     mode.add_argument("--bootstrap")
+    mode.add_argument("--result-reader")
     args = parser.parse_args(argv)
     if args.bootstrap is not None:
         return bootstrap.prepare(bootstrap.decode_payload(args.bootstrap))
+    if args.result_reader is not None:
+        return result_reader.run(result_reader.decode_payload(args.result_reader))
     path = Path(args.helper)
     if not path.is_absolute() or path.is_symlink(): return 2
     raw = ledger_jobs.bounded_regular_bytes(path, 4 * 1024 * 1024)
