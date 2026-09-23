@@ -1,0 +1,26 @@
+{
+  "source_parent": "8d283c9e939124175aea4c6cbf4afcd22f1ee0f0",
+  "source_tree": "18520329f04a92c556c345928af09858c9d79bac",
+  "files": {
+    ".github/workflows/local-hand-v0-1-validation.yml": "dfde25a4160ec7d9f31c433b3d595b9372242c520fe6b69a081918e7f3b90c84",
+    "docs/a2-execution/IMPLEMENTATION_STATUS.md": "782f325f2f6bbc885da39a6fe52c31e50a65230d1d5cdd9a166f9b531f83e1b2",
+    "tests/fixtures/quota_query_syscalls.c": "85ad39bc616eeb522088657ea4d499f4f55d1b4e5ebdd2b05c63472cf944603d",
+    "tests/test_e3_quota_abi.py": "a1cf8dc4b69f265fe03ab06343e9bcf57738cfd02daed3cd1d8070f83cfb26d5",
+    "tests/test_e3_quota_journal.py": "1c7533cfc30f458d00894372a87bd30bd1cf9a1ac80e17256f75863d25b1d4dd",
+    "tests/test_e3_quota_monitor.py": "4cc49b65a2cf240a2a702627da22b8b71159e34ec4734bb447ba5867c348ff4a",
+    "tests/test_e3_quota_runtime.py": "ff169c13d85011fc3630b3042a525e57f96537e2204b5aa216a0e29ed4f4e4b0",
+    "tests/test_e3_quota_runtime_capture.py": "82d3afd68b7cf1be804485e50f745f60a9f9cf2ec61ca90159437f54dd4887c4",
+    "tests/test_e3_quota_runtime_host.py": "c126af440f28a76727bf314f6f6af13b394ecfd19a4f686fe531312454b5c942",
+    "tests/test_e3_quota_worker.py": "a4a9adbb2e6e348b32b952ec9448225e5cbb2044b5570e66060614beb92b9518",
+    "tools/admin/local_hand_quota_observer/README.md": "ba914fdb4810b1fa635b8f04247a7fc001705fe96ac8d05bf5909baf4b8b902d",
+    "tools/admin/local_hand_quota_observer/admission.py": "9355a86c37f406b2fcdbd65869d316bc63d65e76351448aa0034815d690371ab",
+    "tools/admin/local_hand_quota_observer/journal.py": "4eb19510f205e36562e81aac16b26387e6c542b6ea26567d01762a1c2c2f7283",
+    "tools/admin/local_hand_quota_observer/protected_inputs.py": "274a6f362f358e13f1a50621f74827d7f5d4fe244ff409517b68eb414176fa2b",
+    "tools/admin/local_hand_quota_observer/quota_fd_query.c": "4b7a020fcabe5dc514be2983b6b3ff7184d482382b8a76c4d9b03e9fb4548377",
+    "tools/admin/local_hand_quota_observer/quota_syscall_filter.h": "f8c05579ae14c5d1715120c4e86a43b9f7601cea743495e608aaa9eeb0782370",
+    "tools/admin/local_hand_quota_observer/supervision.py": "e47788ebf850d2f99007e447ca66c1e302fa81de41bc837f01510b5c29030463",
+    "tools/admin/local_hand_quota_observer/systemd_runtime.py": "8ae6e0166c7ef1da651474c41cb3bbd4f0b6936e321a4c4a4ed8cb26f6be435d",
+    "tools/admin/local_hand_quota_observer/worker.py": "2da382a491479a9177ab88f4aee63dff5deb499df11388e844e183781a1eb437"
+  },
+  "source_commit": "39e7bcbbad388557cb1ebc3056c18f94a12bb1f4"
+}

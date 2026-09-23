@@ -27,7 +27,8 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 当前检查点进一步完成 Q1 单次 systemd 查询装配源码、受保护 worker、参数级 syscall 过滤及永久启动意图。
 启动竞态、失败停止、原身份恢复及有界采集已有定向验证；systemd/quota 成功链仍为 LOGIC_ONLY，
 未启动真实单元或执行真实 quota。详细边界见 [管理侧 README](../../tools/admin/local_hand_quota_observer/README.md)。
-完整 observer 服务和 Q2 账本/通信未完成，Q1 实机仍 BLOCKED。普通开发日志随验证记录入库，不逐次生成 ZIP。
+完整 observer 服务和 Q2 账本/通信未完成，Q1 实机仍 BLOCKED。准确源码 `39e7bcb`、106 项定向测试
+及仓库内原始日志见 [Q1 运行装配验证](E3_QUOTA_Q1_RUNTIME_VERIFICATION.md)。普通开发不逐次生成 ZIP。
 
 ## 已实现的代码
 

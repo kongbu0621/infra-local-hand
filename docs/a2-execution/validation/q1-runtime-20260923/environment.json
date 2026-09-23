@@ -1,0 +1,8 @@
+{
+  "system": "Linux",
+  "machine": "x86_64",
+  "python": "3.12.14",
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "native_abi_architecture_tested": "x86_64",
+  "GX10_aarch64_tested": false
+}
