@@ -264,6 +264,17 @@ def _mount_path(value):
     return _canonical_path(value)
 
 
+def _mount_root(value, filesystem):
+    # nsfs.show_path emits a namespace handle, not an absolute pathname.
+    # Keep it opaque and retain the mount: dropping a namespace overmount
+    # could expose the underlying cgroup2 record as a false observation.
+    if filesystem == "nsfs":
+        match = re.fullmatch(r"[a-z][a-z0-9_]{0,31}:\[([1-9][0-9]{0,19})\]", value)
+        if match and int(match.group(1)) <= 2**64 - 1:
+            return value
+    return _mount_path(value)
+
+
 def parse_mountinfo(raw):
     if type(raw) is not bytes or len(raw) > MAX_FILE_BYTES:
         raise ProbeError("MOUNTINFO_BYTE_LIMIT")
@@ -281,7 +292,7 @@ def parse_mountinfo(raw):
                 raise ValueError("mount identity")
             options = set(fields[5].split(",")) | set(fields[separator + 3].split(","))
             records.append({"mount_id": mount_id, "parent_id": parent_id, "device": fields[2],
-                "root": _mount_path(fields[3]), "mount_point": _mount_path(fields[4]), "type": filesystem,
+                "root": _mount_root(fields[3], filesystem), "mount_point": _mount_path(fields[4]), "type": filesystem,
                 "read_only": "ro" in set(fields[5].split(",")), "prjquota": "prjquota" in options,
                 "pquota": "pquota" in options})
         if not records or len({item["mount_id"] for item in records}) != len(records):

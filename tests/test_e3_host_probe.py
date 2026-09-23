@@ -325,6 +325,68 @@ class E3ProbeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(probe.ProbeError, "AMBIGUOUS_OVERMOUNT"):
             probe.match_mount("/mnt/archive", mounts + [dict(mounts[2], mount_id=4)])
 
+    def test_nsfs_namespace_roots_preserve_other_mounts_and_are_never_opened(self):
+        namespace_types = ("net", "mnt", "uts", "ipc", "pid", "user", "cgroup", "time")
+        rows = [f"{index + 10} 1 0:4 {name}:[{1000 + index}] /run/ns-fixture/{name} rw shared:4 - nsfs private-ns-source rw,password=ns-secret\n"
+                for index, name in enumerate(namespace_types)]
+        with mock.patch.object(os, "open", side_effect=AssertionError("namespace target open")), \
+                mock.patch.object(os, "stat", side_effect=AssertionError("namespace target stat")), \
+                mock.patch.object(Path, "resolve", side_effect=AssertionError("namespace target resolve")):
+            mounts = probe.parse_mountinfo(MOUNTINFO + "".join(rows).encode())
+            self.assertEqual(len(mounts), 3 + len(namespace_types))
+            for index, name in enumerate(namespace_types):
+                item = probe.match_mount("/run/ns-fixture/" + name, mounts)
+                self.assertEqual(item["root"], f"{name}:[{1000 + index}]")
+                self.assertEqual(item["type"], "nsfs")
+            self.assertEqual(probe.match_mount("/mnt/archive/job", mounts)["type"], "cifs")
+            self.assertEqual(probe.match_mount("/sys/fs/cgroup/fixture.slice", mounts)["type"], "cgroup2")
+        self.assertEqual(mounts[:3], probe.parse_mountinfo(MOUNTINFO))
+        for secret in ("private-ns-source", "ns-secret", "mount-secret"):
+            self.assertNotIn(secret, json.dumps(mounts))
+
+    def test_namespace_root_exception_keeps_filesystem_and_path_validation_strict(self):
+        cases = [(kind, "net:[1000]", "/run/ns-fixture") for kind in ("ext4", "xfs", "cgroup2", "cifs", "nfs")]
+        cases += [("nsfs", root, "/run/ns-fixture") for root in (
+            "relative", "../net:[1000]", "net:[-1]", "net:[+1]", "net:[0]", "net:[01]",
+            "net:[]", "net:[abc]", "net:[1000]suffix", "net:[1000]/child", "Net:[1000]",
+            "net:[18446744073709551616]", "x" * 33 + ":[1000]", r"net:\134[1000]",
+        )]
+        cases += [("nsfs", "net:[1000]", point) for point in ("relative", "//run/ns-fixture", "/run/../ns-fixture")]
+        for kind, root, point in cases:
+            raw = f"10 1 0:4 {root} {point} rw - {kind} ignored rw\n".encode()
+            with self.subTest(kind=kind, root=root, point=point), self.assertRaisesRegex(probe.ProbeError, "MOUNTINFO_FORMAT"):
+                probe.parse_mountinfo(MOUNTINFO + raw)
+        absolute = b"10 1 0:4 / /run/ns-fixture rw - nsfs ignored rw\n"
+        self.assertEqual(probe.parse_mountinfo(absolute)[0]["root"], "/")
+        escaped = b"10 1 0:4 net:[18446744073709551615] /run/ns\\040fixture rw - nsfs ignored rw\n"
+        self.assertEqual(probe.parse_mountinfo(escaped)[0]["mount_point"], "/run/ns fixture")
+
+    def test_nsfs_overmount_cannot_be_discarded_or_treated_as_delegated_cgroup(self):
+        target = "/sys/fs/cgroup/fixture.slice"
+        for point, expected in ((target, "CGROUP_NOT_CGROUP2"), ("/sys/fs/cgroup", "AMBIGUOUS_OVERMOUNT")):
+            mounts = probe.parse_mountinfo(MOUNTINFO + f"10 2 0:4 cgroup:[1000] {point} rw - nsfs ignored rw\n".encode())
+            gaps = []
+            with self.subTest(point=point), mock.patch.object(os, "open", side_effect=AssertionError("namespace overmount opened")):
+                result = probe._observe_cgroup(target, mounts, lambda code, *args, **kwargs: gaps.append(code))
+            self.assertIn(expected, gaps)
+            self.assertFalse(result["filesystem_verified"])
+            self.assertFalse(result["delegation_sufficient"])
+            self.assertEqual(result["files"], {})
+
+    def test_valid_nsfs_records_do_not_erase_missing_private_inputs_or_grant_e3(self):
+        namespaces = b"10 1 0:4 net:[1000] /run/ns-fixture rw - nsfs ignored rw\n"
+        with observed_host(argv=["--label", "candidate", "--mount-target", "/mnt/archive/job"],
+                           mountinfo=MOUNTINFO + namespaces) as (args, calls):
+            report = probe.probe(args)
+        self.assertEqual(report["readiness"], "INCOMPLETE")
+        codes = {gap["code"] for gap in report["gaps"]}
+        self.assertNotIn("MOUNTINFO_FORMAT", codes)
+        self.assertIn("EXPECTED_UID_REQUIRED", codes)
+        self.assertIn("PRIVATE_CGROUP_AND_SLICE_REQUIRED", codes)
+        self.assertEqual(report["observations"]["mounts"][0]["match"]["type"], "cifs")
+        self.assertTrue(report["observations"]["cgroups"]["root"]["filesystem_verified"])
+        self.assert_unaccepted(report)
+
     def test_bounded_file_reads_reject_overflow_symlinks_and_special_files_without_blocking(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

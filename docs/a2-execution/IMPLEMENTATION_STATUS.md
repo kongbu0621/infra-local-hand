@@ -35,7 +35,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | E1 受监督执行 | 已有私有 root allocation、三个固定单元、受监督配额／计划发布与结果读取、三次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
 | E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。现有实机用例仍为 SKIP/FAIL 占位，尚缺完整 host fixture/harness；委派、namespace、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的真实验收未完成 |
 | 本地 project quota | 固定 Linux/systemd 源码显示，当前 PRJQUOTA 查询的 host capability 要求与 `PrivateUsers=yes` 冲突，`PrivateDevices=yes` 还可能影响设备定位；目标内核、准确失败点与 errno 待实测。现实现未保存 quotactl errno。预建配额不能单独消除此实现障碍；不通过提权或放宽隔离解决 |
-| E3 只读准备 | 独立 `tools/probe_e3_host.py` 仅收集有界宿主事实；exit 0 不表示支持，生产／E3／业务授权始终为 false，不执行 quota syscall、不访问传入 mount target。未有当前绑定目标主机的执行证据时，不将开发环境报告转记为目标实测 |
+| E3 只读准备 | 独立 `tools/probe_e3_host.py` 仅收集有界宿主事实；exit 0 不表示支持，生产／E3／业务授权始终为 false，不执行 quota syscall、不访问传入 mount target。已修复合法 nsfs root 标识被误判为非绝对路径的问题，仍保留挂载覆盖与 cgroup 类型检查。目标机原始证据和修复后重测尚待核验，截图、摘要和开发环境测试不转记为目标实测通过 |
 | helper 结果读取 | 新 v3 将文件读取迁入独立只读 reader unit，父端仅处理有界匿名管道；旧布局不补授 reader 预算、不回退直接读盘。重启丢失管道不重读，结果保留 UNKNOWN；原三 unit 退出可独立记录，允许新显式 reconcile，旧 local CLI 停止仍不冒充已证明。真实 E3 尚未验收 |
 | 真实 Unix maintenance transport | 宿主限制和各准确候选结果按对应验证报告分别记账；独立 TCP/SDK 测试不替代 Unix socket |
 | NAS 运行时 | `nas_quota` 已有固定 CIFS 只读请求、准确响应与身份／时间校验，结果始终 LOGIC_ONLY；实际 collector、写入身份、凭据及限定网络未准入。`ledger.nas.roundtrip` 和真实查询仍明确 UNSUPPORTED，Plugin 不提交该类型。现场事实按 [私有输入工作表](NAS_PRIVATE_INPUT_WORKSHEET.md) 收集，填写不启用查询 |

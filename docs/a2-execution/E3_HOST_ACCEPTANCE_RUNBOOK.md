@@ -45,6 +45,8 @@
 
 探针不枚举 NAS 目录、不读取其文件、不执行 quota syscall，也不调用 NAS query。固定工具动作仅为 systemctl/systemd-run 版本及当前 user manager 的只读 show，不创建待验收 unit。proc 中可能出现的挂载元数据不能当作已访问或验证 NAS 内容。准确字段、固定查询和返回语义以本轮 `tools/probe_e3_host.py` 实现及其测试为准，不能沿用另一版本报告。
 
+挂载记录的 `root` 按文件系统语义解释：[Linux 固定源码的 nsfs.show_path](https://github.com/torvalds/linux/blob/adc218676eef25575469234709c2d87185ca223a/fs/nsfs.c) 会输出 `net:[编号]` 等命名空间标识。探针对 `nsfs` 保留符合有限格式的原标识，不能将其当路径访问；其他文件系统的 root 与所有 mount point 仍按原绝对路径规则检查。nsfs 记录不丢弃，覆盖请求 cgroup 的 nsfs 仍会使该 cgroup 观察被拒绝；同点挂载歧义仍保持不明。修复这类格式误判不补齐 expected UID、私有 slice/cgroup 或真实 harness，也不授予 E3 支持。
+
 当前报告 schema 为 `infra-local-hand-e3-host-probe/v1`，`observations` 包含 host、identity、namespaces、cgroups、mounts、systemd 六组，`gaps` 保存结构化 code/component。`unverified_blockers` 固定保留 `REAL_HARNESS_MISSING`、`QUOTA_PERMISSION_MODEL_UNVERIFIED`、`E3_SUPERVISION_UNVERIFIED`，不会因只读观察齐备而删除。报告是一次有界观察快照，不是可重用的部署许可。
 
 Slice 与委派分别核对：[systemd 固定版本委派说明](https://github.com/systemd/systemd/blob/70bae7648f2c18010187c9cf20093155eaa26029/docs/CGROUP_DELEGATION.md)明确 `Delegate=` 适用于 service/scope，不适用于 slice。探针只观察指定 slice 的状态、ControlGroup 和 accounting 属性，不要求给 slice 设置 `Delegate=yes`；user manager 上游的真实委派与实际 unit 约束仍待验收，不从目录可写性或 slice 存在推断。
