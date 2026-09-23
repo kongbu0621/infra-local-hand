@@ -97,8 +97,9 @@ Scope `LH-E3-QUOTA-HARNESS-v1` is **OPEN**. Its authoritative change documents a
 [architecture](docs/a2-execution/e3-quota-harness/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/e3-quota-harness/IMPLEMENTATION_PLAN.md).
 R, mandate, Owner authority, accessible source, integrity, exceptions and change rules remain those above.
-The proposed A is the existing commit containing these three documents, to be recorded separately after
-that commit exists; this declaration does not invent its own SHA or an Owner decision.
+The proposed documentation baseline A is `415327ebdcc251bb055da9931a7a88990f750b7a`.
+Its exact document digests, proposed scope and pending decision are recorded in
+[E3_QUOTA_HARNESS_BASELINE.md](docs/governance/E3_QUOTA_HARNESS_BASELINE.md).
 No Owner closure decision B or CLOSED record C exists for this change.
 The proposed implementation scope is an isolated, fixed-object administrative quota observer, its bounded
 unprivileged client, internal receipt/budget binding and a test-only real three-unit harness on an
