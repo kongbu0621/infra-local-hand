@@ -183,6 +183,7 @@ def run_profile(profile: NodeProfile, repository: str, profile_id: str) -> dict[
         max_stderr=MAX_OUTPUT_BYTES, code_prefix="validation",
     )
 
+    termination_attempted = False
     try:
         deadline = started + spec.timeout_seconds
         while (proc.poll() is None or stdout_thread.is_alive() or stderr_thread.is_alive()
@@ -190,6 +191,7 @@ def run_profile(profile: NodeProfile, repository: str, profile_id: str) -> dict[
             if time.monotonic() >= deadline:
                 timed_out = True
                 termination_scope = "process_tree"
+                termination_attempted = True
                 exit_code, termination_confirmed, termination_method = _terminate_tree(proc)
                 break
             time.sleep(0.02)
@@ -202,6 +204,16 @@ def run_profile(profile: NodeProfile, repository: str, profile_id: str) -> dict[
         duration = time.monotonic() - started
         stdout = _decoded_capture(stdout_state)
         stderr = _decoded_capture(stderr_state)
+    except BaseException as exc:
+        if not termination_attempted:
+            _, confirmed, _ = _terminate_tree(proc)
+            if not confirmed:
+                if isinstance(exc, Exception):
+                    raise LocalHandError("validation_termination_unconfirmed",
+                        "validation interrupted and process-tree termination was not confirmed",
+                        "indeterminate") from exc
+                exc.add_note("validation interrupted; process-tree termination unconfirmed")
+        raise
     finally:
         # Readers own their pipes. A controller-side close can itself block;
         # cancellation is bounded and cannot promote incomplete capture to PASS.

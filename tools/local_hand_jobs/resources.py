@@ -1,12 +1,11 @@
 """Authority anchoring and conservative resource leases (no timeout stealing)."""
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import stat
 
-from .contract import JobError
+from .contract import JobError, strict_loads
 
 
 class AuthorityLock:
@@ -34,7 +33,11 @@ class AuthorityLock:
                 raise JobError("IO_UNCERTAIN", "Authority registration was not read completely")
             expected = {"authority_id": authority_id, "ledger_id": ledger_id,
                         "state_root": str(Path(state_root).absolute())}
-            if json.loads(raw) != expected:
+            try:
+                registration = strict_loads(raw)
+            except JobError as exc:
+                raise JobError("IO_UNCERTAIN", "Authority registration is ambiguous or invalid") from exc
+            if registration != expected:
                 raise JobError("CONFLICT", "Authority registration does not match")
             current = os.stat(anchor, follow_symlinks=False)
             after = os.fstat(descriptor)

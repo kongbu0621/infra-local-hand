@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import struct
 import tempfile
 import unittest
 from unittest import mock
@@ -862,6 +863,132 @@ class ClientTests(unittest.TestCase):
         self.assertLess(artifact["size"], 8192)
         self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
             artifact, BoundedFileWriter(self.root / "client", max_bytes=8192)))
+
+
+    def test_member_count_budget_precedes_standard_zip_metadata_allocation(self):
+        artifact, callback = self.synthetic_archive(seal_changes={"member_count": 100})
+        original = zipfile.ZipFile._RealGetContents
+        calls = []
+        def tracked(archive):
+            calls.append(True)
+            return original(archive)
+        directory = self.root / "count-before-parser"
+        with mock.patch.object(zipfile.ZipFile, "_RealGetContents", tracked):
+            self.assertCode("LIMIT_EXCEEDED", lambda: EvidenceClient(callback, max_members=1).download(
+                artifact, BoundedFileWriter(directory)))
+        self.assertEqual([], calls)
+        self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_real_directory_count_cannot_hide_behind_forged_end_record_counts(self):
+        def hide_count(raw):
+            raw = bytearray(raw)
+            end = raw.rfind(b"PK\x05\x06")
+            raw[end + 8:end + 12] = b"\x02\0\x02\0"
+            return bytes(raw)
+        artifact, callback = self.synthetic_archive(extra=True, seal_changes={"member_count": 2},
+                                                    archive_transform=hide_count)
+        original = zipfile.ZipInfo
+        calls = []
+        def tracked(*args, **kwargs):
+            calls.append(args[0])
+            return original(*args, **kwargs)
+        directory = self.root / "hidden-count"
+        with mock.patch.object(zipfile, "ZipInfo", tracked):
+            self.assertCode("LIMIT_EXCEEDED", lambda: EvidenceClient(callback, max_members=1).download(
+                artifact, BoundedFileWriter(directory)))
+        self.assertEqual([], calls)
+        self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_impossible_directory_sizes_and_offsets_reject_before_eager_parsing(self):
+        for field in ("directory_size", "directory_offset", "entry_size", "comment_size"):
+            with self.subTest(field=field):
+                def corrupt(raw):
+                    raw = bytearray(raw)
+                    end = raw.rfind(b"PK\x05\x06")
+                    if field == "directory_size":
+                        raw[end + 12:end + 16] = b"\xff" * 4
+                    elif field == "directory_offset":
+                        raw[end + 16:end + 20] = b"\xff" * 4
+                    elif field == "comment_size":
+                        raw[end + 20:end + 22] = b"\xff" * 2
+                    else:
+                        start = int.from_bytes(raw[end + 16:end + 20], "little")
+                        raw[start + 28:start + 30] = b"\xff" * 2
+                    return bytes(raw)
+                artifact, callback = self.synthetic_archive(archive_transform=corrupt)
+                with mock.patch.object(zipfile.ZipFile, "_RealGetContents", side_effect=AssertionError("parser reached")):
+                    self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(artifact,
+                        BoundedFileWriter(self.root / ("bad-directory-" + field))))
+
+    @staticmethod
+    def zip64_end_records(raw):
+        end = raw.rfind(b"PK\x05\x06")
+        record = bytearray(raw[end:])
+        count = int.from_bytes(record[10:12], "little")
+        size, offset = int.from_bytes(record[12:16], "little"), int.from_bytes(record[16:20], "little")
+        extended = struct.pack("<4sQHHIIQQQQ", b"PK\x06\x06", 44, 45, 45, 0, 0, count, count, size, offset)
+        locator = struct.pack("<4sIQI", b"PK\x06\x07", 0, end, 1)
+        record[8:20] = b"\xff" * 12
+        return raw[:end] + extended + locator + bytes(record)
+
+    def test_bounded_directory_scan_preserves_zip64_comments_prefixes_and_trailers(self):
+        def comment(raw):
+            value = b"ordinary ZIP markers PK\x03\x04 PK\x01\x02 " + b"x" * 65000
+            return raw[:-2] + len(value).to_bytes(2, "little") + value
+        transforms = (lambda raw: raw, comment, lambda raw: b"archive prefix\n" + raw,
+                      lambda raw: raw + b"archive trailer\n", self.zip64_end_records,
+                      lambda raw: b"archive prefix\n" + self.zip64_end_records(raw))
+        for number, transform in enumerate(transforms):
+            with self.subTest(number=number):
+                artifact, callback = self.synthetic_archive(archive_transform=transform, streaming=number % 2 == 1)
+                final = EvidenceClient(callback).download(artifact, BoundedFileWriter(self.root / ("compatible-" + str(number))))
+                self.assertEqual(artifact["sha256"], _hash(final.read_bytes()))
+
+    def test_zip64_locator_and_embedded_end_signatures_cannot_bypass_directory_bounds(self):
+        for field in ("locator_offset", "record_size", "volume", "signature_in_comment", "extensible_sector", "ambiguous_locator"):
+            with self.subTest(field=field):
+                def corrupt(raw):
+                    raw = bytearray(self.zip64_end_records(raw))
+                    locator = raw.rfind(b"PK\x06\x07")
+                    extended = raw.rfind(b"PK\x06\x06")
+                    if field == "locator_offset":
+                        raw[locator + 8:locator + 16] = b"\xff" * 8
+                    elif field == "record_size":
+                        raw[extended + 4:extended + 12] = b"\xff" * 8
+                    elif field == "volume":
+                        raw[locator + 16:locator + 20] = (2).to_bytes(4, "little")
+                    elif field == "extensible_sector":
+                        extension = b"unadmitted ZIP64 extensible sector"
+                        raw[extended + 4:extended + 12] = (44 + len(extension)).to_bytes(8, "little")
+                        raw[locator:locator] = extension
+                    elif field == "ambiguous_locator":
+                        extension = bytes(raw[extended:extended + 56])
+                        raw[extended + 4:extended + 12] = (100).to_bytes(8, "little")
+                        raw[locator:locator] = extension
+                    else:
+                        value = b"comment contains PK\x05\x06"
+                        raw[-2:] = len(value).to_bytes(2, "little")
+                        raw.extend(value)
+                    return bytes(raw)
+                artifact, callback = self.synthetic_archive(archive_transform=corrupt)
+                with mock.patch.object(zipfile.ZipFile, "_RealGetContents", side_effect=AssertionError("parser reached")):
+                    self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(artifact,
+                        BoundedFileWriter(self.root / ("bad-end-" + field))))
+
+    def test_archive_rewrite_after_directory_preflight_cannot_reach_zipinfo_allocation(self):
+        artifact, callback = self.synthetic_archive()
+        writer = BoundedFileWriter(self.root / "rewrite-after-preflight")
+        original = evidence_client._validate_directory
+        def rewrite(*args):
+            original(*args)
+            with writer.partial.open("r+b") as stream:
+                stream.write(b"changed")
+                stream.flush()
+                os.fsync(stream.fileno())
+        with mock.patch.object(evidence_client, "_validate_directory", side_effect=rewrite), \
+                mock.patch.object(zipfile, "ZipInfo", side_effect=AssertionError("ZipInfo allocation reached")):
+            self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(artifact, writer))
+        self.assertFalse(writer.final.exists())
 
 
 if __name__ == "__main__":

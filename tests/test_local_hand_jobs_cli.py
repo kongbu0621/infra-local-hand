@@ -583,6 +583,19 @@ class CliTests(unittest.TestCase):
                 with self.assertRaises(JobError):
                     MaintenanceServer(self.broker, self.path, {}, response_seconds=budget)
 
+    def test_extreme_integer_budgets_keep_the_admission_error_contract(self):
+        for budget in (10 ** 1000, -(10 ** 1000)):
+            for entry in ("client", "server"):
+                with self.subTest(positive=budget > 0, entry=entry), \
+                        patch("local_hand_jobs.cli.socket.socket") as make_socket:
+                    with self.assertRaises(JobError) as caught:
+                        if entry == "client":
+                            request(self.path, "lh_job_status", {}, timeout=budget)
+                        else:
+                            MaintenanceServer(self.broker, self.path, {}, response_seconds=budget)
+                    self.assertEqual(caught.exception.code, "INVALID_REQUEST")
+                    make_socket.assert_not_called()
+
     def test_close_blocks_handlers_which_have_not_entered_the_broker(self):
         raw = json.dumps({"tool": "lh_job_status", "arguments": {}}).encode()
         server = MaintenanceServer(self.broker, self.path, {os.geteuid(): self.principal})

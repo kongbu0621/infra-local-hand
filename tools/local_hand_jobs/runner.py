@@ -236,6 +236,7 @@ def _verify_project_quota(path, byte_limit):
     while not existing.exists(): existing = existing.parent
     if existing.resolve() != existing: raise RunnerError("UNSUPPORTED", "linked writable root")
     descriptor = os.open(existing, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    original_error = None
     try:
         fsx = bytearray(28)
         fcntl.ioctl(descriptor, 0x801C581F, fsx, True)  # FS_IOC_FSGETXATTR
@@ -250,9 +251,13 @@ def _verify_project_quota(path, byte_limit):
             raise RunnerError("UNSUPPORTED", "finite admitted project hard quota not proven")
         return {"project_id": project_id, "hard_bytes": quota.bhard * 1024, "mount": mount}
     except OSError as error:
-        raise RunnerError("UNSUPPORTED", "project hard quota cannot be verified") from error
+        original_error = RunnerError("UNSUPPORTED", "project hard quota cannot be verified")
+        raise original_error from error
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
-        os.close(descriptor)
+        ledger_jobs._close_input(descriptor, original_error)
 
 
 def _runtime_microseconds(grant, now=None):
@@ -1027,6 +1032,9 @@ def _helper(plan):
             # source mappings remain read-only in this namespace for all stages.
             output["facts"].update(ledger_jobs.verify_inputs(plan))
             if plan["kind"] == "host.inspect":
+                # This fixed business observation runs inside the helper; it
+                # is still execution even though it spawns no separate child.
+                output["business_started"] = True
                 import platform, sqlite3
                 output["facts"].update(python=sys.version, sqlite=sqlite3.sqlite_version,
                     os=platform.system(), machine=platform.machine(), mounts={k: _mount_for(v) for k, v in plan["roots"].items()})

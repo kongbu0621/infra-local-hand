@@ -107,6 +107,81 @@ def helper_budget_fixture(phase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_host_inspection_records_business_entry_separately_from_preflight(self):
+        import platform
+        for mode in ("complete", "partial_failure", "late_budget_failure", "preflight", "input_rejected"):
+            phase = "preflight" if mode == "preflight" else "business"
+            with self.subTest(mode=mode), helper_budget_fixture(phase) as (plan, target):
+                plan.update(kind="host.inspect", python=sys.executable)
+                observations = []
+                def host_system():
+                    observations.append("host observation")
+                    if mode == "partial_failure" and len(observations) == 2:
+                        raise OSError("host observation failed after business entry")
+                    return "Linux"
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(patch.object(platform, "system", side_effect=host_system))
+                    launched = stack.enter_context(patch.object(runner.subprocess, "Popen"))
+                    stack.enter_context(patch.object(runner, "_interpreter_temp_check",
+                        return_value={"outcome": "SUCCEEDED", "bytes_retained": {}}))
+                    if mode == "input_rejected":
+                        stack.enter_context(patch.object(runner.ledger_jobs, "verify_inputs",
+                            side_effect=runner.ledger_jobs.LedgerPlanError("input rejected")))
+                    if mode == "late_budget_failure":
+                        stack.enter_context(patch.object(runner, "_deadline_remaining",
+                            side_effect=runner.JobError("LIMIT_EXCEEDED", "completion exhausted")))
+                    code = runner._helper(plan)
+                launched.assert_not_called()
+                result = json.loads(target.read_text())
+                started = mode not in ("preflight", "input_rejected")
+                failed = mode in ("partial_failure", "input_rejected")
+                self.assertIs(result["business_started"], started)
+                self.assertTrue(result["helper_started"])
+                self.assertEqual(len(observations), 2 if started else 1)
+                self.assertEqual(code, 1 if failed or mode == "late_budget_failure" else 0)
+                self.assertEqual(result["outcome"], "FAILED" if failed else "SUCCEEDED")
+                self.assertIs(result["effects_checked"], not failed)
+
+    def test_quota_descriptor_cleanup_preserves_admission_errors_and_reports_its_own_failure(self):
+        import struct
+        for mode in ("missing_quota", "io_failure", "verified"):
+            for close_failure in (False, True):
+                with self.subTest(mode=mode, close_failure=close_failure), tempfile.TemporaryDirectory() as folder:
+                    real_close = os.close
+                    closed = []
+                    def close(descriptor):
+                        real_close(descriptor)
+                        closed.append(descriptor)
+                        if close_failure: raise OSError("quota close acknowledgement failed")
+                    def ioctl(descriptor, request, buffer, mutate):
+                        if mode == "io_failure": raise OSError("quota read failed")
+                        if mode == "verified": buffer[:20] = struct.pack("=IIIII", 0x200, 0, 0, 8, 0)
+                        return 0
+                    class QuotaLibrary:
+                        def quotactl(self, command, source, project_id, quota):
+                            quota._obj.bhard = 1
+                            return 0
+                    with patch.object(runner, "_mount_for", return_value={"type": "ext4", "source": "fixture"}), \
+                            patch.object(runner.fcntl, "ioctl", side_effect=ioctl), \
+                            patch.object(runner.ctypes, "CDLL", return_value=QuotaLibrary()), \
+                            patch.object(os, "close", side_effect=close):
+                        if mode != "verified":
+                            with self.assertRaises(runner.RunnerError) as failure:
+                                runner._verify_project_quota(folder, 4096)
+                            self.assertEqual(failure.exception.code, "UNSUPPORTED")
+                            message = "inherited project quota missing" if mode == "missing_quota" else "project hard quota cannot be verified"
+                            self.assertEqual(str(failure.exception), message)
+                            self.assertEqual(bool(getattr(failure.exception, "__notes__", [])), close_failure)
+                        elif close_failure:
+                            with self.assertRaisesRegex(OSError, "quota close acknowledgement failed"):
+                                runner._verify_project_quota(folder, 4096)
+                        else:
+                            proof = runner._verify_project_quota(folder, 4096)
+                            self.assertEqual(proof["project_id"], 8)
+                            self.assertEqual(proof["hard_bytes"], 1024)
+                    self.assertEqual(len(closed), 1)
+                    with self.assertRaises(OSError): os.fstat(closed[0])
+
     def test_final_helper_budget_failure_preserves_checked_business_facts(self):
         import hashlib
         from local_hand_jobs import evidence

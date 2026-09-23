@@ -89,6 +89,14 @@ def _overlap(left: str, right: str) -> bool:
     return a == b or a in b.parents or b in a.parents
 
 
+def _trusted_directory(info) -> bool:
+    # Directory owners can chmod or replace descendants even when group/other
+    # write bits are clear. Only root-owned sticky ancestors such as /tmp may
+    # retain shared write access around the privately owned admitted roots.
+    return (stat.S_ISDIR(info.st_mode) and info.st_uid in {0, os.geteuid()}
+            and (not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)))
+
+
 def _file_names(files: Any, digest_length: int) -> None:
     if type(files) is not dict:
         raise _bad()
@@ -305,7 +313,7 @@ class Policy:
             parents = {}
             for parent in target.parents:
                 info = parent.lstat()
-                if not stat.S_ISDIR(info.st_mode) or (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX):
+                if not _trusted_directory(info):
                     raise _bad()
                 parents[parent] = (info.st_dev, info.st_ino, info.st_mode, info.st_uid)
             def check_parents():
@@ -366,15 +374,14 @@ class Policy:
                     info = parent.lstat()
                     if stat.S_ISLNK(info.st_mode):
                         raise _bad()
-                    # Sticky /tmp is safe as an ancestor when the admitted root
-                    # itself is private. Non-sticky writable ancestors are not.
-                    if parent != path and info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX:
+                    if parent != path and not _trusted_directory(info):
                         raise _bad()
                 info = path.lstat()
                 if value in directories:
                     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
                         raise _bad()
-                elif not stat.S_ISREG(info.st_mode) or info.st_mode & 0o022:
+                elif (not stat.S_ISREG(info.st_mode) or info.st_mode & 0o022
+                      or info.st_uid not in {0, os.geteuid()}):
                     raise _bad()
         except OSError:
             raise JobError("IO_UNCERTAIN", "Private admission paths could not be verified") from None

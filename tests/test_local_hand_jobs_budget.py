@@ -49,6 +49,125 @@ class BudgetTests(unittest.TestCase):
             callback()
         self.assertEqual(code, caught.exception.code)
 
+    def frozen_recovery_fixture(self, namespace="job", **proof_changes):
+        fixture = broker_fixtures.BrokerTests(); fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        runner = DeferredDeliverySupervisor()
+        evidence = SimpleNamespace(root=Path(fixture.temp.name) / "sealed")
+        fixture.runner = runner
+        fixture.broker = Broker(fixture.db, fixture.policy, RegistryFixture(), runner, evidence)
+        fixture.submit()
+        if namespace == "job":
+            identity = fixture.request["operation_id"]
+            fixture.broker.tick()
+            self.assertIsNotNone(runner.deliver(runner.starts[-1][1]))
+            runner.finish(runner.starts[-1][1]); fixture.broker.tick()
+        else:
+            fixture.cancel(); identity = str(uuid.uuid4()); fixture.reconcile(identity)
+        fixture.broker.tick()
+        self.assertIsNotNone(runner.deliver(runner.starts[-1][1]))
+        proof = {"collectors_stopped": True, "writers_stopped": True,
+                 "result": {"business_started": namespace == "job", "evidence_snapshot": {
+                     "root": str(Path(fixture.temp.name) / "raw"), "members": []}}}
+        proof.update(proof_changes)
+        runner.finish(runner.starts[-1][1], **proof); fixture.broker.tick()
+        self.assertEqual(fixture.db.get(namespace, identity)["record"]["phase"], "AWAITING_SEAL")
+        return fixture, identity
+
+    def recover_fixture(self, fixture):
+        replacement = DeferredDeliverySupervisor()
+        restored = Broker(fixture.db, fixture.policy, RegistryFixture(), replacement, fixture.broker.evidence)
+        restored.recover()
+        return restored, replacement
+
+    def test_recovered_checked_work_delivers_only_its_first_evidence_intent(self):
+        for namespace in ("job", "reconcile"):
+            for exit_code in (0, 1):
+                with self.subTest(namespace=namespace, exit_code=exit_code):
+                    fixture, identity = self.frozen_recovery_fixture(namespace, exit_code=exit_code)
+                    original = copy.deepcopy(fixture.db.get(namespace, identity)["record"])
+                    restored, replacement = self.recover_fixture(fixture)
+                    restored.tick()
+                    self.assertEqual([item[2]["phase"] for item in replacement.starts], ["evidence"])
+                    execution_id = replacement.starts[-1][1]
+                    self.assertIsNotNone(replacement.deliver(execution_id))
+                    self.assertIsNone(replacement.deliver(execution_id), "delivery cannot be replayed")
+                    current = fixture.db.get(namespace, identity)["record"]
+                    self.assertTrue(current["recovered"], "the generic recovery barrier must not be cleared")
+                    self.assertEqual(current["business_outcome"], original["business_outcome"])
+                    for key in ("started_boottime_ns", "deadline_boottime_ns", "boot_id"):
+                        self.assertEqual(current["execution_budget"][key], original["execution_budget"][key])
+                    for phase, grant in original["execution_budget"]["grants"].items():
+                        self.assertEqual(current["execution_budget"]["grants"][phase], grant)
+                    frozen = current["frozen_snapshot"]
+                    publication = {"operation_id": fixture.request["operation_id"], "seal_id": str(uuid.uuid4()),
+                        "seal_sha256": "a" * 64, "complete": True, "event_seq": frozen["event_seq"],
+                        "bindings": frozen["bindings"]}
+                    if namespace == "reconcile": publication["reconcile_id"] = identity
+                    replacement.finish(execution_id, collectors_stopped=True, writers_stopped=True,
+                                       result={"seal_record": publication})
+                    restored.tick()
+                    sealed = fixture.db.get(namespace, identity)["record"]
+                    self.assertEqual(sealed["evidence"], "SEALED")
+                    self.assertEqual(sealed["outcome"], original["business_outcome"])
+
+    def test_recovered_seal_refuses_missing_proofs_and_any_prior_evidence_intent(self):
+        for fault in ("effects", "collectors", "writers", "snapshot", "frozen_event", "old_intent"):
+            with self.subTest(fault=fault):
+                changes = {"effects_checked": False} if fault == "effects" else {
+                    "collectors_stopped": False} if fault == "collectors" else {
+                    "writers_stopped": False} if fault == "writers" else {}
+                fixture, identity = self.frozen_recovery_fixture(**changes)
+                if fault in ("snapshot", "frozen_event"):
+                    with fixture.db.transaction() as tx:
+                        frozen = copy.deepcopy(fixture.db.get("job", identity, tx)["record"]["frozen_snapshot"])
+                        if fault == "snapshot": frozen.pop("quiescence")
+                        else: frozen["members"].append("not-in-original-frozen-event")
+                        fixture.db.update(tx, "job", identity, "SYNTHETIC_DAMAGED_SNAPSHOT", {"frozen_snapshot": frozen})
+                if fault == "old_intent": fixture.broker.tick()
+                old_budget = copy.deepcopy(fixture.db.get("job", identity)["record"]["execution_budget"])
+                restored, replacement = self.recover_fixture(fixture)
+                restored.tick()
+                self.assertFalse(replacement.starts)
+                self.assertEqual(fixture.db.get("job", identity)["record"]["execution_budget"], old_budget)
+                if fault == "old_intent":
+                    self.assertIsNone(fixture.runner.deliver(fixture.runner.starts[-1][1]))
+
+    def test_recovered_first_seal_rechecks_current_fences_at_intent_and_delivery(self):
+        for moment in ("before_intent", "before_delivery"):
+            for fault in ("cancel", "revoke", "generation", "lease", "expired", "different_boot", "recover_again"):
+                with self.subTest(moment=moment, fault=fault):
+                    self.clock = {"boot_id": "11111111-1111-4111-8111-111111111111", "boottime_ns": 100 * budget.NANOSECONDS}
+                    fixture, identity = self.frozen_recovery_fixture()
+                    restored, replacement = self.recover_fixture(fixture)
+                    if moment == "before_delivery": restored.tick()
+                    baseline = copy.deepcopy(fixture.db.get("job", identity)["record"]["execution_budget"])
+                    if fault == "cancel":
+                        restored.cancel(identity, fixture.request["request_digest"], {"kind": "job"}, fixture.owner)
+                    elif fault == "revoke": restored.revoke(fixture.owner.principal_id)
+                    elif fault == "generation": fixture.policy.generation += 1
+                    elif fault == "lease":
+                        with fixture.db.transaction() as tx: tx.execute("DELETE FROM leases")
+                    elif fault == "expired": self.clock["boottime_ns"] += 31 * budget.NANOSECONDS
+                    elif fault == "different_boot": self.clock["boot_id"] = "22222222-2222-4222-8222-222222222222"
+                    else: restored.recover()
+                    if moment == "before_intent":
+                        restored.tick()
+                        if fault == "recover_again":
+                            # Another recovery before the first evidence intent
+                            # still has no old evidence execution to replay.
+                            self.assertEqual(len(replacement.starts), 1)
+                            self.assertIsNotNone(replacement.deliver(replacement.starts[-1][1]))
+                            continue
+                        self.assertFalse(replacement.starts)
+                    else:
+                        try:
+                            self.assertIsNone(replacement.deliver(replacement.starts[-1][1]))
+                        except JobError as error:
+                            self.assertIn(error.code, ("LIMIT_EXCEEDED", "IO_UNCERTAIN", "RESOURCE_BUSY"))
+                        self.assertFalse(replacement.delivered)
+                    self.assertEqual(fixture.db.get("job", identity)["record"]["execution_budget"], baseline)
+
     def test_three_phase_allocations_are_durable_and_do_not_change_the_plan(self):
         self.await_seal()
         original = copy.deepcopy(self.row()["plan"])

@@ -30,7 +30,9 @@ def _deadline(connection, deadline):
 
 
 def _seconds(value):
-    if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 60:
+    # Compare integers before math.isfinite can coerce an unbounded value to
+    # float. Invalid budgets must retain the same public refusal contract.
+    if type(value) not in (int, float) or not 0 < value <= 60 or not math.isfinite(value):
         raise JobError("INVALID_REQUEST", "Local transport requires a finite response budget")
     return value
 

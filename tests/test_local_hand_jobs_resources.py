@@ -198,6 +198,22 @@ class ResourceTests(unittest.TestCase):
                 AuthorityLock(anchor, **kwargs)
         self.assertEqual("IO_UNCERTAIN", raised.exception.code)
 
+    def test_duplicate_authority_members_are_rejected_and_release_the_lock(self):
+        anchor, kwargs = self._authority()
+        original = anchor.read_bytes()
+        for key in ("authority_id", "ledger_id", "state_root"):
+            with self.subTest(key=key):
+                duplicate = b'{' + json.dumps(key).encode() + b':"foreign",' + original[1:]
+                anchor.write_bytes(duplicate)
+                with self.assertRaises(JobError) as raised:
+                    AuthorityLock(anchor, **kwargs)
+                self.assertEqual("IO_UNCERTAIN", raised.exception.code)
+                self.assertEqual(duplicate, anchor.read_bytes())
+                # The failed parser must not retain the private authority lock.
+                anchor.write_bytes(original)
+                with AuthorityLock(anchor, **kwargs):
+                    pass
+
     def test_authority_close_error_cannot_close_a_reused_descriptor(self):
         anchor, kwargs = self._authority()
         lock = AuthorityLock(anchor, **kwargs)

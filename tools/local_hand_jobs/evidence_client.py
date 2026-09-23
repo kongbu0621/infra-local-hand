@@ -58,7 +58,113 @@ def _descriptor(artifact: dict, maximum: int) -> dict:
     return {k: artifact[k] for k in ("artifact_id", "role", "size", "sha256")}
 
 
-def _validate_compression(path: Path, info: zipfile.ZipInfo) -> None:
+class _StableArchiveReader:
+    """Keep parser reads inside the verified file and detect changes before use."""
+
+    def __init__(self, raw, maximum: int):
+        self.raw = raw
+        before = os.fstat(raw.fileno())
+        if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
+            raise EvidenceError("LIMIT_EXCEEDED", "archive input exceeds its byte budget")
+        self.identity, self.size = _same(before), before.st_size
+
+    def read(self, size=-1):
+        remaining = self.size - self.tell()
+        data = self.raw.read(remaining if size < 0 else min(size, remaining))
+        # In particular, reject a rewrite between the bounded directory scan
+        # and ZipFile's eager metadata read before it can allocate ZipInfo objects.
+        if _same(os.fstat(self.raw.fileno())) != self.identity:
+            raise EvidenceError("CONFLICT", "archive changed during validation")
+        return data
+
+    def seek(self, offset, whence=os.SEEK_SET):
+        target = offset + (self.tell() if whence == os.SEEK_CUR else self.size if whence == os.SEEK_END else 0)
+        if whence not in (os.SEEK_SET, os.SEEK_CUR, os.SEEK_END) or not 0 <= target <= self.size:
+            raise EvidenceError("CONFLICT", "archive offset exceeds its bytes")
+        return self.raw.seek(target)
+
+    def tell(self):
+        return self.raw.tell()
+
+    def seekable(self):
+        return True
+
+
+def _validate_directory(raw: _StableArchiveReader, expected_count: int, maximum_count: int) -> None:
+    """Bound actual central entries before the standard ZIP parser allocates them.
+
+    This is an allocation preflight. ZipFile and the manifest/member validators
+    still check the archive. Fixed headers are read incrementally; optional member
+    metadata is skipped rather than accumulated. ZIP64 local headers are unchanged.
+    """
+    if not _integer(expected_count, 2**53 - 1):
+        raise EvidenceError("CONFLICT", "archive member count is not an integer")
+    if expected_count > maximum_count:
+        raise EvidenceError("LIMIT_EXCEEDED", "archive member count exceeds budget")
+    raw.seek(max(0, raw.size - 65535 - 22))
+    tail_start = raw.tell()
+    tail = raw.read(65535 + 22)
+    end_offset = tail.rfind(b"PK\x05\x06")
+    end = tail[end_offset:end_offset + 22] if end_offset >= 0 else b""
+    if (len(end) != 22 or int.from_bytes(end[20:22], "little") > len(tail) - end_offset - 22
+            or end[4:8] != b"\0" * 4):
+        raise EvidenceError("CONFLICT", "invalid archive end record")
+    directory_end = tail_start + end_offset
+    count, total = int.from_bytes(end[8:10], "little"), int.from_bytes(end[10:12], "little")
+    size, offset = int.from_bytes(end[12:16], "little"), int.from_bytes(end[16:20], "little")
+    if directory_end >= 20:
+        raw.seek(directory_end - 20)
+        locator = raw.read(20)
+        if locator[:4] == b"PK\x06\x07":
+            if locator[4:8] != b"\0" * 4 or int.from_bytes(locator[16:20], "little") != 1:
+                raise EvidenceError("CONFLICT", "unsupported archive volume layout")
+            relative = int.from_bytes(locator[8:16], "little")
+            record_end = directory_end - 20
+            # Accept the producer's fixed record layout across supported Python
+            # parsers. An extensible sector can make older and newer zipfile
+            # versions select different directories; it is not admitted here.
+            position = record_end - 56
+            raw.seek(position)
+            record = raw.read(56)
+            if (len(record) != 56 or record[:4] != b"PK\x06\x06" or relative > position
+                    or int.from_bytes(record[4:12], "little") != 44
+                    or record[16:24] != b"\0" * 8):
+                raise EvidenceError("CONFLICT", "invalid archive ZIP64 end record")
+            if relative != position:
+                raw.seek(relative)
+                if raw.read(4) == b"PK\x06\x06":
+                    raise EvidenceError("CONFLICT", "ambiguous archive ZIP64 record position")
+            count, total = int.from_bytes(record[24:32], "little"), int.from_bytes(record[32:40], "little")
+            size, offset = int.from_bytes(record[40:48], "little"), int.from_bytes(record[48:56], "little")
+            if offset + size != relative:
+                raise EvidenceError("CONFLICT", "invalid archive ZIP64 directory offset")
+            directory_end = position
+    if count != total or size > directory_end or offset > directory_end - size:
+        raise EvidenceError("CONFLICT", "archive directory exceeds its bytes")
+    if total > maximum_count:
+        raise EvidenceError("LIMIT_EXCEEDED", "archive member count exceeds budget")
+    raw.seek(directory_end - size)
+    remaining, found = size, 0
+    while remaining:
+        if remaining < 46:
+            raise EvidenceError("CONFLICT", "truncated archive directory")
+        header = raw.read(46)
+        if len(header) != 46 or header[:4] != b"PK\x01\x02":
+            raise EvidenceError("CONFLICT", "invalid archive directory member")
+        found += 1
+        if found > maximum_count:
+            raise EvidenceError("LIMIT_EXCEEDED", "archive member count exceeds budget")
+        extra = sum(int.from_bytes(header[start:start + 2], "little") for start in (28, 30, 32))
+        remaining -= 46
+        if extra > remaining:
+            raise EvidenceError("CONFLICT", "archive directory member exceeds its bytes")
+        raw.seek(extra, os.SEEK_CUR)
+        remaining -= extra
+    if found != total or found != expected_count:
+        raise EvidenceError("CONFLICT", "archive directory member count mismatch")
+
+
+def _validate_compression(raw: _StableArchiveReader, info: zipfile.ZipInfo) -> None:
     """Verify the complete stored/deflated member without trusting declared EOF.
 
     ZipExtFile stops at the declared uncompressed size and can accept a truncated
@@ -72,31 +178,30 @@ def _validate_compression(path: Path, info: zipfile.ZipInfo) -> None:
         return
     if info.compress_type != zipfile.ZIP_DEFLATED:
         raise EvidenceError("CONFLICT", "unsupported evidence member compression")
-    with path.open("rb") as raw:
-        raw.seek(info.header_offset)
-        header = raw.read(30)
-        if len(header) != 30 or header[:4] != b"PK\x03\x04":
-            raise EvidenceError("CONFLICT", "invalid archive member header")
-        name_size = int.from_bytes(header[26:28], "little")
-        extra_size = int.from_bytes(header[28:30], "little")
-        raw.seek(name_size + extra_size, os.SEEK_CUR)
-        decoder = zlib.decompressobj(-zlib.MAX_WBITS)
-        remaining, produced = info.compress_size, 0
-        while remaining:
-            block = raw.read(min(DEFAULT_CHUNK, remaining))
-            if not block:
-                raise EvidenceError("CONFLICT", "compressed evidence member is truncated")
-            remaining -= len(block)
-            while block:
-                output = decoder.decompress(block, min(DEFAULT_CHUNK, info.file_size - produced + 1))
-                produced += len(output)
-                if produced > info.file_size:
-                    raise EvidenceError("CONFLICT", "compressed member exceeded declared size")
-                if decoder.unused_data or decoder.eof and remaining:
-                    raise EvidenceError("CONFLICT", "compressed member has trailing data")
-                block = decoder.unconsumed_tail
-        if not decoder.eof or produced != info.file_size:
-            raise EvidenceError("CONFLICT", "compressed evidence member is incomplete")
+    raw.seek(info.header_offset)
+    header = raw.read(30)
+    if len(header) != 30 or header[:4] != b"PK\x03\x04":
+        raise EvidenceError("CONFLICT", "invalid archive member header")
+    name_size = int.from_bytes(header[26:28], "little")
+    extra_size = int.from_bytes(header[28:30], "little")
+    raw.seek(name_size + extra_size, os.SEEK_CUR)
+    decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+    remaining, produced = info.compress_size, 0
+    while remaining:
+        block = raw.read(min(DEFAULT_CHUNK, remaining))
+        if not block:
+            raise EvidenceError("CONFLICT", "compressed evidence member is truncated")
+        remaining -= len(block)
+        while block:
+            output = decoder.decompress(block, min(DEFAULT_CHUNK, info.file_size - produced + 1))
+            produced += len(output)
+            if produced > info.file_size:
+                raise EvidenceError("CONFLICT", "compressed member exceeded declared size")
+            if decoder.unused_data or decoder.eof and remaining:
+                raise EvidenceError("CONFLICT", "compressed member has trailing data")
+            block = decoder.unconsumed_tail
+    if not decoder.eof or produced != info.file_size:
+        raise EvidenceError("CONFLICT", "compressed evidence member is incomplete")
 
 
 class BoundedWriter(Protocol):
@@ -455,74 +560,80 @@ class EvidenceClient:
 
     def _validate_zip(self, path: Path, artifact: dict, seal: dict, maximum: int) -> None:
         try:
-            with zipfile.ZipFile(path) as archive:
-                infos = archive.infolist()
-                if not _integer(seal["member_count"], 2**53 - 1):
-                    raise EvidenceError("CONFLICT", "archive member count is not an integer")
-                if len(infos) > self.max_members + 1 or len(infos) != seal["member_count"]:
-                    raise EvidenceError("LIMIT_EXCEEDED", "archive member count mismatch")
-                names = []
-                for info in infos:
-                    # ZipInfo truncates filename at NUL. Validate the decoded
-                    # original too, so the manifest cannot hide an unsafe name.
-                    if _safe_name(info.orig_filename) != info.filename:
-                        raise EvidenceError("CONFLICT", "archive member name changed")
-                    names.append(_safe_name(info.filename))
-                    mode = info.external_attr >> 16
-                    if (not stat.S_ISREG(mode) or info.is_dir() or info.flag_bits & 1
-                            or info.file_size > maximum):
-                        raise EvidenceError("CONFLICT", "archive has an unsafe member")
-                if len(set(names)) != len(names) or names.count(MANIFEST_NAME) != 1:
-                    raise EvidenceError("CONFLICT", "archive has duplicate or missing members")
-                if sum(info.file_size for info in infos) > maximum:
-                    raise EvidenceError("LIMIT_EXCEEDED", "archive expansion budget exceeded")
-                if archive.getinfo(MANIFEST_NAME).file_size > 4 * 1024 * 1024:
-                    raise EvidenceError("LIMIT_EXCEEDED", "archive manifest too large")
-                for info in infos:
-                    _validate_compression(path, info)
-                raw = archive.read(MANIFEST_NAME)
-                manifests = [a for a in seal["artifacts"] if a["role"] == "manifest"]
-                if (len(manifests) != 1 or manifests[0]["sha256"] != _hash(raw)
-                        or manifests[0]["size"] != len(raw)):
-                    raise EvidenceError("CONFLICT", "archive manifest differs from external seal")
-                manifest = _decode_json(raw)
-                if (manifest.get("schema_version") != "lh-evidence-manifest-v1"
-                        or manifest.get("operation_id") != seal["operation_id"]
-                        or manifest.get("seal_id") != seal["seal_id"]
-                        or not _integer(manifest.get("event_seq"), 2**53 - 1)
-                        or manifest.get("event_seq") != seal["event_seq"]
-                        or not isinstance(manifest.get("bindings"), dict)
-                        # Python container equality equates true with 1 (and
-                        # integer with float). Preserve the JSON value types.
-                        or any(_json(manifest.get(field)) != _json(seal.get(field)) for field in
-                               ("bindings", "reconcile_id", "previous_seal_id"))
-                        or manifest.get("complete") is not True):
-                    raise EvidenceError("CONFLICT", "archive manifest identity mismatch")
-                members = manifest["members"]
-                if (not isinstance(members, list) or len(members) != len(infos) - 1
-                        or {m["name"] for m in members} != set(names) - {MANIFEST_NAME}):
-                    raise EvidenceError("CONFLICT", "archive member manifest mismatch")
-                for member in members:
-                    if set(member) != {"name", "size", "sha256"}:
-                        raise EvidenceError("CONFLICT", "invalid archive member record")
-                    info = archive.getinfo(member["name"])
-                    if (not _integer(member["size"], maximum)
-                            or info.file_size != member["size"]):
-                        raise EvidenceError("CONFLICT", "archive member size mismatch")
-                    digest = hashlib.sha256()
-                    read_size = 0
-                    with archive.open(info) as stream:
-                        while block := stream.read(DEFAULT_CHUNK):
-                            read_size += len(block)
-                            if read_size > info.file_size:
-                                raise EvidenceError("CONFLICT", "archive member exceeded budget")
-                            digest.update(block)
-                    if read_size != member["size"] or digest.hexdigest() != member["sha256"]:
-                        raise EvidenceError("CONFLICT", "archive member digest mismatch")
+            with path.open("rb") as source:
+                raw = _StableArchiveReader(source, maximum)
+                _validate_directory(raw, seal["member_count"], self.max_members + 1)
+                self._validate_members(raw, seal, maximum)
         except EvidenceError:
             raise
         except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, RuntimeError, zlib.error):
             raise EvidenceError("CONFLICT", "archive verification failed") from None
+
+    def _validate_members(self, raw: _StableArchiveReader, seal: dict, maximum: int) -> None:
+        with zipfile.ZipFile(raw) as archive:
+            infos = archive.infolist()
+            if not _integer(seal["member_count"], 2**53 - 1):
+                raise EvidenceError("CONFLICT", "archive member count is not an integer")
+            if len(infos) > self.max_members + 1 or len(infos) != seal["member_count"]:
+                raise EvidenceError("LIMIT_EXCEEDED", "archive member count mismatch")
+            names = []
+            for info in infos:
+                # ZipInfo truncates filename at NUL. Validate the decoded
+                # original too, so the manifest cannot hide an unsafe name.
+                if _safe_name(info.orig_filename) != info.filename:
+                    raise EvidenceError("CONFLICT", "archive member name changed")
+                names.append(_safe_name(info.filename))
+                mode = info.external_attr >> 16
+                if (not stat.S_ISREG(mode) or info.is_dir() or info.flag_bits & 1
+                        or info.file_size > maximum):
+                    raise EvidenceError("CONFLICT", "archive has an unsafe member")
+            if len(set(names)) != len(names) or names.count(MANIFEST_NAME) != 1:
+                raise EvidenceError("CONFLICT", "archive has duplicate or missing members")
+            if sum(info.file_size for info in infos) > maximum:
+                raise EvidenceError("LIMIT_EXCEEDED", "archive expansion budget exceeded")
+            if archive.getinfo(MANIFEST_NAME).file_size > 4 * 1024 * 1024:
+                raise EvidenceError("LIMIT_EXCEEDED", "archive manifest too large")
+            for info in infos:
+                _validate_compression(raw, info)
+            raw = archive.read(MANIFEST_NAME)
+            manifests = [a for a in seal["artifacts"] if a["role"] == "manifest"]
+            if (len(manifests) != 1 or manifests[0]["sha256"] != _hash(raw)
+                    or manifests[0]["size"] != len(raw)):
+                raise EvidenceError("CONFLICT", "archive manifest differs from external seal")
+            manifest = _decode_json(raw)
+            if (manifest.get("schema_version") != "lh-evidence-manifest-v1"
+                    or manifest.get("operation_id") != seal["operation_id"]
+                    or manifest.get("seal_id") != seal["seal_id"]
+                    or not _integer(manifest.get("event_seq"), 2**53 - 1)
+                    or manifest.get("event_seq") != seal["event_seq"]
+                    or not isinstance(manifest.get("bindings"), dict)
+                    # Python container equality equates true with 1 (and
+                    # integer with float). Preserve the JSON value types.
+                    or any(_json(manifest.get(field)) != _json(seal.get(field)) for field in
+                           ("bindings", "reconcile_id", "previous_seal_id"))
+                    or manifest.get("complete") is not True):
+                raise EvidenceError("CONFLICT", "archive manifest identity mismatch")
+            members = manifest["members"]
+            if (not isinstance(members, list) or len(members) != len(infos) - 1
+                    or {m["name"] for m in members} != set(names) - {MANIFEST_NAME}):
+                raise EvidenceError("CONFLICT", "archive member manifest mismatch")
+            for member in members:
+                if set(member) != {"name", "size", "sha256"}:
+                    raise EvidenceError("CONFLICT", "invalid archive member record")
+                info = archive.getinfo(member["name"])
+                if (not _integer(member["size"], maximum)
+                        or info.file_size != member["size"]):
+                    raise EvidenceError("CONFLICT", "archive member size mismatch")
+                digest = hashlib.sha256()
+                read_size = 0
+                with archive.open(info) as stream:
+                    while block := stream.read(DEFAULT_CHUNK):
+                        read_size += len(block)
+                        if read_size > info.file_size:
+                            raise EvidenceError("CONFLICT", "archive member exceeded budget")
+                        digest.update(block)
+                if read_size != member["size"] or digest.hexdigest() != member["sha256"]:
+                    raise EvidenceError("CONFLICT", "archive member digest mismatch")
 
     def download(self, artifact: dict, writer: BoundedWriter) -> Path:
         descriptor = _descriptor(artifact, writer.max_bytes)

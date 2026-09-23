@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -496,6 +498,50 @@ class PolicyAndRegistryTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, "UNAUTHORIZED")
                 self.assertEqual(changed, [True])
                 self.assertEqual(json.loads((original / "policy.json").read_text()), self.config)
+
+    def test_file_loader_rejects_foreign_owned_config_ancestors(self):
+        parent = self.root / "untrusted"
+        parent.mkdir()
+        private = parent / "private"
+        private.mkdir(mode=0o700)
+        path = private / "policy.json"
+        path.write_text(json.dumps(self.config))
+        path.chmod(0o600)
+        actual_lstat = Path.lstat
+        for mode in (0o755, 0o1777):
+            with self.subTest(mode=oct(mode)):
+                def untrusted_owner(target, *args, **kwargs):
+                    info = actual_lstat(target, *args, **kwargs)
+                    if target == parent:
+                        return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
+                            st_mode=stat.S_IFDIR | mode, st_uid=os.geteuid() + 4242)
+                    return info
+                with patch.object(Path, "lstat", untrusted_owner), \
+                        patch.object(Policy, "validate_paths") as validate, self.assertRaises(JobError) as raised:
+                    Policy.from_file(path)
+                self.assertEqual("UNAUTHORIZED", raised.exception.code)
+                validate.assert_not_called()
+
+    def test_execution_path_owners_are_trusted_even_when_permissions_are_readonly(self):
+        for name in ("broker", "authority", "work", "evidence", "temporary", "source", "cache"):
+            (self.root / name).mkdir(mode=0o700)
+        for name in ("python", "broker.py"):
+            (self.root / name).write_bytes(b"synthetic fixture bytes")
+            (self.root / name).chmod(0o600)
+        self.policy.validate_paths()
+        actual_lstat = Path.lstat
+        for target, mode in ((self.root, 0o755), (self.root, 0o1777),
+                             (self.root / "python", 0o444), (self.root / "broker.py", 0o444)):
+            with self.subTest(target=target.name, mode=oct(mode)):
+                def untrusted_owner(path, *args, **kwargs):
+                    info = actual_lstat(path, *args, **kwargs)
+                    if path == target:
+                        return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
+                            st_mode=stat.S_IFMT(info.st_mode) | mode, st_uid=os.geteuid() + 4242)
+                    return info
+                with patch.object(Path, "lstat", untrusted_owner), self.assertRaises(JobError) as raised:
+                    self.policy.validate_paths()
+                self.assertEqual("UNAUTHORIZED", raised.exception.code)
 
     def test_config_short_read_cannot_hide_unconsumed_trailing_bytes(self):
         path = self.root / "policy.json"

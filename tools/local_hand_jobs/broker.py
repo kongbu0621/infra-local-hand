@@ -462,6 +462,73 @@ class Broker:
                 owners.add((row["namespace"], row["id"]))
         return len(owners)
 
+    def _first_recovered_evidence(self, tx, row, *, intent_committed):
+        """Authorize only a first seal of already checked, durably frozen work.
+
+        Recovery never clears its generic replay barrier. This narrow case is
+        proved from immutable events and the same operation's retained grants,
+        both before reserving the new evidence intent and at final delivery.
+        """
+        record = row["record"]
+        expected_phase = "EVIDENCE" if intent_committed else "AWAITING_SEAL"
+        if record.get("recovered") is not True or record["phase"] != expected_phase:
+            return False
+        observed = "business" if row["namespace"] == "job" else "reconcile"
+        phases = {"preflight", "business"} if row["namespace"] == "job" else {"reconcile"}
+        if intent_committed:
+            phases.add("evidence")
+        if set(record.get("handles", {})) != phases:
+            return False
+        try:
+            prior = budget.stored_grant(row, observed)
+        except JobError:
+            return False
+        outcome = record.get("business_outcome")
+        proof = record.get("business_exit_proof", {})
+        frozen = record.get("frozen_snapshot", {})
+        quiescence = frozen.get("quiescence", {})
+        if (outcome not in ("SUCCEEDED", "FAILED", "CANCELLED") or record["outcome"] != outcome
+                or not all(proof.get(key) is True for key in ("future_start_blocked", "tree_exited",
+                    "collectors_stopped", "writers_stopped", "effects_checked"))
+                or not all(quiescence.get(key) is True for key in ("future_starts_blocked", "tree_exited",
+                    "collectors_stopped", "writers_stopped"))
+                or frozen.get("operation_id") != row["parent"]
+                or frozen.get("reconcile_id") != (row["id"] if row["namespace"] == "reconcile" else None)
+                or quiescence.get("execution_id") != prior["execution_id"]
+                or type(frozen.get("event_seq")) is not int
+                or quiescence.get("event_seq") != frozen["event_seq"]):
+            return False
+        keys = (row["namespace"], row["id"])
+        frozen_event = tx.execute("SELECT seq,data_json FROM events WHERE namespace=? AND id=? "
+                                 "AND kind='SEAL_SNAPSHOT_FROZEN' ORDER BY seq DESC LIMIT 1", keys).fetchone()
+        recovery = tx.execute("SELECT seq FROM events WHERE namespace=? AND id=? "
+                              "AND kind='RECOVERY_BARRIER' ORDER BY seq DESC LIMIT 1", keys).fetchone()
+        if (frozen_event is None or recovery is None
+                or not 0 < frozen["event_seq"] < frozen_event["seq"] < recovery["seq"]
+                or frozen_event["data_json"] != encoded({"frozen_snapshot": frozen,
+                    "business_outcome": outcome, "business_exit_proof": proof})):
+            return False
+        evidence_id = f"{row['namespace']}-{row['id']}-evidence"
+        history = tx.execute("SELECT seq,kind,data_json FROM events WHERE namespace=? AND id=? "
+                             "AND kind IN ('EXECUTION_INTENT','LAUNCH_ENQUEUED','MANAGER_DELIVERY_INTENT') "
+                             "ORDER BY seq LIMIT 10", keys).fetchall()
+        if len(history) > 9:
+            return False  # At most three fixed phases, one event of each kind.
+        intents = []
+        for event in history:
+            data = json.loads(event["data_json"])
+            if event["kind"] == "EXECUTION_INTENT" and data.get("phase") == "EVIDENCE":
+                if (not intent_committed or event["seq"] <= recovery["seq"]
+                        or data.get("execution_budget") != record.get("execution_budget")
+                        or data.get("handles", {}).get("evidence") !=
+                            {"execution_id": evidence_id, "intent_only": True}):
+                    return False
+                intents.append(event["seq"])
+            elif event["seq"] < recovery["seq"] and (
+                    "evidence" in data.get("handles", {}) or evidence_id in data.get("delivery_intents", [])):
+                return False
+        return len(intents) == (1 if intent_committed else 0)
+
     def _start(self, namespace, identity, phase):
         # Slow preflight facts are produced by the runner; no filesystem access here.
         with self.fence:
@@ -492,6 +559,9 @@ class Broker:
                     current = thaw(self.registry.resolve(parent["request"], self.policy, principal=principal))
                     if current.get("plan_digest") != row["plan"].get("plan_digest"):
                         raise JobError("STALE_DEPLOYMENT", "The immutable execution plan or prerequisite evidence changed")
+                if row["record"].get("recovered") and not (
+                        phase == "evidence" and self._first_recovered_evidence(tx, row, intent_committed=False)):
+                    raise JobError("IO_UNCERTAIN", "Recovered execution does not prove a first evidence intent")
                 if row["record"].get("execution_budget") is None:
                     history = tx.execute("SELECT 1 FROM events WHERE namespace=? AND id=? "
                                          "AND kind NOT IN ('ACCEPTED','ADMISSION_BOUND','OBSERVATION_BOUND') LIMIT 1",
@@ -548,7 +618,10 @@ class Broker:
                 record = row["record"]
                 phase = record["phase"].lower()
                 handle = record.get("handles", {}).get(phase, {})
-                if handle.get("execution_id") != execution_id or record["cancel_requested"] or record.get("recovered"):
+                if handle.get("execution_id") != execution_id or record["cancel_requested"]:
+                    return None
+                if record.get("recovered") and not (
+                        phase == "evidence" and self._first_recovered_evidence(tx, row, intent_committed=True)):
                     return None
                 if execution_id in record.get("delivery_intents", []):
                     return None  # A prior delivery intent is never issued a second time.

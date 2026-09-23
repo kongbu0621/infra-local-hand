@@ -297,7 +297,7 @@ def start_bounded_capture(
             )
             readers.append((reader, stream))
             reader.start()
-    except (RuntimeError, OSError) as exc:
+    except BaseException as exc:
         # Starting a subprocess transfers lifetime ownership before either
         # reader exists. A thread resource failure must not abandon that child.
         terminated = _kill_tree(proc)
@@ -316,6 +316,12 @@ def start_bounded_capture(
                     stream.close()
                 except (OSError, ValueError):
                     pass
+        if not isinstance(exc, (RuntimeError, OSError)):
+            # A catchable shutdown still owns the child, but must retain its
+            # control-flow meaning instead of becoming a recoverable Task error.
+            if not terminated:
+                exc.add_note("output reader startup interrupted; process-tree termination unconfirmed")
+            raise
         if not terminated:
             raise LocalHandError(
                 f"{code_prefix}_termination_unconfirmed",
@@ -371,6 +377,7 @@ def run_process_bounded(
     )
 
     stop_reason: str | None = None
+    termination_attempted = False
     deadline = time.monotonic() + timeout
     try:
         # The root exiting does not finish its process group or inherited pipes.
@@ -385,6 +392,7 @@ def run_process_bounded(
                 break
             time.sleep(0.02)
         if stop_reason is not None:
+            termination_attempted = True
             if not _kill_tree(proc, root_exit_is_confirmation=(stop_reason == "output")):
                 raise LocalHandError(
                     f"{code_prefix}_termination_unconfirmed",
@@ -399,6 +407,16 @@ def run_process_bounded(
         err_thread.join(2)
         if out_thread.is_alive() or err_thread.is_alive() or out_state.error or err_state.error:
             raise LocalHandError(f"{code_prefix}_capture_unconfirmed", "output capture did not terminate cleanly", "indeterminate")
+    except BaseException as exc:
+        # Reader cancellation alone releases pipes, not the process group.
+        # Bound the owned child's lifetime on catchable shutdown/monitor errors.
+        if not termination_attempted and not _kill_tree(proc):
+            if isinstance(exc, Exception):
+                raise LocalHandError(f"{code_prefix}_termination_unconfirmed",
+                    "command interrupted and process-tree termination was not confirmed",
+                    "indeterminate") from exc
+            exc.add_note("command interrupted; process-tree termination unconfirmed")
+        raise
     finally:
         capture_stop.set()
         out_thread.join(2)
