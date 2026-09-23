@@ -14,9 +14,10 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from test_e3_quota_monitor import binding, decode, fixture, NOW
+
 if sys.platform.startswith("linux"):
     from admin.local_hand_quota_observer import admission as a, protected_inputs as p, systemd_runtime as r
-    from test_e3_quota_monitor import binding, decode, fixture, NOW
     from test_e3_quota_worker import runtime
 
 
