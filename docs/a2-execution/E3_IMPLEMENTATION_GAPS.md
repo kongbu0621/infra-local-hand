@@ -7,6 +7,11 @@
 真实测试入口尚为占位；独立宿主 fixture/harness 未实现；当前 project-quota 查询与固定 upstream 权限模型存在冲突。
 下面区分源码事实、由源码得出的影响判断，以及尚需目标主机验证的事项。目标内核的 backport、LSM 和实际 unit 行为仍待补证。
 
+后续进展：GX10 的 nsfs 修复已完成实机重测；[一次性输入确认](GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md)
+结论为 NOT_PREPARED，结束重复盘点。[quota/harness 变更方案](e3-quota-harness/REQUIREMENTS.md)
+已明确推荐独立管理侧观察组件及真实测试入口，但尚未批准或实现；新的受信边界按根 AGENTS 的 OPEN 范围处理。
+下面保留本次缺口核查时的事实与候选方向，不能把后续提案理解为缺口已修复。
+
 ## 1. 当前真实测试没有可执行验收主体
 
 [`tests/test_local_hand_jobs_runner.py`](../../tests/test_local_hand_jobs_runner.py) 中

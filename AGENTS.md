@@ -90,6 +90,31 @@ S2 remains OPEN at its separate baseline. E3's real isolated cgroup integration 
 claiming a deployable candidate; unsupported environments do not turn that check into PASS.
 Preserve the already CLOSED Ledger A2 body scope; do not require it to be approved again.
 
+### Proposed E3 quota and real-harness change
+
+Scope `LH-E3-QUOTA-HARNESS-v1` is **OPEN**. Its authoritative change documents are
+[requirements](docs/a2-execution/e3-quota-harness/REQUIREMENTS.md),
+[architecture](docs/a2-execution/e3-quota-harness/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/e3-quota-harness/IMPLEMENTATION_PLAN.md).
+R, mandate, Owner authority, accessible source, integrity, exceptions and change rules remain those above.
+The proposed A is the existing commit containing these three documents, to be recorded separately after
+that commit exists; this declaration does not invent its own SHA or an Owner decision.
+No Owner closure decision B or CLOSED record C exists for this change.
+The proposed implementation scope is an isolated, fixed-object administrative quota observer, its bounded
+unprivileged client, internal receipt/budget binding and a test-only real three-unit harness on an
+explicitly supplied isolated fixture. Host provisioning, GX10 service installation/cutover and E4–E6
+are not authorized by this proposal.
+
+The current quota-query permission conflict and missing real harness are confirmed implementation gaps;
+the proposal adds a host-privileged trusted component and changes how bootstrap obtains quota facts.
+That affected architecture/implementation scope is OPEN under the existing change-control rule.
+Do not implement that component, its executable prototype/configuration, the new receipt route or the
+associated test-admission path before exact R/A/scope closure and a separate C.
+The previous A/B/C remains historical and valid for clearly unaffected E1–E3 work; its three original
+documents remain unchanged. This proposal does not reopen S1 or Ledger A2 and does not erase past evidence.
+Production `E3_SUPERVISION_UNVERIFIED` remains. Accurate host inputs are currently NOT_PREPARED;
+see [received-input audit](docs/a2-execution/GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md).
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

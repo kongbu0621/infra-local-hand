@@ -7,6 +7,8 @@ NAS 已有固定只读查询与响应校验，但实际查询、写入身份和�
 后续 E3 准备核查确认了两项实现缺口：真实宿主测试仍为占位，且当前 project-quota 查询与固定 upstream 隔离权限模型冲突；不能仅换到 systemd 主机就完成验收。事实、来源和待验证范围见 [E3 实现缺口](E3_IMPLEMENTATION_GAPS.md)，当前可执行的只读盘点及后续场景见 [宿主验收准备](E3_HOST_ACCEPTANCE_RUNBOOK.md)。
 只读准备检查点的准确源码 `287f6b9`、18 项定向验证、准确 main CI 及私有证据摘要见 [准备验证报告](E3_PREPARATION_VERIFICATION.md)；云端 BLOCKED 不转记为目标宿主验收。
 随后修复了只读探针对合法 nsfs root 的解析误判；准确源码 `88b78b6`、22 项探针验证、准确 main CI 与重测交接见 [nsfs 修复验证](E3_NSFS_REPAIR_VERIFICATION.md)。两份原始宿主 ZIP 已独立核验，固定源码的现场解析修复通过，详见 [GX10 重测证据核验](GX10_E3_NSFS_RETEST_VERIFICATION.md)；整体 readiness 仍为 INCOMPLETE。
+最新一次性输入确认包已独立核验：六项专用 E3 输入为 **NOT_PREPARED**，原 13 组命令和 5 个非零退出码均保留，详见 [输入确认核验](GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md)。现场盘点在此结束，不重复无目标探针。
+下一步的 [quota/harness 三层变更方案](e3-quota-harness/REQUIREMENTS.md) 已形成；拟增加独立管理侧查询组件及真实测试入口。它改变受信权限边界，受影响 scope `LH-E3-QUOTA-HARNESS-v1` 为 OPEN，等待准确新基线的 Owner 决定；本轮未新增该实现或宿主配置。
 历史准确提交与结果见 [首轮验证](E1_E3_VERIFICATION.md)、[后续复查](E1_E3_RECHECK.md)、[第二轮复核](E1_E3_RECHECK_2.md)、[第三轮复核](E1_E3_RECHECK_3.md)、[第四轮复核](E1_E3_RECHECK_4.md)、[第五轮复核](E1_E3_RECHECK_5.md)、[第六轮复核](E1_E3_RECHECK_6.md)、[第七轮复核](E1_E3_RECHECK_7.md)、[第八轮复核](E1_E3_RECHECK_8.md)、[第九轮复核](E1_E3_RECHECK_9.md)、[第十轮复核](E1_E3_RECHECK_10.md)及 [fd55 中断交付恢复](E1_E3_RECOVERY_FD55C07.md)。批准基线 A 为
 `79f73faedcd9cde4164b0d1625782dae27db6c2f`，规则 R 为
 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，独立开工记录 C 为
@@ -35,8 +37,8 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | --- | --- |
 | E1 受监督执行 | 已有私有 root allocation、三个固定单元、受监督配额／计划发布与结果读取、三次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
 | E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。现有实机用例仍为 SKIP/FAIL 占位，尚缺完整 host fixture/harness；委派、namespace、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的真实验收未完成 |
-| 本地 project quota | 固定 Linux/systemd 源码显示，当前 PRJQUOTA 查询的 host capability 要求与 `PrivateUsers=yes` 冲突，`PrivateDevices=yes` 还可能影响设备定位；目标内核、准确失败点与 errno 待实测。现实现未保存 quotactl errno。预建配额不能单独消除此实现障碍；不通过提权或放宽隔离解决 |
-| E3 只读准备 | 独立 `tools/probe_e3_host.py` 仅收集有界宿主事实；exit 0 不表示支持，生产／E3／业务授权始终为 false，不执行 quota syscall、不访问传入 mount target。两份原始宿主 ZIP 已核验：重测解析 55 条挂载记录并保留 5 条 nsfs，格式误判消失，cgroup2 根身份绑定通过。完整原始 mountinfo 未归档，不声称云端重放；专用 UID 与私有 slice/cgroup 仍未确认，根绑定不证明私有委派，整体 E3 仍未验收 |
+| 本地 project quota | 固定 Linux/systemd 源码显示，当前 PRJQUOTA 查询的 host capability 要求与 `PrivateUsers=yes` 冲突，`PrivateDevices=yes` 还可能影响设备定位；目标内核、准确失败点与 errno 待实测。现实现未保存 quotactl errno。预建配额不能单独消除此实现障碍；不为普通作业提权或放宽隔离。独立管理侧观察机制目前仅为 OPEN 的变更提案 |
+| E3 只读准备 | 独立探针的 nsfs 修复已完成现场重测；原始 mountinfo 未归档，不声称云端重放。随后一次性输入确认的 44 成员 ZIP 已独立核验，六项专用账户/manager/slice/cgroup/隔离/委派输入为 NOT_PREPARED；slots/quota/store 仍 UNVERIFIED。只读库存阶段结束，整体 E3 仍未验收 |
 | helper 结果读取 | 新 v3 将文件读取迁入独立只读 reader unit，父端仅处理有界匿名管道；旧布局不补授 reader 预算、不回退直接读盘。重启丢失管道不重读，结果保留 UNKNOWN；原三 unit 退出可独立记录，允许新显式 reconcile，旧 local CLI 停止仍不冒充已证明。真实 E3 尚未验收 |
 | 真实 Unix maintenance transport | 宿主限制和各准确候选结果按对应验证报告分别记账；独立 TCP/SDK 测试不替代 Unix socket |
 | NAS 运行时 | `nas_quota` 已有固定 CIFS 只读请求、准确响应与身份／时间校验，结果始终 LOGIC_ONLY；实际 collector、写入身份、凭据及限定网络未准入。`ledger.nas.roundtrip` 和真实查询仍明确 UNSUPPORTED，Plugin 不提交该类型。现场事实按 [私有输入工作表](NAS_PRIVATE_INPUT_WORKSHEET.md) 收集，填写不启用查询 |

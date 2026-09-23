@@ -6,6 +6,11 @@
 
 当前还存在 **本地 project quota 查询权限与单元隔离之间的实现障碍**：仅预建一台 ext4/xfs 配额主机不足以使原 runner 可运行。须先按 [E3 实现缺口](E3_IMPLEMENTATION_GAPS.md) 核对查询机制、设备可见性及现场 errno，不能把问题简化为“换台支持 systemd 的主机”。
 
+2026-09-23 后续状态：本次 GX10 只读盘点和[一次性输入确认](GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md)
+已经结束，准确输入为 NOT_PREPARED。以下只读步骤作为通用参考保留，不是再次执行请求。
+下一步先处理 [quota/harness 变更方案](e3-quota-harness/IMPLEMENTATION_PLAN.md)；新增受信组件的范围为 OPEN。
+未具备准确实现与专用 fixture 时，不进入 H01–H13，也不自动采用已有桌面或 S1 服务账户。
+
 ## 1. 两类活动与判断标准
 
 | 活动 | 可做什么 | 不能据此声明什么 |
