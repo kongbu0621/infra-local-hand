@@ -1,0 +1,109 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_e3_quota_*.py",
+        "-v"
+      ],
+      "started_utc": "2026-09-23T21:02:58.058162+00:00",
+      "finished_utc": "2026-09-23T21:03:00.127123+00:00",
+      "elapsed_seconds": 2.069,
+      "exit_code": 0,
+      "log": "unittest.log",
+      "resolved_executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+    }
+  ],
+  "schema": "local-hand-q1-development-verification/v1",
+  "test_methods": 130,
+  "skipped": 0,
+  "real_quota_syscalls": 0,
+  "systemd_units_started": 0,
+  "GX10_operations": 0,
+  "E3": "BLOCKED",
+  "checks": {
+    "source_compile": {
+      "method": "compile(bytes, relative_path, exec); no bytecode output",
+      "files": [
+        "tools/admin/local_hand_quota_observer/admission.py",
+        "tools/admin/local_hand_quota_observer/fixture_inputs.py",
+        "tools/admin/local_hand_quota_observer/journal.py",
+        "tools/admin/local_hand_quota_observer/protected_inputs.py",
+        "tools/admin/local_hand_quota_observer/supervision.py",
+        "tools/admin/local_hand_quota_observer/systemd_runtime.py",
+        "tools/admin/local_hand_quota_observer/worker.py",
+        "tools/validate_q1_fixture.py",
+        "tests/test_e3_quota_abi.py",
+        "tests/test_e3_quota_fixture.py",
+        "tests/test_e3_quota_fixture_cli.py",
+        "tests/test_e3_quota_journal.py",
+        "tests/test_e3_quota_monitor.py",
+        "tests/test_e3_quota_runtime.py",
+        "tests/test_e3_quota_runtime_capture.py",
+        "tests/test_e3_quota_runtime_host.py",
+        "tests/test_e3_quota_worker.py"
+      ],
+      "result": "PASS"
+    },
+    "approved_A_unchanged": {
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code",
+        "415327ebdcc251bb055da9931a7a88990f750b7a",
+        "--",
+        "docs/a2-execution/e3-quota-harness/REQUIREMENTS.md",
+        "docs/a2-execution/e3-quota-harness/ARCHITECTURE.md",
+        "docs/a2-execution/e3-quota-harness/IMPLEMENTATION_PLAN.md"
+      ],
+      "exit_code": 0,
+      "output": ""
+    },
+    "production_distribution_unchanged": {
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code",
+        "HEAD",
+        "--",
+        "tools/local_hand",
+        "tools/local_hand_connect",
+        "tools/local_hand_jobs",
+        "tools/local_hand_mcp",
+        "plugins",
+        "pyproject.toml",
+        "setup.py"
+      ],
+      "exit_code": 0,
+      "output": ""
+    },
+    "whitespace": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output": ""
+    },
+    "staged_whitespace": {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output": ""
+    }
+  },
+  "unittest_log_sha256": "351de94d489eafc2d0edf471841140713da48bdd2df783335a42b70fb6ae0572"
+}

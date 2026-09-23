@@ -4,7 +4,8 @@
 批准 A 为 `415327ebdcc251bb055da9931a7a88990f750b7a`，独立 C 为
 `5a4ea852091db06549a876e42bbd5f95d5869d3b`；范围见根 `AGENTS.md`。
 当前管理侧源码及既有验证见 [Q1 README](../../tools/admin/local_hand_quota_observer/README.md)
-和[运行装配验证记录](E3_QUOTA_Q1_RUNTIME_VERIFICATION.md)。准确本轮候选由随后验证记录固定。
+和[运行装配验证记录](E3_QUOTA_Q1_RUNTIME_VERIFICATION.md)。本轮离线入口源码为
+`c0b817b2b97be26d13053a4ce74d29c6dcaeac05`，见[离线配置验证记录](E3_QUOTA_Q1_FIXTURE_VERIFICATION.md)。
 
 **实际输入仍为 NOT_PREPARED，Q1 实机与整体 E3 仍 BLOCKED。** 本轮交付离线检查入口，
 不创建账户、FS、quota、slice、服务或安装目录，不再次盘点 GX10，也不启动查询。

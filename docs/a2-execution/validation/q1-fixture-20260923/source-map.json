@@ -1,0 +1,32 @@
+{
+  "source_commit": "c0b817b2b97be26d13053a4ce74d29c6dcaeac05",
+  "source_tree": "3915e7a1e783a97451cf4c97ea16b9b1f3b06c8f",
+  "source_parent": "076e4c64c1580862ecedfa41101a77040587203f",
+  "files": {
+    ".github/workflows/local-hand-v0-1-validation.yml": "6b46ca32aea1763b872286dbc4d363a106431576d04f9ab47f69c309fa4119a7",
+    "docs/a2-execution/E3_QUOTA_Q1_FIXTURE_HANDOFF.md": "264f739c4f5bf3c0713babf87b6a80a51ae89f2127d10cb25b9a1f05912a3ea2",
+    "docs/a2-execution/IMPLEMENTATION_STATUS.md": "ed4d10bef47bdcfc4becd2f92658cd84f594e26fa887fe6cf0b0036edbd8629f",
+    "tests/fixtures/quota_query_syscalls.c": "85ad39bc616eeb522088657ea4d499f4f55d1b4e5ebdd2b05c63472cf944603d",
+    "tests/test_e3_quota_abi.py": "a1cf8dc4b69f265fe03ab06343e9bcf57738cfd02daed3cd1d8070f83cfb26d5",
+    "tests/test_e3_quota_fixture.py": "ec4cde69772167841d76d78d88b6e43bd38774e63bf578b65c91781141f325ae",
+    "tests/test_e3_quota_fixture_cli.py": "f5fc0524d80f5d5ab9e33840717bcc950f403c767c15b178b585eb6ff62d6907",
+    "tests/test_e3_quota_journal.py": "1c7533cfc30f458d00894372a87bd30bd1cf9a1ac80e17256f75863d25b1d4dd",
+    "tests/test_e3_quota_monitor.py": "4cc49b65a2cf240a2a702627da22b8b71159e34ec4734bb447ba5867c348ff4a",
+    "tests/test_e3_quota_runtime.py": "ff169c13d85011fc3630b3042a525e57f96537e2204b5aa216a0e29ed4f4e4b0",
+    "tests/test_e3_quota_runtime_capture.py": "ded07adc0c409d07a936a270435700749e8d4fad318051ce38c963d414580db3",
+    "tests/test_e3_quota_runtime_host.py": "c126af440f28a76727bf314f6f6af13b394ecfd19a4f686fe531312454b5c942",
+    "tests/test_e3_quota_worker.py": "a4a9adbb2e6e348b32b952ec9448225e5cbb2044b5570e66060614beb92b9518",
+    "tools/admin/local_hand_quota_observer/README.md": "71fa31953515e5ef3449a499e080c371fe8b4a3a943dc8f4ffdd00cd63811a96",
+    "tools/admin/local_hand_quota_observer/admission.py": "9355a86c37f406b2fcdbd65869d316bc63d65e76351448aa0034815d690371ab",
+    "tools/admin/local_hand_quota_observer/fixture_inputs.py": "371a6f623e9cad6c00b1022c495dc1d1d7f621d4b4d04ae327110cc8450f7f3a",
+    "tools/admin/local_hand_quota_observer/journal.py": "4eb19510f205e36562e81aac16b26387e6c542b6ea26567d01762a1c2c2f7283",
+    "tools/admin/local_hand_quota_observer/protected_inputs.py": "ff43b441b5434e6386772cef39356d1ea2825428b5ee2a48789f72e31d6d8041",
+    "tools/admin/local_hand_quota_observer/quota_fd_query.c": "4b7a020fcabe5dc514be2983b6b3ff7184d482382b8a76c4d9b03e9fb4548377",
+    "tools/admin/local_hand_quota_observer/quota_syscall_filter.h": "f8c05579ae14c5d1715120c4e86a43b9f7601cea743495e608aaa9eeb0782370",
+    "tools/admin/local_hand_quota_observer/supervision.py": "e47788ebf850d2f99007e447ca66c1e302fa81de41bc837f01510b5c29030463",
+    "tools/admin/local_hand_quota_observer/systemd_runtime.py": "ee4af0db00be820ada308f7824f30e93ce019eda75ef664c79a5c8f3271a9ddb",
+    "tools/admin/local_hand_quota_observer/worker.py": "2da382a491479a9177ab88f4aee63dff5deb499df11388e844e183781a1eb437",
+    "tools/validate_q1_fixture.py": "294071488f43f2d5f8aae8d5436df5f8314d31bb7e94335425e843b5dba040b2"
+  },
+  "scope": "Hashes of staged source checkpoint, including tested dependencies; later report-only edits are separate."
+}

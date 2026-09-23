@@ -36,6 +36,7 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 全部 slot 与固定输入/journal 的路径交叠检查；运行装配同步采用同一检查，修复只检查选中 slot 的缺口。
 输出仅为 `CONFIG_CONSISTENT/OFFLINE_ONLY`，无宿主观察、ticket 或资源保留。
 准确输入及后续实测步骤见 [Q1 fixture 交接](E3_QUOTA_Q1_FIXTURE_HANDOFF.md)。
+准确源码 `c0b817b`、130 项定向验证及仓库内日志见 [离线配置验证记录](E3_QUOTA_Q1_FIXTURE_VERIFICATION.md)。
 实际输入仍 NOT_PREPARED；Q1 实机与 E3 仍 BLOCKED，未进入 Q2。
 
 ## 已实现的代码
