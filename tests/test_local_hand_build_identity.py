@@ -509,6 +509,90 @@ assert saved.is_file() and record.is_file()
 
 @unittest.skipUnless(sys.platform == "linux", "Plugin publication is Linux-only; wheel identity remains cross-platform")
 class PluginBuildIdentityTests(BuildFixture):
+    def plugin_cleanup_probe(self, boundary):
+        script = r'''
+from pathlib import Path
+import errno
+import os
+import sys
+import zipfile
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+import build_plugin
+output = Path(sys.argv[1]) / 'plugin.zip'
+boundary = sys.argv[2]
+real_open, real_close, real_fdopen = os.open, os.close, os.fdopen
+opened, attempted = {}, []
+primary = OSError(errno.EIO, 'original stream construction failure') if boundary == 'fdopen' else ValueError('original publication failure')
+secondary = OSError(errno.EIO, 'secondary descriptor close failure')
+def tracked_open(path, *args, **kwargs):
+    fd = real_open(path, *args, **kwargs)
+    if str(path) == str(output.parent):
+        opened['directory'] = fd
+    elif Path(path).name.startswith('.plugin-build-'):
+        opened['staging'] = fd
+    return fd
+def fdopen(fd, *args, **kwargs):
+    if boundary == 'fdopen' and fd == opened.get('staging'):
+        raise primary
+    return real_fdopen(fd, *args, **kwargs)
+def close(fd):
+    if fd in opened.values():
+        attempted.append(fd)
+        real_close(fd)
+        if fd == opened.get('staging' if boundary == 'fdopen' else 'directory'):
+            raise secondary
+        return
+    return real_close(fd)
+def publish(*args, **kwargs):
+    raise primary
+error = None
+with patch.object(build_plugin.os, 'open', tracked_open), patch.object(build_plugin.os, 'close', close), patch.object(build_plugin.os, 'fdopen', fdopen):
+    try:
+        if boundary == 'publication':
+            with patch.object(build_plugin, '_publish_create_only', publish):
+                build_plugin.build(output)
+        elif boundary == 'healthy':
+            try:
+                raise RuntimeError('unrelated already-handled caller exception')
+            except RuntimeError:
+                build_plugin.build(output)
+        else:
+            build_plugin.build(output)
+    except BaseException as exc:
+        error = exc
+leaked = []
+for name, fd in opened.items():
+    try:
+        os.fstat(fd)
+    except OSError:
+        pass
+    else:
+        leaked.append(name)
+        real_close(fd)
+assert set(opened) == {'directory', 'staging'}, 'construction did not reach owned descriptors'
+assert attempted.count(opened['directory']) == 1, 'output directory must be closed exactly once'
+if boundary == 'fdopen':
+    assert attempted.count(opened['staging']) == 1, 'raw staging descriptor must be closed exactly once'
+assert error is (secondary if boundary == 'healthy' else primary), 'cleanup reported the wrong failure'
+assert not leaked, 'a close failure skipped an owned descriptor'
+if boundary == 'healthy':
+    assert zipfile.is_zipfile(output), 'completed publication must be retained despite close failure'
+else:
+    assert not output.exists(), 'a failed build must not report completed publication'
+    assert len(list(output.parent.glob('.plugin-build-*'))) == 1, 'retain unpublished staging evidence'
+'''
+        self.command([sys.executable, "-I", "-W", "error", "-c", script, self.output, boundary])
+
+    def test_plugin_stream_construction_and_close_failure_release_both_descriptors(self):
+        self.plugin_cleanup_probe("fdopen")
+
+    def test_plugin_publication_failure_is_not_replaced_by_directory_close(self):
+        self.plugin_cleanup_probe("publication")
+
+    def test_plugin_close_failure_is_not_suppressed_by_handled_caller_exception(self):
+        self.plugin_cleanup_probe("healthy")
+
     def plugin_probe(self, boundary):
         script = r'''
 from pathlib import Path

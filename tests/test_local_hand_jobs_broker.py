@@ -658,6 +658,48 @@ class BrokerTests(unittest.TestCase):
                         self.assertEqual("AWAITING_SEAL", rejected["phase"])
                         self.assertFalse(replacement.starts)
 
+    def _queue_round_before_late_preflight_exit(self):
+        self.submit(); self.broker.tick()
+        execution = self.runner.starts[0][1]
+        self.runner.proofs[execution] = {"state": "UNKNOWN"}
+        self.broker.tick()
+        self.assertEqual("RECONCILE_REQUIRED", self.status()["lifecycle"])
+        identity = str(uuid.uuid4())
+        self.reconcile(identity)
+        self.runner.finish(execution)
+        return identity
+
+    def test_late_preflight_serializes_admitted_round_until_business_exit(self):
+        identity = self._queue_round_before_late_preflight_exit()
+        self.broker.tick()
+        after_preflight = self.status()
+        self.broker.tick()
+        self.assertEqual(["preflight", "business"], [item[2]["phase"] for item in self.runner.starts],
+                         "reconciliation must wait until the resumed business becomes quiescent")
+        self.assertEqual("RUNNING", after_preflight["lifecycle"])
+        self.assertEqual("QUEUED", self.broker.status(self.request["operation_id"], self.owner, identity)["phase"])
+        self.runner.finish(self.runner.starts[-1][1]); self.broker.tick()
+        self.assertEqual("SUCCEEDED", self.status()["outcome"])
+        self.assertEqual("reconcile", self.runner.starts[-1][2]["phase"])
+
+    def test_cancel_round_after_late_preflight_keeps_pending_business_lease(self):
+        identity = self._queue_round_before_late_preflight_exit()
+        complete = self.broker._complete
+        def cancel_after_preflight(namespace, operation, proof):
+            complete(namespace, operation, proof)
+            if namespace == "job":
+                # The API request arrives after late proof COMMIT and before
+                # the coordinator next visits the queued reconciliation.
+                self.cancel({"kind": "reconcile", "reconcile_id": identity})
+        with mock.patch.object(self.broker, "_complete", side_effect=cancel_after_preflight):
+            self.broker.tick()
+        with self.db.transaction() as tx:
+            self.assertEqual(1, tx.execute("SELECT count(*) FROM leases").fetchone()[0],
+                             "a queued round cannot release the resumed parent's resource")
+        self.assertCode("RESOURCE_BUSY", lambda: self.broker.submit(self.make_request(), self.owner))
+        self.broker.tick()
+        self.assertEqual(["preflight", "business"], [item[2]["phase"] for item in self.runner.starts])
+
     def _queue_round_before_late_business_exit(self, *, snapshot=False):
         if snapshot:
             self.broker.evidence = SimpleNamespace(root=Path(self.temp.name) / "artifacts")

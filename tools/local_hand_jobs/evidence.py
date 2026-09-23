@@ -94,7 +94,7 @@ def _close_descriptors(*descriptors: int | None, failure: BaseException | None =
             raise EvidenceError("IO_UNCERTAIN", "evidence descriptor cleanup unresolved")
 
 
-def _root_descriptor(root: Path, owner: int) -> int:
+def _root_descriptor(root: Path, owner: int, *, create: bool = False) -> int:
     """Reject symlinks at every component, including ancestors of the admitted root."""
     if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
         raise EvidenceError("UNSUPPORTED", "no-follow directory access unavailable")
@@ -104,8 +104,19 @@ def _root_descriptor(root: Path, owner: int) -> int:
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
     try:
         for component in root.parts[1:]:
-            nxt = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                          dir_fd=fd)
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            try:
+                nxt = os.open(component, flags, dir_fd=fd)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                # Bind creation to the no-follow parent already opened. A
+                # concurrent entry must still pass the same no-follow open.
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                nxt = os.open(component, flags, dir_fd=fd)
             previous, fd = fd, nxt
             _close_descriptors(previous)
         _directory(os.fstat(fd), owner)
@@ -163,8 +174,8 @@ def _sync_directory_ancestry(root: Path, owner: int) -> None:
 
 
 @contextmanager
-def _open_root(root: Path, owner: int) -> Iterator[int]:
-    fd = _root_descriptor(root, owner)
+def _open_root(root: Path, owner: int, *, create: bool = False) -> Iterator[int]:
+    fd = _root_descriptor(root, owner, create=create)
     failure = None
     try:
         yield fd
@@ -342,8 +353,7 @@ class EvidenceStore:
                (max_members, max_source_bytes, max_artifact_bytes, max_seals)):
             raise EvidenceError("LIMIT_EXCEEDED", "invalid evidence store budget")
         self.owner = os.geteuid() if owner_uid is None else owner_uid
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with _open_root(self.root, self.owner):
+        with _open_root(self.root, self.owner, create=True):
             pass
         self.snapshot_provider = snapshot_provider
         self.register_seal = register_seal

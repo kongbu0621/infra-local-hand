@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from functools import partial
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sys
@@ -17,7 +18,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from local_hand_jobs.contract import JobError, Principal, TOOL_SCHEMAS
-from local_hand_mcp.server import create_app
+from local_hand_mcp.server import create_app, main
 from test_local_hand_mcp_auth import HAS_EXTRA, SyntheticIssuer
 
 
@@ -302,6 +303,37 @@ class ServerTests(unittest.TestCase):
                 release.set()
             self.assertTrue(completed.wait(timeout=1))
         self.assertEqual(1, len(self.broker.calls))
+
+    def test_service_teardown_attempts_every_resource_and_preserves_body_error(self):
+        for body_fails in (False, True):
+            with self.subTest(body_fails=body_fails):
+                broker, maintenance = mock.Mock(), mock.Mock()
+                broker.policy = SimpleNamespace(local_peers={}, principals={}, broker_root="/synthetic/private")
+                resources = (maintenance, broker, broker.state, broker.authority_lock)
+                cleanup_error = OSError("synthetic maintenance close failure")
+                for resource in resources:
+                    resource.close.side_effect = cleanup_error
+                stderr = io.StringIO()
+                with mock.patch("local_hand_mcp.server._require_optional"), \
+                        mock.patch("local_hand_mcp.auth.AuthConfig.from_file", return_value=self.issuer.config), \
+                        mock.patch("local_hand_jobs.cli.create_broker", return_value=broker), \
+                        mock.patch("local_hand_jobs.cli.MaintenanceServer", return_value=maintenance), \
+                        mock.patch("local_hand_mcp.server.create_app", return_value=mock.Mock()), \
+                        mock.patch("local_hand_mcp.server.sys.stderr", stderr), \
+                        mock.patch("uvicorn.run", side_effect=RuntimeError("synthetic primary run failure") if body_fails else None):
+                    args = ["--config", "synthetic", "--auth-config", "synthetic", "--port", "8765"]
+                    if body_fails:
+                        self.assertEqual(2, main(args))
+                        self.assertIn("synthetic primary run failure", stderr.getvalue())
+                    else:
+                        try:
+                            raise ValueError("unrelated caller error")
+                        except ValueError:
+                            with self.assertRaises(OSError) as caught:
+                                main(args)
+                        self.assertIs(cleanup_error, caught.exception)
+                for resource in resources:
+                    resource.close.assert_called_once()
 
     def test_real_loopback_listener_uses_the_same_signed_transport(self):
         import httpx2

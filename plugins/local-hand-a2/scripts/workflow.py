@@ -109,6 +109,7 @@ class Workflow:
     @contextmanager
     def _journal_directory(self):
         directory = parent = None
+        body_failed = False
         try:
             parent = os.open(self.journal.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             def check_parent():
@@ -122,9 +123,14 @@ class Workflow:
             check_parent()
             self._check_journal(directory)
         except EvidenceError as error:
+            body_failed = True
             _fail(error.code, "Client identity publication is unavailable")
         except (OSError, RuntimeError):
+            body_failed = True
             _fail("IO_UNCERTAIN", "Client journal identity or durability is unresolved")
+        except BaseException:
+            body_failed = True
+            raise
         finally:
             close_failed = False
             for descriptor in (directory, parent):
@@ -135,7 +141,7 @@ class Workflow:
                         # The failing close may already have released its FD.
                         # Do not retry it, but still release the other directory.
                         close_failed = True
-            if close_failed:
+            if close_failed and not body_failed:
                 _fail("IO_UNCERTAIN", "Client journal directory close is unresolved")
 
     def _read(self, name, expected_identity=None):
@@ -146,7 +152,16 @@ class Workflow:
                 if expected_identity is not None:
                     _fail("IO_UNCERTAIN", "Published client identity disappeared")
                 return None
-            with os.fdopen(fd, "rb") as stream:
+            try:
+                stream = os.fdopen(fd, "rb")
+            except BaseException:
+                # A failed wrapper has not taken ownership of the raw FD.
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            with stream:
                 st = os.fstat(stream.fileno())
                 if expected_identity is not None and (st.st_dev, st.st_ino) != expected_identity:
                     _fail("IO_UNCERTAIN", "Published client identity was replaced")
@@ -186,7 +201,15 @@ class Workflow:
         expected_identity = None
         with self._journal_directory() as (directory, parent):
             fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
-            with os.fdopen(fd, "wb") as stream:
+            try:
+                stream = os.fdopen(fd, "wb")
+            except BaseException:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            with stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())

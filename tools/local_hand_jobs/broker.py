@@ -558,6 +558,10 @@ class Broker:
                     raise JobError("IO_UNCERTAIN", "Preflight returned no stable input proof")
                 self.state.update(tx, namespace, identity, "PREFLIGHT_COMPLETE", {
                     "phase": "EXITED" if record.get("recovered") else "PREFLIGHT_COMPLETE",
+                    # A late proof can resolve an earlier UNKNOWN observation.
+                    # The original job still owns its pending business phase;
+                    # queued reconciliation must not treat it as quiescent.
+                    "lifecycle": "RECONCILE_REQUIRED" if record.get("recovered") else "RUNNING",
                     "outcome": "UNKNOWN" if record.get("recovered") else "PENDING",
                     "helper_started": True, "facts": facts, "exit_proof": thaw(proof)})
                 return

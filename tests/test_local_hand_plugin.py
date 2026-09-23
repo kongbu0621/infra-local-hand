@@ -385,6 +385,105 @@ else:
         self.assertEqual(changed[0], json.loads(path.read_bytes()))
         self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
 
+    def test_publication_error_survives_directory_close_error(self):
+        primary = workflow.EvidenceError("UNSUPPORTED", "synthetic create-only publication unavailable")
+        real_close = os.close
+        closed = []
+        def close(descriptor):
+            real_close(descriptor)
+            closed.append(descriptor)
+            # The first two closes finish the absent-record read. The next
+            # pair belongs to the publication context whose body has failed.
+            if len(closed) == 3:
+                raise OSError("synthetic directory close failure after release")
+        with patch.object(workflow, "_publish_create_only", side_effect=primary), patch.object(workflow.os, "close", side_effect=close):
+            self.assert_error("UNSUPPORTED", self.reserve)
+        self.assertEqual(4, len(closed))
+        self.assertFalse(any(tool == "lh_job_submit" for tool, _ in self.host.calls))
+        self.assertFalse((self.client.journal / self.client._record_name("job", "inspect")).exists())
+        self.assertEqual(1, len(list(self.client.journal.glob(".pending-*"))))
+
+    def test_failed_journal_wrappers_release_raw_descriptors_and_keep_records(self):
+        for boundary in ("read", "save"):
+            with self.subTest(boundary=boundary):
+                record = {"authority_id": self.admission["authority_id"], "fixture": "retained"}
+                name = boundary + ".json"
+                target = self.client.journal / name
+                if boundary == "read":
+                    target.write_text(json.dumps(record))
+                    target.chmod(0o600)
+                acquired = []
+                def fail_wrapper(descriptor, *args, **kwargs):
+                    acquired.append(descriptor)
+                    raise OSError("synthetic wrapper acquisition failure")
+                with patch.object(workflow.os, "fdopen", side_effect=fail_wrapper):
+                    if boundary == "read":
+                        self.assert_error("IO_UNCERTAIN", self.client._read, name)
+                    else:
+                        self.assert_error("IO_UNCERTAIN", self.client._save, name, record)
+                self.assertEqual(1, len(acquired))
+                live = []
+                for descriptor in acquired:
+                    try:
+                        os.fstat(descriptor)
+                    except OSError:
+                        pass
+                    else:
+                        live.append(descriptor)
+                        os.close(descriptor)
+                self.assertEqual([], live, "Wrapper acquisition must not retain a raw descriptor")
+                if boundary == "save":
+                    self.assertFalse(target.exists())
+                    self.assertEqual(1, len(list(self.client.journal.glob(".pending-*"))))
+                    self.client._save(name, record)
+                self.assertEqual(record, self.client._read(name))
+        self.assertFalse(any(tool == "lh_job_submit" for tool, _ in self.host.calls))
+
+    def test_journal_wrapper_error_survives_raw_descriptor_close_error(self):
+        record = {"authority_id": self.admission["authority_id"], "fixture": "retained"}
+        self.client._save("existing.json", record)
+        for boundary in ("read", "save"):
+            with self.subTest(boundary=boundary):
+                acquired, closed = [], []
+                real_close = os.close
+                def fail_wrapper(descriptor, *args, **kwargs):
+                    acquired.append(descriptor)
+                    raise workflow.EvidenceError("UNSUPPORTED", "synthetic wrapper failure")
+                def close(descriptor):
+                    real_close(descriptor)
+                    closed.append(descriptor)
+                    if descriptor in acquired:
+                        raise OSError("synthetic raw descriptor close failure after release")
+                with patch.object(workflow.os, "fdopen", side_effect=fail_wrapper), patch.object(workflow.os, "close", side_effect=close):
+                    if boundary == "read":
+                        self.assert_error("UNSUPPORTED", self.client._read, "existing.json")
+                    else:
+                        self.assert_error("UNSUPPORTED", self.client._save, "unpublished.json", record)
+                self.assertEqual(1, len(acquired))
+                self.assertEqual(1, closed.count(acquired[0]))
+                self.assertEqual(3, len(closed), "The file and both directories must be attempted once")
+        self.assertEqual(record, self.client._read("existing.json"))
+        self.assertFalse((self.client.journal / "unpublished.json").exists())
+        self.assertFalse(any(tool == "lh_job_submit" for tool, _ in self.host.calls))
+
+    def test_journal_close_error_is_not_suppressed_by_handled_caller_exception(self):
+        original = self.reserve()
+        real_close = os.close
+        closed = []
+        def close(descriptor):
+            real_close(descriptor)
+            closed.append(descriptor)
+            if len(closed) == 1:
+                raise OSError("synthetic directory close failure after release")
+        with patch.object(workflow.os, "close", side_effect=close):
+            try:
+                raise RuntimeError("unrelated already-handled caller exception")
+            except RuntimeError:
+                self.assert_error("IO_UNCERTAIN", self.client.submit, "inspect")
+        self.assertEqual(2, len(closed))
+        self.assertFalse(any(tool == "lh_job_submit" for tool, _ in self.host.calls))
+        self.assertEqual(original, self.reserve())
+
     def test_untrusted_authority_and_changed_expected_stop_submission(self):
         self.reserve()
         for mutation in (lambda: self.host.page.update(authority_id="other-authority"),

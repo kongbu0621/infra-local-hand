@@ -65,6 +65,7 @@ def build(output: Path) -> dict:
     directory = os.open(output.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     temporary = Path(".plugin-build-" + str(uuid.uuid4()))
     descriptor = None
+    body_failed = False
     try:
         parent_identity = os.fstat(directory)
         descriptor = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -103,10 +104,22 @@ def build(output: Path) -> dict:
             if (output.parent.resolve() != output.parent or not stat.S_ISDIR(named_parent.st_mode)
                     or (named_parent.st_dev, named_parent.st_ino) != (parent_identity.st_dev, parent_identity.st_ino)):
                 raise ValueError("Plugin output directory changed")
+    except BaseException:
+        body_failed = True
+        raise
     finally:
-        if descriptor is not None:
-            os.close(descriptor)
-        os.close(directory)
+        close_error = None
+        for owned in (descriptor, directory):
+            if owned is not None:
+                try:
+                    os.close(owned)
+                except OSError as error:
+                    # A failing close may already have released its number.
+                    # Attempt each owned FD once and preserve the build error.
+                    if close_error is None:
+                        close_error = error
+        if close_error is not None and not body_failed:
+            raise close_error
     return {"path": str(output), "sha256": expected_digest,
             "size": created.st_size, "source_commit": commit,
             "members": len(files), "connection_state": manifest["connection_state"]}

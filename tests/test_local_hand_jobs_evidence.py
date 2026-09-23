@@ -66,6 +66,41 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, code)
         self.assertNotIn(str(self.root), str(raised.exception))
 
+    def test_rejected_store_ancestor_does_not_create_through_a_symlink(self):
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir(mode=0o700)
+        (unrelated / "sentinel").write_bytes(b"preserve")
+        alias = self.root / "alias"
+        alias.symlink_to(unrelated, target_is_directory=True)
+        for suffix in ("store", "parent/store"):
+            with self.subTest(suffix=suffix):
+                with self.assertRaises(OSError):
+                    EvidenceStore(alias / suffix, snapshot_provider=lambda _: self.fixture.snapshot,
+                                  register_seal=self.fixture.register,
+                                  is_registered=lambda *_: False)
+                self.assertEqual(sorted(path.name for path in unrelated.iterdir()), ["sentinel"])
+                self.assertEqual((unrelated / "sentinel").read_bytes(), b"preserve")
+
+    def test_store_creation_does_not_follow_a_concurrent_directory_alias(self):
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir(mode=0o700)
+        parent = self.root / "created-parent"
+        original_mkdir = os.mkdir
+        injected = []
+        def replace_missing_parent(path, mode=0o777, *, dir_fd=None):
+            if Path(path).name == parent.name:
+                parent.symlink_to(unrelated, target_is_directory=True)
+                injected.append(True)
+            return original_mkdir(path, mode=mode, dir_fd=dir_fd)
+        with mock.patch.object(evidence.os, "mkdir", side_effect=replace_missing_parent):
+            with self.assertRaises(OSError):
+                EvidenceStore(parent / "store", snapshot_provider=lambda _: self.fixture.snapshot,
+                              register_seal=self.fixture.register,
+                              is_registered=lambda *_: False)
+        self.assertEqual(injected, [True])
+        self.assertTrue(parent.is_symlink())
+        self.assertEqual(list(unrelated.iterdir()), [])
+
     def test_seal_binds_exact_members_events_and_external_manifest(self):
         record = self.fixture.store.seal(OP)
         directory = self.fixture.store.root / record["seal_id"]

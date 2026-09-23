@@ -276,6 +276,47 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 AuthConfig.from_file(str(link))
 
+    def test_failed_file_wrapper_closes_untransferred_auth_descriptor(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "auth.json"
+            path.write_text(json.dumps(self.issuer.configuration))
+            path.chmod(0o600)
+            acquired = []
+            def fail_wrapper(fd, *args, **kwargs):
+                acquired.append(fd)
+                raise OSError("synthetic wrapper allocation failure")
+            with patch("os.fdopen", side_effect=fail_wrapper):
+                with self.assertRaises(ValueError):
+                    AuthConfig.from_file(str(path))
+            self.assertEqual(1, len(acquired))
+            closed = False
+            try:
+                os.fstat(acquired[0])
+            except OSError:
+                closed = True
+            finally:
+                if not closed:
+                    os.close(acquired[0])
+            self.assertTrue(closed, "The failed wrapper must not retain the opened configuration FD")
+
+    def test_wrapper_failure_survives_a_raw_descriptor_close_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "auth.json"
+            path.write_text("{}")
+            path.chmod(0o600)
+            failure = RuntimeError("synthetic wrapper allocation failure")
+            closed = []
+            real_close = os.close
+            def close_then_fail(fd):
+                real_close(fd)
+                closed.append(fd)
+                raise OSError("synthetic close failure")
+            with patch("os.fdopen", side_effect=failure), patch("os.close", side_effect=close_then_fail):
+                with self.assertRaises(RuntimeError) as caught:
+                    AuthConfig.from_file(str(path))
+            self.assertIs(failure, caught.exception)
+            self.assertEqual(1, len(closed))
+
 
 if __name__ == "__main__":
     unittest.main()

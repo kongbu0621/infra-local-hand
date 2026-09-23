@@ -392,12 +392,29 @@ def main(argv=None):
         return 2
 
 
+def close_service(broker, server, *, failed=False):
+    """Attempt every owned service cleanup, preserving a local body failure."""
+    resources = ([server] if server is not None else [])
+    if broker is not None:
+        resources.extend((broker, broker.state, broker.authority_lock))
+    failure = None
+    for resource in resources:
+        try:
+            resource.close()
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+    if failure is not None and not failed:
+        raise failure
+
+
 def broker_main(argv=None):
     parser = argparse.ArgumentParser(description="Run the single admitted Local Hand broker")
     parser.add_argument("--policy", required=True, type=Path)
     parser.add_argument("--initialize", action="store_true", help="Explicitly initialize an absent first ledger")
     args = parser.parse_args(argv)
     broker = server = None
+    failed = False
     try:
         broker = create_broker(args.policy, actual_entrypoint=__file__, initialize=args.initialize)
         peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
@@ -409,15 +426,14 @@ def broker_main(argv=None):
     except KeyboardInterrupt:
         return 0
     except JobError as error:
+        failed = True
         print(json.dumps({"error": error.as_dict()}), file=sys.stderr)
         return 2
+    except BaseException:
+        failed = True
+        raise
     finally:
-        if server:
-            server.close()
-        if broker:
-            broker.close()
-            broker.state.close()
-            broker.authority_lock.close()
+        close_service(broker, server, failed=failed)
 
 
 if __name__ == "__main__":

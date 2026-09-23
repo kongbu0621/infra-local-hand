@@ -18,7 +18,7 @@ import zipfile
 from typing import Any, Callable, Protocol
 
 from .evidence import (DEFAULT_CHUNK, MAX_CHUNK, MAX_RESPONSE, MANIFEST_NAME,
-                       EvidenceError, _hash, _integer, _json, _open_member, _open_root,
+                       EvidenceError, _close_descriptors, _hash, _integer, _json, _open_member, _open_root,
                        _publish_create_only, _read, _regular, _safe_name, _same,
                        _sync_directory_ancestry)
 
@@ -76,9 +76,8 @@ class BoundedFileWriter:
         if not _integer(max_bytes, 2**53 - 1) or max_bytes == 0:
             raise EvidenceError("LIMIT_EXCEEDED", "invalid writer byte budget")
         self.root = Path(private_directory).absolute()
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.owner = os.geteuid()
-        with _open_root(self.root, self.owner):
+        with _open_root(self.root, self.owner, create=True):
             pass
         self.max_bytes = max_bytes
         self._lock = None
@@ -95,7 +94,11 @@ class BoundedFileWriter:
         self._completed = False
         key = _hash(_json(self.artifact))
         self.directory = self.root / ("download-" + key)
-        self.directory.mkdir(mode=0o700, exist_ok=True)
+        with _open_root(self.root, self.owner) as root:
+            try:
+                os.mkdir(self.directory.name, mode=0o700, dir_fd=root)
+            except FileExistsError:
+                pass
         self.partial = self.directory / "partial.bin"
         self.final = self.directory / ("evidence.zip" if self.artifact["role"] == "zip" else "evidence.json")
         try:
@@ -116,11 +119,15 @@ class BoundedFileWriter:
                         if _decode_json(_read(fd, DEFAULT_CHUNK)) != self.artifact:
                             raise EvidenceError("CONFLICT", "writer binding changed")
                 else:
+                    failure = None
                     try:
                         self._write_all(fd, _json(self.artifact))
                         os.fsync(fd)
+                    except BaseException as error:
+                        failure = error
+                        raise
                     finally:
-                        os.close(fd)
+                        _close_descriptors(fd, failure=failure)
                 try:
                     with _open_member(directory, self.final.name, self.owner, self.max_bytes) as final:
                         self._verify_descriptor(final)
@@ -166,7 +173,7 @@ class BoundedFileWriter:
                 os.fsync(directory)
                 self._assert_bound()
                 return self.offset
-        except Exception as failure:
+        except BaseException as failure:
             self._close(failure)
             raise
 

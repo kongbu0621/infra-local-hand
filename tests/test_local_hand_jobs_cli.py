@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import io
 import json
 from pathlib import Path
 import socket
@@ -14,7 +15,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from local_hand_jobs.cli import MaintenanceServer, request, _read_frame, create_broker
+from local_hand_jobs.cli import MaintenanceServer, request, _read_frame, create_broker, broker_main
 from local_hand_jobs.contract import JobError, Principal
 
 
@@ -322,6 +323,52 @@ class CliTests(unittest.TestCase):
                 create_broker("synthetic", actual_entrypoint="synthetic")
         state.close.assert_called_once()
         authority.close.assert_called_once()
+
+    def test_service_teardown_attempts_every_resource_after_each_close_failure(self):
+        for failed_resource in ("transport", "broker", "state", "authority"):
+            with self.subTest(failed_resource=failed_resource):
+                broker, server = Mock(), Mock()
+                broker.policy = SimpleNamespace(local_peers={}, principals={}, broker_root=self.temp.name)
+                attempted = []
+                failure = OSError("synthetic service cleanup failure")
+                def close(name):
+                    attempted.append(name)
+                    if name == failed_resource:
+                        raise failure
+                for name, resource in (("transport", server), ("broker", broker),
+                                       ("state", broker.state), ("authority", broker.authority_lock)):
+                    resource.close.side_effect = lambda name=name: close(name)
+                with patch("local_hand_jobs.cli.create_broker", return_value=broker), \
+                        patch("local_hand_jobs.cli.MaintenanceServer", return_value=server), \
+                        patch("local_hand_jobs.cli.threading.Event") as event:
+                    event.return_value.wait.side_effect = KeyboardInterrupt
+                    # An already-handled caller exception must not suppress a
+                    # cleanup failure in an otherwise successful service body.
+                    try:
+                        raise ValueError("unrelated caller error")
+                    except ValueError:
+                        with self.assertRaises(OSError) as caught:
+                            broker_main(["--policy", "synthetic"])
+                self.assertIs(failure, caught.exception)
+                self.assertEqual(["transport", "broker", "state", "authority"], attempted)
+
+    def test_startup_error_survives_all_service_teardown_failures(self):
+        broker, server = Mock(), Mock()
+        broker.policy = SimpleNamespace(local_peers={}, principals={}, broker_root=self.temp.name)
+        broker.start.side_effect = JobError("IO_UNCERTAIN", "synthetic primary startup failure")
+        resources = (server, broker, broker.state, broker.authority_lock)
+        for resource in resources:
+            resource.close.side_effect = OSError("synthetic cleanup failure")
+        stderr = io.StringIO()
+        with patch("local_hand_jobs.cli.create_broker", return_value=broker), \
+                patch("local_hand_jobs.cli.MaintenanceServer", return_value=server), \
+                patch("local_hand_jobs.cli.sys.stderr", stderr):
+            result = broker_main(["--policy", "synthetic"])
+        self.assertEqual(2, result)
+        self.assertIn("synthetic primary startup failure", stderr.getvalue())
+        self.assertNotIn("synthetic cleanup failure", stderr.getvalue())
+        for resource in resources:
+            resource.close.assert_called_once()
 
     def handle(self, raw, peers=None):
         server = MaintenanceServer(self.broker, self.path, peers if peers is not None else {os.geteuid(): self.principal})

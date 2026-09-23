@@ -145,7 +145,17 @@ class AuthConfig:
                         or (info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX and info.st_uid == 0))):
                     raise ValueError("Authorization configuration has a replaceable ancestor")
             fd = os.open(item, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd, "rb") as source:
+            try:
+                source = os.fdopen(fd, "rb")
+            except BaseException:
+                # Ownership transfers only after the wrapper is constructed.
+                # Preserve its failure even if closing the raw FD also fails.
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            with source:
                 before = os.fstat(source.fileno())
                 if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
                         or before.st_mode & 0o077 or before.st_nlink != 1):

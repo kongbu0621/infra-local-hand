@@ -297,6 +297,94 @@ class ClientTests(unittest.TestCase):
                 EvidenceClient(fixture.callback).download(artifact, BoundedFileWriter(self.root / "client"))
         self.assertEqual(collided[0].read_bytes(), b"another writer owns this")
 
+    def test_binding_cleanup_preserves_primary_failure_and_reports_close_only_failure(self):
+        payload = b"recoverable evidence bytes"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        for phase in ("write", "sync", "close"):
+            with self.subTest(phase=phase):
+                writer = BoundedFileWriter(self.root / phase)
+                self.addCleanup(writer.close)
+                primary = OSError("fixture primary binding " + phase + " failure")
+                binding_fds, attempted = [], []
+                real_write, real_sync, real_close = os.write, os.fsync, os.close
+                def fail_write(fd, data):
+                    if Path(os.readlink(f"/proc/self/fd/{fd}")).name == "binding.json":
+                        binding_fds.append(fd)
+                        if phase == "write":
+                            real_write(fd, data[:7])
+                            raise primary
+                    return real_write(fd, data)
+                def fail_sync(fd):
+                    if phase == "sync" and fd in binding_fds:
+                        raise primary
+                    return real_sync(fd)
+                def fail_close(fd):
+                    real_close(fd)
+                    if fd in binding_fds:
+                        attempted.append(fd)
+                        raise OSError("fixture secondary binding close failure")
+                ambient = LookupError("already handled unrelated caller failure")
+                try:
+                    raise ambient
+                except LookupError:
+                    with mock.patch.object(evidence_client.os, "write", side_effect=fail_write), \
+                            mock.patch.object(evidence_client.os, "fsync", side_effect=fail_sync), \
+                            mock.patch.object(evidence_client.os, "close", side_effect=fail_close):
+                        with self.assertRaises(Exception) as raised:
+                            writer.prepare(artifact)
+                self.assertTrue(binding_fds)
+                self.assertEqual(attempted, binding_fds)
+                self.assertFalse(hasattr(ambient, "__notes__"))
+                if phase == "close":
+                    self.assertIsInstance(raised.exception, EvidenceError)
+                    self.assertEqual(raised.exception.code, "IO_UNCERTAIN")
+                else:
+                    self.assertIs(raised.exception, primary)
+                    self.assertIn("Evidence descriptor cleanup also failed", primary.__notes__)
+                self.assertTrue(all(getattr(writer, name) is None for name in
+                                    ("_fd", "_journal", "_lock", "_directory_fd")))
+                self.assertFalse(writer.final.exists())
+                if phase == "write":
+                    self.assertEqual((writer.directory / "binding.json").read_bytes(), b'{"artif')
+                    self.assertCode("CONFLICT", lambda: writer.prepare(artifact))
+                else:
+                    self.assertEqual(writer.prepare(artifact), 0)
+                    writer.write(0, payload)
+                    self.assertEqual(writer.finish(lambda _: None).read_bytes(), payload)
+
+    def test_interrupted_checkpoint_restore_closes_owned_descriptors_and_can_resume(self):
+        payload = b"recoverable evidence bytes"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        writer = BoundedFileWriter(self.root / "client")
+        self.addCleanup(writer.close)
+        writer.prepare(artifact)
+        writer.write(0, payload[:8])
+        writer.close()
+        primary = KeyboardInterrupt("fixture interruption during checkpoint restore")
+        real_read, held = evidence_client._read, []
+        def interrupt_journal(fd, maximum):
+            if Path(os.readlink(f"/proc/self/fd/{fd}")).name == "checkpoints.jsonl":
+                held.extend([writer._fd, writer._journal, writer._lock, writer._directory_fd])
+                raise primary
+            return real_read(fd, maximum)
+        with mock.patch.object(evidence_client, "_read", side_effect=interrupt_journal):
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                writer.prepare(artifact)
+        self.assertIs(raised.exception, primary)
+        self.assertEqual(len(held), 4)
+        self.assertTrue(all(getattr(writer, name) is None for name in
+                            ("_fd", "_journal", "_lock", "_directory_fd")))
+        for fd in held:
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+        resumed = BoundedFileWriter(writer.root)
+        self.addCleanup(resumed.close)
+        self.assertEqual(resumed.prepare(artifact), 8)
+        resumed.write(8, payload[8:])
+        self.assertEqual(resumed.finish(lambda _: None).read_bytes(), payload)
+
     def _publication_sync_failure_requires_successful_recovery(self, target):
         fixture, artifact = self.fixture()
         directory = self.root / "client"
@@ -447,6 +535,29 @@ class ClientTests(unittest.TestCase):
         self.assertCode("CONFLICT", lambda: EvidenceClient(fixture.callback).download(
             artifact, BoundedFileWriter(directory, max_bytes=4)))
         self.assertEqual(list(directory.iterdir()), [])
+
+    def test_writer_creation_rejects_symlink_ancestors_before_creating_directories(self):
+        payload = b"fixture"
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        for phase in ("constructor", "prepare"):
+            with self.subTest(phase=phase):
+                parent = self.root / phase
+                parent.mkdir(mode=0o700)
+                foreign, alias = parent / "foreign", parent / "client"
+                foreign.mkdir(mode=0o700)
+                if phase == "constructor":
+                    alias.symlink_to(foreign, target_is_directory=True)
+                    create = lambda: BoundedFileWriter(alias / "missing" / "private")
+                else:
+                    writer = BoundedFileWriter(alias)
+                    self.addCleanup(writer.close)
+                    alias.rename(parent / "retained")
+                    alias.symlink_to(foreign, target_is_directory=True)
+                    create = lambda: writer.prepare(artifact)
+                with self.assertRaises((OSError, EvidenceError)):
+                    create()
+                self.assertEqual(list(foreign.iterdir()), [])
 
     def test_client_member_budget_must_be_a_finite_positive_integer(self):
         for value in (True, 0, -1, float("inf"), 2**53):

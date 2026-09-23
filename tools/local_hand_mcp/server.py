@@ -351,7 +351,7 @@ def main(argv=None) -> int:
     try:
         _require_optional()
         from local_hand_mcp.auth import AuthConfig, JWTVerifier
-        from local_hand_jobs.cli import create_broker, MaintenanceServer
+        from local_hand_jobs.cli import create_broker, MaintenanceServer, close_service
         from local_hand_jobs.contract import Principal
         import uvicorn
 
@@ -363,6 +363,7 @@ def main(argv=None) -> int:
         # host interface. External connection admission remains E4.
         broker = create_broker(args.config, actual_entrypoint=__file__)
         maintenance = None
+        failed = False
         try:
             peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
                      for uid, identity in broker.policy.local_peers.items()}
@@ -372,12 +373,11 @@ def main(argv=None) -> int:
             uvicorn.run(create_app(broker, JWTVerifier(auth)), host="127.0.0.1", port=args.port,
                         access_log=False, log_level="warning", limit_concurrency=MAX_CONTROL_REQUESTS,
                         timeout_keep_alive=5, proxy_headers=False)
+        except BaseException:
+            failed = True
+            raise
         finally:
-            if maintenance is not None:
-                maintenance.close()
-            broker.close()
-            broker.state.close()
-            broker.authority_lock.close()
+            close_service(broker, maintenance, failed=failed)
         return 0
     except (RuntimeError, ValueError, JobError) as exc:
         message = str(exc) if isinstance(exc, RuntimeError) else "Private MCP admission or broker startup failed"
