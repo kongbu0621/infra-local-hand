@@ -45,6 +45,37 @@ def await_state(supervisor, handle, expected):
     raise AssertionError(supervisor.inspect(handle))
 
 
+def budgeted_plan(plan, *, operation_id="fixture", record_id=None, now=None):
+    """Trusted test admission: create a real internal grant, never a bypass."""
+    phase = plan["phase"]
+    namespace = "reconcile" if phase == "reconcile" else "job"
+    record_id = record_id or operation_id
+    execution = plan.get("execution", plan)
+    limits = dict(wall_seconds=30, terminate_grace_seconds=1, cpu_seconds=9,
+                  memory_bytes=1024**2, processes=8, temporary_bytes=1024**2,
+                  nas_bytes=0, log_bytes=1024, reservation_bytes=4 * 1024**2)
+    limits.update(execution.get("budgets", {}))
+    original = dict(limits)
+    for key in ("wall_seconds", "cpu_seconds", "log_bytes"):
+        original[key] *= 2 if namespace == "reconcile" else 3
+    now = runner.budget.current_clock() if now is None else now
+    row = {"namespace": namespace, "id": record_id, "parent": operation_id,
+           "plan": {"budgets": original}, "record": {"handles": {}, "phase": "QUEUED",
+               "lifecycle": "ACCEPTED", "business_started": False, "helper_started": False,
+               "exit_proof": None}}
+    phases = ("reconcile", "evidence") if namespace == "reconcile" else ("preflight", "business", "evidence")
+    for predecessor in phases:
+        row["record"]["phase"] = ("PREFLIGHT_COMPLETE" if predecessor == "business" else
+                                  "AWAITING_SEAL" if predecessor == "evidence" else "QUEUED")
+        state, grant = runner.budget.reserve(row, predecessor, now=now)
+        row["record"]["execution_budget"] = state
+        row["record"]["handles"][predecessor] = {"execution_id": grant["execution_id"]}
+        if predecessor == phase: break
+    execution["budgets"] = grant["limits"]
+    plan.update(execution_id=grant["execution_id"], budgets=grant["limits"], budget_grant=grant)
+    return plan
+
+
 @contextlib.contextmanager
 def helper_budget_fixture(phase):
     with tempfile.TemporaryDirectory() as folder:
@@ -72,15 +103,170 @@ def helper_budget_fixture(phase):
                 patch.object(runner, "_verify_cgroup_limits", return_value={}), \
                 patch.object(runner.ledger_jobs, "verify_inputs", return_value={"inputs_stable": True}), \
                 patch.object(runner.ledger_jobs, "copy_verified_source"):
-            yield plan, target
+            yield budgeted_plan(plan), target
 
 
 class RunnerTests(unittest.TestCase):
+    def test_final_helper_budget_failure_preserves_checked_business_facts(self):
+        import hashlib
+        from local_hand_jobs import evidence
+        for phase in ("business", "reconcile", "preflight", "evidence"):
+            for error_code in ("LIMIT_EXCEEDED", "IO_UNCERTAIN", "relative_timeout"):
+                with self.subTest(phase=phase, error=error_code), helper_budget_fixture(phase) as (plan, target):
+                    plan.update(kind="host.inspect", python=sys.executable,
+                                observed_roots={"work": plan["roots"]["work"]})
+                    source = Path(plan["roots"]["work"]) / "known-work"
+                    source.write_bytes(b"known complete work")
+                    plan["evidence_store_root"] = str(target.parent / "store")
+                    plan["evidence_snapshot"] = {"operation_id": "fixture", "event_seq": 7,
+                        "root": plan["roots"]["work"], "members": ["known-work"], "bindings": {},
+                        "quiescence": {"execution_id": "previous-phase", "event_seq": 7,
+                            "future_starts_blocked": True, "tree_exited": True,
+                            "collectors_stopped": True, "writers_stopped": True}}
+                    observation = {"outcome": "SUCCEEDED", "bytes_retained": {"stdout": 0, "stderr": 0}}
+                    publication = {"operation_id": "fixture", "complete": True}
+                    final_check = (-1 if error_code == "relative_timeout" else
+                                   runner.JobError(error_code, "completion budget failure"))
+                    checks = [1_000_000_000, final_check] if phase == "preflight" else [final_check]
+                    with patch.object(runner, "_interpreter_temp_check", return_value=observation), \
+                            patch.object(runner, "_deadline_remaining", side_effect=checks), \
+                            patch.object(evidence, "EvidenceStore") as store:
+                        store.return_value.publish_only.return_value = publication
+                        code = runner._helper(plan)
+                    result = json.loads(target.read_text())
+                    checked_business = phase in ("business", "reconcile")
+                    self.assertEqual(code, 1)
+                    self.assertEqual(result["outcome"], "SUCCEEDED" if checked_business else "FAILED")
+                    self.assertEqual(result["effects_checked"], checked_business)
+                    self.assertEqual(result["helper_error"]["code"],
+                                     "LIMIT_EXCEEDED" if error_code == "relative_timeout" else error_code)
+                    self.assertEqual(result["helper_error"]["stage"], "completion_budget")
+                    self.assertEqual(source.read_bytes(), b"known complete work")
+                    if phase == "business": self.assertIn("python", result["facts"])
+                    if phase == "reconcile":
+                        self.assertEqual(result["result"]["observed_files"]["work"]["known-work"],
+                                         hashlib.sha256(b"known complete work").hexdigest())
+                    if phase == "evidence": self.assertEqual(result["seal_record"], publication)
+
+    def test_expired_operation_grant_blocks_helper_before_output_io(self):
+        with helper_budget_fixture("business") as (plan, target):
+            grant = plan["budget_grant"]
+            clock = {"boot_id": grant["boot_id"], "boottime_ns": grant["deadline_boottime_ns"] + 1}
+            with patch.object(runner.budget, "current_clock", return_value=clock), \
+                    patch.object(Path, "mkdir", side_effect=AssertionError("expired output creation")) as create:
+                with self.assertRaises(runner.JobError) as failure: runner._helper(plan)
+            self.assertEqual(failure.exception.code, "LIMIT_EXCEEDED")
+            create.assert_not_called()
+            self.assertEqual(list(target.parent.iterdir()), [])
+
+    def test_manager_final_delivery_caps_deadline_and_reserves_stop_grace(self):
+        class Prepared(runner.SystemdManager):
+            def _admit(self, plan): return runner._plain(plan["execution"]), {}
+        for elapsed in (0, 27, 29, 30):
+            with self.subTest(elapsed=elapsed), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                roots = {key: str(root / key) for key in ("work", "temporary", "evidence")}
+                clock = dict(runner.budget.current_clock(), boottime_ns=100_000_000_000)
+                execution = {"roots": roots, "budgets": {"wall_seconds": 10, "cpu_seconds": 3},
+                             "python": sys.executable, "writable": list(roots.values()), "readonly": []}
+                plan = budgeted_plan({"phase": "business", "execution": execution}, now=clock)
+                identity = {"job_key": "fixture", "phase": "business", "execution_id": plan["execution_id"],
+                            "unit": "lhj-test-budget.service"}
+                manager = Prepared({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
+                def guard(execution_id, launch):
+                    clock["boottime_ns"] += elapsed * runner.budget.NANOSECONDS
+                    return launch()
+                manager.set_start_guard(guard)
+                with patch.object(runner.budget, "current_clock", side_effect=lambda: dict(clock)), \
+                        patch.object(runner.subprocess, "Popen", return_value=object()) as launched:
+                    if elapsed >= 29:
+                        with self.assertRaises(runner._NoStartError) as failure:
+                            manager.start(identity, plan, threading.Event())
+                        self.assertEqual(failure.exception.code, "LIMIT_EXCEEDED")
+                        launched.assert_not_called()
+                        continue
+                    handle = manager.start(identity, plan, threading.Event())
+                properties = dict(item.removeprefix("--property=").split("=", 1)
+                                  for item in launched.call_args.args[0] if item.startswith("--property="))
+                self.assertEqual(properties["RuntimeMaxSec"], "9000000us" if elapsed == 0 else "2000000us")
+                self.assertEqual(properties["TimeoutStopSec"], "1")
+                self.assertEqual(properties["CPUQuota"], "30.000000%")
+                self.assertLessEqual(handle["phase_deadline_boottime_ns"] + runner.budget.NANOSECONDS,
+                                     plan["budget_grant"]["deadline_boottime_ns"])
+
+    def test_cpu_quota_is_floored_and_rejects_unrepresentable_small_rates(self):
+        self.assertEqual(runner._cpu_quota({"cpu_seconds": 1, "wall_seconds": 3}), "33.333333%")
+        self.assertEqual(runner._cpu_quota({"cpu_seconds": 1, "wall_seconds": 1000}), "0.100000%")
+        self.assertEqual(runner._cpu_quota({"cpu_seconds": 100, "wall_seconds": 3}), "100.000000%")
+        for wall in (1001, 2**53 - 1):
+            with self.subTest(wall=wall), self.assertRaises(runner.RunnerError) as failure:
+                runner._cpu_quota({"cpu_seconds": 1, "wall_seconds": wall})
+            self.assertEqual(failure.exception.code, "UNSUPPORTED")
+
+    def test_absolute_deadline_blocks_child_when_boottime_advances(self):
+        with helper_budget_fixture("business") as (plan, target):
+            grant = plan["budget_grant"]
+            deadline = grant["started_boottime_ns"] + 9 * runner.budget.NANOSECONDS
+            clock = {"boot_id": grant["boot_id"], "boottime_ns": deadline + 1}
+            stage = plan["stages"][0]
+            with patch.object(runner.budget, "current_clock", return_value=clock), \
+                    patch.object(runner.subprocess, "Popen") as launched:
+                with self.assertRaises(runner.JobError) as failure:
+                    runner._capture_stage(stage, target.parent, 100, 100, (grant, deadline))
+            self.assertEqual(failure.exception.code, "LIMIT_EXCEEDED")
+            launched.assert_not_called()
+            self.assertEqual(list(target.parent.iterdir()), [])
+
+    def test_recovery_does_not_renew_phase_deadline_or_legacy_runtime(self):
+        import hashlib
+        import subprocess
+        for mode in ("retained", "missing_receipt", "legacy", "lost_budget_with_receipt", "damaged_budget",
+                     "damaged_receipt_type", "damaged_receipt_grace"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                roots = {key: str(root / key) for key in ("work", "temporary", "evidence")}
+                clock = dict(runner.budget.current_clock(), boottime_ns=100_000_000_000)
+                plan = budgeted_plan({"phase": "business", "execution": {"roots": roots, "budgets": {"wall_seconds": 10}}}, now=clock)
+                execution_id = plan["execution_id"]
+                suffix = hashlib.sha256(execution_id.encode()).hexdigest()
+                unit = "lhj-" + suffix + ".service"
+                old_deadline = 109_000_000_000 if mode in ("retained", "lost_budget_with_receipt", "damaged_budget") else None
+                if mode == "damaged_receipt_type": old_deadline = "109000000000"
+                if mode == "damaged_receipt_grace": old_deadline = plan["budget_grant"]["deadline_boottime_ns"]
+                identity = {"job_key": "fixture", "execution_id": execution_id, "phase": "business", "unit": unit,
+                    "manager": {"boot_id": clock["boot_id"], "cgroup_parent": "/sys/fs/cgroup/fixture", "launch_acked": True,
+                        "result_path": str(root / "evidence" / ("result-" + suffix[:24] + ".json")),
+                        "invocation_id": "a" * 32, "phase_deadline_boottime_ns": old_deadline}}
+                if mode in ("legacy", "lost_budget_with_receipt"): plan.pop("budget_grant")
+                if mode == "damaged_budget": plan["budget_grant"]["version"] = 2
+                manager = runner.SystemdManager({"cgroup": "/sys/fs/cgroup/fixture"})
+                with patch.object(manager, "support", return_value={"supported": True}):
+                    handle = manager.reattach(identity, plan, threading.Event())
+                retained_deadline = old_deadline if mode == "retained" else None
+                self.assertEqual(handle["phase_deadline_boottime_ns"], retained_deadline)
+                clock["boottime_ns"] = 112_000_000_000
+                show = ("ActiveState=active\nSubState=running\nControlGroup=/fixture/" + unit +
+                        "\nInvocationID=" + "a" * 32 + "\nJob=\n")
+                original_read = Path.read_text
+                def read(path, *args, **kwargs):
+                    if str(path).endswith("/cgroup.events"): return "populated 1\n"
+                    return original_read(path, *args, **kwargs)
+                with patch.object(runner.budget, "current_clock", return_value=clock), \
+                        patch.object(Path, "read_text", read), \
+                        patch.object(manager, "_command", return_value=subprocess.CompletedProcess([], 0, show.encode())), \
+                        patch.object(manager, "stop", return_value=runner._unknown()) as stop:
+                    proof = manager.inspect(handle)
+                stop.assert_called_once_with(handle)
+                self.assertFalse(proof["future_start_blocked"])
+                self.assertFalse(proof["tree_exited"])
+                self.assertEqual(handle["phase_deadline_boottime_ns"], retained_deadline)
+
     def test_helper_probe_logs_share_preflight_and_business_log_budget(self):
         for phase in ("preflight", "business"):
             for limit in (10, 20):
                 with self.subTest(phase=phase, limit=limit), helper_budget_fixture(phase) as (plan, target):
                     plan["budgets"]["log_bytes"] = limit
+                    budgeted_plan(plan)
                     capture = runner._capture_stage
                     def noisy_probe(stage, *args):
                         if stage["name"].startswith("temp-"):
@@ -136,7 +322,8 @@ class RunnerTests(unittest.TestCase):
             manager.set_start_guard(guard)
             supervisor = runner.Runner(manager)
             with patch.object(runner.subprocess, "Popen", return_value=object()) as launch:
-                handle = supervisor.start("job", "post-delivery-business", {"execution": execution, "phase": "business"})
+                plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job")
+                handle = supervisor.start("job", plan["execution_id"], plan)
                 self.assertTrue(delivered.wait(1))
                 deadline = time.monotonic() + 1
                 while time.monotonic() < deadline:
@@ -215,7 +402,8 @@ class RunnerTests(unittest.TestCase):
             manager.set_start_guard(uncertain_receipt)
             supervisor = runner.Runner(manager)
             with patch.object(runner.subprocess, "Popen", return_value=Receipt()) as launch:
-                handle = supervisor.start("job", "delivered-no-receipt-business", {"execution": execution, "phase": "business"})
+                plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job")
+                handle = supervisor.start("job", plan["execution_id"], plan)
                 await_state(supervisor, handle, "RUNNING")
                 supervisor.stop(handle)
                 proof = await_state(supervisor, handle, "EXITED")
@@ -542,6 +730,7 @@ class RunnerTests(unittest.TestCase):
                     "environment": runner.ledger_jobs.clean_environment(roots["temporary"]),
                     "parent_mount_namespace": "original-namespace",
                     "result_path": str(root / "evidence" / "result.json")}
+            budgeted_plan(plan)
             mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
             # This is a helper-unit fixture, not real cgroup/bootstrap acceptance.
             with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
@@ -695,6 +884,7 @@ class RunnerTests(unittest.TestCase):
                 "stages": [{"name": "fixed-fixture", "argv": [sys.executable, "-I", "-c",
                     "import pathlib;pathlib.Path('business-complete').write_text('done')"],
                     "cwd": roots["work"], "env": environment}]}
+            budgeted_plan(plan)
             evidence_identity = (target.parent.stat().st_dev, target.parent.stat().st_ino)
             actual_fsync = os.fsync
             sync_failed = False
@@ -838,7 +1028,8 @@ class RunnerTests(unittest.TestCase):
                 execution = {"roots": roots, "budgets": limits, "python": sys.executable,
                     "writable": list(roots.values()), "readonly": [], "environment": {"PATH": "/usr/bin:/bin"}}
                 manager = PreparedManager({"slice": "fixture.slice", "cgroup": "/sys/fs/cgroup/fixture"})
-                identity = {"job_key": "job-fixture", "execution_id": "guard-fixture", "phase": "business",
+                plan = budgeted_plan({"execution": execution, "phase": "business"}, operation_id="job-fixture")
+                identity = {"job_key": "job-fixture", "execution_id": plan["execution_id"], "phase": "business",
                             "unit": "lhj-guard-fixture.service"}
                 cancel = threading.Event()
                 in_fence = [False]
@@ -861,11 +1052,11 @@ class RunnerTests(unittest.TestCase):
                 with patch.object(runner.subprocess, "Popen", side_effect=delivered) as launch:
                     if mode == "missing":
                         with self.assertRaisesRegex(runner.RunnerError, "startup guard is not bound"):
-                            manager.start(identity, {"execution": execution, "phase": "business"}, cancel)
+                            manager.start(identity, plan, cancel)
                         launch.assert_not_called()
                     else:
-                        handle = manager.start(identity, {"execution": execution, "phase": "business"}, cancel)
-                        self.assertEqual(guard_calls, ["guard-fixture"])
+                        handle = manager.start(identity, plan, cancel)
+                        self.assertEqual(guard_calls, [plan["execution_id"]])
                         if mode == "authorized":
                             launch.assert_called_once()
                             self.assertIs(handle["launch"], receipt)

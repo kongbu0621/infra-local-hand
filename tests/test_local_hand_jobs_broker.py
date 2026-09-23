@@ -20,11 +20,16 @@ from local_hand_jobs.contract import JobError, Principal, request_digest
 from local_hand_jobs.state import StateStore
 
 
+SYNTHETIC_BUDGET = {"wall_seconds": 30, "terminate_grace_seconds": 1, "cpu_seconds": 30,
+                    "memory_bytes": 1024, "processes": 2, "temporary_bytes": 100,
+                    "nas_bytes": 0, "log_bytes": 300, "reservation_bytes": 1000}
+
+
 class PolicyFixture:
     generation = 1
     limits = {"max_queued": 20, "max_running": 2, "retained_bytes": 100000,
               "ledger_emergency_bytes": 1000, "requests_per_minute": 30}
-    profiles = {"fixture": {"budgets": {"reconcile": {"reservation_bytes": 1000}}}}
+    profiles = {"fixture": {"budgets": {"reconcile": dict(SYNTHETIC_BUDGET)}}}
 
     def authorize(self, principal, scope, request=None, owner=None):
         if scope not in principal.scopes or (owner is not None and owner != principal.principal_id):
@@ -43,7 +48,7 @@ class RegistryFixture:
     def resolve(self, request, policy, *, principal=None):
         return {"kind": request["kind"], "profile_ref": request["profile_ref"],
                 "resource_ids": ["same-physical-root"], "reservation_bytes": 1000,
-                "inputs": request["inputs"], "budgets": {"wall_seconds": 30}}
+                "inputs": request["inputs"], "budgets": dict(SYNTHETIC_BUDGET)}
 
 
 class SupervisorFixture:

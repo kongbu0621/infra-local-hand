@@ -13,6 +13,7 @@ import threading
 import time
 
 from .contract import JobError, Principal, validate_submit, validate_tool_args
+from . import budget
 from .resources import ResourceManager
 from .state import encoded
 
@@ -45,6 +46,12 @@ class Broker:
     """
 
     def __init__(self, state, policy, registry, runner, evidence=None, *, resources=None):
+        try:
+            budget.initialize_clock()
+        except JobError:
+            # Cache failure before transactions. Historical observation and
+            # controlled cancellation remain available; new grants fail closed.
+            pass
         self.state, self.policy, self.registry = state, policy, registry
         self.runner, self.evidence = runner, evidence
         self.resources = resources or ResourceManager()
@@ -139,7 +146,8 @@ class Broker:
         # Internal execution handles contain deployment paths; never expose them.
         for key in ("handles", "facts", "principal_scopes", "generation", "runner_result"):
             result.pop(key, None)
-        for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents"):
+        for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents",
+                    "execution_budget", "budget_grant"):
             result.pop(key, None)
         result["seal_refs"] = [{"seal_id": item["seal_id"], "seal_sha256": item.get("seal_sha256")}
                                for item in result.pop("seals", [])]
@@ -377,8 +385,17 @@ class Broker:
                     phase = record["phase"].lower()
                     handle = record.get("handles", {}).get(phase)
                     if handle is not None:
-                        reconnect.append(((row["namespace"], row["id"]), handle,
-                                          dict(row["plan"], phase=phase)))
+                        plan = dict(row["plan"], phase=phase)
+                        try:
+                            grant = budget.stored_grant(row, phase)
+                        except JobError:
+                            # Legacy/uncertain budget records still permit
+                            # observation and controlled stopping, never a new
+                            # execution or a replacement operation deadline.
+                            pass
+                        else:
+                            plan.update(budget_grant=grant, budgets=grant["limits"])
+                        reconnect.append(((row["namespace"], row["id"]), handle, plan))
         for key, handle, plan in reconnect:
             if hasattr(self.runner, "reattach"):
                 try:
@@ -400,6 +417,36 @@ class Broker:
             if all(record.get(name) == value for name, value in changes.items()):
                 return  # Polling the same uncertainty is not a new durable observation.
             self.state.update(tx, namespace, identity, "EXECUTION_UNCERTAIN", changes)
+
+    def _budget_blocked(self, namespace, identity):
+        """An exhausted allocation cannot change an already observed business result."""
+        with self.fence, self.state.transaction() as tx:
+            row = self.state.get(namespace, identity, tx)
+            record = row["record"]
+            if record["lifecycle"] == "TERMINAL":
+                return True
+            if (namespace, identity) in self._active:
+                return False  # An issued request still needs its own stop/exit proof.
+            if record["phase"] == "AWAITING_SEAL":
+                proof = record.get("business_exit_proof", {})
+                outcome = record.get("business_outcome", "UNKNOWN")
+            elif record["phase"] == "QUEUED" and not record.get("handles"):
+                proof = {"future_start_blocked": True, "tree_exited": True, "effects_checked": True}
+                outcome = "FAILED"
+            elif record["phase"] == "PREFLIGHT_COMPLETE":
+                proof = record.get("exit_proof") or {}
+                outcome = "FAILED" if proof.get("effects_checked") is True else "UNKNOWN"
+            else:
+                return False
+            certain = outcome != "UNKNOWN" and all(proof.get(key) is True for key in
+                         ("future_start_blocked", "tree_exited", "effects_checked"))
+            self.state.update(tx, namespace, identity, "EXECUTION_BUDGET_EXHAUSTED", {
+                "phase": "EXITED", "lifecycle": "TERMINAL" if certain else "RECONCILE_REQUIRED",
+                "outcome": outcome, "exit_proof": proof,
+                "gaps": ["Operation budget prevents another helper; prior observed business facts retained"]})
+            if certain:
+                self._release(tx, row, proof)
+            return True
 
     def _execution_slots(self, tx):
         # Losing a start acknowledgement or a recovery attachment does not
@@ -445,6 +492,13 @@ class Broker:
                     current = thaw(self.registry.resolve(parent["request"], self.policy, principal=principal))
                     if current.get("plan_digest") != row["plan"].get("plan_digest"):
                         raise JobError("STALE_DEPLOYMENT", "The immutable execution plan or prerequisite evidence changed")
+                if row["record"].get("execution_budget") is None:
+                    history = tx.execute("SELECT 1 FROM events WHERE namespace=? AND id=? "
+                                         "AND kind NOT IN ('ACCEPTED','ADMISSION_BOUND','OBSERVATION_BOUND') LIMIT 1",
+                                         (namespace, identity)).fetchone()
+                    if history is not None:
+                        raise JobError("IO_UNCERTAIN", "Prior operation events cannot acquire a fresh execution budget")
+                execution_budget, grant = budget.reserve(row, phase)
                 execution_id = f"{namespace}-{identity}-{phase}"
                 handles = row["record"]["handles"]
                 if phase in handles:
@@ -452,12 +506,14 @@ class Broker:
                 handles[phase] = {"execution_id": execution_id, "intent_only": True}
                 self.state.update(tx, namespace, identity, "EXECUTION_INTENT", {
                     "phase": phase.upper(), "lifecycle": "RUNNING", "handles": handles,
+                    "execution_budget": execution_budget,
                     "exit_proof": None,
                     "business_started": None if phase == "business" else row["record"]["business_started"],
                     "helper_started": row["record"]["helper_started"] if row["record"]["helper_started"] is True or phase == "business" else None})
-                plan = dict(row["plan"], phase=phase, execution_id=execution_id)
+                plan = dict(row["plan"], phase=phase, execution_id=execution_id,
+                            budget_grant=grant, budgets=grant["limits"])
                 if namespace == "reconcile":
-                    plan["execution"] = dict(plan.get("execution", {}), budgets=row["plan"]["budgets"])
+                    plan["execution"] = dict(plan.get("execution", {}), budgets=grant["limits"])
                 plan["preflight_facts"] = row["record"].get("facts", {})
                 if phase == "evidence":
                     plan["evidence_snapshot"] = row["record"]["frozen_snapshot"]
@@ -496,6 +552,9 @@ class Broker:
                     return None
                 if execution_id in record.get("delivery_intents", []):
                     return None  # A prior delivery intent is never issued a second time.
+                grant = budget.stored_grant(row, phase)
+                if budget.remaining_ns(grant) <= grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS:
+                    raise JobError("LIMIT_EXCEEDED", "Operation has no runtime left after its required stop grace")
                 parent = row if namespace == "job" else self.state.get("job", row["parent"], tx)
                 if record["generation"] != self._generation(tx) or parent["request"]["expected"] != thaw(self.policy.expected(parent["request"]["profile_ref"])):
                     return None
@@ -677,6 +736,9 @@ class Broker:
                      "business" if record["phase"] == "PREFLIGHT_COMPLETE" else "preflight")
             try:
                 self._start(*key, phase)
+            except JobError as error:
+                if not isinstance(error, budget.BudgetExhausted) or not self._budget_blocked(*key):
+                    self._unknown(*key, "Startup binding or supervisor acknowledgement is unresolved")
             except Exception:
                 self._unknown(*key, "Startup binding or supervisor acknowledgement is unresolved")
 

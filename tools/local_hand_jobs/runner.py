@@ -27,10 +27,12 @@ import time
 from typing import Mapping
 
 if __package__:
-    from . import ledger_jobs
+    from . import budget, ledger_jobs
+    from .contract import JobError
 else:  # fixed -I script entry: importing only this installed sibling
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from local_hand_jobs import ledger_jobs
+    from local_hand_jobs import budget, ledger_jobs
+    from local_hand_jobs.contract import JobError
 
 
 class RunnerError(RuntimeError):
@@ -196,11 +198,11 @@ class Runner:
         except RunnerError as error:
             proof = _unknown(str(error))
             proof["result"] = {"outcome": "UNKNOWN", "error": error.code}
-            # UNSUPPORTED before submitting anything is a proved no-start case.
+            # Only an explicit manager no-delivery proof establishes no-start.
             if isinstance(error, _NoStartError) and not item.launch_complete and not item.plan.get("_reattach"):
                 proof.update(state="EXITED", future_start_blocked=True, tree_exited=True,
                              collectors_stopped=True, writers_stopped=True, effects_checked=True,
-                             result={"outcome": "FAILED", "error": "UNSUPPORTED", "business_started": False, "helper_started": False}, missing=[])
+                             result={"outcome": "FAILED", "error": error.code, "business_started": False, "helper_started": False}, missing=[])
             with item.lock: item.proof = proof
         except BaseException:
             with item.lock: item.proof = _unknown("manager operation is uncertain")
@@ -251,6 +253,39 @@ def _verify_project_quota(path, byte_limit):
         raise RunnerError("UNSUPPORTED", "project hard quota cannot be verified") from error
     finally:
         os.close(descriptor)
+
+
+def _runtime_microseconds(grant, now=None):
+    """Reserve the full stop grace inside the phase/operation wall envelope."""
+    remaining = budget.remaining_ns(grant, now=now)
+    limits = grant["limits"]
+    runtime = min(limits["wall_seconds"] * budget.NANOSECONDS, remaining)
+    runtime -= limits["terminate_grace_seconds"] * budget.NANOSECONDS
+    runtime //= 1000  # systemd time spans are encoded as integer microseconds.
+    if runtime <= 0:
+        raise JobError("LIMIT_EXCEEDED", "No helper runtime remains after its required stop grace")
+    return runtime
+
+
+def _cpu_quota(limits):
+    # Always divide by the full envelope (runtime + reserved stop grace).
+    # Six decimal places are floored using integers, never rounded upward.
+    millionths = min(100_000_000, limits["cpu_seconds"] * 100_000_000 // limits["wall_seconds"])
+    # systemd permits a period up to 1 s and requires at least a 1 ms quota.
+    # Smaller requested rates cannot be represented without exceeding the cap.
+    if millionths < 100_000:
+        raise RunnerError("UNSUPPORTED", "CPU quota cannot be represented within its admitted envelope")
+    whole, fraction = divmod(millionths, 1_000_000)
+    return f"{whole}.{fraction:06d}%"
+
+
+def _deadline_remaining(deadline):
+    grant, phase_deadline = deadline
+    now = budget.current_clock()
+    remaining = min(budget.remaining_ns(grant, now=now), phase_deadline - now["boottime_ns"])
+    if remaining <= 0:
+        raise JobError("LIMIT_EXCEEDED", "Helper runtime deadline is exhausted")
+    return remaining
 
 
 class SystemdManager:
@@ -421,13 +456,21 @@ class SystemdManager:
         except RunnerError as error:
             handle = self._runs.get(identity["unit"])
             delivery_attempted = handle is not None and (handle.get("delivery_attempted") or handle.get("launch") is not None)
-            if error.code == "UNSUPPORTED" and not delivery_attempted:
+            if error.code in ("UNSUPPORTED", "LIMIT_EXCEEDED") and not delivery_attempted:
                 raise _NoStartError(error.code, str(error)) from error
             raise
 
     def _start(self, identity, plan, cancel_event):
         plan = dict(plan, execution_id=identity["execution_id"])
         execution, quotas = self._admit(plan)
+        grant = _plain(plan.get("budget_grant"))
+        try:
+            budget.validate_grant(grant, execution_id=identity["execution_id"], phase=identity["phase"],
+                                  operation_id=identity["job_key"], budgets=execution["budgets"])
+            runtime_us = _runtime_microseconds(grant)
+        except JobError as error:
+            raise RunnerError(error.code, str(error)) from error
+        quota = _cpu_quota(grant["limits"])
         unit = identity["unit"]
         if unit in self._runs: raise RunnerError("CONFLICT", "manager identity reuse")
         for root in execution["roots"].values():
@@ -438,6 +481,8 @@ class SystemdManager:
         execution = dict(execution)
         execution["phase"] = plan.get("phase", "business")
         execution["execution_id"] = identity["execution_id"]
+        execution["budget_grant"] = grant
+        execution["runtime_cap_us"] = runtime_us
         execution["unit"] = identity["unit"]
         execution["quota_observation"] = quotas
         execution["parent_mount_namespace"] = os.readlink("/proc/self/ns/mnt")
@@ -451,9 +496,9 @@ class SystemdManager:
             os.chmod(plan_path, 0o400); stream.write(raw); stream.flush(); os.fsync(stream.fileno())
         limits = execution["budgets"]
         properties = {"Slice": self.configuration["slice"], "Type": "exec", "KillMode": "control-group",
-            "SendSIGKILL": "yes", "RemainAfterExit": "yes", "RuntimeMaxSec": str(limits["wall_seconds"]),
+            "SendSIGKILL": "yes", "RemainAfterExit": "yes", "RuntimeMaxSec": str(runtime_us) + "us",
             "TimeoutStopSec": str(limits["terminate_grace_seconds"]), "MemoryMax": str(limits["memory_bytes"]),
-            "TasksMax": str(limits["processes"]), "CPUQuota": str(min(100, limits["cpu_seconds"] * 100 / limits["wall_seconds"])) + "%", "CPUQuotaPeriodSec": "1ms", "LimitCPU": str(limits["cpu_seconds"]),
+            "TasksMax": str(limits["processes"]), "CPUQuota": quota, "CPUQuotaPeriodSec": "1ms", "LimitCPU": str(limits["cpu_seconds"]),
             "LimitFSIZE": str(limits["temporary_bytes"]), "NoNewPrivileges": "yes", "ProtectSystem": "strict",
             "ProtectHome": "read-only", "PrivateUsers": "yes", "PrivateMounts": "yes", "PrivateNetwork": "yes", "PrivateDevices": "yes", "RestrictSUIDSGID": "yes",
             "ProtectKernelTunables": "yes", "ProtectKernelModules": "yes", "ProtectControlGroups": "yes",
@@ -474,7 +519,8 @@ class SystemdManager:
                   "cancel_event": cancel_event, "launch": None, "launch_acked": False, "stop_acked": False,
                   "stop_requested": False, "started": time.monotonic(), "deadline": limits["wall_seconds"],
                   "invocation_id": None, "execution_id": identity["execution_id"], "cancel_before_launch": False,
-                  "identity": dict(identity), "recovered": False, "delivery_attempted": False}
+                  "identity": dict(identity), "recovered": False, "delivery_attempted": False,
+                  "budget_grant": grant, "phase_deadline_boottime_ns": None}
         self._runs[unit] = handle
         if cancel_event.is_set():
             handle["cancel_before_launch"] = True
@@ -488,6 +534,18 @@ class SystemdManager:
         def deliver():
             if cancel_event.is_set():
                 return None
+            # Preparation and broker queueing never renew the durable deadline.
+            # The absolute grant also reaches the helper because systemd may
+            # activate a delivered unit later than this final delivery fence.
+            try:
+                now = budget.current_clock()
+                final_us = min(runtime_us, _runtime_microseconds(grant, now=now))
+            except JobError as error:
+                raise RunnerError(error.code, str(error)) from error
+            for index, argument in enumerate(command):
+                if argument.startswith("--property=RuntimeMaxSec="):
+                    command[index] = "--property=RuntimeMaxSec=" + str(final_us) + "us"
+            handle["phase_deadline_boottime_ns"] = now["boottime_ns"] + final_us * 1000
             # Mark before Popen: an exception does not prove no process was created.
             handle["delivery_attempted"] = True
             handle["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -495,6 +553,8 @@ class SystemdManager:
             return handle["launch"]
         try:
             accepted = self._start_guard(identity["execution_id"], deliver)
+        except JobError as error:
+            raise RunnerError(error.code, str(error)) from error
         except OSError as error:
             raise RunnerError("IO_UNCERTAIN", "manager launch acknowledgement missing") from error
         if accepted is None:
@@ -504,7 +564,7 @@ class SystemdManager:
         return handle
 
     def export_handle(self, handle):
-        fields = ("boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked", "invocation_id", "execution_id")
+        fields = ("boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked", "invocation_id", "execution_id", "phase_deadline_boottime_ns")
         return {**{key: value for key, value in handle["identity"].items() if key != "manager"},
                 "manager": {key: handle.get(key) for key in fields}}
 
@@ -534,13 +594,30 @@ class SystemdManager:
         if saved.get("result_path", result_path) != result_path:
             raise RunnerError("IO_UNCERTAIN", "recovery result identity differs")
         current_boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        grant = _plain(plan.get("budget_grant"))
+        if grant is not None:
+            try:
+                budget.validate_grant(grant, execution_id=identity["execution_id"], phase=phase,
+                                      operation_id=identity["job_key"], budgets=plan["budgets"])
+            except JobError:
+                # An unusable budget never authorizes more runtime, but it
+                # must not disable observation/stopping of the already bound
+                # unit. All existing boot, unit, invocation and path checks stay.
+                grant = None
+        saved_deadline = saved.get("phase_deadline_boottime_ns") if grant is not None else None
+        if saved_deadline is not None and (type(saved_deadline) is not int or grant is None
+                or not grant["reserved_boottime_ns"] < saved_deadline <= (grant["deadline_boottime_ns"]
+                    - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS)):
+            # Corrupt timing cannot grant runtime or disable stopping an
+            # otherwise identity-bound unit. Missing time requests stop below.
+            saved_deadline = None
         handle = {"unit": identity["unit"], "identity": dict(identity), "boot_id": saved.get("boot_id", current_boot),
                   "result_path": result_path, "cgroup_parent": expected_group, "cancel_event": cancel_event,
                   "launch": None, "launch_acked": saved.get("launch_acked") is True and saved.get("boot_id") == current_boot,
                   "stop_acked": saved.get("stop_acked") is True, "stop_requested": False,
                   "invocation_id": saved.get("invocation_id"), "execution_id": identity["execution_id"],
-                  "started": time.monotonic(), "deadline": plan.get("budgets", execution["budgets"])["wall_seconds"],
-                  "cancel_before_launch": False, "recovered": True}
+                  "cancel_before_launch": False, "recovered": True,
+                  "budget_grant": grant, "phase_deadline_boottime_ns": saved_deadline}
         self._runs[identity["unit"]] = handle
         return handle
 
@@ -600,7 +677,16 @@ class SystemdManager:
         idle = values.get("ActiveState") in ("inactive", "failed") or values.get("SubState") == "exited"
         blocked = handle["launch_acked"] and job_empty and idle
         if not (blocked and empty):
-            if idle or time.monotonic() - handle["started"] > handle["deadline"]:
+            grant = handle.get("budget_grant")
+            if grant is not None:
+                try:
+                    phase_deadline = handle.get("phase_deadline_boottime_ns")
+                    expired = phase_deadline is None or _deadline_remaining((grant, phase_deadline)) <= 0
+                except JobError:
+                    expired = True  # Uncertain/other-boot budget never grants fresh runtime.
+            else:
+                expired = handle.get("recovered") or time.monotonic() - handle["started"] > handle["deadline"]
+            if idle or expired:
                 handle["stop_requested"] = True
                 self.stop(handle)
             return {**_unknown(), "state": "RUNNING" if not idle else "UNKNOWN",
@@ -630,8 +716,10 @@ class SystemdManager:
                 "missing": [] if result else ["helper result unavailable; side effects require reconciliation"]}
 
 
-def _capture_stage(stage, directory, limit, remaining):
+def _capture_stage(stage, directory, limit, remaining, deadline=None):
     """Drain both pipes independently; truncate storage, continue draining."""
+    if deadline is not None:
+        remaining = min(remaining, _deadline_remaining(deadline) / budget.NANOSECONDS)
     if remaining <= 0:
         # The prior stage or interpreter check may already have spent the job's
         # remaining budget. Terminating after Popen cannot undo a child's work.
@@ -656,6 +744,11 @@ def _capture_stage(stage, directory, limit, remaining):
         while selector.get_map() or process.poll() is None:
             if time.monotonic() - start > remaining:
                 exceeded = True
+            if deadline is not None:
+                try: _deadline_remaining(deadline)
+                except JobError as error:
+                    if error.code != "LIMIT_EXCEEDED": raise
+                    exceeded = True
             if exceeded and drain_deadline is None:
                 # The manager controls the whole unit. Helper exits nonzero;
                 # KillMode=control-group removes descendants. No pgid fallback.
@@ -711,7 +804,7 @@ def _capture_stage(stage, directory, limit, remaining):
             "outcome": "SUCCEEDED" if code == 0 and not exceeded and not pending_pipes else "FAILED"}
 
 
-def _interpreter_temp_check(python, plan, directory, *, log_limit=None, remaining=10, observations=None):
+def _interpreter_temp_check(python, plan, directory, *, log_limit=None, remaining=10, observations=None, deadline=None):
     # The Ledger interpreters need not have Local Hand installed. Keep this
     # independent probe standard-library-only, with the same failure semantics.
     code = ("import os,pathlib,tempfile\n"
@@ -754,7 +847,8 @@ def _interpreter_temp_check(python, plan, directory, *, log_limit=None, remainin
     stage = {"name": "temp-" + hashlib.sha256(python.encode()).hexdigest()[:12],
              "argv": [python, "-I", "-c", code], "cwd": plan["roots"]["work"], "env": plan["environment"]}
     if log_limit is None: log_limit = plan["budgets"]["log_bytes"]
-    observation = _capture_stage(stage, directory, min(16384, log_limit), min(10, remaining))
+    arguments = (stage, directory, min(16384, log_limit), min(10, remaining))
+    observation = _capture_stage(*arguments, deadline) if deadline is not None else _capture_stage(*arguments)
     if observations is not None: observations.append(observation)
     if observation["outcome"] != "SUCCEEDED": raise ledger_jobs.LedgerPlanError("actual interpreter temporary binding failed")
     return observation
@@ -839,6 +933,18 @@ def _verify_storage_namespace(plan):
 
 
 def _helper(plan):
+    # This check precedes even helper-owned directory creation or input I/O.
+    # A delayed systemd activation cannot turn an old grant into fresh time.
+    grant = plan.get("budget_grant")
+    budget.validate_grant(grant, execution_id=plan["execution_id"], phase=plan["phase"], budgets=plan["budgets"])
+    now = budget.current_clock()
+    runtime_us = _runtime_microseconds(grant, now=now)
+    if "runtime_cap_us" in plan:
+        cap = plan["runtime_cap_us"]
+        if type(cap) is not int or cap <= 0:
+            raise JobError("IO_UNCERTAIN", "Helper runtime cap is malformed")
+        runtime_us = min(runtime_us, cap)
+    deadline = (grant, now["boottime_ns"] + runtime_us * 1000)
     started = time.monotonic()
     remaining_logs = plan["budgets"]["log_bytes"]
     phase = plan["phase"]
@@ -848,11 +954,12 @@ def _helper(plan):
     directory = evidence / (phase + "-" + hashlib.sha256(plan["execution_id"].encode()).hexdigest()[:16])
     directory.mkdir(mode=0o700)
     def remaining_time():
-        return plan["budgets"]["wall_seconds"] - (time.monotonic() - started)
+        return min(runtime_us / 1_000_000 - (time.monotonic() - started),
+                   _deadline_remaining(deadline) / budget.NANOSECONDS)
     def check_interpreter(python):
         nonlocal remaining_logs
         observation = _interpreter_temp_check(python, plan, directory,
-            log_limit=remaining_logs, remaining=remaining_time(), observations=output["stages"])
+            log_limit=remaining_logs, remaining=remaining_time(), observations=output["stages"], deadline=deadline)
         remaining_logs -= sum(observation["bytes_retained"].values())
     try:
         # Verify that requested namespace settings actually became effective.
@@ -932,7 +1039,7 @@ def _helper(plan):
                     python = stage["argv"][0]
                     if python not in checked:
                         check_interpreter(python); checked.add(python)
-                    observed = _capture_stage(stage, directory, remaining_logs, remaining_time())
+                    observed = _capture_stage(stage, directory, remaining_logs, remaining_time(), deadline)
                     output["stages"].append(observed)
                     remaining_logs -= sum(observed["bytes_retained"].values())
                     if observed["outcome"] != "SUCCEEDED": break
@@ -969,6 +1076,20 @@ def _helper(plan):
             raise ledger_jobs.LedgerPlanError("unsupported fixed helper phase")
     except BaseException as error:
         output.update(outcome="FAILED", error=type(error).__name__)
+    helper_failed = False
+    if output["outcome"] == "SUCCEEDED":
+        try:
+            if remaining_time() <= 0:
+                raise JobError("LIMIT_EXCEEDED", "Helper completion budget exhausted")
+        except BaseException as error:
+            # A later helper budget/clock failure must not rewrite completed,
+            # checked business facts. The nonzero helper exit keeps reporting
+            # uncertainty separate from that already known business outcome.
+            helper_failed = True
+            output["helper_error"] = {"stage": "completion_budget", "type": type(error).__name__,
+                                      "code": getattr(error, "code", "IO_UNCERTAIN")}
+            if phase not in ("business", "reconcile") or output["effects_checked"] is not True:
+                output.update(outcome="FAILED", effects_checked=False, error=type(error).__name__)
     output["bindings"] = dict(output.get("prepared", {}).get("bindings", plan.get("prepared", {}).get("bindings", {})))
     output["bindings"]["environment_fingerprint"] = output["facts"].get("environment_fingerprint")
     target = Path(plan["result_path"])
@@ -985,7 +1106,7 @@ def _helper(plan):
     fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
     try: os.fsync(fd)
     finally: os.close(fd)
-    return 0 if output["outcome"] == "SUCCEEDED" else 1
+    return 0 if output["outcome"] == "SUCCEEDED" and not helper_failed else 1
 
 
 def main(argv=None):
