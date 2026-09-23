@@ -1,0 +1,3 @@
+2026-09-23T18:17:16.4762336Z SKIPPED [1] tests/test_local_hand_jobs_runner.py:1173: UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; no predelegated manager admission; dedicated non-root account is required
+2026-09-23T18:17:16.4764014Z 993 passed, 1 skipped in 356.01s (0:05:56)
+2026-09-23T18:21:36.9519824Z {"status": "PASS", "checks": 94, "commands": 292, "report": "/home/runner/work/_temp/local-hand-s1-1b8eece0bb614ddab6dc92c42390077f/installed-acceptance/report.json"}

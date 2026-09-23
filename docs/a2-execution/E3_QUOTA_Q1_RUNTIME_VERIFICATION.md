@@ -50,8 +50,8 @@ tree `18520329f04a92c556c345928af09858c9d79bac`；
 
 开发联调中曾出现 native 已升 v2 而 Python 消费者仍预期 v1 的失败，已同步修复并加入旧版本拒绝负例。
 该中间轮次只有会话运行记录，本报告不声称归档其逐字日志；最终通过依据是下列独立新运行的原始日志。
-未执行本候选完整源码/安装套件；不沿用历史候选的全量结果。发布后的远端 CI 另按准确提交核验，
-本记录没有提前声明 CI 通过。
+本地未执行完整源码/安装套件；不沿用历史候选的全量结果。发布后的远端 CI 按准确提交另行记账，
+结果见下文。
 
 ## 仓库内证据
 
@@ -99,4 +99,26 @@ Linux 专用测试的类定义默认参数 `now_ns=NOW` 在 skip 生效前求值
 - [修复后定向日志](validation/q1-runtime-20260923/capture-import-fix.log)及
   [命令/退出码/文件摘要](validation/q1-runtime-20260923/capture-import-fix.json)。
 
-首个 Linux CI 尚未作为完成证据使用；新提交可能按既有 concurrency 策略取消旧运行。
+首轮 Linux job 后来通过，但首轮整体仍因 Windows 收集失败而失败；不以旧结果替代修复候选。
+
+## 修复后准确 main CI
+
+准确 CI 提交为 `41485273de87d6c3aabc3d0e53fe81a9f422d2c6`，
+[运行 35900688639](https://github.com/kongbu0621/infra-local-hand/actions/runs/35900688639)
+已 completed / success；两个平台 job 均 success。此节及摘要作为后续纯文档提交，不改被测实现或测试。
+
+| 平台 | 源码通过 | 源码跳过 | 独立安装检查 | 命令数 |
+| --- | ---: | ---: | ---: | ---: |
+| Linux | 993 | 1 | 94 / PASS | 292 |
+| Windows（原 S1 范围） | 211 | 264 | 10 / PASS | 10 |
+
+Linux 唯一跳过项为真实 systemd/cgroup integration，明确包含 E3_SUPERVISION_UNVERIFIED；
+Windows 跳过包括 Linux 专属 Q1 测试，不能算作 Windows quota 支持。
+独立安装检查覆盖默认分发 wheel，**不覆盖未打包的管理侧 observer 安装或真实 quota 单元**。
+Linux Plugin 构建和既有平台 bootstrap 检查按该 run 的实际 steps 记录。E3 仍 BLOCKED。
+
+- [准确 run/job/step 与统计](validation/q1-runtime-20260923/ci-final.json)。
+- [Linux 原文摘要及跳过原因](validation/q1-runtime-20260923/ci-linux-summary.log)。
+- [Windows 原文摘要及跳过原因](validation/q1-runtime-20260923/ci-windows-summary.log)。
+
+摘要为原始 CI 日志的逐字摘录；GitHub 保留完整 job 日志，仓库中没有将摘要冒称完整日志。

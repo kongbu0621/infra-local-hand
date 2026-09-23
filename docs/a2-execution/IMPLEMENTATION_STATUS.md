@@ -29,7 +29,8 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 未启动真实单元或执行真实 quota。详细边界见 [管理侧 README](../../tools/admin/local_hand_quota_observer/README.md)。
 完整 observer 服务和 Q2 账本/通信未完成，Q1 实机仍 BLOCKED。准确源码 `39e7bcb`、106 项定向测试
 及仓库内原始日志见 [Q1 运行装配验证](E3_QUOTA_Q1_RUNTIME_VERIFICATION.md)。后续 `d117cbe` 修复 Windows
-收集时 Linux 测试默认参数的常量导入；保留首次 CI 失败与 14 项定向重测日志。普通开发不逐次生成 ZIP。
+收集时 Linux 测试默认参数的常量导入；保留首次 CI 失败与 14 项定向重测日志。修复后的准确 main
+`4148527` 两平台 CI/独立安装均通过，平台跳过与 E3 未验收边界在报告中分别记录。普通开发不逐次生成 ZIP。
 
 ## 已实现的代码
 

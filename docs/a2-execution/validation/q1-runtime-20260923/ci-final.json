@@ -1,0 +1,343 @@
+{
+  "schema": "local-hand-q1-ci-verification/v1",
+  "head_sha": "41485273de87d6c3aabc3d0e53fe81a9f422d2c6",
+  "run_id": 35900688639,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35900688639",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 107315801257,
+      "name": "classify-change",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-23T18:11:00Z",
+      "completed_at": "2026-09-23T18:11:04Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Classify verification scope",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 107315841007,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-23T18:11:08Z",
+      "completed_at": "2026-09-23T18:17:50Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install isolated build and test dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install hash-locked optional MCP dependencies for Linux verification",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate exact checked-out commit identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Compile Local Hand shared core and tests",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Build and verify an independently installed wheel",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate PR whitespace and diff boundary",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate Linux bootstrap syntax",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate Windows bootstrap parses",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate Windows exact ACL replacement",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate Windows runner propagates native worker exit code",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate Windows Junction roots fail closed",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Preserve isolated acceptance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 107315841086,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-23T18:11:06Z",
+      "completed_at": "2026-09-23T18:21:40Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install isolated build and test dependencies",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install hash-locked optional MCP dependencies for Linux verification",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate exact checked-out commit identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Compile Local Hand shared core and tests",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify an independently installed wheel",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate PR whitespace and diff boundary",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate Linux bootstrap syntax",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate Windows bootstrap parses",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate Windows exact ACL replacement",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate Windows runner propagates native worker exit code",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Validate Windows Junction roots fail closed",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Preserve isolated acceptance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "evidence_kind": "Verbatim source-test and installed-check summary excerpts; full original logs retained by GitHub",
+  "scope_note": "Installed checks cover the default wheel, not deployment of the uninstalled administrative quota observer. E3 real host acceptance remains BLOCKED.",
+  "summary_files": {
+    "ci-linux-summary.log": "d2ad36ebf49aa50d2dbc24b43cd677613d8f3c70844f90e4a4e874a57f7c41b3",
+    "ci-windows-summary.log": "4582f81e0cdcc4b363dca645cb63b12a3103e7acfdbd0dcaa044e417c3649cb6"
+  },
+  "source_tests": {
+    "linux": {
+      "passed": 993,
+      "skipped": 1
+    },
+    "windows": {
+      "passed": 211,
+      "skipped": 264
+    }
+  },
+  "installed_checks": {
+    "linux": {
+      "checks": 94,
+      "commands": 292,
+      "status": "PASS"
+    },
+    "windows": {
+      "checks": 10,
+      "commands": 10,
+      "status": "PASS"
+    }
+  }
+}
