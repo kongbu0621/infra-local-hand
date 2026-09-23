@@ -101,6 +101,92 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(parent.is_symlink())
         self.assertEqual(list(unrelated.iterdir()), [])
 
+    def test_archive_stream_construction_failure_releases_real_descriptor(self):
+        original = os.fdopen
+        captured = []
+        def fail_archive(fd, mode="r", *args, **kwargs):
+            if mode == "w+b":
+                captured.append(fd)
+                raise OSError("fixture archive stream construction failure")
+            return original(fd, mode, *args, **kwargs)
+        with mock.patch.object(evidence.os, "fdopen", side_effect=fail_archive):
+            self.assertCode("IO_UNCERTAIN", lambda: self.fixture.store.seal(OP))
+        self.assertEqual(len(captured), 1)
+        leaked = []
+        for fd in captured:
+            try:
+                os.fstat(fd)
+            except OSError:
+                pass
+            else:
+                leaked.append(fd)
+                os.close(fd)
+        self.assertFalse(self.fixture.registered)
+        self.assertEqual(leaked, [], "Failed archive stream construction must release the raw FD")
+
+    def test_seal_writes_cannot_follow_a_concurrently_replaced_store_root(self):
+        for phase in ("staging", "archive", "manifest", "destination", "publication", "seal"):
+            with self.subTest(phase=phase):
+                case = self.root / phase
+                case.mkdir(mode=0o700)
+                fixture = EvidenceFixture(case)
+                unrelated = case / "unrelated"
+                unrelated.mkdir(mode=0o700)
+                (unrelated / "sentinel").write_bytes(b"keep")
+                injected = []
+                def replace_root():
+                    if not injected:
+                        fixture.store.root.rename(case / "retained-store")
+                        fixture.store.root.symlink_to(unrelated, target_is_directory=True)
+                        injected.append(True)
+                real_mkdir, real_open = os.mkdir, os.open
+                real_rename = evidence._rename_create_only
+                def mkdir(path, mode=0o777, *, dir_fd=None):
+                    name = Path(path).name
+                    if ((phase == "staging" and name.startswith("staging-"))
+                            or (phase == "destination" and len(name) == 36)):
+                        replace_root()
+                    return real_mkdir(path, mode, dir_fd=dir_fd)
+                def open_file(path, flags, *args, **kwargs):
+                    names = {"archive": "evidence.zip", "manifest": "manifest.json", "seal": "seal.json"}
+                    if flags & os.O_CREAT and Path(path).name == names.get(phase):
+                        replace_root()
+                    return real_open(path, flags, *args, **kwargs)
+                def publish(*args):
+                    if phase == "publication":
+                        replace_root()
+                    return real_rename(*args)
+                with mock.patch.object(evidence.os, "mkdir", side_effect=mkdir), \
+                        mock.patch.object(evidence.os, "open", side_effect=open_file), \
+                        mock.patch.object(evidence, "_rename_create_only", side_effect=publish):
+                    with self.assertRaises(EvidenceError):
+                        fixture.store.seal(OP)
+                self.assertEqual(injected, [True])
+                self.assertFalse(fixture.registered)
+                self.assertEqual(sorted(path.name for path in unrelated.iterdir()), ["sentinel"])
+                self.assertEqual((unrelated / "sentinel").read_bytes(), b"keep")
+                self.assertTrue(list((case / "retained-store").iterdir()), "Keep failed owned evidence")
+
+    def test_metadata_write_rejects_symlinked_parent_without_creating_foreign_file(self):
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir(mode=0o700)
+        alias = self.root / "alias"
+        alias.symlink_to(unrelated, target_is_directory=True)
+        with self.assertRaises(OSError):
+            self.fixture.store._write(alias / "manifest.json", b"private evidence")
+        self.assertEqual(list(unrelated.iterdir()), [])
+
+    def test_publication_rejects_symlinked_parent_without_moving_private_bytes(self):
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir(mode=0o700)
+        alias = self.root / "alias"
+        alias.symlink_to(unrelated, target_is_directory=True)
+        source = self.fixture.source / "stdout.log"
+        with self.assertRaises(OSError):
+            evidence._publish_create_only(source, alias / "evidence.zip")
+        self.assertEqual(list(unrelated.iterdir()), [])
+        self.assertEqual(source.read_bytes(), b"retained command output\n")
+
     def test_seal_binds_exact_members_events_and_external_manifest(self):
         record = self.fixture.store.seal(OP)
         directory = self.fixture.store.root / record["seal_id"]

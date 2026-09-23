@@ -103,6 +103,110 @@ class CliTests(unittest.TestCase):
         self.assertEqual(2, server._listener.accept.call_count)
         self.assertFalse(self.broker.calls)
 
+    def test_handler_start_and_close_failure_does_not_stop_accepting(self):
+        server = MaintenanceServer(self.broker, self.path, {}, max_clients=1)
+        first, second = Mock(), Mock()
+        first.close.side_effect = OSError("synthetic disconnected socket close failure")
+        server._listener = Mock()
+        server._listener.accept.side_effect = [(first, None), (second, None), OSError("stop")]
+        with patch("local_hand_jobs.cli.threading.Thread") as thread:
+            thread.return_value.start.side_effect = [RuntimeError("no thread capacity"), None]
+            server._serve()
+        self.assertEqual(3, server._listener.accept.call_count)
+        self.assertNotIn(first, server._connections)
+        self.assertIn(second, server._connections)
+        self.assertEqual(2, thread.return_value.start.call_count)
+        first.close.assert_called_once()
+        self.assertFalse(server._slots.acquire(blocking=False))
+        self.assertFalse(self.broker.calls)
+
+    def test_rejected_connection_close_errors_preserve_listener_and_capacity(self):
+        for reason in ("capacity", "closed"):
+            with self.subTest(reason=reason):
+                server = MaintenanceServer(self.broker, self.path, {}, max_clients=1)
+                connection = Mock()
+                connection.close.side_effect = OSError("synthetic rejected close failure")
+                server._listener = Mock()
+                if reason == "capacity":
+                    self.assertTrue(server._slots.acquire(blocking=False))
+                    server._listener.accept.side_effect = [(connection, None), OSError("stop")]
+                else:
+                    def accept_after_close():
+                        server._closed.set()
+                        return connection, None
+                    server._listener.accept.side_effect = accept_after_close
+                server._serve()
+                connection.close.assert_called_once()
+                self.assertFalse(server._connections)
+                if reason == "capacity":
+                    self.assertEqual(2, server._listener.accept.call_count)
+                    self.assertFalse(server._slots.acquire(blocking=False))
+                else:
+                    self.assertTrue(server._slots.acquire(blocking=False))
+                server._slots.release()
+                self.assertFalse(self.broker.calls)
+
+    def test_failed_bind_remains_primary_after_unbound_listener_close_failure(self):
+        server = MaintenanceServer(self.broker, self.path, {})
+        listener = Mock()
+        primary = OSError("synthetic bind failure")
+        listener.bind.side_effect = primary
+        listener.close.side_effect = OSError("synthetic unbound cleanup failure")
+        with patch("local_hand_jobs.cli.socket.socket", return_value=listener):
+            with self.assertRaises(JobError) as caught:
+                server.start()
+        self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+        self.assertIs(primary, caught.exception.__cause__)
+        self.assertTrue(server._closed.is_set())
+        self.assertFalse(self.path.exists())
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_close_failure_still_releases_connections_and_owned_socket(self):
+        for failed_resource in ("listener", "connection", "thread"):
+            with self.subTest(failed_resource=failed_resource):
+                os.mknod(self.path, stat.S_IFSOCK | 0o600)
+                info = self.path.lstat()
+                server = MaintenanceServer(self.broker, self.path, {})
+                server._identity = (info.st_dev, info.st_ino)
+                server._listener = Mock()
+                server._connections.update((Mock(), Mock()))
+                connections = tuple(server._connections)
+                server._thread = Mock(ident=1)
+                primary = OSError("synthetic cleanup failure")
+                target = {"listener": server._listener.close,
+                          "connection": connections[0].close,
+                          "thread": server._thread.join}[failed_resource]
+                target.side_effect = primary
+                # A handled caller error does not hide this method's failure.
+                try:
+                    raise ValueError("unrelated caller error")
+                except ValueError:
+                    with self.assertRaises(OSError) as caught:
+                        server.close()
+                self.assertIs(primary, caught.exception)
+                self.assertTrue(server._closed.is_set())
+                server._listener.close.assert_called_once()
+                for connection in connections:
+                    connection.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+                    connection.close.assert_called_once()
+                server._thread.join.assert_called_once_with(timeout=1)
+                self.assertFalse(self.path.exists())
+
+    @unittest.skipUnless(hasattr(os, "mknod"), "Socket inode fixture requires POSIX mknod")
+    def test_thread_start_failure_survives_listener_cleanup_failure(self):
+        server = MaintenanceServer(self.broker, self.path, {})
+        listener = Mock()
+        listener.bind.side_effect = lambda path: os.mknod(path, stat.S_IFSOCK | 0o600)
+        listener.close.side_effect = OSError("synthetic cleanup failure")
+        primary = RuntimeError("synthetic thread-start failure")
+        with patch("local_hand_jobs.cli.socket.socket", return_value=listener), \
+                patch("local_hand_jobs.cli.threading.Thread.start", side_effect=primary):
+            with self.assertRaises(JobError) as caught:
+                server.start()
+        self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+        self.assertIs(primary, caught.exception.__cause__)
+        self.assertFalse(self.path.exists())
+
     def test_close_after_listener_thread_failed_to_start(self):
         server = MaintenanceServer(self.broker, self.path, {})
         server._listener = Mock()
@@ -321,6 +425,33 @@ class CliTests(unittest.TestCase):
                 patch("local_hand_jobs.evidence.EvidenceStore", side_effect=JobError("IO_UNCERTAIN", "synthetic construction failure")):
             with self.assertRaises(JobError):
                 create_broker("synthetic", actual_entrypoint="synthetic")
+        state.close.assert_called_once()
+        authority.close.assert_called_once()
+
+    def test_failed_composition_preserves_primary_after_all_cleanup_failures(self):
+        root = Path(self.temp.name)
+        (root / "authority.json").write_text('{"ledger_id":"synthetic-ledger"}')
+        policy = SimpleNamespace(config={}, source_commit="a" * 40, installed_payload_digest="b" * 64,
+            execution_entrypoint="synthetic", broker_root=str(root / "broker"),
+            authority_root=str(root), authority_id="synthetic-authority", limits={"retained_bytes": 1024})
+        state, authority, manager = unittest.mock.MagicMock(), Mock(), Mock()
+        state.all.return_value = []
+        manager.support.return_value = {"supported": True}
+        manager.scan.return_value = {"status": "READY"}
+        state.close.side_effect = OSError("synthetic state cleanup failure")
+        authority.close.side_effect = OSError("synthetic authority cleanup failure")
+        primary = JobError("IO_UNCERTAIN", "synthetic original construction failure")
+        with patch("local_hand_jobs.policy.Policy.from_file", return_value=policy), \
+                patch("local_hand_jobs.deployment.verify_release"), \
+                patch("local_hand_jobs.resources.verify_local_filesystem"), \
+                patch("local_hand_jobs.resources.AuthorityLock", return_value=authority), \
+                patch("local_hand_jobs.runner.SystemdManager", return_value=manager), \
+                patch("local_hand_jobs.state.StateStore", return_value=state), \
+                patch("local_hand_jobs.broker.Broker"), \
+                patch("local_hand_jobs.evidence.EvidenceStore", side_effect=primary):
+            with self.assertRaises(JobError) as caught:
+                create_broker("synthetic", actual_entrypoint="synthetic")
+        self.assertIs(primary, caught.exception)
         state.close.assert_called_once()
         authority.close.assert_called_once()
 

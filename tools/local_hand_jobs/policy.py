@@ -302,24 +302,47 @@ class Policy:
             target = Path(path)
             if not target.is_absolute():
                 raise _bad()
+            parents = {}
             for parent in target.parents:
                 info = parent.lstat()
-                if stat.S_ISLNK(info.st_mode) or (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX):
+                if not stat.S_ISDIR(info.st_mode) or (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX):
                     raise _bad()
+                parents[parent] = (info.st_dev, info.st_ino, info.st_mode, info.st_uid)
+            def check_parents():
+                # O_NOFOLLOW protects the file itself, not earlier path
+                # components. A substituted parent must not rebind admission.
+                for parent, identity in parents.items():
+                    info = parent.lstat()
+                    if (info.st_dev, info.st_ino, info.st_mode, info.st_uid) != identity:
+                        raise _bad()
             descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            body_failed = False
             try:
                 before = os.fstat(descriptor)
                 if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() or before.st_mode & 0o077 or before.st_nlink != 1:
                     raise _bad()
+                check_parents()
                 raw = os.read(descriptor, 65537)
+                if len(raw) != min(before.st_size, 65537):
+                    raise JobError("IO_UNCERTAIN", "Private admission read is incomplete")
                 after = os.fstat(descriptor)
                 current = target.lstat()
                 if (before.st_ino, before.st_dev, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                     after.st_ino, after.st_dev, after.st_size, after.st_mtime_ns, after.st_ctime_ns) or (
                         before.st_dev, before.st_ino) != (current.st_dev, current.st_ino):
                     raise _bad()
+                check_parents()
+            except BaseException:
+                body_failed = True
+                raise
             finally:
-                os.close(descriptor)
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    # Do not replace a prior admission rejection or retry a
+                    # descriptor number that close may already have released.
+                    if not body_failed:
+                        raise
             policy = cls(strict_loads(raw))
             policy.validate_paths()
             return policy

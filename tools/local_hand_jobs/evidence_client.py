@@ -31,12 +31,14 @@ def _decode_json(raw: bytes) -> dict:
                 raise EvidenceError("CONFLICT", "duplicate evidence metadata key")
             result[key] = value
         return result
+    def reject_constant(_value):
+        raise ValueError("non-finite evidence metadata")
     try:
-        value = json.loads(raw, object_pairs_hook=unique)
+        value = json.loads(raw, object_pairs_hook=unique, parse_constant=reject_constant)
         if not isinstance(value, dict):
             raise ValueError
         return value
-    except (UnicodeError, ValueError):
+    except (UnicodeError, ValueError, RecursionError):
         raise EvidenceError("CONFLICT", "invalid evidence metadata") from None
 
 
@@ -340,7 +342,13 @@ class EvidenceClient:
                total: int | None = None) -> tuple[bytes, int]:
         result = self.callback("lh_evidence_read_chunk", {"artifact_id": artifact_id,
                                "offset": offset, "length": length, "expected_sha256": digest})
-        if not isinstance(result, dict) or len(_json(result)) > MAX_RESPONSE:
+        if not isinstance(result, dict):
+            raise EvidenceError("LIMIT_EXCEEDED", "invalid evidence response budget")
+        try:
+            response_size = len(_json(result))
+        except (TypeError, ValueError, RecursionError):
+            raise EvidenceError("CONFLICT", "invalid evidence response metadata") from None
+        if response_size > MAX_RESPONSE:
             raise EvidenceError("LIMIT_EXCEEDED", "invalid evidence response budget")
         if (result.get("artifact_id") != artifact_id or result.get("sha256") != digest
                 or type(result.get("offset")) is not int or result["offset"] != offset
@@ -377,10 +385,20 @@ class EvidenceClient:
                 or seal.get("seal_id") != seal_id or seal.get("complete") is not True
                 or seal.get("operation_id") != artifact.get("operation_id")
                 or seal.get("reconcile_id") != artifact.get("reconcile_id")
+                or not _integer(seal.get("event_seq"), 2**53 - 1)
+                or not _integer(artifact.get("event_seq"), 2**53 - 1)
                 or seal.get("event_seq") != artifact.get("event_seq")):
             raise EvidenceError("CONFLICT", "external seal identity mismatch")
         try:
-            zip_entry = next(a for a in seal["artifacts"] if a["role"] == "zip")
+            entries = seal["artifacts"]
+            if (not isinstance(entries, list) or len(entries) != 2
+                    or {a["role"] for a in entries} != {"zip", "manifest"}):
+                raise EvidenceError("CONFLICT", "external seal artifact list invalid")
+            for entry in entries:
+                descriptor = _descriptor(entry, 2**53 - 1)
+                if descriptor["artifact_id"] != seal_id + "." + descriptor["role"]:
+                    raise EvidenceError("CONFLICT", "external seal artifact identity mismatch")
+            zip_entry = next(a for a in entries if a["role"] == "zip")
             if _descriptor(zip_entry, 2**53 - 1) != _descriptor(artifact, 2**53 - 1):
                 raise EvidenceError("CONFLICT", "external seal archive mismatch")
         except (KeyError, TypeError, StopIteration):
@@ -391,10 +409,16 @@ class EvidenceClient:
         try:
             with zipfile.ZipFile(path) as archive:
                 infos = archive.infolist()
+                if not _integer(seal["member_count"], 2**53 - 1):
+                    raise EvidenceError("CONFLICT", "archive member count is not an integer")
                 if len(infos) > self.max_members + 1 or len(infos) != seal["member_count"]:
                     raise EvidenceError("LIMIT_EXCEEDED", "archive member count mismatch")
                 names = []
                 for info in infos:
+                    # ZipInfo truncates filename at NUL. Validate the decoded
+                    # original too, so the manifest cannot hide an unsafe name.
+                    if _safe_name(info.orig_filename) != info.filename:
+                        raise EvidenceError("CONFLICT", "archive member name changed")
                     names.append(_safe_name(info.filename))
                     mode = info.external_attr >> 16
                     if (not stat.S_ISREG(mode) or info.is_dir() or info.flag_bits & 1
@@ -415,9 +439,12 @@ class EvidenceClient:
                 if (manifest.get("schema_version") != "lh-evidence-manifest-v1"
                         or manifest.get("operation_id") != seal["operation_id"]
                         or manifest.get("seal_id") != seal["seal_id"]
+                        or not _integer(manifest.get("event_seq"), 2**53 - 1)
                         or manifest.get("event_seq") != seal["event_seq"]
                         or not isinstance(manifest.get("bindings"), dict)
-                        or any(manifest.get(field) != seal.get(field) for field in
+                        # Python container equality equates true with 1 (and
+                        # integer with float). Preserve the JSON value types.
+                        or any(_json(manifest.get(field)) != _json(seal.get(field)) for field in
                                ("bindings", "reconcile_id", "previous_seal_id"))
                         or manifest.get("complete") is not True):
                     raise EvidenceError("CONFLICT", "archive manifest identity mismatch")
@@ -429,7 +456,8 @@ class EvidenceClient:
                     if set(member) != {"name", "size", "sha256"}:
                         raise EvidenceError("CONFLICT", "invalid archive member record")
                     info = archive.getinfo(member["name"])
-                    if info.file_size != member["size"]:
+                    if (not _integer(member["size"], maximum)
+                            or info.file_size != member["size"]):
                         raise EvidenceError("CONFLICT", "archive member size mismatch")
                     digest = hashlib.sha256()
                     read_size = 0

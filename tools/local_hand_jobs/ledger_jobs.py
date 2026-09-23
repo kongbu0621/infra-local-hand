@@ -290,10 +290,26 @@ def check_temp_binding(expected):
     if Path(tempfile.gettempdir()) != path:
         raise LedgerPlanError("Python temporary directory fallback detected")
     probe_fd, probe_name = tempfile.mkstemp(dir=path)
+    original_error = None
     try:
-        os.write(probe_fd, b"lh-temp-binding\n"); os.fsync(probe_fd)
+        payload = b"lh-temp-binding\n"
+        if os.write(probe_fd, payload) != len(payload):
+            raise LedgerPlanError("temporary binding probe write was incomplete")
+        os.fsync(probe_fd)
+    except BaseException as error:
+        original_error = error
+        raise
     finally:
-        os.close(probe_fd); os.unlink(probe_name)
+        cleanup_error = None
+        for action in (lambda: os.close(probe_fd), lambda: os.unlink(probe_name)):
+            try: action()
+            except BaseException as error:
+                if cleanup_error is None: cleanup_error = error
+        if cleanup_error is not None:
+            if original_error is not None:
+                original_error.add_note("temporary probe cleanup was incomplete")
+            else:
+                raise cleanup_error
     return {"temporary": str(path), "device": path.stat().st_dev, "inode": path.stat().st_ino}
 
 

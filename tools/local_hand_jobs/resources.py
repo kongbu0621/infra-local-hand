@@ -18,6 +18,7 @@ class AuthorityLock:
 
     def __init__(self, anchor, *, authority_id, ledger_id, state_root):
         self.fd = None
+        failed = True
         try:
             import fcntl
             descriptor = os.open(anchor, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -39,26 +40,34 @@ class AuthorityLock:
                     after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) or (
                     current.st_dev, current.st_ino) != (after.st_dev, after.st_ino):
                 raise JobError("IO_UNCERTAIN", "Authority registration changed while acquiring its lock")
+            failed = False
         except BlockingIOError as exc:
-            self.close()
             raise JobError("RESOURCE_BUSY", "Another broker owns this authority") from exc
         except (OSError, ValueError, ImportError) as exc:
-            self.close()
             raise JobError("IO_UNCERTAIN", "Authority anchor cannot be proven") from exc
-        except BaseException:
-            self.close()
-            raise
+        finally:
+            if failed:
+                self._close(failed=True)
 
     def close(self):
+        self._close(failed=False)
+
+    def _close(self, *, failed):
         if self.fd is not None:
-            os.close(self.fd)
-            self.fd = None
+            descriptor, self.fd = self.fd, None
+            try:
+                # close may release the descriptor even when it reports an
+                # error. Never retry a number another file can now own.
+                os.close(descriptor)
+            except OSError:
+                if not failed:
+                    raise
 
     def __enter__(self):
         return self
 
-    def __exit__(self, *_):
-        self.close()
+    def __exit__(self, exc_type, *_):
+        self._close(failed=exc_type is not None)
 
 
 def verify_local_filesystem(path):

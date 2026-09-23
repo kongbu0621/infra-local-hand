@@ -161,7 +161,16 @@ def fs_write_text_cas(
         try:
             fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.local-hand-", dir=str(parent))
             temp_path = Path(temp_name)
-            with os.fdopen(fd, "wb") as handle:
+            try:
+                stream = os.fdopen(fd, "wb")
+            except BaseException:
+                # fdopen has not acquired ownership when construction fails.
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            with stream as handle:
                 handle.write(desired)
                 handle.flush()
                 # Atomic replacement swaps the inode. Preserve and verify the

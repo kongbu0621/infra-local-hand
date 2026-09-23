@@ -712,7 +712,29 @@ def _capture_stage(stage, directory, limit, remaining):
 
 
 def _interpreter_temp_check(python, plan, directory):
-    code = "import os,pathlib,tempfile; p=pathlib.Path(os.environ['TMPDIR']); assert p.is_dir() and p.resolve()==p; assert pathlib.Path(tempfile.gettempdir())==p; f,n=tempfile.mkstemp(dir=p); os.write(f,b'lh'); os.fsync(f); os.close(f); os.unlink(n)"
+    # The Ledger interpreters need not have Local Hand installed. Keep this
+    # independent probe standard-library-only, with the same failure semantics.
+    code = ("import os,pathlib,tempfile\n"
+        "p=pathlib.Path(os.environ['TMPDIR'])\n"
+        "assert p.is_dir() and p.resolve()==p\n"
+        "assert pathlib.Path(tempfile.gettempdir())==p\n"
+        "f,n=tempfile.mkstemp(dir=p)\n"
+        "original_error=None\n"
+        "try:\n"
+        "    if os.write(f,b'lh') != 2: raise OSError('temporary probe write was incomplete')\n"
+        "    os.fsync(f)\n"
+        "except BaseException as error:\n"
+        "    original_error=error\n"
+        "    raise\n"
+        "finally:\n"
+        "    cleanup_error=None\n"
+        "    for action in (lambda: os.close(f), lambda: os.unlink(n)):\n"
+        "        try: action()\n"
+        "        except BaseException as error:\n"
+        "            if cleanup_error is None: cleanup_error=error\n"
+        "    if cleanup_error is not None:\n"
+        "        if original_error is not None: original_error.add_note('temporary probe cleanup was incomplete')\n"
+        "        else: raise cleanup_error\n")
     stage = {"name": "temp-" + hashlib.sha256(python.encode()).hexdigest()[:12],
              "argv": [python, "-I", "-c", code], "cwd": plan["roots"]["work"], "env": plan["environment"]}
     observation = _capture_stage(stage, directory, min(16384, plan["budgets"]["log_bytes"]), 10)

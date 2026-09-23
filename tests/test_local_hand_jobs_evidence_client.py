@@ -586,7 +586,8 @@ class ClientTests(unittest.TestCase):
 
     def synthetic_archive(self, *, unsafe_name=None, symlink=False, duplicate=False,
                           extra=False, bad_member_digest=False, expand=False,
-                          manifest_changes=None, seal_changes=None):
+                          manifest_changes=None, seal_changes=None,
+                          archive_transform=None, seal_transform=None):
         seal_id = "2f6f5c74-20eb-4c59-b692-e690e8449e5b"
         name = unsafe_name or "payload.bin"
         payload = b"data" * (10000 if expand else 1)
@@ -615,6 +616,8 @@ class ClientTests(unittest.TestCase):
                 else:
                     archive.writestr(info, b"foreign")
         archive_raw = output.getvalue()
+        if archive_transform is not None:
+            archive_raw = archive_transform(archive_raw)
         artifact = {"artifact_id": seal_id + ".zip", "role": "zip", "size": len(archive_raw),
                     "sha256": _hash(archive_raw), "seal_id": seal_id,
                     "operation_id": OP, "event_seq": 7}
@@ -626,6 +629,8 @@ class ClientTests(unittest.TestCase):
                               {"artifact_id": seal_id + ".manifest", "role": "manifest",
                                "size": len(manifest_raw), "sha256": _hash(manifest_raw)}]}
         seal.update(seal_changes or {})
+        if seal_transform is not None:
+            seal_transform(seal)
         seal_raw = _json(seal)
         artifact["seal_sha256"] = _hash(seal_raw)
         def callback(tool, arguments):
@@ -637,6 +642,95 @@ class ClientTests(unittest.TestCase):
                     "chunk_sha256": _hash(chunk), "data_base64": base64.b64encode(chunk).decode(),
                     "eof": offset + len(chunk) == len(raw)}
         return artifact, callback
+
+    def test_zip_original_member_name_cannot_hide_a_nul_suffix(self):
+        def insert_nul(raw):
+            self.assertEqual(raw.count(b"payload.binQ../hidden"), 2)
+            changed = raw.replace(b"payload.binQ../hidden", b"payload.bin\0../hidden")
+            with zipfile.ZipFile(io.BytesIO(changed)) as archive:
+                info = archive.infolist()[0]
+                self.assertEqual(info.filename, "payload.bin")
+                self.assertEqual(info.orig_filename, "payload.bin\0../hidden")
+            return changed
+        artifact, callback = self.synthetic_archive(unsafe_name="payload.binQ../hidden",
+            manifest_changes={"members": [{"name": "payload.bin", "size": 4,
+                                            "sha256": _hash(b"data")}]},
+            archive_transform=insert_nul)
+        directory = self.root / "nul-name"
+        self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+            artifact, BoundedFileWriter(directory)))
+        self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_external_seal_artifact_roles_and_ids_must_be_unambiguous(self):
+        mutations = (
+            lambda seal: seal["artifacts"].append(dict(seal["artifacts"][0], sha256="0" * 64)),
+            lambda seal: seal["artifacts"][1].update(artifact_id="foreign.manifest"),
+            lambda seal: seal["artifacts"][1].update(artifact_id=seal["seal_id"] + ".zip"),
+        )
+        for index, mutate in enumerate(mutations):
+            with self.subTest(index=index):
+                artifact, callback = self.synthetic_archive(seal_transform=mutate)
+                directory = self.root / ("ambiguous-seal-" + str(index))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                # Metadata conflicts are rejected before any ZIP download state.
+                self.assertEqual(list(directory.iterdir()), [])
+
+    def test_manifest_binding_comparison_preserves_json_value_types(self):
+        pairs = ((True, 1), (False, 0), (1.0, 1),
+                 ({"nested": [True]}, {"nested": [1]}))
+        for index, (manifest_value, seal_value) in enumerate(pairs):
+            with self.subTest(index=index):
+                artifact, callback = self.synthetic_archive(
+                    manifest_changes={"bindings": {"value": manifest_value}},
+                    seal_changes={"bindings": {"value": seal_value}})
+                directory = self.root / ("binding-types-" + str(index))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_evidence_cutoffs_counts_and_sizes_require_actual_integers(self):
+        cases = ({"seal_changes": {"event_seq": 7.0}},
+                 {"manifest_changes": {"event_seq": 7.0}},
+                 {"seal_changes": {"member_count": 2.0}},
+                 {"manifest_changes": {"members": [{"name": "payload.bin", "size": 4.0,
+                                                     "sha256": _hash(b"data")}]}})
+        for index, case in enumerate(cases):
+            with self.subTest(index=index):
+                artifact, callback = self.synthetic_archive(**case)
+                directory = self.root / ("numeric-types-" + str(index))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertFalse(list(directory.glob("download-*/evidence.zip")))
+
+    def test_invalid_raw_seal_json_is_a_structured_conflict(self):
+        cases = [b'{"bad":' + value + b'}' for value in (b"NaN", b"Infinity", b"-Infinity")]
+        cases.append(b'{"nested":' + b"[" * 10000 + b"0" + b"]" * 10000 + b"}")
+        for index, raw in enumerate(cases):
+            with self.subTest(index=index):
+                artifact, _ = self.synthetic_archive()
+                artifact["seal_sha256"] = _hash(raw)
+                def callback(_tool, arguments):
+                    return {"artifact_id": arguments["artifact_id"], "offset": 0,
+                            "length": len(raw), "total_size": len(raw), "sha256": _hash(raw),
+                            "chunk_sha256": _hash(raw), "data_base64": base64.b64encode(raw).decode(),
+                            "eof": True}
+                directory = self.root / ("invalid-json-" + str(index))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(callback).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertEqual(list(directory.iterdir()), [])
+
+    def test_invalid_raw_callback_result_is_a_structured_conflict(self):
+        recursive = {}
+        recursive["self"] = recursive
+        cases = ({"bad": float("nan")}, {"bad": {1, 2}}, recursive)
+        for index, result in enumerate(cases):
+            with self.subTest(index=index):
+                artifact, _ = self.synthetic_archive()
+                directory = self.root / ("invalid-response-" + str(index))
+                self.assertCode("CONFLICT", lambda: EvidenceClient(lambda *_: result).download(
+                    artifact, BoundedFileWriter(directory)))
+                self.assertEqual(list(directory.iterdir()), [])
 
     def test_external_seal_and_manifest_must_agree_on_candidate_and_reconciliation(self):
         for field, first, second in (("bindings", {"source_digest": "a" * 64}, {"source_digest": "b" * 64}),

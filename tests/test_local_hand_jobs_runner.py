@@ -252,6 +252,58 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(observed["outcome"], "FAILED")
             self.assertLessEqual(sum(Path(root, "noisy." + kind).stat().st_size for kind in ("stdout", "stderr")), 1024)
 
+    def test_actual_interpreter_temp_probe_rejects_zero_write(self):
+        from local_hand_jobs import runner
+        import sys
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            temporary = root / "temporary"; temporary.mkdir()
+            plan = {"roots": {"work": str(root), "temporary": str(temporary)},
+                    "environment": runner.ledger_jobs.clean_environment(str(temporary)),
+                    "budgets": {"log_bytes": 16384}}
+            capture = runner._capture_stage
+            def inject_zero_write(stage, *args):
+                stage = dict(stage, argv=list(stage["argv"]))
+                stage["argv"][-1] = ("import os\noriginal_write = os.write\n"
+                    "os.write = lambda fd, data: 0 if data == b'lh' else original_write(fd, data)\n"
+                    + stage["argv"][-1])
+                return capture(stage, *args)
+            with patch.object(runner, "_capture_stage", side_effect=inject_zero_write):
+                with self.assertRaises(runner.ledger_jobs.LedgerPlanError):
+                    runner._interpreter_temp_check(sys.executable, plan, root)
+            self.assertEqual(list(temporary.iterdir()), [])
+
+    def test_actual_interpreter_temp_probe_close_failure_still_unlinks(self):
+        from local_hand_jobs import runner
+        import sys
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            temporary = root / "temporary"; temporary.mkdir()
+            plan = {"roots": {"work": str(root), "temporary": str(temporary)},
+                    "environment": runner.ledger_jobs.clean_environment(str(temporary)),
+                    "budgets": {"log_bytes": 16384}}
+            capture = runner._capture_stage
+            def inject_close_failure(stage, *args):
+                stage = dict(stage, argv=list(stage["argv"]))
+                stage["argv"][-1] = ("import os\noriginal_write, original_close = os.write, os.close\n"
+                    "probe_descriptor = None\n"
+                    "def track_write(fd, data):\n"
+                    "    global probe_descriptor\n"
+                    "    if data == b'lh': probe_descriptor = fd\n"
+                    "    return original_write(fd, data)\n"
+                    "def close_then_fail(fd):\n"
+                    "    original_close(fd)\n"
+                    "    if fd == probe_descriptor: raise OSError('probe close acknowledgement unavailable')\n"
+                    "os.write, os.close = track_write, close_then_fail\n"
+                    + stage["argv"][-1])
+                return capture(stage, *args)
+            with patch.object(runner, "_capture_stage", side_effect=inject_close_failure):
+                with self.assertRaises(runner.ledger_jobs.LedgerPlanError):
+                    runner._interpreter_temp_check(sys.executable, plan, root)
+            self.assertEqual(list(temporary.iterdir()), [])
+
     def test_expired_stage_budget_cannot_start_a_side_effecting_program(self):
         import subprocess
         actual_popen = subprocess.Popen

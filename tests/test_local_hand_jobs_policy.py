@@ -461,6 +461,81 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with self.assertRaises(JobError):
             Policy.from_file(path)
 
+    def test_file_loader_rejects_parent_replacement_during_open(self):
+        for name in ("broker", "authority", "work", "evidence", "temporary", "source", "cache"):
+            (self.root / name).mkdir(mode=0o700)
+        for name in ("python", "broker.py"):
+            (self.root / name).write_bytes(b"synthetic fixture bytes")
+            (self.root / name).chmod(0o600)
+        for replacement in ("symlink", "directory"):
+            with self.subTest(replacement=replacement):
+                parent = self.root / (replacement + "-parent")
+                original = self.root / (replacement + "-original")
+                alternate = self.root / (replacement + "-alternate")
+                parent.mkdir(mode=0o700)
+                alternate.mkdir(mode=0o700)
+                path = parent / "policy.json"
+                path.write_text(json.dumps(self.config))
+                path.chmod(0o600)
+                substitute = copy.deepcopy(self.config)
+                substitute["local_peers"][str(os.getuid())] = "other"
+                (alternate / "policy.json").write_text(json.dumps(substitute))
+                (alternate / "policy.json").chmod(0o600)
+                real_open, changed = os.open, []
+                def replace_parent(value, *args, **kwargs):
+                    if Path(value) == path and not changed:
+                        parent.rename(original)
+                        if replacement == "symlink":
+                            parent.symlink_to(alternate, target_is_directory=True)
+                        else:
+                            alternate.rename(parent)
+                        changed.append(True)
+                    return real_open(value, *args, **kwargs)
+                with patch("os.open", side_effect=replace_parent), self.assertRaises(JobError) as caught:
+                    Policy.from_file(path)
+                self.assertEqual(caught.exception.code, "UNAUTHORIZED")
+                self.assertEqual(changed, [True])
+                self.assertEqual(json.loads((original / "policy.json").read_text()), self.config)
+
+    def test_config_short_read_cannot_hide_unconsumed_trailing_bytes(self):
+        path = self.root / "policy.json"
+        raw = json.dumps(self.config).encode()
+        path.write_bytes(raw + b" invalid trailing content")
+        path.chmod(0o600)
+        real_read, observed = os.read, []
+        def read_prefix(descriptor, count):
+            result = real_read(descriptor, min(count, len(raw)))
+            observed.append(len(result))
+            return result
+        # Validating paths is outside the read boundary; it must not be reached
+        # even though the short read contains a complete syntactically valid map.
+        with patch("os.read", side_effect=read_prefix), patch.object(Policy, "validate_paths") as validate:
+            with self.assertRaises(JobError) as caught:
+                Policy.from_file(path)
+        self.assertEqual(caught.exception.code, "IO_UNCERTAIN")
+        self.assertEqual(observed, [len(raw)])
+        validate.assert_not_called()
+
+    def test_config_cleanup_preserves_rejection_and_reports_healthy_close_failure(self):
+        path = self.root / "policy.json"
+        path.write_text(json.dumps(self.config))
+        real_close = os.close
+        for mode, expected in ((0o644, "UNAUTHORIZED"), (0o600, "IO_UNCERTAIN")):
+            with self.subTest(mode=mode):
+                path.chmod(mode)
+                closed = []
+                def close(descriptor):
+                    real_close(descriptor)
+                    closed.append(descriptor)
+                    raise OSError("synthetic descriptor close failure after release")
+                try:
+                    raise RuntimeError("unrelated handled caller exception")
+                except RuntimeError:
+                    with patch("os.close", side_effect=close), self.assertRaises(JobError) as caught:
+                        Policy.from_file(path)
+                self.assertEqual(caught.exception.code, expected)
+                self.assertEqual(len(closed), 1)
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO boundary unavailable")
     def test_private_config_special_file_does_not_block_at_open(self):
         fifo = self.root / "config-fifo"

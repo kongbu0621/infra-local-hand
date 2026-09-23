@@ -155,6 +155,49 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(original, preserved)
         self.assertEqual(list(self.client.journal.iterdir()), [])
 
+    def test_journal_creation_remains_bound_when_parent_is_replaced(self):
+        root = Path(self.tmp.name)
+        parent, old, outside = root / "create-parent", root / "original-parent", root / "outside"
+        parent.mkdir(mode=0o700)
+        outside.mkdir(mode=0o700)
+        real_mkdir, changed = os.mkdir, []
+        def replace_parent(path, *args, **kwargs):
+            if Path(path).name == "new-journal" and not changed:
+                parent.rename(old)
+                parent.symlink_to(outside, target_is_directory=True)
+                changed.append(True)
+            return real_mkdir(path, *args, **kwargs)
+        calls = list(self.host.calls)
+        with patch.object(workflow.os, "mkdir", side_effect=replace_parent):
+            self.assert_error("IO_UNCERTAIN", workflow.Workflow, self.host, parent / "new-journal", self.admission)
+        self.assertEqual(changed, [True])
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertTrue((old / "new-journal").is_dir(), "Keep the directory created in the pinned parent")
+        self.assertEqual(self.host.calls, calls)
+
+    def test_journal_creation_rechecks_ancestors_before_any_mkdir(self):
+        root = Path(self.tmp.name)
+        ancestor, old, outside = root / "ancestor", root / "original-ancestor", root / "outside"
+        ancestor.mkdir(mode=0o700)
+        outside.mkdir(mode=0o700)
+        parent = ancestor / "parent"
+        parent.mkdir(mode=0o700)
+        (outside / "parent").mkdir(mode=0o700)
+        real_open, changed = os.open, []
+        def replace_ancestor(path, *args, **kwargs):
+            if Path(path) == parent and not changed:
+                ancestor.rename(old)
+                ancestor.symlink_to(outside, target_is_directory=True)
+                changed.append(True)
+            return real_open(path, *args, **kwargs)
+        calls = list(self.host.calls)
+        with patch.object(workflow.os, "open", side_effect=replace_ancestor):
+            self.assert_error("IO_UNCERTAIN", workflow.Workflow, self.host, parent / "new-journal", self.admission)
+        self.assertEqual(changed, [True])
+        self.assertEqual(list((outside / "parent").iterdir()), [])
+        self.assertEqual(list((old / "parent").iterdir()), [])
+        self.assertEqual(self.host.calls, calls)
+
     def test_identity_publication_never_unlinks_a_concurrent_staging_replacement(self):
         replacements = []
         publish_name = "_publish_create_only" if hasattr(workflow, "_publish_create_only") else None

@@ -509,6 +509,42 @@ assert saved.is_file() and record.is_file()
 
 @unittest.skipUnless(sys.platform == "linux", "Plugin publication is Linux-only; wheel identity remains cross-platform")
 class PluginBuildIdentityTests(BuildFixture):
+    def test_plugin_build_rechecks_ancestors_before_creating_staging(self):
+        script = r'''
+from pathlib import Path
+import os
+import sys
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+import build_plugin
+root = Path(sys.argv[1])
+ancestor, saved, outside = root / 'ancestor', root / 'original', root / 'outside'
+ancestor.mkdir()
+outside.mkdir()
+parent = ancestor / 'parent'
+parent.mkdir()
+(outside / 'parent').mkdir()
+output = parent / 'plugin.zip'
+real_open, changed = os.open, []
+def replace_ancestor(path, *args, **kwargs):
+    if Path(path) == parent and not changed:
+        ancestor.rename(saved)
+        ancestor.symlink_to(outside, target_is_directory=True)
+        changed.append(True)
+    return real_open(path, *args, **kwargs)
+with patch.object(build_plugin.os, 'open', side_effect=replace_ancestor):
+    try:
+        build_plugin.build(output)
+    except ValueError as error:
+        assert str(error) == 'Plugin output directory changed'
+    else:
+        raise AssertionError('Replaced ancestor was accepted')
+assert changed == [True]
+assert list((outside / 'parent').iterdir()) == [], 'No staging or ZIP may be written in the substituted path'
+assert list((saved / 'parent').iterdir()) == []
+'''
+        self.command([sys.executable, "-I", "-c", script, self.root])
+
     def plugin_cleanup_probe(self, boundary):
         script = r'''
 from pathlib import Path

@@ -21,7 +21,7 @@ from local_hand_jobs.contract import (
     JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
     request_digest, strict_loads, validate_submit, validate_tool_args,
 )
-from local_hand_jobs.evidence import EvidenceError, _publish_create_only
+from local_hand_jobs.evidence import EvidenceError, _close_descriptors, _publish_create_only
 
 
 def _copy(value):
@@ -52,13 +52,34 @@ class Workflow:
         self.journal = Path(journal).absolute()
         if self.journal.parent.resolve() != self.journal.parent:
             _fail("UNAUTHORIZED", "Client journal ancestors must not be linked")
-        self.journal.mkdir(mode=0o700, parents=False, exist_ok=True)
-        st = self.journal.lstat()
-        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
-            _fail("UNAUTHORIZED", "Client journal must be a private owned directory")
-        self._journal_identity = (st.st_dev, st.st_ino)
-        parent = self.journal.parent.stat()
-        self._journal_parent_identity = (parent.st_dev, parent.st_ino)
+        parent = directory = None
+        failure = None
+        try:
+            parent = os.open(self.journal.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            parent_info = os.fstat(parent)
+            self._journal_parent_identity = (parent_info.st_dev, parent_info.st_ino)
+            self._check_journal_parent(parent)
+            try:
+                # Creation stays bound to this parent even if its name is
+                # replaced. Never follow a new path before detecting the race.
+                os.mkdir(self.journal.name, mode=0o700, dir_fd=parent)
+            except FileExistsError:
+                pass
+            directory = os.open(self.journal.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            st = os.fstat(directory)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+                _fail("UNAUTHORIZED", "Client journal must be a private owned directory")
+            self._journal_identity = (st.st_dev, st.st_ino)
+            self._check_journal_parent(parent)
+            self._check_journal(directory)
+        except (OSError, RuntimeError) as error:
+            failure = error
+            _fail("IO_UNCERTAIN", "Client journal creation or identity is unresolved")
+        except BaseException as error:
+            failure = error
+            raise
+        finally:
+            _close_descriptors(directory, parent, failure=failure)
         self._profiles = {}
         self._execution_support = {}
 
@@ -106,21 +127,23 @@ class Workflow:
                        for st in (opened, named))):
             _fail("IO_UNCERTAIN", "Client journal directory identity changed")
 
+    def _check_journal_parent(self, parent):
+        if (self.journal.parent.resolve() != self.journal.parent
+                or any(not stat.S_ISDIR(st.st_mode) or (st.st_dev, st.st_ino) != self._journal_parent_identity
+                       for st in (os.fstat(parent), self.journal.parent.lstat()))):
+            _fail("IO_UNCERTAIN", "Client journal parent identity changed")
+
     @contextmanager
     def _journal_directory(self):
         directory = parent = None
         body_failed = False
         try:
             parent = os.open(self.journal.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            def check_parent():
-                if any(not stat.S_ISDIR(st.st_mode) or (st.st_dev, st.st_ino) != self._journal_parent_identity
-                       for st in (os.fstat(parent), self.journal.parent.lstat())):
-                    _fail("IO_UNCERTAIN", "Client journal parent identity changed")
-            check_parent()
+            self._check_journal_parent(parent)
             directory = os.open(self.journal.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
             self._check_journal(directory)
             yield directory, parent
-            check_parent()
+            self._check_journal_parent(parent)
             self._check_journal(directory)
         except EvidenceError as error:
             body_failed = True

@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from local_hand_jobs.contract import JobError
@@ -79,6 +80,53 @@ class ResourceTests(unittest.TestCase):
             StateStore(fifo, "authority", "ledger")
         with self.assertRaises(JobError):
             AuthorityLock(fifo, authority_id="authority", ledger_id="ledger", state_root=self.root)
+
+    def _authority(self):
+        anchor = self.root / "authority.json"
+        anchor.write_text(json.dumps({"authority_id": "authority", "ledger_id": "ledger", "state_root": str(self.root)}))
+        anchor.chmod(0o600)
+        return anchor, {"authority_id": "authority", "ledger_id": "ledger", "state_root": self.root}
+
+    def test_authority_close_error_cannot_close_a_reused_descriptor(self):
+        anchor, kwargs = self._authority()
+        lock = AuthorityLock(anchor, **kwargs)
+        descriptor, real_close = lock.fd, os.close
+        def close_then_fail(fd):
+            real_close(fd)
+            raise OSError(5, "synthetic close error after release")
+        with mock.patch("local_hand_jobs.resources.os.close", side_effect=close_then_fail):
+            with self.assertRaises(OSError):
+                lock.close()
+        foreign = os.open(self.root / "foreign", os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            self.assertEqual(descriptor, foreign)
+            lock.close()
+            os.fstat(foreign)
+            self.assertIsNone(lock.fd)
+        finally:
+            real_close(foreign)
+
+    def test_authority_primary_error_survives_descriptor_cleanup_error(self):
+        anchor, kwargs = self._authority()
+        real_close = os.close
+        def close_then_fail(fd):
+            real_close(fd)
+            raise OSError(5, "synthetic close error after release")
+        with mock.patch("local_hand_jobs.resources.os.close", side_effect=close_then_fail):
+            with self.assertRaises(JobError) as rejected:
+                AuthorityLock(anchor, **dict(kwargs, ledger_id="other"))
+            self.assertEqual("CONFLICT", rejected.exception.code)
+            primary = KeyboardInterrupt("synthetic original interruption")
+            with self.assertRaises(KeyboardInterrupt) as interrupted:
+                with AuthorityLock(anchor, **kwargs):
+                    raise primary
+            self.assertIs(primary, interrupted.exception)
+            try:
+                raise ValueError("unrelated caller exception")
+            except ValueError:
+                with self.assertRaises(OSError):
+                    with AuthorityLock(anchor, **kwargs):
+                        pass
 
 
 if __name__ == "__main__":

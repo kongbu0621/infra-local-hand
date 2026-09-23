@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass, field
 import hashlib
 import hmac
@@ -268,6 +268,22 @@ def _file_digest(path: Path, *, expected_identity: tuple[int, ...] | None = None
 def _publish_create_only(source: Path, destination: Path, *,
                          source_dir_fd: int = -100, destination_dir_fd: int = -100) -> None:
     """Linux atomic rename without replacement; no racy unlink of a staging entry."""
+    # Path-based callers must protect every parent component too. O_NOFOLLOW on
+    # a final file alone cannot prevent moving private bytes through an alias.
+    with ExitStack() as directories:
+        if source_dir_fd == -100:
+            source = Path(source).absolute()
+            source_dir_fd = directories.enter_context(_open_root(source.parent, os.geteuid()))
+            source = Path(source.name)
+        if destination_dir_fd == -100:
+            destination = Path(destination).absolute()
+            destination_dir_fd = directories.enter_context(_open_root(destination.parent, os.geteuid()))
+            destination = Path(destination.name)
+        _rename_create_only(source, destination, source_dir_fd, destination_dir_fd)
+
+
+def _rename_create_only(source: Path, destination: Path,
+                        source_dir_fd: int, destination_dir_fd: int) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     rename = getattr(libc, "renameat2", None)
     if rename is None:
@@ -445,22 +461,25 @@ class EvidenceStore:
 
     @staticmethod
     def _write(path: Path, data: bytes) -> None:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        try:
-            with os.fdopen(fd, "wb", closefd=False) as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(fd)
-        finally:
-            os.close(fd)
+        with _open_root(path.parent, os.geteuid()) as directory:
+            fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=directory)
+            failure = None
+            try:
+                with os.fdopen(fd, "wb", closefd=False) as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(fd)
+            except BaseException as error:
+                failure = error
+                raise
+            finally:
+                _close_descriptors(fd, failure=failure)
 
     @staticmethod
     def _sync_directory(path: Path) -> None:
-        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
+        with _open_root(path, os.geteuid()) as fd:
             os.fsync(fd)
-        finally:
-            os.close(fd)
 
     def seal(self, operation_id: str) -> dict:
         """Freeze and register one new version; errors preserve all original files.
@@ -524,14 +543,15 @@ class EvidenceStore:
             # An earlier failed attempt can leave only its staging directory.
             # Account for both new entries before writing, and stop the scan as
             # soon as the finite retained-entry budget is exhausted.
-            with os.scandir(self.root) as retained:
+            with os.scandir(store_fd) as retained:
                 for count, _ in enumerate(retained, 1):
                     if count + 2 > self.max_seals * 2:
                         raise EvidenceError("LIMIT_EXCEEDED", "evidence retention limit reached")
-            stage.mkdir(mode=0o700)
+            os.mkdir(stage.name, mode=0o700, dir_fd=store_fd)
             entries = []
             total = 0
-            with _open_root(snapshot.root, self.owner) as root_fd:
+            with _open_root(stage, self.owner) as stage_fd, \
+                    _open_root(snapshot.root, self.owner) as root_fd:
                 inventory = self._inventory(root_fd)
                 if set(inventory) != set(snapshot.members):
                     raise EvidenceError("CONFLICT", "frozen evidence membership changed")
@@ -539,8 +559,14 @@ class EvidenceStore:
                 if total > self.max_source_bytes:
                     raise EvidenceError("LIMIT_EXCEEDED", "evidence byte budget exceeded")
                 archive_path = stage / _ROLES["zip"]
-                archive_fd = os.open(archive_path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
-                with os.fdopen(archive_fd, "w+b") as archive_stream:
+                archive_fd = os.open(archive_path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                     0o600, dir_fd=stage_fd)
+                try:
+                    archive_stream = os.fdopen(archive_fd, "w+b")
+                except BaseException as failure:
+                    _close_descriptors(archive_fd, failure=failure)
+                    raise
+                with archive_stream:
                     with zipfile.ZipFile(_BoundedArchive(archive_stream, self.max_artifact_bytes),
                                          "w", compression=zipfile.ZIP_STORED,
                                          allowZip64=True) as archive:
@@ -601,7 +627,7 @@ class EvidenceStore:
                     "member_count": len(entries) + 1, "artifacts": artifacts}
             self._sync_directory(stage)
             # Both the directory and every published member are create-only.
-            destination.mkdir(mode=0o700)
+            os.mkdir(destination.name, mode=0o700, dir_fd=store_fd)
             published = True
             for role in ("zip", "manifest"):
                 _publish_create_only(stage / _ROLES[role], destination / _ROLES[role])

@@ -265,6 +265,59 @@ class LedgerPlanTests(unittest.TestCase):
             self.assertFalse(hasattr(ambient, "__notes__"))
         self.assertEqual((root / "data").read_bytes(), b"approved")
 
+    def test_temp_probe_short_write_cannot_confirm_binding(self):
+        root = self.root / "short-write"; root.mkdir()
+        actual_write = os.write
+        for count in (0, 1, len(b"lh-temp-binding\n") - 1):
+            with self.subTest(count=count):
+                def short_write(descriptor, data):
+                    return actual_write(descriptor, data[:count])
+                with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                        patch.object(os, "write", side_effect=short_write):
+                    with self.assertRaises(jobs.LedgerPlanError):
+                        jobs.check_temp_binding(str(root))
+                self.assertEqual(list(root.iterdir()), [])
+
+    def test_temp_probe_close_failure_still_removes_owned_probe(self):
+        root = self.root / "close-failure"; root.mkdir()
+        actual_close = os.close
+        closed = []
+        def close_then_fail(descriptor):
+            closed.append(descriptor)
+            actual_close(descriptor)
+            raise OSError("probe close acknowledgement unavailable")
+        try:
+            raise LookupError("unrelated caller recovery")
+        except LookupError as ambient:
+            with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                    patch.object(os, "close", side_effect=close_then_fail):
+                with self.assertRaisesRegex(OSError, "probe close acknowledgement unavailable"):
+                    jobs.check_temp_binding(str(root))
+            self.assertFalse(hasattr(ambient, "__notes__"))
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(list(root.iterdir()), [])
+        with self.assertRaises(OSError): os.fstat(closed[0])
+
+    def test_temp_probe_primary_failure_survives_failed_close(self):
+        root = self.root / "sync-failure"; root.mkdir()
+        actual_close = os.close
+        primary = OSError("probe sync failed")
+        def close_then_fail(descriptor):
+            actual_close(descriptor)
+            raise OSError("probe close acknowledgement unavailable")
+        with patch.object(tempfile, "gettempdir", return_value=str(root)), \
+                patch.object(os, "fsync", side_effect=primary), \
+                patch.object(os, "close", side_effect=close_then_fail):
+            try:
+                jobs.check_temp_binding(str(root))
+            except OSError as error:
+                observed = error
+            else:
+                self.fail("failed temporary write probe unexpectedly succeeded")
+        self.assertIs(observed, primary)
+        self.assertEqual(list(root.iterdir()), [])
+        self.assertEqual(primary.__notes__, ["temporary probe cleanup was incomplete"])
+
     def test_resource_skips_and_wrong_counts_never_pass(self):
         for text in ("Ran 8 tests in 1s\n\nOK (skipped=1)\n", "Ran 7 tests in 1s\n\nOK\n", ""):
             self.assertEqual(jobs.resource_result("a1_resources", "", text, 0)["outcome"], "FAILED")

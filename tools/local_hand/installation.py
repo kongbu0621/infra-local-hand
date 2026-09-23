@@ -107,7 +107,15 @@ def create_record(profile_path: Path, output: Path, *, install_instance_id: str,
             "build_metadata_sha256":hashlib.sha256((Path(__file__).parent/"_build_metadata.json").read_bytes()).hexdigest()}
     data=(json.dumps(record,sort_keys=True,indent=2)+"\n").encode()
     fd=os.open(output,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(fd,"wb") as f:f.write(data);f.flush();os.fsync(f.fileno())
+    try:
+        stream=os.fdopen(fd,"wb")
+    except BaseException:
+        # Ownership transfers only after the stream wrapper is constructed.
+        # Close once: even a reported close failure may release the descriptor.
+        try:os.close(fd)
+        except OSError:pass
+        raise
+    with stream as f:f.write(data);f.flush();os.fsync(f.fileno())
     return record
 
 

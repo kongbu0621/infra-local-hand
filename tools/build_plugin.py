@@ -68,6 +68,14 @@ def build(output: Path) -> dict:
     body_failed = False
     try:
         parent_identity = os.fstat(directory)
+        def check_parent():
+            named_parent = output.parent.lstat()
+            if (output.parent.resolve() != output.parent or not stat.S_ISDIR(named_parent.st_mode)
+                    or (named_parent.st_dev, named_parent.st_ino) != (parent_identity.st_dev, parent_identity.st_ino)):
+                raise ValueError("Plugin output directory changed")
+        # Opening a directory with O_NOFOLLOW only protects its final path
+        # component. Recheck ancestors before creating anything through it.
+        check_parent()
         descriptor = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                              0o600, dir_fd=directory)
         with os.fdopen(descriptor, "w+b") as stream:
@@ -100,10 +108,7 @@ def build(output: Path) -> dict:
                     or any(stable(item) != stable(published) for item in
                            (os.fstat(stream.fileno()), os.stat(output.name, dir_fd=directory, follow_symlinks=False)))):
                 raise ValueError("Published Plugin output changed")
-            named_parent = output.parent.lstat()
-            if (output.parent.resolve() != output.parent or not stat.S_ISDIR(named_parent.st_mode)
-                    or (named_parent.st_dev, named_parent.st_ino) != (parent_identity.st_dev, parent_identity.st_ino)):
-                raise ValueError("Plugin output directory changed")
+            check_parent()
     except BaseException:
         body_failed = True
         raise

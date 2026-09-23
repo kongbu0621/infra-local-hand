@@ -135,15 +135,25 @@ class AuthConfig:
         item = Path(path)
         if not item.is_absolute() or ".." in item.parts:
             raise ValueError("Authorization configuration requires an absolute path")
-        try:
-            # Do not traverse a replaceable symlink in any ancestor.
-            for ancestor in (item, *item.parents):
+
+        def ancestors():
+            identities = []
+            for ancestor in item.parents:
                 info = ancestor.lstat()
-                if stat.S_ISLNK(info.st_mode):
-                    raise ValueError("Authorization configuration must not use symlinks")
-                if ancestor != item and (info.st_uid not in {0, os.geteuid()}
+                if not stat.S_ISDIR(info.st_mode):
+                    raise ValueError("Authorization configuration must not use linked ancestors")
+                if (info.st_uid not in {0, os.geteuid()}
                         or (info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX and info.st_uid == 0))):
                     raise ValueError("Authorization configuration has a replaceable ancestor")
+                identities.append((info.st_dev, info.st_ino))
+            return tuple(identities)
+
+        try:
+            # O_NOFOLLOW protects only the final component. Bind ancestors
+            # before opening and recheck before/after reading the file.
+            admitted_ancestors = ancestors()
+            if stat.S_ISLNK(item.lstat().st_mode):
+                raise ValueError("Authorization configuration must not use symlinks")
             fd = os.open(item, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             try:
                 source = os.fdopen(fd, "rb")
@@ -160,12 +170,14 @@ class AuthConfig:
                 if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
                         or before.st_mode & 0o077 or before.st_nlink != 1):
                     raise ValueError("Authorization configuration is not private and owned")
+                if ancestors() != admitted_ancestors:
+                    raise ValueError("Authorization configuration ancestors changed while opening")
                 raw = source.read(MAX_AUTH_DOCUMENT + 1)
                 after = os.fstat(source.fileno())
                 current = item.lstat()
                 if (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                     after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
-                ) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
+                ) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino) or ancestors() != admitted_ancestors:
                     raise ValueError("Authorization configuration changed while reading")
         except OSError:
             raise ValueError("Authorization configuration could not be read safely") from None

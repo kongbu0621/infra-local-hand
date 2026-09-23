@@ -276,6 +276,62 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 AuthConfig.from_file(str(link))
 
+    def test_auth_config_cannot_be_rebound_through_changed_ancestors(self):
+        for replacement in ("symlink", "directory"):
+            with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                parent, saved, outside = root / "parent", root / "saved", root / "outside"
+                parent.mkdir(mode=0o700)
+                outside.mkdir(mode=0o700)
+                path = parent / "auth.json"
+                path.write_text(json.dumps(self.issuer.configuration))
+                path.chmod(0o600)
+                alternate = copy.deepcopy(self.issuer.configuration)
+                alternate["subject_map"] = {"issuer-user-a": "different-owner"}
+                (outside / "auth.json").write_text(json.dumps(alternate))
+                (outside / "auth.json").chmod(0o600)
+                real_open, opened, changed = os.open, [], []
+                def substitute(value, *args, **kwargs):
+                    if Path(value) == path and not changed:
+                        parent.rename(saved)
+                        if replacement == "symlink":
+                            parent.symlink_to(outside, target_is_directory=True)
+                        else:
+                            outside.rename(parent)
+                        changed.append(True)
+                    descriptor = real_open(value, *args, **kwargs)
+                    opened.append(descriptor)
+                    return descriptor
+                with patch("os.open", side_effect=substitute):
+                    with self.assertRaises(ValueError):
+                        AuthConfig.from_file(str(path))
+                self.assertEqual([True], changed)
+                self.assertEqual(1, len(opened))
+                with self.assertRaises(OSError):
+                    os.fstat(opened[0])
+                self.assertEqual(self.issuer.configuration, json.loads((saved / "auth.json").read_text()))
+
+    def test_auth_config_rechecks_ancestor_permissions_after_read(self):
+        with tempfile.TemporaryDirectory() as folder:
+            parent = Path(folder)
+            path = parent / "auth.json"
+            path.write_text(json.dumps(self.issuer.configuration))
+            path.chmod(0o600)
+            real_fstat, reads = os.fstat, []
+            def change_after_read(descriptor):
+                info = real_fstat(descriptor)
+                reads.append(descriptor)
+                if len(reads) == 2:
+                    parent.chmod(0o777)
+                return info
+            try:
+                with patch("os.fstat", side_effect=change_after_read):
+                    with self.assertRaises(ValueError):
+                        AuthConfig.from_file(str(path))
+                self.assertEqual(2, len(reads))
+            finally:
+                parent.chmod(0o700)
+
     def test_failed_file_wrapper_closes_untransferred_auth_descriptor(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "auth.json"

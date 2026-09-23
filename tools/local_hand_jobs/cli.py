@@ -161,7 +161,10 @@ class MaintenanceServer:
             listener.listen(16)
         except OSError as exc:
             if listener is not None and self._listener is None:
-                listener.close()
+                try:
+                    listener.close()
+                except OSError:
+                    pass  # The bind/setup failure remains the startup cause.
             # bind may have created our entry before chmod/listen failed.
             # Reuse identity-checked cleanup; unknown identity or a concurrent
             # replacement is retained, never blindly unlinked on startup.
@@ -174,7 +177,10 @@ class MaintenanceServer:
             self._thread = threading.Thread(target=self._serve, daemon=True, name="local-hand-maintenance")
             self._thread.start()
         except Exception as exc:
-            self.close()
+            try:
+                self.close()
+            except OSError:
+                pass  # Retain the original startup failure after all cleanup.
             raise JobError("IO_UNCERTAIN", "Maintenance listener thread could not be started") from exc
         return self
 
@@ -187,12 +193,19 @@ class MaintenanceServer:
             except OSError:
                 return
             if not self._slots.acquire(blocking=False):
-                connection.close()
+                try:
+                    connection.close()
+                except OSError:
+                    pass
                 continue
             with self._connection_lock:
                 if self._closed.is_set():
-                    connection.close()
-                    self._slots.release()
+                    try:
+                        connection.close()
+                    except OSError:
+                        pass
+                    finally:
+                        self._slots.release()
                     continue
                 self._connections.add(connection)
             try:
@@ -200,6 +213,10 @@ class MaintenanceServer:
             except Exception:
                 try:
                     connection.close()
+                except OSError:
+                    # A failed handler never entered the broker. A socket
+                    # close error must not terminate the shared accept loop.
+                    pass
                 finally:
                     with self._connection_lock:
                         self._connections.discard(connection)
@@ -242,8 +259,18 @@ class MaintenanceServer:
 
     def close(self):
         self._closed.set()
+        failure = None
+
+        def attempt(action):
+            nonlocal failure
+            try:
+                action()
+            except BaseException as exc:
+                if failure is None:
+                    failure = exc
+
         if self._listener is not None:
-            self._listener.close()
+            attempt(self._listener.close)
         with self._connection_lock:
             connections = tuple(self._connections)
         for connection in connections:
@@ -251,16 +278,22 @@ class MaintenanceServer:
                 connection.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-            connection.close()
+            attempt(connection.close)
         if (self._thread is not None and self._thread.ident is not None
                 and self._thread is not threading.current_thread()):
-            self._thread.join(timeout=1)
-        try:
-            info = self.path.lstat()
-            if self._identity == (info.st_dev, info.st_ino) and stat.S_ISSOCK(info.st_mode):
-                self.path.unlink()
-        except FileNotFoundError:
-            pass
+            attempt(lambda: self._thread.join(timeout=1))
+
+        def remove_owned_entry():
+            try:
+                info = self.path.lstat()
+                if self._identity == (info.st_dev, info.st_ino) and stat.S_ISSOCK(info.st_mode):
+                    self.path.unlink()
+            except FileNotFoundError:
+                pass
+
+        attempt(remove_owned_entry)
+        if failure is not None:
+            raise failure
 
 
 def request(socket_path, tool, arguments, *, timeout=2):
@@ -369,11 +402,14 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         broker.authority_lock = authority
         return broker
     except BaseException:
-        try:
-            if state is not None:
-                state.close()
-        finally:
-            authority.close()
+        # Composition failed before ownership could transfer to a service.
+        # Attempt every acquired resource without replacing that failure.
+        for resource in (state, authority):
+            if resource is not None:
+                try:
+                    resource.close()
+                except BaseException:
+                    pass
         raise
 
 
