@@ -32,6 +32,12 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 收集时 Linux 测试默认参数的常量导入；保留首次 CI 失败与 14 项定向重测日志。修复后的准确 main
 `4148527` 两平台 CI/独立安装均通过，平台跳过与 E3 未验收边界在报告中分别记录。普通开发不逐次生成 ZIP。
 
+随后补充 Q1 离线配置检查入口 `tools/validate_q1_fixture.py`：两份字节快照及外部摘要、源码和安装绑定，
+全部 slot 与固定输入/journal 的路径交叠检查；运行装配同步采用同一检查，修复只检查选中 slot 的缺口。
+输出仅为 `CONFIG_CONSISTENT/OFFLINE_ONLY`，无宿主观察、ticket 或资源保留。
+准确输入及后续实测步骤见 [Q1 fixture 交接](E3_QUOTA_Q1_FIXTURE_HANDOFF.md)。
+实际输入仍 NOT_PREPARED；Q1 实机与 E3 仍 BLOCKED，未进入 Q2。
+
 ## 已实现的代码
 
 | 边界 | 实现与可观察行为 |
@@ -43,6 +49,7 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 | Q1 内部 quota ABI | 独立管理侧开发目录中的原生 FD 查询原语，固定观察调用、errno/前后身份和有界 JSON；不接受路径或修改动作，未安装、未提权、未接入 broker，不在默认 wheel/Plugin 中。模拟成功不是宿主准入，完整 observer 仍待实现 |
 | Q1 固定对象与结果判定 | `admin/local_hand_quota_observer/admission.py`、`supervision.py`；不可变配置映射、原执行/截止时间绑定、有限非阻塞采集、独立进程退出事实与原语回包分别核对。内部判定核心；实际 adapter 由独立 Q1 runtime 源码连接，未授予作业执行 |
 | Q1 单次运行装配 | 保护配置/安装及 worker、固定 systemd query unit、准确能力集和 native 参数级过滤、永久意图 journal、启动竞态/原身份停止与有界采集；真实 systemd/quota 未实测，恢复丢失原采集归属保持 UNKNOWN；不替代 Q2 服务 |
+| Q1 离线输入校验 | 严格快照摘要/源码/安装绑定及全部 slot 路径检查；计费域去重，声明额度不冒充实际预留；CLI 无宿主执行，真实权限/配额/监督仍待实测 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |

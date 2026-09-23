@@ -15,7 +15,7 @@ import os
 from pathlib import PurePosixPath
 import stat
 
-from .admission import (fields, integer, path, require, strict_json, token)
+from .admission import (Manifest, fields, integer, path, require, strict_json, token)
 from .supervision import Binding, bind_query
 
 
@@ -82,6 +82,37 @@ def decode_runtime(raw, expected_digest):
                          integer(value["memory_bytes"], 16 * 1024**2, 1024**3),
                          integer(value["tasks_max"], 1, 8), integer(value["cpu_seconds"], 1, 30),
                          integer(value["max_output_bytes"], 8192, 32768))
+
+
+def validate_geometry(config, manifest, runtime_path, journal_path):
+    """Pure lexical checks shared by offline review and actual query admission.
+
+    Check ALL declared roots, including slots not selected by the current query.
+    This cannot establish real ownership, mount identity or absence of aliases
+    caused by mounts/symlinks; those still need protected host observations.
+    """
+    require(type(config) is RuntimeConfig and type(manifest) is Manifest, "GEOMETRY_INPUT")
+    path(runtime_path)
+    path(journal_path)
+    require(manifest.cgroup_parent == "/" + config.query_slice, "DEDICATED_SLICE_REQUIRED")
+    require(manifest.query_uid == 0 and manifest.query_euid == 0, "ADMIN_QUERY_UID_REQUIRED")
+    inputs = (runtime_path, config.manifest_path, config.python_path, config.worker_path, config.native_path,
+              config.systemd_run_path, config.systemctl_path,
+              *(str(PurePosixPath(config.worker_path).parent / name) for name, _ in config.package_files))
+
+    def overlap(left, right):
+        first, second = PurePosixPath(left), PurePosixPath(right)
+        return first == second or first in second.parents or second in first.parents
+
+    # These inputs must all be different regular files, never each other's
+    # parent directory. A consistent digest cannot make such a layout installable.
+    for index, item in enumerate(inputs):
+        require(all(not overlap(item, other) for other in inputs[index + 1:]), "FIXED_INPUT_OVERLAP")
+        require(not overlap(item, journal_path), "CONTROL_INPUT_OVERLAP")
+        for slot in manifest.slots:
+            require(not overlap(item, slot.path), "ROOT_INPUT_OVERLAP")
+    for slot in manifest.slots:
+        require(not overlap(slot.path, journal_path), "ROOT_CONTROL_OVERLAP")
 
 
 def _protected(metadata, *, directory):

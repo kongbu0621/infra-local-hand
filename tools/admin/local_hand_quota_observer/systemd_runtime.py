@@ -17,7 +17,8 @@ import time
 
 from .admission import Rejected, decode_manifest, fields, integer, path, require, strict_json, token
 from .protected_inputs import (RuntimeConfig, decode_ticket, encode_ticket, installation_digest,
-                               load_runtime, open_protected, read_fd, read_protected, verify_installation)
+                               load_runtime, open_protected, read_fd, read_protected, validate_geometry,
+                               verify_installation)
 from .supervision import Binding, Decision, QueryMonitor, UnitObservation
 
 
@@ -57,18 +58,8 @@ def _below(left, right):
 
 
 def _check_geometry(config, binding, config_path, control_dir):
-    path(config_path)
-    path(control_dir)
-    require(binding.manifest.cgroup_parent == "/" + config.query_slice, "DEDICATED_SLICE_REQUIRED")
-    require(binding.manifest.query_uid == 0 and binding.manifest.query_euid == 0, "ADMIN_QUERY_UID_REQUIRED")
-    inputs = (config_path, config.manifest_path, config.python_path, config.worker_path, config.native_path,
-              config.systemd_run_path, config.systemctl_path,
-              *(str(PurePosixPath(config.worker_path).parent / name) for name, _ in config.package_files))
-    for item in inputs:
-        require(not _below(item, control_dir) and not _below(control_dir, item), "CONTROL_INPUT_OVERLAP")
-        require(not _below(item, binding.slot.path) and not _below(binding.slot.path, item), "ROOT_INPUT_OVERLAP")
-    require(not _below(binding.slot.path, control_dir) and not _below(control_dir, binding.slot.path),
-            "ROOT_CONTROL_OVERLAP")
+    require(binding.slot in binding.manifest.slots, "FOREIGN_SLOT")
+    validate_geometry(config, binding.manifest, config_path, control_dir)
 
 
 def unit_command(config, binding, config_path, control_dir, *, now_ns):

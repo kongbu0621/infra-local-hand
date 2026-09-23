@@ -14,6 +14,7 @@
 | `quota_fd_query.c` / `quota_syscall_filter.h` | 固定 FD quota 观察、原始 errno、查询阶段参数级 seccomp 过滤 |
 | `journal.py` | 最多 32 个永久意图，文件与目录 fsync 后才交付；原请求/资源永不自动重用 |
 | `systemd_runtime.py` | 固定 system-manager argv、启动竞态等待、原 InvocationID 停止、专用父 cgroup 空状态、双管道与采集进程退出 |
+| `fixture_inputs.py` / `tools/validate_q1_fixture.py` | 两份固定字节快照的离线绑定与全部路径交叠检查；不读取声明的宿主对象、不创建 ticket 或启动查询 |
 
 ## 精确行为
 
@@ -148,6 +149,12 @@ production_supported 始终 false。
 Q2 的 peer 鉴权、外部协议、防重及 broker 账本/原三段预算绑定尚未完成；不能用 Q1 journal 冒充完整 Q2。
 
 ## 专用环境交接前仍需具备
+
+先按[准确输入与实测交接](../../../docs/a2-execution/E3_QUOTA_Q1_FIXTURE_HANDOFF.md)交付 manifest/runtime
+快照、外部摘要、完整 source commit 及 runtime/journal 安装路径。Linux 离线入口必须使用 `python -I -B`；
+`CONFIG_CONSISTENT` 只表示配置一致，始终为 OFFLINE_ONLY，不证明宿主准备完成或授予运行权限。
+它与运行装配复用全部 slot 的路径检查，拒绝任一 root 与固定输入/journal 交叠及固定文件路径的相互别名。
+不对声明的宿主路径作 resolve、stat 或 open，不生成运行 ticket、资源预留或启动意图。
 
 - 预先确认的可丢弃 ext4/XFS project-quota filesystem 与 slot、普通测试 UID/generation/project/hard limit，
   以及其当前 boot、真实 FS 身份和无其他 writer 的保护流程。
