@@ -1,0 +1,575 @@
+CI LOG EXCERPTS ONLY. Original timestamps/content retained; CRLF and trailing whitespace normalized.
+Includes source summary, reported skips, installed acceptance output. Full fetched UTF-8 log SHA-256 is recorded in ci-runs.json.
+
+Run 35936686250; head 6e1a25be40b5a4364a425301049c55b3e1eaabae; job 107435202806; semantic-core (ubuntu-latest); conclusion=success.
+2026-09-24T00:10:40.7652778Z SKIPPED [1] tests/test_local_hand_jobs_runner.py:1173: UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; no predelegated manager admission; dedicated non-root account is required
+2026-09-24T00:10:40.7653479Z 1081 passed, 1 skipped in 356.52s (0:05:56)
+2026-09-24T00:14:48.3270070Z {"status": "PASS", "checks": 94, "commands": 292, "report": "/home/runner/work/_temp/local-hand-s1-860145d08f9148c89c58e0c80a9ca388/installed-acceptance/report.json"}
+
+Run 35936686250; head 6e1a25be40b5a4364a425301049c55b3e1eaabae; job 107435202820; semantic-core (windows-latest); conclusion=failure.
+2026-09-24T00:10:44.6536525Z SKIPPED [1] tests\test_e3_host_probe.py:77: E3 host observation is Linux-only
+2026-09-24T00:10:44.6537548Z SKIPPED [1] tests\test_e3_host_probe.py:69: E3 host observation is Linux-only
+2026-09-24T00:10:44.6538479Z SKIPPED [1] tests\test_e3_host_probe.py:62: E3 host observation is Linux-only
+2026-09-24T00:10:44.6539438Z SKIPPED [1] tests\test_e3_host_probe.py:54: E3 host observation is Linux-only
+2026-09-24T00:10:44.6540363Z SKIPPED [1] tests\test_e3_host_probe.py:99: E3 host observation is Linux-only
+2026-09-24T00:10:44.6541293Z SKIPPED [1] tests\test_e3_host_probe.py:152: E3 host observation is Linux-only
+2026-09-24T00:10:44.6542245Z SKIPPED [1] tests\test_e3_host_probe.py:118: E3 host observation is Linux-only
+2026-09-24T00:10:44.6543181Z SKIPPED [1] tests\test_e3_host_probe.py:143: E3 host observation is Linux-only
+2026-09-24T00:10:44.6544114Z SKIPPED [1] tests\test_e3_host_probe.py:163: E3 host observation is Linux-only
+2026-09-24T00:10:44.6545043Z SKIPPED [1] tests\test_e3_host_probe.py:243: E3 host observation is Linux-only
+2026-09-24T00:10:44.6545971Z SKIPPED [1] tests\test_e3_host_probe.py:390: E3 host observation is Linux-only
+2026-09-24T00:10:44.6547135Z SKIPPED [1] tests\test_e3_host_probe.py:409: E3 host observation is Linux-only
+2026-09-24T00:10:44.6548139Z SKIPPED [1] tests\test_e3_host_probe.py:298: E3 host observation is Linux-only
+2026-09-24T00:10:44.6549086Z SKIPPED [1] tests\test_e3_host_probe.py:314: E3 host observation is Linux-only
+2026-09-24T00:10:44.6550024Z SKIPPED [1] tests\test_e3_host_probe.py:347: E3 host observation is Linux-only
+2026-09-24T00:10:44.6550949Z SKIPPED [1] tests\test_e3_host_probe.py:328: E3 host observation is Linux-only
+2026-09-24T00:10:44.6551876Z SKIPPED [1] tests\test_e3_host_probe.py:364: E3 host observation is Linux-only
+2026-09-24T00:10:44.6553111Z SKIPPED [1] tests\test_e3_host_probe.py:456: E3 host observation is Linux-only
+2026-09-24T00:10:44.6554077Z SKIPPED [1] tests\test_e3_host_probe.py:438: E3 host observation is Linux-only
+2026-09-24T00:10:44.6555015Z SKIPPED [1] tests\test_e3_host_probe.py:270: E3 host observation is Linux-only
+2026-09-24T00:10:44.6555948Z SKIPPED [1] tests\test_e3_host_probe.py:286: E3 host observation is Linux-only
+2026-09-24T00:10:44.6556887Z SKIPPED [1] tests\test_e3_host_probe.py:376: E3 host observation is Linux-only
+2026-09-24T00:10:44.6557806Z SKIPPED [1] tests\test_e3_quota_abi.py:218: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6559685Z SKIPPED [1] tests\test_e3_quota_abi.py:287: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6560650Z SKIPPED [1] tests\test_e3_quota_abi.py:263: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6561545Z SKIPPED [1] tests\test_e3_quota_abi.py:183: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6562398Z SKIPPED [1] tests\test_e3_quota_abi.py:274: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6563258Z SKIPPED [1] tests\test_e3_quota_abi.py:305: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6564125Z SKIPPED [1] tests\test_e3_quota_abi.py:196: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6565005Z SKIPPED [1] tests\test_e3_quota_abi.py:162: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6565892Z SKIPPED [1] tests\test_e3_quota_abi.py:143: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6566780Z SKIPPED [1] tests\test_e3_quota_abi.py:151: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6567703Z SKIPPED [1] tests\test_e3_quota_abi.py:137: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6568588Z SKIPPED [1] tests\test_e3_quota_abi.py:257: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6569467Z SKIPPED [1] tests\test_e3_quota_abi.py:206: Q1 ABI primitive is Linux-only
+2026-09-24T00:10:44.6570504Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:114: Q1 Linux real pipe descriptor inspection
+2026-09-24T00:10:44.6571723Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:125: Q1 Linux real pipe descriptor inspection
+2026-09-24T00:10:44.6573184Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:151: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:10:44.6574328Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:173: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:10:44.6575488Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:186: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:10:44.6576604Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:180: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:10:44.6577734Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:168: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:10:44.6578925Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:159: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:10:44.6580069Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:232: Q1 Linux cgroup observation LOGIC_ONLY
+2026-09-24T00:10:44.6581225Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:218: Q1 Linux cgroup observation LOGIC_ONLY
+2026-09-24T00:10:44.6582366Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:223: Q1 Linux cgroup observation LOGIC_ONLY
+2026-09-24T00:10:44.6583573Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:333: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6584933Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:318: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6586157Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:285: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6587374Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:296: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6588561Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:304: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6590006Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:310: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6591547Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:274: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:10:44.6592780Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:371: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:10:44.6593942Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:380: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:10:44.6595126Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:364: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:10:44.6596287Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:352: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:10:44.6597417Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:108: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6598669Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:115: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6599739Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:119: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6600783Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:152: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6601779Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:134: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6602803Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:145: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6603847Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:167: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6604880Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:191: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6605904Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:125: Q1 experiment CLI is Linux-only
+2026-09-24T00:10:44.6606957Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:156: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6608026Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:148: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6609174Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:201: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6610285Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:144: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6611605Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:126: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6612656Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:102: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6613728Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:180: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6614795Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:134: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6615855Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:111: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6616992Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:188: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6618055Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:82: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6619117Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:93: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6620185Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:118: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:10:44.6621151Z SKIPPED [1] tests\test_e3_quota_journal.py:137: Q1 Linux control journal
+2026-09-24T00:10:44.6622040Z SKIPPED [1] tests\test_e3_quota_journal.py:317: Q1 Linux control journal
+2026-09-24T00:10:44.6623749Z SKIPPED [1] tests\test_e3_quota_journal.py:348: Q1 Linux control journal
+2026-09-24T00:10:44.6624714Z SKIPPED [1] tests\test_e3_quota_journal.py:203: Q1 Linux control journal
+2026-09-24T00:10:44.6625645Z SKIPPED [1] tests\test_e3_quota_journal.py:298: Q1 Linux control journal
+2026-09-24T00:10:44.6626512Z SKIPPED [1] tests\test_e3_quota_journal.py:286: Q1 Linux control journal
+2026-09-24T00:10:44.6627398Z SKIPPED [1] tests\test_e3_quota_journal.py:87: Q1 Linux control journal
+2026-09-24T00:10:44.6628263Z SKIPPED [1] tests\test_e3_quota_journal.py:176: Q1 Linux control journal
+2026-09-24T00:10:44.6629129Z SKIPPED [1] tests\test_e3_quota_journal.py:62: Q1 Linux control journal
+2026-09-24T00:10:44.6629988Z SKIPPED [1] tests\test_e3_quota_journal.py:223: Q1 Linux control journal
+2026-09-24T00:10:44.6631121Z SKIPPED [1] tests\test_e3_quota_journal.py:308: Q1 Linux control journal
+2026-09-24T00:10:44.6631985Z SKIPPED [1] tests\test_e3_quota_journal.py:162: Q1 Linux control journal
+2026-09-24T00:10:44.6632883Z SKIPPED [1] tests\test_e3_quota_journal.py:189: Q1 Linux control journal
+2026-09-24T00:10:44.6633751Z SKIPPED [1] tests\test_e3_quota_journal.py:99: Q1 Linux control journal
+2026-09-24T00:10:44.6634583Z SKIPPED [1] tests\test_e3_quota_journal.py:128: Q1 Linux control journal
+2026-09-24T00:10:44.6635813Z SKIPPED [1] tests\test_e3_quota_journal.py:363: Q1 Linux control journal
+2026-09-24T00:10:44.6636691Z SKIPPED [1] tests\test_e3_quota_journal.py:327: Q1 Linux control journal
+2026-09-24T00:10:44.6637563Z SKIPPED [1] tests\test_e3_quota_journal.py:231: Q1 Linux control journal
+2026-09-24T00:10:44.6638443Z SKIPPED [1] tests\test_e3_quota_journal.py:269: Q1 Linux control journal
+2026-09-24T00:10:44.6639289Z SKIPPED [1] tests\test_e3_quota_journal.py:252: Q1 Linux control journal
+2026-09-24T00:10:44.6640156Z SKIPPED [1] tests\test_e3_quota_journal.py:383: Q1 Linux control journal
+2026-09-24T00:10:44.6641025Z SKIPPED [1] tests\test_e3_quota_journal.py:154: Q1 Linux control journal
+2026-09-24T00:10:44.6641888Z SKIPPED [1] tests\test_e3_quota_monitor.py:85: Q1 Linux ABI contract
+2026-09-24T00:10:44.6642726Z SKIPPED [1] tests\test_e3_quota_monitor.py:114: Q1 Linux ABI contract
+2026-09-24T00:10:44.6643549Z SKIPPED [1] tests\test_e3_quota_monitor.py:156: Q1 Linux ABI contract
+2026-09-24T00:10:44.6644376Z SKIPPED [1] tests\test_e3_quota_monitor.py:138: Q1 Linux ABI contract
+2026-09-24T00:10:44.6645202Z SKIPPED [1] tests\test_e3_quota_monitor.py:97: Q1 Linux ABI contract
+2026-09-24T00:10:44.6646095Z SKIPPED [1] tests\test_e3_quota_monitor.py:189: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6647092Z SKIPPED [1] tests\test_e3_quota_monitor.py:310: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6648054Z SKIPPED [1] tests\test_e3_quota_monitor.py:323: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6649026Z SKIPPED [1] tests\test_e3_quota_monitor.py:220: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6649983Z SKIPPED [1] tests\test_e3_quota_monitor.py:202: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6651210Z SKIPPED [1] tests\test_e3_quota_monitor.py:258: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6652165Z SKIPPED [1] tests\test_e3_quota_monitor.py:294: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6653120Z SKIPPED [1] tests\test_e3_quota_monitor.py:273: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6654106Z SKIPPED [1] tests\test_e3_quota_monitor.py:245: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6655055Z SKIPPED [1] tests\test_e3_quota_monitor.py:232: Linux pipe/ABI observation core
+2026-09-24T00:10:44.6656002Z SKIPPED [1] tests\test_e3_quota_runtime.py:358: Q1 Linux controller assembly
+2026-09-24T00:10:44.6656924Z SKIPPED [1] tests\test_e3_quota_runtime.py:349: Q1 Linux controller assembly
+2026-09-24T00:10:44.6657827Z SKIPPED [1] tests\test_e3_quota_runtime.py:288: Q1 Linux controller assembly
+2026-09-24T00:10:44.6658731Z SKIPPED [1] tests\test_e3_quota_runtime.py:383: Q1 Linux controller assembly
+2026-09-24T00:10:44.6659842Z SKIPPED [1] tests\test_e3_quota_runtime.py:402: Q1 Linux controller assembly
+2026-09-24T00:10:44.6660781Z SKIPPED [1] tests\test_e3_quota_runtime.py:310: Q1 Linux controller assembly
+2026-09-24T00:10:44.6661727Z SKIPPED [1] tests\test_e3_quota_runtime.py:261: Q1 Linux controller assembly
+2026-09-24T00:10:44.6662645Z SKIPPED [1] tests\test_e3_quota_runtime.py:300: Q1 Linux controller assembly
+2026-09-24T00:10:44.6663557Z SKIPPED [1] tests\test_e3_quota_runtime.py:278: Q1 Linux controller assembly
+2026-09-24T00:10:44.6664472Z SKIPPED [1] tests\test_e3_quota_runtime.py:412: Q1 Linux controller assembly
+2026-09-24T00:10:44.6665386Z SKIPPED [1] tests\test_e3_quota_runtime.py:370: Q1 Linux controller assembly
+2026-09-24T00:10:44.6666296Z SKIPPED [1] tests\test_e3_quota_runtime.py:391: Q1 Linux controller assembly
+2026-09-24T00:10:44.6667198Z SKIPPED [1] tests\test_e3_quota_runtime.py:440: Q1 Linux controller assembly
+2026-09-24T00:10:44.6668114Z SKIPPED [1] tests\test_e3_quota_runtime.py:430: Q1 Linux controller assembly
+2026-09-24T00:10:44.6669118Z SKIPPED [1] tests\test_e3_quota_runtime.py:419: Q1 Linux controller assembly
+2026-09-24T00:10:44.6670028Z SKIPPED [1] tests\test_e3_quota_runtime.py:334: Q1 Linux controller assembly
+2026-09-24T00:10:44.6671181Z SKIPPED [1] tests\test_e3_quota_runtime.py:320: Q1 Linux controller assembly
+2026-09-24T00:10:44.6672387Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:48: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6673467Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:71: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6674524Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:152: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6675585Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:98: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6676667Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:60: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6677712Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:126: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6678810Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:112: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6679866Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:105: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6680915Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:81: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6681975Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:136: Q1 Linux anonymous pipe capture
+2026-09-24T00:10:44.6683029Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:232: Q1 Linux fixed systemd assembly
+2026-09-24T00:10:44.6684085Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:186: Q1 Linux fixed systemd assembly
+2026-09-24T00:10:44.6685204Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:214: Q1 Linux fixed systemd assembly
+2026-09-24T00:10:44.6686272Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:223: Q1 Linux fixed systemd assembly
+2026-09-24T00:10:44.6687305Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:81: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6688347Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:172: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6689358Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:136: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6690370Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:109: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6691628Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:155: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6692740Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:86: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6693736Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:95: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6694739Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:125: Q1 Linux host proof logic only
+2026-09-24T00:10:44.6695709Z SKIPPED [1] tests\test_e3_quota_worker.py:155: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6696680Z SKIPPED [1] tests\test_e3_quota_worker.py:164: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6697808Z SKIPPED [1] tests\test_e3_quota_worker.py:90: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6698767Z SKIPPED [1] tests\test_e3_quota_worker.py:107: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6699697Z SKIPPED [1] tests\test_e3_quota_worker.py:116: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6700617Z SKIPPED [1] tests\test_e3_quota_worker.py:135: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6701559Z SKIPPED [1] tests\test_e3_quota_worker.py:74: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6702474Z SKIPPED [1] tests\test_e3_quota_worker.py:61: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6703419Z SKIPPED [1] tests\test_e3_quota_worker.py:250: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6704341Z SKIPPED [1] tests\test_e3_quota_worker.py:183: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6705256Z SKIPPED [1] tests\test_e3_quota_worker.py:290: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6706188Z SKIPPED [1] tests\test_e3_quota_worker.py:303: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6707119Z SKIPPED [1] tests\test_e3_quota_worker.py:310: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6708032Z SKIPPED [1] tests\test_e3_quota_worker.py:192: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6709127Z SKIPPED [1] tests\test_e3_quota_worker.py:221: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6710060Z SKIPPED [1] tests\test_e3_quota_worker.py:239: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6711016Z SKIPPED [1] tests\test_e3_quota_worker.py:227: Q1 Linux process and FD worker
+2026-09-24T00:10:44.6712285Z SKIPPED [1] tests\test_local_hand_bootstrap_cwd_boundary.py:130: POSIX Git behavior test
+2026-09-24T00:10:44.6713323Z SKIPPED [1] tests\test_local_hand_build_identity.py:395: requires a real POSIX FIFO
+2026-09-24T00:10:44.6714648Z SKIPPED [1] tests\test_local_hand_build_identity.py:512: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6716248Z SKIPPED [1] tests\test_local_hand_build_identity.py:629: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6717833Z SKIPPED [1] tests\test_local_hand_build_identity.py:677: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6719435Z SKIPPED [1] tests\test_local_hand_build_identity.py:714: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6721067Z SKIPPED [1] tests\test_local_hand_build_identity.py:626: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6722603Z SKIPPED [1] tests\test_local_hand_build_identity.py:671: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6724192Z SKIPPED [1] tests\test_local_hand_build_identity.py:674: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6725795Z SKIPPED [1] tests\test_local_hand_build_identity.py:623: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:10:44.6727301Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:117: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:10:44.6728712Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:122: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:10:44.6730154Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:112: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:10:44.6731853Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:128: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:10:44.6733197Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:203: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6734462Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:206: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6735718Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:103: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6737155Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:215: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6738428Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:209: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6739714Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:212: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6740982Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:106: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:10:44.6742185Z SKIPPED [1] tests\test_local_hand_contract_boundaries.py:54: POSIX special-file observation
+2026-09-24T00:10:44.6743505Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:124: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6744977Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:205: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6746444Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:157: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6747944Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:143: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6750105Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:174: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6751799Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:91: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6753249Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:57: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6754690Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:72: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6756117Z SKIPPED [1] tests\test_local_hand_digest_admission_chain.py:48: POSIX local Git fixture; Windows deferred
+2026-09-24T00:10:44.6757480Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:100: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6758784Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:56: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6760070Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:66: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6761345Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:145: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6762628Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:109: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6763913Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:90: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6765211Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:134: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6766649Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:78: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6767800Z SKIPPED [1] tests\test_local_hand_hardening_b.py:454: POSIX dangling-link fixture
+2026-09-24T00:10:44.6768794Z SKIPPED [1] tests\test_local_hand_hardening_b.py:228: POSIX hook execution proof
+2026-09-24T00:10:44.6770133Z SKIPPED [1] tests\test_local_hand_hardening_b.py:154: POSIX symlink construction proof
+2026-09-24T00:10:44.6771502Z SKIPPED [1] tests\test_local_hand_hardening_d.py:71: symlink privilege varies on Windows
+2026-09-24T00:10:44.6772578Z SKIPPED [1] tests\test_local_hand_hardening_d.py:81: symlink privilege varies on Windows
+2026-09-24T00:10:44.6773779Z SKIPPED [1] tests\test_local_hand_hardening_d2.py:72: creating symlinks is privilege-dependent on Windows
+2026-09-24T00:10:44.6775107Z SKIPPED [1] tests\test_local_hand_hardening_d2.py:118: creating symlinks is privilege-dependent on Windows
+2026-09-24T00:10:44.6859033Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:164: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6861384Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:91: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6862719Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:152: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6864003Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:129: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6865272Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:68: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6866577Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:114: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6867795Z SKIPPED [1] tests\test_local_hand_maintenance_chain.py:56: POSIX Git Trace2 fixture; Windows deferred
+2026-09-24T00:10:44.6869032Z SKIPPED [1] tests\test_local_hand_maintenance_chain.py:41: POSIX Git Trace2 fixture; Windows deferred
+2026-09-24T00:10:44.6870562Z SKIPPED [1] tests\test_local_hand_maintenance_chain.py:16: POSIX Git Trace2 fixture; Windows deferred
+2026-09-24T00:10:44.6871827Z SKIPPED [1] tests\test_local_hand_process_chain.py:95: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6873069Z SKIPPED [1] tests\test_local_hand_process_chain.py:89: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6874577Z SKIPPED [1] tests\test_local_hand_process_chain.py:101: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6875838Z SKIPPED [1] tests\test_local_hand_process_chain.py:107: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6877082Z SKIPPED [1] tests\test_local_hand_process_chain.py:98: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6878320Z SKIPPED [1] tests\test_local_hand_process_chain.py:92: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6879632Z SKIPPED [1] tests\test_local_hand_process_chain.py:104: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:10:44.6880966Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:149: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6882385Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:141: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6883806Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:55: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6885222Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:104: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6886623Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:94: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6888016Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:131: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6889401Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:121: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6891102Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:84: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:10:44.6892409Z SKIPPED [1] tests\test_local_hand_reader_race_chain.py:64: POSIX FIFO race; Windows deferred
+2026-09-24T00:10:44.6893546Z SKIPPED [1] tests\test_local_hand_reader_race_chain.py:66: POSIX FIFO race; Windows deferred
+2026-09-24T00:10:44.6894654Z SKIPPED [1] tests\test_local_hand_reader_race_chain.py:65: POSIX FIFO race; Windows deferred
+2026-09-24T00:10:44.6895907Z SKIPPED [1] tests\test_local_hand_report_publication_chain.py:53: POSIX directory durability; Windows deferred
+2026-09-24T00:10:44.6897285Z SKIPPED [1] tests\test_local_hand_report_publication_chain.py:16: POSIX directory durability; Windows deferred
+2026-09-24T00:10:44.6898654Z SKIPPED [1] tests\test_local_hand_report_publication_chain.py:33: POSIX directory durability; Windows deferred
+2026-09-24T00:10:44.6899974Z SKIPPED [1] tests\test_local_hand_reset_residue_chain.py:54: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6901468Z SKIPPED [1] tests\test_local_hand_reset_residue_chain.py:40: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6902786Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:113: POSIX local Git fixture; Windows deferred
+2026-09-24T00:10:44.6904080Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:80: POSIX local Git fixture; Windows deferred
+2026-09-24T00:10:44.6905350Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:97: POSIX local Git fixture; Windows deferred
+2026-09-24T00:10:44.6906670Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:60: POSIX local Git fixture; Windows deferred
+2026-09-24T00:10:44.6908337Z SKIPPED [1] tests\test_local_hand_s1_recheck.py:55: POSIX directory fsync
+2026-09-24T00:10:44.6909307Z SKIPPED [1] tests\test_local_hand_s1_recheck.py:99: POSIX mode preservation semantics
+2026-09-24T00:10:44.6910409Z SKIPPED [1] tests\test_local_hand_s1_recheck.py:112: POSIX directory fsync
+2026-09-24T00:10:44.6911641Z SKIPPED [1] tests\test_local_hand_seed_and_hooks_boundary.py:15: POSIX-only hook boundary
+2026-09-24T00:10:44.6912599Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:65: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6913691Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:168: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6914941Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:162: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6916139Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:165: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6917124Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:171: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6918221Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:51: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6944290Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:174: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6946172Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:30: POSIX persistence injection; Windows deferred
+2026-09-24T00:10:44.6948065Z SKIPPED [1] tests\test_local_hand_task_admission_chain.py:104: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6949883Z SKIPPED [1] tests\test_local_hand_task_admission_chain.py:69: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6951432Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:105: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6953222Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:151: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6955629Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:148: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6956746Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:145: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6957690Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:93: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6958583Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:60: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6959466Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:70: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6960393Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:84: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6961351Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:116: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:10:44.6962217Z SKIPPED [1] tests\test_local_hand_worker.py:473: POSIX directory fsync semantics
+2026-09-24T00:10:44.6962853Z 3 failed, 252 passed, 308 skipped in 347.05s (0:05:47)
+
+Run 35937512985; head 4dcf46cd586f7af5642fb49326da79fc6f2fc768; job 107437804862; semantic-core (ubuntu-latest); conclusion=success.
+2026-09-24T00:20:55.1074021Z SKIPPED [1] tests/test_local_hand_jobs_runner.py:1173: UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; no predelegated manager admission; dedicated non-root account is required
+2026-09-24T00:20:55.1075243Z 1081 passed, 1 skipped in 356.60s (0:05:56)
+2026-09-24T00:25:10.9901847Z {"status": "PASS", "checks": 94, "commands": 292, "report": "/home/runner/work/_temp/local-hand-s1-8b6a61aef2b1450c93a893c9e9f709e6/installed-acceptance/report.json"}
+
+Run 35937512985; head 4dcf46cd586f7af5642fb49326da79fc6f2fc768; job 107437804901; semantic-core (windows-latest); conclusion=success.
+2026-09-24T00:20:45.8478696Z SKIPPED [1] tests\test_e3_host_probe.py:77: E3 host observation is Linux-only
+2026-09-24T00:20:45.8479289Z SKIPPED [1] tests\test_e3_host_probe.py:69: E3 host observation is Linux-only
+2026-09-24T00:20:45.8480480Z SKIPPED [1] tests\test_e3_host_probe.py:62: E3 host observation is Linux-only
+2026-09-24T00:20:45.8481780Z SKIPPED [1] tests\test_e3_host_probe.py:54: E3 host observation is Linux-only
+2026-09-24T00:20:45.8482793Z SKIPPED [1] tests\test_e3_host_probe.py:99: E3 host observation is Linux-only
+2026-09-24T00:20:45.8483719Z SKIPPED [1] tests\test_e3_host_probe.py:152: E3 host observation is Linux-only
+2026-09-24T00:20:45.8484628Z SKIPPED [1] tests\test_e3_host_probe.py:118: E3 host observation is Linux-only
+2026-09-24T00:20:45.8485513Z SKIPPED [1] tests\test_e3_host_probe.py:143: E3 host observation is Linux-only
+2026-09-24T00:20:45.8486550Z SKIPPED [1] tests\test_e3_host_probe.py:163: E3 host observation is Linux-only
+2026-09-24T00:20:45.8490169Z SKIPPED [1] tests\test_e3_host_probe.py:243: E3 host observation is Linux-only
+2026-09-24T00:20:45.8490882Z SKIPPED [1] tests\test_e3_host_probe.py:390: E3 host observation is Linux-only
+2026-09-24T00:20:45.8491926Z SKIPPED [1] tests\test_e3_host_probe.py:409: E3 host observation is Linux-only
+2026-09-24T00:20:45.8493175Z SKIPPED [1] tests\test_e3_host_probe.py:298: E3 host observation is Linux-only
+2026-09-24T00:20:45.8493784Z SKIPPED [1] tests\test_e3_host_probe.py:314: E3 host observation is Linux-only
+2026-09-24T00:20:45.8494368Z SKIPPED [1] tests\test_e3_host_probe.py:347: E3 host observation is Linux-only
+2026-09-24T00:20:45.8494907Z SKIPPED [1] tests\test_e3_host_probe.py:328: E3 host observation is Linux-only
+2026-09-24T00:20:45.8495436Z SKIPPED [1] tests\test_e3_host_probe.py:364: E3 host observation is Linux-only
+2026-09-24T00:20:45.8495976Z SKIPPED [1] tests\test_e3_host_probe.py:456: E3 host observation is Linux-only
+2026-09-24T00:20:45.8496513Z SKIPPED [1] tests\test_e3_host_probe.py:438: E3 host observation is Linux-only
+2026-09-24T00:20:45.8497049Z SKIPPED [1] tests\test_e3_host_probe.py:270: E3 host observation is Linux-only
+2026-09-24T00:20:45.8497576Z SKIPPED [1] tests\test_e3_host_probe.py:286: E3 host observation is Linux-only
+2026-09-24T00:20:45.8498099Z SKIPPED [1] tests\test_e3_host_probe.py:376: E3 host observation is Linux-only
+2026-09-24T00:20:45.8498919Z SKIPPED [1] tests\test_e3_quota_abi.py:218: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8499439Z SKIPPED [1] tests\test_e3_quota_abi.py:287: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8499946Z SKIPPED [1] tests\test_e3_quota_abi.py:263: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8500446Z SKIPPED [1] tests\test_e3_quota_abi.py:183: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8500947Z SKIPPED [1] tests\test_e3_quota_abi.py:274: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8501523Z SKIPPED [1] tests\test_e3_quota_abi.py:305: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8502031Z SKIPPED [1] tests\test_e3_quota_abi.py:196: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8502534Z SKIPPED [1] tests\test_e3_quota_abi.py:162: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8503039Z SKIPPED [1] tests\test_e3_quota_abi.py:143: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8503570Z SKIPPED [1] tests\test_e3_quota_abi.py:151: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8504073Z SKIPPED [1] tests\test_e3_quota_abi.py:137: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8504575Z SKIPPED [1] tests\test_e3_quota_abi.py:257: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8505079Z SKIPPED [1] tests\test_e3_quota_abi.py:206: Q1 ABI primitive is Linux-only
+2026-09-24T00:20:45.8505679Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:114: Q1 Linux real pipe descriptor inspection
+2026-09-24T00:20:45.8506360Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:125: Q1 Linux real pipe descriptor inspection
+2026-09-24T00:20:45.8507025Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:151: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:20:45.8507691Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:173: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:20:45.8508327Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:186: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:20:45.8508963Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:180: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:20:45.8509592Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:168: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:20:45.8510219Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:159: Q1 Linux host and manager LOGIC_ONLY
+2026-09-24T00:20:45.8510863Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:232: Q1 Linux cgroup observation LOGIC_ONLY
+2026-09-24T00:20:45.8511509Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:218: Q1 Linux cgroup observation LOGIC_ONLY
+2026-09-24T00:20:45.8512150Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:223: Q1 Linux cgroup observation LOGIC_ONLY
+2026-09-24T00:20:45.8513750Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:333: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8514564Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:318: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8515262Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:285: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8515938Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:296: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8516600Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:304: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8517251Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:310: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8517935Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:274: Q1 Linux controller admission LOGIC_ONLY
+2026-09-24T00:20:45.8518589Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:371: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:20:45.8519244Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:380: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:20:45.8519898Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:364: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:20:45.8520679Z SKIPPED [1] tests\test_e3_quota_controller_guard.py:352: Q1 Linux admission sequencing LOGIC_ONLY
+2026-09-24T00:20:45.8521315Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:108: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8521928Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:115: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8522523Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:119: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8523139Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:152: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8523725Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:134: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8524306Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:145: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8524936Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:167: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8525529Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:191: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8526166Z SKIPPED [1] tests\test_e3_quota_experiment_cli.py:125: Q1 experiment CLI is Linux-only
+2026-09-24T00:20:45.8526779Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:156: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8527405Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:148: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8528007Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:201: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8528612Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:144: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8529212Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:126: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8529820Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:102: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8530458Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:180: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8531065Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:134: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8531682Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:111: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8532297Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:188: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8532898Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:82: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8533935Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:93: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8534547Z SKIPPED [1] tests\test_e3_quota_fixture_cli.py:118: Offline Q1 snapshot CLI is Linux-only
+2026-09-24T00:20:45.8535255Z SKIPPED [1] tests\test_e3_quota_journal.py:137: Q1 Linux control journal
+2026-09-24T00:20:45.8535783Z SKIPPED [1] tests\test_e3_quota_journal.py:317: Q1 Linux control journal
+2026-09-24T00:20:45.8536280Z SKIPPED [1] tests\test_e3_quota_journal.py:348: Q1 Linux control journal
+2026-09-24T00:20:45.8536782Z SKIPPED [1] tests\test_e3_quota_journal.py:203: Q1 Linux control journal
+2026-09-24T00:20:45.8537278Z SKIPPED [1] tests\test_e3_quota_journal.py:298: Q1 Linux control journal
+2026-09-24T00:20:45.8537769Z SKIPPED [1] tests\test_e3_quota_journal.py:286: Q1 Linux control journal
+2026-09-24T00:20:45.8538271Z SKIPPED [1] tests\test_e3_quota_journal.py:87: Q1 Linux control journal
+2026-09-24T00:20:45.8538778Z SKIPPED [1] tests\test_e3_quota_journal.py:176: Q1 Linux control journal
+2026-09-24T00:20:45.8539294Z SKIPPED [1] tests\test_e3_quota_journal.py:62: Q1 Linux control journal
+2026-09-24T00:20:45.8539786Z SKIPPED [1] tests\test_e3_quota_journal.py:223: Q1 Linux control journal
+2026-09-24T00:20:45.8540277Z SKIPPED [1] tests\test_e3_quota_journal.py:308: Q1 Linux control journal
+2026-09-24T00:20:45.8540770Z SKIPPED [1] tests\test_e3_quota_journal.py:162: Q1 Linux control journal
+2026-09-24T00:20:45.8541257Z SKIPPED [1] tests\test_e3_quota_journal.py:189: Q1 Linux control journal
+2026-09-24T00:20:45.8542370Z SKIPPED [1] tests\test_e3_quota_journal.py:99: Q1 Linux control journal
+2026-09-24T00:20:45.8542882Z SKIPPED [1] tests\test_e3_quota_journal.py:128: Q1 Linux control journal
+2026-09-24T00:20:45.8543377Z SKIPPED [1] tests\test_e3_quota_journal.py:363: Q1 Linux control journal
+2026-09-24T00:20:45.8543947Z SKIPPED [1] tests\test_e3_quota_journal.py:327: Q1 Linux control journal
+2026-09-24T00:20:45.8544444Z SKIPPED [1] tests\test_e3_quota_journal.py:231: Q1 Linux control journal
+2026-09-24T00:20:45.8544939Z SKIPPED [1] tests\test_e3_quota_journal.py:269: Q1 Linux control journal
+2026-09-24T00:20:45.8545431Z SKIPPED [1] tests\test_e3_quota_journal.py:252: Q1 Linux control journal
+2026-09-24T00:20:45.8545959Z SKIPPED [1] tests\test_e3_quota_journal.py:383: Q1 Linux control journal
+2026-09-24T00:20:45.8546450Z SKIPPED [1] tests\test_e3_quota_journal.py:154: Q1 Linux control journal
+2026-09-24T00:20:45.8546940Z SKIPPED [1] tests\test_e3_quota_monitor.py:85: Q1 Linux ABI contract
+2026-09-24T00:20:45.8547431Z SKIPPED [1] tests\test_e3_quota_monitor.py:114: Q1 Linux ABI contract
+2026-09-24T00:20:45.8547913Z SKIPPED [1] tests\test_e3_quota_monitor.py:156: Q1 Linux ABI contract
+2026-09-24T00:20:45.8548387Z SKIPPED [1] tests\test_e3_quota_monitor.py:138: Q1 Linux ABI contract
+2026-09-24T00:20:45.8548859Z SKIPPED [1] tests\test_e3_quota_monitor.py:97: Q1 Linux ABI contract
+2026-09-24T00:20:45.8549381Z SKIPPED [1] tests\test_e3_quota_monitor.py:189: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8549975Z SKIPPED [1] tests\test_e3_quota_monitor.py:310: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8550545Z SKIPPED [1] tests\test_e3_quota_monitor.py:323: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8551098Z SKIPPED [1] tests\test_e3_quota_monitor.py:220: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8551648Z SKIPPED [1] tests\test_e3_quota_monitor.py:202: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8552195Z SKIPPED [1] tests\test_e3_quota_monitor.py:258: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8552749Z SKIPPED [1] tests\test_e3_quota_monitor.py:294: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8553643Z SKIPPED [1] tests\test_e3_quota_monitor.py:273: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8554237Z SKIPPED [1] tests\test_e3_quota_monitor.py:245: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8554819Z SKIPPED [1] tests\test_e3_quota_monitor.py:232: Linux pipe/ABI observation core
+2026-09-24T00:20:45.8555370Z SKIPPED [1] tests\test_e3_quota_runtime.py:358: Q1 Linux controller assembly
+2026-09-24T00:20:45.8555896Z SKIPPED [1] tests\test_e3_quota_runtime.py:349: Q1 Linux controller assembly
+2026-09-24T00:20:45.8556543Z SKIPPED [1] tests\test_e3_quota_runtime.py:288: Q1 Linux controller assembly
+2026-09-24T00:20:45.8557077Z SKIPPED [1] tests\test_e3_quota_runtime.py:383: Q1 Linux controller assembly
+2026-09-24T00:20:45.8557596Z SKIPPED [1] tests\test_e3_quota_runtime.py:402: Q1 Linux controller assembly
+2026-09-24T00:20:45.8558115Z SKIPPED [1] tests\test_e3_quota_runtime.py:310: Q1 Linux controller assembly
+2026-09-24T00:20:45.8558666Z SKIPPED [1] tests\test_e3_quota_runtime.py:261: Q1 Linux controller assembly
+2026-09-24T00:20:45.8559184Z SKIPPED [1] tests\test_e3_quota_runtime.py:300: Q1 Linux controller assembly
+2026-09-24T00:20:45.8559703Z SKIPPED [1] tests\test_e3_quota_runtime.py:278: Q1 Linux controller assembly
+2026-09-24T00:20:45.8560217Z SKIPPED [1] tests\test_e3_quota_runtime.py:412: Q1 Linux controller assembly
+2026-09-24T00:20:45.8560730Z SKIPPED [1] tests\test_e3_quota_runtime.py:370: Q1 Linux controller assembly
+2026-09-24T00:20:45.8561246Z SKIPPED [1] tests\test_e3_quota_runtime.py:391: Q1 Linux controller assembly
+2026-09-24T00:20:45.8561764Z SKIPPED [1] tests\test_e3_quota_runtime.py:440: Q1 Linux controller assembly
+2026-09-24T00:20:45.8562288Z SKIPPED [1] tests\test_e3_quota_runtime.py:430: Q1 Linux controller assembly
+2026-09-24T00:20:45.8562825Z SKIPPED [1] tests\test_e3_quota_runtime.py:419: Q1 Linux controller assembly
+2026-09-24T00:20:45.8563450Z SKIPPED [1] tests\test_e3_quota_runtime.py:334: Q1 Linux controller assembly
+2026-09-24T00:20:45.8563967Z SKIPPED [1] tests\test_e3_quota_runtime.py:320: Q1 Linux controller assembly
+2026-09-24T00:20:45.8564526Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:48: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8565126Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:71: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8565725Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:152: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8566322Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:98: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8566915Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:60: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8567542Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:126: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8568139Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:112: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8568743Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:105: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8569340Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:81: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8569947Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:136: Q1 Linux anonymous pipe capture
+2026-09-24T00:20:45.8570552Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:232: Q1 Linux fixed systemd assembly
+2026-09-24T00:20:45.8571145Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:186: Q1 Linux fixed systemd assembly
+2026-09-24T00:20:45.8571764Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:214: Q1 Linux fixed systemd assembly
+2026-09-24T00:20:45.8572358Z SKIPPED [1] tests\test_e3_quota_runtime_capture.py:223: Q1 Linux fixed systemd assembly
+2026-09-24T00:20:45.8572941Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:81: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8573853Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:172: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8574467Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:136: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8575031Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:109: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8575584Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:155: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8576144Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:86: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8576730Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:95: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8577288Z SKIPPED [1] tests\test_e3_quota_runtime_host.py:125: Q1 Linux host proof logic only
+2026-09-24T00:20:45.8578346Z SKIPPED [1] tests\test_e3_quota_worker.py:155: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8578957Z SKIPPED [1] tests\test_e3_quota_worker.py:164: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8579498Z SKIPPED [1] tests\test_e3_quota_worker.py:90: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8580035Z SKIPPED [1] tests\test_e3_quota_worker.py:107: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8580561Z SKIPPED [1] tests\test_e3_quota_worker.py:116: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8581175Z SKIPPED [1] tests\test_e3_quota_worker.py:135: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8581746Z SKIPPED [1] tests\test_e3_quota_worker.py:74: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8582272Z SKIPPED [1] tests\test_e3_quota_worker.py:61: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8582792Z SKIPPED [1] tests\test_e3_quota_worker.py:250: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8583321Z SKIPPED [1] tests\test_e3_quota_worker.py:183: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8583844Z SKIPPED [1] tests\test_e3_quota_worker.py:290: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8584361Z SKIPPED [1] tests\test_e3_quota_worker.py:303: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8584984Z SKIPPED [1] tests\test_e3_quota_worker.py:310: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8585534Z SKIPPED [1] tests\test_e3_quota_worker.py:192: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8586051Z SKIPPED [1] tests\test_e3_quota_worker.py:221: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8586573Z SKIPPED [1] tests\test_e3_quota_worker.py:239: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8587087Z SKIPPED [1] tests\test_e3_quota_worker.py:227: Q1 Linux process and FD worker
+2026-09-24T00:20:45.8587654Z SKIPPED [1] tests\test_local_hand_bootstrap_cwd_boundary.py:130: POSIX Git behavior test
+2026-09-24T00:20:45.8588256Z SKIPPED [1] tests\test_local_hand_build_identity.py:395: requires a real POSIX FIFO
+2026-09-24T00:20:45.8589015Z SKIPPED [1] tests\test_local_hand_build_identity.py:512: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8589939Z SKIPPED [1] tests\test_local_hand_build_identity.py:629: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8590828Z SKIPPED [1] tests\test_local_hand_build_identity.py:677: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8591708Z SKIPPED [1] tests\test_local_hand_build_identity.py:714: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8592580Z SKIPPED [1] tests\test_local_hand_build_identity.py:626: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8593454Z SKIPPED [1] tests\test_local_hand_build_identity.py:671: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8594837Z SKIPPED [1] tests\test_local_hand_build_identity.py:674: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8595755Z SKIPPED [1] tests\test_local_hand_build_identity.py:623: Plugin publication is Linux-only; wheel identity remains cross-platform
+2026-09-24T00:20:45.8596596Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:117: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:20:45.8597379Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:122: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:20:45.8598151Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:112: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:20:45.8598928Z SKIPPED [1] tests\test_local_hand_capture_interrupt.py:128: POSIX signal/process-group fixture; Windows deferred
+2026-09-24T00:20:45.8599666Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:203: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8600546Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:206: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8601294Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:103: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8602016Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:215: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8602721Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:209: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8603471Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:212: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8604169Z SKIPPED [1] tests\test_local_hand_capture_start_chain.py:106: POSIX lifetime fixture; Windows deferred
+2026-09-24T00:20:45.8604873Z SKIPPED [1] tests\test_local_hand_contract_boundaries.py:54: POSIX special-file observation
+2026-09-24T00:20:45.8605631Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:124: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8606460Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:205: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8607267Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:157: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8608196Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:143: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8609010Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:174: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8609819Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:91: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8610620Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:57: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8611417Z SKIPPED [1] tests\test_local_hand_controller_persistence_chain.py:72: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8612192Z SKIPPED [1] tests\test_local_hand_digest_admission_chain.py:48: POSIX local Git fixture; Windows deferred
+2026-09-24T00:20:45.8612919Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:100: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8613676Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:56: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8614818Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:66: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8615542Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:145: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8616271Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:109: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8616990Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:90: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8617707Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:134: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8618436Z SKIPPED [1] tests\test_local_hand_fetch_snapshot_chain.py:78: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8619115Z SKIPPED [1] tests\test_local_hand_hardening_b.py:454: POSIX dangling-link fixture
+2026-09-24T00:20:45.8619691Z SKIPPED [1] tests\test_local_hand_hardening_b.py:228: POSIX hook execution proof
+2026-09-24T00:20:45.8620273Z SKIPPED [1] tests\test_local_hand_hardening_b.py:154: POSIX symlink construction proof
+2026-09-24T00:20:45.8620883Z SKIPPED [1] tests\test_local_hand_hardening_d.py:71: symlink privilege varies on Windows
+2026-09-24T00:20:45.8621495Z SKIPPED [1] tests\test_local_hand_hardening_d.py:81: symlink privilege varies on Windows
+2026-09-24T00:20:45.8622160Z SKIPPED [1] tests\test_local_hand_hardening_d2.py:72: creating symlinks is privilege-dependent on Windows
+2026-09-24T00:20:45.8622884Z SKIPPED [1] tests\test_local_hand_hardening_d2.py:118: creating symlinks is privilege-dependent on Windows
+2026-09-24T00:20:45.8623750Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:164: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8624472Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:91: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8625182Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:152: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8625885Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:129: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8626591Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:68: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8627287Z SKIPPED [6] tests\test_local_hand_state_lookup_chain.py:114: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8627994Z SKIPPED [1] tests\test_local_hand_maintenance_chain.py:56: POSIX Git Trace2 fixture; Windows deferred
+2026-09-24T00:20:45.8628735Z SKIPPED [1] tests\test_local_hand_maintenance_chain.py:41: POSIX Git Trace2 fixture; Windows deferred
+2026-09-24T00:20:45.8629434Z SKIPPED [1] tests\test_local_hand_maintenance_chain.py:16: POSIX Git Trace2 fixture; Windows deferred
+2026-09-24T00:20:45.8630126Z SKIPPED [1] tests\test_local_hand_process_chain.py:95: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8630913Z SKIPPED [1] tests\test_local_hand_process_chain.py:89: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8632040Z SKIPPED [1] tests\test_local_hand_process_chain.py:101: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8632767Z SKIPPED [1] tests\test_local_hand_process_chain.py:107: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8633500Z SKIPPED [1] tests\test_local_hand_process_chain.py:98: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8634196Z SKIPPED [1] tests\test_local_hand_process_chain.py:92: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8634899Z SKIPPED [1] tests\test_local_hand_process_chain.py:104: POSIX process-group fixtures; Windows deferred
+2026-09-24T00:20:45.8635645Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:149: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8636436Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:141: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8637227Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:55: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8638014Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:104: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8638834Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:94: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8639614Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:131: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8640398Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:121: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8641178Z SKIPPED [1] tests\test_local_hand_read_failure_chain.py:84: POSIX local Git/read-failure fixtures; Windows deferred
+2026-09-24T00:20:45.8641888Z SKIPPED [1] tests\test_local_hand_reader_race_chain.py:64: POSIX FIFO race; Windows deferred
+2026-09-24T00:20:45.8642524Z SKIPPED [1] tests\test_local_hand_reader_race_chain.py:66: POSIX FIFO race; Windows deferred
+2026-09-24T00:20:45.8643187Z SKIPPED [1] tests\test_local_hand_reader_race_chain.py:65: POSIX FIFO race; Windows deferred
+2026-09-24T00:20:45.8643890Z SKIPPED [1] tests\test_local_hand_report_publication_chain.py:53: POSIX directory durability; Windows deferred
+2026-09-24T00:20:45.8644662Z SKIPPED [1] tests\test_local_hand_report_publication_chain.py:16: POSIX directory durability; Windows deferred
+2026-09-24T00:20:45.8645422Z SKIPPED [1] tests\test_local_hand_report_publication_chain.py:33: POSIX directory durability; Windows deferred
+2026-09-24T00:20:45.8646282Z SKIPPED [1] tests\test_local_hand_reset_residue_chain.py:54: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8647001Z SKIPPED [1] tests\test_local_hand_reset_residue_chain.py:40: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8647725Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:113: POSIX local Git fixture; Windows deferred
+2026-09-24T00:20:45.8648472Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:80: POSIX local Git fixture; Windows deferred
+2026-09-24T00:20:45.8649185Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:97: POSIX local Git fixture; Windows deferred
+2026-09-24T00:20:45.8649892Z SKIPPED [1] tests\test_local_hand_result_encoding_chain.py:60: POSIX local Git fixture; Windows deferred
+2026-09-24T00:20:45.8650517Z SKIPPED [1] tests\test_local_hand_s1_recheck.py:55: POSIX directory fsync
+2026-09-24T00:20:45.8651071Z SKIPPED [1] tests\test_local_hand_s1_recheck.py:99: POSIX mode preservation semantics
+2026-09-24T00:20:45.8651638Z SKIPPED [1] tests\test_local_hand_s1_recheck.py:112: POSIX directory fsync
+2026-09-24T00:20:45.8652478Z SKIPPED [1] tests\test_local_hand_seed_and_hooks_boundary.py:15: POSIX-only hook boundary
+2026-09-24T00:20:45.8653205Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:65: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8654084Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:168: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8654874Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:162: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8655643Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:165: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8656421Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:171: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8657597Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:51: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8658398Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:174: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8659212Z SKIPPED [1] tests\test_local_hand_state_persistence_chain.py:30: POSIX persistence injection; Windows deferred
+2026-09-24T00:20:45.8659972Z SKIPPED [1] tests\test_local_hand_task_admission_chain.py:104: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8880378Z SKIPPED [1] tests\test_local_hand_task_admission_chain.py:69: POSIX local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8881405Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:105: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8882338Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:151: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8883278Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:148: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8884258Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:145: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8885175Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:93: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8886089Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:60: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8886995Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:70: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8887892Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:84: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8888797Z SKIPPED [1] tests\test_local_hand_untracked_chain.py:116: POSIX fault and local Git fixtures; Windows deferred
+2026-09-24T00:20:45.8889606Z SKIPPED [1] tests\test_local_hand_worker.py:473: POSIX directory fsync semantics
+2026-09-24T00:20:45.8890507Z 255 passed, 308 skipped in 333.29s (0:05:33)
+2026-09-24T00:20:58.0144037Z {"status": "PASS", "checks": 10, "commands": 10, "report": "D:\\a\\_temp\\local-hand-s1-5d1aa996c58f40409ba4b5187d1d87c2\\installed-acceptance\\report.json"}

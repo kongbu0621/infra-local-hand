@@ -49,7 +49,9 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 准确源码 `e9b21b3`、194 项定向回归及仓库内原始日志见
 [单次管理实验入口验证](E3_QUOTA_Q1_EXPERIMENT_VERIFICATION.md)。
 首轮 Windows CI 暴露合成 Linux 报告测试未明确模拟 `O_PATH`；测试修复 `273eb0a`
-仅固定测试模型，10 项局部回归通过，真实 Windows CI 重测结果按同一验证记录另记。
+仅固定测试模型，10 项局部回归通过。准确候选 `4dcf46c` 的 CI 已完整 success：
+Linux 1081 passed/1 skipped、安装 94 checks/292 commands；Windows 255 passed/308 skipped、安装 10/10。
+首轮失败、修复和最终准确结果均在同一验证记录及入库 CI 摘录中保留。
 
 ## 已实现的代码
 

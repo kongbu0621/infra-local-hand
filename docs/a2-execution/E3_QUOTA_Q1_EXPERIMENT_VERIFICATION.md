@@ -80,6 +80,8 @@ CLI 9 项及最终 194 项通过。没有将首次失败改写为成功。
 中，Windows job `107435202820` 的源码步骤失败：**3 failed、252 passed、308 skipped**。
 安装验证因前序失败未执行，不记 PASS。失败均位于新诊断编码测试：合成 Linux native 成功报告
 经 `match_report` 检查时，真实 Windows `os` 没有 `O_PATH`，故正确拒绝 `FD_MODE`。
+同一首轮的 Linux job `107435202806` 完成 success：源码 **1081 passed、1 skipped**，
+安装 **94 checks、292 commands PASS**。整个首轮 workflow 仍为 failure。
 
 测试修复提交 `273eb0a77538a4617f157fa79f9b32cac4a3fa2f`，
 tree `41393c4dda141a4ed435487ff5550447dfb7f7a0`，仅修改
@@ -92,7 +94,25 @@ tree `41393c4dda141a4ed435487ff5550447dfb7f7a0`，仅修改
 - [修复后定向原始日志](validation/q1-experiment-20260924/windows-portability-targeted.log)
 - [修复后准确命令、退出码及测试文件摘要](validation/q1-experiment-20260924/windows-portability-targeted.json)
 
-真实 Windows 修复重测及 Linux CI 完整结果待准确候选完成后补记。
+## 修复后准确候选 CI
+
+修复报告 head `4dcf46cd586f7af5642fb49326da79fc6f2fc768`，
+tree `2bc7b81ffd829475cd3fb249f9d9583af40a045f`，
+[run 35937512985](https://github.com/kongbu0621/infra-local-hand/actions/runs/35937512985)，attempt 1。
+该候选的全部运行代码仍与源码检查点 `e9b21b3` 相同，仅有上述测试修复及后续证据文档。
+
+整个修复后 workflow 已完成 **success**，准确结果为：
+
+| 平台与 job | 源码 passed | 源码 skipped | 独立安装 |
+| --- | ---: | ---: | --- |
+| Linux `107437804862` | 1081 | 1 | 94 checks、292 commands PASS |
+| Windows `107437804901` | 255 | 308 | 10 checks、10 commands PASS |
+
+运行/作业身份、步骤结论和完整抓取日志摘要见
+[CI 元数据](validation/q1-experiment-20260924/ci-runs.json)；准确计数、跳过原因和安装输出见
+[CI 原日志摘录](validation/q1-experiment-20260924/ci-excerpts.log)。
+首轮与修复轮分开记账；后续本提交仅补验证记录，没有再改变源码或测试。
+Windows 的跳过项仍按平台记录，不能解释为 Linux systemd/quota 已实测；生产封堵不因 CI success 解除。
 
 ## 固定来源
 
