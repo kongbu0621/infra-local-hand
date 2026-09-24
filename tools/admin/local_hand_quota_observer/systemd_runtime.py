@@ -272,12 +272,18 @@ class Q1Controller:
         raise Rejected("MANAGER_COMMAND_UNCERTAIN")
 
     def _show(self, binding, *, absolute_end_ns):
-        raw = self._command(("show", binding.unit, "--property=" + ",".join(SHOW_FIELDS)),
+        raw = self._command(("show", binding.unit, "--all", "--property=" + ",".join(SHOW_FIELDS)),
                             absolute_end_ns=absolute_end_ns)
         pairs = [line.split("=", 1) for line in raw.decode("utf-8", "strict").splitlines()]
         require(all(len(item) == 2 for item in pairs) and len({item[0] for item in pairs}) == len(pairs),
                 "UNIT_PROPERTIES_FORMAT")
-        return fields(dict(pairs), SHOW_FIELDS)
+        values = dict(pairs)
+        # Pinned systemctl-show.c emits Exec* array entries in a loop: an empty
+        # command array has no output line even with --all. Only these standard
+        # Service hooks have that representation; other omissions stay fatal.
+        for hook in ("ExecStop", "ExecStopPost", "ExecReload"):
+            values.setdefault(hook, "")
+        return fields(values, SHOW_FIELDS)
 
     def _unit_identity(self, binding, values, *, invocation=None):
         require(values["Id"] == binding.unit and values["LoadState"] == "loaded", "UNIT_NOT_RETAINED")

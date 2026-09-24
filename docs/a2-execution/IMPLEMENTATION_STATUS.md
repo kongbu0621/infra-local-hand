@@ -41,6 +41,12 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 默认 wheel 安装分别 94/10 项检查通过；真实 E3 跳过和管理侧安装未覆盖在报告中保留。
 实际输入仍 NOT_PREPARED；Q1 实机与 E3 仍 BLOCKED，未进入 Q2。
 
+随后补充[单次管理实验入口](E3_QUOTA_Q1_EXPERIMENT_HANDOFF.md)：在接触 journal 前核验
+控制器的实际 systemd/cgroup/进程限制及匿名管道，再使用原票据进行一次运行或恢复；
+输出有限私有诊断，保留原字节及独立错误，输出失败不重投。入口不创建监督器，外层受信启动器
+需在 unit 启动后固定自身 InvocationID/cgroup 身份并保留 PID 地进入入口；该装配及真实 fixture
+尚未交付。完整 observer/Q2/三单元验收仍待完成，生产封堵保持。
+
 ## 已实现的代码
 
 | 边界 | 实现与可观察行为 |
@@ -53,6 +59,7 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 | Q1 固定对象与结果判定 | `admin/local_hand_quota_observer/admission.py`、`supervision.py`；不可变配置映射、原执行/截止时间绑定、有限非阻塞采集、独立进程退出事实与原语回包分别核对。内部判定核心；实际 adapter 由独立 Q1 runtime 源码连接，未授予作业执行 |
 | Q1 单次运行装配 | 保护配置/安装及 worker、固定 systemd query unit、准确能力集和 native 参数级过滤、永久意图 journal、启动竞态/原身份停止与有界采集；真实 systemd/quota 未实测，恢复丢失原采集归属保持 UNKNOWN；不替代 Q2 服务 |
 | Q1 离线输入校验 | 严格快照摘要/源码/安装绑定及全部 slot 路径检查；计费域去重，声明额度不冒充实际预留；CLI 无宿主执行，真实权限/配额/监督仍待实测 |
+| Q1 管理实验入口 | 原票据 run/recover 单次连接、执行前实际监督核验、有界私有诊断及失败不重投；外层启动装配和真实 fixture 尚缺，Outcome 未携带的 EOF 事实不补造，不提供完整 Q1 出口证明 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |

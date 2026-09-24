@@ -12,6 +12,7 @@ on:
       - "tools/build_plugin.py"
       - "tools/probe_e3_host.py"
       - "tools/validate_q1_fixture.py"
+      - "tools/run_q1_experiment.py"
       - "requirements-mcp-linux-x86_64-py312.lock"
       - "tests/**"
       - "pyproject.toml"
@@ -32,6 +33,7 @@ on:
       - "tools/build_plugin.py"
       - "tools/probe_e3_host.py"
       - "tools/validate_q1_fixture.py"
+      - "tools/run_q1_experiment.py"
       - "requirements-mcp-linux-x86_64-py312.lock"
       - "tests/**"
       - "pyproject.toml"
@@ -117,7 +119,7 @@ jobs:
                   or name.startswith("tools/local_hand_mcp/")
                   or name.startswith("tools/admin/local_hand_quota_observer/")
                   or name.startswith("plugins/local-hand-a2/")
-                  or name in {"tools/build_plugin.py", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "requirements-mcp-linux-x86_64-py312.lock"}
+                  or name in {"tools/build_plugin.py", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "tools/run_q1_experiment.py", "requirements-mcp-linux-x86_64-py312.lock"}
                   or name.startswith("tests/")
                   or name in {"pyproject.toml", "setup.py", "requirements-build.txt", "tools/verify_installed.py"}
                   or name == ".github/workflows/local-hand-v0-1-validation.yml"
@@ -194,7 +196,7 @@ jobs:
         shell: python
         run: |
           import os, subprocess
-          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp", "tools/probe_e3_host.py", "plugins", "tests"], check=True)
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp", "tools/admin/local_hand_quota_observer", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "tools/run_q1_experiment.py", "plugins", "tests"], check=True)
       - name: Run platform-scoped source tests (A2 jobs are Linux only)
         shell: python
         run: |

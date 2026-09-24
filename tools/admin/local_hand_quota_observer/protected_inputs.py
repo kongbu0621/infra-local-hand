@@ -84,7 +84,7 @@ def decode_runtime(raw, expected_digest):
                          integer(value["max_output_bytes"], 8192, 32768))
 
 
-def validate_geometry(config, manifest, runtime_path, journal_path):
+def validate_geometry(config, manifest, runtime_path, journal_path, *, extra_input=None):
     """Pure lexical checks shared by offline review and actual query admission.
 
     Check ALL declared roots, including slots not selected by the current query.
@@ -99,6 +99,8 @@ def validate_geometry(config, manifest, runtime_path, journal_path):
     inputs = (runtime_path, config.manifest_path, config.python_path, config.worker_path, config.native_path,
               config.systemd_run_path, config.systemctl_path,
               *(str(PurePosixPath(config.worker_path).parent / name) for name, _ in config.package_files))
+    if extra_input is not None:
+        inputs += (path(extra_input),)
 
     def overlap(left, right):
         first, second = PurePosixPath(left), PurePosixPath(right)

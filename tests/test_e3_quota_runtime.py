@@ -26,6 +26,49 @@ class FakeClock:
         self.now += max(1, int(seconds * 1_000_000_000))
 
 
+class ShowPropertiesTests(unittest.TestCase):
+    """Official systemctl empty-Exec-array rendering, with no manager process."""
+    def setUp(self):
+        self.bound = binding()
+        self.controller = object.__new__(r.Q1Controller)
+        self.controller.config = runtime()
+        self.values = dict.fromkeys(r.SHOW_FIELDS, '')
+        self.values.update(Id=self.bound.unit, LoadState='loaded', InvocationID=INVOCATION,
+                           ControlGroup=self.bound.cgroup, Slice=self.controller.config.query_slice,
+                           Type='exec', ExitType='cgroup', RemainAfterExit='yes', Restart='no',
+                           KillMode='control-group')
+
+    def show(self, values, suffix=''):
+        raw = ('\n'.join(key + '=' + value for key, value in values.items()) + '\n' + suffix).encode()
+        with patch.object(self.controller, '_command', return_value=raw) as command:
+            result = self.controller._show(self.bound, absolute_end_ns=NOW + 1)
+        self.assertIn('--all', command.call_args.args[0])
+        return result
+
+    def test_empty_hook_arrays_may_be_omitted_but_are_normalized_only_by_name(self):
+        hooks = ('ExecStop', 'ExecStopPost', 'ExecReload')
+        raw_values = {key: value for key, value in self.values.items() if key not in hooks}
+        values = self.show(raw_values)
+        self.assertEqual(values, self.values)
+        self.assertEqual(self.controller._unit_identity(self.bound, values), INVOCATION)
+
+    def test_nonempty_hooks_are_preserved_and_rejected(self):
+        for hook in ('ExecStop', 'ExecStopPost', 'ExecReload'):
+            values = self.show(dict(self.values, **{hook: '{ path=/synthetic/hook ; }'}))
+            with self.subTest(hook=hook), self.assertRaisesRegex(a.Rejected, 'UNIT_CONFIG_CHANGED'):
+                self.controller._unit_identity(self.bound, values)
+
+    def test_other_missing_duplicate_and_unknown_properties_remain_errors(self):
+        for missing in set(r.SHOW_FIELDS) - {'ExecStop', 'ExecStopPost', 'ExecReload'}:
+            values = {key: value for key, value in self.values.items() if key != missing}
+            with self.subTest(missing=missing), self.assertRaises(a.Rejected):
+                self.show(values)
+        with self.assertRaisesRegex(a.Rejected, 'UNIT_PROPERTIES_FORMAT'):
+            self.show(self.values, suffix='Id=other.service\n')
+        with self.assertRaises(a.Rejected):
+            self.show(dict(self.values, Unknown=''))
+
+
 class FakeJournal:
     control_dir = "/synthetic-control/observer"
 

@@ -15,6 +15,8 @@
 | `journal.py` | 最多 32 个永久意图，文件与目录 fsync 后才交付；原请求/资源永不自动重用 |
 | `systemd_runtime.py` | 固定 system-manager argv、启动竞态等待、原 InvocationID 停止、专用父 cgroup 空状态、双管道与采集进程退出 |
 | `fixture_inputs.py` / `tools/validate_q1_fixture.py` | 两份固定字节快照的离线绑定与全部路径交叠检查；不读取声明的宿主对象、不创建 ticket 或启动查询 |
+| `controller_guard.py` / `experiment.py` / `tools/run_q1_experiment.py` | 单次管理测试入口；先核验自身实际监督，再接原票据运行或恢复，不准备宿主或重投 |
+| `experiment_evidence.py` | 有界私有诊断记录，保留原始输出与各层错误；不是 Q2 receipt 或完整验收证明 |
 
 ## 精确行为
 
@@ -174,3 +176,18 @@ Q1 实机出口通过前不把普通作业切到新机制；随后依次 Q2 绑�
 [systemd service.c](https://github.com/systemd/systemd/blob/70bae7648f2c18010187c9cf20093155eaa26029/src/core/service.c)
 的 SERVICE_EXITED prune 和 stdio 释放，及上文固定 Linux quota.c 的权限/mnt_want_write。
 源码核对不能替代目标版本的实测。
+
+## 单次管理测试入口
+
+[准确调用与监督交接](../../../docs/a2-execution/E3_QUOTA_Q1_EXPERIMENT_HANDOFF.md)规定
+`tools/run_q1_experiment.py` 的受保护输入、外部摘要、原票据和当前控制器身份。
+入口要求 Linux、root 与 `python -I -B`；在构造 journal 前，核验实际 MainPID/InvocationID、
+初始 user namespace、独立 cgroup2 及 memory/pids/cpu 限制、进程 CPU rlimit 和独立匿名输出管道。
+管理观察只调用一次固定 systemctl，不通过配置布尔值代替实际检查。
+
+原请求只选择一次 `run` 或 `recover_original`。关闭账本失败单独记录；中断尽量保留原字节，
+编码或管道失败均不补投。单条私有诊断最多 128 KiB，与 Q2 的 32 KiB socket 上限分开；
+不补造内部 Outcome 没有携带的 EOF 事实，`evidence_complete` 与全部准入标志保持 false。
+
+准确控制器身份在 unit 启动后才存在，仍需外层受信启动器在同一受监督 unit 中固定输入后
+保留 PID 地 exec 此入口；该启动器及真实 fixture 尚未交付，不能把本入口当作完整 Q1 验收。
