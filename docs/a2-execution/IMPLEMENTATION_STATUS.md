@@ -71,7 +71,9 @@ Windows 261 passed/343 skipped、独立安装 10 checks/10 commands。
 后续隔离 fixture 调试定位并修正了 systemd 255 显式 `User=0` 留下继承能力的启动冲突。
 worker 严格权限检查未放宽，235 项 Q1 开发回归通过、0 跳过。私有候选参数只读检查由用户
 截图反馈通过，未据此宣称 quota enforcement 或 Q1/E3 通过；原 UNKNOWN 及预留继续保留。
-准确源码与验证边界见 [默认 root 启动修正](E3_QUOTA_Q1_DEFAULT_ROOT_VERIFICATION.md)。
+修正源码已发布为 `45ebc2f`；准确候选 `97e12d8` 的 CI `35975888188` 全部通过，
+Linux 1122 passed/1 skipped、安装 94 checks/292 commands；Windows 261 passed/343 skipped、
+安装 10 checks/10 commands。准确源码与验证边界见 [默认 root 启动修正](E3_QUOTA_Q1_DEFAULT_ROOT_VERIFICATION.md)。
 
 ## 已实现的代码
 
@@ -83,7 +85,7 @@ worker 严格权限检查未放宽，235 项 Q1 开发回归通过、0 跳过。
 | 进程监督 | `runner/bootstrap/result_reader/ledger_jobs`；新阶段依次使用 bootstrap、helper、result_reader 三个固定 unit，每次交付有独立持久意图和启动围栏；启动根身份、硬配额和计划发布在 bootstrap 内进行，helper 写入前再验根身份。结果文件由只读 reader 读取，observer 只收有界非阻塞管道；生产入口仍固定拒绝启用 |
 | Q1 内部 quota ABI | 独立管理侧开发目录中的原生 FD 查询原语，固定观察调用、errno/前后身份和有界 JSON；不接受路径或修改动作，未安装、未提权、未接入 broker，不在默认 wheel/Plugin 中。模拟成功不是宿主准入，完整 observer 仍待实现 |
 | Q1 固定对象与结果判定 | `admin/local_hand_quota_observer/admission.py`、`supervision.py`；不可变配置映射、原执行/截止时间绑定、有限非阻塞采集、独立进程退出事实与原语回包分别核对。内部判定核心；实际 adapter 由独立 Q1 runtime 源码连接，未授予作业执行 |
-| Q1 单次运行装配 | 保护配置/安装及 worker、固定 systemd query unit、准确能力集和 native 参数级过滤、永久意图 journal、启动竞态/原身份停止与有界采集；真实 systemd/quota 未实测，恢复丢失原采集归属保持 UNKNOWN；不替代 Q2 服务 |
+| Q1 单次运行装配 | 保护配置/安装及 worker、固定 systemd query unit、准确能力集和 native 参数级过滤、永久意图 journal、启动竞态/原身份停止与有界采集；真实启动已取得失败现场及候选参数 pre-exec 反馈，原生 quota 尚未成功；恢复丢失原采集归属保持 UNKNOWN；不替代 Q2 服务 |
 | Q1 离线输入校验 | 严格快照摘要/源码/安装绑定及全部 slot 路径检查；计费域去重，声明额度不冒充实际预留；CLI 无宿主执行，真实权限/配额/监督仍待实测 |
 | Q1 管理实验入口 | 原票据 run/recover 单次连接、执行前实际监督核验、有界私有诊断及失败不重投；Outcome 未携带的 EOF 事实不补造，不提供完整 Q1 出口证明 |
 | Q1 单元内启动与外部采集 | 固定安装清单、当前身份绑定、保护输入 create-only 交付、同 PID exec；独立有限管理采集保留原字节/EOF/客户端退出/关闭错误，输出已知停止身份但不执行停止；真实 fixture、外层监督/停止和实机验收尚缺 |

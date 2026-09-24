@@ -47,3 +47,31 @@ allocation、slot/root/project 预留继续保留，不能覆盖为成功或靠�
 
 本地没有重复整个产品安装矩阵；新候选 CI 在发布后按准确 head 单独核对，
 不得沿用旧 run 的通过数。发布身份和 CI 状态以同目录 publication-status.json 为准。
+
+## 发布身份
+
+已发布源码 `45ebc2fd1fe70cfa4680f6ad71f0badc2a4ec0a3`，与本地被测源码
+tree `d82ec1c3194bb39da07545fff0429e4466abc68e` 完全相同；初始开发证据发布为
+`97e12d86d52243747f694827415066c593f851b0`。GitHub 接口生成的提交元数据不同，
+原本地提交保留，逐文件摘要和文件树均已比对，详见
+[publication-map.json](validation/q1-default-root-20260924/publication-map.json)。
+
+VM 固定新源码时应并排安装发布提交 `45ebc2f`，保留原 `37a24a1` 及其配置、
+原票据、永久 journal 和证据。源码 staging 不代表新配置准入，不执行 quota 查询。
+
+## 准确候选 CI
+
+[run 35975888188](https://github.com/kongbu0621/infra-local-hand/actions/runs/35975888188)，
+attempt 1，head `97e12d86d52243747f694827415066c593f851b0`，三项 job 全部 success。
+
+| 平台 | 源码通过 | 源码跳过 | 独立安装 |
+| --- | ---: | ---: | --- |
+| Linux | 1122 | 1 | PASS：94 checks、292 commands |
+| Windows | 261 | 343 | PASS：10 checks、10 commands |
+
+准确 job/步骤、规范化完整日志摘要及逐项跳过原因见
+[CI 元数据](validation/q1-default-root-20260924/ci-runs.json)，
+原始对应行见 [CI 摘录](validation/q1-default-root-20260924/ci-excerpts.log)。
+Linux 的唯一跳过仍是缺少专用 non-root / predelegated manager 准入的真实 cgroup 集成，
+明确报 `E3_SUPERVISION_UNVERIFIED`。Windows 的平台跳过单列，不计入通过。
+本次补记只涉及文档和开发证据，不改变已验证源码、测试或 workflow。

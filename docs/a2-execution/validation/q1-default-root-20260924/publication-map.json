@@ -1,0 +1,25 @@
+{
+  "observed_at_utc": "2026-09-24T08:39:38.551681+00:00",
+  "repository": "kongbu0621/infra-local-hand",
+  "branch": "main",
+  "force": false,
+  "local_commits_preserved": true,
+  "commits": [
+    {
+      "kind": "source",
+      "local_commit": "3d074795eb3d69f3e4d81205085af36e5fb7ae61",
+      "published_commit": "45ebc2fd1fe70cfa4680f6ad71f0badc2a4ec0a3",
+      "tree": "d82ec1c3194bb39da07545fff0429e4466abc68e",
+      "identical_file_tree": true
+    },
+    {
+      "kind": "initial_development_evidence",
+      "local_commit": "196ed6bb5035bf792600e9a8000ec9ae743433cb",
+      "published_commit": "97e12d86d52243747f694827415066c593f851b0",
+      "tree": "cf22b1cea1ee38c5fd4344fd539d8716414f316d",
+      "identical_file_tree": true
+    }
+  ],
+  "ci_head": "97e12d86d52243747f694827415066c593f851b0",
+  "ci_run_id": 35975888188
+}
