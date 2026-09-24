@@ -7,7 +7,8 @@
 
 `tools/run_q1_experiment.py` 将准确管理输入接到既有 `Q1Controller.run` 或
 `recover_original`，并输出一条有限私有诊断记录。它不是 listener、Q2 接口、安装器、
-宿主准备程序或完整 Q1/三单元验收套件。源码/测试/实际源码提交由本轮验证记录另行固定。
+宿主准备程序或完整 Q1/三单元验收套件。源码 `e9b21b355a5dcb507d1b73d620b3307918d04533`
+及准确测试见[本轮验证记录](E3_QUOTA_Q1_EXPERIMENT_VERIFICATION.md)。
 
 ## 输入和调用顺序
 

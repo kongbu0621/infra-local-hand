@@ -46,6 +46,8 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 输出有限私有诊断，保留原字节及独立错误，输出失败不重投。入口不创建监督器，外层受信启动器
 需在 unit 启动后固定自身 InvocationID/cgroup 身份并保留 PID 地进入入口；该装配及真实 fixture
 尚未交付。完整 observer/Q2/三单元验收仍待完成，生产封堵保持。
+准确源码 `e9b21b3`、194 项定向回归及仓库内原始日志见
+[单次管理实验入口验证](E3_QUOTA_Q1_EXPERIMENT_VERIFICATION.md)。
 
 ## 已实现的代码
 
