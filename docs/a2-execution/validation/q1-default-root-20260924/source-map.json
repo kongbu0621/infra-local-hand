@@ -1,0 +1,179 @@
+{
+  "source_commit": "3d074795eb3d69f3e4d81205085af36e5fb7ae61",
+  "source_tree": "d82ec1c3194bb39da07545fff0429e4466abc68e",
+  "parent_commit": "37a24a1a0c3d28f89a7d0bfa53e8efdc42729db1",
+  "scope": "Q1 source, related entrypoints and all Q1 tests",
+  "tested_state": "Final source and tests committed after validation without further Python changes",
+  "files": [
+    {
+      "path": "tests/test_e3_quota_abi.py",
+      "bytes": 18436,
+      "sha256": "a1cf8dc4b69f265fe03ab06343e9bcf57738cfd02daed3cd1d8070f83cfb26d5"
+    },
+    {
+      "path": "tests/test_e3_quota_controller_guard.py",
+      "bytes": 21674,
+      "sha256": "ee1c625672167a19fa51438b7e48f356f01672cbe9ff14f515c60b5283727de0"
+    },
+    {
+      "path": "tests/test_e3_quota_experiment.py",
+      "bytes": 13609,
+      "sha256": "48449245111407a636a9b549680c55728a9289280825df5afcd99f100d968555"
+    },
+    {
+      "path": "tests/test_e3_quota_experiment_capture.py",
+      "bytes": 15479,
+      "sha256": "ae0427f20fe0770f769522e2dffd6cfd1c81d3d7941c299c482758b19d327a96"
+    },
+    {
+      "path": "tests/test_e3_quota_experiment_cli.py",
+      "bytes": 9523,
+      "sha256": "ef0b2462d0c6ea6bb629aef62fad58b0505339dc78f45378e66690e17871c000"
+    },
+    {
+      "path": "tests/test_e3_quota_experiment_evidence.py",
+      "bytes": 15086,
+      "sha256": "98627a8cf8f157587fa3749fe974cbbec537747f291ac1cd7b9514c03b59ecda"
+    },
+    {
+      "path": "tests/test_e3_quota_fixture.py",
+      "bytes": 9797,
+      "sha256": "ec4cde69772167841d76d78d88b6e43bd38774e63bf578b65c91781141f325ae"
+    },
+    {
+      "path": "tests/test_e3_quota_fixture_cli.py",
+      "bytes": 10983,
+      "sha256": "f5fc0524d80f5d5ab9e33840717bcc950f403c767c15b178b585eb6ff62d6907"
+    },
+    {
+      "path": "tests/test_e3_quota_journal.py",
+      "bytes": 19791,
+      "sha256": "1c7533cfc30f458d00894372a87bd30bd1cf9a1ac80e17256f75863d25b1d4dd"
+    },
+    {
+      "path": "tests/test_e3_quota_launcher.py",
+      "bytes": 21554,
+      "sha256": "cd7567e625a9b9326e06232e026810639745b47a151599634317ac9c0ae84ae2"
+    },
+    {
+      "path": "tests/test_e3_quota_launcher_cli.py",
+      "bytes": 5707,
+      "sha256": "7ee6986a19d877d0a1efa10bfcbbf96f7efb58ceeb36e5a000e69ed83f25bba0"
+    },
+    {
+      "path": "tests/test_e3_quota_monitor.py",
+      "bytes": 17681,
+      "sha256": "4cc49b65a2cf240a2a702627da22b8b71159e34ec4734bb447ba5867c348ff4a"
+    },
+    {
+      "path": "tests/test_e3_quota_runtime.py",
+      "bytes": 21692,
+      "sha256": "9d9491723f2d9bbfedc138e99d544370e219057d2a62c6db0edc8b7cf6799e1e"
+    },
+    {
+      "path": "tests/test_e3_quota_runtime_capture.py",
+      "bytes": 13118,
+      "sha256": "8cd194f830f9f286c7ed4b2aa329cd78a788d58964c942d364cb62ad6ddb4f91"
+    },
+    {
+      "path": "tests/test_e3_quota_runtime_host.py",
+      "bytes": 9455,
+      "sha256": "c126af440f28a76727bf314f6f6af13b394ecfd19a4f686fe531312454b5c942"
+    },
+    {
+      "path": "tests/test_e3_quota_worker.py",
+      "bytes": 18459,
+      "sha256": "dcc06ef0b3f4d6312c3ce149ca44d859d42de8130926d5f81bcb1c672c546993"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/README.md",
+      "bytes": 18017,
+      "sha256": "a2f72d732a8be5c718cc428d351c4cca4ae83fad5bcddddfcf986f3f9e93f8c9"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/admission.py",
+      "bytes": 12115,
+      "sha256": "9355a86c37f406b2fcdbd65869d316bc63d65e76351448aa0034815d690371ab"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/controller_guard.py",
+      "bytes": 15294,
+      "sha256": "a79a98fb47ab99ac73156b6aa7af0431aa42b960cfa690e62a4bc55ace1348b2"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/experiment.py",
+      "bytes": 7552,
+      "sha256": "ca04de444f234c1d09bbbeabd1a6cd2774ce3da0f728ffb3bbd432ee29133cb2"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/experiment_capture.py",
+      "bytes": 8242,
+      "sha256": "e05a731c0a0b3f3d557d89150503e3adbe53c891ba5b6b17777ad7e2a06a5ec8"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/experiment_evidence.py",
+      "bytes": 17345,
+      "sha256": "91371840ca265627c567165b2f4b3d4756b4ace3f4f11e4c8e7b5ac2a1f0fc55"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/fixture_inputs.py",
+      "bytes": 3330,
+      "sha256": "371a6f623e9cad6c00b1022c495dc1d1d7f621d4b4d04ae327110cc8450f7f3a"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/journal.py",
+      "bytes": 19127,
+      "sha256": "4eb19510f205e36562e81aac16b26387e6c542b6ea26567d01762a1c2c2f7283"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/launcher.py",
+      "bytes": 16068,
+      "sha256": "9bb3a2453513af2eedbbeef3a5bdfa0d6b7bc89b408885634df3404fe0a1b6af"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/protected_inputs.py",
+      "bytes": 13136,
+      "sha256": "69d4e542733d1853c5b53e52e08dd068edfc5af014c90b3bad6f581009718e2e"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/quota_fd_query.c",
+      "bytes": 12135,
+      "sha256": "4b7a020fcabe5dc514be2983b6b3ff7184d482382b8a76c4d9b03e9fb4548377"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/quota_syscall_filter.h",
+      "bytes": 4992,
+      "sha256": "f8c05579ae14c5d1715120c4e86a43b9f7601cea743495e608aaa9eeb0782370"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/supervision.py",
+      "bytes": 10042,
+      "sha256": "e47788ebf850d2f99007e447ca66c1e302fa81de41bc837f01510b5c29030463"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/systemd_runtime.py",
+      "bytes": 27011,
+      "sha256": "8596713719e916660307ee71f63eeb1bd53f5253d04196592fba44aa579f12da"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/worker.py",
+      "bytes": 14890,
+      "sha256": "2da382a491479a9177ab88f4aee63dff5deb499df11388e844e183781a1eb437"
+    },
+    {
+      "path": "tools/launch_q1_experiment.py",
+      "bytes": 2668,
+      "sha256": "5bd2af2f9819ba92e4dc20963931c793f76d215277b2d437b4bdac7939f0c66f"
+    },
+    {
+      "path": "tools/run_q1_experiment.py",
+      "bytes": 2618,
+      "sha256": "f03e9e74575aa92adf36fa09a1334c3b9cc344635d47b53a5c2f8bd35e3fbd9a"
+    },
+    {
+      "path": "tools/validate_q1_fixture.py",
+      "bytes": 5492,
+      "sha256": "294071488f43f2d5f8aae8d5436df5f8314d31bb7e94335425e843b5dba040b2"
+    }
+  ]
+}

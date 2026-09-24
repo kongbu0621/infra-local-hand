@@ -1,0 +1,58 @@
+[
+  {
+    "label": "pre-fix-regression",
+    "purpose": "Confirm the regression rejects explicit User=0 before the runtime fix",
+    "argv": [
+      "python3",
+      "-I",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_e3_quota_runtime_capture.py",
+      "-v"
+    ],
+    "started_at_utc": "2026-09-24T08:29:24.686388+00:00",
+    "completed_at_utc": "2026-09-24T08:29:24.987367+00:00",
+    "exit_code": 1,
+    "log": "pre-fix-regression.log",
+    "log_sha256": "c796f436733c6a72ad91b1a2b242df564045d90983f0d499201652584d60f5b1"
+  },
+  {
+    "label": "unittest",
+    "argv": [
+      "python3",
+      "-I",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_e3_quota_*.py",
+      "-v"
+    ],
+    "started_at_utc": "2026-09-24T08:29:53.913917+00:00",
+    "completed_at_utc": "2026-09-24T08:29:58.610634+00:00",
+    "exit_code": 0,
+    "log": "unittest.log",
+    "log_sha256": "d2b6a142988fba4d546a57b2d3d653413a558497d3122a2bdcfe01f803291e26"
+  },
+  {
+    "label": "diff-check",
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "started_at_utc": "2026-09-24T08:29:58.610718+00:00",
+    "completed_at_utc": "2026-09-24T08:29:58.614380+00:00",
+    "exit_code": 0,
+    "log": "diff-check.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

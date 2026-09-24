@@ -68,6 +68,11 @@ Linux 1122 passed/1 skipped、独立安装 94 checks/292 commands；
 Windows 261 passed/343 skipped、独立安装 10 checks/10 commands。
 详见[本轮验证记录](E3_QUOTA_Q1_LAUNCH_VERIFICATION.md)。
 
+后续隔离 fixture 调试定位并修正了 systemd 255 显式 `User=0` 留下继承能力的启动冲突。
+worker 严格权限检查未放宽，235 项 Q1 开发回归通过、0 跳过。私有候选参数只读检查由用户
+截图反馈通过，未据此宣称 quota enforcement 或 Q1/E3 通过；原 UNKNOWN 及预留继续保留。
+准确源码与验证边界见 [默认 root 启动修正](E3_QUOTA_Q1_DEFAULT_ROOT_VERIFICATION.md)。
+
 ## 已实现的代码
 
 | 边界 | 实现与可观察行为 |

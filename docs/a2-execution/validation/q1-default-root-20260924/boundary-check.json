@@ -1,0 +1,9 @@
+{
+  "base_commit": "37a24a1a0c3d28f89a7d0bfa53e8efdc42729db1",
+  "approved_documents_unchanged": true,
+  "production_packages_unchanged": true,
+  "worker_exact_capability_checks_unchanged": true,
+  "journal_reservations_unchanged": true,
+  "native_query_unchanged": true,
+  "changed_files_compile": true
+}
