@@ -53,6 +53,14 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 Linux 1081 passed/1 skipped、安装 94 checks/292 commands；Windows 255 passed/308 skipped、安装 10/10。
 首轮失败、修复和最终准确结果均在同一验证记录及入库 CI 摘录中保留。
 
+后续补充[Q1 单元内启动适配与有限采集](E3_QUOTA_Q1_LAUNCH_HANDOFF.md)：
+在已存在的受监督控制器单元中取得当前身份，固定管理侧安装字节，create-only/fsync
+交付原票据绑定的实验输入，再保留 PID 地 exec 进入已有入口。新增外部采集组件
+保留原匿名管道的有限字节、EOF、客户端退出和关闭错误；管理采集可覆盖原查询超时后的
+有限收尾，但不延长查询期限或判定业务成功。原始票据恢复不补投，失败不覆盖输入。
+这只是单元内启动适配和采集组件；真实 fixture 的监督单元、独立停止入口、有限存储
+以及实际 systemd/quota/三单元验证仍未交付。Q1/E3 仍 BLOCKED，未进入 Q2。
+
 ## 已实现的代码
 
 | 边界 | 实现与可观察行为 |
@@ -65,7 +73,8 @@ Linux 1081 passed/1 skipped、安装 94 checks/292 commands；Windows 255 passed
 | Q1 固定对象与结果判定 | `admin/local_hand_quota_observer/admission.py`、`supervision.py`；不可变配置映射、原执行/截止时间绑定、有限非阻塞采集、独立进程退出事实与原语回包分别核对。内部判定核心；实际 adapter 由独立 Q1 runtime 源码连接，未授予作业执行 |
 | Q1 单次运行装配 | 保护配置/安装及 worker、固定 systemd query unit、准确能力集和 native 参数级过滤、永久意图 journal、启动竞态/原身份停止与有界采集；真实 systemd/quota 未实测，恢复丢失原采集归属保持 UNKNOWN；不替代 Q2 服务 |
 | Q1 离线输入校验 | 严格快照摘要/源码/安装绑定及全部 slot 路径检查；计费域去重，声明额度不冒充实际预留；CLI 无宿主执行，真实权限/配额/监督仍待实测 |
-| Q1 管理实验入口 | 原票据 run/recover 单次连接、执行前实际监督核验、有界私有诊断及失败不重投；外层启动装配和真实 fixture 尚缺，Outcome 未携带的 EOF 事实不补造，不提供完整 Q1 出口证明 |
+| Q1 管理实验入口 | 原票据 run/recover 单次连接、执行前实际监督核验、有界私有诊断及失败不重投；Outcome 未携带的 EOF 事实不补造，不提供完整 Q1 出口证明 |
+| Q1 单元内启动与外部采集 | 固定安装清单、当前身份绑定、保护输入 create-only 交付、同 PID exec；独立有限管理采集保留原字节/EOF/客户端退出/关闭错误，输出已知停止身份但不执行停止；真实 fixture、外层监督/停止和实机验收尚缺 |
 | 证据交付 | `evidence/evidence_client`；真实事件和停止证明、成员摘要、create-only ZIP/manifest/外 seal、fsync 后 DB 登记、有界读取和宿主直接文件续传 |
 | MCP | `local_hand_mcp`；官方 SDK Streamable HTTP、成熟 JWT 验签、逐次权限检查、OAuth 发现和挑战；复用同一个 broker |
 | 维护 CLI | `local-hand-jobs` 经私有 Unix socket 与 OS peer 映射调用同 broker；没有另一套直接执行路径 |

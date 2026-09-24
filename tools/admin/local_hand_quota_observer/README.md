@@ -189,5 +189,13 @@ Q1 实机出口通过前不把普通作业切到新机制；随后依次 Q2 绑�
 编码或管道失败均不补投。单条私有诊断最多 128 KiB，与 Q2 的 32 KiB socket 上限分开；
 不补造内部 Outcome 没有携带的 EOF 事实，`evidence_complete` 与全部准入标志保持 false。
 
-准确控制器身份在 unit 启动后才存在，仍需外层受信启动器在同一受监督 unit 中固定输入后
-保留 PID 地 exec 此入口；该启动器及真实 fixture 尚未交付，不能把本入口当作完整 Q1 验收。
+准确控制器身份在 unit 启动后才存在。后续新增
+[`tools/launch_q1_experiment.py`](../../launch_q1_experiment.py) 与 `launcher.py`，
+在已存在的受监督 unit 中核验当前身份和管理安装字节，create-only/fsync 交付输入后
+保留 PID 地 exec 此入口；原票据、期限和监督预算不重置。
+`experiment_capture.py` 只采集已存在的原进程匿名管道，保留有限原字节、EOF、客户端退出
+及读端关闭错误；不解析诊断为准入、不发起或停止查询。有限管理采集窗口可保留原查询
+超时后的收尾诊断，但不延长原查询期限。准确接线见
+[启动与采集交接](../../../docs/a2-execution/E3_QUOTA_Q1_LAUNCH_HANDOFF.md)。
+这两个内部组件不创建 fixture 的监督单元、独立停止入口或有限存储；真实 fixture 和
+完整 Q1 实机验收仍未交付。
