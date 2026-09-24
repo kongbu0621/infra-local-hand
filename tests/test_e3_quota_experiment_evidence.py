@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -56,6 +57,14 @@ def encode(value=None, **changes):
 
 
 class EvidenceTests(unittest.TestCase):
+    def setUp(self):
+        # These are synthetic Linux native reports, even on a Windows test host.
+        # Model the reviewed Linux flags in this module only; do not mutate the
+        # global os module or relax production rejection of an unknown host ABI.
+        model = patch.object(a, "os", SimpleNamespace(O_ACCMODE=3, O_PATH=0x200000))
+        model.start()
+        self.addCleanup(model.stop)
+
     def test_observed_is_private_nonacceptance_record_with_original_identity_and_bytes(self):
         original = outcome(observed=True)
         raw = encode(original)
