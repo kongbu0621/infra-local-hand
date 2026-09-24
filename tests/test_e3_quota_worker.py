@@ -183,7 +183,7 @@ class WorkerTests(unittest.TestCase):
     def test_logic_only_capabilities_require_exact_set_and_no_new_privileges(self):
         self.assertEqual(w.parse_status(status())["CapEff"], w.CAPABILITIES)
         for changes in ({"CapEff": 0}, {"CapPrm": w.CAPABILITIES | 1}, {"CapBnd": 2**40 - 1},
-                        {"CapInh": 1}, {"CapAmb": 1}, {"NoNewPrivs": 0}):
+                        {"CapInh": 1}, {"CapInh": 0x200000}, {"CapAmb": 1}, {"NoNewPrivs": 0}):
             with self.subTest(changes=changes), self.assertRaises(a.Rejected):
                 w.parse_status(status(**changes))
         with self.assertRaisesRegex(a.Rejected, "PROCESS_STATUS"):

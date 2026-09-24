@@ -74,7 +74,10 @@ def unit_command(config, binding, config_path, control_dir, *, now_ns):
         "RuntimeMaxSec": str(remaining // 1000) + "us", "TimeoutStartSec": str(remaining // 1000) + "us",
         "TimeoutStopSec": "1s", "MemoryMax": str(config.memory_bytes), "TasksMax": str(config.tasks_max),
         "CPUQuota": "100%", "LimitCPU": str(config.cpu_seconds), "LimitCORE": "0", "LimitFSIZE": "0",
-        "User": "0", "Group": "0", "NoNewPrivileges": "yes", "PrivateUsers": "no",
+        # Use the system manager's default root identity. Explicit User=0 takes
+        # systemd 255's setuid/seccomp path, which leaves CAP_SYS_ADMIN in CapInh.
+        # worker.verify_process still requires UID/EUID 0 and CapInh/CapAmb 0.
+        "User": "", "Group": "0", "NoNewPrivileges": "yes", "PrivateUsers": "no",
         "CapabilityBoundingSet": "CAP_SYS_ADMIN CAP_DAC_READ_SEARCH", "AmbientCapabilities": "",
         "PrivateDevices": "yes", "PrivateNetwork": "yes", "PrivateMounts": "yes", "PrivateTmp": "yes",
         "ProtectSystem": "strict", "ProtectControlGroups": "yes", "ProtectKernelTunables": "yes",

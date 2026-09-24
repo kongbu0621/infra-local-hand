@@ -203,6 +203,12 @@ class UnitCommandTests(unittest.TestCase):
         self.assertEqual(props["InaccessiblePaths"], "/synthetic/control")
         self.assertEqual(props["ReadWritePaths"], bound.slot.path)
         self.assertEqual(props["CapabilityBoundingSet"], "CAP_SYS_ADMIN CAP_DAC_READ_SEARCH")
+        # Explicit User=0 triggers systemd 255's setuid/seccomp capability
+        # preservation path and leaves CAP_SYS_ADMIN inheritable. System-manager
+        # default root avoids it; the worker still verifies UID and all cap sets.
+        self.assertEqual(props["User"], "")
+        self.assertEqual(props["Group"], "0")
+        self.assertEqual(props["AmbientCapabilities"], "")
         self.assertEqual(props["PrivateUsers"], "no")
         for key in ("NoNewPrivileges", "PrivateNetwork", "PrivateDevices", "PrivateMounts"):
             self.assertEqual(props[key], "yes")

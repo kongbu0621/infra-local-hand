@@ -127,6 +127,9 @@ production_supported 始终 false。
    管理命令固定禁止密码提示（`--no-ask-password`），systemctl 同时禁止 pager，避免交互助手。
    单元 root UID、初始 user namespace、能力仅 `CAP_SYS_ADMIN CAP_DAC_READ_SEARCH`，NNP 开启，
    关闭继承/ambient 能力，并限制内存、Tasks、CPU、设备、网络、挂载操作和写入路径。
+   `User=` 使用 system manager 默认 root；显式 `User=0` 在 systemd 255 的 setuid/seccomp
+   路径会留下继承能力。worker 仍核验实际 UID/EUID 0、准确 Prm/Eff/Bnd 和零 Inh/Amb，
+   不接受配置声明代替实际权限，也不放宽非零继承位检查。
    `ProtectSystem=strict` 下仅固定 slot 有 `ReadWritePaths` 例外，因为 Q_GETQUOTA 需要 mount write access。
    这不承诺 quota 元数据零变化，也不保证 CAP_SYS_ADMIN 组件失陷时仍安全。
 4. 根与 FD：systemd-run 仅负责标准流；worker 在自己的单元内打开固定根，核对普通作业 UID/0700、
