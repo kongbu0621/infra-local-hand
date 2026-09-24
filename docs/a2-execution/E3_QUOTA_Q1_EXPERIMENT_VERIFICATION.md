@@ -71,8 +71,28 @@ CLI 9 项及最终 194 项通过。没有将首次失败改写为成功。
 下一步补外层受信启动与有限采集装配，再在明确交付的隔离 fixture 完成权限对照、真实绑定、
 限额强制和独立退出验收。Q1 出口通过后才进入 Q2 → Q3 → Q4；不重复 GX10 库存或改现役服务。
 
-本地没有重复执行整个产品源码/安装套件；准确发布提交的 Linux/Windows CI 待完成后另记，
-不沿用上一候选结果。
+本地没有重复执行整个产品源码/安装套件；准确发布提交的 CI 如下分别记录，不沿用上一候选结果。
+
+## 首轮 CI 与测试可移植性修正
+
+首轮准确 head `6e1a25be40b5a4364a425301049c55b3e1eaabae` 的
+[run 35936686250](https://github.com/kongbu0621/infra-local-hand/actions/runs/35936686250)
+中，Windows job `107435202820` 的源码步骤失败：**3 failed、252 passed、308 skipped**。
+安装验证因前序失败未执行，不记 PASS。失败均位于新诊断编码测试：合成 Linux native 成功报告
+经 `match_report` 检查时，真实 Windows `os` 没有 `O_PATH`，故正确拒绝 `FD_MODE`。
+
+测试修复提交 `273eb0a77538a4617f157fa79f9b32cac4a3fa2f`，
+tree `41393c4dda141a4ed435487ff5550447dfb7f7a0`，仅修改
+`tests/test_e3_quota_experiment_evidence.py`：在每个测试内替换该模块使用的 os 引用，
+明确模拟 Linux `O_PATH=0x200000` 与 `O_ACCMODE=3`，测试结束即恢复。
+不修改全局 os、不放宽产品校验、不增加 skip。独立复核认可此限定修复。
+本地只重跑受影响的 10 项纯编码测试，全部通过；此结果不冒充实际 Windows 运行。
+
+- [首轮 Windows 原始失败摘录与日志摘要](validation/q1-experiment-20260924/windows-first-failure.log)
+- [修复后定向原始日志](validation/q1-experiment-20260924/windows-portability-targeted.log)
+- [修复后准确命令、退出码及测试文件摘要](validation/q1-experiment-20260924/windows-portability-targeted.json)
+
+真实 Windows 修复重测及 Linux CI 完整结果待准确候选完成后补记。
 
 ## 固定来源
 

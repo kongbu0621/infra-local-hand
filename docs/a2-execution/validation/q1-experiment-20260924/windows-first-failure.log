@@ -1,0 +1,102 @@
+EXCERPT ONLY; skipped-test listing omitted; original timestamps retained; CRLF and trailing whitespace normalized.
+Run 35936686250; head 6e1a25be40b5a4364a425301049c55b3e1eaabae; Windows job 107435202820.
+Complete fetched UTF-8 log SHA-256: 4c5a2e7517c8737faa976bb5d1139b0fe2f8db35308f19de568d9fa6c7ce0266
+
+2026-09-24T00:10:44.6464310Z ================================== FAILURES ===================================
+2026-09-24T00:10:44.6465359Z _______ EvidenceTests.test_encoder_has_no_runtime_or_host_side_effects ________
+2026-09-24T00:10:44.6465997Z
+2026-09-24T00:10:44.6466983Z self = <test_e3_quota_experiment_evidence.EvidenceTests testMethod=test_encoder_has_no_runtime_or_host_side_effects>
+2026-09-24T00:10:44.6467964Z
+2026-09-24T00:10:44.6468277Z     def test_encoder_has_no_runtime_or_host_side_effects(self):
+2026-09-24T00:10:44.6469005Z         original = outcome(observed=True)
+2026-09-24T00:10:44.6470057Z         with patch.object(r.Q1Controller, "run", side_effect=AssertionError("query")), \
+2026-09-24T00:10:44.6471217Z                 patch.object(r.Q1Controller, "recover_original", side_effect=AssertionError("recover")), \
+2026-09-24T00:10:44.6472933Z                 patch("builtins.open", side_effect=AssertionError("filesystem")), \
+2026-09-24T00:10:44.6474268Z                 patch.object(r.os, "open", side_effect=AssertionError("filesystem")), \
+2026-09-24T00:10:44.6477850Z                 patch.object(r, "boottime_ns", side_effect=AssertionError("clock")):
+2026-09-24T00:10:44.6478945Z >           self.assertEqual(encode(original), encode(original))
+2026-09-24T00:10:44.6480080Z                              ^^^^^^^^^^^^^^^^
+2026-09-24T00:10:44.6480428Z
+2026-09-24T00:10:44.6480735Z tests\test_e3_quota_experiment_evidence.py:206:
+2026-09-24T00:10:44.6481425Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+2026-09-24T00:10:44.6482169Z tests\test_e3_quota_experiment_evidence.py:55: in encode
+2026-09-24T00:10:44.6482860Z     return e.encode_outcome(value, **options)
+2026-09-24T00:10:44.6483528Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-24T00:10:44.6484297Z tools\admin\local_hand_quota_observer\experiment_evidence.py:286: in encode_outcome
+2026-09-24T00:10:44.6485202Z     _observed_consistency(outcome, unit_facts, runtime_digest)
+2026-09-24T00:10:44.6486162Z tools\admin\local_hand_quota_observer\experiment_evidence.py:238: in _observed_consistency
+2026-09-24T00:10:44.6487135Z     match_report(native, binding.manifest, binding.slot)
+2026-09-24T00:10:44.6487948Z tools\admin\local_hand_quota_observer\admission.py:266: in match_report
+2026-09-24T00:10:44.6488894Z     require(hasattr(os, "O_PATH") and rc & (os.O_ACCMODE | os.O_PATH) == 0, "FD_MODE")
+2026-09-24T00:10:44.6490066Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+2026-09-24T00:10:44.6490520Z
+2026-09-24T00:10:44.6490736Z condition = False, code = 'FD_MODE'
+2026-09-24T00:10:44.6491054Z
+2026-09-24T00:10:44.6491288Z     def require(condition, code):
+2026-09-24T00:10:44.6491867Z         if not condition:
+2026-09-24T00:10:44.6492624Z >           raise Rejected(code)
+2026-09-24T00:10:44.6493384Z E           admin.local_hand_quota_observer.admission.Rejected: FD_MODE
+2026-09-24T00:10:44.6493930Z
+2026-09-24T00:10:44.6494231Z tools\admin\local_hand_quota_observer\admission.py:34: Rejected
+2026-09-24T00:10:44.6495297Z _ EvidenceTests.test_observed_is_private_nonacceptance_record_with_original_identity_and_bytes _
+2026-09-24T00:10:44.6496013Z
+2026-09-24T00:10:44.6496895Z self = <test_e3_quota_experiment_evidence.EvidenceTests testMethod=test_observed_is_private_nonacceptance_record_with_original_identity_and_bytes>
+2026-09-24T00:10:44.6498146Z
+2026-09-24T00:10:44.6498629Z     def test_observed_is_private_nonacceptance_record_with_original_identity_and_bytes(self):
+2026-09-24T00:10:44.6499737Z         original = outcome(observed=True)
+2026-09-24T00:10:44.6500285Z >       raw = encode(original)
+2026-09-24T00:10:44.6500742Z               ^^^^^^^^^^^^^^^^
+2026-09-24T00:10:44.6501049Z
+2026-09-24T00:10:44.6501315Z tests\test_e3_quota_experiment_evidence.py:61:
+2026-09-24T00:10:44.6501991Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+2026-09-24T00:10:44.6502728Z tests\test_e3_quota_experiment_evidence.py:55: in encode
+2026-09-24T00:10:44.6503395Z     return e.encode_outcome(value, **options)
+2026-09-24T00:10:44.6503945Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-24T00:10:44.6504717Z tools\admin\local_hand_quota_observer\experiment_evidence.py:286: in encode_outcome
+2026-09-24T00:10:44.6505640Z     _observed_consistency(outcome, unit_facts, runtime_digest)
+2026-09-24T00:10:44.6506606Z tools\admin\local_hand_quota_observer\experiment_evidence.py:238: in _observed_consistency
+2026-09-24T00:10:44.6507603Z     match_report(native, binding.manifest, binding.slot)
+2026-09-24T00:10:44.6508414Z tools\admin\local_hand_quota_observer\admission.py:266: in match_report
+2026-09-24T00:10:44.6509343Z     require(hasattr(os, "O_PATH") and rc & (os.O_ACCMODE | os.O_PATH) == 0, "FD_MODE")
+2026-09-24T00:10:44.6510199Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+2026-09-24T00:10:44.6510674Z
+2026-09-24T00:10:44.6510852Z condition = False, code = 'FD_MODE'
+2026-09-24T00:10:44.6511217Z
+2026-09-24T00:10:44.6511400Z     def require(condition, code):
+2026-09-24T00:10:44.6511881Z         if not condition:
+2026-09-24T00:10:44.6513505Z >           raise Rejected(code)
+2026-09-24T00:10:44.6514286Z E           admin.local_hand_quota_observer.admission.Rejected: FD_MODE
+2026-09-24T00:10:44.6514800Z
+2026-09-24T00:10:44.6515154Z tools\admin\local_hand_quota_observer\admission.py:34: Rejected
+2026-09-24T00:10:44.6516086Z __ EvidenceTests.test_secondary_entry_error_keeps_original_observed_decision __
+2026-09-24T00:10:44.6516691Z
+2026-09-24T00:10:44.6517451Z self = <test_e3_quota_experiment_evidence.EvidenceTests testMethod=test_secondary_entry_error_keeps_original_observed_decision>
+2026-09-24T00:10:44.6518392Z
+2026-09-24T00:10:44.6518776Z     def test_secondary_entry_error_keeps_original_observed_decision(self):
+2026-09-24T00:10:44.6519578Z         original = outcome(observed=True)
+2026-09-24T00:10:44.6520353Z >       value = json.loads(encode(original, entry_error="JOURNAL_CLOSE_UNCERTAIN"))
+2026-09-24T00:10:44.6521226Z                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-24T00:10:44.6521637Z
+2026-09-24T00:10:44.6521920Z tests\test_e3_quota_experiment_evidence.py:116:
+2026-09-24T00:10:44.6522588Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+2026-09-24T00:10:44.6523317Z tests\test_e3_quota_experiment_evidence.py:55: in encode
+2026-09-24T00:10:44.6524153Z     return e.encode_outcome(value, **options)
+2026-09-24T00:10:44.6524689Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-24T00:10:44.6525461Z tools\admin\local_hand_quota_observer\experiment_evidence.py:286: in encode_outcome
+2026-09-24T00:10:44.6526374Z     _observed_consistency(outcome, unit_facts, runtime_digest)
+2026-09-24T00:10:44.6527367Z tools\admin\local_hand_quota_observer\experiment_evidence.py:238: in _observed_consistency
+2026-09-24T00:10:44.6528312Z     match_report(native, binding.manifest, binding.slot)
+2026-09-24T00:10:44.6529106Z tools\admin\local_hand_quota_observer\admission.py:266: in match_report
+2026-09-24T00:10:44.6530048Z     require(hasattr(os, "O_PATH") and rc & (os.O_ACCMODE | os.O_PATH) == 0, "FD_MODE")
+2026-09-24T00:10:44.6530893Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+2026-09-24T00:10:44.6531358Z
+2026-09-24T00:10:44.6531536Z condition = False, code = 'FD_MODE'
+2026-09-24T00:10:44.6531906Z
+2026-09-24T00:10:44.6532081Z     def require(condition, code):
+2026-09-24T00:10:44.6532894Z         if not condition:
+2026-09-24T00:10:44.6533340Z >           raise Rejected(code)
+2026-09-24T00:10:44.6533989Z E           admin.local_hand_quota_observer.admission.Rejected: FD_MODE
+2026-09-24T00:10:44.6534493Z
+2026-09-24T00:10:44.6534825Z tools\admin\local_hand_quota_observer\admission.py:34: Rejected
+2026-09-24T00:10:44.6535580Z =========================== short test summary info ===========================
+2026-09-24T00:10:44.6962853Z 3 failed, 252 passed, 308 skipped in 347.05s (0:05:47)

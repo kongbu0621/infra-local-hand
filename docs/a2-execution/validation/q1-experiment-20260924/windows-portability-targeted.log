@@ -1,0 +1,15 @@
+test_capture_maximum_is_preserved_and_total_limit_is_independent (test_e3_quota_experiment_evidence.EvidenceTests.test_capture_maximum_is_preserved_and_total_limit_is_independent) ... ok
+test_complete_stdout_and_stopped_do_not_upgrade_unknown (test_e3_quota_experiment_evidence.EvidenceTests.test_complete_stdout_and_stopped_do_not_upgrade_unknown) ... ok
+test_encoder_has_no_runtime_or_host_side_effects (test_e3_quota_experiment_evidence.EvidenceTests.test_encoder_has_no_runtime_or_host_side_effects) ... ok
+test_fabricated_observed_and_changed_identity_are_rejected (test_e3_quota_experiment_evidence.EvidenceTests.test_fabricated_observed_and_changed_identity_are_rejected) ... ok
+test_failure_status_does_not_claim_no_consumption_or_success (test_e3_quota_experiment_evidence.EvidenceTests.test_failure_status_does_not_claim_no_consumption_or_success) ... ok
+test_observed_is_private_nonacceptance_record_with_original_identity_and_bytes (test_e3_quota_experiment_evidence.EvidenceTests.test_observed_is_private_nonacceptance_record_with_original_identity_and_bytes) ... ok
+test_recovery_always_unknown_and_rejects_fabricated_observed (test_e3_quota_experiment_evidence.EvidenceTests.test_recovery_always_unknown_and_rejects_fabricated_observed) ... ok
+test_secondary_entry_error_keeps_original_observed_decision (test_e3_quota_experiment_evidence.EvidenceTests.test_secondary_entry_error_keeps_original_observed_decision) ... ok
+test_strict_types_counts_and_lengths (test_e3_quota_experiment_evidence.EvidenceTests.test_strict_types_counts_and_lengths) ... ok
+test_unknown_keeps_partial_binary_output_and_three_distinct_errors (test_e3_quota_experiment_evidence.EvidenceTests.test_unknown_keeps_partial_binary_output_and_three_distinct_errors) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.013s
+
+OK

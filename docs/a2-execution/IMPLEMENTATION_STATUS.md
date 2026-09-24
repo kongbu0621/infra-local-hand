@@ -48,6 +48,8 @@ quota/harness 变更的首个源码检查点为 `eb7ca61d109f00a699de8591fcf0e0f
 尚未交付。完整 observer/Q2/三单元验收仍待完成，生产封堵保持。
 准确源码 `e9b21b3`、194 项定向回归及仓库内原始日志见
 [单次管理实验入口验证](E3_QUOTA_Q1_EXPERIMENT_VERIFICATION.md)。
+首轮 Windows CI 暴露合成 Linux 报告测试未明确模拟 `O_PATH`；测试修复 `273eb0a`
+仅固定测试模型，10 项局部回归通过，真实 Windows CI 重测结果按同一验证记录另记。
 
 ## 已实现的代码
 

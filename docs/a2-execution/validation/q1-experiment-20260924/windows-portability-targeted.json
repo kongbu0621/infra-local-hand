@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "python3",
+    "-I",
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_e3_quota_experiment_evidence.py",
+    "-v"
+  ],
+  "started_utc": "2026-09-24T00:12:40.511079+00:00",
+  "finished_utc": "2026-09-24T00:12:40.607230+00:00",
+  "elapsed_seconds": 0.096,
+  "exit_code": 0,
+  "log": "windows-portability-targeted.log",
+  "log_sha256": "b3c2ff431c394f1c41ed8e81fa35ed2f4511cfbf6fa68cc4c4d083189323b252",
+  "test_file_sha256": "98627a8cf8f157587fa3749fe974cbbec537747f291ac1cd7b9514c03b59ecda",
+  "scope": "Linux local logic-only regression; this is not an actual Windows run. Product source unchanged.",
+  "test_source_commit": "273eb0a77538a4617f157fa79f9b32cac4a3fa2f",
+  "test_source_tree": "41393c4dda141a4ed435487ff5550447dfb7f7a0"
+}
