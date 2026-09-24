@@ -1,0 +1,38 @@
+{
+  "approved_documents": [
+    {
+      "path": "docs/a2-execution/e3-quota-harness/ARCHITECTURE.md",
+      "approved_a": "415327ebdcc251bb055da9931a7a88990f750b7a",
+      "approved_sha256": "ffa20073619247b9413667795289633bae396271df53a6cdf798005423c663ff",
+      "current_sha256": "ffa20073619247b9413667795289633bae396271df53a6cdf798005423c663ff",
+      "unchanged": true
+    },
+    {
+      "path": "docs/a2-execution/e3-quota-harness/IMPLEMENTATION_PLAN.md",
+      "approved_a": "415327ebdcc251bb055da9931a7a88990f750b7a",
+      "approved_sha256": "943c65fc5f894c96c9b00b421bd6add3828ac6c1657318f06b944c6e5d8fe728",
+      "current_sha256": "943c65fc5f894c96c9b00b421bd6add3828ac6c1657318f06b944c6e5d8fe728",
+      "unchanged": true
+    },
+    {
+      "path": "docs/a2-execution/e3-quota-harness/REQUIREMENTS.md",
+      "approved_a": "415327ebdcc251bb055da9931a7a88990f750b7a",
+      "approved_sha256": "04f28701209a044fbf1b644cb71262ad0e17684702415a783c8f4058f3e41c48",
+      "current_sha256": "04f28701209a044fbf1b644cb71262ad0e17684702415a783c8f4058f3e41c48",
+      "unchanged": true
+    }
+  ],
+  "product_and_packaging_paths": [
+    "tools/local_hand",
+    "tools/local_hand_jobs",
+    "tools/local_hand_connect",
+    "tools/local_hand_mcp",
+    "plugins",
+    "pyproject.toml",
+    "setup.py",
+    "tools/build_plugin.py",
+    "tools/verify_installed.py"
+  ],
+  "base_commit": "d6f5e5a907eea722919e526c1313cce870f67ddb",
+  "product_and_packaging_unchanged": true
+}

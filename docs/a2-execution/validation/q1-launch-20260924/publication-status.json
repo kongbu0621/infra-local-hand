@@ -1,0 +1,10 @@
+{
+  "status": "BLOCKED_BY_AUTOMATIC_APPROVAL_REVIEW",
+  "source_commit": "c1c37dd31763726eeca3084c0db690836b0d43fa",
+  "source_published": false,
+  "remote_main_observed": "d6f5e5a907eea722919e526c1313cce870f67ddb",
+  "github_ci": "NOT_RUN_FOR_THIS_CANDIDATE",
+  "rejected_action": "git push origin HEAD:refs/heads/main",
+  "review_reason": "Publishing source/documentation to a public shared main branch requires explicit user authorization; current authorization was not recognized.",
+  "workaround_attempted": false
+}

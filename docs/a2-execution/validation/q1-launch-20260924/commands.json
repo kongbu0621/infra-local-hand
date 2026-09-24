@@ -1,0 +1,58 @@
+[
+  {
+    "label": "unittest",
+    "argv": [
+      "python3",
+      "-I",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_e3_quota_*.py",
+      "-v"
+    ],
+    "cwd": "/workspace/scratch/a20dd33d0f57/infra-local-hand",
+    "started_at_utc": "2026-09-24T01:19:53.188045+00:00",
+    "completed_at_utc": "2026-09-24T01:19:57.856710+00:00",
+    "exit_code": 0,
+    "log": "unittest.log",
+    "log_sha256": "acbb520cd8b2f409536ee5e12dfd65ff64cee34edd8818a5c44ed470239da74f"
+  },
+  {
+    "label": "compile",
+    "argv": [
+      "python3",
+      "-m",
+      "compileall",
+      "-q",
+      "tools/admin/local_hand_quota_observer",
+      "tools/launch_q1_experiment.py",
+      "tests/test_e3_quota_launcher.py",
+      "tests/test_e3_quota_launcher_cli.py",
+      "tests/test_e3_quota_experiment_capture.py"
+    ],
+    "cwd": "/workspace/scratch/a20dd33d0f57/infra-local-hand",
+    "started_at_utc": "2026-09-24T01:19:57.856964+00:00",
+    "completed_at_utc": "2026-09-24T01:19:57.908170+00:00",
+    "exit_code": 0,
+    "log": "compile.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "label": "diff-check",
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "cwd": "/workspace/scratch/a20dd33d0f57/infra-local-hand",
+    "started_at_utc": "2026-09-24T01:19:57.908243+00:00",
+    "completed_at_utc": "2026-09-24T01:19:57.912890+00:00",
+    "exit_code": 0,
+    "log": "diff-check.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

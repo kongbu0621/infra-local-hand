@@ -60,6 +60,9 @@ Linux 1081 passed/1 skipped、安装 94 checks/292 commands；Windows 255 passed
 有限收尾，但不延长查询期限或判定业务成功。原始票据恢复不补投，失败不覆盖输入。
 这只是单元内启动适配和采集组件；真实 fixture 的监督单元、独立停止入口、有限存储
 以及实际 systemd/quota/三单元验证仍未交付。Q1/E3 仍 BLOCKED，未进入 Q2。
+源码本地检查点 `c1c37dd31763726eeca3084c0db690836b0d43fa` 的 235 项 Q1 回归通过、
+0 跳过，独立源码复核收口。发布 main 被自动审批拒绝；当前未推送，准确候选
+Linux/Windows CI 均未运行。详见[本轮验证记录](E3_QUOTA_Q1_LAUNCH_VERIFICATION.md)。
 
 ## 已实现的代码
 
