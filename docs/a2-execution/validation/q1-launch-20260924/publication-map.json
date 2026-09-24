@@ -1,0 +1,26 @@
+{
+  "observed_at_utc": "2026-09-24T04:41:44.635161+00:00",
+  "method": "GitHub connector Git data API; ordinary git push lacked credentials after user authorization",
+  "repository": "kongbu0621/infra-local-hand",
+  "branch": "main",
+  "force": false,
+  "local_commits_preserved": true,
+  "commits": [
+    {
+      "kind": "source",
+      "local_commit": "c1c37dd31763726eeca3084c0db690836b0d43fa",
+      "published_commit": "07807d62b49f07d31e9e41d4f2fd25c3cefe8f83",
+      "tree": "88a7c4fe373ce7a8775e674c760af914d8440782",
+      "identical_file_tree": true
+    },
+    {
+      "kind": "verification",
+      "local_commit": "25ace7f87cd370a699c8b11636d20f06b2bb64b2",
+      "published_commit": "8cc2b2b8255502d1407f8b820be86b47cc813559",
+      "tree": "d86aa665a14552554b9ade9bcd80cf0bbc4f25ee",
+      "identical_file_tree": true
+    }
+  ],
+  "ci_head": "8cc2b2b8255502d1407f8b820be86b47cc813559",
+  "ci_run_id": 35956624107
+}

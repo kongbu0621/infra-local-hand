@@ -1,10 +1,23 @@
 {
-  "status": "BLOCKED_BY_AUTOMATIC_APPROVAL_REVIEW",
-  "source_commit": "c1c37dd31763726eeca3084c0db690836b0d43fa",
-  "source_published": false,
-  "remote_main_observed": "d6f5e5a907eea722919e526c1313cce870f67ddb",
-  "github_ci": "NOT_RUN_FOR_THIS_CANDIDATE",
-  "rejected_action": "git push origin HEAD:refs/heads/main",
-  "review_reason": "Publishing source/documentation to a public shared main branch requires explicit user authorization; current authorization was not recognized.",
-  "workaround_attempted": false
+  "status": "PUBLISHED_CI_SUCCESS",
+  "source_commit": "07807d62b49f07d31e9e41d4f2fd25c3cefe8f83",
+  "source_published": true,
+  "remote_main_observed": "8cc2b2b8255502d1407f8b820be86b47cc813559",
+  "github_ci": "SUCCESS",
+  "ci_run_id": 35956624107,
+  "prior_status": {
+    "status": "BLOCKED_BY_AUTOMATIC_APPROVAL_REVIEW",
+    "source_commit": "c1c37dd31763726eeca3084c0db690836b0d43fa",
+    "source_published": false,
+    "remote_main_observed": "d6f5e5a907eea722919e526c1313cce870f67ddb",
+    "github_ci": "NOT_RUN_FOR_THIS_CANDIDATE",
+    "rejected_action": "git push origin HEAD:refs/heads/main",
+    "review_reason": "Publishing source/documentation to a public shared main branch requires explicit user authorization; current authorization was not recognized.",
+    "workaround_attempted": false
+  },
+  "authorization": "User explicitly permitted publication of the two source/development-log commits to the public main and continuation of CI verification.",
+  "publication_map": "publication-map.json",
+  "ci_head": "8cc2b2b8255502d1407f8b820be86b47cc813559",
+  "ci_run_attempt": 1,
+  "ci_results": "ci-runs.json"
 }
