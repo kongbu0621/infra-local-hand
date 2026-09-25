@@ -1,0 +1,13 @@
+{
+  "source_commit": "59a72ddbac0703486123873f4ee1b03cff8c522a",
+  "tree": "8d2dfa5d3a5c45f510737c6d5896e798d5020898",
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "-I",
+    "-B",
+    "tests/e3_host/q2_batch_check.py"
+  ],
+  "returncode": 3,
+  "stdout_sha256": "9ee84b877edd04cec4c83430a446aa6870cf895dba444244da651eefa08caa30",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

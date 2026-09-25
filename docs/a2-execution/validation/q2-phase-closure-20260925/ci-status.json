@@ -1,0 +1,78 @@
+{
+  "observed_at": "2026-09-25T10:40:26.809Z",
+  "scope": "GitHub Actions API job status; not target-host Q3 verification",
+  "runs": [
+    {
+      "run_id": 36119356829,
+      "head_sha": "007cbdf49ca61005c91f092a982a6c9b9240e6f0",
+      "jobs": [
+        {
+          "id": 108020902550,
+          "name": "classify-change",
+          "head_sha": "007cbdf49ca61005c91f092a982a6c9b9240e6f0",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36119356829/job/108020902550",
+          "started_at": "2026-09-25T09:36:11Z",
+          "completed_at": "2026-09-25T09:36:15Z"
+        },
+        {
+          "id": 108020935915,
+          "name": "semantic-core (windows-latest)",
+          "head_sha": "007cbdf49ca61005c91f092a982a6c9b9240e6f0",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36119356829/job/108020935915",
+          "started_at": "2026-09-25T09:36:17Z",
+          "completed_at": "2026-09-25T09:43:23Z"
+        },
+        {
+          "id": 108020935927,
+          "name": "semantic-core (ubuntu-latest)",
+          "head_sha": "007cbdf49ca61005c91f092a982a6c9b9240e6f0",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36119356829/job/108020935927",
+          "started_at": "2026-09-25T09:36:17Z",
+          "completed_at": "2026-09-25T09:47:10Z"
+        }
+      ]
+    },
+    {
+      "run_id": 36125012802,
+      "head_sha": "ae63052cdf9d67534bcd35347cbf2596651c3246",
+      "jobs": [
+        {
+          "id": 108038998751,
+          "name": "classify-change",
+          "head_sha": "ae63052cdf9d67534bcd35347cbf2596651c3246",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36125012802/job/108038998751",
+          "started_at": "2026-09-25T10:37:53Z",
+          "completed_at": "2026-09-25T10:37:59Z"
+        },
+        {
+          "id": 108039045149,
+          "name": "semantic-core (ubuntu-latest)",
+          "head_sha": "ae63052cdf9d67534bcd35347cbf2596651c3246",
+          "status": "in_progress",
+          "conclusion": null,
+          "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36125012802/job/108039045149",
+          "started_at": "2026-09-25T10:38:02Z",
+          "completed_at": null
+        },
+        {
+          "id": 108039045241,
+          "name": "semantic-core (windows-latest)",
+          "head_sha": "ae63052cdf9d67534bcd35347cbf2596651c3246",
+          "status": "in_progress",
+          "conclusion": null,
+          "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36125012802/job/108039045241",
+          "started_at": "2026-09-25T10:38:02Z",
+          "completed_at": null
+        }
+      ]
+    }
+  ]
+}

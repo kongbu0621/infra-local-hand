@@ -10,7 +10,7 @@ broker 阶段关闭检查及固定 fixture 预检入口。**Q2 整体尚未完�
 `415327ebdcc251bb055da9931a7a88990f750b7a`、独立 C
 `5a4ea852091db06549a876e42bbd5f95d5869d3b`。本记录不改三份批准文档。
 第三批历史状态见 [管理运行与绑定](E3_QUOTA_Q2_RUNTIME_BINDING.md)。
-准确源码、最终回归、发布映射与 CI 在本批验证记录中另行保存。
+准确源码、最终回归、发布映射与 CI 见 [本批验证记录](E3_QUOTA_Q2_PHASE_CLOSURE_VERIFICATION.md)。
 
 ## 已实现的行为
 

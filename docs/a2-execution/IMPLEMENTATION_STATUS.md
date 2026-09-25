@@ -4,6 +4,8 @@
 broker 阶段关闭检查及一次组合预检，见 [第四批实现与固定 fixture 交接](E3_QUOTA_Q2_PHASE_CLOSURE.md)。
 真实双向管理桥接和整链 fixture 驱动尚待完成；Q2 整体、Q3/Q4 和生产 E3 仍未完成。
 下文各批历史范围和结果保留，不将组件验证等同于实机验收。
+本批准确源码两组回归共 802 项：787 通过、15 环境跳过、零失败，见
+[第四批验证与发布映射](E3_QUOTA_Q2_PHASE_CLOSURE_VERIFICATION.md)。
 
 前三批进展：私有隔离 guest 的 Q1 查询/权限/真实 EDQUOT/完整退出及原容量范围已复核，
 见 [Q1 限定范围结论](E3_QUOTA_Q1_GUEST_CAPACITY_REVIEW.md)。Q2 首批协议、完整根绑定和有界客户端
