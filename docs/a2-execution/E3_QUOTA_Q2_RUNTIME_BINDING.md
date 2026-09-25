@@ -8,7 +8,7 @@ bootstrap 回执管道一起实现。**这是隔离源码候选；Q2 整体验�
 A `415327ebdcc251bb055da9931a7a88990f750b7a`，独立 C
 `5a4ea852091db06549a876e42bbd5f95d5869d3b`。三份权威文档未改变。
 第二批历史结果见[持久核心验证](E3_QUOTA_Q2_DURABLE_VERIFICATION.md)；本批准确提交、命令、结果和
-发布映射在随后保存的 `E3_QUOTA_Q2_RUNTIME_VERIFICATION.md` 中记录。
+发布映射见[准确验证与接续记录](E3_QUOTA_Q2_RUNTIME_VERIFICATION.md)。
 
 ## 本批行为
 

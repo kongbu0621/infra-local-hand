@@ -1,0 +1,46 @@
+{
+  "source_commit": "47f2cd3fa03042190e1fffaf2c26ca3fa799664a",
+  "source_tree": "3e272b5e70cc2f6fc99bf830c2832cd44e05426a",
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "-B",
+    "-W",
+    "error",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_local_hand_jobs*.py",
+    "-v"
+  ],
+  "cwd": "repository-root",
+  "environment": {
+    "PYTHONPATH": "tools:tests"
+  },
+  "started": "2026-09-25T09:35:05.177555+00:00",
+  "finished": "2026-09-25T09:35:11.923354+00:00",
+  "exit_code": 0,
+  "tests": 507,
+  "skipped": [
+    "test_real_unix_socket_roundtrip_when_host_permits (test_local_hand_jobs_cli.CliTests.test_real_unix_socket_roundtrip_when_host_permits) ... skipped 'UNSUPPORTED: host policy prohibits AF_UNIX sockets; synthetic transport tests are separate'",
+    "test_real_maintenance_transport_shares_broker_and_original_identity (test_local_hand_jobs_integration.JobIntegrationTests.test_real_maintenance_transport_shares_broker_and_original_identity) ... skipped 'UNSUPPORTED: this host forbids the real Unix maintenance socket'",
+    "test_bound_receipt_from_another_request_is_rejected_after_complete_ipc (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_bound_receipt_from_another_request_is_rejected_after_complete_ipc) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_complete_json_without_transport_eof_is_not_complete (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_complete_json_without_transport_eof_is_not_complete) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_connection_error_is_sanitized_and_not_retried (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_connection_error_is_sanitized_and_not_retried) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_endpoint_replacement_after_connection_is_rejected (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_endpoint_replacement_after_connection_is_rejected) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_expired_boot_mismatch_invalid_request_and_roots_send_nothing (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_expired_boot_mismatch_invalid_request_and_roots_send_nothing) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_fragmented_response_and_eof_return_immutable_bound_facts (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_fragmented_response_and_eof_return_immutable_bound_facts) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_os_peer_must_match_installed_socket_owner (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_os_peer_must_match_installed_socket_owner) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_partial_header_body_zero_oversize_and_trailing_data_are_rejected_once (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_partial_header_body_zero_oversize_and_trailing_data_are_rejected_once) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_rights_in_header_body_or_after_frame_are_closed_before_rejection (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_rights_in_header_body_or_after_frame_are_closed_before_rejection) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_slow_fragments_do_not_refresh_deadline (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_slow_fragments_do_not_refresh_deadline) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_unprotected_parent_world_socket_and_symlink_fail_before_connect (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_unprotected_parent_world_socket_and_symlink_fail_before_connect) ... skipped 'executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED'",
+    "test_real_delegated_cgroup_integration_is_not_a_simulated_pass (test_local_hand_jobs_runner.RunnerTests.test_real_delegated_cgroup_integration_is_not_a_simulated_pass) ... skipped 'UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; PID 1 is not systemd; no predelegated manager admission; dedicated non-root account is required'"
+  ],
+  "log_sha256": "13f3871b5d86dac433014b9d373f61a369219ca5c89bf03cb2a21e6b737169da",
+  "python": "3.12.14",
+  "system": "Linux",
+  "kernel": "6.18.44"
+}

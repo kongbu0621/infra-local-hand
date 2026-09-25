@@ -1,0 +1,33 @@
+{
+  "source_commit": "47f2cd3fa03042190e1fffaf2c26ca3fa799664a",
+  "source_tree": "3e272b5e70cc2f6fc99bf830c2832cd44e05426a",
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "-B",
+    "-W",
+    "error",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_e3_quota*.py",
+    "-v"
+  ],
+  "cwd": "repository-root",
+  "environment": {
+    "PYTHONPATH": "tools:tests"
+  },
+  "started": "2026-09-25T09:35:05.178063+00:00",
+  "finished": "2026-09-25T09:35:11.585055+00:00",
+  "exit_code": 0,
+  "tests": 273,
+  "skipped": [
+    "test_real_fd_handoff_request_and_response_with_supervision_modeled (test_e3_quota_q2_runtime.ListenerIPCTests.test_real_fd_handoff_request_and_response_with_supervision_modeled) ... skipped 'AF_UNIX unavailable'"
+  ],
+  "log_sha256": "08742661c21c85af812c0f52542c32428850fd55c719c475872f730ade561e38",
+  "python": "3.12.14",
+  "system": "Linux",
+  "kernel": "6.18.44"
+}
