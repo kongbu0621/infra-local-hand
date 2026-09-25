@@ -144,9 +144,17 @@ def verify_roots(execution):
 def prepare(payload):
     """Create only allocation-owned files after independent supervision exists."""
     from . import bootstrap_roots, budget, runner
-    if not isinstance(payload, dict) or set(payload) != {"execution", "allocation"}:
+    if not isinstance(payload, dict):
+        raise JobError("UNSUPPORTED", "Bootstrap payload shape is invalid")
+    modern = set(payload) == {"version", "execution", "allocation", "observation"}
+    if modern:
+        if type(payload["version"]) is not int or payload["version"] != 2:
+            raise JobError("UNSUPPORTED", "Unknown bootstrap observation envelope")
+    elif set(payload) != {"execution", "allocation"}:
         raise JobError("UNSUPPORTED", "Bootstrap payload shape is invalid")
     execution, allocation = payload["execution"], payload["allocation"]
+    if modern != ("quota_grant_digest" in execution):
+        raise JobError("UNSUPPORTED", "Bootstrap observation version and binding differ")
     bootstrap_roots.validate_grant(allocation, execution_id=execution["execution_id"],
                                    phase=execution["phase"], operation_id=execution["operation_id"])
     budget.validate_grant(execution["budget_grant"], execution_id=execution["execution_id"],
@@ -167,13 +175,20 @@ def prepare(payload):
     try:
         for path, identity in allocation["paths"].items():
             descriptors[path] = _root_descriptor(path, identity)
-        quotas = {}
-        for path in allocation["paths"]:
-            limit = execution["budgets"]["temporary_bytes"] if path == execution["roots"]["temporary"] else execution["budgets"]["reservation_bytes"]
-            quotas[path] = runner._verify_project_quota(path, limit, expected_identity=allocation["paths"][path])
-        distinct = {(item["mount"]["source"], item["project_id"]): item["hard_bytes"] for item in quotas.values()}
-        if sum(distinct.values()) > execution["budgets"]["reservation_bytes"]:
-            raise JobError("UNSUPPORTED", "Combined hard quotas exceed the reserved peak capacity")
+        if modern:
+            from . import quota_bootstrap, quota_contract
+            try:
+                quotas = quota_bootstrap.observe(execution, allocation, payload["observation"], descriptors)
+            except quota_contract.QuotaError as error:
+                raise JobError("IO_UNCERTAIN", "Quota observation unresolved: " + error.code) from error
+        else:
+            quotas = {}
+            for path in allocation["paths"]:
+                limit = execution["budgets"]["temporary_bytes"] if path == execution["roots"]["temporary"] else execution["budgets"]["reservation_bytes"]
+                quotas[path] = runner._verify_project_quota(path, limit, expected_identity=allocation["paths"][path])
+            distinct = {(item["mount"]["source"], item["project_id"]): item["hard_bytes"] for item in quotas.values()}
+            if sum(distinct.values()) > execution["budgets"]["reservation_bytes"]:
+                raise JobError("UNSUPPORTED", "Combined hard quotas exceed the reserved peak capacity")
         marker = json.dumps({"version": 1, "allocation_id": allocation["allocation_id"],
                              "operation_id": allocation["operation_id"], "slot_id": allocation["slot_id"]},
                             sort_keys=True, separators=(",", ":")).encode()
