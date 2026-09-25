@@ -52,6 +52,9 @@ def encode_payload(payload):
 
 
 def decode_payload(encoded):
+    if isinstance(encoded, str) and encoded.startswith("lhq2-bootstrap-z1:"):
+        from . import quota_payload
+        return quota_payload.decode_bootstrap(encoded)
     if not isinstance(encoded, str) or len(encoded) > MAX_ENCODED_BYTES:
         raise JobError("LIMIT_EXCEEDED", "Bootstrap plan exceeds its bounded launch transport")
     try:
@@ -192,6 +195,12 @@ def prepare(payload):
         marker = json.dumps({"version": 1, "allocation_id": allocation["allocation_id"],
                              "operation_id": allocation["operation_id"], "slot_id": allocation["slot_id"]},
                             sort_keys=True, separators=(",", ":")).encode()
+        if modern:
+            from . import quota_payload
+            if quota_payload.requires_extended(payload):
+                filesystem = os.fstatvfs(descriptors[execution["roots"]["evidence"]])
+                quota_payload.check_final_artifact(payload, quotas, marker,
+                    block_size=filesystem.f_frsize or filesystem.f_bsize)
         # Observe every fresh root before writing the first marker. Partial
         # marker publication is retained after failure and never silently reused.
         if allocation["fresh"]:

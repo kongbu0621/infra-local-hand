@@ -14,13 +14,13 @@ def bind_payload(execution, allocation, grant, *, now_ns):
     Selection/consumption of grant and the peer start attestation must already
     be durable. This pure function performs no ledger I/O or grant issuance.
     """
-    from . import bootstrap
+    from . import bootstrap, quota_payload
     grant = g.decode_grant(grant.wire)
     bound = dict(execution, quota_grant_digest=grant.digest)
     g.check_execution(grant, bound, allocation, now_ns=now_ns)
     value = {"version": 2, "execution": bound, "allocation": allocation, "observation": grant.as_dict()}
     # Roundtrip makes a detached value and enforces the existing exec envelope.
-    return bootstrap.decode_payload(bootstrap.encode_payload(value))
+    return bootstrap.decode_payload(quota_payload.encode_bootstrap(value))
 
 
 def _local_roots(grant, descriptors):

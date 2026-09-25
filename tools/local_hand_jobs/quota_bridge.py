@@ -19,6 +19,8 @@ LIMIT = 2 * 1024 * 1024
 CHUNK = 16384
 HEADER = struct.Struct("!III")
 SCHEMA = "local-hand-quota-bridge/v1"
+CHAIN_SCHEMA = "local-hand-quota-bridge/v2"
+JOB_PHASES = ("preflight", "business", "evidence")
 
 
 class Channel:
@@ -28,7 +30,8 @@ class Channel:
     NEVER from an incoming record. There is no reconnect or retransmission.
     A retained pidfd prevents a replacement process satisfying the PID pin.
     """
-    def __init__(self, sock, *, peer, session, boot_id, deadline_ns):
+    def __init__(self, sock, *, peer, session, boot_id, deadline_ns, version=1):
+        q.require(type(version) is int and version in (1, 2), "BRIDGE_VERSION")
         q.require(sock.family == socket.AF_UNIX and sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE)
                   == socket.SOCK_SEQPACKET, "BRIDGE_SOCKET")
         q.require(type(peer) is tuple and len(peer) == 3, "BRIDGE_PEER")
@@ -39,6 +42,8 @@ class Channel:
         self.end = q.integer(deadline_ns, 1)
         self.owner = os.getpid()
         self.tx = self.rx = self.total = self.packets = 0
+        self.version, self.phase_index = version, 0
+        self.phase_tx = self.phase_rx = self.phase_total = self.phase_packets = 0
         self.poisoned = False
         self.pidfd = os.pidfd_open(peer[0], 0)
         try:
@@ -65,13 +70,38 @@ class Channel:
 
     def _charge(self, count):
         self.total += count;self.packets += 1
-        q.require(self.total <= 8 * LIMIT and self.packets <= 2048, "BRIDGE_TOTAL_LIMIT")
+        self.phase_total += count;self.phase_packets += 1
+        phases = len(JOB_PHASES) if self.version == 2 else 1
+        q.require(self.total <= phases * 8 * LIMIT and self.packets <= phases * 2048
+                  and self.phase_total <= 8 * LIMIT and self.phase_packets <= 2048, "BRIDGE_TOTAL_LIMIT")
+
+    def advance_phase(self, phase):
+        """Advance fixed transport accounting only; never an execution grant.
+
+        Both original peers call after sending/validating the authenticated
+        advance command. Global order, byte totals and deadline remain intact.
+        The resident separately proves the prior durable phase closure.
+        """
+        try:
+            self._time()
+            q.require(self.version == 2 and self.phase_index + 1 < len(JOB_PHASES)
+                      and phase == JOB_PHASES[self.phase_index + 1], "BRIDGE_PHASE_ORDER")
+            self.phase_index += 1
+            self.phase_tx = self.phase_rx = self.phase_total = self.phase_packets = 0
+        except BaseException:
+            self.poisoned = True
+            raise
 
     def send(self, value):
         try:
             self._time()
-            q.require(self.tx < 64, "BRIDGE_EXCHANGE_LIMIT")
-            raw = q._canonical(dict(schema=SCHEMA, session=self.session, value=value), LIMIT)
+            q.require(self.phase_tx < 64 and self.tx < (192 if self.version == 2 else 64), "BRIDGE_EXCHANGE_LIMIT")
+            envelope = dict(schema=SCHEMA, session=self.session, value=value)
+            if self.version == 2:
+                from . import quota_payload
+                envelope.update(schema=CHAIN_SCHEMA, phase=JOB_PHASES[self.phase_index])
+                envelope["value"] = quota_payload.encode_bridge_value(value)
+            raw = q._canonical(envelope, LIMIT)
             end = min(self.end, self._time()+2_000_000_000)
             for offset in range(0,len(raw),CHUNK):
                 packet = HEADER.pack(self.tx, offset, len(raw)) + raw[offset:offset+CHUNK]
@@ -81,14 +111,14 @@ class Channel:
                     except BlockingIOError:continue
                     q.require(written == len(packet), "BRIDGE_PARTIAL_SEND")
                     self._charge(written);break
-            self._time();self.tx += 1
+            self._time();self.tx += 1;self.phase_tx += 1
         except BaseException:
             self.poisoned = True
             raise
 
     def receive(self):
         try:
-            q.require(self.rx < 64, "BRIDGE_EXCHANGE_LIMIT")
+            q.require(self.phase_rx < 64 and self.rx < (192 if self.version == 2 else 64), "BRIDGE_EXCHANGE_LIMIT")
             end = min(self.end, self._time()+2_000_000_000)
             raw = bytearray();expected = None
             while expected is None or len(raw) < expected:
@@ -120,9 +150,14 @@ class Channel:
                 expected = size;raw.extend(packet[HEADER.size:])
                 q.require(len(raw) <= expected and len(packet)-HEADER.size == min(CHUNK,size-offset), "BRIDGE_FRAME")
             value = q._load(bytes(raw), LIMIT, 20)
-            q._keys(value, {"schema","session","value"})
-            q.require(value["schema"] == SCHEMA and value["session"] == self.session, "BRIDGE_SESSION")
-            self._time();self.rx += 1
+            q._keys(value, {"schema","session","value"} | ({"phase"} if self.version == 2 else set()))
+            q.require(value["schema"] == (CHAIN_SCHEMA if self.version == 2 else SCHEMA)
+                      and value["session"] == self.session, "BRIDGE_SESSION")
+            if self.version == 2:
+                from . import quota_payload
+                q.require(value["phase"] == JOB_PHASES[self.phase_index], "BRIDGE_PHASE_ORDER")
+                value["value"] = quota_payload.decode_bridge_value(value["value"])
+            self._time();self.rx += 1;self.phase_rx += 1
             return value["value"]
         except BaseException:
             self.poisoned = True
@@ -143,9 +178,11 @@ class Phase:
     Immutable event verification and mutations use the existing broker fence.
     The ordinary maintenance transport does not construct or expose this class.
     """
-    def __init__(self, broker, namespace, identity, phase):
+    def __init__(self, broker, namespace, identity, phase, *, version=1):
+        q.require(type(version) is int and version in (1, 2), "BRIDGE_VERSION")
         q.require(namespace in q._PHASES and phase in q._PHASES[namespace], "BRIDGE_PHASE")
         self.broker, self.namespace, self.identity, self.phase = broker, namespace, identity, phase
+        self.version = version
         self.session = broker._quota_session
         self.failed = False
 
@@ -163,6 +200,10 @@ class Phase:
                 if self.phase in row['record'].get(field,{}) or binding.recorded(tx,row,self.phase,kind):
                     result[name] = binding.original(tx,row,self.phase,kind,field)
             # Canonical copy prevents sharing mutable state beyond the fence.
+            if self.version == 2:
+                from . import quota_payload
+                return quota_payload.decode_bridge_value(q._load(q._canonical(
+                    quota_payload.encode_bridge_value(result), LIMIT), LIMIT, 20))
             return q._load(q._canonical(result,LIMIT),LIMIT,20)
 
     def handle(self, command):

@@ -128,6 +128,16 @@ class QuotaBootstrapTests(unittest.TestCase):
             self.assertFalse(any(path.exists() for path in self.fixture.markers()))
             self.assertFalse(self.fixture.plan_path(self.payload).exists())
 
+    def test_extended_final_artifact_budget_is_checked_before_any_marker_write(self):
+        # Actual directories and receipt validation; modeled systemd/quota facts
+        # as in host(). Direct prepare also rechecks the bounded argv admission.
+        self.payload["execution"]["padding"] = "x" * 65536
+        with self.host() as request, self.assertRaisesRegex(JobError, "original artifact budget"):
+            bootstrap.prepare(self.payload)
+        self.assertEqual(1, request.call_count)
+        self.assertFalse(any(path.exists() for path in self.fixture.markers()))
+        self.assertFalse(self.fixture.plan_path(self.payload).exists())
+
     def test_unknown_receipt_does_not_fallback_or_publish_plan(self):
         self.result.update(status="UNKNOWN", reason="EXIT_UNPROVEN")
         self.result["exit"]["tree_empty"] = False

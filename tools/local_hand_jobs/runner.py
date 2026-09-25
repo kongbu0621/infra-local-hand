@@ -376,13 +376,13 @@ def _quota_prepared_execution(plan, *, parent_mount_namespace, now_ns):
 
 def quota_bootstrap_argv(execution, grant, *, script=None, now_ns):
     """Exact original ordinary argv; caller's script is an administrator pin."""
-    from . import quota_bootstrap
+    from . import quota_bootstrap, quota_payload
     script = str(Path(__file__).absolute()) if script is None else script
     if any(not isinstance(path, str) or not path.startswith("/")
            or re.search(r"[\s\\%$]", path) for path in (script, execution["python"])):
         raise RunnerError("UNSUPPORTED", "systemd executable paths must not contain specifiers")
     payload = quota_bootstrap.bind_payload(execution, execution["bootstrap_allocation"], grant, now_ns=now_ns)
-    return [execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)]
+    return [execution["python"], "-I", script, "--bootstrap", quota_payload.encode_bootstrap(payload)]
 
 
 class _SystemdExecutionCore:

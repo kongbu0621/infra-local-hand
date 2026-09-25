@@ -45,7 +45,7 @@ class ResidentEntryTests(unittest.TestCase):
             channel = mock.Mock()
             if cleanup_failure:
                 channel.close.side_effect = JobError("IO_UNCERTAIN", "private diagnostic detail")
-            with mock.patch.object(resident, "bootstrap", return_value={"bridge": {}}), \
+            with mock.patch.object(resident, "bootstrap", return_value={"bridge": {}, "schema": resident.SCHEMA}), \
                  mock.patch.object(resident, "channel_from_pin", return_value=channel), \
                  mock.patch.object(resident, "compose", return_value=broker), \
                  mock.patch.object(resident, "run", side_effect=JobError("CONFLICT", "private diagnostic detail")), \
@@ -58,6 +58,18 @@ class ResidentEntryTests(unittest.TestCase):
             self.assertNotIn(b"private", raw)
             self.assertEqual("INCOMPLETE", json.loads(raw)["status"])
             self.assertEqual("IO_UNCERTAIN" if cleanup_failure else "CONFLICT", json.loads(raw)["reason"])
+
+    def test_only_explicit_v2_can_select_the_fixed_complete_phase_sequence(self):
+        self.assertEqual(resident.PHASES, resident.fixture_phases(dict(schema=resident.SCHEMA,
+            purpose="ISOLATED_Q2_RESIDENT", phases=["preflight"])))
+        self.assertEqual(resident.CHAIN_PHASES, resident.fixture_phases(dict(schema=resident.CHAIN_SCHEMA,
+            purpose="ISOLATED_Q2_CHAIN", phases=list(resident.CHAIN_PHASES))))
+        for version,purpose,phases in ((resident.SCHEMA,"ISOLATED_Q2_RESIDENT",list(resident.CHAIN_PHASES)),
+                (resident.CHAIN_SCHEMA,"ISOLATED_Q2_CHAIN",["preflight","evidence"]),
+                (resident.CHAIN_SCHEMA,"ISOLATED_Q2_CHAIN",["preflight","business","business"]),
+                (resident.CHAIN_SCHEMA,"ISOLATED_Q2_RESIDENT",list(resident.CHAIN_PHASES))):
+            with self.subTest(phases=phases), self.assertRaisesRegex(ValueError,"RESIDENT_SCHEMA"):
+                resident.fixture_phases(dict(schema=version,purpose=purpose,phases=phases))
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux production manager and exact Q2 argv")

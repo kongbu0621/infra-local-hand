@@ -17,11 +17,11 @@ import test_local_hand_jobs_quota_closure as closure_tests
 
 @unittest.skipUnless(sys.platform.startswith('linux') and hasattr(os,'pidfd_open'), 'Linux credentialed inherited bridge')
 class ChannelTests(unittest.TestCase):
-    def pair(self, peer=None):
+    def pair(self, peer=None, version=1):
         left,right=socket.socketpair(socket.AF_UNIX,socket.SOCK_SEQPACKET)
         clock=budget.current_clock()
         options=dict(peer=peer or (os.getpid(),os.getuid(),os.getgid()),session='a'*64,
-            boot_id=clock['boot_id'],deadline_ns=clock['boottime_ns']+5_000_000_000)
+            boot_id=clock['boot_id'],deadline_ns=clock['boottime_ns']+5_000_000_000,version=version)
         a=bridge.Channel(left,**options);b=bridge.Channel(right,**options)
         self.addCleanup(a.close);self.addCleanup(b.close)
         return a,b
@@ -36,6 +36,51 @@ class ChannelTests(unittest.TestCase):
         self.assertFalse(thread.is_alive());self.assertEqual([],errors)
         b.send({'ack':True});self.assertEqual({'ack':True},a.receive())
         self.assertEqual((1,1,1,1),(a.tx,a.rx,b.tx,b.rx))
+
+    def test_chain_transport_has_fixed_three_phase_caps_and_monotone_original_order(self):
+        a,b=self.pair(version=2)
+        original=(a.end,a.session,a.boot_id,a.owner,a.pidfd)
+        previous_total=0
+        for index,phase in enumerate(bridge.JOB_PHASES):
+            if index:
+                a.advance_phase(phase);b.advance_phase(phase)
+                self.assertEqual(64*index,a.tx)
+                self.assertEqual(previous_total,a.total)
+            for counter in range(64):
+                a.send({'phase':phase,'counter':counter})
+                self.assertEqual({'phase':phase,'counter':counter},b.receive())
+            self.assertEqual(64*(index+1),a.tx)
+            self.assertEqual(64,a.phase_tx)
+            self.assertEqual(a.tx,b.rx)
+            self.assertGreater(a.total,previous_total)
+            previous_total=a.total
+            self.assertEqual(original,(a.end,a.session,a.boot_id,a.owner,a.pidfd))
+        with self.assertRaisesRegex(q.QuotaError,'BRIDGE_PHASE_ORDER'):a.advance_phase('preflight')
+        self.assertTrue(a.poisoned)
+
+    def test_chain_phase_limit_cannot_be_repaired_by_reset_or_reconnect(self):
+        a,b=self.pair(version=2)
+        for counter in range(64):a.send(counter);self.assertEqual(counter,b.receive())
+        with self.assertRaisesRegex(q.QuotaError,'BRIDGE_EXCHANGE_LIMIT'):a.send('overflow')
+        with self.assertRaises(q.QuotaError):a.advance_phase('business')
+        self.assertEqual(0,a.phase_index)
+        self.assertEqual(64,a.tx)
+
+    def test_chain_wrong_phase_and_v1_advance_are_rejected(self):
+        a,b=self.pair(version=2)
+        a.advance_phase('business');a.send({'wrong_phase':True})
+        with self.assertRaisesRegex(q.QuotaError,'BRIDGE_PHASE_ORDER'):b.receive()
+        self.assertTrue(b.poisoned)
+        old,_=self.pair()
+        with self.assertRaisesRegex(q.QuotaError,'BRIDGE_PHASE_ORDER'):old.advance_phase('business')
+        a,b=self.pair(version=2)
+        with self.assertRaisesRegex(q.QuotaError,'BRIDGE_PHASE_ORDER'):a.advance_phase('evidence')
+
+    def test_chain_control_float_is_not_an_ordinary_proof_exception(self):
+        a,b=self.pair(version=2)
+        a.send({'action':'bind','value':{'deadline_ns':1.5}})
+        with self.assertRaisesRegex(q.QuotaError,'NON_INTEGER_NUMBER'):b.receive()
+        self.assertTrue(b.poisoned)
 
     def test_wrong_actual_uid_poisoned_before_payload_use(self):
         a,b=self.pair(peer=(os.getpid(),os.getuid()+1,os.getgid()))

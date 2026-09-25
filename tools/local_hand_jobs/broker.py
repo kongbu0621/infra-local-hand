@@ -27,6 +27,32 @@ def thaw(value):
     return value
 
 
+def phase_plan(row, phase, grant, *, allocation=None, observation=None, parent=None, evidence_store_root=None):
+    """Pure phase declaration used by original delivery and trusted inspection.
+
+    Callers obtain row/grant/allocation through the existing durable authority
+    fence. This transform neither reserves capacity nor authorizes execution.
+    """
+    namespace, identity = row["namespace"], row["id"]
+    plan = dict(thaw(row["plan"]), phase=phase, execution_id=f"{namespace}-{identity}-{phase}",
+                budget_grant=thaw(grant), budgets=thaw(grant["limits"]))
+    if allocation is not None:
+        plan["bootstrap_allocation"] = thaw(allocation)
+        plan["supervision_version"] = 3
+    if observation is not None:
+        plan["quota_observation_grant"] = thaw(observation)
+    if namespace == "reconcile":
+        plan["execution"] = dict(plan.get("execution", {}), budgets=thaw(grant["limits"]))
+        original = parent["record"].get("bootstrap_grants", {}).get("preflight")
+        if original is not None:
+            plan["observed_roots"] = thaw(original["roots"])
+    plan["preflight_facts"] = thaw(row["record"].get("facts", {}))
+    if phase == "evidence":
+        plan["evidence_snapshot"] = thaw(row["record"]["frozen_snapshot"])
+        plan["evidence_store_root"] = evidence_store_root
+    return plan
+
+
 REPORT_DURABILITY_GAP = "Verified business result retained; helper exit leaves report durability unresolved"
 
 
@@ -756,22 +782,9 @@ class Broker:
                     "exit_proof": None,
                     "business_started": None if phase == "business" else row["record"]["business_started"],
                     "helper_started": row["record"]["helper_started"] if row["record"]["helper_started"] is True or phase == "business" else None})
-                plan = dict(row["plan"], phase=phase, execution_id=execution_id,
-                            budget_grant=grant, budgets=grant["limits"])
-                if allocation is not None:
-                    plan["bootstrap_allocation"] = allocation
-                    plan["supervision_version"] = 3
-                if observation is not None:
-                    plan["quota_observation_grant"] = observation.as_dict()
-                if namespace == "reconcile":
-                    plan["execution"] = dict(plan.get("execution", {}), budgets=grant["limits"])
-                    original = parent["record"].get("bootstrap_grants", {}).get("preflight")
-                    if original is not None:
-                        plan["observed_roots"] = thaw(original["roots"])
-                plan["preflight_facts"] = row["record"].get("facts", {})
-                if phase == "evidence":
-                    plan["evidence_snapshot"] = row["record"]["frozen_snapshot"]
-                    plan["evidence_store_root"] = str(self.evidence.root)
+                plan = phase_plan(row, phase, grant, allocation=allocation,
+                    observation=None if observation is None else observation.as_dict(), parent=parent,
+                    evidence_store_root=str(self.evidence.root) if phase == "evidence" else None)
             # The runner enqueues locally; its manager provides the delayed-launch fence.
             self._execution_owners[execution_id] = (namespace, identity)
             handle = self.runner.start(row["parent"], execution_id, plan)

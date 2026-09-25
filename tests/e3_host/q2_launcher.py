@@ -1,4 +1,4 @@
-"""Explicit first-phase fixture launcher inside an existing root controller.
+"""Explicit finite fixture launcher inside an existing root controller.
 
 Creates only finite evidence/configuration files in declared existing fixture
 directories. The external supervisor must own this controller's original
@@ -23,6 +23,8 @@ import threading
 from types import SimpleNamespace
 
 SCHEMA = "local-hand-q2-launcher/v1"
+CHAIN_SCHEMA = "local-hand-q2-launcher/v2"
+PHASES = ("preflight", "business", "evidence")
 LIMIT = 2 * 1024 * 1024
 SOURCE_ROOTS = frozenset({"admin", "local_hand", "local_hand_jobs", "local_hand_connect", "local_hand_mcp"})
 
@@ -89,7 +91,8 @@ def decode(raw, digest):
     finite(value)
     require(type(value) is dict and set(value) == {"schema", "purpose", "source", "resident", "assembly",
             "controller_envelope", "setpriv", "output", "declarations", "session"}
-            and value["schema"] == SCHEMA and value["purpose"] == "ISOLATED_Q2_PREFLIGHT", "LAUNCHER_SCHEMA")
+            and (value["schema"], value["purpose"]) in ((SCHEMA, "ISOLATED_Q2_PREFLIGHT"),
+                (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN")), "LAUNCHER_SCHEMA")
     return value
 
 
@@ -158,7 +161,7 @@ def source(value, repository):
     require(provenance.source_commit(require_clean=True) == pin["commit"], "LAUNCHER_SOURCE_IDENTITY")
 
 
-def controller(value, template):
+def controller(value, template, declared_totals=None):
     """Verify independent controller before the first file or process mutation."""
     from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c
     from admin.local_hand_quota_observer.systemd_runtime import Capture
@@ -175,7 +178,8 @@ def controller(value, template):
               <= envelope["issued_ns"] + spec.runtime_max_usec * 1000, "LAUNCHER_DEADLINE")
     q.integer(envelope["output_bytes"], 1, 32768)
     q.integer(envelope["storage_bytes"], 1024 * 1024)
-    q.integer(envelope["storage_inodes"], 8)
+    phase_count = 3 if value["schema"] == CHAIN_SCHEMA else 1
+    q.integer(envelope["storage_inodes"], max(8, 6 + phase_count))
     # Capacity must fund the controller/resident before the resident reserves
     # anything. Static costs do not need, and must not invent, its future phase
     # clock or quota grant. Revalidate all finite template amounts before sums.
@@ -191,13 +195,13 @@ def controller(value, template):
     request = prepared["grant"]["request"]
     require(all(request[key] == capacity[key] for key in ("boot_id", "epoch", "authority_digest"))
             and management["capacity_digest"] == g.digest(capacity), "LAUNCHER_CAPACITY_BINDING")
-    totals = g.totals(SimpleNamespace(as_dict=lambda: prepared["grant"]))
+    totals = g.totals(SimpleNamespace(as_dict=lambda: prepared["grant"])) if declared_totals is None else declared_totals
     costs = dict(storage_bytes=envelope["storage_bytes"], storage_inodes=envelope["storage_inodes"],
         cpu_ns=((spec.runtime_max_usec + spec.timeout_stop_usec + 1_000_000) * spec.cpu_quota_per_sec_usec + 999) // 1000,
         memory_bytes=spec.memory_bytes, pids=spec.tasks_max,
         # Resident pipes, manager-control captures and the outer summary have
         # independent finite buffers; none is charged as zero.
-        output_bytes=envelope["output_bytes"] + 32768 + 4096)
+        output_bytes=phase_count * envelope["output_bytes"] + 32768 + 4096)
     for key, amount in costs.items():
         require(q.integer(amount + totals[key]) <= capacity["management"][key], "LAUNCHER_CONTROLLER_CAPACITY")
     for kind in ("bytes", "inodes"):
@@ -339,13 +343,63 @@ def reason(error):
     return code if re.fullmatch(r"[A-Z_]{1,100}", code) else type(error).__name__[:100]
 
 
+def validate_phase_plan(resident, prepared, grant, previous_plans):
+    """Bind the pinned resident's durable facts to the immutable declaration.
+
+    Dynamic facts arrive over the original authenticated process channel; the
+    pinned resident checks their original SQLite events. No incoming argv,
+    replacement base plan, new allocation, or future budget is authoritative.
+    """
+    from local_hand_jobs import quota_contract as q, quota_grant as g, quota_payload
+    from local_hand_jobs.broker import phase_plan
+    plan = quota_payload.decode_phase_plan(prepared["phase_plan"])
+    phase = prepared["phase"]
+    require(type(plan) is dict and list(previous_plans) == list(PHASES[:PHASES.index(phase)]),
+            "LAUNCHER_PHASE_PLAN_ORDER")
+    prep = prepared["snapshot"]["preparation"]
+    require(type(plan.get("preflight_facts")) is dict, "LAUNCHER_PHASE_FACTS")
+    facts = plan["preflight_facts"]
+    if phase == "preflight":
+        require(facts == {}, "LAUNCHER_PHASE_FACTS")
+    if phase == "evidence":
+        require(facts == previous_plans["business"]["preflight_facts"], "LAUNCHER_PHASE_FACTS_CHANGED")
+    row = dict(namespace="job", id=prepared["identity"], plan=resident["plan"], record={"facts": facts})
+    store = None
+    if phase == "evidence":
+        frozen = plan.get("evidence_snapshot")
+        require(type(frozen) is dict, "LAUNCHER_SNAPSHOT")
+        require(frozen.get("operation_id") == prepared["identity"] and frozen.get("reconcile_id") is None
+                and frozen.get("previous_seal_id") is None, "LAUNCHER_SNAPSHOT_OPERATION")
+        q.integer(frozen.get("event_seq"), 1)
+        business = previous_plans["business"]
+        require(frozen.get("root") == g.root_paths(business["bootstrap_allocation"])["evidence"],
+                "LAUNCHER_SNAPSHOT_ROOT")
+        quiet = frozen.get("quiescence")
+        q._keys(quiet, {"execution_id", "event_seq", "future_starts_blocked", "tree_exited",
+                        "collectors_stopped", "writers_stopped"})
+        require(quiet["execution_id"] == business["execution_id"] and quiet["event_seq"] == frozen["event_seq"]
+                and all(quiet[k] is True for k in ("future_starts_blocked", "tree_exited", "collectors_stopped", "writers_stopped")),
+                "LAUNCHER_SNAPSHOT_QUIESCENCE")
+        store = plan.get("evidence_store_root")
+        require(prep["allocation"]["retained_paths"] == [store], "LAUNCHER_SNAPSHOT_STORE")
+        row["record"]["frozen_snapshot"] = frozen
+    expected = phase_plan(row, phase, prep["budget"], allocation=prep["allocation"], evidence_store_root=store)
+    require(plan == expected, "LAUNCHER_PHASE_PLAN_CHANGED")
+    require(grant.as_dict()["budget"] == prep["budget"] and grant.as_dict()["allocation"] == prep["allocation"],
+            "LAUNCHER_PHASE_GRANT")
+    return dict(expected, quota_observation_grant=grant.as_dict())
+
+
 def run(value, repository):
     from local_hand_jobs import budget, quota_bridge as bridge, quota_contract as q, quota_closure, runner
-    from admin.local_hand_quota_observer import q2_assembly as assembly, q2_config as c, q2_management as m
+    from admin.local_hand_quota_observer import q2_assembly as assembly, q2_chain as chains, q2_config as c, q2_management as m
     from admin.local_hand_quota_observer.q2_coordinator import Coordinator
     from admin.local_hand_quota_observer.q2_capture import capture_existing
     raw = encoded(value["assembly"], LIMIT)
-    template = assembly.decode(raw, hashlib.sha256(raw).hexdigest())
+    chained = value["schema"] == CHAIN_SCHEMA
+    phases = PHASES if chained else ("preflight",)
+    chain = chains.decode(raw, hashlib.sha256(raw).hexdigest()) if chained else None
+    template = chains.phase_template(chain, "preflight") if chained else assembly.decode(raw, hashlib.sha256(raw).hexdigest())
     t = template.data(); resident = value["resident"]
     q.match(value["session"], r"[0-9a-f]{64}")
     q.integer(resident["ordinary"]["uid"], 1, 2**32-2)
@@ -353,9 +407,16 @@ def run(value, repository):
     work = next(root for root in t["grant"]["roots"] if root["role"] == "work")
     require((resident["ordinary"]["uid"], resident["ordinary"]["gid"]) == (work["uid"], work["gid"]),
             "LAUNCHER_ORDINARY_ACCOUNT")
-    require("bridge" not in resident and resident["phases"] == ["preflight"]
+    require("bridge" not in resident and resident["phases"] == list(phases)
             and resident["installation"]["source_commit"] == t["installation"]["source_commit"] == value["source"]["commit"],
             "LAUNCHER_RESIDENT_BINDING")
+    if chained:
+        require(resident["schema"] == "local-hand-q2-resident/v2" and resident["purpose"] == "ISOLATED_Q2_CHAIN",
+                "LAUNCHER_RESIDENT_BINDING")
+        for phase in phases:
+            phase_work = next(root for root in chain.data()["phases"][phase]["grant"]["roots"] if root["role"] == "work")
+            require((phase_work["uid"], phase_work["gid"]) == (resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
+                    "LAUNCHER_ORDINARY_ACCOUNT")
     require(resident["entry"]["path"] == str(repository / "tests/e3_host/q2_resident.py")
             and resident["entry"]["sha256"] == value["source"]["files"]["tests/e3_host/q2_resident.py"], "LAUNCHER_RESIDENT_ENTRY")
     require(resident["ordinary"]["parent"] == t["peer"]["parent"] and
@@ -379,11 +440,18 @@ def run(value, repository):
         t["journal"]["path"], t["installation"]["evidence"]["path"], t["installation"]["tools_path"], installed["package_root"],
         *t["grant"]["allocation"]["paths"]]
     require(all(not c.overlap(first, second) for i, first in enumerate(protected_paths) for second in protected_paths[i+1:]), "LAUNCHER_GEOMETRY")
-    clock = controller(value, template)
+    if chained:
+        for phase in phases:
+            declaration = chain.data()["phases"][phase]
+            extras = [declaration["output"]["path"], *declaration["grant"]["allocation"]["paths"],
+                      declaration["grant"]["endpoint"]["path"], declaration["service"]["control_path"]]
+            require(all(not c.overlap(root, path) for root in (value["output"]["path"], value["declarations"]["path"], installed["package_root"])
+                        for path in extras), "LAUNCHER_GEOMETRY")
+    clock = controller(value, template, chains.declared_totals(chain)) if chained else controller(value, template)
     end = value["controller_envelope"]["deadline_ns"]
     output = declarations = None; channel = record = None; process = None; sockets = []; capture = {}; worker = None
-    phase_result = None
-    result = dict(schema="local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
+    phase_result = None; configs = []; plans = {}; closures = {}; grants = {}; broker_session = None
+    result = dict(schema="local-hand-q2-launcher-result/v2" if chained else "local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
                   production_supported=False, independent_controller_stop_required=True)
     try:
         output = directory(value["output"], 0o700)
@@ -405,7 +473,7 @@ def run(value, repository):
         right.close(); sockets = [left]
         child_start = start_ticks(process.pid)
         channel = bridge.Channel(left, peer=(process.pid, resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
-            session=value["session"], boot_id=clock["boot_id"], deadline_ns=end)
+            session=value["session"], boot_id=clock["boot_id"], deadline_ns=end, version=2 if chained else 1)
         require(start_ticks(process.pid) == child_start, "LAUNCHER_CHILD_REPLACED")
         def collect():
             try:
@@ -425,46 +493,73 @@ def run(value, repository):
                     production_supported=False, q3_accepted=False)
             capture.update(captured)
         worker = threading.Thread(target=collect, name="q2-resident-capture", daemon=True); worker.start()
-        while not select.select([left], [], [], 0.025)[0]: channel._time()
-        prepared = channel.receive()
-        q._keys(prepared, {"event", "namespace", "identity", "phase", "snapshot"})
-        require(prepared["event"] == "prepared" and prepared["namespace"] == "job" and prepared["phase"] == "preflight"
-                and prepared["identity"] == resident["request"]["operation_id"], "LAUNCHER_PREPARED")
-        # The broker session is generated inside the resident, distinct from
-        # the inherited transport nonce and authenticated by this original FD.
-        prep = prepared["snapshot"]["preparation"]
-        session = prep["session"]
-        grant = assembly.build_grant(template, prepared["snapshot"], session=session, clock=budget.current_clock())
-        # Fixed setpriv+Python delivery performs no namespace operation. Use
-        # the controller's inherited namespace without acquiring SYS_PTRACE
-        # merely to dereference a different-UID /proc/<pid>/ns symlink. The
-        # root-built payload will fail the exact peer command check on change.
-        namespace = os.readlink("/proc/self/ns/mnt")
-        plan = dict(resident["plan"], phase="preflight", execution_id=prep["budget"]["execution_id"],
-            budget_grant=prep["budget"], budgets=prep["budget"]["limits"], bootstrap_allocation=prep["allocation"],
-            supervision_version=3, quota_observation_grant=grant.as_dict())
-        execution = runner._quota_prepared_execution(plan, parent_mount_namespace=namespace,
-                                                     now_ns=budget.current_clock()["boottime_ns"])
-        argv = runner.quota_bootstrap_argv(execution, grant, script=t["peer"]["runner"]["path"],
-                                           now_ns=budget.current_clock()["boottime_ns"])
-        installed = assembly.install(template, grant, bootstrap_argv=argv, session=session, clock=budget.current_clock())
-        config = installed["config"]
-        m.controller(config, value["controller_envelope"])
-        record = m.RunRecord(installed["management_record"])
-        phase_result = Coordinator(config, value["controller_envelope"], record, bridge.Client(channel)).run()
-        save(output, "phase.json", encoded(phase_result))
+        for index, phase in enumerate(phases):
+            while not select.select([left], [], [], 0.025)[0]: channel._time()
+            prepared = channel.receive()
+            keys = {"event", "namespace", "identity", "phase", "snapshot"}
+            q._keys(prepared, keys | {"phase_plan"} if chained else keys)
+            require(prepared["event"] == "prepared" and prepared["namespace"] == "job" and prepared["phase"] == phase
+                    and prepared["identity"] == resident["request"]["operation_id"], "LAUNCHER_PREPARED")
+            # The original broker session is distinct from the transport nonce.
+            prep = prepared["snapshot"]["preparation"]
+            session = prep["session"]
+            if broker_session is None: broker_session = session
+            require(session == broker_session, "LAUNCHER_BROKER_SESSION_CHANGED")
+            if chained:
+                template = chains.phase_template(chain, phase)
+                grant = chains.build_grant(chain, prepared["snapshot"], previousconfigs=configs,
+                                          session=session, clock=budget.current_clock())
+                plan = validate_phase_plan(resident, prepared, grant, plans)
+            else:
+                grant = assembly.build_grant(template, prepared["snapshot"], session=session, clock=budget.current_clock())
+                plan = dict(resident["plan"], phase=phase, execution_id=prep["budget"]["execution_id"],
+                    budget_grant=prep["budget"], budgets=prep["budget"]["limits"], bootstrap_allocation=prep["allocation"],
+                    supervision_version=3, quota_observation_grant=grant.as_dict())
+            # Fixed setpriv delivery inherits this mount namespace. No extra
+            # SYS_PTRACE authority is acquired merely to inspect another UID.
+            namespace = os.readlink("/proc/self/ns/mnt")
+            execution = runner._quota_prepared_execution(plan, parent_mount_namespace=namespace,
+                                                         now_ns=budget.current_clock()["boottime_ns"])
+            argv = runner.quota_bootstrap_argv(execution, grant, script=template.data()["peer"]["runner"]["path"],
+                                               now_ns=budget.current_clock()["boottime_ns"])
+            installed = chains.install(chain, grant, bootstrap_argv=argv, previousconfigs=configs,
+                session=session, clock=budget.current_clock()) if chained else assembly.install(template, grant,
+                bootstrap_argv=argv, session=session, clock=budget.current_clock())
+            config = installed["config"]
+            m.controller(config, value["controller_envelope"])
+            record = m.RunRecord(installed["management_record"])
+            phase_result = Coordinator(config, value["controller_envelope"], record, bridge.Client(channel)).run()
+            save(output, "phase-" + phase + ".json" if chained else "phase.json", encoded(phase_result))
+            require(phase_result["status"] == "PHASE_CLOSED" and phase_result["q3_accepted"] is False
+                    and phase_result["production_supported"] is False, "LAUNCHER_PHASE_UNCLOSED")
+            closures[phase] = quota_closure.digest({"phase": phase, "fence": phase_result["fence"]})
+            grants[phase] = grant.digest; plans[phase] = plan; configs.append(config)
+            if chained:
+                record.close(); record = None
+                result["closed_phases"] = list(closures)
+                if index + 1 < len(phases):
+                    following = phases[index + 1]
+                    channel.send(dict(action="advance", value={"from": phase, "to": following,
+                                                               "closure_digest": closures[phase]}))
+                    channel.advance_phase(following)
         channel.send(dict(action="finish", value=None))
         channel.close(); channel = None
         while worker.is_alive() and budget.current_clock()["boottime_ns"] < end: worker.join(0.025)
         require(bool(capture) and capture["complete"] and capture["returncode"] == 0, "LAUNCHER_RESIDENT_CAPTURE")
         summary = q._load(capture["stdout"], 4096, 4)
-        q._keys(summary, {"schema", "status", "operation_id", "phase", "closure_digest", "q3_accepted", "production_supported"})
-        require(summary["schema"] == "local-hand-q2-resident-result/v1" and summary["status"] == "PHASE_CLOSED"
-                and summary["operation_id"] == prepared["identity"] and summary["phase"] == "preflight"
-                and summary["closure_digest"] == quota_closure.digest({"phase": "preflight", "fence": phase_result["fence"]})
+        if chained:
+            q._keys(summary, {"schema", "status", "operation_id", "phases", "closure_digests", "q3_accepted", "production_supported"})
+            require(summary["schema"] == "local-hand-q2-resident-result/v2" and summary["status"] == "CHAIN_CLOSED"
+                    and summary["phases"] == list(phases) and summary["closure_digests"] == closures, "LAUNCHER_RESIDENT_RESULT")
+        else:
+            q._keys(summary, {"schema", "status", "operation_id", "phase", "closure_digest", "q3_accepted", "production_supported"})
+            require(summary["schema"] == "local-hand-q2-resident-result/v1" and summary["status"] == "PHASE_CLOSED"
+                    and summary["phase"] == "preflight" and summary["closure_digest"] == closures["preflight"], "LAUNCHER_RESIDENT_RESULT")
+        require(summary["operation_id"] == prepared["identity"]
                 and summary["q3_accepted"] is False and summary["production_supported"] is False
                 and capture["stderr"] == b"", "LAUNCHER_RESIDENT_RESULT")
-        result.update(status="PREFLIGHT_CLOSED", grant_digest=grant.digest)
+        result.update(status="CHAIN_CLOSED" if chained else "PREFLIGHT_CLOSED")
+        result.update(dict(grant_digests=grants, closure_digests=closures) if chained else dict(grant_digest=grant.digest))
     except Exception as error:
         result["reason"] = reason(error)
     finally:
@@ -520,7 +615,7 @@ def main(argv=None):
     # Full records and host identities stay in the private fixture directory.
     print(json.dumps({key: result[key] for key in ("schema", "status", "q3_accepted", "production_supported",
           "independent_controller_stop_required", "reason", "evidence") if key in result}, sort_keys=True))
-    return 0 if result["status"] == "PREFLIGHT_CLOSED" else 3
+    return 0 if result["status"] in ("PREFLIGHT_CLOSED", "CHAIN_CLOSED") else 3
 
 
 if __name__ == "__main__": raise SystemExit(main())

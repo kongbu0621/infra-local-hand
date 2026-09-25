@@ -20,8 +20,10 @@ import stat
 import sys
 
 SCHEMA = "local-hand-q2-resident/v1"
+CHAIN_SCHEMA = "local-hand-q2-resident/v2"
 LIMIT = 262144
 PHASES = ("preflight",)
+CHAIN_PHASES = ("preflight", "business", "evidence")
 
 
 def require(condition, code):
@@ -35,6 +37,14 @@ def unique(items):
         require(key not in value, "RESIDENT_DUPLICATE_KEY")
         value[key] = item
     return value
+
+
+def fixture_phases(value):
+    phases = PHASES if value.get("schema") == SCHEMA else CHAIN_PHASES if value.get("schema") == CHAIN_SCHEMA else ()
+    require(bool(phases) and value.get("phases") == list(phases)
+            and value.get("purpose") == ("ISOLATED_Q2_RESIDENT" if phases == PHASES else "ISOLATED_Q2_CHAIN"),
+            "RESIDENT_SCHEMA")
+    return phases
 
 
 def protected(filename, maximum):
@@ -104,8 +114,8 @@ def bootstrap(path, digest):
     value = json.loads(raw, object_pairs_hook=unique)
     require(type(value) is dict and set(value) == {
         "schema", "purpose", "entry", "installation", "policy", "ordinary", "principal",
-        "request", "plan", "phases", "bridge"} and value["schema"] == SCHEMA
-        and value["purpose"] == "ISOLATED_Q2_RESIDENT", "RESIDENT_SCHEMA")
+        "request", "plan", "phases", "bridge"}, "RESIDENT_SCHEMA")
+    fixture_phases(value)
     entry = value["entry"]
     require(type(entry) is dict and set(entry) == {"path", "sha256"}
             and entry["path"] == os.path.abspath(__file__)
@@ -141,7 +151,7 @@ def process_start(pid):
     return int(raw[raw.rfind(b")") + 2:].split()[19])
 
 
-def channel_from_pin(pin):
+def channel_from_pin(pin, *, version=1):
     from local_hand_jobs import quota_contract as q, quota_bridge
     q._keys(pin, {"fd", "pid", "uid", "gid", "start_ticks", "session", "boot_id", "deadline_ns"})
     q.integer(pin["fd"], 3)
@@ -153,7 +163,7 @@ def channel_from_pin(pin):
     channel = None
     try:
         channel = quota_bridge.Channel(sock, peer=(pin["pid"], 0, 0), session=pin["session"],
-                                      boot_id=pin["boot_id"], deadline_ns=pin["deadline_ns"])
+                                      boot_id=pin["boot_id"], deadline_ns=pin["deadline_ns"], version=version)
         require(process_start(pin["pid"]) == pin["start_ticks"], "RESIDENT_ADMIN_REPLACED")
         return channel
     except BaseException:
@@ -268,22 +278,120 @@ def prepare_request(value, broker):
             and set(pin["scopes"]) == {"lh:submit", "lh:read", "lh:evidence"}, "RESIDENT_SCOPES")
     request = contract.validate_submit(value["request"])
     require(request["kind"] == "host.inspect" and request["inputs"] == {}
-            and value["phases"] == list(PHASES), "RESIDENT_SYNTHETIC_REQUEST")
+            and fixture_phases(value), "RESIDENT_SYNTHETIC_REQUEST")
     principal = contract.Principal(pin["principal_id"], frozenset(pin["scopes"]))
     broker.submit(request, principal)
     require(broker.state.get("job", request["operation_id"])["plan"] == value["plan"], "RESIDENT_PLAN_BINDING")
     return request["operation_id"], principal
 
 
-def run_phase(broker, identity, phase, channel):
+class Chain:
+    """One original operation/session; phase advancement is never recovery."""
+    def __init__(self, broker, identity, plan):
+        self.broker, self.identity, self.plan = broker, identity, plan
+        self.session = broker._quota_session
+        self.preparations, self.closed = {}, {}
+
+    def _row(self, tx):
+        from local_hand_jobs import budget, quota_binding as binding
+        b = self.broker
+        row = b.state.get("job", self.identity, tx)
+        require(row is not None and row["plan"] == self.plan and not row["record"].get("recovered")
+                and not row["record"]["cancel_requested"] and b._quota_session == self.session
+                and binding.admission_version(tx, row) == 1, "RESIDENT_ORIGINAL_CHAIN")
+        for phase, prepared in self.preparations.items():
+            require(binding.original(tx, row, phase, "QUOTA_PREPARATION", "quota_preparations") == prepared
+                    and budget.stored_grant(row, phase) == prepared["budget"], "RESIDENT_PREPARATION_CHANGED")
+        for phase, closed in self.closed.items():
+            require(binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed") == closed,
+                    "RESIDENT_CLOSURE_CHANGED")
+        if "preflight" in self.closed:
+            pending = binding.original(tx, row, "preflight", "QUOTA_EXIT_PENDING", "quota_pending")
+            require(row["record"]["facts"] == pending["proof"].get("facts", {}), "RESIDENT_PREFLIGHT_FACTS_CHANGED")
+        if self.preparations:
+            budget.remaining_ns(self.preparations["preflight"]["budget"])
+        return row
+
+    def declaration(self, phase, snapshot):
+        from local_hand_jobs import budget, quota_payload
+        from local_hand_jobs.broker import phase_plan
+        index = len(self.preparations)
+        require(index < len(CHAIN_PHASES) and phase == CHAIN_PHASES[index]
+                and list(self.closed) == list(CHAIN_PHASES[:index]), "RESIDENT_PHASE_ORDER")
+        prepared = snapshot["preparation"]
+        require(all(snapshot[name] is None for name in ("observation", "pending", "closed"))
+                and prepared["session"] == self.session and prepared["phase"] == phase, "RESIDENT_PREPARATION")
+        with self.broker.fence, self.broker.state.transaction() as tx:
+            row = self._row(tx)
+            require(set(row["record"].get("quota_preparations", {})) == set(CHAIN_PHASES[:index + 1])
+                    and set(row["record"].get("quota_closed", {})) == set(CHAIN_PHASES[:index])
+                    and phase not in row["record"]["handles"]
+                    and budget.stored_grant(row, phase) == prepared["budget"], "RESIDENT_PHASE_HISTORY")
+            if self.preparations:
+                original = self.preparations["preflight"]
+                require(prepared["generation"] == original["generation"] and all(prepared["budget"][key]
+                        == original["budget"][key] for key in ("namespace", "record_id", "operation_id",
+                        "budget_digest", "boot_id", "started_boottime_ns", "deadline_boottime_ns")),
+                        "RESIDENT_OPERATION_BUDGET_CHANGED")
+            if phase == "evidence":
+                frozen = tx.execute("SELECT data_json FROM events WHERE namespace='job' AND id=? "
+                                    "AND kind='SEAL_SNAPSHOT_FROZEN'", (self.identity,)).fetchall()
+                require(len(frozen) == 1 and json.loads(frozen[0]["data_json"]).get("frozen_snapshot")
+                        == row["record"].get("frozen_snapshot"), "RESIDENT_FROZEN_SNAPSHOT_CHANGED")
+            plan = phase_plan(row, phase, prepared["budget"], allocation=prepared["allocation"],
+                evidence_store_root=str(self.broker.evidence.root) if phase == "evidence" else None)
+            # No argv or grant authority is accepted from the administrator's
+            # advance packet. This declaration comes only from the original row.
+            result = quota_payload.encode_phase_plan(plan)
+        self.preparations[phase] = prepared
+        return result
+
+    def retain_closure(self, phase, closed):
+        from local_hand_jobs import quota_binding as binding
+        require(phase == CHAIN_PHASES[len(self.closed)] and phase in self.preparations,
+                "RESIDENT_PHASE_ORDER")
+        with self.broker.fence, self.broker.state.transaction() as tx:
+            row = self._row(tx)
+            require(binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed") == closed
+                    and ("job", self.identity) not in self.broker._active, "RESIDENT_CLOSURE_UNPROVEN")
+        self.closed[phase] = closed
+
+    def advance(self, channel, previous, following):
+        from local_hand_jobs import quota_closure
+        require(previous in self.closed and len(self.closed) < len(CHAIN_PHASES)
+                and following == CHAIN_PHASES[len(self.closed)], "RESIDENT_PHASE_ORDER")
+        command = channel.receive()
+        require(command == dict(action="advance", value={"from": previous, "to": following,
+                "closure_digest": quota_closure.digest(self.closed[previous])}), "RESIDENT_ADVANCE")
+        with self.broker.fence, self.broker.state.transaction() as tx:
+            row = self._row(tx)
+            require(row["record"]["phase"] == ("PREFLIGHT_COMPLETE" if following == "business" else "AWAITING_SEAL")
+                    and set(row["record"].get("quota_preparations", {})) == set(self.closed)
+                    and set(row["record"].get("quota_closed", {})) == set(self.closed)
+                    and ("job", self.identity) not in self.broker._active, "RESIDENT_ADVANCE_UNPROVEN")
+        channel.advance_phase(following)
+
+    def complete(self):
+        require(list(self.closed) == list(CHAIN_PHASES), "RESIDENT_CHAIN_INCOMPLETE")
+        with self.broker.fence, self.broker.state.transaction() as tx:
+            row = self._row(tx)
+            require(row["record"]["phase"] == "EXITED" and row["record"]["evidence"] == "SEALED"
+                    and bool(row["record"].get("seals")) and ("job", self.identity) not in self.broker._active,
+                    "RESIDENT_SEAL_UNPROVEN")
+
+
+def run_phase(broker, identity, phase, channel, *, chain=None):
     """Autonomous observation, same persistent startup fence and broker session."""
     from local_hand_jobs import quota_bridge
-    handler = quota_bridge.Phase(broker, "job", identity, phase)
+    handler = quota_bridge.Phase(broker, "job", identity, phase, version=2 if chain is not None else 1)
     # _start reserves the original budget and root allocation exactly once; it
     # cannot launch a manager before the authenticated root binds observation.
     broker._start("job", identity, phase)
     snapshot = handler.snapshot()
-    channel.send(dict(event="prepared", namespace="job", identity=identity, phase=phase, snapshot=snapshot))
+    prepared = dict(event="prepared", namespace="job", identity=identity, phase=phase, snapshot=snapshot)
+    if chain is not None:
+        prepared["phase_plan"] = chain.declaration(phase, snapshot)
+    channel.send(prepared)
     started = False
     while True:
         channel._time()
@@ -300,6 +408,9 @@ def run_phase(broker, identity, phase, channel):
             if command["action"] == "start":
                 started = True
             if reply["closed"] is not None:
+                if chain is not None:
+                    chain.retain_closure(phase, reply["closed"])
+                    return reply["closed"]
                 # The administrator must consume the final closure ACK while
                 # this exact peer remains alive. It then sends finish and owns
                 # the real process-exit and pipe-EOF capture, without a reply.
@@ -310,8 +421,19 @@ def run_phase(broker, identity, phase, channel):
 
 def run(value, channel, broker):
     identity, principal = prepare_request(value, broker)
-    closure = run_phase(broker, identity, "preflight", channel)
     from local_hand_jobs import quota_closure
+    if fixture_phases(value) == CHAIN_PHASES:
+        chain = Chain(broker, identity, value["plan"])
+        for index, phase in enumerate(CHAIN_PHASES):
+            if index:
+                chain.advance(channel, CHAIN_PHASES[index - 1], phase)
+            run_phase(broker, identity, phase, channel, chain=chain)
+        chain.complete()
+        require(channel.receive() == {"action": "finish", "value": None}, "RESIDENT_FINISH")
+        return dict(schema="local-hand-q2-resident-result/v2", status="CHAIN_CLOSED", operation_id=identity,
+            phases=list(CHAIN_PHASES), closure_digests={phase: quota_closure.digest(closed) for phase, closed in chain.closed.items()},
+            q3_accepted=False, production_supported=False)
+    closure = run_phase(broker, identity, "preflight", channel)
     return dict(schema="local-hand-q2-resident-result/v1", status="PHASE_CLOSED", operation_id=identity,
                 phase="preflight", closure_digest=quota_closure.digest(closure),
                 q3_accepted=False, production_supported=False)
@@ -333,7 +455,7 @@ def main(argv=None):
     try:
         require(args.fixture and args.sha256, "EXPLICIT_PRIVATE_FIXTURE_REQUIRED")
         value = bootstrap(args.fixture, args.sha256)
-        channel = channel_from_pin(value["bridge"])
+        channel = channel_from_pin(value["bridge"], version=2 if value["schema"] == CHAIN_SCHEMA else 1)
         broker = compose(value)
         result = run(value, channel, broker)
     except Exception as error:
@@ -348,13 +470,13 @@ def main(argv=None):
         if broker is not None:
             try:
                 from local_hand_jobs.cli import close_service
-                close_service(broker, None, failed=result["status"] != "PHASE_CLOSED")
+                close_service(broker, None, failed=result["status"] not in ("PHASE_CLOSED", "CHAIN_CLOSED"))
             except Exception as error:
                 result.update(status="INCOMPLETE", reason=failure_reason(error))
     output = json.dumps(result, sort_keys=True, separators=(",", ":")).encode("utf-8")
     require(len(output) <= 4096, "RESIDENT_SUMMARY_LIMIT")
     os.write(1, output + b"\n")
-    return 0 if result["status"] == "PHASE_CLOSED" else 3
+    return 0 if result["status"] in ("PHASE_CLOSED", "CHAIN_CLOSED") else 3
 
 
 if __name__ == "__main__":

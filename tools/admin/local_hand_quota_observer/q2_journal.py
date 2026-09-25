@@ -1,7 +1,8 @@
 """Finite Q2 append-only cells; call only in a supervised management worker.
 
 Provisioning is explicit and separate. Opening/recovery NEVER creates a file.
-The external protected pin and immutable grant table must survive a restart.
+The protected cumulative pin and immutable registered grants survive a restart.
+Legacy policy v2 is immutable; chain policy v3 only appends exact registrations.
 No FS call here is assumed nonblocking; the listener must not call this class.
 """
 from __future__ import annotations
@@ -123,6 +124,42 @@ def _line(value):
     return q._canonical(value, 65536) + b"\n"
 
 
+def _chain_policy(capacity, grants):
+    """Deterministic, hash-linked registrations for one original job only.
+
+    Future budgets are deliberately absent. The protected chain declaration
+    supplies their fixed skeletons; each actual immutable grant is registered
+    only after its predecessors have closed in this same journal.
+    """
+    phases = ("preflight", "business", "evidence")
+    q.require(1 <= len(grants) <= len(phases), "CHAIN_GRANT_COUNT")
+    by_phase = {item.request.as_dict()["phase"]: item for item in grants}
+    q.require(len(by_phase) == len(grants) and set(by_phase) == set(phases[:len(grants)]), "CHAIN_PHASE_ORDER")
+    ordered = [by_phase[phase] for phase in phases[:len(grants)]]
+    first = ordered[0].as_dict()
+    q.require(first["allocation"]["namespace"] == "job", "CHAIN_OPERATION")
+    prefix = _line({"schema": "local-hand-quota-journal/v3", "capacity_digest": g.digest(capacity)})
+    prior = []
+    for index, grant in enumerate(ordered):
+        data = grant.as_dict()
+        q.require(all(data["allocation"][key] == first["allocation"][key]
+                      for key in ("namespace", "record_id", "operation_id")), "CHAIN_OPERATION")
+        q.require(all(data["request"][key] == first["request"][key] for key in
+                      ("boot_id", "epoch", "authority_digest", "installation_digest", "manifest_digest", "generation")),
+                  "CHAIN_BINDING")
+        q.require(all(data["budget"][key] == first["budget"][key] for key in
+                      ("boot_id", "budget_digest", "started_boottime_ns", "deadline_boottime_ns", "limits")),
+                  "ORIGINAL_BUDGET_CHANGED")
+        q.require(set(data["predecessors"]) == set(prior), "PREDECESSOR_BINDING")
+        record = {"kind": "REGISTER", "index": index, "request_id": data["request"]["request_id"],
+                  "grant_digest": grant.digest, "previous_digest": hashlib.sha256(prefix).hexdigest()}
+        record["digest"] = hashlib.sha256(q._canonical(record, 65536)).hexdigest()
+        prefix += _line(record)
+        prior.append(data["request"]["request_id"])
+    g.check_capacity(capacity, ordered)
+    return prefix, ordered
+
+
 class Journal:
     def __init__(self, path, pin, capacity, grants):
         self.path = q.canonical_path(os.fspath(path))
@@ -150,10 +187,14 @@ class Journal:
         self._dir = self._lock = -1
         self._guard = threading.Lock()
         self._poisoned = False
+        self._chain = False
         try:
             self._dir = _directory(self.path, self.owner)
             self._lock = self._open("lock")
             with self.locked():
+                if self._read("policy") != self.policy:
+                    self.policy, _ = _chain_policy(self.capacity, list(self.grants.values()))
+                    self._chain = True
                 self.scan()
         except BaseException:
             self.close()
@@ -166,6 +207,16 @@ class Journal:
         Failure leaves all partial files. It never finishes/replaces an existing
         directory. Administrative provisioning is not a wire service operation.
         """
+        return Journal._provision(path, capacity, grants, chain=False)
+
+    @staticmethod
+    def provision_chain(path, capacity, grants):
+        """Create the permanent chain journal for its first actual grant only."""
+        q.require(len(grants) == 1, "CHAIN_FIRST_PHASE_ONLY")
+        return Journal._provision(path, capacity, grants, chain=True)
+
+    @staticmethod
+    def _provision(path, capacity, grants, *, chain):
         grants = [g.decode_grant(item.wire) for item in grants]
         q.require(0 < len(grants) <= g.MAX_GRANTS, "GRANT_COUNT")
         capacity = g.decode_capacity(q._canonical(capacity, g.GRANT_LIMIT))
@@ -173,11 +224,13 @@ class Journal:
         q.require(len(set(ids)) == len(ids), "DUPLICATE_GRANT")
         for grant in grants:
             g.check_capacity(capacity, [grant])
+        policy = (_chain_policy(capacity, grants)[0] if chain else
+                  _line({"schema": "local-hand-quota-journal/v2", "capacity_digest": g.digest(capacity),
+                         "grants": {key: item.digest for key, item in zip(ids, grants)}}))
         descriptor = _directory(path, os.geteuid())
         try:
             q.require(not _names(descriptor), "JOURNAL_EXISTS")
-            files = {"lock": b"", "policy": _line({"schema": "local-hand-quota-journal/v2",
-                "capacity_digest": g.digest(capacity), "grants": {key: item.digest for key, item in zip(ids, grants)}})}
+            files = {"lock": b"", "policy": policy}
             files.update({key + ".cell": _line({"kind": "READY", "grant_digest": item.digest}) for key, item in zip(ids, grants)})
             pin = {"directory": {}, "files": {}}
             info = os.fstat(descriptor)
@@ -194,6 +247,63 @@ class Journal:
             return pin
         finally:
             os.close(descriptor)
+
+    @staticmethod
+    def extend(path, prior_pin, capacity, prior_grants, next_grant):
+        """Append one original phase under the permanent retained lock.
+
+        The new cell precedes its registration. Any failed/uncertain write
+        therefore leaves a directory that the old pin cannot reopen. There is
+        no repair/resume path and no policy replacement or capacity refund.
+        Only a fully acknowledged extension returns its new cumulative pin.
+        """
+        from .q2_service import Service, _clock
+        next_grant = g.decode_grant(next_grant.wire)
+        journal = Journal(path, prior_pin, capacity, prior_grants)
+        try:
+            with journal.locked():
+                q.require(journal._chain, "CHAIN_JOURNAL_REQUIRED")
+                states = journal.scan()
+                key = next_grant.request.as_dict()["request_id"]
+                q.require(key not in journal.grants, "DUPLICATE_GRANT")
+                policy, _ = _chain_policy(journal.capacity, [*journal.grants.values(), next_grant])
+                q.require(policy.startswith(journal.policy), "CHAIN_PREFIX")
+                service = Service(journal, clock=_clock, closure_version=2)
+                now = service._now(next_grant)
+                service._admit_new(next_grant, states, now)
+                issued = next_grant.as_dict()["management"]["issued_ns"]
+                reserved = next_grant.as_dict()["budget"]["reserved_boottime_ns"]
+                q.require(all(state["closed"]["closed_ns"] <= min(issued, reserved)
+                              for state in states.values()), "CHAIN_RESERVATION_ORDER")
+                pin = q._load(q._canonical(journal.pin, g.GRANT_LIMIT), g.GRANT_LIMIT, 5)
+                try:
+                    name = key + ".cell"
+                    child = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                    0o600, dir_fd=journal._dir)
+                    try:
+                        _write(child, _line({"kind": "READY", "grant_digest": next_grant.digest}))
+                        info = os.fstat(child)
+                        q.require(stat.S_ISREG(info.st_mode) and info.st_uid == journal.owner
+                                  and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1, "JOURNAL_FILE")
+                        pin["files"][name] = {"device": info.st_dev, "inode": info.st_ino}
+                    finally:
+                        os.close(child)
+                    service._now(next_grant)
+                    descriptor = journal._open("policy", append=True)
+                    try:
+                        q.require(os.fstat(descriptor).st_size == len(journal.policy)
+                                  and len(policy) <= g.CELL_BYTES, "JOURNAL_SIZE")
+                        _write(descriptor, policy[len(journal.policy):])
+                    finally:
+                        os.close(descriptor)
+                    os.fsync(journal._dir)
+                    service._now(next_grant)
+                    return pin
+                except BaseException:
+                    journal._poisoned = True
+                    raise
+        finally:
+            journal.close()
 
     def _open(self, name, *, append=False):
         descriptor = os.open(name, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC | (os.O_APPEND if append else 0), dir_fd=self._dir)
@@ -309,6 +419,19 @@ class Journal:
                 state["status"] = kind
             result[key] = state
         g.check_capacity(self.capacity, [self.grants[key] for key, state in result.items() if state["status"] != "READY"])
+        if self._chain:
+            from .q2_service import Service
+            _, ordered = _chain_policy(self.capacity, list(self.grants.values()))
+            prior = {}
+            service = Service(self, closure_version=2)
+            for grant in ordered:
+                if prior:
+                    data = grant.as_dict()
+                    service._admit_new(grant, prior, data["management"]["issued_ns"])
+                    q.require(all(state["closed"]["closed_ns"] <= data["budget"]["reserved_boottime_ns"]
+                                  for state in prior.values()), "CHAIN_RESERVATION_ORDER")
+                key = grant.request.as_dict()["request_id"]
+                prior[key] = result[key]
         return result
 
     def append(self, key, kind, value):
