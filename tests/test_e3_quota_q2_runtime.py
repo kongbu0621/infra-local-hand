@@ -144,6 +144,40 @@ class ConfigAndRuntimeTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux listener framing")
 class FrameTests(unittest.TestCase):
+    def test_readiness_permission_published_only_after_listen(self):
+        # Modeled setup interleavings; even an initial umask that would create
+        # mode 600 cannot publish readiness before listen. Named IPC is tested
+        # separately where the executor permits it.
+        for seqpacket in (False,True):
+            for fault in (None,'bind','listen'):
+                with self.subTest(seqpacket=seqpacket,fault=fault):
+                    calls=[];mask=[0o177];mode=[None];listening=[False];nonblocking=[False]
+                    def umask(value):old=mask[0];mask[0]=value;return old
+                    def bind(path):
+                        self.assertEqual(0o777,mask[0]);mode[0]=0
+                        if fault=='bind':raise OSError('bind fault')
+                    def listen(backlog):
+                        self.assertEqual(0,mode[0]);self.assertEqual(0o177,mask[0])
+                        if fault=='listen':raise OSError('listen fault')
+                        listening[0]=True
+                    def setblocking(value):nonblocking[0]=not value
+                    def chmod(path,value,**kwargs):
+                        self.assertTrue(listening[0] and nonblocking[0]);mode[0]=value;calls.append('published')
+                    sock=mock.Mock(bind=bind,listen=listen,setblocking=setblocking)
+                    parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY)
+                    with mock.patch.object(c,'open_protected',return_value=parent),\
+                         mock.patch.object(l.socket,'socket',return_value=sock),\
+                         mock.patch.object(l.os,'umask',side_effect=umask),\
+                         mock.patch.object(l.os,'chown'),mock.patch.object(l.os,'chmod',side_effect=chmod):
+                        if fault:
+                            with self.assertRaises(OSError):l.bind('/synthetic/socket',seqpacket=seqpacket)
+                            self.assertEqual([],calls);sock.close.assert_called_once()
+                        else:
+                            self.assertIs(sock,l.bind('/synthetic/socket',seqpacket=seqpacket))
+                            self.assertEqual(['published'],calls)
+                            self.assertEqual(0o600 if seqpacket else 0o660,mode[0])
+                        self.assertEqual(0o177,mask[0])
+
     def test_fragmented_exact_frame_requires_peer_eof(self):
         raw=b'{}';frame=l.Frame(10)
         self.assertIsNone(frame.feed(struct.pack("!I",2)[:2],now=1))
@@ -200,9 +234,16 @@ class ListenerIPCTests(unittest.TestCase):
                 thread=threading.Thread(target=serve,daemon=True);thread.start()
                 worker=socket.socket(socket.AF_UNIX,socket.SOCK_SEQPACKET);worker.settimeout(2)
                 limit=time.monotonic()+2
-                while not Path(value['service']['control_path']).exists() and time.monotonic()<limit:time.sleep(.001)
+                def wait_ready(path,mode):
+                    while time.monotonic()<limit:
+                        try:ready=Path(path).stat().st_mode & 0o777 == mode
+                        except FileNotFoundError:ready=False
+                        if ready:return
+                        time.sleep(.001)
+                    self.fail('listener did not publish readiness')
+                wait_ready(value['service']['control_path'],0o600)
                 worker.connect(value['service']['control_path'])
-                while not Path(grant['endpoint']['path']).exists() and time.monotonic()<limit:time.sleep(.001)
+                wait_ready(grant['endpoint']['path'],0o660)
                 wrong=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);wrong.connect(grant['endpoint']['path'])
                 rfd,wfd=os.pipe()
                 try:wrong.sendmsg([b'x'],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[rfd]))])

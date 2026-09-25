@@ -580,16 +580,10 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
     """
     if sys.platform != "linux":
         raise JobError("UNSUPPORTED", "The restricted job service requires Linux supervision")
-    from .broker import Broker
     from .deployment import verify_release
     from .policy import Policy
-    from .registry import Registry
-    from .resources import AuthorityLock, verify_local_filesystem
-    from .runner import Runner, SystemdManager
-    from .state import StateStore
-    from .evidence import EvidenceStore
+    from .runner import SystemdManager
     policy = Policy.from_file(policy_path)
-    evidence_root, evidence_identity = _admitted_evidence_store(policy)
     verify_release(expected_source_commit=policy.source_commit,
                    expected_payload_digest=policy.installed_payload_digest,
                    expected_entrypoint=policy.execution_entrypoint,
@@ -598,6 +592,22 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
     support = manager.support()
     if support.get("supported") is not True:
         raise JobError("UNSUPPORTED", "The admitted independent process supervisor is unavailable")
+    return _compose_broker(policy, manager, initialize=initialize)
+
+
+def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
+    """Shared assembly after trusted caller's release and supervisor admission.
+
+    This private function never supplies a production qualification override.
+    The test-only caller verifies its own finite fixture before reaching here.
+    """
+    from .broker import Broker
+    from .registry import Registry
+    from .resources import AuthorityLock, verify_local_filesystem
+    from .runner import Runner
+    from .state import StateStore
+    from .evidence import EvidenceStore
+    evidence_root, evidence_identity = _admitted_evidence_store(policy)
     verify_local_filesystem(policy.broker_root)
     verify_local_filesystem(policy.authority_root)
     anchor_path = Path(policy.authority_root) / "authority.json"
@@ -641,7 +651,7 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         inventory = manager.scan(units)
         if inventory.get("status") != "READY":
             raise JobError("IO_UNCERTAIN", "Supervisor inventory has orphaned or unresolved executions")
-        broker = Broker(state, policy, Registry(), Runner(manager))
+        broker = Broker(state, policy, Registry(), Runner(manager), quota_required=quota_required)
         def no_direct_seal(_):
             raise JobError("UNSUPPORTED", "Evidence publication must use a registered supervised phase")
         def authorize_evidence(principal, operation_id):

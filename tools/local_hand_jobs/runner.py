@@ -300,7 +300,92 @@ def _deadline_remaining(deadline):
     return remaining
 
 
-class SystemdManager:
+def _resolve_plan(plan):
+    """Pure fixed execution transform shared with trusted harness assembly."""
+    execution = _plain(plan.get("execution", plan))
+    if plan.get("budgets"):
+        execution["budgets"] = _plain(plan["budgets"])
+    phase = plan.get("phase", "business")
+    allocation = bootstrap_roots.validate_grant(_plain(plan.get("bootstrap_allocation")),
+        execution_id=plan["execution_id"], phase=phase, operation_id=execution["operation_id"])
+    original_roots = _plain(plan.get("observed_roots", execution["roots"]))
+    execution = bootstrap_roots.bind_execution(execution, allocation)
+    if phase == "reconcile":
+        execution["observed_roots"] = original_roots
+        execution["readonly"] = execution.get("readonly", []) + list(original_roots.values())
+        execution["environment"] = ledger_jobs.clean_environment(execution["roots"]["temporary"])
+        if execution.get("storage"):
+            execution["observed_storage"] = execution.pop("storage")
+            execution["readonly"].append(execution["observed_storage"]["archive_root"])
+    if phase == "evidence":
+        snapshot, store_root = plan.get("evidence_snapshot"), plan.get("evidence_store_root")
+        if (not isinstance(snapshot, dict) or not isinstance(store_root, str)
+                or allocation["retained_paths"] != [store_root]):
+            raise RunnerError("UNSUPPORTED", "trusted evidence snapshot and store allocation are required")
+        execution["readonly"] = execution.get("readonly", []) + [snapshot["root"]]
+        execution["environment"] = ledger_jobs.clean_environment(execution["roots"]["temporary"])
+        execution["evidence_snapshot"], execution["evidence_store_root"] = snapshot, store_root
+        execution["broker_events"] = _plain(plan.get("broker_events", snapshot.get("broker_events", [])))
+        execution["storage"] = {}
+    if execution.get("storage"):
+        raise RunnerError("UNSUPPORTED", "network archive hard quota adapter is not implemented; NAS execution is blocked")
+    execution["writable"] = list(allocation["paths"])
+    if any(re.search(r"[\s\\%$]", path) for path in execution["writable"] + execution.get("readonly", [])):
+        raise RunnerError("UNSUPPORTED", "systemd path admission requires unambiguous paths")
+    execution["bootstrap_allocation"] = allocation
+    return execution, {}
+
+
+def _quota_prepared_execution(plan, *, parent_mount_namespace, now_ns):
+    """Derive exact Q2 argv facts from original immutable plan/reservation.
+
+    The argv's cap is frozen at original reservation. Actual delivery still
+    shortens RuntimeMaxSec against the live original deadline immediately
+    inside the durable guard. No current timestamp is written into the payload.
+    """
+    from . import quota_bootstrap, quota_grant, quota_contract
+    quota_contract.require(plan.get("supervision_version") == 3, "Q2_SUPERVISION_VERSION")
+    execution, _ = _resolve_plan(plan)
+    allocation = _plain(plan["bootstrap_allocation"])
+    grant = _plain(plan["budget_grant"])
+    budget.validate_grant(grant, execution_id=plan["execution_id"], phase=plan["phase"],
+                          operation_id=execution["operation_id"], budgets=execution["budgets"])
+    current = {"boot_id": grant["boot_id"], "boottime_ns": now_ns}
+    _runtime_microseconds(grant, now=current)  # Expiry cannot be hidden by a frozen cap.
+    original = {"boot_id": grant["boot_id"], "boottime_ns": grant["reserved_boottime_ns"]}
+    runtime_us = _runtime_microseconds(grant, now=original)
+    for stage in ("bootstrap", "helper", "result_reader"):
+        budget.substage_limits(grant, stage, supervision_version=3)
+    quota_contract.match(parent_mount_namespace, r"mnt:\[[0-9]+\]")
+    unit = "lhj-" + hashlib.sha256(plan["execution_id"].encode()).hexdigest() + ".service"
+    bootstrap_unit = "lhj-" + hashlib.sha256((plan["execution_id"] + ":bootstrap").encode()).hexdigest() + ".service"
+    execution = dict(execution, phase=plan["phase"], execution_id=plan["execution_id"],
+        budget_grant=grant, bootstrap_allocation=allocation, runtime_cap_us=runtime_us,
+        unit=unit, supervision_version=3, bootstrap_unit=bootstrap_unit,
+        parent_mount_namespace=parent_mount_namespace,
+        phase_deadline_boottime_ns=budget.phase_deadline_ns(grant)
+            - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS)
+    parsed = quota_grant.decode_grant(quota_contract._canonical(_plain(plan["quota_observation_grant"]),
+                                                               quota_grant.GRANT_LIMIT))
+    execution = quota_bootstrap.bind_payload(execution, allocation, parsed, now_ns=now_ns)["execution"]
+    execution["quota_endpoint"] = parsed.as_dict()["endpoint"]["path"]
+    suffix = hashlib.sha256(plan["execution_id"].encode()).hexdigest()[:24]
+    execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
+    return execution
+
+
+def quota_bootstrap_argv(execution, grant, *, script=None, now_ns):
+    """Exact original ordinary argv; caller's script is an administrator pin."""
+    from . import quota_bootstrap
+    script = str(Path(__file__).absolute()) if script is None else script
+    if any(not isinstance(path, str) or not path.startswith("/")
+           or re.search(r"[\s\\%$]", path) for path in (script, execution["python"])):
+        raise RunnerError("UNSUPPORTED", "systemd executable paths must not contain specifiers")
+    payload = quota_bootstrap.bind_payload(execution, execution["bootstrap_allocation"], grant, now_ns=now_ns)
+    return [execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)]
+
+
+class _SystemdExecutionCore:
     """Manage only one fixed lhj-<execution digest>.service namespace.
 
     The host administrator supplies an existing delegated slice and account.
@@ -321,10 +406,9 @@ class SystemdManager:
         self._start_guard = callback
 
     def support(self):
-        # All fixed launch stages are implemented, but this candidate has no real
-        # delegated-host integration evidence. No configuration switch promotes
-        # synthetic manager tests into production support.
-        reasons = ["E3_SUPERVISION_UNVERIFIED"]
+        # Actual OS admission shared by production and the isolated harness.
+        # Production qualification is a separate, permanently closed wrapper.
+        reasons = []
         if sys.platform != "linux": reasons.append("Linux is required")
         try:
             if Path("/proc/1/comm").read_text().strip() != "systemd": reasons.append("PID 1 is not systemd")
@@ -410,38 +494,7 @@ class SystemdManager:
         if (not re.fullmatch(r"[a-z0-9-]+\.slice", config.get("slice", "")) or
                 not config.get("cgroup", "").startswith("/sys/fs/cgroup/")):
             raise RunnerError("UNSUPPORTED", "invalid predelegated slice admission")
-        execution = _plain(plan.get("execution", plan))
-        if plan.get("budgets"):
-            execution["budgets"] = _plain(plan["budgets"])
-        phase = plan.get("phase", "business")
-        allocation = bootstrap_roots.validate_grant(_plain(plan.get("bootstrap_allocation")),
-            execution_id=plan["execution_id"], phase=phase, operation_id=execution["operation_id"])
-        original_roots = _plain(plan.get("observed_roots", execution["roots"]))
-        execution = bootstrap_roots.bind_execution(execution, allocation)
-        if phase == "reconcile":
-            execution["observed_roots"] = original_roots
-            execution["readonly"] = execution.get("readonly", []) + list(original_roots.values())
-            execution["environment"] = ledger_jobs.clean_environment(execution["roots"]["temporary"])
-            if execution.get("storage"):
-                execution["observed_storage"] = execution.pop("storage")
-                execution["readonly"].append(execution["observed_storage"]["archive_root"])
-        if phase == "evidence":
-            snapshot, store_root = plan.get("evidence_snapshot"), plan.get("evidence_store_root")
-            if (not isinstance(snapshot, dict) or not isinstance(store_root, str)
-                    or allocation["retained_paths"] != [store_root]):
-                raise RunnerError("UNSUPPORTED", "trusted evidence snapshot and store allocation are required")
-            execution["readonly"] = execution.get("readonly", []) + [snapshot["root"]]
-            execution["environment"] = ledger_jobs.clean_environment(execution["roots"]["temporary"])
-            execution["evidence_snapshot"], execution["evidence_store_root"] = snapshot, store_root
-            execution["broker_events"] = _plain(plan.get("broker_events", snapshot.get("broker_events", [])))
-            execution["storage"] = {}
-        if execution.get("storage"):
-            raise RunnerError("UNSUPPORTED", "network archive hard quota adapter is not implemented; NAS execution is blocked")
-        execution["writable"] = list(allocation["paths"])
-        if any(re.search(r"[\s\\%$]", path) for path in execution["writable"] + execution.get("readonly", [])):
-            raise RunnerError("UNSUPPORTED", "systemd path admission requires unambiguous paths")
-        execution["bootstrap_allocation"] = allocation
-        return execution, {}
+        return _resolve_plan(plan)
 
     def start(self, identity, plan, cancel_event):
         try:
@@ -541,10 +594,11 @@ class SystemdManager:
             if receipt_pipe:
                 from . import quota_bootstrap, quota_binding, quota_grant, quota_contract
                 observation = quota_grant.decode_grant(quota_contract._canonical(handle["quota_observation_grant"], quota_grant.GRANT_LIMIT))
-                payload = quota_bootstrap.bind_payload(execution, execution["bootstrap_allocation"], observation,
-                                                       now_ns=budget.current_clock()["boottime_ns"])
                 part.update(quota_pipe=quota_binding.Pipe(), quota_grant=observation, pipe_nonblocking=False)
-            command.extend(["--", execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)])
+                command.extend(["--", *quota_bootstrap_argv(execution, observation, script=script,
+                    now_ns=budget.current_clock()["boottime_ns"])])
+            else:
+                command.extend(["--", execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)])
         elif stage == "helper":
             command.extend(["--", execution["python"], "-I", script, "--helper", handle["plan_path"]])
         else:
@@ -627,11 +681,9 @@ class SystemdManager:
             phase_deadline_boottime_ns=budget.phase_deadline_ns(grant) - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS)
         observation = plan.get("quota_observation_grant")
         if observation is not None:
-            from . import quota_bootstrap, quota_grant, quota_contract
-            parsed = quota_grant.decode_grant(quota_contract._canonical(_plain(observation), quota_grant.GRANT_LIMIT))
-            execution = quota_bootstrap.bind_payload(execution, allocation, parsed,
-                now_ns=budget.current_clock()["boottime_ns"])["execution"]
-            execution["quota_endpoint"] = parsed.as_dict()["endpoint"]["path"]
+            execution = _quota_prepared_execution(plan,
+                parent_mount_namespace=os.readlink("/proc/self/ns/mnt"),
+                now_ns=budget.current_clock()["boottime_ns"])
         suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
         execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
         handle = {"version": supervision_version, "unit": identity["unit"], "identity": dict(identity), "execution": execution,
@@ -1218,6 +1270,18 @@ class SystemdManager:
                 "exit_code": exit_code, "facts": {}, "result": {"outcome": "UNKNOWN"},
                 "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group},
                 "missing": ["unit exit alone does not verify the helper result"]}
+
+
+class SystemdManager(_SystemdExecutionCore):
+    """Production qualification remains closed, irrespective of host facts.
+
+    The private execution core is composed only by the explicit test harness;
+    no policy, environment, CLI or transport field can select that composition.
+    """
+    def support(self):
+        actual = super().support()
+        return {"supported": False, "status": "UNSUPPORTED",
+                "reasons": ["E3_SUPERVISION_UNVERIFIED", *actual["reasons"]]}
 
 
 def _capture_stage(stage, directory, limit, remaining, deadline=None):

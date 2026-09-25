@@ -1,5 +1,6 @@
 """Actual anonymous pipes/child exits; manager and cgroup facts are modeled."""
 import copy
+import contextlib
 import os
 from pathlib import Path
 import subprocess
@@ -52,6 +53,65 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(all(part["quota_exit"][key] for key in q.EXIT_FLAGS))
         self.assertEqual(1,sum(args[0]=="stop" for args in calls))
         self.assertEqual(result,life.observe(manager,part,runner._unknown))
+
+    def unload(self, props):
+        props.update(LoadState="not-found", ActiveState="inactive", SubState="dead",
+                     ControlGroup="", InvocationID="", Job="", ExecMainCode="0", ExecMainStatus="0")
+
+    def test_post_stop_transient_collection_preserves_original_terminal_and_exit(self):
+        part,props,manager,calls=self.setup_part()
+        life.observe(manager,part,runner._unknown)
+        terminal=copy.deepcopy(part["quota_terminal"])
+        self.unload(props)
+        result=life.observe(manager,part,runner._unknown)
+        self.assertEqual("EXITED",result["state"])
+        self.assertEqual("a"*32,result["identity"]["invocation_id"])
+        self.assertEqual(terminal,part["quota_terminal"])
+        self.assertEqual({"stdout","stderr"},part["quota_transport"].eof)
+        self.assertTrue(all(part["quota_exit"][key] for key in q.EXIT_FLAGS))
+        self.assertEqual(1,sum(args[0]=="stop" for args in calls))
+
+    def test_missing_before_retained_stop_never_adopts_a_unit(self):
+        part,props,manager,calls=self.setup_part()
+        self.unload(props)
+        with self.assertRaisesRegex(q.QuotaError,"ORIGINAL_UNIT_MISSING"):
+            life.observe(manager,part,runner._unknown)
+        self.assertNotIn("quota_exit",part)
+        self.assertEqual(0,sum(args[0]=="stop" for args in calls))
+
+    def test_post_stop_absence_still_requires_all_original_exit_evidence(self):
+        faults=("terminal_missing","stop_ack","stop_attempt","launch_ack","identity_missing",
+                "terminal_identity","terminal_unit","terminal_running","terminal_config","unit",
+                "invocation","cgroup","queue","active","deadline","parent","occupied","client","eof")
+        for fault in faults:
+            with self.subTest(fault=fault),contextlib.ExitStack() as patches:
+                part,props,manager,calls=self.setup_part()
+                life.observe(manager,part,runner._unknown)
+                self.unload(props)
+                if fault=="terminal_missing":part.pop("quota_terminal")
+                if fault=="stop_ack":part["quota_stop_ok"]=False
+                if fault=="stop_attempt":part["quota_stop_attempted"]=False
+                if fault=="launch_ack":part["launch_acked"]=False
+                if fault=="identity_missing":part["invocation_id"]=None
+                if fault=="terminal_identity":part["quota_terminal"]["InvocationID"]="b"*32
+                if fault=="terminal_unit":part["quota_terminal"]["Id"]="another.service"
+                if fault=="terminal_running":part["quota_terminal"].update(ActiveState="active",SubState="running")
+                if fault=="terminal_config":part["quota_terminal"]["OnSuccess"]="another.service"
+                if fault=="unit":props["Id"]="another.service"
+                if fault=="invocation":props["InvocationID"]="b"*32
+                if fault=="cgroup":props["ControlGroup"]="/fixed.slice/another.service"
+                if fault=="queue":props["Job"]="1 /queued/start"
+                if fault=="active":props["ActiveState"]="active"
+                if fault=="deadline":part["phase_deadline_boottime_ns"]=SECOND
+                if fault=="parent":patches.enter_context(mock.patch.object(life,"parent",side_effect=q.QuotaError("ORDINARY_PARENT_CHANGED")))
+                if fault=="occupied":patches.enter_context(mock.patch.object(life,"parent",return_value=(part["quota_parent"],False)))
+                if fault=="client":part["launch"].returncode=-9
+                if fault=="eof":
+                    part["quota_transport"].eof={"stdout"}
+                    patches.enter_context(mock.patch.object(part["quota_transport"],"pump"))
+                with self.assertRaises(q.QuotaError):life.observe(manager,part,runner._unknown)
+                self.assertNotIn("quota_exit",part)
+                self.assertEqual(1,sum(args[0]=="stop" for args in calls))
 
     def test_same_real_exit_without_original_eof_does_not_prove_closed(self):
         part,props,manager,_=self.setup_part()

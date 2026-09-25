@@ -1,12 +1,14 @@
 """Orchestration fault/order models; real contract/closure validation, no host PASS."""
 from contextlib import contextmanager
 import copy
+import os
+import stat
 from types import SimpleNamespace
 import sys
 import unittest
 from unittest import mock
 
-from local_hand_jobs import quota_contract as q
+from local_hand_jobs import quota_contract as q, quota_grant as g
 from q2_fixtures import make_grant, capacity, SECOND
 from test_e3_quota_q2_closure import complete
 if sys.platform.startswith('linux'):
@@ -20,9 +22,18 @@ class CoordinatorTests(unittest.TestCase):
         self.now += 1_000_000
         return self.now
 
-    def setup_driver(self, fault=None):
+    def setup_driver(self, fault=None, *, long_phase=False, pending_after=0,
+                     management_close_poll=3, eof_after=0):
         self.now=3*SECOND
-        grant=make_grant();v=grant.as_dict();fence,ordinary,receipt,peer=complete(grant)
+        grant=make_grant()
+        if long_phase:
+            declaration=grant.as_dict()
+            declaration['budget']['limits']['wall_seconds']=120
+            declaration['budget']['deadline_boottime_ns']=361*SECOND
+            declaration['request']['deadline_ns']=110*SECOND
+            grant=g.decode_grant(q._canonical(declaration,g.GRANT_LIMIT))
+        v=grant.as_dict();fence,ordinary,receipt,peer=complete(grant)
+        owner=self
         order=[];states={grant.request.as_dict()['request_id']:{'status':'READY'}}
         key=grant.request.as_dict()['request_id']
         class Journal:
@@ -40,19 +51,26 @@ class CoordinatorTests(unittest.TestCase):
             request_digest=grant.request.digest,controller={},observed_ns=3*SECOND,
             stages={k:fence['stages'][k] for k in ('collector','admission')})
         class Management:
-            end=10*SECOND
+            end=(100 if long_phase else 10)*SECOND
             def __init__(self,*args):self.runs={};self.polls=0
             def begin(self):order.append('listener');self.launch('listener')
             def launch(self,role):
                 if role=='admission':order.append('admission')
-                self.runs[role]={'invocation':None,'stop_attempted':True,'after':None,'capture':SimpleNamespace(error=None,exited=False,settled=False,
-                    process=SimpleNamespace(returncode=0),pump=lambda:None)}
+                cap=SimpleNamespace(error=None,exited=False,done=False,settled=False,
+                    process=SimpleNamespace(returncode=0))
+                def pump():
+                    if self.polls>=management_close_poll and owner.now>=eof_after:
+                        cap.done=cap.settled=cap.exited=True
+                cap.pump=pump
+                self.runs[role]={'invocation':None,'stop_attempted':False,'stop_ok':False,'after':None,'capture':cap}
             def poll(self):
                 self.polls+=1
                 for p in self.runs.values():
                     p['invocation']='e'*32
-                    if self.polls>=2:p['capture'].exited=True;p['capture'].settled=True
-                return management if self.polls>=3 else None
+                    if self.polls>=management_close_poll-1:p['stop_attempted']=p['stop_ok']=True
+                    if self.polls>=management_close_poll:p['after']={'LoadState':'not-found'}
+                    p['capture'].pump()
+                return management if all(p['capture'].done for p in self.runs.values()) else None
             def finish(self):
                 order.append('management-closed')
                 if fault=='management':raise q.QuotaError('CLOSE_FAULT')
@@ -63,11 +81,14 @@ class CoordinatorTests(unittest.TestCase):
         class Client:
             def call(self,action,value=None):
                 order.append(action)
+                if sum(order.count(k) for k in ('snapshot','bind','start','close'))>64:
+                    raise q.QuotaError('BRIDGE_EXCHANGE_LIMIT')
                 if action=='start':
                     states[key]=dict(status='RESULT',intent={'peer':peer},result={'receipt':receipt.as_dict(),'received_ns':2*SECOND+10})
                     snap['observation']={'phase':'preflight','observation':{'receipt':receipt.as_dict()}}
-                    snap['pending']={'phase':'preflight','proof':ordinary}
                     if fault=='receipt':snap['observation']['observation']['receipt']=dict(receipt.as_dict(),reason='OTHER')
+                if snap['observation'] is not None and owner.now>=pending_after:
+                    snap['pending']={'phase':'preflight','proof':ordinary}
                 if action=='close':
                     if states[key]['status']!='CLOSED':raise AssertionError('broker closed before administrator')
                     if fault=='ack':raise OSError('lost ack')
@@ -79,7 +100,7 @@ class CoordinatorTests(unittest.TestCase):
             mock.patch.object(driver,'ready',side_effect=ready),mock.patch.object(driver,'boottime_ns',side_effect=self.clock),
             mock.patch.object(driver.time,'sleep'),mock.patch.object(driver.quota_lifecycle,'parent',side_effect=lambda path,pin:(pin,fault!='occupied'))]
         for p in patches:p.start();self.addCleanup(p.stop)
-        instance=driver.Coordinator(cfg,{'deadline_ns':30*SECOND},None,Client())
+        instance=driver.Coordinator(cfg,{'deadline_ns':(130 if long_phase else 30)*SECOND},None,Client())
         return instance,order,states[key],states
 
     def test_fixed_readiness_order_and_two_ledger_commit_order(self):
@@ -116,6 +137,38 @@ class CoordinatorTests(unittest.TestCase):
         instance,order,_,_=self.setup_driver('occupied')
         with self.assertRaises(q.QuotaError):instance.run()
         self.assertNotIn('admin-CLOSED',order);self.assertNotIn('close',order)
+
+    def test_long_original_phase_keeps_bridge_capacity_for_close(self):
+        instance,order,_,_=self.setup_driver(long_phase=True,pending_after=80*SECOND)
+        result=instance.run()
+        self.assertEqual('PHASE_CLOSED',result['status'])
+        self.assertGreater(self.now,80*SECOND)
+        self.assertLessEqual(order.count('snapshot'),driver.SNAPSHOT_POLLS+1)
+        self.assertLessEqual(sum(order.count(k) for k in ('snapshot','bind','start','close')),64)
+
+    def test_last_regular_poll_can_stop_then_observe_original_exit(self):
+        # Initial readiness poll plus ten running-service polls; the final
+        # regular poll issues stop and needs a separate post-stop observation.
+        instance,order,_,_=self.setup_driver(management_close_poll=12)
+        result=instance.run()
+        self.assertEqual('PHASE_CLOSED',result['status'])
+        self.assertEqual(12,instance.management.polls)
+        self.assertLessEqual(2+2*instance.management.polls+2,32)
+
+    def test_delayed_client_eof_does_not_spend_more_systemctl_polls(self):
+        instance,order,_,_=self.setup_driver(eof_after=8*SECOND)
+        result=instance.run()
+        self.assertEqual('PHASE_CLOSED',result['status'])
+        self.assertGreaterEqual(self.now,8*SECOND)
+        self.assertEqual(3,instance.management.polls)
+
+    def test_unpublished_socket_is_not_ready_or_an_error(self):
+        # Socket filesystem state is modeled: no actual systemd readiness PASS.
+        parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY)
+        info=SimpleNamespace(st_mode=stat.S_IFSOCK,st_uid=0,st_gid=1234)
+        with mock.patch.object(driver.c,'open_protected',return_value=parent),\
+             mock.patch.object(driver.os,'stat',return_value=info):
+            self.assertFalse(driver.ready('/synthetic/private',0,0,0o600))
 
 
 if __name__=='__main__':unittest.main()

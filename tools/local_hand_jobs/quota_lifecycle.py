@@ -92,6 +92,25 @@ class Transport:
                     returncode=client.poll(), digests={k: v.hexdigest() for k, v in self.hashes.items()})
 
 
+def _loaded_identity(part, values):
+    """Validate the original live or retained loaded-unit observation."""
+    q._keys(values, set(FIELDS))
+    q.require(values["Id"] == part["unit"] and values["LoadState"] == "loaded", "ORIGINAL_UNIT_MISSING")
+    inv = q.match(values["InvocationID"], r"[0-9a-f]{32}")
+    q.require(part["invocation_id"] in (None, inv), "ORIGINAL_INVOCATION_CHANGED")
+    expected = part["quota_parent"]["path"] + "/" + part["unit"]
+    q.require(values["ControlGroup"] in (expected, ""), "ORIGINAL_CGROUP_CHANGED")
+    required = dict(Restart="no", TriggeredBy="", ExecStop="", ExecStopPost="", ExecReload="",
+                    KillMode="control-group", Type="exec", ExitType="cgroup", RemainAfterExit="yes",
+                    ExecStartPre="", ExecStartPost="", OnFailure="", OnSuccess="", RestartForceExitStatus="")
+    q.require(all(values[k] == v for k, v in required.items()), "UNIT_CONFIG_CHANGED")
+    return dict(boot_id=part["boot_id"], invocation_id=inv, cgroup=expected)
+
+
+def _terminal(values):
+    return values["SubState"] == "exited" or values["ActiveState"] in ("inactive", "failed")
+
+
 def observe(manager, part, unknown):
     """Stop the same retained invocation, then require its real client and EOFs."""
     q.require(not part.get("recovered"), "ORIGINAL_TRANSPORT_LOST")
@@ -109,31 +128,37 @@ def observe(manager, part, unknown):
     for hook in ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"):
         values.setdefault(hook, "")
     q._keys(values, set(FIELDS))
-    q.require(values["Id"] == part["unit"] and values["LoadState"] == "loaded", "ORIGINAL_UNIT_MISSING")
-    inv = q.match(values["InvocationID"], r"[0-9a-f]{32}")
-    q.require(part["invocation_id"] in (None, inv), "ORIGINAL_INVOCATION_CHANGED")
-    expected = part["quota_parent"]["path"] + "/" + part["unit"]
-    q.require(values["ControlGroup"] in (expected, ""), "ORIGINAL_CGROUP_CHANGED")
-    required = dict(Restart="no", TriggeredBy="", ExecStop="", ExecStopPost="", ExecReload="",
-                    KillMode="control-group", Type="exec", ExitType="cgroup", RemainAfterExit="yes",
-                    ExecStartPre="", ExecStartPost="", OnFailure="", OnSuccess="", RestartForceExitStatus="")
-    q.require(all(values[k] == v for k, v in required.items()), "UNIT_CONFIG_CHANGED")
-    part["invocation_id"], part["launch_acked"] = inv, True
-    identity = dict(boot_id=part["boot_id"], invocation_id=inv, cgroup=expected)
-    if part.get("reader") is not None:
-        part["reader"].bind_reader(identity)
-    terminal = values["SubState"] == "exited" or values["ActiveState"] in ("inactive", "failed")
     expired = now["boottime_ns"] >= part["phase_deadline_boottime_ns"]
-    if (terminal or expired or cap.error) and not part.get("quota_stop_attempted"):
-        part["quota_stop_attempted"] = True
-        part["quota_terminal"] = values
-        # Recheck original identity immediately before the bounded StopUnit.
-        same = manager._command("show", part["unit"], "--property=InvocationID", "--value")
-        q.require(same.returncode == 0 and same.stdout.decode().strip() == inv, "ORIGINAL_INVOCATION_CHANGED")
-        part["quota_stop_ok"] = manager._command("stop", part["unit"]).returncode == 0
-        return {**unknown(), "identity": identity}
-    if not terminal:
-        return {**unknown(), "state": "RUNNING", "identity": identity}
+    if values["LoadState"] == "loaded":
+        identity = _loaded_identity(part, values)
+        inv = identity["invocation_id"]
+        part["invocation_id"], part["launch_acked"] = inv, True
+        if part.get("reader") is not None:
+            part["reader"].bind_reader(identity)
+        terminal = _terminal(values)
+        if (terminal or expired or cap.error) and not part.get("quota_stop_attempted"):
+            part["quota_stop_attempted"] = True
+            part["quota_terminal"] = values
+            # Recheck original identity immediately before the bounded StopUnit.
+            same = manager._command("show", part["unit"], "--property=InvocationID", "--value")
+            q.require(same.returncode == 0 and same.stdout.decode().strip() == inv, "ORIGINAL_INVOCATION_CHANGED")
+            part["quota_stop_ok"] = manager._command("stop", part["unit"]).returncode == 0
+            return {**unknown(), "identity": identity}
+        if not terminal:
+            return {**unknown(), "state": "RUNNING", "identity": identity}
+    else:
+        # A successful StopUnit may garbage-collect the transient unit. Only
+        # this same process's retained loaded terminal observation and stop ACK
+        # can bridge that absence; it can never adopt a missing or new launch.
+        q.require(values["LoadState"] == "not-found" and values["Id"] == part["unit"]
+                  and values["InvocationID"] == "" and values["ControlGroup"] == ""
+                  and values["ActiveState"] == "inactive" and values["SubState"] == "dead"
+                  and values["Job"] in ("", "0") and part.get("quota_stop_attempted") is True
+                  and part.get("quota_stop_ok") is True and part.get("launch_acked") is True
+                  and part.get("invocation_id") is not None and type(part.get("quota_terminal")) is dict,
+                  "ORIGINAL_UNIT_MISSING")
+        identity = _loaded_identity(part, part["quota_terminal"])
+        q.require(_terminal(part["quota_terminal"]), "ORIGINAL_TERMINAL_UNPROVEN")
     _, empty = parent(part["cgroup_parent"], part["quota_parent"])
     now = budget.current_clock()
     q.require(now["boot_id"] == part["boot_id"], "BOOT_CHANGED")

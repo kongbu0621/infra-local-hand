@@ -62,11 +62,17 @@ def bind(path, *, seqpacket=False, gid=0):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET if seqpacket else socket.SOCK_STREAM)
     try:
         # bind fails on an existing filesystem entry; never unlink a reservation.
-        sock.bind(path)
+        # This is the single-threaded listener's setup path. A zero-mode socket
+        # is an unpublished reservation: the coordinator must not connect until
+        # listen and nonblocking setup have completed. Do not expose a final
+        # mode between bind and listen, even under a caller's unusual umask.
+        prior_umask = os.umask(0o777)
+        try:sock.bind(path)
+        finally:os.umask(prior_umask)
         os.chown(path, 0, gid, follow_symlinks=False)
-        os.chmod(path, 0o600 if seqpacket else 0o660, follow_symlinks=False)
         sock.listen(1)
         sock.setblocking(False)
+        os.chmod(path, 0o600 if seqpacket else 0o660, follow_symlinks=False)
         return sock
     except BaseException:
         sock.close()

@@ -17,6 +17,10 @@ from .q2_journal import Journal
 from .q2_service import Service
 from .systemd_runtime import boottime_ns
 
+SNAPSHOT_POLLS = 48  # Plus initial snapshot/bind/start/close stays below 64.
+MANAGEMENT_POLLS = 10
+MANAGEMENT_STOP_POLLS = 3
+
 
 def ready(path, uid, gid, mode):
     """Observe, never connect to/consume the one-request socket for readiness."""
@@ -24,6 +28,8 @@ def ready(path, uid, gid, mode):
     try:
         try:info = os.stat(PurePosixPath(path).name, dir_fd=parent, follow_symlinks=False)
         except FileNotFoundError:return False
+        if stat.S_ISSOCK(info.st_mode) and info.st_uid == uid and stat.S_IMODE(info.st_mode) == 0:
+            return False  # Listener has reserved the path but not published listen readiness.
         q.require(stat.S_ISSOCK(info.st_mode) and (info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))
                   == (uid,gid,mode), 'COORDINATOR_ENDPOINT')
         return True
@@ -99,29 +105,51 @@ class Coordinator:
             self.client.call('bind',v)
             self.client.call('start')
             self._event('ORDINARY_START',dict(grant_digest=grant.digest))
-            management=None;snapshot=None;next_snapshot=0;next_management=0;management_polls=0
+            management=None;snapshot=None;next_snapshot=0;next_management=0
+            management_polls=stop_polls=snapshot_polls=0
             while snapshot is None or snapshot['pending'] is None or management is None:
                 self._pump()
                 # --pipe clients may remain alive while RemainAfterExit is
                 # active. Observe/stop the original service BEFORE requiring
-                # client EOF; waiting for EOF first can deadlock. At most eight
-                # additional polls keep the systemctl inventory under its cap.
-                if management is None and boottime_ns() >= next_management:
-                    q.require(management_polls < 8, 'MANAGEMENT_POLL_LIMIT')
-                    management_polls += 1
-                    if self.management.poll() is not None:
-                        management=self.management.finish()
-                        self.management_closed=True
-                        self._event('MANAGEMENT_CLOSED',management)
-                    else:
-                        now=boottime_ns()
+                # client EOF; waiting for EOF first can deadlock. Ten regular
+                # and three reserved post-stop polls cost at most 32 controls:
+                # begin=2, initial=2, polls=26, the two original stops=2.
+                if management is None:
+                    stopped=all(p.get('stop_ok') and p.get('after') for p in self.management.runs.values())
+                    done=None
+                    if stopped:
+                        # Services already have original post-stop facts. Only
+                        # pump the original clients while waiting for real EOF;
+                        # repeated systemctl calls would waste the finite budget.
+                        if all(p['capture'].done for p in self.management.runs.values()):
+                            done=self.management.finish()
+                    elif boottime_ns() >= next_management:
                         stopping=any(p.get('stop_attempted') and p.get('after') is None
                                      for p in self.management.runs.values())
-                        interval=10_000_000 if stopping else max(10_000_000,
-                            (self.management.end-now)//(9-management_polls))
-                        next_management=now+interval
+                        if stopping:
+                            q.require(stop_polls < MANAGEMENT_STOP_POLLS, 'MANAGEMENT_STOP_POLL_LIMIT')
+                            stop_polls += 1
+                        else:
+                            q.require(management_polls < MANAGEMENT_POLLS, 'MANAGEMENT_POLL_LIMIT')
+                            management_polls += 1
+                        if self.management.poll() is not None:
+                            done=self.management.finish()
+                        else:
+                            now=boottime_ns()
+                            stopping=any(p.get('stop_attempted') and p.get('after') is None
+                                         for p in self.management.runs.values())
+                            interval=10_000_000 if stopping else max(10_000_000,
+                                (self.management.end-now)//(MANAGEMENT_POLLS+1-management_polls))
+                            next_management=now+interval
+                    if done is not None:
+                        management=done
+                        self.management_closed=True
+                        self._event('MANAGEMENT_CLOSED',management)
                 if boottime_ns() >= next_snapshot and (snapshot is None or snapshot['pending'] is None):
-                    snapshot=self._snapshot();next_snapshot=boottime_ns()+1_000_000_000
+                    q.require(snapshot_polls < SNAPSHOT_POLLS, 'COORDINATOR_SNAPSHOT_LIMIT')
+                    snapshot=self._snapshot();snapshot_polls += 1
+                    now=boottime_ns()
+                    next_snapshot=now+max(10_000_000,(self.end-now)//(SNAPSHOT_POLLS+1-snapshot_polls))
                 time.sleep(0.01)
             ordinary=snapshot['pending']['proof']
             q.require(snapshot['closed'] is None and snapshot['observation'] is not None, 'COORDINATOR_ORIGINAL_OBSERVATION')
