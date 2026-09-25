@@ -1065,9 +1065,10 @@ class SystemdManager:
             events = dict(line.split() for line in (cgroup / "cgroup.events").read_text().splitlines())
             # populated is recursive, and is not interchangeable with cgroup.procs.
             empty = events.get("populated") == "0"
-        except FileNotFoundError:
-            empty = values.get("ActiveState") in ("inactive", "failed") and not cgroup.exists()
         except OSError:
+            # A pruned or unreadable leaf is not recursive exit proof. Until an
+            # identity-bound parent proof is available, retain UNKNOWN instead
+            # of authorizing the next stage from manager state alone.
             empty = False
         job_empty = values.get("Job", "") in ("", "0")
         idle = values.get("ActiveState") in ("inactive", "failed") or values.get("SubState") == "exited"

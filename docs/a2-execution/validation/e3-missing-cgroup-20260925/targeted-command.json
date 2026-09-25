@@ -1,0 +1,26 @@
+{
+  "started_utc": "2026-09-25T06:43:16.933540+00:00",
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-B",
+    "-m",
+    "unittest",
+    "test_local_hand_jobs_bootstrap",
+    "test_local_hand_jobs_runner",
+    "test_local_hand_jobs_result_reader_runner",
+    "test_local_hand_jobs_bootstrap_broker",
+    "-v"
+  ],
+  "environment_override": {
+    "PYTHONPATH": "tools:tests"
+  },
+  "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "base_commit": "32852f28b4edefb7acd1b5c6562cecc29524637d",
+  "source_sha256": {
+    "tools/local_hand_jobs/runner.py": "c82f8b9fbdffe47ef08da5343751311d8211aa28576938a1231e9e989e9f766b",
+    "tests/test_local_hand_jobs_bootstrap.py": "3efe161cc54d6a6fb90afabbf88c0a65243efb38d4fcf87a2d5408c23115ac19"
+  },
+  "returncode": 0,
+  "finished_utc": "2026-09-25T06:43:19.856586+00:00",
+  "log_sha256": "b4ea9681568b1a785e51dac4167060aa3c6f9da610058359fcb8021367117576"
+}

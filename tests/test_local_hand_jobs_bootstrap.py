@@ -126,6 +126,39 @@ class BootstrapLifecycleTests(unittest.TestCase):
                     self.assertFalse(result["result"]["business_started"])
                     self.assertEqual(result["result"]["outcome"], "CANCELLED")
 
+    def test_missing_bootstrap_cgroup_never_authorizes_helper_delivery(self):
+        # A terminal main process and a missing leaf do not prove its full tree
+        # stopped. Exercise the real manager transition, not a supplied proof.
+        for active in ("inactive", "failed"):
+            with self.subTest(active=active), admitted_plan() as (manager, identity, plan):
+                manager.set_start_guard(lambda execution_id, launch, **options: launch())
+                with patch.object(runner.subprocess, "Popen", return_value=Receipt()) as launched:
+                    handle = manager.start(identity, plan, threading.Event())
+                    part = handle["bootstrap"]
+                    fields = {"LoadState": "loaded", "ActiveState": active, "SubState": "dead",
+                              "ControlGroup": "/fixture/" + part["unit"], "InvocationID": "1" * 32,
+                              "Job": "0", "ExecMainCode": "1", "ExecMainStatus": "0", "Result": "success"}
+
+                    def read(path, *args, **kwargs):
+                        if str(path) == "/proc/sys/kernel/random/boot_id":
+                            return part["boot_id"]
+                        if str(path).endswith("/cgroup.events"):
+                            raise FileNotFoundError(str(path))
+                        raise AssertionError("Unexpected filesystem observation: " + str(path))
+
+                    with patch.object(manager, "_command", return_value=subprocess.CompletedProcess([], 0,
+                            "\n".join(key + "=" + value for key, value in fields.items()).encode())), \
+                            patch.object(Path, "read_text", read), \
+                            patch.object(Path, "exists", return_value=False), \
+                            patch.object(manager, "_stop_unit", return_value=runner._unknown()) as stop:
+                        proof = manager.inspect(handle)
+                    self.assertIsNone(handle["helper"])
+                    self.assertEqual(launched.call_count, 1)
+                    self.assertEqual(proof["state"], "UNKNOWN")
+                    self.assertFalse(proof["tree_exited"])
+                    self.assertFalse(proof["effects_checked"])
+                    stop.assert_called_once_with(part)
+
     def test_failed_bootstrap_never_delivers_helper_or_claims_clean_effects(self):
         with admitted_plan() as (manager, identity, plan):
             manager.set_start_guard(lambda execution_id, launch, **options: launch())

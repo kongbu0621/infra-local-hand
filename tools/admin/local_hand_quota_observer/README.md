@@ -1,5 +1,11 @@
 # Q1 原生 quota 查询原语
 
+2026-09-25 进展：Owner 已返还私有隔离 fixture 的查询、PrivateUsers 权限/边界、真实
+EDQUOT 和完整退出复核结果；Q1 容量来源仍待核对，尚未验收。准确状态与历史失败保留见
+[Q1 收口清单](../../../docs/a2-execution/E3_QUOTA_Q1_CLOSEOUT_REVIEW.md)，后续接线差异见
+[Q2 设计草案](../../../docs/a2-execution/E3_QUOTA_Q2_INTEGRATION_DRAFT.md)。
+下文“尚未实测/NOT_PREPARED”等措辞保留各次源码交付当时的状态；不能据新结果授予生产资格。
+
 批准范围：`LH-E3-QUOTA-HARNESS-v1`，A `415327ebdcc251bb055da9931a7a88990f750b7a`，
 独立 CLOSED 记录 C `5a4ea852091db06549a876e42bbd5f95d5869d3b`。
 

@@ -1,0 +1,17 @@
+{
+  "started_utc": "2026-09-25T06:39:21.903454+00:00",
+  "argv": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+    "-B",
+    "-m",
+    "unittest",
+    "test_local_hand_jobs_bootstrap.BootstrapLifecycleTests.test_missing_bootstrap_cgroup_never_authorizes_helper_delivery",
+    "-v"
+  ],
+  "environment_override": {
+    "PYTHONPATH": "tools:tests"
+  },
+  "returncode": 1,
+  "expected_returncode": 1,
+  "log_sha256": "56805b50b3651cf8a812a2ca2a1ebe2acec37be109a59a7043b865253021b6fa"
+}
