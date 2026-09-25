@@ -4,6 +4,8 @@
 首个 preflight 的一次 fixture 入口，并修复启动/readiness/有限轮询问题，见
 [第六批实现与准确剩余缺口](E3_QUOTA_Q2_RESIDENT.md)。完整 business/evidence 跨阶段账本装配、
 外层 controller 生命周期及真实 Q3/Q4 尚待完成；生产仍固定封堵。
+本批固定回归 872 项：857 通过、15 环境跳过、零失败；准确源码与发布映射见
+[第六批验证](E3_QUOTA_Q2_RESIDENT_VERIFICATION.md)。
 
 第五批历史进展：Q2 第五批新增认证常驻桥接、已准备单阶段驱动、管理员先关闭的双账本顺序及外层采集，
 见 [第五批实现和准确剩余缺口](E3_QUOTA_Q2_BRIDGE.md)。常驻 broker 的 test-only composition、
