@@ -1,0 +1,53 @@
+{
+  "source": "43f9ec5667af39a795185b71114d1f5c3c094a83",
+  "tree": "0cabf78d82d8c98c674f917252807ca2825c5355",
+  "started": "2026-09-25T11:38:45.845976+00:00",
+  "runs": [
+    {
+      "name": "jobs",
+      "argv": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_local_hand_jobs*.py",
+        "-v"
+      ],
+      "exit": 0,
+      "sha256": "1fd32a295fcb63a1b5e273eea928ac44002089e324ab8fde93e97eca690c1730"
+    },
+    {
+      "name": "quota",
+      "argv": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_e3_quota*.py",
+        "-v"
+      ],
+      "exit": 0,
+      "sha256": "b36294feb6c072d00cc18d7bd7ac53971e24496fcc13a1d18481c32b09e7d00b"
+    },
+    {
+      "name": "driver",
+      "argv": [
+        "python",
+        "-I",
+        "-B",
+        "tests/e3_host/q2_phase_driver.py"
+      ],
+      "exit": 3,
+      "sha256": "0d09cad73594dd5ff0349b86f84c58e43eb336225581bb5758f5b5fb7c484956"
+    }
+  ],
+  "ended": "2026-09-25T11:39:00.115122+00:00"
+}

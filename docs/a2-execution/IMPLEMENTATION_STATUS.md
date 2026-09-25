@@ -3,6 +3,7 @@
 2026-09-25 最新进展：Q2 第五批新增认证常驻桥接、已准备单阶段驱动、管理员先关闭的双账本顺序及外层采集，
 见 [第五批实现和准确剩余缺口](E3_QUOTA_Q2_BRIDGE.md)。常驻 broker 的 test-only composition、
 原预算管理配置装配及完整 fixture 启动器尚待完成；未执行真实 Q3/Q4，生产仍封堵。
+本批固定回归 822 项：807 通过、15 环境跳过，见 [第五批验证](E3_QUOTA_Q2_BRIDGE_VERIFICATION.md)。
 
 第四批历史进展：Q2 第四批已实现六单元关闭合同、原普通客户端双流采集、独立管理监督组件、
 broker 阶段关闭检查及一次组合预检，见 [第四批实现与固定 fixture 交接](E3_QUOTA_Q2_PHASE_CLOSURE.md)。
