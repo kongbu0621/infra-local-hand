@@ -5,6 +5,8 @@ EDQUOT 和完整退出复核结果；原专用 guest 的容量复核已完成，
 [限定范围结论](../../../docs/a2-execution/E3_QUOTA_Q1_GUEST_CAPACITY_REVIEW.md)。准确状态与历史失败保留见
 [Q1 收口清单](../../../docs/a2-execution/E3_QUOTA_Q1_CLOSEOUT_REVIEW.md)，后续接线差异见
 [Q2 设计草案](../../../docs/a2-execution/E3_QUOTA_Q2_INTEGRATION_DRAFT.md)。
+Q2 第一批无特权协议/客户端已有源码与 31 项逻辑验证，11 项实际 IPC 尚未验证，见
+[客户端验证记录](../../../docs/a2-execution/E3_QUOTA_Q2_CLIENT_VERIFICATION.md)；本目录尚无 Q2 listener。
 下文“尚未实测/NOT_PREPARED”等措辞保留各次源码交付当时的状态；不能据新结果授予生产资格。
 
 批准范围：`LH-E3-QUOTA-HARNESS-v1`，A `415327ebdcc251bb055da9931a7a88990f750b7a`，

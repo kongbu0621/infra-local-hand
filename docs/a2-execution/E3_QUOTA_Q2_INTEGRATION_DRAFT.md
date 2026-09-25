@@ -2,6 +2,8 @@
 
 日期：2026-09-25。状态：**接线设计草案；Q1 限定 guest 范围复核完成，Q2 开始按批实现**。
 阶段依据见[Q1 容量复核](E3_QUOTA_Q1_GUEST_CAPACITY_REVIEW.md)。本草案不是 Q2 完成报告。
+第一批 contract/client 已实现，准确范围与未验证 IPC 见
+[客户端验证记录](E3_QUOTA_Q2_CLIENT_VERIFICATION.md)。下述接线差异仍作为后续清单。
 
 本草案细化已批准的 [QH 架构](e3-quota-harness/ARCHITECTURE.md)与
 [实施顺序](e3-quota-harness/IMPLEMENTATION_PLAN.md)，不替换权威 A/R/C，

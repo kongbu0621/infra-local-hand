@@ -22,6 +22,7 @@ endpoint 来自 bootstrap 受保护安装配置，不由请求携带。client �
 管理员保护且不可被普通身份替换的祖先、socket owner/权限及前后 inode，再以 SO_PEERCRED
 核对服务 UID/GID，PID 仅作观测。不能用同 UID 判定服务端所见的客户端角色；服务端还需
 后续批次的 bootstrap 阶段、分配和入口隔离校验。通信成功不授予启动或释放资格。
+客户端对 socket 拒绝所有 other 权限及特殊权限位；祖先拒绝 group/other 写权限。
 
 ## 请求 v1
 
@@ -83,3 +84,6 @@ OBSERVED 要求 started <= finished < receipt deadline，且消费时未过期�
 本批的客户端只返回经过格式与绑定检查的不可变事实，不启动业务、不发布 bootstrap plan、
 不修改 broker 账本、不释放资源。生产封堵保留。服务端来源认证、原预算准入、持久意图、
 多根 query、全部 collector 的真实退出和 bootstrap 最终本地根复查完成后，才能接通后续阶段。
+
+实际第一批源码、31 项逻辑通过及 11 项 IPC 未验证结果见
+[客户端验证记录](E3_QUOTA_Q2_CLIENT_VERIFICATION.md)；本节描述的实测用例不代表已运行通过。

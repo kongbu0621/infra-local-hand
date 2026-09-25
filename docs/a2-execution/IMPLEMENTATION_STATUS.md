@@ -1,5 +1,11 @@
 # E1–E3 实现候选状态
 
+2026-09-25 最新进展：私有隔离 guest 的 Q1 查询/权限/真实 EDQUOT/完整退出及原容量范围已复核，
+见 [Q1 限定范围结论](E3_QUOTA_Q1_GUEST_CAPACITY_REVIEW.md)。Q2 首批协议、完整根绑定和有界客户端
+已实现：31 项逻辑通过，11 项实际 IPC 因执行器策略未验证，见
+[Q2 客户端验证](E3_QUOTA_Q2_CLIENT_VERIFICATION.md)。服务端、防重预算和 bootstrap 尚未接通；
+Q2 整体、Q3/Q4 和生产 E3 仍未完成。下文的逐次历史结果不因这次复核被改写。
+
 本文件记录实现事实，不替代已批准的三层文档。整体状态为 **受监督启动准备和结果读取已有隔离实现、E1 整体未完成、E3 实机验收 BLOCKED、候选不可部署**；
 NAS 已有固定只读查询与响应校验，但实际查询、写入身份和限定网络尚未准入。结果读取已迁入独立受监督进程，真实阻塞 I/O、恢复和取消仍待 E3 实测；本轮未达到 E1–E3 全部出口。
 实现边界见 [受监督启动与结果读取](SUPERVISED_BOOTSTRAP.md)和 [NAS 配额准入](NAS_QUOTA_ADMISSION.md)。上一检查点准确源码 `4be98b8`、运行结果、保留的本地安装失败和产物身份见 [启动准备验证报告](E1_BOOTSTRAP_VERIFICATION.md)，不转记为新增实现的验证。
@@ -103,7 +109,7 @@ Connector 继续用于获准的 GitHub 访问，仓库文件中不存在实际�
 | --- | --- |
 | E1 受监督执行 | 已有私有 root allocation、三个固定单元、受监督配额／计划发布与结果读取、三次 durable guard 和不重放恢复代码；真实 OS 约束、阻塞 I/O 及完整取消链尚未验收，不据此声明 E1 整体完成 |
 | E3 真实独立进程监督 | `SystemdManager.support()` 固定包含 `E3_SUPERVISION_UNVERIFIED`，即使其他主机条件齐备也拒绝生产启动；没有配置布尔值可解除。现有实机用例仍为 SKIP/FAIL 占位，尚缺完整 host fixture/harness；委派、namespace、子孙进程、延迟启动、broker 崩溃、配额和阻塞 I/O 的真实验收未完成 |
-| 本地 project quota | 现有生产路径仍有 host capability 与单元隔离冲突，尚未接入新机制。管理侧 Q1 原生 ABI 原语已实现并保留 errno，云端只执行不调用 quota 的真实负例和明确模拟的查询分支；没有目标主机 quota 结果。独立 observer、准入/监督及真实 enforcement 验证仍未完成，不能据此启用生产 |
+| 本地 project quota | 用户专用 guest 已取得 Q1 查询和 PrivateUsers 下真实 EDQUOT/完整退出结果，限定范围复核见页首；旧 UNKNOWN/INCOMPLETE 保留。Q2 contract/client 已实现但实际 IPC 未验证，完整 observer 服务、原预算与 bootstrap 尚未接通；GX10 生产能力和 E3 支持仍未验收 |
 | E3 只读准备 | 独立探针的 nsfs 修复已完成现场重测；原始 mountinfo 未归档，不声称云端重放。随后一次性输入确认的 44 成员 ZIP 已独立核验，六项专用账户/manager/slice/cgroup/隔离/委派输入为 NOT_PREPARED；slots/quota/store 仍 UNVERIFIED。只读库存阶段结束，整体 E3 仍未验收 |
 | helper 结果读取 | 新 v3 将文件读取迁入独立只读 reader unit，父端仅处理有界匿名管道；旧布局不补授 reader 预算、不回退直接读盘。重启丢失管道不重读，结果保留 UNKNOWN；原三 unit 退出可独立记录，允许新显式 reconcile，旧 local CLI 停止仍不冒充已证明。真实 E3 尚未验收 |
 | 真实 Unix maintenance transport | 宿主限制和各准确候选结果按对应验证报告分别记账；独立 TCP/SDK 测试不替代 Unix socket |
