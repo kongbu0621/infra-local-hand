@@ -5,8 +5,9 @@
 第一批 contract/client 已实现，准确范围与未验证 IPC 见
 [客户端验证记录](E3_QUOTA_Q2_CLIENT_VERIFICATION.md)。第二批的固定准入、持久防重、管理预算和
 bootstrap 新版消费实现见[持久核心设计](E3_QUOTA_Q2_DURABLE_CORE.md)及
-[107 项定向验证](E3_QUOTA_Q2_DURABLE_VERIFICATION.md)。下表保留草案基准差异；listener、运行适配、
-broker 持久绑定和 socket 隔离仍需完成，不能把新增核心视为整条接线完成。
+[107 项定向验证](E3_QUOTA_Q2_DURABLE_VERIFICATION.md)。第三批 listener、运行适配、broker 持久绑定
+和 socket 隔离的实现见[本批记录](E3_QUOTA_Q2_RUNTIME_BINDING.md)。完整关闭装配和真实整链验收仍待完成；
+下表保留草案基准差异，不能把新增核心视为整条接线验收完成。
 
 本草案细化已批准的 [QH 架构](e3-quota-harness/ARCHITECTURE.md)与
 [实施顺序](e3-quota-harness/IMPLEMENTATION_PLAN.md)，不替换权威 A/R/C，

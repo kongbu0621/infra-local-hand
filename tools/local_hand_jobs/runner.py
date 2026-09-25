@@ -477,6 +477,13 @@ class SystemdManager:
             "StandardOutput": "null", "StandardError": "null",
             "ReadWritePaths": " ".join(execution["writable"]),
             "ReadOnlyPaths": " ".join(execution.get("readonly", []))}
+        if "quota_grant_digest" in execution:
+            properties["CapabilityBoundingSet"] = ""
+            if stage == "bootstrap":
+                properties.pop("StandardOutput")
+            else:
+                # ReadOnlyPaths does not deny connect(2) on a UNIX socket.
+                properties["InaccessiblePaths"] += " " + execution["quota_endpoint"]
         if stage == "result_reader":
             # Its only output is the inherited anonymous pipe. No job root is
             # writable, and no follow-up result file is read by this process.
@@ -511,14 +518,21 @@ class SystemdManager:
         properties = self._properties(execution, stage)
         command = ["/usr/bin/systemd-run", "--user", "--quiet", "--unit=" + part["unit"],
                    "--description=Local-Hand-supervised-" + stage]
-        if stage == "result_reader":
+        receipt_pipe = stage == "bootstrap" and "quota_grant_digest" in execution
+        if stage == "result_reader" or receipt_pipe:
             command.append("--pipe")
-        command.extend("--property=" + key + "=" + value for key, value in properties.items() if value)
+        command.extend("--property=" + key + "=" + value for key, value in properties.items() if value or key == "CapabilityBoundingSet")
         script = str(Path(__file__).absolute())
         if any(re.search(r"[\s\\%$]", path) for path in (script, execution["python"])):
             raise RunnerError("UNSUPPORTED", "systemd executable paths must not contain specifiers")
         if stage == "bootstrap":
             payload = {"execution": execution, "allocation": execution["bootstrap_allocation"]}
+            if receipt_pipe:
+                from . import quota_bootstrap, quota_binding, quota_grant, quota_contract
+                observation = quota_grant.decode_grant(quota_contract._canonical(handle["quota_observation_grant"], quota_grant.GRANT_LIMIT))
+                payload = quota_bootstrap.bind_payload(execution, execution["bootstrap_allocation"], observation,
+                                                       now_ns=budget.current_clock()["boottime_ns"])
+                part.update(quota_pipe=quota_binding.Pipe(), quota_grant=observation, pipe_nonblocking=False)
             command.extend(["--", execution["python"], "-I", script, "--bootstrap", bootstrap.encode_payload(payload)])
         elif stage == "helper":
             command.extend(["--", execution["python"], "-I", script, "--helper", handle["plan_path"]])
@@ -551,9 +565,9 @@ class SystemdManager:
             # Neither a Popen exception nor a lost return proves no delivery.
             handle["delivery_attempted"] = part["delivery_attempted"] = True
             part["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE if stage == "result_reader" else subprocess.DEVNULL,
+                stdout=subprocess.PIPE if stage == "result_reader" or receipt_pipe else subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, env=environment)
-            if stage == "result_reader":
+            if stage == "result_reader" or receipt_pipe:
                 os.set_blocking(part["launch"].stdout.fileno(), False)
                 part["pipe_nonblocking"] = True
             return part["launch"]
@@ -598,6 +612,13 @@ class SystemdManager:
             bootstrap_unit=self._bootstrap_unit(identity["execution_id"]),
             parent_mount_namespace=os.readlink("/proc/self/ns/mnt"),
             phase_deadline_boottime_ns=budget.phase_deadline_ns(grant) - grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS)
+        observation = plan.get("quota_observation_grant")
+        if observation is not None:
+            from . import quota_bootstrap, quota_grant, quota_contract
+            parsed = quota_grant.decode_grant(quota_contract._canonical(_plain(observation), quota_grant.GRANT_LIMIT))
+            execution = quota_bootstrap.bind_payload(execution, allocation, parsed,
+                now_ns=budget.current_clock()["boottime_ns"])["execution"]
+            execution["quota_endpoint"] = parsed.as_dict()["endpoint"]["path"]
         suffix = hashlib.sha256(identity["execution_id"].encode()).hexdigest()[:24]
         execution["result_path"] = str(Path(execution["roots"]["evidence"]) / ("result-" + suffix + ".json"))
         handle = {"version": supervision_version, "unit": identity["unit"], "identity": dict(identity), "execution": execution,
@@ -606,6 +627,8 @@ class SystemdManager:
             "delivery_attempted": False, "recovered": False, "helper_attempted": False,
             "bootstrap_proof": None, "transition_error": None,
             "result_reader": None, "reader_attempted": False, "helper_proof": None, "reader_error": None}
+        if observation is not None:
+            handle["quota_observation_grant"] = _plain(observation)
         self._runs[identity["unit"]] = handle
         self._deliver_stage(handle, "bootstrap")
         return handle
@@ -1010,17 +1033,18 @@ class SystemdManager:
             if observed.returncode or observed.stdout.decode().strip() != handle["invocation_id"]:
                 return _unknown("original invocation differs; stop not retargeted")
         launch = handle["launch"]
-        if handle.get("stage") == "result_reader" and not handle.get("invocation_id"):
+        piped = handle.get("stage") == "result_reader" or "quota_pipe" in handle
+        if piped and not handle.get("invocation_id"):
             observed = self._command("show", handle["unit"], "--property=InvocationID,ControlGroup")
             values = dict(line.split("=", 1) for line in observed.stdout.decode().splitlines() if "=" in line)
             invocation, group = values.get("InvocationID", ""), values.get("ControlGroup", "")
             cgroup = Path("/sys/fs/cgroup" + group)
             if (observed.returncode or re.fullmatch(r"[0-9a-f]{32}", invocation) is None or not group or
                     not str(cgroup).startswith(handle["cgroup_parent"] + "/") or cgroup.name != handle["unit"]):
-                return _unknown("original result reader start has not been observed; stop not retargeted")
+                return _unknown("original piped unit start has not been observed; stop not retargeted")
             handle["invocation_id"] = invocation
             handle["launch_acked"] = True
-        if (handle.get("stage") != "result_reader" and not handle.get("recovered")
+        if (not piped and not handle.get("recovered")
                 and (launch is None or launch.poll() is None)):
             return _unknown("manager start request remains in flight")
         # Ordered after launch completion. systemctl stop --no-block would not
@@ -1030,6 +1054,42 @@ class SystemdManager:
             handle["stop_acked"] = result.returncode == 0
         return _unknown("stop accepted; awaiting job and tree exit proof")
 
+    def _bootstrap_receipt(self, handle, values):
+        pipe = handle["quota_pipe"]
+        client = handle["launch"]
+        if client is None or not handle.get("pipe_nonblocking"):
+            return None
+        for _ in range(9):
+            if pipe.eof:
+                break
+            try:
+                chunk = os.read(client.stdout.fileno(), 4096)
+            except BlockingIOError:
+                break
+            except OSError:
+                pipe.error = True
+                return None
+            pipe.feed(chunk)
+        if not handle.get("quota_stop_attempted"):
+            # --pipe with RemainAfterExit waits until StopUnit. Record the
+            # original invocation before stopping; never kill the client as proof.
+            handle["quota_stop_attempted"] = True
+            stopped = self._command("stop", handle["unit"])
+            handle["quota_stop_ok"] = stopped.returncode == 0
+        if (not handle.get("quota_stop_ok") or values["ActiveState"] not in ("inactive", "failed")
+                or not pipe.eof or client.poll() != 0):
+            return None
+        from . import quota_contract
+        try:
+            result = pipe.finish(handle["quota_grant"], now_ns=budget.current_clock()["boottime_ns"])
+            if not handle.get("quota_pipe_closed"):
+                client.stdout.close()
+                handle["quota_pipe_closed"] = True
+            return result
+        except quota_contract.QuotaError:
+            pipe.error = True
+            return None
+
     def _inspect_unit(self, handle):
         if handle["cancel_before_launch"]:
             return {**_unknown(), "state": "EXITED", "future_start_blocked": True, "tree_exited": True,
@@ -1037,8 +1097,10 @@ class SystemdManager:
                 "result": {"outcome": "CANCELLED", "business_started": False, "helper_started": False}}
         if Path("/proc/sys/kernel/random/boot_id").read_text().strip() != handle["boot_id"]:
             return _unknown("boot identity changed; reconcile durable ownership")
+        if handle.get("quota_verified_proof") is not None:
+            return _plain(handle["quota_verified_proof"])
         launch = handle["launch"]
-        if not handle.get("recovered") and handle.get("stage") != "result_reader":
+        if not handle.get("recovered") and handle.get("stage") != "result_reader" and "quota_pipe" not in handle:
             if launch is None or launch.poll() is None:
                 return _unknown("manager start request has not been acknowledged")
             handle["launch_acked"] = launch.returncode == 0
@@ -1052,11 +1114,13 @@ class SystemdManager:
         if handle["invocation_id"] not in (None, invocation): return _unknown("unit invocation identity changed")
         handle["invocation_id"] = invocation
         group = values.get("ControlGroup", "")
+        if "quota_pipe" in handle and not group and handle.get("quota_empty_group"):
+            group = handle["quota_empty_group"]
         expected_prefix = handle["cgroup_parent"] + "/"
         cgroup = Path("/sys/fs/cgroup" + group)
         if not group or not str(cgroup).startswith(expected_prefix) or cgroup.name != handle["unit"]:
             return _unknown("cgroup ownership differs from execution")
-        if handle.get("stage") == "result_reader":
+        if handle.get("stage") == "result_reader" or "quota_pipe" in handle:
             # --pipe waits for service termination; a still-running client is
             # neither a pending delivery nor proof the service remains alive.
             # Bind the accepted deterministic unit itself before observing it.
@@ -1070,6 +1134,20 @@ class SystemdManager:
             # identity-bound parent proof is available, retain UNKNOWN instead
             # of authorizing the next stage from manager state alone.
             empty = False
+            if "quota_pipe" in handle and handle.get("quota_empty_group") == group:
+                # After leaf pruning, require the SAME recursively empty parent.
+                # This conservatively waits if another operation occupies it.
+                try:
+                    parent = Path(handle["cgroup_parent"])
+                    info = parent.stat()
+                    events = dict(line.split() for line in (parent / "cgroup.events").read_text().splitlines())
+                    empty = [info.st_dev, info.st_ino] == handle.get("quota_parent_identity") and events.get("populated") == "0"
+                except OSError:
+                    empty = False
+        if empty and "quota_pipe" in handle and not handle.get("quota_empty_group"):
+            info = Path(handle["cgroup_parent"]).stat()
+            handle["quota_parent_identity"] = [info.st_dev, info.st_ino]
+            handle["quota_empty_group"] = group
         job_empty = values.get("Job", "") in ("", "0")
         idle = values.get("ActiveState") in ("inactive", "failed") or values.get("SubState") == "exited"
         blocked = handle["launch_acked"] and job_empty and idle
@@ -1089,19 +1167,28 @@ class SystemdManager:
             return {**_unknown(), "state": "RUNNING" if not idle else "UNKNOWN",
                     "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group}}
         if handle.get("stage") == "bootstrap":
+            observation = None
+            if "quota_pipe" in handle:
+                observation = self._bootstrap_receipt(handle, values)
+                if observation is None:
+                    return _unknown("original bootstrap receipt, client exit or EOF is unresolved")
             exit_code = int(values["ExecMainStatus"]) if values.get("ExecMainCode") == "1" and values.get("ExecMainStatus", "").isdigit() else None
             prepared = exit_code == 0
             # The fixed bootstrap entry returns zero only after its admitted
             # root/quota checks, create-only plan publication, fsync and final
             # root-binding/deadline checks. No result/plan storage read occurs in
             # the observer thread; failed/partial preparation keeps its barrier.
-            return {"state": "EXITED", "future_start_blocked": True, "tree_exited": True,
+            proof = {"state": "EXITED", "future_start_blocked": True, "tree_exited": True,
                 "collectors_stopped": True, "writers_stopped": True, "effects_checked": prepared,
                 "exit_code": exit_code, "execution_id": handle["execution_id"], "unit": handle["unit"],
                 "facts": {}, "result": {"outcome": "SUCCEEDED" if prepared else "FAILED",
-                    "bootstrap_prepared": prepared, "business_started": False, "helper_started": True},
+                    "bootstrap_prepared": prepared, "business_started": False, "helper_started": True,
+                    **({"quota_observation": observation} if observation is not None else {})},
                 "identity": {"boot_id": handle["boot_id"], "invocation_id": invocation, "cgroup": group},
                 "missing": [] if prepared else ["bootstrap preparation failed; partial files remain allocated"]}
+            if observation is not None:
+                handle["quota_verified_proof"] = _plain(proof)
+            return proof
         exit_code = int(values["ExecMainStatus"]) if values.get("ExecMainCode") == "1" and values.get("ExecMainStatus", "").isdigit() else None
         # Legacy grants have no reader allocation. They remain observable and
         # stoppable, but cannot fall back to unbounded result storage I/O here.

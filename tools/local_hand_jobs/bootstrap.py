@@ -229,6 +229,11 @@ def prepare(payload):
             if (now.st_dev, now.st_ino) != (held.st_dev, held.st_ino):
                 raise JobError("IO_UNCERTAIN", "Root binding changed during launch preparation")
         runner._deadline_remaining((execution["budget_grant"], execution["phase_deadline_boottime_ns"]))
+        if modern:
+            from . import quota_binding
+            packet = quota_binding.frame(quotas)
+            if os.write(1, packet) != len(packet):
+                raise JobError("IO_UNCERTAIN", "Bootstrap receipt pipe is incomplete")
         return 0
     finally:
         _close_all(descriptors.values(), sys.exc_info()[1])

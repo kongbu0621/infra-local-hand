@@ -43,6 +43,15 @@ class QuotaBootstrapTests(unittest.TestCase):
         self.now = issued + SECOND
         self.result = receipt(self.grant, start=self.now, finish=self.now)
         self.calls = 0
+        self.emitted = []
+        real_write = os.write
+        def write(fd, raw):
+            if fd == 1:
+                self.emitted.append(raw)
+                return len(raw)
+            return real_write(fd, raw)
+        self.emit_patch = mock.patch.object(bootstrap.os, "write", side_effect=write)
+        self.emit_patch.start(); self.addCleanup(self.emit_patch.stop)
 
     @contextlib.contextmanager
     def host(self, *, response=None, ioctl=None):
@@ -87,6 +96,11 @@ class QuotaBootstrapTests(unittest.TestCase):
         self.assertEqual(self.grant.digest, facts["grant_digest"])
         self.assertEqual(3*65536, facts["domain_hard_bytes"])
         self.assertTrue(all(path.exists() for path in self.fixture.markers()))
+        from local_hand_jobs import quota_binding
+        pipe = quota_binding.Pipe()
+        self.assertEqual(1, len(self.emitted))
+        pipe.feed(self.emitted[0]); pipe.feed(b"")
+        self.assertEqual(facts, pipe.finish(self.grant, now_ns=self.now))
 
     def test_trusted_payload_binding_is_explicit_detached_and_bounded(self):
         execution = copy.deepcopy(self.payload["execution"])

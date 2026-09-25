@@ -219,7 +219,23 @@ def _validate_state(row, state):
             or state["deadline_boottime_ns"] != state["started_boottime_ns"] + original["wall_seconds"] * NANOSECONDS):
         raise _invalid()
     handles = row["record"].get("handles", {})
-    if type(handles) is not dict or set(state["grants"]) != set(handles):
+    if type(handles) is not dict:
+        raise _invalid()
+    handles = dict(handles)
+    preparations = row["record"].get("quota_preparations", {})
+    if preparations:
+        if (type(row["record"].get("quota_binding_version")) is not int
+                or row["record"]["quota_binding_version"] != 1 or type(preparations) is not dict):
+            raise _invalid("Quota preparation version is unresolved")
+        for phase, prepared in preparations.items():
+            if (type(prepared) is not dict or prepared.get("phase") != phase
+                    or prepared.get("budget") != state["grants"].get(phase)
+                    or not isinstance(prepared.get("session"), str)
+                    or re.fullmatch(r"[0-9a-f]{32}", prepared["session"]) is None):
+                raise _invalid("Original quota preparation budget differs")
+            if phase not in handles:
+                handles[phase] = {"execution_id": prepared["budget"]["execution_id"]}
+    if set(state["grants"]) != set(handles):
         raise _invalid("Execution intent and aggregate budget reservations differ")
     for old_phase, old in state["grants"].items():
         validate_grant(old, namespace=namespace, record_id=identity, operation_id=parent,

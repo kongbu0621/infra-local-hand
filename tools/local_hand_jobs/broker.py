@@ -11,6 +11,7 @@ import hashlib
 import json
 import threading
 import time
+import uuid
 
 from .contract import JobError, Principal, validate_submit, validate_tool_args
 from . import bootstrap_roots, budget
@@ -45,7 +46,7 @@ class Broker:
     never a timeout, establishes whether delayed launches can still occur.
     """
 
-    def __init__(self, state, policy, registry, runner, evidence=None, *, resources=None):
+    def __init__(self, state, policy, registry, runner, evidence=None, *, resources=None, quota_required=False):
         try:
             budget.initialize_clock()
         except JobError:
@@ -54,6 +55,10 @@ class Broker:
             pass
         self.state, self.policy, self.registry = state, policy, registry
         self.runner, self.evidence = runner, evidence
+        if type(quota_required) is not bool:
+            raise ValueError("quota_required must be an installation boolean")
+        self.quota_required = quota_required
+        self._quota_session = uuid.uuid4().hex
         self.resources = resources or ResourceManager()
         self.fence = threading.RLock()
         self._rates = {}
@@ -147,7 +152,8 @@ class Broker:
         for key in ("handles", "facts", "principal_scopes", "generation", "runner_result"):
             result.pop(key, None)
         for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents",
-                    "execution_budget", "budget_grant", "bootstrap_grants", "bootstrap_completed", "helper_completed"):
+                    "execution_budget", "budget_grant", "bootstrap_grants", "bootstrap_completed", "helper_completed",
+                    "quota_binding_version", "quota_preparations", "quota_bindings", "quota_observed", "quota_event_phase"):
             result.pop(key, None)
         result["seal_refs"] = [{"seal_id": item["seal_id"], "seal_sha256": item.get("seal_sha256")}
                                for item in result.pop("seals", [])]
@@ -235,7 +241,8 @@ class Broker:
                                     digest, request, plan, reserved)
             self.state.update(tx, "job", identity, "ADMISSION_BOUND", {
                 "principal_scopes": sorted(principal.scopes),
-                "generation": self._generation(tx), "handles": {}})
+                "generation": self._generation(tx), "handles": {},
+                **({"quota_binding_version": 1} if self.quota_required else {})})
             result = self._view(self.state.get("job", identity, tx))
         self._wake.set()
         self._catalog(self.state.get("job", identity))
@@ -337,7 +344,8 @@ class Broker:
                               "reconcile_id": reconcile_id, "expected_request_digest": expected_request_digest},
                               plan, plan["reservation_bytes"])
             self.state.update(tx, "reconcile", reconcile_id, "OBSERVATION_BOUND", {
-                "principal_scopes": sorted(principal.scopes), "generation": self._generation(tx), "handles": {}})
+                "principal_scopes": sorted(principal.scopes), "generation": self._generation(tx), "handles": {},
+                **({"quota_binding_version": 1} if self.quota_required else {})})
             result = self._view(self.state.get("reconcile", reconcile_id, tx))
         self._wake.set()
         return result
@@ -555,6 +563,37 @@ class Broker:
                 return False
         return len(intents) == (1 if intent_committed else 0)
 
+    def bind_observation(self, namespace, identity, phase, raw):
+        """Trusted administrator/harness API; no transport route or grant issuance."""
+        from . import quota_binding, quota_contract as q, quota_grant as g
+        grant = g.decode_grant(raw)
+        with self.fence, self.state.transaction() as tx:
+            row = self.state.get(namespace, identity, tx)
+            if (row is None or row["record"].get("quota_binding_version") != 1
+                    or row["record"].get("recovered") or row["record"]["cancel_requested"]
+                    or phase in row["record"]["handles"] or row["record"]["generation"] != self._generation(tx)):
+                raise JobError("IO_UNCERTAIN", "Quota preparation cannot be bound")
+            prep = quota_binding.original(tx, row, phase, "QUOTA_PREPARATION", "quota_preparations")
+            q.require(prep["session"] == self._quota_session and grant.as_dict()["allocation"] == prep["allocation"]
+                      and grant.as_dict()["budget"] == prep["budget"], "ORIGINAL_PREPARATION")
+            g.check_execution(grant, quota_binding.execution(grant), prep["allocation"],
+                              now_ns=budget.current_clock()["boottime_ns"])
+            existing = row["record"].get("quota_bindings", {}).get(phase)
+            history = tx.execute("SELECT data_json FROM events WHERE namespace=? AND id=? AND kind='QUOTA_OBSERVATION_BOUND'",
+                                 (namespace, identity)).fetchall()
+            already_bound = any(json.loads(event["data_json"]).get("quota_event_phase") == phase for event in history)
+            if already_bound and existing is None:
+                raise JobError("IO_UNCERTAIN", "Original quota binding snapshot is missing")
+            if existing is not None:
+                same = quota_binding.selected(tx, row, phase, session=self._quota_session,
+                                              now_ns=budget.current_clock()["boottime_ns"])
+                q.require(same == grant, "QUOTA_BINDING_CONFLICT")
+                return
+            item = {"phase": phase, "grant_digest": grant.digest, "grant": grant.as_dict()}
+            self.state.update(tx, namespace, identity, "QUOTA_OBSERVATION_BOUND", {
+                "quota_event_phase": phase, "quota_bindings": dict(row["record"].get("quota_bindings", {}), **{phase: item})})
+        self._wake.set()
+
     def _start(self, namespace, identity, phase):
         # Slow preflight facts are produced by the runner; no filesystem access here.
         with self.fence:
@@ -594,7 +633,22 @@ class Broker:
                                          (namespace, identity)).fetchone()
                     if history is not None:
                         raise JobError("IO_UNCERTAIN", "Prior operation events cannot acquire a fresh execution budget")
-                execution_budget, grant = budget.reserve(row, phase)
+                from . import quota_binding
+                quota = quota_binding.admission_version(tx, row) == 1
+                if self.quota_required and not quota:
+                    raise JobError("IO_UNCERTAIN", "Historical admission cannot acquire a new quota binding")
+                preparation = row["record"].get("quota_preparations", {}).get(phase)
+                if quota and preparation is not None:
+                    from . import quota_binding
+                    preparation = quota_binding.original(tx, row, phase, "QUOTA_PREPARATION", "quota_preparations")
+                    if preparation["session"] != self._quota_session:
+                        raise JobError("IO_UNCERTAIN", "Quota preparation retained across restart; no automatic continuation")
+                    execution_budget = row["record"]["execution_budget"]
+                    grant = budget.stored_grant(row, phase)
+                    if budget.phase_remaining_ns(grant) <= grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS:
+                        raise JobError("LIMIT_EXCEEDED", "Original quota preparation deadline expired")
+                else:
+                    execution_budget, grant = budget.reserve(row, phase)
                 execution_id = f"{namespace}-{identity}-{phase}"
                 handles = row["record"]["handles"]
                 if phase in handles:
@@ -614,6 +668,25 @@ class Broker:
                         extras = {"evidence_store": store}
                     allocation = bootstrap_roots.reserve(self.state, tx, row, phase,
                         thaw(profile["bootstrap_slots"]), extra_roots=extras)
+                observation = None
+                if quota:
+                    if allocation is None:
+                        raise JobError("UNSUPPORTED", "Quota binding requires preprovisioned bootstrap slots")
+                    if preparation is None:
+                        prepared = {"phase": phase, "session": self._quota_session, "budget": grant,
+                                    "allocation": allocation, "generation": row["record"]["generation"]}
+                        self.state.update(tx, namespace, identity, "QUOTA_PREPARATION", {
+                            "quota_event_phase": phase, "execution_budget": execution_budget,
+                            "quota_preparations": dict(row["record"].get("quota_preparations", {}), **{phase: prepared})})
+                        return  # No manager intent or fresh reservation on the next tick.
+                    if phase not in row["record"].get("quota_bindings", {}):
+                        return
+                    from . import quota_binding
+                    try:
+                        observation = quota_binding.selected(tx, row, phase, session=self._quota_session,
+                                                             now_ns=budget.current_clock()["boottime_ns"])
+                    except ValueError as error:
+                        raise JobError("IO_UNCERTAIN", "Quota observation binding is unresolved") from error
                 handles[phase] = {"execution_id": execution_id, "intent_only": True}
                 if allocation is not None:
                     # This immutable intent fixes the CPU split and the complete
@@ -630,6 +703,8 @@ class Broker:
                 if allocation is not None:
                     plan["bootstrap_allocation"] = allocation
                     plan["supervision_version"] = 3
+                if observation is not None:
+                    plan["quota_observation_grant"] = observation.as_dict()
                 if namespace == "reconcile":
                     plan["execution"] = dict(plan.get("execution", {}), budgets=grant["limits"])
                     original = parent["record"].get("bootstrap_grants", {}).get("preflight")
@@ -765,6 +840,25 @@ class Broker:
                         raise
                     if current.get("plan_digest") != row["plan"].get("plan_digest"):
                         return None
+                from . import quota_binding
+                if quota_binding.admission_version(tx, row) == 1:
+                    try:
+                        observation_grant = quota_binding.selected(tx, row, phase, session=self._quota_session,
+                            now_ns=None if stage == "result_reader" else budget.current_clock()["boottime_ns"])
+                        if stage == "result_reader":
+                            saved = quota_binding.original(tx, row, phase, "QUOTA_OBSERVED", "quota_observed")
+                            quota_binding.validate_observation(saved["observation"], observation_grant,
+                                now_ns=saved["observation"]["receipt"]["finished_ns"])
+                        if stage is None:
+                            raise ValueError("QUOTA_REQUIRES_THREE_STAGES")
+                        if stage == "helper":
+                            observed = quota_binding.validate_observation(proof["result"].get("quota_observation"),
+                                observation_grant, now_ns=budget.current_clock()["boottime_ns"])
+                            self.state.update(tx, namespace, identity, "QUOTA_OBSERVED", {
+                                "quota_event_phase": phase, "quota_observed": dict(record.get("quota_observed", {}),
+                                    **{phase: {"phase": phase, "observation": observed}})})
+                    except ValueError as error:
+                        raise JobError("IO_UNCERTAIN", "Original quota receipt is unresolved") from error
                 if stage == "helper":
                     prepared = dict(record.get("bootstrap_completed", {}), **{phase: proof})
                     self.state.update(tx, namespace, identity, "BOOTSTRAP_COMPLETE", {"bootstrap_completed": prepared})

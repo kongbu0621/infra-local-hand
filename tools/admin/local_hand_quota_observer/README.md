@@ -9,16 +9,18 @@ Q2 第一批无特权协议/客户端已有源码与 31 项逻辑验证，11 项
 [客户端验证记录](../../../docs/a2-execution/E3_QUOTA_Q2_CLIENT_VERIFICATION.md)。第二批已增加固定准入、
 持久防重和管理预算服务核心，并提供 bootstrap 新版回执消费；107 项定向测试通过，见
 [持久核心设计](../../../docs/a2-execution/E3_QUOTA_Q2_DURABLE_CORE.md)及
-[准确验证记录](../../../docs/a2-execution/E3_QUOTA_Q2_DURABLE_VERIFICATION.md)。本目录仍无 Q2 listener，
-受监督运行适配和 broker 持久接线尚未完成。
+[准确验证记录](../../../docs/a2-execution/E3_QUOTA_Q2_DURABLE_VERIFICATION.md)。第三批已实现保护配置、
+认证 listener/独立 admission、多根运行适配和 broker 持久接线，见
+[本批记录](../../../docs/a2-execution/E3_QUOTA_Q2_RUNTIME_BINDING.md)。完整关闭装配和真实整链验收仍待完成。
 下文“尚未实测/NOT_PREPARED”等措辞保留各次源码交付当时的状态；不能据新结果授予生产资格。
 
 批准范围：`LH-E3-QUOTA-HARNESS-v1`，A `415327ebdcc251bb055da9931a7a88990f750b7a`，
 独立 CLOSED 记录 C `5a4ea852091db06549a876e42bbd5f95d5869d3b`。
 
-本目录是 **Q1 管理侧内部装配源码**，没有监听服务、安装脚本、公开作业入口或支持启用开关；
-不接入 broker，不进入默认 wheel/Plugin。源码已具备单次 systemd 查询装配，
-**尚未在专用 systemd/quota 环境实测，不能据此安装到 GX10 或宣布 E3 通过**。
+本目录包含 **Q1/Q2 管理侧内部装配源码**。Q2 有单次固定 listener 入口，普通 broker 内部可显式绑定，
+没有安装脚本、公开作业入口或支持启用开关；admin 包不进入默认 wheel/Plugin。
+Q2 真实整链尚未验收，不能据此安装到 GX10 或宣布 E3 通过。
+下文的组件表和原生原语说明描述 Q1；Q2 新组件与当前限制见页首第三批链接。
 
 | 组件 | 当前职责 |
 | --- | --- |

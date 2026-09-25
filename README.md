@@ -41,4 +41,6 @@ S1 的交付对象是可安装、可验证的通用候选包。S2 才切换真�
 完整字节校验、并发资源绑定及恢复边界的后续修复见[第九轮实现复核](docs/a2-execution/E1_E3_RECHECK_9.md)。
 读取完整性、跨阶段执行预算及准入失效的后续修复见[第十轮实现复核](docs/a2-execution/E1_E3_RECHECK_10.md)。
 当前新作业生产入口明确拒绝启用；模拟环境测试通过不能解除这个实现阻塞。
+Q2 最新一批已接通认证观察服务源码、原预算持久绑定和 bootstrap 回执管道；准确范围与后续整链验收见
+[Q2 第三批记录](docs/a2-execution/E3_QUOTA_Q2_RUNTIME_BINDING.md)。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。
