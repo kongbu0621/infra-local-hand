@@ -237,7 +237,28 @@ def reports(config, raw, identity):
     return roots, calls
 
 
-class Dispatcher(Q1Controller):
+class UnitTransport(Q1Controller):
+    """Q2 also rejects hooks that could activate work outside the stopped tree."""
+    extra_fields = ("ExecStartPre", "ExecStartPost", "OnFailure", "OnSuccess", "RestartForceExitStatus")
+
+    def _show(self, binding, *, absolute_end_ns):
+        fields = (*SHOW_FIELDS, *self.extra_fields)
+        raw = self._command(("show", binding.unit, "--all", "--property=" + ",".join(fields)), absolute_end_ns=absolute_end_ns)
+        pairs = [line.split("=", 1) for line in raw.decode("utf-8", "strict").splitlines()]
+        q.require(all(len(x) == 2 for x in pairs) and len({x[0] for x in pairs}) == len(pairs), "UNIT_PROPERTIES_FORMAT")
+        values = dict(pairs)
+        for name in ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"):
+            values.setdefault(name, "")
+        q._keys(values, set(fields))
+        return values
+
+    def _unit_identity(self, binding, values, *, invocation=None):
+        actual = super()._unit_identity(binding, values, invocation=invocation)
+        q.require(all(values.get(name) == "" for name in self.extra_fields), "UNIT_ACTIVATION_CHANGED")
+        return actual
+
+
+class Dispatcher(UnitTransport):
     """Uses fixed transport/stop primitives, not Q1 admission or journal methods."""
     def __init__(self, config):
         self.installation = config

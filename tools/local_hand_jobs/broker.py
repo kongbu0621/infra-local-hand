@@ -153,7 +153,8 @@ class Broker:
             result.pop(key, None)
         for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents",
                     "execution_budget", "budget_grant", "bootstrap_grants", "bootstrap_completed", "helper_completed",
-                    "quota_binding_version", "quota_preparations", "quota_bindings", "quota_observed", "quota_event_phase"):
+                    "quota_binding_version", "quota_preparations", "quota_bindings", "quota_observed", "quota_event_phase",
+                    "quota_pending", "quota_closed"):
             result.pop(key, None)
         result["seal_refs"] = [{"seal_id": item["seal_id"], "seal_sha256": item.get("seal_sha256")}
                                for item in result.pop("seals", [])]
@@ -268,6 +269,12 @@ class Broker:
         return [self.policy.generation, tx.execute("SELECT value FROM counters WHERE key='generation'").fetchone()[0]]
 
     def _release(self, tx, row, proof):
+        from . import quota_binding
+        if quota_binding.admission_version(tx, row) == 1:
+            for phase in row["record"].get("quota_preparations", {}):
+                if phase not in row["record"].get("quota_closed", {}):
+                    return  # No refund from ordinary exit or current empty trees.
+                quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
         # Business and observation rounds share the parent's resource owner.
         # A late result cannot delete another admitted round's reservation.
         for item in tx.execute("SELECT id FROM operations WHERE namespace='reconcile' AND parent=?", (row["parent"],)):
@@ -594,6 +601,53 @@ class Broker:
                 "quota_event_phase": phase, "quota_bindings": dict(row["record"].get("quota_bindings", {}), **{phase: item})})
         self._wake.set()
 
+    def close_observation(self, namespace, identity, phase, fence):
+        """Trusted internal bridge AFTER administrative journal closure.
+
+        No public operation exposes this method. It consumes the immutable
+        ordinary proof and all six original stage identities; it never launches
+        an observer, substitutes a receipt, refunds quota, or renews a deadline.
+        A restart cannot reconstruct the original private transport ownership.
+        """
+        from . import quota_binding, quota_closure, quota_contract as q
+        with self.fence, self.state.transaction() as tx:
+            row = self.state.get(namespace, identity, tx)
+            if row is None:
+                raise JobError("IO_UNCERTAIN", "Original quota phase is missing")
+            grant = quota_binding.selected(tx, row, phase, session=self._quota_session, now_ns=None)
+            saved = quota_binding.original(tx, row, phase, "QUOTA_OBSERVED", "quota_observed")["observation"]
+            pending = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")["proof"]
+            stages = quota_closure.ordinary(pending, grant)
+            execution = grant.request.as_dict()["execution_id"]
+            required = {execution + ":" + stage for stage in ("bootstrap", "helper", "result_reader")}
+            deliveries = tx.execute("SELECT data_json FROM events WHERE namespace=? AND id=? AND kind='MANAGER_DELIVERY_INTENT'",
+                                    (namespace, identity)).fetchall()
+            history = [json.loads(item["data_json"]).get("delivery_intents", []) for item in deliveries]
+            q.require(required <= set(row["record"].get("delivery_intents", []))
+                      and all(any(item in saved for saved in history) for item in required), "ORIGINAL_DELIVERY_MISSING")
+            receipt = q.decode_receipt(q._canonical(saved["receipt"], q.RESPONSE_LIMIT), grant.request,
+                grant.as_dict()["roots"], now_ns=saved["receipt"]["finished_ns"])
+            clock = budget.current_clock()
+            q.require(clock["boot_id"] == grant.request.as_dict()["boot_id"], "BOOT_CHANGED")
+            value = quota_closure.decode(fence, grant, receipt, stages["bootstrap"]["identity"],
+                now_ns=clock["boottime_ns"], ordinary_digest=quota_closure.digest(pending),
+                originals={name: item["identity"] for name, item in stages.items()})
+            q.require(all(value["stages"][name] == item for name, item in stages.items()), "ORDINARY_PROOF_CHANGED")
+            existing = row["record"].get("quota_closed", {}).get(phase)
+            if existing is None and quota_binding.recorded(tx, row, phase, "QUOTA_PHASE_CLOSED"):
+                raise JobError("IO_UNCERTAIN", "Original phase closure snapshot is missing")
+            if existing is not None:
+                original = quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
+                q.require(original["fence"] == value, "PHASE_FENCE_CONFLICT")
+                return
+            q.require(row["record"]["phase"].lower() == phase, "PHASE_CHANGED")
+            self.state.update(tx, namespace, identity, "QUOTA_PHASE_CLOSED", {
+                "quota_event_phase": phase, "quota_closed": dict(row["record"].get("quota_closed", {}),
+                    **{phase: {"phase": phase, "fence": value}})})
+        # The two journals are deliberately not claimed to commit atomically.
+        # A crash here retains closure and pending proof without another launch.
+        self._complete(namespace, identity, pending)
+
     def _start(self, namespace, identity, phase):
         # Slow preflight facts are produced by the runner; no filesystem access here.
         with self.fence:
@@ -637,6 +691,10 @@ class Broker:
                 quota = quota_binding.admission_version(tx, row) == 1
                 if self.quota_required and not quota:
                     raise JobError("IO_UNCERTAIN", "Historical admission cannot acquire a new quota binding")
+                if quota:
+                    for earlier in row["record"].get("quota_preparations", {}):
+                        if earlier != phase:
+                            quota_binding.original(tx, row, earlier, "QUOTA_PHASE_CLOSED", "quota_closed")
                 preparation = row["record"].get("quota_preparations", {}).get(phase)
                 if quota and preparation is not None:
                     from . import quota_binding
@@ -876,6 +934,26 @@ class Broker:
         with self.state.transaction() as tx:
             row = self.state.get(namespace, identity, tx)
             record = row["record"]
+            from . import quota_binding
+            if quota_binding.admission_version(tx, row) == 1:
+                phase = record["phase"].lower()
+                if phase not in record.get("quota_closed", {}):
+                    if quota_binding.recorded(tx, row, phase, "QUOTA_PHASE_CLOSED"):
+                        raise JobError("IO_UNCERTAIN", "Original phase closure snapshot is missing")
+                    existing = record.get("quota_pending", {}).get(phase)
+                    if existing is None:
+                        if quota_binding.recorded(tx, row, phase, "QUOTA_EXIT_PENDING"):
+                            raise JobError("IO_UNCERTAIN", "Original pending exit snapshot is missing")
+                        self.state.update(tx, namespace, identity, "QUOTA_EXIT_PENDING", {
+                            "quota_event_phase": phase, "quota_pending": dict(record.get("quota_pending", {}),
+                                **{phase: {"phase": phase, "proof": thaw(proof)}}),
+                            "gaps": ["Original management and ordinary phase closure is pending"]})
+                    else:
+                        original = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")
+                        if original["proof"] != thaw(proof):
+                            raise JobError("IO_UNCERTAIN", "Original pending exit proof changed")
+                    return
+                quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
             if record["phase"] == "EVIDENCE":
                 result = thaw(proof.get("result", {}))
                 publication = result.get("seal_record", result.get("publication"))
@@ -912,7 +990,7 @@ class Broker:
                     # queued reconciliation must not treat it as quiescent.
                     "lifecycle": "RECONCILE_REQUIRED" if record.get("recovered") else "RUNNING",
                     "outcome": "UNKNOWN" if record.get("recovered") else "PENDING",
-                    "helper_started": True, "facts": facts, "exit_proof": thaw(proof)})
+                    "helper_started": True, "facts": facts, "exit_proof": thaw(proof), "gaps": []})
                 return
             effects_checked = proof.get("effects_checked") is True
             result = thaw(proof.get("result", {}))

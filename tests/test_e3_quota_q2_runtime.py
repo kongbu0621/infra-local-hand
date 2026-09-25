@@ -250,6 +250,7 @@ class DispatcherTests(unittest.TestCase):
                     'KillMode':'control-group','ExecStop':'','ExecStopPost':'','ExecReload':'','TriggeredBy':'',
                     'ActiveState':'active','SubState':'exited','Job':'','Result':'exit-code' if fault=='exit' else 'success',
                     'ExecMainCode':'1','ExecMainStatus':'2' if fault=='exit' else '0'}
+                terminal.update(dict.fromkeys(r.UnitTransport.extra_fields, ''))
                 dispatch=r.Dispatcher(cfg);remember=[]
                 with mock.patch.object(r,'Capture',Capture),mock.patch.object(r,'host',return_value={}),mock.patch.object(r,'boottime_ns',return_value=2*SECOND),\
                      mock.patch.object(c,'open_protected',side_effect=fixture_open),\

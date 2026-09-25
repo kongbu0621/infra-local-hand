@@ -46,6 +46,9 @@ def invocation(value, grant):
 
 
 def closed_fence(value, grant, receipt, peer):
+    if type(value) is dict and value.get("schema") == "local-hand-quota-phase-closed/v2":
+        from local_hand_jobs import quota_closure
+        return quota_closure.decode(value, grant, receipt, peer, now_ns=value.get("closed_ns"))
     q._keys(value, {"schema", "request_digest", "receipt_digest", "boot_id", "execution_id",
                     "proof_digest", "closed_ns", "stages"})
     data = grant.as_dict()

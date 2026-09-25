@@ -63,6 +63,13 @@ class Pipe:
         return validate_observation(q._load(bytes(self.raw[4:]), q.RESPONSE_LIMIT, 8), grant, now_ns=now_ns)
 
 
+def recorded(tx, row, phase, kind):
+    """A lost snapshot does not make an already committed intent reusable."""
+    events = tx.execute("SELECT data_json FROM events WHERE namespace=? AND id=? AND kind=?",
+                        (row["namespace"], row["id"], kind)).fetchall()
+    return any(json.loads(event["data_json"]).get("quota_event_phase") == phase for event in events)
+
+
 def original(tx, row, phase, kind, field):
     """Mutable snapshot must equal its unique immutable event, without repair."""
     events = tx.execute("SELECT data_json FROM events WHERE namespace=? AND id=? AND kind=? ORDER BY seq",

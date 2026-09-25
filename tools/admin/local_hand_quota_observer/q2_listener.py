@@ -188,7 +188,7 @@ def admission(config):
         attested = peer.inspect(config, connection)
         # The expected command/parent/uid came from protected config; process
         # start ticks/invocation were read independently, not from request JSON.
-        result = Service(journal).handle(raw, peer=attested, expected_peer=attested,
+        result = Service(journal, closure_version=2).handle(raw, peer=attested, expected_peer=attested,
                                         dispatch=runtime.Dispatcher(config))
         q.require(result.receipt is not None, "ORIGINAL_QUERY_UNRESOLVED")
         runtime.host(config, "admission")

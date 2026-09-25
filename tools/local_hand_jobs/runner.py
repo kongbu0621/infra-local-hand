@@ -479,15 +479,18 @@ class SystemdManager:
             "ReadOnlyPaths": " ".join(execution.get("readonly", []))}
         if "quota_grant_digest" in execution:
             properties["CapabilityBoundingSet"] = ""
+            properties.update(ExitType="cgroup", Restart="no")
+            properties.pop("StandardOutput", None)
+            properties.pop("StandardError", None)
             if stage == "bootstrap":
-                properties.pop("StandardOutput")
+                properties.pop("StandardOutput", None)
             else:
                 # ReadOnlyPaths does not deny connect(2) on a UNIX socket.
                 properties["InaccessiblePaths"] += " " + execution["quota_endpoint"]
         if stage == "result_reader":
             # Its only output is the inherited anonymous pipe. No job root is
             # writable, and no follow-up result file is read by this process.
-            properties.pop("StandardOutput")
+            properties.pop("StandardOutput", None)
             properties["ReadWritePaths"] = ""
             properties["ReadOnlyPaths"] = " ".join(sorted(set(execution.get("readonly", []) + execution["writable"])))
         return properties
@@ -519,7 +522,15 @@ class SystemdManager:
         command = ["/usr/bin/systemd-run", "--user", "--quiet", "--unit=" + part["unit"],
                    "--description=Local-Hand-supervised-" + stage]
         receipt_pipe = stage == "bootstrap" and "quota_grant_digest" in execution
-        if stage == "result_reader" or receipt_pipe:
+        full_capture = "quota_grant_digest" in execution
+        if full_capture:
+            from . import quota_lifecycle
+            pin, empty = quota_lifecycle.parent(part["cgroup_parent"])
+            if not empty:
+                raise RunnerError("IO_UNCERTAIN", "Original ordinary parent is not empty")
+            limit = (result_reader.MAX_TRANSPORT_BYTES + 32768 if stage == "result_reader" else 65536)
+            part.update(quota_transport=quota_lifecycle.Transport(limit), quota_parent=pin)
+        if stage == "result_reader" or full_capture:
             command.append("--pipe")
         command.extend("--property=" + key + "=" + value for key, value in properties.items() if value or key == "CapabilityBoundingSet")
         script = str(Path(__file__).absolute())
@@ -565,10 +576,12 @@ class SystemdManager:
             # Neither a Popen exception nor a lost return proves no delivery.
             handle["delivery_attempted"] = part["delivery_attempted"] = True
             part["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE if stage == "result_reader" or receipt_pipe else subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, env=environment)
-            if stage == "result_reader" or receipt_pipe:
+                stdout=subprocess.PIPE if stage == "result_reader" or full_capture else subprocess.DEVNULL,
+                stderr=subprocess.PIPE if full_capture else subprocess.DEVNULL, env=environment)
+            if stage == "result_reader" or full_capture:
                 os.set_blocking(part["launch"].stdout.fileno(), False)
+                if full_capture:
+                    os.set_blocking(part["launch"].stderr.fileno(), False)
                 part["pipe_nonblocking"] = True
             return part["launch"]
         try:
@@ -669,7 +682,7 @@ class SystemdManager:
             try:
                 if part is None:
                     return _unknown("stage has not been delivered")
-                if part.get("stage") == "result_reader" and not part.get("recovered"):
+                if part.get("stage") == "result_reader" and not part.get("recovered") and "quota_transport" not in part:
                     self._drain_reader(part)
                 proof = self._inspect_unit(part)
                 if part.get("reader") is not None and proof.get("identity"):
@@ -867,9 +880,13 @@ class SystemdManager:
             return self._unavailable_result(helper_proof, "result reader did not return a complete verified result")
         # Reader success proves observation, not successful execution. Retain
         # the original helper exit code even when its final fsync failed.
-        return {**helper_proof, "effects_checked": result.get("effects_checked", False),
+        proof = {**helper_proof, "effects_checked": result.get("effects_checked", False),
             "helper_result_verified": True, "result": result, "facts": result.get("facts", {}), "missing": [],
             "result_reader_exit_proof": third}
+        if "quota_observation_grant" in handle:
+            proof["quota_stage_exits"] = {key: _plain(handle[name].get("quota_exit"))
+                for key, name in (("bootstrap", "bootstrap"), ("helper", "helper"), ("reader", "result_reader"))}
+        return proof
 
     def stop(self, handle):
         if handle.get("version") not in (2, 3):
@@ -1091,6 +1108,9 @@ class SystemdManager:
             return None
 
     def _inspect_unit(self, handle):
+        if "quota_transport" in handle:
+            from . import quota_lifecycle
+            return quota_lifecycle.observe(self, handle, _unknown)
         if handle["cancel_before_launch"]:
             return {**_unknown(), "state": "EXITED", "future_start_blocked": True, "tree_exited": True,
                 "collectors_stopped": True, "writers_stopped": True, "effects_checked": True, "missing": [],

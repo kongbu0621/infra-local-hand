@@ -33,10 +33,12 @@ def _resources(grant):
 
 
 class Service:
-    def __init__(self, journal, *, clock=_clock):
+    def __init__(self, journal, *, clock=_clock, closure_version=1):
+        q.require(type(closure_version) is int and closure_version in (1, 2), "CLOSURE_VERSION")
         self.journal = journal
         self.clock = clock
         self.last_ns = 0
+        self.closure_version = closure_version
 
     def _now(self, grant=None):
         value = self.clock()
@@ -66,6 +68,8 @@ class Service:
             previous = self.journal.grants[key]
             old = previous.as_dict()
             q.require(state["status"] == "CLOSED", "PRIOR_EXIT_UNPROVEN")
+            if self.closure_version == 2:
+                q.require(state["closed"]["schema"] == "local-hand-quota-phase-closed/v2", "PRIOR_CLOSURE_VERSION")
             q.require(state["closed"]["closed_ns"] <= now, "CLOCK_REGRESSION")
             occupied.append(previous)
             same_operation = old["allocation"]["operation_id"] == allocation["operation_id"]
@@ -168,6 +172,8 @@ class Service:
         """
         grant = self._grant(request)
         now = self._now()
+        if self.closure_version == 2:
+            q.require(type(fence) is dict and fence.get("schema") == "local-hand-quota-phase-closed/v2", "CLOSURE_VERSION")
         with self.journal.locked():
             state = self.journal.scan()[request.as_dict()["request_id"]]
             if state["status"] == "CLOSED":
