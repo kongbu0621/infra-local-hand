@@ -1,0 +1,39 @@
+{
+  "schema": "local-hand-q2-publication-map/v1",
+  "base": "32852f28b4edefb7acd1b5c6562cecc29524637d",
+  "entries": [
+    {
+      "local_commit": "f0ae30dff03c82316e0e919c4b69da1a902e9c25",
+      "published_commit": "1986ad6673f2bedfe5f4a2fa973e4ec1d89d8729",
+      "tree": "8c1b652b98eddafe1e114099f38a5b44a06a7548",
+      "parent": "32852f28b4edefb7acd1b5c6562cecc29524637d",
+      "message": "fix(jobs): retain uncertainty when a supervised cgroup disappears\n\nBlock subsequent helper delivery without recursive exit proof. Record the Q1 closeout status, Q2 integration design gaps, and targeted regression evidence."
+    },
+    {
+      "local_commit": "ac8ae70f84bedf5050cbc391900b29d079aa66a2",
+      "published_commit": "deeb8ab0b61d6f84558d61a081183c16071553cf",
+      "tree": "c7e2cbfac7ef6f564cafce49379793e90e63a5b5",
+      "parent": "1986ad6673f2bedfe5f4a2fa973e4ec1d89d8729",
+      "message": "docs(q1): review original guest capacity bounds and define Q2 wire contract"
+    },
+    {
+      "local_commit": "3aa851fa102b7861f8a301e3c07236d6b3864858",
+      "published_commit": "0a31657dffaf6a7793f8ede50322cba97ea0ed6a",
+      "tree": "e7f83d1ef00380758cd26a4c84cf266d6d95274d",
+      "parent": "deeb8ab0b61d6f84558d61a081183c16071553cf",
+      "message": "feat(quota): add strict Q2 receipts and bounded one-shot client"
+    },
+    {
+      "local_commit": "f6cd2c4505d37ff5d0f08a98ba69083d9d048734",
+      "published_commit": "5d72553a6b88f9bcc1c0285bbdfcbb07917edd86",
+      "tree": "383286c35897ac07e19947307a469765bfa17b68",
+      "parent": "0a31657dffaf6a7793f8ede50322cba97ea0ed6a",
+      "message": "docs(quota): record Q2 client validation and retained IPC block"
+    }
+  ],
+  "published_source": "0a31657dffaf6a7793f8ede50322cba97ea0ed6a",
+  "published_report": "5d72553a6b88f9bcc1c0285bbdfcbb07917edd86",
+  "verification": "Exact Git tree SHA equality for each local/published commit; GitHub-generated metadata changes commit SHAs; historical local commits retained.",
+  "ci": "Pending verification; no previous run result reused.",
+  "real_ipc": "UNVERIFIED: executor denied AF_UNIX creation and permission escalation."
+}

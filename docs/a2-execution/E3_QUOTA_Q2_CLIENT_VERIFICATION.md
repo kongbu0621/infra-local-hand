@@ -57,3 +57,12 @@ Python 3.12.14，Linux 6.18.44，退出码 0：42 项中 **31 通过 / 11 SKIP /
 
 旧 slot-001 UNKNOWN、slot-002 INCOMPLETE、原 reservation 和证据保持原样；新 Q2 不借用
 这些已消费对象。无需重跑 Q1、重格式化磁盘、扩大额度或清理旧现场。
+
+## 发布检查点
+
+源码已发布为 `0a31657dffaf6a7793f8ede50322cba97ea0ed6a`，开发验证记录发布为
+`5d72553a6b88f9bcc1c0285bbdfcbb07917edd86`。此前缺失 cgroup 的保守退出修复及 Q1/Q2
+阶段记录也分别发布，保留原提交顺序。各提交的本地/远端 Git tree 完全相同；GitHub 生成的
+提交元数据导致 commit SHA 不同。准确映射见
+[publication-map.json](validation/q2-wire-client-20260925/publication-map.json)。
+新 head 的 CI 尚待核验，未引用旧候选的 CI 通过结果。持久代码检查点已具备，可从此继续 Q2。
