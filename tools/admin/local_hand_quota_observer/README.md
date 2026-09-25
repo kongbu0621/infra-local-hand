@@ -1,7 +1,8 @@
 # Q1 原生 quota 查询原语
 
 2026-09-25 进展：Owner 已返还私有隔离 fixture 的查询、PrivateUsers 权限/边界、真实
-EDQUOT 和完整退出复核结果；Q1 容量来源仍待核对，尚未验收。准确状态与历史失败保留见
+EDQUOT 和完整退出复核结果；原专用 guest 的容量复核已完成，见
+[限定范围结论](../../../docs/a2-execution/E3_QUOTA_Q1_GUEST_CAPACITY_REVIEW.md)。准确状态与历史失败保留见
 [Q1 收口清单](../../../docs/a2-execution/E3_QUOTA_Q1_CLOSEOUT_REVIEW.md)，后续接线差异见
 [Q2 设计草案](../../../docs/a2-execution/E3_QUOTA_Q2_INTEGRATION_DRAFT.md)。
 下文“尚未实测/NOT_PREPARED”等措辞保留各次源码交付当时的状态；不能据新结果授予生产资格。

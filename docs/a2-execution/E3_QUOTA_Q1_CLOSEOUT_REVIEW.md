@@ -1,6 +1,8 @@
 # Q1 实机结果与出口收口清单
 
-日期：2026-09-25。状态：**机制实测结果已返还；容量来源待核对；Q1 出口尚未通过**。
+日期：2026-09-25。最新状态：**原隔离 guest 范围的 Q1 复核完成，继续 Q2 隔离开发**。
+新增的容量结论与范围见[专用 guest 容量复核](E3_QUOTA_Q1_GUEST_CAPACITY_REVIEW.md)。
+下方矩阵及“待补”步骤保留先前收口时的状态；原失败和现场报告不修改。
 
 本记录承接 [Q1 fixture 交接](E3_QUOTA_Q1_FIXTURE_HANDOFF.md)和
 [单次实验交接](E3_QUOTA_Q1_EXPERIMENT_HANDOFF.md)，不改变批准 A
