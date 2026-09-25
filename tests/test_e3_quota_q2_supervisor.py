@@ -233,6 +233,43 @@ class StopProofTests(unittest.TestCase):
         self.assertEqual([], self.commands)
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux original startup model")
+class StartupTests(unittest.TestCase):
+    def setUp(self):
+        self.value = fixture()
+        self.facts = running(self.value)
+        self.static = self.value["launcher"]["controller_envelope"]["controller"]
+        self.controls = mock.Mock()
+        self.process = mock.Mock(); self.process.poll.return_value = None
+        self.pending = dict(self.facts, ActiveState="activating", SubState="start", MainPID="0", Job="701")
+
+    def test_pending_invocation_cannot_be_replaced_before_running(self):
+        self.controls.show.side_effect = [self.pending, dict(self.facts, InvocationID="f"*32)]
+        with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_ORIGINAL_INSTANCE_CHANGED"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_never_running_start_is_finite_and_never_resubmitted(self):
+        self.controls.show.return_value = self.pending
+        with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_INSTANCE_NOT_OBSERVED"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        self.assertEqual(s.START_OBSERVATIONS, self.controls.show.call_count)
+        self.assertLessEqual(s.START_OBSERVATIONS + 1 + 4, s.CONTROL_CALLS)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_exited_original_delivery_is_not_replaced_by_manager_observation(self):
+        self.controls.show.return_value = self.facts
+        self.process.poll.return_value = 3
+        with mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_DELIVERY_UNCERTAIN"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        observe.assert_not_called()
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux atomic result publication")
 class PublicationTests(unittest.TestCase):
     def test_complete_marker_is_atomic_and_cannot_replace_existing_bytes(self):
@@ -266,6 +303,8 @@ class OriginalCaptureTests(unittest.TestCase):
             info = path.stat(); self.value[key] = dict(path=str(path), device=info.st_dev, inode=info.st_ino)
         self.facts = running(self.value)
         self.foreign = False; self.overflow = False; self.fail_seal = False; self.changed_tree = False
+        self.pending_start = False
+        self.extra_member = False; self.replace_directory = False
         self.model = None
 
     def invoke(self):
@@ -273,7 +312,13 @@ class OriginalCaptureTests(unittest.TestCase):
         original_save = launcher.save
         def save(directory, name, raw, mode=0o600):
             if name == "seal.json" and test.fail_seal: raise OSError("modeled seal fsync failure")
-            return original_save(directory, name, raw, mode)
+            result = original_save(directory, name, raw, mode)
+            if name == "result.json" and test.extra_member:
+                (test.root/"declarations/extra.json").write_bytes(b"{}")
+            if name == "result.json" and test.replace_directory:
+                (test.root/"output").rename(test.root/"retained-output")
+                (test.root/"output").mkdir(mode=0o700)
+            return result
         def directory(pin, mode):
             fd = os.open(pin["path"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
@@ -299,6 +344,7 @@ signal.signal(signal.SIGTERM, lambda *unused: sys.exit(0))
 path = pathlib.Path(sys.argv[1]); marker = json.loads(sys.argv[2])
 marker['controller']['pid'] = os.getpid()
 marker['completed_ns'] = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+(path.parent/'launcher.json').write_text('{}')  # Modeled child declaration; real child writes pinned nested fixture.
 print(json.dumps(marker['result']), flush=True)
 if sys.argv[3] == 'yes': print('x' * 40000, flush=True)
 temporary = path.with_suffix('.pending')
@@ -311,7 +357,7 @@ while True: time.sleep(.01)
                     "yes" if test.overflow else "no"]
         class Controls:
             def __init__(self, *_):
-                self.calls = []; self.shown = False; self.stopped = False; self.empties = 0; test.model = self
+                self.calls = []; self.shown = False; self.stopped = False; self.empties = 0; self.pending = test.pending_start; test.model = self
             def clock(self, end):
                 now = budget.current_clock()["boottime_ns"]
                 s.require(now < end, "SUPERVISOR_DEADLINE_OR_BOOT")
@@ -324,6 +370,9 @@ while True: time.sleep(.01)
                 while not marker.exists(): self.clock(end); time.sleep(.005)
                 actual = json.loads(marker.read_bytes())["controller"]["pid"]
                 test.facts["MainPID"] = str(actual)
+                if self.pending:
+                    self.pending = False
+                    return dict(test.facts, ActiveState="activating", SubState="start", MainPID="0", Job="701")
                 return dict(test.facts, MainPID="0", ActiveState="inactive", SubState="dead", ControlGroup="") if self.stopped else dict(test.facts)
             def call(self, arguments, end):
                 self.clock(end)
@@ -365,6 +414,41 @@ while True: time.sleep(.01)
         for filename, pin in seal["files"].items():
             raw = Path(filename).read_bytes()
             self.assertEqual(dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()), pin)
+
+    def test_pending_original_start_can_finish_without_redelivery(self):
+        self.pending_start = True
+        result = self.invoke()
+        self.assertEqual("CONTROLLER_CLOSED", result["status"], result)
+        self.assertTrue(result["sealed"])
+        self.assertEqual(1, len(self.model.calls))
+        self.assertFalse(self.model.pending)
+
+    def test_unfunded_filesystem_blocks_refuse_before_any_evidence_write_or_delivery(self):
+        with mock.patch.object(s.os, "fstatvfs", return_value=SimpleNamespace(f_frsize=1024**2)):
+            result = self.invoke()
+        self.assertEqual("BLOCKED", result["status"], result)
+        self.assertEqual("SUPERVISOR_STORAGE_RESERVATION", result["reason"])
+        self.assertEqual([], self.model.calls)
+        self.assertEqual([], list((self.root/"output").iterdir()))
+        self.assertEqual([], list((self.root/"declarations").iterdir()))
+
+    def test_unexpected_declaration_cannot_receive_a_successful_seal(self):
+        self.extra_member = True
+        result = self.invoke()
+        self.assertEqual("INCOMPLETE", result["status"], result)
+        self.assertFalse(result["sealed"])
+        self.assertEqual("SUPERVISOR_SEAL_UNPROVEN", result["reason"])
+        self.assertFalse((self.root/"output/seal.json").exists())
+
+    def test_replaced_output_path_cannot_seal_a_different_directory(self):
+        self.replace_directory = True
+        result = self.invoke()
+        self.assertEqual("INCOMPLETE", result["status"], result)
+        self.assertFalse(result["sealed"])
+        self.assertEqual("SUPERVISOR_SEAL_UNPROVEN", result["reason"])
+        self.assertFalse((self.root/"output/seal.json").exists())
+        self.assertFalse((self.root/"retained-output/seal.json").exists())
+        self.assertTrue((self.root/"retained-output/result.json").is_file())
 
     def test_foreign_completion_marker_is_retained_but_never_sealed(self):
         self.foreign = True

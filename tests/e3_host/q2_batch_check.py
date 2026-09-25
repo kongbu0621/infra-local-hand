@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.abc
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,17 +19,19 @@ import sys
 
 SCHEMA = "local-hand-q2-fixture/v1"
 LIMIT = 131072
+SOURCE_ROOTS = frozenset({"admin", "local_hand", "local_hand_jobs", "local_hand_connect", "local_hand_mcp"})
 
 
 def protected(path, limit):
     spelling = str(path)
     path = Path(path)
-    if not path.is_absolute() or str(path) != spelling or ".." in path.parts:
+    if not path.is_absolute() or spelling.startswith("//") or str(path) != spelling or ".." in path.parts or len(path.parts) < 2:
         raise ValueError("FIXTURE_PATH")
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
         for i, part in enumerate(path.parts[1:]):
-            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+            # A FIFO must be rejected by fstat, without waiting for a writer.
+            flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
             if i < len(path.parts) - 2:
                 flags |= os.O_DIRECTORY
             child = os.open(part, flags, dir_fd=fd)
@@ -36,7 +40,8 @@ def protected(path, limit):
             if info.st_uid != 0 or info.st_mode & 0o022:
                 raise ValueError("FIXTURE_PROTECTION")
         before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_mode & 0o6000 or before.st_size > limit):
             raise ValueError("FIXTURE_FILE")
         data = bytearray()
         while len(data) <= limit:
@@ -76,6 +81,67 @@ def decode(raw, digest):
     return value
 
 
+class Pinned(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """Execute retained verified source, never an unchecked bytecode cache."""
+    def __init__(self, sources):
+        self.sources = sources
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] not in SOURCE_ROOTS:
+            return None
+        if fullname not in self.sources:
+            raise ValueError("FIXTURE_UNPINNED_MODULE")
+        return importlib.util.spec_from_loader(fullname, self, is_package=self.sources[fullname][2])
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        raw, filename, package = self.sources[module.__name__]
+        module.__file__ = filename
+        if package:
+            module.__path__ = []
+        exec(compile(raw, filename, "exec", dont_inherit=True), module.__dict__)
+
+
+def source(value, repository):
+    """Bind imports to the old fixture's existing complete source manifest."""
+    def required(ok, reason):
+        if not ok:
+            raise ValueError(reason)
+    files = value["files"]
+    required("tests/e3_host/q2_batch_check.py" in files, "HARNESS_PIN_MISSING")
+    required(not any(name.split(".")[0] in SOURCE_ROOTS for name in sys.modules), "FIXTURE_PREIMPORTED")
+    sources = {}
+    for name, checksum in files.items():
+        filename = str(repository / name)
+        raw = protected(filename, 2 * 1024 * 1024)
+        required(hashlib.sha256(raw).hexdigest() == checksum, "SOURCE_BYTES_CHANGED")
+        if name.startswith("tools/"):
+            relative = name[len("tools/"):]
+            package = relative.endswith("/__init__.py")
+            module = (relative[:-12] if package else relative[:-3]).replace("/", ".")
+            if module.split(".")[0] in SOURCE_ROOTS:
+                required(module not in sources, "FIXTURE_SOURCE_ALIAS")
+                sources[module] = raw, filename, package
+    # Every Python module in these runtime packages must be explicitly pinned.
+    for folder in ("admin/local_hand_quota_observer", "local_hand_jobs", "local_hand"):
+        for file in (repository / "tools" / folder).glob("**/*.py"):
+            required(file.relative_to(repository).as_posix() in files, "SOURCE_PIN_MISSING")
+    # Only the existing administrative namespaces may omit __init__.py.
+    for name in ("admin", "admin.local_hand_quota_observer"):
+        if any(module.startswith(name + ".") for module in sources):
+            sources.setdefault(name, (b"", "<pinned-namespace>", True))
+    for name in sources:
+        parts = name.split(".")
+        for count in range(1, len(parts)):
+            parent = ".".join(parts[:count])
+            required(parent in sources and sources[parent][2], "FIXTURE_SOURCE_PARENT")
+    required(all(name in sources and sources[name][2] for name in ("local_hand", "local_hand_jobs"))
+             and "local_hand.provenance" in sources, "SOURCE_PIN_MISSING")
+    sys.meta_path.insert(0, Pinned(sources))
+
+
 def check(value, repository):
     """All independent host checks in one report; errors never become PASS."""
     results=[]
@@ -85,14 +151,7 @@ def check(value, repository):
             results.append(dict(check=name,status="BLOCKED",reason=type(error).__name__+":"+str(error)))
     def required(ok,reason):
         if not ok:raise ValueError(reason)
-    required("tests/e3_host/q2_batch_check.py" in value["files"],"HARNESS_PIN_MISSING")
-    for name, checksum in value["files"].items():
-        required(hashlib.sha256(protected(str(repository/name),2*1024*1024)).hexdigest()==checksum,"SOURCE_BYTES_CHANGED")
-    # Every Python module in these runtime packages must be explicitly pinned.
-    for folder in ("admin/local_hand_quota_observer","local_hand_jobs","local_hand"):
-        for file in (repository/"tools"/folder).glob("**/*.py"):
-            required(str(file.relative_to(repository)) in value["files"],"SOURCE_PIN_MISSING")
-    sys.path.insert(0,str(repository/"tools"))
+    source(value, repository)
     from local_hand_jobs import quota_contract as q
     from local_hand import provenance
     from local_hand.protocol import LocalHandError

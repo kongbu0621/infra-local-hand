@@ -1,5 +1,11 @@
 # E3 隔离宿主盘点与实机验收准备
 
+2026-09-25 接续说明：下文保留 2026-09-23 盘点时的状态与 H01–H13 验收判据。
+后续已实现 [Q2 同一操作三阶段与目标控制器监督](E3_QUOTA_Q2_CHAIN.md)，
+现有入口及完整私有输入清单见 [批量前检与证据复核](E3_QUOTA_Q2_HANDOFF.md)。
+这补上了部分源码入口，未完成真实 H01–H13 或 Q3 验收；下文“本轮只读”描述原盘点轮次，
+不要求重复已经结束的 GX10 盘点，也不表示后续实现已取得实机通过。
+
 本文件是非权威的执行准备说明，依据固定 A `79f73faedcd9cde4164b0d1625782dae27db6c2f` 的[需求](REQUIREMENTS.md)、[架构](ARCHITECTURE.md)和[实施方案](IMPLEMENTATION_PLAN.md)，并与当前[受监督启动及结果读取](SUPERVISED_BOOTSTRAP.md)实现对齐。规则 R、E1–E3 Owner 决定与独立记录 C 仍见根 `AGENTS.md`；本文件不替换三份批准原文，不要求重复批准已 CLOSED 的 E1–E3。
 
 **本轮可执行范围为只读宿主盘点；真正 E3 三单元实机验收尚无完整入口，仍 BLOCKED。** 盘点只回答当前进程可以观察哪些条件，不启动 job，不证明系统约束已经生效，也不授予生产部署权限。`SystemdManager.support()` 的 `E3_SUPERVISION_UNVERIFIED` 固定封堵保持不变。

@@ -29,10 +29,19 @@ LIMIT = 2 * 1024 * 1024
 RECORD_LIMIT = 65536
 PIPE_LIMIT = 32768
 CONTROL_CALLS = 16
+START_OBSERVATIONS = 8
 CAPABILITIES = "CAP_DAC_READ_SEARCH CAP_SETGID CAP_SETUID CAP_SETPCAP CAP_SYS_ADMIN"
 CAP_MASK = sum(1 << bit for bit in (2, 6, 7, 8, 21))
 DYNAMIC = {"invocation_id", "cgroup_device", "cgroup_inode"}
 ENVELOPE = {"controller", "issued_ns", "deadline_ns", "output_bytes", "storage_bytes", "storage_inodes"}
+STORAGE_FILES = ({"reservation.json": RECORD_LIMIT, "delivery.json": RECORD_LIMIT,
+                  "invocation.json": RECORD_LIMIT, "controller.stdout": PIPE_LIMIT,
+                  "controller.stderr": PIPE_LIMIT, "capture.json": 131072,
+                  "stop.json": 131072, "controls.json": 131072,
+                  "controller-result.json": 131072, "result.json": RECORD_LIMIT,
+                  "seal.json": RECORD_LIMIT},
+                 {"supervisor.json": LIMIT, "launcher.json": LIMIT,
+                  "controller-result.json": RECORD_LIMIT})
 
 
 def require(condition, code):
@@ -308,6 +317,65 @@ def command(value, binding, repository, fixture_path, fixture_digest):
         "--controller", "--fixture", fixture_path, "--sha256", fixture_digest]
 
 
+def storage_capacity(value, output, declarations):
+    """Charge bounded files, the seal and directory growth before any write.
+
+    These are retained control records, not a measurement of an earlier peak.
+    The caller must already have opened the two pinned, empty directories.
+    """
+    total = 0
+    for directory, members in zip((output, declarations), STORAGE_FILES):
+        block = os.fstatvfs(directory).f_frsize
+        require(type(block) is int and 0 < block < 2**63, "SUPERVISOR_STORAGE_GEOMETRY")
+        # Existing directory blocks stay charged, including an extra block for
+        # the finite names being added. Temporary marker rename uses one inode.
+        total += max(block, os.fstat(directory).st_blocks * 512) + block
+        total += sum(((maximum + block - 1) // block) * block for maximum in members.values())
+    envelope = value["supervisor_envelope"]
+    require(total <= envelope["storage_bytes"] and
+            sum(map(len, STORAGE_FILES)) + 2 <= envelope["storage_inodes"], "SUPERVISOR_STORAGE_RESERVATION")
+    return dict(storage_bytes=total, storage_inodes=sum(map(len, STORAGE_FILES)) + 2)
+
+
+def seal_files(value, output, declarations, launcher):
+    """Recheck the original directories and exact retained member allocation."""
+    files = {}
+    allocated = 0
+    for pin, directory, limits in zip((value["output"], value["declarations"]),
+                                      (output, declarations), STORAGE_FILES):
+        def same_directory():
+            actual = os.stat(pin["path"], follow_symlinks=False)
+            held = os.fstat(directory)
+            require(stat.S_ISDIR(actual.st_mode) and
+                    (actual.st_dev, actual.st_ino) == (held.st_dev, held.st_ino) ==
+                    (pin["device"], pin["inode"]), "SUPERVISOR_SEAL_DIRECTORY_CHANGED")
+        same_directory()
+        names = sorted(os.listdir(directory))
+        expected = set(limits) - {"seal.json"}
+        require(set(names) == expected, "SUPERVISOR_SEAL_MEMBERS")
+        block = os.fstatvfs(directory).f_frsize
+        require(type(block) is int and 0 < block < 2**63, "SUPERVISOR_STORAGE_GEOMETRY")
+        allocated += max(block, os.fstat(directory).st_blocks * 512)
+        for name in names:
+            before = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            path = pin["path"] + "/" + name
+            raw = launcher.protected(path, limits[name])
+            after = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            linked = os.stat(path, follow_symlinks=False)
+            require(stat.S_ISREG(after.st_mode) and all(getattr(before, key) == getattr(after, key) ==
+                    getattr(linked, key) for key in ("st_dev", "st_ino", "st_size", "st_blocks", "st_mtime_ns", "st_ctime_ns"))
+                    and after.st_size == len(raw), "SUPERVISOR_SEAL_MEMBER_CHANGED")
+            allocated += max(after.st_blocks * 512, ((len(raw) + block - 1) // block) * block)
+            files[path] = dict(bytes=len(raw), sha256=sha(raw))
+        if "seal.json" in limits:
+            allocated += ((limits["seal.json"] + block - 1) // block) * block + block
+        same_directory()
+    envelope = value["supervisor_envelope"]
+    require(allocated <= envelope["storage_bytes"] and len(files) + 3 <= envelope["storage_inodes"],
+            "SUPERVISOR_SEAL_STORAGE")
+    return files
+
+
 class Controls:
     """Bounded real system-manager calls, separately retained from target pipes."""
     def __init__(self, value, binding):
@@ -397,6 +465,44 @@ def observe_identity(values, static):
                     cgroup_device=metadata.st_dev, cgroup_inode=metadata.st_ino)
     guard._cgroup_identity(guard.decode_controller(dict(static, **{key: identity[key] for key in DYNAMIC})))
     return identity
+
+
+def observe_start(controls, static, process, end):
+    """Observe the one submitted start through its finite pending states.
+
+    Type=exec first exposes an activating unit and its start Job, often before
+    MainPID exists. Neither is an accepted running identity. Observing them
+    never resubmits a launch and leaves at least four control calls for stop.
+    """
+    invocation = pid = None
+    for index in range(START_OBSERVATIONS):
+        facts = controls.show(end)
+        require(facts["Id"] == static["unit"] and process.poll() is None,
+                "SUPERVISOR_DELIVERY_UNCERTAIN")
+        if facts["LoadState"] == "loaded":
+            current = facts["InvocationID"]
+            require(current == "" or re.fullmatch(r"[0-9a-f]{32}", current), "SUPERVISOR_RUNNING_IDENTITY")
+            if current:
+                require(invocation in (None, current), "SUPERVISOR_ORIGINAL_INSTANCE_CHANGED")
+                invocation = current
+            require(re.fullmatch(r"0|[1-9][0-9]{0,19}", facts["MainPID"]), "SUPERVISOR_RUNNING_IDENTITY")
+            current_pid = int(facts["MainPID"])
+            if current_pid:
+                require(pid in (None, current_pid), "SUPERVISOR_ORIGINAL_INSTANCE_CHANGED")
+                pid = current_pid
+            if (facts["ActiveState"], facts["SubState"]) == ("active", "running") and facts["Job"] in ("", "0"):
+                return observe_identity(facts, static)
+            require((facts["ActiveState"], facts["SubState"]) in
+                    (("activating", "start-pre"), ("activating", "start"), ("active", "running")) and facts["ControlPID"] == "0"
+                    and facts["ExecStartPre"] == "", "SUPERVISOR_DELIVERY_UNCERTAIN")
+        else:
+            require(facts["LoadState"] == "not-found" and facts["Job"] in ("", "0")
+                    and facts["InvocationID"] == "" and facts["MainPID"] == "0"
+                    and facts["ControlPID"] == "0" and invocation is None and pid is None,
+                    "SUPERVISOR_DELIVERY_UNCERTAIN")
+        controls.clock(end)
+        if index + 1 < START_OBSERVATIONS: time.sleep(0.125)
+    raise ValueError("SUPERVISOR_INSTANCE_NOT_OBSERVED")
 
 
 def stop_original(controls, static, original, end, record):
@@ -506,6 +612,7 @@ def supervise(value, launcher, repository):
                   production_supported=False, independent_supervisor_stop_required=True,
                   scope="TARGET_CONTROLLER_CLOSURE_ONLY", seal_required=True, sealed=False)
     output = declarations = None
+    storage_admitted = False
     process = worker = controls = None
     capture = {}; stop = {}; original = marker = None
     try:
@@ -520,6 +627,8 @@ def supervise(value, launcher, repository):
                 and before["Job"] in ("", "0"), "SUPERVISOR_TARGET_ALREADY_EXISTS")
         output = launcher.directory(value["output"], 0o700)
         declarations = launcher.directory(value["declarations"], 0o700)
+        storage_capacity(value, output, declarations)
+        storage_admitted = True
         result["status"] = "INCOMPLETE"
         result["evidence"] = value["output"]["path"]
         launcher.save(output, "reservation.json", encoded(dict(schema=SCHEMA, fixture_sha256=sha(encoded(value, LIMIT)),
@@ -543,17 +652,8 @@ def supervise(value, launcher, repository):
                     except Exception: pass
         worker = threading.Thread(target=collect, daemon=True); worker.start()
         static = value["launcher"]["controller_envelope"]["controller"]
-        for _ in range(4):
-            facts = controls.show(work_end)
-            if facts["LoadState"] == "loaded" and facts["InvocationID"]:
-                original = observe_identity(facts, static)
-                launcher.save(output, "invocation.json", encoded(original))
-                break
-            require(facts["Id"] == binding["target"].unit and facts["Job"] in ("", "0")
-                    and facts["LoadState"] in ("not-found", "loaded") and process.poll() is None,
-                    "SUPERVISOR_DELIVERY_UNCERTAIN")
-            time.sleep(0.05)
-        require(original is not None, "SUPERVISOR_INSTANCE_NOT_OBSERVED")
+        original = observe_start(controls, static, process, work_end)
+        launcher.save(output, "invocation.json", encoded(original))
         for _ in range(4800):
             controls.clock(work_end)
             marker = read_marker(value, original, launcher)
@@ -589,7 +689,7 @@ def supervise(value, launcher, repository):
                 while worker.is_alive():
                     controls.clock(value["supervisor_envelope"]["deadline_ns"]); worker.join(0.025)
             retain(await_capture, "SUPERVISOR_CAPTURE_UNFINISHED")
-        if output is not None:
+        if output is not None and storage_admitted:
             captured = dict(capture)
             for name in ("stdout", "stderr"):
                 raw = captured.pop(name, b"")
@@ -606,17 +706,7 @@ def supervise(value, launcher, repository):
             if result["status"] == "CONTROLLER_CLOSED" and not failures:
                 def seal():
                     controls.clock(value["supervisor_envelope"]["deadline_ns"])
-                    files = {}
-                    for pin, directory_fd in ((value["output"], output), (value["declarations"], declarations)):
-                        names = sorted(os.listdir(directory_fd))
-                        require(len(names) <= 16, "SUPERVISOR_SEAL_FILE_COUNT")
-                        for name in names:
-                            require(re.fullmatch(r"[a-z.-]+", name), "SUPERVISOR_SEAL_FILE_NAME")
-                            path = pin["path"] + "/" + name
-                            raw = launcher.protected(path, LIMIT)
-                            files[path] = dict(bytes=len(raw), sha256=sha(raw))
-                    require(sum(item["bytes"] for item in files.values()) <= value["supervisor_envelope"]["storage_bytes"],
-                            "SUPERVISOR_SEAL_STORAGE")
+                    files = seal_files(value, output, declarations, launcher)
                     require(controls.empty(), "SUPERVISOR_SEAL_TREE_NOT_EMPTY")
                     payload = dict(schema="local-hand-q2-controller-seal/v1", scope=result["scope"], files=files,
                         original=original, fixture_sha256=sha(encoded(value, LIMIT)), closed_ns=result["closed_ns"],
@@ -625,7 +715,7 @@ def supervise(value, launcher, repository):
                     launcher.save(output, "seal.json", encoded(payload))
                 retain(seal, "SUPERVISOR_SEAL_UNPROVEN")
                 if not failures: result["sealed"] = True
-            retain(lambda: os.close(output), "SUPERVISOR_OUTPUT_CLOSE")
+        if output is not None: retain(lambda: os.close(output), "SUPERVISOR_OUTPUT_CLOSE")
         if declarations is not None: retain(lambda: os.close(declarations), "SUPERVISOR_DECLARATIONS_CLOSE")
     return result
 
