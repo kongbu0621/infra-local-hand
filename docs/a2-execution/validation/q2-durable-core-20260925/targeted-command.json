@@ -1,0 +1,41 @@
+{
+  "source_commit": "4c550483a92eb5d13c9bd3d7ef42319fabebcace",
+  "source_tree": "736ad69811bd293c97acbe7feb995c66922e1399",
+  "started_utc": "2026-09-25T08:29:07.380523+00:00",
+  "finished_utc": "2026-09-25T08:29:08.906908+00:00",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "command_equivalent": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+    "-B",
+    "-W",
+    "error",
+    "-m",
+    "unittest",
+    "-v",
+    "test_local_hand_jobs_quota_grant",
+    "test_e3_quota_q2_service",
+    "test_local_hand_jobs_quota_bootstrap",
+    "test_local_hand_jobs_quota_contract",
+    "test_local_hand_jobs_bootstrap_preparation",
+    "test_local_hand_jobs_budget",
+    "test_local_hand_jobs_bootstrap",
+    "test_local_hand_jobs_bootstrap_roots"
+  ],
+  "environment": {
+    "PYTHONPATH": "tools:tests"
+  },
+  "tests": 107,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "exit_code": 0,
+  "log_sha256": "df9f470cde80fafddfd0ee843740bad50a6b5e220f69d47aefd7a4296913d21d",
+  "classification": {
+    "journal": "real temporary files/fsync/flock/fork exit; simulated supervisor/peer/quota",
+    "bootstrap": "real file identities/markers/plans; modeled UID, namespace, ioctl and IPC",
+    "quota_and_systemd": "NOT_RUN",
+    "real_unix_ipc": "NOT_RUN; prior executor denial retained",
+    "complete_product_suite_and_installation": "NOT_RUN"
+  }
+}

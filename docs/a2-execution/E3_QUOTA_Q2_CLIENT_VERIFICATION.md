@@ -3,6 +3,10 @@
 2026-09-25。**严格协议与有界客户端已实现；31 项逻辑测试通过，11 项真实 IPC 测试
 因执行器权限跳过。Q2 整体未完成，生产 E3_SUPERVISION_UNVERIFIED 保留。**
 
+后续第二批已实现固定准入、持久防重、管理预算和 bootstrap 新版回执消费，见
+[持久核心验证](E3_QUOTA_Q2_DURABLE_VERIFICATION.md)。本文保留第一批准确结果与当时缺口；
+后续结果不替代本批 11 项尚未验证的真实 IPC。
+
 本批源码 `3aa851fa102b7861f8a301e3c07236d6b3864858`，tree
 `e7f83d1ef00380758cd26a4c84cf266d6d95274d`，继承已批准 A/C。
 编码合同先在 `ac8ae70` 固定，见 [wire 合同](E3_QUOTA_Q2_WIRE_CONTRACT.md)。
