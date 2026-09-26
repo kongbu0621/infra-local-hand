@@ -1,0 +1,145 @@
+{
+  "schema": "local-hand-q2-candidate-build-identity/v1",
+  "status": "PASS",
+  "scope": "OFFLINE_CANDIDATE_BUILD_AND_INSTALLED_IDENTITY_ONLY",
+  "source_commit": "2ea59b8d1b262632bae5636938107ef2f002a59b",
+  "source_tree": "dcb3b7163afc4187b9eb5b04d8d73d14a2a1f5e5",
+  "public_commit_object_verified": true,
+  "wheel_name": "infra_local_hand-0.2.0a1-py3-none-any.whl",
+  "wheel_sha256": "e60a7649f0b0883edb0d986c12ae8e5aca5607261043e5fcf6643ab4e2e18e10",
+  "wheel_bytes": 265849,
+  "payload_files": 53,
+  "payload_matches_committed_source": true,
+  "installed": {
+    "identities": {
+      "broker": {
+        "installed_payload_digest": "2953bbb0ef9f5e2133db2ef26e6a2a8a096e8652bb2fdbc389c29d06d153e329",
+        "source_commit": "2ea59b8d1b262632bae5636938107ef2f002a59b"
+      },
+      "mcp": {
+        "installed_payload_digest": "2953bbb0ef9f5e2133db2ef26e6a2a8a096e8652bb2fdbc389c29d06d153e329",
+        "source_commit": "2ea59b8d1b262632bae5636938107ef2f002a59b"
+      }
+    },
+    "isolated_runtime": true,
+    "optional_mcp_absent": true,
+    "packages": {
+      "infra-local-hand": "0.2.0a1",
+      "pip": "25.0.1"
+    },
+    "payload_files": 53,
+    "source_commit": "2ea59b8d1b262632bae5636938107ef2f002a59b",
+    "status": "PASS"
+  },
+  "commands": [
+    {
+      "label": "init",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "tree-object",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "commit-object",
+      "exit_code": 0,
+      "stdout_sha256": "4699c44436e9efd987e6eecba42b4ecec026aeb3c36d72a427e18058a27fb135",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "autocrlf",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "checkout",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "head-before",
+      "exit_code": 0,
+      "stdout_sha256": "4699c44436e9efd987e6eecba42b4ecec026aeb3c36d72a427e18058a27fb135",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "tree-before",
+      "exit_code": 0,
+      "stdout_sha256": "77785caea828ffb2793ef4e5207a4178d760a570bf6a05a04a6f06c7ed3055e5",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "status-before",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "wheel-build",
+      "exit_code": 0,
+      "stdout_sha256": "3d784bd889e262a57577d377e4a40b20aef9b53e83c47db8dba1d9905ddad3aa",
+      "stderr_sha256": "9ce904622c4a3bfae8db3e4bd9ad7af1c055d424babbe8ebdd4c8c3d82425277"
+    },
+    {
+      "label": "status-after",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "head-after",
+      "exit_code": 0,
+      "stdout_sha256": "4699c44436e9efd987e6eecba42b4ecec026aeb3c36d72a427e18058a27fb135",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "runtime-create",
+      "exit_code": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "runtime-install",
+      "exit_code": 0,
+      "stdout_sha256": "e7cdec1a1238095bd13be4d541791522ac05f32a313bad02fc8fbe8a5e2959c3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "installed-identity",
+      "exit_code": 0,
+      "stdout_sha256": "c68e482e8575528fab1154d4fee215b1618e9e43bd4d0492bb5208f85c9e3b42",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "build-toolchain",
+      "exit_code": 0,
+      "stdout_sha256": "ef93d502939ca447df98fec2cb51103930f74e431234cecf98ca04a6e4da4104",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "fixture_provisioned": false,
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "production_supported": false,
+  "build_toolchain": {
+    "packages": {
+      "build": "1.2.2.post1",
+      "iniconfig": "2.3.0",
+      "packaging": "26.3",
+      "pluggy": "1.6.0",
+      "pygments": "2.21.0",
+      "pyproject_hooks": "1.3.3",
+      "pytest": "8.4.2",
+      "setuptools": "80.9.0",
+      "wheel": "0.45.1"
+    },
+    "python_version": "3.12.14"
+  },
+  "build_requirements_sha256": "3d5cb1f383a0e9064aced781734d83acb89ee0b9b9d4161001f5c6dbd879d94d"
+}

@@ -127,8 +127,10 @@ Scope `LH-Q2-FIXTURE-PREP-v1` is **PROPOSED / OPEN**. Its documents are
 [implementation plan](docs/a2-execution/q2-fixture-preparation/IMPLEMENTATION_PLAN.md).
 R, readable direct source, integrity, Owner authority, mandate, exceptions and
 change rules remain those above. No Owner closure decision is recorded for this
-new scope. Its exact proposed documentation baseline will be recorded after the
-documentation commit exists; no implementation is authorized by this proposal.
+new scope. Its proposed documentation baseline A is
+`2ea59b8d1b262632bae5636938107ef2f002a59b`; exact document digests and scope are
+recorded in [Q2_FIXTURE_PREPARATION_BASELINE.md](docs/governance/Q2_FIXTURE_PREPARATION_BASELINE.md).
+No implementation is authorized by this proposal.
 
 The proposal addresses the host-provisioning exclusion in the existing
 `LH-E3-QUOTA-HARNESS-v1` closure: prepare a new bounded fixture inside the already

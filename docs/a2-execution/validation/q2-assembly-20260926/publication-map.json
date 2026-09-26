@@ -1,0 +1,12 @@
+{
+  "schema": "local-hand-q2-publication-map/v1",
+  "verified_source_commit": "e912b3eaa7bce19e27aa167c281ccc8126d6c6f8",
+  "public_source_commit": "2ea59b8d1b262632bae5636938107ef2f002a59b",
+  "exact_common_tree": "dcb3b7163afc4187b9eb5b04d8d73d14a2a1f5e5",
+  "mapping": "SAME_GIT_TREE_DISTINCT_COMMIT_IDENTITIES",
+  "public_ref_readback_verified": true,
+  "fixture_preparation_gate": "OPEN",
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "production_supported": false
+}

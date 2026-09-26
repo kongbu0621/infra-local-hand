@@ -1,0 +1,208 @@
+* Getting build dependencies for wheel...
+running egg_info
+creating tools/infra_local_hand.egg-info
+writing tools/infra_local_hand.egg-info/PKG-INFO
+writing dependency_links to tools/infra_local_hand.egg-info/dependency_links.txt
+writing entry points to tools/infra_local_hand.egg-info/entry_points.txt
+writing requirements to tools/infra_local_hand.egg-info/requires.txt
+writing top-level names to tools/infra_local_hand.egg-info/top_level.txt
+writing manifest file 'tools/infra_local_hand.egg-info/SOURCES.txt'
+reading manifest file 'tools/infra_local_hand.egg-info/SOURCES.txt'
+writing manifest file 'tools/infra_local_hand.egg-info/SOURCES.txt'
+* Building wheel...
+running bdist_wheel
+running build
+running build_py
+creating build/lib/local_hand
+copying tools/local_hand/bootstrap_safety.py -> build/lib/local_hand
+copying tools/local_hand/bounded_io.py -> build/lib/local_hand
+copying tools/local_hand/observe.py -> build/lib/local_hand
+copying tools/local_hand/windows_runner.py -> build/lib/local_hand
+copying tools/local_hand/validate.py -> build/lib/local_hand
+copying tools/local_hand/worker.py -> build/lib/local_hand
+copying tools/local_hand/__init__.py -> build/lib/local_hand
+copying tools/local_hand/paths.py -> build/lib/local_hand
+copying tools/local_hand/act.py -> build/lib/local_hand
+copying tools/local_hand/config.py -> build/lib/local_hand
+copying tools/local_hand/git_safety.py -> build/lib/local_hand
+copying tools/local_hand/provenance.py -> build/lib/local_hand
+copying tools/local_hand/runtime_lock.py -> build/lib/local_hand
+copying tools/local_hand/mailbox_safety.py -> build/lib/local_hand
+copying tools/local_hand/protocol.py -> build/lib/local_hand
+copying tools/local_hand/installation.py -> build/lib/local_hand
+creating build/lib/local_hand_connect
+copying tools/local_hand_connect/__init__.py -> build/lib/local_hand_connect
+copying tools/local_hand_connect/cli.py -> build/lib/local_hand_connect
+copying tools/local_hand_connect/live_acceptance.py -> build/lib/local_hand_connect
+copying tools/local_hand_connect/controller.py -> build/lib/local_hand_connect
+creating build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_grant.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/contract.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_closure.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_binding.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/budget.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/__init__.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/policy.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/nas_quota.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_bootstrap.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/evidence_client.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/bootstrap.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_client.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/resources.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_bridge.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_lifecycle.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_contract.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/cli.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/evidence.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/broker.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/ledger_jobs.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/bootstrap_roots.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/state.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/result_reader.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/runner.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/quota_payload.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/deployment.py -> build/lib/local_hand_jobs
+copying tools/local_hand_jobs/registry.py -> build/lib/local_hand_jobs
+creating build/lib/local_hand_mcp
+copying tools/local_hand_mcp/auth.py -> build/lib/local_hand_mcp
+copying tools/local_hand_mcp/__init__.py -> build/lib/local_hand_mcp
+copying tools/local_hand_mcp/server.py -> build/lib/local_hand_mcp
+running egg_info
+writing tools/infra_local_hand.egg-info/PKG-INFO
+writing dependency_links to tools/infra_local_hand.egg-info/dependency_links.txt
+writing entry points to tools/infra_local_hand.egg-info/entry_points.txt
+writing requirements to tools/infra_local_hand.egg-info/requires.txt
+writing top-level names to tools/infra_local_hand.egg-info/top_level.txt
+reading manifest file 'tools/infra_local_hand.egg-info/SOURCES.txt'
+writing manifest file 'tools/infra_local_hand.egg-info/SOURCES.txt'
+copying tools/local_hand/bootstrap_linux.sh -> build/lib/local_hand
+copying tools/local_hand/bootstrap_windows.ps1 -> build/lib/local_hand
+copying tools/local_hand/windows_acl.ps1 -> build/lib/local_hand
+installing to build/bdist.linux-x86_64/wheel
+running install
+running install_lib
+creating build/bdist.linux-x86_64/wheel
+creating build/bdist.linux-x86_64/wheel/local_hand_mcp
+copying build/lib/local_hand_mcp/auth.py -> build/bdist.linux-x86_64/wheel/./local_hand_mcp
+copying build/lib/local_hand_mcp/__init__.py -> build/bdist.linux-x86_64/wheel/./local_hand_mcp
+copying build/lib/local_hand_mcp/server.py -> build/bdist.linux-x86_64/wheel/./local_hand_mcp
+creating build/bdist.linux-x86_64/wheel/local_hand_connect
+copying build/lib/local_hand_connect/__init__.py -> build/bdist.linux-x86_64/wheel/./local_hand_connect
+copying build/lib/local_hand_connect/cli.py -> build/bdist.linux-x86_64/wheel/./local_hand_connect
+copying build/lib/local_hand_connect/live_acceptance.py -> build/bdist.linux-x86_64/wheel/./local_hand_connect
+copying build/lib/local_hand_connect/controller.py -> build/bdist.linux-x86_64/wheel/./local_hand_connect
+creating build/bdist.linux-x86_64/wheel/local_hand_jobs
+copying build/lib/local_hand_jobs/quota_grant.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/contract.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_closure.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_binding.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/budget.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/__init__.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/policy.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/nas_quota.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_bootstrap.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/evidence_client.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/bootstrap.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_client.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/resources.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_bridge.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_lifecycle.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_contract.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/cli.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/evidence.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/broker.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/ledger_jobs.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/bootstrap_roots.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/state.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/result_reader.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/runner.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/quota_payload.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/deployment.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+copying build/lib/local_hand_jobs/registry.py -> build/bdist.linux-x86_64/wheel/./local_hand_jobs
+creating build/bdist.linux-x86_64/wheel/local_hand
+copying build/lib/local_hand/_build_metadata.json -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/bootstrap_safety.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/bootstrap_linux.sh -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/bounded_io.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/observe.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/windows_runner.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/validate.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/worker.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/__init__.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/windows_acl.ps1 -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/paths.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/bootstrap_windows.ps1 -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/act.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/config.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/git_safety.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/provenance.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/runtime_lock.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/mailbox_safety.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/protocol.py -> build/bdist.linux-x86_64/wheel/./local_hand
+copying build/lib/local_hand/installation.py -> build/bdist.linux-x86_64/wheel/./local_hand
+running install_egg_info
+Copying tools/infra_local_hand.egg-info to build/bdist.linux-x86_64/wheel/./infra_local_hand-0.2.0a1-py3.12.egg-info
+running install_scripts
+creating build/bdist.linux-x86_64/wheel/infra_local_hand-0.2.0a1.dist-info/WHEEL
+creating '/workspace/scratch/a20dd33d0f57/q2-batch10-build/2ea59b8d1b262632bae5636938107ef2f002a59b/dist/.tmp-2edkszex/infra_local_hand-0.2.0a1-py3-none-any.whl' and adding 'build/bdist.linux-x86_64/wheel' to it
+adding 'local_hand/__init__.py'
+adding 'local_hand/_build_metadata.json'
+adding 'local_hand/act.py'
+adding 'local_hand/bootstrap_linux.sh'
+adding 'local_hand/bootstrap_safety.py'
+adding 'local_hand/bootstrap_windows.ps1'
+adding 'local_hand/bounded_io.py'
+adding 'local_hand/config.py'
+adding 'local_hand/git_safety.py'
+adding 'local_hand/installation.py'
+adding 'local_hand/mailbox_safety.py'
+adding 'local_hand/observe.py'
+adding 'local_hand/paths.py'
+adding 'local_hand/protocol.py'
+adding 'local_hand/provenance.py'
+adding 'local_hand/runtime_lock.py'
+adding 'local_hand/validate.py'
+adding 'local_hand/windows_acl.ps1'
+adding 'local_hand/windows_runner.py'
+adding 'local_hand/worker.py'
+adding 'local_hand_connect/__init__.py'
+adding 'local_hand_connect/cli.py'
+adding 'local_hand_connect/controller.py'
+adding 'local_hand_connect/live_acceptance.py'
+adding 'local_hand_jobs/__init__.py'
+adding 'local_hand_jobs/bootstrap.py'
+adding 'local_hand_jobs/bootstrap_roots.py'
+adding 'local_hand_jobs/broker.py'
+adding 'local_hand_jobs/budget.py'
+adding 'local_hand_jobs/cli.py'
+adding 'local_hand_jobs/contract.py'
+adding 'local_hand_jobs/deployment.py'
+adding 'local_hand_jobs/evidence.py'
+adding 'local_hand_jobs/evidence_client.py'
+adding 'local_hand_jobs/ledger_jobs.py'
+adding 'local_hand_jobs/nas_quota.py'
+adding 'local_hand_jobs/policy.py'
+adding 'local_hand_jobs/quota_binding.py'
+adding 'local_hand_jobs/quota_bootstrap.py'
+adding 'local_hand_jobs/quota_bridge.py'
+adding 'local_hand_jobs/quota_client.py'
+adding 'local_hand_jobs/quota_closure.py'
+adding 'local_hand_jobs/quota_contract.py'
+adding 'local_hand_jobs/quota_grant.py'
+adding 'local_hand_jobs/quota_lifecycle.py'
+adding 'local_hand_jobs/quota_payload.py'
+adding 'local_hand_jobs/registry.py'
+adding 'local_hand_jobs/resources.py'
+adding 'local_hand_jobs/result_reader.py'
+adding 'local_hand_jobs/runner.py'
+adding 'local_hand_jobs/state.py'
+adding 'local_hand_mcp/__init__.py'
+adding 'local_hand_mcp/auth.py'
+adding 'local_hand_mcp/server.py'
+adding 'infra_local_hand-0.2.0a1.dist-info/METADATA'
+adding 'infra_local_hand-0.2.0a1.dist-info/WHEEL'
+adding 'infra_local_hand-0.2.0a1.dist-info/entry_points.txt'
+adding 'infra_local_hand-0.2.0a1.dist-info/top_level.txt'
+adding 'infra_local_hand-0.2.0a1.dist-info/RECORD'
+removing build/bdist.linux-x86_64/wheel
+Successfully built infra_local_hand-0.2.0a1-py3-none-any.whl
