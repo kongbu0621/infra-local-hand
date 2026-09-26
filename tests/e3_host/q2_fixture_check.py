@@ -9,8 +9,11 @@ existing independent supervisor; O_NONBLOCK is not a disk-I/O timeout.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
+import importlib.util
 import json
+import marshal
 import os
 from pathlib import Path
 import re
@@ -59,12 +62,35 @@ def identity(info):
                                                 "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns"))
 
 
-def opened(path, *, owner=0, directory=False):
+def ordinary_access(fd, reader, bits, *, default_acl=False):
+    """Conservative DAC check for the resident's cleared supplementary groups.
+
+    It is a read-only prerequisite, not an impersonation or kernel access test.
+    ACL-dependent access is unproven rather than guessed from the mode mask.
+    """
+    uid, gid = reader
+    require(type(uid) is int and uid > 0 and type(gid) is int and gid > 0, "FIXTURE_ORDINARY_IDENTITY")
+    info = os.fstat(fd)
+    shift = 6 if info.st_uid == uid else 3 if info.st_gid == gid else 0
+    require((info.st_mode >> shift) & bits == bits, "FIXTURE_ORDINARY_PATH_ACCESS")
+    for name in ("system.posix_acl_access", "system.posix_acl_default") if default_acl else ("system.posix_acl_access",):
+        try:
+            os.getxattr(fd, name)
+        except OSError as error:
+            if error.errno in (errno.ENODATA, errno.ENOTSUP, errno.EOPNOTSUPP):
+                continue
+            raise
+        raise ValueError("FIXTURE_ORDINARY_ACL_UNPROVEN")
+
+
+def opened(path, *, owner=0, directory=False, reader=None, required_bits=4, ancestor_bits=5):
     """No symlink components; ordinary-owned ancestry is allowed only explicitly."""
     require(type(path) is str and path.startswith("/") and not path.startswith("//")
             and str(Path(path)) == path and ".." not in Path(path).parts and path != "/", "FIXTURE_PATH")
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
+        if reader is not None:
+            ordinary_access(fd, reader, ancestor_bits)
         parts = Path(path).parts[1:]
         for index, name in enumerate(parts):
             isdir = index + 1 < len(parts) or directory
@@ -76,6 +102,9 @@ def opened(path, *, owner=0, directory=False):
                     and (stat.S_ISDIR(info.st_mode) if isdir else
                          stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not info.st_mode & 0o6000),
                     "FIXTURE_PROTECTION")
+            if reader is not None:
+                ordinary_access(fd, reader, (5 if directory and index + 1 == len(parts) else ancestor_bits)
+                                if isdir else required_bits)
         return fd
     except BaseException:
         os.close(fd)
@@ -249,7 +278,7 @@ def installed_release(nested):
     require(set(metadata) == {"schema_version", "product_version", "source_commit", "artifact_kind", "files"}
             and metadata["schema_version"] == provenance.BUILD_SCHEMA and metadata["product_version"] == provenance.VERSION
             and metadata["artifact_kind"] == "wheel" and metadata["source_commit"] == install["source_commit"], "FIXTURE_WHEEL_METADATA")
-    actual = {}
+    actual = {}; caches = []
     for package in PACKAGES:
         fd = opened(root + "/" + package, directory=True)
         try:
@@ -257,6 +286,9 @@ def installed_release(nested):
                 for entry in entries:
                     require(len(actual) < 512, "FIXTURE_INSTALLED_FILE_COUNT")
                     if package == "local_hand" and entry.name == provenance.METADATA_NAME:
+                        continue
+                    if entry.name == "__pycache__":
+                        caches.append(package)
                         continue
                     require(re.fullmatch(r"[a-z_][a-z0-9_]*\.(?:py|sh|ps1)", entry.name), "FIXTURE_INSTALLED_EXTRA_FILE")
                     relative = package + "/" + entry.name
@@ -266,10 +298,78 @@ def installed_release(nested):
         require(package + "/__init__.py" in actual, "FIXTURE_INSTALLED_PACKAGE")
     require(actual == metadata["files"] and {key: val for key, val in actual.items() if key.endswith(".py")} == install["files"],
             "FIXTURE_WHEEL_FILES")
+    # Match the installed resident's source-bound cache contract. Keep the
+    # reads bounded/no-follow instead of calling its pathname-based helper.
+    require(sys.pycache_prefix is None, "FIXTURE_WHEEL_EXTERNAL_CACHE")
+    pattern = re.compile(r"([a-z_][a-z0-9_]*)\." + re.escape(sys.implementation.cache_tag) + r"(?:\.opt-([12]))?\.pyc")
+    for package in caches:
+        cache = root + "/" + package + "/__pycache__"
+        fd = opened(cache, directory=True)
+        try:
+            count = 0
+            with os.scandir(fd) as entries:
+                for entry in entries:
+                    count += 1
+                    require(count <= 3 * len(install["files"]), "FIXTURE_WHEEL_CACHE_COUNT")
+                    match = pattern.fullmatch(entry.name)
+                    require(match is not None, "FIXTURE_WHEEL_CACHE_NAME")
+                    relative = package + "/" + match[1] + ".py"
+                    require(relative in install["files"], "FIXTURE_WHEEL_CACHE_SOURCE")
+                    raw = protected(root + "/" + relative, LIMIT)
+                    require(sha(raw) == install["files"][relative], "FIXTURE_WHEEL_CACHE_SOURCE")
+                    variants = []
+                    for name in (root + "/" + relative, "tools/" + relative, relative):
+                        compiled = compile(raw, name, "exec", dont_inherit=True, optimize=int(match[2] or "0"))
+                        variants.append(marshal.dumps(compiled))
+                    cached = protected(cache + "/" + entry.name, max(map(len, variants)) + 16)
+                    require(cached[:4] == importlib.util.MAGIC_NUMBER and cached[16:] in variants, "FIXTURE_WHEEL_CACHE_BYTES")
+        finally:
+            os.close(fd)
     digest = sha(json.dumps(dict(schema_version="infra-local-hand-full-payload/v1", files=actual),
                             sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii"))
     require(digest == install["payload_digest"], "FIXTURE_WHEEL_PAYLOAD")
     return digest
+
+
+def resident_paths(nested):
+    """The root checker must not confuse its own access with resident access."""
+    resident = nested["resident"]; installation = resident["installation"]
+    uid, gid = resident["ordinary"]["uid"], resident["ordinary"]["gid"]
+    from local_hand import provenance
+    # q2_resident.protected opens EVERY directory with O_RDONLY|O_DIRECTORY;
+    # its ancestors therefore need read+search, not only pathname traversal.
+    paths = [(resident["entry"]["path"], 0, 4)]
+    paths += [(installation["package_root"] + "/" + name, 0, 4) for name in
+              (*installation["files"], "local_hand/" + provenance.METADATA_NAME)]
+    paths += [(pin["path"], 0, 5) for pin in installation["programs"].values()]
+    for path, owner, bits in paths:
+        fd = opened(path, owner=owner, reader=(uid, gid), required_bits=bits)
+        os.close(fd)
+    # Policy.from_file uses lstat + one leaf open. A protected 0711 ancestor
+    # can legitimately work there, so do not require directory read access.
+    fd = opened(resident["policy"]["path"], owner=uid, reader=(uid, gid), ancestor_bits=1)
+    os.close(fd)
+    for package in PACKAGES:
+        cache = installation["package_root"] + "/" + package + "/__pycache__"
+        try:
+            fd = opened(cache, directory=True, reader=(uid, gid))
+        except FileNotFoundError:
+            continue
+        try:
+            with os.scandir(fd) as entries:
+                for count, entry in enumerate(entries, 1):
+                    require(count <= 3 * len(installation["files"]), "FIXTURE_WHEEL_CACHE_COUNT")
+                    child = opened(cache + "/" + entry.name, reader=(uid, gid))
+                    os.close(child)
+        finally:
+            os.close(fd)
+    # resident.json is created here later with 0644. A default ACL could make
+    # that future read differ from the current directory's ordinary mode bits.
+    fd = opened(nested["declarations"]["path"], directory=True, reader=(uid, gid))
+    try:
+        ordinary_access(fd, (uid, gid), 5, default_acl=True)
+    finally:
+        os.close(fd)
 
 
 def policy_snapshot(nested):
@@ -401,6 +501,7 @@ def check(raw, digest, repository):
     report.probe("initial_namespace", lambda: namespace(resident["ordinary"]["initial_userns"]))
     report.probe("installed_wheel", lambda: installed_release(nested), needs=("resident_static_binding",))
     policy = report.probe("ordinary_policy", lambda: policy_snapshot(nested), needs=("resident_static_binding",))
+    report.probe("ordinary_resident_path_access", lambda: resident_paths(nested), needs=("resident_static_binding",))
     report.probe("original_empty_ledger", lambda: empty_ledger(policy, resident["ordinary"]["uid"], nested["assembly"]["broker_generation"]),
                  needs=("ordinary_policy",))
     pins = [("setpriv", nested["setpriv"])]

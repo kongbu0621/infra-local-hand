@@ -5,11 +5,14 @@ are explicitly modeled where noted. No tests start services or query/set quota.
 """
 import contextlib
 import copy
+import errno
 import hashlib
 import importlib.util
 import json
+import marshal
 import os
 from pathlib import Path
+import py_compile
 import sqlite3
 import stat
 import subprocess
@@ -86,7 +89,7 @@ class LocalReadTests(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     @staticmethod
-    def modeled_open(path, *, owner=0, directory=False):
+    def modeled_open(path, *, owner=0, directory=False, **kwargs):
         # Model protected ancestry only; real fd, no-follow/nonblock and content.
         return os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
                        | (os.O_DIRECTORY if directory else 0))
@@ -200,23 +203,126 @@ class LocalReadTests(unittest.TestCase):
         with mock.patch.object(c, "opened", self.modeled_open), self.assertRaisesRegex(ValueError, "FIXTURE_LEDGER_SCHEMA"):
             c.empty_ledger(policy, os.getuid(), [2, 1])
 
-    def test_installed_full_payload_checks_actual_bytes_metadata_and_extra_entries(self):
+    def installed_fixture(self):
         from local_hand import provenance
         installed = self.root / "wheel"; files = {}
         for package in c.PACKAGES:
             folder = installed / package; folder.mkdir(parents=True)
             path = folder / "__init__.py"; path.write_bytes(b"# modeled installed source\n")
             files[package + "/__init__.py"] = c.sha(path.read_bytes())
+        worker = installed / "local_hand/worker.py"
+        worker.write_text('VALUE = "source"\n')
+        files["local_hand/worker.py"] = c.sha(worker.read_bytes())
         digest = c.sha(json.dumps(dict(schema_version="infra-local-hand-full-payload/v1", files=files),
                                  sort_keys=True, separators=(",", ":")).encode())
         metadata = dict(schema_version=provenance.BUILD_SCHEMA, product_version=provenance.VERSION,
                         source_commit="a"*40, artifact_kind="wheel", files=files)
         (installed / "local_hand" / provenance.METADATA_NAME).write_text(json.dumps(metadata))
         nested = dict(resident=dict(installation=dict(package_root=str(installed), source_commit="a"*40, payload_digest=digest, files=files)))
+        return installed, nested, digest
+
+    def test_installed_full_payload_checks_actual_bytes_metadata_and_extra_entries(self):
+        installed, nested, digest = self.installed_fixture()
         with mock.patch.object(c, "opened", self.modeled_open):
             self.assertEqual(digest, c.installed_release(nested))
             (installed / "local_hand_jobs/plugin.so").write_bytes(b"opaque")
             with self.assertRaisesRegex(ValueError, "FIXTURE_INSTALLED_EXTRA_FILE"): c.installed_release(nested)
+
+    def test_pip_style_current_interpreter_caches_match_resident_contract(self):
+        from local_hand import provenance
+        installed, nested, digest = self.installed_fixture()
+        source = installed / "local_hand/worker.py"
+        for optimize in (0, 1, 2):
+            py_compile.compile(str(source), optimize=optimize, doraise=True)
+        before = {path: path.read_bytes() for path in installed.rglob("*.pyc")}
+        self.assertEqual(digest, provenance.full_payload_digest(installed))
+        with mock.patch.object(c, "opened", self.modeled_open):
+            self.assertEqual(digest, c.installed_release(nested))
+        self.assertEqual(before, {path: path.read_bytes() for path in installed.rglob("*.pyc")})
+
+    def test_timestamp_valid_poisoned_cache_is_not_loaded_or_admitted(self):
+        installed, nested, _ = self.installed_fixture()
+        source = installed / "local_hand/worker.py"
+        cache = Path(py_compile.compile(str(source), doraise=True))
+        original = cache.read_bytes()
+        poisoned = marshal.dumps(compile('VALUE = "poison"\n', str(source), "exec", dont_inherit=True))
+        self.assertEqual(len(original[16:]), len(poisoned))
+        cache.write_bytes(original[:16] + poisoned)
+        # The normal interpreter accepts this cache: the header still matches
+        # the untouched .py. The checker must compare executable content.
+        result = subprocess.run([sys.executable, "-I", "-B", "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]); from local_hand import worker; print(worker.VALUE)",
+            str(installed)], capture_output=True, text=True, timeout=10)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("poison", result.stdout.strip())
+        with mock.patch.object(c, "opened", self.modeled_open), mock.patch.object(marshal, "loads", side_effect=AssertionError("unmarshal")), \
+             self.assertRaisesRegex(ValueError, "FIXTURE_WHEEL_CACHE_BYTES"):
+            c.installed_release(nested)
+        self.assertEqual(original[:16] + poisoned, cache.read_bytes())
+
+    def test_cache_symlinks_foreign_interpreter_and_extra_source_are_rejected(self):
+        installed, nested, _ = self.installed_fixture()
+        source = installed / "local_hand/worker.py"
+        cache = Path(py_compile.compile(str(source), doraise=True))
+        original = cache.read_bytes(); cache.unlink()
+        cache.symlink_to(source)
+        with mock.patch.object(c, "opened", self.modeled_open), self.assertRaises(OSError):
+            c.installed_release(nested)
+        cache.unlink()
+        for name, reason in (("worker.foreign-999.pyc", "FIXTURE_WHEEL_CACHE_NAME"),
+                             ("extra." + sys.implementation.cache_tag + ".pyc", "FIXTURE_WHEEL_CACHE_SOURCE")):
+            extra = cache.with_name(name); extra.write_bytes(original)
+            with mock.patch.object(c, "opened", self.modeled_open), self.assertRaisesRegex(ValueError, reason):
+                c.installed_release(nested)
+            extra.unlink()
+
+    def test_root_private_ancestor_cannot_pass_as_ordinary_readable_declaration(self):
+        private = self.root / "private"; private.mkdir(mode=0o700)
+        declarations = private / "declarations"; declarations.mkdir(mode=0o755)
+        private_id = (private.stat().st_dev, private.stat().st_ino)
+        real_fstat = os.fstat
+        def protected_owner(fd):
+            # Actual directory modes and descriptors. Model root ownership and
+            # secure external ancestors because CI cannot chown or drop UID.
+            info = real_fstat(fd)
+            values = {name: getattr(info, name) for name in
+                      ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")}
+            values.update(st_uid=0, st_gid=0)
+            if stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino) != private_id:
+                values["st_mode"] = stat.S_IFDIR | 0o755
+            return SimpleNamespace(**values)
+        with mock.patch.object(c.os, "fstat", protected_owner):
+            fd = c.opened(str(declarations), directory=True); os.close(fd)
+            with self.assertRaisesRegex(ValueError, "FIXTURE_ORDINARY_PATH_ACCESS"):
+                c.opened(str(declarations), directory=True, reader=(12345, 12345))
+            private.chmod(0o711)
+            with self.assertRaisesRegex(ValueError, "FIXTURE_ORDINARY_PATH_ACCESS"):
+                c.opened(str(declarations), directory=True, reader=(12345, 12345))
+            fd = c.opened(str(declarations), directory=True, reader=(12345, 12345), ancestor_bits=1)
+            os.close(fd)
+            private.chmod(0o755)
+            fd = c.opened(str(declarations), directory=True, reader=(12345, 12345)); os.close(fd)
+
+    def test_ordinary_acl_and_unreadable_leaf_remain_unproven(self):
+        path = self.root / "file"; path.write_bytes(b"read only"); path.chmod(0o600)
+        fd = os.open(path, os.O_RDONLY); self.addCleanup(os.close, fd)
+        reader = (os.getuid() + 10000, os.getgid() + 10000)
+        with self.assertRaisesRegex(ValueError, "FIXTURE_ORDINARY_PATH_ACCESS"):
+            c.ordinary_access(fd, reader, 4)
+        path.chmod(0o644)
+        c.ordinary_access(fd, reader, 4)
+        with mock.patch.object(c.os, "getxattr", return_value=b"mode bits are insufficient"), \
+             self.assertRaisesRegex(ValueError, "FIXTURE_ORDINARY_ACL_UNPROVEN"):
+            c.ordinary_access(fd, reader, 4)
+        seen = []
+        def default_acl(fd, name):
+            seen.append(name)
+            if name.endswith("_default"): return b"inherited access"
+            raise OSError(errno.ENODATA, "absent")
+        with mock.patch.object(c.os, "getxattr", side_effect=default_acl), \
+             self.assertRaisesRegex(ValueError, "FIXTURE_ORDINARY_ACL_UNPROVEN"):
+            c.ordinary_access(fd, reader, 4, default_acl=True)
+        self.assertEqual(["system.posix_acl_access", "system.posix_acl_default"], seen)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Modeled Linux host authority")
@@ -239,7 +345,7 @@ class AggregateTests(unittest.TestCase):
                 stack.enter_context(mock.patch.object(c.os, name, return_value=0))
             stack.enter_context(mock.patch.object(budget, "current_clock", return_value=self.clock))
             stack.enter_context(mock.patch.object(c, "static_binding", return_value=self.templates))
-            for name in ("namespace", "installed_release", "policy_snapshot", "empty_ledger", "executable", "absent_endpoint",
+            for name in ("namespace", "installed_release", "policy_snapshot", "resident_paths", "empty_ledger", "executable", "absent_endpoint",
                          "directory", "storage_geometry", "manager_delegation"):
                 stack.enter_context(mock.patch.object(c, name, side_effect=ValueError(name.upper()+"_FAILED") if name in failures else None))
             stack.enter_context(mock.patch.object(quota_lifecycle, "parent", return_value=({}, True)))
@@ -261,6 +367,7 @@ class AggregateTests(unittest.TestCase):
         for phase in c.PHASES:
             self.assertTrue({phase+"_endpoint", phase+"_control", phase+"_output", phase+"_root_work"} <= names)
         self.assertIn("original_empty_ledger", names); self.assertIn("supervisor_storage_geometry", names)
+        self.assertIn("ordinary_resident_path_access", names)
         controls.call.assert_not_called()
         controls.show.assert_called_once()
         self.assertFalse(result["q3_accepted"])

@@ -1,5 +1,7 @@
 # Explicit isolated host entries
 
+Before a complete fixture exists, use the standalone read-only
+[existing guest handoff](../../docs/a2-execution/E3_QUOTA_Q2_MACHINE_HANDOFF.md).
 The current three-phase route is documented in the
 [batch preflight and retained-evidence handoff](../../docs/a2-execution/E3_QUOTA_Q2_HANDOFF.md).
 All entries are test-only, require explicit inputs, and retain production/Q3
@@ -7,6 +9,7 @@ acceptance as false. Ordinary test discovery never starts them on the host.
 
 | Entry | Role |
 | --- | --- |
+| `q2_host_export.py` | Explicit existing Q1 guest facts and missing Q2 input groups; no provisioning or fixture required |
 | `q2_fixture_check.py` | Read-only aggregate preflight for the full supervisor/three-phase fixture |
 | `q2_supervisor.py` | One original target-controller launch, independent stop, capture and seal inside an already supervised root service |
 | `q2_launcher.py` | One ordinary resident and permanent journal for the same operation's preflight/business/evidence chain |

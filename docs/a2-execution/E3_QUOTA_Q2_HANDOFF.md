@@ -19,6 +19,10 @@
 原 `q2_batch_check.py` 保留已发行单阶段观察配置的 v1 合同，不是新三阶段 fixture 的入口。
 普通 unit-test discovery 不启动上述实机工作。
 
+尚未拥有完整 Q2 fixture 时，先用后续新增的
+[现有实验机一次性交接](E3_QUOTA_Q2_MACHINE_HANDOFF.md)收集明确选择的当前事实。
+该入口不要求先装配完整 fixture，也不改变 Q1 的已完成 scoped 结论。
+
 ## 一次收齐输入
 
 fixture 沿用 `local-hand-q2-supervisor/v1 / ISOLATED_Q2_SUPERVISION`，nested launcher 采用
