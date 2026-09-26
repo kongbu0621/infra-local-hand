@@ -119,27 +119,35 @@ documents remain unchanged. This proposal does not reopen S1 or Ledger A2 and do
 Production `E3_SUPERVISION_UNVERIFIED` remains. Accurate host inputs are currently NOT_PREPARED;
 see [received-input audit](docs/a2-execution/GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md).
 
-### Q2 isolated fixture preparation proposal
+### Q2 isolated fixture preparation
 
-Scope `LH-Q2-FIXTURE-PREP-v1` is **PROPOSED / OPEN**. Its documents are
+Scope `LH-Q2-FIXTURE-PREP-v1` is **CLOSED for the bounded isolated preparation below**. Its documents are
 [requirements](docs/a2-execution/q2-fixture-preparation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-fixture-preparation/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-fixture-preparation/IMPLEMENTATION_PLAN.md).
 R, readable direct source, integrity, Owner authority, mandate, exceptions and
-change rules remain those above. No Owner closure decision is recorded for this
-new scope. Its proposed documentation baseline A is
+change rules remain those above. Its approved documentation baseline A is
 `2ea59b8d1b262632bae5636938107ef2f002a59b`; exact document digests and scope are
 recorded in [Q2_FIXTURE_PREPARATION_BASELINE.md](docs/governance/Q2_FIXTURE_PREPARATION_BASELINE.md).
-No implementation is authorized by this proposal.
+Owner closure decision B is retained in
+[Q2_FIXTURE_PREPARATION_OWNER_DECISION.md](docs/governance/Q2_FIXTURE_PREPARATION_OWNER_DECISION.md),
+event `LH-Q2-FIXTURE-PREP-CLOSURE-20260926-01`. This independent bookkeeping-only
+C records that decision before new implementation D. A's three authoritative
+documents remain byte-identical, including their historical OPEN labels.
 
-The proposal addresses the host-provisioning exclusion in the existing
+This closure addresses the host-provisioning exclusion in the existing
 `LH-E3-QUOTA-HARNESS-v1` closure: prepare a new bounded fixture inside the already
 supplied isolated Q1 guest, including its ordinary identity/manager, seven
 distinct quota roots, protected installation/state and independently supervised
 entry. Existing Q1 objects and verdicts remain retained. This is separate from
 unaffected repairs to the already CLOSED Q2 development scope. Preparation is
 not Q2/Q3 acceptance, production support, GX10 deployment or E4–E6 authority.
-Any later closure must preserve R → exact A → Owner B → independent C → D.
+It authorizes one new ordinary identity/instance-specific manager, seven new
+project roots, bounded installation/state/control objects and one original
+supervised test-only handoff within A's ceilings and exclusions. The Owner
+explicitly authorized the complete batch without per-item approval. Material
+scope changes retain the root change rule. Preserve R → exact A → Owner B →
+independent C → D; do not squash this closure with implementation.
 
 ### Continuing constraints
 
