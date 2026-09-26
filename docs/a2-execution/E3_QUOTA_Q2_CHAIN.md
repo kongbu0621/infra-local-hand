@@ -26,7 +26,11 @@ schema 为 `local-hand-q2-launcher/v2`，purpose 为 `ISOLATED_Q2_CHAIN`。
 | 每阶段 peer | 相同 ordinary parent、解释器及固定 runner；query/management parent 也固定 |
 
 三阶段均属于 `job` 命名空间和同一 operation/record。business 复用原 allocation；
-evidence 使用新且隔离的工作 quota 域，只按批准的绑定保留原 evidence store。
+evidence 使用新且隔离的工作 quota 域，并显式绑定同一选定 Policy 的
+`bootstrap_evidence_store`。该 store 的路径及 inode 必须独立于所有 profile/slot roots，
+不得通过别名指向 preflight root；声明中的 store 路径、device/inode、uid 和原 reservation
+须准确对应 Policy。所有 evidence roots 均不能复用前阶段已消费的 quota 域；
+同一阶段内合法共享的域仍按 filesystem/project 去重并要求一致的 hard limit。
 每阶段 output 分离。没有创建账户、挂载、quota、slice 或系统服务配置的功能。
 
 ## 单一容量与永久账本

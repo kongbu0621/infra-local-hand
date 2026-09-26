@@ -126,17 +126,18 @@ def decode(raw, digest):
             q.require(allocation["allocation_id"] == first["grant"]["allocation"]["allocation_id"]
                       and expected == first["grant"]["roots"], "BUSINESS_ALLOCATION")
         if phase == "evidence":
-            retained = next(root for root in expected if root["role"] == "retained_store")
-            retained_path = paths["retained_store"]
             old_paths = g.root_paths(first["grant"]["allocation"])
-            q.require(any(retained_path == old_paths[old["role"]]
-                          and all(retained[key] == old[key] for key in retained if key != "role")
-                          for old in first["grant"]["roots"]), "RETAINED_BINDING")
-            q.require(all(not c.overlap(path, old) for role, path in paths.items()
-                          if role != "retained_store" for old in old_paths.values()), "RESOURCE_CONSUMED")
+            # The retained store is the policy's independent evidence store,
+            # not a renamed preflight work/evidence/temporary root. The broker
+            # copies its exact path/identity into this evidence allocation.
+            q.require(all(not c.overlap(path, old) for path in paths.values()
+                          for old in old_paths.values()), "RESOURCE_CONSUMED")
+            old_inodes = {(root["device"], root["inode"]) for root in first["grant"]["roots"]}
+            q.require(all((root["device"], root["inode"]) not in old_inodes
+                          for root in expected), "RESOURCE_CONSUMED")
             old_domains = {(root["filesystem_uuid"], root["project_id"]) for root in first["grant"]["roots"]}
             q.require(all((root["filesystem_uuid"], root["project_id"]) not in old_domains
-                          for root in expected if root["role"] != "retained_store"), "RESOURCE_CONSUMED")
+                          for root in expected), "RESOURCE_CONSUMED")
         q._keys(fixed["endpoint"], {"path", "uid", "gid", "boot_id"})
         endpoint = fixed["endpoint"]
         q.require(len(q.canonical_path(endpoint["path"]).encode()) <= 107 and endpoint["uid"] == 0
@@ -186,6 +187,40 @@ def decode(raw, digest):
 
 def load(path, digest):
     return decode(read_protected(path, c.LIMIT), digest)
+
+
+def check_policy(chain, policy, profile_ref):
+    """Bind declared allocations to one validated immutable broker policy.
+
+    This pure check does not reserve slots or replace the resident broker's
+    policy admission and later exact original-preparation comparison.
+    """
+    from local_hand_jobs.policy import Policy, thaw
+    q.require(isinstance(policy, Policy) and profile_ref in policy.profiles, "CHAIN_POLICY_BINDING")
+    profile = thaw(policy.profiles[profile_ref])
+    q.require("bootstrap_slots" in profile and "bootstrap_evidence_store" in profile, "CHAIN_POLICY_BINDING")
+    slots = {slot["slot_id"]: slot for slot in profile["bootstrap_slots"]}
+    value = decode(chain.wire, chain.digest).data()
+    uid = policy.config.get("process_manager", {}).get("uid")
+    q.require(type(uid) is int and uid > 0
+              and policy.source_commit == value["installation"]["source_commit"], "CHAIN_POLICY_BINDING")
+    for phase in PHASES:
+        allocation = value["phases"][phase]["grant"]["allocation"]
+        q.require(all(root["uid"] == uid for root in value["phases"][phase]["grant"]["roots"]),
+                  "CHAIN_POLICY_ROOT_BINDING")
+        slot = slots.get(allocation["slot_id"])
+        q.require(slot is not None, "CHAIN_POLICY_SLOT")
+        paths = {root["path"]: {key: root[key] for key in ("device", "inode", "uid")}
+                 for root in slot["roots"].values()}
+        q.require(allocation["roots"] == {role: root["path"] for role, root in slot["roots"].items()},
+                  "CHAIN_POLICY_SLOT")
+        retained = []
+        if phase == "evidence":
+            store = profile["bootstrap_evidence_store"]
+            retained = [store["path"]]
+            paths[store["path"]] = {key: store[key] for key in ("device", "inode", "uid")}
+        q.require(allocation["retained_paths"] == retained and allocation["paths"] == paths,
+                  "CHAIN_POLICY_ROOT_BINDING")
 
 
 def declared_totals(chain):

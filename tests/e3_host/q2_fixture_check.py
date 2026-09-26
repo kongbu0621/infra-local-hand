@@ -389,6 +389,11 @@ def policy_snapshot(nested):
             and policy.execution_entrypoint == resident["installation"]["package_root"] + "/local_hand_jobs/cli.py",
             "FIXTURE_POLICY_BINDING")
     require(policy.config["process_manager"]["cgroup"] == "/sys/fs/cgroup" + ordinary["parent"]["path"], "FIXTURE_POLICY_PARENT")
+    if nested["schema"] == "local-hand-q2-launcher/v2":
+        from admin.local_hand_quota_observer import q2_chain
+        chain_raw = q2_chain.q._canonical(nested["assembly"], q2_chain.c.LIMIT)
+        chain = q2_chain.decode(chain_raw, sha(chain_raw))
+        q2_chain.check_policy(chain, policy, resident["request"]["profile_ref"])
     return policy
 
 

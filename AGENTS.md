@@ -119,6 +119,26 @@ documents remain unchanged. This proposal does not reopen S1 or Ledger A2 and do
 Production `E3_SUPERVISION_UNVERIFIED` remains. Accurate host inputs are currently NOT_PREPARED;
 see [received-input audit](docs/a2-execution/GX10_E3_INPUT_CONFIRMATION_VERIFICATION.md).
 
+### Q2 isolated fixture preparation proposal
+
+Scope `LH-Q2-FIXTURE-PREP-v1` is **PROPOSED / OPEN**. Its documents are
+[requirements](docs/a2-execution/q2-fixture-preparation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-fixture-preparation/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-fixture-preparation/IMPLEMENTATION_PLAN.md).
+R, readable direct source, integrity, Owner authority, mandate, exceptions and
+change rules remain those above. No Owner closure decision is recorded for this
+new scope. Its exact proposed documentation baseline will be recorded after the
+documentation commit exists; no implementation is authorized by this proposal.
+
+The proposal addresses the host-provisioning exclusion in the existing
+`LH-E3-QUOTA-HARNESS-v1` closure: prepare a new bounded fixture inside the already
+supplied isolated Q1 guest, including its ordinary identity/manager, seven
+distinct quota roots, protected installation/state and independently supervised
+entry. Existing Q1 objects and verdicts remain retained. This is separate from
+unaffected repairs to the already CLOSED Q2 development scope. Preparation is
+not Q2/Q3 acceptance, production support, GX10 deployment or E4–E6 authority.
+Any later closure must preserve R → exact A → Owner B → independent C → D.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

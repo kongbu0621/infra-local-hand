@@ -3,6 +3,7 @@
 No test provisions host identities, quota, mounts or systemd objects.
 """
 import copy
+import errno
 import hashlib
 import importlib.util
 import io
@@ -211,11 +212,48 @@ class LocalReadTests(unittest.TestCase):
             data["/sys/class/dmi/id/sys_vendor"] = b"physical-machine\n"
             with self.assertRaisesRegex(ValueError, "ISOLATED_GUEST_HINT_REQUIRED"): m.host(reader, "fixture-guest")
 
-    def test_protected_reader_refuses_writable_ancestry_and_noncanonical_path(self):
+    def test_protected_reader_refuses_unprotected_temporary_path(self):
         file = self.root/"plain"; file.write_bytes(b"x")
-        with self.assertRaises(ValueError): self.reader.read(str(file), 8)
+        # A non-root CI runner cannot open root-owned '/' with O_NOATIME.
+        # Root instead reaches and rejects the writable temporary ancestry.
+        with self.assertRaises((ValueError, PermissionError)) as raised:
+            self.reader.read(str(file), 8)
+        if isinstance(raised.exception, PermissionError):
+            self.assertEqual(errno.EPERM, raised.exception.errno)
+        else:
+            self.assertEqual("UNPROTECTED_OBJECT", str(raised.exception))
+        self.assertEqual(0, self.reader.used)
+
+    def test_protected_reader_refuses_modeled_root_owned_writable_ancestor(self):
+        ancestor = SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o777)
+        with mock.patch.object(m.os, "open", side_effect=[100, 101]) as opened, \
+             mock.patch.object(m.os, "close") as closed, \
+             mock.patch.object(m.os, "fstat", return_value=ancestor), \
+             mock.patch.object(self.reader, "read_fd") as read:
+            with self.assertRaisesRegex(ValueError, "^UNPROTECTED_OBJECT$"):
+                self.reader.read("/writable/secret", 8)
+        self.assertEqual(2, opened.call_count)
+        self.assertEqual("/", opened.call_args_list[0].args[0])
+        self.assertEqual("writable", opened.call_args_list[1].args[0])
+        self.assertEqual([mock.call(100), mock.call(101)], closed.call_args_list)
+        read.assert_not_called()
+
+    def test_protected_reader_does_not_retry_without_noatime_permission(self):
+        denied = PermissionError(errno.EPERM, "synthetic no-atime denial")
+        with mock.patch.object(m.os, "open", side_effect=denied) as opened, \
+             mock.patch.object(self.reader, "read_fd") as read:
+            with self.assertRaises(PermissionError) as raised:
+                self.reader.read("/synthetic/secret", 8)
+        self.assertIs(denied, raised.exception)
+        opened.assert_called_once()
+        self.assertTrue(opened.call_args.args[1] & os.O_NOATIME)
+        read.assert_not_called()
+
+    def test_noncanonical_path_is_rejected_before_open(self):
         for name in ("relative", "//path", "/tmp/../etc/passwd", "/"):
-            with self.subTest(path=name), self.assertRaises(ValueError): self.reader.opened(name)
+            with self.subTest(path=name), mock.patch.object(m.os, "open") as opened:
+                with self.assertRaises(ValueError): self.reader.opened(name)
+                opened.assert_not_called()
 
     def test_program_hash_streams_large_binary_and_accepts_source_role(self):
         binary = self.root/"program"; raw = b"\x7fELF" + b"x"*(3*1024*1024)

@@ -13,6 +13,10 @@ import unittest
 from unittest import mock
 
 from local_hand_jobs import bootstrap_roots, quota_contract as q, quota_grant as g
+from local_hand_jobs.contract import JobError
+from local_hand_jobs.policy import Policy, thaw
+from local_hand_jobs.state import StateStore
+from test_local_hand_jobs_policy import policy_fixture
 from q2_fixtures import BOOT, SECOND, grant_data, query
 if sys.platform.startswith("linux"):
     from admin.local_hand_quota_observer import q2_assembly as a, q2_chain as chain, q2_config as c
@@ -45,16 +49,6 @@ def declaration_chain():
         data["query_parent"] = copy.deepcopy(first["grant"]["query_parent"])
         data["management_parent"] = copy.deepcopy(first["grant"]["management_parent"])
         data["endpoint"]["path"] = "/synthetic/control/" + phase + ".sock"
-        if phase == "evidence":
-            retained = dict(value["phases"]["preflight"]["grant"]["roots"][0], role="retained_store")
-            data["roots"][-1] = retained
-            allocation = data["allocation"]
-            allocation["paths"].pop(allocation["retained_paths"][0])
-            kept_path = value["phases"]["preflight"]["grant"]["allocation"]["roots"]["work"]
-            allocation["retained_paths"] = [kept_path]
-            allocation["paths"][kept_path] = {key: retained[key] for key in ("device", "inode", "uid")}
-            allocation["grant_digest"] = bootstrap_roots._digest(
-                {key: item for key, item in allocation.items() if key != "grant_digest"})
         value["phases"][phase] = {
             "grant": data,
             "output": dict(path="/synthetic/" + phase + "-output", device=7, inode=330 + index),
@@ -79,6 +73,40 @@ def preparation(value, original, phase):
 
 def clock(phase):
     return dict(boot_id=BOOT, boottime_ns=(2 + PHASES.index(phase) * 10) * SECOND)
+
+
+def policy_allocations(value, state):
+    """Real Policy and durable broker allocator; only OS quota facts are synthetic."""
+    config = policy_fixture("/synthetic/ordinary")
+    config["source_commit"] = value["installation"]["source_commit"]
+    config["process_manager"] = dict(uid=1234, slice="fixture.slice", cgroup="/sys/fs/cgroup/fixture")
+    profile = config["profiles"]["fixture"]
+    slots = []
+    for phase in ("preflight", "evidence"):
+        grant = value["phases"][phase]["grant"]
+        slot_id = grant["allocation"]["slot_id"]
+        slots.append(dict(slot_id=slot_id, roots={root["role"]: dict(
+            path=profile[root["role"] + "_root"] + "/" + slot_id,
+            **{key: root[key] for key in ("device", "inode", "uid")})
+            for root in grant["roots"] if root["role"] != "retained_store"}))
+    store = next(root for root in value["phases"]["evidence"]["grant"]["roots"] if root["role"] == "retained_store")
+    profile["bootstrap_slots"] = slots
+    profile["bootstrap_evidence_store"] = dict(path="/synthetic/ordinary/sealed",
+        **{key: store[key] for key in ("device", "inode", "uid")})
+    policy = Policy(config)
+    profile = thaw(policy.profiles["fixture"])
+    with state.transaction() as tx:
+        row = state.insert(tx, "job", "fixture", "fixture", "owner", "request-digest", {},
+            dict(execution=dict(roots={name: profile[name + "_root"] + "/fixture"
+                for name in bootstrap_roots.ROOT_NAMES}), expected=dict(deployment_epoch=1)), 4096)
+    for phase in PHASES:
+        with state.transaction() as tx:
+            allocation = bootstrap_roots.reserve(state, tx, row, phase, profile["bootstrap_slots"],
+                extra_roots={"evidence_store": profile["bootstrap_evidence_store"]} if phase == "evidence" else None)
+        grant = value["phases"][phase]["grant"]
+        grant["allocation"] = allocation
+        grant["request"].update(allocation_digest=allocation["allocation_id"], slot_ref=allocation["slot_id"])
+    return policy
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrative chain")
@@ -160,9 +188,66 @@ class DeclarationTests(unittest.TestCase):
             value = copy.deepcopy(self.value)
             if fault == "business-slot": value["phases"]["business"]["grant"]["allocation"]["allocation_id"] = "f" * 64
             elif fault == "business-root": value["phases"]["business"]["grant"]["roots"][0]["inode"] += 1
-            elif fault == "retained-root": value["phases"]["evidence"]["grant"]["roots"][-1]["project_id"] += 1
+            elif fault == "retained-root": value["phases"]["evidence"]["grant"]["roots"][-1]["inode"] += 1
             else: value["phases"]["evidence"]["grant"]["allocation"]["retained_paths"][0] = "/synthetic/foreign"
             with self.subTest(fault=fault), self.assertRaises(ValueError): decoded(value)
+
+    def test_independent_store_cannot_alias_consumed_preflight_path_inode_or_domain(self):
+        for fault in ("path", "inode", "domain"):
+            value = copy.deepcopy(self.value)
+            old = value["phases"]["preflight"]["grant"]
+            target = value["phases"]["evidence"]["grant"]
+            kept = next(root for root in target["roots"] if root["role"] == "retained_store")
+            allocation = target["allocation"]
+            if fault == "domain":
+                kept["project_id"] = old["roots"][0]["project_id"]
+            elif fault == "inode":
+                kept["inode"] = old["roots"][0]["inode"]
+                allocation["paths"][allocation["retained_paths"][0]]["inode"] = kept["inode"]
+            else:
+                identity = allocation["paths"].pop(allocation["retained_paths"][0])
+                reused = old["allocation"]["roots"]["work"]
+                allocation["retained_paths"] = [reused]
+                allocation["paths"][reused] = identity
+            allocation["allocation_id"] = bootstrap_roots._allocation_id("job", "fixture", allocation["slot_id"],
+                allocation["roots"], allocation["paths"])
+            allocation["grant_digest"] = bootstrap_roots._digest({key: item for key, item in allocation.items() if key != "grant_digest"})
+            target["request"]["allocation_digest"] = allocation["allocation_id"]
+            with self.subTest(fault=fault), self.assertRaisesRegex(ValueError, "RESOURCE_CONSUMED"):
+                decoded(value)
+
+    def test_evidence_store_can_share_consistent_domain_with_same_phase_fresh_root(self):
+        target = self.value["phases"]["evidence"]["grant"]
+        target["roots"][-1]["project_id"] = target["roots"][0]["project_id"]
+        contract = decoded(self.value)
+        self.assertEqual(target["roots"], contract.data()["phases"]["evidence"]["grant"]["roots"])
+
+    def test_real_policy_allocations_bind_exact_store_slot_and_source(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = StateStore(Path(root) / "state.sqlite", "authority", "ledger", initialize=True)
+            self.addCleanup(state.close)
+            policy = policy_allocations(self.value, state)
+            contract = decoded(self.value)
+            chain.check_policy(contract, policy, "fixture")
+            for fault in ("path", "inode", "slot-inode", "source", "uid"):
+                changed = thaw(policy.config)
+                profile = changed["profiles"]["fixture"]
+                if fault == "path": profile["bootstrap_evidence_store"]["path"] += "-other"
+                elif fault == "inode": profile["bootstrap_evidence_store"]["inode"] += 1000
+                elif fault == "slot-inode": profile["bootstrap_slots"][0]["roots"]["work"]["inode"] += 1000
+                elif fault == "source": changed["source_commit"] = "f" * 40
+                else:
+                    changed["process_manager"]["uid"] += 1
+                    for slot in profile["bootstrap_slots"]:
+                        for binding in slot["roots"].values(): binding["uid"] += 1
+                    profile["bootstrap_evidence_store"]["uid"] += 1
+                changed_policy = Policy(changed)
+                with self.subTest(fault=fault), self.assertRaises(ValueError):
+                    chain.check_policy(contract, changed_policy, "fixture")
+            aliased = thaw(policy.config)
+            profile = aliased["profiles"]["fixture"]
+            profile["bootstrap_evidence_store"] = copy.deepcopy(profile["bootstrap_slots"][0]["roots"]["work"])
+            with self.assertRaises(JobError): Policy(aliased)
 
     def test_output_journal_root_and_socket_aliases_are_rejected(self):
         for fault in ("outputs", "journal", "evidence", "root", "socket", "control"):
@@ -316,6 +401,23 @@ class PersistenceTests(unittest.TestCase):
             for old, raw in original_configs.items(): self.assertEqual(raw, Path(old).read_bytes())
             original_configs[cfg.path] = Path(cfg.path).read_bytes()
         self.assertEqual(3, len(original_configs))
+        self.assertEqual(3, len(list((self.root / "journal").glob("*.cell"))))
+
+    def test_policy_admitted_durable_allocations_complete_three_phase_chain(self):
+        state = StateStore(self.root / "broker.sqlite", "authority", "ledger", initialize=True)
+        self.addCleanup(state.close)
+        policy = policy_allocations(self.value, state)
+        self.contract = decoded(self.value)
+        chain.check_policy(self.contract, policy, "fixture")
+        for phase in PHASES:
+            config = self.advance(phase)
+            allocation = config.active().as_dict()["allocation"]
+            with state.transaction() as tx:
+                bootstrap_roots.assert_reserved(tx, allocation)
+            original = state.get("job", "fixture")["record"]["bootstrap_grants"][phase]
+            self.assertEqual(original, allocation)
+        evidence = self.configs[-1].active().as_dict()["allocation"]
+        self.assertEqual([policy.profiles["fixture"]["bootstrap_evidence_store"]["path"]], evidence["retained_paths"])
         self.assertEqual(3, len(list((self.root / "journal").glob("*.cell"))))
 
     def test_unclosed_predecessor_cannot_enroll_or_create_next_observer(self):
