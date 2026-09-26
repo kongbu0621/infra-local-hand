@@ -70,10 +70,60 @@ class ProvisionOrder(unittest.TestCase):
         result=m.prepare(fixture(),b,validate_settings=lambda _:None)
         self.assertEqual("INCOMPLETE",result["status"]);self.assertEqual("PREPARE_RETAINED_CHANGED",result["reason"])
 
+    def test_command_diagnosis_is_reported_without_changing_failure_status(self):
+        b=ModelBackend("account")
+        b.last_command_failure={"returncode":3,"stderr":"invalid option","record_saved":True}
+        result=m.prepare(fixture(),b,validate_settings=lambda _:None)
+        self.assertEqual("INCOMPLETE",result["status"])
+        self.assertEqual(b.last_command_failure,result["command_failure"])
+        self.assertEqual(result,b.saved);self.assertFalse(result["q2_accepted"])
+
     def test_no_argument_entry_blocks_before_host_operations(self):
         p=subprocess.run([sys.executable,"-I","-B",str(PATH)],capture_output=True,timeout=10)
         self.assertEqual(3,p.returncode);self.assertEqual(b"",p.stderr)
         self.assertEqual("BLOCKED",json.loads(p.stdout)["status"])
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"),"Linux account lookup")
+class OrdinaryAccount(unittest.TestCase):
+    def test_account_uses_explicit_unprivileged_identity_and_no_implicit_resources(self):
+        import pwd
+        b=m.LinuxBackend(fixture());b.command=mock.Mock()
+        account=b.plan["account"]
+        entry=pwd.struct_passwd((account["name"],"x",account["uid"],account["gid"],"",
+                                 b.plan["directories"]["state"]["path"],"/usr/sbin/nologin"))
+        with mock.patch.object(pwd,"getpwnam",return_value=entry),mock.patch.object(m.os,"getgrouplist",return_value=[account["gid"]]):
+            self.assertEqual(account,b.account())
+        group,user=[call.args[0] for call in b.command.call_args_list]
+        self.assertEqual([b.tool("groupadd"),"--gid",str(account["gid"]),account["name"]],group)
+        self.assertEqual(b.tool("useradd"),user[0]);self.assertEqual(account["name"],user[-1])
+        # --system suppresses mail/subids; the explicit identity stays ordinary.
+        for flag in ("--system","--no-user-group","--no-log-init","--no-create-home"):
+            self.assertIn(flag,user)
+        for flag,value in (("--uid",str(account["uid"])),("--gid",str(account["gid"])),
+                           ("--home-dir",entry.pw_dir),("--shell",entry.pw_shell),("--password","!")):
+            self.assertEqual(value,user[user.index(flag)+1])
+        for prohibited in ("-K","--key","CREATE_MAIL_SPOOL=no","-F","--add-subids-for-system","-m","--create-home"):
+            self.assertNotIn(prohibited,user)
+
+    def test_failed_user_creation_does_not_verify_or_repeat_group_creation(self):
+        b=m.LinuxBackend(fixture())
+        b.command=mock.Mock(side_effect=[b"",ValueError("PREPARE_COMMAND_FAILED")])
+        b.verify_account=mock.Mock()
+        with self.assertRaisesRegex(ValueError,"PREPARE_COMMAND_FAILED"):b.account()
+        self.assertEqual(2,b.command.call_count)
+        b.verify_account.assert_not_called()
+
+    def test_extra_group_or_wrong_account_identity_cannot_complete(self):
+        import pwd
+        b=m.LinuxBackend(fixture());account=b.plan["account"]
+        for uid,gid,groups in ((account["uid"]+1,account["gid"],[account["gid"]]),
+                               (account["uid"],account["gid"]+1,[account["gid"]]),
+                               (account["uid"],account["gid"],[account["gid"],42])):
+            entry=pwd.struct_passwd((account["name"],"x",uid,gid,"","/synthetic/state","/usr/sbin/nologin"))
+            with self.subTest(uid=uid,gid=gid,groups=groups),mock.patch.object(pwd,"getpwnam",return_value=entry),\
+                 mock.patch.object(m.os,"getgrouplist",return_value=groups):
+                with self.assertRaisesRegex(ValueError,"PREPARE_ORDINARY_IDENTITY"):b.verify_account()
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"),"Linux no-follow and process-group primitives")
@@ -112,6 +162,18 @@ class RealFileAndCapture(unittest.TestCase):
         self.assertEqual(b"hello\n",raw)
         record=b.event.call_args.args[1]
         self.assertEqual(0,record["returncode"]);self.assertEqual(["stderr","stdout"],record["eof"])
+
+    def test_failed_command_retains_raw_error_and_reports_bounded_readable_summary(self):
+        b=self.backend()
+        with self.assertRaisesRegex(ValueError,"PREPARE_COMMAND_FAILED"):
+            b.command([sys.executable,"-I","-B","-c","import os;os.write(2,b'e'*5000+b'\\xff');raise SystemExit(3)"])
+        record=b.event.call_args.args[1];summary=b.last_command_failure
+        self.assertEqual(b"e"*5000+b"\xff",bytes.fromhex(record["stderr"]))
+        self.assertEqual("e"*4096,summary["stderr"])
+        self.assertEqual({"stdout":False,"stderr":True},summary["summary_truncated"])
+        self.assertEqual(3,summary["returncode"]);self.assertEqual(["stderr","stdout"],summary["eof"])
+        self.assertFalse(summary["record_saved"]);self.assertIsNone(summary["record"])
+        self.assertEqual(m.sha(m.c.encoded(record)),summary["record_sha256"])
 
     def test_output_limit_is_retained_not_silently_truncated_success(self):
         b=self.backend();b.plan["budgets"]["command_output_bytes"]=1024

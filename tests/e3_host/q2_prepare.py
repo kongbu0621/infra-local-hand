@@ -199,6 +199,7 @@ class LinuxBackend:
         self.log_bytes=0
         self.max_events=0
         self.log_block=4096
+        self.last_command_failure=None
 
     def guard(self):
         c.require(time.monotonic_ns() < self.deadline, "PREPARE_DEADLINE")
@@ -258,9 +259,23 @@ class LinuxBackend:
                 except subprocess.TimeoutExpired: pass
             result = {"argv": list(argv), "returncode": proc.poll(), "eof": sorted(eof), "failure": failure,
                       **{name: bytes(raw).hex() for name, raw in output.items()}}
+            unsuccessful=failure is not None or len(eof)!=2 or proc.returncode!=0
+            if unsuccessful:
+                # The durable command result keeps the original bounded bytes.
+                # Include a small readable diagnosis in the batch receipt too,
+                # so a failed command does not require another host round trip.
+                self.last_command_failure={"argv":list(argv),"returncode":proc.poll(),"eof":sorted(eof),
+                    "failure":failure,"record":None if self.reservation is None else
+                        str(self.reservation/f"{self.sequence+1:04d}-command-result.json"),
+                    "record_sha256":sha(c.encoded(result)),"record_saved":False,
+                    "stdout":bytes(output["stdout"][:4096]).decode("utf-8",errors="replace"),
+                    "stderr":bytes(output["stderr"][:4096]).decode("utf-8",errors="replace"),
+                    "summary_truncated":{name:len(value)>4096 for name,value in output.items()}}
             if self.reservation is None:
                 self.preflight_commands.append(len(argv_record)+len(c.encoded(result)))
             self.event("command-result", result)
+            if unsuccessful:
+                self.last_command_failure["record_saved"]=self.reservation is not None
             c.require(failure is None and len(eof) == 2 and proc.returncode == 0,
                       failure or "PREPARE_COMMAND_FAILED")
             return bytes(output["stdout"])
@@ -442,10 +457,22 @@ class LinuxBackend:
     def account(self):
         p = self.plan; account = p["account"]
         self.command([self.tool("groupadd"), "--gid", str(account["gid"]), account["name"]])
-        self.command([self.tool("useradd"), "--uid", str(account["uid"]), "--gid", str(account["gid"]),
-                      "--no-user-group", "--no-log-init", "-K", "CREATE_MAIL_SPOOL=no",
-                      "--no-create-home", "--home-dir", p["directories"]["state"]["path"],
-                      "--shell", "/usr/sbin/nologin", "--password", "!", account["name"]])
+        self.command(self.useradd_argv())
+        return self.verify_account()
+
+    def useradd_argv(self):
+        p = self.plan; account = p["account"]
+        # CREATE_MAIL_SPOOL is a useradd-defaults setting, not a login.defs
+        # key accepted by -K. Shadow's --system mode suppresses the mailbox
+        # and subordinate-ID allocation (without -F), while explicit --uid
+        # and --gid retain the planned non-root execution identity.
+        return [self.tool("useradd"), "--system", "--uid", str(account["uid"]), "--gid", str(account["gid"]),
+                "--no-user-group", "--no-log-init", "--no-create-home",
+                "--home-dir", p["directories"]["state"]["path"],
+                "--shell", "/usr/sbin/nologin", "--password", "!", account["name"]]
+
+    def verify_account(self):
+        account = self.plan["account"]
         import pwd, grp
         entry = pwd.getpwnam(account["name"])
         c.require((entry.pw_uid,entry.pw_gid) == (account["uid"],account["gid"])
@@ -612,6 +639,8 @@ def prepare(plan, backend=None, *, validate_settings):
         reserved = reserved or getattr(backend,"reservation",None) is not None
         result["status"]="INCOMPLETE" if reserved else "BLOCKED"
         result["reason"]=reason(error)
+        command_failure=getattr(backend,"last_command_failure",None)
+        if command_failure is not None:result["command_failure"]=command_failure
         if reserved and result["reason"] in ("PREPARE_COMMAND_TIMEOUT","PREPARE_DEADLINE","PREPARE_COMMAND_OUTPUT_LIMIT"):
             result["status"]="UNKNOWN"
     backend.finish(result)
