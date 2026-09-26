@@ -149,6 +149,31 @@ explicitly authorized the complete batch without per-item approval. Material
 scope changes retain the root change rule. Preserve R → exact A → Owner B →
 independent C → D; do not squash this closure with implementation.
 
+### Q2 account-failure recovery proposal
+
+Scope `LH-Q2-PREP-RECOVERY-v1` is **OPEN**. Its proposed documentation baseline A is
+`72c06ec68d370333f5ffb1079023917828b3e681`, containing
+[requirements](docs/a2-execution/q2-preparation-recovery/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-preparation-recovery/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-preparation-recovery/IMPLEMENTATION_PLAN.md).
+R, readable direct source and its integrity, Owner-only authority, mandate,
+no exceptions and change rules remain those above. Exact document digests,
+scope and local/public tree equivalence are in
+[Q2_PREPARATION_RECOVERY_BASELINE.md](docs/governance/Q2_PREPARATION_RECOVERY_BASELINE.md).
+No Owner decision B or CLOSED record C exists for this new recovery scope.
+
+The original preparation command failed after primary-group creation because
+its useradd configuration argument was unsupported. The independently authorized
+[account/diagnostic repair](docs/a2-execution/Q2_PREPARATION_ACCOUNT_REPAIR_VERIFICATION.md)
+does not authorize replay or a refreshed deadline. The original preparation
+window has expired; the new proposal requests one at-most-300-second management
+window for exact-state attestation, corrected account creation, only the
+undelivered original steps and the never-issued first original Q2 run.
+Original failure bytes, preparation identity, candidate and cumulative capacity
+remain bound; a new recovery ID is evidence identity only. No executable
+recovery implementation may precede Owner B and an independent CLOSED C.
+The existing CLOSED preparation scope and its original three documents remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
