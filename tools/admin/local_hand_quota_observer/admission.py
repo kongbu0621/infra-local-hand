@@ -52,7 +52,8 @@ def token(value, pattern):
 def path(value):
     # Keep future argv and systemd property serialization unambiguous. This is
     # lexical validation only; it does NOT prove mount type or reject symlinks.
-    token(value, r"/[A-Za-z0-9_./-]{1,1023}")
+    # Instantiated systemd user managers contain a literal @ (user@UID.service).
+    token(value, r"/[A-Za-z0-9_./@-]{1,1023}")
     require(str(PurePosixPath(value)) == value and not value.startswith("//")
             and ".." not in PurePosixPath(value).parts and value != "/", "PATH")
     return value

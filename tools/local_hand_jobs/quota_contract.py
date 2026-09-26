@@ -115,7 +115,9 @@ def canonical_path(value):
             and value.startswith("/") and not value.startswith("//")
             and str(PurePosixPath(value)) == value
             and ".." not in PurePosixPath(value).parts
-            and re.fullmatch(r"/[A-Za-z0-9/._-]+", value) is not None, "PATH")
+            # systemd's real user manager component is user@UID.service.
+            # A literal @ is unambiguous in the fixed argv/property protocol.
+            and re.fullmatch(r"/[A-Za-z0-9/._@-]+", value) is not None, "PATH")
     return value
 
 

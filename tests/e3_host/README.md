@@ -19,9 +19,40 @@ acceptance as false. Ordinary test discovery never starts them on the host.
 Preflight is a snapshot, not a reusable launch authorization. Offline review
 establishes retained-artifact consistency, not current host state or historical
 capacity peaks. The supervisor's own original external stop remains required.
-No entry provisions accounts, mounts, quota or cgroups, and none replays a
-consumed experiment. Missing inputs report BLOCKED rather than synthesizing
-private host values from unit-test fixtures.
+The entries above require prepared resources and never provision accounts,
+mounts, quota or cgroups. None replays a consumed experiment. Missing inputs
+report BLOCKED rather than synthesizing private values from unit-test fixtures.
+
+## Separately authorized fixture preparation
+
+`LH-Q2-FIXTURE-PREP-v1` is closed at the exact baseline and Owner decision in
+[the closure record](../../docs/governance/Q2_FIXTURE_PREPARATION_OWNER_DECISION.md).
+`q2_prepare_driver.py --plan ABSOLUTE_PRIVATE_PLAN --sha256 PLAN_SHA256 --execute`
+is the single explicit resource-preparation and original-handoff entry. It
+requires the supplied isolated guest, initial-namespace root, all current host
+pins and the complete strict plan. No-argument entry points remain inert.
+
+| Module | Responsibility |
+| --- | --- |
+| `q2_prepare_contract.py` | Exact private plan fields, isolated scope and finite resource ceilings |
+| `q2_prepare.py` | Pre-mutation host/capacity/source checks, create-only reservation, new ordinary account, seven quota roots and five parents |
+| `q2_prepare_build.py` | Exact Git and wheel verification, offline installation, native compilation and ordinary installed-identity check |
+| `q2_prepare_assembly.py` | Real policy, allocator and three-phase declarations, with no invented running identity or issued deadline |
+| `q2_prepare_driver.py` | Observed preparation facts to declarations and empty ordinary ledger, then fresh exec into the original owner |
+| `q2_prepare_run.py` | Actual same-process supervisor binding, complete check, one original launch and independently observed exit/EOF |
+| `q2_prepare_delivery.py` | Bounded create-only archive delivery and external client capture |
+
+The private delivery fixes guest/account/path/project choices outside public
+source. It preserves the original SSH/admin endpoint as the final observer of
+client exit and both stream EOFs. All preparation, ordinary, administrative and
+outer capture costs are declared before use. A retained reservation or partial
+installation blocks replay; failures retain their records. Installation never
+formats, mounts, changes packages or resets old allocations.
+
+`RESOURCES_PREPARED`, `PREPARED`, complete transport and modeled test success
+are distinct results. Only the running supervisor can complete the full fixture
+check, using its actual PID, invocation and cgroup. The batch retains Q2/Q3 and
+production acceptance as false; live evidence still requires review.
 
 ## Earlier single-phase entries
 

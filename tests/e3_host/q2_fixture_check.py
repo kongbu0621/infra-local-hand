@@ -479,7 +479,15 @@ def storage_geometry(value, supervisor):
             os.close(fd)
 
 
-def check(raw, digest, repository):
+def check(raw, digest, repository, *, admitted=None):
+    """Check once in the original process, optionally reusing its source loader.
+
+    ``admitted`` is an internal same-process handoff from q2_prepare_run: it
+    carries the already byte-verified supervisor/launcher modules. The exact
+    fixture is decoded again, so changing the bound fixture cannot reuse an
+    earlier admission. This avoids importing an independent checker process
+    whose PID/InvocationID would cease to be the supervisor's original one.
+    """
     report = Report()
     report.probe("linux", lambda: require(sys.platform.startswith("linux"), "LINUX_REQUIRED"))
     if "linux" not in report.values:
@@ -487,7 +495,14 @@ def check(raw, digest, repository):
     report.probe("systemd_pid1", lambda: require(fixed("/proc/1/comm", 4096).strip() == b"systemd", "SYSTEMD_REQUIRED"))
     report.probe("administrator", lambda: require(os.getuid() == os.geteuid() == os.getgid() == os.getegid() == 0,
                                                 "ADMINISTRATOR_REQUIRED"))
-    loaded = report.probe("protected_source", lambda: bootstrap(raw, digest, repository))
+    def original_source():
+        if admitted is None:
+            return bootstrap(raw, digest, repository)
+        value, supervisor, launcher = admitted
+        require(supervisor.decode(raw, digest) == value, "FIXTURE_ADMITTED_BYTES")
+        require(supervisor.expected_status(value["launcher"]) == "CHAIN_CLOSED", "FIXTURE_THREE_PHASE_REQUIRED")
+        return value, supervisor, launcher
+    loaded = report.probe("protected_source", original_source)
     if loaded is None:
         report.probe("fixture_checks", lambda: None, needs=("protected_source",))
         return report.result()
