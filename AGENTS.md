@@ -149,9 +149,9 @@ explicitly authorized the complete batch without per-item approval. Material
 scope changes retain the root change rule. Preserve R → exact A → Owner B →
 independent C → D; do not squash this closure with implementation.
 
-### Q2 account-failure recovery proposal
+### Q2 account-failure recovery
 
-Scope `LH-Q2-PREP-RECOVERY-v1` is **OPEN**. Its proposed documentation baseline A is
+Scope `LH-Q2-PREP-RECOVERY-v1` is **CLOSED for the exact bounded recovery below**. Its approved documentation baseline A is
 `72c06ec68d370333f5ffb1079023917828b3e681`, containing
 [requirements](docs/a2-execution/q2-preparation-recovery/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-preparation-recovery/ARCHITECTURE.md), and
@@ -160,18 +160,24 @@ R, readable direct source and its integrity, Owner-only authority, mandate,
 no exceptions and change rules remain those above. Exact document digests,
 scope and local/public tree equivalence are in
 [Q2_PREPARATION_RECOVERY_BASELINE.md](docs/governance/Q2_PREPARATION_RECOVERY_BASELINE.md).
-No Owner decision B or CLOSED record C exists for this new recovery scope.
+Owner decision B is retained in
+[Q2_PREPARATION_RECOVERY_OWNER_DECISION.md](docs/governance/Q2_PREPARATION_RECOVERY_OWNER_DECISION.md),
+event `LH-Q2-PREP-RECOVERY-CLOSURE-20260926-01`. This independent bookkeeping-only
+commit records CLOSED C before recovery implementation D. The three documents'
+historical OPEN labels and bytes at A remain unchanged.
 
 The original preparation command failed after primary-group creation because
 its useradd configuration argument was unsupported. The independently authorized
 [account/diagnostic repair](docs/a2-execution/Q2_PREPARATION_ACCOUNT_REPAIR_VERIFICATION.md)
 does not authorize replay or a refreshed deadline. The original preparation
-window has expired; the new proposal requests one at-most-300-second management
+window has expired; the Owner now authorizes one at-most-300-second management
 window for exact-state attestation, corrected account creation, only the
 undelivered original steps and the never-issued first original Q2 run.
 Original failure bytes, preparation identity, candidate and cumulative capacity
-remain bound; a new recovery ID is evidence identity only. No executable
-recovery implementation may precede Owner B and an independent CLOSED C.
+remain bound; a new recovery ID is evidence identity only. Recovery implementation
+must descend from this independent CLOSED C. The Owner explicitly approved the
+complete batch without per-item inquiries; material scope changes still follow
+the existing change rule.
 The existing CLOSED preparation scope and its original three documents remain unchanged.
 
 ### Continuing constraints
