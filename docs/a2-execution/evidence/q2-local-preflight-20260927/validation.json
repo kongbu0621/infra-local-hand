@@ -1,0 +1,59 @@
+{
+  "all_tested_source_bytes_match_exact_D": true,
+  "closure": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+  "documentation_baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+  "evidence_limits": [
+    "Synthetic source pins, boot and mount facts in local filesystem tests do not establish actual host facts.",
+    "Real PTY tests cover framing, restoration, rejected code execution and deadlines, not the authorized host.",
+    "O_NOATIME requires actual read capability; permission failures remain BLOCKED.",
+    "No consumption, guest dispatch, complete joint bill, remote deadline or runtime readiness is claimed."
+  ],
+  "execution_window_consumed": false,
+  "guest_connection": false,
+  "implementation_commit": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+  "implementation_tree": "d29cc1cdea2800d9cca05cc3b33041abf319e695",
+  "new_or_changed_files": [
+    {
+      "bytes": 18906,
+      "git_blob": "07854165a0373fea57cc30dff0b49761e794e115",
+      "path": "tests/e3_host/q2_host_window_preflight.py",
+      "sha256": "91308ad174801f13c57fd8adbda9e364832b6d1c27077800077c271d2548cc4d"
+    },
+    {
+      "bytes": 9082,
+      "git_blob": "eb454421b21a59e24e297575283cb0c050cc283b",
+      "path": "tests/e3_host/q2_host_window_receiver.py",
+      "sha256": "0851f1fe1a1c0fd0c52f32d6603364f2b485e15548c87f30c5ee5619238e0bc4"
+    },
+    {
+      "bytes": 16476,
+      "git_blob": "7d0f001d32507de5861c53b411daa17e8f4485eb",
+      "path": "tests/test_e3_q2_host_window_preflight.py",
+      "sha256": "1c35080753865de5122e925acccfd204cbaca779638a1347cfed8a3c84b1effc"
+    },
+    {
+      "bytes": 5956,
+      "git_blob": "710b4ac2b2acf4ac3adf22628ccee440303f0389",
+      "path": "tests/test_e3_q2_host_window_receiver.py",
+      "sha256": "b03125950e351b6b80e1507b546c8414eb975cc34f74681b4bee755e68709396"
+    }
+  ],
+  "new_targeted_cases": {
+    "preflight": 22,
+    "receiver": 8
+  },
+  "original_host_connection": false,
+  "owner_issued": false,
+  "parent": "bf5492b796182d8fd0aab7839077567c4abe7fc1",
+  "ready": false,
+  "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "schema": "q2-local-preflight-implementation-validation/v1",
+  "scope": "APPROVED_READ_ONLY_LOCAL_PREFLIGHT_NO_CONSUMPTION",
+  "tests": {
+    "command": "python -m pytest -q tests/test_e3_q2_reconciliation*.py tests/test_e3_q2_host_window*.py",
+    "passed": 287,
+    "raw_sha256": "6860631d5dbbc1bb654372ed5c4040228806ca6aee3db756abcbac609cf525e5",
+    "seconds": 15.83,
+    "skipped": 2
+  }
+}

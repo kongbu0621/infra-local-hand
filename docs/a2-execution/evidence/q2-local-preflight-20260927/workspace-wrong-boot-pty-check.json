@@ -1,0 +1,21 @@
+{
+  "consumed": false,
+  "early_receiver_origin_retained": true,
+  "elapsed_seconds": 3.996,
+  "field_stage": "host_boot",
+  "guest_connected": false,
+  "implementation_commit": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+  "input_bytes": 7445953,
+  "original_host_connected": false,
+  "output_bytes": 4324,
+  "owner_issued": false,
+  "package_sha256": "733d34737fe2ae26f1e60e8f5dbc0690bda13831e667c35409c3a50243392a01",
+  "payload_echo_absent": true,
+  "raw_sha256": "f8eaf4a6ff5beb718cf7765681316906dc30569c3867795ff84a6d6c654be5ce",
+  "reason": "HOST_LOCAL_BOOT_CHANGED",
+  "returncode": 2,
+  "schema": "q2-local-preflight-whole-package-pty-check/v1",
+  "status": "LOCAL_PREFLIGHT_BLOCKED",
+  "terminal_attributes_restored": true,
+  "test_scope": "CURRENT_WORKSPACE_WRONG_BOOT_REJECTION_NOT_ORIGINAL_HOST"
+}

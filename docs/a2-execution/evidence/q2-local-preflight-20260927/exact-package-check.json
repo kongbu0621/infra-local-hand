@@ -1,0 +1,122 @@
+{
+  "exact_delivery": {
+    "command_bytes": 9190,
+    "final_delivery_command_independently_verified": true,
+    "frame_bytes": 7445953,
+    "input_limit_bytes": 16777216,
+    "receiver_source_sha256": "0851f1fe1a1c0fd0c52f32d6603364f2b485e15548c87f30c5ee5619238e0bc4",
+    "total_input_bytes": 7455143
+  },
+  "expanded_member_bytes": 14340332,
+  "implementation_commit": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+  "implementation_tree": "d29cc1cdea2800d9cca05cc3b33041abf319e695",
+  "negative_cases": [
+    {
+      "actual_reason": "OFFLINE_TOOL_GIT_BLOB",
+      "case": "changed_loader_and_recomputed_index",
+      "expected_reason": "OFFLINE_TOOL_GIT_BLOB",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "OFFLINE_C_ANCESTRY",
+      "case": "deleted_required_C_object",
+      "expected_reason": "OFFLINE_C_ANCESTRY",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "OFFLINE_FIXED_GIT_IDENTITIES",
+      "case": "weakened_self_reported_C_list",
+      "expected_reason": "OFFLINE_FIXED_GIT_IDENTITIES",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "HOST_WINDOW_ATTESTATION_PIN",
+      "case": "changed_host_raw_and_recomputed_index",
+      "expected_reason": "HOST_WINDOW_ATTESTATION_PIN",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "LOCAL_PACKAGE_EXTRA_FILE",
+      "case": "extra_ZIP_member_without_index",
+      "expected_reason": "LOCAL_PACKAGE_EXTRA_FILE",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "LOCAL_PACKAGE_FIXED_MEMBERS",
+      "case": "extra_ZIP_member_with_recomputed_index",
+      "expected_reason": "LOCAL_PACKAGE_FIXED_MEMBERS",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "LOCAL_PACKAGE_INDEX_BOUND",
+      "case": "oversized_index_before_read",
+      "expected_reason": "LOCAL_PACKAGE_INDEX_BOUND",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "LOCAL_PREFLIGHT_RECEPTION_WINDOW_REQUIRED",
+      "case": "RAM_LOCAL_missing_receiver_origin",
+      "expected_reason": "LOCAL_PREFLIGHT_RECEPTION_WINDOW_REQUIRED",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "LOCAL_PREFLIGHT_RAM_ENTRY_REQUIRED",
+      "case": "disk_--local-preflight",
+      "expected_reason": "LOCAL_PREFLIGHT_RAM_ENTRY_REQUIRED",
+      "run_local_called": false,
+      "status": "PASS"
+    },
+    {
+      "actual_reason": "ONLY_OFFLINE_OR_LOCAL_PREFLIGHT_IS_SUPPORTED",
+      "case": "disk_--run",
+      "expected_reason": "ONLY_OFFLINE_OR_LOCAL_PREFLIGHT_IS_SUPPORTED",
+      "run_local_called": false,
+      "status": "PASS"
+    }
+  ],
+  "negative_passed": 10,
+  "offline_check": {
+    "allow_consume": false,
+    "allow_run": false,
+    "blobs": 48,
+    "execution_window_consumed": false,
+    "field_reads_performed": false,
+    "git": {
+      "closure_ancestry": true,
+      "frozen_source_tree_files": 525,
+      "implementation_tree": "d29cc1cdea2800d9cca05cc3b33041abf319e695",
+      "runtime_source_bytes": false,
+      "tool_files": 48,
+      "tools_verified_before_execution": true
+    },
+    "guest_connection": false,
+    "implementation_commit": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+    "implementation_tree": "d29cc1cdea2800d9cca05cc3b33041abf319e695",
+    "mode": "--check-offline",
+    "persistence": false,
+    "ready": false,
+    "runtime_artifact_bytes_included": false,
+    "runtime_execution": false,
+    "schema": "q2-local-preflight-private-offline-check/v1",
+    "source_verification": "PASS",
+    "status": "OFFLINE_CHECK_PASS",
+    "target_provenance_verified": true,
+    "typed_sources": 47
+  },
+  "package_bytes": 5573496,
+  "package_sha256": "733d34737fe2ae26f1e60e8f5dbc0690bda13831e667c35409c3a50243392a01",
+  "ready": false,
+  "runtime_tar_included": false,
+  "schema": "q2-local-preflight-package-validation/v1",
+  "scope": "RAM_ONLY_LOCAL_OBSERVATION_NOT_RUNTIME_HANDOFF",
+  "status": "PASS",
+  "two_independent_builds_byte_identical": true
+}

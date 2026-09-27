@@ -351,8 +351,23 @@ prove the first remote absolute deadline, complete host future/audit costs,
 wrapper source admission or actual filesystem qualification. Current production
 entries therefore refuse before any field read, window or consumption. This is
 a factual readiness block under the closed A, not a request to approve A again.
-The exact-D private package supports offline verification only. No actual window
-was consumed and no owner was issued by this work.
+The private package for that earlier D supports offline verification only. No actual window
+was consumed and no owner was issued by that work.
+
+The subsequent [local preflight and deadline review](docs/a2-execution/Q2_LOCAL_PREFLIGHT_AND_DEADLINE_REVIEW.md)
+records completion of the already approved read-only LOCAL_PREFLIGHT branch at D
+`0a456a909821fd1fc6a4fdec43b9e16bc88679f2`. This does not reopen or close another
+scope. The separate local reader verifies exact offline inputs and fixed known
+object locators, retains its receiver's earlier dual-clock origin, and returns
+only partial observations or BLOCKED. It cannot create the marker, execute the
+wrapper, contact the guest, admit a joint bill or dispatch the owner. The existing
+consumption and full execution entries remain blocked. The returned host manifest
+is used only to locate known objects for current observations; its historical
+metadata or fee categories are not newly adopted. Kernel/evidence reads retain
+O_NOATIME without a privilege or weaker-read fallback. Lack of that capability
+is an explicit local BLOCKED result, not permission to request sudo or modify
+the host. Exact RAM delivery and observation results do not consume the original
+batch, prove H07, or supply missing historical obligations.
 
 ### Continuing constraints
 
