@@ -413,6 +413,14 @@ those results separately from the successful scoped and ordinary-identity checks
 K4 still awaits the original host's complete JSON; neither CI nor the private
 package establishes original-host facts, H07, joint admission or consumption.
 
+The subsequent [field screenshot result](docs/a2-execution/Q2_KERNEL_FACT_READ_FIELD_RESULT.md)
+records OBSERVED_PARTIAL at final_local_recheck on 2026-09-28 +08. This is
+evidence that the reported field attempt passed the previous kernel permission
+block. K4's complete raw JSON remains unreceived and unverified; retrieve the
+existing terminal output without rerunning. Visible allocated bytes are limited
+current observations, with cost classification and audit obligations still
+unproven. This record changes no code, package, authority or consumption state.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

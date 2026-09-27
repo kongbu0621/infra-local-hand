@@ -1,0 +1,61 @@
+{
+  "schema": "q2-kernel-fact-field-screenshot-review/v1",
+  "received_at": "2026-09-28T00:40:51+08:00",
+  "evidence_type": "USER_SCREENSHOT_NOT_FULL_RAW_JSON_OR_INDEPENDENT_SEAL",
+  "screenshot": {
+    "original_name": "image(20260927-164046).png",
+    "bytes": 3337723,
+    "sha256": "d1ea317231a25ff3611885d9f4ea4887aa64724d20453b0d49d19f053d333234",
+    "dimensions": [
+      2047,
+      1149
+    ],
+    "original_image_published": false
+  },
+  "expected_implementation_commit": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+  "visible_fields": {
+    "status": "OBSERVED_PARTIAL",
+    "stage": "final_local_recheck",
+    "reason": "LOCAL_FACTS_ONLY_LATER_ADMISSION_UNPROVEN",
+    "source_tree": "c7c60ec47b742615dbae9f8cb230679f3a9c4997",
+    "offline_sources_verified": true,
+    "observations.observed_unique_allocated_bytes": 13189120,
+    "observations.observed_unique_inodes": 42,
+    "observations.native_audit_peak_bytes": null,
+    "target_sources.current_observation_not_adoption": true,
+    "target_sources.cost_classification_proven": false,
+    "target_sources.historical_identity_adopted": false,
+    "production_supported": false,
+    "q2_accepted": false,
+    "q3_accepted": false,
+    "remote_attempted": false,
+    "window_consumed_by_this_invocation": false,
+    "wrapper_executed": false
+  },
+  "visible_tree_cost_category": "UNPROVEN",
+  "terminal_prompt_returned": true,
+  "full_json_received": false,
+  "full_json_verified": false,
+  "process_euid_visible": false,
+  "independent_host_attestation": false,
+  "code_based_inference": {
+    "source": "tests/e3_host/q2_host_window_preflight.py at exact expected D",
+    "conditional_on_output_from_expected_D": true,
+    "successful_path_requires": [
+      "initial boot equals retained pin",
+      "five fixed trees scanned",
+      "seven retained pins match",
+      "final marker/path/boot checks and guard complete"
+    ],
+    "not_independent_observation_of_hidden_json_fields": true
+  },
+  "limits": [
+    "Known-tree allocated bytes are not a full joint bill or a whole-host inventory.",
+    "Unknown audit/future/wrapper/filesystem obligations are not zero.",
+    "Screenshot alone does not verify exact complete JSON or hidden authority/clock fields.",
+    "Original-host namespace alignment remains an environment assumption."
+  ],
+  "next_action": "COPY_EXISTING_TERMINAL_FULL_JSON_WITHOUT_RERUN",
+  "new_host_commands_requested": false,
+  "new_execution_window_authorized": false
+}
