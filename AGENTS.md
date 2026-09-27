@@ -253,33 +253,43 @@ The independent C is `d4a925c883672fadc7d1b10a8dfe58df18b922cd`; tooling D
 `78589e6871cdf5eba72008ee2b27a350a0dfdc03` descends directly from it. See the
 [tooling verification and execution blockers](docs/a2-execution/Q2_SUPERVISOR_STARTUP_RETRY_VERIFICATION.md).
 The new batch is NOT ISSUED and its one execution authorization is unconsumed.
-The current no-release accounting retains at least 192 + 64 + new 64 = 320 MiB
-of installation obligations against the original 256 MiB ceiling. Remaining
-historical raw/provenance gaps and current-state attestation are an independent
-blocker. The [versioned evidence index](docs/a2-execution/evidence/q2-history-20260927/README.md)
-corrects the initial missing-input report: both old preparation/recovery instance
-identities and ten historical files have been recovered from existing carriers;
-preflight expected bytes are derived, while six reservation raw values remain
-missing. Preserve that distinction and consult the index before requesting
-materials again. Critical evidence must have a repository index with digest,
-source relation, retention location and explicit availability; private raw
+The no-release lower bound, including retained staging, is now independently
+established at 365694976 bytes / 17599 inodes, above 256 MiB / 16384 inodes,
+before new staging. The earlier 320 MiB lower bound remains valid but incomplete.
+The [new return review](docs/a2-execution/evidence/q2-readonly-return-20260927/README.md)
+supersedes the prior missing-raw inventory: all ten reservation inputs are
+available across the old and new archives; preflight is verified by its original
+historical tree. Twelve historical trees, fifteen old-file digests, 628 overlapping
+files and eleven host carriers match. Two second-bootstrap raw inputs lack an
+independent historical whole-file pin; their prospective adoption is proposed,
+not approved. Five disclosed atime changes are retained, not repaired or described
+as complete preservation. The accurate second staging tree plus adjacent intent
+is a proposed 610-entry forward comparison baseline, not historical identity.
+Do not ask Owner to find these already retained files again. Complete live
+admission remains required. Critical evidence has a repository index with
+digest, source relation, retention location and availability; raw machine
 evidence remains in its separately versioned private Git archive.
 
 ### Proposed installation-reservation reconciliation
 
 Scope `LH-Q2-INSTALLATION-RESERVATION-RECONCILIATION-v1` is **PROPOSED / Gate OPEN /
-BLOCKED ON HISTORICAL INPUTS**. Its draft
+AWAITING OWNER**. Its reviewable
 [requirements](docs/a2-execution/q2-installation-reservation-reconciliation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-installation-reservation-reconciliation/ARCHITECTURE.md) and
 [implementation plan](docs/a2-execution/q2-installation-reservation-reconciliation/IMPLEMENTATION_PLAN.md)
-consider an append-only termination of precisely proven unused historical future
-installation obligations. All actual data, other commitments, original ceilings,
+jointly propose limited adoption of two exact current raw inputs, a precise
+current second-staging comparison baseline, the five disclosed post-read metadata
+values, and append-only termination of only the two installation targets' unused
+future obligations. All actual data, other commitments, original ceilings,
 frozen runtime and the same single unissued startup batch remain retained.
-There is no closure-ready A, Owner B or C for this amendment. Do not implement
-release behavior or generate a READY private batch. First obtain the missing
-historical originals/provenance and current instance attestation, then complete an exact
-reviewable proposal. Existing startup approval does not authorize this changed
-accounting; no immediate approval of the incomplete amendment is requested.
+Full live checks and before/after accounting must fit the original single 300s
+window and 140s preparation budget. The additional state record budget is
+1 MiB / 16 inodes inside the unchanged state ceiling, not an expansion.
+Exact A is the commit containing these three fixed documents; its registration
+will pin their hashes separately. No Owner B or independent C exists for this
+amendment. Until then, do not implement it or generate a READY private entry.
+The existing startup approval does not authorize changed source or accounting
+semantics. Documentation review and evidence retention do not consume the run.
 
 ### Continuing constraints
 

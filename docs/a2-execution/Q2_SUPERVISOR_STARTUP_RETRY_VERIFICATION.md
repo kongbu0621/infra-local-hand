@@ -84,7 +84,7 @@ Native CI builds its own D-stamped verification wheel. It does not replace the
 separately frozen b49d runtime wheel, whose prior full source and isolated installed
 verification are retained in [the runtime repair report](Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md).
 
-## Two independent execution blockers
+## Current evidence and execution blockers
 
 The earlier proposal missed a retained installation obligation. Under approved
 S02/S06, elapsed time, service termination or successful installation does not
@@ -114,16 +114,29 @@ original exit evidence and ten recoverable historical files whose bytes match
 retained SHA-256 pins. These include the original preparation host streams,
 intent, report, failure receipt and five step/command records.
 
-Six reservation raw values remain unavailable. The seventh, preflight, now has
-derived expected bytes from the hash-verified original receipt and pinned writer/
-validator, but no independent raw-file capture or current guest comparison.
-Other predecessor-document and ledger provenance gaps remain in the private
-inventory; six is not the count of all admission gaps. Some sources may be proved
-by fully reproducing an already anchored historical tree hash. The second staging
-tree has no usable historical anchor; newly hashing current content cannot create
-historical provenance. Historical instance recovery is not a current-state check.
-Machine paths and identities remain in the separately versioned private evidence
-archive; public hashes, source relationships and archive commit are in the index.
+The subsequent [original-host return review](evidence/q2-readonly-return-20260927/README.md)
+supersedes the first recovery's missing-raw claims. All ten reservation inputs
+are now retained across both archives. The returned preflight matches its old
+historical tree and the earlier derived bytes. Twelve complete historical tree
+snapshots, fifteen old-file digests, 628 overlapping files and eleven host carriers
+have been independently verified. Both predecessor chains and both raw ledgers
+match their old pins. Machine paths and identities stay in the private archive.
+
+Two second-bootstrap raw files have no independent old whole-file pin. Their
+exact bytes are proposed as prospective source inputs, not declared historically
+identical. The second staging tree (609 entries) and adjacent intent (one entry)
+are a proposed exact forward comparison baseline. Five disclosed atime deviations
+remain explicit; the absence of the original initial-stat capture prevents a
+blanket preservation claim. The returned inventory is after that initial hash
+probe and before archive collection, not a full archival pre/post proof.
+
+Adding retained staging yields a stricter lower bound of 365694976 bytes /
+17599 inodes before new staging, exceeding 268435456 / 16384. The earlier
+320 MiB figure remains a valid incomplete lower bound. These are commitments,
+not actual-only disk usage or a releasable total. Complete current second-install
+and other billed trees, measured quota attributes and usage, full cgroup/config/
+account/namespace checks and freshness remain required in the one authorized
+window. The returned quota project IDs are collector constants, not measurements.
 
 No runnable READY private entry was generated. No old reservation was released,
 no ceiling or capability was raised, and no old verdict was revised. Q2, Q3 and
@@ -133,18 +146,20 @@ new actual run remain absent.
 ## Reviewable next work
 
 The [reservation reconciliation proposal](q2-installation-reservation-reconciliation/REQUIREMENTS.md)
-is **PROPOSED / Gate OPEN / BLOCKED ON HISTORICAL INPUTS**. It only considers
-terminating unused future installation obligations of the two terminated attempts
-through a new append-only record while retaining all actual data, all other
-commitments, original ceilings, frozen runtime and this same single unissued batch.
-No reconciliation algorithm, executable prototype or release configuration is
-implemented or authorized.
+is now **PROPOSED / Gate OPEN / AWAITING OWNER**. Its three fixed documents jointly
+present the two exact raw-source adoptions, the precise second-staging forward
+baseline, the five bounded metadata deviations and an append-only termination of
+only unused future installation obligations of the two terminated attempts.
+All actual data, other commitments, original ceilings, frozen runtime and this
+same single unissued batch remain retained. Complete live checks and exact
+before/after bills must fit the original 300s window and 140s preparation stage.
+The proposed new state records have an additional 1 MiB / 16 inode subbudget
+inside the unchanged state ceiling; no total ceiling is raised.
 
-First close the remaining raw/provenance and amount inventory using the recovered
-evidence and any valid historical tree-expansion proofs. Original instance IDs
-already recovered must not be requested again; current attestation remains
-necessary before execution. Only then can a complete three-document amendment A, exact Owner B
-and independent C authorize that changed accounting. This report does not ask
-for immediate approval of an incomplete release proposal. Tooling P1 and the
-reported P2 checks are delivered; private READY handoff and actual execution
-remain blocked.
+No reconciliation algorithm, executable prototype or release configuration is
+implemented or authorized. Exact Owner B and independent C at the new A must
+precede affected implementation D. Original startup A's three files remain
+byte-identical, and its tested D is not claimed to implement the new amendment.
+Owner need not manually resend the retained raw files. Private READY handoff and
+actual execution remain blocked pending this source/accounting decision and
+future complete admission; an approval would not guarantee issuance or Q2 PASS.

@@ -1,0 +1,235 @@
+{
+  "capacity": {
+    "exact_after_bill_available": false,
+    "new_state_subbudget_within_existing_ceiling": {
+      "bytes": 1048576,
+      "inodes": 16
+    },
+    "only_proposed_change": "terminate max(0,C_i-A_i) for the two exact installation targets, each dimension; retain all actual and all other obligations",
+    "original_installation_commitment": {
+      "bytes": 201326592,
+      "inodes": 8192
+    },
+    "release_performed": false,
+    "second_historical_actual_base": 46166016,
+    "second_independent_installation_commitment": {
+      "bytes": 67108864,
+      "inodes": 4096
+    },
+    "second_new_peak": 67108864,
+    "second_raw_installation_reservation": 113274880,
+    "strict_lower_bound_before_new_staging": {
+      "bytes": 365694976,
+      "inodes": 17599
+    },
+    "unchanged_installation_ceiling": {
+      "bytes": 268435456,
+      "inodes": 16384
+    }
+  },
+  "current_source_adoption_proposed_only": [
+    {
+      "bytes": 556,
+      "historical_full_byte_identity_proven": false,
+      "role": "second-bootstrap-intent",
+      "sha256": "58992ee2ff0d66fec5e10c7e138e8de4529089ca35d76f71200db1a05ac160b6",
+      "source_class": "CURRENT_OWNER_SUPPLIED_RAW"
+    },
+    {
+      "bytes": 7766,
+      "historical_full_byte_identity_proven": false,
+      "role": "second-bootstrap-attestation",
+      "sha256": "cfc6c07265b4edc6d0b26e67a6ca9cfc19c652b4d011a2386b9bd95e945a34cb",
+      "source_class": "CURRENT_OWNER_SUPPLIED_RAW"
+    }
+  ],
+  "date": "2026-09-27",
+  "execution_authorization_consumed": false,
+  "gate": "OPEN_AWAITING_OWNER",
+  "historical_verification": {
+    "all_ten_reservation_raw_inputs_available_across_archive_union": true,
+    "both_predecessor_reference_chains_match": true,
+    "host_carriers_matching_previously_public_pins": 11,
+    "independently_reproduced_tree_snapshots": 12,
+    "old_file_digests": 15,
+    "overlapping_previous_files": 628,
+    "preflight_source": "HISTORICAL_TREE_MEMBER_AND_MATCHES_PREVIOUS_DERIVED_BYTES",
+    "previous_only_files_still_retained": 10
+  },
+  "inner_archives": {
+    "guest": {
+      "bytes": 20164157,
+      "content_hashes_match": true,
+      "entries": 3102,
+      "float_mtime_projection_differences": 3095,
+      "raw_bytes": 53920658,
+      "regular_files": 2886,
+      "sha256": "078b4a5bc198caa42760c31d2a4f8d0be1dd3564090ea316c799bfe6d9e653f7",
+      "source_vs_exact_pax_differences": []
+    },
+    "host": {
+      "bytes": 17556540,
+      "content_hashes_match": true,
+      "entries": 49,
+      "float_mtime_projection_differences": 49,
+      "raw_bytes": 23569898,
+      "regular_files": 44,
+      "sha256": "3f402855949f75f603e7b4e9f8ca104904072ae66688e91cfb957dc27a1ec4b3",
+      "source_vs_exact_pax_differences": []
+    }
+  },
+  "ledger_snapshots": [
+    {
+      "bytes": 53248,
+      "empty_consumption_tables": true,
+      "generation": 1,
+      "role": "first-ledger",
+      "schema_and_quick_check": "PASS_RAM_COPY",
+      "sha256": "187b5db84a8e1066dd5356108c5b73464ffc892113417397a4571f95a4fa16ea"
+    },
+    {
+      "bytes": 53248,
+      "empty_consumption_tables": true,
+      "generation": 1,
+      "role": "second-ledger",
+      "schema_and_quick_check": "PASS_RAM_COPY",
+      "sha256": "4afcf595e0fa6fffed97c9133268d79846351f5fc522c0269ccb563dbe460b91"
+    }
+  ],
+  "limits": {
+    "new_adoption_and_accounting_require_exact_A_B_C": true,
+    "no_new_owner_collection_requested": true,
+    "original_results_unchanged": true,
+    "preparation_including_live_checks_seconds": 140,
+    "q2_acceptance": false,
+    "same_single_management_window_seconds": 300
+  },
+  "metadata_deviation": {
+    "affected_files_with_historical_content_and_non_atime_tree_proof": 3,
+    "affected_files_without_historical_whole_file_pin": 2,
+    "full_metadata_preservation_claim": false,
+    "future_noatime_requirements_retained": true,
+    "guest_manifest": {
+      "bytes": 3419814,
+      "sha256": "82c8c13e250ac0be0957b766e84827514dd50cc5cc53d461c126d6dd0523f735"
+    },
+    "historical_tree_anchors_exclude_atime": true,
+    "note": {
+      "bytes": 3529,
+      "sha256": "5a99256c38bb28b9188114f47763f7cc5d54b4b90f52fc01f2c7ad44cd68a1e6"
+    },
+    "raw_initial_stat_capture_available": false,
+    "reported_changed_atime_files": 5,
+    "roles": [
+      "original-bootstrap-intent",
+      "second-bootstrap-intent",
+      "recovery-intent",
+      "recovery-stage",
+      "second-bootstrap-attestation"
+    ],
+    "timestamp_restoration_performed": false
+  },
+  "private_audits": [
+    {
+      "bytes": 7288,
+      "logical_name": "integrity-audit.json",
+      "sha256": "acad3c60e612ea34b6e7e12db41c72a93073b412ba591ff2d8b86ca691c8ebdc"
+    },
+    {
+      "bytes": 2095,
+      "logical_name": "carrier-audit.json",
+      "sha256": "1e4fc1288c515552a672894339f550cb636227acc05182fa2f202a8f9e5a8e87"
+    },
+    {
+      "bytes": 207305,
+      "logical_name": "provenance-audit.json",
+      "sha256": "9cd4af49b5289b6df756a7ea1334929b27ddd47be831848470346e4f84918a5b"
+    },
+    {
+      "bytes": 15621,
+      "logical_name": "metadata-audit.json",
+      "sha256": "265f845d9fae246cc75f7717a7824ce0879c05fed7e7cb072fa0e21d580fbb0a"
+    },
+    {
+      "bytes": 16805,
+      "logical_name": "capacity-audit.json",
+      "sha256": "700927824f20d817b977dcfdd7c78dd36e0696b6b91553b8dc9b9f28f2c3039e"
+    },
+    {
+      "bytes": 356,
+      "logical_name": "rule-access-audit.json",
+      "sha256": "16b557a2002b2b4a511400b2a321557aaaf4764c11bd44d0e527a9a49cc665c4"
+    }
+  ],
+  "private_git_archive": {
+    "all_715_prior_entries_unchanged": true,
+    "all_indexed_object_hashes_and_lengths": "PASS",
+    "bundle_bytes": 51587297,
+    "bundle_sha256": "fdaf812e676d7525c5ce1ff2b031381b996a6ef161a5263d581fda2f43edf213",
+    "commit": "14be72107572bc092c8b8aaf16abcdf5c99c7a87",
+    "filename": "q2-history-evidence-20260927.bundle",
+    "logical_entries": 750,
+    "private_remote_publication_claim": false,
+    "restore_clone_and_git_fsck": "PASS",
+    "retained_parent": "25366a51971c654d962fcc9dd0ba144d2571e79c",
+    "tree": "c97f62fe91d90bdc8b3348b33b0afd8d7d483b06",
+    "unique_objects": 431
+  },
+  "proposed_forward_comparison_baseline": {
+    "adjacent_intent_entries": 1,
+    "bytes": 239944,
+    "entries": 610,
+    "historical_identity_claim": false,
+    "logical_name": "forward-baseline-index.json",
+    "observation_phase": "after initial hash probe, at guest-inventory; before archive collection",
+    "owner_adoption_complete": false,
+    "sha256": "9b5b5ec8dd1516cb8807bf26f657c652079843a3669783db215a4f9c5dd5852e",
+    "staging_tree_entries": 609
+  },
+  "reported_current_state": {
+    "full_live_admission_verified": false,
+    "historical_failed_instances_matching": 4,
+    "project_id_is_collector_constant": true,
+    "reviewer_connected_to_guest": false,
+    "roots_matching_and_empty": 7
+  },
+  "retained_authority": {
+    "R": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "runtime_commit": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+    "runtime_tree": "2d957ccf1d9cbdf5e538189c6b68d56f34590a42",
+    "runtime_wheel_sha256": "c077a8f8aa2f0c3147228602746fd459a6d13267df299a84835331ad35ef158b",
+    "startup_A": "47b351b2b943bf1d6f1c71cfeb031157a2eb70cc",
+    "startup_C": "d4a925c883672fadc7d1b10a8dfe58df18b922cd",
+    "startup_D": "78589e6871cdf5eba72008ee2b27a350a0dfdc03"
+  },
+  "rule_access": {
+    "collector_access_not_implied": true,
+    "commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "path": "docs/workflow/program-repository-documentation-gate.md",
+    "returned_collector_http_status": 404,
+    "reviewer_retrieved_pinned_source": true,
+    "sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5",
+    "source_repository": "kongbu0621/engineering-sop"
+  },
+  "schema": "local-hand-q2-readonly-return-public-index/v1",
+  "scope": "LH-Q2-INSTALLATION-RESERVATION-RECONCILIATION-v1",
+  "second_staging_comparison": {
+    "byte_identical_files": 544,
+    "differences": "ctime/mtime/dev/inode stat cache",
+    "different_files": 1,
+    "different_role": "git-index",
+    "git_index_records": 505,
+    "historical_whole_staging_byte_identity_claim": false,
+    "original_archive_files": 545,
+    "same_paths_blob_oids_flags_modes_extensions": true
+  },
+  "source_return": {
+    "bytes": 38014204,
+    "logical_name": "q2-history-readonly-return-20260927T151622+0800.tar.gz",
+    "outer_members": 31,
+    "outer_uncompressed_bytes": 42209267,
+    "sha256": "869a859fcbe7a952d11e22db6f6534c9b9a3025cec27471fe3e2a054a6a96018",
+    "sha256sums_verified": true
+  },
+  "startup_issuance": "NOT_ISSUED"
+}
