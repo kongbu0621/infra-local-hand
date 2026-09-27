@@ -369,6 +369,31 @@ is an explicit local BLOCKED result, not permission to request sudo or modify
 the host. Exact RAM delivery and observation results do not consume the original
 batch, prove H07, or supply missing historical obligations.
 
+### Fixed kernel fact read amendment
+
+Scope `LH-Q2-KERNEL-FACT-READ-v1` is **PROPOSED / OPEN**, not covered by a new
+Owner B or CLOSED C. The authoritative proposal consists of
+[requirements](docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md).
+Its exact documentation A is to be pinned by a subsequent baseline record.
+R, direct source/integrity, Owner-only authority and the existing change rule remain unchanged.
+
+The [field screenshot review](docs/a2-execution/Q2_LOCAL_PREFLIGHT_FIELD_REVIEW.md)
+records a local preflight permission block at host_boot, empty observations and
+no consumption by this invocation. It does not prove the boot value, absence of
+the consumption path, full raw output integrity or joint admission. Do not ask
+Owner to repeatedly paste the same version or change host privileges.
+
+The proposed amendment only permits explicit ordinary reads of the two fixed
+kernel views after fd/procfs/mount-identity qualification, with disclosed kernel
+metadata semantics. It would narrowly supersede the original host A's universal
+O_NOATIME clause for those reads. It is not a generic fallback or a change to R.
+Before exact B and independent C, do not implement or field-run that amendment.
+All ordinary evidence O_NOATIME protection, old pins and budgets, frozen runtime,
+no-consumption/no-remote local branch and the full execution blockers remain.
+Unaffected CLOSED work remains authorized; no blanket reopening or new batch.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
