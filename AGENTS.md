@@ -285,8 +285,9 @@ frozen runtime and the same single unissued startup batch remain retained.
 Full live checks and before/after accounting must fit the original single 300s
 window and 140s preparation budget. The additional state record budget is
 1 MiB / 16 inodes inside the unchanged state ceiling, not an expansion.
-Exact A is the commit containing these three fixed documents; its registration
-will pin their hashes separately. No Owner B or independent C exists for this
+Exact A is `c65ff4e25ea6373aabf8db25d304ee7614b96eb5`; its
+[separate baseline registration](docs/governance/Q2_INSTALLATION_RESERVATION_RECONCILIATION_BASELINE.md)
+pins the three document hashes. No Owner B or independent C exists for this
 amendment. Until then, do not implement it or generate a READY private entry.
 The existing startup approval does not authorize changed source or accounting
 semantics. Documentation review and evidence retention do not consume the run.
