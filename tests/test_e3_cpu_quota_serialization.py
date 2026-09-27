@@ -9,8 +9,12 @@ import errno
 from fractions import Fraction
 import json
 from pathlib import Path
+import sys
 import unittest
 from unittest import mock
+
+if not sys.platform.startswith("linux"):
+    raise unittest.SkipTest("Linux CPUQuota runtime imports and native systemd parser")
 
 from admin.local_hand_quota_observer import controller_guard as guard
 from local_hand_jobs import runner
