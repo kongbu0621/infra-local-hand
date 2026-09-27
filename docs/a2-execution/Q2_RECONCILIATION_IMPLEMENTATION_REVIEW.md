@@ -69,3 +69,17 @@ noatime 挂载下允许分支称为实测通过。
 未发行 owner。现场 after 账单仍未知，旧 INCOMPLETE 保留，Q2/Q3 未验收，
 production support 不变。P1–P4 组件进度不等于 P5/P6 完成；新 host 顺序准确
 决定后，还须完成对应实现与验证，才可能在原唯一批次中条件执行。
+
+## 准确实现提交之后的复验
+
+实际实现 D 为 `8fd84521cdd25b455ff148e0c0fed6b5d8e39fe1`，tree
+`5fb64e578d06e2954c1eedbc1b15e00069dc32a4`，已证明 C 是其祖先。复验从 D 的
+实际 Git blob 导出 42 个工具文件（包含全部 11 个新模块），加载准确 D 的
+校验器并使用 48 个真实输入 blob、5,686,734 bytes：47 分类来源、12 历史树、
+610 当前条目、五项 metadata 起点与七项归并义务全部通过。冻结 wheel 原件
+266,010 bytes，摘要与原候选相符，并与 b49d 的准确源码进行验证。
+
+[准确 D 复验记录](evidence/q2-reconciliation-implementation-20260927/exact-D-source-check.json)
+保留完整工具摘要、离线 manifest 摘要及真实结果。调用准确 D 的受控 host 入口
+验证其在调用 guest builder 以前返回 BLOCKED；这次检查没有创建现场窗口。
+该复验只证明准确代码/来源关系与入口阻断，仍不是可执行交付或现场准入。
