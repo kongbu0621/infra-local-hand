@@ -180,6 +180,32 @@ complete batch without per-item inquiries; material scope changes still follow
 the existing change rule.
 The existing CLOSED preparation scope and its original three documents remain unchanged.
 
+### Q2 CPU quota startup retry proposal
+
+Scope `LH-Q2-CPUQUOTA-RETRY-v1` is **OPEN**. Its proposed documentation baseline A is
+`d8e49617efecae199b0874f183530794f8c36e6a`, containing
+[requirements](docs/a2-execution/q2-cpuquota-retry/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-cpuquota-retry/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-cpuquota-retry/IMPLEMENTATION_PLAN.md).
+R, readable direct source/integrity, Owner authority, mandate, no exceptions and
+change rules remain unchanged. Exact document hashes and the proposed boundary
+are in [Q2_CPUQUOTA_RETRY_BASELINE.md](docs/governance/Q2_CPUQUOTA_RETRY_BASELINE.md).
+No Owner B or CLOSED C exists for this new scope; this is documentation only.
+
+Real recovery preparation completed, but its issued owner command failed because
+systemd rejected the four-decimal CPUQuota text. The old owner remains INCOMPLETE.
+The independently authorized encoding repair, native parser checks and candidate
+build are recorded in [Q2_CPU_QUOTA_REPAIR_VERIFICATION.md](docs/a2-execution/Q2_CPU_QUOTA_REPAIR_VERIFICATION.md).
+That source repair does not authorize changing the frozen guest candidate or
+reissuing the consumed recovery/owner attempt. This new proposal covers one exact
+replacement candidate, independently created runtime state, attested reuse of the
+seven unconsumed prepared roots, and one new 300-second management window.
+Old source, ledger, reservations, deadlines and evidence remain retained.
+New retry source/tests/configuration require R → exact A → Owner B → independent C → D.
+The prior preparation and recovery closures and their approved document bytes
+remain historical and unchanged; unaffected repairs in their existing CLOSED
+development scopes need not be reapproved.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
