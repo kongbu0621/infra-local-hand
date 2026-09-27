@@ -445,10 +445,9 @@ def empty_ledger(policy, uid, generation):
         os.close(root)
 
 
-def namespace(pin):
-    for path in ("/proc/self/ns/user", "/proc/1/ns/user"):
-        info = os.stat(path)
-        require(pin == dict(device=info.st_dev, inode=info.st_ino), "FIXTURE_INITIAL_NAMESPACE")
+def namespace(pin, boot_id):
+    from admin.local_hand_quota_observer import q2_config as config
+    config.initial_namespace(pin, boot_id)
 
 
 def manager_delegation(controls, ordinary, end):
@@ -518,7 +517,8 @@ def check(raw, digest, repository, *, admitted=None):
         report.guard = original_time
     templates = report.probe("resident_static_binding", lambda: static_binding(value, supervisor, repository))
     nested = value["launcher"]; resident = nested["resident"]
-    report.probe("initial_namespace", lambda: namespace(resident["ordinary"]["initial_userns"]))
+    report.probe("initial_namespace", lambda: namespace(resident["ordinary"]["initial_userns"], binding["boot_id"]),
+                 needs=("declaration_capacity_geometry", "resident_static_binding"))
     report.probe("installed_wheel", lambda: installed_release(nested), needs=("resident_static_binding",))
     policy = report.probe("ordinary_policy", lambda: policy_snapshot(nested), needs=("resident_static_binding",))
     report.probe("ordinary_resident_path_access", lambda: resident_paths(nested), needs=("resident_static_binding",))

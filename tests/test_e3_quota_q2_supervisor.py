@@ -242,6 +242,116 @@ class StartupTests(unittest.TestCase):
         self.controls = mock.Mock()
         self.process = mock.Mock(); self.process.poll.return_value = None
         self.pending = dict(self.facts, ActiveState="activating", SubState="start", MainPID="0", Job="701")
+        self.queued = dict(self.facts, ActiveState="inactive", SubState="dead", MainPID="0", ControlPID="0",
+                           Job="701", InvocationID="", ControlGroup="")
+
+    def test_queued_start_waits_for_the_original_running_identity(self):
+        self.controls.show.side_effect = [self.queued, self.queued, self.pending, self.facts]
+        with mock.patch.object(s.time, "sleep") as sleep, mock.patch.object(s, "observe_identity") as observe:
+            self.assertIs(observe.return_value,
+                          s.observe_start(self.controls, self.static, self.process, 100*SECOND))
+        observe.assert_called_once_with(self.facts, self.static)
+        self.assertEqual([mock.call(100*SECOND)]*4, self.controls.show.call_args_list)
+        self.assertEqual([mock.call(100*SECOND)]*3, self.controls.clock.call_args_list)
+        self.assertEqual([mock.call(0.125)]*3, sleep.call_args_list)
+        self.controls.call.assert_not_called()
+
+    def test_queued_job_cannot_change_before_activation(self):
+        for next_facts in (self.queued, self.pending, self.facts):
+            with self.subTest(state=next_facts["ActiveState"]):
+                self.controls.reset_mock()
+                self.controls.show.side_effect = [self.queued, dict(next_facts, Job="702")]
+                with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+                    with self.assertRaisesRegex(ValueError, "SUPERVISOR_ORIGINAL_START_JOB_CHANGED"):
+                        s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+                observe.assert_not_called()
+                self.controls.call.assert_not_called()
+
+    def test_first_activating_job_is_bound_before_process_identity_exists(self):
+        pending = dict(self.pending, InvocationID="", MainPID="0")
+        self.controls.show.side_effect = [pending, dict(self.facts, Job="702"), self.facts]
+        with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_ORIGINAL_START_JOB_CHANGED"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_activation_cannot_regress_to_unstarted_queue_before_identity_exists(self):
+        pending = dict(self.pending, InvocationID="", MainPID="0")
+        self.controls.show.side_effect = [pending, self.queued, self.facts]
+        with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_DELIVERY_UNCERTAIN"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_activation_cannot_disappear_without_a_bound_process_or_job(self):
+        pending = dict(self.pending, InvocationID="", MainPID="0", Job="0")
+        absent = dict(self.queued, LoadState="not-found", Job="")
+        self.controls.show.side_effect = [pending, absent, self.facts]
+        with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_DELIVERY_UNCERTAIN"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_only_an_unstarted_queued_job_can_be_waited_on(self):
+        changes = ({"Job": job} for job in ("", "0", "0701", "701 ", "-1", "4294967296"))
+        changes = [*changes, {"ActiveState": "failed", "SubState": "failed"},
+            {"InvocationID": "f"*32}, {"MainPID": "42"}, {"ControlPID": "42"},
+            {"ControlGroup": self.static["cgroup"]}, {"ExecStartPre": "unexpected"},
+            {"ExecMainCode": "1"}, {"ExecMainStatus": "3"}, {"Result": "exit-code"}]
+        for change in changes:
+            with self.subTest(change=change):
+                self.controls.reset_mock()
+                self.controls.show.return_value = dict(self.queued, **change)
+                with mock.patch.object(s.time, "sleep") as sleep, mock.patch.object(s, "observe_identity") as observe:
+                    with self.assertRaisesRegex(ValueError, "SUPERVISOR_DELIVERY_UNCERTAIN"):
+                        s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+                self.assertEqual(1, self.controls.show.call_count)
+                observe.assert_not_called(); sleep.assert_not_called()
+                self.controls.call.assert_not_called()
+
+    def test_observed_identity_cannot_regress_to_a_queued_job(self):
+        for pending in (self.pending, dict(self.pending, InvocationID="", MainPID="42")):
+            with self.subTest(invocation=pending["InvocationID"]):
+                self.controls.reset_mock()
+                self.controls.show.side_effect = [pending, self.queued]
+                with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+                    with self.assertRaisesRegex(ValueError, "SUPERVISOR_DELIVERY_UNCERTAIN"):
+                        s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+                observe.assert_not_called()
+                self.controls.call.assert_not_called()
+
+    def test_observed_queued_job_cannot_disappear_and_be_replaced(self):
+        self.controls.show.side_effect = [self.queued, dict(self.queued, LoadState="not-found", Job="")]
+        with mock.patch.object(s.time, "sleep"), mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_DELIVERY_UNCERTAIN"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_queued_start_uses_the_existing_observation_and_stop_call_budget(self):
+        self.controls.show.return_value = self.queued
+        with mock.patch.object(s.time, "sleep") as sleep, mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_INSTANCE_NOT_OBSERVED"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        self.assertEqual(s.START_OBSERVATIONS, self.controls.show.call_count)
+        self.assertEqual(s.START_OBSERVATIONS-1, sleep.call_count)
+        self.assertLessEqual(s.START_OBSERVATIONS + 1 + 4, s.CONTROL_CALLS)
+        observe.assert_not_called()
+        self.controls.call.assert_not_called()
+
+    def test_queued_start_does_not_extend_the_original_deadline(self):
+        self.controls.show.return_value = self.queued
+        self.controls.clock.side_effect = ValueError("SUPERVISOR_DEADLINE_OR_BOOT")
+        with mock.patch.object(s.time, "sleep") as sleep, mock.patch.object(s, "observe_identity") as observe:
+            with self.assertRaisesRegex(ValueError, "SUPERVISOR_DEADLINE_OR_BOOT"):
+                s.observe_start(self.controls, self.static, self.process, 100*SECOND)
+        self.controls.clock.assert_called_once_with(100*SECOND)
+        self.assertEqual(1, self.controls.show.call_count)
+        observe.assert_not_called(); sleep.assert_not_called()
+        self.controls.call.assert_not_called()
 
     def test_pending_invocation_cannot_be_replaced_before_running(self):
         self.controls.show.side_effect = [self.pending, dict(self.facts, InvocationID="f"*32)]
@@ -303,7 +413,7 @@ class OriginalCaptureTests(unittest.TestCase):
             info = path.stat(); self.value[key] = dict(path=str(path), device=info.st_dev, inode=info.st_ino)
         self.facts = running(self.value)
         self.foreign = False; self.overflow = False; self.fail_seal = False; self.changed_tree = False
-        self.pending_start = False
+        self.pending_start = False; self.queued_start = False
         self.extra_member = False; self.replace_directory = False
         self.model = None
 
@@ -357,7 +467,8 @@ while True: time.sleep(.01)
                     "yes" if test.overflow else "no"]
         class Controls:
             def __init__(self, *_):
-                self.calls = []; self.shown = False; self.stopped = False; self.empties = 0; self.pending = test.pending_start; test.model = self
+                self.calls = []; self.shown = False; self.stopped = False; self.empties = 0
+                self.pending = test.pending_start; self.queued = test.queued_start; test.model = self
             def clock(self, end):
                 now = budget.current_clock()["boottime_ns"]
                 s.require(now < end, "SUPERVISOR_DEADLINE_OR_BOOT")
@@ -370,6 +481,10 @@ while True: time.sleep(.01)
                 while not marker.exists(): self.clock(end); time.sleep(.005)
                 actual = json.loads(marker.read_bytes())["controller"]["pid"]
                 test.facts["MainPID"] = str(actual)
+                if self.queued:
+                    self.queued = False
+                    return dict(test.facts, ActiveState="inactive", SubState="dead", MainPID="0", ControlPID="0",
+                                Job="701", InvocationID="", ControlGroup="")
                 if self.pending:
                     self.pending = False
                     return dict(test.facts, ActiveState="activating", SubState="start", MainPID="0", Job="701")
@@ -422,6 +537,18 @@ while True: time.sleep(.01)
         self.assertTrue(result["sealed"])
         self.assertEqual(1, len(self.model.calls))
         self.assertFalse(self.model.pending)
+
+    def test_queued_then_activating_original_start_retains_real_exit_and_eofs(self):
+        self.queued_start = self.pending_start = True
+        result = self.invoke()
+        self.assertEqual("CONTROLLER_CLOSED", result["status"], result)
+        self.assertTrue(result["sealed"])
+        capture = json.loads((self.root/"output/capture.json").read_bytes())
+        self.assertTrue(capture["complete"])
+        self.assertEqual(["stderr", "stdout"], capture["eof"])
+        self.assertEqual(0, capture["returncode"])
+        self.assertEqual(1, len(self.model.calls))
+        self.assertFalse(self.model.queued or self.model.pending)
 
     def test_unfunded_filesystem_blocks_refuse_before_any_evidence_write_or_delivery(self):
         with mock.patch.object(s.os, "fstatvfs", return_value=SimpleNamespace(f_frsize=1024**2)):

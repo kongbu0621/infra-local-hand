@@ -69,14 +69,19 @@ fsynced core evidence. The final upload archive's completion time is checked
 after its durable write and reported by the process exit and terminal output;
 it is not retrospectively substituted for guest execution evidence.
 
-## Remaining live step
+## Subsequent actual execution
 
-The cloud executor has no connection to the original host's SSH wrapper.
-The delivered private entry must run once on that host. Its preflight checks
-the actual ordinary account, service configuration, preserved inputs,
-unconsumed roots and available capacity. Code verification alone does not
-establish those facts. Guest failure retains the attempt and produces a
-structured result; the entry does not replay automatically.
+The Owner ran the delivered entry once and returned its original result and
+core archives. The batch completed within its original 300-second window,
+but returned **INCOMPLETE**. Preparation succeeded and the supervisor actually
+executed; its original captured result was `BLOCKED / PermissionError`, exit 3.
+The owner also encountered a queued-start observation defect. Neither the
+complete transport capture nor later empty trees establish a successful seal.
 
-Status: **implementation verified / guest execution pending**.
+The preserved execution, source diagnosis and scoped repairs are recorded in
+[Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md](Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md).
+The one-shot execution authority is consumed. The entry must not be replayed,
+and the frozen installation and prior verdicts remain unchanged.
+
+Status: **actual guest execution recorded / INCOMPLETE**.
 `q2_accepted=false`, `q3_accepted=false`, `production_supported=false`.

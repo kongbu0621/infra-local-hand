@@ -37,6 +37,21 @@ FILES = {"reservation.json": LIMIT, "delivery.json": 65536, "invocation.json": 6
          "result.json": 65536, "child-result.json": RECORD_LIMIT, "seal.json": RECORD_LIMIT}
 DECLARATIONS = {"envelope.json": LIMIT, "fixture-check.json": RECORD_LIMIT,
                 "bound-supervisor.json": LIMIT, "supervisor-result.json": RECORD_LIMIT}
+DIAGNOSTIC_STAGES = frozenset({"entry", "platform", "envelope_read", "envelope_decode",
+    "source_load", "envelope_validation", "bound_role", "plan_read", "plan_decode", "owner_run",
+    "owner_admission", "owner_parent_check", "owner_output_open", "owner_reservation",
+    "owner_delivery", "owner_start_observation", "owner_result_wait", "owner_stop", "owner_capture",
+    "owner_final_exit"})
+DIAGNOSTIC_SOURCES = (
+    "tests/e3_host/q2_prepare_run.py", "tests/e3_host/q2_supervisor.py",
+    "tests/e3_host/q2_fixture_check.py", "tests/e3_host/q2_launcher.py",
+    "tools/admin/local_hand_quota_observer/controller_guard.py",
+    "tools/admin/local_hand_quota_observer/protected_inputs.py",
+    "tools/admin/local_hand_quota_observer/q2_config.py",
+    "tools/admin/local_hand_quota_observer/q2_management.py",
+    "tools/admin/local_hand_quota_observer/q2_runtime.py",
+    "tools/admin/local_hand_quota_observer/systemd_runtime.py",
+)
 
 
 def require(ok, code):
@@ -47,6 +62,35 @@ def require(ok, code):
 def reason(error):
     value = getattr(error, "code", str(error) if isinstance(error, ValueError) else type(error).__name__)
     return value if type(value) is str and re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", value) else type(error).__name__
+
+
+def diagnostic(error, stage):
+    """Bound source-only failure evidence; never render exception/input text."""
+    # Do not resolve paths or read source while handling an I/O failure. These
+    # exact filenames belong to the already pinned source, never to arguments.
+    repository = Path(os.path.abspath(__file__)).parents[2]
+    allowed = {str(repository / name): name for name in DIAGNOSTIC_SOURCES}
+    kind = type(error).__name__
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", kind) is None:
+        kind = "Exception"
+    number = error.errno if isinstance(error, OSError) else None
+    if type(number) is not int or not 0 <= number <= 4095:
+        number = None
+    frames = []; trace = error.__traceback__; examined = 0; omitted = False
+    while trace is not None and examined < 64:
+        code = trace.tb_frame.f_code; source = allowed.get(code.co_filename)
+        if source is not None:
+            function = code.co_name
+            if re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]{0,63}|<module>|<lambda>)", function) is None:
+                function = "unknown"
+            line = trace.tb_lineno
+            frames.append(dict(source=source, function=function,
+                               line=line if type(line) is int and 1 <= line <= 1_000_000 else None))
+            if len(frames) > 8:
+                del frames[0]; omitted = True
+        trace = trace.tb_next; examined += 1
+    return dict(stage=stage if stage in DIAGNOSTIC_STAGES else "entry", type=kind, errno=number,
+                frames=frames, frames_truncated=omitted or trace is not None)
 
 
 def keys(value, expected):
@@ -430,8 +474,10 @@ def run_original(plan, repository, *, loaded=None):
                   owner_self_exit_verified=False, scope="ONE_ORIGINAL_Q2_HANDOFF", sealed=False)
     output = declarations = None; process = worker = controls = None
     original = child = value = None; capture = {}; stop = {}; storage_admitted = False
+    stage = "source_load"
     try:
         supervisor, checker, launcher = loaded or modules(plan["template"], repository)
+        stage = "owner_admission"
         value = issue(plan, supervisor, clock(plan))
         admitted = binding(value, supervisor, launcher)
         owner = owner_identity(plan, admitted)
@@ -442,21 +488,25 @@ def run_original(plan, repository, *, loaded=None):
         controls = supervisor.Controls(control_value, control_binding)
         work_end = value["fixture"]["supervisor_envelope"]["deadline_ns"]
         end = plan["owner_envelope"]["deadline_ns"]
+        stage = "owner_parent_check"
         require(controls.empty(), "HANDOFF_SUPERVISOR_PARENT_OCCUPIED")
         before = controls.show(work_end)
         require(before["Id"] == control_binding["target"].unit and before["LoadState"] == "not-found"
                 and before["Job"] in ("", "0"), "HANDOFF_ALREADY_STARTED")
+        stage = "owner_output_open"
         output = launcher.directory(plan["output"], 0o700)
         declarations = launcher.directory(plan["declarations"], 0o700)
         storage(plan, output, declarations)
         result.update(status="INCOMPLETE", evidence=plan["output"]["path"])
         envelope_raw = encoded(value, LIMIT)
+        stage = "owner_reservation"
         launcher.save(output, "reservation.json", encoded(dict(schema=SCHEMA, plan_sha256=sha(plan_raw), owner=owner,
                       envelope_sha256=sha(envelope_raw), costs=admitted["costs_with_owner"]), LIMIT))
         # A concurrent loser at the create-only reservation must not add its
         # failure records to the successful original owner's directory.
         storage_admitted = True
         launcher.save(declarations, "envelope.json", envelope_raw)
+        stage = "owner_delivery"
         argv = command(value, supervisor, admitted, repository, plan["declarations"]["path"] + "/envelope.json", sha(envelope_raw))
         started = clock(plan, work_end)["boottime_ns"]
         launcher.save(output, "delivery.json", encoded(dict(unit=control_binding["target"].unit, started_ns=started,
@@ -475,8 +525,10 @@ def run_original(plan, repository, *, loaded=None):
                     except Exception: pass
         worker = threading.Thread(target=collect, daemon=True); worker.start()
         static = value["fixture"]["supervisor_envelope"]["controller"]
+        stage = "owner_start_observation"
         original = supervisor.observe_start(controls, static, process, work_end)
         launcher.save(output, "invocation.json", encoded(original))
+        stage = "owner_result_wait"
         for _ in range(4800):
             clock(plan, work_end)
             child = marker(value, original, launcher)
@@ -484,7 +536,9 @@ def run_original(plan, repository, *, loaded=None):
             require(process.poll() is None and not capture, "HANDOFF_SUPERVISOR_EXITED_EARLY")
             time.sleep(0.025)
         require(child is not None, "HANDOFF_RESULT_MISSING")
+        stage = "owner_stop"
         supervisor.stop_original(controls, static, original, end, stop)
+        stage = "owner_capture"
         while worker.is_alive():
             clock(plan); worker.join(0.025)
         require(capture.get("complete") is True and capture.get("returncode") == 0 and capture.get("stderr") == b"",
@@ -493,11 +547,14 @@ def run_original(plan, repository, *, loaded=None):
         require(summary == dict(schema=RESULT_SCHEMA, status="CONTROLLER_CLOSED", q3_accepted=False, production_supported=False)
                 and child["result"].get("status") == "CONTROLLER_CLOSED" and child["result"].get("sealed") is True,
                 "HANDOFF_SUPERVISOR_NOT_CLOSED")
+        stage = "owner_final_exit"
         require(controls.empty() and all(cap.done for _, cap in controls.calls), "HANDOFF_FINAL_EXIT_UNPROVEN")
         result.update(status="SUPERVISOR_CLOSED", original=original, stopped=True,
                       closed_ns=clock(plan)["boottime_ns"])
     except Exception as error:
         result["reason"] = reason(error)
+        result["primary_reason"] = result["reason"]
+        result["diagnostic"] = diagnostic(error, stage)
     finally:
         failures = []
         def retain(action, code):
@@ -553,20 +610,34 @@ def main(argv=None):
     args = parser.parse_args(argv)
     result = dict(schema=RESULT_SCHEMA, status="BLOCKED", q2_accepted=False, q3_accepted=False,
                   production_supported=False, owner_self_exit_verified=False, original_management_session_exit_required=True)
+    stage = "entry"
     try:
         require(bool(args.sha256 and (args.envelope if args.bind else args.plan))
                 and not (args.plan and args.envelope), "EXPLICIT_PRIVATE_HANDOFF_REQUIRED")
+        stage = "platform"
         require(sys.platform.startswith("linux") and sys.flags.isolated and sys.dont_write_bytecode,
                 "HANDOFF_ISOLATED_LINUX_PYTHON")
         repository = Path(__file__).resolve().parents[2]
         if args.bind:
-            raw = protected(args.envelope); preliminary = document(raw, args.sha256)
+            stage = "envelope_read"
+            raw = protected(args.envelope)
+            stage = "envelope_decode"
+            preliminary = document(raw, args.sha256)
+            stage = "source_load"
             loaded = modules(preliminary["plan"]["template"], repository)
-            return bound_role(envelope(raw, args.sha256, loaded[0]), *loaded, repository)
-        plan = decode(protected(args.plan), args.sha256)
+            stage = "envelope_validation"
+            value = envelope(raw, args.sha256, loaded[0])
+            stage = "bound_role"
+            return bound_role(value, *loaded, repository)
+        stage = "plan_read"
+        raw = protected(args.plan)
+        stage = "plan_decode"
+        plan = decode(raw, args.sha256)
+        stage = "owner_run"
         result = run_original(plan, repository)
     except Exception as error:
         result["reason"] = reason(error)
+        result["diagnostic"] = diagnostic(error, stage)
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0 if result["status"] == "SUPERVISOR_CLOSED" and result.get("sealed") is True else 3
 

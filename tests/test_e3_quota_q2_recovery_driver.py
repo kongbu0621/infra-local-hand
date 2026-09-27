@@ -1,6 +1,7 @@
 """Recovery authority, original first issuance and finite-window integration."""
 import copy
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -31,10 +32,15 @@ def fixture():
         recovery=dict(id=recovery["recovery_id"], plan_sha256=r.sha(r.encoded(recovery)), source=recovery["recovery_source"],
             original_receipt_sha256="a" * 64, attested=True, original_files_preserved=True,
             directory=dict(path=plan["directories"]["reservation"]["path"] + "/restore001", device=70, inode=8800)))
-    entry = dict(monotonic_ns=50 * 10**9, boottime_ns=1000 * 10**9)
-    guest = dict(schema=r.DELIVERY_SCHEMA, recovery_id="restore001", boot_id=observed["host"]["boot_id"],
-        issued_ns=999 * 10**9, deadline_ns=1269 * 10**9, stop_ns=3 * 10**9, guest_outer_deadline_ns=1280 * 10**9, clock_anchor_sha256="e" * 64, preparation_deadline_ns=1139 * 10**9)
+    entry, guest = clock_fixture(observed["host"]["boot_id"])
     return plan, recovery, receipt, entry, guest
+
+
+def clock_fixture(boot_id="11111111-2222-3333-4444-555555555555"):
+    entry = dict(monotonic_ns=50 * 10**9, boottime_ns=1000 * 10**9)
+    guest = dict(schema=r.DELIVERY_SCHEMA, recovery_id="restore001", boot_id=boot_id,
+        issued_ns=999 * 10**9, deadline_ns=1269 * 10**9, stop_ns=3 * 10**9, guest_outer_deadline_ns=1280 * 10**9, clock_anchor_sha256="e" * 64, preparation_deadline_ns=1139 * 10**9)
+    return entry, guest
 
 
 def costs():
@@ -63,6 +69,7 @@ def ledger_command(plan, files, calls):
     return command
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Q2 Linux administrative receipt and policy assembly")
 class RecoveryDriverTests(unittest.TestCase):
     def test_delivery_recovery_receipt_and_assembly_share_bootstrap_deadline(self):
         """Real helper schemas/assembly/SQLite, with explicit modeled OS facts."""
@@ -148,20 +155,6 @@ class RecoveryDriverTests(unittest.TestCase):
         self.assertLess(handoff["owner_envelope"]["deadline_ns"] + 8*10**9, guest["deadline_ns"])
         self.assertGreater(delivery_module.remaining(guest, anchor,
             guest_boot_id=boot_id, guest_now_ns=now["boottime_ns"]), 128*10**9)
-
-    def test_bootstrap_elapsed_time_and_suspend_are_not_refunded(self):
-        _, _, _, entry, guest = fixture()
-        late_entry = dict(entry, monotonic_ns=entry["monotonic_ns"] + 130*10**9,
-            boottime_ns=entry["boottime_ns"] + 130*10**9)
-        self.assertEqual(r.preparation_window(guest, entry), r.preparation_window(guest, late_entry))
-        original_guard = mock.Mock()
-        # MONOTONIC guard still permits progress after a simulated suspended VM,
-        # but the unchanged BOOTTIME deadline has already elapsed.
-        guard = r.preparation_guard(original_guard, guest,
-            lambda: dict(boot_id=guest["boot_id"], boottime_ns=guest["preparation_deadline_ns"]))
-        with self.assertRaisesRegex(ValueError, "RECOVERY_DRIVER_PREPARATION_EXPIRED"):
-            guard()
-        original_guard.assert_called_once()
 
     def test_recovered_assembly_preserves_failure_and_pins_actual_first_request(self):
         plan, recovery, receipt, entry, guest = fixture()
@@ -283,10 +276,25 @@ class RecoveryDriverTests(unittest.TestCase):
                 wall_clock=lambda: 1800000000*10**9)
         self.assertEqual(2, len(checks))
 
+
+class ClockAndEntryTests(unittest.TestCase):
+    def test_bootstrap_elapsed_time_and_suspend_are_not_refunded(self):
+        entry, guest = clock_fixture()
+        late_entry = dict(entry, monotonic_ns=entry["monotonic_ns"] + 130*10**9,
+            boottime_ns=entry["boottime_ns"] + 130*10**9)
+        self.assertEqual(r.preparation_window(guest, entry), r.preparation_window(guest, late_entry))
+        original_guard = mock.Mock()
+        # MONOTONIC still permits progress after suspend; BOOTTIME does not.
+        guard = r.preparation_guard(original_guard, guest,
+            lambda: dict(boot_id=guest["boot_id"], boottime_ns=guest["preparation_deadline_ns"]))
+        with self.assertRaisesRegex(ValueError, "RECOVERY_DRIVER_PREPARATION_EXPIRED"):
+            guard()
+        original_guard.assert_called_once()
+
     def test_delivery_absolute_window_has_no_renewal(self):
-        _, recovery, _, entry, guest = fixture()
+        entry, guest = clock_fixture()
         with mock.patch.object(Path, "read_text", return_value=guest["boot_id"]):
-            self.assertEqual(guest, r.delivery(r.encoded(guest), r.sha(r.encoded(guest)), recovery["recovery_id"], entry))
+            self.assertEqual(guest, r.delivery(r.encoded(guest), r.sha(r.encoded(guest)), guest["recovery_id"], entry))
             for fault in ("long", "late", "wrong_id", "stop", "future", "renewed_prep", "spent_prep"):
                 value = dict(guest)
                 if fault == "long": value["deadline_ns"] += 1
@@ -297,7 +305,25 @@ class RecoveryDriverTests(unittest.TestCase):
                 elif fault == "renewed_prep": value["preparation_deadline_ns"] = entry["boottime_ns"] + r.PREPARATION_NS
                 else: value["preparation_deadline_ns"] = entry["boottime_ns"]
                 with self.subTest(fault=fault), self.assertRaises(ValueError):
-                    r.delivery(r.encoded(value), r.sha(r.encoded(value)), recovery["recovery_id"], entry)
+                    r.delivery(r.encoded(value), r.sha(r.encoded(value)), guest["recovery_id"], entry)
+
+    def test_no_argument_entry_does_not_sample_platform_clock(self):
+        with mock.patch.object(r, "first_clock", side_effect=AssertionError("platform clock used")) as clock, \
+             mock.patch.object(r, "helper") as helper, mock.patch.object(sys, "stdout", new_callable=io.StringIO) as output:
+            self.assertEqual(3, r.main([]))
+        self.assertEqual("BLOCKED", json.loads(output.getvalue())["status"])
+        clock.assert_not_called(); helper.assert_not_called()
+
+    def test_explicit_nonlinux_execution_blocks_before_clock_or_helpers(self):
+        argv = ["--execute"]
+        for flag in ("plan", "sha256", "recovery", "recovery-sha256", "delivery-envelope", "delivery-sha256"):
+            argv.extend(["--" + flag, "unused"])
+        with mock.patch.object(r.sys, "platform", "win32"), \
+             mock.patch.object(r, "first_clock", side_effect=AssertionError("platform clock used")) as clock, \
+             mock.patch.object(r, "helper") as helper, mock.patch.object(sys, "stdout", new_callable=io.StringIO) as output:
+            self.assertEqual(3, r.main(argv))
+        self.assertEqual("RECOVERY_DRIVER_ISOLATED_ROOT_REQUIRED", json.loads(output.getvalue())["reason"])
+        clock.assert_not_called(); helper.assert_not_called()
 
     def test_no_argument_entry_has_no_helper_or_filesystem_effect(self):
         result = subprocess.run([sys.executable, "-I", "-B", str(PATH)], capture_output=True, timeout=10)

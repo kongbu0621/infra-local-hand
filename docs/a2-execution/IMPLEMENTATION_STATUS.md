@@ -1,6 +1,14 @@
 # E1–E3 实现候选状态
 
-2026-09-25 最新进展：Q2 第六批已补常驻 broker test-only composition、原预算管理装配和
+2026-09-27 当前接续状态：一次已批准的 CPUQuota retry 已真实执行并回收原始证据，
+准备达到 `RETRY_PREPARED`，监督器返回 `BLOCKED / PermissionError`，外层保持
+`INCOMPLETE / SUPERVISOR_DELIVERY_UNCERTAIN`。旧记录、未消费账本及七个空根的既有保留检查通过，
+但这些检查未证明全部 atime 不变；原始独立停止与 seal 也未形成，后续观察不补判该尝试成功。
+准确执行、启动排队/受限身份检查修复及验证边界见
+[监督器启动修复记录](Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md)。
+本次代码修复不重放已消费的 300 秒窗口，不替换原实机安装；Q2、Q3/Q4、E3 和生产仍未验收。
+
+2026-09-25 第六批历史进展：Q2 第六批已补常驻 broker test-only composition、原预算管理装配和
 首个 preflight 的一次 fixture 入口，并修复启动/readiness/有限轮询问题，见
 [第六批实现与准确剩余缺口](E3_QUOTA_Q2_RESIDENT.md)。完整 business/evidence 跨阶段账本装配、
 外层 controller 生命周期及真实 Q3/Q4 尚待完成；生产仍固定封堵。

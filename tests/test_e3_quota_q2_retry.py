@@ -91,6 +91,22 @@ class ReadOnlyLedger(unittest.TestCase):
         self.assertEqual(m.p.sha(before),proof['sha256']);self.assertEqual(before,self.path.read_bytes())
         self.assertEqual(['jobs.sqlite'],os.listdir(self.directory.name))
 
+    def test_sqlite_validation_preserves_retained_ledger_atime_and_bytes(self):
+        raw=self.path.read_bytes()
+        os.utime(self.path,ns=(10**9,2*10**9));before=self.path.stat()
+        proof=self.attest()
+        self.assertEqual(before.st_atime_ns,self.path.stat().st_atime_ns)
+        self.assertEqual(before,self.path.stat())
+        self.assertEqual(m.p.sha(raw),proof['sha256'])
+        self.assertEqual(raw,m.p.read(self.path,len(raw),owner=before.st_uid,noatime=True))
+
+    def test_invalid_sqlite_journal_header_is_not_normalized_into_acceptance(self):
+        raw=bytearray(self.path.read_bytes())
+        for version in (b'\3\3',b'\1\2',b'\0\0'):
+            with self.subTest(version=version):
+                raw[18:20]=version;self.path.write_bytes(raw)
+                with self.assertRaisesRegex(ValueError,'RETRY_LEDGER_FORMAT'):self.attest()
+
     def test_consumption_generation_unknown_schema_and_revocation_rejected(self):
         mutations=["INSERT INTO events(namespace,id,kind,observed_at,data_json) VALUES('job','id','x',1,'{}')",
             "UPDATE counters SET value=2", "CREATE TABLE surprise(x)", "INSERT INTO revocations VALUES('x',1)",
@@ -115,6 +131,34 @@ class ReadOnlyLedger(unittest.TestCase):
 
 
 class RetentionAndDeadlines(unittest.TestCase):
+    def test_snapshot_preserves_retained_file_and_directory_atimes(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as td:
+            path=Path(td);file=path/'payload';file.write_bytes(b'retained')
+            for name in (file,path):os.utime(name,ns=(10**9,2*10**9))
+            before={name:name.stat() for name in (file,path)}
+            m.snapshot_tree(path,lambda:None)
+            # Retry also inherits the original Q1 retained-tree snapshot.
+            backend=m.p.LinuxBackend.__new__(m.p.LinuxBackend);backend.guard=lambda:None
+            info=path.stat();backend.plan=dict(retained=[dict(path=str(path),device=info.st_dev,inode=info.st_ino)],
+                budgets=dict(retained_scan_entries=8,retained_scan_bytes=128))
+            self.assertEqual(2,backend.snapshot()[0]['entries'])
+            for name,info in before.items():
+                with self.subTest(name=name):
+                    self.assertEqual(info.st_atime_ns,name.stat().st_atime_ns)
+                    self.assertEqual(info,name.stat())
+
+    def test_old_directory_membership_preserves_atime_and_rejects_extra_members(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as td:
+            path=Path(td);(path/'envelope.json').write_bytes(b'{}')
+            os.utime(path,ns=(10**9,2*10**9));before=path.stat()
+            m.require_members(path,{'envelope.json'},'RETRY_OLD_CHILD_CREATED',owner=os.getuid())
+            self.assertEqual(before.st_atime_ns,path.stat().st_atime_ns)
+            (path/'unexpected.json').write_bytes(b'{}')
+            os.utime(path,ns=(10**9,2*10**9));before=path.stat()
+            with self.assertRaisesRegex(ValueError,'RETRY_OLD_CHILD_CREATED'):
+                m.require_members(path,{'envelope.json'},'RETRY_OLD_CHILD_CREATED',owner=os.getuid())
+            self.assertEqual(before.st_atime_ns,path.stat().st_atime_ns)
+
     def test_real_snapshot_detects_same_size_edit_and_hardlinks(self):
         with tempfile.TemporaryDirectory(dir=Path.home()) as td:
             path=Path(td);file=path/'payload';file.write_bytes(b'one');before=m.snapshot_tree(path,lambda:None)

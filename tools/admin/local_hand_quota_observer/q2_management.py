@@ -17,6 +17,38 @@ from . import controller_guard as guard, q2_config as c, q2_runtime as runtime
 from .systemd_runtime import Capture, boottime_ns, _boot_id
 
 
+def host_identity(config, manifest, spec):
+    """Q2 controller identity under its original restricted capabilities.
+
+    Q1's guard remains unchanged. Q2 installation admission already binds the
+    administrator-observed initial namespace to this boot. Check the current
+    process against that protected pin without acquiring PID1 ptrace access.
+    All remaining enclosing-controller conditions match the Q1 guard.
+    """
+    import resource
+
+    q.require(os.getuid() == os.geteuid() == 0, "CONTROLLER_ADMIN_REQUIRED")
+    q.require(resource.getrlimit(resource.RLIMIT_CPU) == (spec.limit_cpu_seconds, spec.limit_cpu_seconds),
+              "CONTROLLER_CPU_LIMIT_CHANGED")
+    q.require(guard._fixed_read("/proc/1/comm", 128).strip() == b"systemd", "CONTROLLER_SYSTEMD_REQUIRED")
+    q.require(_boot_id() == manifest.boot_id, "CONTROLLER_BOOT_CHANGED")
+    c.initial_namespace(dict(device=config.initial_userns_device, inode=config.initial_userns_inode),
+                        manifest.boot_id)
+    pid, rows = os.getpid(), {}
+    for line in guard._fixed_read("/proc/self/status", 16384).decode("ascii").splitlines():
+        name, separator, value = line.partition(":")
+        if separator and name in ("Pid", "Uid"):
+            q.require(name not in rows, "CONTROLLER_PROCESS_IDENTITY")
+            rows[name] = value.split()
+    q.require(rows == {"Pid": [str(pid)], "Uid": ["0"] * 4}, "CONTROLLER_PROCESS_IDENTITY")
+    q.require(guard._own_cgroup() == spec.cgroup, "CONTROLLER_CGROUP_CHANGED")
+    q.require(not guard._below(spec.cgroup, manifest.cgroup_parent) and
+              not guard._below(manifest.cgroup_parent, spec.cgroup), "CONTROLLER_IN_QUERY_TREE")
+    stdout, stderr = guard._pipe_identity(1), guard._pipe_identity(2)
+    q.require(stdout != stderr, "CONTROLLER_OUTPUT_PIPE_ALIAS")
+    return pid, stdout, stderr
+
+
 def controller(config, envelope):
     """Reobserve the actual enclosing service; declarations alone grant nothing."""
     q._keys(envelope, {"controller", "issued_ns", "deadline_ns", "output_bytes", "storage_bytes", "storage_inodes"})
@@ -50,11 +82,11 @@ def controller(config, envelope):
         initial_userns_inode=raw["initial_userns"]["inode"], systemctl_path=raw["programs"]["systemctl"]["path"],
         systemctl_sha256=raw["programs"]["systemctl"]["sha256"])
     manifest = SimpleNamespace(boot_id=data["request"]["boot_id"], cgroup_parent=data["query_parent"]["path"])
-    before = guard._host_identity(adapter, manifest, spec)
+    before = host_identity(adapter, manifest, spec)
     guard._cgroup_identity(spec)
     guard._check_manager(guard._show_once(adapter, spec), spec, before[0])
     guard._cgroup_identity(spec)
-    q.require(before == guard._host_identity(adapter, manifest, spec), "CONTROLLER_CHANGED")
+    q.require(before == host_identity(adapter, manifest, spec), "CONTROLLER_CHANGED")
     return dict(unit=spec.unit, invocation_id=spec.invocation_id, boot_id=manifest.boot_id,
                 cgroup=spec.cgroup, observed_ns=boottime_ns())
 

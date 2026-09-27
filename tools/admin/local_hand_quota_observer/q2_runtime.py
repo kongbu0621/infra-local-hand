@@ -99,10 +99,7 @@ def host(config, role):
     """Actual process/cgroup facts; no peer-supplied booleans are accepted."""
     grant = config.active().as_dict(); v = config.data()
     q.require(os.getuid() == os.geteuid() == 0 and _boot_id() == grant["request"]["boot_id"], "RUNTIME_IDENTITY")
-    expected = v["initial_userns"]
-    for path in ("/proc/self/ns/user", "/proc/1/ns/user"):
-        info = os.stat(path)
-        q.require((info.st_dev, info.st_ino) == (expected["device"], expected["inode"]), "RUNTIME_USERNS")
+    c.initial_namespace(v["initial_userns"], grant["request"]["boot_id"])
     invocation = q.match(os.environ.get("INVOCATION_ID"), r"[0-9a-f]{32}")
     p = parent(config, role); group = p["path"] + "/" + name(config, role)
     q.require(_own_cgroup() == group, "RUNTIME_CGROUP")

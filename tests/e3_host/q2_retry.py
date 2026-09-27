@@ -150,8 +150,14 @@ def attest_ledger(path, pin, authority_id, guard=lambda:None):
         c.require((before.st_dev,before.st_ino,before.st_uid,stat.S_IMODE(before.st_mode)) ==
                   (pin['device'],pin['inode'],pin['uid'],pin['mode']) and stat.S_ISREG(before.st_mode)
                   and before.st_nlink == 1 and before.st_size <= 8*1024**2, 'RETRY_LEDGER_IDENTITY')
-        digest=p.sha(p.read(path,8*1024**2,owner=pin['uid'],noatime=True))
-        with closing(sqlite3.connect(f'file:/proc/self/fd/{fd}?mode=ro&immutable=1',uri=True,timeout=0.1)) as db:
+        raw=p.read_fd(fd,8*1024**2);digest=p.sha(raw)
+        c.require(raw.startswith(b'SQLite format 3\0') and len(raw)>=100
+            and raw[18:20] in (b'\1\1',b'\2\2'),'RETRY_LEDGER_FORMAT')
+        # SQLite would reopen /proc/self/fd and lose O_NOATIME. Inspect only a
+        # bounded RAM copy, normalizing a closed WAL database's header there.
+        snapshot=bytearray(raw);snapshot[18:20]=b'\1\1'
+        with closing(sqlite3.connect(':memory:')) as db:
+            db.deserialize(bytes(snapshot))
             db.execute('PRAGMA query_only=ON'); db.execute('PRAGMA trusted_schema=OFF')
             db.set_progress_handler(lambda: (guard() or 0), 1000)
             c.require(db.execute('PRAGMA quick_check').fetchall()==[('ok',)],'RETRY_LEDGER_INTEGRITY')
@@ -165,12 +171,25 @@ def attest_ledger(path, pin, authority_id, guard=lambda:None):
             for table in ('operations','events','leases','revocations','sqlite_sequence'):
                 c.require(db.execute('SELECT COUNT(*) FROM '+table).fetchone()==(0,), 'RETRY_LEDGER_CONSUMED')
         after=os.fstat(fd)
-        c.require(all(getattr(before,k)==getattr(after,k) for k in ('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns'))
+        c.require(all(getattr(before,k)==getattr(after,k) for k in ('st_dev','st_ino','st_size','st_atime_ns','st_mtime_ns','st_ctime_ns'))
             and digest==p.sha(p.read(path,8*1024**2,owner=pin['uid'],noatime=True)), 'RETRY_LEDGER_CHANGED')
         for suffix in ('-wal','-shm','-journal'):
             c.require(not os.path.lexists(str(path)+suffix),'RETRY_LEDGER_SIDECAR')
         guard(); return dict(pin,authority_id=authority_id,sha256=digest,unused=True)
     finally: os.close(fd)
+
+
+def require_members(path, expected, code, *, owner=0):
+    """Check old directory membership without altering its access time."""
+    fd=p.opened(path,directory=True,owner=owner,noatime=True)
+    try:
+        names=set()
+        with os.scandir(fd) as entries:
+            for entry in entries:
+                c.require(entry.name in expected and entry.name not in names,code)
+                names.add(entry.name)
+        c.require(names==set(expected),code)
+    finally:os.close(fd)
 
 
 def snapshot_tree(path, guard, *, maximum_bytes=256*1024**2, maximum_entries=32768, seen=None, hash_files=True):
@@ -401,7 +420,7 @@ class RetryBackend(p.LinuxBackend):
                 if base+row['unit']!=canonical:
                     c.require(not os.path.lexists(base+row['unit']),'RETRY_CONFIGURATION_SHADOW')
         drop=Path(f'/etc/systemd/system/{instance}.d')
-        c.require({entry.name for entry in os.scandir(drop)}=={'50-local-hand-q2.conf'},'RETRY_MANAGER_DROPIN')
+        require_members(drop,{'50-local-hand-q2.conf'},'RETRY_MANAGER_DROPIN')
         for base in ('/run/systemd/system/','/usr/lib/systemd/system/'):
             c.require(not os.path.lexists(base+instance+'.d') and not os.path.lexists(base+instance),'RETRY_MANAGER_SHADOW')
         return {name:p.sha(raw) for name,raw in files.items()}
@@ -597,7 +616,7 @@ class RetryBackend(p.LinuxBackend):
             self.guard();raw=p.read(tool['path'],64*1024**2,noatime=True)
             c.require(raw.startswith(b'\x7fELF') and p.sha(raw)==tool['sha256'] and os.stat(tool['path']).st_mode&0o111,'RETRY_TOOL_CHANGED')
         self.verify_old_service_exit();self.verify_old_source()
-        owner=Path(self.retry['old_owner_output']);c.require({entry.name for entry in os.scandir(owner)}==OWNER_FILES,'RETRY_OWNER_MEMBERS')
+        owner=Path(self.retry['old_owner_output']);require_members(owner,OWNER_FILES,'RETRY_OWNER_MEMBERS')
         raw={name:p.read(owner/name,c.LIMIT,noatime=True) for name in OWNER_FILES}
         envelope_path=self.old_handoff['declarations']['path']+'/envelope.json'
         c.require(envelope_path in self.retry['old_files'],'RETRY_OLD_PIN_MISSING');env_raw=p.read(envelope_path,c.LIMIT,noatime=True)
@@ -605,10 +624,10 @@ class RetryBackend(p.LinuxBackend):
         self.old_storage_commitment=c.document(raw['reservation.json'])['costs']
         # Only the issued envelope exists; any child binding or output means the
         # parser-only boundary cannot justify reusing these roots.
-        c.require({entry.name for entry in os.scandir(self.old_handoff['declarations']['path'])}=={'envelope.json'},'RETRY_OLD_CHILD_CREATED')
+        require_members(self.old_handoff['declarations']['path'],{'envelope.json'},'RETRY_OLD_CHILD_CREATED')
         fixture=c.document(env_raw)['fixture']
         for pin in (fixture['declarations'],fixture['output'],fixture['launcher']['declarations'],fixture['launcher']['output']):
-            c.require(not any(os.scandir(pin['path'])),'RETRY_OLD_CHILD_CREATED')
+            require_members(pin['path'],set(),'RETRY_OLD_CHILD_CREATED')
         for name in (fixture['supervisor_envelope']['controller']['unit'],fixture['launcher']['controller_envelope']['controller']['unit']):
             value=self.unit_show(name)
             c.require(value.get('LoadState')=='not-found' and value.get('ActiveState')=='inactive'

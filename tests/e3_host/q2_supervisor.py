@@ -265,17 +265,17 @@ def validate(value, launcher, clock):
 
 
 def actual_controller(spec, installation, boot_id):
-    from admin.local_hand_quota_observer import controller_guard as guard
+    from admin.local_hand_quota_observer import controller_guard as guard, q2_management as management
     adapter = SimpleNamespace(initial_userns_device=installation["initial_userns"]["device"],
         initial_userns_inode=installation["initial_userns"]["inode"],
         systemctl_path=installation["programs"]["systemctl"]["path"],
         systemctl_sha256=installation["programs"]["systemctl"]["sha256"])
     manifest = SimpleNamespace(boot_id=boot_id, cgroup_parent="/unused-query.slice")
-    before = guard._host_identity(adapter, manifest, spec)
+    before = management.host_identity(adapter, manifest, spec)
     guard._cgroup_identity(spec)
     guard._check_manager(guard._show_once(adapter, spec), spec, before[0])
     guard._cgroup_identity(spec)
-    require(before == guard._host_identity(adapter, manifest, spec), "SUPERVISOR_IDENTITY_CHANGED")
+    require(before == management.host_identity(adapter, manifest, spec), "SUPERVISOR_IDENTITY_CHANGED")
     return dict(controller={"schema": guard.SCHEMA, **asdict(spec)}, pid=before[0],
                 stdout=list(before[1]), stderr=list(before[2]), boot_id=boot_id)
 
@@ -471,11 +471,13 @@ def observe_identity(values, static):
 def observe_start(controls, static, process, end):
     """Observe the one submitted start through its finite pending states.
 
-    Type=exec first exposes an activating unit and its start Job, often before
-    MainPID exists. Neither is an accepted running identity. Observing them
-    never resubmits a launch and leaves at least four control calls for stop.
+    Type=exec can expose the loaded unit and queued start Job before activation,
+    then an activating unit before MainPID exists. Neither is an accepted
+    running identity. Observing them never resubmits a launch and leaves at
+    least four control calls for stop.
     """
-    invocation = pid = None
+    invocation = pid = pending_job = None
+    activation_seen = False
     for index in range(START_OBSERVATIONS):
         facts = controls.show(end)
         require(facts["Id"] == static["unit"] and process.poll() is None,
@@ -491,15 +493,33 @@ def observe_start(controls, static, process, end):
             if current_pid:
                 require(pid in (None, current_pid), "SUPERVISOR_ORIGINAL_INSTANCE_CHANGED")
                 pid = current_pid
+            if pending_job is not None:
+                require(facts["Job"] in ("", "0", pending_job), "SUPERVISOR_ORIGINAL_START_JOB_CHANGED")
+            if facts["Job"] not in ("", "0"):
+                require(re.fullmatch(r"[1-9][0-9]{0,9}", facts["Job"])
+                        and int(facts["Job"]) < 2**32, "SUPERVISOR_DELIVERY_UNCERTAIN")
+                pending_job = facts["Job"]
             if (facts["ActiveState"], facts["SubState"]) == ("active", "running") and facts["Job"] in ("", "0"):
                 return observe_identity(facts, static)
-            require((facts["ActiveState"], facts["SubState"]) in
+            queued = (facts["ActiveState"], facts["SubState"]) == ("inactive", "dead")
+            if queued:
+                require(re.fullmatch(r"[1-9][0-9]{0,9}", facts["Job"])
+                        and int(facts["Job"]) < 2**32 and invocation is None and pid is None and not activation_seen
+                        and facts["InvocationID"] == "" and facts["MainPID"] == facts["ControlPID"] == "0"
+                        and facts["ControlGroup"] == facts["ExecStartPre"] == ""
+                        and facts["ExecMainCode"] == facts["ExecMainStatus"] == "0" and facts["Result"] == "success",
+                        "SUPERVISOR_DELIVERY_UNCERTAIN")
+                pending_job = facts["Job"]
+            else:
+                require((facts["ActiveState"], facts["SubState"]) in
                     (("activating", "start-pre"), ("activating", "start"), ("active", "running")) and facts["ControlPID"] == "0"
                     and facts["ExecStartPre"] == "", "SUPERVISOR_DELIVERY_UNCERTAIN")
+                activation_seen = True
         else:
             require(facts["LoadState"] == "not-found" and facts["Job"] in ("", "0")
                     and facts["InvocationID"] == "" and facts["MainPID"] == "0"
-                    and facts["ControlPID"] == "0" and invocation is None and pid is None,
+                    and facts["ControlPID"] == "0" and invocation is None and pid is None
+                    and pending_job is None and not activation_seen,
                     "SUPERVISOR_DELIVERY_UNCERTAIN")
         controls.clock(end)
         if index + 1 < START_OBSERVATIONS: time.sleep(0.125)

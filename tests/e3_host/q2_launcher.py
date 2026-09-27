@@ -163,7 +163,7 @@ def source(value, repository):
 
 def controller(value, template, declared_totals=None):
     """Verify independent controller before the first file or process mutation."""
-    from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c
+    from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c, q2_management as management
     from admin.local_hand_quota_observer.systemd_runtime import Capture
     from local_hand_jobs import budget, quota_contract as q, quota_grant as g
     prepared = template.data()
@@ -214,10 +214,7 @@ def controller(value, template, declared_totals=None):
     q._keys(data["initial_userns"], {"device", "inode"})
     for number in data["initial_userns"].values(): q.integer(number, 1)
     require(ordinary["initial_userns"] == data["initial_userns"], "LAUNCHER_USER_NAMESPACE_BINDING")
-    for path in ("/proc/self/ns/user", "/proc/1/ns/user"):
-        info = os.stat(path)
-        require({"device": info.st_dev, "inode": info.st_ino} == data["initial_userns"],
-                "LAUNCHER_INITIAL_USER_NAMESPACE")
+    c.initial_namespace(data["initial_userns"], request["boot_id"])
     require(os.getuid() == os.geteuid() == os.getgid() == os.getegid() == 0, "LAUNCHER_ADMINISTRATOR")
     for parent in (ordinary["parent"], template.data()["grant"]["query_parent"],
                    template.data()["grant"]["management_parent"]):
@@ -231,7 +228,7 @@ def controller(value, template, declared_totals=None):
         systemctl_sha256=data["programs"]["systemctl"]["sha256"])
     manifest = SimpleNamespace(boot_id=template.data()["grant"]["request"]["boot_id"],
                                cgroup_parent=template.data()["grant"]["query_parent"]["path"])
-    before = guard._host_identity(adapter, manifest, spec)
+    before = management.host_identity(adapter, manifest, spec)
     guard._cgroup_identity(spec)
     guard._check_manager(guard._show_once(adapter, spec), spec, before[0])
     # Delegation belongs to the enclosing system user manager service, never
@@ -280,7 +277,7 @@ def controller(value, template, declared_totals=None):
             except (OSError, ValueError): pass
         capture.close_pipes()
     guard._cgroup_identity(spec)
-    require(before == guard._host_identity(adapter, manifest, spec), "LAUNCHER_CONTROLLER_CHANGED")
+    require(before == management.host_identity(adapter, manifest, spec), "LAUNCHER_CONTROLLER_CHANGED")
     current = budget.current_clock()
     require(current["boot_id"] == clock["boot_id"] and current["boottime_ns"] < envelope["deadline_ns"],
             "LAUNCHER_DEADLINE")

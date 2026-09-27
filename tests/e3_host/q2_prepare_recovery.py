@@ -157,7 +157,7 @@ class RecoveryBackend(p.LinuxBackend):
             c.require(not os.path.lexists(prefix+"/"+a["name"]),"RECOVERY_MAIL_EXISTS")
 
     def original_members(self,*,reserved=False):
-        self.guard();fd=p.opened(str(self.original_directory),directory=True)
+        self.guard();fd=p.opened(str(self.original_directory),directory=True,noatime=True)
         try:
             c.require(p.identity(os.fstat(fd),str(self.original_directory))==self.recovery["reservation"],"RECOVERY_RESERVATION_CHANGED")
             expected=set(ORIGINAL_FILES)
@@ -214,9 +214,13 @@ class RecoveryBackend(p.LinuxBackend):
             seen.add(key);count+=1;total+=max(info.st_size,info.st_blocks*512)
             c.require(count<=32768 and total<=256*1024**2,"RECOVERY_INVENTORY_LIMIT")
             if stat.S_ISDIR(info.st_mode):
-                with os.scandir(name) as entries:
-                    for entry in entries:
-                        c.require(len(pending)+count<32768,"RECOVERY_INVENTORY_LIMIT");pending.append(Path(entry.path))
+                fd=p.opened(name,directory=True,owner=info.st_uid,noatime=True)
+                try:
+                    c.require(p.identity(os.fstat(fd))==p.identity(info),"RECOVERY_COST_CHANGED")
+                    with os.scandir(fd) as entries:
+                        for entry in entries:
+                            c.require(len(pending)+count<32768,"RECOVERY_INVENTORY_LIMIT");pending.append(name/entry.name)
+                finally:os.close(fd)
             else:c.require(stat.S_ISREG(info.st_mode) and info.st_nlink==1,"RECOVERY_COST_TYPE")
         self.guard()
         return {"bytes":total,"inodes":count}

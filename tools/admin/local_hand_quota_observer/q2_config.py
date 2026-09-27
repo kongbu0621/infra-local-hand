@@ -25,6 +25,28 @@ def identity(value, *, path=True):
     return value
 
 
+def initial_namespace(pin, boot_id):
+    """Observe self against the administrator's protected, boot-bound pin.
+
+    The fixed fixture attests PID1 and itself before reducing capabilities.
+    Restricted Q2 roles must compare their own real namespace to that pin;
+    traversing PID1's namespace requires unrelated ptrace authority. This
+    helper neither derives an initial pin from self nor tolerates a failed
+    namespace read. Call only after protected configuration/source admission.
+    """
+    from .systemd_runtime import _boot_id
+
+    identity(pin, path=False)
+    q.match(boot_id, q.UUID_PATTERN)
+    q.require(_boot_id() == boot_id, "INITIAL_NAMESPACE_BOOT_CHANGED")
+    info = os.stat("/proc/self/ns/user")
+    q.require((info.st_dev, info.st_ino) == (pin["device"], pin["inode"]),
+              "INITIAL_USER_NAMESPACE_REQUIRED")
+    # Keep a boot-bound observation even if acquisition spans a boundary.
+    q.require(_boot_id() == boot_id, "INITIAL_NAMESPACE_BOOT_CHANGED")
+    return dict(device=info.st_dev, inode=info.st_ino)
+
+
 def overlap(a, b):
     a, b = PurePosixPath(a), PurePosixPath(b)
     return a == b or a in b.parents or b in a.parents

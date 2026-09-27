@@ -122,6 +122,7 @@ class AccountAndClock(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"PREPARE_COMMAND_FAILED"):b.account()
         b.command.assert_called_once();b.verify_account.assert_not_called()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux account and group lookup")
     def test_reappeared_account_or_changed_group_blocks_before_useradd(self):
         import pwd,grp
         b=backend();a=b.plan["account"]
@@ -132,6 +133,7 @@ class AccountAndClock(unittest.TestCase):
              mock.patch.object(grp,"getgrnam",return_value=wrong),mock.patch.object(grp,"getgrgid",return_value=wrong):
             with self.assertRaisesRegex(ValueError,"RECOVERY_GROUP_CHANGED"):b.check_account_boundary()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux account and group lookup")
     def test_missing_group_and_account_side_effects_cannot_be_reused(self):
         import pwd,grp
         b=backend();a=b.plan["account"]
@@ -155,6 +157,7 @@ class AccountAndClock(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"RECOVERY_DEADLINE"):m.RecoveryBackend(plan,recovery,99,199)
         self.assertEqual(199,b.deadline)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux allocated-block inventory")
     def test_inventory_cannot_certify_an_observation_that_finishes_after_deadline(self):
         b=backend()
         with tempfile.TemporaryDirectory() as td:
@@ -199,36 +202,48 @@ class NeverIssuedRun(unittest.TestCase):
 
 
 class RetainedFilesAndBudgets(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux protected directory descriptors")
     def test_actual_original_directory_pin_and_extra_member_checked(self):
         b=backend()
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as td:
             directory=Path(td)/"original";directory.mkdir(mode=0o700)
             b.original_directory=directory;b.recovery["reservation"]=m.p.identity(directory.stat(),str(directory))
             for name in m.ORIGINAL_FILES:(directory/name).write_bytes(b"{}\n")
-            with mock.patch.object(m.p,"opened",side_effect=lambda path,**_:os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)):
+            os.utime(directory,ns=(10**9,2*10**9));before=directory.stat()
+            opened=m.p.opened
+            # Only substitute the test account for the root-owned guest fixture;
+            # real path traversal and O_NOATIME remain under test.
+            with mock.patch.object(m.p,"opened",side_effect=lambda path,**kw:opened(path,owner=os.getuid(),**kw)):
                 b.original_members()
+                self.assertEqual(before.st_atime_ns,directory.stat().st_atime_ns)
                 (directory/"run-issued.json").write_bytes(b"{}\n")
                 with self.assertRaisesRegex(ValueError,"RECOVERY_ORIGINAL_MEMBERS"):b.original_members()
                 (directory/"run-issued.json").unlink();b.recovery["reservation"]["inode"]+=1
                 with self.assertRaisesRegex(ValueError,"RECOVERY_RESERVATION_CHANGED"):b.original_members()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux allocated-block inventory")
     def test_old_and_new_installation_inputs_share_original_budget(self):
         b=backend()
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as td:
             base=Path(td);old=base/"old-stage";new=base/"recovery-stage";reservation=base/"reservation"
             for path in (old,new,reservation):path.mkdir()
             (old/"payload").write_bytes(b"a"*8192);(new/"payload").write_bytes(b"b"*8192)
+            for path in (old,new,reservation):os.utime(path,ns=(10**9,2*10**9))
+            before={path:path.stat() for path in (old,new,reservation)}
             b.original_directory=reservation
             b.recovery["retained_inputs"]=[dict(path=str(old),category="installation"),dict(path=str(new),category="installation")]
             costs=b.measure_costs()
+            for path,info in before.items():
+                with self.subTest(path=path):self.assertEqual(info.st_atime_ns,path.stat().st_atime_ns)
             self.assertEqual(b.inventory(old)["bytes"]+b.inventory(new)["bytes"],costs["installation"]["bytes"])
             self.assertEqual(1,costs["state"]["inodes"])
             b.plan["budgets"]["installation_bytes"]=costs["installation"]["bytes"]-1
             with self.assertRaisesRegex(ValueError,"RECOVERY_TOTAL_CAPACITY"):b.measure_costs()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux allocated-block inventory and link semantics")
     def test_inventory_rejects_symlinks_and_hardlinks_without_following(self):
         b=backend()
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as td:
             base=Path(td);(base/"file").write_bytes(b"original");(base/"link").symlink_to(base/"file")
             with self.assertRaisesRegex(ValueError,"RECOVERY_COST_ALIAS"):b.inventory(base)
             (base/"link").unlink();os.link(base/"file",base/"hardlink")

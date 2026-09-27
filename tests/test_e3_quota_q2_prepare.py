@@ -4,6 +4,7 @@ No test creates accounts, quota domains or systemd objects. Synthetic completion
 is explicitly RESOURCES_PREPARED, never a claim of guest/Q2 acceptance.
 """
 import copy
+import errno
 import importlib.util
 import json
 import os
@@ -82,6 +83,70 @@ class ProvisionOrder(unittest.TestCase):
         p=subprocess.run([sys.executable,"-I","-B",str(PATH)],capture_output=True,timeout=10)
         self.assertEqual(3,p.returncode);self.assertEqual(b"",p.stderr)
         self.assertEqual("BLOCKED",json.loads(p.stdout)["status"])
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux protected no-atime descriptors")
+class ProtectedReads(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(dir=Path.home())
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    def noatime_open(self, final):
+        real_open = os.open
+        def open_as_owner(name, flags, **kwargs):
+            # A regular CI user owns the leaf, but cannot request O_NOATIME on
+            # root-owned ancestors. Exercise that boundary even in root CI.
+            if flags & os.O_NOATIME and name != final:
+                raise PermissionError(errno.EPERM, "ancestor is owned by root", name)
+            return real_open(name, flags, **kwargs)
+        return mock.patch.object(m.os, "open", side_effect=open_as_owner)
+
+    def test_noatime_reads_owned_leaf_without_requiring_ancestor_ownership(self):
+        file = self.root / "retained"; file.write_bytes(b"retained")
+        os.utime(file, ns=(10**9, 2*10**9)); before = file.stat()
+        with self.noatime_open(file.name) as opened:
+            self.assertEqual(b"retained", m.read(file, 32, owner=os.getuid(), noatime=True))
+        self.assertTrue(opened.call_args.args[1] & os.O_NOATIME)
+        self.assertTrue(all(not call.args[1] & os.O_NOATIME for call in opened.call_args_list[:-1]))
+        self.assertEqual(before, file.stat())
+        self.assertEqual(before.st_atime_ns, file.stat().st_atime_ns)
+
+    def test_noatime_directory_listing_preserves_leaf_atime(self):
+        (self.root / "retained").write_bytes(b"retained")
+        os.utime(self.root, ns=(10**9, 2*10**9)); before = self.root.stat()
+        with self.noatime_open(self.root.name) as opened:
+            fd = m.opened(self.root, directory=True, owner=os.getuid(), noatime=True)
+            try: self.assertEqual(["retained"], os.listdir(fd))
+            finally: os.close(fd)
+        self.assertTrue(opened.call_args.args[1] & os.O_NOATIME)
+        self.assertEqual(before.st_atime_ns, self.root.stat().st_atime_ns)
+
+    def test_denied_final_noatime_open_never_retries_or_reads(self):
+        file = self.root / "retained"; file.write_bytes(b"retained")
+        real_open = os.open
+        def denied(name, flags, **kwargs):
+            if name == file.name:
+                self.assertTrue(flags & os.O_NOATIME)
+                raise PermissionError(errno.EPERM, "leaf no-atime permission denied", name)
+            return real_open(name, flags, **kwargs)
+        with mock.patch.object(m.os, "open", side_effect=denied) as opened, mock.patch.object(m.os, "read") as read:
+            with self.assertRaises(PermissionError): m.read(file, 32, owner=os.getuid(), noatime=True)
+        self.assertEqual(1, sum(call.args[0] == file.name for call in opened.call_args_list))
+        read.assert_not_called()
+
+    def test_noatime_does_not_relax_path_and_file_protection(self):
+        parent = self.root / "parent"; parent.mkdir()
+        file = parent / "retained"; file.write_bytes(b"retained")
+        parent.chmod(0o770)
+        with self.assertRaisesRegex(ValueError, "PREPARE_UNPROTECTED_PATH"):
+            m.read(file, 32, owner=os.getuid(), noatime=True)
+        parent.chmod(0o700)
+        alias = self.root / "alias"; alias.symlink_to(file)
+        with self.assertRaises(OSError): m.read(alias, 32, owner=os.getuid(), noatime=True)
+        alias.unlink(); os.link(file, alias)
+        with self.assertRaisesRegex(ValueError, "PREPARE_UNPROTECTED_PATH"):
+            m.read(file, 32, owner=os.getuid(), noatime=True)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"),"Linux account lookup")

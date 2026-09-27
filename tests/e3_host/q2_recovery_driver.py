@@ -282,7 +282,6 @@ def complete(plan, recovery, receipt, *, files, command, clock, entry, delivery_
 
 
 def main(argv=None):
-    entry = first_clock()
     parser = argparse.ArgumentParser(description=__doc__)
     for flag in ("plan", "sha256", "recovery", "recovery-sha256", "delivery-envelope", "delivery-sha256"):
         parser.add_argument("--" + flag)
@@ -297,6 +296,9 @@ def main(argv=None):
             "EXPLICIT_RECOVERY_AND_DELIVERY_REQUIRED")
         require(sys.platform.startswith("linux") and sys.flags.isolated and sys.dont_write_bytecode
             and os.getuid() == os.geteuid() == 0, "RECOVERY_DRIVER_ISOLATED_ROOT_REQUIRED")
+        # Reject inert/unsupported entry points before using Linux clocks. The
+        # caller's absolute preparation deadline is unchanged by this sample.
+        entry = first_clock()
         handoff = helper("q2_prepare_run")
         contract = helper("q2_prepare_contract")
         recovery_module = helper("q2_prepare_recovery")

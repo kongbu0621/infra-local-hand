@@ -56,12 +56,18 @@ def opened(name, *, directory=False, owner=0, noatime=False):
     """Walk protected ancestry without following symlinks or special files."""
     c.path(str(name), root=True)
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
-    if noatime: flags |= os.O_NOATIME
-    fd = os.open("/", flags | os.O_DIRECTORY)
+    parts = Path(name).parts[1:]
+    final_flags = flags | (os.O_NOATIME if noatime else 0)
+    # Ancestors are only opened/stat'ed, never read or enumerated. O_NOATIME
+    # there would need ownership of '/', even when the caller owns the leaf.
+    # The actual read/listing descriptor must retain O_NOATIME; do not retry
+    # without it if the kernel refuses that protection.
+    fd = os.open("/", (flags if parts else final_flags) | os.O_DIRECTORY)
     try:
-        for index, part in enumerate(Path(name).parts[1:]):
-            isdir = directory or index < len(Path(name).parts) - 2
-            child = os.open(part, flags | (os.O_DIRECTORY if isdir else 0), dir_fd=fd)
+        for index, part in enumerate(parts):
+            final = index == len(parts) - 1
+            isdir = directory or not final
+            child = os.open(part, (final_flags if final else flags) | (os.O_DIRECTORY if isdir else 0), dir_fd=fd)
             os.close(fd); fd = child
             info = os.fstat(fd)
             c.require(info.st_uid in (0, owner) and not info.st_mode & 0o022
@@ -72,19 +78,23 @@ def opened(name, *, directory=False, owner=0, noatime=False):
         os.close(fd); raise
 
 
+def read_fd(fd, maximum):
+    """Bound a read from an already protected descriptor without reopening it."""
+    before = os.fstat(fd); result = bytearray()
+    c.require(before.st_size <= maximum, "PREPARE_READ_LIMIT")
+    while len(result) <= maximum:
+        block = os.read(fd, min(65536, maximum + 1 - len(result)))
+        if not block: break
+        result.extend(block)
+    after = os.fstat(fd)
+    c.require(len(result) <= maximum and all(getattr(before, k) == getattr(after, k) for k in
+        ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")), "PREPARE_READ_CHANGED")
+    return bytes(result)
+
+
 def read(name, maximum, *, owner=0, noatime=False):
     fd = opened(name, owner=owner, noatime=noatime)
-    try:
-        before = os.fstat(fd); result = bytearray()
-        c.require(before.st_size <= maximum, "PREPARE_READ_LIMIT")
-        while len(result) <= maximum:
-            block = os.read(fd, min(65536, maximum + 1 - len(result)))
-            if not block: break
-            result.extend(block)
-        after = os.fstat(fd)
-        c.require(len(result) <= maximum and all(getattr(before, k) == getattr(after, k) for k in
-            ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")), "PREPARE_READ_CHANGED")
-        return bytes(result)
+    try: return read_fd(fd, maximum)
     finally:
         os.close(fd)
 
@@ -303,10 +313,14 @@ class LinuxBackend:
                           and info.st_dev == selected["device"], "PREPARE_RETAINED_TREE")
                 row = identity(info, name)
                 if stat.S_ISDIR(info.st_mode):
-                    with os.scandir(name) as entries:
-                        for entry in entries:
-                            c.require(len(stack) + count < self.plan["budgets"]["retained_scan_entries"], "PREPARE_RETAINED_SCAN_LIMIT")
-                            stack.append(Path(entry.path))
+                    fd = opened(name, directory=True, owner=info.st_uid, noatime=True)
+                    try:
+                        c.require(identity(os.fstat(fd)) == identity(info), "PREPARE_RETAINED_IDENTITY")
+                        with os.scandir(fd) as entries:
+                            for entry in entries:
+                                c.require(len(stack) + count < self.plan["budgets"]["retained_scan_entries"], "PREPARE_RETAINED_SCAN_LIMIT")
+                                stack.append(name / entry.name)
+                    finally: os.close(fd)
                 else:
                     c.require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "PREPARE_RETAINED_TYPE")
                     total += info.st_size

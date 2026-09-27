@@ -5,6 +5,7 @@ and mutation tests distinguish original identity from declared placeholders;
 the capture tests use real Popen exit, separate pipes and create-only files.
 """
 import copy
+import errno
 import importlib.util
 import json
 import os
@@ -71,6 +72,69 @@ class EntryTests(unittest.TestCase):
         for raw in (b'{"a":1,"a":2}', b'{"a":1.0}', b'{"a":NaN}', b'{"a":-1}'):
             with self.subTest(raw=raw), self.assertRaises(ValueError): r.document(raw, r.sha(raw))
         with self.assertRaises(ValueError): r.document(b"{}", "0" * 64)
+
+
+class FailureDiagnosticTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux bound role imports")
+    def test_binding_start_denial_is_distinct_from_input_and_source_loading(self):
+        error = PermissionError(errno.EACCES, "private diagnostic input", "/private/path")
+        with mock.patch.object(r.sys, "flags", SimpleNamespace(isolated=1)), \
+             mock.patch.object(r.sys, "dont_write_bytecode", True), \
+             mock.patch.object(r, "protected", return_value=b"{}"), \
+             mock.patch.object(r, "document", return_value={"plan": {"template": {}}}), \
+             mock.patch.object(r, "modules", return_value=(s, mock.Mock(), launcher)), \
+             mock.patch.object(r, "envelope", return_value={"plan": {"declarations": {}}}), \
+             mock.patch.object(q2_config, "pinned_directory", side_effect=error), \
+             mock.patch("builtins.print") as output:
+            self.assertEqual(3, r.main(["--bind", "--envelope", "/private/envelope", "--sha256", "a" * 64]))
+        value = json.loads(output.call_args.args[0]); details = value["diagnostic"]
+        self.assertEqual(("BLOCKED", "PermissionError"), (value["status"], value["reason"]))
+        self.assertEqual("bound_role", details["stage"])
+        self.assertEqual("bound_role", details["frames"][-1]["function"])
+        self.assertEqual(errno.EACCES, details["errno"])
+        self.assertNotIn("/private", output.call_args.args[0])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux protected no-follow read")
+    def test_protected_read_denial_retains_exit_reason_and_bounded_source_location(self):
+        secret = "/private-input-" + "sensitive" * 10000
+        error = PermissionError(errno.EACCES, secret, secret)
+        with mock.patch.object(r.sys, "platform", "linux"), \
+             mock.patch.object(r.sys, "flags", SimpleNamespace(isolated=1)), \
+             mock.patch.object(r.sys, "dont_write_bytecode", True), \
+             mock.patch.object(r.os, "open", side_effect=error), mock.patch("builtins.print") as output:
+            self.assertEqual(3, r.main(["--bind", "--envelope", secret, "--sha256", "a" * 64]))
+        raw = output.call_args.args[0]; value = json.loads(raw)
+        self.assertEqual(("BLOCKED", "PermissionError"), (value["status"], value["reason"]))
+        self.assertFalse(value["q2_accepted"]); self.assertFalse(value["q3_accepted"])
+        details = value["diagnostic"]
+        self.assertEqual(("envelope_read", "PermissionError", errno.EACCES),
+                         (details["stage"], details["type"], details["errno"]))
+        self.assertEqual("protected", details["frames"][-1]["function"])
+        self.assertEqual("tests/e3_host/q2_prepare_run.py", details["frames"][-1]["source"])
+        self.assertGreater(details["frames"][-1]["line"], 0)
+        self.assertNotIn("sensitive", raw); self.assertLess(len(raw), 4096)
+
+    def test_untrusted_frame_and_exception_text_are_not_exposed(self):
+        try:
+            raise PermissionError(errno.EACCES, "secret message", "/secret/path")
+        except PermissionError as error:
+            details = r.diagnostic(error, "secret-stage")
+        self.assertEqual([], details["frames"])
+        self.assertEqual("entry", details["stage"])
+        self.assertNotIn("secret", json.dumps(details))
+
+    def test_deep_trusted_trace_is_bounded_without_rendering_code_or_values(self):
+        namespace = {}
+        exec(compile("def recurse(depth):\n if depth: return recurse(depth-1)\n raise PermissionError(13, 'secret')\n",
+                     str(PATH), "exec"), namespace)
+        try:
+            namespace["recurse"](100)
+        except PermissionError as error:
+            details = r.diagnostic(error, "bound_role")
+        self.assertTrue(details["frames_truncated"])
+        self.assertLessEqual(len(details["frames"]), 8)
+        self.assertLess(len(json.dumps(details)), 4096)
+        self.assertNotIn("secret", json.dumps(details))
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux declaration imports")
@@ -258,7 +322,7 @@ class OriginalClientTests(unittest.TestCase):
         declaration = Path(self.plan["declarations"]["path"])
         for name in ("bound-supervisor.json", "fixture-check.json", "supervisor-result.json"):
             if not (declaration / name).exists(): (declaration / name).write_bytes(b"{}\n")
-        return dict(result=dict(status="CONTROLLER_CLOSED", sealed=self.fault != "unsealed"))
+        return dict(result=dict(status="CONTROLLER_CLOSED", sealed=self.fault not in ("unsealed", "unsealed_cleanup")))
 
     def stop(self, controls, static, original, end, record):
         record.update(attempted=True, complete=True, parent_empty=True)
@@ -282,6 +346,8 @@ class OriginalClientTests(unittest.TestCase):
             if self.fault == "reservation_race" and name == "reservation.json":
                 self.real_save(fd, name, b"other-original-owner\n", mode)
                 raise FileExistsError(name)
+            if self.fault == "unsealed_cleanup" and name == "controls.json":
+                raise PermissionError(errno.EACCES, "private cleanup details", "/private/controls.json")
             self.real_save(fd, name, raw, mode)
         patches = [mock.patch.object(budget, "current_clock", side_effect=current_clock),
             mock.patch.object(r, "binding", return_value=dict(installation={}, costs_with_owner={})),
@@ -330,6 +396,24 @@ class OriginalClientTests(unittest.TestCase):
         self.assertEqual("INCOMPLETE", result["status"])
         self.assertEqual("HANDOFF_SUPERVISOR_NOT_CLOSED", result["reason"])
         self.assertFalse((Path(self.plan["output"]["path"]) / "seal.json").exists())
+        self.assertEqual(1, len(self.processes))
+
+    def test_cleanup_failure_preserves_original_reason_and_diagnostic_without_seal(self):
+        self.fault = "unsealed_cleanup"
+        result = self.run_model()
+        self.assertEqual("INCOMPLETE", result["status"])
+        self.assertEqual("HANDOFF_RECORD_PERSIST", result["reason"])
+        self.assertEqual("HANDOFF_SUPERVISOR_NOT_CLOSED", result["primary_reason"])
+        self.assertEqual("owner_capture", result["diagnostic"]["stage"])
+        self.assertEqual("ValueError", result["diagnostic"]["type"])
+        self.assertEqual(["HANDOFF_RECORD_PERSIST"], result["cleanup_errors"])
+        output = Path(self.plan["output"]["path"])
+        persisted = json.loads((output / "result.json").read_bytes())
+        self.assertEqual(result["primary_reason"], persisted["primary_reason"])
+        self.assertEqual(result["diagnostic"], persisted["diagnostic"])
+        self.assertNotIn("private", json.dumps(result))
+        self.assertFalse(result["sealed"])
+        self.assertFalse((output / "seal.json").exists())
         self.assertEqual(1, len(self.processes))
 
     def test_actual_nonzero_client_cannot_be_replaced_by_successful_marker(self):
