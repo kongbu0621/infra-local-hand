@@ -328,6 +328,20 @@ remain retained. See the scoped implementation review in
 and remaining limits. Do not manufacture READY or infer a new batch from these
 components.
 
+The reviewed proposal is scope `LH-Q2-HOST-WINDOW-CONSUMPTION-v1`, still **OPEN**,
+at exact A `8402f0cc82d8a0ac0b9a56716bf276f41cafea37`. Its
+[baseline record](docs/governance/Q2_HOST_WINDOW_CONSUMPTION_BASELINE.md) pins the
+[requirements](docs/a2-execution/q2-host-window-consumption/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-host-window-consumption/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-host-window-consumption/IMPLEMENTATION_PLAN.md).
+It proposes the bounded early host marker and explicitly repeatable local-only
+prechecks before acquisition; successful acquisition retains that winner's
+original clocks and forbids replay. The precise carrier-derived location,
+current host-boot adoption, storage assumptions and existing management audit
+boundary are part of this proposal. No new B/C exists and no forward host-order
+implementation is authorized. Preserve the unchanged R and obtain the exact
+Owner decision before H1–H6; current containment remains in force.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
