@@ -15,9 +15,22 @@
 - 原 startup/对账批准链、旧 v1、冻结 runtime `b49d3df3d1e76813faf08e59ab4975e25279c2fc`
   与原 wheel 均不修改。不新增依赖，不释放其它承诺，不扩预算。
 
+实现 D：`f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff`，tree
+`3263752f0d0537f7e0eb65b081a2473f3b9ab353`。组件整组 **257 PASS / 2 SKIP**，
+旧接口回归 **115 PASS**。30 份被测源码/测试文件的字节已逐件对齐实际 D。
+
 D 的源码逐文件摘要与本轮实际测试结果见
 [validation.json](evidence/q2-host-window-implementation-20260927/validation.json)。
-固定 D 后的真实私有来源核验另作后继证据，不用自引用假 D。
+固定 D 后的[真实私有来源核验](evidence/q2-host-window-implementation-20260927/exact-D-offline-check.json)
+验证 46 份工具的实际 Git blob、三条 C 祖先、48 份 raw blobs、47 份分类来源、
+525 份冻结 runtime 文件及原 wheel。工具在任何私有源码执行前匹配 Git D。
+私有核验包仅支持 `--check-offline`；其检查通过同时确认现场入口继续 BLOCKED。
+两次从准确 D 全新组装所得包字节完全相同。篡改工具并重算自带索引、改写 C 集合、
+超大索引、额外 ZIP 成员与 `--run` 均被拒绝；未验证的工具不会先执行。
+
+包体为 9,684,082 bytes。静态配置压缩前缀加 header/预留 ACK 为 14,289,385 bytes，
+staged inputs 加两固定 host 原件为 14,875,538 bytes；尚未构造其余动态现场上下文，
+因此这些容量检查不声称完整可执行 stdin 已验证或实际交付已就绪。
 
 ## 实际交付范围
 

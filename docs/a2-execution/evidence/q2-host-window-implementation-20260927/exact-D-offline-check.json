@@ -1,0 +1,133 @@
+{
+  "all_30_tested_source_and_test_bytes_equal_D": true,
+  "blobs": 48,
+  "executable_handoff": false,
+  "git": {
+    "closure_ancestry": true,
+    "frozen_source_files": 525,
+    "implementation_tree": "3263752f0d0537f7e0eb65b081a2473f3b9ab353",
+    "runtime_source_bytes": true,
+    "tool_files": 46,
+    "tools_verified_before_execution": true
+  },
+  "guest_connection": false,
+  "host_entry": {
+    "additional_missing_facts": [
+      "HOST_HISTORICAL_FUTURE_SOURCE_COVERAGE",
+      "NATIVE_AUDIT_SOURCE_BOUND",
+      "SUPPORTED_HOST_FILESYSTEM_ALLOCATION_AND_DURABILITY",
+      "HELD_WRAPPER_BYTES_AND_AUTHORIZED_SOURCE_BINDING"
+    ],
+    "batch_delivery_issued": false,
+    "execution_window_consumed": false,
+    "execution_window_started": false,
+    "field_reads_performed": false,
+    "host_persistence_attempted": false,
+    "offline_sources_verified": true,
+    "reason": "HOST_WINDOW_REMOTE_DEADLINE_UNPROVEN",
+    "status": "BLOCKED"
+  },
+  "implementation_commit": "f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff",
+  "implementation_tree": "3263752f0d0537f7e0eb65b081a2473f3b9ab353",
+  "offline_package_negative_checks": {
+    "checks": [
+      {
+        "case": "independent_process_exact_package",
+        "exit_code": 0,
+        "status": "OFFLINE_CHECK_PASS"
+      },
+      {
+        "case": "tool_changed_and_index_recomputed",
+        "exit_code": 2,
+        "reason": "OFFLINE_TOOL_GIT_BLOB",
+        "unverified_tool_not_executed": true
+      },
+      {
+        "case": "proof_self_declared_closure_removed",
+        "exit_code": 2,
+        "reason": "OFFLINE_FIXED_GIT_IDENTITIES",
+        "unverified_tool_not_executed": true
+      },
+      {
+        "case": "oversized_index",
+        "exit_code": 2,
+        "reason": "OFFLINE_PACKAGE_INDEX_BOUND",
+        "unverified_tool_not_executed": true
+      },
+      {
+        "case": "extra_zip_member",
+        "exit_code": 2,
+        "reason": "OFFLINE_PACKAGE_EXTRA_FILE",
+        "unverified_tool_not_executed": true
+      },
+      {
+        "case": "no_run_mode",
+        "exit_code": 2,
+        "reason": "ONLY_CHECK_OFFLINE_IS_SUPPORTED"
+      }
+    ],
+    "field_reads_performed": false,
+    "guest_connection": false,
+    "implementation_commit": "f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff",
+    "package_bytes": 9684082,
+    "package_sha256": "7f57677b9f1f5c3de243a1af01d7d8386a582ce6216247a17d6fc91579b05d6c",
+    "ready": false,
+    "runtime_execution": false,
+    "schema": "q2-private-offline-package-negative-checks/v1"
+  },
+  "offline_package_reproducibility": {
+    "implementation_commit": "f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff",
+    "package_bytes": 9684082,
+    "package_sha256": "7f57677b9f1f5c3de243a1af01d7d8386a582ce6216247a17d6fc91579b05d6c",
+    "ready": false,
+    "runtime_rebuilt": false,
+    "schema": "q2-private-offline-package-reproducibility/v1",
+    "two_fresh_assemblies_identical": true
+  },
+  "original_wheel_sha256": "c077a8f8aa2f0c3147228602746fd459a6d13267df299a84835331ad35ef158b",
+  "parent_closure": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+  "private_offline_package": {
+    "package_bytes": 9684082,
+    "package_name": "q2-host-window-offline-review-20260927.pyz",
+    "package_sha256": "7f57677b9f1f5c3de243a1af01d7d8386a582ce6216247a17d6fc91579b05d6c"
+  },
+  "production_supported": false,
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "ready": false,
+  "remote_deadline": {
+    "absolute_manager_deadline_proven": false,
+    "dispatch_allowed": false,
+    "host_boottime_mapping_proven": false,
+    "missing_pinned_anchors": [],
+    "original_anchor_count": 2,
+    "status": "BLOCKED"
+  },
+  "runtime_execution": false,
+  "schema": "local-hand-q2-host-window-exact-D-offline-check/v1",
+  "size_report": {
+    "compressed_loader_script_bytes": 14272992,
+    "config_decoded_limit_bytes": 33554432,
+    "config_gzip_base64_bytes": 14271812,
+    "final_executable_stdin_claimed": false,
+    "header_bytes": 9,
+    "implementation_commit": "f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff",
+    "metadata_reserved_bytes": 23166976,
+    "metadata_reserved_inodes": 6,
+    "other_dynamic_context_not_constructed": true,
+    "ready": false,
+    "reserved_ack_bytes": 16384,
+    "schema": "q2-exact-host-D-static-material-size/v1",
+    "stage_allocation_peak_bytes": 12218368,
+    "stage_archive_bytes": 4129799,
+    "stage_entries": 637,
+    "stage_input_limit_bytes": 16777216,
+    "staged_inputs_with_host_raw_bytes": 14875538,
+    "staged_original_inputs_bytes": 7632018,
+    "static_material_json_bytes": 21524161,
+    "static_wire_bytes_with_header_and_ack": 14289385,
+    "wire_limit_bytes": 16777216
+  },
+  "source_verification": "PASS",
+  "typed_sources": 47
+}
