@@ -116,27 +116,64 @@ environment skips**. The two changed test modules' focused rerun passed 5 tests.
 The first candidate's failures remain recorded; its full-source run is not
 reported as a passing result of the successor candidate.
 
-## Verification boundary
+## Exact repaired candidate and verification
 
-The frozen repair worktree passed 171 targeted supervisor/namespace tests with
-one explicit AF_UNIX environment skip, and 76 read-preservation/recovery tests.
-These include a real local restricted-process namespace reproduction, a real
-SQLite access-time regression, queued-state identity regressions and retention
-of the primary failure when cleanup also fails. A Linux-hosted Windows-branch
-model passed 20 tests and skipped 14 Linux-only cases; it is not native Windows
-verification. The executor could not switch to an ordinary UID, so the
-ancestor-permission regression combines real descriptors with an explicit
-permission-denial model. Native Linux ordinary-user and Windows outcomes must
-come from the new candidate's CI.
+- Public source commit: `b49d3df3d1e76813faf08e59ab4975e25279c2fc`.
+- Exact tree: `2d957ccf1d9cbdf5e538189c6b68d56f34590a42`.
+- Frozen wheel: `infra_local_hand-0.2.0a1-py3-none-any.whl`, 266010 bytes,
+  SHA-256 `c077a8f8aa2f0c3147228602746fd459a6d13267df299a84835331ad35ef158b`.
+- Independently sealed, unconfigured Plugin SHA-256:
+  `f27c638bed416344f61921df55a49c494c00763c75c0d04915400a54939e25a6`.
 
-Full source, packaging and independent-install results will be recorded against
-the completed exact public candidate. None substitutes for execution on the
-original guest. The cloud executor has no access to that host's management
-connection, and no new guest run has been issued.
+The public Git commit object was reconstructed and hash-checked locally; the
+clean tree exactly matches the public tree. The pinned build dependencies passed
+`pip check`. The wheel was built without network or build isolation from that
+exact clean commit. Its metadata binds the same source commit, and all 53 payload
+file digests match both the wheel and source. It was installed with `--no-deps`
+into a fresh runtime and tested with `python -I` outside the checkout.
+
+| Verification | Actual result |
+| --- | --- |
+| Source compilation and diff checks | PASS |
+| Full local source suite, Python 3.12.14 | **1748 passed, 16 skipped, zero failures** |
+| Full Q2/controller-guard regression after launcher correction | 523 passed, 2 environment skips; included in the subsequent full suite |
+| Local frozen-wheel acceptance | **PASS: 94 checks, 292 commands**, exact frozen wheel and source identity |
+| Native Windows CI | **PASS: 361 passed, 703 platform skips**; installed acceptance 10 checks/10 commands; Windows bootstrap, ACL, Local Service, exit propagation and junction checks passed |
+| Native Linux CI | **PASS: 1751 passed, 13 explicit skips**; installed acceptance 94 checks/292 commands; Linux bootstrap checks passed |
+| Exact-candidate workflow | [36295204218](https://github.com/kongbu0621/infra-local-hand/actions/runs/36295204218) |
+
+The 16 local skips explicitly retain unavailable ordinary-UID mapping, AF_UNIX
+and real systemd/cgroup integration. They do not become passing guest evidence.
+The targeted namespace tests include a real restricted local child, while full
+controller facts remain modeled. The first local installed run at the earlier
+`eb8a54ab...` candidate stopped after 273 completed captured commands: the parent
+made no further progress and a synthetic target expected to be regular was
+observed as FIFO. It was externally interrupted and retained as INCOMPLETE;
+the cross-process cause was not proven. The final candidate's independent run
+completed all 292 commands using the byte-identical verifier. No test fixture
+was altered to turn that earlier stalled run into PASS.
+
+Retained final local evidence digests:
+
+| Record | SHA-256 |
+| --- | --- |
+| Complete source-test log | `b88d3bd387222e94cefc5c39924fb0472e57e614569c8bdaf70abe09c8b56528` |
+| Exact frozen-wheel installed report | `466777d99be58a3186d37fabea5ec47a1734e5cf3e7cffcd374c36b4bd21439d` |
+
+Native CI builds its own wheel from the same exact source commit; its wheel
+bytes are not substituted for the separately frozen local wheel above. Local
+and CI checks establish source/packaging behavior, not original-guest Q2
+acceptance. No new guest run was issued and no original installation was changed.
+All Q2/Q3/production acceptance flags remain false.
+
+## New execution boundary
 
 The existing source-repair authority permits these unchanged-boundary repairs,
-their tests and publication. The CPUQuota retry's T05 and final implementation
-paragraph authorize one batch with a fixed candidate and forbid automatic
-replay. A replacement runtime and another guest window therefore require a
-separate concrete scope and Owner decision after the repaired candidate is
-reviewable; they cannot be inferred from an empty ledger or a short failed run.
+their tests and publication. The consumed CPUQuota retry's T05 and final
+implementation paragraph authorize one batch with a fixed candidate and forbid
+automatic replay. A replacement runtime and another guest window require the
+separate concrete scope and exact Owner decision described in
+[the new proposed baseline](../governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md).
+The new scope remains OPEN; its three documents are reviewable, but its new
+orchestration, configuration and actual one-shot batch follow Owner B and a
+separate CLOSED C. Unaffected source repairs need no repeated approval.

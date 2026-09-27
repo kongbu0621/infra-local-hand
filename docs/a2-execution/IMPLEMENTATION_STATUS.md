@@ -7,6 +7,9 @@
 准确执行、启动排队/受限身份检查修复及验证边界见
 [监督器启动修复记录](Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md)。
 本次代码修复不重放已消费的 300 秒窗口，不替换原实机安装；Q2、Q3/Q4、E3 和生产仍未验收。
+修复候选 `b49d3df3d1e76813faf08e59ab4975e25279c2fc` 已完成本地完整源码与隔离安装验证，原生 Linux/Windows CI 均通过。
+新一次运行的准确三文档 A 为 `47b351b2b943bf1d6f1c71cfeb031157a2eb70cc`，
+范围仍 OPEN，见[新批次提案登记](../governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md)。
 
 2026-09-25 第六批历史进展：Q2 第六批已补常驻 broker test-only composition、原预算管理装配和
 首个 preflight 的一次 fixture 入口，并修复启动/readiness/有限轮询问题，见

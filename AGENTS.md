@@ -213,6 +213,34 @@ The prior preparation and recovery closures and their approved document bytes
 remain historical and unchanged; unaffected repairs in their existing CLOSED
 development scopes need not be reapproved.
 
+### Q2 supervisor startup failure retry
+
+Scope `LH-Q2-SUPERVISOR-STARTUP-RETRY-v1` is **PROPOSED / OPEN**. Its exact
+three-document baseline A is `47b351b2b943bf1d6f1c71cfeb031157a2eb70cc`, containing
+[requirements](docs/a2-execution/q2-supervisor-startup-retry/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-supervisor-startup-retry/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-supervisor-startup-retry/IMPLEMENTATION_PLAN.md).
+R, readable direct source and integrity, Owner authority, mandate, no exceptions
+and change rules remain unchanged. Exact document hashes and the one-batch proposal
+are in [Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md](docs/governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md).
+No Owner B or separate CLOSED C has been recorded for this new scope.
+
+The previously approved CPUQuota retry was issued once and remains INCOMPLETE.
+Its supervisor actually executed and failed; original streams and exit 3 were
+captured, while invocation declaration, independent-stop proof and seal were
+not completed. The existing CLOSED source-development authority covers the
+[completed source repairs](docs/a2-execution/Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md),
+tests and publication. It does not replay that consumed attempt.
+
+The concrete proposal pins repaired runtime `b49d3df3d1e76813faf08e59ab4975e25279c2fc`,
+binds both historical failures and ledgers, preserves exact historical FAILED
+instances, checks all prior identities and cumulative commitments, and requests
+one new at-most-300-second batch with independent create-only state. Prepared
+roots are reused only after joint live attestation. New orchestration, tests,
+configuration and execution follow exact A, Owner B and independent C; no new
+batch implementation is included before closure. The prior approved documents
+and unaffected CLOSED development scopes remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

@@ -45,4 +45,5 @@ Q2 最近一次已批准的实机批次完成准备并收回证据，监督器�
 当前启动排队、受限身份检查修复与平台验证见
 [监督器启动修复记录](docs/a2-execution/Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md)；
 历史批次与剩余阶段见[当前实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。
+新的单次运行候选与三文档已固定，范围仍 OPEN，见[新批次提案](docs/governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md)。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。
