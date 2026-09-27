@@ -228,3 +228,14 @@ def test_boot_drift_after_namespace_observation():
     plan = dict(host=dict(boot_id="boot", initial_userns=dict(device=1, inode=10)))
     with pytest.raises(ValueError, match="BOOT_CHANGED"):
         m.audit_namespaces(plan, reader=reader)
+
+
+def test_direct_backend_construction_cannot_bypass_unproven_host_field_gate(monkeypatch):
+    from types import SimpleNamespace
+    calls=[]
+    monkeypatch.setattr(m.p.LinuxBackend, '__init__', lambda *args: calls.append('base-constructor'))
+    verified=SimpleNamespace(host_window={'ready':True,'source_coverage_proven':True})
+    with pytest.raises(ValueError, match='HOST_WINDOW_FIELD_READINESS_UNPROVEN'):
+        m.ReconciliationBackend(verified, issued_ns=1, deadline_ns=2, boot_deadline_ns=3,
+            delivery_envelope={}, reconciliation_directory='/synthetic/reconciliation')
+    assert calls==[]

@@ -1,0 +1,191 @@
+{
+  "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+  "closure_parent": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+  "collector_entry": "BLOCKED_BEFORE_FIELD_READ",
+  "date": "2026-09-27",
+  "files": {
+    "tests/e3_host/q2_host_window_billing.py": {
+      "bytes": 18824,
+      "sha256": "5c231b7d81969975208412ec86f762fa90aa1743c8aa706ce9b8ff6dbd8fe20a"
+    },
+    "tests/e3_host/q2_host_window_contract.py": {
+      "bytes": 10033,
+      "sha256": "0105180e96a48380778bf53d5ead0ddaeffb42af8752d8202ec1c8ca1abfe49e"
+    },
+    "tests/e3_host/q2_host_window_delivery.py": {
+      "bytes": 22412,
+      "sha256": "16f90e4261635d29a18159834df0c44d650a400cbe9b8250eb08288bbc6a8497"
+    },
+    "tests/e3_host/q2_host_window_record.py": {
+      "bytes": 24200,
+      "sha256": "785828dca6a492b6c136deb8e260f92ee507de932ff5422aa09a62a33e803f4a"
+    },
+    "tests/e3_host/q2_reconciliation_backend.py": {
+      "bytes": 50352,
+      "sha256": "c15741bcc9b1186e9073e35f16b462bffaf56f13b0221ba22f868d6fd844e165"
+    },
+    "tests/e3_host/q2_reconciliation_billing.py": {
+      "bytes": 23490,
+      "sha256": "af9c86ac303c234c0bf18d631b85ab5e40eacee916957f97905ae319e28d7210"
+    },
+    "tests/e3_host/q2_reconciliation_bootstrap.py": {
+      "bytes": 20799,
+      "sha256": "dbfb913c624a0ded1ba36914349c51fec7a8f3194036fc04e4f0b56b687501a6"
+    },
+    "tests/e3_host/q2_reconciliation_collect.py": {
+      "bytes": 28788,
+      "sha256": "778d43ba89d2a985ef04d33e4508cbf244e6a4cc5c5878a84e6d6e81f2312929"
+    },
+    "tests/e3_host/q2_reconciliation_contract.py": {
+      "bytes": 19021,
+      "sha256": "5ee7fe38fc58565707be818326c1781bd3e14d6525c125dfff362d82eb81ac6c"
+    },
+    "tests/e3_host/q2_reconciliation_delivery.py": {
+      "bytes": 10632,
+      "sha256": "bd128dbc902509b2620a77ca047f57089203e655c24dbcc048b528bcdd7a341c"
+    },
+    "tests/e3_host/q2_reconciliation_driver.py": {
+      "bytes": 12466,
+      "sha256": "09dddf2490921dcca5afbb68a31198cb72baa20e4cfd763df1f9aaafe5e43d73"
+    },
+    "tests/e3_host/q2_reconciliation_entry.py": {
+      "bytes": 19159,
+      "sha256": "79b163c4a36ad69683910c1e595d3ec9675d269a6d00426869b44d4e58898bf7"
+    },
+    "tests/e3_host/q2_reconciliation_io.py": {
+      "bytes": 15968,
+      "sha256": "f950004072eb9574942a086f9a6380b02fbbdfc327729f6d0b6c28bdb97430f2"
+    },
+    "tests/e3_host/q2_reconciliation_records.py": {
+      "bytes": 10173,
+      "sha256": "f5da894c3233033b9d846da5a6b635b1b426f91178f9cfcac293f48918410df8"
+    },
+    "tests/e3_host/q2_reconciliation_sources.py": {
+      "bytes": 22167,
+      "sha256": "53b9f68dd09f99195541f8e7c239cef90c9ca6fdb9887749c3c5ac77a62b4233"
+    },
+    "tests/test_e3_q2_host_window_billing.py": {
+      "bytes": 12908,
+      "sha256": "1886e08ea82eac819d351891734230615dda58c681cd35953af14ad55b223fe1"
+    },
+    "tests/test_e3_q2_host_window_contract.py": {
+      "bytes": 5132,
+      "sha256": "ea49b6c2958b8cd9644decdcbfacc7a1e84d46a1b8a4b6879c6c5e751e71b451"
+    },
+    "tests/test_e3_q2_host_window_delivery.py": {
+      "bytes": 10658,
+      "sha256": "98452339d5aaf3191dd469e44c15ba55f5817cf7941584a4a64f90a14a465969"
+    },
+    "tests/test_e3_q2_host_window_record.py": {
+      "bytes": 15579,
+      "sha256": "204ecc476b88f5b8711f57367ffaafa28ea8d32d90994331876e7453f44dd025"
+    },
+    "tests/test_e3_q2_reconciliation_backend.py": {
+      "bytes": 11294,
+      "sha256": "3658e1bd03122399e63dbce9635db53c2f4acf32c8c121fe40ea08e179b3be12"
+    },
+    "tests/test_e3_q2_reconciliation_billing.py": {
+      "bytes": 19218,
+      "sha256": "ce274b8d13f0b07af46b5d67a601788639a90c91e95e34c4cdded0912e6dd5c0"
+    },
+    "tests/test_e3_q2_reconciliation_bootstrap.py": {
+      "bytes": 10574,
+      "sha256": "35300119ff02014b7e8010f612348237062bb95ba1364a6ba1fc4146826c5af2"
+    },
+    "tests/test_e3_q2_reconciliation_collect.py": {
+      "bytes": 25991,
+      "sha256": "f301d2e35e2efa940ac8e1ba571c36c98075001cc80bc2c7dfb2927a1c4f5ef5"
+    },
+    "tests/test_e3_q2_reconciliation_delivery.py": {
+      "bytes": 5822,
+      "sha256": "b806409785b4f4d15928259415c5eead537620d8a627c95b4d5e2f6845d64d7c"
+    },
+    "tests/test_e3_q2_reconciliation_driver.py": {
+      "bytes": 7354,
+      "sha256": "3207b60b77ecf3f1ae4fcef6f51992750148a13a78ca116a02300bc860c6b4f8"
+    },
+    "tests/test_e3_q2_reconciliation_entry.py": {
+      "bytes": 4436,
+      "sha256": "161e7cb963167920fd28f506b4452446d26fe53b1d37538732d51a068bb80b79"
+    },
+    "tests/test_e3_q2_reconciliation_host_inputs.py": {
+      "bytes": 6790,
+      "sha256": "274b6e963756593a302b677ba7fb9056d36a81d92925d5607d1c4939dc86394c"
+    },
+    "tests/test_e3_q2_reconciliation_host_store.py": {
+      "bytes": 11610,
+      "sha256": "f77f6dc0cc94393c28dfc779d54b4aef136fcdd2025080a219c3f6555a76c102"
+    },
+    "tests/test_e3_q2_reconciliation_io_records.py": {
+      "bytes": 17856,
+      "sha256": "ec944521ce6976f21ef8e7bbb54e0b89368dd00e2e7c863d468c113fa0811387"
+    },
+    "tests/test_e3_q2_reconciliation_sources.py": {
+      "bytes": 17021,
+      "sha256": "b91aa92b4c7dcae654282ab889e090c25bf7d6c44fa0c5df6bed088eeec59338"
+    }
+  },
+  "guest_entry": "BLOCKED_BEFORE_FIELD_READ",
+  "host_entry": "BLOCKED_BEFORE_WINDOW_FIELD_READ_OR_CONSUMPTION",
+  "host_window_consumed": false,
+  "limitations": [
+    "H3 complete field dispatch and H5 live delivery remain unimplemented/unready; binding primitives are not dispatch.",
+    "Record syscall tests use explicit modeled readiness/filesystem qualification; actual overlay volatile fsync is unsupported.",
+    "Host seal is HELD_FILES_ONLY; no live seal, original pipe EOF, independent stop or tree-empty proof.",
+    "Pinned historical anchors do not prove first remote absolute deadline; no caller ADMITTED bypass.",
+    "Complete source-proven host future/audit costs and wrapper admission remain unavailable.",
+    "Two retained skips concern current UID/GID mapping and numeric proc identity; neither is PASS.",
+    "Exact D Git closure/private fixture verification follows actual D creation."
+  ],
+  "new_tests": {
+    "command": "python -m pytest -q tests/test_e3_q2_reconciliation*.py tests/test_e3_q2_host_window*.py",
+    "passed": 257,
+    "raw_sha256": "7c2a0a3b789ddb66f0d25d75751bd9b8f009af5cae5ca6391ef963f296aa1878",
+    "raw_summary": "257 passed, 2 skipped in 14.50s",
+    "skipped": 2
+  },
+  "owner_issued": false,
+  "preserved_baselines": {
+    "approved_docs": [
+      {
+        "bytes": 9401,
+        "path": "docs/a2-execution/q2-host-window-consumption/REQUIREMENTS.md",
+        "sha256": "400fe60987be3de44f78ea747b51458f4ccdd08f21cff7654be0b9dd7e2d66cc",
+        "unchanged": true
+      },
+      {
+        "bytes": 7746,
+        "path": "docs/a2-execution/q2-host-window-consumption/ARCHITECTURE.md",
+        "sha256": "82daca9a1a3dd31df423aa6e0904fd44d5e5c6aa19a6364ad3a632dcae84ac7c",
+        "unchanged": true
+      },
+      {
+        "bytes": 7222,
+        "path": "docs/a2-execution/q2-host-window-consumption/IMPLEMENTATION_PLAN.md",
+        "sha256": "8e74f4721017b86c5957a120d6ee1ba33a814d66ffb801443234b6dda76f5881",
+        "unchanged": true
+      }
+    ],
+    "old_v1_unchanged": true,
+    "runtime_unchanged": true,
+    "wheel": {
+      "bytes": 266010,
+      "sha256": "c077a8f8aa2f0c3147228602746fd459a6d13267df299a84835331ad35ef158b"
+    }
+  },
+  "production_supported": false,
+  "pytest": "8.4.2",
+  "python": "3.12.14",
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "ready": false,
+  "retained_entry_regression": {
+    "passed": 115,
+    "raw_sha256": "fb46bd9242d9916d3cb3ce75c4301c3483846f6717add693b3a4f3b9fddca702",
+    "raw_summary": "115 passed in 24.60s",
+    "skipped": 0
+  },
+  "schema": "local-hand-q2-host-window-isolated-validation/v1",
+  "scope": "COMPONENTS_AND_OFFLINE_READINESS_ONLY",
+  "syntax_checked_files": 30
+}

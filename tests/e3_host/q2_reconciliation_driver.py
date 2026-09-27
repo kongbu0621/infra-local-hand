@@ -29,7 +29,7 @@ DOCUMENT_NAMES = ("evidence-adoption.json", "reconciliation-intent.json",
     "live-attestation.json", "reconciliation-record.json")
 
 
-def binding(verified, envelope, directory):
+def binding(verified, envelope, directory, joint_bill):
     manifest = verified.manifest
     return dict(rule=manifest["rule"], baseline=manifest["baseline"], closure=manifest["closure"],
         owner_decision=manifest["owner_decision"], implementation_commit=verified.implementation_commit,
@@ -44,7 +44,9 @@ def binding(verified, envelope, directory):
         issued_ns=envelope["issued_ns"], preparation_deadline_ns=envelope["preparation_deadline_ns"],
         deadline_ns=envelope["deadline_ns"],
         future_only=True, actual_preserved=True, other_commitments_preserved=True,
-        historical_results_unchanged=True, run_permission="existing_startup_once")
+        historical_results_unchanged=True, run_permission="existing_startup_once",
+        host_window=helper("q2_reconciliation_bootstrap").host_reference(verified),
+        host_joint_bill_sha256=sha(encoded(joint_bill)))
 
 
 def make_documents(backend, live):
@@ -52,7 +54,9 @@ def make_documents(backend, live):
     require(not backend.reconciliation_sealed and live == backend.live_document(),
         "RECONCILIATION_LIVE_DOCUMENT_CHANGED")
     backend._billing.require_admissible(backend.quote, proposed=True)
-    common = binding(backend.verified, backend.delivery_envelope, backend.reconciliation_directory)
+    helper("q2_host_window_billing").require_joint_admissible(backend.joint_quote, proposed=True)
+    common = binding(backend.verified, backend.delivery_envelope, backend.reconciliation_directory,
+        backend.joint_quote)
     obligations = backend.quote["obligations"]
     targets = [copy.deepcopy(row) for row in obligations if row["terminated_by_amendment"]]
     require(len(targets) == 2 and {row["covered_paths"][0] for row in targets}
@@ -88,7 +92,12 @@ def validate_documents(verified, envelope, directory, documents):
     parsed = {name: contract.document(raw, limit=limits[name]) for name, raw in documents.items()}
     adoption, intent, live, record = (parsed[name] for name in DOCUMENT_NAMES)
     require(adoption == verified.adoption, "RECONCILIATION_ADOPTION_CHANGED")
-    expected = binding(verified, envelope, directory)
+    host_billing = helper("q2_host_window_billing")
+    joint_bill = host_billing.joint_quote(live["bill"], verified.host_window["bill"])
+    host_billing.require_joint_admissible(joint_bill, proposed=True)
+    require(live["joint_bill"] == joint_bill and live["host_window"] ==
+        helper("q2_reconciliation_bootstrap").host_reference(verified), "RECONCILIATION_HOST_JOINT_BINDING")
+    expected = binding(verified, envelope, directory, joint_bill)
     contract.keys(intent, ("schema", "kind", "binding", "targets", "adoption_sha256"))
     contract.keys(record, ("schema", "kind", "binding", "intent_sha256", "adoption_sha256",
         "live_attestation_sha256", "targets", "before", "after", "obligations", "quota_domains", "terminated_unspent"))
@@ -102,7 +111,7 @@ def validate_documents(verified, envelope, directory, documents):
         "RECONCILIATION_RECORD_REFERENCES")
     contract.keys(live, ("schema", "attempt_id", "amendment_sha256", "source_commit", "boot_before",
         "boot_after", "source_classes", "historical_atime_preservation_proven", "predecessors", "ledgers",
-        "historical_units", "roots", "q1", "preserved_trees", "parents", "bill", "current_tree_coverage",
+        "historical_units", "roots", "q1", "preserved_trees", "parents", "bill", "host_window", "joint_bill", "current_tree_coverage",
         "deadline_ns", "preparation_deadline_ns", "clock_anchor_sha256"))
     require(live["schema"] == "local-hand-q2-installation-reconciliation-live/v1"
         and live["boot_before"] == live["boot_after"] == verified.plan["host"]

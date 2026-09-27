@@ -3,10 +3,9 @@
 The full joint attestation and proposed-after bill precede all owned persistent
 writes. The five-file seal then precedes charged staging and startup assembly.
 """
-from __future__ import annotations
-
 import base64
 import copy
+from dataclasses import dataclass
 import importlib.util
 import os
 from pathlib import Path
@@ -23,8 +22,13 @@ def helper(name):
 
 
 FIELDS = {"manifest_raw", "manifest_sha256", "blobs", "implementation_commit", "stage",
-    "archive", "archive_sha256", "files", "file_hashes", "clock_anchor", "guest_pin"}
+    "archive", "archive_sha256", "files", "file_hashes", "clock_anchor", "guest_pin", "host_window"}
 LIVE_SCHEMA = "local-hand-q2-reconciliation-live-admitted/v1"
+ACK_SCHEMA = "local-hand-q2-host-window-live-ack/v1"
+ACK_LIMIT = 16 * 1024
+ACK_BINDINGS = ("attempt_id", "amendment_sha256", "source_commit", "source_tree",
+    "clock_anchor_sha256", "host_binding_sha256", "host_marker_sha256", "host_bill_sha256",
+    "joint_bill_sha256", "live_attestation_sha256")
 READY_SCHEMA = "local-hand-q2-reconciliation-bootstrap-ready/v1"
 SCHEMA = "local-hand-q2-reconciliation-bootstrap-result/v1"
 INPUTS_LIMIT = 16 * 1024**2
@@ -56,12 +60,13 @@ def input_bundle(config):
     # Persist only the inputs already checked in memory. No new source is read
     # after issuance of a private, source-pinned input package.
     return {key: copy.deepcopy(config[key]) for key in
-        ("manifest_raw", "manifest_sha256", "blobs", "implementation_commit")}
+        ("manifest_raw", "manifest_sha256", "blobs", "implementation_commit", "host_window")}
 
 
 def load_inputs(value):
     require(type(value) is dict and set(value) == {"manifest_raw", "manifest_sha256", "blobs",
-        "implementation_commit"}, "RECONCILIATION_STAGED_INPUT_FIELDS")
+        "implementation_commit", "host_window"}, "RECONCILIATION_STAGED_INPUT_FIELDS")
+    helper("q2_reconciliation_contract").encoded(value, limit=INPUTS_LIMIT)
     source = helper("q2_reconciliation_sources")
     contract = source.c
     raw = unbase64(value["manifest_raw"], contract.INPUT_LIMIT)
@@ -75,8 +80,111 @@ def load_inputs(value):
         require(total <= INPUTS_LIMIT, "RECONCILIATION_BLOB_TOTAL")
         require(contract.sha(data) == digest, "RECONCILIATION_BLOB_DIGEST")
         blobs[digest] = data
-    return source.verify(raw, value["manifest_sha256"], blobs,
+    verified = source.verify(raw, value["manifest_sha256"], blobs,
         implementation_commit=value["implementation_commit"])
+    return VerifiedInputs(verified, load_host_window(value["host_window"], verified))
+
+
+@dataclass(frozen=True)
+class VerifiedInputs:
+    """Keep the new host authority outside the original reconciliation proof."""
+    reconciliation: object
+    host_window: dict
+
+    def __getattr__(self, name):
+        try:
+            original = object.__getattribute__(self, "reconciliation")
+        except AttributeError:
+            raise AttributeError(name) from None
+        return getattr(original, name)
+
+
+def load_host_window(value, verified):
+    """Check raw bytes and relationships, not live fsync or full host provenance.
+
+    In particular a wrapper preimage binds the supplied bytes but does not make
+    those bytes an adopted historical source. The separate, fixed field gate
+    remains closed while wrapper/cost/deadline evidence is unproved.
+    """
+    contract = helper("q2_host_window_contract")
+    billing = helper("q2_host_window_billing")
+    contract.keys(value, ("binding", "carrier_raw", "host_attestation_raw", "configuration",
+        "wrapper_raw", "intent_raw", "intent_sha256", "precheck_bill", "bill"))
+    carrier = unbase64(value["carrier_raw"], contract.CARRIER_BYTES)
+    attestation = unbase64(value["host_attestation_raw"], contract.ATTESTATION_BYTES)
+    location = contract.sources(carrier, attestation)
+    configuration = helper("q2_reconciliation_entry").validate_config(value["configuration"])
+    execution, plan = verified.execution, verified.plan
+    require(configuration["attempt_id"] == execution["attempt_id"]
+        and configuration["source_commit"] == verified.implementation_commit
+        and configuration["source_tree"] == execution["source"]["tree"]
+        and configuration["amendment_sha256"] == configuration["inputs_sha256"] == verified.digest
+        and configuration["guest_stage"] == str(Path(plan["candidate"]["source"]).parent)
+        and configuration["guest_pin"] == plan["host"]
+        and configuration["candidate"] == plan["candidate"]["commit"]
+        and configuration["wheel_sha256"] == plan["candidate"]["wheel_sha256"],
+        "RECONCILIATION_HOST_CONFIGURATION_BINDING")
+    wrapper = unbase64(value["wrapper_raw"], 64 * 1024)
+    require(bool(wrapper), "RECONCILIATION_HOST_WRAPPER_EMPTY")
+    binding = contract.make_binding(implementation_commit=verified.implementation_commit,
+        source_tree=execution["source"]["tree"], source_files_sha256=contract.sha(contract.encoded(execution["source"]["files"])),
+        attempt_id=execution["attempt_id"], plan_sha256=contract.sha(contract.encoded(plan)),
+        amendment_sha256=verified.digest, configuration_sha256=contract.sha(contract.encoded(configuration)),
+        wrapper_sha256=contract.sha(wrapper), location=location)
+    require(value["binding"] == binding, "RECONCILIATION_HOST_BINDING_CHANGED")
+    raw = unbase64(value["intent_raw"], contract.LOGICAL_LIMIT)
+    require(contract.sha(raw) == contract.digest(value["intent_sha256"]),
+        "RECONCILIATION_HOST_MARKER_DIGEST")
+    intent = contract.verify_intent(raw, binding, location)
+    precheck = billing.validate_host_bill(value["precheck_bill"])
+    require(intent["precheck"]["host_bill_sha256"] == contract.sha(contract.encoded(value["precheck_bill"]))
+        and intent["precheck"]["host_bill_summary"] == precheck,
+        "RECONCILIATION_HOST_PRECHECK_BILL")
+    transition = billing.validate_marker_transition(value["precheck_bill"], value["bill"])
+    require(transition["host_id"] == contract.ATTESTATION_SHA256
+        and transition["guest_id"] == contract.sha(contract.encoded(plan["host"])),
+        "RECONCILIATION_HOST_BILL_MACHINE_BINDING")
+    validate_marker_scan(value["bill"], intent, raw, location)
+    return dict(binding=binding, location=location, intent=intent, intent_raw=raw,
+        intent_sha256=value["intent_sha256"], bill=copy.deepcopy(value["bill"]),
+        configuration=copy.deepcopy(configuration))
+
+
+def validate_marker_scan(bill, intent, raw, location):
+    """Cross-bind the billed marker's actual bytes and root to its strict intent."""
+    contract = helper("q2_host_window_contract")
+    scan = bill["inventory"]["scans"][location["directory"]]
+    require(scan["path"] == location["directory"], "RECONCILIATION_HOST_MARKER_LOCATION")
+    rows = {row["relative_path"]: row for row in scan["entries"]}
+    require(set(rows) == {".", contract.INTENT_NAME}, "RECONCILIATION_HOST_MARKER_MEMBERS")
+    root = rows["."]["source_metadata"]
+    identity = intent["directory_identity"]
+    require(all(root[key] == identity[key] for key in ("device", "inode", "uid", "gid"))
+        and root["st_mode"] & 0o7777 == identity["mode"], "RECONCILIATION_HOST_MARKER_IDENTITY")
+    leaf = rows[contract.INTENT_NAME]
+    require(leaf["sha256"] == contract.sha(raw) and leaf["source_metadata"]["size"] == len(raw),
+        "RECONCILIATION_HOST_MARKER_CONTENT")
+
+
+def host_reference(verified):
+    contract = helper("q2_reconciliation_contract")
+    value = verified.host_window
+    return dict(binding=copy.deepcopy(value["binding"]),
+        host_binding_sha256=contract.sha(contract.encoded(value["binding"])),
+        host_marker_sha256=value["intent_sha256"], host_marker_bytes=len(value["intent_raw"]),
+        host_bill_sha256=contract.sha(contract.encoded(value["bill"])))
+
+
+def validate_live_ack(raw, event):
+    """A bounded response to this exact LIVE event, never a renewed window."""
+    contract = helper("q2_reconciliation_contract")
+    value = contract.document(raw, limit=ACK_LIMIT)
+    contract.keys(value, ("schema", "status", *ACK_BINDINGS))
+    require(value["schema"] == ACK_SCHEMA and value["status"] == "HOST_JOINT_ACK",
+        "RECONCILIATION_HOST_ACK_SCHEMA")
+    require(all(value[key] == event[key] for key in ACK_BINDINGS),
+        "RECONCILIATION_HOST_ACK_BINDING")
+    return value
 
 
 def guarded_extract(base, checked, digest, *, root, backend, admission, entry):
@@ -139,18 +247,25 @@ def bootstrap(config, entry, *, on_live=None):
     backend = None
     stage = "configuration"
     stage_owned = False
+    window_consumed = None
     try:
         require(type(config) is dict and set(config) == FIELDS, "RECONCILIATION_BOOTSTRAP_FIELDS")
         require(type(entry) is dict and set(entry) == {"monotonic_ns", "boottime_ns"}
             and all(type(value) is int and value > 0 for value in entry.values()),
             "RECONCILIATION_ENTRY_CLOCK")
-        require(on_live is None or callable(on_live), "RECONCILIATION_LIVE_CALLBACK")
+        require(callable(on_live), "RECONCILIATION_LIVE_CALLBACK_REQUIRED")
         contract = helper("q2_reconciliation_contract")
         delivery = helper("q2_reconciliation_delivery")
         base = helper("q2_prepare_delivery")
         old_boot = helper("q2_startup_retry_bootstrap")
         driver = helper("q2_reconciliation_driver")
         verified = load_inputs(input_bundle(config))
+        window_consumed = verified.host_window["intent"]["window_consumed"]
+        # Pure parsing and a caller-supplied quote do not prove complete original
+        # host obligations, native audit bounds or an actual first-probe deadline.
+        # The current fixed evidence cannot satisfy those prerequisites. There
+        # is no input boolean, amount or callback that may waive this boundary.
+        helper("q2_host_window_contract").require_field_readiness(verified.host_window)
         root = contract.path(config["stage"])
         execution, plan = verified.execution, verified.plan
         require(root == str(Path(plan["candidate"]["source"]).parent)
@@ -158,6 +273,10 @@ def bootstrap(config, entry, *, on_live=None):
             "RECONCILIATION_STAGE_BINDING")
         require(base.verify_guest(config["guest_pin"]) == config["guest_pin"],
             "RECONCILIATION_GUEST_CHANGED")
+        window = verified.host_window["intent"]["window"]
+        require(config["clock_anchor"]["host_issued_ns"] == window["issued_ns"]
+            and config["clock_anchor"]["host_deadline_ns"] == window["deadline_ns"],
+            "RECONCILIATION_HOST_WINDOW_CHANGED")
         envelope = delivery.guest_envelope(config["clock_anchor"], attempt_id=execution["attempt_id"],
             guest_boot_id=config["guest_pin"]["boot_id"], guest_now_ns=entry["boottime_ns"])
         delivery.validate_envelope(config["clock_anchor"], envelope, attempt_id=execution["attempt_id"],
@@ -185,14 +304,17 @@ def bootstrap(config, entry, *, on_live=None):
             source_commit=verified.implementation_commit, source_tree=execution["source"]["tree"],
             clock_anchor_sha256=envelope["clock_anchor_sha256"],
             live_attestation_sha256=contract.sha(documents["live-attestation.json"]),
-            q2_accepted=False, q3_accepted=False, production_supported=False)
+            **backend.host_bindings(), q2_accepted=False, q3_accepted=False, production_supported=False)
         backend.guard()
-        if on_live is not None:
-            on_live(copy.deepcopy(live_event))
         print(contract.encoded(live_event).decode(), end="", flush=True)
+        stage = "host_joint_acknowledgment"
+        ack = validate_live_ack(on_live(copy.deepcopy(live_event)), live_event)
+        backend.guard()
+        require(backend.recheck_before_record() == live, "RECONCILIATION_LIVE_CHANGED_AFTER_ACK")
+        backend.accept_host_ack(live_event, ack)
         stage = "reconciliation_records"
         result = helper("q2_reconciliation_records").write_once(backend.reconciliation_directory,
-            documents, backend.guard)
+            documents, backend.record_guard)
         backend.accept_new_seal(result, documents)
         stage = "staging"
         transfer = guarded_extract(base, checked, config["archive_sha256"], root=root,
@@ -213,14 +335,14 @@ def bootstrap(config, entry, *, on_live=None):
             attempt_id=execution["attempt_id"], source_commit=verified.implementation_commit,
             source_tree=execution["source"]["tree"],
             reconciliation_seal_sha256=contract.sha(contract.encoded(backend.seal)),
-            q2_accepted=False, q3_accepted=False, production_supported=False)
+            **backend.host_bindings(), q2_accepted=False, q3_accepted=False, production_supported=False)
         print(contract.encoded(ready).decode(), end="", flush=True)
         return dict(ready=True, backend=backend, envelope=envelope, entry=entry, record=ready)
     except Exception as error:
         value = str(error) if isinstance(error, ValueError) else type(error).__name__
         result = dict(schema=SCHEMA, status="BLOCKED_RETAINED", stage=stage,
             reason=value if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", value) else type(error).__name__,
-            window_consumed=True, automatic_replay_permitted=False, historical_results_unchanged=True,
+            window_consumed=window_consumed, automatic_replay_permitted=False, historical_results_unchanged=True,
             q2_accepted=False, q3_accepted=False, production_supported=False)
         if backend is not None:
             result.update(attempt_id=backend.retry["attempt_id"], amendment_sha256=backend.verified.digest,
@@ -235,8 +357,8 @@ def bootstrap(config, entry, *, on_live=None):
         return dict(ready=False, backend=None, envelope=None, entry=entry, record=result)
 
 
-def run(config, entry):
-    result = bootstrap(config, entry)
+def run(config, entry, *, on_live=None):
+    result = bootstrap(config, entry, on_live=on_live)
     if not result["ready"]:
         return result["record"]
     return helper("q2_reconciliation_driver").execute(result["backend"], result["envelope"], entry)

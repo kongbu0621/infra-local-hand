@@ -96,13 +96,20 @@ class ProtectedCollection(unittest.TestCase):
         plan = dict(directories=directories, candidate=candidate,
             settings=dict(identity=dict(id=owner["preparation_id"])))
         verified = SimpleNamespace(execution=execution, plan=plan, source_classes={},
-            digest="4"*64, implementation_commit="d"*40)
+            digest="4"*64, implementation_commit="d"*40,
+            host_window=dict(binding={"synthetic":"binding"},intent_raw=b"synthetic intent",
+                intent_sha256=r.sha(b"synthetic intent"),bill={"synthetic":"bill"}))
+        host_ref = r.helper("q2_reconciliation_bootstrap").host_reference(verified)
+        self.host_bindings = {key:host_ref[key] for key in
+            ("host_binding_sha256", "host_marker_sha256", "host_bill_sha256")}
+        self.host_bindings["joint_bill_sha256"] = "a"*64
         docs = {name: records.encoded(dict(synthetic=name)) for name in records.DOCUMENT_NAMES}
         seal, _ = records.make_seal(docs)
         attest = {key: [] for key in r.legacy.ATTESTATION_FIELDS}
         attest.update(unused_ledgers=True, unused_roots=True, original_files_preserved=True,
             ledgers=[{}, {}], reconciliation=dict(seal=seal, source_classes={},
-                historical_atime_preservation_proven=False))
+                historical_atime_preservation_proven=False,host_window=host_ref,
+                host_joint_bindings=self.host_bindings))
         folder = self.root / "reservation"; info = folder.stat()
         receipt = dict(schema=r.legacy.RECEIPT_SCHEMA, status="STARTUP_RETRY_RESOURCES_PREPARED",
             attempt_id=execution["attempt_id"], retry_sha256=r.sha(r.encoded(execution)),
@@ -177,17 +184,17 @@ class ProtectedCollection(unittest.TestCase):
 
     def test_new_receipt_accepts_exact_reconciliation_extension(self):
         verified, envelope, receipt, seal, _ = self.fixture()
-        self.assertEqual(receipt, r.checked_receipt(verified, envelope, self.reader, seal))
+        self.assertEqual(receipt, r.checked_receipt(verified, envelope, self.reader, seal, host_joint_bindings=self.host_bindings))
         self.reader.stable()
 
     def test_receipt_rejects_legacy_attestation_and_window_renewal(self):
         verified, envelope, receipt, seal, _ = self.fixture()
         changed = dict(envelope, deadline_ns=envelope["deadline_ns"]+1)
         with self.assertRaisesRegex(ValueError, "COLLECT_ORIGINAL_DELIVERY_CHANGED"):
-            r.checked_receipt(verified, changed, self.reader, seal)
+            r.checked_receipt(verified, changed, self.reader, seal, host_joint_bindings=self.host_bindings)
         different = dict(seal, status="OTHER")
         with self.assertRaisesRegex(ValueError, "COLLECT_RECONCILIATION_RECEIPT"):
-            r.checked_receipt(verified, envelope, self.reader, different)
+            r.checked_receipt(verified, envelope, self.reader, different, host_joint_bindings=self.host_bindings)
 
     def test_owner_actual_sealed_bytes_bind_terminal_without_self_exit_claim(self):
         verified, envelope, receipt, _, result = self.fixture()
@@ -303,6 +310,7 @@ class ProtectedCollection(unittest.TestCase):
         # Source semantics and live history belong to their separately tested
         # backend. This local collector fixture exposes ONLY read-only methods.
         backend = SimpleNamespace(reconciliation_directory=folder,
+            host_bindings=lambda:self.host_bindings,
             load_sealed_for_collection=lambda retained: records.verify_sealed(folder, retained, lambda: None),
             collection_preservation=lambda observed: dict(old_bytes_preserved=observed == receipt,
                 old_ledgers_preserved=True, historical_results_unchanged=True,
@@ -317,6 +325,16 @@ class ProtectedCollection(unittest.TestCase):
 
 
 class CollectionEnvelopeAndWire(unittest.TestCase):
+    def test_real_entry_blocks_before_any_clock_file_or_guest_read(self):
+        def forbidden(*args, **kwargs):
+            raise AssertionError("unproven field input caused an observation")
+        with patch.object(r, "Reader", side_effect=forbidden), \
+                patch.object(r.Path, "read_text", side_effect=forbidden), \
+                patch.object(r.time, "clock_gettime_ns", side_effect=forbidden), \
+                patch("builtins.print") as output:
+            self.assertEqual(3, r.main([]))
+        self.assertEqual("HOST_WINDOW_FIELD_READINESS_UNPROVEN", json.loads(output.call_args.args[0])["reason"])
+
     def test_expired_window_rejects_before_inputs_read_or_source_verification(self):
         anchor = delivery.legacy.make_clock_anchor(host_issued_ns=100*r.NS, host_deadline_ns=400*r.NS,
             host_probe_send_ns=110*r.NS, host_probe_receive_ns=112*r.NS, guest_sample_ns=1000*r.NS,
@@ -330,6 +348,10 @@ class CollectionEnvelopeAndWire(unittest.TestCase):
             return raw[path]  # Any attempt to read the large input fails this test.
         reader = SimpleNamespace(read=read, close=lambda: None)
         def source(name):
+            # The real field-readiness gate is separately tested below. This
+            # fixture exercises only the retained, bounded clock protocol.
+            if name == "q2_host_window_contract":
+                return SimpleNamespace(require_field_readiness=lambda _:None)
             self.assertEqual("q2_reconciliation_delivery", name)
             return delivery
         args = ["--inputs", "/inputs", "--sha256", "a"*64, "--implementation-commit", "b"*40,
@@ -378,7 +400,7 @@ class CollectionEnvelopeAndWire(unittest.TestCase):
         result = subprocess.run([sys.executable, "-I", "-B", r.__file__], capture_output=True, timeout=10)
         self.assertEqual(3, result.returncode); self.assertEqual(b"", result.stderr)
         value = json.loads(result.stdout)
-        self.assertEqual("EXPLICIT_RECONCILIATION_WINDOW_REQUIRED", value["reason"])
+        self.assertEqual("HOST_WINDOW_FIELD_READINESS_UNPROVEN", value["reason"])
         self.assertTrue(value["read_only"]); self.assertFalse(value["replay_allowed"])
 
 

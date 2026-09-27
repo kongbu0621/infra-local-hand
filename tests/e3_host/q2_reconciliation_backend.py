@@ -59,6 +59,7 @@ class ReconciliationBackend(startup.StartupRetryBackend):
     """Use only a new-contract-validated view, never decode it as startup v1."""
     def __init__(self, verified, *, issued_ns, deadline_ns, boot_deadline_ns,
                  delivery_envelope, reconciliation_directory, read_only_collection=False):
+        helper("q2_host_window_contract").require_field_readiness(verified.host_window)
         # This constructor intentionally does not call StartupRetryBackend.__init__:
         # the new execution view has its own schema and source-class authority.
         require(type(read_only_collection) is bool, "RECONCILIATION_COLLECTION_MODE")
@@ -70,6 +71,10 @@ class ReconciliationBackend(startup.StartupRetryBackend):
             "RECONCILIATION_BOOT_WINDOW")
         self.read_only_collection = read_only_collection
         self.verified = verified
+        self.host_window = copy.deepcopy(verified.host_window)
+        self.host_ack = None
+        self.admitted_joint_quote = None
+        self.joint_quote = None
         self.plan = copy.deepcopy(verified.plan)
         p.LinuxBackend.__init__(self, self.plan)
         # The base initialization creates no files/processes. Its default deadline
@@ -121,6 +126,7 @@ class ReconciliationBackend(startup.StartupRetryBackend):
         self.new_staging_peak = dict(bytes=0, inodes=0)
         self._io = helper("q2_reconciliation_io")
         self._billing = helper("q2_reconciliation_billing")
+        self._host_billing = helper("q2_host_window_billing")
         self._sources = helper("q2_reconciliation_sources")
 
     def close(self):
@@ -274,7 +280,9 @@ class ReconciliationBackend(startup.StartupRetryBackend):
         quote = self._billing.quote_bill(scans, obligations, self._new_obligations(), quotas,
             list(device_rows.values()), installation_targets=[x["candidate"]["destination"] for x in self.histories],
             expected_roots=expected_roots, quota_expected=quota_expected, sealed=self.reconciliation_sealed)
-        self.quote = quote
+        joint = self._host_billing.joint_quote(quote, self.host_window["bill"])
+        self._host_billing.require_joint_admissible(joint, proposed=not self.reconciliation_sealed)
+        self.quote, self.joint_quote = quote, joint
         self._current_mounts, self._current_inventory = mounts, inventory
         self.reservation_records = {name: sha(c.encoded(value)) for name, value in records.items()}
         self.reservation_proofs = obligations
@@ -286,7 +294,7 @@ class ReconciliationBackend(startup.StartupRetryBackend):
         require(inventory == self._current_inventory, "RECONCILIATION_QUOTA_DRIFT")
         return dict(cumulative_actual=costs, reservations=self.reservation_proofs,
             reservation_records=self.reservation_records, quota_inventory=inventory,
-            reconciliation_quote=copy.deepcopy(self.quote), by_device=copy.deepcopy(self.quote["current" if self.reconciliation_sealed else "proposed_after"]["by_device"]),
+            reconciliation_quote=copy.deepcopy(self.quote), host_joint_quote=copy.deepcopy(self.joint_quote), by_device=copy.deepcopy(self.quote["current" if self.reconciliation_sealed else "proposed_after"]["by_device"]),
             quota_unique=dict(hard_bytes=sum(row["hard"] * 1024 for row in inventory),
                 hard_inodes=sum(row["ihard"] for row in inventory)))
 
@@ -300,8 +308,34 @@ class ReconciliationBackend(startup.StartupRetryBackend):
             admitted_bytes=selected["admitted_bytes"], admitted_inodes=selected["admitted_inodes"],
             staging_bytes=staging_bytes, staging_entries=staging_entries, costs=costs)
 
-    def effect_admission(self):
+    def host_reference(self):
+        return helper("q2_reconciliation_bootstrap").host_reference(self.verified)
+
+    def host_bindings(self):
+        require(self.joint_quote is not None, "RECONCILIATION_HOST_JOINT_QUOTE_REQUIRED")
+        ref = self.host_reference()
+        selected = self.admitted_joint_quote or self.joint_quote
+        return {**{key: ref[key] for key in ("host_binding_sha256", "host_marker_sha256", "host_bill_sha256")},
+            "joint_bill_sha256": sha(c.encoded(selected))}
+
+    def accept_host_ack(self, event, ack):
         self.guard()
+        require(not self.read_only_collection and self.host_ack is None
+            and not self.reconciliation_sealed, "RECONCILIATION_HOST_ACK_STATE")
+        checked = helper("q2_reconciliation_bootstrap").validate_live_ack(c.encoded(ack), event)
+        require(all(event[key] == value for key, value in self.host_bindings().items()),
+            "RECONCILIATION_HOST_ACK_DRIFT")
+        self.admitted_joint_quote = copy.deepcopy(self.joint_quote)
+        self.host_ack = copy.deepcopy(checked)
+
+    def record_guard(self):
+        self.guard()
+        require(not self.read_only_collection and self.host_ack is not None
+            and all(self.host_ack[key] == value for key, value in self.host_bindings().items()),
+            "RECONCILIATION_HOST_ACK_REQUIRED")
+
+    def effect_admission(self):
+        self.record_guard()
         require(not self.read_only_collection and self.reconciliation_sealed and self.seal is not None,
             "RECONCILIATION_SEAL_REQUIRED")
         self.verify_seal()
@@ -353,7 +387,8 @@ class ReconciliationBackend(startup.StartupRetryBackend):
             self._io.verify_held(held, self.guard)
         if self.reconciliation_sealed:
             self.attestation["reconciliation"] = dict(seal=copy.deepcopy(self.seal),
-                source_classes=copy.deepcopy(self.source_classes), historical_atime_preservation_proven=False)
+                source_classes=copy.deepcopy(self.source_classes), historical_atime_preservation_proven=False,
+                host_window=self.host_reference(), host_joint_bindings=self.host_bindings())
         if self.live_initial is None:
             self.live_initial = self.live_document(before, after)
         return result
@@ -376,7 +411,8 @@ class ReconciliationBackend(startup.StartupRetryBackend):
             q1=copy.deepcopy(self.attestation["q1_snapshot"]),
             preserved_trees=copy.deepcopy(self.attestation["old_snapshots"]),
             parents=copy.deepcopy(self.parent_observation),
-            bill=copy.deepcopy(self.quote),
+            bill=copy.deepcopy(self.quote), host_window=self.host_reference(),
+            joint_bill=copy.deepcopy(self.joint_quote),
             current_tree_coverage={name: scan_summary(scan) for name, scan in sorted(self.live_scans.items())},
             deadline_ns=self.delivery_envelope["deadline_ns"],
             preparation_deadline_ns=self.delivery_envelope["preparation_deadline_ns"],
@@ -417,10 +453,12 @@ class ReconciliationBackend(startup.StartupRetryBackend):
 
     def load_sealed_for_collection(self, documents):
         require(self.read_only_collection, "RECONCILIATION_COLLECTION_MODE_REQUIRED")
-        helper("q2_reconciliation_driver").validate_documents(self.verified, self.delivery_envelope,
-            self.reconciliation_directory, documents)
         result = helper("q2_reconciliation_records").verify_sealed(self.reconciliation_directory,
             documents, self.guard)
+        parsed = helper("q2_reconciliation_driver").validate_documents(self.verified, self.delivery_envelope,
+            self.reconciliation_directory, documents)
+        self.admitted_joint_quote = copy.deepcopy(parsed["live-attestation.json"]["joint_bill"])
+        self.joint_quote = copy.deepcopy(self.admitted_joint_quote)
         self.sealed_documents, self.seal = dict(documents), copy.deepcopy(result["seal"])
         self.reconciliation_sealed = True
         return result

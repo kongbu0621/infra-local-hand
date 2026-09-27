@@ -16,11 +16,14 @@ def module(name, path=None):
 
 m = module('q2_reconciliation_driver')
 billing_test = module('bill_fixture', Path(__file__).with_name('test_e3_q2_reconciliation_billing.py'))
+host_bill_test = module('host_bill_fixture', Path(__file__).with_name('test_e3_q2_host_window_billing.py'))
 
 
 def fixture():
     args, _ = billing_test.fixture()
     quote = billing_test.m.quote_bill(**args)
+    host_bill=host_bill_test.m.quote_host(host_bill_test.consume(host_bill_test.fixture()))
+    joint=host_bill_test.m.joint_quote(quote,host_bill)
     authority = dict(rule=m.contract.RULE, baseline=m.contract.BASELINE,
         closure=m.contract.CLOSURE, owner_decision=m.contract.OWNER_DECISION,
         operation_id='synthetic-amendment', startup_authority=dict(baseline='a' * 40, closure='b' * 40))
@@ -28,7 +31,8 @@ def fixture():
     plan = dict(host=dict(boot_id='synthetic-boot'), candidate=dict(commit='d' * 40,
         tree='e' * 40, wheel_sha256='f' * 64))
     verified = SimpleNamespace(manifest=authority, digest='0' * 64, implementation_commit='1' * 40,
-        execution=execution, plan=plan, original=dict(candidate=dict(destination='/old/install')),
+        execution=execution, plan=plan, host_window=dict(binding={'synthetic':'binding'},
+            intent_raw=b'synthetic intent',intent_sha256=m.sha(b'synthetic intent'),bill=host_bill), original=dict(candidate=dict(destination='/old/install')),
         previous=dict(candidate=dict(destination='/second/install')), source_classes={'/old/pin':'HISTORICAL_PIN'},
         obligations=tuple(args['obligations']), adoption=dict(schema='synthetic-test-adoption', prospective_only=True))
     envelope = dict(attempt_id='syntheticonce', clock_anchor_sha256='2' * 64,
@@ -37,9 +41,10 @@ def fixture():
         amendment_sha256=verified.digest, source_commit=verified.implementation_commit,
         boot_before=plan['host'], boot_after=plan['host'], source_classes=verified.source_classes,
         historical_atime_preservation_proven=False, predecessors=[], ledgers=[], historical_units=[], roots=[],
-        q1=[], preserved_trees=[], parents={}, bill=quote, current_tree_coverage={},
+        q1=[], preserved_trees=[], parents={}, bill=quote, joint_bill=joint,
+        host_window=m.helper('q2_reconciliation_bootstrap').host_reference(verified),current_tree_coverage={},
         deadline_ns=270, preparation_deadline_ns=140, clock_anchor_sha256='2' * 64)
-    backend = SimpleNamespace(reconciliation_sealed=False, execution_entered=False, quote=quote, verified=verified, retry=execution,
+    backend = SimpleNamespace(reconciliation_sealed=False, execution_entered=False, quote=quote, joint_quote=joint, verified=verified, retry=execution,
         delivery_envelope=envelope, reconciliation_directory='/new/reservation.reconciliation',
         histories=[verified.original, verified.previous], _billing=billing_test.m, live_document=lambda: live)
     return backend, live
@@ -56,7 +61,8 @@ def test_exact_new_documents_bind_all_sources_and_only_two_obligations():
 
 
 @pytest.mark.parametrize('fault', ['adoption', 'cross_plan', 'old_scope', 'deadline', 'third_target',
-    'free_actual', 'release_staging', 'positive_history', 'missing_obligation', 'extra_live'])
+    'free_actual', 'release_staging', 'positive_history', 'missing_obligation', 'extra_live',
+    'host_marker', 'host_authority', 'host_bill', 'joint_bill'])
 def test_independent_record_mutations_fail(fault):
     backend, live = fixture(); documents = m.make_documents(backend, live)
     parsed = {name:m.contract.document(raw) for name,raw in documents.items()}
@@ -69,6 +75,10 @@ def test_independent_record_mutations_fail(fault):
     elif fault == 'release_staging': parsed['reconciliation-record.json']['obligations'][1]['terminated_by_amendment'] = True
     elif fault == 'positive_history': parsed['live-attestation.json']['historical_atime_preservation_proven'] = True
     elif fault == 'missing_obligation': parsed['reconciliation-record.json']['obligations'].pop()
+    elif fault == 'host_marker': parsed['live-attestation.json']['host_window']['host_marker_sha256']='e'*64
+    elif fault == 'host_authority': parsed['reconciliation-intent.json']['binding']['host_window']['binding']['synthetic']='changed'
+    elif fault == 'host_bill': parsed['live-attestation.json']['host_window']['host_bill_sha256']='e'*64
+    elif fault == 'joint_bill': parsed['live-attestation.json']['joint_bill']['proposed_after']['categories']['capture']['admitted']['bytes']-=1
     else: parsed['live-attestation.json']['skip_quota'] = True
     documents = {name:m.encoded(value) for name,value in parsed.items()}
     with pytest.raises(ValueError):

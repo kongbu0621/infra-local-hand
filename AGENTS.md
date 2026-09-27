@@ -344,6 +344,16 @@ exact evidence and limits. All new results must identify their actual D and fiel
 state; Gate closure, publication and evidence retention do not consume the run
 or prove issuance. Material scope/contract/adoption changes retain R's reopen rule.
 
+The subsequent [component implementation review](docs/a2-execution/Q2_HOST_WINDOW_IMPLEMENTATION_REVIEW.md)
+records H1/H2/H4 component work and H3 binding primitives. H3's complete field
+dispatcher and H5 live delivery remain NOT READY: existing evidence does not
+prove the first remote absolute deadline, complete host future/audit costs,
+wrapper source admission or actual filesystem qualification. Current production
+entries therefore refuse before any field read, window or consumption. This is
+a factual readiness block under the closed A, not a request to approve A again.
+The exact-D private package supports offline verification only. No actual window
+was consumed and no owner was issued by this work.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

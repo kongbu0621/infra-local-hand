@@ -21,7 +21,7 @@ def test_no_arguments_or_unknown_configuration_never_produces_ready(capsys):
     result = m.bootstrap({'release_old':True}, {})
     assert result['ready'] is False and result['backend'] is None
     assert result['record']['reason'] == 'RECONCILIATION_BOOTSTRAP_FIELDS'
-    assert result['record']['window_consumed'] is True
+    assert result['record']['window_consumed'] is None
     assert 'READY' not in capsys.readouterr().out
 
 
@@ -32,9 +32,9 @@ def test_base64_is_strict_and_bounded(value, limit):
 
 def test_input_bundle_cannot_silently_add_an_execution_option():
     config = dict(manifest_raw='e30=',manifest_sha256='0'*64,blobs={},implementation_commit='1'*40,
-        release_unconditionally=True)
+        host_window={},release_unconditionally=True)
     result = m.input_bundle(config)
-    assert set(result) == {'manifest_raw','manifest_sha256','blobs','implementation_commit'}
+    assert set(result) == {'manifest_raw','manifest_sha256','blobs','implementation_commit','host_window'}
     result['release_unconditionally']=True
     with pytest.raises(ValueError, match='FIELDS'): m.load_inputs(result)
 
@@ -75,11 +75,14 @@ def pipeline(monkeypatch, failure=None):
     files={'/root/synthetic/tools/q2_fixture.py':'# synthetic\n'}
     hashes={name:contract.sha(raw.encode()) for name,raw in files.items()}
     verified=SimpleNamespace(digest='a'*64,implementation_commit='b'*40,
+        host_window={'intent':{'window_consumed':True,'window':{'issued_ns':now,'deadline_ns':now+300*10**9}}},
         execution=dict(attempt_id='syntheticonce',source=dict(files=hashes,tree='c'*40)),
         plan=dict(candidate=dict(source='/root/synthetic/source'),
             directories=dict(reservation=dict(path='/new/reservation'))))
     envelope=dict(attempt_id='syntheticonce',issued_ns=boot,preparation_deadline_ns=boot+140*10**9,
         deadline_ns=boot+270*10**9,clock_anchor_sha256='d'*64)
+    host_fields={name:'f'*64 for name in ('host_binding_sha256','host_marker_sha256','host_bill_sha256','joint_bill_sha256')}
+    ack_seen=[]
     class Backend:
         def __init__(self,*args,**kwargs):
             self.retry=verified.execution; self.verified=verified
@@ -91,7 +94,11 @@ def pipeline(monkeypatch, failure=None):
         def stage_admission(self,*args):events.append('full-bill');return {}
         def recheck_before_record(self):events.append('second-live');return {}
         def guard(self):
-            if failure=='deadline':raise ValueError('RECONCILIATION_DEADLINE')
+            if failure=='deadline' or failure=='ack_late' and ack_seen:
+                raise ValueError('RECONCILIATION_DEADLINE')
+        def host_bindings(self):return host_fields
+        def accept_host_ack(self,*args):events.append('host-ack-accepted')
+        def record_guard(self):self.guard()
         def accept_new_seal(self,*args):
             events.append('verify-new-seal');self.reconciliation_sealed=True
             if failure=='seal_recheck':raise ValueError('LIVE_CHANGED')
@@ -99,8 +106,12 @@ def pipeline(monkeypatch, failure=None):
         def close(self):events.append('close')
     config=dict(manifest_raw='e30=',manifest_sha256='a'*64,blobs={},implementation_commit='b'*40,
         stage='/root/synthetic',archive=base64.b64encode(b'archive').decode(),archive_sha256='e'*64,
-        files=files,file_hashes=hashes,clock_anchor={},guest_pin={'boot_id':'test'})
+        files=files,file_hashes=hashes,clock_anchor={'host_issued_ns':now,'host_deadline_ns':now+300*10**9},
+        guest_pin={'boot_id':'test'},host_window={})
     fake={
+        # Only this isolated protocol fixture replaces the known-unsatisfied
+        # field-readiness gate. It does not establish actual host provenance.
+        'q2_host_window_contract':SimpleNamespace(require_field_readiness=lambda value:None),
         'q2_reconciliation_delivery':SimpleNamespace(guest_envelope=lambda *a,**k:envelope,
             validate_envelope=lambda *a,**k:None,legacy=SimpleNamespace(preparation_window=lambda *a:(now,now+140*10**9))),
         'q2_prepare_delivery':SimpleNamespace(verify_guest=lambda pin:pin,
@@ -115,13 +126,20 @@ def pipeline(monkeypatch, failure=None):
     monkeypatch.setattr(m,'helper',lambda name:fake[name] if name in fake else real_helper(name))
     monkeypatch.setattr(m,'guarded_extract',lambda *a,**k:(events.append('persistent-stage') or {}))
     monkeypatch.setattr(m,'write_metadata',lambda root,name,*a:events.append('metadata:'+name))
-    return m.bootstrap(config,entry,on_live=lambda event:events.append('live-signal')),events
+    def on_live(event):
+        events.append('live-signal');ack_seen.append(True)
+        if failure=='ack_none':return b''
+        ack=dict(schema=m.ACK_SCHEMA,status='HOST_JOINT_ACK',**{key:event[key] for key in m.ACK_BINDINGS})
+        if failure=='ack_wrong':ack['host_marker_sha256']='0'*64
+        return contract.encoded(ack)
+    if failure=='field_readiness':fake.pop('q2_host_window_contract')
+    return m.bootstrap(config,entry,on_live=on_live),events
 
 
 def test_complete_joint_live_and_after_quote_precede_every_persistent_write(monkeypatch,capsys):
     result,events=pipeline(monkeypatch)
     assert result['ready'] is True
-    assert events[:6]==['full-live','full-bill','second-live','live-signal','persistent-record','verify-new-seal']
+    assert events[:8]==['full-live','full-bill','second-live','live-signal','second-live','host-ack-accepted','persistent-record','verify-new-seal']
     assert events.index('persistent-stage')>events.index('verify-new-seal')
     assert 'metadata:clock-anchor.json' in events
     text=capsys.readouterr().out
@@ -136,3 +154,50 @@ def test_any_joint_or_seal_drift_blocks_following_mutations(monkeypatch,failure,
     if failure!='seal_recheck':
         assert 'persistent-record' not in events and 'live-signal' not in events
     assert 'RECONCILIATION_BOOTSTRAP_READY' not in capsys.readouterr().out
+
+
+def ack_fixture():
+    event = {name: ('a' * 40 if name in ('source_commit', 'source_tree') else 'b' * 64)
+        for name in m.ACK_BINDINGS}
+    event['attempt_id'] = 'synthetic-attempt'
+    return event, dict(schema=m.ACK_SCHEMA, status='HOST_JOINT_ACK', **event)
+
+
+def test_host_ack_is_exact_bounded_and_rejects_duplicate_keys():
+    contract = m.helper('q2_reconciliation_contract')
+    event, ack = ack_fixture()
+    raw = contract.encoded(ack)
+    assert m.validate_live_ack(raw, event) == ack
+    for invalid in (raw.replace(b'{', b'{"status":"HOST_JOINT_ACK",', 1),
+                    raw[:-2] + b',"extra":true}\n', b' ' * (m.ACK_LIMIT + 1), ack):
+        with pytest.raises(ValueError):
+            m.validate_live_ack(invalid, event)
+
+
+@pytest.mark.parametrize('field', m.ACK_BINDINGS)
+def test_host_ack_cannot_authorize_a_different_live_event(field):
+    contract = m.helper('q2_reconciliation_contract')
+    event, ack = ack_fixture()
+    ack[field] = 'changed'
+    with pytest.raises(ValueError, match='ACK_BINDING'):
+        m.validate_live_ack(contract.encoded(ack), event)
+
+
+@pytest.mark.parametrize('failure', ['ack_none', 'ack_wrong', 'ack_late'])
+def test_missing_changed_or_late_host_ack_never_reaches_first_guest_write(monkeypatch, capsys, failure):
+    result, events = pipeline(monkeypatch, failure)
+    assert result['ready'] is False
+    assert 'live-signal' in events
+    assert 'host-ack-accepted' not in events
+    assert 'persistent-record' not in events and 'persistent-stage' not in events
+    text = capsys.readouterr().out
+    assert text.count('"status":"LIVE_ATTESTED"') == 1
+    assert 'RECONCILIATION_BOOTSTRAP_READY' not in text
+
+
+def test_actual_field_readiness_gate_blocks_before_guest_observation_or_backend(monkeypatch, capsys):
+    result, events = pipeline(monkeypatch, 'field_readiness')
+    assert result['ready'] is False
+    assert result['record']['reason'] == 'HOST_WINDOW_FIELD_READINESS_UNPROVEN'
+    assert events == []
+    assert 'LIVE_ATTESTED' not in capsys.readouterr().out

@@ -197,6 +197,48 @@ class HostStoreIntegrity(unittest.TestCase):
             store.write("intent.json", b"ninebytes")
         self.assertFalse((self.directory / "intent.json").exists())
 
+    def test_seal_binds_actual_members_without_copying_raw_or_its_own_hash(self):
+        store = self.store()
+        store.write("probe.stdout", b"retained raw output\n")
+        bindings = dict.fromkeys(entry.HOST_BINDING_FIELDS, "a" * 64)
+        result = store.seal(host_bindings=bindings)
+        store.check()
+        value = entry.delivery.legacy.document(store.files["host-seal.json"])
+        self.assertEqual(["host-seal.json", "probe.stdout"], value["sealed_member_names"])
+        self.assertEqual({"probe.stdout"}, set(value["members"]))
+        member = value["members"]["probe.stdout"]
+        self.assertEqual(io.metadata((self.directory / "probe.stdout").stat()), member["metadata"])
+        self.assertEqual(entry.sha(b"retained raw output\n"), member["sha256"])
+        self.assertNotIn("data", member)
+        self.assertFalse(result["q2_accepted"])
+        self.assertFalse(result["independent_stop_proven"])
+        with self.assertRaisesRegex(ValueError, "HOST_STORE_SEALED"):
+            store.write("late.json", b"{}")
+        self.assertFalse((self.directory / "late.json").exists())
+
+    def test_file_change_during_seal_is_not_hidden_by_memory_hashes(self):
+        store = self.store()
+        store.write("probe.stdout", b"original")
+        real = os.write
+        def race(fd, raw):
+            written = real(fd, raw)
+            (self.directory / "probe.stdout").write_bytes(b"modified")
+            return written
+        with patch.object(entry.os, "write", side_effect=race), self.assertRaisesRegex(
+                ValueError, "HOST_FILE_CHANGED"):
+            store.seal(host_bindings=dict.fromkeys(entry.HOST_BINDING_FIELDS, "a" * 64))
+        self.assertTrue((self.directory / "host-seal.json").exists())
+        with self.assertRaisesRegex(ValueError, "HOST_STORE_UNUSABLE"):
+            store.check()
+
+    def test_expired_guard_prevents_seal_without_late_persistence(self):
+        store = self.store()
+        store.write("probe.stdout", b"original")
+        store.guard = lambda: (_ for _ in ()).throw(ValueError("ORIGINAL_DEADLINE_EXPIRED"))
+        with self.assertRaisesRegex(ValueError, "ORIGINAL_DEADLINE_EXPIRED"):
+            store.seal(host_bindings=dict.fromkeys(entry.HOST_BINDING_FIELDS, "a" * 64))
+        self.assertFalse((self.directory / "host-seal.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

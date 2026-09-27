@@ -45,6 +45,8 @@ REQUIRED_SOURCE_FILES = frozenset({
     "q2_reconciliation_records.py", "q2_reconciliation_billing.py", "q2_reconciliation_backend.py",
     "q2_reconciliation_driver.py", "q2_reconciliation_bootstrap.py", "q2_reconciliation_delivery.py",
     "q2_reconciliation_entry.py", "q2_reconciliation_collect.py",
+    "q2_host_window_contract.py", "q2_host_window_record.py",
+    "q2_host_window_billing.py", "q2_host_window_delivery.py",
 })
 
 

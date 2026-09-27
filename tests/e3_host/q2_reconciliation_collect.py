@@ -118,7 +118,7 @@ def fixed_envelope(anchor, envelope, attempt_id, *, boot_id, now_ns, anchor_sha2
         attempt_id=attempt_id, boot_id=boot_id, now_ns=now_ns)
 
 
-def checked_receipt(verified, envelope, reader, seal):
+def checked_receipt(verified, envelope, reader, seal, *, host_joint_bindings):
     retry, plan = verified.execution, verified.plan
     path = retry["directories"]["reservation"]["path"] + "/" + legacy.RECEIPT_NAME
     raw = reader.read(path); result = decode(raw)
@@ -143,7 +143,9 @@ def checked_receipt(verified, envelope, reader, seal):
         and type(attest["ledgers"]) is list and len(attest["ledgers"]) == 2,
         "COLLECT_ATTESTATION_BINDING")
     require(attest["reconciliation"] == dict(seal=seal, source_classes=verified.source_classes,
-        historical_atime_preservation_proven=False), "COLLECT_RECONCILIATION_RECEIPT")
+        historical_atime_preservation_proven=False,
+        host_window=helper("q2_reconciliation_bootstrap").host_reference(verified),
+        host_joint_bindings=host_joint_bindings), "COLLECT_RECONCILIATION_RECEIPT")
     require(result["delivery_envelope"] == envelope and result["delivery_sha256"] == sha(encoded(envelope))
         and result["clock_anchor_sha256"] == envelope["clock_anchor_sha256"], "COLLECT_ORIGINAL_DELIVERY_CHANGED")
     directory = result["retry"]["directory"]
@@ -298,13 +300,15 @@ def checked_owner(verified, envelope, receipt, reader):
 
 def collect(verified, envelope, anchor, *, backend, reader, seal_sha256):
     retry, plan = verified.execution, verified.plan
+    host = helper("q2_reconciliation_bootstrap").host_reference(verified)
     value = dict(schema=BUNDLE_SCHEMA, scope=SCOPE, attempt_id=retry["attempt_id"],
         amendment_sha256=verified.digest, inputs_sha256=verified.digest,
         source_commit=verified.implementation_commit, source_tree=retry["source"]["tree"],
         execution_sha256=sha(encoded(retry)), plan_sha256=sha(encoded(plan)),
         delivery_sha256=sha(encoded(envelope)), clock_anchor_sha256=sha(encoded(anchor)),
         reconciliation_seal_sha256=seal_sha256, delivery=envelope, clock_anchor=anchor,
-        files=[], errors=[], complete=False, reason=None, read_only=True, replay_allowed=False,
+        **{key:host[key] for key in ("host_binding_sha256", "host_marker_sha256", "host_bill_sha256")},
+        joint_bill_sha256=None, files=[], errors=[], complete=False, reason=None, read_only=True, replay_allowed=False,
         remote_stop_proven=False, original_eof_proven=False,
         q2_accepted=False, q3_accepted=False, production_supported=False)
     def attempt(stage, operation):
@@ -327,7 +331,9 @@ def collect(verified, envelope, anchor, *, backend, reader, seal_sha256):
     receipt = None
     if sealed is not None:
         value["reconciliation"] = sealed
-        receipt = attempt("preparation-receipt", lambda: checked_receipt(verified, envelope, reader, sealed["seal"]))
+        value.update(backend.host_bindings())
+        receipt = attempt("preparation-receipt", lambda: checked_receipt(verified, envelope, reader,
+            sealed["seal"], host_joint_bindings=backend.host_bindings()))
     if receipt is not None:
         value["preservation"] = attempt("historical-preservation", lambda: backend.collection_preservation(receipt))
         value["owner_proof"] = attempt("owner-retained-artifacts", lambda: checked_owner(verified, envelope, receipt, reader))
@@ -358,7 +364,8 @@ def bundle_report(value, *, output_limit):
         return dict(format="gzip+base64", raw_bytes=len(raw), compressed_bytes=len(compressed),
             raw_sha256=sha(raw), sha256=sha(compressed), data=base64.b64encode(compressed).decode())
     fields = ("attempt_id", "amendment_sha256", "inputs_sha256", "source_commit", "source_tree",
-        "execution_sha256", "plan_sha256", "delivery_sha256", "clock_anchor_sha256", "reconciliation_seal_sha256")
+        "execution_sha256", "plan_sha256", "delivery_sha256", "clock_anchor_sha256", "reconciliation_seal_sha256",
+        "host_binding_sha256", "host_marker_sha256", "host_bill_sha256", "joint_bill_sha256")
     report = dict(schema=SCHEMA, scope=SCOPE, status="COLLECTED" if value.get("complete") is True else "INCOMPLETE",
         **{key: value.get(key) for key in fields}, reason=value.get("reason"),
         read_only=True, replay_allowed=False, remote_stop_proven=False, original_eof_proven=False,
@@ -386,6 +393,10 @@ def main(argv=None):
     reader = backend = None
     try:
         args = parser.parse_args(argv)
+        # This fixed implementation has no proven first-probe hard deadline or
+        # complete host obligation/audit sources. Refuse before even clock-file
+        # reads; a later retained input cannot replace the missing field facts.
+        helper("q2_host_window_contract").require_field_readiness(None)
         require(all(getattr(args, name.replace("-", "_")) for name in fields), "EXPLICIT_RECONCILIATION_WINDOW_REQUIRED")
         require(sys.platform.startswith("linux") and sys.flags.isolated and sys.dont_write_bytecode
             and os.getuid() == os.geteuid() == 0, "COLLECT_ISOLATED_ROOT_REQUIRED")
@@ -409,6 +420,8 @@ def main(argv=None):
         require(bundle.get("manifest_sha256") == args.sha256
             and bundle.get("implementation_commit") == args.implementation_commit, "COLLECT_INPUT_BINDING")
         verified = helper("q2_reconciliation_bootstrap").load_inputs(bundle)
+        # Collection cannot launder unproved host inputs into a complete report.
+        helper("q2_host_window_contract").require_field_readiness(verified.host_window)
         bound[0] = fixed_envelope(anchor, envelope, verified.execution["attempt_id"], boot_id=boot,
             now_ns=time.clock_gettime_ns(time.CLOCK_BOOTTIME), anchor_sha256=args.clock_anchor_sha256)
         reader.uids.add(verified.plan["account"]["uid"])
