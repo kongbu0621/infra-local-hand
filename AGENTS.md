@@ -376,7 +376,8 @@ Owner B or CLOSED C. The authoritative proposal consists of
 [requirements](docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md).
-Its exact documentation A is to be pinned by a subsequent baseline record.
+Its exact documentation A is `887b640b394f9983f37dfe97c58ba35aaa099359`;
+[baseline registration](docs/governance/Q2_KERNEL_FACT_READ_BASELINE.md) pins its three files.
 R, direct source/integrity, Owner-only authority and the existing change rule remain unchanged.
 
 The [field screenshot review](docs/a2-execution/Q2_LOCAL_PREFLIGHT_FIELD_REVIEW.md)
