@@ -64,6 +64,15 @@ null/未知标记、旧摘要错标新版、新版不可精确表示值均拒绝
 
 ## 下一次真实执行的边界
 
+修复已发布到 `main`：公开 commit `9a556322183f0fa80d4edeada4b03c74a26524a5`，
+本地同字节 commit `5c4c07a3cea58db2660be9f1f9322ddbafdfefbe`，相同 tree
+`0687d7cd8eaf6a901d565a60b99042827437354c`。
+从验证过的准确公开 Git commit 对象离线构建 wheel，大小 265979 字节，SHA-256
+`0924ac531f3f710cd39838318e8d72b09a4261589df70cf3f650be62a8c8ebcb`。
+53 个 payload 文件逐项匹配 committed source；独立 venv 安装后 broker/MCP 的
+source 与 payload 身份一致。可选 MCP SDK 未安装，未声称真实 MCP 会话通过。
+构建、安装与 provenance 检查均 PASS，仍只是离线候选验证。
+
 本次没有重跑原 recovery/owner，没有换名发行或刷新旧期限。
 原批准恢复的 R05/R06/R07 固定旧候选、只允许未发行的首次运行且禁止自动重试；
 其一次 300 秒窗口已经结束。修复后的候选替换和新的运行窗口因此需要明确的新范围，
@@ -72,3 +81,4 @@ null/未知标记、旧摘要错标新版、新版不可精确表示值均拒绝
 新范围应一次覆盖准确状态鉴证、保留旧材料、独立候选安装、新运行身份及完整退出/EOF
 复核，并在文档基线获批准后整批实施。任何旧对象已消费、容量不足或身份不明应停止。
 Q2/Q3、production、GX10 及 E4–E6 的既有验收状态均未改变。
+具体新范围见 [单次新运行提案](q2-cpuquota-retry/REQUIREMENTS.md)，当前仍为 OPEN。
