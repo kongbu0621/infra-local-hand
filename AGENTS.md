@@ -254,8 +254,16 @@ The independent C is `d4a925c883672fadc7d1b10a8dfe58df18b922cd`; tooling D
 [tooling verification and execution blockers](docs/a2-execution/Q2_SUPERVISOR_STARTUP_RETRY_VERIFICATION.md).
 The new batch is NOT ISSUED and its one execution authorization is unconsumed.
 The current no-release accounting retains at least 192 + 64 + new 64 = 320 MiB
-of installation obligations against the original 256 MiB ceiling. Missing
-historical raw records and instance evidence are an independent blocker.
+of installation obligations against the original 256 MiB ceiling. Remaining
+historical raw/provenance gaps and current-state attestation are an independent
+blocker. The [versioned evidence index](docs/a2-execution/evidence/q2-history-20260927/README.md)
+corrects the initial missing-input report: both old preparation/recovery instance
+identities and ten historical files have been recovered from existing carriers;
+preflight expected bytes are derived, while six reservation raw values remain
+missing. Preserve that distinction and consult the index before requesting
+materials again. Critical evidence must have a repository index with digest,
+source relation, retention location and explicit availability; private raw
+evidence remains in its separately versioned private Git archive.
 
 ### Proposed installation-reservation reconciliation
 
@@ -269,7 +277,7 @@ installation obligations. All actual data, other commitments, original ceilings,
 frozen runtime and the same single unissued startup batch remain retained.
 There is no closure-ready A, Owner B or C for this amendment. Do not implement
 release behavior or generate a READY private batch. First obtain the missing
-historical originals/provenance and instance identities, then complete an exact
+historical originals/provenance and current instance attestation, then complete an exact
 reviewable proposal. Existing startup approval does not authorize this changed
 accounting; no immediate approval of the incomplete amendment is requested.
 

@@ -14,11 +14,14 @@ BLOCKED。不得输出 READY 或调用 guest 来试试看；唯一获批新运�
 
 本提案先完成以下非实现性工作：
 
-1. 取得原 preparation/transfer、recovery、第二次 bootstrap 所缺的真实 raw。
+1. 从[已恢复证据索引](../evidence/q2-history-20260927/README.md)继续，取得原
+   preparation/transfer、recovery、第二次 bootstrap 剩余六份 reservation raw，
+   并完成 preflight 原文件证明/比较及其他前序文档和 ledger 的来源核验。
    有既存可信历史树摘要的，完整展开并复算；第二 staging 无历史锚时，要求真实
    留存来源，不从现状自设 hash 或把源码预期值当作执行回执。
-2. 补齐原 preparation/recovery 及后续外层/监督器的准确历史实例身份，逐项证明
-   允许保留的失败对象。当前 failed 不能替代原 InvocationID 的来源。
+2. 原 preparation/recovery 历史 InvocationID 和退出来源已在既有载体内找回；
+   使用归档中的对应原件，连同后续外层/监督器身份逐项绑定允许保留的失败对象。
+   现场状态仍需核实；当前 failed 不能替代原 InvocationID 的来源。
 3. 为十条历史 reservation 制作私有可审阅的来源清单：两 owner、两 bootstrap、
    原 intent/preflight、recovery-intent、retry-intent、recovery stage、第二
    bootstrap-attestation；记录 raw 是否取得、原摘要或历史树证明、类别与相互引用。
@@ -73,8 +76,8 @@ startup 的容量与期限复核 → 如成立才继续原独立安装与一次�
 
 ## 完成与当前下一步
 
-当前下一步是取得缺失的真实留存材料或有效历史树展开证明，并核实准确失败实例
-身份。输入清单未闭合时，本提案保持 OPEN，不向 Owner 请求立即运行，也不交付
+当前下一步是按已修正索引补齐剩余真实留存材料或有效历史树展开证明，并准备
+基于已恢复历史身份的现场核验。输入清单未闭合时，本提案保持 OPEN，不向 Owner 请求立即运行，也不交付
 可误解为 READY 的入口。
 
 关闭后实施完成须有准确 D、义务前后账单、原材料保持证明、新追加记录及其 seal，

@@ -105,14 +105,25 @@ persistent mutation. The historical 8192/4096 installation inode reservations
 were independently traced to pinned pre-installation code; 16384 is the original
 total inode ceiling, not an extra reservation.
 
-Separately, seven historical raw reservation files are absent from returned
-local evidence, with six lacking independently anchored single-file digests.
-Some may be recoverable by fully expanding and reproducing an already anchored
-historical tree hash. The second staging tree has no usable historical anchor;
-newly hashing current content cannot manufacture historical provenance. Original
-preparation/recovery service instance identities also need their original retained
-evidence. Private file paths and machine identities are in the delivered private
-missing-input list, not this public repository.
+The original missing-input inventory at commit
+`e25a5c4d008511d974c2817b5767714bd727a1ba` was incomplete. The subsequent
+[historical evidence recovery and repository index](evidence/q2-history-20260927/README.md)
+supersedes its availability claims. Existing nested carriers contain both original
+preparation/recovery InvocationIDs (three consistent records each), separate
+original exit evidence and ten recoverable historical files whose bytes match
+retained SHA-256 pins. These include the original preparation host streams,
+intent, report, failure receipt and five step/command records.
+
+Six reservation raw values remain unavailable. The seventh, preflight, now has
+derived expected bytes from the hash-verified original receipt and pinned writer/
+validator, but no independent raw-file capture or current guest comparison.
+Other predecessor-document and ledger provenance gaps remain in the private
+inventory; six is not the count of all admission gaps. Some sources may be proved
+by fully reproducing an already anchored historical tree hash. The second staging
+tree has no usable historical anchor; newly hashing current content cannot create
+historical provenance. Historical instance recovery is not a current-state check.
+Machine paths and identities remain in the separately versioned private evidence
+archive; public hashes, source relationships and archive commit are in the index.
 
 No runnable READY private entry was generated. No old reservation was released,
 no ceiling or capability was raised, and no old verdict was revised. Q2, Q3 and
@@ -129,9 +140,10 @@ commitments, original ceilings, frozen runtime and this same single unissued bat
 No reconciliation algorithm, executable prototype or release configuration is
 implemented or authorized.
 
-First obtain the missing existing raw records and original instance evidence, or
-valid historical tree-expansion proofs, and close the exact provenance and amount
-inventory. Only then can a complete three-document amendment A, exact Owner B
+First close the remaining raw/provenance and amount inventory using the recovered
+evidence and any valid historical tree-expansion proofs. Original instance IDs
+already recovered must not be requested again; current attestation remains
+necessary before execution. Only then can a complete three-document amendment A, exact Owner B
 and independent C authorize that changed accounting. This report does not ask
 for immediate approval of an incomplete release proposal. Tooling P1 and the
 reported P2 checks are delivered; private READY handoff and actual execution
