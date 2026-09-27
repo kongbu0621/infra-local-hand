@@ -130,7 +130,9 @@ def helper_budget_fixture(phase):
                 "import os;os.write(1,b'1234567890')"], "cwd": roots["work"], "env": environment}]}
         # Use distinct names even when the test interpreter is not a venv.
         alternate = root / "other-python"
-        alternate.symlink_to(Path(sys.executable).resolve())
+        # An outside alias to a copied venv executable loses its pyvenv.cfg;
+        # use the actual base interpreter so its standard library remains bound.
+        alternate.symlink_to(Path(getattr(sys, "_base_executable", None) or sys.executable).resolve())
         plan["prepared"]["runtime_python"] = str(alternate)
         mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
         with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \

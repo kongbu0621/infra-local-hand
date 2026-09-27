@@ -163,7 +163,7 @@ def source(value, repository):
 
 def controller(value, template, declared_totals=None):
     """Verify independent controller before the first file or process mutation."""
-    from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c, q2_management as management
+    from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c, q2_management as controller_management
     from admin.local_hand_quota_observer.systemd_runtime import Capture
     from local_hand_jobs import budget, quota_contract as q, quota_grant as g
     prepared = template.data()
@@ -228,7 +228,7 @@ def controller(value, template, declared_totals=None):
         systemctl_sha256=data["programs"]["systemctl"]["sha256"])
     manifest = SimpleNamespace(boot_id=template.data()["grant"]["request"]["boot_id"],
                                cgroup_parent=template.data()["grant"]["query_parent"]["path"])
-    before = management.host_identity(adapter, manifest, spec)
+    before = controller_management.host_identity(adapter, manifest, spec)
     guard._cgroup_identity(spec)
     guard._check_manager(guard._show_once(adapter, spec), spec, before[0])
     # Delegation belongs to the enclosing system user manager service, never
@@ -277,7 +277,7 @@ def controller(value, template, declared_totals=None):
             except (OSError, ValueError): pass
         capture.close_pipes()
     guard._cgroup_identity(spec)
-    require(before == management.host_identity(adapter, manifest, spec), "LAUNCHER_CONTROLLER_CHANGED")
+    require(before == controller_management.host_identity(adapter, manifest, spec), "LAUNCHER_CONTROLLER_CHANGED")
     current = budget.current_clock()
     require(current["boot_id"] == clock["boot_id"] and current["boottime_ns"] < envelope["deadline_ns"],
             "LAUNCHER_DEADLINE")

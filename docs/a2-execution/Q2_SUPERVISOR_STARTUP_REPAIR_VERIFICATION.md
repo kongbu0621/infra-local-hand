@@ -32,7 +32,7 @@ false. No old deadline, reservation, ledger, payload or failure is amended.
 
 ## Diagnosis and bounded repair
 
-Two independent defects affect the existing source path:
+Two independent defects affected the original source path:
 
 1. `observe_start()` rejected the real queued-start state before a service had
    acquired its process and invocation identities. Waiting must stay inside
@@ -94,6 +94,27 @@ promoted to proof of unchanged atime.
 
 Linux documents the owner/capability condition for this flag in
 [open(2)](https://man7.org/linux/man-pages/man2/open.2.html).
+
+## Retained repair-candidate findings
+
+The first repair candidate `eb8a54ab413396df26a393ff730e958e68fac00a` completed
+local full-source testing with **3 failed, 1744 passed and 16 environment skips**.
+Two capacity tests still intercepted the old first namespace read; the corrected
+identity chain reads the fixed boot ID first. Their sentinel now follows that
+read while continuing to reject filesystem/process side effects and requiring
+capacity refusal before subsequent host admission. The third failure was a
+test fixture aliasing a copied venv executable outside its `pyvenv.cfg`; the
+alias now uses the actual base interpreter. Production log budgets are unchanged.
+
+Following the complete controller path also found a repair-draft defect: the
+launcher's local management-budget dictionary shadowed its imported management
+module. A distinct module alias fixes the resulting `AttributeError`.
+A full controller-flow regression reproduced that failure before the fix and
+then verified both repeated identity checks and identity-change rejection.
+The post-fix Q2/controller-guard suite passed **523 tests with 2 explicit
+environment skips**. The two changed test modules' focused rerun passed 5 tests.
+The first candidate's failures remain recorded; its full-source run is not
+reported as a passing result of the successor candidate.
 
 ## Verification boundary
 
