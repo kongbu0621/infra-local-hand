@@ -371,8 +371,8 @@ batch, prove H07, or supply missing historical obligations.
 
 ### Fixed kernel fact read amendment
 
-Scope `LH-Q2-KERNEL-FACT-READ-v1` is **PROPOSED / OPEN**, not covered by a new
-Owner B or CLOSED C. The authoritative proposal consists of
+Scope `LH-Q2-KERNEL-FACT-READ-v1` is **CLOSED for K0–K4 at exact A below**.
+Its authoritative documents consist of
 [requirements](docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md).
@@ -386,11 +386,17 @@ no consumption by this invocation. It does not prove the boot value, absence of
 the consumption path, full raw output integrity or joint admission. Do not ask
 Owner to repeatedly paste the same version or change host privileges.
 
-The proposed amendment only permits explicit ordinary reads of the two fixed
+The approved amendment only permits explicit ordinary reads of the two fixed
 kernel views after fd/procfs/mount-identity qualification, with disclosed kernel
-metadata semantics. It would narrowly supersede the original host A's universal
+metadata semantics. It narrowly supersedes the original host A's universal
 O_NOATIME clause for those reads. It is not a generic fallback or a change to R.
-Before exact B and independent C, do not implement or field-run that amendment.
+Owner B is retained in
+[Q2_KERNEL_FACT_READ_OWNER_DECISION.md](docs/governance/Q2_KERNEL_FACT_READ_OWNER_DECISION.md),
+event `LH-Q2-KERNEL-FACT-READ-CLOSURE-20260927-01`, including the exact decision
+and explicit public disclosure approval for this batch's sanitized documents.
+This separate bookkeeping-only C records CLOSED before any new implementation;
+A's three documents and historical OPEN labels remain byte-identical. D must
+descend from this C. No new implementation or test source is included in C.
 All ordinary evidence O_NOATIME protection, old pins and budgets, frozen runtime,
 no-consumption/no-remote local branch and the full execution blockers remain.
 Unaffected CLOSED work remains authorized; no blanket reopening or new batch.
