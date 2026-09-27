@@ -157,10 +157,20 @@ def validate_plan(plan):
 
 def facts_from_receipt(plan, receipt, children):
     """Translate observed pins, never planned inode/account/cgroup identities."""
+    require(receipt["status"] == "RESOURCES_PREPARED", "DRIVER_RESOURCES_NOT_PREPARED")
+    authority = dict(schema="local-hand-q2-preparation-authority/v1", scope=plan["scope"], baseline=plan["baseline"],
+        plan_sha256=sha(encoded(plan)), preparation_id=plan["preparation_id"], receipt_sha256=sha(encoded(receipt)))
+    return facts_from_observed(plan, receipt["facts"], children, authority)
+
+
+def facts_from_observed(plan, observed, children, authority):
+    """Bind actual observations to an explicit preparation/recovery authority.
+
+    This common translator cannot turn a failed receipt into a successful one.
+    Each caller admits its own result and constructs the matching provenance.
+    """
     a = helper("q2_prepare_assembly")
     settings = validate_plan(plan)
-    require(receipt["status"] == "RESOURCES_PREPARED", "DRIVER_RESOURCES_NOT_PREPARED")
-    observed = receipt["facts"]
     installation = observed["installation"]
     require(installation["ordinary_verified"] is True, "DRIVER_ORDINARY_INSTALLATION")
     require(installation["source"]["commit"] == plan["candidate"]["commit"]
@@ -186,8 +196,6 @@ def facts_from_receipt(plan, receipt, children):
             and root["hard_inodes"] == planned["inode_hard_limit"] and root["role"] == planned["role"], "DRIVER_QUOTA_CHANGED")
         if planned["slot"] == "store": store = root
         else: slots[planned["slot"]]["roots"][planned["role"]] = root
-    authority = dict(schema="local-hand-q2-preparation-authority/v1", scope=plan["scope"], baseline=plan["baseline"],
-        plan_sha256=sha(encoded(plan)), preparation_id=plan["preparation_id"], receipt_sha256=sha(encoded(receipt)))
     manifest = dict(schema="local-hand-q2-preparation-manifest/v1", source=installation["source"], ordinary=ordinary,
         roots=roots, parents=observed["parents"], boot_id=observed["host"]["boot_id"], epoch=settings["identity"]["epoch"])
     identity = dict(settings["identity"], authority_digest=sha(encoded(authority)), manifest_digest=sha(encoded(manifest)))
