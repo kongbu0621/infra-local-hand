@@ -72,6 +72,13 @@ class ControllerObservation:
         return asdict(self)
 
 
+def cpu_quota_percent(value):
+    """Exact systemd percent text; its parser accepts at most two decimals."""
+    integer(value, 1000, 1_000_000)
+    require(value % 100 == 0, "CONTROLLER_CPU_QUOTA_PRECISION")
+    return f"{value // 10000}.{value // 100 % 100:02d}".rstrip("0").rstrip(".") + "%"
+
+
 def decode_controller(value):
     """Strict pure configuration decoding; declarations are not host facts."""
     fields(value, SPEC_FIELDS)
@@ -80,6 +87,7 @@ def decode_controller(value):
     cgroup = path(value["cgroup"])
     require(PurePosixPath(cgroup).name == unit and
             PurePosixPath(cgroup).parent.name.endswith(".slice"), "CONTROLLER_CGROUP_LAYOUT")
+    cpu_quota_percent(value["cpu_quota_per_sec_usec"])
     return ControllerSpec(unit, token(value["invocation_id"], r"[0-9a-f]{32}"), cgroup,
                           integer(value["cgroup_device"]), integer(value["cgroup_inode"], 1),
                           integer(value["runtime_max_usec"], 1_000_000, 120_000_000),

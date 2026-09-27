@@ -103,6 +103,7 @@ def validate_settings(settings):
         c.number(control["timeout_stop_usec"], 1000, 5000000)
         c.number(control["memory_bytes"], 16*1024**2, 1024**3); c.number(control["tasks_max"], 2, 64)
         c.number(control["cpu_quota_per_sec_usec"], 1000, 1000000); c.number(control["limit_cpu_seconds"], 1, 120)
+        c.cpu_quota_percent(control["cpu_quota_per_sec_usec"])
         c.number(control["storage_bytes"], 65536, 32*1024**2); c.number(control["storage_inodes"], 16, 4096)
     target, supervisor = controllers["target"], controllers["supervisor"]
     require(target["unit"] != supervisor["unit"] and budgets["wall_seconds"] * 1000000 < target["runtime_max_usec"]

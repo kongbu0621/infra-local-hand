@@ -460,7 +460,8 @@ def run_original(plan, repository, *, loaded=None):
         argv = command(value, supervisor, admitted, repository, plan["declarations"]["path"] + "/envelope.json", sha(envelope_raw))
         started = clock(plan, work_end)["boottime_ns"]
         launcher.save(output, "delivery.json", encoded(dict(unit=control_binding["target"].unit, started_ns=started,
-                      deadline_ns=end, argv_sha256=sha(encoded(argv)))))
+                      deadline_ns=end, argv_sha256=sha(encoded(argv)),
+                      cpu_quota_format="systemd-percent-hundredths/v1")))
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             close_fds=True, bufsize=0, cwd="/", env=dict(PATH="/usr/bin:/bin", LANG="C", LC_ALL="C", SYSTEMD_COLORS="0"))
         from admin.local_hand_quota_observer.q2_capture import capture_existing

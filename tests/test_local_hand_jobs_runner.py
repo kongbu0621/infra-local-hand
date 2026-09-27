@@ -1,5 +1,6 @@
 """Trusted DI simulations are distinguished from real cgroup integration."""
 import contextlib
+from fractions import Fraction
 import json
 import os
 from pathlib import Path
@@ -304,20 +305,38 @@ class RunnerTests(unittest.TestCase):
                                   for item in launched.call_args.args[0] if item.startswith("--property="))
                 self.assertEqual(properties["RuntimeMaxSec"], "9000000us" if elapsed == 0 else "2000000us")
                 self.assertEqual(properties["TimeoutStopSec"], "1")
-                self.assertEqual(properties["CPUQuota"], "10.000000%")
+                self.assertEqual(properties["CPUQuota"], "10%")
                 self.assertEqual(properties["LimitCPU"], "1")
                 self.assertEqual(handle["bootstrap"]["phase_deadline_boottime_ns"], 109_000_000_000)
                 self.assertLessEqual(handle["bootstrap"]["phase_deadline_boottime_ns"] + runner.budget.NANOSECONDS,
                                      plan["budget_grant"]["deadline_boottime_ns"])
 
     def test_cpu_quota_is_floored_and_rejects_unrepresentable_small_rates(self):
-        self.assertEqual(runner._cpu_quota({"cpu_seconds": 1, "wall_seconds": 3}), "33.333333%")
-        self.assertEqual(runner._cpu_quota({"cpu_seconds": 1, "wall_seconds": 1000}), "0.100000%")
-        self.assertEqual(runner._cpu_quota({"cpu_seconds": 100, "wall_seconds": 3}), "100.000000%")
+        cases = ((1, 3, "33.33%"), (2, 3, "66.66%"), (1, 1000, "0.1%"),
+                 (1, 999, "0.1%"), (1, 910, "0.1%"), (1, 909, "0.11%"),
+                 (99999, 100000, "99.99%"), (100, 3, "100%"))
+        for cpu, wall, expected in cases:
+            with self.subTest(cpu=cpu, wall=wall):
+                self.assertEqual(runner._cpu_quota({"cpu_seconds": cpu, "wall_seconds": wall}), expected)
         for wall in (1001, 2**53 - 1):
             with self.subTest(wall=wall), self.assertRaises(runner.RunnerError) as failure:
                 runner._cpu_quota({"cpu_seconds": 1, "wall_seconds": wall})
             self.assertEqual(failure.exception.code, "UNSUPPORTED")
+
+    def test_cpu_quota_wire_precision_preserves_the_full_envelope_budget(self):
+        # Parse the public percentage independently as a rational number. The
+        # full runtime includes the stop grace; neither may receive extra CPU
+        # from percentage rounding or floating-point loss on large integers.
+        for cpu, wall in ((1, 3), (2, 7), (1, 999), (7, 1000),
+                          (99999, 100000), (2**53 - 2, 2**53 - 1), (100, 3)):
+            with self.subTest(cpu=cpu, wall=wall):
+                wire = runner._cpu_quota({"cpu_seconds": cpu, "wall_seconds": wall})
+                self.assertRegex(wire, r"^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?%$")
+                rate = Fraction(wire[:-1]) / 100
+                admitted = min(Fraction(cpu, wall), Fraction(1))
+                self.assertLessEqual(rate * wall, cpu)
+                self.assertLessEqual(rate, admitted)
+                self.assertLess(admitted - rate, Fraction(1, 10000))
 
     def test_absolute_deadline_blocks_child_when_boottime_advances(self):
         with helper_budget_fixture("business") as (plan, target):

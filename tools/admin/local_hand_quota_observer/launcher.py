@@ -83,6 +83,7 @@ def decode_launch_input(raw, expected_digest, expected_source_commit):
                            ("memory_bytes", 16 * 1024**2, 1024**3), ("tasks_max", 2, 64),
                            ("cpu_quota_per_sec_usec", 1000, 1_000_000), ("limit_cpu_seconds", 1, 120)):
         integer(controller[key], low, high)
+    require(controller["cpu_quota_per_sec_usec"] % 100 == 0, "CONTROLLER_CPU_QUOTA_PRECISION")
     output = fields(value["output"], ("path", "parent"))
     parent = fields(output["parent"], ("path", "owner_uid", "device", "inode"))
     target, parent_path = path(output["path"]), path(parent["path"])

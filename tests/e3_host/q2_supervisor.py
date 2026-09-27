@@ -298,6 +298,7 @@ def admit(value, binding):
 
 
 def command(value, binding, repository, fixture_path, fixture_digest):
+    from admin.local_hand_quota_observer.controller_guard import cpu_quota_percent
     spec = binding["target"]
     programs = binding["installation"]["programs"]
     properties = dict(User="root", Group="root", Slice=Path(spec.cgroup).parent.name,
@@ -307,7 +308,7 @@ def command(value, binding, repository, fixture_path, fixture_digest):
         RuntimeMaxSec=str(spec.runtime_max_usec) + "us", RuntimeRandomizedExtraSec="0",
         TimeoutStopSec=str(spec.timeout_stop_usec) + "us", TimeoutStopFailureMode="kill",
         MemoryMax=str(spec.memory_bytes), MemorySwapMax="0", TasksMax=str(spec.tasks_max),
-        CPUQuota=str(spec.cpu_quota_per_sec_usec // 10000) + "." + f"{spec.cpu_quota_per_sec_usec % 10000:04d}" + "%",
+        CPUQuota=cpu_quota_percent(spec.cpu_quota_per_sec_usec),
         CPUQuotaPeriodSec="100ms", LimitCPU=str(spec.limit_cpu_seconds), UMask="0077", WorkingDirectory="/",
         NoNewPrivileges="yes", CapabilityBoundingSet=CAPABILITIES, AmbientCapabilities="",
         StandardInput="null")
@@ -638,7 +639,7 @@ def supervise(value, launcher, repository):
         argv = command(value, binding, repository, value["declarations"]["path"] + "/supervisor.json", sha(fixture_raw))
         started = controls.clock(work_end)
         launcher.save(output, "delivery.json", encoded(dict(argv_sha256=sha(encoded(argv)), started_ns=started,
-                                                            deadline_ns=end, unit=binding["target"].unit)))
+            deadline_ns=end, unit=binding["target"].unit, cpu_quota_format="systemd-percent-hundredths/v1")))
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    close_fds=True, bufsize=0, cwd="/", env=dict(PATH="/usr/bin:/bin", LANG="C", LC_ALL="C", SYSTEMD_COLORS="0"))
         def collect():

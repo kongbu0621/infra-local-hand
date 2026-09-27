@@ -39,6 +39,13 @@ def number(value, low=0, high=2**63 - 1):
     return value
 
 
+def cpu_quota_percent(value):
+    """Encode an exact declared CPU rate without rounding or floating point."""
+    number(value, 1000, 1000000)
+    require(value % 100 == 0, "PREPARE_CPU_QUOTA_PRECISION")
+    return f"{value // 10000}.{value // 100 % 100:02d}".rstrip("0").rstrip(".") + "%"
+
+
 def token(value, pattern):
     require(type(value) is str and re.fullmatch(pattern, value), "PREPARE_TOKEN")
     return value
@@ -151,6 +158,7 @@ def decode(raw, digest):
         token(parent["unit"], r"lhq[a-z0-9]+\.slice")
         number(parent["memory_bytes"], 16*1024**2, 2*1024**3); number(parent["tasks_max"], 2, 128)
         number(parent["cpu_quota_per_sec_usec"], 10000, 1000000)
+        cpu_quota_percent(parent["cpu_quota_per_sec_usec"])
     require(len({p["unit"] for p in parents.values()}) == 5, "PREPARE_PARENT_ALIAS")
     tools = value["tools"]; keys(tools, TOOLS)
     for tool in tools.values():

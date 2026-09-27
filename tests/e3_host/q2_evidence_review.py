@@ -303,8 +303,8 @@ def capacity_facts(fixture, reservation, member_bytes):
     return status, capacity
 
 
-def delivery_digest(fixture, fixture_sha):
-    """Pure reconstruction of the fixed v1 producer command; never executed."""
+def delivery_digest(fixture, fixture_sha, *, cpu_quota_format=None):
+    """Reconstruct the recorded encoding; legacy bytes are never rewritten."""
     nested = fixture["launcher"]; spec = nested["controller_envelope"]["controller"]
     programs = nested["assembly"]["installation"]["programs"]
     entry = absolute(nested["resident"]["entry"]["path"])
@@ -312,6 +312,15 @@ def delivery_digest(fixture, fixture_sha):
     require(entry.endswith(suffix), "REVIEW_SOURCE_ENTRY_LAYOUT")
     repository = entry[:-len(suffix)]
     absolute(repository)
+    rate = integer(spec["cpu_quota_per_sec_usec"], 1000)
+    if cpu_quota_format is None:
+        # Historical producer emitted four decimal places, including zeros.
+        # Keep its digest reproducible even though systemd rejected that text.
+        quota = str(rate // 10000) + "." + f"{rate % 10000:04d}" + "%"
+    else:
+        require(cpu_quota_format == "systemd-percent-hundredths/v1", "REVIEW_CPU_QUOTA_FORMAT")
+        require(rate <= 1000000 and rate % 100 == 0, "REVIEW_CPU_QUOTA_PRECISION")
+        quota = f"{rate // 10000}.{rate // 100 % 100:02d}".rstrip("0").rstrip(".") + "%"
     properties = dict(User="root", Group="root", Slice=PurePosixPath(spec["cgroup"]).parent.name,
         Type="exec", ExitType="cgroup", RemainAfterExit="no", Restart="no", RestartForceExitStatus="",
         KillMode="control-group", SendSIGKILL="yes", FinalKillSignal="SIGKILL", NotifyAccess="none",
@@ -319,7 +328,7 @@ def delivery_digest(fixture, fixture_sha):
         RuntimeMaxSec=str(spec["runtime_max_usec"]) + "us", RuntimeRandomizedExtraSec="0",
         TimeoutStopSec=str(spec["timeout_stop_usec"]) + "us", TimeoutStopFailureMode="kill",
         MemoryMax=str(spec["memory_bytes"]), MemorySwapMax="0", TasksMax=str(spec["tasks_max"]),
-        CPUQuota=str(spec["cpu_quota_per_sec_usec"] // 10000) + "." + f"{spec['cpu_quota_per_sec_usec'] % 10000:04d}" + "%",
+        CPUQuota=quota,
         CPUQuotaPeriodSec="100ms", LimitCPU=str(spec["limit_cpu_seconds"]), UMask="0077", WorkingDirectory="/",
         NoNewPrivileges="yes", CapabilityBoundingSet="CAP_DAC_READ_SEARCH CAP_SETGID CAP_SETUID CAP_SETPCAP CAP_SYS_ADMIN",
         AmbientCapabilities="", StandardInput="null")
@@ -393,7 +402,10 @@ def facts(output, declarations, seal, member_bytes):
             and capture["started_ns"] == delivery["started_ns"] and capture["deadline_ns"] == end == delivery["deadline_ns"]
             and delivery["unit"] == static["unit"], "REVIEW_ORIGINAL_TIME_BINDING")
     token(delivery["argv_sha256"], r"[0-9a-f]{64}", "REVIEW_DELIVERY_DIGEST")
-    require(delivery["argv_sha256"] == delivery_digest(fixture, fixture_sha), "REVIEW_DELIVERY_BINDING")
+    if "cpu_quota_format" in delivery:
+        require(delivery["cpu_quota_format"] == "systemd-percent-hundredths/v1", "REVIEW_CPU_QUOTA_FORMAT")
+    require(delivery["argv_sha256"] == delivery_digest(fixture, fixture_sha,
+        cpu_quota_format=delivery.get("cpu_quota_format")), "REVIEW_DELIVERY_BINDING")
     require(all(stop.get(name) is True for name in ("attempted", "acknowledged", "parent_empty", "complete")),
             "REVIEW_STOP_INCOMPLETE")
     running(stop["before"], static, original)

@@ -553,7 +553,7 @@ class LinuxBackend:
         create_directory(drop,mode=0o755)
         ordinary=p["parents"]["ordinary"]
         manager_configuration=("[Service]\nDelegate=cpu memory pids\nCPUAccounting=yes\nCPUQuota="
-            +format(ordinary["cpu_quota_per_sec_usec"]/10000,"g")+"%\nCPUQuotaPeriodSec=100ms\nMemoryAccounting=yes\nMemoryMax="
+            +c.cpu_quota_percent(ordinary["cpu_quota_per_sec_usec"])+"\nCPUQuotaPeriodSec=100ms\nMemoryAccounting=yes\nMemoryMax="
             +str(ordinary["memory_bytes"])+"\nMemorySwapMax=0\nTasksAccounting=yes\nTasksMax="+str(ordinary["tasks_max"])+"\n")
         create_file(drop/"50-local-hand-q2.conf",manager_configuration.encode(),mode=0o644)
         for role in c.SYSTEM_PARENTS:
@@ -606,9 +606,9 @@ class LinuxBackend:
 
     @staticmethod
     def slice_bytes(parent):
-        percent=parent["cpu_quota_per_sec_usec"]/10000
+        percent=c.cpu_quota_percent(parent["cpu_quota_per_sec_usec"])
         return ("[Unit]\nDescription=Local Hand isolated Q2 preparation\nStopWhenUnneeded=no\n[Slice]\n"
-                "CPUAccounting=yes\nCPUQuota="+format(percent,"g")+"%\nCPUQuotaPeriodSec=100ms\n"
+                "CPUAccounting=yes\nCPUQuota="+percent+"\nCPUQuotaPeriodSec=100ms\n"
                 "MemoryAccounting=yes\nMemoryMax="+str(parent["memory_bytes"])+"\nMemorySwapMax=0\n"
                 "TasksAccounting=yes\nTasksMax="+str(parent["tasks_max"])+"\n").encode()
 

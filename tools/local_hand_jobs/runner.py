@@ -281,14 +281,15 @@ def _runtime_microseconds(grant, now=None):
 
 def _cpu_quota(limits):
     # Always divide by the full envelope (runtime + reserved stop grace).
-    # Six decimal places are floored using integers, never rounded upward.
-    millionths = min(100_000_000, limits["cpu_seconds"] * 100_000_000 // limits["wall_seconds"])
+    # systemd's CPUQuota percentage parser accepts at most two decimal places.
+    # Floor to that exact permyriad granularity, never round the budget upward.
+    permyriad = min(10_000, limits["cpu_seconds"] * 10_000 // limits["wall_seconds"])
     # systemd permits a period up to 1 s and requires at least a 1 ms quota.
     # Smaller requested rates cannot be represented without exceeding the cap.
-    if millionths < 100_000:
+    if permyriad < 10:
         raise RunnerError("UNSUPPORTED", "CPU quota cannot be represented within its admitted envelope")
-    whole, fraction = divmod(millionths, 1_000_000)
-    return f"{whole}.{fraction:06d}%"
+    whole, fraction = divmod(permyriad, 100)
+    return (f"{whole}.{fraction:02d}".rstrip("0").rstrip(".") if fraction else str(whole)) + "%"
 
 
 def _deadline_remaining(deadline):
