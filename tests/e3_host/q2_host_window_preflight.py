@@ -30,6 +30,7 @@ def helper(name):
 c = helper("q2_host_window_contract")
 io = helper("q2_reconciliation_io")
 delivery = helper("q2_reconciliation_delivery")
+kernel = helper("q2_host_kernel_facts")
 require = c.require
 SCHEMA = "local-hand-q2-host-window-local-preflight/v1"
 LOCATOR_SHA256 = "7672ac050609fc7e05481443c9239df0d36f25b4ec9860c2bb833024b962647a"
@@ -40,7 +41,11 @@ OUTPUT_LIMIT = 2 * 1024**2
 REPORT_LIMIT = OUTPUT_LIMIT - 16384  # original receiver/protocol/error output
 MAX_ENTRIES = 512
 MAX_READ_BYTES = 64 * 1024**2
-KERNEL_LIMIT = 1024**2
+KERNEL_AUTHORITY = dict(rule="10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    baseline="887b640b394f9983f37dfe97c58ba35aaa099359",
+    closure="f7f8b503470725ca1ba18d1cb8d8b39e09a15ea8",
+    owner_decision="LH-Q2-KERNEL-FACT-READ-CLOSURE-20260927-01",
+    scope="LH-Q2-KERNEL-FACT-READ-v1")
 FS_IOC_GETFLAGS = 0x80086601
 MISSING = ("HOST_HISTORICAL_FUTURE_SOURCE_COVERAGE", "HOST_OBJECT_COST_CLASSIFICATION",
     "NATIVE_AUDIT_SOURCE_BOUND", "WRAPPER_AUTHORIZED_SOURCE_AND_EXECUTION_BINDING",
@@ -143,22 +148,16 @@ def _chain(held, guard):
     held.verify()
 
 
-def _kernel_text(path, guard, maximum):
-    # Root-owned proc leaves may reject O_NOATIME for an ordinary user. That is
-    # a supported BLOCK result, not a reason to retry a content read unprotected.
-    try:
-        with io.HeldPath(path, guard, allowed_uids={0, os.geteuid()}) as held:
-            guard()
-            raw = os.read(held.fd, maximum + 1)
-            require(len(raw) <= maximum and not os.read(held.fd, 1), "HOST_LOCAL_KERNEL_READ_LIMIT")
-            held.verify()
-            return raw
-    except PermissionError as error:
-        raise ValueError("HOST_LOCAL_KERNEL_NOATIME_PERMISSION") from error
+def _kernel_fact(kind, guard, report):
+    records = report["observations"].setdefault("kernel_reads", [])
+    require(len(records) < 3, "HOST_LOCAL_KERNEL_READ_COUNT")
+    detail = {}
+    records.append(detail)
+    return kernel.read_fact(kind, guard, detail)
 
 
-def _boot(guard):
-    raw = _kernel_text("/proc/sys/kernel/random/boot_id", guard, 64)
+def _boot(guard, report):
+    raw = _kernel_fact("boot", guard, report)
     require(raw.endswith(b"\n") and raw.count(b"\n") == 1, "HOST_LOCAL_BOOT_FORMAT")
     return c.boot(raw[:-1].decode("ascii"))
 
@@ -174,8 +173,8 @@ def _marker(parent, report):
     raise ValueError("HOST_LOCAL_ALREADY_CONSUMED_OR_UNCERTAIN")
 
 
-def _mount_observation(parent, guard):
-    raw = _kernel_text("/proc/" + str(os.getpid()) + "/mountinfo", guard, KERNEL_LIMIT)
+def _mount_observation(parent, guard, report):
+    raw = _kernel_fact("mountinfo", guard, report)
     matches = []
     def unescape(value):
         return re.sub(r"\\(040|011|012|134)", lambda match: chr(int(match[1], 8)), value)
@@ -288,7 +287,7 @@ def _window(reception_window):
 
 
 def run_local(config, inputs, carrier_raw, host_attestation_raw, *, host_source_proof,
-              reception_window=None):
+              reception_window=None, kernel_authority=None):
     """Observe exactly the permitted local precheck and always stop before mkdir.
 
     This neither executes nor adopts the wrapper. Existing offline plan/config
@@ -307,6 +306,11 @@ def run_local(config, inputs, carrier_raw, host_attestation_raw, *, host_source_
     window = None
     stage = "offline_inputs"
     try:
+        # The exact private launcher proves this fourth Git approval chain before
+        # importing tools. A missing/altered declaration never uses the exception.
+        require(type(kernel_authority) is dict and kernel_authority == KERNEL_AUTHORITY,
+            "HOST_LOCAL_KERNEL_AUTHORITY")
+        report["kernel_read_authority"] = copy.deepcopy(KERNEL_AUTHORITY)
         verified, location = helper("q2_reconciliation_entry").offline_inputs(
             config, inputs, carrier_raw, host_attestation_raw)
         selected = targets(carrier_raw, host_attestation_raw, host_source_proof, config=config)
@@ -324,7 +328,7 @@ def run_local(config, inputs, carrier_raw, host_attestation_raw, *, host_source_
         report.update(local_preflight_started=True, window=origin,
             preparation_deadline_ns=window.issued_ns + 140 * c.NS)
         guard(); stage = "host_boot"; report["field_reads_performed"] = True
-        observed_boot = _boot(guard)
+        observed_boot = _boot(guard, report)
         report["observations"]["boot_id"] = observed_boot
         require(observed_boot == location["expected_boot_id"], "HOST_LOCAL_BOOT_CHANGED")
         stage = "parent_and_marker"
@@ -334,7 +338,7 @@ def run_local(config, inputs, carrier_raw, host_attestation_raw, *, host_source_
             _chain(parent, guard)
             report["observations"]["parent_metadata"] = io.metadata(os.fstat(parent.fd))
             stage = "filesystem_observation"
-            report["observations"]["filesystem"] = _mount_observation(parent, guard)
+            report["observations"]["filesystem"] = _mount_observation(parent, guard, report)
             report["observations"].update(trees=[], old_pin_matches=[])
             state = dict(entries=0, read_bytes=0, allocated=0, identities=set())
             pins = {row["path"]: row["sha256"] for row in selected["old_pins"]}
@@ -344,7 +348,7 @@ def run_local(config, inputs, carrier_raw, host_attestation_raw, *, host_source_
                 _scan_tree(root, guard, allowed_uids, report, state, pins)
             stage = "final_local_recheck"
             _marker(parent, report); _chain(parent, guard)
-            require(_boot(guard) == observed_boot, "HOST_LOCAL_BOOT_CHANGED")
+            require(_boot(guard, report) == observed_boot, "HOST_LOCAL_BOOT_CHANGED")
             require(set(report["observations"]["old_pin_matches"]) == set(pins), "HOST_LOCAL_OLD_PIN_MISSING")
             report["observations"].update(observed_unique_allocated_bytes=state["allocated"],
                 observed_unique_inodes=state["entries"], file_bytes_read=state["read_bytes"],
