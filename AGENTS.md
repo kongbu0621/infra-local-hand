@@ -300,47 +300,49 @@ single startup batch; it does not authorize an additional run or relaxed ceiling
 Documentation, closure and evidence retention do not consume the run. The new
 batch remains NOT ISSUED until actual evidence proves otherwise.
 
-### Host window consumption: affected scope reopened
+### Host window consumption
 
-Independent implementation review found a material conflict between the approved
-reconciliation A's no-new-persistent-write-before-full-live-admission order
-(I06, architecture joint attestation, plan P5.2) and cross-process consumption
-of the single window when an early probe fails. The original startup documents
-contain the same ordering. A process-local set or an old implementation's early
-host write is not authority to resolve this conflict.
-
-The affected host launch/persistence order and live delivery are **OPEN**. The
-new `q2_reconciliation_entry.run_host` and CLI are contained: they return
-`HOST_WINDOW_CONSUMPTION_DESIGN_OPEN` before opening a window, calling a wrapper,
-reading field history, or writing. No new startup attempt or guest probe has
-been issued for this implementation. No new durable launch receipt has been
-implemented. An exact scoped three-document amendment and Owner decision are
-required before that affected path can proceed, under the unchanged pinned R.
-
-The source classification, pure accounting, protected IO, five-file guest
-record protocol, bounded transport primitives, read-only collector, and their
-isolated tests remain within the existing CLOSED A/C where their behavior does
-not change the first-write order. Their local validation does not authorize
-live issuance or establish field admission. The exact original three approved
-document byte sequences, prior closures, frozen runtime, and old v1 sources
-remain retained. See the scoped implementation review in
-`docs/a2-execution/Q2_RECONCILIATION_IMPLEMENTATION_REVIEW.md` for actual evidence
-and remaining limits. Do not manufacture READY or infer a new batch from these
-components.
-
-The reviewed proposal is scope `LH-Q2-HOST-WINDOW-CONSUMPTION-v1`, still **OPEN**,
-at exact A `8402f0cc82d8a0ac0b9a56716bf276f41cafea37`. Its
+Scope `LH-Q2-HOST-WINDOW-CONSUMPTION-v1` is **CLOSED for H1–H6 at exact A
+`8402f0cc82d8a0ac0b9a56716bf276f41cafea37`**. Its
 [baseline record](docs/governance/Q2_HOST_WINDOW_CONSUMPTION_BASELINE.md) pins the
 [requirements](docs/a2-execution/q2-host-window-consumption/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-host-window-consumption/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-host-window-consumption/IMPLEMENTATION_PLAN.md).
-It proposes the bounded early host marker and explicitly repeatable local-only
-prechecks before acquisition; successful acquisition retains that winner's
-original clocks and forbids replay. The precise carrier-derived location,
-current host-boot adoption, storage assumptions and existing management audit
-boundary are part of this proposal. No new B/C exists and no forward host-order
-implementation is authorized. Preserve the unchanged R and obtain the exact
-Owner decision before H1–H6; current containment remains in force.
+Their historical OPEN labels and exact bytes remain unchanged.
+
+Owner B is retained in
+[Q2_HOST_WINDOW_CONSUMPTION_OWNER_DECISION.md](docs/governance/Q2_HOST_WINDOW_CONSUMPTION_OWNER_DECISION.md),
+event `LH-Q2-HOST-WINDOW-CONSUMPTION-CLOSURE-20260927-01`, with exact reply
+“按原 R，批准 A 8402f0cc 的 host 窗口消费方案，继续实施。” and its preceding request.
+This independent bookkeeping-only commit is C; new implementation D must descend
+from it. Unchanged R is `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`, with the
+same direct readable source/integrity, Owner mandate/authority, no exceptions
+and change-control rule recorded above.
+
+The prior first-write / cross-process-consumption conflict reopened this exact
+host scope; this decision now closes it with A's explicit limited changes.
+A permits one bounded host marker inside the original capture ceiling before
+joint guest admission, and repeatable local-only read prechecks before exclusive
+acquisition. The winner retains its precheck's original clocks; every existing
+or partial marker blocks further remote delivery. The location is derived from
+the exact carrier parent and original startup C, independent of caller-selected
+attempt/output prefixes. The fixed current host-boot adoption, storage assumptions
+and existing management audit boundary are part of this exact approval.
+
+H1–H6 includes implementation, isolated validation, exact private delivery and
+conditional continuation of the same single startup batch. Full joint admission,
+shared host/guest accounting, source preservation, hard deadlines, stop/EOF and
+seals remain necessary; no second consumed window, relaxed ceiling, system
+configuration change or frozen runtime replacement is authorized. The existing
+source containment can be replaced only by verified implementation of this closed
+scope. Current code and earlier local tests alone do not establish readiness.
+
+The already closed reconciliation scope and its implementation D
+`8fd84521cdd25b455ff148e0c0fed6b5d8e39fe1` remain retained, with old v1 unchanged.
+See `docs/a2-execution/Q2_RECONCILIATION_IMPLEMENTATION_REVIEW.md` for the prior
+exact evidence and limits. All new results must identify their actual D and field
+state; Gate closure, publication and evidence retention do not consume the run
+or prove issuance. Material scope/contract/adoption changes retain R's reopen rule.
 
 ### Continuing constraints
 
