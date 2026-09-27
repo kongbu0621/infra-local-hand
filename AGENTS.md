@@ -180,9 +180,9 @@ complete batch without per-item inquiries; material scope changes still follow
 the existing change rule.
 The existing CLOSED preparation scope and its original three documents remain unchanged.
 
-### Q2 CPU quota startup retry proposal
+### Q2 CPU quota startup retry
 
-Scope `LH-Q2-CPUQUOTA-RETRY-v1` is **OPEN**. Its proposed documentation baseline A is
+Scope `LH-Q2-CPUQUOTA-RETRY-v1` is **CLOSED for the bounded batch below**. Its approved documentation baseline A is
 `d8e49617efecae199b0874f183530794f8c36e6a`, containing
 [requirements](docs/a2-execution/q2-cpuquota-retry/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-cpuquota-retry/ARCHITECTURE.md), and
@@ -190,18 +190,25 @@ Scope `LH-Q2-CPUQUOTA-RETRY-v1` is **OPEN**. Its proposed documentation baseline
 R, readable direct source/integrity, Owner authority, mandate, no exceptions and
 change rules remain unchanged. Exact document hashes and the proposed boundary
 are in [Q2_CPUQUOTA_RETRY_BASELINE.md](docs/governance/Q2_CPUQUOTA_RETRY_BASELINE.md).
-No Owner B or CLOSED C exists for this new scope; this is documentation only.
+Owner decision B is retained in
+[Q2_CPUQUOTA_RETRY_OWNER_DECISION.md](docs/governance/Q2_CPUQUOTA_RETRY_OWNER_DECISION.md),
+event `LH-Q2-CPUQUOTA-RETRY-CLOSURE-20260927-01`. This separate bookkeeping-only
+commit is CLOSED C. It changes neither A's three document bytes nor their
+historical OPEN labels, and adds no implementation. Implementation D must descend from C.
 
 Real recovery preparation completed, but its issued owner command failed because
 systemd rejected the four-decimal CPUQuota text. The old owner remains INCOMPLETE.
 The independently authorized encoding repair, native parser checks and candidate
 build are recorded in [Q2_CPU_QUOTA_REPAIR_VERIFICATION.md](docs/a2-execution/Q2_CPU_QUOTA_REPAIR_VERIFICATION.md).
-That source repair does not authorize changing the frozen guest candidate or
-reissuing the consumed recovery/owner attempt. This new proposal covers one exact
+That source repair alone did not authorize changing the frozen guest candidate or
+reissuing the consumed recovery/owner attempt. The Owner now explicitly approves one exact
 replacement candidate, independently created runtime state, attested reuse of the
 seven unconsumed prepared roots, and one new 300-second management window.
 Old source, ledger, reservations, deadlines and evidence remain retained.
-New retry source/tests/configuration require R → exact A → Owner B → independent C → D.
+New retry source/tests/configuration follow R → exact A → Owner B → independent C → D.
+The Owner authorizes the complete one-time 300-second batch without per-item
+inquiries; retained failure/consumption, fixed candidate and cumulative budgets
+remain mandatory. A second attempt or a material scope change is not implied.
 The prior preparation and recovery closures and their approved document bytes
 remain historical and unchanged; unaffected repairs in their existing CLOSED
 development scopes need not be reapproved.
