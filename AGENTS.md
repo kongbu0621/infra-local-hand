@@ -215,7 +215,7 @@ development scopes need not be reapproved.
 
 ### Q2 supervisor startup failure retry
 
-Scope `LH-Q2-SUPERVISOR-STARTUP-RETRY-v1` is **PROPOSED / OPEN**. Its exact
+Scope `LH-Q2-SUPERVISOR-STARTUP-RETRY-v1` is **CLOSED for the one bounded batch below**. Its exact
 three-document baseline A is `47b351b2b943bf1d6f1c71cfeb031157a2eb70cc`, containing
 [requirements](docs/a2-execution/q2-supervisor-startup-retry/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-supervisor-startup-retry/ARCHITECTURE.md), and
@@ -223,7 +223,13 @@ three-document baseline A is `47b351b2b943bf1d6f1c71cfeb031157a2eb70cc`, contain
 R, readable direct source and integrity, Owner authority, mandate, no exceptions
 and change rules remain unchanged. Exact document hashes and the one-batch proposal
 are in [Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md](docs/governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md).
-No Owner B or separate CLOSED C has been recorded for this new scope.
+Owner decision B is retained in
+[Q2_SUPERVISOR_STARTUP_RETRY_OWNER_DECISION.md](docs/governance/Q2_SUPERVISOR_STARTUP_RETRY_OWNER_DECISION.md),
+event `LH-Q2-SUPERVISOR-STARTUP-RETRY-CLOSURE-20260927-01`. This separate
+bookkeeping-only commit is CLOSED C. It retains the exact approval and its
+immediately preceding scope request, adds no implementation, and leaves all
+three A document bytes and their historical OPEN labels unchanged. D must
+descend from C; do not squash the closure with implementation.
 
 The previously approved CPUQuota retry was issued once and remains INCOMPLETE.
 Its supervisor actually executed and failed; original streams and exit 3 were
@@ -232,13 +238,15 @@ not completed. The existing CLOSED source-development authority covers the
 [completed source repairs](docs/a2-execution/Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md),
 tests and publication. It does not replay that consumed attempt.
 
-The concrete proposal pins repaired runtime `b49d3df3d1e76813faf08e59ab4975e25279c2fc`,
+The approved batch pins repaired runtime `b49d3df3d1e76813faf08e59ab4975e25279c2fc`,
 binds both historical failures and ledgers, preserves exact historical FAILED
-instances, checks all prior identities and cumulative commitments, and requests
+instances, checks all prior identities and cumulative commitments, and authorizes
 one new at-most-300-second batch with independent create-only state. Prepared
 roots are reused only after joint live attestation. New orchestration, tests,
-configuration and execution follow exact A, Owner B and independent C; no new
-batch implementation is included before closure. The prior approved documents
+configuration and execution follow exact A, Owner B and independent C. Owner
+approved the complete implementation, verification, delivery and one new run
+without per-item inquiries. No second run, refreshed old deadline or material
+scope expansion is implied. The prior approved documents
 and unaffected CLOSED development scopes remain unchanged.
 
 ### Continuing constraints
