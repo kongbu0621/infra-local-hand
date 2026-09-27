@@ -174,6 +174,10 @@ implementation paragraph authorize one batch with a fixed candidate and forbid
 automatic replay. A replacement runtime and another guest window require the
 separate concrete scope and exact Owner decision described in
 [the new proposed baseline](../governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md).
-The new scope remains OPEN; its three documents are reviewable, but its new
-orchestration, configuration and actual one-shot batch follow Owner B and a
-separate CLOSED C. Unaffected source repairs need no repeated approval.
+At this repair report's original publication, that new scope remained OPEN;
+its orchestration, configuration and actual one-shot batch required Owner B and
+a separate CLOSED C. The subsequent exact approval and C are now retained in
+the [startup retry verification report](Q2_SUPERVISOR_STARTUP_RETRY_VERIFICATION.md).
+Its tools are published, while the batch remains unissued because of retained
+installation commitments and missing historical inputs. Unaffected source
+repairs need no repeated approval.

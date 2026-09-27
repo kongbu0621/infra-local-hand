@@ -249,6 +249,30 @@ without per-item inquiries. No second run, refreshed old deadline or material
 scope expansion is implied. The prior approved documents
 and unaffected CLOSED development scopes remain unchanged.
 
+The independent C is `d4a925c883672fadc7d1b10a8dfe58df18b922cd`; tooling D
+`78589e6871cdf5eba72008ee2b27a350a0dfdc03` descends directly from it. See the
+[tooling verification and execution blockers](docs/a2-execution/Q2_SUPERVISOR_STARTUP_RETRY_VERIFICATION.md).
+The new batch is NOT ISSUED and its one execution authorization is unconsumed.
+The current no-release accounting retains at least 192 + 64 + new 64 = 320 MiB
+of installation obligations against the original 256 MiB ceiling. Missing
+historical raw records and instance evidence are an independent blocker.
+
+### Proposed installation-reservation reconciliation
+
+Scope `LH-Q2-INSTALLATION-RESERVATION-RECONCILIATION-v1` is **PROPOSED / Gate OPEN /
+BLOCKED ON HISTORICAL INPUTS**. Its draft
+[requirements](docs/a2-execution/q2-installation-reservation-reconciliation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-installation-reservation-reconciliation/ARCHITECTURE.md) and
+[implementation plan](docs/a2-execution/q2-installation-reservation-reconciliation/IMPLEMENTATION_PLAN.md)
+consider an append-only termination of precisely proven unused historical future
+installation obligations. All actual data, other commitments, original ceilings,
+frozen runtime and the same single unissued startup batch remain retained.
+There is no closure-ready A, Owner B or C for this amendment. Do not implement
+release behavior or generate a READY private batch. First obtain the missing
+historical originals/provenance and instance identities, then complete an exact
+reviewable proposal. Existing startup approval does not authorize this changed
+accounting; no immediate approval of the incomplete amendment is requested.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
