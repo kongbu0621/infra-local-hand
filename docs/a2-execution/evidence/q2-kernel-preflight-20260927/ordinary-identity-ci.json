@@ -1,0 +1,47 @@
+{
+  "candidate": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+  "euid": 1001,
+  "execution_window_consumed": false,
+  "normal_noatime_errno": 1,
+  "observations": [
+    {
+      "bytes": 37,
+      "euid": 1001,
+      "qualification": {
+        "abi": "linux-x86_64-lp64",
+        "all_names_nofollow_required": true,
+        "content_open_noatime": false,
+        "layout_checked": true,
+        "native_metadata_crosscheck_complete": true,
+        "native_metadata_crosscheck_required": true,
+        "native_metadata_crosschecks_completed": 32,
+        "qualified_before_content": true,
+        "same_proc_mount_required": true
+      },
+      "status": "OBSERVED",
+      "target": "boot"
+    },
+    {
+      "bytes": 2502,
+      "euid": 1001,
+      "qualification": {
+        "abi": "linux-x86_64-lp64",
+        "all_names_nofollow_required": true,
+        "content_open_noatime": false,
+        "layout_checked": true,
+        "native_metadata_crosscheck_complete": true,
+        "native_metadata_crosscheck_required": true,
+        "native_metadata_crosschecks_completed": 22,
+        "qualified_before_content": true,
+        "same_proc_mount_required": true
+      },
+      "status": "OBSERVED",
+      "target": "mountinfo"
+    }
+  ],
+  "original_host_execution": false,
+  "remote_called": false,
+  "schema": "local-hand-q2-ci-unprivileged-kernel-facts/v1",
+  "source_sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02",
+  "status": "PASS"
+}

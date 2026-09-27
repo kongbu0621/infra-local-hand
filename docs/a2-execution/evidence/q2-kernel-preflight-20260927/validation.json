@@ -1,0 +1,46 @@
+{
+  "schema": "q2-kernel-fact-read-implementation-validation/v1",
+  "implementation_commit": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+  "implementation_tree": "c7c60ec47b742615dbae9f8cb230679f3a9c4997",
+  "direct_parent": "f7f8b503470725ca1ba18d1cb8d8b39e09a15ea8",
+  "changed_sources": [
+    {
+      "path": "tests/e3_host/q2_host_kernel_facts.py",
+      "bytes": 15055,
+      "sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02"
+    },
+    {
+      "path": "tests/e3_host/q2_host_window_preflight.py",
+      "bytes": 19227,
+      "sha256": "592ff22f65099239daa659a69dd8a8deeaa9a14937b3fe291f3ab8f519ba519e"
+    },
+    {
+      "path": "tests/test_e3_q2_host_kernel_facts.py",
+      "bytes": 13923,
+      "sha256": "a6d76cc4a8f9a0c79f03e9a50aa222373e978c5ebadc27cccb043e662ab9d0fa"
+    },
+    {
+      "path": "tests/test_e3_q2_host_window_preflight.py",
+      "bytes": 17511,
+      "sha256": "34eb5fad809b8da4c25f874192e6760556233aea0a65a10526793d55a036859d"
+    }
+  ],
+  "python311_grammar": "PASS",
+  "old_host_A_document_count": 3,
+  "old_host_A_document_bytes_unchanged": true,
+  "new_A_document_bytes_unchanged": true,
+  "ordinary_evidence_receiver_sources_changed": false,
+  "tests": {
+    "passed": 331,
+    "skipped": 3,
+    "failed": 0,
+    "elapsed_seconds": 17.5,
+    "command": "venv/bin/python -m pytest -q tests/test_e3_q2_reconciliation*.py tests/test_e3_q2_host_window*.py tests/test_e3_q2_host_kernel_facts.py",
+    "raw_sha256": "c5d2650ac24058b3d4dfe7e717cbb903c96dde559aee9ad96d6bc59492a6ccd5",
+    "ordinary_identity_development_probe": "SKIP: identity transition unsupported, errno 22; separate CI result required"
+  },
+  "original_host_connected": false,
+  "original_host_execution": false,
+  "execution_window_consumed": false,
+  "remote_called": false
+}

@@ -1,0 +1,136 @@
+{
+  "schema": "local-hand-q2-platform-ci-status/v1",
+  "commit": "ad405506abf46952f271f3fb309ed7bd873e3d1c",
+  "tree": "c7c60ec47b742615dbae9f8cb230679f3a9c4997",
+  "run_id": 36331451304,
+  "overall_status": "completed",
+  "overall_pass": false,
+  "windows": {
+    "job_id": 108654081824,
+    "status": "completed",
+    "conclusion": "failure",
+    "collection_errors": 6,
+    "skipped": 7,
+    "seconds": 2.07,
+    "errors": [
+      {
+        "path": "tests/test_e3_q2_host_window_delivery.py",
+        "reason": "module_import_reads_linux_proc_boot_file"
+      },
+      {
+        "path": "tests/test_e3_q2_host_window_preflight.py",
+        "reason": "module_import_requires_fcntl"
+      },
+      {
+        "path": "tests/test_e3_q2_host_window_receiver.py",
+        "reason": "module_import_requires_termios"
+      },
+      {
+        "path": "tests/test_e3_q2_host_window_record.py",
+        "reason": "module_import_requires_fcntl"
+      },
+      {
+        "path": "tests/test_e3_q2_reconciliation_backend.py",
+        "reason": "module_import_requires_fcntl"
+      },
+      {
+        "path": "tests/test_e3_q2_reconciliation_host_inputs.py",
+        "reason": "module_import_requires_fcntl"
+      }
+    ],
+    "preexisting_evidence": {
+      "source_baseline": "19069a8ab62c19355ff8eed6ee65da2c459f3404",
+      "parent_c": "f7f8b503470725ca1ba18d1cb8d8b39e09a15ea8",
+      "five_failed_test_files_identical_at_baseline_and_d": true,
+      "preflight_linux_import_unchanged": true,
+      "prior_run_id": 36324126279,
+      "prior_job_id": 108633494415,
+      "prior_source": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+      "prior_conclusion": "failure",
+      "prior_collection_errors": 6,
+      "prior_skipped": 7,
+      "same_collection_targets": true,
+      "trigger_statements_verified_at_base_c_and_d": true
+    }
+  },
+  "linux": {
+    "job_id": 108654081724,
+    "status": "completed",
+    "conclusion": "failure",
+    "prior_run_id": 36324126279,
+    "prior_job_id": 108633494401,
+    "prior_source": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+    "prior_failed": 21,
+    "prior_passed": 2095,
+    "prior_skipped": 31,
+    "prior_seconds": 408.34,
+    "failed": 21,
+    "passed": 2140,
+    "skipped": 31,
+    "seconds": 457.5,
+    "failed_nodeids": [
+      "tests/test_e3_q2_host_window_preflight.py::test_metadata_drift_during_content_read_is_retained_as_failure",
+      "tests/test_e3_q2_host_window_preflight.py::test_original_pin_change_is_not_adopted",
+      "tests/test_e3_q2_host_window_preflight.py::test_real_local_reads_preserve_metadata_and_never_write_or_dispatch",
+      "tests/test_e3_q2_host_window_preflight.py::test_receiver_origin_is_retained_without_resampling",
+      "tests/test_e3_q2_host_window_preflight.py::test_report_budget_returns_bounded_failure_with_no_admission",
+      "tests/test_e3_q2_host_window_preflight.py::test_tree_work_has_fixed_bounds[MAX_ENTRIES]",
+      "tests/test_e3_q2_host_window_preflight.py::test_tree_work_has_fixed_bounds[MAX_READ_BYTES]",
+      "tests/test_e3_q2_reconciliation_backend.py::test_real_kernel_reader_bound_and_numeric_proc",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_directory_member_change_and_path_replacement_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_full_collector_reads_actual_five_file_seal_and_owner_without_effect_api",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_new_receipt_accepts_exact_reconciliation_extension",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_actual_sealed_bytes_bind_terminal_without_self_exit_claim",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_missing_or_extra_member_rejects_before_terminal_projection",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_rejects_source_or_receipt_substitution",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_sealed_member_changed_before_read_rejects_hash",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_read_retains_metadata_atime_and_rechecks_actual_bytes",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_receipt_rejects_legacy_attestation_and_window_renewal",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_bound_fixture_and_failed_checker_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_capture_hash_errors_and_original_deadline_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_child_digest_completion_and_stop_scope_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_total_budget_hardlink_and_symlink_refuse_without_fallback"
+    ],
+    "prior_failed_nodeids": [
+      "tests/test_e3_q2_host_window_preflight.py::test_metadata_drift_during_content_read_is_retained_as_failure",
+      "tests/test_e3_q2_host_window_preflight.py::test_original_pin_change_is_not_adopted",
+      "tests/test_e3_q2_host_window_preflight.py::test_real_local_reads_preserve_metadata_and_never_write_or_dispatch",
+      "tests/test_e3_q2_host_window_preflight.py::test_receiver_origin_is_retained_without_resampling",
+      "tests/test_e3_q2_host_window_preflight.py::test_report_budget_returns_bounded_failure_with_no_admission",
+      "tests/test_e3_q2_host_window_preflight.py::test_tree_work_has_fixed_bounds[MAX_ENTRIES]",
+      "tests/test_e3_q2_host_window_preflight.py::test_tree_work_has_fixed_bounds[MAX_READ_BYTES]",
+      "tests/test_e3_q2_reconciliation_backend.py::test_real_kernel_reader_bound_and_numeric_proc",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_directory_member_change_and_path_replacement_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_full_collector_reads_actual_five_file_seal_and_owner_without_effect_api",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_new_receipt_accepts_exact_reconciliation_extension",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_actual_sealed_bytes_bind_terminal_without_self_exit_claim",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_missing_or_extra_member_rejects_before_terminal_projection",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_rejects_source_or_receipt_substitution",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_sealed_member_changed_before_read_rejects_hash",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_read_retains_metadata_atime_and_rechecks_actual_bytes",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_receipt_rejects_legacy_attestation_and_window_renewal",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_bound_fixture_and_failed_checker_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_capture_hash_errors_and_original_deadline_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_child_digest_completion_and_stop_scope_are_rejected",
+      "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_total_budget_hardlink_and_symlink_refuse_without_fallback"
+    ],
+    "same_failed_nodeids_as_prior": true,
+    "new_failed_nodeids": [],
+    "removed_failed_nodeids": [],
+    "no_new_failure_nodeids_is_not_full_suite_pass": true,
+    "completed_at_utc": "2026-09-27T16:05:53Z"
+  },
+  "separate_fixed_kernel_ci": {
+    "run_id": 36331366647,
+    "job_id": 108653819147,
+    "conclusion": "success"
+  },
+  "original_host_execution": false,
+  "overall_conclusion": "failure",
+  "log_sha256": {
+    "windows-job-108654081824.log": "0cf9b9c01bd0f4d9fb704dfbe8563a2336fa97f5a6bf7a5ad71595c1db601273",
+    "linux-job-108654081724.log": "cb3c11f21747ebfadabc240a354e401a68b29718aace94003736e496f54b2575",
+    "prior-job-108633494415.log": "298b5ad97ba57238d895b9bf523ccb32f8eb1eb750d69910369454b7e2677285",
+    "prior-job-108633494401.log": "67e6e12441286e9e76f1b010fbeb3572eb449f16fba0b87cbc1f045c59b0745f"
+  }
+}

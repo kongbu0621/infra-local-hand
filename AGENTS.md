@@ -401,6 +401,18 @@ All ordinary evidence O_NOATIME protection, old pins and budgets, frozen runtime
 no-consumption/no-remote local branch and the full execution blockers remain.
 Unaffected CLOSED work remains authorized; no blanket reopening or new batch.
 
+
+The subsequent [kernel fact implementation review](docs/a2-execution/Q2_KERNEL_FACT_READ_IMPLEMENTATION_REVIEW.md)
+records K1–K3 completion at D `e15c633adbdfbf1e29cb12b2410975fe4911458d`,
+with 331 passing / 3 skipped development tests, a separate successful actual
+ordinary-identity CI check, and an exact new four-chain RAM delivery. The
+workspace PTY's proc submount rejection is a separate expected BLOCKED result.
+The general CI retains the same 21 Linux test failures and 6 Windows collection
+errors as the prior source run; it is not a full-suite PASS. The review retains
+those results separately from the successful scoped and ordinary-identity checks.
+K4 still awaits the original host's complete JSON; neither CI nor the private
+package establishes original-host facts, H07, joint admission or consumption.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

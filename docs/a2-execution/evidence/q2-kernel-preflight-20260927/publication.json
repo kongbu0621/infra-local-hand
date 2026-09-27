@@ -1,0 +1,67 @@
+{
+  "schema": "local-hand-q2-kernel-publication-verification/v1",
+  "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "approved_a": "887b640b394f9983f37dfe97c58ba35aaa099359",
+  "closed_c": "f7f8b503470725ca1ba18d1cb8d8b39e09a15ea8",
+  "implementation_d": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+  "transport_t": "a829a8a7194d1f56953fb19200377d30d2151d51",
+  "merge_m": "ad405506abf46952f271f3fb309ed7bd873e3d1c",
+  "tree": "c7c60ec47b742615dbae9f8cb230679f3a9c4997",
+  "original_a_c_d_ancestry_preserved": true,
+  "approved_document_bytes_preserved": true,
+  "merge_and_d_identical_tree": true,
+  "temporary_importer_absent_current_tree": true,
+  "git_ref_updates_forced": false,
+  "ci_import_run_id": 36331366647,
+  "ci_import_job_id": 108653819147,
+  "ci_import_conclusion": "success",
+  "ci_unprivileged_kernel_facts": {
+    "candidate": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+    "euid": 1001,
+    "execution_window_consumed": false,
+    "normal_noatime_errno": 1,
+    "observations": [
+      {
+        "bytes": 37,
+        "euid": 1001,
+        "qualification": {
+          "abi": "linux-x86_64-lp64",
+          "all_names_nofollow_required": true,
+          "content_open_noatime": false,
+          "layout_checked": true,
+          "native_metadata_crosscheck_complete": true,
+          "native_metadata_crosscheck_required": true,
+          "native_metadata_crosschecks_completed": 32,
+          "qualified_before_content": true,
+          "same_proc_mount_required": true
+        },
+        "status": "OBSERVED",
+        "target": "boot"
+      },
+      {
+        "bytes": 2502,
+        "euid": 1001,
+        "qualification": {
+          "abi": "linux-x86_64-lp64",
+          "all_names_nofollow_required": true,
+          "content_open_noatime": false,
+          "layout_checked": true,
+          "native_metadata_crosscheck_complete": true,
+          "native_metadata_crosscheck_required": true,
+          "native_metadata_crosschecks_completed": 22,
+          "qualified_before_content": true,
+          "same_proc_mount_required": true
+        },
+        "status": "OBSERVED",
+        "target": "mountinfo"
+      }
+    ],
+    "original_host_execution": false,
+    "remote_called": false,
+    "schema": "local-hand-q2-ci-unprivileged-kernel-facts/v1",
+    "source_sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02",
+    "status": "PASS"
+  },
+  "original_host_execution": false,
+  "original_batch_consumed_by_ci": false
+}

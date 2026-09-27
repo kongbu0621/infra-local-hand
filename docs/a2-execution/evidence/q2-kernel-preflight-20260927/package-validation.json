@@ -1,0 +1,246 @@
+{
+  "allow_consume": false,
+  "allow_run": false,
+  "artifacts": {
+    "q2-kernel-preflight-20260927.pyz": {
+      "bytes": 5609648,
+      "sha256": "04af4262c6ea033862512d05df68ff5665498023660ce312c57f956ecda9a616"
+    },
+    "q2-kernel-preflight-input-20260927.txt": {
+      "bytes": 7494251,
+      "sha256": "807f774bfe6716ae404d360698adb5f6d5190c18d8f8b6be4e74d7691b8eefe3"
+    },
+    "q2-kernel-preflight-start-20260927.txt": {
+      "bytes": 9190,
+      "sha256": "98ecf31a74d18d86d26e2933258d1e1521463999513564d514cd88d8fef838a6"
+    }
+  },
+  "authority_chains": [
+    {
+      "baseline": "47b351b2b943bf1d6f1c71cfeb031157a2eb70cc",
+      "closure": "d4a925c883672fadc7d1b10a8dfe58df18b922cd",
+      "owner_decision": "LH-Q2-SUPERVISOR-STARTUP-RETRY-CLOSURE-20260927-01",
+      "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+      "scope": "LH-Q2-SUPERVISOR-STARTUP-RETRY-v1"
+    },
+    {
+      "baseline": "c65ff4e25ea6373aabf8db25d304ee7614b96eb5",
+      "closure": "1491765c64c60a63d6bddf10a049308e404885ca",
+      "owner_decision": "LH-Q2-INSTALLATION-RECONCILIATION-CLOSURE-20260927-01",
+      "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+      "scope": "LH-Q2-INSTALLATION-RESERVATION-RECONCILIATION-v1"
+    },
+    {
+      "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "closure": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+      "owner_decision": "LH-Q2-HOST-WINDOW-CONSUMPTION-CLOSURE-20260927-01",
+      "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+      "scope": "LH-Q2-HOST-WINDOW-CONSUMPTION-v1"
+    },
+    {
+      "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "closure": "f7f8b503470725ca1ba18d1cb8d8b39e09a15ea8",
+      "owner_decision": "LH-Q2-KERNEL-FACT-READ-CLOSURE-20260927-01",
+      "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+      "scope": "LH-Q2-KERNEL-FACT-READ-v1"
+    }
+  ],
+  "authority_verification": {
+    "all_D_tool_git_blobs_verified_before_execution": true,
+    "all_four_closures_are_D_ancestors": true,
+    "exact_A_three_documents_and_C_B_copy_and_C_adoption_record_git_and_sha256_verified": true,
+    "kernel_A_is_C_ancestor": true,
+    "kernel_A_three_documents_unchanged_at_C_and_D": true,
+    "kernel_B_copy_unchanged_at_D": true,
+    "kernel_authority_verified_before_tools_import": true,
+    "ordinary_evidence_protection_unchanged": true
+  },
+  "delivery": {
+    "clocks": [
+      "CLOCK_MONOTONIC",
+      "CLOCK_BOOTTIME"
+    ],
+    "command_argv_independently_verified": true,
+    "command_bytes": 9190,
+    "frame_bytes": 7494251,
+    "frame_roundtrip_independently_verified": true,
+    "input_limit_bytes": 16777216,
+    "output_limit_bytes": 2097152,
+    "preparation_seconds": 140,
+    "receiver_origin_not_reset": true,
+    "total_input_bytes": 7503441,
+    "total_seconds": 300
+  },
+  "execution_window_consumed": false,
+  "frozen_runtime": {
+    "runtime_commit": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+    "runtime_tree": "2d957ccf1d9cbdf5e538189c6b68d56f34590a42",
+    "wheel_sha256": "c077a8f8aa2f0c3147228602746fd459a6d13267df299a84835331ad35ef158b"
+  },
+  "guest_connected": false,
+  "implementation_commit": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+  "implementation_tree": "c7c60ec47b742615dbae9f8cb230679f3a9c4997",
+  "original_host_connected": false,
+  "original_host_result_obtained": false,
+  "package_validation": {
+    "expanded_member_bytes": 14435147,
+    "git_verified_tool_files": 49,
+    "negative_cases": [
+      {
+        "actual_reason": "OFFLINE_TOOL_GIT_BLOB",
+        "case": "changed_loader_and_recomputed_index",
+        "expected_reason": "OFFLINE_TOOL_GIT_BLOB",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_C_ANCESTRY",
+        "case": "deleted_required_C_object",
+        "expected_reason": "OFFLINE_C_ANCESTRY",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_FIXED_GIT_IDENTITIES",
+        "case": "weakened_self_reported_C_list",
+        "expected_reason": "OFFLINE_FIXED_GIT_IDENTITIES",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_C_ANCESTRY",
+        "case": "deleted_fourth_kernel_C_object",
+        "expected_reason": "OFFLINE_C_ANCESTRY",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_C_ANCESTRY",
+        "case": "deleted_fourth_kernel_A_object",
+        "expected_reason": "OFFLINE_C_ANCESTRY",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_KERNEL_AUTHORITY_DIGEST",
+        "case": "changed_fourth_A_document_recomputed_index",
+        "expected_reason": "OFFLINE_KERNEL_AUTHORITY_DIGEST",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_KERNEL_AUTHORITY_DIGEST",
+        "case": "changed_fourth_B_document_recomputed_index",
+        "expected_reason": "OFFLINE_KERNEL_AUTHORITY_DIGEST",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_KERNEL_AUTHORITY",
+        "case": "broadened_kernel_adoption_in_both_records",
+        "expected_reason": "OFFLINE_KERNEL_AUTHORITY",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "OFFLINE_TOOL_GIT_BLOB",
+        "case": "changed_kernel_reader_recomputed_index",
+        "expected_reason": "OFFLINE_TOOL_GIT_BLOB",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "LOCAL_PACKAGE_FIXED_MEMBERS",
+        "case": "old_package_cannot_gain_kernel_amendment",
+        "expected_reason": "LOCAL_PACKAGE_FIXED_MEMBERS",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "HOST_WINDOW_ATTESTATION_PIN",
+        "case": "changed_host_raw_and_recomputed_index",
+        "expected_reason": "HOST_WINDOW_ATTESTATION_PIN",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "LOCAL_PACKAGE_EXTRA_FILE",
+        "case": "extra_ZIP_member_without_index",
+        "expected_reason": "LOCAL_PACKAGE_EXTRA_FILE",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "LOCAL_PACKAGE_FIXED_MEMBERS",
+        "case": "extra_ZIP_member_with_recomputed_index",
+        "expected_reason": "LOCAL_PACKAGE_FIXED_MEMBERS",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "LOCAL_PACKAGE_INDEX_BOUND",
+        "case": "oversized_index_before_read",
+        "expected_reason": "LOCAL_PACKAGE_INDEX_BOUND",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "LOCAL_PREFLIGHT_RECEPTION_WINDOW_REQUIRED",
+        "case": "RAM_LOCAL_missing_receiver_origin",
+        "expected_reason": "LOCAL_PREFLIGHT_RECEPTION_WINDOW_REQUIRED",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "LOCAL_PREFLIGHT_RAM_ENTRY_REQUIRED",
+        "case": "disk_--local-preflight",
+        "expected_reason": "LOCAL_PREFLIGHT_RAM_ENTRY_REQUIRED",
+        "run_local_called": false,
+        "status": "PASS"
+      },
+      {
+        "actual_reason": "ONLY_OFFLINE_OR_LOCAL_PREFLIGHT_IS_SUPPORTED",
+        "case": "disk_--run",
+        "expected_reason": "ONLY_OFFLINE_OR_LOCAL_PREFLIGHT_IS_SUPPORTED",
+        "run_local_called": false,
+        "status": "PASS"
+      }
+    ],
+    "negative_passed": 17,
+    "offline_field_reads_performed": false,
+    "reproduction_sha256": "04af4262c6ea033862512d05df68ff5665498023660ce312c57f956ecda9a616",
+    "source_blobs": 48,
+    "status": "PASS",
+    "two_independent_builds_byte_identical": true,
+    "typed_sources": 47
+  },
+  "preservation": {
+    "previous_delivery_package_start_input_bytes_unchanged": true
+  },
+  "public_actual_boot_value_included": false,
+  "public_kernel_content_included": false,
+  "public_raw_host_paths_included": false,
+  "ready": false,
+  "receiver_source_sha256": "0851f1fe1a1c0fd0c52f32d6603364f2b485e15548c87f30c5ee5619238e0bc4",
+  "schema": "q2-kernel-preflight-public-package-evidence/v1",
+  "workspace_pty": {
+    "all_frame_bytes_sent": true,
+    "both_report_origins_precede_payload_transmission": true,
+    "consumed": false,
+    "early_receiver_origin_retained": true,
+    "echo_disabled_before_transmission": true,
+    "elapsed_seconds": 4.076,
+    "field_stage": "host_boot",
+    "guest_connected": false,
+    "input_bytes": 7494251,
+    "original_host_connected": false,
+    "output_bytes": 5995,
+    "owner_issued": false,
+    "payload_echo_absent": true,
+    "reason": "HOST_LOCAL_KERNEL_MOUNT_CHANGED",
+    "returncode": 2,
+    "status": "LOCAL_PREFLIGHT_BLOCKED",
+    "terminal_attributes_restored": true,
+    "test_scope": "CURRENT_WORKSPACE_PROC_SUBMOUNT_REJECTION_NOT_ORIGINAL_HOST"
+  }
+}
