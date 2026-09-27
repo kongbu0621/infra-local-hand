@@ -261,23 +261,23 @@ supersedes the prior missing-raw inventory: all ten reservation inputs are
 available across the old and new archives; preflight is verified by its original
 historical tree. Twelve historical trees, fifteen old-file digests, 628 overlapping
 files and eleven host carriers match. Two second-bootstrap raw inputs lack an
-independent historical whole-file pin; their prospective adoption is proposed,
-not approved. Five disclosed atime changes are retained, not repaired or described
+independent historical whole-file pin; their limited prospective adoption is now
+approved by the separate decision below. Five disclosed atime changes are retained, not repaired or described
 as complete preservation. The accurate second staging tree plus adjacent intent
-is a proposed 610-entry forward comparison baseline, not historical identity.
+is the approved 610-entry forward comparison baseline, not historical identity.
 Do not ask Owner to find these already retained files again. Complete live
 admission remains required. Critical evidence has a repository index with
 digest, source relation, retention location and availability; raw machine
 evidence remains in its separately versioned private Git archive.
 
-### Proposed installation-reservation reconciliation
+### Installation-reservation reconciliation
 
-Scope `LH-Q2-INSTALLATION-RESERVATION-RECONCILIATION-v1` is **PROPOSED / Gate OPEN /
-AWAITING OWNER**. Its reviewable
+Scope `LH-Q2-INSTALLATION-RESERVATION-RECONCILIATION-v1` is **CLOSED for the exact
+bounded amendment below**. Its approved
 [requirements](docs/a2-execution/q2-installation-reservation-reconciliation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-installation-reservation-reconciliation/ARCHITECTURE.md) and
 [implementation plan](docs/a2-execution/q2-installation-reservation-reconciliation/IMPLEMENTATION_PLAN.md)
-jointly propose limited adoption of two exact current raw inputs, a precise
+jointly authorize limited adoption of two exact current raw inputs, a precise
 current second-staging comparison baseline, the five disclosed post-read metadata
 values, and append-only termination of only the two installation targets' unused
 future obligations. All actual data, other commitments, original ceilings,
@@ -287,10 +287,18 @@ window and 140s preparation budget. The additional state record budget is
 1 MiB / 16 inodes inside the unchanged state ceiling, not an expansion.
 Exact A is `c65ff4e25ea6373aabf8db25d304ee7614b96eb5`; its
 [separate baseline registration](docs/governance/Q2_INSTALLATION_RESERVATION_RECONCILIATION_BASELINE.md)
-pins the three document hashes. No Owner B or independent C exists for this
-amendment. Until then, do not implement it or generate a READY private entry.
-The existing startup approval does not authorize changed source or accounting
-semantics. Documentation review and evidence retention do not consume the run.
+pins the three document hashes. Owner B is retained in
+[Q2_INSTALLATION_RESERVATION_RECONCILIATION_OWNER_DECISION.md](docs/governance/Q2_INSTALLATION_RESERVATION_RECONCILIATION_OWNER_DECISION.md),
+event `LH-Q2-INSTALLATION-RECONCILIATION-CLOSURE-20260927-01`; exact reply
+“按原 R，批准 A c65ff4e2 的对账方案，继续实施” and its preceding request are preserved.
+This independent bookkeeping-only commit is C; implementation D must descend
+from it. A's three fixed documents remain byte-identical, including historical
+OPEN labels. R, direct source/integrity, mandate, Owner authority, no exceptions
+and change rules remain unchanged. This authorizes P1–P6 within A, including
+implementation, verification, delivery and conditional continuation of the same
+single startup batch; it does not authorize an additional run or relaxed ceiling.
+Documentation, closure and evidence retention do not consume the run. The new
+batch remains NOT ISSUED until actual evidence proves otherwise.
 
 ### Continuing constraints
 
