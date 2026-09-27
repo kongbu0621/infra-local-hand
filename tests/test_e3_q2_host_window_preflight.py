@@ -2,7 +2,7 @@
 
 Private locators, original input verification and kernel text are substituted
 explicitly. Filesystem reads, O_NOATIME, metadata, ACL observations and path
-checks are real. Ordinary-user proc O_NOATIME capability is not established.
+checks are real. Fixed proc-reader qualification is tested in its own module.
 These tests establish neither the private inputs nor execution readiness.
 """
 import copy
@@ -23,7 +23,6 @@ from e3_host import q2_host_window_preflight as m
 
 
 BOOT = "00000000-0000-0000-0000-000000000001"
-REAL_KERNEL_TEXT, REAL_BOOT = m._kernel_text, m._boot
 
 
 def encoded(value):
@@ -79,11 +78,14 @@ def setup(monkeypatch):
         monkeypatch.setattr(m, "helper", lambda name: SimpleNamespace(
             offline_inputs=lambda *args: (verified, copy.deepcopy(location)))
             if name == "q2_reconciliation_entry" else real_helper(name))
-        monkeypatch.setattr(m, "_boot", lambda guard: (guard(), BOOT)[1])
         # The cloud process PID namespace differs from its exposed proc mount.
         # This is synthetic kernel data, not evidence about an authorized host.
-        monkeypatch.setattr(m, "_kernel_text", lambda path, guard, maximum:
-            (guard(), b"1 0 0:1 / / rw - synthetic synthetic rw\n")[1])
+        def synthetic_kernel(kind, guard, report):
+            guard()
+            raw = (BOOT + "\n").encode() if kind == "boot" else b"1 0 0:1 / / rw - synthetic synthetic rw\n"
+            report.update(target=kind, status="SYNTHETIC_TEST_ONLY", bytes=len(raw))
+            return raw
+        monkeypatch.setattr(m.kernel, "read_fact", synthetic_kernel)
         try:
             yield SimpleNamespace(parent=parent, roots=roots, files=files, carrier=carrier,
                 location=location, config=config, proof=selected_sources, siblings=siblings)
@@ -94,7 +96,7 @@ def setup(monkeypatch):
 
 def run(setup, **kwargs):
     return m.run_local(setup.config, {}, setup.carrier, b"synthetic-host-attestation",
-        host_source_proof=setup.proof, **kwargs)
+        host_source_proof=setup.proof, kernel_authority=kwargs.pop("kernel_authority", m.KERNEL_AUTHORITY), **kwargs)
 
 
 def test_fixed_locators_are_not_historical_adoption_or_arbitrary_paths(setup):
@@ -169,7 +171,7 @@ def test_real_local_reads_preserve_metadata_and_never_write_or_dispatch(setup, m
 
 
 def test_wrong_boot_stops_before_parent_open(setup, monkeypatch):
-    monkeypatch.setattr(m, "_boot", lambda guard: "00000000-0000-0000-0000-000000000002")
+    monkeypatch.setattr(m, "_boot", lambda guard, report: "00000000-0000-0000-0000-000000000002")
     monkeypatch.setattr(m.io, "HeldPath", lambda *args, **kwargs: pytest.fail("parent read"))
     report = run(setup)
     assert report["reason"] == "HOST_LOCAL_BOOT_CHANGED"
@@ -204,29 +206,41 @@ def test_noatime_denied_never_reopens_with_weaker_flags(setup, monkeypatch):
     assert len(calls) == 1 and calls[0] & os.O_NOATIME
 
 
-def test_root_owned_kernel_noatime_denial_is_explicit_without_fallback(setup, monkeypatch):
-    monkeypatch.setattr(m, "_kernel_text", REAL_KERNEL_TEXT)
-    monkeypatch.setattr(m, "_boot", REAL_BOOT)
-    real_open, attempts = os.open, []
-    def refused(path, flags, *args, **kwargs):
-        if path == "boot_id":
-            attempts.append(flags)
-            raise PermissionError(errno.EPERM, "synthetic ordinary-user noatime denial")
-        return real_open(path, flags, *args, **kwargs)
-    monkeypatch.setattr(m.os, "open", refused)
+def test_kernel_failure_preserves_specific_operation_and_no_parent_read(setup, monkeypatch):
+    calls = []
+    def refused(kind, guard, detail):
+        guard()
+        calls.append(kind)
+        detail.update(status="BLOCKED", target=kind, error=dict(operation="open_leaf", errno=errno.EACCES))
+        raise ValueError("HOST_KERNEL_OPEN_LEAF")
+    monkeypatch.setattr(m.kernel, "read_fact", refused)
+    monkeypatch.setattr(m.io, "HeldPath", lambda *args, **kwargs: pytest.fail("parent read"))
     report = run(setup)
-    assert report["reason"] == "HOST_LOCAL_KERNEL_NOATIME_PERMISSION"
+    assert report["reason"] == "HOST_KERNEL_OPEN_LEAF"
     assert report["stage"] == "host_boot"
     assert report["consumption_path_state"] == "NOT_OBSERVED"
-    assert len(attempts) == 1 and attempts[0] & os.O_NOATIME
+    assert report["observations"]["kernel_reads"][0]["error"] == dict(operation="open_leaf", errno=errno.EACCES)
+    assert calls == ["boot"]
 
 
-def test_kernel_content_limit_is_not_a_silent_prefix(setup):
-    sample = setup.roots[0] / "evidence-0"
-    before = m.io.metadata(sample.stat())
-    with pytest.raises(ValueError, match="KERNEL_READ_LIMIT"):
-        REAL_KERNEL_TEXT(str(sample), lambda: None, 1)
-    assert m.io.metadata(sample.stat()) == before
+@pytest.mark.parametrize("authority", [None, {}, dict(m.KERNEL_AUTHORITY, closure="0" * 40),
+    dict(m.KERNEL_AUTHORITY, scope="unapproved"), dict(m.KERNEL_AUTHORITY, extra=True)])
+def test_new_kernel_authority_required_before_clock_or_field_reads(setup, monkeypatch, authority):
+    monkeypatch.setattr(m, "_window", lambda *args: pytest.fail("window"))
+    monkeypatch.setattr(m.kernel, "read_fact", lambda *args: pytest.fail("field read"))
+    report = run(setup, kernel_authority=authority)
+    assert report["reason"] == "HOST_LOCAL_KERNEL_AUTHORITY"
+    assert report["field_reads_performed"] is False
+    assert report["offline_sources_verified"] is False
+
+
+@pytest.mark.parametrize("raw", [b"not-a-boot\n", (BOOT + "\n\n").encode(), BOOT.encode()])
+def test_invalid_boot_format_stops_before_parent(setup, monkeypatch, raw):
+    monkeypatch.setattr(m.kernel, "read_fact", lambda *args: raw)
+    monkeypatch.setattr(m.io, "HeldPath", lambda *args, **kwargs: pytest.fail("parent"))
+    report = run(setup)
+    assert report["reason"] in ("HOST_LOCAL_BOOT_FORMAT", "HOST_WINDOW_BOOT")
+    assert report["consumption_path_state"] == "NOT_OBSERVED"
 
 
 @pytest.mark.parametrize("error", [None, errno.EOPNOTSUPP])
@@ -297,7 +311,7 @@ def test_expired_receiver_and_changed_origin_refuse_before_field_reads(setup, mo
     now = 250 * m.c.NS
     monkeypatch.setattr(m.delivery.time, "monotonic_ns", lambda: now)
     monkeypatch.setattr(m.delivery.time, "clock_gettime_ns", lambda _: now)
-    monkeypatch.setattr(m, "_boot", lambda guard: pytest.fail("expired field read"))
+    monkeypatch.setattr(m, "_boot", lambda guard, report: pytest.fail("expired field read"))
     origin = dict(issued_ns=100 * m.c.NS, deadline_ns=400 * m.c.NS,
         boottime_issued_ns=100 * m.c.NS, boottime_deadline_ns=400 * m.c.NS)
     report = run(setup, reception_window=origin)
@@ -310,7 +324,7 @@ def test_expired_receiver_and_changed_origin_refuse_before_field_reads(setup, mo
 def test_boottime_alone_expires_preparation_before_reads(setup, monkeypatch):
     monkeypatch.setattr(m.delivery.time, "monotonic_ns", lambda: 110 * m.c.NS)
     monkeypatch.setattr(m.delivery.time, "clock_gettime_ns", lambda _: 241 * m.c.NS)
-    monkeypatch.setattr(m, "_boot", lambda guard: pytest.fail("expired field read"))
+    monkeypatch.setattr(m, "_boot", lambda guard, report: pytest.fail("expired field read"))
     origin = dict(issued_ns=100 * m.c.NS, deadline_ns=400 * m.c.NS,
         boottime_issued_ns=100 * m.c.NS, boottime_deadline_ns=400 * m.c.NS)
     report = run(setup, reception_window=origin)

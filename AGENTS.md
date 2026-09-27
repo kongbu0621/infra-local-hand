@@ -369,6 +369,38 @@ is an explicit local BLOCKED result, not permission to request sudo or modify
 the host. Exact RAM delivery and observation results do not consume the original
 batch, prove H07, or supply missing historical obligations.
 
+### Fixed kernel fact read amendment
+
+Scope `LH-Q2-KERNEL-FACT-READ-v1` is **CLOSED for K0–K4 at exact A below**.
+Its authoritative documents consist of
+[requirements](docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md).
+Its exact documentation A is `887b640b394f9983f37dfe97c58ba35aaa099359`;
+[baseline registration](docs/governance/Q2_KERNEL_FACT_READ_BASELINE.md) pins its three files.
+R, direct source/integrity, Owner-only authority and the existing change rule remain unchanged.
+
+The [field screenshot review](docs/a2-execution/Q2_LOCAL_PREFLIGHT_FIELD_REVIEW.md)
+records a local preflight permission block at host_boot, empty observations and
+no consumption by this invocation. It does not prove the boot value, absence of
+the consumption path, full raw output integrity or joint admission. Do not ask
+Owner to repeatedly paste the same version or change host privileges.
+
+The approved amendment only permits explicit ordinary reads of the two fixed
+kernel views after fd/procfs/mount-identity qualification, with disclosed kernel
+metadata semantics. It narrowly supersedes the original host A's universal
+O_NOATIME clause for those reads. It is not a generic fallback or a change to R.
+Owner B is retained in
+[Q2_KERNEL_FACT_READ_OWNER_DECISION.md](docs/governance/Q2_KERNEL_FACT_READ_OWNER_DECISION.md),
+event `LH-Q2-KERNEL-FACT-READ-CLOSURE-20260927-01`, including the exact decision
+and explicit public disclosure approval for this batch's sanitized documents.
+This separate bookkeeping-only C records CLOSED before any new implementation;
+A's three documents and historical OPEN labels remain byte-identical. D must
+descend from this C. No new implementation or test source is included in C.
+All ordinary evidence O_NOATIME protection, old pins and budgets, frozen runtime,
+no-consumption/no-remote local branch and the full execution blockers remain.
+Unaffected CLOSED work remains authorized; no blanket reopening or new batch.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
