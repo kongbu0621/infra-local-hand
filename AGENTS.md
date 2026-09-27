@@ -300,6 +300,34 @@ single startup batch; it does not authorize an additional run or relaxed ceiling
 Documentation, closure and evidence retention do not consume the run. The new
 batch remains NOT ISSUED until actual evidence proves otherwise.
 
+### Host window consumption: affected scope reopened
+
+Independent implementation review found a material conflict between the approved
+reconciliation A's no-new-persistent-write-before-full-live-admission order
+(I06, architecture joint attestation, plan P5.2) and cross-process consumption
+of the single window when an early probe fails. The original startup documents
+contain the same ordering. A process-local set or an old implementation's early
+host write is not authority to resolve this conflict.
+
+The affected host launch/persistence order and live delivery are **OPEN**. The
+new `q2_reconciliation_entry.run_host` and CLI are contained: they return
+`HOST_WINDOW_CONSUMPTION_DESIGN_OPEN` before opening a window, calling a wrapper,
+reading field history, or writing. No new startup attempt or guest probe has
+been issued for this implementation. No new durable launch receipt has been
+implemented. An exact scoped three-document amendment and Owner decision are
+required before that affected path can proceed, under the unchanged pinned R.
+
+The source classification, pure accounting, protected IO, five-file guest
+record protocol, bounded transport primitives, read-only collector, and their
+isolated tests remain within the existing CLOSED A/C where their behavior does
+not change the first-write order. Their local validation does not authorize
+live issuance or establish field admission. The exact original three approved
+document byte sequences, prior closures, frozen runtime, and old v1 sources
+remain retained. See the scoped implementation review in
+`docs/a2-execution/Q2_RECONCILIATION_IMPLEMENTATION_REVIEW.md` for actual evidence
+and remaining limits. Do not manufacture READY or infer a new batch from these
+components.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

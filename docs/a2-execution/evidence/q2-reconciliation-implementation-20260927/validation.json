@@ -1,0 +1,153 @@
+{
+  "closure_parent": "1491765c64c60a63d6bddf10a049308e404885ca",
+  "date": "2026-09-27",
+  "files": {
+    "tests/e3_host/q2_reconciliation_backend.py": {
+      "bytes": 48076,
+      "sha256": "a3f6bec4081ec994645831a4a9d39dad871ce2ce4e8a4a1d838a7a821357cc91"
+    },
+    "tests/e3_host/q2_reconciliation_billing.py": {
+      "bytes": 23490,
+      "sha256": "af9c86ac303c234c0bf18d631b85ab5e40eacee916957f97905ae319e28d7210"
+    },
+    "tests/e3_host/q2_reconciliation_bootstrap.py": {
+      "bytes": 13432,
+      "sha256": "5a6f74787192684a91624f92fdcde5e4f27658380b0f87f47740c7032c3718b2"
+    },
+    "tests/e3_host/q2_reconciliation_collect.py": {
+      "bytes": 27752,
+      "sha256": "11714b2d69e4bfd774ef87b1db73df94d26cf8f65ad6ef59af12103f5def73d4"
+    },
+    "tests/e3_host/q2_reconciliation_contract.py": {
+      "bytes": 18896,
+      "sha256": "187c4ef06739c9b1a717acc65a38b18ec70b3e00a17bd352f08b942220497939"
+    },
+    "tests/e3_host/q2_reconciliation_delivery.py": {
+      "bytes": 10632,
+      "sha256": "bd128dbc902509b2620a77ca047f57089203e655c24dbcc048b528bcdd7a341c"
+    },
+    "tests/e3_host/q2_reconciliation_driver.py": {
+      "bytes": 11757,
+      "sha256": "ff4877830fc8da2885471d69173f1b09ece1daa4fe6eedc8a9cd21fc64656032"
+    },
+    "tests/e3_host/q2_reconciliation_entry.py": {
+      "bytes": 11976,
+      "sha256": "13fee89fecbb12684d8ac52c6fd0a801a138ac650c23634e27ce2226c26bebca"
+    },
+    "tests/e3_host/q2_reconciliation_io.py": {
+      "bytes": 15968,
+      "sha256": "f950004072eb9574942a086f9a6380b02fbbdfc327729f6d0b6c28bdb97430f2"
+    },
+    "tests/e3_host/q2_reconciliation_records.py": {
+      "bytes": 10173,
+      "sha256": "f5da894c3233033b9d846da5a6b635b1b426f91178f9cfcac293f48918410df8"
+    },
+    "tests/e3_host/q2_reconciliation_sources.py": {
+      "bytes": 22167,
+      "sha256": "53b9f68dd09f99195541f8e7c239cef90c9ca6fdb9887749c3c5ac77a62b4233"
+    },
+    "tests/test_e3_q2_reconciliation_backend.py": {
+      "bytes": 10681,
+      "sha256": "7633b5a7adcf4821ef67aec5c96f974efa246cd07c5f8f89bcf2d2bb3736e90f"
+    },
+    "tests/test_e3_q2_reconciliation_billing.py": {
+      "bytes": 19218,
+      "sha256": "ce274b8d13f0b07af46b5d67a601788639a90c91e95e34c4cdded0912e6dd5c0"
+    },
+    "tests/test_e3_q2_reconciliation_bootstrap.py": {
+      "bytes": 7302,
+      "sha256": "5e3bb04d68ea10de8785fa0a5e0a51015af656128338b4b0f9398ad58945b88b"
+    },
+    "tests/test_e3_q2_reconciliation_collect.py": {
+      "bytes": 24381,
+      "sha256": "36e91eaf4f5fce46beaaec2dba801d5f69a785b50abf3a1365192f6926546b29"
+    },
+    "tests/test_e3_q2_reconciliation_delivery.py": {
+      "bytes": 5822,
+      "sha256": "b806409785b4f4d15928259415c5eead537620d8a627c95b4d5e2f6845d64d7c"
+    },
+    "tests/test_e3_q2_reconciliation_driver.py": {
+      "bytes": 6269,
+      "sha256": "f95efaacf85c2f81bf6f7fa94b8141d774944b5e4cf94393a1495db51315063e"
+    },
+    "tests/test_e3_q2_reconciliation_entry.py": {
+      "bytes": 1385,
+      "sha256": "e71ef48984dabef86fc2b542902bd31258c76715f97908233e8359b7b56925e3"
+    },
+    "tests/test_e3_q2_reconciliation_host_store.py": {
+      "bytes": 9281,
+      "sha256": "64a8cd948142ddf82bf5677f7b0707028751d03d6ddd4d7236d9a1d69582b275"
+    },
+    "tests/test_e3_q2_reconciliation_io_records.py": {
+      "bytes": 17856,
+      "sha256": "ec944521ce6976f21ef8e7bbb54e0b89368dd00e2e7c863d468c113fa0811387"
+    },
+    "tests/test_e3_q2_reconciliation_sources.py": {
+      "bytes": 17021,
+      "sha256": "b91aa92b4c7dcae654282ab889e090c25bf7d6c44fa0c5df6bed088eeec59338"
+    }
+  },
+  "host_entry": "BLOCKED_BEFORE_ANY_WINDOW_OR_FIELD_EFFECT",
+  "limitations": [
+    "No live guest/host probe, original execution window or owner issuance occurred.",
+    "Real noatime-mounted symlink allowed branch remains unproven; relatime refusal before readlink is tested.",
+    "Q1 per-object owner map and several current installation/runtime trees are unavailable in the retained return; no zero-fill or arbitrary owner adoption.",
+    "COLLECTED proves retained byte relations only, not original caller EOF or independent remote stop.",
+    "Exact D Git membership and real private fixture verification are recorded after the implementation commit."
+  ],
+  "new_tests": {
+    "command": "python -m pytest -q tests/test_e3_q2_reconciliation_*.py",
+    "passed": 154,
+    "raw_summary": "154 passed, 2 skipped in 10.95s",
+    "skipped": 2
+  },
+  "preserved_baselines": {
+    "approved_docs": [
+      {
+        "path": "docs/a2-execution/q2-installation-reservation-reconciliation/REQUIREMENTS.md",
+        "sha256": "3261d65ca264d07d1f3b0e174fbcd651ad68922bee3fd766341fcb7f62fcadc3",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-installation-reservation-reconciliation/ARCHITECTURE.md",
+        "sha256": "4085374fd1544201edf33f4ce1cdaccb50ebc8944ea75f9d6078f8404885d739",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-installation-reservation-reconciliation/IMPLEMENTATION_PLAN.md",
+        "sha256": "f6244c622906512c3727bb0038c8555363167a91bc24f576c73f0f2519aa7ed6",
+        "unchanged": true
+      }
+    ],
+    "old_v1_unchanged": true,
+    "runtime_unchanged": true,
+    "schema": "q2-reconciliation-retained-baselines/v1",
+    "tracked_diff_only": [
+      "AGENTS.md"
+    ],
+    "wheel": {
+      "bytes": 266010,
+      "sha256": "c077a8f8aa2f0c3147228602746fd459a6d13267df299a84835331ad35ef158b"
+    }
+  },
+  "production_supported": false,
+  "pytest": "8.4.2",
+  "python": "3.12.14",
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "ready": false,
+  "requirements_build_sha256": "3d5cb1f383a0e9064aced781734d83acb89ee0b9b9d4161001f5c6dbd879d94d",
+  "retained_entry_regression": {
+    "command": "python -m pytest -q tests/test_e3_q2_startup_retry_bootstrap.py tests/test_e3_quota_q2_startup_retry_driver.py tests/test_e3_q2_startup_retry_contract.py tests/test_e3_quota_q2_startup_retry_collect.py tests/test_e3_q2_startup_retry.py tests/test_e3_quota_q2_startup_retry_delivery.py tests/test_e3_quota_q2_startup_retry_entry.py tests/test_e3_quota_q2_retry_contract.py tests/test_e3_quota_q2_prepare_contract.py",
+    "passed": 115,
+    "raw_summary": "115 passed in 25.40s",
+    "skipped": 0
+  },
+  "schema": "local-hand-q2-reconciliation-isolated-validation/v1",
+  "scope": "SCOPED_COMPONENT_VALIDATION_HOST_ENTRY_CONTAINED",
+  "skipped_reasons": [
+    "Current UID/GID namespace cannot map the ordinary test UID for a real chown.",
+    "Current environment does not expose the required numeric /proc/<pid> identity surface."
+  ],
+  "syntax_checked_files": 21
+}
