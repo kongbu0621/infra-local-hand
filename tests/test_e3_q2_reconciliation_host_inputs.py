@@ -2,14 +2,19 @@
 import base64
 import copy
 import stat
+import sys
 from types import SimpleNamespace
 
 import pytest
 
 from e3_host import q2_reconciliation_bootstrap as m
 from e3_host import q2_host_window_contract as c
-from e3_host import q2_host_window_record as record
 from test_e3_q2_host_window_billing import fixture, consume, scan, m as billing
+
+# verify_intent loads the Linux record validator, which imports fcntl. Keep the
+# standalone marker-shape boundary below active on every supported test runner.
+linux_record = pytest.mark.skipif(not sys.platform.startswith("linux"),
+    reason="Host intent validation loads the Linux fcntl record implementation")
 
 
 def fixture_inputs(monkeypatch):
@@ -40,12 +45,14 @@ def fixture_inputs(monkeypatch):
         boottime_issued_ns=200, boottime_deadline_ns=200+300*c.NS)
     meta = copy.deepcopy(scan("/synthetic-host", 10)["entries"][0]["source_metadata"])
     meta.update(uid=0, gid=0, size=4096, blocks=8)
-    fs = dict(schema=record.FILESYSTEM_SCHEMA, device=1, mount_id=4, mountpoint="/",
+    # Literal wire values keep these synthetic inputs independent of Linux I/O
+    # imports. The real record validator checks them in the integration cases.
+    fs = dict(schema="local-hand-q2-host-window-ext4/v1", device=1, mount_id=4, mountpoint="/",
         source="/dev/synthetic", mountinfo_sha256="1"*64, superblock_sha256="2"*64,
-        block_size=4096, cluster_size=4096, parent_flags=record.FS_EXTENTS_FL,
+        block_size=4096, cluster_size=4096, parent_flags=0x80000,
         parent_size=4096, available_bytes=128*1024**2, free_inodes=10000,
         allocation_bound=65536, logical_bound=16384, inode_bound=4)
-    precheck = dict(schema=record.PRECHECK_SCHEMA, location_sha256=c.sha(c.encoded(location)),
+    precheck = dict(schema="local-hand-q2-host-window-precheck/v1", location_sha256=c.sha(c.encoded(location)),
         window=window, boot_id=location["expected_boot_id"], parent_metadata=meta, filesystem=fs,
         host_bill_sha256=c.sha(c.encoded(precheck_bill)), host_bill_summary=precheck_bill["summary"],
         limits=dict(c.RESERVATION))
@@ -75,6 +82,7 @@ def fixture_inputs(monkeypatch):
     return value, verified
 
 
+@linux_record
 def test_host_input_proof_keeps_old_reconciliation_and_actual_field_gate_separate(monkeypatch):
     value, verified = fixture_inputs(monkeypatch)
     result = m.load_host_window(value, verified)
@@ -89,6 +97,7 @@ def test_host_input_proof_keeps_old_reconciliation_and_actual_field_gate_separat
         c.require_field_readiness(result)
 
 
+@linux_record
 @pytest.mark.parametrize("fault", ["configuration", "wrapper", "source_map", "marker_bytes",
     "marker_identity", "precheck_digest", "machine_identity", "unknown_field"])
 def test_host_input_cross_bindings_reject_self_consistent_but_different_material(monkeypatch, fault):
@@ -135,6 +144,7 @@ def reseal_marker_input(value, intent):
     return raw
 
 
+@linux_record
 @pytest.mark.parametrize("fault", ["uid", "gid", "device", "parent_inode"])
 def test_intent_rejects_writer_identity_conflicts_even_after_all_rehashing(monkeypatch, fault):
     value, verified = fixture_inputs(monkeypatch)
@@ -165,6 +175,7 @@ def test_intent_rejects_writer_identity_conflicts_even_after_all_rehashing(monke
         m.load_host_window(value, verified)
 
 
+@linux_record
 @pytest.mark.parametrize("fault", ["root_nlink", "leaf_uid", "leaf_gid", "leaf_writable",
     "leaf_group_readable", "leaf_setgid", "leaf_parent_inode"])
 def test_marker_profile_rejects_valid_requoted_but_nonwriter_metadata(monkeypatch, fault):

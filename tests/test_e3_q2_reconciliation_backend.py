@@ -3,7 +3,17 @@ import copy
 import importlib.util
 from pathlib import Path
 import stat
+import subprocess
+import sys
+import time
+from types import SimpleNamespace
 import pytest
+
+# This module exercises the Linux reconciliation backend, whose import chain
+# requires fcntl and whose paths/identities are Linux procfs and cgroup objects.
+# Portable reconciliation contract tests remain separately collected on Windows.
+if not sys.platform.startswith("linux"):
+    pytest.skip("Linux reconciliation backend requires procfs, cgroup and fcntl", allow_module_level=True)
 
 spec = importlib.util.spec_from_file_location("cgroup_fragment", Path(__file__).parent / "e3_host/q2_reconciliation_backend.py")
 m = importlib.util.module_from_spec(spec)
@@ -187,12 +197,62 @@ def test_real_kernel_reader_bound_and_numeric_proc():
     reader = m.KernelReader(lambda: None)
     with pytest.raises(ValueError, match="FILE_BOUND"):
         reader.read("/proc/sys/kernel/random/boot_id", 1)
+
+    # setup-python's interpreter may be runner-owned. Use a fixed distro binary
+    # satisfying the unchanged executable contract, under the test's own uid.
+    executable = Path("/usr/bin/sleep")
+    info = executable.stat()
+    assert stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022
+    deadline = time.monotonic() + 10
+
+    def guard():
+        assert time.monotonic() < deadline, "bounded numeric-proc observation expired"
+
+    child = subprocess.Popen([str(executable), "30"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
     try:
-        observed = m.KernelReader(lambda: None).process(m.os.getpid())
-    except (FileNotFoundError, PermissionError):
-        pytest.skip("Execution container numeric proc identity is unavailable/inaccessible; live admission would BLOCK")
-    assert m.process_stat(observed["stat"])["identity"][0] == m.os.getpid()
-    assert set(observed["namespaces"]) == set(m.NAMESPACES)
+        try:
+            observed = m.KernelReader(guard).process(child.pid)
+        except (FileNotFoundError, PermissionError):
+            if m.os.environ.get("GITHUB_ACTIONS") == "true":
+                raise  # Hosted Linux CI must exercise the real positive path.
+            pytest.skip("Execution container numeric proc identity is unavailable/inaccessible; live admission would BLOCK")
+        assert child.poll() is None
+        assert m.process_stat(observed["stat"])["identity"][0] == child.pid
+        assert observed["identity"]["uid"] == m.os.geteuid()
+        assert observed["exe"]["text"] == str(executable.resolve())
+        assert observed["exe"]["identity"] == m.identity(info)
+        assert set(observed["namespaces"]) == set(m.NAMESPACES)
+    finally:
+        child.terminate()
+        try:
+            child.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=3)
+
+
+@pytest.mark.parametrize("uid,mode,text", [
+    (1000, stat.S_IFREG | 0o755, "/usr/bin/sleep"),
+    (0, stat.S_IFREG | 0o775, "/usr/bin/sleep"),
+    (0, stat.S_IFREG | 0o757, "/usr/bin/sleep"),
+    (0, stat.S_IFDIR | 0o755, "/usr/bin/sleep"),
+    (0, stat.S_IFREG | 0o755, "/usr/bin/sleep (deleted)"),
+])
+def test_kernel_executable_contract_rejects_unqualified_targets(monkeypatch, uid, mode, text):
+    """Fixing the positive process fixture must retain each rejection boundary."""
+    link = SimpleNamespace(st_dev=1, st_ino=2, st_mode=stat.S_IFLNK | 0o777,
+                           st_uid=1000, st_gid=1000, st_nlink=1)
+    target = SimpleNamespace(st_dev=1, st_ino=3, st_mode=mode,
+                             st_uid=uid, st_gid=0, st_nlink=1)
+    closed = []
+    monkeypatch.setattr(m, "os", SimpleNamespace(
+        stat=lambda *args, **kwargs: link, readlink=lambda *args, **kwargs: text,
+        open=lambda *args, **kwargs: 42, fstat=lambda fd: target,
+        close=closed.append, O_PATH=m.os.O_PATH, O_CLOEXEC=m.os.O_CLOEXEC))
+    with pytest.raises(ValueError, match="RECON_PROC_EXECUTABLE"):
+        m.KernelReader(lambda: None)._magic(10, "exe", r"/[^\x00\n]+")
+    assert closed == [42]
 
 
 def namespace_reader():

@@ -5,6 +5,7 @@ supervision nor guest acceptance. No test calls a preparation/effect API.
 """
 import base64
 import copy
+import errno
 import gzip
 import json
 import os
@@ -21,17 +22,45 @@ from e3_host import q2_reconciliation_delivery as delivery
 from e3_host import q2_reconciliation_records as records
 
 
-@unittest.skipUnless(sys.platform.startswith("linux"), "Linux protected no-atime files")
+@unittest.skipUnless(sys.platform.startswith("linux") and os.getresuid() == (0, 0, 0),
+    "Requires real root credentials; mandatory Linux CI root-fixture step covers this class")
 class ProtectedCollection(unittest.TestCase):
     def setUp(self):
-        home = Path.home()
-        if any(os.stat(path).st_mode & 0o022 for path in (home, *home.parents)):
-            self.skipTest("No protected local temporary parent")
+        from e3_host import q2_host_window_preflight as preflight
+        supplied = os.environ.get("LOCAL_HAND_Q2_ROOT_TEST_PARENT")
+        home = Path(r.io.absolute(supplied)) if supplied is not None else Path.home()
+        # Reader's actual contract permits root-owned paths only. Validate the
+        # complete real chain, including ACLs, before building this root fixture.
+        # Never widen Reader(uids=(0,)) to accommodate an ordinary CI home.
+        with r.io.HeldPath(str(home), lambda: None, directory=True, allowed_uids=(0,)) as held:
+            preflight._chain(held, lambda: None)
         self.tmp = tempfile.TemporaryDirectory(prefix="q2-collect-test-", dir=home)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.reader = r.Reader(lambda: None)
         self.addCleanup(self.reader.close)
+
+    def test_nonroot_owned_evidence_is_rejected_by_default_reader(self):
+        path = self.file("ordinary-owned", b"never admitted")
+        uid = int(os.environ.get("LOCAL_HAND_Q2_TEST_UNPRIVILEGED_UID", "65534"))
+        self.assertGreater(uid, 0)
+        try:
+            os.chown(path, uid, -1)
+        except OSError as error:
+            if error.errno == errno.EINVAL and "LOCAL_HAND_Q2_TEST_UNPRIVILEGED_UID" not in os.environ:
+                self.skipTest("Cloud user namespace cannot map the ordinary fixture owner")
+            raise
+        self.assertEqual(uid, path.stat().st_uid)
+        with self.assertRaisesRegex(ValueError, "RECONCILIATION_UNPROTECTED_PATH"):
+            self.reader.read(str(path))
+        self.assertEqual({}, self.reader.raw)
+
+    def test_group_writable_evidence_is_rejected_by_default_reader(self):
+        path = self.file("group-writable", b"never admitted")
+        path.chmod(0o620)
+        with self.assertRaisesRegex(ValueError, "RECONCILIATION_UNPROTECTED_PATH"):
+            self.reader.read(str(path))
+        self.assertEqual({}, self.reader.raw)
 
     def file(self, relative, value):
         path = self.root / relative
@@ -328,9 +357,10 @@ class CollectionEnvelopeAndWire(unittest.TestCase):
     def test_real_entry_blocks_before_any_clock_file_or_guest_read(self):
         def forbidden(*args, **kwargs):
             raise AssertionError("unproven field input caused an observation")
+        clock = SimpleNamespace(CLOCK_BOOTTIME=object(), clock_gettime_ns=forbidden)
         with patch.object(r, "Reader", side_effect=forbidden), \
                 patch.object(r.Path, "read_text", side_effect=forbidden), \
-                patch.object(r.time, "clock_gettime_ns", side_effect=forbidden), \
+                patch.object(r, "time", clock), \
                 patch("builtins.print") as output:
             self.assertEqual(3, r.main([]))
         self.assertEqual("HOST_WINDOW_FIELD_READINESS_UNPROVEN", json.loads(output.call_args.args[0])["reason"])
@@ -358,11 +388,19 @@ class CollectionEnvelopeAndWire(unittest.TestCase):
             "--delivery-envelope", "/delivery", "--delivery-sha256", r.sha(raw["/delivery"]),
             "--clock-anchor", "/clock", "--clock-anchor-sha256", r.sha(raw["/clock"]),
             "--seal-sha256", "c"*64]
+        # Model only this module's protocol inputs. Do not add Unix attributes
+        # to the host's os/time modules or treat this as real Linux evidence.
+        clock_id = object()
+        def clock(kind):
+            self.assertIs(kind, clock_id)
+            return envelope["guest_outer_deadline_ns"]
+        runtime = SimpleNamespace(platform="linux", flags=SimpleNamespace(isolated=1),
+            dont_write_bytecode=True)
         with patch.object(r, "Reader", return_value=reader), patch.object(r, "helper", side_effect=source), \
-                patch.object(r.sys, "flags", SimpleNamespace(isolated=1)), \
-                patch.object(r.sys, "dont_write_bytecode", True), patch.object(r.os, "getuid", return_value=0), \
-                patch.object(r.os, "geteuid", return_value=0), patch.object(r.Path, "read_text", return_value=anchor["guest_boot_id"]), \
-                patch.object(r.time, "clock_gettime_ns", return_value=envelope["guest_outer_deadline_ns"]), \
+                patch.object(r, "sys", runtime), \
+                patch.object(r, "os", SimpleNamespace(getuid=lambda: 0, geteuid=lambda: 0)), \
+                patch.object(r.Path, "read_text", return_value=anchor["guest_boot_id"]), \
+                patch.object(r, "time", SimpleNamespace(CLOCK_BOOTTIME=clock_id, clock_gettime_ns=clock)), \
                 patch("builtins.print") as output:
             self.assertEqual(3, r.main(args))
         self.assertEqual(["/clock", "/delivery"], observed)

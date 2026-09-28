@@ -19,6 +19,9 @@ from types import SimpleNamespace
 
 import pytest
 
+if sys.platform != "linux":
+    pytest.skip("Host local preflight uses Linux fd, ACL and proc interfaces", allow_module_level=True)
+
 from e3_host import q2_host_window_preflight as m
 
 
@@ -29,11 +32,20 @@ def encoded(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def fixture_parent():
+    # The runner home may have an access/default ACL. CI provisions a fresh
+    # ordinary-owned fixture under a protected root ancestor instead of changing
+    # existing permissions. Explicit bad fixtures fail; they never become SKIP.
+    supplied = os.environ.get("LOCAL_HAND_Q2_TEST_PARENT")
+    home = Path(m.io.absolute(supplied)) if supplied is not None else Path.home()
+    with m.io.HeldPath(str(home), lambda: None, directory=True) as held:
+        m._chain(held, lambda: None)
+    return home
+
+
 @pytest.fixture
 def setup(monkeypatch):
-    home = Path.home()
-    if sys.platform != "linux" or any(os.stat(path).st_mode & 0o022 for path in (home, *home.parents)):
-        pytest.skip("No Linux protected temporary parent")
+    home = fixture_parent()
     with tempfile.TemporaryDirectory(prefix="host-local-only-test-", dir=home) as directory:
         parent = Path(directory)
         roots = [parent / ("history-" + letter) for letter in "abcde"]
@@ -97,6 +109,24 @@ def setup(monkeypatch):
 def run(setup, **kwargs):
     return m.run_local(setup.config, {}, setup.carrier, b"synthetic-host-attestation",
         host_source_proof=setup.proof, kernel_authority=kwargs.pop("kernel_authority", m.KERNEL_AUTHORITY), **kwargs)
+
+
+@pytest.mark.parametrize("kind", ("writable", "symlink"))
+def test_explicit_fixture_must_qualify_without_home_fallback(setup, monkeypatch, kind):
+    parent = setup.parent / "configured-parent"
+    if kind == "writable":
+        parent.mkdir(mode=0o700)
+        parent.chmod(0o720)
+    else:
+        parent.symlink_to(setup.parent, target_is_directory=True)
+    monkeypatch.setenv("LOCAL_HAND_Q2_TEST_PARENT", str(parent))
+    if kind == "writable":
+        with pytest.raises(ValueError, match="RECONCILIATION_UNPROTECTED_PATH"):
+            fixture_parent()
+    else:
+        with pytest.raises(OSError) as error:
+            fixture_parent()
+        assert error.value.errno in (errno.ELOOP, errno.ENOTDIR)
 
 
 def test_fixed_locators_are_not_historical_adoption_or_arbitrary_paths(setup):

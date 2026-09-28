@@ -1,7 +1,7 @@
 """Bounded input and write ordering; no SSH, guest, service or quota operation."""
 import base64
 import importlib.util
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
@@ -70,7 +70,16 @@ def pipeline(monkeypatch, failure=None):
     events=[]
     real_helper=m.helper
     contract=real_helper('q2_reconciliation_contract')
-    now=m.time.monotonic_ns(); boot=m.time.clock_gettime_ns(m.time.CLOCK_BOOTTIME)
+    # This is a synthetic guest protocol/ordering model. Its Linux clock and
+    # guest path semantics must not depend on the operating system running CI.
+    # No clock, filesystem or actual Windows execution support is established.
+    now, boot = 100 * 10**9, 200 * 10**9
+    boot_clock = object()
+    def model_boottime(clock):
+        assert clock is boot_clock
+        return boot
+    monkeypatch.setattr(m, 'time', SimpleNamespace(CLOCK_BOOTTIME=boot_clock,
+        clock_gettime_ns=model_boottime))
     entry=dict(monotonic_ns=now,boottime_ns=boot)
     files={'/root/synthetic/tools/q2_fixture.py':'# synthetic\n'}
     hashes={name:contract.sha(raw.encode()) for name,raw in files.items()}
@@ -109,6 +118,7 @@ def pipeline(monkeypatch, failure=None):
         files=files,file_hashes=hashes,clock_anchor={'host_issued_ns':now,'host_deadline_ns':now+300*10**9},
         guest_pin={'boot_id':'test'},host_window={})
     fake={
+        'q2_reconciliation_contract':contract,
         # Only this isolated protocol fixture replaces the known-unsatisfied
         # field-readiness gate. It does not establish actual host provenance.
         'q2_host_window_contract':SimpleNamespace(require_field_readiness=lambda value:None),
@@ -123,7 +133,12 @@ def pipeline(monkeypatch, failure=None):
         'q2_reconciliation_records':SimpleNamespace(write_once=lambda *a:(events.append('persistent-record') or {})),
     }
     monkeypatch.setattr(m,'load_inputs',lambda value:verified)
-    monkeypatch.setattr(m,'helper',lambda name:fake[name] if name in fake else real_helper(name))
+    # Resolve actual contract modules before replacing guest lexical paths, so
+    # native host paths remain in use while loading their source files.
+    if failure=='field_readiness':
+        fake['q2_host_window_contract']=real_helper('q2_host_window_contract')
+    monkeypatch.setattr(m,'helper',lambda name:fake[name])
+    monkeypatch.setattr(m,'Path',PurePosixPath)
     monkeypatch.setattr(m,'guarded_extract',lambda *a,**k:(events.append('persistent-stage') or {}))
     monkeypatch.setattr(m,'write_metadata',lambda root,name,*a:events.append('metadata:'+name))
     def on_live(event):
@@ -132,7 +147,6 @@ def pipeline(monkeypatch, failure=None):
         ack=dict(schema=m.ACK_SCHEMA,status='HOST_JOINT_ACK',**{key:event[key] for key in m.ACK_BINDINGS})
         if failure=='ack_wrong':ack['host_marker_sha256']='0'*64
         return contract.encoded(ack)
-    if failure=='field_readiness':fake.pop('q2_host_window_contract')
     return m.bootstrap(config,entry,on_live=on_live),events
 
 

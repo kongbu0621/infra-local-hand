@@ -6,15 +6,19 @@ import io
 import json
 import os
 from pathlib import Path
-import pty
 import select
 import subprocess
 import sys
-import termios
 import time
 import zipfile
 
 import pytest
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Linux PTY, termios and BOOTTIME receiver integration", allow_module_level=True)
+
+import pty
+import termios
 
 SOURCE = Path(__file__).parent / "e3_host/q2_host_window_receiver.py"
 

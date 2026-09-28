@@ -15,6 +15,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Linux fcntl/ext4 and protected-fd record implementation", allow_module_level=True)
+
 from e3_host import q2_host_window_billing as billing
 from e3_host import q2_host_window_contract as c
 from e3_host import q2_host_window_record as r

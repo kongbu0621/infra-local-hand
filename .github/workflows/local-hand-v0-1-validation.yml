@@ -199,12 +199,12 @@ jobs:
         run: |
           import os, subprocess
           subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp", "tools/admin/local_hand_quota_observer", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "tools/run_q1_experiment.py", "tools/launch_q1_experiment.py", "plugins", "tests"], check=True)
-      - name: Prepare isolated protected parent for local-source tests
+      - name: Prepare isolated protected parent for ordinary local-read tests
         if: runner.os == 'Linux'
         shell: python
         run: |
           import errno, json, os, pathlib, stat, subprocess
-          # Only fixture provisioning is privileged. Pytest and the observer
+          # Only this fixture provisioning is privileged. Ordinary pytest and the observer
           # retain the runner's real ordinary credentials. Do not clear ACLs
           # or change the existing home/system ancestor permissions.
           uid, gid = os.getuid(), os.getgid()
@@ -235,6 +235,35 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
               stream.write(f"LOCAL_HAND_Q2_TEST_PARENT={root}\n")
           print("LOCAL_SOURCE_TEST_PARENT " + json.dumps(diagnostics, sort_keys=True))
+      - name: Verify root-only collector against isolated real root-owned files
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import os, pathlib, subprocess, xml.etree.ElementTree as ET
+          # The production collector retains its root-only owner contract.
+          # Run just that real-filesystem class with real root credentials;
+          # the complete source suite below continues as the ordinary runner.
+          uid = os.getuid()
+          if uid == 0:
+              raise SystemExit("ordinary CI coordinator required")
+          parent = pathlib.Path(subprocess.check_output(
+              ["sudo", "-n", "mktemp", "-d", "/local-hand-q2-collector-XXXXXXXXXX"], text=True).strip())
+          if parent.parent != pathlib.Path("/") or not parent.name.startswith("local-hand-q2-collector-"):
+              raise SystemExit("unexpected isolated root fixture path")
+          report = pathlib.Path(os.environ["LOCAL_HAND_VERIFY_ROOT"]) / "root-collector-tests.xml"
+          try:
+              subprocess.run(["sudo", "-n", "env", "PYTHONDONTWRITEBYTECODE=1",
+                  f"LOCAL_HAND_Q2_ROOT_TEST_PARENT={parent}", f"LOCAL_HAND_Q2_TEST_UNPRIVILEGED_UID={uid}",
+                  os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q", "-rA",
+                  "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection",
+                  "--junitxml", str(report)], check=True)
+              cases = ET.parse(report).getroot().findall(".//testcase")
+              if len(cases) < 16 or any(case.find(tag) is not None
+                      for case in cases for tag in ("failure", "error", "skipped")):
+                  raise SystemExit("root collector gate requires at least 16 PASS, zero SKIP/error/failure")
+              print(f"ROOT_COLLECTION_REAL_FILES={len(cases)} PASS, 0 SKIP")
+          finally:
+              subprocess.run(["sudo", "-n", "rm", "-rf", "--", str(parent)], check=True)
       - name: Run platform-scoped source tests (A2 jobs are Linux only)
         shell: python
         run: |
@@ -765,4 +794,5 @@ jobs:
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/local-hand-a2-plugin.zip
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/commands/
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/report.json
+            ${{ env.LOCAL_HAND_VERIFY_ROOT }}/root-collector-tests.xml
           if-no-files-found: warn

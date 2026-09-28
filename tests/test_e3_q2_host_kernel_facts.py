@@ -98,6 +98,8 @@ def test_unknown_abi_rejected_before_any_open(monkeypatch):
 
 
 def test_missing_libc_symbol_rejected(monkeypatch):
+    if not m._layout_supported():
+        pytest.skip("Native Linux ABI required to reach the libc-symbol boundary")
     monkeypatch.setattr(m.ct, "CDLL", lambda *a, **kw: SimpleNamespace())
     with pytest.raises(m.KernelFactError) as error:
         m.read_fact("boot", lambda: None, {})
@@ -288,6 +290,8 @@ def test_native_layout_matches_current_python_metadata_without_reading_content()
         os.close(fd)
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"),
+    reason="Real Linux ordinary credentials and procfs qualification")
 def test_real_ordinary_identity_reads_report_actual_outcome():
     # This subprocess is an isolated test fixture. The delivered reader contains
     # no setuid/setgid/setgroups calls and never requests privilege changes.
