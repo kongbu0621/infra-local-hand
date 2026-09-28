@@ -482,15 +482,21 @@ diagnostic repair may retain metadata already obtained by the same checks; it
 must not add reads, weaken protection or retry the host automatically.
 This diagnostic repair is implemented at `89c725efd61dad11b0cc9ae11c3c08a941e3111a`,
 with 236 PASS / 3 SKIP scoped regression and an exact offline-verified private
-package. The initial diagnostic and a separately initiated rerun1 have returned;
+package. The initial diagnostic and separately initiated rerun1/rerun2 have returned;
 the [field review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)
-retains both exact receipts at the same D. The latest remains BLOCKED at the
-control-parent ancestor with component_index=4 (root=0), after the earlier
-index=3 check. All eleven targets remain unattempted. Local Codex reports
-maintenance of the earlier ancestor; no further permission change or invocation
-follows from that report. A separate fixed-chain metadata inventory is the next
-maintenance candidate, not a collector bypass or Q2 acceptance. Failed-check
-metadata is not a completed path-stability proof.
+retains all three exact diagnostic receipts at the same D. The latest rerun2
+passed the initial parent-chain checks and reached fixed_objects, then blocked
+at M01: retained mode 0664 intersects 06022 only at group-write. One target was
+attempted, ten remain unattempted; observed/matched/raw and ordinary bytes are zero.
+M01 metadata is from the parent-relative no-follow stat before file open, not
+an opened-file fstat or a completed file stability/ACL check. Final parent/marker/
+boot rechecks were not reached; initial parent success is not permanent admission.
+The [next maintenance handoff](docs/a2-execution/Q2_FIXED_OBJECT_METADATA_HANDOFF.md)
+is an independent metadata-only inventory of all eleven fixed files and the
+necessary fixed parent chains. It is prepared, not dispatched to the host by this
+review. It creates no permission-change or additional invocation authority and
+does not alter collector fail-at-first-rejection or Q2 acceptance. Owner access
+bits alone cannot prove that removing shared group write has no operational impact.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

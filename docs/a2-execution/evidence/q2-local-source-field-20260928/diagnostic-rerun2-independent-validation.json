@@ -1,0 +1,400 @@
+{
+  "schema": "q2-local-source-diagnostic-rerun2-independent-validation/v1",
+  "status": "STATIC_REVIEW_PASS_FIELD_BLOCKED",
+  "receipt": {
+    "filename": "q2-local-source-diagnostic-result-89c725ef-rerun2.json",
+    "bytes": 17522,
+    "sha256": "437cea426cd19e8026ed7646457674516360bb00c2cea930eb5ad128fdbc5221"
+  },
+  "implementation_commit": "89c725efd61dad11b0cc9ae11c3c08a941e3111a",
+  "implementation_tree": "15f5a0dceae0f534506abf7195562980459f3ee7",
+  "package": {
+    "bytes": 4113937,
+    "sha256": "e6ed13681e79492aae5ba8216996056ef03c987c901d4f23db4906989d92eeec"
+  },
+  "tools": [
+    {
+      "name": "q2_host_kernel_facts.py",
+      "bytes": 15055,
+      "sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02"
+    },
+    {
+      "name": "q2_local_source_contract.py",
+      "bytes": 13192,
+      "sha256": "04c0506176d0a8e0d6a0f8f932252e83daad04887ae02b10bc9f5a54d5f930af"
+    },
+    {
+      "name": "q2_local_source_delivery.py",
+      "bytes": 27013,
+      "sha256": "2013643bcbc1f80e8d012de6cd1f1d4efae64789e80c946e6986b9539efe64b4"
+    },
+    {
+      "name": "q2_local_source_observe.py",
+      "bytes": 25511,
+      "sha256": "775adff37f685d0ecc85615c95c8997ea8611e48f702fd8bc3c64503300a43e8"
+    },
+    {
+      "name": "q2_reconciliation_io.py",
+      "bytes": 15968,
+      "sha256": "f950004072eb9574942a086f9a6380b02fbbdfc327729f6d0b6c28bdb97430f2"
+    },
+    {
+      "name": "q2_retry_bundle.py",
+      "bytes": 6870,
+      "sha256": "a8b21c71b219822cb0e798b454f0b86cfde982b2d4f7c2bc1802a2962982863d"
+    }
+  ],
+  "check_count": 47,
+  "checks": [
+    {
+      "id": "canonical",
+      "status": "PASS",
+      "detail": "Strict single integer-only UTF-8 JSON exactly equals canonical encoding and final LF"
+    },
+    {
+      "id": "received_identity",
+      "status": "PASS",
+      "detail": "Received file identity, not sealed host stdout"
+    },
+    {
+      "id": "container",
+      "status": "PASS",
+      "detail": "23 unique data members"
+    },
+    {
+      "id": "D_tree",
+      "status": "PASS",
+      "detail": "Exact retained Git tree"
+    },
+    {
+      "id": "package",
+      "status": "PASS",
+      "detail": "Exact package bytes and SHA match receipt and build record"
+    },
+    {
+      "id": "tool_q2_host_kernel_facts.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_local_source_contract.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_local_source_delivery.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_local_source_observe.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_reconciliation_io.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_retry_bundle.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_aggregate",
+      "status": "PASS",
+      "detail": "Six-tool digest recomputed"
+    },
+    {
+      "id": "source_pins",
+      "status": "PASS",
+      "detail": "P/M/T whole-file pins match; carrier and modules not executed"
+    },
+    {
+      "id": "authority",
+      "status": "PASS",
+      "detail": "Exact R/A/C/event/scope/D/tree"
+    },
+    {
+      "id": "command",
+      "status": "PASS",
+      "detail": "Command decoded as data, never invoked"
+    },
+    {
+      "id": "frame",
+      "status": "PASS",
+      "detail": "Frame roundtrip as bytes"
+    },
+    {
+      "id": "transport",
+      "status": "PASS",
+      "detail": "Transport lengths and receiver digest"
+    },
+    {
+      "id": "all11_target_bindings",
+      "status": "PASS",
+      "detail": "All 11 exact target bindings derived from AST literal and JSON only; private paths omitted"
+    },
+    {
+      "id": "manifest",
+      "status": "PASS",
+      "detail": "Full target-manifest digest independently recomputed"
+    },
+    {
+      "id": "protection_predicate_source",
+      "status": "PASS",
+      "detail": "Exact D initial file protection predicate checked from AST; 3090 is octal 06022"
+    },
+    {
+      "id": "preopen_failure_order",
+      "status": "PASS",
+      "detail": "Failed predicate consumes retained no-follow by-name stat before target open, fd/name comparison, ACL, device, alias, read and final stability"
+    },
+    {
+      "id": "phase_source_order",
+      "status": "PASS",
+      "detail": "Initial parent and ancestor protection/ACL checks precede retained marker/FS and first target; final full-chain/marker/boot checks follow all targets"
+    },
+    {
+      "id": "blocked_branch",
+      "status": "PASS",
+      "detail": "File-stage protection rejection, not previous parent failure or timeout"
+    },
+    {
+      "id": "first_target_failure_shape",
+      "status": "PASS",
+      "detail": "Exact M01 retained failure shape, no after/fd/raw/digest/stability evidence"
+    },
+    {
+      "id": "file_protection_cause",
+      "status": "PASS",
+      "detail": "Owner allowed; original mask rejects group-write only (0664 & 06022 = 00020)"
+    },
+    {
+      "id": "file_retained_metadata",
+      "status": "PASS",
+      "detail": "Retained by-name metadata is regular single-link file of expected length; downstream type/size predicates did not run and content was not matched"
+    },
+    {
+      "id": "remaining_unattempted",
+      "status": "PASS",
+      "detail": "Remaining six metadata/hash objects and four raw controls exactly retain NOT_ATTEMPTED state"
+    },
+    {
+      "id": "completion",
+      "status": "PASS",
+      "detail": "Attempt is not completed observation; only M01 attempted"
+    },
+    {
+      "id": "marker_precheck",
+      "status": "PASS",
+      "detail": "Initial marker absence retained; no after-marker check or absence for all time"
+    },
+    {
+      "id": "two_parent_fs_identity",
+      "status": "PASS",
+      "detail": "Both exact parent terminal identities retained and distinct"
+    },
+    {
+      "id": "parent_metadata_0",
+      "status": "PASS",
+      "detail": "Retained terminal-parent fstat passes mode/owner/type arithmetic; no durability or peak claim"
+    },
+    {
+      "id": "parent_mount_capacity_0",
+      "status": "PASS",
+      "detail": "Reported mount device/containment and statvfs arithmetic consistent; mountinfo raw bytes not returned"
+    },
+    {
+      "id": "parent_metadata_1",
+      "status": "PASS",
+      "detail": "Retained terminal-parent fstat passes mode/owner/type arithmetic; no durability or peak claim"
+    },
+    {
+      "id": "parent_mount_capacity_1",
+      "status": "PASS",
+      "detail": "Reported mount device/containment and statvfs arithmetic consistent; mountinfo raw bytes not returned"
+    },
+    {
+      "id": "kernel_order_counts",
+      "status": "PASS",
+      "detail": "Initial boot plus one mountinfo; no final boot read"
+    },
+    {
+      "id": "kernel_boot",
+      "status": "PASS",
+      "detail": "Retained fixed kernel-read qualification and stable reported metadata internally consistent; namespace remains assumption"
+    },
+    {
+      "id": "kernel_mountinfo",
+      "status": "PASS",
+      "detail": "Retained fixed kernel-read qualification and stable reported metadata internally consistent; namespace remains assumption"
+    },
+    {
+      "id": "boot_pin",
+      "status": "PASS",
+      "detail": "Initial boot digest exactly matches fixed T boot ID bytes"
+    },
+    {
+      "id": "ordinary_identity",
+      "status": "PASS",
+      "detail": "Reported ordinary execution identity internally consistent"
+    },
+    {
+      "id": "byte_accounting",
+      "status": "PASS",
+      "detail": "17,522-byte JSON verified; stream declarations sum to 17,580, ordinary content bytes zero"
+    },
+    {
+      "id": "zero_totals_scope",
+      "status": "PASS",
+      "detail": "Zero covers empty stable target set, not measured total resource cost"
+    },
+    {
+      "id": "false_boundaries",
+      "status": "PASS",
+      "detail": "All top-level execution/admission/consumption/production/proof flags remain false"
+    },
+    {
+      "id": "bounded_io",
+      "status": "PASS",
+      "detail": "Exact constant input/read/kernel/report ceilings respected"
+    },
+    {
+      "id": "window_monotonic_ns",
+      "status": "PASS",
+      "detail": "Original dual-clock 300-second window retained; all observer samples inside 140-second preparation bound"
+    },
+    {
+      "id": "window_boottime_ns",
+      "status": "PASS",
+      "detail": "Original dual-clock 300-second window retained; all observer samples inside 140-second preparation bound"
+    },
+    {
+      "id": "clock_agreement",
+      "status": "PASS",
+      "detail": "Reported elapsed clocks agree within original tolerance"
+    },
+    {
+      "id": "same_contract_as_rerun1",
+      "status": "PASS",
+      "detail": "Same D/package/source/target contract; prior receipt unchanged; progress is new observation not retrospective replacement"
+    }
+  ],
+  "timing": {
+    "monotonic_ns": {
+      "start_after_receiver_seconds": 103.810335851,
+      "end_after_receiver_seconds": 103.82802307,
+      "observation_seconds": 0.017687219,
+      "first_object_after_start_seconds": 0.017506875
+    },
+    "boottime_ns": {
+      "start_after_receiver_seconds": 103.810336572,
+      "end_after_receiver_seconds": 103.828023702,
+      "observation_seconds": 0.01768713,
+      "first_object_after_start_seconds": 0.017506755
+    }
+  },
+  "failure_sanitized": {
+    "phase": "fixed_objects",
+    "object_id": "M01",
+    "metadata_source": "NOFOLLOW_BY_NAME_STAT_BEFORE_FILE_OPEN",
+    "mode_octal": "0100664",
+    "permissions_octal": "0664",
+    "owner_allowed": true,
+    "forbidden_mask_octal": "06022",
+    "intersecting_bits_octal": "00020",
+    "cause": "GROUP_WRITE",
+    "private_path_disclosed": false,
+    "metadata_is_exact_check_input": true,
+    "target_file_opened": false,
+    "content_read": false,
+    "stable_current_object_proven": false
+  },
+  "completion": {
+    "attempted": 1,
+    "expected_objects": 11,
+    "matched": 0,
+    "observed": 0,
+    "raw_returned": 0
+  },
+  "bytes": {
+    "kernel_actual_read": 5618,
+    "ordinary_actual_read": 0,
+    "output_json_bytes": 17522,
+    "payload_input": 5523278
+  },
+  "marker_observations": [
+    {
+      "phase": "before",
+      "state": "ABSENT_AT_OBSERVATION"
+    }
+  ],
+  "parent_filesystems_sanitized": [
+    {
+      "parent_role": "host_parent",
+      "mode_octal": "0o40755",
+      "permissions_octal": "0755",
+      "filesystem": "ext4",
+      "mount_options": [
+        "rw",
+        "relatime"
+      ],
+      "statvfs_status": "OBSERVED",
+      "parent_flags_status": "OBSERVED",
+      "allocation_peak_proven": false,
+      "durability_proven": false
+    },
+    {
+      "parent_role": "control_parent",
+      "mode_octal": "0o40700",
+      "permissions_octal": "0700",
+      "filesystem": "ext4",
+      "mount_options": [
+        "rw",
+        "relatime"
+      ],
+      "statvfs_status": "OBSERVED",
+      "parent_flags_status": "OBSERVED",
+      "allocation_peak_proven": false,
+      "durability_proven": false
+    }
+  ],
+  "false_boundaries": {
+    "allocation_peak_proven": false,
+    "allow_consume": false,
+    "allow_run": false,
+    "complete_joint_bill_proven": false,
+    "durability_proven": false,
+    "full_host_inventory_complete": false,
+    "h07_proven": false,
+    "historical_costs_adopted": false,
+    "historical_identity_adopted": false,
+    "host_persistence_attempted": false,
+    "k4_trees_reread": false,
+    "production_accepted": false,
+    "production_admitted": false,
+    "production_supported": false,
+    "q2_accepted": false,
+    "q3_accepted": false,
+    "remote_attempted": false,
+    "window_consumed_by_this_invocation": false,
+    "wrapper_executed": false
+  },
+  "inconsistencies": [],
+  "package_code_executed": false,
+  "original_host_observed": false,
+  "limits": [
+    "Receipt plus exact-source order supports initial protection and ancestor ACL checks completed for both parents; individual ancestor modes and ACL records are not retained",
+    "Final full-chain/marker/boot rechecks were not reached; parent qualification is not permanent or atomic snapshot proof",
+    "M01 metadata is the exact initial no-follow by-name stat predicate input, not a held-file-fd or stable final object observation",
+    "M01 regular type, single link and expected length appear in retained metadata but downstream acceptance checks had not run; no actual content digest or raw bytes returned",
+    "Mountinfo digest and longest-match choice cannot be independently recomputed because raw mountinfo bytes are not returned",
+    "Namespace alignment remains ENVIRONMENT_ASSUMPTION_NOT_PROVEN",
+    "Host invocation count, process exit code, local receipt file mode 0600, process cleanup and clean repository are screenshot self-report, not proved by this JSON",
+    "Permission change actor/scope and complete host maintenance inventory are not established by this receipt",
+    "Elapsed pre-observer time is not attributed to any specific reception/paste/validation phase",
+    "Q2/Q3/H07/full joint bill/allocation peak/durability/production remain unproved and not admitted"
+  ]
+}
