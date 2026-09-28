@@ -139,6 +139,11 @@
   "prior_component_permission_change_reported_locally": true,
   "next_maintenance_candidate": {
     "kind": "INDEPENDENT_FIXED_OBJECT_METADATA_INVENTORY_WITH_PARENT_RECHECK",
+    "readonly_inventory_owner_direction_received": true,
+    "owner_direction_time": "2026-09-28T23:09:01+08:00",
+    "owner_direction_basis": "EXACT_REPLY_RETAINED_IN_Q2_FIXED_OBJECT_METADATA_HANDOFF",
+    "readonly_inventory_requires_repeat_confirmation": false,
+    "new_inventory_receipt_received": false,
     "handoff": "../../Q2_FIXED_OBJECT_METADATA_HANDOFF.md",
     "fixed_file_count": 11,
     "fixed_parent_count": 2,
