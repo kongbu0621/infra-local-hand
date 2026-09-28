@@ -527,3 +527,168 @@ def test_configured_fixture_acl_failure_has_no_fallback_or_skip(monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: pytest.fail("An explicit test parent cannot fall back to home"))
     with pytest.raises(ValueError, match="LOCAL_SOURCE_ACL_PRESENT"):
         fixture_parent()
+
+
+@pytest.mark.parametrize("role", ("host_parent", "control_parent"))
+@pytest.mark.parametrize("fault", ("group_write", "other_write", "setuid", "setgid", "uid"))
+def test_failed_parent_diagnostic_preserves_checked_role_and_existing_metadata(setup, monkeypatch, role, fault):
+    path = setup.host if role == "host_parent" else setup.control
+    if fault == "uid":
+        # Existing stat results are substituted for this owner-rejection model;
+        # it is not an ordinary-user field claim and it does not change owners.
+        real_fstat, inode = os.fstat, path.stat().st_ino
+        def stat_with_bad_owner(fd):
+            info = real_fstat(fd)
+            if info.st_ino != inode:
+                return info
+            fields = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+            fields["st_uid"] = 2**31
+            return SimpleNamespace(**fields)
+        monkeypatch.setattr(os, "fstat", stat_with_bad_owner)
+    else:
+        path.chmod(0o700 | dict(group_write=0o020, other_write=0o002, setuid=0o4000, setgid=0o2000)[fault])
+    monkeypatch.setattr(os, "read", lambda *args: pytest.fail("A rejected parent cannot read target content"))
+    result = run(setup)
+    assert result["status"] == "LOCAL_SOURCE_EVIDENCE_BLOCKED"
+    assert result["phase"] == "protected_parents"
+    assert result["error"]["reason"] == "RECONCILIATION_UNPROTECTED_PATH"
+    detail = result["parent_protection_failure"]
+    assert detail["parent_role"] == role and detail["component_kind"] == "parent"
+    assert detail["component_path"] == str(path)
+    assert detail["component_index"] == len(path.parts) - 1
+    assert detail["metadata_is_exact_check_input"] is True
+    assert detail["additional_filesystem_observation"] is False
+    assert detail["forbidden_mode_mask"] == 0o6022
+    assert detail["retained_metadata"]["inode"] == path.stat().st_ino
+    assert detail["failed_checks"] == (["OWNER_NOT_ALLOWED"] if fault == "uid" else ["FORBIDDEN_MODE_BITS"])
+    assert result["completion"]["attempted"] == 0
+    assert result["byte_counts"]["ordinary_actual_read"] == 0
+    assert setup.kernel_calls == ["boot"]
+    assert result["marker_observations"] == result["parent_filesystems"] == []
+    assert all(row["status"] == "NOT_ATTEMPTED" for row in result["objects"])
+    assert len(m.encoded(detail)) <= 8192
+    assert result["byte_counts"]["output_json_bytes"] == len(m.encoded(result)) <= m.c.REPORT_LIMIT
+    assert all(result[name] is False for name in m.c.DENIED_FLAGS)
+
+
+@pytest.mark.parametrize("role", ("host_parent", "control_parent"))
+def test_ancestor_failure_is_identified_without_claiming_the_parent_failed(setup, role):
+    if role == "host_parent":
+        setup.root.chmod(0o720)
+        failed = setup.root
+    else:
+        # Only the control parent passes through this separately owned fixture
+        # ancestor, so the host parent's successful check is retained.
+        ancestor = setup.root / "control-ancestor"
+        ancestor.mkdir(mode=0o700)
+        parent = ancestor / "control"
+        parent.mkdir(mode=0o700)
+        setup.derived["location"]["control_parent"] = str(parent)
+        ancestor.chmod(0o720)
+        failed = ancestor
+    result = run(setup)
+    detail = result["parent_protection_failure"]
+    assert detail["parent_role"] == role
+    assert detail["component_kind"] == "ancestor"
+    assert detail["component_path"] == str(failed)
+    assert detail["component_index"] == len(failed.parts) - 1
+    assert detail["metadata_is_exact_check_input"] is True
+    assert result["error"]["reason"] == "RECONCILIATION_UNPROTECTED_PATH"
+    assert result["completion"]["attempted"] == 0
+
+
+def test_root_failure_discloses_distinct_fstat_input_without_false_predicate_attribution(setup, monkeypatch):
+    real_fstat = os.fstat
+    root_inode = os.stat("/").st_ino
+    root_reads = 0
+    def root_changed(fd):
+        nonlocal root_reads
+        info = real_fstat(fd)
+        if info.st_ino == root_inode:
+            root_reads += 1
+            if root_reads == 2:
+                fields = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+                fields["st_mode"] |= 0o020
+                return SimpleNamespace(**fields)
+        return info
+    monkeypatch.setattr(os, "fstat", root_changed)
+    result = run(setup)
+    detail = result["parent_protection_failure"]
+    assert detail["component_kind"] == "root" and detail["component_index"] == 0
+    assert detail["component_path"] == "/" and detail["parent_role"] == "host_parent"
+    assert detail["metadata_is_exact_check_input"] is False
+    assert detail["metadata_limitation"] == "ROOT_PROTECTION_USED_A_SEPARATE_FSTAT_RESULT"
+    assert not detail["retained_metadata"]["st_mode"] & 0o6022
+    assert "failed_checks" not in detail
+    assert root_reads == 2 and result["completion"]["attempted"] == 0
+
+
+@pytest.mark.parametrize("reason", ("RECONCILIATION_OBJECT_TYPE", "RECONCILIATION_PATH_CHANGED", "UNKNOWN_CHECK"))
+def test_unknown_initialization_errors_never_claim_a_protection_layer(setup, monkeypatch, reason):
+    def fail_check(*args, **kwargs):
+        raise ValueError(reason)
+    monkeypatch.setattr(m.io, "protected", fail_check)
+    result = run(setup)
+    assert result["error"]["reason"] == reason
+    assert "parent_protection_failure" not in result
+    assert result["phase"] == "protected_parents"
+    assert result["completion"]["attempted"] == 0
+
+
+def test_parent_diagnostic_error_never_replaces_the_original_rejection(setup, monkeypatch):
+    setup.host.chmod(0o720)
+    def diagnostic_failure(*args):
+        raise RuntimeError("diagnostic failure must not replace the original refusal")
+    monkeypatch.setattr(m, "_retained_parent_failure", diagnostic_failure)
+    result = run(setup)
+    assert result["error"]["reason"] == "RECONCILIATION_UNPROTECTED_PATH"
+    assert "parent_protection_failure" not in result
+
+
+@pytest.mark.parametrize("mutation", ("missing_metadata", "bad_type", "chain_name", "protected_metadata", "over_cap", "oversized"))
+def test_malformed_or_oversized_retained_diagnostic_is_omitted_without_reobservation(setup, monkeypatch, mutation):
+    setup.host.chmod(0o720)
+    original = m._retained_parent_failure
+    def damaged(held, path, role):
+        name, fd, before = held.chain[-1]
+        before = dict(before)
+        if mutation == "missing_metadata": before.pop("uid")
+        if mutation == "bad_type": before["uid"] = "untrusted"
+        if mutation == "protected_metadata": before["st_mode"] &= ~0o6022
+        if mutation == "over_cap":
+            before.update(device=10**3500, inode=10**3500, blocks=10**3500)
+        if mutation == "oversized": before["blocks"] = 10**12000
+        held.chain[-1] = ("wrong-component" if mutation == "chain_name" else name, fd, before)
+        return original(held, path, role)
+    monkeypatch.setattr(m, "_retained_parent_failure", damaged)
+    monkeypatch.setattr(os, "read", lambda *args: pytest.fail("No diagnostic content read"))
+    result = run(setup)
+    assert result["error"]["reason"] == "RECONCILIATION_UNPROTECTED_PATH"
+    assert "parent_protection_failure" not in result
+    assert result["completion"]["attempted"] == 0
+
+
+@pytest.mark.parametrize("role", ("host_parent", "control_parent"))
+def test_diagnostic_wrap_keeps_the_exact_original_syscall_sequence_and_failure(setup, monkeypatch, role):
+    path = setup.host if role == "host_parent" else setup.control
+    path.chmod(0o720)
+    trace = []
+    for name in ("open", "fstat", "stat", "close", "read", "getxattr"):
+        original = getattr(os, name)
+        def tracked(*args, _name=name, _original=original, **kwargs):
+            trace.append((_name, args, kwargs))
+            return _original(*args, **kwargs)
+        monkeypatch.setattr(os, name, tracked)
+    owners = {0, os.geteuid()}
+    with pytest.raises(ValueError, match="^RECONCILIATION_UNPROTECTED_PATH$"):
+        m.io.HeldPath(str(path), lambda: None, directory=True, allowed_uids=owners)
+    before = list(trace)
+    trace.clear()
+    report = {}
+    with pytest.raises(ValueError, match="^RECONCILIATION_UNPROTECTED_PATH$"):
+        m._hold_parent(str(path), role, lambda: None, owners, report)
+    assert trace == before
+    assert "parent_protection_failure" in report
+    assert not any(item[0] in ("read", "getxattr") for item in trace)
+    assert m.c.CONTENT_LIMIT == 10490352 and m.c.READ_LIMIT == 10490363
+    assert m.c.KERNEL_READ_LIMIT == 1048707 and m.c.REPORT_LIMIT == 2 * 1024**2 - 16384

@@ -168,6 +168,72 @@ def _chain(held, guard):
     held.verify()
 
 
+def _retained_parent_failure(held, path, role):
+    """Describe only metadata already retained by a failed HeldPath init.
+
+    Failed initialization has closed its descriptors; this function performs no
+    filesystem operation. The root handle is special: HeldPath stores one fstat
+    result and protects a second, so its retained metadata is not necessarily
+    the exact failed check input. Later components protect the stored result.
+    """
+    if role not in ("host_parent", "control_parent"):
+        return None
+    chain = held.chain
+    parts = Path(path).parts
+    if type(chain) is not list or not chain or len(chain) > len(parts):
+        return None
+    index = len(chain) - 1
+    if any(type(item) is not tuple or len(item) != 3 or
+        item[0] != (None if offset == 0 else parts[offset]) for offset, item in enumerate(chain)):
+        return None
+    before = chain[-1][2]
+    if type(before) is not dict or set(before) != set(io.META_FIELDS) or not all(
+        type(before[key]) is int for key in io.META_FIELDS):
+        return None
+    owners = sorted(held.allowed_uids)
+    if not 1 <= len(owners) <= 2 or any(type(uid) is not int for uid in owners):
+        return None
+    value = dict(parent_role=role, component_index=index,
+        component_kind="root" if index == 0 else "parent" if len(chain) == len(parts) else "ancestor",
+        component_path=str(Path(*parts[:index + 1])),
+        reason="RECONCILIATION_UNPROTECTED_PATH", allowed_uids=owners, forbidden_mode_mask=0o6022,
+        retained_metadata={key: before[key] for key in io.META_FIELDS},
+        metadata_source="HELD_PATH_INITIALIZATION_RETAINED_METADATA",
+        metadata_is_exact_check_input=index > 0, additional_filesystem_observation=False)
+    if index > 0:
+        failures = []
+        if before["uid"] not in owners:
+            failures.append("OWNER_NOT_ALLOWED")
+        if before["st_mode"] & 0o6022:
+            failures.append("FORBIDDEN_MODE_BITS")
+        if not failures:
+            return None
+        value["failed_checks"] = failures
+    else:
+        value["metadata_limitation"] = "ROOT_PROTECTION_USED_A_SEPARATE_FSTAT_RESULT"
+    return value if len(encoded(value)) <= 8192 else None
+
+
+def _hold_parent(path, role, guard, owners, report):
+    # Keep the partially initialized instance without changing HeldPath's
+    # syscall order, protection predicates, exception or cleanup behavior.
+    held = object.__new__(io.HeldPath)
+    try:
+        io.HeldPath.__init__(held, path, guard, directory=True, allowed_uids=owners)
+    except BaseException as error:
+        if type(error) is ValueError and str(error) == "RECONCILIATION_UNPROTECTED_PATH":
+            try:
+                detail = _retained_parent_failure(held, path, role)
+                if detail is not None:
+                    report["parent_protection_failure"] = detail
+            except BaseException:
+                # Diagnostics are subordinate to the original failure. They
+                # cannot replace its reason or cause a retry/new observation.
+                pass
+        raise
+    return held
+
+
 def _marker(parent, name, guard, report, phase):
     value = dict(phase=phase, state="UNCERTAIN")
     report["marker_observations"].append(value)
@@ -427,7 +493,7 @@ def run_local(carrier_raw, manifest_raw, attestation_raw, *, reception_window, b
         _boot(guard, report, location["expected_boot_id"])
         report["phase"] = "protected_parents"
         for role in ("host_parent", "control_parent"):
-            held = io.HeldPath(location[role], guard, directory=True, allowed_uids=owners)
+            held = _hold_parent(location[role], role, guard, owners, report)
             parents[role] = held
             _chain(held, guard)
         identities = {(parent.chain[-1][2]["device"], parent.chain[-1][2]["inode"])
