@@ -54,6 +54,6 @@ K4 已完成限定的完整回执核验，完整账单、H07 首次远端截止�
 本轮已完成[离线来源差额核对](docs/a2-execution/Q2_OFFLINE_SOURCE_GAP_REVIEW.md)，含写入器身份限制与原观察条件的差异。
 后续已完成[v1 记录／账单绑定修复](docs/a2-execution/Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)，Q2 相关回归 942 PASS / 5 SKIP；普通身份写入及完整实机准入仍未完成。
 随后[固定本地来源补证](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)准确 A `b8b9ec3d` 已获[Owner 关闭决定](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)，授权 L1–L6；独立 C `8e754519` 后已完成 最终 D `411a9f05` 的 L1–L4 实现、相关回归和准确 RAM 交付，见[实现复核](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md)。[首次 L5 回执](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)已收到并核对：父目录保护阻断，11项均未尝试、4份原文未取得；L6阻断复核完成，Q2仍未验收。
-后续89c725ef诊断回执已核对：control_parent祖先的group-write位触发保护拒绝，11项仍未尝试；具体证据与单目录维护候选见上述回执复核。本轮未改原机权限，不自动重跑。
+后续89c725ef诊断与rerun1回执均已核对：最新阻断推进到control_parent的下一祖先（index=4，root=0），仍为group-write拒绝，11项未尝试。下一步先独立核对完整固定目录链，形成维护差额清单，见上述回执复核；不逐层盲改或自动重跑。
 旧提交的通用 CI 失败记录保留；后续[CI 装配与平台边界修复](docs/a2-execution/CI_REPAIR_20260928.md)记录准确修复版本及验证结果。源码／CI 通过与 K4 完成均不构成完整 Q2 验收。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。

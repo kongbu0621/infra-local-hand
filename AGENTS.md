@@ -482,12 +482,15 @@ diagnostic repair may retain metadata already obtained by the same checks; it
 must not add reads, weaken protection or retry the host automatically.
 This diagnostic repair is implemented at `89c725efd61dad11b0cc9ae11c3c08a941e3111a`,
 with 236 PASS / 3 SKIP scoped regression and an exact offline-verified private
-package. A subsequent Owner-initiated diagnostic observation has now returned;
+package. The initial diagnostic and a separately initiated rerun1 have returned;
 the [field review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)
-records its exact receipt at the same D. It remains BLOCKED at a control-parent
-ancestor's group-write mode bit, with all eleven targets unattempted. This is a
-retained failed-check input, not a completed path-stability proof. No permission
-change, further invocation or full Q2 acceptance follows from this receipt.
+retains both exact receipts at the same D. The latest remains BLOCKED at the
+control-parent ancestor with component_index=4 (root=0), after the earlier
+index=3 check. All eleven targets remain unattempted. Local Codex reports
+maintenance of the earlier ancestor; no further permission change or invocation
+follows from that report. A separate fixed-chain metadata inventory is the next
+maintenance candidate, not a collector bypass or Q2 acceptance. Failed-check
+metadata is not a completed path-stability proof.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

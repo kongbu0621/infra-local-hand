@@ -1,0 +1,312 @@
+{
+  "schema": "q2-local-source-diagnostic-rerun1-independent-validation/v1",
+  "status": "STATIC_REVIEW_PASS_FIELD_BLOCKED",
+  "receipt": {
+    "filename": "q2-local-source-diagnostic-result-89c725ef-rerun1.json",
+    "bytes": 12236,
+    "sha256": "b6754ed53bf7e5d0b4a3b058fe128f29b3b80e83e1004ad061d13bf2a3b87b91"
+  },
+  "implementation_commit": "89c725efd61dad11b0cc9ae11c3c08a941e3111a",
+  "implementation_tree": "15f5a0dceae0f534506abf7195562980459f3ee7",
+  "package": {
+    "bytes": 4113937,
+    "sha256": "e6ed13681e79492aae5ba8216996056ef03c987c901d4f23db4906989d92eeec"
+  },
+  "tools": [
+    {
+      "name": "q2_host_kernel_facts.py",
+      "bytes": 15055,
+      "sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02"
+    },
+    {
+      "name": "q2_local_source_contract.py",
+      "bytes": 13192,
+      "sha256": "04c0506176d0a8e0d6a0f8f932252e83daad04887ae02b10bc9f5a54d5f930af"
+    },
+    {
+      "name": "q2_local_source_delivery.py",
+      "bytes": 27013,
+      "sha256": "2013643bcbc1f80e8d012de6cd1f1d4efae64789e80c946e6986b9539efe64b4"
+    },
+    {
+      "name": "q2_local_source_observe.py",
+      "bytes": 25511,
+      "sha256": "775adff37f685d0ecc85615c95c8997ea8611e48f702fd8bc3c64503300a43e8"
+    },
+    {
+      "name": "q2_reconciliation_io.py",
+      "bytes": 15968,
+      "sha256": "f950004072eb9574942a086f9a6380b02fbbdfc327729f6d0b6c28bdb97430f2"
+    },
+    {
+      "name": "q2_retry_bundle.py",
+      "bytes": 6870,
+      "sha256": "a8b21c71b219822cb0e798b454f0b86cfde982b2d4f7c2bc1802a2962982863d"
+    }
+  ],
+  "check_count": 41,
+  "checks": [
+    {
+      "id": "canonical",
+      "status": "PASS",
+      "detail": "Strict single integer-only UTF-8 JSON exactly equals canonical encoding and final LF"
+    },
+    {
+      "id": "reject_duplicate",
+      "status": "PASS",
+      "detail": "Strict parser rejection guard verified"
+    },
+    {
+      "id": "reject_nonfinite",
+      "status": "PASS",
+      "detail": "Strict parser rejection guard verified"
+    },
+    {
+      "id": "reject_float",
+      "status": "PASS",
+      "detail": "Strict parser rejection guard verified"
+    },
+    {
+      "id": "received_identity",
+      "status": "PASS",
+      "detail": "Received file identity, not sealed host stdout"
+    },
+    {
+      "id": "container",
+      "status": "PASS",
+      "detail": "23 unique data members"
+    },
+    {
+      "id": "D_tree",
+      "status": "PASS",
+      "detail": "Exact retained Git tree"
+    },
+    {
+      "id": "package",
+      "status": "PASS",
+      "detail": "Exact package bytes and SHA match receipt and build record"
+    },
+    {
+      "id": "tool_q2_host_kernel_facts.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_local_source_contract.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_local_source_delivery.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_local_source_observe.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_reconciliation_io.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_q2_retry_bundle.py",
+      "status": "PASS",
+      "detail": "Exact D Git blob equals package tool; no execution"
+    },
+    {
+      "id": "tool_aggregate",
+      "status": "PASS",
+      "detail": "Six-tool digest recomputed"
+    },
+    {
+      "id": "source_pins",
+      "status": "PASS",
+      "detail": "P/M/T whole-file pins match; carrier and modules not executed"
+    },
+    {
+      "id": "authority",
+      "status": "PASS",
+      "detail": "Exact R/A/C/event/scope/D/tree"
+    },
+    {
+      "id": "command",
+      "status": "PASS",
+      "detail": "Command decoded as data, never invoked"
+    },
+    {
+      "id": "frame",
+      "status": "PASS",
+      "detail": "Frame roundtrip as bytes"
+    },
+    {
+      "id": "transport",
+      "status": "PASS",
+      "detail": "Transport lengths and receiver digest"
+    },
+    {
+      "id": "all11_targets",
+      "status": "PASS",
+      "detail": "All target fields derived by AST literal/JSON data parsing only; private paths omitted from report"
+    },
+    {
+      "id": "manifest",
+      "status": "PASS",
+      "detail": "Full target-manifest digest independently recomputed"
+    },
+    {
+      "id": "diagnostic_component",
+      "status": "PASS",
+      "detail": "Private component matches fixed control parent ancestor index 4, root index 0"
+    },
+    {
+      "id": "diagnostic_shape",
+      "status": "PASS",
+      "detail": "Exact nonroot diagnostic shape"
+    },
+    {
+      "id": "owner_allowed",
+      "status": "PASS",
+      "detail": "Owner is allowed; no OWNER_NOT_ALLOWED cause"
+    },
+    {
+      "id": "group_write_only",
+      "status": "PASS",
+      "detail": "Only group-write intersects original mask"
+    },
+    {
+      "id": "diagnostic_provenance",
+      "status": "PASS",
+      "detail": "Nonroot retained fstat is exact predicate input; no extra observation"
+    },
+    {
+      "id": "diagnostic_cap",
+      "status": "PASS",
+      "detail": "Diagnostic inside 8 KiB cap"
+    },
+    {
+      "id": "blocked",
+      "status": "PASS",
+      "detail": "Exact failure branch"
+    },
+    {
+      "id": "completion",
+      "status": "PASS",
+      "detail": "All targets unattempted; no raw"
+    },
+    {
+      "id": "unreached",
+      "status": "PASS",
+      "detail": "No marker/filesystem/mountinfo/final boot facts"
+    },
+    {
+      "id": "boot",
+      "status": "PASS",
+      "detail": "First boot pin and reported metadata internally agree"
+    },
+    {
+      "id": "identity",
+      "status": "PASS",
+      "detail": "Reported identity internally consistent"
+    },
+    {
+      "id": "bytes",
+      "status": "PASS",
+      "detail": "JSON byte count exact; other stream counters internally consistent declarations"
+    },
+    {
+      "id": "zero_scope",
+      "status": "PASS",
+      "detail": "Zero covers empty observed target set, not actual costs"
+    },
+    {
+      "id": "false_boundaries",
+      "status": "PASS",
+      "detail": "All admission/execution/consumption flags false"
+    },
+    {
+      "id": "limits",
+      "status": "PASS",
+      "detail": "Approved input, output and kernel ceilings"
+    },
+    {
+      "id": "window_monotonic_ns",
+      "status": "PASS",
+      "detail": "Original dual-clock bounds retained"
+    },
+    {
+      "id": "window_boottime_ns",
+      "status": "PASS",
+      "detail": "Original dual-clock bounds retained"
+    },
+    {
+      "id": "clock_agreement",
+      "status": "PASS",
+      "detail": "Reported elapsed clocks inside tolerance"
+    },
+    {
+      "id": "old_receipt",
+      "status": "PASS",
+      "detail": "Earlier receipt unchanged and not retroactively diagnosed"
+    }
+  ],
+  "timing": {
+    "monotonic_ns": {
+      "start_after_receiver_seconds": 71.432595028,
+      "end_after_receiver_seconds": 71.449785795,
+      "observation_seconds": 0.017190767
+    },
+    "boottime_ns": {
+      "start_after_receiver_seconds": 71.432596079,
+      "end_after_receiver_seconds": 71.449786786,
+      "observation_seconds": 0.017190707
+    }
+  },
+  "diagnostic_sanitized": {
+    "parent_role": "control_parent",
+    "component_index": 4,
+    "component_kind": "ancestor",
+    "private_path_disclosed": false,
+    "mode_octal": "040775",
+    "permissions_octal": "0775",
+    "owner_allowed": true,
+    "forbidden_mask_octal": "06022",
+    "intersecting_bits_octal": "00020",
+    "cause": "GROUP_WRITE",
+    "diagnostic_bytes": 616
+  },
+  "false_boundaries": {
+    "allocation_peak_proven": false,
+    "allow_consume": false,
+    "allow_run": false,
+    "complete_joint_bill_proven": false,
+    "durability_proven": false,
+    "full_host_inventory_complete": false,
+    "h07_proven": false,
+    "historical_costs_adopted": false,
+    "historical_identity_adopted": false,
+    "host_persistence_attempted": false,
+    "k4_trees_reread": false,
+    "production_accepted": false,
+    "production_admitted": false,
+    "production_supported": false,
+    "q2_accepted": false,
+    "q3_accepted": false,
+    "remote_attempted": false,
+    "window_consumed_by_this_invocation": false,
+    "wrapper_executed": false
+  },
+  "inconsistencies": [],
+  "package_code_executed": false,
+  "original_host_observed": false,
+  "limits": [
+    "Metadata is one failed fd-check input, not a stable current-path snapshot",
+    "Failed component by-name/fd recheck and full-chain verification had not completed",
+    "Host parent initial qualification is an inference from source order, not independent retained chain evidence",
+    "No current ACL, permission-change actor, exit status, process cleanup or invocation count is proved",
+    "First receipt exact cause cannot be inferred retrospectively",
+    "All 11 files/four raw controls remain unobserved; H07/full bill/FS/Q2 not admitted"
+  ]
+}
