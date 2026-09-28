@@ -23,7 +23,8 @@
 随后[v1 跨层绑定修复](Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)已在实现
 `14d19f1f52d687afa360353aadecd6ea17725310` 完成：记录／预检／账单身份一致性与写入时身份检查加强，
 相关 Q2 回归 942 PASS / 5 SKIP。普通身份 writer 尚未实现；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
-准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，OPEN 待 Owner 决定；只含方案，无新采集实现或原 host 操作。
+准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，已获[准确 Owner 决定](../governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)
+关闭该范围 Gate并授权L1–L6；本关闭登记尚无新采集实现或原host操作，不证明Q2准入。
 现有本地观察不能补齐这些事实；`allow_run`、`allow_consume`、Q2/Q3 验收与 production supported 均仍为 false。
 新作业生产入口继续保留 `E3_SUPERVISION_UNVERIFIED`；E1–E3 未全部完成，E4–E6 及 S2 未因此启动。
 

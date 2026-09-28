@@ -434,7 +434,7 @@ consumption or full Q2 acceptance follows. Continue offline source-gap accountin
 for H07, costs, wrapper binding and filesystem qualification; this receipt review
 requires no host rerun or repeated Owner approval.
 
-### Fixed local source evidence proposal
+### Fixed local source evidence
 
 The already closed host scope's subsequent
 [v1 record binding repair](docs/a2-execution/Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)
@@ -443,16 +443,28 @@ is implemented at `14d19f1f52d687afa360353aadecd6ea17725310`, with 942 passing a
 billing consistency; ordinary-identity writer support and field readiness remain
 unproven. It creates no new execution authority or consumed batch.
 
-Scope `LH-Q2-LOCAL-SOURCE-EVIDENCE-v1` is **PROPOSED / OPEN / AWAITING OWNER** at
+Scope `LH-Q2-LOCAL-SOURCE-EVIDENCE-v1` is **CLOSED for L0–L6** at
 exact documentation A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`. Its
 [baseline registration](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md) pins
-the three proposed documents and explains the material change from the old K
-scope. It proposes only seven fixed adjacent metadata/hash observations, four
+the three approved documents and explains the material change from the old K
+scope. Their exact bytes and historical OPEN labels remain unchanged. Owner B is
+retained in [Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md),
+event `LH-Q2-LOCAL-SOURCE-EVIDENCE-CLOSURE-20260928-01`, with exact reply
+“按原 R，批准 A b8b9ec3d 的固定本地来源补证方案，关闭该范围 Gate，继续实施。”
+and the preceding request. This independent bookkeeping-only commit is C; new D
+must descend from it. R, its direct readable source/integrity, Owner mandate and
+authority, no exceptions and change rules remain unchanged.
+
+This closure authorizes only seven fixed adjacent metadata/hash observations, four
 fixed control-file matching raw inputs, two parents' existing filesystem facts
-and narrowly reused fixed kernel views in a new local-only branch. No new B/C/D,
-collector, original-host invocation, wrapper execution, remote, marker or Q2
-consumption follows from these documents. The old K4 receipt is already complete
-and need not be resubmitted or rerun. Unaffected CLOSED work remains authorized.
+and narrowly reused fixed kernel views in a new local-only branch, with L1–L6
+implementation, isolated verification, exact RAM delivery, one initial bounded
+original-host invocation and receipt/static-source review. No automatic retry,
+wrapper execution, remote, marker or Q2 consumption is authorized. This does not
+admit ordinary writer support, H07, full billing, filesystem allocation/durability
+or Q2/Q3. The old K4 receipt is already complete and need not be resubmitted or
+rerun. Unaffected CLOSED work remains authorized. Material scope, source adoption
+or contract changes retain R's reopen rule.
 
 ### Continuing constraints
 
