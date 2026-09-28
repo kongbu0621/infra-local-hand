@@ -2,7 +2,7 @@
 
 ## 2026-09-28 当前接续
 
-**K4 完整本地观察回执已收到并完成限定核验，无需重跑或重交。后续已批准的固定本地来源补证完成 L1–L4，下一步是原 PRO6000 一次新补证；相同范围无需重复批准。**
+**K4 完整本地观察回执已收到并完成限定核验，无需重跑或重交。固定本地来源首次L5已返回父目录保护BLOCKED，L6收件与阻断复核完成；11项未尝试、4份原文仍缺，不自动重跑。**
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
 [Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
 回执仍为 `OBSERVED_PARTIAL` / `final_local_recheck`，不证明完整 Q2 准入。
@@ -13,7 +13,7 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 | 安装预留对账 | A `c65ff4e25ea6373aabf8db25d304ee7614b96eb5` 的 P1–P6 已 CLOSED；保留历史来源、准确义务和原累计上界。 |
 | host 窗口消费 | A `8402f0cc82d8a0ac0b9a56716bf276f41cafea37` 的 H1–H6 已 CLOSED；完整现场派发仍因证据缺口 NOT READY。 |
 | 固定内核事实读取 | A `887b640b394f9983f37dfe97c58ba35aaa099359` 的 K0–K4 已 CLOSED；K1–K4 各自限定任务已完成，含完整回执接收及核验。 |
-| 固定本地来源补证 | A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d` 的 L0–L6 已 CLOSED；独立 C `8e7545199bde66583e1d643656dece867ab1dbda` 后，最终 D `411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239` 完成 L1–L4。L5 原 host 一次调用及 L6 实际回执／原文复核尚待执行。 |
+| 固定本地来源补证 | A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d` 的 L0–L6 已 CLOSED；独立 C `8e7545199bde66583e1d643656dece867ab1dbda` 后，最终 D `411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239` 完成 L1–L4。[首次L5回执](Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)已返回BLOCKED；L6收件/阻断复核完成，原文与wrapper依赖审查仍缺输入。 |
 
 以上准确 R/A、Owner 决定和独立 C 以根 [AGENTS.md](../../AGENTS.md)及其引用记录为准。
 冻结设计文件的历史 OPEN 标签保留，不覆盖后续有效关闭记录；本状态更新不产生新授权或新批次。
@@ -26,7 +26,7 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 相关 Q2 回归 942 PASS / 5 SKIP。普通身份 writer 尚未实现；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
 准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，已获[准确 Owner 决定](../governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)
 关闭该范围 Gate 并授权 L1–L6；随后已完成[固定来源采集器与准确 RAM 交付](Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md)，
-相关开发回归 211 PASS / 3 SKIP，准确源码、普通身份 CI 与交付验证见该复核。原 host 尚未执行，不证明 Q2 准入。
+相关开发回归 211 PASS / 3 SKIP，准确源码、普通身份 CI 与交付验证见该复核。首次原host调用已返回父目录保护阻断，不证明Q2准入；诊断缺口已在 `89c725ef` 修复，相关六组236 PASS / 3 SKIP，准确新包离线核对完成。未改变保护合同，原机再次观察尚未发起。
 现有本地观察不能补齐这些事实；`allow_run`、`allow_consume`、Q2/Q3 验收与 production supported 均仍为 false。
 新作业生产入口继续保留 `E3_SUPERVISION_UNVERIFIED`；E1–E3 未全部完成，E4–E6 及 S2 未因此启动。
 

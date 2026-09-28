@@ -473,9 +473,16 @@ implementation and isolated CI fixture repairs. The source change,
 211 PASS / 3 SKIP affected regression, exact private RAM delivery, independent
 review and accurate CI outcomes are registered in
 [the implementation review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md).
-Development/CI identity evidence does not attest the original host. L5's one
-original PRO6000 ordinary-account invocation and L6's actual receipt/static raw
-review remain pending; do not replace them with a development PTY result.
+Development/CI identity evidence does not attest the original host. The subsequent
+[first field receipt review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)
+records the returned L5 invocation and completed L6 receipt/block review: BLOCKED
+at protected_parents, all eleven targets unattempted. Four raw sources remain
+unavailable; static wrapper review and full Q2 remain incomplete. A bounded
+diagnostic repair may retain metadata already obtained by the same checks; it
+must not add reads, weaken protection or retry the host automatically.
+This diagnostic repair is implemented at `89c725efd61dad11b0cc9ae11c3c08a941e3111a`,
+with 236 PASS / 3 SKIP scoped regression and an exact offline-verified private
+package. No second original-host observation has been issued.
 
 ### Continuing constraints
 
