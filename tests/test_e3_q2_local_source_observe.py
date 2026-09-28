@@ -31,7 +31,7 @@ FIXTURE_PARENT_ENV = "LOCAL_HAND_Q2_TEST_PARENT"
 def fixture_parent():
     """Test setup only; production never accepts this environment override.
 
-    CI supplies a fresh ordinary-owned directory under protected /opt ancestors.
+    CI supplies a fresh ordinary-owned directory under a protected root ancestor.
     An explicit fixture must qualify with real credentials/ACLs or fail; there
     is no fallback to home and no modification of an existing ancestor's ACL.
     """

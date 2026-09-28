@@ -211,8 +211,8 @@ jobs:
           if uid == 0 or os.getresuid() != (uid, uid, uid) or os.getresgid() != (gid, gid, gid):
               raise SystemExit("ordinary CI identity required")
           root = pathlib.Path(subprocess.check_output(
-              ["sudo", "-n", "mktemp", "-d", "/opt/local-hand-q2-source-XXXXXXXXXX"], text=True).strip())
-          if root.parent != pathlib.Path("/opt") or not root.name.startswith("local-hand-q2-source-"):
+              ["sudo", "-n", "mktemp", "-d", "/local-hand-q2-source-XXXXXXXXXX"], text=True).strip())
+          if root.parent != pathlib.Path("/") or not root.name.startswith("local-hand-q2-source-"):
               raise SystemExit("unexpected isolated fixture path")
           subprocess.run(["sudo", "-n", "chown", f"{uid}:{gid}", str(root)], check=True)
           diagnostics = []
@@ -230,7 +230,7 @@ jobs:
                       acls[name] = False
                   else:
                       acls[name] = True
-                      raise SystemExit(f"isolated fixture ancestor has an ACL: {path}; no ACL was changed")
+                      raise SystemExit(f"isolated fixture ancestor has an ACL: {path} ({name}); no ACL was changed")
               diagnostics.append(dict(path=str(path), mode=oct(stat.S_IMODE(info.st_mode)), acl_present=acls))
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
               stream.write(f"LOCAL_HAND_Q2_TEST_PARENT={root}\n")
