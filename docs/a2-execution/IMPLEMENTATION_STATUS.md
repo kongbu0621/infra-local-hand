@@ -20,6 +20,10 @@
 当前继续离线核对完整账单、H07 首次远端截止与停止覆盖、wrapper 来源与执行绑定、文件系统分配及持久资格。
 本轮[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)已完成：旧 anchor 确缺历史 host 字段、wrapper 原件未恢复，
 写入器额外的 root-only 条件与 K4 当次报告的普通身份／父目录不匹配；这不构成放宽准入的理由。
+随后[v1 跨层绑定修复](Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)已在实现
+`14d19f1f52d687afa360353aadecd6ea17725310` 完成：记录／预检／账单身份一致性与写入时身份检查加强，
+相关 Q2 回归 942 PASS / 5 SKIP。普通身份 writer 尚未实现；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
+准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，OPEN 待 Owner 决定；只含方案，无新采集实现或原 host 操作。
 现有本地观察不能补齐这些事实；`allow_run`、`allow_consume`、Q2/Q3 验收与 production supported 均仍为 false。
 新作业生产入口继续保留 `E3_SUPERVISION_UNVERIFIED`；E1–E3 未全部完成，E4–E6 及 S2 未因此启动。
 

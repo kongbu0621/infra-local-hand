@@ -434,6 +434,26 @@ consumption or full Q2 acceptance follows. Continue offline source-gap accountin
 for H07, costs, wrapper binding and filesystem qualification; this receipt review
 requires no host rerun or repeated Owner approval.
 
+### Fixed local source evidence proposal
+
+The already closed host scope's subsequent
+[v1 record binding repair](docs/a2-execution/Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)
+is implemented at `14d19f1f52d687afa360353aadecd6ea17725310`, with 942 passing and
+5 skipped scoped development tests. This hardens existing root v1 record and
+billing consistency; ordinary-identity writer support and field readiness remain
+unproven. It creates no new execution authority or consumed batch.
+
+Scope `LH-Q2-LOCAL-SOURCE-EVIDENCE-v1` is **PROPOSED / OPEN / AWAITING OWNER** at
+exact documentation A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`. Its
+[baseline registration](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md) pins
+the three proposed documents and explains the material change from the old K
+scope. It proposes only seven fixed adjacent metadata/hash observations, four
+fixed control-file matching raw inputs, two parents' existing filesystem facts
+and narrowly reused fixed kernel views in a new local-only branch. No new B/C/D,
+collector, original-host invocation, wrapper execution, remote, marker or Q2
+consumption follows from these documents. The old K4 receipt is already complete
+and need not be resubmitted or rerun. Unaffected CLOSED work remains authorized.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

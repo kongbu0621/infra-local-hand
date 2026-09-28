@@ -52,5 +52,7 @@ S1 的交付对象是可安装、可验证的通用候选包。S2 才切换真�
 后续对账、host 窗口与固定内核读取的独立授权及边界见 [AGENTS.md](AGENTS.md)。
 K4 已完成限定的完整回执核验，完整账单、H07 首次远端截止与停止覆盖、wrapper 来源绑定和文件系统资格仍缺证据。
 本轮已完成[离线来源差额核对](docs/a2-execution/Q2_OFFLINE_SOURCE_GAP_REVIEW.md)，含写入器身份限制与原观察条件的差异。
+后续已完成[v1 记录／账单绑定修复](docs/a2-execution/Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)，Q2 相关回归 942 PASS / 5 SKIP；普通身份写入及完整实机准入仍未完成。
+下一步[固定本地来源补证](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)已形成准确 A `b8b9ec3d`，当前 OPEN 待 Owner 决定；无新采集器或现场操作。
 既有通用 CI 的失败仍保留；定向测试与 K4 完成不构成全量 CI 或 Q2 通过。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。

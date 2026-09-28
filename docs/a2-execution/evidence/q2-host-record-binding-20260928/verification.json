@@ -1,0 +1,62 @@
+{
+  "source_base": "dc2ce472cd16e032eea1ac6857590c93b272da72",
+  "files": [
+    {
+      "path": "tests/e3_host/q2_host_window_contract.py",
+      "bytes": 10495,
+      "sha256": "c0cc4615f0a10106ac21f4b3ff26f720662ad976ead9bea3a87e98ba238e556f"
+    },
+    {
+      "path": "tests/e3_host/q2_host_window_record.py",
+      "bytes": 24386,
+      "sha256": "ec752b22ad50a91f6866591c3119acba0066baa8dea71a439d01ab9cde6bcc80"
+    },
+    {
+      "path": "tests/e3_host/q2_reconciliation_bootstrap.py",
+      "bytes": 21375,
+      "sha256": "f38387479dc291070d9f0d193ae6250e30e8476f29508b9c196225b3b163b2a8"
+    },
+    {
+      "path": "tests/test_e3_q2_host_window_record.py",
+      "bytes": 18444,
+      "sha256": "16a53fcb15fc22c5944bd64d6fa5016ef5c98a8ff4597f3bdb3210e0ec2a6de1"
+    },
+    {
+      "path": "tests/test_e3_q2_reconciliation_host_inputs.py",
+      "bytes": 12390,
+      "sha256": "7c443e9437a84a327c86e88752d1acb922bb7c9c9414ac7a0f23c913e3975798"
+    }
+  ],
+  "compile": "PASS",
+  "diff_check": "PASS",
+  "regression": {
+    "command": "python -m pytest -q tests/test_e3_q2*.py tests/test_e3_quota_q2*.py",
+    "passed": 942,
+    "skipped": 5,
+    "duration_seconds": 70.27,
+    "skip_reasons": [
+      "ordinary identity unavailable: EPERM",
+      "numeric proc identity inaccessible",
+      "ordinary UID chown unavailable",
+      "ordinary-credential ledger validation unavailable",
+      "AF_UNIX unavailable"
+    ]
+  },
+  "pre_fix_negative_comparison": {
+    "failed": 20,
+    "passed": 1,
+    "deselected": 27
+  },
+  "field_execution": false,
+  "ordinary_writer_supported": false,
+  "implementation_commit": "14d19f1f52d687afa360353aadecd6ea17725310",
+  "implementation_tree": "ba5b7510b45cb34cf6023f0003e474192753f711",
+  "test_evidence": "development local syscalls plus explicit synthetic readiness/filesystem and input fixtures; no original-host execution",
+  "general_ci": {
+    "run_id": 36385294117,
+    "head_sha": "14d19f1f52d687afa360353aadecd6ea17725310",
+    "status_at_registration": "in_progress",
+    "conclusion": null,
+    "historical_failures_remain_separate": true
+  }
+}
