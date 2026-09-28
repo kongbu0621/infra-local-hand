@@ -451,8 +451,9 @@ scope. Their exact bytes and historical OPEN labels remain unchanged. Owner B is
 retained in [Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md),
 event `LH-Q2-LOCAL-SOURCE-EVIDENCE-CLOSURE-20260928-01`, with exact reply
 “按原 R，批准 A b8b9ec3d 的固定本地来源补证方案，关闭该范围 Gate，继续实施。”
-and the preceding request. This independent bookkeeping-only commit is C; new D
-must descend from it. R, its direct readable source/integrity, Owner mandate and
+and the preceding request. The independent bookkeeping-only C is
+`8e7545199bde66583e1d643656dece867ab1dbda`; new D must descend from it.
+R, its direct readable source/integrity, Owner mandate and
 authority, no exceptions and change rules remain unchanged.
 
 This closure authorizes only seven fixed adjacent metadata/hash observations, four
@@ -465,6 +466,16 @@ admit ordinary writer support, H07, full billing, filesystem allocation/durabili
 or Q2/Q3. The old K4 receipt is already complete and need not be resubmitted or
 rerun. Unaffected CLOSED work remains authorized. Material scope, source adoption
 or contract changes retain R's reopen rule.
+
+L1–L4 are implemented at final D `411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239`, tree
+`21773876ef321eb70fdfd9dc24cbeed881efd2ef`, descending from C through the first
+implementation and isolated CI fixture repairs. The source change,
+211 PASS / 3 SKIP affected regression, exact private RAM delivery, independent
+review and accurate CI outcomes are registered in
+[the implementation review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md).
+Development/CI identity evidence does not attest the original host. L5's one
+original PRO6000 ordinary-account invocation and L6's actual receipt/static raw
+review remain pending; do not replace them with a development PTY result.
 
 ### Continuing constraints
 

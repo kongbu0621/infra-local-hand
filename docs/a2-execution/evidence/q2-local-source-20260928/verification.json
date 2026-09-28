@@ -1,0 +1,445 @@
+{
+  "schema": "q2-local-source-implementation-verification/v1",
+  "authority": {
+    "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+    "closure": "8e7545199bde66583e1d643656dece867ab1dbda",
+    "owner_decision": "LH-Q2-LOCAL-SOURCE-EVIDENCE-CLOSURE-20260928-01",
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "scope": "LH-Q2-LOCAL-SOURCE-EVIDENCE-v1"
+  },
+  "implementation_D": "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+  "implementation_tree": "21773876ef321eb70fdfd9dc24cbeed881efd2ef",
+  "files": [
+    {
+      "path": "tests/e3_host/q2_local_source_contract.py",
+      "python310_syntax": "PASS",
+      "compile": "PASS",
+      "bytes": 13192,
+      "sha256": "04c0506176d0a8e0d6a0f8f932252e83daad04887ae02b10bc9f5a54d5f930af"
+    },
+    {
+      "path": "tests/e3_host/q2_local_source_delivery.py",
+      "python310_syntax": "PASS",
+      "compile": "PASS",
+      "bytes": 27013,
+      "sha256": "2013643bcbc1f80e8d012de6cd1f1d4efae64789e80c946e6986b9539efe64b4"
+    },
+    {
+      "path": "tests/e3_host/q2_local_source_observe.py",
+      "python310_syntax": "PASS",
+      "compile": "PASS",
+      "bytes": 22427,
+      "sha256": "70f687ba43b7c0d5208f6b9824fa51b63f9cfe72ff8733d8bc615c74b3d0a4d6"
+    },
+    {
+      "path": "tests/test_e3_q2_local_source_contract.py",
+      "python310_syntax": "PASS",
+      "compile": "PASS",
+      "bytes": 12077,
+      "sha256": "daf526a525d6e3015c7c7d4a71583fe747f7bade002831830ac3b3d6ed2cd473"
+    },
+    {
+      "path": "tests/test_e3_q2_local_source_delivery.py",
+      "python310_syntax": "PASS",
+      "compile": "PASS",
+      "bytes": 21098,
+      "sha256": "b4b07619c30385b17670f4c3d28cf734ff136d9290d2f07e57222b4b7ccd168b"
+    },
+    {
+      "path": "tests/test_e3_q2_local_source_observe.py",
+      "python310_syntax": "PASS",
+      "compile": "PASS",
+      "bytes": 27251,
+      "sha256": "2da9476cefe8e37b984c3de38435e284e41871728dd4b6a92b50e203ba7f96b9"
+    }
+  ],
+  "shared": [
+    {
+      "path": "tests/e3_host/q2_host_kernel_facts.py",
+      "sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02",
+      "unchanged_from_C": true
+    },
+    {
+      "path": "tests/e3_host/q2_reconciliation_io.py",
+      "sha256": "f950004072eb9574942a086f9a6380b02fbbdfc327729f6d0b6c28bdb97430f2",
+      "unchanged_from_C": true
+    },
+    {
+      "path": "tests/e3_host/q2_retry_bundle.py",
+      "sha256": "a8b21c71b219822cb0e798b454f0b86cfde982b2d4f7c2bc1802a2962982863d",
+      "unchanged_from_C": true
+    }
+  ],
+  "frozen_documents": [
+    {
+      "A": "47b351b2b943bf1d6f1c71cfeb031157a2eb70cc",
+      "path": "docs/a2-execution/q2-supervisor-startup-retry/REQUIREMENTS.md",
+      "byte_identical": true
+    },
+    {
+      "A": "47b351b2b943bf1d6f1c71cfeb031157a2eb70cc",
+      "path": "docs/a2-execution/q2-supervisor-startup-retry/ARCHITECTURE.md",
+      "byte_identical": true
+    },
+    {
+      "A": "47b351b2b943bf1d6f1c71cfeb031157a2eb70cc",
+      "path": "docs/a2-execution/q2-supervisor-startup-retry/IMPLEMENTATION_PLAN.md",
+      "byte_identical": true
+    },
+    {
+      "A": "c65ff4e25ea6373aabf8db25d304ee7614b96eb5",
+      "path": "docs/a2-execution/q2-installation-reservation-reconciliation/REQUIREMENTS.md",
+      "byte_identical": true
+    },
+    {
+      "A": "c65ff4e25ea6373aabf8db25d304ee7614b96eb5",
+      "path": "docs/a2-execution/q2-installation-reservation-reconciliation/ARCHITECTURE.md",
+      "byte_identical": true
+    },
+    {
+      "A": "c65ff4e25ea6373aabf8db25d304ee7614b96eb5",
+      "path": "docs/a2-execution/q2-installation-reservation-reconciliation/IMPLEMENTATION_PLAN.md",
+      "byte_identical": true
+    },
+    {
+      "A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "path": "docs/a2-execution/q2-host-window-consumption/REQUIREMENTS.md",
+      "byte_identical": true
+    },
+    {
+      "A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "path": "docs/a2-execution/q2-host-window-consumption/ARCHITECTURE.md",
+      "byte_identical": true
+    },
+    {
+      "A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "path": "docs/a2-execution/q2-host-window-consumption/IMPLEMENTATION_PLAN.md",
+      "byte_identical": true
+    },
+    {
+      "A": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "path": "docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md",
+      "byte_identical": true
+    },
+    {
+      "A": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "path": "docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md",
+      "byte_identical": true
+    },
+    {
+      "A": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "path": "docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md",
+      "byte_identical": true
+    },
+    {
+      "A": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "path": "docs/a2-execution/q2-local-source-evidence/REQUIREMENTS.md",
+      "byte_identical": true
+    },
+    {
+      "A": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "path": "docs/a2-execution/q2-local-source-evidence/ARCHITECTURE.md",
+      "byte_identical": true
+    },
+    {
+      "A": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "path": "docs/a2-execution/q2-local-source-evidence/IMPLEMENTATION_PLAN.md",
+      "byte_identical": true
+    }
+  ],
+  "scoped_regression": {
+    "passed": 211,
+    "skipped": 3,
+    "failed": 0,
+    "seconds": 1.81,
+    "new_tests_passed": 136,
+    "new_tests_skipped": 1,
+    "shared_tests_passed": 75,
+    "shared_tests_skipped": 2,
+    "environment": "Python 3.12.14; pytest 8.4.2; isolated root-only UID/GID mapping",
+    "not_full_repository_regression": true,
+    "source_note": "CI fixture location literal and test helper docstring only; production and executable test logic unchanged"
+  },
+  "package": {
+    "bytes": 4107619,
+    "expanded_bytes": 5950952,
+    "field_entry": false,
+    "member_count": 23,
+    "sha256": "b97112107193000ae36266b7d2179167fc60dcb38ecf8d4d62ff7dcb0c2dcdda"
+  },
+  "startup": {
+    "bytes": 27191,
+    "sha256": "4aca662e9d599dd51272efa23797b5ff9f5adcb5b3e79b2a12efcd9bc4bf8c60"
+  },
+  "frame": {
+    "bytes": 5487647,
+    "sha256": "5a2814d137f3d3148f0dd287ef602d0b8d9a09dd5b422629c7e779d8b5eb2b7d"
+  },
+  "wire": {
+    "actual_bytes": 5514838,
+    "limit_bytes": 16777216,
+    "startup_included": true
+  },
+  "offline_check": {
+    "allow_consume": false,
+    "allow_run": false,
+    "authority": {
+      "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "closure": "8e7545199bde66583e1d643656dece867ab1dbda",
+      "owner_decision": "LH-Q2-LOCAL-SOURCE-EVIDENCE-CLOSURE-20260928-01",
+      "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+      "scope": "LH-Q2-LOCAL-SOURCE-EVIDENCE-v1"
+    },
+    "field_reads_performed": false,
+    "git": {
+      "authority_git_bound": true,
+      "closure_ancestry": true,
+      "tools": 6,
+      "tools_verified_before_execution": true
+    },
+    "host_persistence_attempted": false,
+    "implementation_commit": "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+    "implementation_tree": "21773876ef321eb70fdfd9dc24cbeed881efd2ef",
+    "package_bytes": 4107619,
+    "package_sha256": "b97112107193000ae36266b7d2179167fc60dcb38ecf8d4d62ff7dcb0c2dcdda",
+    "production_supported": false,
+    "q2_accepted": false,
+    "q3_accepted": false,
+    "ready": false,
+    "remote_attempted": false,
+    "schema": "q2-local-source-offline-check/v1",
+    "status": "OFFLINE_CHECK_PASS",
+    "target_count": 11,
+    "target_manifest_sha256": "2795cfcc2b5e1c39a7e6140b083448f15a0feb1370a2d95f2eb420ee32c0ed28",
+    "tools_sha256": "bb2ad9c824a2a667e757cacf0253c7cf5193b6c35c0afd46fee55fd5bc9d001c",
+    "window_consumed_by_this_invocation": false,
+    "wrapper_executed": false
+  },
+  "reproducible_two_independent_builds": true,
+  "independent_source_and_package_review": "PASS; no remaining must-fix",
+  "development_pty": {
+    "implementation_commit": "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+    "implementation_tree": "21773876ef321eb70fdfd9dc24cbeed881efd2ef",
+    "input_wire_bytes": 5514838,
+    "kernel_actual_read": 0,
+    "ordinary_actual_read": 0,
+    "original_host_executed": false,
+    "original_host_pass": false,
+    "output_json_bytes": 6883,
+    "package_sha256": "b97112107193000ae36266b7d2179167fc60dcb38ecf8d4d62ff7dcb0c2dcdda",
+    "payload_echoed": false,
+    "reason": "LOCAL_SOURCE_ORDINARY_IDENTITY_REQUIRED",
+    "schema": "q2-local-source-development-pty-check/v1",
+    "seconds": 0.356,
+    "status": "EXPECTED_EARLY_BLOCK_PASS",
+    "targets_attempted": 0,
+    "terminal_state_restored": true,
+    "working_directory_written": false
+  },
+  "ci": {
+    "revision": "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+    "tree": "21773876ef321eb70fdfd9dc24cbeed881efd2ef",
+    "run_id": 36393186487,
+    "prior_revision": "14d19f1f52d687afa360353aadecd6ea17725310",
+    "first_implementation_revision": "4c1285a346ad7afabbfbdf54830bcbaca177da17",
+    "differential": {
+      "linux": {
+        "collection_errors": {
+          "added": [],
+          "removed": [],
+          "retained_count": 0,
+          "retained_reason_changes": []
+        },
+        "failures": {
+          "added": [],
+          "removed": [],
+          "retained_count": 21,
+          "retained_reason_changes": []
+        },
+        "reported_count_delta": {
+          "failed": 0,
+          "passed": 137,
+          "skipped": 0
+        },
+        "skips": {
+          "added": [],
+          "removed": [],
+          "retained_count": 35,
+          "retained_reason_changes": []
+        }
+      },
+      "windows": {
+        "collection_errors": {
+          "added": [],
+          "removed": [],
+          "retained_count": 6,
+          "retained_reason_changes": []
+        },
+        "failures": {
+          "added": [],
+          "removed": [],
+          "retained_count": 0,
+          "retained_reason_changes": []
+        },
+        "reported_count_delta": {
+          "errors": 0,
+          "skipped": 2
+        },
+        "skips": {
+          "added": [
+            "tests/test_e3_q2_local_source_delivery.py",
+            "tests/test_e3_q2_local_source_observe.py"
+          ],
+          "removed": [],
+          "retained_count": 7,
+          "retained_reason_changes": []
+        }
+      }
+    },
+    "status": "completed",
+    "conclusion": "failure; retained general CI failures, no added failure/error relative to prior v1 baseline",
+    "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36393186487",
+    "ordinary_user_positive_scope": "isolated CI read protection only; not original host or writer support",
+    "platforms": {
+      "linux": {
+        "job_id": 108833454373,
+        "log_bytes": 97887,
+        "log_sha256": "09aaf6436f734283b1baafd92ea5244ecb75368145479c76bbb85e9f430d81f3",
+        "summary": {
+          "collection_interrupted": false,
+          "log_line": 976,
+          "reported_counts": {
+            "failed": 21,
+            "passed": 2294,
+            "skipped": 35
+          },
+          "text": "21 failed, 2294 passed, 35 skipped in 454.28s (0:07:34)"
+        },
+        "ordinary_success_explicit": true,
+        "ordinary_marker_lines": [
+          {
+            "log_line": 409,
+            "text": ".........................LOCAL_SOURCE_ORDINARY identity=ordinary noatime=PASS ancestor_acl=PASS metadata=STABLE"
+          }
+        ],
+        "new_module_failures": [],
+        "new_module_collection_errors": [],
+        "job_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36393186487/job/108833454373",
+        "new_module_skip_count": 0,
+        "failure_nodes": [
+          "tests/test_e3_q2_host_window_preflight.py::test_real_local_reads_preserve_metadata_and_never_write_or_dispatch",
+          "tests/test_e3_q2_host_window_preflight.py::test_metadata_drift_during_content_read_is_retained_as_failure",
+          "tests/test_e3_q2_host_window_preflight.py::test_original_pin_change_is_not_adopted",
+          "tests/test_e3_q2_host_window_preflight.py::test_tree_work_has_fixed_bounds[MAX_ENTRIES]",
+          "tests/test_e3_q2_host_window_preflight.py::test_tree_work_has_fixed_bounds[MAX_READ_BYTES]",
+          "tests/test_e3_q2_host_window_preflight.py::test_report_budget_returns_bounded_failure_with_no_admission",
+          "tests/test_e3_q2_host_window_preflight.py::test_receiver_origin_is_retained_without_resampling",
+          "tests/test_e3_q2_reconciliation_backend.py::test_real_kernel_reader_bound_and_numeric_proc",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_directory_member_change_and_path_replacement_are_rejected",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_full_collector_reads_actual_five_file_seal_and_owner_without_effect_api",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_new_receipt_accepts_exact_reconciliation_extension",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_actual_sealed_bytes_bind_terminal_without_self_exit_claim",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_missing_or_extra_member_rejects_before_terminal_projection",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_rejects_source_or_receipt_substitution",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_owner_sealed_member_changed_before_read_rejects_hash",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_read_retains_metadata_atime_and_rechecks_actual_bytes",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_receipt_rejects_legacy_attestation_and_window_renewal",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_bound_fixture_and_failed_checker_are_rejected",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_capture_hash_errors_and_original_deadline_are_rejected",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_resealed_child_digest_completion_and_stop_scope_are_rejected",
+          "tests/test_e3_q2_reconciliation_collect.py::ProtectedCollection::test_total_budget_hardlink_and_symlink_refuse_without_fallback"
+        ],
+        "collection_error_nodes": []
+      },
+      "windows": {
+        "job_id": 108833454305,
+        "log_bytes": 40833,
+        "log_sha256": "73eaaa4b2725cd629d304d542859ce5551a224026e57b3b45a867ed65dc485d5",
+        "summary": {
+          "collection_interrupted": true,
+          "log_line": 363,
+          "reported_counts": {
+            "errors": 6,
+            "skipped": 9
+          },
+          "text": "9 skipped, 6 errors in 2.25s"
+        },
+        "ordinary_success_explicit": false,
+        "ordinary_marker_lines": [],
+        "new_module_failures": [],
+        "new_module_collection_errors": [],
+        "job_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36393186487/job/108833454305",
+        "new_module_skip_count": 2,
+        "failure_nodes": [],
+        "collection_error_nodes": [
+          "tests/test_e3_q2_host_window_delivery.py",
+          "tests/test_e3_q2_host_window_preflight.py",
+          "tests/test_e3_q2_host_window_receiver.py",
+          "tests/test_e3_q2_host_window_record.py",
+          "tests/test_e3_q2_reconciliation_backend.py",
+          "tests/test_e3_q2_reconciliation_host_inputs.py"
+        ]
+      }
+    },
+    "removed_first_implementation_new_observer_failures": 34,
+    "first_implementation_ordinary_skip_removed": true
+  },
+  "phase": "L1-L4 complete; L5 original-host invocation and L6 actual receipt/static-source review pending",
+  "actual_host_execution": false,
+  "wrapper_executed": false,
+  "remote_attempted": false,
+  "window_consumed_by_this_invocation": false,
+  "new_startup_batch": "NOT ISSUED / unconsumed",
+  "historical_consumed_failed_batch": "preserved; INCOMPLETE remains",
+  "allow_run": false,
+  "allow_consume": false,
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "production_supported": false,
+  "private_payload_and_raw_published": false,
+  "fixture_workflow": {
+    "path": ".github/workflows/local-hand-v0-1-validation.yml",
+    "bytes": 41046,
+    "sha256": "63e413d852a0710d363471588fa751d4e419951432bc1658cef07b7b2231164c",
+    "changes_only_new_isolated_CI_directory": true,
+    "ordinary_pytest_identity_required": true,
+    "existing_ancestor_ACLs_unchanged": true,
+    "python310_syntax": "PASS",
+    "compile": "PASS"
+  },
+  "production_modules_unchanged_from_first_D": true,
+  "regression_source_note": "CI fixture location literal and test helper docstring only; production and executable test logic unchanged",
+  "prior_ci_attempts": [
+    {
+      "revision": "4c1285a346ad7afabbfbdf54830bcbaca177da17",
+      "run_id": 36391489578,
+      "linux": {
+        "failed": 55,
+        "passed": 2257,
+        "skipped": 36,
+        "new_observer_failures": 34,
+        "ordinary_success_explicit": false
+      },
+      "windows": {
+        "collection_errors": 6,
+        "skipped": 9
+      },
+      "status": "failure; not ordinary-positive evidence"
+    },
+    {
+      "revision": "317b09f30054779bcfd37a77374ad14418cc5ba3",
+      "run_id": 36392913200,
+      "linux": {
+        "fixture_setup": "failure; ACL detected on newly created test directory",
+        "source_tests_executed": false,
+        "pytest_counts": null,
+        "ordinary_success_explicit": false
+      },
+      "windows": {
+        "collection_errors": 6,
+        "skipped": 9
+      },
+      "production_source_changed": false
+    }
+  ]
+}
