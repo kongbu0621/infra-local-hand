@@ -482,7 +482,12 @@ diagnostic repair may retain metadata already obtained by the same checks; it
 must not add reads, weaken protection or retry the host automatically.
 This diagnostic repair is implemented at `89c725efd61dad11b0cc9ae11c3c08a941e3111a`,
 with 236 PASS / 3 SKIP scoped regression and an exact offline-verified private
-package. No second original-host observation has been issued.
+package. A subsequent Owner-initiated diagnostic observation has now returned;
+the [field review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)
+records its exact receipt at the same D. It remains BLOCKED at a control-parent
+ancestor's group-write mode bit, with all eleven targets unattempted. This is a
+retained failed-check input, not a completed path-stability proof. No permission
+change, further invocation or full Q2 acceptance follows from this receipt.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

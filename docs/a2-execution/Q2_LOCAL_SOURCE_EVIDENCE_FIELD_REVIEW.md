@@ -82,4 +82,61 @@ Git祖先、P/M/T、11对象、启动/帧roundtrip、实际长度/摘要及封�
 接收器字节未变；未重跑无关PTY或原机调用，不宣称新增现场证据或全仓CI结果。
 
 [本轮脱敏验证索引](evidence/q2-local-source-field-20260928/verification.json)登记准确回执和修复。
-诊断版仅准备就绪，原机再次观察尚未发起；原A无需重批，仍等待明确再次观察指令。
+上述为诊断交付准备时的状态；后续已明确发起并回传，见下节。原A无需重批，
+但已完成的调用不成为下一次调用或改动原机权限的授权。
+
+## 后续诊断回执：已定位组写权限阻断
+
+2026-09-28 +08，Owner 上传诊断原件及本地 Codex 执行截图。截图保留的明确指令为：
+“先快进到远端 main 77792665，再执行一次 89c725ef 诊断观察；失败不重试，完整 JSON
+以 0600 私存到 Downloads。”它只授权该次观察；本次收件不派发下一次执行。
+
+新原件 `q2-local-source-diagnostic-result-89c725ef.json` 为 **12,231 bytes**，SHA-256
+`3a2e4a0984eb7c8d3fc3c786ed62bc2491cf317647d8dd118bed7c99f539f637`。
+D/tree、包及交付字节仍与前节准确89c725ef交付一致。机器路径、身份、inode和完整
+metadata只留在私有原件；公开登记如下脱敏事实。
+
+本轮另行完成[41项独立静态核验](evidence/q2-local-source-field-20260928/diagnostic-independent-validation.json)，
+全部通过且未发现不一致：严格JSON/规范字节、自计量、D/tree/包及六工具逐字绑定、
+启动/帧字节roundtrip、固定P/M/T、11目标与manifest、boot pin、双钟及计数。
+来源派生只解析AST字面量/JSON，未执行包或采集入口。这41项属于本轮检查，
+不是截图自报34项的明细或重计；静态核验通过不改变现场BLOCKED。
+
+| 项目 | 诊断结果 |
+| --- | --- |
+| 状态 / 阶段 / 原因 | `LOCAL_SOURCE_EVIDENCE_BLOCKED` / `protected_parents` / `RECONCILIATION_UNPROTECTED_PATH` |
+| 失败位置 | `control_parent`，`component_index=3`，`component_kind=ancestor`；root索引为0 |
+| 失败谓词 | 仅 `FORBIDDEN_MODE_BITS`；保留属主在原允许集合内 |
+| 保留权限 | 目录 `0775`；与原 `06022` mask 相交仅 `00020`，即group-write |
+| metadata来源 | 已打开fd的初始化保留值；`metadata_is_exact_check_input=true`，未追加文件系统观察 |
+| 目标与原文 | 11项全部 `NOT_ATTEMPTED`；attempted/observed/matched/raw均0 |
+| 实际读取 | 普通文件0 bytes；固定初始boot37 bytes；marker、parent FS和最终复检未到达 |
+| 输出 | 报告12,231 bytes，READY58，stdout合计12,289；报告记载stderr0 |
+| 权限与验收 | wrapper、remote、持久写、消费及所有执行/验收许可仍false |
+
+该非root层的保留metadata正是失败保护谓词的输入，因此能定位该次拒绝为group-write；
+不能倒填第一次411回执的具体原因。失败发生在该组件后续name↔fd重检及全链稳定核验
+之前，故不证明路径从那时至今一直绑定同一inode或权限未变，也不证明后续祖先、ACL、
+NOATIME、原文匹配或文件系统资格会通过。将该位去除本身不能保证完整观察成功。
+
+按源码顺序可知host_parent的先行检查已返回，control_parent随后失败；JSON未保留
+前者完整链的metadata，不能把此推断升级为独立父目录资格证据。空marker/FS数组表示
+未观察，不表示不存在。Q2业务startup batch仍NOT ISSUED且未消费；本地诊断不是该批次。
+
+退出码2、唯一一次诊断、无重试、文件0600、PTY及进程清理、现场HEAD为77792665和
+工作树干净来自本地Codex截图自报，不能由JSON独立证明。namespace对齐仍为环境假设。
+
+## 下一步的具体处理边界
+
+现有A的只读补证不授权修改原机目录权限。当前可以继续做回执／准确源码的离线复核
+并形成修复候选；不能自动chmod/chown、递归改权限、移动来源、放宽保护规则或重跑。
+
+优先候选是对**这一处祖先目录**做最小环境整改：先确认最新身份、mode、ACL、挂载与
+该目录的实际组共享／写入依赖；若确认组写权限无需保留，再提出仅移除该目录group-write
+位的明确变更。按本次保留值其预期为0775→0755，保留属主、组、其它权限和所有子项。
+这仍是候选，不是已授权命令。它涉及共享祖先目录，影响评估必须先于变更；事实不符即停。
+整改后再按明确发起的同范围一次观察重新验证，不能沿用本次metadata作通过证据。
+
+若组共享必须保留，则该候选不适用；另行形成来源布局或保护合同方案，并按原R复审。
+直接复制四份文件到新位置不能证明原执行来源，也不会自动满足固定P/M/T的来源绑定。
+本轮不关闭任何新的环境整改范围，不宣称wrapper、H07、完整账单或Q2验收完成。
