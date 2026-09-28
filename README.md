@@ -2,7 +2,9 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前状态：原始 S1 候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
+**当前接续（2026-09-28）：K4 完整本地观察回执已收到并核验，结果为 `OBSERVED_PARTIAL`；Q2、E3 与生产支持仍未验收。** 见[完整回执复核](docs/a2-execution/Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)和[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。当前继续离线核对来源缺口，无需重复粘贴 JSON、重跑预检或再次批准已关闭的相同范围。
+
+**S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 
 **GX10 首轮复现入口：** [原始 S1 任务书](docs/GX10_S1_RUNBOOK.md) 固定到 `b763bd6`，保留原始输入身份。验证后续修复时使用 [复核记录](docs/S1_FOLLOWUP_REVIEW.md) 指定的新候选，仍须新 checkout、独立 build/runtime venv；不同候选的结果分别记录。
 
@@ -41,9 +43,14 @@ S1 的交付对象是可安装、可验证的通用候选包。S2 才切换真�
 完整字节校验、并发资源绑定及恢复边界的后续修复见[第九轮实现复核](docs/a2-execution/E1_E3_RECHECK_9.md)。
 读取完整性、跨阶段执行预算及准入失效的后续修复见[第十轮实现复核](docs/a2-execution/E1_E3_RECHECK_10.md)。
 当前新作业生产入口明确拒绝启用；模拟环境测试通过不能解除这个实现阻塞。
-Q2 最近一次已批准的实机批次完成准备并收回证据，监督器启动失败，结果保持 `INCOMPLETE`。
-当前启动排队、受限身份检查修复与平台验证见
+历史 CPUQuota retry 批次完成准备并收回证据，监督器启动失败，结果保持 `INCOMPLETE`。
+该次启动排队、受限身份检查修复与平台验证见
 [监督器启动修复记录](docs/a2-execution/Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md)；
 历史批次与剩余阶段见[当前实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。
-新的单次运行候选与三文档已固定，范围仍 OPEN，见[新批次提案](docs/governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md)。
+后续单次启动重试范围已获[Owner 准确批准](docs/governance/Q2_SUPERVISOR_STARTUP_RETRY_OWNER_DECISION.md)，
+按固定 R/A 记录为 CLOSED；该新批次仍为 NOT ISSUED，不能把授权关闭解释为可以跳过现场准入。
+后续对账、host 窗口与固定内核读取的独立授权及边界见 [AGENTS.md](AGENTS.md)。
+K4 已完成限定的完整回执核验，完整账单、H07 首次远端截止与停止覆盖、wrapper 来源绑定和文件系统资格仍缺证据。
+本轮已完成[离线来源差额核对](docs/a2-execution/Q2_OFFLINE_SOURCE_GAP_REVIEW.md)，含写入器身份限制与原观察条件的差异。
+既有通用 CI 的失败仍保留；定向测试与 K4 完成不构成全量 CI 或 Q2 通过。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。

@@ -1,6 +1,35 @@
 # E1–E3 实现候选状态
 
-2026-09-27 当前接续状态：一次已批准的 CPUQuota retry 已真实执行并回收原始证据，
+## 2026-09-28 当前接续
+
+**K4 完整本地观察回执已收到并完成限定核验；当前无需 Owner 重跑预检、继续截图、再次粘贴 JSON 或重复批准相同范围。**
+准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
+[Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
+回执仍为 `OBSERVED_PARTIAL` / `final_local_recheck`，不证明完整 Q2 准入。
+
+| 范围 | 当前授权与执行状态 |
+| --- | --- |
+| 单次监督器启动重试 | A `47b351b2b943bf1d6f1c71cfeb031157a2eb70cc` 已由 [Owner 决定](../governance/Q2_SUPERVISOR_STARTUP_RETRY_OWNER_DECISION.md)关闭；独立 C 为 `d4a925c883672fadc7d1b10a8dfe58df18b922cd`。该新批次仍 NOT ISSUED，单次授权尚未消费。 |
+| 安装预留对账 | A `c65ff4e25ea6373aabf8db25d304ee7614b96eb5` 的 P1–P6 已 CLOSED；保留历史来源、准确义务和原累计上界。 |
+| host 窗口消费 | A `8402f0cc82d8a0ac0b9a56716bf276f41cafea37` 的 H1–H6 已 CLOSED；完整现场派发仍因证据缺口 NOT READY。 |
+| 固定内核事实读取 | A `887b640b394f9983f37dfe97c58ba35aaa099359` 的 K0–K4 已 CLOSED；K1–K4 各自限定任务已完成，含完整回执接收及核验。 |
+
+以上准确 R/A、Owner 决定和独立 C 以根 [AGENTS.md](../../AGENTS.md)及其引用记录为准。
+冻结设计文件的历史 OPEN 标签保留，不覆盖后续有效关闭记录；本状态更新不产生新授权或新批次。
+
+当前继续离线核对完整账单、H07 首次远端截止与停止覆盖、wrapper 来源与执行绑定、文件系统分配及持久资格。
+本轮[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)已完成：旧 anchor 确缺历史 host 字段、wrapper 原件未恢复，
+写入器额外的 root-only 条件与 K4 当次报告的普通身份／父目录不匹配；这不构成放宽准入的理由。
+现有本地观察不能补齐这些事实；`allow_run`、`allow_consume`、Q2/Q3 验收与 production supported 均仍为 false。
+新作业生产入口继续保留 `E3_SUPERVISION_UNVERIFIED`；E1–E3 未全部完成，E4–E6 及 S2 未因此启动。
+
+既有内核读取定向验证为 331 PASS / 3 SKIP；通用 CI 保留 Linux 21 FAILED / 2140 PASS / 31 SKIP、
+Windows 6 项收集错误 / 7 SKIP，详见[实现复核](Q2_KERNEL_FACT_READ_IMPLEMENTATION_REVIEW.md)。
+这些是各自准确版本的既有结果，本次状态同步未运行新测试，也不把局部成功改写为全仓 PASS。
+
+## 历史批次与实现沿革
+
+2026-09-27 CPUQuota retry 历史状态：一次已批准的批次已真实执行并回收原始证据，
 准备达到 `RETRY_PREPARED`，监督器返回 `BLOCKED / PermissionError`，外层保持
 `INCOMPLETE / SUPERVISOR_DELIVERY_UNCERTAIN`。旧记录、未消费账本及七个空根的既有保留检查通过，
 但这些检查未证明全部 atime 不变；原始独立停止与 seal 也未形成，后续观察不补判该尝试成功。
@@ -9,7 +38,8 @@
 本次代码修复不重放已消费的 300 秒窗口，不替换原实机安装；Q2、Q3/Q4、E3 和生产仍未验收。
 修复候选 `b49d3df3d1e76813faf08e59ab4975e25279c2fc` 已完成本地完整源码与隔离安装验证，原生 Linux/Windows CI 均通过。
 新一次运行的准确三文档 A 为 `47b351b2b943bf1d6f1c71cfeb031157a2eb70cc`，
-范围仍 OPEN，见[新批次提案登记](../governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md)。
+形成时为 OPEN，见[新批次提案登记](../governance/Q2_SUPERVISOR_STARTUP_RETRY_BASELINE.md)；
+后续准确 Owner 决定已关闭该范围，当前授权和剩余执行阻塞见页首。
 
 2026-09-25 第六批历史进展：Q2 第六批已补常驻 broker test-only composition、原预算管理装配和
 首个 preflight 的一次 fixture 入口，并修复启动/readiness/有限轮询问题，见
