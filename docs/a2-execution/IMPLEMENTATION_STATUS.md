@@ -32,7 +32,9 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 
 既有内核读取定向验证为 331 PASS / 3 SKIP；通用 CI 保留 Linux 21 FAILED / 2140 PASS / 31 SKIP、
 Windows 6 项收集错误 / 7 SKIP，详见[实现复核](Q2_KERNEL_FACT_READ_IMPLEMENTATION_REVIEW.md)。
-这些是各自准确版本的历史结果；本次 D 的测试和 CI 单独登记于上述新复核，不把局部成功改写为全仓 PASS。
+这些是各自准确版本的历史结果；后续 [2026-09-28 CI 修复](CI_REPAIR_20260928.md)记录
+`3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe` 的测试装配、平台边界及准确验证结果。
+不把局部成功改写为全仓 PASS，也不把 CI 修复解释为原机 Q2 验收。
 
 ## 历史批次与实现沿革
 

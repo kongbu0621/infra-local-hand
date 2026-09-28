@@ -484,6 +484,14 @@ This diagnostic repair is implemented at `89c725efd61dad11b0cc9ae11c3c08a941e311
 with 236 PASS / 3 SKIP scoped regression and an exact offline-verified private
 package. No second original-host observation has been issued.
 
+The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
+records test-fixture and platform-collection repairs at
+`3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe`. These remain inside existing CLOSED
+isolated-verification scopes. Production modules and authoritative A documents
+are unchanged; real root-only collector coverage is mandatory alongside the
+ordinary-user suite. Exact native CI outcomes are distinct from cloud skips
+and do not establish original-host readiness or Q2 acceptance.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
