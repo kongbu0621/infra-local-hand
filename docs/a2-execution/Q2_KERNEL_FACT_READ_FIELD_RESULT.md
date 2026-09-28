@@ -1,5 +1,9 @@
 # Q2 固定内核读取：原机部分观察回执
 
+> 历史时点说明：以下保留仅收到截图时的原始结论。随后完整粘贴 JSON 已收到并完成
+> 限定范围核对，见[完整本地观察回执复核](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
+> 原文中的“尚未收到／待核验”仅描述当时状态，不再要求 Owner 重复回传或重跑。
+
 2026-09-28 00:40:51 +08 收到 Owner 新截图。可见报告已到
 `final_local_recheck`，返回 `OBSERVED_PARTIAL`，原因是
 `LOCAL_FACTS_ONLY_LATER_ADMISSION_UNPROVEN`，并已回到 Bash 提示符。

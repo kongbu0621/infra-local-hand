@@ -421,6 +421,19 @@ existing terminal output without rerunning. Visible allocated bytes are limited
 current observations, with cost classification and audit obligations still
 unproven. This record changes no code, package, authority or consumption state.
 
+The subsequent [complete local observation receipt review](docs/a2-execution/Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)
+records receipt and scoped verification of the complete Owner-pasted JSON on
+2026-09-28 +08. It supersedes only the preceding pending-JSON status: K4's
+complete local observation receipt is now received and checked. Exact-D package
+tool bytes, retained external sources, all target fields and seven old pins were
+checked separately from the independent internal-consistency review. The paste
+is retained evidence, not an independently sealed stdout or host attestation.
+OBSERVED_PARTIAL remains; unknown bills and qualifications remain unknown, and
+the existing general CI failures remain. No new C/D, scope, package, batch,
+consumption or full Q2 acceptance follows. Continue offline source-gap accounting
+for H07, costs, wrapper binding and filesystem qualification; this receipt review
+requires no host rerun or repeated Owner approval.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

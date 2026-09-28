@@ -1,0 +1,190 @@
+{
+  "schema": "q2-kernel-fact-full-return-review/v1",
+  "review_status": "COMPLETE_SCOPED_LOCAL_OBSERVATION_RECEIPT_REVIEW",
+  "review_date_local": "2026-09-28",
+  "receipt": {
+    "evidence_type": "OWNER_SUPPLIED_COMPLETE_PASTED_JSON",
+    "received_bytes": 34013,
+    "received_sha256": "281ff17ffd7bb83f7afd0bcae7488f5fa5b9bf551852f63494ceb8d84cc5cab9",
+    "strict_single_json": true,
+    "full_json_received": true,
+    "scoped_verification_complete": true,
+    "independent_stdout_seal": false,
+    "independent_host_attestation": false,
+    "raw_json_published": false
+  },
+  "authority": {
+    "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+    "closure": "f7f8b503470725ca1ba18d1cb8d8b39e09a15ea8",
+    "owner_decision": "LH-Q2-KERNEL-FACT-READ-CLOSURE-20260927-01",
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "scope": "LH-Q2-KERNEL-FACT-READ-v1"
+  },
+  "implementation": {
+    "commit": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+    "tree": "c7c60ec47b742615dbae9f8cb230679f3a9c4997",
+    "package_sha256": "04af4262c6ea033862512d05df68ff5665498023660ce312c57f956ecda9a616",
+    "exact_tools_compared_with_d": 49,
+    "code_changed": false,
+    "package_changed": false
+  },
+  "previous_screenshot_review_commit": "dd16fd792880b1113bd1814385885f9acd4ae6d3",
+  "verification": {
+    "external_source_checks": 157,
+    "external_source_checks_passed": 157,
+    "method": "Existing exact-D offline_inputs and targets; no field execution",
+    "all_target_fields_rederived": true,
+    "retained_boot_pin_matches": true,
+    "all_seven_old_pins_match_external_sources": true,
+    "independent_internal_consistency_checks": 73,
+    "independent_internal_consistency_checks_passed": 73,
+    "review_checks_are_not_new_code_tests": true,
+    "source_review_sha256": "f547eb781018594f6041ab670a808032117025ba9720e185e5e12fb16cc25b5c",
+    "independent_review_sha256": "24fdc6e7ab11edd5d1b5d9e04b69cc2279c5a835a5cae61354a97f6b979b90a8"
+  },
+  "report": {
+    "schema": "local-hand-q2-host-window-local-preflight/v1",
+    "scope": "LH-Q2-HOST-WINDOW-CONSUMPTION-v1",
+    "status": "OBSERVED_PARTIAL",
+    "stage": "final_local_recheck",
+    "reason": "LOCAL_FACTS_ONLY_LATER_ADMISSION_UNPROVEN",
+    "offline_sources_verified": true,
+    "consumption_path_state": "ABSENT_AT_OBSERVATION",
+    "absence_is_only_at_reported_observation": true
+  },
+  "reported_timing": {
+    "monotonic_elapsed_seconds_rounded": 53.56,
+    "boottime_elapsed_seconds_rounded": 53.56,
+    "preparation_limit_seconds": 140,
+    "total_limit_seconds": 300,
+    "inside_both_preparation_windows": true,
+    "independent_event_timestamps_available": false
+  },
+  "kernel_reads": [
+    {
+      "target": "boot",
+      "status": "OBSERVED",
+      "bytes": 37,
+      "ordinary_identity_consistent": true,
+      "qualified_before_content": true,
+      "native_metadata_crosscheck_complete": true,
+      "content_open_noatime": false,
+      "historical_metadata_preservation_claimed": false
+    },
+    {
+      "target": "mountinfo",
+      "status": "OBSERVED",
+      "bytes": 5581,
+      "ordinary_identity_consistent": true,
+      "qualified_before_content": true,
+      "native_metadata_crosscheck_complete": true,
+      "content_open_noatime": false,
+      "historical_metadata_preservation_claimed": false
+    },
+    {
+      "target": "boot",
+      "status": "OBSERVED",
+      "bytes": 37,
+      "ordinary_identity_consistent": true,
+      "qualified_before_content": true,
+      "native_metadata_crosscheck_complete": true,
+      "content_open_noatime": false,
+      "historical_metadata_preservation_claimed": false
+    }
+  ],
+  "observed_scope": {
+    "trees": 5,
+    "files": 37,
+    "directories": 5,
+    "unique_objects": 42,
+    "logical_file_bytes": 13081230,
+    "allocated_bytes_including_directories": 13189120,
+    "matched_old_pins": 7,
+    "locator_only_roots": 2,
+    "unobserved_known_siblings": 7,
+    "full_inventory": false
+  },
+  "boundary_flags": {
+    "allow_consume": false,
+    "allow_run": false,
+    "joint_admission_proven": false,
+    "window_consumed_by_this_invocation": false,
+    "remote_attempted": false,
+    "wrapper_executed": false,
+    "host_persistence_attempted": false,
+    "q2_accepted": false,
+    "q3_accepted": false,
+    "production_supported": false,
+    "current_observation_not_adoption": true,
+    "cost_classification_proven": false,
+    "historical_identity_adopted": false,
+    "full_host_inventory_complete": false,
+    "allocation_peak_proven": false,
+    "durability_proven": false,
+    "raw_device_read_performed": false
+  },
+  "unknown_cost_and_admission_fields": {
+    "capture_admissible": null,
+    "capture_bill_bytes": null,
+    "historical_future_bytes": null,
+    "native_audit_peak_bytes": null
+  },
+  "remaining_missing": [
+    "HOST_HISTORICAL_FUTURE_SOURCE_COVERAGE",
+    "HOST_OBJECT_COST_CLASSIFICATION",
+    "NATIVE_AUDIT_SOURCE_BOUND",
+    "WRAPPER_AUTHORIZED_SOURCE_AND_EXECUTION_BINDING",
+    "REMOTE_ABSOLUTE_DEADLINE_AND_STOP_COVERAGE",
+    "COMPLETE_GUEST_JOINT_ADMISSION",
+    "HOST_ALLOCATION_PEAK_AND_DURABILITY_QUALIFICATION"
+  ],
+  "namespace_alignment": "ENVIRONMENT_ASSUMPTION_NOT_PROVEN",
+  "prior_general_ci": {
+    "run_id": 36331451304,
+    "commit": "ad405506abf46952f271f3fb309ed7bd873e3d1c",
+    "conclusion": "failure",
+    "linux": {
+      "failed": 21,
+      "passed": 2140,
+      "skipped": 31
+    },
+    "windows": {
+      "collection_errors": 6,
+      "skipped": 7
+    },
+    "unchanged_by_this_review": true
+  },
+  "next_step": "OFFLINE_SOURCE_AND_ACCOUNTING_GAP_TABLE",
+  "new_host_commands_requested": false,
+  "host_execution_by_review": false,
+  "new_execution_window_authorized": false,
+  "new_closure_or_implementation_commit": false,
+  "whole_q2_accepted": false,
+  "limits": [
+    "Received paste bytes are pinned; this is not independently sealed stdout.",
+    "Reported observations and syscall outcomes were checked for source and internal consistency, not re-executed on the original host.",
+    "Observed allocated bytes cover five known trees, not the whole capture bill or host inventory.",
+    "Unknown costs and qualifications remain unknown; current or future marker absence is not established.",
+    "K4 receipt review does not prove H07, wrapper binding, filesystem qualification or complete guest joint admission."
+  ],
+  "old_archive_comparison": {
+    "matched_file_sizes_and_sha256": 37,
+    "matched_member_set": 42,
+    "directories_with_different_access_time": 1,
+    "difference_attributed_to_this_k4": false,
+    "difference_repaired_by_this_k4": false,
+    "historical_metadata_byte_preservation_proven": false,
+    "dispatch_input_copies": 3,
+    "dispatch_input_allocated_bytes": 10457088,
+    "dispatch_inputs_classified_as_capture_by_directory_name": false,
+    "billing_review_sha256": "fcad520f3929aca8c6b89443ebd78c0e773de1b66d724820c1c844754593f018"
+  },
+  "next_step_boundaries": {
+    "full_bill": "Map existing carrier, manifest and obligation sources; retain seven unobserved siblings and unknown category/future/audit obligations.",
+    "h07": "Review existing mechanisms; old anchors do not authorize a new probe or prove first-dispatch absolute stopping coverage.",
+    "wrapper": "Existing adopted attestation covers locator/boot only; do not reconstruct or execute a substitute for an unavailable admissible original.",
+    "filesystem": "Map allocation-peak, parent-growth and fsync durability obligations against existing current filesystem facts; no permission, flag or mount changes."
+  },
+  "gap_proof_matrix_completed": false,
+  "observed_tree_cost_category": "UNPROVEN"
+}
