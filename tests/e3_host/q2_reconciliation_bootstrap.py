@@ -10,6 +10,7 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import stat
 import time
 
 
@@ -159,10 +160,19 @@ def validate_marker_scan(bill, intent, raw, location):
     require(set(rows) == {".", contract.INTENT_NAME}, "RECONCILIATION_HOST_MARKER_MEMBERS")
     root = rows["."]["source_metadata"]
     identity = intent["directory_identity"]
-    require(all(root[key] == identity[key] for key in ("device", "inode", "uid", "gid"))
-        and root["st_mode"] & 0o7777 == identity["mode"], "RECONCILIATION_HOST_MARKER_IDENTITY")
+    parent = intent["precheck"]["parent_metadata"]
+    require(rows["."]["type"] == "directory"
+        and all(root[key] == identity[key] for key in ("device", "inode", "uid", "gid"))
+        and root["st_mode"] == (stat.S_IFDIR | 0o700) and root["nlink"] == 2
+        and root["device"] == parent["device"] and root["inode"] != parent["inode"]
+        and root["uid"] == root["gid"] == 0, "RECONCILIATION_HOST_MARKER_IDENTITY")
     leaf = rows[contract.INTENT_NAME]
-    require(leaf["sha256"] == contract.sha(raw) and leaf["source_metadata"]["size"] == len(raw),
+    meta = leaf["source_metadata"]
+    require(leaf["type"] == "file" and meta["st_mode"] == (stat.S_IFREG | 0o400)
+        and meta["nlink"] == 1 and meta["uid"] == meta["gid"] == 0
+        and meta["device"] == root["device"] and meta["inode"] not in (root["inode"], parent["inode"]),
+        "RECONCILIATION_HOST_MARKER_FILE_IDENTITY")
+    require(leaf["sha256"] == contract.sha(raw) and meta["size"] == len(raw),
         "RECONCILIATION_HOST_MARKER_CONTENT")
 
 

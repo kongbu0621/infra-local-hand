@@ -170,7 +170,13 @@ def verify_intent(raw, expected_binding, location):
         "HOST_WINDOW_PRECHECK_DIGEST")
     # The record module supplies the strict observation schema without creating
     # a second authority decoder or permitting arbitrary fields in this object.
-    helper("q2_host_window_record").validate_precheck(value["precheck"], location, value["window"])
+    precheck = helper("q2_host_window_record").validate_precheck(value["precheck"], location, value["window"])
+    parent = precheck["parent_metadata"]
+    # v1 records can only be emitted by the root-only writer. Independent
+    # integer validation (or a recomputed digest) is not a parent/child bind.
+    # Ordinary-identity support must not be inferred from arbitrary uid fields.
+    require(identity["device"] == parent["device"] and identity["inode"] != parent["inode"]
+        and identity["uid"] == identity["gid"] == 0, "HOST_WINDOW_DIRECTORY_BINDING")
     return value
 
 

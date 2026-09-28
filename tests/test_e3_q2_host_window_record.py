@@ -211,6 +211,64 @@ class HostWindowRecords(unittest.TestCase):
             pre.consume()
         self.assertFalse(Path(self.location["directory"]).exists())
 
+    def test_writer_identity_change_after_precheck_refuses_before_mkdir(self):
+        self.modeled()
+        pre = self.precheck()
+        for getter in ("geteuid", "getegid"):
+            with self.subTest(getter=getter), patch.object(r.os, getter, return_value=12345), \
+                    patch.object(r.os, "mkdir", side_effect=AssertionError("write after identity change")), \
+                    self.assertRaisesRegex(ValueError, "HOST_WINDOW_ROOT_REQUIRED"):
+                pre.consume()
+        self.assertFalse(Path(self.location["directory"]).exists())
+
+    def test_writer_identity_change_after_mkdir_retains_partial_without_intent(self):
+        self.modeled()
+        pre = self.precheck()
+        original = os.mkdir
+        changed = [False]
+        def mkdir_then_change(*args, **kwargs):
+            result = original(*args, **kwargs)
+            changed[0] = True
+            return result
+        with patch.object(r.os, "mkdir", side_effect=mkdir_then_change), \
+                patch.object(r.os, "geteuid", side_effect=lambda:12345 if changed[0] else 0), \
+                self.assertRaisesRegex(ValueError, "HOST_WINDOW_ROOT_REQUIRED"):
+            pre.consume()
+        marker = Path(self.location["directory"])
+        self.assertTrue(marker.is_dir())
+        self.assertEqual([], list(marker.iterdir()))
+        with self.assertRaisesRegex(ValueError, "ALREADY_CONSUMED"):
+            self.precheck()
+
+    def test_retained_record_rechecks_writer_identity_before_reading(self):
+        self.modeled()
+        held = self.consume()
+        with patch.object(r.os, "getegid", return_value=12345), \
+                patch.object(r.os, "open", side_effect=AssertionError("read after identity change")), \
+                self.assertRaisesRegex(ValueError, "HOST_WINDOW_ROOT_REQUIRED"):
+            held.verify()
+
+    def test_identity_change_after_intent_open_prevents_payload_write(self):
+        self.modeled()
+        pre = self.precheck()
+        original = os.open
+        changed = [False]
+        def open_then_change(path, *args, **kwargs):
+            fd = original(path, *args, **kwargs)
+            if path == c.INTENT_NAME:
+                changed[0] = True
+            return fd
+        with patch.object(r.os, "open", side_effect=open_then_change), \
+                patch.object(r.os, "getegid", side_effect=lambda:12345 if changed[0] else 0), \
+                patch.object(r.os, "write", side_effect=AssertionError("payload write after identity change")), \
+                self.assertRaisesRegex(ValueError, "HOST_WINDOW_ROOT_REQUIRED"):
+            pre.consume()
+        intent = Path(self.location["directory"]) / c.INTENT_NAME
+        self.assertTrue(intent.is_file())
+        self.assertEqual(0, intent.stat().st_size)
+        with self.assertRaisesRegex(ValueError, "ALREADY_CONSUMED"):
+            self.precheck()
+
     def test_marker_verification_after_preparation_uses_original_300_seconds(self):
         self.modeled()
         now=[100*c.NS]

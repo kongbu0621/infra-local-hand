@@ -251,7 +251,6 @@ class HeldPrecheck:
         self.closed = False; self.spent = False; self.parent = None
         try:
             self.preparation_guard()
-            require(os.geteuid() == 0 and os.getegid() == 0, "HOST_WINDOW_ROOT_REQUIRED")
             self.parent = io.HeldPath(location["parent"], self.preparation_guard, directory=True, allowed_uids={0})
             _protected_chain(self.parent); _absent(self.parent.fd)
             require(_boot(self.guard) == location["expected_boot_id"], "HOST_WINDOW_BOOT_CHANGED")
@@ -273,6 +272,9 @@ class HeldPrecheck:
             raise
 
     def guard(self):
+        # v1's writer identity is fixed across every observation, write and
+        # retained-record verification, not just at constructor entry.
+        require(os.geteuid() == 0 and os.getegid() == 0, "HOST_WINDOW_ROOT_REQUIRED")
         require(self.window.fields() == self.origin, "HOST_WINDOW_ORIGIN_CHANGED")
         self.window.guard()
 
@@ -364,6 +366,7 @@ class HeldConsumption:
         self.file_fd = os.open(c.INTENT_NAME,
             os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
             0o400, dir_fd=self.directory_fd)
+        self.preflight.preparation_guard()
         count = os.write(self.file_fd, self.intent_raw)
         require(count == len(self.intent_raw), "HOST_WINDOW_SHORT_WRITE")
         self.preflight.preparation_guard(); os.fsync(self.file_fd)
