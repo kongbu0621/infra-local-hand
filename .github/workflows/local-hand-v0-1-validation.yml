@@ -199,6 +199,42 @@ jobs:
         run: |
           import os, subprocess
           subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp", "tools/admin/local_hand_quota_observer", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "tools/run_q1_experiment.py", "tools/launch_q1_experiment.py", "plugins", "tests"], check=True)
+      - name: Prepare isolated protected parent for local-source tests
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import errno, json, os, pathlib, stat, subprocess
+          # Only fixture provisioning is privileged. Pytest and the observer
+          # retain the runner's real ordinary credentials. Do not clear ACLs
+          # or change the existing home/system ancestor permissions.
+          uid, gid = os.getuid(), os.getgid()
+          if uid == 0 or os.getresuid() != (uid, uid, uid) or os.getresgid() != (gid, gid, gid):
+              raise SystemExit("ordinary CI identity required")
+          root = pathlib.Path(subprocess.check_output(
+              ["sudo", "-n", "mktemp", "-d", "/opt/local-hand-q2-source-XXXXXXXXXX"], text=True).strip())
+          if root.parent != pathlib.Path("/opt") or not root.name.startswith("local-hand-q2-source-"):
+              raise SystemExit("unexpected isolated fixture path")
+          subprocess.run(["sudo", "-n", "chown", f"{uid}:{gid}", str(root)], check=True)
+          diagnostics = []
+          for path in (root, *root.parents):
+              info = path.lstat()
+              if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o6022 or info.st_uid not in (0, uid):
+                  raise SystemExit(f"isolated fixture has an unprotected ancestor: {path}")
+              acls = {}
+              for name in ("system.posix_acl_access", "system.posix_acl_default"):
+                  try:
+                      raw = os.getxattr(path, name, follow_symlinks=False)
+                  except OSError as error:
+                      if error.errno != errno.ENODATA:
+                          raise
+                      acls[name] = False
+                  else:
+                      acls[name] = True
+                      raise SystemExit(f"isolated fixture ancestor has an ACL: {path}; no ACL was changed")
+              diagnostics.append(dict(path=str(path), mode=oct(stat.S_IMODE(info.st_mode)), acl_present=acls))
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as stream:
+              stream.write(f"LOCAL_HAND_Q2_TEST_PARENT={root}\n")
+          print("LOCAL_SOURCE_TEST_PARENT " + json.dumps(diagnostics, sort_keys=True))
       - name: Run platform-scoped source tests (A2 jobs are Linux only)
         shell: python
         run: |

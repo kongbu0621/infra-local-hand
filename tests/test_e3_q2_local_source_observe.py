@@ -25,6 +25,27 @@ from e3_host import q2_local_source_observe as m
 
 
 BOOT = "00000000-0000-0000-0000-000000000001"
+FIXTURE_PARENT_ENV = "LOCAL_HAND_Q2_TEST_PARENT"
+
+
+def fixture_parent():
+    """Test setup only; production never accepts this environment override.
+
+    CI supplies a fresh ordinary-owned directory under protected /opt ancestors.
+    An explicit fixture must qualify with real credentials/ACLs or fail; there
+    is no fallback to home and no modification of an existing ancestor's ACL.
+    """
+    supplied = os.environ.get(FIXTURE_PARENT_ENV)
+    if supplied is not None:
+        original = m.identity()  # A configured CI fixture requires real nonroot.
+        def guard():
+            assert m.identity() == original
+        parent = Path(m.io.absolute(supplied))
+    else:
+        parent, guard = Path.home(), lambda: None
+    with m.io.HeldPath(str(parent), guard, directory=True) as held:
+        m._chain(held, guard)
+    return parent
 
 
 def window():
@@ -44,9 +65,7 @@ def binding():
 
 @pytest.fixture
 def setup(monkeypatch):
-    home = Path.home()
-    if any(os.stat(path).st_mode & 0o022 for path in (home, *home.parents)):
-        pytest.skip("No protected home ancestor chain for real file fixture")
+    home = fixture_parent()
     with tempfile.TemporaryDirectory(prefix="local-source-observe-", dir=home) as directory:
         root = Path(directory)
         host, control = root / "host", root / "control"
@@ -424,11 +443,11 @@ def test_real_ordinary_identity_noatime_acl_and_metadata(capsys):
     # Root may drop credentials only in this isolated fixture process. The
     # production observer never changes credentials or asks for elevation.
     source = str(Path(m.__file__).resolve())
+    if FIXTURE_PARENT_ENV in os.environ and os.geteuid() == 0:
+        pytest.fail("Configured ordinary fixture cannot be tested as root")
     if os.geteuid() != 0:
         original = m.identity()
-        home = Path.home()
-        if any(os.stat(path).st_mode & 0o022 for path in (home, *home.parents)) or not os.access(home, os.W_OK):
-            pytest.skip("Real ordinary identity lacks a protected writable home")
+        home = fixture_parent()
         def guard():
             assert m.identity() == original
         with tempfile.TemporaryDirectory(prefix="q2-source-ordinary-", dir=home) as directory:
@@ -436,16 +455,13 @@ def test_real_ordinary_identity_noatime_acl_and_metadata(capsys):
             path = parent / "fixed-evidence"
             path.write_bytes(b"ordinary evidence\n"); path.chmod(0o600)
             before, parent_before = m.io.metadata(path.stat()), m.io.metadata(parent.stat())
-            try:
-                with m.io.HeldPath(str(parent), guard, directory=True) as held:
-                    m._chain(held, guard)
-                    with m.io.HeldPath(str(path), guard) as file:
-                        m._acl(file.fd, guard)
-                        raw, eof = os.read(file.fd, 64), os.read(file.fd, 1)
-                        file.verify(); guard()
-                    m._chain(held, guard)
-            except (ValueError, OSError) as error:
-                pytest.skip("Real ordinary local source BLOCKED: " + json.dumps(m._error(error), sort_keys=True))
+            with m.io.HeldPath(str(parent), guard, directory=True) as held:
+                m._chain(held, guard)
+                with m.io.HeldPath(str(path), guard) as file:
+                    m._acl(file.fd, guard)
+                    raw, eof = os.read(file.fd, 64), os.read(file.fd, 1)
+                    file.verify(); guard()
+                m._chain(held, guard)
             assert raw == b"ordinary evidence\n" and eof == b""
             assert before == m.io.metadata(path.stat()) and parent_before == m.io.metadata(parent.stat())
             guard()
@@ -489,3 +505,25 @@ print(json.dumps(dict(status="PASS",ordinary_identity=True,noatime=True,metadata
     assert outcome == dict(status="PASS", ordinary_identity=True, noatime=True, metadata_stable=True, ancestor_acl=True)
     with capsys.disabled():
         print("LOCAL_SOURCE_ORDINARY identity=ordinary noatime=PASS ancestor_acl=PASS metadata=STABLE")
+
+
+def test_configured_fixture_requires_actual_ordinary_identity_without_skip(monkeypatch):
+    monkeypatch.setenv(FIXTURE_PARENT_ENV, str(Path.home()))
+    def identity_unavailable():
+        raise ValueError("LOCAL_SOURCE_ORDINARY_IDENTITY_REQUIRED")
+    monkeypatch.setattr(m, "identity", identity_unavailable)
+    with pytest.raises(ValueError, match="ORDINARY_IDENTITY_REQUIRED"):
+        fixture_parent()
+
+
+def test_configured_fixture_acl_failure_has_no_fallback_or_skip(monkeypatch):
+    # Pure negative setup control: this synthetic identity does not claim the
+    # real ordinary test passed, and no file contents or host facts are read.
+    monkeypatch.setenv(FIXTURE_PARENT_ENV, str(Path.home()))
+    monkeypatch.setattr(m, "identity", lambda: dict(uid=[1000] * 3, gid=[1000] * 3, supplementary_groups=[]))
+    def acl_present(held, guard):
+        raise ValueError("LOCAL_SOURCE_ACL_PRESENT")
+    monkeypatch.setattr(m, "_chain", acl_present)
+    monkeypatch.setattr(Path, "home", lambda: pytest.fail("An explicit test parent cannot fall back to home"))
+    with pytest.raises(ValueError, match="LOCAL_SOURCE_ACL_PRESENT"):
+        fixture_parent()
