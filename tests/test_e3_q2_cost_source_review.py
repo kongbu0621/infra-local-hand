@@ -645,7 +645,8 @@ def test_total_source_size_is_bounded_below_each_individual_limit():
         review(manifest, sources)
 
 
-@pytest.mark.parametrize("raw", [b"[" * 2000 + b"0" + b"]" * 2000, b"[" + b"0," * 100000 + b"0]"])
+@pytest.mark.parametrize("raw", [b"[" * 2000 + b"0" + b"]" * 2000, b"[" + b"0," * 100000 + b"0]"],
+                         ids=["excessive-depth", "excessive-node-count"])
 def test_source_depth_and_node_bounds_report_valueerror_not_recursionerror(raw):
     _, manifest, _ = fixture()
     manifest["sources"] = [source_row("receipt", raw)]
