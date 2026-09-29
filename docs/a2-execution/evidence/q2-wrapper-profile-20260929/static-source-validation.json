@@ -1,0 +1,27 @@
+{
+  "dependency_roles": [
+    "env",
+    "bash",
+    "ssh",
+    "identity_file",
+    "known_hosts"
+  ],
+  "field_io_attempted": false,
+  "guest_contacted": false,
+  "interpretation": "static supported syntax only; source admission, environment equivalence and H07 are not proven",
+  "legacy_reason": "HOST_WINDOW_WRAPPER_INTERPRETER_UNSUPPORTED",
+  "local_variables": [
+    "q1_vm"
+  ],
+  "original_source_bytes_in_argv": true,
+  "original_wrapper_identity_in_argv": true,
+  "profile_id": "env-bash-literal-ssh-v1",
+  "raw_executed": false,
+  "receipt_sha256": "700a17989fec4271973a0620e87dccee64ce30ef4f7082a97ab42e5b6648f119",
+  "schema": "local-hand-q2-wrapper-profile-analysis/v1",
+  "source_and_observed_hash_match": true,
+  "source_bytes": 328,
+  "source_execution_admitted": false,
+  "source_sha256": "aed91e80483d4df103f95c1d4cd5bf9bd18720f4dc51720702c329c937f93c63",
+  "supported_syntax": true
+}

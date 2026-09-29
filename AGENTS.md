@@ -508,12 +508,21 @@ at final_local_recheck. L5 receipt/source verification and L6 static dependency
 review are complete; L1–L6's limited local-evidence task is complete. Per-file
 read stability is not a simultaneous global snapshot or independent host attestation.
 The [remaining admission plan](docs/a2-execution/Q2_POST_SOURCE_ADMISSION_PLAN.md)
-records actual wrapper interpreter/local-variable incompatibility and the current
+records the wrapper compatibility boundary and the current
 indexed 12-KiB parent exceeding the writer's narrow filesystem profile. Raw text
 availability does not authorize execution; H07, billing, ordinary writer, filesystem
 peak/durability and full Q2 remain unproved. Do not rerun the same collection or
 repeat maintenance. Further observation, new source adoption or supervision changes
 retain their existing authority/change rules; there is no automatic retry or new batch.
+
+The subsequent [wrapper profile review](docs/a2-execution/Q2_WRAPPER_PROFILE_IMPLEMENTATION_REVIEW.md)
+records D `22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3`: an explicit finite
+env-Bash/literal-SSH profile and synthetic isolated tests within existing CLOSED
+H1/H4. The old default remains unchanged. There are 143 distinct targeted local
+test passes; independent reruns are a subset. The real source only matched
+statically and was not executed or adopted for execution. Source admission,
+actual tool/environment binding, H07 and all field readiness gates remain required.
+This implementation does not update old exact delivery packages or the frozen runtime.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

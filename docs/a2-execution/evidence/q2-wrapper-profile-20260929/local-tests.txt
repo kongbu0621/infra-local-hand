@@ -1,0 +1,18 @@
+Exact source commit: 22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3
+Python 3.12.14 / pytest 8.4.2
+
+Author run:
+python -m pytest -q tests/test_e3_q2_wrapper_profile.py tests/test_e3_q2_host_window_delivery.py
+........................................................................ [ 76%]
+......................                                                   [100%]
+94 passed in 1.38s
+
+Root separate regression (result transcribed from retained tool output):
+python -m pytest -q -rs tests/test_e3_q2_host_window_contract.py tests/test_e3_q2_host_window_receiver.py tests/test_e3_q2_reconciliation_entry.py tests/test_e3_q2_reconciliation_host_inputs.py
+49 passed in 1.27s
+
+Independent reviewer subset:
+3 passed, 65 deselected in 0.14s
+Subset of the 68 new tests; not added to 143 distinct targeted passes.
+
+First author run: 8 failed, 86 passed. New-test fixture/assertion errors only: seven mismatched expected error-code names and one missing model Window. Corrected only new tests; original delivery tests and product refusals retained.

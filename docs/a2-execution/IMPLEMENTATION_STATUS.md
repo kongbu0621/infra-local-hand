@@ -4,7 +4,9 @@
 
 **固定本地来源补证L1–L6限定任务已完成。** 最新89c725ef rerun3完整回执为`OBSERVED_PARTIAL / final_local_recheck`：11项均匹配且各自读前后元数据稳定，四份控制原文已返回；收件及静态依赖复核完成。见[限定完成复核](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)。
 
-旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理wrapper兼容性、H07、完整账单、普通writer及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
+随后已完成原 H1/H4 内的[有限 wrapper profile 兼容修复](Q2_WRAPPER_PROFILE_IMPLEMENTATION_REVIEW.md)，准确 D `22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3`，143 个不同定向测试通过。新 profile 显式选入；旧默认和全部现场门保持。原件仅静态匹配，未执行或采用为执行来源。
+
+旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、H07、完整账单、普通writer及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
 [Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
@@ -22,7 +24,7 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 冻结设计文件的历史 OPEN 标签保留，不覆盖后续有效关闭记录；本状态更新不产生新授权或新批次。
 
 当前继续离线核对完整账单、H07 首次远端截止与停止覆盖、wrapper 来源与执行绑定、文件系统分配及持久资格。
-此前[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)确认旧 anchor 缺历史 host 字段；wrapper 原件现已恢复，但现适配器不支持其准确语法。
+此前[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)确认旧 anchor 缺历史 host 字段；wrapper 原件已恢复，旧默认不支持其语法，后续显式 profile 已完成限定兼容验证；实际来源与环境绑定仍未闭合。
 写入器额外的 root-only 条件与 K4 当次报告的普通身份／父目录不匹配；这不构成放宽准入的理由。
 随后[v1 跨层绑定修复](Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)已在实现
 `14d19f1f52d687afa360353aadecd6ea17725310` 完成：记录／预检／账单身份一致性与写入时身份检查加强，

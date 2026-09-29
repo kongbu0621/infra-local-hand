@@ -1,0 +1,151 @@
+{
+  "schema": "local-hand-q2-wrapper-profile-implementation-review/v1",
+  "date": "2026-09-29",
+  "implementation_commit": "22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3",
+  "implementation_tree": "276c48f23c84f08cbe6457c9e27864f26d252d5e",
+  "parent_commit": "9d4c03cc80be5b6b156b3b3cee2f3301b2d3d04d",
+  "scope": "existing CLOSED H1/H4 isolated wrapper compatibility repair",
+  "authority": {
+    "R": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "H_A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+    "H_C": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+    "H_C_is_ancestor": true,
+    "H_K_L_nine_exact_documents_unchanged": true
+  },
+  "source_files": [
+    {
+      "path": "tests/e3_host/q2_host_window_delivery.py",
+      "bytes": 25962,
+      "sha256": "25e9c257c4d078a22e174ac1c470a8c83c499d49409e9b875801150c6d152278"
+    },
+    {
+      "path": "tests/test_e3_q2_wrapper_profile.py",
+      "bytes": 10722,
+      "sha256": "c481f008d45dce29a4e64ecedef3cd194368fbbec029b443c50b563e17606e8a"
+    }
+  ],
+  "local_verification": {
+    "python": "3.12.14",
+    "pytest": "8.4.2",
+    "profile_new_passed": 68,
+    "existing_delivery_passed": 26,
+    "four_file_entry_regression_passed": 49,
+    "distinct_targeted_passed": 143,
+    "independent_subset_passed": 3,
+    "subset_added_to_distinct_total": false,
+    "full_repository_locally_rerun": false,
+    "py_compile": "PASS",
+    "git_diff_check": "PASS",
+    "independent_review": "NO_MUSTFIX",
+    "first_author_run": {
+      "failed": 8,
+      "passed": 86,
+      "resolution": "Corrected only new test error-code assertions and missing model Window; no product gate relaxation."
+    }
+  },
+  "native_ci": {
+    "head_sha": "22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3",
+    "run_id": 36527720495,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36527720495",
+    "status": "completed",
+    "conclusion": "success",
+    "run_attempt": 1,
+    "created_at": "2026-09-29T05:46:01Z",
+    "updated_at": "2026-09-29T05:58:37Z",
+    "jobs": [
+      {
+        "id": 109274314462,
+        "name": "classify-change",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-29T05:46:03Z",
+        "completed_at": "2026-09-29T05:46:08Z",
+        "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36527720495/job/109274314462"
+      },
+      {
+        "id": 109274341500,
+        "name": "semantic-core (windows-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-29T05:46:10Z",
+        "completed_at": "2026-09-29T05:52:52Z",
+        "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36527720495/job/109274341500"
+      },
+      {
+        "id": 109274341501,
+        "name": "semantic-core (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-29T05:46:10Z",
+        "completed_at": "2026-09-29T05:58:36Z",
+        "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36527720495/job/109274341501"
+      }
+    ],
+    "linux": {
+      "source_passed": 2401,
+      "source_skipped": 51,
+      "root_collector_passed": 16,
+      "root_collector_skipped": 0,
+      "installed_wheel_status": "PASS",
+      "installed_checks": 94,
+      "installed_commands": 292,
+      "plugin_and_platform_smoke": "PASS",
+      "artifacts_uploaded": true
+    },
+    "windows": {
+      "source_passed": 636,
+      "source_skipped": 879,
+      "installed_wheel_status": "PASS",
+      "installed_checks": 10,
+      "installed_commands": 10,
+      "platform_smoke": "PASS",
+      "artifacts_uploaded": true
+    },
+    "limits": "Platform/privilege skips retain their original meaning; root collector is separately required. CI is isolated verification, not original-host or Q2 acceptance. Earlier failed SHA records are unchanged."
+  },
+  "limits": {
+    "profile": "env-bash-literal-ssh-v1",
+    "old_default_preserved": true,
+    "syntax_compatible": true,
+    "source_execution_admitted": false,
+    "private_source_executed": false,
+    "field_io_attempted": false,
+    "guest_contacted": false,
+    "marker_created": false,
+    "startup_batch_consumed": false,
+    "startup_batch_state": "NOT ISSUED",
+    "H07_proven": false,
+    "full_bill_proven": false,
+    "ordinary_writer_implemented": false,
+    "filesystem_peak_and_durability_proven": false,
+    "q2_accepted": false,
+    "production_supported": false,
+    "exact_old_delivery_packages_unchanged": true,
+    "frozen_runtime_unchanged": true
+  },
+  "evidence": [
+    {
+      "path": "independent-review.json",
+      "bytes": 1472,
+      "sha256": "6d542a320461790271fa4f1de4f6fddc65692a79392d1b11d41c486336576990"
+    },
+    {
+      "path": "local-tests.txt",
+      "bytes": 1036,
+      "sha256": "be918a905c9c3b043a479a08da5834b47a86ae816ea208016722fd7bef147782"
+    },
+    {
+      "path": "static-source-validation.json",
+      "bytes": 905,
+      "sha256": "71a3c96a404e39ca7c7b685a35d77671c8c529eb1d775c903b5018f5b1dbd930"
+    }
+  ],
+  "documentation_review": {
+    "independent_review": "NO_MUSTFIX",
+    "scope_and_test_count_consistent": true,
+    "no_private_literal_paths_endpoints_or_credentials_found": true,
+    "historical_failures_retained": true,
+    "no_field_or_production_admission": true,
+    "evidence_hashes_and_relative_links": "PASS"
+  }
+}

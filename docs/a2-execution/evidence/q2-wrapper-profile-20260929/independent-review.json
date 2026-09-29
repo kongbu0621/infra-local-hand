@@ -1,0 +1,34 @@
+{
+  "baseline": "9d4c03cc80be5b6b156b3b3cee2f3301b2d3d04d",
+  "source_sha256": "25e9c257c4d078a22e174ac1c470a8c83c499d49409e9b875801150c6d152278",
+  "test_sha256": "c481f008d45dce29a4e64ecedef3cd194368fbbec029b443c50b563e17606e8a",
+  "checks": {
+    "old_default_function_body_unchanged": true,
+    "controlled_environment_ast_unchanged": true,
+    "remote_deadline_proof_ast_unchanged": true,
+    "require_remote_deadline_ast_unchanged": true,
+    "dispatch_original_ast_unchanged": true,
+    "capture_framed_memory_ast_unchanged": true,
+    "q2_host_window_contract.py_bytes_unchanged": true,
+    "q2_reconciliation_entry.py_bytes_unchanged": true,
+    "private_T01_complete_regex_matches": true,
+    "private_T01_literal_directory_canonical": true,
+    "private_T01_port_in_bounds": true
+  },
+  "private_T01": {
+    "bytes": 328,
+    "sha256": "aed91e80483d4df103f95c1d4cd5bf9bd18720f4dc51720702c329c937f93c63",
+    "method": "AST literal regex extraction and static matching only; private bytes never executed"
+  },
+  "independent_tests": {
+    "python": "3.12.14",
+    "pytest": "8.4.2",
+    "command_selector": "analysis_is_ram_only or profile_success_cannot or synthetic_script",
+    "result": "3 passed, 65 deselected in 0.14s"
+  },
+  "author_test_log": "local-tests.txt",
+  "author_test_result": "94 passed; independently read report, not independently rerun full set",
+  "review": "NO_MUSTFIX",
+  "field_execution": false,
+  "source_execution_admitted": false
+}
