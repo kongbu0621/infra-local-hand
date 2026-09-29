@@ -6,7 +6,9 @@
 
 随后已完成原 H1/H4 内的[有限 wrapper profile 兼容修复](Q2_WRAPPER_PROFILE_IMPLEMENTATION_REVIEW.md)，准确 D `22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3`，143 个不同定向测试通过。新 profile 显式选入；旧默认和全部现场门保持。原件仅静态匹配，未执行或采用为执行来源。
 
-旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、H07、完整账单、普通writer及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
+普通操作者的[显式 v2 记录组件及纯账单绑定](Q2_ORDINARY_WRITER_IMPLEMENTATION_REVIEW.md)随后在原 H1/H2/H4 内完成。旧 v1 仍按 root 合同验证；生产 loader、原内核/FS 资格及 field readiness 拒绝保留。准确 D `c2373313` 的原生 CI 3/3 成功，Linux 新增 99 项均通过，包含 20 项真实普通身份操作；组件验证与原机资格分开登记。
+
+旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、H07、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
 [Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
@@ -25,10 +27,10 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 
 当前继续离线核对完整账单、H07 首次远端截止与停止覆盖、wrapper 来源与执行绑定、文件系统分配及持久资格。
 此前[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)确认旧 anchor 缺历史 host 字段；wrapper 原件已恢复，旧默认不支持其语法，后续显式 profile 已完成限定兼容验证；实际来源与环境绑定仍未闭合。
-写入器额外的 root-only 条件与 K4 当次报告的普通身份／父目录不匹配；这不构成放宽准入的理由。
+此前写入器的 root-only 条件与 K4 当次报告的普通身份／父目录不匹配。后续显式 v2 组件补齐普通身份支持，旧 v1 不放宽；这不证明当前 FS 或完整现场准入。
 随后[v1 跨层绑定修复](Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)已在实现
 `14d19f1f52d687afa360353aadecd6ea17725310` 完成：记录／预检／账单身份一致性与写入时身份检查加强，
-相关 Q2 回归 942 PASS / 5 SKIP。普通身份 writer 尚未实现；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
+相关 Q2 回归 942 PASS / 5 SKIP。当时普通身份 writer 尚未实现（后续组件结果见页首）；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
 准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，已获[准确 Owner 决定](../governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)
 关闭该范围 Gate 并授权 L1–L6；随后已完成[固定来源采集器与准确 RAM 交付](Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md)，
 相关开发回归 211 PASS / 3 SKIP及原准确交付保持。诊断修复`89c725ef`的六组236 PASS / 3 SKIP和准确离线包验证保持。首次调用及其后三份诊断的BLOCKED详见[历史收件记录](Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)。本次rerun3在六文件维护后完成11项读取和最终parent/marker/boot复检；每文件稳定不等于全体同刻稳定，当前分配量不等于完整账单。准确结果和后续支持差额见页首新复核。

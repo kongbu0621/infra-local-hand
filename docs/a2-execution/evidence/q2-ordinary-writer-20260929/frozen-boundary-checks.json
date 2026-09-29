@@ -1,0 +1,127 @@
+{
+  "exact_source_commit": "c2373313eb78aa55373cb0318d08d5f60424dafd",
+  "frozen": {
+    "baseline": "b777ec29d059cb87db66aed7aa3105ace52e798c",
+    "H_C_is_ancestor": true,
+    "source_syntax_python310": true,
+    "checks": [
+      {
+        "path": "docs/a2-execution/q2-host-window-consumption/REQUIREMENTS.md",
+        "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+        "sha256": "400fe60987be3de44f78ea747b51458f4ccdd08f21cff7654be0b9dd7e2d66cc",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-host-window-consumption/ARCHITECTURE.md",
+        "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+        "sha256": "82daca9a1a3dd31df423aa6e0904fd44d5e5c6aa19a6364ad3a632dcae84ac7c",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-host-window-consumption/IMPLEMENTATION_PLAN.md",
+        "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+        "sha256": "8e74f4721017b86c5957a120d6ee1ba33a814d66ffb801443234b6dda76f5881",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md",
+        "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+        "sha256": "8fff20a7a6c9b08a427ff6768b567d4a38cd0441e4a54ceaf8b3786c6abb1268",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md",
+        "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+        "sha256": "c18ef78c8fa22994d0270ce8e731d5a690c1f38fa5d2ba9fdb23491127572954",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md",
+        "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+        "sha256": "810c0f2d274b18536249076e0de8278b012b00d5f23fb6ea0ed6d569f65d61f8",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-local-source-evidence/REQUIREMENTS.md",
+        "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+        "sha256": "0ae9ee2403851191be6863c4fdd685d477586d94fccfb9312e11d19f160b15f7",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-local-source-evidence/ARCHITECTURE.md",
+        "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+        "sha256": "b31f342c6fbef4411daa63af1c4c7993cc28507fa989438959816c3e086bbc2d",
+        "unchanged": true
+      },
+      {
+        "path": "docs/a2-execution/q2-local-source-evidence/IMPLEMENTATION_PLAN.md",
+        "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+        "sha256": "9452714bcab444c68089e790f3e5ee378ec0c368fcd13f7fe5d0edc49212c200",
+        "unchanged": true
+      },
+      {
+        "path": "tests/e3_host/q2_host_kernel_facts.py",
+        "unchanged": true,
+        "sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02"
+      },
+      {
+        "path": "tests/e3_host/q2_reconciliation_entry.py",
+        "unchanged": true,
+        "sha256": "79b163c4a36ad69683910c1e595d3ec9675d269a6d00426869b44d4e58898bf7"
+      },
+      {
+        "path": "tests/e3_host/q2_host_window_billing.py",
+        "unchanged": true,
+        "sha256": "5c231b7d81969975208412ec86f762fa90aa1743c8aa706ce9b8ff6dbd8fe20a"
+      },
+      {
+        "path": ".github/workflows/local-hand-v0-1-validation.yml",
+        "unchanged": true,
+        "sha256": "c19ea692b7a04950a4bee69763a1af16878db897c1a2874bfce320936dbc81e6"
+      }
+    ]
+  },
+  "functions": {
+    "baseline": "b777ec29d059cb87db66aed7aa3105ace52e798c",
+    "checks": [
+      {
+        "ast_sha256": "8fb92e11b05da612e8b86bcb435e25b8c08b59fd547fb3dca1c9ba5839098bea",
+        "ast_unchanged": true,
+        "file": "tests/e3_host/q2_host_window_record.py",
+        "function": "_special"
+      },
+      {
+        "ast_sha256": "90bc88afeae59f1f3307a5701915beddd66ab2094d738bfa632d817fdcfb0508",
+        "ast_unchanged": true,
+        "file": "tests/e3_host/q2_host_window_record.py",
+        "function": "_boot"
+      },
+      {
+        "ast_sha256": "445219793220e03d6a90b02855fdf789a1338cf41c81103ed61d828df2323613",
+        "ast_unchanged": true,
+        "file": "tests/e3_host/q2_host_window_record.py",
+        "function": "_mount"
+      },
+      {
+        "ast_sha256": "545794876d1997be6c3493de7a0f5bdcd5427dced023760d279234dc385871ac",
+        "ast_unchanged": true,
+        "file": "tests/e3_host/q2_host_window_record.py",
+        "function": "_superblock"
+      },
+      {
+        "ast_sha256": "7cc895f9fe51d383315231adb6394e8c5ab491b6310f2d73a8fc36fb3ddfaac3",
+        "ast_unchanged": true,
+        "file": "tests/e3_host/q2_host_window_record.py",
+        "function": "filesystem"
+      },
+      {
+        "ast_sha256": "12c15fb9735f28986bc6274be5ab830137e604a676386daeda55ec428753d4af",
+        "ast_unchanged": true,
+        "file": "tests/e3_host/q2_host_window_contract.py",
+        "function": "require_field_readiness"
+      }
+    ],
+    "meaning": "Identity support only; no kernel, filesystem qualifier or field-readiness expansion",
+    "no_new_module": true
+  }
+}

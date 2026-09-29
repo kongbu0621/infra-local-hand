@@ -440,8 +440,8 @@ The already closed host scope's subsequent
 [v1 record binding repair](docs/a2-execution/Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)
 is implemented at `14d19f1f52d687afa360353aadecd6ea17725310`, with 942 passing and
 5 skipped scoped development tests. This hardens existing root v1 record and
-billing consistency; ordinary-identity writer support and field readiness remain
-unproven. It creates no new execution authority or consumed batch.
+billing consistency; ordinary-identity support was not implemented at that D,
+and field readiness remains unproven. It creates no new execution authority or consumed batch.
 
 Scope `LH-Q2-LOCAL-SOURCE-EVIDENCE-v1` is **CLOSED for L0–L6** at
 exact documentation A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`. Its
@@ -510,8 +510,8 @@ read stability is not a simultaneous global snapshot or independent host attesta
 The [remaining admission plan](docs/a2-execution/Q2_POST_SOURCE_ADMISSION_PLAN.md)
 records the wrapper compatibility boundary and the current
 indexed 12-KiB parent exceeding the writer's narrow filesystem profile. Raw text
-availability does not authorize execution; H07, billing, ordinary writer, filesystem
-peak/durability and full Q2 remain unproved. Do not rerun the same collection or
+availability does not authorize execution; H07, billing, ordinary-identity field
+qualification/entry assembly, filesystem peak/durability and full Q2 remain unproved. Do not rerun the same collection or
 repeat maintenance. Further observation, new source adoption or supervision changes
 retain their existing authority/change rules; there is no automatic retry or new batch.
 
@@ -523,6 +523,17 @@ test passes; independent reruns are a subset. The real source only matched
 statically and was not executed or adopted for execution. Source admission,
 actual tool/environment binding, H07 and all field readiness gates remain required.
 This implementation does not update old exact delivery packages or the frozen runtime.
+
+The subsequent [ordinary writer component review](docs/a2-execution/Q2_ORDINARY_WRITER_IMPLEMENTATION_REVIEW.md)
+records D `c2373313eb78aa55373cb0318d08d5f60424dafd` within existing CLOSED H1/H2/H4.
+Explicit ordinary precheck/intent/evidence v2 binds live process credentials,
+parent and actual created ownership, full protected name/fd chains and exact bills.
+Old root v1 and the existing production loader remain strict. Pure input consistency
+never grants execution or source adoption. Kernel/FS qualifiers and field refusal
+are unchanged; the local-only kernel read exception is not wired into consumption.
+Ordinary component testing does not establish original-host qualification, H07,
+complete common billing or Q2. Exact local/native results belong to that review;
+old runtime and private packages are not rebuilt, and the startup batch remains unissued.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

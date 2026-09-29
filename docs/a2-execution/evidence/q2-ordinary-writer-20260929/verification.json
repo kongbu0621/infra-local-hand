@@ -1,0 +1,132 @@
+{
+  "schema": "local-hand-q2-ordinary-writer-verification/v1",
+  "implementation_commit": "c2373313eb78aa55373cb0318d08d5f60424dafd",
+  "source_tree": "78634f75004548aaa6f42549fae45d9b60172c0c",
+  "parent": "b777ec29d059cb87db66aed7aa3105ace52e798c",
+  "authority": {
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+    "closure": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+    "scope": "existing H1/H2/H4 bounded component repair"
+  },
+  "files": {
+    "tests/e3_host/q2_host_window_contract.py": {
+      "bytes": 12679,
+      "sha256": "1afdf2b0faf230795ec7bb26f27639e2d1d06b8eeef078b6a7dae2e192ee288b"
+    },
+    "tests/e3_host/q2_host_window_record.py": {
+      "bytes": 37569,
+      "sha256": "e80ca8516b960be663fe43b33a3306abcb922645dd8170104025fa57b5272218"
+    },
+    "tests/e3_host/q2_reconciliation_bootstrap.py": {
+      "bytes": 25293,
+      "sha256": "a69191bb1336d6623f18fa28b00089a10ad06fc79b2d017dce3bdf79eadee53a"
+    },
+    "tests/test_e3_q2_host_window_ordinary.py": {
+      "bytes": 30170,
+      "sha256": "87cce77505d642b43d192f6f524efb8f656ca9d744b334147619ac7958a7b4fc"
+    },
+    "tests/test_e3_q2_host_window_ordinary_inputs.py": {
+      "bytes": 11461,
+      "sha256": "f80ccf80587f13b3ebcd737d3e7d933869a2bfe31ca0636d4541529514bacf0c"
+    }
+  },
+  "local": {
+    "python": "3.12.14",
+    "pytest": "8.4.2",
+    "identity": "root development environment",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_e3_q2_host_window_contract.py",
+      "tests/test_e3_q2_host_window_record.py",
+      "tests/test_e3_q2_host_window_ordinary.py",
+      "tests/test_e3_q2_host_window_ordinary_inputs.py",
+      "tests/test_e3_q2_reconciliation_host_inputs.py",
+      "tests/test_e3_q2_host_window_billing.py",
+      "tests/test_e3_q2_host_window_preflight.py",
+      "tests/test_e3_q2_host_window_delivery.py",
+      "tests/test_e3_q2_host_window_receiver.py",
+      "tests/test_e3_q2_wrapper_profile.py",
+      "tests/test_e3_q2_reconciliation_host_store.py",
+      "tests/test_e3_q2_reconciliation_entry.py"
+    ],
+    "passed": 306,
+    "skipped": 20,
+    "total": 326,
+    "seconds": 4.33,
+    "log_sha256": "7ee9a10f7b2c7cb5ad420968dc2f1239cc7cc2de3a3d17fc28540f7894536bca",
+    "skip_reason": "Real ordinary identity unavailable; no synthetic positive credentials",
+    "new_cases": 99,
+    "new_pure_passed": 79,
+    "new_real_ordinary_skipped": 20
+  },
+  "independent": {
+    "must_fix": [],
+    "resolved_findings": [
+      "ordinary_marker_and_leaf_name_fd_before_payload",
+      "ordinary_full_ancestor_name_fd_after_acl_before_mkdir_and_payload"
+    ],
+    "pure_subset_passed": 33,
+    "subset_not_additive": true
+  },
+  "ci": {
+    "run_id": 36531956523,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36531956523",
+    "head_sha": "c2373313eb78aa55373cb0318d08d5f60424dafd",
+    "status": "COMPLETED",
+    "conclusion": "SUCCESS",
+    "jobs_succeeded": 3,
+    "linux": {
+      "job_id": 109287420962,
+      "source_passed": 2500,
+      "source_skipped": 51,
+      "root_collector_passed": 16,
+      "root_collector_skipped": 0,
+      "wheel_checks": 94,
+      "wheel_commands": 292,
+      "ordinary_real_cases": 20,
+      "ordinary_total_cases": 61,
+      "ordinary_input_cases": 38,
+      "new_source_passes_vs_previous": 99,
+      "ordinary_skip_entries": []
+    },
+    "windows": {
+      "job_id": 109287420961,
+      "source_passed": 636,
+      "source_skipped": 918,
+      "wheel_checks": 10,
+      "wheel_commands": 10,
+      "new_platform_skips": {
+        "ordinary_module": 1,
+        "ordinary_inputs": 38
+      }
+    },
+    "ordinary_evidence": "Full source success, complete -rs list without new ordinary tests, exact-source case count, mandatory real ordinary fixture; no per-node JUnit claim"
+  },
+  "preserved": {
+    "frozen_runtime": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+    "old_exact_delivery_packages_unchanged": true,
+    "kernel_exception_expanded": false,
+    "field_readiness": false,
+    "host_action_performed": false,
+    "guest_contacted": false,
+    "marker_created_on_original_host": false,
+    "owner_issued": false,
+    "startup_batch": "NOT_ISSUED",
+    "full_q2_accepted": false
+  },
+  "limits": [
+    "getresuid/getresgid/groups do not attest fsuid/fsgid/capabilities/user namespace",
+    "Real syscall tests model readiness, boot and filesystem qualification; no original-host durability proof",
+    "Indexed 12 KiB field parent remains unsupported by old narrow filesystem profile",
+    "Parent growth common accounting, historical/future/native audit cost coverage and H07 remain incomplete"
+  ]
+}

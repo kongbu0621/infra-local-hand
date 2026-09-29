@@ -1,0 +1,60 @@
+{
+  "baseline": "b777ec29d059cb87db66aed7aa3105ace52e798c",
+  "source_stage": "reviewed_worktree_before_D",
+  "files": {
+    "tests/e3_host/q2_host_window_contract.py": {
+      "bytes": 12679,
+      "sha256": "1afdf2b0faf230795ec7bb26f27639e2d1d06b8eeef078b6a7dae2e192ee288b"
+    },
+    "tests/e3_host/q2_host_window_record.py": {
+      "bytes": 37569,
+      "sha256": "e80ca8516b960be663fe43b33a3306abcb922645dd8170104025fa57b5272218"
+    },
+    "tests/e3_host/q2_reconciliation_bootstrap.py": {
+      "bytes": 25293,
+      "sha256": "a69191bb1336d6623f18fa28b00089a10ad06fc79b2d017dce3bdf79eadee53a"
+    },
+    "tests/test_e3_q2_host_window_ordinary.py": {
+      "bytes": 30170,
+      "sha256": "87cce77505d642b43d192f6f524efb8f656ca9d744b334147619ac7958a7b4fc"
+    },
+    "tests/test_e3_q2_host_window_ordinary_inputs.py": {
+      "bytes": 11461,
+      "sha256": "f80ccf80587f13b3ebcd737d3e7d933869a2bfe31ca0636d4541529514bacf0c"
+    }
+  },
+  "checks": {
+    "_special_ast_unchanged": true,
+    "_boot_ast_unchanged": true,
+    "_mount_ast_unchanged": true,
+    "_superblock_ast_unchanged": true,
+    "_geometry_ast_unchanged": true,
+    "filesystem_ast_unchanged": true,
+    "verify_existing_ast_unchanged": true,
+    "field_readiness_ast_unchanged": true,
+    "old_loader_ast_unchanged": true,
+    "tests/e3_host/q2_host_window_billing.py_bytes_unchanged": true,
+    "tests/e3_host/q2_reconciliation_io.py_bytes_unchanged": true,
+    "tests/e3_host/q2_reconciliation_entry.py_bytes_unchanged": true,
+    "tests/e3_host/q2_host_window_delivery.py_bytes_unchanged": true,
+    "H_REQUIREMENTS_frozen": true,
+    "H_ARCHITECTURE_frozen": true,
+    "H_IMPLEMENTATION_PLAN_frozen": true
+  },
+  "mustfix": [],
+  "resolved_findings": [
+    "ordinary_marker_and_leaf_name_fd_before_payload",
+    "ordinary_full_ancestor_name_fd_after_acl_before_mkdir_and_payload"
+  ],
+  "independent_test_result": "33 passed, 5 deselected in 0.50s",
+  "independent_test_scope": "pure input requote/rehash/crossbinding subset",
+  "real_ordinary_runtime_result": "PENDING_NATIVE_CI",
+  "private_wrapper_executed": false,
+  "field_readiness": false,
+  "kernel_exception_expanded": false,
+  "full_q2_accepted": false,
+  "subsequent_exact_source_commit": "c2373313eb78aa55373cb0318d08d5f60424dafd",
+  "subsequent_exact_source_tree": "78634f75004548aaa6f42549fae45d9b60172c0c",
+  "subsequent_ci_record": "native-ci.json",
+  "review_time_result_note": "The PENDING_NATIVE_CI value records the independent review time. Final native CI is separately recorded in native-ci.json and verification.json."
+}

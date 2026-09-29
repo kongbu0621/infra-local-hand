@@ -1,0 +1,463 @@
+{
+  "schema": "infra-local-hand-q2-ordinary-native-ci-review/v1",
+  "repository": "kongbu0621/infra-local-hand",
+  "source_commit": "c2373313eb78aa55373cb0318d08d5f60424dafd",
+  "source_tree": "78634f75004548aaa6f42549fae45d9b60172c0c",
+  "run": {
+    "id": 36531956523,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36531956523",
+    "event": "push",
+    "attempt": 1,
+    "status": "completed",
+    "conclusion": "success",
+    "started_at_utc": "2026-09-29T06:36:34Z",
+    "updated_at_utc": "2026-09-29T06:49:05Z"
+  },
+  "observed_at_utc": "2026-09-29T06:51:39.895Z",
+  "jobs_successful": 3,
+  "jobs_failed": 0,
+  "linux": {
+    "job_id": 109287420962,
+    "conclusion": "success",
+    "source": {
+      "passed": 2500,
+      "skipped": 51,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 452.89,
+      "summary_timestamp_utc": "2026-09-29T06:44:35.7008487Z",
+      "skip_groups": {
+        "tests/test_e3_q2_host_window_record.py": 21,
+        "tests/test_e3_q2_reconciliation_collect.py": 16,
+        "tests/test_e3_q2_reconciliation_io_records.py": 1,
+        "tests/test_e3_quota_q2_namespace.py": 1,
+        "tests/test_local_hand_jobs_quota_client.py": 11,
+        "tests/test_local_hand_jobs_runner.py": 1
+      }
+    },
+    "root_collector": {
+      "passed": 16,
+      "skipped": 0,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 0.8,
+      "summary_timestamp_utc": "2026-09-29T06:37:01.9607363Z"
+    },
+    "ordinary_reader": {
+      "identity": "ordinary",
+      "noatime": "PASS",
+      "ancestor_acl": "PASS",
+      "metadata": "STABLE"
+    },
+    "installed_wheel": {
+      "status": "PASS",
+      "checks": 94,
+      "commands": 292,
+      "summary_timestamp_utc": "2026-09-29T06:48:57.7521603Z"
+    },
+    "plugin_build": "success",
+    "bootstrap_syntax": "success",
+    "repeat_bootstrap_smoke_identity": "PASS",
+    "evidence_archive": "success"
+  },
+  "windows": {
+    "job_id": 109287420961,
+    "conclusion": "success",
+    "source": {
+      "passed": 636,
+      "skipped": 918,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 350.79,
+      "summary_timestamp_utc": "2026-09-29T06:43:11.9207602Z"
+    },
+    "installed_wheel": {
+      "status": "PASS",
+      "checks": 10,
+      "commands": 10,
+      "summary_timestamp_utc": "2026-09-29T06:43:26.5991260Z"
+    },
+    "new_ordinary_platform_skips": {
+      "ordinary_module": 1,
+      "ordinary_inputs_cases": 38
+    },
+    "platform_smoke": "success",
+    "evidence_archive": "success"
+  },
+  "ordinary_coverage": {
+    "assessment": "Native Linux completion of the 20 real-ordinary-identity cases is supported by combined exact-source, full-suite and complete skip-list evidence.",
+    "evidence_granularity": "The workflow uses pytest -q -rs: no individual-node PASS transcript or source-suite JUnit was supplied. This report does not claim such a transcript.",
+    "exact_test_source": {
+      "path": "tests/test_e3_q2_host_window_ordinary.py",
+      "git_blob_sha": "204d19aab0a8e99af1eb5899f80fda62d2158afc",
+      "static_parameterized_cases": 61,
+      "real_ordinary_fixture_cases": 20,
+      "ordinary_nodes": [
+        {
+          "name": "test_real_ordinary_creation_fsync_readback_noatime_and_acl",
+          "line": 264,
+          "count": 1,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_acl_present_or_unknown_is_rejected_before_creation",
+          "line": 334,
+          "count": 2,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_noatime_denial_has_no_weaker_open_fallback",
+          "line": 345,
+          "count": 1,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_failed_creation_retains_partial_and_prevents_replay",
+          "line": 361,
+          "count": 2,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_counterfactual_identity_drift_refuses_before_read_or_write",
+          "line": 386,
+          "count": 3,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_counterfactual_saved_id_change_blocks_retained_read",
+          "line": 401,
+          "count": 1,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_counterfactual_postcreate_drift_retains_partial_without_more_io",
+          "line": 411,
+          "count": 2,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_file_owner_mismatch_is_rejected_before_payload_write",
+          "line": 443,
+          "count": 1,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_acl_stage_name_replacement_refuses_before_payload",
+          "line": 470,
+          "count": 2,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_later_acl_stage_ancestor_replacement_blocks_stale_fd_writes",
+          "line": 502,
+          "count": 2,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_historical_parent_inode_cannot_be_laundered_with_matching_hash",
+          "line": 556,
+          "count": 1,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_current_reader_and_historical_issuer_groups_are_separate",
+          "line": 571,
+          "count": 1,
+          "ordinary_fixture": true
+        },
+        {
+          "name": "test_two_real_ordinary_processes_compete_for_single_receipt",
+          "line": 591,
+          "count": 1,
+          "ordinary_fixture": true
+        }
+      ]
+    },
+    "exact_input_test_source": {
+      "path": "tests/test_e3_q2_host_window_ordinary_inputs.py",
+      "git_blob_sha": "432857961787c5988d3460d2679708f8e8dee8bf",
+      "static_parameterized_cases": 38
+    },
+    "native_source_full_suite_success": true,
+    "full_skip_list_examined": true,
+    "new_ordinary_skip_entries": [],
+    "configured_ordinary_parent_seen_in_source_step_environment": true,
+    "configured_fixture_behavior": "With LOCAL_HAND_Q2_TEST_PARENT configured, root UID/GID fails; ordinary fixture checks complete UID/GID equality, real group list, protected ancestry and actual parent owner. It cannot skip on missing ordinary credentials in this CI configuration.",
+    "aggregate_cross_check": {
+      "previous_run_id": 36527720495,
+      "previous_source_commit": "22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3",
+      "previous_linux_passed": 2401,
+      "previous_linux_skipped": 51,
+      "added_cases": 99,
+      "added_passes": 99,
+      "additional_skips": 0
+    },
+    "boundary": "Readiness, boot identity and ext4 qualification are explicitly modeled in successful syscall fixtures. Real ordinary credentials, local filesystem/syscall behavior and adversarial refusal are tested; original-host readiness, native billing completeness and Q2/Q3 acceptance are not established."
+  },
+  "log_digests": {
+    "definition": "SHA-256 over UTF-8 encoding of the complete decoded text returned by github_fetch_workflow_job_logs; includes source/root-collector/wheel/smoke records. Not a ZIP digest.",
+    "linux": {
+      "decoded_log_utf8_bytes": 97676,
+      "decoded_log_utf8_sha256": "746fc15b7ce6f3b34fa5c4f9b6edd41f84bb49daff59a040372e4eff3aea44a0",
+      "source_skip_lines": 51,
+      "new_ordinary_skip_lines": []
+    },
+    "windows": {
+      "decoded_log_utf8_bytes": 200856,
+      "decoded_log_utf8_sha256": "b1256a864f26d568dc284ae95d739b7f173cdbd63adfcbab48e788b4571c101f",
+      "source_skip_lines": 826,
+      "new_ordinary_skip_lines": [
+        "2026-09-29T06:43:11.7591138Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary.py:20: Ordinary writer uses Linux credentials, procfs and protected fds",
+        "2026-09-29T06:43:11.7635660Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary_inputs.py:59: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7636482Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary_inputs.py:81: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7637302Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary_inputs.py:87: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7638118Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary_inputs.py:102: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7638935Z SKIPPED [5] tests\\test_e3_q2_host_window_ordinary_inputs.py:109: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7640554Z SKIPPED [9] tests\\test_e3_q2_host_window_ordinary_inputs.py:132: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7641392Z SKIPPED [10] tests\\test_e3_q2_host_window_ordinary_inputs.py:152: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7642217Z SKIPPED [8] tests\\test_e3_q2_host_window_ordinary_inputs.py:178: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7643028Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary_inputs.py:207: Strict ordinary host intent uses the Linux record validator",
+        "2026-09-29T06:43:11.7643841Z SKIPPED [1] tests\\test_e3_q2_host_window_ordinary_inputs.py:218: Strict ordinary host intent uses the Linux record validator"
+      ]
+    }
+  },
+  "jobs": [
+    {
+      "id": 109287391200,
+      "name": "classify-change",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 6,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109287420961,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 6,
+          "name": "Validate exact checked-out commit identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Compile Local Hand shared core and tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 8,
+          "name": "Prepare isolated protected parent for ordinary local-read tests",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 9,
+          "name": "Verify root-only collector against isolated real root-owned files",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 10,
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "conclusion": "success"
+        },
+        {
+          "number": 11,
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 12,
+          "name": "Build and verify an independently installed wheel",
+          "conclusion": "success"
+        },
+        {
+          "number": 13,
+          "name": "Validate PR whitespace and diff boundary",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 14,
+          "name": "Validate Linux bootstrap syntax",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 15,
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 16,
+          "name": "Validate Windows bootstrap parses",
+          "conclusion": "success"
+        },
+        {
+          "number": 17,
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "conclusion": "success"
+        },
+        {
+          "number": 18,
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "conclusion": "success"
+        },
+        {
+          "number": 19,
+          "name": "Validate Windows exact ACL replacement",
+          "conclusion": "success"
+        },
+        {
+          "number": 20,
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "conclusion": "success"
+        },
+        {
+          "number": 21,
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "conclusion": "success"
+        },
+        {
+          "number": 22,
+          "name": "Validate Windows runner propagates native worker exit code",
+          "conclusion": "success"
+        },
+        {
+          "number": 23,
+          "name": "Validate Windows Junction roots fail closed",
+          "conclusion": "success"
+        },
+        {
+          "number": 24,
+          "name": "Preserve isolated acceptance evidence",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109287420962,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 6,
+          "name": "Validate exact checked-out commit identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Compile Local Hand shared core and tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 8,
+          "name": "Prepare isolated protected parent for ordinary local-read tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 9,
+          "name": "Verify root-only collector against isolated real root-owned files",
+          "conclusion": "success"
+        },
+        {
+          "number": 10,
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "conclusion": "success"
+        },
+        {
+          "number": 11,
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "conclusion": "success"
+        },
+        {
+          "number": 12,
+          "name": "Build and verify an independently installed wheel",
+          "conclusion": "success"
+        },
+        {
+          "number": 13,
+          "name": "Validate PR whitespace and diff boundary",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 14,
+          "name": "Validate Linux bootstrap syntax",
+          "conclusion": "success"
+        },
+        {
+          "number": 15,
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 16,
+          "name": "Validate Windows bootstrap parses",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 17,
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 18,
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 19,
+          "name": "Validate Windows exact ACL replacement",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 20,
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 21,
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 22,
+          "name": "Validate Windows runner propagates native worker exit code",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 23,
+          "name": "Validate Windows Junction roots fail closed",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 24,
+          "name": "Preserve isolated acceptance evidence",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "review_actions": {
+    "repository_modified": false,
+    "workflow_rerun": false,
+    "workflow_modified": false,
+    "local_tests_executed": false,
+    "original_host_material_read": false
+  },
+  "boundaries": [
+    "The 51 Linux source skips remain skips; 16 root-collector cases are separately exercised by the mandatory root step.",
+    "Windows Linux-specific ordinary cases are platform skips, not Windows support.",
+    "Results bind source D only; documentation commits do not inherit a claimed new CI run.",
+    "All Q2/Q3/original-host/production acceptance claims remain outside this CI result."
+  ]
+}
