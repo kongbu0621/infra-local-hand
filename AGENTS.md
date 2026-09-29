@@ -491,12 +491,20 @@ attempted, ten remain unattempted; observed/matched/raw and ordinary bytes are z
 M01 metadata is from the parent-relative no-follow stat before file open, not
 an opened-file fstat or a completed file stability/ACL check. Final parent/marker/
 boot rechecks were not reached; initial parent success is not permanent admission.
-The [next maintenance handoff](docs/a2-execution/Q2_FIXED_OBJECT_METADATA_HANDOFF.md)
-is an independent metadata-only inventory of all eleven fixed files and the
-necessary fixed parent chains. It is prepared, not dispatched to the host by this
-review. It creates no permission-change or additional invocation authority and
-does not alter collector fail-at-first-rejection or Q2 acceptance. Owner access
-bits alone cannot prove that removing shared group write has no operational impact.
+The [maintenance receipt review](docs/a2-execution/Q2_FIXED_OBJECT_MAINTENANCE_REVIEW.md)
+now records receipt of the eleven-file/eight-directory inventory and the six-file
+permission-maintenance report. Cross-report identities and the exact 0664-to-0644
+delta match. The local executor reports maintenance after Owner's six-file instruction;
+this cloud review did not perform host operations. Shared-write dependency remains
+UNKNOWN, with no retained explicit acceptance of that unknown. Do not silently mark
+it resolved, repeat the maintenance, or undo the completed change. ctime changes and
+the limits of report-only evidence remain recorded. The latest actual diagnostic
+is still rerun2 BLOCKED; no post-maintenance observation has been received.
+The [one-observation handoff](docs/a2-execution/Q2_POST_MAINTENANCE_OBSERVATION_HANDOFF.md)
+is prepared, not issued. Same-scope observation requires an explicit Owner instruction
+under the original L5 rule, not approval of A again. Preserve the exact D, source
+pins, first-failure stop, private receipts and no automatic retry. This review
+does not change the protection contract or Q2 acceptance.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

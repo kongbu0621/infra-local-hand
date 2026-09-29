@@ -1,8 +1,9 @@
 # E1–E3 实现候选状态
 
-## 2026-09-28 当前接续
+## 2026-09-29 当前接续
 
 **K4 完整本地观察回执已收到并完成限定核验，无需重跑或重交。固定本地来源首次L5、89c725ef诊断、rerun1及rerun2均返回BLOCKED；最新rerun2已越过父目录初始检查，在fixed_objects首项M01因0664的group-write位被拒绝。尝试1项、观察/匹配/raw均0，其余10项未尝试，4份原文仍缺。已完成收件与阻断复核，不自动改权限或重跑。**
+**新增进展：11文件/8目录盘点与六文件权限维护两份原件已核对；本地执行方报告六项0664→0644完成，ctime变化保留，共享依赖仍UNKNOWN。维护后尚无新观察，下一次准确89c725ef交接已准备、未发起。** 见[维护复核](Q2_FIXED_OBJECT_MAINTENANCE_REVIEW.md)及[单次观察交接](Q2_POST_MAINTENANCE_OBSERVATION_HANDOFF.md)。无需重复盘点或改权，维护PASS不等于Q2 PASS。
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
 [Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
 回执仍为 `OBSERVED_PARTIAL` / `final_local_recheck`，不证明完整 Q2 准入。
@@ -26,7 +27,7 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 相关 Q2 回归 942 PASS / 5 SKIP。普通身份 writer 尚未实现；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
 准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，已获[准确 Owner 决定](../governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)
 关闭该范围 Gate 并授权 L1–L6；随后已完成[固定来源采集器与准确 RAM 交付](Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md)，
-相关开发回归 211 PASS / 3 SKIP，准确源码、普通身份 CI 与交付验证见该复核。首次原host调用已返回父目录保护阻断，不证明Q2准入；诊断缺口已在 `89c725ef` 修复，相关六组236 PASS / 3 SKIP，准确新包离线核对完成。后续诊断与rerun1分别在control_parent祖先index=3、4返回group-write阻断。最新另行发起的rerun2已越过两条父链的初始保护和ACL检查，取得marker前检及两父目录有限FS事实，在首个文件M01的初始stat保护检查返回BLOCKED；最终全链复检未到达，不能宣称目录永久合格。下一步按[维护盘点交接](Q2_FIXED_OBJECT_METADATA_HANDOFF.md)，一次核对11固定文件及必要父链，形成精确差额/影响方案。保护合同不变；这不授权改权限或自动再次观察。
+相关开发回归 211 PASS / 3 SKIP，准确源码、普通身份 CI 与交付验证见该复核。首次原host调用已返回父目录保护阻断，不证明Q2准入；诊断缺口已在 `89c725ef` 修复，相关六组236 PASS / 3 SKIP，准确新包离线核对完成。后续诊断与rerun1分别在control_parent祖先index=3、4返回group-write阻断。最新另行发起的rerun2已越过两条父链的初始保护和ACL检查，取得marker前检及两父目录有限FS事实，在首个文件M01的初始stat保护检查返回BLOCKED；最终全链复检未到达，不能宣称目录永久合格。该次后续盘点及六文件维护原件现已收件复核，见[维护复核](Q2_FIXED_OBJECT_MAINTENANCE_REVIEW.md)；下一步为已准备的单次观察交接。保护合同不变；新观察尚未发起。
 现有本地观察不能补齐这些事实；`allow_run`、`allow_consume`、Q2/Q3 验收与 production supported 均仍为 false。
 新作业生产入口继续保留 `E3_SUPERVISION_UNVERIFIED`；E1–E3 未全部完成，E4–E6 及 S2 未因此启动。
 

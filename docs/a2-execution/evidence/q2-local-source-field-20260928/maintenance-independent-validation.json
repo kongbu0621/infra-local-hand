@@ -1,0 +1,178 @@
+{
+  "schema": "q2-fixed-object-maintenance-review/v1",
+  "status": "CROSS_REPORT_STATIC_CHECKS_PASS_NOT_HOST_ATTESTATION",
+  "inputs": [
+    {
+      "filename": "q2-fixed-object-metadata-inventory-20260928.md",
+      "bytes": 13181,
+      "sha256": "e5b6cba1a8d72ba5d510b6e6b76d90f73725a419a315d6bcd0505ed258a39da9"
+    },
+    {
+      "filename": "q2-fixed-object-permission-maintenance-20260929.md",
+      "bytes": 3087,
+      "sha256": "bc1307b7d42d4338684809d94bbf25332a2ecef083487f67b00778b79982ec38"
+    }
+  ],
+  "handoff_commit": "9cc25bccda9d631e3e6c5b975963523a283bec13",
+  "implementation_commit": "89c725efd61dad11b0cc9ae11c3c08a941e3111a",
+  "check_count": 29,
+  "checks": [
+    {
+      "id": "inventory_exact_received_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "maintenance_exact_received_bytes_and_prior_screenshot_digest",
+      "status": "PASS"
+    },
+    {
+      "id": "maintenance_references_received_inventory",
+      "status": "PASS"
+    },
+    {
+      "id": "pinned_handoff_exact_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "handoff_commit_tree_parent",
+      "status": "PASS"
+    },
+    {
+      "id": "D_is_handoff_ancestor",
+      "status": "PASS"
+    },
+    {
+      "id": "diagnostic_pin_matches_registered_D",
+      "status": "PASS"
+    },
+    {
+      "id": "rerun2_digest_and_length_match_retained_review",
+      "status": "PASS"
+    },
+    {
+      "id": "manifest_digest_matches_retained_review",
+      "status": "PASS"
+    },
+    {
+      "id": "fixed_ids_and_cardinality",
+      "status": "PASS"
+    },
+    {
+      "id": "fixed_set_paths_and_identities_unique",
+      "status": "PASS"
+    },
+    {
+      "id": "file_types_links_sampled_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "directory_types_masks_sampled_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "all_file_mask_arithmetic",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_six_difference_ids",
+      "status": "PASS"
+    },
+    {
+      "id": "cross_report_identity_size_before_M01",
+      "status": "PASS"
+    },
+    {
+      "id": "cross_report_identity_size_before_M02",
+      "status": "PASS"
+    },
+    {
+      "id": "cross_report_identity_size_before_M04",
+      "status": "PASS"
+    },
+    {
+      "id": "cross_report_identity_size_before_M05",
+      "status": "PASS"
+    },
+    {
+      "id": "cross_report_identity_size_before_M06",
+      "status": "PASS"
+    },
+    {
+      "id": "cross_report_identity_size_before_M07",
+      "status": "PASS"
+    },
+    {
+      "id": "all_six_only_group_write_removed",
+      "status": "PASS"
+    },
+    {
+      "id": "reported_ctime_moves_forward",
+      "status": "PASS"
+    },
+    {
+      "id": "unchanged_five_modes_consistent",
+      "status": "PASS"
+    },
+    {
+      "id": "unchanged_eight_directory_modes_consistent",
+      "status": "PASS"
+    },
+    {
+      "id": "total_caps_and_bounded_read_arithmetic",
+      "status": "PASS"
+    },
+    {
+      "id": "fixed_source_indices_and_raw_flags",
+      "status": "PASS"
+    },
+    {
+      "id": "shared_dependency_still_unknown",
+      "status": "PASS"
+    },
+    {
+      "id": "maintenance_authority_and_no_diagnostic_assertions_retained",
+      "status": "PASS"
+    }
+  ],
+  "fixed_file_count": 11,
+  "unique_directory_node_count": 8,
+  "changed_ids": [
+    "M01",
+    "M02",
+    "M04",
+    "M05",
+    "M06",
+    "M07"
+  ],
+  "reported_mode_delta": {
+    "before": "0664",
+    "after": "0644",
+    "removed_bits": "00020",
+    "other_mode_bits_changed": false
+  },
+  "reported_ctime_changes_retained": true,
+  "shared_write_dependency": "UNKNOWN",
+  "explicit_owner_acceptance_of_unknown_retained": false,
+  "maintenance_authority_basis": "OWNER_SIX_FILE_INSTRUCTION_IN_RECEIPT_AND_PREVIOUS_UPLOADED_SCREENSHOT",
+  "maintenance_outcome_basis": "LOCAL_EXECUTOR_REPORT_NOT_INDEPENDENT_HOST_MEASUREMENT",
+  "latest_actual_diagnostic": "rerun2_LOCAL_SOURCE_EVIDENCE_BLOCKED",
+  "post_maintenance_observation_issued": false,
+  "post_maintenance_observation_received": false,
+  "host_dispatched_by_this_review": false,
+  "target_contents_read_by_this_review": false,
+  "target_permissions_changed_by_this_review": false,
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "allow_run": false,
+  "allow_consume": false,
+  "limits": [
+    "Reported paired samples are not an atomic snapshot or continuing stability proof",
+    "Inventory omits per-object timestamp values; maintenance ctime-before is not independently matched to underlying inventory samples",
+    "Unchanged target content is executor report; no new target content hashes were obtained",
+    "Base ACL and postflight statements are local report evidence, not independent host measurements",
+    "Exact prior P/M/T and package bindings are retained; no package rebuild or execution was performed in this review",
+    "Report file modes and host process/repository state are not proved by uploaded bytes",
+    "Maintenance PASS does not change old BLOCKED receipts or establish current collector admission",
+    "Owner six-file instruction is not extended to another observation or explicit acceptance of unresolved shared-write impact"
+  ]
+}
