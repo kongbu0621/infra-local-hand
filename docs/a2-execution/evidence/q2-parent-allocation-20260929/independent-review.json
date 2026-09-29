@@ -1,0 +1,162 @@
+{
+  "base_commit": "bd3f5e038f9517b702590aa0ef6fdda99757562d",
+  "closed_findings": [
+    {
+      "fix": "Both base summary identifiers must equal strict intent precheck host bill summary before observation use.",
+      "found_by": "root",
+      "id": "standalone-machine-binding",
+      "issue": "New raw-bound standalone quote could previously quote observation under different host/guest identifiers while composite rejected it.",
+      "verification": "Independently read fixed code and two direct negative tests plus resealed guest/plan test."
+    }
+  ],
+  "implementation_commit": "530a2a45bc6e96270771ccf266793e471d8408ee",
+  "implementation_tree": "ce3ac229ed0a083875fb49ddcfa2f086fd0833f5",
+  "independent_cross_review": {
+    "must_fix": [],
+    "scope": "billing/bootstrap arithmetic, deduplication and explicit input relationships; final machine-binding fix re-read",
+    "test_suite_repeated": false
+  },
+  "must_fix": [],
+  "proof_limits": {
+    "allocation_peak_proven": false,
+    "causal_growth_proven": false,
+    "complete_host_inventory_proven": false,
+    "durability_proven": false,
+    "field_ready": false,
+    "frozen_runtime_changed": false,
+    "full_bill_proven": false,
+    "guest_connected_by_review": false,
+    "h07_proven": false,
+    "host_invoked_by_review": false,
+    "indexed_12k_parent_qualification_proven": false,
+    "native_audit_budget_proven": false,
+    "new_kernel_read_exception": false,
+    "new_persistent_observation_object": false,
+    "observation_is_causal_cost_certificate": false,
+    "observation_is_signed_or_independently_attested_source": false,
+    "observation_is_simultaneous_snapshot": false,
+    "old_parent_baseline_classification_or_exclusion_proven": false,
+    "parent_baseline_cost_status": "UNPROVEN",
+    "source_admission_proven": false
+  },
+  "review_date": "2026-09-29",
+  "review_result": "PASS_FOR_SCOPED_COMPONENT",
+  "reviewed_properties": {
+    "actual_plus_growth_future_minus_same_growth": true,
+    "already_covered_parent_or_alias_rejected": true,
+    "first_endpoint_retained_once": true,
+    "growth_derived_from_bound_full_metadata": true,
+    "later_rechecks_do_not_replace_first_endpoint": true,
+    "legacy_loaders_and_joint_admission_reject_new_schema": true,
+    "marker_pool_total_unchanged": true,
+    "no_new_parent_inode": true,
+    "observation_export_deepcopy_without_io_or_clock_refresh": true,
+    "ordinary_only_no_historical_backfill": true,
+    "parent_baseline_not_zeroed_or_classified": true,
+    "shrinking_blocks_rejected_by_new_consumer": true,
+    "strict_intent_precheck_window_plan_machine_and_snapshot_binding": true,
+    "summary_capture_and_same_device_adjusted_together": true
+  },
+  "schema": "local-hand-q2-parent-allocation-independent-review/v1",
+  "scope": {
+    "A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+    "C": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+    "C_is_ancestor_of_D": true,
+    "H1_changed": false,
+    "R": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "basis": "Retention of existing first fstat facts, same marker-pool actual/future classification, explicit pure bill/input composition and isolated validation; no changed authority, source adoption, limits or field entry.",
+    "gate_scope": "LH-Q2-HOST-WINDOW-CONSUMPTION-v1",
+    "reviewed_stages": [
+      "H2",
+      "H3",
+      "H4"
+    ]
+  },
+  "source_binding": {
+    "five_files_recomputed_from_exact_D": true,
+    "implementation_tree_verified": true,
+    "working_tree_bytes_equal_D": true
+  },
+  "source_files": [
+    {
+      "bytes": 39464,
+      "path": "tests/e3_host/q2_host_window_record.py",
+      "sha256": "11bc30552da5fdbae0255db95227d0ed2dbb93f8e30288e9448e919283e4631d"
+    },
+    {
+      "bytes": 28586,
+      "path": "tests/e3_host/q2_host_window_billing.py",
+      "sha256": "c95c940282e6311b1995f106d4463e1c5befafc6dd749a7532e0da82f457c660"
+    },
+    {
+      "bytes": 27649,
+      "path": "tests/e3_host/q2_reconciliation_bootstrap.py",
+      "sha256": "d67c0798972511c829ce38bcf2e2ced86a2dfbdddd9eac74f4992211de8aa820"
+    },
+    {
+      "bytes": 6004,
+      "path": "tests/test_e3_q2_host_window_parent_observation.py",
+      "sha256": "bae63ea203a13229971f7a4cde09bdddef225a371854b61ba1237516b7c1e312"
+    },
+    {
+      "bytes": 23762,
+      "path": "tests/test_e3_q2_host_window_parent_allocation_inputs.py",
+      "sha256": "c5d49900f874382ced51b5b3bc76bb04bbbbd7d531f9f5846ad88d947c22c736"
+    }
+  ],
+  "static_boundary_checks": {
+    "all_pass": true,
+    "base_commit": "bd3f5e038f9517b702590aa0ef6fdda99757562d",
+    "checks": {
+      "q2_host_window_billing.py:precheck_costs": true,
+      "q2_host_window_billing.py:quote_host": true,
+      "q2_host_window_billing.py:require_joint_admissible": true,
+      "q2_host_window_billing.py:validate_host_bill": true,
+      "q2_host_window_record.py:HeldConsumption.evidence": true,
+      "q2_host_window_record.py:HeldConsumption.verify": true,
+      "q2_host_window_record.py:HeldPrecheck.consume": true,
+      "q2_host_window_record.py:_boot": true,
+      "q2_host_window_record.py:_geometry": true,
+      "q2_host_window_record.py:_mount": true,
+      "q2_host_window_record.py:_superblock": true,
+      "q2_host_window_record.py:_validate_precheck": true,
+      "q2_host_window_record.py:filesystem": true,
+      "q2_host_window_record.py:verify_existing": true,
+      "q2_host_window_record.py:verify_existing_ordinary": true,
+      "q2_reconciliation_bootstrap.py:load_host_window": true,
+      "q2_reconciliation_bootstrap.py:load_inputs": true,
+      "q2_reconciliation_bootstrap.py:validate_ordinary_host_window": true,
+      "unchanged:q2_host_kernel_facts.py": true,
+      "unchanged:q2_host_window_contract.py": true,
+      "unchanged:q2_reconciliation_backend.py": true,
+      "unchanged:q2_reconciliation_billing.py": true,
+      "unchanged:q2_reconciliation_entry.py": true,
+      "unchanged:q2_reconciliation_io.py": true
+    },
+    "count": 24,
+    "diff_whitespace_check_pass": true,
+    "mode": "static AST and byte equality only; no source execution"
+  },
+  "validation_evidence": {
+    "local_targeted_regression": {
+      "duration_seconds": 6.63,
+      "executed_by": "root",
+      "failed": 0,
+      "filesystem_and_readiness_substitutions_are_isolated_models": true,
+      "log_sha256": "6f090ecefd7edfd1935be0e337e9ba854b69b3f6f567a328d1d040add7919dae",
+      "ordinary_filesystem_execution_proven_by_root_run": false,
+      "passed": 388,
+      "reviewer_action": "Read complete final result log; did not rerun the suite.",
+      "scope": "14 affected test files; exact five-file source/test bytes bound above.",
+      "skipped": 22,
+      "skips_are_pass": false
+    },
+    "native_ci": {
+      "interpretation": "Consult the subsequent native-ci.json for this exact D. This static review neither asserts its eventual result nor treats local root skips as ordinary-user native success.",
+      "review_claims_final_native_ci_result": false,
+      "state_at_static_review": "NOT_RUN_AT_STATIC_REVIEW",
+      "subsequent_result_file": "native-ci.json"
+    },
+    "review_method": "Read all production diffs and two new tests, independently compare 24 AST/byte boundaries, recompute exact D hashes and read root local regression log. No payload or field entry executed by reviewer."
+  }
+}

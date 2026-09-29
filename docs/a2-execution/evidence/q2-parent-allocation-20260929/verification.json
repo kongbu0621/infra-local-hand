@@ -1,0 +1,131 @@
+{
+  "schema": "local-hand-q2-parent-allocation-verification/v1",
+  "implementation_commit": "530a2a45bc6e96270771ccf266793e471d8408ee",
+  "source_tree": "ce3ac229ed0a083875fb49ddcfa2f086fd0833f5",
+  "parent": "bd3f5e038f9517b702590aa0ef6fdda99757562d",
+  "authority": {
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+    "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+    "closure": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+    "scope": "existing CLOSED H2/H3/H4 bounded component repair"
+  },
+  "files": {
+    "tests/e3_host/q2_host_window_billing.py": {
+      "bytes": 28586,
+      "sha256": "c95c940282e6311b1995f106d4463e1c5befafc6dd749a7532e0da82f457c660"
+    },
+    "tests/e3_host/q2_host_window_record.py": {
+      "bytes": 39464,
+      "sha256": "11bc30552da5fdbae0255db95227d0ed2dbb93f8e30288e9448e919283e4631d"
+    },
+    "tests/e3_host/q2_reconciliation_bootstrap.py": {
+      "bytes": 27649,
+      "sha256": "d67c0798972511c829ce38bcf2e2ced86a2dfbdddd9eac74f4992211de8aa820"
+    },
+    "tests/test_e3_q2_host_window_parent_allocation_inputs.py": {
+      "bytes": 23762,
+      "sha256": "c5d49900f874382ced51b5b3bc76bb04bbbbd7d531f9f5846ad88d947c22c736"
+    },
+    "tests/test_e3_q2_host_window_parent_observation.py": {
+      "bytes": 6004,
+      "sha256": "bae63ea203a13229971f7a4cde09bdddef225a371854b61ba1237516b7c1e312"
+    }
+  },
+  "local": {
+    "python": "3.12.14",
+    "pytest": "8.4.2",
+    "identity": "root development environment",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_e3_q2_host_window_parent_observation.py",
+      "tests/test_e3_q2_host_window_parent_allocation_inputs.py",
+      "tests/test_e3_q2_host_window_contract.py",
+      "tests/test_e3_q2_host_window_record.py",
+      "tests/test_e3_q2_host_window_ordinary.py",
+      "tests/test_e3_q2_host_window_ordinary_inputs.py",
+      "tests/test_e3_q2_reconciliation_host_inputs.py",
+      "tests/test_e3_q2_host_window_billing.py",
+      "tests/test_e3_q2_host_window_preflight.py",
+      "tests/test_e3_q2_host_window_delivery.py",
+      "tests/test_e3_q2_host_window_receiver.py",
+      "tests/test_e3_q2_wrapper_profile.py",
+      "tests/test_e3_q2_reconciliation_host_store.py",
+      "tests/test_e3_q2_reconciliation_entry.py"
+    ],
+    "passed": 388,
+    "skipped": 22,
+    "total": 410,
+    "seconds": 6.63,
+    "log_sha256": "6f090ecefd7edfd1935be0e337e9ba854b69b3f6f567a328d1d040add7919dae",
+    "skip_reason": "Actual ordinary credentials unavailable; no synthetic successful identities",
+    "new_cases": 84,
+    "new_pure_passed": 82,
+    "new_real_ordinary_skipped": 2
+  },
+  "independent": {
+    "must_fix": [],
+    "resolved_findings": [
+      "standalone_raw_bound_quote_machine_binding"
+    ],
+    "review_record": "independent-review.json"
+  },
+  "ci": {
+    "run_id": 36536347779,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36536347779",
+    "head_sha": "530a2a45bc6e96270771ccf266793e471d8408ee",
+    "status": "COMPLETED",
+    "record": "native-ci.json",
+    "conclusion": "SUCCESS",
+    "jobs_succeeded": 3,
+    "linux": {
+      "job_id": 109301215664,
+      "source_passed": 2584,
+      "source_skipped": 51,
+      "root_collector_passed": 16,
+      "root_collector_skipped": 0,
+      "wheel_checks": 94,
+      "wheel_commands": 292,
+      "new_source_passes_vs_previous": 84,
+      "new_real_ordinary_cases": 2,
+      "new_parent_skip_entries": []
+    },
+    "windows": {
+      "job_id": 109301215728,
+      "source_passed": 636,
+      "source_skipped": 994,
+      "wheel_checks": 10,
+      "wheel_commands": 10,
+      "new_platform_skips": {
+        "parent_allocation_inputs": 75,
+        "parent_observation_module": 1
+      }
+    },
+    "ordinary_evidence": "Exact-source case counts, mandatory actual ordinary fixture, full Linux source success, full -rs without new parent tests and net 84 passes; no per-node JUnit claim"
+  },
+  "preserved": {
+    "frozen_runtime": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+    "old_exact_delivery_packages_unchanged": true,
+    "kernel_exception_expanded": false,
+    "host_action_performed": false,
+    "guest_contacted": false,
+    "marker_created_on_original_host": false,
+    "owner_issued": false,
+    "startup_batch": "NOT_ISSUED",
+    "full_q2_accepted": false
+  },
+  "limits": [
+    "First net allocation span is not causal attribution, simultaneity, exclusive ownership of growth or a peak proof",
+    "Parent baseline remains UNPROVEN and is neither zeroed nor newly classified as capture",
+    "Real syscall tests model readiness, boot and FS; they do not establish original-host qualification",
+    "Complete obligations, native audit, filesystem qualification, first-remote supervision and source admission remain incomplete",
+    "New bill and joint v2 arithmetic is rejected by old run gate and is not wired to production loader"
+  ]
+}

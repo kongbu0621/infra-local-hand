@@ -535,6 +535,21 @@ Ordinary component testing does not establish original-host qualification, H07,
 complete common billing or Q2. Exact local/native results belong to that review;
 old runtime and private packages are not rebuilt, and the startup batch remains unissued.
 
+The subsequent [parent-allocation component review](docs/a2-execution/Q2_PARENT_ALLOCATION_IMPLEMENTATION_REVIEW.md)
+records D `530a2a45bc6e96270771ccf266793e471d8408ee` within existing CLOSED H2/H3/H4.
+The ordinary writer retains the first already-read parent metadata and marker
+snapshot binding in RAM; the explicit bill/v2 moves only that observed net
+growth from the same marker pool's future to actual. Total reservation is
+unchanged. This is neither causal attribution nor peak/durability proof.
+The narrow profile rejects old parent/ancestor scan or obligation coverage and
+physical aliases; baseline parent cost remains UNPROVEN, never zero or capture.
+Old bill/run APIs and field refusal stay strict. New arithmetic/consistency
+outputs do not establish full billing, filesystem qualification or execution.
+The [next qualification review](docs/a2-execution/Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)
+fixes the H07 domain/state and FS source-proof work; it is not a new A/closure
+or host instruction. No original-host action, new source adoption or startup
+consumption follows from this component. Frozen runtime and old packages remain.
+
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at
 `3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe`. These remain inside existing CLOSED

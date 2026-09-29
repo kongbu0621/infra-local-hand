@@ -8,6 +8,8 @@
 
 普通操作者的[显式 v2 记录组件及纯账单绑定](Q2_ORDINARY_WRITER_IMPLEMENTATION_REVIEW.md)随后在原 H1/H2/H4 内完成。旧 v1 仍按 root 合同验证；生产 loader、原内核/FS 资格及 field readiness 拒绝保留。准确 D `c2373313` 的原生 CI 3/3 成功，Linux 新增 99 项均通过，包含 20 项真实普通身份操作；组件验证与原机资格分开登记。
 
+本轮[首次父目录增量计费组件](Q2_PARENT_ALLOCATION_IMPLEMENTATION_REVIEW.md)已在 H2/H3/H4 内完成，准确 D `530a2a45` 的 CI 3/3 成功，Linux 新增 84 项通过（含 2 项真实普通身份用例）。已有首次 metadata 与 marker snapshot 固定绑定，显式 bill/v2 将 G 从同一原池 future 转入 actual，总预留保持；父旧基数 UNPROVEN、完整账单/FS/现场门不放行。具体后续见[现场资格复核](Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)。
+
 旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、H07、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
