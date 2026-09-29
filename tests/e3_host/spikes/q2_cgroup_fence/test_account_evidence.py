@@ -224,7 +224,9 @@ def test_provider_rejections_are_before_any_nss(nss):
 @pytest.mark.parametrize("key,raw", [("/etc/passwd", b"x" * 262145), ("/etc/nsswitch.conf", b"x" * 16385),
                                     ("/etc/passwd", b"root:x:0:0::/:/bin/sh\nroot:x:1:1::/:/bin/sh\n"),
                                     ("/etc/group", b"group:x:1:other,other\n"),
-                                    ("/etc/passwd", b"bad:x:true:1::/:/bin/sh\n")])
+                                    ("/etc/passwd", b"bad:x:true:1::/:/bin/sh\n")],
+                         ids=["passwd-over-limit", "nsswitch-over-limit", "duplicate-user",
+                              "duplicate-group-member", "invalid-uid"])
 def test_local_source_limits_and_malformed_rows(key, raw):
     inputs = raw_sources()
     inputs[key] = raw

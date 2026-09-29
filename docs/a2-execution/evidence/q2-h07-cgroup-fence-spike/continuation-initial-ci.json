@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "execution_kind": "ordinary_ci_review",
+  "implementation": "78fc0a3ca0cbc54e4c6def38338d04afe4d7449d",
+  "run_id": 36586633992,
+  "attempt": 1,
+  "event": "push",
+  "conclusion": "failure",
+  "completed_at": "2026-09-29T15:11:45Z",
+  "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36586633992",
+  "jobs": [
+    {
+      "id": 109468603873,
+      "name": "classify-change",
+      "conclusion": "success"
+    },
+    {
+      "id": 109468675666,
+      "name": "semantic-core (ubuntu-latest)",
+      "conclusion": "success",
+      "source": {
+        "passed": 3063,
+        "skipped": 51
+      },
+      "root_collector": {
+        "passed": 16,
+        "skipped": 0
+      },
+      "installed": {
+        "status": "PASS",
+        "checks": 94,
+        "commands": 292
+      },
+      "decoded_log": {
+        "bytes": 98549,
+        "sha256": "3b6768e685f44597f1f7e2601e3e637a9a80551ca93da25298c7b74c52dd8ca8"
+      }
+    },
+    {
+      "id": 109468675878,
+      "name": "semantic-core (windows-latest)",
+      "conclusion": "failure",
+      "source": {
+        "passed": 995,
+        "skipped": 996,
+        "errors": 2
+      },
+      "failure": "pytest auto-generated a 262145-byte parameter in PYTEST_CURRENT_TEST; Windows rejected an environment variable longer than 32767 characters at test setup and teardown.",
+      "installed": "NOT_RUN",
+      "decoded_log": {
+        "bytes": 675215,
+        "sha256": "c36d82df3dc540bb79655f3f0da93221be8e4deb09b5a804548f726272419563"
+      }
+    }
+  ],
+  "repair": "Use explicit short IDs for five account source-input negative tests, leaving payloads, assertions and runtime unchanged.",
+  "lab_dispatches_consumed": 1,
+  "lab_dispatches_limit": 3,
+  "round_2_dispatched": false
+}

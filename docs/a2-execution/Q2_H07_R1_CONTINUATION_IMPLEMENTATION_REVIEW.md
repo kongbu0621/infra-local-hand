@@ -47,3 +47,19 @@
 若第二轮已获资格即结束；不能为 C5 竞态或剩余额度而重跑。第三轮还需要明确另一
 源码缺陷、准确修复、离线及普通 CI、第二轮完整证据和无新增阻断。
 本实验不签发原 Q2 startup，不代表原机器、真实远程链、文件系统或完整计费已合格。
+
+## 首次实现与普通 CI 的保留结果
+
+首次实现 D 是 `78fc0a3ca0cbc54e4c6def38338d04afe4d7449d`，tree
+`1d8d6a9fb6db1e4b51edb7ca6ca33ac74b118808`。离线 317 PASS / 0 SKIP。
+普通 CI `36586633992` attempt 1 在该准确 D 上完成，但总体为 FAILURE：
+Linux 源码 3063 PASS / 51 SKIP、真实 root collector 16 PASS / 0 SKIP、
+installed 94 checks / 292 commands PASS；Windows 995 PASS / 996 SKIP / 2 ERROR。
+Windows 错误发生在同一个超大输入用例的 setup/teardown，原因是 pytest 将
+262145 字节参数自动编码进 `PYTEST_CURRENT_TEST`，超过平台环境变量长度上限。
+该结果及日志摘要保存在 `continuation-initial-ci.json`，不改写为成功。
+
+后续修复仅为五个账户输入负例设置固定短 ID，测试输入、断言和所有 runtime 文件不变。
+再次整套离线 317 PASS / 0 SKIP；317 个收集节点最长 215 字符，见
+`continuation-ci-repair-offline.json`。修复后的准确提交仍须普通 CI 通过。
+此次 CI 与测试名称修复均未派发实验，额度仍为 1/3。

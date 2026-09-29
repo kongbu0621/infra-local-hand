@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "execution_kind": "isolated_test_id_repair_verification",
+  "parent_implementation": "78fc0a3ca0cbc54e4c6def38338d04afe4d7449d",
+  "scope": "LH-Q2-H07-R1-CONTINUATION-v1",
+  "changed_file": "tests/e3_host/spikes/q2_cgroup_fence/test_account_evidence.py",
+  "changed_file_sha256": "7e567c289ccbad789243a87be0889d4b8a4ff9e38471e1246ceb62889994f67d",
+  "change": "Five explicit short pytest parameter IDs; payloads and assertions unchanged",
+  "passed": 317,
+  "skipped": 0,
+  "failed": 0,
+  "exit_code": 0,
+  "log_sha256": "1279d8dc594d415e8f0e8b3297504421a4ef2a59ddc1ba7f9b5a7065a15c917a",
+  "log_bytes": 420,
+  "log_text": "........................................................................ [ 22%]\n........................................................................ [ 45%]\n........................................................................ [ 68%]\n........................................................................ [ 90%]\n.............................                                            [100%]\n317 passed in 1.98s\n",
+  "collected_tests": 317,
+  "longest_node_id_characters": 215,
+  "runtime_files_changed": false,
+  "lab_dispatches_consumed": 1,
+  "lab_dispatches_limit": 3
+}
