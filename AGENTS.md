@@ -630,6 +630,25 @@ Exact A therefore blocks further laboratory dispatches, including on a fresh
 runner. The in-scope account-argument repair and offline tests do not clear
 this stop condition or alter the original run's evidence.
 
+### H07 round 1 bounded continuation proposal
+
+Scope `LH-Q2-H07-R1-CONTINUATION-v1` is **PROPOSED / Gate OPEN**, U1–U4.
+The [requirements](docs/a2-execution/q2-h07-r1-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-h07-r1-continuation/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-h07-r1-continuation/IMPLEMENTATION_PLAN.md)
+propose accepting only run `36577764454`'s historical cleanup unknown as no longer
+independently blocking the remaining two rounds. Its original failure, cleanup
+unknown and consumed round remain unchanged; all later stopping conditions stay.
+The proposal also separates observed account identity from admitted cleanup
+identity and specifies bounded account evidence and explicit report versioning.
+Rule R/source/integrity, Owner-only Authority, adoption mandate and no exceptions
+remain as above. An exact new documentation baseline must be registered after
+this documentation commit, then receive an exact Owner decision and independent
+bookkeeping C before affected implementation D or another laboratory dispatch.
+The instruction to continue preparing this proposal is not closure of its
+not-yet-pinned A. Unaffected original CLOSED scopes remain valid; the current
+round 1 stop condition remains effective until a valid new C exists.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

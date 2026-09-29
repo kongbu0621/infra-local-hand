@@ -132,3 +132,23 @@ job 完成、托管 runner 标签和参数错误本身都不能替代原账户�
 范围内源码修复无需重复批准，但不能据此豁免停止条件。若无法补足原轮次清理
 证据而需改变停止条件，必须先形成具体变更方案并取得对应决定；本记录不构成该决定。
 冻结 A/B/C、生产后端和原 Q2 startup 均不变。
+
+## 账户参数修复的最终普通 CI
+
+准确修复提交 `9596c784932dc8990e0225e0f46bf292d7e7b3ea` 的
+[run 36579157335](https://github.com/kongbu0621/infra-local-hand/actions/runs/36579157335)
+已于 2026-09-29 22:11:44 +08 完成，`push` / attempt 1，三个 job 全部 SUCCESS。
+[准确 CI 清单](evidence/q2-h07-cgroup-fence-spike/round-1-repair-ci.json)
+分别记录源测试、root collector、安装验收以及获取的解码日志摘要。
+
+| 检查 | 结果 |
+| --- | --- |
+| Linux 源测试 | 2834 PASS / 51 SKIP |
+| Linux root-only collector | 16 PASS |
+| Linux 安装验收 | 94 checks / 292 commands PASS |
+| Windows 源测试 | 787 PASS / 996 SKIP |
+| Windows 安装验收 | 10 checks / 10 commands PASS |
+
+新增三个账户 mock 在 Linux 收集，Windows 沿用 Linux-only fixture module 的
+整模块 skip；该边界没有扩大。源码修复完成，不将普通 CI 成功转记为首轮清理、
+真实 cgroup 资格或第二轮准入。当前总额度仍 1/3。

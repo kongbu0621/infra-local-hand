@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "source_commit": "9596c784932dc8990e0225e0f46bf292d7e7b3ea",
+  "source_tree": "8a4dba71e8a892cf60da6dd0bc91ae9c35d58f6a",
+  "run_id": 36579157335,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36579157335",
+  "event": "push",
+  "run_attempt": 1,
+  "conclusion": "success",
+  "created_at": "2026-09-29T13:58:48Z",
+  "completed_updated_at": "2026-09-29T14:11:44Z",
+  "jobs": [
+    {
+      "id": 109442457345,
+      "name": "classify-change",
+      "conclusion": "success"
+    },
+    {
+      "id": 109442527477,
+      "name": "semantic-core (ubuntu-latest)",
+      "conclusion": "success"
+    },
+    {
+      "id": 109442527244,
+      "name": "semantic-core (windows-latest)",
+      "conclusion": "success"
+    }
+  ],
+  "linux": {
+    "source_passed": 2834,
+    "source_skipped": 51,
+    "root_collector_passed": 16,
+    "installed_checks_passed": 94,
+    "installed_commands": 292
+  },
+  "windows": {
+    "source_passed": 787,
+    "source_skipped": 996,
+    "installed_checks_passed": 10,
+    "installed_commands": 10
+  },
+  "decoded_job_log_digests": [
+    {
+      "job_id": 109442527244,
+      "bytes": 204535,
+      "sha256": "72c1a05fdb4a5ad16c75972e7364f2d5599e37cd19127cac10e044741225dbc2",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    },
+    {
+      "job_id": 109442527477,
+      "bytes": 98229,
+      "sha256": "ae76fed944b646b9ed87c9aebb4b534018cac1bf0f0752c766f48be27f6a89a7",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    }
+  ],
+  "lab_dispatches_consumed": 1,
+  "lab_dispatches_limit": 3,
+  "new_lab_dispatches": 0,
+  "actual_cgroup_lab": "ROUND_1_UNKNOWN_RETAINED",
+  "original_cleanup_verified": false,
+  "further_dispatch_blocked": true,
+  "original_Q2_startup": "NOT_ISSUED",
+  "interpretation": "Ordinary source and installed checks passed for the account-argument repair. They neither supply round 1 cleanup evidence nor authorize a further laboratory dispatch."
+}

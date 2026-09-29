@@ -10,6 +10,10 @@
 已完成参数修复及 88 项离线验证，原结果仍为 **UNKNOWN_RETAINED / cleanup 未证**，
 按准确 A 停止后续实验派发；普通 CI 不能解除该停止条件。
 
+修复提交 `9596c784` 的普通 CI 已 **3/3 成功**。当前准备
+[首轮历史异常的限定续验方案](docs/a2-execution/q2-h07-r1-continuation/REQUIREMENTS.md)，
+新范围 **PROPOSED / Gate OPEN**，待准确方案决定后才可实施并考虑第二轮。
+
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 
 **GX10 首轮复现入口：** [原始 S1 任务书](docs/GX10_S1_RUNBOOK.md) 固定到 `b763bd6`，保留原始输入身份。验证后续修复时使用 [复核记录](docs/S1_FOLLOWUP_REVIEW.md) 指定的新候选，仍须新 checkout、独立 build/runtime venv；不同候选的结果分别记录。
