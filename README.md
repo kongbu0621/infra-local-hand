@@ -4,7 +4,7 @@
 
 **当前接续（2026-09-29）：固定本地补证 L1–L6 限定任务已完成，结果仍为 `OBSERVED_PARTIAL`；完整 Q2、E3 与生产支持未验收。** 已继续完成范围内的离线组件，见[费用来源复核](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)和[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。实际 H07、完整账单和 FS 资格仍需闭合；无需重复已有 11 项采集或权限维护。
 
-下一具体方案为[H07 cgroup 监督原语隔离实验](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)，准确 A `71c7e842`。需求、架构、实施三文档已固定；新范围 OPEN，尚未编码或执行，不等于原 Q2 已准入。
+下一具体工作为[H07 cgroup 监督原语隔离实验](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)，准确 A `71c7e842`；Owner 已批准 F1–F4，独立 C 为 `8deeed49`。实验实现与实际派发状态见[实施复核](docs/a2-execution/Q2_H07_CGROUP_FENCE_SPIKE_IMPLEMENTATION_REVIEW.md)；局部实验不等于原 Q2 已准入。
 
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 

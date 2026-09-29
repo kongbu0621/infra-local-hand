@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-29",
+  "scope": "LH-Q2-H07-CGROUP-FENCE-SPIKE-v1",
+  "R": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "A": "71c7e842c724650a0e949a63bb898699b41107be",
+  "C": "8deeed492edeb7e5fa79cbe95c123a27e69f9f92",
+  "execution_kind": "offline_source_verification",
+  "sources": [
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/helper.c",
+      "bytes": 42827,
+      "sha256": "d9dbefdb82f811660baf32f57f97723e731465954d3630cde8eed41e6d19de32"
+    },
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/run_fixture.py",
+      "bytes": 40050,
+      "sha256": "ef3d8730a18b3d399c8df385e82d43dbe7e6144edb2bb866c0f5ded5349539c0"
+    },
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/test_fixture_admission.py",
+      "bytes": 8947,
+      "sha256": "5b6452feb055f6a756f023758804007bb9ce6f9eef425bea446aca042431aaef"
+    },
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/test_verify_receipt.py",
+      "bytes": 18286,
+      "sha256": "beb707ddb4b68952cbd344f32ee4f353138162f0a5cc04912d694de3ff8207c0"
+    },
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/verify_receipt.py",
+      "bytes": 41354,
+      "sha256": "4f6ecd45599e9a4f4f4dae13612743a74b6c705f2d0c9473f458a42b5b06f127"
+    },
+    {
+      "path": ".github/workflows/q2-cgroup-fence-spike.yml",
+      "bytes": 5228,
+      "sha256": "c7a185cd0ca3ceaf493fdcc687e1e56de326bd2fa5e8071456cc9ffe6e5b458a"
+    }
+  ],
+  "approved_A_bytes_unchanged": true,
+  "verification": {
+    "pytest": {
+      "command": "python -B -m pytest -q tests/e3_host/spikes/q2_cgroup_fence",
+      "passed": 85,
+      "failed": 0,
+      "elapsed_seconds": 0.23
+    },
+    "strict_c_compile": {
+      "command": "cc -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic tests/e3_host/spikes/q2_cgroup_fence/helper.c -o <external-scratch>/helper",
+      "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+      "exit_code": 0
+    },
+    "native_pure_selftest": {
+      "command": "<external-scratch>/helper selftest",
+      "assertions_passed": 39,
+      "exit_code": 0
+    },
+    "python_ast_parse": "PASS",
+    "yaml_parse": "PASS",
+    "workflow_bash_syntax": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "native_real_probe_executed": false,
+  "privileged_fixture_executed": false,
+  "lab_dispatches_consumed": 0,
+  "lab_dispatches_limit": 3,
+  "original_Q2_startup_issued": false,
+  "qualification": "NOT_RUN",
+  "limits": [
+    "Offline negative cases and pure filter interpretation do not prove kernel runtime behavior.",
+    "F1 capability, F3 actual cases and F4 runtime qualification require the exact manually dispatched candidate and retained original evidence."
+  ]
+}

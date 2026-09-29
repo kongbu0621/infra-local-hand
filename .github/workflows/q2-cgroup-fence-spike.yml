@@ -1,0 +1,98 @@
+name: H07 cgroup fence spike
+run-name: H07 lab round ${{ inputs.round }} at ${{ inputs.expected_commit }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: Exact reviewed full implementation commit D
+        required: true
+        type: string
+      round:
+        description: Owner-approved round (maximum three; never rerun a job)
+        required: true
+        type: choice
+        options: ["1", "2", "3"]
+      reason:
+        description: Initial verification or the recorded source repair reason
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: q2-h07-cgroup-fence-spike
+  cancel-in-progress: false
+
+jobs:
+  bounded-experiment:
+    if: github.repository == 'kongbu0621/infra-local-hand' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+      LAB_ROUND: ${{ inputs.round }}
+      LAB_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # same pinned checkout as main validation
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Admit exact manually dispatched source identity
+        id: identity
+        shell: bash
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import os, re, subprocess
+          expected = os.environ["EXPECTED_COMMIT"]
+          assert re.fullmatch(r"[0-9a-f]{40}", expected), "full D required"
+          assert os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch"
+          assert os.environ["GITHUB_RUN_ATTEMPT"] == "1", "rerun not authorized"
+          assert os.environ["RUNNER_ENVIRONMENT"] == "github-hosted"
+          assert os.environ["RUNNER_ARCH"] == "X64"
+          assert os.environ["LAB_ROUND"] in {"1", "2", "3"}
+          reason = os.environ["LAB_REASON"]
+          assert 1 <= len(reason.encode()) <= 512 and not any(ord(c) < 32 for c in reason)
+          actual = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          assert expected == actual == os.environ["GITHUB_SHA"], "D mismatch; not dispatched into fixture"
+          assert not subprocess.check_output(["git", "status", "--porcelain"]), "dirty checkout"
+          subprocess.run(["git", "merge-base", "--is-ancestor",
+                          "8deeed492edeb7e5fa79cbe95c123a27e69f9f92", expected], check=True)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write("admitted=true\n")
+          print("Exact D admitted; fixture capability is not yet established.")
+          PY
+      - name: Compile and run the bounded isolated experiment
+        if: steps.identity.outputs.admitted == 'true'
+        shell: bash
+        run: |
+          sudo -n /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+            GITHUB_ACTIONS="$GITHUB_ACTIONS" GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+            GITHUB_SHA="$GITHUB_SHA" GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" RUNNER_TEMP="$RUNNER_TEMP" \
+            ImageOS="$ImageOS" ImageVersion="$ImageVersion" \
+            LAB_REASON="$LAB_REASON" \
+            /usr/bin/python3 -B tests/e3_host/spikes/q2_cgroup_fence/run_fixture.py \
+            --expected-commit "$EXPECTED_COMMIT" --round "$LAB_ROUND"
+      - name: Retain exact synthetic experiment evidence
+        if: always() && steps.identity.outputs.admitted == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # existing pinned v4
+        with:
+          name: q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}
+          path: |
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/report.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/manifest.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/diagnostics.txt
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/probe.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/C1.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/C2.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/C3.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/C4.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/C5.json
+            ${{ runner.temp }}/q2-h07-${{ github.run_id }}-${{ github.run_attempt }}-r${{ inputs.round }}/evidence/C6.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
