@@ -1,0 +1,81 @@
+{
+  "field_ready": false,
+  "frozen_boundaries": "frozen-boundary-checks.json",
+  "h07_proven": false,
+  "implementation_commit": "293cb51f2318ebd82761f8f7855ba8bbc945d3c3",
+  "implementation_tree": "3c70536fc75625228ebbcaf097c586198038d14f",
+  "independent_review": "independent-review.json",
+  "local_targeted": {
+    "exit_code": 0,
+    "files": [
+      "tests/test_e3_q2_host_window_billing.py",
+      "tests/test_e3_q2_host_window_contract.py",
+      "tests/test_e3_q2_host_window_delivery.py",
+      "tests/test_e3_q2_host_window_h07.py",
+      "tests/test_e3_q2_host_window_ordinary.py",
+      "tests/test_e3_q2_host_window_ordinary_inputs.py",
+      "tests/test_e3_q2_host_window_parent_allocation_inputs.py",
+      "tests/test_e3_q2_host_window_parent_observation.py",
+      "tests/test_e3_q2_host_window_preflight.py",
+      "tests/test_e3_q2_host_window_receiver.py",
+      "tests/test_e3_q2_host_window_record.py",
+      "tests/test_e3_q2_reconciliation_sources.py",
+      "tests/test_e3_q2_reconciliation_bootstrap.py"
+    ],
+    "log_bytes": 513,
+    "log_sha256": "f772778c459ab28d17682c5a063a7e4e05785720bc3e0dab4e25035eea47e4fd",
+    "new_unique_cases": {
+      "all_84_passed": true,
+      "ea_inode": 1,
+      "h07": 83
+    },
+    "passed": 391,
+    "pytest": "8.4.2",
+    "python": "3.12.14",
+    "seconds": 16.23,
+    "skip_scope": "Existing real ordinary identity cases skipped under cloud root; not counted as passing.",
+    "skipped": 22
+  },
+  "native_ci": "native-ci.json",
+  "original_host_action_performed": false,
+  "parent": "3a328aa159e96f1a96dcd8cec1e013b7473d59d0",
+  "private_validation": {
+    "exact_historical_offline_inputs": "PASS",
+    "final_source_bytes_rechecked": true,
+    "new_public_api_no_trace": "PASS",
+    "new_public_api_two_edge_missing_original": "PASS",
+    "private_payload_executed": false,
+    "ram_derivative_description": "Original fixed bytes retained. Only an extra declared module hash and matching manifest/configuration digests are synthesized in RAM. Historical declared D remains historical; this is not an exact new D/Git or adoption check.",
+    "sha256_and_length_check": "PASS",
+    "source_documents_mutated": false,
+    "source_tool_bytes": 16991,
+    "source_tool_sha256": "d4dbc31d50c578daf5ceda7988da8505c62c196250ee560915b2d0564c3cfdfe",
+    "supplied_blob_bytes": 5686734,
+    "supplied_blob_count": 48
+  },
+  "q2_accepted": false,
+  "schema": "local-hand-q2-h07-verification/v1",
+  "source_files": [
+    {
+      "bytes": 16991,
+      "path": "tests/e3_host/q2_host_window_h07.py",
+      "sha256": "d4dbc31d50c578daf5ceda7988da8505c62c196250ee560915b2d0564c3cfdfe"
+    },
+    {
+      "bytes": 39610,
+      "path": "tests/e3_host/q2_host_window_record.py",
+      "sha256": "d6e95e9b5fd42554b507f586c7bae3074fc35565ff77043dbb01417e409fb274"
+    },
+    {
+      "bytes": 23573,
+      "path": "tests/test_e3_q2_host_window_h07.py",
+      "sha256": "87adf648b0566ea3542b8b5b2bb9ed0258ca04dfbc95d014a8cb8f03d0ab0f8a"
+    },
+    {
+      "bytes": 19344,
+      "path": "tests/test_e3_q2_host_window_record.py",
+      "sha256": "d3fc3c8156344815c67665492ce170bb618914859db682cddc1f9ee95227b214"
+    }
+  ],
+  "startup_batch_issued": false
+}

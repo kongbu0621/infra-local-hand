@@ -10,7 +10,9 @@
 
 本轮[首次父目录增量计费组件](Q2_PARENT_ALLOCATION_IMPLEMENTATION_REVIEW.md)已在 H2/H3/H4 内完成，准确 D `530a2a45` 的 CI 3/3 成功，Linux 新增 84 项通过（含 2 项真实普通身份用例）。已有首次 metadata 与 marker snapshot 固定绑定，显式 bill/v2 将 G 从同一原池 future 转入 actual，总预留保持；父旧基数 UNPROVEN、完整账单/FS/现场门不放行。具体后续见[现场资格复核](Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)。
 
-旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、H07、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
+本轮新增[H07 固定域与队列一致性组件](Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)，准确 D `293cb51f` 的 CI **3/3 成功**、Linux 新增 84 项通过：重新核对传入原件，按固定计划派生域，分别保留两条内部请求边的未决状态；其他动态域明确缺证。模型不能生成 fence、实际停止或执行许可。另补 ext4 EA_INODE 漏拒，仍不证明当前 FS 资格。
+
+旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、实际 H07 机制、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
 [Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。

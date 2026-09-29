@@ -1,0 +1,169 @@
+{
+  "baseline": "3a328aa159e96f1a96dcd8cec1e013b7473d59d0",
+  "documentation_review": {
+    "must_fix": [],
+    "precision_correction": "Test prose names CLOSED/FENCE and caller admission switches, rather than claiming a separately executed ADMITTED event case.",
+    "private_validation_repeated": false,
+    "relative_links_checked": 251,
+    "scope": [
+      "AGENTS.md",
+      "README.md",
+      "IMPLEMENTATION_STATUS.md",
+      "Q2_POST_SOURCE_ADMISSION_PLAN.md",
+      "Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md",
+      "Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md"
+    ],
+    "status": "PASS",
+    "tests_repeated": false
+  },
+  "files": [
+    {
+      "bytes": 16991,
+      "path": "tests/e3_host/q2_host_window_h07.py",
+      "sha256": "d4dbc31d50c578daf5ceda7988da8505c62c196250ee560915b2d0564c3cfdfe"
+    },
+    {
+      "bytes": 39610,
+      "path": "tests/e3_host/q2_host_window_record.py",
+      "sha256": "d6e95e9b5fd42554b507f586c7bae3074fc35565ff77043dbb01417e409fb274"
+    },
+    {
+      "bytes": 23573,
+      "path": "tests/test_e3_q2_host_window_h07.py",
+      "sha256": "87adf648b0566ea3542b8b5b2bb9ed0258ca04dfbc95d014a8cb8f03d0ab0f8a"
+    },
+    {
+      "bytes": 19344,
+      "path": "tests/test_e3_q2_host_window_record.py",
+      "sha256": "d3fc3c8156344815c67665492ce170bb618914859db682cddc1f9ee95227b214"
+    }
+  ],
+  "implementation_commit": "293cb51f2318ebd82761f8f7855ba8bbc945d3c3",
+  "implementation_tree": "3c70536fc75625228ebbcaf097c586198038d14f",
+  "must_fix": [],
+  "primary_sources": [
+    {
+      "fact": "s_feature_incompat offset 0x60; EA_INODE bit 0x400",
+      "url": "https://docs.kernel.org/filesystems/ext4/super.html"
+    },
+    {
+      "fact": "EA value storage can use inodes and data blocks absent from directory entries",
+      "url": "https://docs.kernel.org/filesystems/ext4/eainode.html"
+    }
+  ],
+  "private_pure_validation": {
+    "exact_historical_offline_inputs": "PASS",
+    "final_source_bytes_rechecked": true,
+    "new_public_api_no_trace": "PASS",
+    "new_public_api_two_edge_missing_original": "PASS",
+    "private_payload_executed": false,
+    "ram_derivative_description": "Original fixed bytes retained. Only an extra declared module hash and matching manifest/configuration digests are synthesized in RAM. Historical declared D remains historical; this is not an exact new D/Git or adoption check.",
+    "sha256_and_length_check": "PASS",
+    "source_documents_mutated": false,
+    "source_tool_bytes": 16991,
+    "source_tool_sha256": "d4dbc31d50c578daf5ceda7988da8505c62c196250ee560915b2d0564c3cfdfe",
+    "supplied_blob_bytes": 5686734,
+    "supplied_blob_count": 48
+  },
+  "review_date": "2026-09-29",
+  "review_status": "PASS_FOR_SCOPED_COMPONENT",
+  "reviewer_field_operations_performed": false,
+  "reviewer_product_source_edited": false,
+  "schema": "local-hand-q2-h07-independent-review/v1",
+  "scope": {
+    "additional_gate_required_for_this_slice": false,
+    "baseline_A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+    "closure_C": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+    "ext4_rejection": [
+      "H2",
+      "H4"
+    ],
+    "h07": [
+      "H1",
+      "H3",
+      "H4"
+    ],
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
+  },
+  "source_checks": [
+    {
+      "evidence": "New API re-runs entry.offline_inputs and sources.verify from exact bytes; no caller VerifiedSources object or domain subset is accepted.",
+      "id": "SOURCE_RELATIONSHIPS",
+      "status": "PASS"
+    },
+    {
+      "evidence": "36 roles include five parents, phase ordinary/quota roles and unresolved shell/sudo/loader/stop endpoint roles; 12 required unmodeled edges remain explicit.",
+      "id": "DOMAIN_INVENTORY",
+      "status": "PASS"
+    },
+    {
+      "evidence": "owner_supervisor and supervisor_target hold separate sticky submission, queue, instance and cancellation observations; missing original cannot imply no dispatch.",
+      "id": "INDEPENDENT_PENDING_EDGES",
+      "status": "PASS"
+    },
+    {
+      "evidence": "No FENCE/CLOSED/ADMITTED operation; cancel, absent Job, empty snapshot, stop acknowledgement and local EOF do not resolve pending or prove remote stop.",
+      "id": "NO_FALSE_CLOSURE",
+      "status": "PASS"
+    },
+    {
+      "evidence": "External window digest and exact 300-second shape, both event clocks, monotonic ordering and inherited divergence diagnostic checked; original_window_proven remains false.",
+      "id": "MODEL_WINDOW_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Strict JSON, exact fields and byte/event/integer/output bounds. Input paths/payloads are not opened or executed. Repository helper loading is separate normal Python filesystem activity.",
+      "id": "BOUNDED_INPUT_OUTPUT",
+      "status": "PASS"
+    },
+    {
+      "evidence": "New module name required once in opt-in closure; source_code_git_verified and source_admission_proven remain false. Existing required source set unchanged.",
+      "id": "DECLARED_SOURCE_IS_NOT_GIT_AUTHORITY",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Existing superblock incompat field gains bit 0x400 rejection. No additional syscall/read, accepted profile or runtime action. Cross-field same-bit controls are explicit.",
+      "id": "EA_INODE_REJECTION_ONLY",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Independently compared 18 approved/frozen source/document entries, including owner/supervisor at frozen runtime. Only _geometry changed among 22 record top-level functions.",
+      "id": "FROZEN_BOUNDARIES",
+      "status": "PASS"
+    }
+  ],
+  "static_boundaries": {
+    "dispatch_rejection_changed": false,
+    "existing_source_adoption_changed": false,
+    "field_readiness_changed": false,
+    "frozen_file_count": 18,
+    "frozen_runtime_changed": false,
+    "record_changed_top_level_functions": [
+      "_geometry"
+    ],
+    "record_other_top_level_functions_unchanged": 21
+  },
+  "tests": {
+    "independent_new_file": {
+      "observed_by": "independent test-author child",
+      "passed": 83,
+      "reviewer_read_entire_final_test_file": true,
+      "seconds": 7.34,
+      "skipped": 0
+    },
+    "native_ci": "NOT_RUN_AT_REVIEW_TIME",
+    "native_ci_record": "native-ci.json when available; no prior D result is inherited",
+    "no_field_io_test_boundary": "The syscall-blocking public test isolates the provenance stage. It does not prove normal trusted module loading has no filesystem access.",
+    "private_full_source_relationship_call": "PASS",
+    "public_isolation_boundary": "Public positive wrapper/report tests explicitly mock offline_inputs only; strict plan decode/bind, domains and model remain real. They do not claim public end-to-end provenance. Separate private test invokes full offline_inputs/sources.verify and public review_h07 without mocking.",
+    "root_final_targeted": "verification.json; includes the same 83 new cases without double counting"
+  },
+  "unproven": [
+    "Actual original window, host/guest mapping and clock-rate/suspend qualification",
+    "Pre-first-remote supervision, future-request fence, remote stop and endpoint self-exit",
+    "Full fixed-domain live identities and complete actual/pending resource bill",
+    "Filesystem allocation peak, implicit metadata coverage and storage durability",
+    "New source adoption or actual Git verification by the model",
+    "New startup issuance, field readiness, H07 acceptance or complete Q2 acceptance"
+  ]
+}

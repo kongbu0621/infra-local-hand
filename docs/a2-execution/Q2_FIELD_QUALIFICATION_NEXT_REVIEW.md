@@ -74,9 +74,10 @@ collector 未覆盖及缺 EOF。检查准确状态和是否仍可启动，不只
 
 已回传 parent 的 INDEX/多块事实超出当前窄 profile；它不是永久属性，也不表示原机已经运行 writer。
 现有 statvfs、GETFLAGS 和端点 metadata 不足以证明全过程分配峰值或掉电持久性。
-当前 `_geometry` 也未排除 `INCOMPAT_EA_INODE` (`0x400`)；ACL absence 不能补成
-所有创建属性及隐式 inode 均不存在的证明。旧窄几何检查本身也不是完整峰值资格，
-完整入口仍在更早的 readiness 门拒绝；本轮没有改动这个几何谓词。
+后续[有限组件修复](Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)已在 `_geometry` 补拒
+`INCOMPAT_EA_INODE` (`0x400`)，沿用已有 superblock 读取，无新增现场权限。
+ACL absence 仍不能补成所有创建属性及隐式 inode 均不存在的证明。
+这个收紧后的窄几何检查也不是完整峰值资格，完整入口仍在更早的 readiness 门拒绝。
 下一 FS 方案应先完成下表，所有现场事实关联同一固定 host/boot/parent/device/mount：
 
 | 资格谓词 | 准确来源及读取合同应包含 | 当前缺口/拒绝条件 |

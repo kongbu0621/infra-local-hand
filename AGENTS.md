@@ -550,6 +550,19 @@ fixes the H07 domain/state and FS source-proof work; it is not a new A/closure
 or host instruction. No original-host action, new source adoption or startup
 consumption follows from this component. Frozen runtime and old packages remain.
 
+The subsequent [H07 consistency component review](docs/a2-execution/Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)
+records a bounded, explicit offline API within CLOSED H1/H3/H4. It rechecks
+supplied source bytes, derives fixed planned domains, and models the two internal
+manager-request edges independently. Unknown dynamic domains remain missing.
+Submission stays unresolved after absent Job, cancellation, empty tree or EOF;
+no model event grants a fence, actual closure, source adoption or execution.
+An input window's syntax/hash consistency does not prove its actual origin.
+The old source-closure list and live entries remain unchanged. A separate H2/H4
+fail-closed fix rejects ext4 EA_INODE from already-read superblock bytes; this
+does not qualify the current indexed parent, all allocation costs or durability.
+Exact D, test and native CI evidence belong to the linked component review.
+No original-host action or new operational authority follows from these repairs.
+
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at
 `3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe`. These remain inside existing CLOSED

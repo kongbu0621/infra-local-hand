@@ -1,0 +1,499 @@
+{
+  "schema": "infra-local-hand-q2-h07-model-native-ci-review/v1",
+  "repository": "kongbu0621/infra-local-hand",
+  "source_commit": "293cb51f2318ebd82761f8f7855ba8bbc945d3c3",
+  "source_tree": "3c70536fc75625228ebbcaf097c586198038d14f",
+  "source_parent": "3a328aa159e96f1a96dcd8cec1e013b7473d59d0",
+  "source_files": [
+    {
+      "path": "tests/e3_host/q2_host_window_h07.py",
+      "bytes": 16991,
+      "sha256": "d4dbc31d50c578daf5ceda7988da8505c62c196250ee560915b2d0564c3cfdfe",
+      "git_blob_sha": "3d5acfdbea9b15068472e38d00a086f66d85fcbd"
+    },
+    {
+      "path": "tests/e3_host/q2_host_window_record.py",
+      "bytes": 39610,
+      "sha256": "d6e95e9b5fd42554b507f586c7bae3074fc35565ff77043dbb01417e409fb274",
+      "git_blob_sha": "080bb550d652d4205897da6e7ff1ab224f49dd2b"
+    },
+    {
+      "path": "tests/test_e3_q2_host_window_h07.py",
+      "bytes": 23573,
+      "sha256": "87adf648b0566ea3542b8b5b2bb9ed0258ca04dfbc95d014a8cb8f03d0ab0f8a",
+      "git_blob_sha": "573f58c4c7a75447aba8696f7ed105ba86379273"
+    },
+    {
+      "path": "tests/test_e3_q2_host_window_record.py",
+      "bytes": 19344,
+      "sha256": "d3fc3c8156344815c67665492ce170bb618914859db682cddc1f9ee95227b214",
+      "git_blob_sha": "1440d2724868135c115fae2e62a483ff83691475"
+    }
+  ],
+  "source_binding": "The exact published D commit API identifies these four changed files. Exact-D GitHub file content was separately read; UTF-8 byte sizes and SHA-256 digests equal the frozen-boundary-checks.json declarations and the reviewed worktree bytes.",
+  "workflow_changed": false,
+  "run": {
+    "id": 36540605278,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36540605278",
+    "event": "push",
+    "attempt": 1,
+    "status": "completed",
+    "conclusion": "success",
+    "started_at_utc": "2026-09-29T08:06:00Z",
+    "updated_at_utc": "2026-09-29T08:18:44Z"
+  },
+  "observed_at_utc": "2026-09-29T08:20:48.453Z",
+  "jobs_successful": 3,
+  "jobs_failed": 0,
+  "linux": {
+    "job_id": 109314872979,
+    "conclusion": "success",
+    "source": {
+      "passed": 2668,
+      "skipped": 51,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 461.74,
+      "summary_timestamp_utc": "2026-09-29T08:14:13.8411843Z",
+      "skip_groups": {
+        "tests/test_e3_q2_host_window_record.py": 21,
+        "tests/test_e3_q2_reconciliation_collect.py": 16,
+        "tests/test_e3_q2_reconciliation_io_records.py": 1,
+        "tests/test_e3_quota_q2_namespace.py": 1,
+        "tests/test_local_hand_jobs_quota_client.py": 11,
+        "tests/test_local_hand_jobs_runner.py": 1
+      }
+    },
+    "root_collector": {
+      "passed": 16,
+      "skipped": 0,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 0.82,
+      "summary_timestamp_utc": "2026-09-29T08:06:31.1205654Z",
+      "gate_marker": "ROOT_COLLECTION_REAL_FILES=16 PASS, 0 SKIP"
+    },
+    "ordinary_reader": {
+      "identity": "ordinary",
+      "noatime": "PASS",
+      "ancestor_acl": "PASS",
+      "metadata": "STABLE"
+    },
+    "installed_wheel": {
+      "status": "PASS",
+      "checks": 94,
+      "commands": 292,
+      "summary_timestamp_utc": "2026-09-29T08:18:40.0376113Z"
+    },
+    "plugin_build": "success",
+    "bootstrap_syntax": "success",
+    "repeat_bootstrap_smoke_identity": "PASS",
+    "evidence_archive": "success"
+  },
+  "windows": {
+    "job_id": 109314872923,
+    "conclusion": "success",
+    "source": {
+      "passed": 636,
+      "skipped": 995,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 342.64,
+      "summary_timestamp_utc": "2026-09-29T08:12:23.2907087Z"
+    },
+    "installed_wheel": {
+      "status": "PASS",
+      "checks": 10,
+      "commands": 10,
+      "summary_timestamp_utc": "2026-09-29T08:12:37.3854952Z"
+    },
+    "new_h07_module_skip": {
+      "count": 1,
+      "path": "tests/test_e3_q2_host_window_h07.py",
+      "line": 12,
+      "reason": "Inherited strict Q2 fixtures require Linux contracts"
+    },
+    "existing_record_module_skip_count": 1,
+    "platform_smoke": "success",
+    "evidence_archive": "success"
+  },
+  "new_test_coverage": {
+    "h07_model": {
+      "path": "tests/test_e3_q2_host_window_h07.py",
+      "test_functions": 24,
+      "parameterized_pytest_cases": 83,
+      "linux_h07_skip_entries": 0,
+      "windows_module_guard": true
+    },
+    "ea_inode": {
+      "path": "tests/test_e3_q2_host_window_record.py",
+      "node": "HostWindowExt4Geometry::test_ea_inode_rejected_from_the_incompatible_feature_field",
+      "new_pytest_cases": 1,
+      "unittest_subtest_values": 4,
+      "subtest_values_counted_as_separate_pytest_cases": false
+    },
+    "added_pytest_cases": 84,
+    "assessment": "Combined exact-source review, successful complete native Linux suite, unchanged complete Linux skip list and +84 PASS delta support completion of the 83 new H07 model cases and one new EA_INODE geometry case.",
+    "evidence_granularity": "The source suite runs pytest -q -rs. It provides aggregate results and the complete skip list, not individual-node PASS records or source-suite JUnit. The separate root-collector step validates its own JUnit.",
+    "aggregate_cross_check": {
+      "previous_run_id": 36536347779,
+      "previous_source_commit": "530a2a45bc6e96270771ccf266793e471d8408ee",
+      "previous_linux_passed": 2584,
+      "previous_linux_skipped": 51,
+      "added_linux_passes": 84,
+      "additional_linux_skips": 0,
+      "previous_windows_passed": 636,
+      "previous_windows_skipped": 994,
+      "added_windows_passes": 0,
+      "additional_windows_platform_skips": 1
+    },
+    "retained_linux_skips": "The source suite's 16 root-only collector skips are exercised separately by the mandatory root-collector step (16 PASS, 0 SKIP). The other 35 existing conditional skips remain; SKIP is not PASS.",
+    "boundary": "H07 supplied-source and event-trace consistency tests preserve unproven actual admission, domain closure, pending resolution and future activation fencing. EA_INODE rejection uses already-read superblock bytes and narrows geometry acceptance. CI does not establish original-host facts, source adoption, full filesystem allocation or durability, full billing, field readiness, dispatch authority, H07 admission, Q2/Q3 acceptance or production support."
+  },
+  "log_digests": {
+    "definition": "SHA-256 over UTF-8 encoding of the complete decoded job text returned by github_fetch_workflow_job_logs; covers source, root collector, independent wheel and smoke records. Not a ZIP digest.",
+    "linux": {
+      "job_id": 109314872979,
+      "decoded_log_utf8_bytes": 97896,
+      "decoded_log_utf8_sha256": "485ad85ca1b2726fddafd0652cea62ce2473125fe4fc3abe1a0ced853cab379a"
+    },
+    "windows": {
+      "job_id": 109314872923,
+      "decoded_log_utf8_bytes": 204159,
+      "decoded_log_utf8_sha256": "3f42a82a52ae17257e3061219ca0211a2e4fb73969c86d649bfc5576c2ebbc0b"
+    }
+  },
+  "jobs": [
+    {
+      "id": 109314820695,
+      "name": "classify-change",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 1,
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 3,
+          "name": "Classify verification scope",
+          "conclusion": "success"
+        },
+        {
+          "number": 6,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109314872923,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 1,
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 3,
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 4,
+          "name": "Install isolated build and test dependencies",
+          "conclusion": "success"
+        },
+        {
+          "number": 5,
+          "name": "Install hash-locked optional MCP dependencies for Linux verification",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 6,
+          "name": "Validate exact checked-out commit identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Compile Local Hand shared core and tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 8,
+          "name": "Prepare isolated protected parent for ordinary local-read tests",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 9,
+          "name": "Verify root-only collector against isolated real root-owned files",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 10,
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "conclusion": "success"
+        },
+        {
+          "number": 11,
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 12,
+          "name": "Build and verify an independently installed wheel",
+          "conclusion": "success"
+        },
+        {
+          "number": 13,
+          "name": "Validate PR whitespace and diff boundary",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 14,
+          "name": "Validate Linux bootstrap syntax",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 15,
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 16,
+          "name": "Validate Windows bootstrap parses",
+          "conclusion": "success"
+        },
+        {
+          "number": 17,
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "conclusion": "success"
+        },
+        {
+          "number": 18,
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "conclusion": "success"
+        },
+        {
+          "number": 19,
+          "name": "Validate Windows exact ACL replacement",
+          "conclusion": "success"
+        },
+        {
+          "number": 20,
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "conclusion": "success"
+        },
+        {
+          "number": 21,
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "conclusion": "success"
+        },
+        {
+          "number": 22,
+          "name": "Validate Windows runner propagates native worker exit code",
+          "conclusion": "success"
+        },
+        {
+          "number": 23,
+          "name": "Validate Windows Junction roots fail closed",
+          "conclusion": "success"
+        },
+        {
+          "number": 24,
+          "name": "Preserve isolated acceptance evidence",
+          "conclusion": "success"
+        },
+        {
+          "number": 47,
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 48,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 49,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109314872979,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 1,
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 3,
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 4,
+          "name": "Install isolated build and test dependencies",
+          "conclusion": "success"
+        },
+        {
+          "number": 5,
+          "name": "Install hash-locked optional MCP dependencies for Linux verification",
+          "conclusion": "success"
+        },
+        {
+          "number": 6,
+          "name": "Validate exact checked-out commit identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Compile Local Hand shared core and tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 8,
+          "name": "Prepare isolated protected parent for ordinary local-read tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 9,
+          "name": "Verify root-only collector against isolated real root-owned files",
+          "conclusion": "success"
+        },
+        {
+          "number": 10,
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "conclusion": "success"
+        },
+        {
+          "number": 11,
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "conclusion": "success"
+        },
+        {
+          "number": 12,
+          "name": "Build and verify an independently installed wheel",
+          "conclusion": "success"
+        },
+        {
+          "number": 13,
+          "name": "Validate PR whitespace and diff boundary",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 14,
+          "name": "Validate Linux bootstrap syntax",
+          "conclusion": "success"
+        },
+        {
+          "number": 15,
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 16,
+          "name": "Validate Windows bootstrap parses",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 17,
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 18,
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 19,
+          "name": "Validate Windows exact ACL replacement",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 20,
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 21,
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 22,
+          "name": "Validate Windows runner propagates native worker exit code",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 23,
+          "name": "Validate Windows Junction roots fail closed",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 24,
+          "name": "Preserve isolated acceptance evidence",
+          "conclusion": "success"
+        },
+        {
+          "number": 47,
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 48,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 49,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "review_actions": {
+    "source_or_workflow_modified": false,
+    "native_ci_rerun_requested": false,
+    "local_tests_run_by_ci_reviewer": false,
+    "original_host_read": false,
+    "evidence_file_written": true
+  },
+  "limits": [
+    "This result belongs to the exact source D above. Later documentation commits are separate identities.",
+    "Existing platform and privilege skips are retained explicitly.",
+    "No original-host execution, private raw machine evidence, runtime replacement, new batch consumption or Q2/Q3 acceptance follows from this CI result."
+  ]
+}

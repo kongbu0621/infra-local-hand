@@ -4,6 +4,7 @@
 tree `276c48f23c84f08cbe6457c9e27864f26d252d5e`。
 普通操作者组件 D `c2373313eb78aa55373cb0318d08d5f60424dafd` 的[实现与验证](Q2_ORDINARY_WRITER_IMPLEMENTATION_REVIEW.md)另列。
 首次父目录增量计费组件 D `530a2a45bc6e96270771ccf266793e471d8408ee` 的[实现与验证](Q2_PARENT_ALLOCATION_IMPLEMENTATION_REVIEW.md)另列。
+后续[H07 固定域/队列一致性组件与 EA_INODE 修复](Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)另列；模型不证明实际 H07。
 依据[rerun3 完整回执](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)。
 **7+4 固定来源补证、wrapper 显式 profile、普通操作者及首次父目录增量计费组件已经完成；执行准入仍未完成。**
 本文件是 L6 的后续决策材料，不是新增范围的三层文档 A、Gate 关闭或现场执行指令。
@@ -55,8 +56,10 @@ T01/T02/T03 的固定定位及端点关系相符。这里不公开这些私有�
 即失败的路径，没有由这一清理分支证明独立撤销与截止后不再激活。已有停止原语可研究复用，
 但不能把窄范围控制器监督器直接当成 H07 全链证明。
 
-本轮[下一有限范围复核](Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)已列出按固定计划派生的控制域、
-pending/queued/已绑定实例状态与具体负例。下一方案必须说明保护如何在首次远端前生效，
+后续[有限一致性组件](Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)已从固定计划派生 36 个域角色，
+两条内部请求边分别校验 pending/queued/已绑定实例模型，12 条未建模请求边仍明确缺项。
+完整字段、取消应答、空树或 EOF 均不产生实际 fence/停止证明。
+下一方案必须按[准确范围复核](Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)说明保护如何在首次远端前生效，
 并验证迟激活、无 original、传输停滞、
 boot/双钟不符和客户端失联等反例；不得先 probe 再建立保护，或在迟到激活时刷新相对时长。
 
@@ -126,8 +129,9 @@ held parent 与前后 stat 也不构成兄弟创建互斥，不能由“观察�
 
 ## 下一阶段的实际顺序
 
-1. 保留已发布 wrapper、普通身份及首次增长计费组件的准确验证。按[下一有限范围复核](Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)
-   完成 H07 纯证据合同、逐域状态模型及 FS 谓词/来源映射；相同 11 项无需再向 Owner 索取。
+1. 保留已发布 wrapper、普通身份、首次增长计费及 H07 有限模型组件的准确验证。
+   H07 全链证据合同仍需实际机制支持；按[下一有限范围复核](Q2_FIELD_QUALIFICATION_NEXT_REVIEW.md)
+   选择预先生效的监督路线并闭合 FS 谓词/来源映射，相同 11 项无需再向 Owner 索取。
 2. 将 wrapper 现场资格、普通身份/当前 FS 支持和首次远端监督的关系放在同一准入方案中审查，
    明确哪些是既有 CLOSED 内的实现修复，哪些需要新增来源采用、内核入口或监督机制。
    选择方案时保留原单次批次、冻结 runtime、预算和所有历史失败；不能用新名字刷新消费权。
