@@ -622,6 +622,14 @@ The Owner expressly permits executor-triggered GitHub-page manual dispatch withi
 that quota, and in-scope repairs without repeated approval. Exact A stopping and
 change-control conditions apply. No laboratory round is consumed by this closure.
 
+The subsequent [round 1 review](docs/a2-execution/Q2_H07_CGROUP_FENCE_SPIKE_IMPLEMENTATION_REVIEW.md#round-1-2026-09-29)
+records run `36577764454`, attempt 1, at `6b085d9ceb536b9785ea683cd108e92cd8a4eec4`.
+Quota consumed is **1/3**. Account setup failed before the capability probe and
+all six cases; the retained result is **UNKNOWN_RETAINED**, cleanup unverified.
+Exact A therefore blocks further laboratory dispatches, including on a fresh
+runner. The in-scope account-argument repair and offline tests do not clear
+this stop condition or alter the original run's evidence.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

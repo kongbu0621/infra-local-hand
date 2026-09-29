@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-29",
+  "scope": "LH-Q2-H07-CGROUP-FENCE-SPIKE-v1",
+  "execution_kind": "offline_source_repair_verification",
+  "base_commit": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+  "approved_A": "71c7e842c724650a0e949a63bb898699b41107be",
+  "closure_C": "8deeed492edeb7e5fa79cbe95c123a27e69f9f92",
+  "repair_reason": "Remove invalid useradd --key CREATE_MAIL_SPOOL=no; retain restricted system identity and fail-closed cleanup semantics.",
+  "sources": [
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/run_fixture.py",
+      "bytes": 40165,
+      "sha256": "a59998d5cfd18e7931e634578f17895a0f6e5d8559121afa4f92701189b40fa5"
+    },
+    {
+      "path": "tests/e3_host/spikes/q2_cgroup_fence/test_fixture_admission.py",
+      "bytes": 12425,
+      "sha256": "0cc3ce09c7f56d7bb78ff0c5aebb57a9ca637fd4650e2522b9cb18b91c223e9e"
+    }
+  ],
+  "verification": {
+    "python": "3.12.14",
+    "pytest": "8.4.2",
+    "command": "python -B -m pytest -q tests/e3_host/spikes/q2_cgroup_fence",
+    "passed": 88,
+    "skipped": 0,
+    "failed": 0,
+    "elapsed_seconds": 0.29,
+    "python_ast_parse": "PASS",
+    "changed_file_whitespace": "PASS"
+  },
+  "approved_A_bytes_unchanged": true,
+  "native_helper_and_workflow_unchanged": true,
+  "live_account_commands_executed": false,
+  "native_real_probe_executed": false,
+  "privileged_fixture_executed": false,
+  "new_lab_dispatches": 0,
+  "lab_dispatches_consumed": 1,
+  "lab_dispatches_limit": 3,
+  "original_run_status": "UNKNOWN_RETAINED",
+  "original_cleanup_verified": false,
+  "further_dispatch_blocked": true,
+  "limitations": [
+    "Offline account-command mocks do not prove runner behavior or recover original account cleanup.",
+    "Original round and original source evidence are retained unchanged."
+  ]
+}

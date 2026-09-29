@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-29",
+  "scope": "LH-Q2-H07-CGROUP-FENCE-SPIKE-v1",
+  "execution_kind": "real_hosted_lab_round_review",
+  "source": {
+    "approved_A": "71c7e842c724650a0e949a63bb898699b41107be",
+    "closure_C": "8deeed492edeb7e5fa79cbe95c123a27e69f9f92",
+    "closure_sha256": {
+      ".github/workflows/q2-cgroup-fence-spike.yml": "c7a185cd0ca3ceaf493fdcc687e1e56de326bd2fa5e8071456cc9ffe6e5b458a",
+      "AGENTS.md": "4f97a0883c6076b8c90a19b6e2c752346489d0f195535313c348430d7c87438d",
+      "docs/a2-execution/q2-h07-cgroup-fence-spike/ARCHITECTURE.md": "6b7ef2487658e759df565084393e5de010db8f35de4966a4790320eea060116c",
+      "docs/a2-execution/q2-h07-cgroup-fence-spike/IMPLEMENTATION_PLAN.md": "0bd3dab26e10e2fa9717ef218fa70846cf5ad3b5888ad2f17596c7b7b385e99d",
+      "docs/a2-execution/q2-h07-cgroup-fence-spike/REQUIREMENTS.md": "41706c5b07cfceea319f10dcab1fcc8b2606995b029566f3e13bb00e41affd51",
+      "docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_OWNER_DECISION.md": "e42c3b17c7ddb8677eb02a1ad59b558ef323e333aa3cc1c7686fe3a38e425cc1",
+      "tests/e3_host/spikes/q2_cgroup_fence/helper.c": "d9dbefdb82f811660baf32f57f97723e731465954d3630cde8eed41e6d19de32",
+      "tests/e3_host/spikes/q2_cgroup_fence/run_fixture.py": "ef3d8730a18b3d399c8df385e82d43dbe7e6144edb2bb866c0f5ded5349539c0",
+      "tests/e3_host/spikes/q2_cgroup_fence/test_fixture_admission.py": "5b6452feb055f6a756f023758804007bb9ce6f9eef425bea446aca042431aaef",
+      "tests/e3_host/spikes/q2_cgroup_fence/test_verify_receipt.py": "beb707ddb4b68952cbd344f32ee4f353138162f0a5cc04912d694de3ff8207c0",
+      "tests/e3_host/spikes/q2_cgroup_fence/verify_receipt.py": "4f6ecd45599e9a4f4f4dae13612743a74b6c705f2d0c9473f458a42b5b06f127"
+    },
+    "expected_commit": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+    "github_sha": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+    "head": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4"
+  },
+  "run": {
+    "attempt": 1,
+    "id": "36577764454",
+    "round": 1,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36577764454",
+    "event": "workflow_dispatch",
+    "head_branch": "main",
+    "conclusion": "failure",
+    "job_id": 109437700015,
+    "fixture_exit_code": 3,
+    "created_at": "2026-09-29T13:47:50Z",
+    "updated_at": "2026-09-29T13:48:10Z"
+  },
+  "inputs": {
+    "expected_commit": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+    "round": "1",
+    "reason": "Initial reviewed H07 experiment; ordinary CI 36562115482 passed"
+  },
+  "identity_admission": "success",
+  "artifact_upload": "success",
+  "artifact": {
+    "id": 11038133434,
+    "name": "q2-h07-36577764454-1-r1",
+    "bytes": 3830,
+    "sha256": "5a48b64ae1a4c38e2ff33aca7d2c47b046acfb2f1232778d527e852f5e307a8e",
+    "expires_at": "2026-10-29T13:48:06Z",
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36577764454/artifacts/11038133434",
+    "archive_digest_verified": true,
+    "original_zip_separately_retained": true,
+    "files": {
+      "diagnostics.txt": {
+        "bytes": 344,
+        "sha256": "ae44063dddf419f2a63745bd4c438968d7ff0997c8344edfa1447faf94d00366"
+      },
+      "manifest.json": {
+        "bytes": 2224,
+        "sha256": "707be115083dde463fd129d57e4304a81c5e3385f76f2421479250629e0127da"
+      },
+      "report.json": {
+        "bytes": 3855,
+        "sha256": "9799682e04878ce583a6e446003f8d2e9fd49559adb1cc85b3bf6c650b5a013b"
+      }
+    }
+  },
+  "manifest_files_verified": true,
+  "manifest_source_and_run_match": true,
+  "source_closure_files_verified": 11,
+  "status": "UNKNOWN_RETAINED",
+  "reason": "dedicated account creation failed; inspect partial objects",
+  "diagnostic_excerpt": "configuration error - unknown item 'CREATE_MAIL_SPOOL' (notify administrator)",
+  "capability_executed": false,
+  "cases_executed": 0,
+  "cleanup": {
+    "records": [
+      {
+        "identity_match": true,
+        "object": "build/helper",
+        "operation": "unlink",
+        "removed": true
+      }
+    ],
+    "residuals": [
+      "account creation was attempted but its exact identity is not established"
+    ],
+    "verified": false
+  },
+  "cgroup_objects_observed": 0,
+  "independent_receipt_verifier": {
+    "status": "UNKNOWN_RETAINED",
+    "errors": [],
+    "case_results": [],
+    "exit_code": 2
+  },
+  "lab_dispatches_consumed": 1,
+  "lab_dispatches_limit": 3,
+  "remaining_quota": 2,
+  "further_dispatch_blocked": true,
+  "stop_basis": "Exact A IMPLEMENTATION_PLAN.md: unexpected UNKNOWN or unverified cleanup blocks subsequent rounds; a fresh runner does not erase unresolved cleanup.",
+  "original_Q2_startup_issued": false,
+  "publication_note": "Sanitized review and original file digests only; original artifact preserved separately without rewriting its status.",
+  "R": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "failure_stage": "setup/account_creation",
+  "case_statuses": {
+    "C1": "NOT_RUN",
+    "C2": "NOT_RUN",
+    "C3": "NOT_RUN",
+    "C4": "NOT_RUN",
+    "C5": "NOT_RUN",
+    "C6": "NOT_RUN"
+  }
+}

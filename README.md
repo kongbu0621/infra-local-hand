@@ -6,6 +6,10 @@
 
 下一具体工作为[H07 cgroup 监督原语隔离实验](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)，准确 A `71c7e842`；Owner 已批准 F1–F4，独立 C 为 `8deeed49`。实验实现与实际派发状态见[实施复核](docs/a2-execution/Q2_H07_CGROUP_FENCE_SPIKE_IMPLEMENTATION_REVIEW.md)；局部实验不等于原 Q2 已准入。
 
+实验首轮 `36577764454` 在账户 setup 失败，probe 与六案未开始；额度已用 **1/3**。
+已完成参数修复及 88 项离线验证，原结果仍为 **UNKNOWN_RETAINED / cleanup 未证**，
+按准确 A 停止后续实验派发；普通 CI 不能解除该停止条件。
+
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 
 **GX10 首轮复现入口：** [原始 S1 任务书](docs/GX10_S1_RUNBOOK.md) 固定到 `b763bd6`，保留原始输入身份。验证后续修复时使用 [复核记录](docs/S1_FOLLOWUP_REVIEW.md) 指定的新候选，仍须新 checkout、独立 build/runtime venv；不同候选的结果分别记录。

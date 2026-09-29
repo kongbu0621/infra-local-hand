@@ -97,6 +97,90 @@ def test_github_rerun_never_becomes_a_fresh_lab_round(tmp_path, attempt):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_account_creation_keeps_system_identity_without_invalid_mail_key(monkeypatch, tmp_path):
+    fixture = driver.Fixture(tmp_path, tmp_path / "out", "123456", 1)
+    calls = []
+    uid, gid = 60001, 60002
+
+    def account(name):
+        assert name == fixture.account
+        if not calls:
+            raise KeyError(name)
+        return SimpleNamespace(pw_uid=uid, pw_gid=gid, pw_dir="/nonexistent",
+                               pw_shell="/usr/sbin/nologin")
+
+    def group(name):
+        assert name == fixture.account
+        if not calls:
+            raise KeyError(name)
+        return SimpleNamespace(gr_gid=gid, gr_mem=[])
+
+    def groups(name, primary):
+        assert (name, primary) == (fixture.account, gid)
+        return [gid]
+
+    def command(argv, _deadline):
+        calls.append(argv)
+        return 0, b""
+
+    monkeypatch.setattr(driver.pwd, "getpwnam", account)
+    monkeypatch.setattr(driver.grp, "getgrnam", group)
+    monkeypatch.setattr(driver.os, "getgrouplist", groups)
+    monkeypatch.setattr(fixture, "command", command)
+    fixture.create_account(driver.Deadline(1))
+
+    assert len(calls) == 1
+    argv = calls[0]
+    assert argv[0] == "/usr/sbin/useradd" and argv[-1] == fixture.account
+    for flag in ("--system", "--user-group", "--no-create-home", "--no-log-init"):
+        assert flag in argv
+    for flag, value in (("--home-dir", "/nonexistent"), ("--shell", "/usr/sbin/nologin")):
+        assert argv[argv.index(flag) + 1] == value
+    for prohibited in ("-K", "--key", "CREATE_MAIL_SPOOL=no", "-F",
+                       "--add-subids-for-system", "-m", "--create-home"):
+        assert prohibited not in argv
+    assert fixture.account_attempted is True
+    assert fixture.account_id == (uid, gid)
+    assert fixture.facts["account"] == {"uid": uid, "gid": gid,
+                                        "supplementary_groups": [], "home_created": False}
+
+
+@pytest.mark.parametrize("failure", ["nonzero-exit", "incomplete-capture"])
+def test_failed_account_creation_retains_unknown_cleanup_without_deletion(monkeypatch, tmp_path, failure):
+    fixture = driver.Fixture(tmp_path, tmp_path / "out", "123456", 1)
+    calls, lookups = [], []
+
+    def absent(name):
+        assert name == fixture.account
+        lookups.append(name)
+        raise KeyError(name)
+
+    def command(argv, _deadline, **_kwargs):
+        calls.append(argv)
+        assert len(calls) == 1 and argv[0] == "/usr/sbin/useradd"
+        if failure == "incomplete-capture":
+            raise driver.CommandFailure("account command capture unresolved", b"partial")
+        return 3, b"fixed account creation failure\n"
+
+    monkeypatch.setattr(driver.pwd, "getpwnam", absent)
+    monkeypatch.setattr(driver.grp, "getgrnam", absent)
+    monkeypatch.setattr(fixture, "command", command)
+    with pytest.raises(driver.Refusal):
+        fixture.create_account(driver.Deadline(1))
+    assert len(lookups) == 2  # Only the pre-creation name checks completed.
+    assert fixture.account_attempted is True
+    assert fixture.account_id is None and fixture.facts["account"] is None
+    assert fixture.cg_objects == [] and fixture.native_started is False
+
+    result = fixture.cleanup()
+    assert result["verified"] is False
+    assert result["records"] == []
+    assert result["residuals"] == [
+        "account creation was attempted but its exact identity is not established"]
+    assert len(calls) == 1 and len(lookups) == 2
+    assert not (tmp_path / "out").exists()
+
+
 def simulated_process(monkeypatch, stream_name, payload):
     """Exercise the real bounded collector using fake descriptors, not a process."""
     class Pipe:

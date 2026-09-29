@@ -333,10 +333,12 @@ class Fixture:
                 continue
             raise Refusal("dedicated account/group name already exists")
         self.account_attempted = True
+        # CREATE_MAIL_SPOOL is a useradd-defaults setting, not a --key
+        # login.defs item. --system suppresses mail and, without -F, subids.
         rc, raw = self.command([
             "/usr/sbin/useradd", "--system", "--user-group", "--no-create-home",
             "--no-log-init", "--home-dir", "/nonexistent", "--shell", "/usr/sbin/nologin",
-            "--key", "CREATE_MAIL_SPOOL=no", self.account,
+            self.account,
         ], deadline)
         self.diagnostic(raw)
         if rc:

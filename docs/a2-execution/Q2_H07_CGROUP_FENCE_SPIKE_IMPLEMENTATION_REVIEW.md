@@ -2,6 +2,10 @@
 
 2026-09-29。仅 `LH-Q2-H07-CGROUP-FENCE-SPIKE-v1` 的 F1–F4。
 
+当前状态：首轮已运行，额度 **1/3**；账户 setup 失败，原报告
+**UNKNOWN_RETAINED / cleanup 未证**，后续实验派发停止。详见文末
+[首轮记录](#round-1-2026-09-29)。以下原实现、0/3 与普通 CI 段保留其历史时点。
+
 ## Authority 与准确边界
 
 - R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，直接来源及完整性沿用 AGENTS。
@@ -91,3 +95,40 @@ Windows 的新增 module skip 是 Linux-only fixture driver；收件验证器离
 本后续提交仅登记证据，实验实现文件与准确 D 字节不变。若 main 已包含本登记，
 后续派发必须冻结并填写届时当前完整提交、核对实验源码与上述 D 一致，不能
 在 main 前进后仍填写旧 D 并将 identity 拒绝视为实验运行结果。
+
+## Round 1 (2026-09-29)
+
+[run 36577764454](https://github.com/kongbu0621/infra-local-hand/actions/runs/36577764454)
+为 `workflow_dispatch` / round 1 / attempt 1；准确运行源码
+`6b085d9ceb536b9785ea683cd108e92cd8a4eec4`。其 parent 为上述 D，实验源码字节相同。
+`main`、完整 `expected_commit`、round 与 reason 均正确；源码准入步骤 SUCCESS。
+job `109437700015` 在创建专属账户时退出 3，上传证据步骤 SUCCESS。
+
+[首轮复核清单](evidence/q2-h07-cgroup-fence-spike/round-1-verification.json)
+保留身份、输入、artifact 和原件摘要。artifact `11038133434` 为 3830 字节，
+ZIP SHA-256 `5a48b64ae1a4c38e2ff33aca7d2c47b046acfb2f1232778d527e852f5e307a8e`；
+ZIP、manifest 两项文件摘要和 11 项源码闭包均已独立核对。
+原 ZIP 已另行保存，原报告和诊断不被本修复覆盖；公开仓库只记脱敏结果及摘要。
+
+失败诊断为 `configuration error - unknown item 'CREATE_MAIL_SPOOL'`。
+`run_fixture.py` 错将 useradd defaults 的设置传给 `--key` 的 login.defs 接口，
+重复引入了同仓 `q2_prepare.py` 已修复的参数问题。最小修复只删除
+`--key CREATE_MAIL_SPOOL=no`，保留 system/no-home/no-log-init/nologin 等限制。
+历史 recovery 中用于核验旧失败的参数保持原样。
+
+真实 capability probe 未运行，C1–C6 **0/6**，没有创建 cgroup 的记录。
+helper 已构建且删除有据；账户创建尝试失败后没有建立准确身份，因此账户是否
+残留仍未知。报告原值为 `UNKNOWN_RETAINED`、`cleanup.verified=false`；
+独立收件器派生相同状态且结构错误为空。此处“结构有效”不代表实验通过。
+job 完成、托管 runner 标签和参数错误本身都不能替代原账户清理证据。
+
+[本次修复离线清单](evidence/q2-h07-cgroup-fence-spike/round-1-repair-offline.json)
+记录修改后源码摘要与 **88 PASS / 0 SKIP**。新增三个非特权 mock 用例覆盖正常
+账户参数/身份，以及非零退出和捕获不完整时不重试、不删除未知账户、保留 cleanup
+未证。未在 cloud 执行真实账户/cgroup/probe；该结果不解决首轮清理未知。
+
+根据准确 A 实施方案“非预期 UNKNOWN 或清理未证阻断后续轮次，不能换 runner
+遗忘未决”，**剩余 2/3 额度暂不可使用**，不得 Re-run 或派发第二轮。
+范围内源码修复无需重复批准，但不能据此豁免停止条件。若无法补足原轮次清理
+证据而需改变停止条件，必须先形成具体变更方案并取得对应决定；本记录不构成该决定。
+冻结 A/B/C、生产后端和原 Q2 startup 均不变。
