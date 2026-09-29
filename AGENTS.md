@@ -594,19 +594,23 @@ are unchanged; real root-only collector coverage is mandatory alongside the
 ordinary-user suite. Exact native CI outcomes are distinct from cloud skips
 and do not establish original-host readiness or Q2 acceptance.
 
-### H07 cgroup fence qualification spike (proposed)
+### H07 cgroup fence qualification spike
 
-Scope `LH-Q2-H07-CGROUP-FENCE-SPIKE-v1` is **OPEN** at exact proposed A
+Scope `LH-Q2-H07-CGROUP-FENCE-SPIKE-v1` is **CLOSED for F1–F4** at exact approved A
 `71c7e842c724650a0e949a63bb898699b41107be`. Its
 [baseline record](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md) pins the
 [requirements](docs/a2-execution/q2-h07-cgroup-fence-spike/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-h07-cgroup-fence-spike/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-h07-cgroup-fence-spike/IMPLEMENTATION_PLAN.md).
 Unchanged R/source/integrity, Owner mandate/authority, no exceptions and change
-rules remain those above. There is no Owner B or independent CLOSED C for this scope.
-Do not create its helper, test implementation or workflow before that closure.
+rules remain those above. Owner B is retained in
+[Q2_H07_CGROUP_FENCE_SPIKE_OWNER_DECISION.md](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_OWNER_DECISION.md),
+event `LH-Q2-H07-CGROUP-FENCE-SPIKE-CLOSURE-20260929-01`, with the exact reply
+and preceding request. This independent bookkeeping-only commit is CLOSED C;
+implementation D must descend from it. The three approved document bytes and
+historical OPEN labels remain unchanged.
 
-The proposed F1–F4 experiment uses atomic clone3 placement and a separately
+The approved F1–F4 experiment uses atomic clone3 placement and a separately
 observed guardian to close a subtree containing every synthetic workload producer.
 It includes a bounded temporary hosted-Linux fixture, manual-only GitHub workflow,
 and at most three dispatched rounds (initial plus two justified source-repair
@@ -614,7 +618,9 @@ verifications), each with six fixed cases. It is not existing H4 guest authority
 a production backend, original-host provisioning, frozen runtime replacement or
 permission to issue/consume the original Q2 batch. Successful local fencing would
 not qualify first remote dispatch, cross-clock mapping, FS or full billing.
-This registration is proposal bookkeeping, not a CLOSED record or implementation.
+The Owner expressly permits executor-triggered GitHub-page manual dispatch within
+that quota, and in-scope repairs without repeated approval. Exact A stopping and
+change-control conditions apply. No laboratory round is consumed by this closure.
 
 ### Continuing constraints
 
