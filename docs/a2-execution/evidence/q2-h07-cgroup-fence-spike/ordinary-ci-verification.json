@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "source_commit": "e10dbfcb7f354f27b009c1b63c533fb72ac1a677",
+  "source_tree": "f60e745fcace90898e92b5717c0d4ef79d5b55a9",
+  "run_id": 36562115482,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36562115482",
+  "event": "push",
+  "run_attempt": 1,
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 109385214785,
+      "name": "classify-change",
+      "conclusion": "success"
+    },
+    {
+      "id": 109385266997,
+      "name": "semantic-core (ubuntu-latest)",
+      "conclusion": "success"
+    },
+    {
+      "id": 109385267146,
+      "name": "semantic-core (windows-latest)",
+      "conclusion": "success"
+    }
+  ],
+  "linux": {
+    "source_passed": 2831,
+    "source_skipped": 51,
+    "root_collector_passed": 16,
+    "installed_checks_passed": 94,
+    "installed_commands": 292
+  },
+  "windows": {
+    "source_passed": 787,
+    "source_skipped": 996,
+    "installed_checks_passed": 10,
+    "installed_commands": 10
+  },
+  "retained_job_log_digests": [
+    {
+      "platform": "classify",
+      "bytes": 22288,
+      "sha256": "c06ecc6c264e810feb123b3a05c5acb9bede9264bfd528f960ba9f1ba4483edd"
+    },
+    {
+      "platform": "linux",
+      "bytes": 98222,
+      "sha256": "7df478631cfb89d8cff89d8db8730a64f359314b44cae3132ac19d8f2efdf965"
+    },
+    {
+      "platform": "windows",
+      "bytes": 202658,
+      "sha256": "206ec4d232335da9b7169dc018ffe528cfedf618197f5185fb3a6c6134f6ccd3"
+    }
+  ],
+  "lab_dispatches_consumed": 0,
+  "actual_cgroup_lab": "NOT_DISPATCHED",
+  "original_Q2_startup": "NOT_ISSUED",
+  "interpretation": "Ordinary source and installed verification passed; this is not F1 capability or F3 native cgroup experiment evidence."
+}

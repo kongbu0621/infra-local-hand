@@ -62,3 +62,32 @@ Owner 的实验批准已有效，无需重批相同范围；此处是访问状�
 在 GitHub 页面以完整 `expected_commit` 触发并记录 run_id/attempt。应答不明先查
 已有运行，不补发。原 A 的清理、UNKNOWN、UNSUPPORTED 和三轮额度停止条件保持。
 后续真实结果需追加准确 D/run_id 的 F4 记录，不能将本文件的离线验证改称实机通过。
+
+## 准确实现 D 的普通 CI 复核
+
+D：`e10dbfcb7f354f27b009c1b63c533fb72ac1a677`，tree
+`f60e745fcace90898e92b5717c0d4ef79d5b55a9`，直接 parent 为上述独立 C。
+[run 36562115482](https://github.com/kongbu0621/infra-local-hand/actions/runs/36562115482)
+为普通 `push` / attempt 1，三个 job 全部 SUCCESS。
+[准确 CI 清单](evidence/q2-h07-cgroup-fence-spike/ordinary-ci-verification.json)
+保留 job IDs、计数及原日志摘要。
+
+| 检查 | 结果 |
+| --- | --- |
+| Linux 源测试 | 2831 PASS / 51 SKIP |
+| Linux root-only collector | 16 PASS |
+| Linux 安装验收 | 94 checks / 292 commands PASS |
+| Windows 源测试 | 787 PASS / 996 SKIP |
+| Windows 安装验收 | 10 checks / 10 commands PASS |
+
+Windows 的新增 module skip 是 Linux-only fixture driver；收件验证器离线测试
+正常收集。没有通过跳过新增跨平台收件测试掩盖失败。
+
+本次只读复核及文档登记没有新实验 dispatch，额度仍为 **0/3**。云浏览器在
+安全登录交接后仍呈 GitHub 登录页面，尚无已登录的可见证据；未点击实验运行。
+这不是 GitHub 服务不可达或实验 UNSUPPORTED 的证据，真实实验仍为 NOT DISPATCHED。
+原 Q2 未发起，F1/F3 实机能力仍未证明。
+
+本后续提交仅登记证据，实验实现文件与准确 D 字节不变。若 main 已包含本登记，
+后续派发必须冻结并填写届时当前完整提交、核对实验源码与上述 D 一致，不能
+在 main 前进后仍填写旧 D 并将 identity 拒绝视为实验运行结果。
