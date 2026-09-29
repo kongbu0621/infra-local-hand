@@ -642,9 +642,12 @@ unknown and consumed round remain unchanged; all later stopping conditions stay.
 The proposal also separates observed account identity from admitted cleanup
 identity and specifies bounded account evidence and explicit report versioning.
 Rule R/source/integrity, Owner-only Authority, adoption mandate and no exceptions
-remain as above. An exact new documentation baseline must be registered after
-this documentation commit, then receive an exact Owner decision and independent
-bookkeeping C before affected implementation D or another laboratory dispatch.
+remain as above. The exact new documentation baseline is
+`a08a5055c35009a896ad6c6059d709758cc78436`; its
+[baseline record](docs/governance/Q2_H07_R1_CONTINUATION_BASELINE.md) pins all three
+document digests and the precise historical acceptance requested. New B and C
+are absent. An exact Owner decision and independent bookkeeping C are required
+before affected implementation D or another laboratory dispatch.
 The instruction to continue preparing this proposal is not closure of its
 not-yet-pinned A. Unaffected original CLOSED scopes remain valid; the current
 round 1 stop condition remains effective until a valid new C exists.

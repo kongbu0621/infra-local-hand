@@ -11,7 +11,7 @@
 按准确 A 停止后续实验派发；普通 CI 不能解除该停止条件。
 
 修复提交 `9596c784` 的普通 CI 已 **3/3 成功**。当前准备
-[首轮历史异常的限定续验方案](docs/a2-execution/q2-h07-r1-continuation/REQUIREMENTS.md)，
+[首轮历史异常的限定续验方案 A `a08a5055`](docs/governance/Q2_H07_R1_CONTINUATION_BASELINE.md)，
 新范围 **PROPOSED / Gate OPEN**，待准确方案决定后才可实施并考虑第二轮。
 
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
