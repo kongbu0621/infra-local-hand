@@ -33,6 +33,7 @@ ORDINARY_PRECHECK_SCHEMA = "local-hand-q2-host-window-precheck/v2"
 FILESYSTEM_SCHEMA = "local-hand-q2-host-window-ext4/v1"
 EVIDENCE_SCHEMA = "local-hand-q2-host-window-consumption/v1"
 ORDINARY_EVIDENCE_SCHEMA = "local-hand-q2-host-window-consumption/v2"
+PARENT_ALLOCATION_SCHEMA = "local-hand-q2-host-window-parent-allocation/v1"
 PRECHECK_FIELDS = ("schema", "location_sha256", "window", "boot_id", "parent_metadata",
     "filesystem", "host_bill_sha256", "host_bill_summary", "limits")
 FILESYSTEM_FIELDS = ("schema", "device", "mount_id", "mountpoint", "source", "mountinfo_sha256",
@@ -552,6 +553,8 @@ class HeldConsumption:
         self.closed = False; self.durable = False; self.window_consumed = False
         self.snapshot = None
         self.parent_growth_bytes = None
+        self._first_parent_metadata = None
+        self._first_allocation_observation = None
 
     def _parent_verify(self):
         require(not self.closed, "HOST_WINDOW_CLOSED")
@@ -607,6 +610,20 @@ class HeldConsumption:
             allowed_uids=self.preflight.allowed_uids)
         self._budget(observed)
         self.snapshot = observed
+        if self.preflight.intent_schema == c.ORDINARY_INTENT_SCHEMA:
+            # Retain only facts already read by the original first budget
+            # check. No later recheck may replace this historical endpoint.
+            intent = c.document(self.intent_raw)
+            self._first_allocation_observation = dict(schema=PARENT_ALLOCATION_SCHEMA,
+                span="precheck-parent-to-first-marker-budget",
+                binding_sha256=sha(encoded(intent["binding"])),
+                location_sha256=intent["precheck"]["location_sha256"],
+                intent_sha256=self.intent_sha256,
+                precheck_sha256=intent["precheck_sha256"], window=copy.deepcopy(intent["window"]),
+                parent_path=self.preflight.location["parent"],
+                parent_before=copy.deepcopy(intent["precheck"]["parent_metadata"]),
+                parent_after=copy.deepcopy(self._first_parent_metadata),
+                marker_snapshot_sha256=sha(encoded(observed)))
         self.durable = True
         self.parent.guard = self.preflight.guard
         self.verify()
@@ -625,6 +642,8 @@ class HeldConsumption:
         require(logical <= c.LOGICAL_LIMIT and observed["bytes"] + parent_growth <= c.BYTE_LIMIT
             and observed["inodes"] <= c.INODE_LIMIT and parent_growth <= BLOCK,
             "HOST_WINDOW_ACTUAL_LIMIT")
+        if self._first_parent_metadata is None:
+            self._first_parent_metadata = copy.deepcopy(parent_now)
         self.parent_growth_bytes = parent_growth
         return dict(logical_bytes=logical, bytes=observed["bytes"],
             parent_growth_bytes=parent_growth, inodes=observed["inodes"])
@@ -667,6 +686,18 @@ class HeldConsumption:
             owner_issued=False, allow_run=False, intent_sha256=self.intent_sha256,
             directory_identity=dict(self.directory_identity), window=dict(self.preflight.origin),
             actual=self._budget(observed), **self.preflight._operator_fields())
+
+    def first_allocation_observation(self):
+        """Copy the historical first span; no new I/O or freshness assertion.
+
+        This ordinary-profile companion is not a causal, allocation-peak,
+        baseline-cost, durability or live-dispatch proof. Existing evidence
+        schemas and historical readback cannot synthesize this observation.
+        """
+        require(not self.closed and self.durable, "HOST_WINDOW_NOT_DURABLE")
+        require(self._first_allocation_observation is not None,
+            "HOST_WINDOW_PARENT_ALLOCATION_UNAVAILABLE")
+        return copy.deepcopy(self._first_allocation_observation)
 
     def close(self):
         if not self.closed:

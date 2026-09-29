@@ -244,6 +244,43 @@ def validate_ordinary_host_window(raw, *, expected_binding, location, window,
         joint_admission_proven=False, q2_accepted=False)
 
 
+def validate_ordinary_host_window_parent_allocation(raw, *, expected_binding, location, window,
+                                                  precheck_bill, consumed_bill, plan):
+    """Explicit v2-bill consistency only; this is not wired to any run loader.
+
+    First parent endpoints are historical observations, not evidence of cause,
+    peak allocation, or complete baseline costs. The original clocks, source
+    prerequisites, filesystem qualification and fixed field gate stay intact.
+    """
+    contract = helper("q2_host_window_contract")
+    billing = helper("q2_host_window_billing")
+    binding = contract.validate_binding(expected_binding, location)
+    expected_window = contract.validate_window(window)
+    require(type(plan) is dict and type(plan.get("host")) is dict
+        and contract.sha(contract.encoded(plan)) == binding["plan_sha256"],
+        "RECONCILIATION_HOST_ORDINARY_PLAN_BINDING")
+    transition = billing.validate_marker_transition_parent_allocation(precheck_bill, consumed_bill,
+        raw=raw, expected_binding=binding, location=location, window=expected_window)
+    intent = contract.verify_intent_ordinary(raw, binding, location)
+    operator = contract.validate_operator(intent["operator"])
+    _validate_marker_scan(consumed_bill, intent, raw, location,
+        uid=operator["uid"][1], gid=operator["gid"][1])
+    require(transition["host_id"] == contract.ATTESTATION_SHA256
+        and transition["guest_id"] == contract.sha(contract.encoded(plan["host"])),
+        "RECONCILIATION_HOST_BILL_MACHINE_BINDING")
+    return dict(schema="local-hand-q2-host-window-ordinary-inputs/v2",
+        status="INPUT_CONSISTENT", binding=binding, location=copy.deepcopy(location),
+        window=expected_window, intent=intent, intent_sha256=contract.sha(raw),
+        precheck_bill_sha256=contract.sha(contract.encoded(precheck_bill)),
+        host_bill_sha256=contract.sha(contract.encoded(consumed_bill)),
+        plan_sha256=binding["plan_sha256"], transition=transition,
+        parent_allocation_sha256=transition["parent_allocation_sha256"],
+        baseline_parent_cost_status="UNPROVEN", baseline_parent_cost_proven=False,
+        full_bill_proven=False, filesystem_proven=False,
+        source_admission_proven=False, field_ready=False, allow_run=False,
+        joint_admission_proven=False, q2_accepted=False)
+
+
 def host_reference(verified):
     contract = helper("q2_reconciliation_contract")
     value = verified.host_window

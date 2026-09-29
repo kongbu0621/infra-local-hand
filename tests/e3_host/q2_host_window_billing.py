@@ -13,6 +13,7 @@ import importlib.util
 import json
 from pathlib import Path, PurePosixPath as P
 import re
+import stat
 
 
 def helper(name):
@@ -26,6 +27,12 @@ def helper(name):
 b = helper("q2_reconciliation_billing")
 SCHEMA = "local-hand-q2-host-window-bill/v1"
 JOINT_SCHEMA = "local-hand-q2-host-guest-bill/v1"
+PARENT_BILL_SCHEMA = "local-hand-q2-host-window-bill/v2"
+PARENT_JOINT_SCHEMA = "local-hand-q2-host-guest-bill/v2"
+PARENT_ALLOCATION_SCHEMA = "local-hand-q2-host-window-parent-allocation/v1"
+PARENT_ALLOCATION_FIELDS = {"schema", "span", "binding_sha256", "location_sha256",
+    "intent_sha256", "precheck_sha256", "window", "parent_path", "parent_before",
+    "parent_after", "marker_snapshot_sha256"}
 STARTUP_C = "d4a925c883672fadc7d1b10a8dfe58df18b922cd"
 MARKER_NAME = "q2-startup-window-" + hashlib.sha256(STARTUP_C.encode()).hexdigest()
 MARKER_FILE = "host-window-intent.json"
@@ -253,7 +260,11 @@ def validate_marker_transition(precheck_bill, consumed_bill):
     """A consumed quote must contain the actual marker and retained old scans."""
     before = validate_host_bill(precheck_bill)
     after = validate_host_bill(consumed_bill)
-    a, z = precheck_bill["inventory"], consumed_bill["inventory"]
+    return _marker_transition(precheck_bill["inventory"], consumed_bill["inventory"], before, after)
+
+
+def _marker_transition(a, z, before, after):
+    """Shared unchanged-history checks after explicit schema validation."""
     require(before["marker"]["state"] == "ABSENT" and after["marker"]["state"] == "DURABLE", "MARKER_TRANSITION")
     for key in ("host_id", "guest_id", "obligations", "early_audit", "coverage_sha256"):
         require(a[key] == z[key], "MARKER_DECLARATION_DRIFT")
@@ -269,6 +280,146 @@ def validate_marker_transition(precheck_bill, consumed_bill):
         host_id=after["host_id"], guest_id=after["guest_id"])
 
 
+def _parent_unproven():
+    return dict(baseline_parent_cost_status="UNPROVEN", baseline_parent_cost_proven=False,
+        full_bill_proven=False, filesystem_proven=False, field_ready=False)
+
+
+def _parent_allocation_inputs(inventory, base_quote, *, raw, expected_binding, location, window):
+    """Bind a first endpoint observation; never infer cause, peak or provenance."""
+    c = helper("q2_host_window_contract")
+    intent = c.verify_intent_ordinary(raw, expected_binding, location)
+    require(intent["window"] == c.validate_window(window), "PARENT_WINDOW")
+    require(all(base_quote["summary"][key] == intent["precheck"]["host_bill_summary"][key]
+        for key in ("host_id", "guest_id")), "PARENT_MACHINE_BINDING")
+    value = inventory["parent_allocation"]
+    b.keys(value, PARENT_ALLOCATION_FIELDS)
+    require(value["schema"] == PARENT_ALLOCATION_SCHEMA
+        and value["span"] == "precheck-parent-to-first-marker-budget", "PARENT_SCHEMA")
+    require(c.validate_window(value["window"]) == intent["window"]
+        and value["parent_path"] == location["parent"]
+        and value["binding_sha256"] == digest(expected_binding)
+        and value["location_sha256"] == digest(location)
+        and value["intent_sha256"] == c.sha(raw)
+        and value["precheck_sha256"] == intent["precheck_sha256"], "PARENT_BINDING")
+    before, after = value["parent_before"], value["parent_after"]
+    for metadata in (before, after):
+        b.keys(metadata, b._METADATA)
+        for key in metadata:
+            b.integer(metadata[key], 1 if key in ("device", "inode", "nlink") else 0)
+        require(stat.S_ISDIR(metadata["st_mode"])
+            and metadata["blocks"] <= b.MAX_INTEGER // 512, "PARENT_METADATA")
+    require(before == intent["precheck"]["parent_metadata"]
+        and all(before[key] == after[key] for key in ("device", "inode", "st_mode", "uid", "gid")),
+        "PARENT_IDENTITY")
+    require(after["blocks"] >= before["blocks"], "PARENT_ALLOCATION_SHRANK")
+    growth = (after["blocks"] - before["blocks"]) * 512
+    require(growth <= intent["precheck"]["filesystem"]["block_size"], "PARENT_GROWTH_BOUND")
+    marker = base_quote["summary"]["marker"]
+    require(marker["state"] == "DURABLE" and marker["path"] == location["directory"]
+        and marker["device"] == before["device"] and marker["intent_sha256"] == c.sha(raw),
+        "PARENT_MARKER_BINDING")
+    scan = inventory["scans"][location["directory"]]
+    require(value["marker_snapshot_sha256"] == digest(scan), "PARENT_MARKER_SNAPSHOT")
+    rows = {row["relative_path"]: row for row in scan["entries"]}
+    root, leaf = rows["."]["source_metadata"], rows[MARKER_FILE]["source_metadata"]
+    identity = intent["directory_identity"]
+    require(all(root[key] == identity[key] for key in ("device", "inode", "uid", "gid"))
+        and root["st_mode"] == (stat.S_IFDIR | 0o700) and root["nlink"] == 2
+        and root["device"] == before["device"] and root["inode"] != before["inode"],
+        "PARENT_MARKER_IDENTITY")
+    require(leaf["st_mode"] == (stat.S_IFREG | 0o400) and leaf["nlink"] == 1
+        and leaf["uid"] == identity["uid"] and leaf["gid"] == identity["gid"]
+        and leaf["device"] == before["device"]
+        and leaf["inode"] not in (before["inode"], root["inode"])
+        and leaf["size"] == len(raw) and rows[MARKER_FILE]["sha256"] == c.sha(raw),
+        "PARENT_MARKER_CONTENT")
+    parent = location["parent"]
+    require(all(not b.contains(root_path, parent) for root_path in inventory["scans"]),
+        "PARENT_BASELINE_SCAN_COVERED")
+    objects = b._scans(inventory["scans"], inventory["expected_roots"])
+    require(all(row["path"] != parent
+        and (row["device"], row["inode"]) != (before["device"], before["inode"])
+        for row in objects.values()), "PARENT_BASELINE_OBJECT_COVERED")
+    require(all(not b.contains(covered, parent) for declaration in inventory["obligations"]
+        for covered in declaration["covered_paths"]), "PARENT_BASELINE_OBLIGATION_COVERED")
+    require(b.add(marker["actual"]["bytes"], growth) <= MARKER_PEAK["bytes"], "PARENT_MARKER_SUBBUDGET")
+    return growth
+
+
+def quote_host_parent_allocation(inventory, *, raw, expected_binding, location, window):
+    """Explicit consumed v2 arithmetic over one retained first observation.
+
+    The old parent baseline is neither classified nor credited here. This
+    narrow profile rejects any ordinary scan/obligation already covering it;
+    passing arithmetic still does not establish a complete bill or field gate.
+    """
+    b.keys(inventory, INVENTORY_KEYS | {"parent_allocation"})
+    base = quote_host({key: inventory[key] for key in INVENTORY_KEYS})
+    growth = _parent_allocation_inputs(inventory, base, raw=raw,
+        expected_binding=expected_binding, location=location, window=window)
+    summary = copy.deepcopy(base["summary"])
+    marker = summary["marker"]
+    subtree = copy.deepcopy(marker["actual"])
+    marker.update(subtree_actual=subtree, parent_growth=dict(bytes=growth, inodes=0),
+        parent_allocation_sha256=digest(inventory["parent_allocation"]))
+    marker["actual"]["bytes"] = b.add(subtree["bytes"], growth)
+    proof = next(row for row in summary["obligations"] if row["kind"] == "marker")
+    require(proof["actual"] == subtree and proof["unspent"]["bytes"] >= growth,
+        "PARENT_MARKER_CREDIT")
+    proof["actual"]["bytes"] = b.add(proof["actual"]["bytes"], growth)
+    proof["unspent"]["bytes"] -= growth
+    # The allocation debit is not a new inode/object or a second coverage path.
+    # Its evidence is linked explicitly; all old path coverage hashes stay put.
+    proof["parent_allocation_sha256"] = marker["parent_allocation_sha256"]
+    for values in (summary, summary["categories"]["capture"],
+                   summary["by_device"][str(marker["device"])]):
+        require(values["future"]["bytes"] >= growth, "PARENT_FUTURE_CREDIT")
+        values["actual"]["bytes"] = b.add(values["actual"]["bytes"], growth)
+        values["future"]["bytes"] -= growth
+    summary["total"] = {key: b.add(summary["actual"][key], summary["future"][key])
+        for key in ("bytes", "inodes")}
+    for values in summary["categories"].values():
+        values["admitted"] = {key: b.add(values["actual"][key], values["future"][key])
+            for key in ("bytes", "inodes")}
+        values["within_ceiling"] = all(values["admitted"][key] <= values["ceiling"][key]
+            for key in ("bytes", "inodes"))
+    for values in summary["by_device"].values():
+        values["within_capacity"] = all(values["future"][key] <= values["available"][key]
+            for key in ("bytes", "inodes"))
+    summary["local_admissible"] = all(row["within_ceiling"] for row in summary["categories"].values()) \
+        and all(row["within_capacity"] for row in summary["by_device"].values())
+    require(summary["total"] == base["summary"]["total"], "PARENT_TOTAL_CHANGED")
+    summary["inventory_sha256"] = digest(inventory)
+    summary.update(_parent_unproven())
+    require(len(encoded(summary)) <= 8192, "INTENT_SUMMARY_BOUND")
+    return dict(schema=PARENT_BILL_SCHEMA, inventory=copy.deepcopy(inventory), summary=summary)
+
+
+def validate_host_bill_parent_allocation(value, *, raw, expected_binding, location, window):
+    b.keys(value, ("schema", "inventory", "summary"))
+    require(value["schema"] == PARENT_BILL_SCHEMA, "PARENT_BILL_SCHEMA")
+    expected = quote_host_parent_allocation(value["inventory"], raw=raw,
+        expected_binding=expected_binding, location=location, window=window)
+    require(encoded(value) == encoded(expected), "PARENT_QUOTE_CHANGED")
+    require(expected["summary"]["local_admissible"], "LOCAL_CAPACITY")
+    return copy.deepcopy(expected["summary"])
+
+
+def validate_marker_transition_parent_allocation(precheck_bill, consumed_bill, *,
+                                                raw, expected_binding, location, window):
+    before = validate_host_bill(precheck_bill)
+    after = validate_host_bill_parent_allocation(consumed_bill, raw=raw,
+        expected_binding=expected_binding, location=location, window=window)
+    c = helper("q2_host_window_contract")
+    intent = c.verify_intent_ordinary(raw, expected_binding, location)
+    require(intent["precheck"]["host_bill_sha256"] == digest(precheck_bill)
+        and intent["precheck"]["host_bill_summary"] == before, "PARENT_PRECHECK_BILL")
+    proof = _marker_transition(precheck_bill["inventory"], consumed_bill["inventory"], before, after)
+    return dict(proof, parent_allocation_sha256=after["marker"]["parent_allocation_sha256"],
+        **_parent_unproven())
+
+
 def joint_quote(guest_quote, host_bill):
     """Combine one host and one guest without crediting unrelated pools.
 
@@ -277,6 +428,19 @@ def joint_quote(guest_quote, host_bill):
     before and after, so the only amendment delta remains those same two U.
     """
     host = validate_host_bill(host_bill)
+    return _joint_quote(guest_quote, host_bill, host, schema=JOINT_SCHEMA)
+
+
+def joint_quote_parent_allocation(guest_quote, host_bill, *, raw, expected_binding, location, window):
+    """A v2 arithmetic comparison, deliberately rejected by the v1 run gate."""
+    host = validate_host_bill_parent_allocation(host_bill, raw=raw,
+        expected_binding=expected_binding, location=location, window=window)
+    result = _joint_quote(guest_quote, host_bill, host, schema=PARENT_JOINT_SCHEMA)
+    result.update(_parent_unproven())
+    return result
+
+
+def _joint_quote(guest_quote, host_bill, host, *, schema):
     require(host["marker"]["state"] == "DURABLE", "DURABLE_MARKER_REQUIRED")
     require(type(guest_quote) is dict and guest_quote.get("schema") == "local-hand-q2-reconciliation-bill/v1"
         and type(guest_quote.get("sealed")) is bool, "GUEST_QUOTE")
@@ -313,7 +477,7 @@ def joint_quote(guest_quote, host_bill):
     delta = copy.deepcopy(guest_quote["terminated_unspent"])
     require(all(before["total"][key] - after["total"][key] == delta[key]
         and before["actual"][key] == after["actual"][key] for key in ("bytes", "inodes")), "AMENDMENT_DELTA")
-    return dict(schema=JOINT_SCHEMA, before=before, proposed_after=after,
+    return dict(schema=schema, before=before, proposed_after=after,
         current=copy.deepcopy(after if guest_quote["sealed"] else before), sealed=guest_quote["sealed"],
         terminated_unspent=delta, guest_quote_sha256=digest(guest_quote), host_bill_sha256=digest(host_bill),
         host_inventory_sha256=host["inventory_sha256"], marker=host["marker"],
