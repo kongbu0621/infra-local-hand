@@ -12,7 +12,7 @@ import base64
 import gzip
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import selectors
 import shlex
@@ -39,6 +39,20 @@ HEADER_BYTES = 9
 SCHEMA = "local-hand-q2-host-window-framed-capture/v1"
 CONFIG_LIMIT = 32 * 1024**2
 CONFIG_SCHEMA = "local-hand-q2-host-window-compressed-config/v1"
+ENV_BASH_LITERAL_SSH_PROFILE = "env-bash-literal-ssh-v1"
+_LITERAL_SSH_SOURCE = re.compile(
+    r'#!/usr/bin/env bash\n'
+    r'set -euo pipefail\n'
+    r'q1_vm=(?P<directory>/[A-Za-z0-9_./-]{1,4094})\n'
+    r'exec ssh -F /dev/null \\\n'
+    r'  -i "\$q1_vm/id_ed25519" -p (?P<port>[1-9][0-9]{0,4}) \\\n'
+    r'  -o IdentitiesOnly=yes -o BatchMode=yes \\\n'
+    r'  -o StrictHostKeyChecking=accept-new \\\n'
+    r'  -o UserKnownHostsFile="\$q1_vm/known_hosts" \\\n'
+    r'  -o ConnectTimeout=10 \\\n'
+    r'  [A-Za-z_][A-Za-z0-9_.-]{0,63}@'
+    r'[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])? "\$@"\n'
+)
 ANCHOR_PINS = {
     "278d2c8fa1a08697730ce6bc44b3cff19f44c10fdfc39682aa0c6e8d4eea83c6": 360,
     "91078ec71900208e48096026b456664c2128556a56c99acd50d593109125a965": 366,
@@ -257,11 +271,47 @@ def read_ack(*, boot_id, deadline_ns, fd=0):
             return bytes(raw)
 
 
-def memory_wrapper_argv(raw, *, expected_sha256, wrapper_path, remote_argv):
+def analyze_wrapper_profile(raw, *, expected_sha256, wrapper_path, profile_id):
+    """Analyze one complete finite grammar in RAM; never admit its execution.
+
+    Literal slots are data within an otherwise exact source shape. This is not
+    a shell parser, nor authority to adopt a caller-supplied source digest.
+    Paths are checked lexically; no file, executable or credential is opened.
+    """
+    require(type(profile_id) is str and profile_id == ENV_BASH_LITERAL_SSH_PROFILE,
+        "HOST_WINDOW_WRAPPER_PROFILE_UNSUPPORTED")
+    require(type(raw) is bytes and 0 < len(raw) <= 1024**2
+        and hashlib.sha256(raw).hexdigest() == expected_sha256, "HOST_WINDOW_WRAPPER_DIGEST")
+    require(type(wrapper_path) is str and wrapper_path.startswith("/")
+        and not wrapper_path.startswith("//") and wrapper_path != "/"
+        and str(PurePosixPath(wrapper_path)) == wrapper_path
+        and ".." not in PurePosixPath(wrapper_path).parts and "\0" not in wrapper_path,
+        "HOST_WINDOW_WRAPPER_PATH")
+    try:
+        source = raw.decode("utf-8", "strict")
+    except UnicodeError:
+        raise ValueError("HOST_WINDOW_WRAPPER_ENCODING") from None
+    match = _LITERAL_SSH_SOURCE.fullmatch(source)
+    require(match is not None, "HOST_WINDOW_WRAPPER_PROFILE_SOURCE_UNSUPPORTED")
+    directory = match["directory"]
+    require(not directory.startswith("//") and directory != "/"
+        and str(PurePosixPath(directory)) == directory
+        and ".." not in PurePosixPath(directory).parts
+        and int(match["port"]) <= 65535, "HOST_WINDOW_WRAPPER_PROFILE_LITERAL_UNSUPPORTED")
+    return dict(schema="local-hand-q2-wrapper-profile-analysis/v1", profile_id=profile_id,
+        source_sha256=expected_sha256, source_bytes=len(raw), supported_syntax=True,
+        local_variables=["q1_vm"], dependency_roles=["env", "bash", "ssh", "identity_file", "known_hosts"],
+        source_execution_admitted=False)
+
+
+def memory_wrapper_argv(raw, *, expected_sha256, wrapper_path, remote_argv, profile_id=None):
     """Use exact pinned shell text without reopening its preserved source path.
 
     Unknown interpreters and script-file introspection are unsupported. This is
     an execution adapter for the existing wrapper, not a replacement SSH recipe.
+    An explicit finite profile constructs argv for controlled_environment();
+    this function does not apply that environment or prove field tool identity,
+    credential/cwd equivalence, source adoption or permission to execute.
     """
     require(type(raw) is bytes and 0 < len(raw) <= 1024**2
         and hashlib.sha256(raw).hexdigest() == expected_sha256, "HOST_WINDOW_WRAPPER_DIGEST")
@@ -276,6 +326,19 @@ def memory_wrapper_argv(raw, *, expected_sha256, wrapper_path, remote_argv):
         source = raw.decode("utf-8", "strict")
     except UnicodeError:
         raise ValueError("HOST_WINDOW_WRAPPER_ENCODING") from None
+    if profile_id is not None:
+        analyze_wrapper_profile(raw, expected_sha256=expected_sha256,
+            wrapper_path=wrapper_path, profile_id=profile_id)
+        try:
+            command = shlex.join(remote_argv)
+            command.encode("utf-8", "strict")
+        except UnicodeError:
+            raise ValueError("HOST_WINDOW_WRAPPER_REMOTE_ENCODING") from None
+        # Preserve the original env/PATH interpreter lookup and every source
+        # byte. The profile excludes file introspection and any stdin reader
+        # before exec; $0 and the one existing remote-command argument remain.
+        # This construction does not prove tool identity or field readiness.
+        return ["/usr/bin/env", "bash", "-c", source, wrapper_path, command]
     interpreter = source.splitlines()[0]
     interpreters = {"#!/bin/sh": ["/bin/sh"], "#!/bin/bash": ["/bin/bash", "--noprofile", "--norc"],
         "#!/usr/bin/bash": ["/usr/bin/bash", "--noprofile", "--norc"]}
