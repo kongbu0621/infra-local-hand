@@ -1,0 +1,480 @@
+{
+  "schema": "q2-local-source-rerun3-independent-validation/v1",
+  "status": "STATIC_RECEIPT_REVIEW_PASS_OBSERVED_PARTIAL",
+  "receipt": {
+    "filename": "q2-local-source-diagnostic-result-89c725ef-rerun3.json",
+    "bytes": 32439,
+    "sha256": "700a17989fec4271973a0620e87dccee64ce30ef4f7082a97ab42e5b6648f119"
+  },
+  "implementation_commit": "89c725efd61dad11b0cc9ae11c3c08a941e3111a",
+  "implementation_tree": "15f5a0dceae0f534506abf7195562980459f3ee7",
+  "check_count": 73,
+  "checks": [
+    {
+      "id": "strict_canonical_received_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_D_q2_host_kernel_facts.py",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_D_q2_local_source_contract.py",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_D_q2_local_source_delivery.py",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_D_q2_local_source_observe.py",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_D_q2_reconciliation_io.py",
+      "status": "PASS"
+    },
+    {
+      "id": "exact_D_q2_retry_bundle.py",
+      "status": "PASS"
+    },
+    {
+      "id": "D_tree",
+      "status": "PASS"
+    },
+    {
+      "id": "six_tool_aggregate",
+      "status": "PASS"
+    },
+    {
+      "id": "private_source_P",
+      "status": "PASS"
+    },
+    {
+      "id": "private_source_M",
+      "status": "PASS"
+    },
+    {
+      "id": "private_source_T",
+      "status": "PASS"
+    },
+    {
+      "id": "source_declarations",
+      "status": "PASS"
+    },
+    {
+      "id": "authority",
+      "status": "PASS"
+    },
+    {
+      "id": "package_identity_record_only",
+      "status": "PASS"
+    },
+    {
+      "id": "transport_record",
+      "status": "PASS"
+    },
+    {
+      "id": "independently_derived_manifest",
+      "status": "PASS"
+    },
+    {
+      "id": "M01_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M01_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M01_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "M02_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M02_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M02_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "M03_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M03_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M03_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "M04_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M04_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M04_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "M05_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M05_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M05_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "M06_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M06_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M06_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "M07_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "M07_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "M07_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "T01_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "T01_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "T01_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "T01_raw_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "T02_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "T02_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "T02_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "T02_raw_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "T03_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "T03_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "T03_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "T03_raw_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "T04_source_fields",
+      "status": "PASS"
+    },
+    {
+      "id": "T04_metadata_stability",
+      "status": "PASS"
+    },
+    {
+      "id": "T04_hash_and_counts",
+      "status": "PASS"
+    },
+    {
+      "id": "T04_raw_bytes",
+      "status": "PASS"
+    },
+    {
+      "id": "successful_completion",
+      "status": "PASS"
+    },
+    {
+      "id": "host_parent",
+      "status": "PASS"
+    },
+    {
+      "id": "host_filesystem",
+      "status": "PASS"
+    },
+    {
+      "id": "control_parent",
+      "status": "PASS"
+    },
+    {
+      "id": "control_filesystem",
+      "status": "PASS"
+    },
+    {
+      "id": "kernel_sequence",
+      "status": "PASS"
+    },
+    {
+      "id": "kernel_0",
+      "status": "PASS"
+    },
+    {
+      "id": "kernel_1",
+      "status": "PASS"
+    },
+    {
+      "id": "kernel_2",
+      "status": "PASS"
+    },
+    {
+      "id": "both_boot_pins",
+      "status": "PASS"
+    },
+    {
+      "id": "marker",
+      "status": "PASS"
+    },
+    {
+      "id": "byte_counters",
+      "status": "PASS"
+    },
+    {
+      "id": "allocation_totals",
+      "status": "PASS"
+    },
+    {
+      "id": "false_boundaries",
+      "status": "PASS"
+    },
+    {
+      "id": "identity_namespace",
+      "status": "PASS"
+    },
+    {
+      "id": "byte_limits",
+      "status": "PASS"
+    },
+    {
+      "id": "monotonic_ns_window_sequence",
+      "status": "PASS"
+    },
+    {
+      "id": "boottime_ns_window_sequence",
+      "status": "PASS"
+    },
+    {
+      "id": "clock_agreement",
+      "status": "PASS"
+    }
+  ],
+  "objects": [
+    {
+      "id": "M01",
+      "bytes": 9844,
+      "sha256": "6c59ec19ec24090c928752322b7437395c4386ea89ab74d906b7849094146a4c",
+      "metadata_equal": true,
+      "allocated_bytes": 12288,
+      "raw_returned": false
+    },
+    {
+      "id": "M02",
+      "bytes": 5426689,
+      "sha256": "5eef22e497e9e0a867470c6c490336dc80fadd0e506e3419847e6c37b687918b",
+      "metadata_equal": true,
+      "allocated_bytes": 5427200,
+      "raw_returned": false
+    },
+    {
+      "id": "M03",
+      "bytes": 4564,
+      "sha256": "21ec1472a61c0ca9e0adf863ee8034c05c3e54c2388b5d99b32bfb446b6a3e85",
+      "metadata_equal": true,
+      "allocated_bytes": 8192,
+      "raw_returned": false
+    },
+    {
+      "id": "M04",
+      "bytes": 4779775,
+      "sha256": "f34de8221790dfc3b77b83af49ba8841d28890ca08faa402d2ad393e6de3189d",
+      "metadata_equal": true,
+      "allocated_bytes": 4780032,
+      "raw_returned": false
+    },
+    {
+      "id": "M05",
+      "bytes": 5353,
+      "sha256": "69ea69ce4c85d34ae9a2a1b58d3ebba640e28ed311d977f537f7e79f4ded8e9d",
+      "metadata_equal": true,
+      "allocated_bytes": 8192,
+      "raw_returned": false
+    },
+    {
+      "id": "M06",
+      "bytes": 258348,
+      "sha256": "46278ebae3d3fbc548c5e25aa98b2fb781475238ec56a8e8ee5829ba485a1c04",
+      "metadata_equal": true,
+      "allocated_bytes": 262144,
+      "raw_returned": false
+    },
+    {
+      "id": "M07",
+      "bytes": 4095,
+      "sha256": "e60d415171b1430d6d52a320d11f01015b58157688b21c4c4489e28aa43d3ff3",
+      "metadata_equal": true,
+      "allocated_bytes": 4096,
+      "raw_returned": false
+    },
+    {
+      "id": "T01",
+      "bytes": 328,
+      "sha256": "aed91e80483d4df103f95c1d4cd5bf9bd18720f4dc51720702c329c937f93c63",
+      "metadata_equal": true,
+      "allocated_bytes": 4096,
+      "raw_returned": true
+    },
+    {
+      "id": "T02",
+      "bytes": 1162,
+      "sha256": "1acc8c4cb09bc5b14c32adc35e87d8500098cbf3968d53f406269e96df30f96a",
+      "metadata_equal": true,
+      "allocated_bytes": 4096,
+      "raw_returned": true
+    },
+    {
+      "id": "T03",
+      "bytes": 99,
+      "sha256": "d1025c074e532f29534fcab1d10ec1bc2f38d2137173c74d0bc921bbab420bbd",
+      "metadata_equal": true,
+      "allocated_bytes": 4096,
+      "raw_returned": true
+    },
+    {
+      "id": "T04",
+      "bytes": 95,
+      "sha256": "e67e15549d3e8586af936108f666612841d31612705236dd8ce265a3da18b25c",
+      "metadata_equal": true,
+      "allocated_bytes": 4096,
+      "raw_returned": true
+    }
+  ],
+  "raw_controls": [
+    {
+      "id": "T01",
+      "bytes": 328,
+      "sha256": "aed91e80483d4df103f95c1d4cd5bf9bd18720f4dc51720702c329c937f93c63"
+    },
+    {
+      "id": "T02",
+      "bytes": 1162,
+      "sha256": "1acc8c4cb09bc5b14c32adc35e87d8500098cbf3968d53f406269e96df30f96a"
+    },
+    {
+      "id": "T03",
+      "bytes": 99,
+      "sha256": "d1025c074e532f29534fcab1d10ec1bc2f38d2137173c74d0bc921bbab420bbd"
+    },
+    {
+      "id": "T04",
+      "bytes": 95,
+      "sha256": "e67e15549d3e8586af936108f666612841d31612705236dd8ce265a3da18b25c"
+    }
+  ],
+  "timing": {
+    "monotonic_ns": {
+      "start_after_receiver_seconds": 0.095234514,
+      "end_after_receiver_seconds": 0.126322053,
+      "observation_seconds": 0.031087539
+    },
+    "boottime_ns": {
+      "start_after_receiver_seconds": 0.095235166,
+      "end_after_receiver_seconds": 0.126322544,
+      "observation_seconds": 0.031087378
+    }
+  },
+  "ordinary_bytes": 10490352,
+  "kernel_bytes": 5655,
+  "allocated_target_bytes": 10518528,
+  "tool_digest_basis": "Six exact Git-D blobs; current worktree bytes also match",
+  "package_check_basis": "Receipt identity equals retained exact delivery registration; archive absent from restored workspace, not reconstructed or executed",
+  "source_basis": "Independent P/M/T private originals: whole-file pins, AST literal/JSON 11-target and manifest derivation",
+  "false_boundaries": {
+    "allocation_peak_proven": false,
+    "allow_consume": false,
+    "allow_run": false,
+    "complete_joint_bill_proven": false,
+    "durability_proven": false,
+    "full_host_inventory_complete": false,
+    "h07_proven": false,
+    "historical_costs_adopted": false,
+    "historical_identity_adopted": false,
+    "host_persistence_attempted": false,
+    "k4_trees_reread": false,
+    "production_accepted": false,
+    "production_admitted": false,
+    "production_supported": false,
+    "q2_accepted": false,
+    "q3_accepted": false,
+    "remote_attempted": false,
+    "window_consumed_by_this_invocation": false,
+    "wrapper_executed": false
+  },
+  "inconsistencies": [],
+  "payload_executed": false,
+  "original_host_called": false,
+  "final_recheck_semantics": [
+    "Both held parent paths and ancestor ACL chains, marker, final boot, parent metadata and identity/window guards are rechecked",
+    "Target fds close after individual reads; final_local_recheck does not rehash or re-stat all eleven files",
+    "Per-file stability covers each own read interval, not an atomic simultaneous snapshot"
+  ],
+  "cross_maintenance_comparison": {
+    "independently_reperformed": false,
+    "root_reported": "Six maintenance paths/dev:inode/size/mode-after/ctime-after match rerun3 before fields; before equals after",
+    "basis": "ROOT_REVIEW_SEPARATE_FROM_THIS_CHECKS"
+  },
+  "limits": [
+    "Received JSON is not independently sealed stdout or host attestation",
+    "Seven M digests are reported field hashes bound to pinned sources; raw M bytes are absent",
+    "Four T raw byte values independently decoded/rehashed without printing, interpreting or executing",
+    "EOF/name/ACL success inferred from bound source branch, not independently observed syscalls",
+    "Parent FS and marker observations do not establish peak/durability or past/future absence",
+    "Exit0, invocation count/no retry, controller elapsed, cleanup, file0600 and no permission changes are local executor self-report",
+    "Shared-write dependency UNKNOWN and maintenance risk are not resolved by matching",
+    "No full bill/H07/historical identity/cost adoption/Q2/Q3/production admission or wrapper execution permission follows"
+  ]
+}

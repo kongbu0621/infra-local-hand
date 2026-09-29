@@ -476,18 +476,18 @@ review and accurate CI outcomes are registered in
 Development/CI identity evidence does not attest the original host. The subsequent
 [first field receipt review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)
 records the returned L5 invocation and completed L6 receipt/block review: BLOCKED
-at protected_parents, all eleven targets unattempted. Four raw sources remain
-unavailable; static wrapper review and full Q2 remain incomplete. A bounded
+at protected_parents, all eleven targets unattempted. Four raw sources were then
+unavailable; static wrapper review and full Q2 were incomplete. A bounded
 diagnostic repair may retain metadata already obtained by the same checks; it
 must not add reads, weaken protection or retry the host automatically.
 This diagnostic repair is implemented at `89c725efd61dad11b0cc9ae11c3c08a941e3111a`,
 with 236 PASS / 3 SKIP scoped regression and an exact offline-verified private
 package. The initial diagnostic and separately initiated rerun1/rerun2 have returned;
 the [field review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)
-retains all three exact diagnostic receipts at the same D. The latest rerun2
+retains those three exact diagnostic receipts at the same D. The retained rerun2
 passed the initial parent-chain checks and reached fixed_objects, then blocked
 at M01: retained mode 0664 intersects 06022 only at group-write. One target was
-attempted, ten remain unattempted; observed/matched/raw and ordinary bytes are zero.
+attempted, ten were unattempted; observed/matched/raw and ordinary bytes were zero.
 M01 metadata is from the parent-relative no-follow stat before file open, not
 an opened-file fstat or a completed file stability/ACL check. Final parent/marker/
 boot rechecks were not reached; initial parent success is not permanent admission.
@@ -498,13 +498,22 @@ delta match. The local executor reports maintenance after Owner's six-file instr
 this cloud review did not perform host operations. Shared-write dependency remains
 UNKNOWN, with no retained explicit acceptance of that unknown. Do not silently mark
 it resolved, repeat the maintenance, or undo the completed change. ctime changes and
-the limits of report-only evidence remain recorded. The latest actual diagnostic
-is still rerun2 BLOCKED; no post-maintenance observation has been received.
-The [one-observation handoff](docs/a2-execution/Q2_POST_MAINTENANCE_OBSERVATION_HANDOFF.md)
-is prepared, not issued. Same-scope observation requires an explicit Owner instruction
-under the original L5 rule, not approval of A again. Preserve the exact D, source
-pins, first-failure stop, private receipts and no automatic retry. This review
-does not change the protection contract or Q2 acceptance.
+the limits of report-only evidence remain recorded.
+
+The subsequent [rerun3 completion review](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)
+records Owner's explicit single-call instruction under the 172bb13 handoff and
+receipt of the complete 32,439-byte JSON. Exact D is still 89c725ef. All eleven
+targets matched, four raw controls returned, and the result is OBSERVED_PARTIAL
+at final_local_recheck. L5 receipt/source verification and L6 static dependency
+review are complete; L1–L6's limited local-evidence task is complete. Per-file
+read stability is not a simultaneous global snapshot or independent host attestation.
+The [remaining admission plan](docs/a2-execution/Q2_POST_SOURCE_ADMISSION_PLAN.md)
+records actual wrapper interpreter/local-variable incompatibility and the current
+indexed 12-KiB parent exceeding the writer's narrow filesystem profile. Raw text
+availability does not authorize execution; H07, billing, ordinary writer, filesystem
+peak/durability and full Q2 remain unproved. Do not rerun the same collection or
+repeat maintenance. Further observation, new source adoption or supervision changes
+retain their existing authority/change rules; there is no automatic retry or new batch.
 
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at

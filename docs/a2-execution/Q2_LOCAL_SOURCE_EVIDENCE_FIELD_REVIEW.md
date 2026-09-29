@@ -1,5 +1,7 @@
 # Q2 固定本地来源：首次回执与保护阻断复核
 
+后续状态：2026-09-29已收到[rerun3完整回执](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)，11项匹配、4份raw返回，限定补证完成。本文保留此前各次BLOCKED及维护收件记录，不改写历史结果。
+
 2026-09-28 +08。Owner 上传本地 Codex 返回的完整 JSON，L5 首次调用已返回。
 准确实现仍为 `411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239`，tree
 `21773876ef321eb70fdfd9dc24cbeed881efd2ef`；包 SHA-256

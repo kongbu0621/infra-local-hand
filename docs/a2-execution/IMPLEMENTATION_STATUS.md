@@ -2,8 +2,10 @@
 
 ## 2026-09-29 当前接续
 
-**K4 完整本地观察回执已收到并完成限定核验，无需重跑或重交。固定本地来源首次L5、89c725ef诊断、rerun1及rerun2均返回BLOCKED；最新rerun2已越过父目录初始检查，在fixed_objects首项M01因0664的group-write位被拒绝。尝试1项、观察/匹配/raw均0，其余10项未尝试，4份原文仍缺。已完成收件与阻断复核，不自动改权限或重跑。**
-**新增进展：11文件/8目录盘点与六文件权限维护两份原件已核对；本地执行方报告六项0664→0644完成，ctime变化保留，共享依赖仍UNKNOWN。维护后尚无新观察，下一次准确89c725ef交接已准备、未发起。** 见[维护复核](Q2_FIXED_OBJECT_MAINTENANCE_REVIEW.md)及[单次观察交接](Q2_POST_MAINTENANCE_OBSERVATION_HANDOFF.md)。无需重复盘点或改权，维护PASS不等于Q2 PASS。
+**固定本地来源补证L1–L6限定任务已完成。** 最新89c725ef rerun3完整回执为`OBSERVED_PARTIAL / final_local_recheck`：11项均匹配且各自读前后元数据稳定，四份控制原文已返回；收件及静态依赖复核完成。见[限定完成复核](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)。
+
+旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理wrapper兼容性、H07、完整账单、普通writer及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
+
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见
 [Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)。
 回执仍为 `OBSERVED_PARTIAL` / `final_local_recheck`，不证明完整 Q2 准入。
@@ -14,20 +16,20 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 | 安装预留对账 | A `c65ff4e25ea6373aabf8db25d304ee7614b96eb5` 的 P1–P6 已 CLOSED；保留历史来源、准确义务和原累计上界。 |
 | host 窗口消费 | A `8402f0cc82d8a0ac0b9a56716bf276f41cafea37` 的 H1–H6 已 CLOSED；完整现场派发仍因证据缺口 NOT READY。 |
 | 固定内核事实读取 | A `887b640b394f9983f37dfe97c58ba35aaa099359` 的 K0–K4 已 CLOSED；K1–K4 各自限定任务已完成，含完整回执接收及核验。 |
-| 固定本地来源补证 | A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d` 的 L0–L6 已 CLOSED；独立 C `8e7545199bde66583e1d643656dece867ab1dbda` 后，最终 D `411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239` 完成 L1–L4。[首次L5及后续三份诊断回执](Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)均返回BLOCKED；最新89c725ef rerun2定位M01文件的group-write阻断，收件复核完成，原文与wrapper依赖审查仍缺输入。 |
+| 固定本地来源补证 | A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d` 的 L0–L6 已 CLOSED；独立 C `8e7545199bde66583e1d643656dece867ab1dbda` 后完成实现与交付。最新诊断 D `89c725efd61dad11b0cc9ae11c3c08a941e3111a` 的 [rerun3](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)为11 MATCHED / 4 raw，L5收件与L6限定静态复核完成；不是完整Q2准入。 |
 
 以上准确 R/A、Owner 决定和独立 C 以根 [AGENTS.md](../../AGENTS.md)及其引用记录为准。
 冻结设计文件的历史 OPEN 标签保留，不覆盖后续有效关闭记录；本状态更新不产生新授权或新批次。
 
 当前继续离线核对完整账单、H07 首次远端截止与停止覆盖、wrapper 来源与执行绑定、文件系统分配及持久资格。
-本轮[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)已完成：旧 anchor 确缺历史 host 字段、wrapper 原件未恢复，
+此前[来源差额核对](Q2_OFFLINE_SOURCE_GAP_REVIEW.md)确认旧 anchor 缺历史 host 字段；wrapper 原件现已恢复，但现适配器不支持其准确语法。
 写入器额外的 root-only 条件与 K4 当次报告的普通身份／父目录不匹配；这不构成放宽准入的理由。
 随后[v1 跨层绑定修复](Q2_HOST_RECORD_BINDING_REPAIR_REVIEW.md)已在实现
 `14d19f1f52d687afa360353aadecd6ea17725310` 完成：记录／预检／账单身份一致性与写入时身份检查加强，
 相关 Q2 回归 942 PASS / 5 SKIP。普通身份 writer 尚未实现；新增[固定本地补证基线](../governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)
 准确 A 为 `b8b9ec3da3de43b72e4e17416ea6633494d50c1d`，已获[准确 Owner 决定](../governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)
 关闭该范围 Gate 并授权 L1–L6；随后已完成[固定来源采集器与准确 RAM 交付](Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md)，
-相关开发回归 211 PASS / 3 SKIP，准确源码、普通身份 CI 与交付验证见该复核。首次原host调用已返回父目录保护阻断，不证明Q2准入；诊断缺口已在 `89c725ef` 修复，相关六组236 PASS / 3 SKIP，准确新包离线核对完成。后续诊断与rerun1分别在control_parent祖先index=3、4返回group-write阻断。最新另行发起的rerun2已越过两条父链的初始保护和ACL检查，取得marker前检及两父目录有限FS事实，在首个文件M01的初始stat保护检查返回BLOCKED；最终全链复检未到达，不能宣称目录永久合格。该次后续盘点及六文件维护原件现已收件复核，见[维护复核](Q2_FIXED_OBJECT_MAINTENANCE_REVIEW.md)；下一步为已准备的单次观察交接。保护合同不变；新观察尚未发起。
+相关开发回归 211 PASS / 3 SKIP及原准确交付保持。诊断修复`89c725ef`的六组236 PASS / 3 SKIP和准确离线包验证保持。首次调用及其后三份诊断的BLOCKED详见[历史收件记录](Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)。本次rerun3在六文件维护后完成11项读取和最终parent/marker/boot复检；每文件稳定不等于全体同刻稳定，当前分配量不等于完整账单。准确结果和后续支持差额见页首新复核。
 现有本地观察不能补齐这些事实；`allow_run`、`allow_consume`、Q2/Q3 验收与 production supported 均仍为 false。
 新作业生产入口继续保留 `E3_SUPERVISION_UNVERIFIED`；E1–E3 未全部完成，E4–E6 及 S2 未因此启动。
 

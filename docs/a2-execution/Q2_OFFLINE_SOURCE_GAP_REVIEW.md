@@ -1,5 +1,8 @@
 # Q2 完整回执后的离线来源差额
 
+2026-09-29后续更新：本文中的“七相邻对象未观察/四控制原文缺失”已由[rerun3补证](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)解决。
+新的[准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)明确实际wrapper不兼容及当前parent几何/flags不在writer支持范围；完整账单、H07与FS资格仍未证明。下文保留原检查点的历史结论。
+
 2026-09-28 +08。本记录接续[完整本地观察回执复核](Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)，
 核对源码基线为 `044cee6962980f02c13db54d38c770531029c21a`。
 K4 回执已收到并完成限定核验；无需重跑、再次粘贴相同 JSON 或重复批准已关闭范围。
