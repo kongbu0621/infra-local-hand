@@ -23,6 +23,9 @@ require, keys, number, digest, commit, path = (prior.require, prior.keys, prior.
 encoded, document, sha = prior.encoded, prior.document, prior.sha
 SCHEMA = "local-hand-q2-host-window-binding/v1"
 INTENT_SCHEMA = "local-hand-q2-host-window-intent/v1"
+ORDINARY_INTENT_SCHEMA = "local-hand-q2-host-window-intent/v2"
+OPERATOR_SCHEMA = "local-hand-q2-host-window-operator/v1"
+OPERATOR_FIELDS = ("schema", "uid", "gid", "groups")
 SOURCES_SCHEMA = "local-hand-q2-host-window-sources/v1"
 SCOPE = "LH-Q2-HOST-WINDOW-CONSUMPTION-v1"
 RULE = "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
@@ -148,12 +151,35 @@ def validate_window(value):
     return copy.deepcopy(value)
 
 
-def verify_intent(raw, expected_binding, location):
-    """Pure binding verification, never evidence of a new host fsync or replay right."""
+def validate_operator(value):
+    """Validate a retained ordinary issuer, not the current reader or FS identity.
+
+    These fields describe real/effective/saved credentials and supplementary
+    groups only. They say nothing about fsuid/fsgid, capabilities or userns.
+    Full sorted group lists are retained, including any repeated entries.
+    """
+    keys(value, OPERATOR_FIELDS)
+    require(value["schema"] == OPERATOR_SCHEMA, "HOST_WINDOW_OPERATOR_SCHEMA")
+    for kind in ("uid", "gid"):
+        values = value[kind]
+        require(type(values) is list and len(values) == 3, "HOST_WINDOW_OPERATOR_CREDENTIALS")
+        for item in values:
+            number(item, 1, 2**32 - 2)
+        require(values[0] == values[1] == values[2], "HOST_WINDOW_OPERATOR_CREDENTIALS")
+    groups = value["groups"]
+    require(type(groups) is list and len(groups) <= 65536, "HOST_WINDOW_OPERATOR_GROUPS")
+    for item in groups:
+        number(item, 0, 2**32 - 2)
+    require(groups == sorted(groups), "HOST_WINDOW_OPERATOR_GROUPS")
+    return copy.deepcopy(value)
+
+
+def _verify_intent(raw, expected_binding, location, *, ordinary):
     value = document(raw, limit=LOGICAL_LIMIT)
-    keys(value, INTENT_FIELDS)
-    require(value["schema"] == INTENT_SCHEMA and value["scope"] == SCOPE and
+    keys(value, INTENT_FIELDS + (("operator",) if ordinary else ()))
+    require(value["schema"] == (ORDINARY_INTENT_SCHEMA if ordinary else INTENT_SCHEMA) and value["scope"] == SCOPE and
         value["binding"] == validate_binding(expected_binding, location), "HOST_WINDOW_INTENT_BINDING")
+    operator = validate_operator(value["operator"]) if ordinary else None
     validate_window(value["window"])
     identity = value["directory_identity"]
     keys(identity, ("device", "inode", "uid", "gid", "mode"))
@@ -170,14 +196,33 @@ def verify_intent(raw, expected_binding, location):
         "HOST_WINDOW_PRECHECK_DIGEST")
     # The record module supplies the strict observation schema without creating
     # a second authority decoder or permitting arbitrary fields in this object.
-    precheck = helper("q2_host_window_record").validate_precheck(value["precheck"], location, value["window"])
+    record = helper("q2_host_window_record")
+    validator = record.validate_precheck_ordinary if ordinary else record.validate_precheck
+    precheck = validator(value["precheck"], location, value["window"])
     parent = precheck["parent_metadata"]
     # v1 records can only be emitted by the root-only writer. Independent
     # integer validation (or a recomputed digest) is not a parent/child bind.
     # Ordinary-identity support must not be inferred from arbitrary uid fields.
-    require(identity["device"] == parent["device"] and identity["inode"] != parent["inode"]
-        and identity["uid"] == identity["gid"] == 0, "HOST_WINDOW_DIRECTORY_BINDING")
+    if ordinary:
+        require(precheck["operator"] == operator and parent["uid"] == operator["uid"][1]
+            and parent["gid"] == operator["gid"][1]
+            and identity["uid"] == operator["uid"][1] and identity["gid"] == operator["gid"][1],
+            "HOST_WINDOW_DIRECTORY_BINDING")
+    else:
+        require(identity["uid"] == identity["gid"] == 0, "HOST_WINDOW_DIRECTORY_BINDING")
+    require(identity["device"] == parent["device"] and identity["inode"] != parent["inode"],
+        "HOST_WINDOW_DIRECTORY_BINDING")
     return value
+
+
+def verify_intent(raw, expected_binding, location):
+    """Pure strict v1 verification; never a new fsync or replay right."""
+    return _verify_intent(raw, expected_binding, location, ordinary=False)
+
+
+def verify_intent_ordinary(raw, expected_binding, location):
+    """Pure explicit v2 issuer binding; current-reader checks belong to record."""
+    return _verify_intent(raw, expected_binding, location, ordinary=True)
 
 
 def require_field_readiness(host_window):

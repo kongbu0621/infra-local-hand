@@ -152,7 +152,15 @@ def load_host_window(value, verified):
 
 
 def validate_marker_scan(bill, intent, raw, location):
-    """Cross-bind the billed marker's actual bytes and root to its strict intent."""
+    """Retain the root-v1 marker boundary; ordinary v2 needs its explicit API."""
+    contract = helper("q2_host_window_contract")
+    require(type(intent) is dict and intent.get("schema") == contract.INTENT_SCHEMA,
+        "RECONCILIATION_HOST_MARKER_SCHEMA")
+    _validate_marker_scan(bill, intent, raw, location, uid=0, gid=0)
+
+
+def _validate_marker_scan(bill, intent, raw, location, *, uid, gid):
+    """Internal shape check after the caller has selected one exact profile."""
     contract = helper("q2_host_window_contract")
     scan = bill["inventory"]["scans"][location["directory"]]
     require(scan["path"] == location["directory"], "RECONCILIATION_HOST_MARKER_LOCATION")
@@ -165,15 +173,75 @@ def validate_marker_scan(bill, intent, raw, location):
         and all(root[key] == identity[key] for key in ("device", "inode", "uid", "gid"))
         and root["st_mode"] == (stat.S_IFDIR | 0o700) and root["nlink"] == 2
         and root["device"] == parent["device"] and root["inode"] != parent["inode"]
-        and root["uid"] == root["gid"] == 0, "RECONCILIATION_HOST_MARKER_IDENTITY")
+        and root["uid"] == uid and root["gid"] == gid, "RECONCILIATION_HOST_MARKER_IDENTITY")
     leaf = rows[contract.INTENT_NAME]
     meta = leaf["source_metadata"]
     require(leaf["type"] == "file" and meta["st_mode"] == (stat.S_IFREG | 0o400)
-        and meta["nlink"] == 1 and meta["uid"] == meta["gid"] == 0
+        and meta["nlink"] == 1 and meta["uid"] == uid and meta["gid"] == gid
         and meta["device"] == root["device"] and meta["inode"] not in (root["inode"], parent["inode"]),
         "RECONCILIATION_HOST_MARKER_FILE_IDENTITY")
     require(leaf["sha256"] == contract.sha(raw) and meta["size"] == len(raw),
         "RECONCILIATION_HOST_MARKER_CONTENT")
+
+
+def validate_marker_scan_ordinary(bill, raw, expected_binding, location):
+    """Check ordinary-v2 bytes and billed metadata without reading any machine.
+
+    Ownership comes only from the strictly decoded issuer in these exact bytes,
+    never from a caller-supplied UID or this reader's process credentials.
+    This does not establish provenance, an actual fsync, or permission to run.
+    """
+    contract = helper("q2_host_window_contract")
+    intent = contract.verify_intent_ordinary(raw, expected_binding, location)
+    summary = helper("q2_host_window_billing").validate_host_bill(bill)
+    require(summary["marker"]["state"] == "DURABLE"
+        and summary["marker"]["path"] == location["directory"]
+        and summary["marker"]["device"] == intent["directory_identity"]["device"]
+        and summary["marker"]["intent_sha256"] == contract.sha(raw),
+        "RECONCILIATION_HOST_ORDINARY_MARKER_BINDING")
+    operator = contract.validate_operator(intent["operator"])
+    _validate_marker_scan(bill, intent, raw, location,
+        uid=operator["uid"][1], gid=operator["gid"][1])
+    return copy.deepcopy(intent)
+
+
+def validate_ordinary_host_window(raw, *, expected_binding, location, window,
+                                  precheck_bill, consumed_bill, plan):
+    """Pure, explicitly selected v2 consistency proof; never a startup loader.
+
+    Plan bytes remain caller-provided evidence, but their digest must match the
+    expected binding and their host must match both bills. No source is adopted
+    by this check. The existing loader and field-readiness gate stay unchanged.
+    Parent-allocation growth and all complete-field qualifications still require
+    their independent evidence; a recomputed local quote cannot supply it.
+    """
+    contract = helper("q2_host_window_contract")
+    billing = helper("q2_host_window_billing")
+    binding = contract.validate_binding(expected_binding, location)
+    expected_window = contract.validate_window(window)
+    require(type(plan) is dict and type(plan.get("host")) is dict
+        and contract.sha(contract.encoded(plan)) == binding["plan_sha256"],
+        "RECONCILIATION_HOST_ORDINARY_PLAN_BINDING")
+    intent = validate_marker_scan_ordinary(consumed_bill, raw, binding, location)
+    require(intent["window"] == expected_window,
+        "RECONCILIATION_HOST_ORDINARY_WINDOW_BINDING")
+    precheck = billing.validate_host_bill(precheck_bill)
+    precheck_sha256 = contract.sha(contract.encoded(precheck_bill))
+    require(intent["precheck"]["host_bill_sha256"] == precheck_sha256
+        and intent["precheck"]["host_bill_summary"] == precheck,
+        "RECONCILIATION_HOST_PRECHECK_BILL")
+    transition = billing.validate_marker_transition(precheck_bill, consumed_bill)
+    require(transition["host_id"] == contract.ATTESTATION_SHA256
+        and transition["guest_id"] == contract.sha(contract.encoded(plan["host"])),
+        "RECONCILIATION_HOST_BILL_MACHINE_BINDING")
+    return dict(schema="local-hand-q2-host-window-ordinary-inputs/v1",
+        status="INPUT_CONSISTENT", binding=binding, location=copy.deepcopy(location),
+        window=expected_window, intent=intent, intent_sha256=contract.sha(raw),
+        precheck_bill_sha256=precheck_sha256,
+        host_bill_sha256=contract.sha(contract.encoded(consumed_bill)),
+        plan_sha256=binding["plan_sha256"], transition=transition,
+        source_admission_proven=False, field_ready=False, allow_run=False,
+        joint_admission_proven=False, q2_accepted=False)
 
 
 def host_reference(verified):

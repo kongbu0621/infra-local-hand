@@ -29,8 +29,10 @@ def helper(name):
 c, io = helper("q2_host_window_contract"), helper("q2_reconciliation_io")
 require, keys, number, sha, encoded = c.require, c.keys, c.number, c.sha, c.encoded
 PRECHECK_SCHEMA = "local-hand-q2-host-window-precheck/v1"
+ORDINARY_PRECHECK_SCHEMA = "local-hand-q2-host-window-precheck/v2"
 FILESYSTEM_SCHEMA = "local-hand-q2-host-window-ext4/v1"
 EVIDENCE_SCHEMA = "local-hand-q2-host-window-consumption/v1"
+ORDINARY_EVIDENCE_SCHEMA = "local-hand-q2-host-window-consumption/v2"
 PRECHECK_FIELDS = ("schema", "location_sha256", "window", "boot_id", "parent_metadata",
     "filesystem", "host_bill_sha256", "host_bill_summary", "limits")
 FILESYSTEM_FIELDS = ("schema", "device", "mount_id", "mountpoint", "source", "mountinfo_sha256",
@@ -77,6 +79,68 @@ def _protected_chain(held):
             _acl_absent(opened)
         finally:
             os.close(opened)
+
+
+def _current_operator():
+    """Capture stable process credentials only; no procfs or privilege query.
+
+    Repeating the sample rejects observed transitions, not changes which occur
+    and revert entirely between samples. No fsuid/capability/userns claim.
+    """
+    require(all(hasattr(os, name) for name in ("getresuid", "getresgid", "getgroups")),
+        "HOST_WINDOW_OPERATOR_UNSUPPORTED")
+    first_uid, first_gid = os.getresuid(), os.getresgid()
+    first_groups = sorted(os.getgroups())
+    last_uid, last_gid = os.getresuid(), os.getresgid()
+    last_groups = sorted(os.getgroups())
+    require(first_uid == last_uid and first_gid == last_gid and first_groups == last_groups,
+        "HOST_WINDOW_OPERATOR_CHANGED")
+    return c.validate_operator(dict(schema=c.OPERATOR_SCHEMA, uid=list(first_uid),
+        gid=list(first_gid), groups=first_groups))
+
+
+def _ordinary_acl_absent(fd, guard):
+    for name in ("system.posix_acl_access", "system.posix_acl_default"):
+        guard()
+        try:
+            os.getxattr(fd, name)
+        except OSError as error:
+            require(error.errno == errno.ENODATA, "HOST_WINDOW_ACL_UNPROVEN")
+        else:
+            raise ValueError("HOST_WINDOW_ACL_PRESENT")
+        guard()
+
+
+def _protected_chain_ordinary(held):
+    """Metadata-only ancestor ACL checks; these fds never read or enumerate."""
+    for _, fd, before in held.chain:
+        held.guard()
+        opened = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+        try:
+            held.guard()
+            info = os.fstat(opened)
+            current = io.metadata(info)
+            require(all(current[key] == before[key] for key in io.ANCESTOR_FIELDS),
+                "HOST_WINDOW_ANCESTOR_CHANGED")
+            io.protected(info, True, allowed_uids=held.allowed_uids)
+            _ordinary_acl_absent(opened, held.guard)
+            held.guard()
+            require(io.metadata(os.fstat(opened)) == current, "HOST_WINDOW_ANCESTOR_CHANGED")
+        finally:
+            os.close(opened)
+    _ordinary_chain_binding(held)
+
+
+def _ordinary_chain_binding(held):
+    """Rebind all names after ACL work, without freezing parent timestamps."""
+    for index, (name, fd, before) in enumerate(held.chain):
+        held.guard()
+        current = io.metadata(os.fstat(fd))
+        by_name = io.metadata(os.stat("/", follow_symlinks=False) if index == 0 else
+            os.stat(name, dir_fd=held.chain[index-1][1], follow_symlinks=False))
+        require(all(current[key] == by_name[key] == before[key] for key in io.ANCESTOR_FIELDS),
+            "HOST_WINDOW_ANCESTOR_CHANGED")
+    held.guard()
 
 
 def _special(path, guard, limit):
@@ -191,17 +255,23 @@ def filesystem(parent, guard):
         allocation_bound=ALLOCATION_BOUND, logical_bound=c.LOGICAL_LIMIT, inode_bound=c.INODE_LIMIT)
 
 
-def validate_precheck(value, location, window):
-    keys(value, PRECHECK_FIELDS); c.validate_location(location); c.validate_window(window)
-    require(value["schema"] == PRECHECK_SCHEMA and value["location_sha256"] == sha(encoded(location))
+def _validate_precheck(value, location, window, *, ordinary):
+    keys(value, PRECHECK_FIELDS + (("operator",) if ordinary else ()))
+    c.validate_location(location); c.validate_window(window)
+    require(value["schema"] == (ORDINARY_PRECHECK_SCHEMA if ordinary else PRECHECK_SCHEMA)
+        and value["location_sha256"] == sha(encoded(location))
         and value["window"] == window and value["boot_id"] == location["expected_boot_id"]
         and value["limits"] == c.RESERVATION, "HOST_WINDOW_PRECHECK_BINDING")
     meta = value["parent_metadata"]
     keys(meta, io.META_FIELDS)
     for key in meta:
         number(meta[key], 0)
-    require(stat.S_ISDIR(meta["st_mode"]) and meta["uid"] == 0 and not meta["st_mode"] & 0o6022,
+    operator = c.validate_operator(value["operator"]) if ordinary else None
+    require(stat.S_ISDIR(meta["st_mode"]) and meta["uid"] == (operator["uid"][1] if ordinary else 0)
+        and not meta["st_mode"] & 0o6022,
         "HOST_WINDOW_PARENT_PROTECTION")
+    if ordinary:
+        require(meta["gid"] == operator["gid"][1], "HOST_WINDOW_PARENT_PROTECTION")
     fs = value["filesystem"]
     keys(fs, FILESYSTEM_FIELDS)
     require(fs["schema"] == FILESYSTEM_SCHEMA and fs["device"] == meta["device"]
@@ -242,7 +312,22 @@ def validate_precheck(value, location, window):
     return copy.deepcopy(value)
 
 
+def validate_precheck(value, location, window):
+    return _validate_precheck(value, location, window, ordinary=False)
+
+
+def validate_precheck_ordinary(value, location, window):
+    return _validate_precheck(value, location, window, ordinary=True)
+
+
 class HeldPrecheck:
+    proof_schema = PRECHECK_SCHEMA
+    intent_schema = c.INTENT_SCHEMA
+    evidence_schema = EVIDENCE_SCHEMA
+    owner_uid = owner_gid = 0
+    allowed_uids = frozenset({0})
+    maximum_identity_number = 2**63 - 1
+
     def __init__(self, location, binding, window, host_costs):
         c.require_field_readiness(binding)
         self.location = c.validate_location(location)
@@ -250,31 +335,67 @@ class HeldPrecheck:
         self.window, self.origin = window, c.validate_window(window.fields())
         self.closed = False; self.spent = False; self.parent = None
         try:
+            self._initialize_identity()
             self.preparation_guard()
-            self.parent = io.HeldPath(location["parent"], self.preparation_guard, directory=True, allowed_uids={0})
-            _protected_chain(self.parent); _absent(self.parent.fd)
+            self.parent = io.HeldPath(location["parent"], self.preparation_guard, directory=True,
+                allowed_uids=self.allowed_uids)
+            self._check_parent(); self._protect_chain(self.parent); _absent(self.parent.fd)
             require(_boot(self.guard) == location["expected_boot_id"], "HOST_WINDOW_BOOT_CHANGED")
             facts = filesystem(self.parent, self.guard)
             summary = helper("q2_host_window_billing").validate_host_bill(host_costs)
-            self.proof = validate_precheck(dict(schema=PRECHECK_SCHEMA,
+            self.proof = self._validate_proof(dict(schema=self.proof_schema,
                 location_sha256=sha(encoded(self.location)), window=self.origin,
                 boot_id=location["expected_boot_id"], parent_metadata=io.metadata(os.fstat(self.parent.fd)),
                 filesystem=facts, host_bill_sha256=sha(encoded(host_costs)), host_bill_summary=summary,
-                limits=dict(c.RESERVATION)), self.location, self.origin)
+                limits=dict(c.RESERVATION), **self._operator_fields()), self.location, self.origin)
             self.bill = copy.deepcopy(host_costs)
             # Full worst-width identity encoded before the first write. Actual
             # directory identity can only shorten this bounded intent.
-            maximum = self.intent(dict(device=2**63-1, inode=2**63-1, uid=0, gid=0, mode=0o700))
+            maximum = self.intent(dict(device=self.maximum_identity_number, inode=self.maximum_identity_number,
+                uid=self.owner_uid, gid=self.owner_gid, mode=0o700))
             require(len(encoded(maximum)) <= INTENT_LIMIT, "HOST_WINDOW_INTENT_LIMIT")
             self.verify()
         except BaseException:
             self.close()
             raise
 
+    def _initialize_identity(self):
+        pass
+
+    def _identity_guard(self):
+        require(os.geteuid() == 0 and os.getegid() == 0, "HOST_WINDOW_ROOT_REQUIRED")
+
+    def _check_parent(self):
+        pass
+
+    def _operator_fields(self):
+        return {}
+
+    def _protect_chain(self, held):
+        _protected_chain(held)
+
+    def _acl(self, fd):
+        _acl_absent(fd)
+
+    def _created_file_check(self, fd, directory_fd):
+        pass
+
+    def _created_directory_check(self, fd):
+        pass
+
+    def _before_mkdir(self):
+        pass
+
+    def _validate_proof(self, value, location, window):
+        return validate_precheck(value, location, window)
+
+    def _verify_intent(self, raw):
+        return c.verify_intent(raw, self.binding, self.location)
+
     def guard(self):
         # v1's writer identity is fixed across every observation, write and
         # retained-record verification, not just at constructor entry.
-        require(os.geteuid() == 0 and os.getegid() == 0, "HOST_WINDOW_ROOT_REQUIRED")
+        self._identity_guard()
         require(self.window.fields() == self.origin, "HOST_WINDOW_ORIGIN_CHANGED")
         self.window.guard()
 
@@ -284,15 +405,16 @@ class HeldPrecheck:
             "HOST_WINDOW_PREPARATION_EXPIRED")
 
     def intent(self, identity):
-        return dict(schema=c.INTENT_SCHEMA, scope=c.SCOPE, binding=copy.deepcopy(self.binding),
+        return dict(schema=self.intent_schema, scope=c.SCOPE, binding=copy.deepcopy(self.binding),
             window=dict(self.origin), directory_identity=identity, precheck=copy.deepcopy(self.proof),
             precheck_sha256=sha(encoded(self.proof)), reservation=dict(c.RESERVATION),
-            window_consumed=True, owner_issued=False, run_permission="existing_startup_once")
+            window_consumed=True, owner_issued=False, run_permission="existing_startup_once",
+            **self._operator_fields())
 
     def verify(self):
         require(not self.closed and not self.spent, "HOST_WINDOW_PRECHECK_SPENT")
         self.preparation_guard(); _absent(self.parent.fd)
-        self.parent.verify(); _protected_chain(self.parent)
+        self.parent.verify(); self._check_parent(); self._protect_chain(self.parent)
         require(_boot(self.guard) == self.location["expected_boot_id"], "HOST_WINDOW_BOOT_CHANGED")
         _absent(self.parent.fd)
         require(helper("q2_host_window_billing").validate_host_bill(self.bill) == self.proof["host_bill_summary"],
@@ -322,6 +444,106 @@ def precheck(location, binding, window, host_costs):
     return HeldPrecheck(location, binding, window, host_costs)
 
 
+class HeldOrdinaryPrecheck(HeldPrecheck):
+    """Explicit v2 writer; an ordinary process cannot opt into the v1 writer."""
+    proof_schema = ORDINARY_PRECHECK_SCHEMA
+    intent_schema = c.ORDINARY_INTENT_SCHEMA
+    evidence_schema = ORDINARY_EVIDENCE_SCHEMA
+    maximum_identity_number = 2**64 - 1
+
+    def _initialize_identity(self):
+        self._operator = _current_operator()
+
+    @property
+    def operator(self):
+        return copy.deepcopy(self._operator)
+
+    @property
+    def owner_uid(self):
+        return self._operator["uid"][1]
+
+    @property
+    def owner_gid(self):
+        return self._operator["gid"][1]
+
+    @property
+    def allowed_uids(self):
+        return frozenset({0, self.owner_uid})
+
+    def _identity_guard(self):
+        require(_current_operator() == self._operator, "HOST_WINDOW_OPERATOR_CHANGED")
+        if hasattr(self, "proof"):
+            require(self.proof.get("operator") == self._operator, "HOST_WINDOW_OPERATOR_CHANGED")
+
+    def _operator_fields(self):
+        return dict(operator=self.operator)
+
+    def _check_parent(self):
+        self.guard()
+        info = os.fstat(self.parent.fd)
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == self.owner_uid
+            and info.st_gid == self.owner_gid and not info.st_mode & 0o6022,
+            "HOST_WINDOW_PARENT_PROTECTION")
+        self.guard()
+
+    def _protect_chain(self, held):
+        _protected_chain_ordinary(held)
+
+    def _acl(self, fd):
+        _ordinary_acl_absent(fd, self.guard)
+
+    def _created_file_check(self, fd, directory_fd):
+        # Creation can be influenced by FS credentials or mount semantics not
+        # described by getresuid/getresgid. Verify the real object BEFORE data.
+        self.preparation_guard()
+        self._created_directory_check(directory_fd)
+        info = os.fstat(fd)
+        before = io.metadata(info)
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size == 0
+            and info.st_uid == self.owner_uid and info.st_gid == self.owner_gid
+            and stat.S_IMODE(info.st_mode) == 0o400
+            and info.st_dev == self.proof["parent_metadata"]["device"], "HOST_WINDOW_INTENT_IDENTITY")
+        require(io.metadata(os.stat(c.INTENT_NAME, dir_fd=directory_fd, follow_symlinks=False)) == before,
+            "HOST_WINDOW_INTENT_REPLACED")
+        self._acl(fd)
+        self.preparation_guard()
+        require(io.metadata(os.fstat(fd)) == before, "HOST_WINDOW_INTENT_CHANGED")
+        require(io.metadata(os.stat(c.INTENT_NAME, dir_fd=directory_fd, follow_symlinks=False)) == before,
+            "HOST_WINDOW_INTENT_REPLACED")
+        self._created_directory_check(directory_fd)
+        self.preparation_guard()
+
+    def _created_directory_check(self, fd):
+        self.preparation_guard()
+        _ordinary_chain_binding(self.parent)
+        info = os.fstat(fd)
+        require(stat.S_ISDIR(info.st_mode) and info.st_nlink == 2
+            and info.st_dev == self.proof["parent_metadata"]["device"]
+            and info.st_uid == self.owner_uid and info.st_gid == self.owner_gid
+            and stat.S_IMODE(info.st_mode) == 0o700, "HOST_WINDOW_DIRECTORY_IDENTITY")
+        require(io.metadata(os.stat(c.DIRECTORY_NAME, dir_fd=self.parent.fd, follow_symlinks=False))
+            == io.metadata(info), "HOST_WINDOW_DIRECTORY_CHANGED")
+        self.preparation_guard()
+
+    def _before_mkdir(self):
+        self.preparation_guard()
+        _protected_chain_ordinary(self.parent)
+        # No authorized child write has happened yet; retain the precheck's
+        # full parent metadata here. After mkdir only ancestor fields apply.
+        self.parent.verify()
+        self.preparation_guard()
+
+    def _validate_proof(self, value, location, window):
+        return validate_precheck_ordinary(value, location, window)
+
+    def _verify_intent(self, raw):
+        return c.verify_intent_ordinary(raw, self.binding, self.location)
+
+
+def precheck_ordinary(location, binding, window, host_costs):
+    return HeldOrdinaryPrecheck(location, binding, window, host_costs)
+
+
 class HeldConsumption:
     def __init__(self, preflight):
         self.preflight = preflight
@@ -342,31 +564,37 @@ class HeldConsumption:
                 os.stat(name, dir_fd=self.parent.chain[index-1][1], follow_symlinks=False))
             require(all(info[key] == by_name[key] == before[key] for key in io.ANCESTOR_FIELDS),
                 "HOST_WINDOW_PARENT_CHANGED")
-        _protected_chain(self.parent)
+        self.preflight._protect_chain(self.parent)
 
     def _create(self):
         self.preflight.preparation_guard()
+        self.preflight._before_mkdir()
         try:
             os.mkdir(c.DIRECTORY_NAME, 0o700, dir_fd=self.parent.fd)
         except FileExistsError as error:
             self.window_consumed = True
             raise ValueError("HOST_WINDOW_ALREADY_CONSUMED") from error
         self.window_consumed = True
+        self.preflight.preparation_guard()
         self.directory_fd = os.open(c.DIRECTORY_NAME, io.flags(True), dir_fd=self.parent.fd)
         info = os.fstat(self.directory_fd)
-        require(_identity(info) == dict(device=self.proof_device, inode=info.st_ino, uid=0, gid=0, mode=0o700)
+        require(_identity(info) == dict(device=self.proof_device, inode=info.st_ino,
+            uid=self.preflight.owner_uid, gid=self.preflight.owner_gid, mode=0o700)
             and stat.S_ISDIR(info.st_mode) and info.st_nlink == 2, "HOST_WINDOW_DIRECTORY_IDENTITY")
         self.directory_identity = _identity(info)
-        _acl_absent(self.directory_fd); self._parent_verify()
-        self.preflight.preparation_guard(); os.fsync(self.directory_fd); os.fsync(self.parent.fd)
+        self.preflight._acl(self.directory_fd); self._parent_verify()
+        self.preflight.preparation_guard(); os.fsync(self.directory_fd)
+        self.preflight.preparation_guard(); os.fsync(self.parent.fd)
         self.intent_raw = encoded(self.preflight.intent(self.directory_identity))
         require(len(self.intent_raw) <= INTENT_LIMIT, "HOST_WINDOW_INTENT_LIMIT")
         self.intent_sha256 = sha(self.intent_raw)
         self.preflight.preparation_guard()
+        self.preflight._created_directory_check(self.directory_fd)
         self.file_fd = os.open(c.INTENT_NAME,
             os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
             0o400, dir_fd=self.directory_fd)
         self.preflight.preparation_guard()
+        self.preflight._created_file_check(self.file_fd, self.directory_fd)
         count = os.write(self.file_fd, self.intent_raw)
         require(count == len(self.intent_raw), "HOST_WINDOW_SHORT_WRITE")
         self.preflight.preparation_guard(); os.fsync(self.file_fd)
@@ -375,7 +603,8 @@ class HeldConsumption:
         self.file_metadata = io.metadata(os.fstat(self.file_fd))
         self.directory_metadata = io.metadata(os.fstat(self.directory_fd))
         self._verify_files()
-        observed = io.snapshot(self.preflight.location["directory"], self.preflight.guard, allowed_uids={0})
+        observed = io.snapshot(self.preflight.location["directory"], self.preflight.guard,
+            allowed_uids=self.preflight.allowed_uids)
         self._budget(observed)
         self.snapshot = observed
         self.durable = True
@@ -407,25 +636,26 @@ class HeldConsumption:
         require(io.metadata(directory) == self.directory_metadata
             and io.metadata(os.stat(c.DIRECTORY_NAME, dir_fd=self.parent.fd, follow_symlinks=False))
                 == self.directory_metadata, "HOST_WINDOW_DIRECTORY_CHANGED")
-        _acl_absent(self.directory_fd)
+        self.preflight._acl(self.directory_fd)
         require(os.listdir(self.directory_fd) == [c.INTENT_NAME], "HOST_WINDOW_MEMBERS")
         current = os.fstat(self.file_fd)
         require(io.metadata(current) == self.file_metadata and stat.S_ISREG(current.st_mode)
-            and current.st_nlink == 1 and current.st_uid == current.st_gid == 0
+            and current.st_nlink == 1 and current.st_uid == self.preflight.owner_uid
+            and current.st_gid == self.preflight.owner_gid
             and stat.S_IMODE(current.st_mode) == 0o400 and current.st_dev == self.proof_device,
             "HOST_WINDOW_INTENT_IDENTITY")
         require(io.metadata(os.stat(c.INTENT_NAME, dir_fd=self.directory_fd, follow_symlinks=False)) == self.file_metadata,
             "HOST_WINDOW_INTENT_REPLACED")
-        _acl_absent(self.file_fd)
+        self.preflight._acl(self.file_fd)
         require(io._read(self.file_fd, self.preflight.guard, INTENT_LIMIT) == self.intent_raw,
             "HOST_WINDOW_INTENT_CHANGED")
-        c.verify_intent(self.intent_raw, self.preflight.binding, self.preflight.location)
+        self.preflight._verify_intent(self.intent_raw)
 
     def verify(self):
         require(self.durable, "HOST_WINDOW_NOT_DURABLE")
         self._verify_files()
         current = io.snapshot(self.preflight.location["directory"], self.preflight.guard,
-            expected=self.snapshot, allowed_uids={0})
+            expected=self.snapshot, allowed_uids=self.preflight.allowed_uids)
         self._budget(current)
         self._verify_files()
         return copy.deepcopy(current)
@@ -433,10 +663,10 @@ class HeldConsumption:
     @property
     def evidence(self):
         observed = self.verify()
-        return dict(schema=EVIDENCE_SCHEMA, status="HOST_INTENT_DURABLE", window_consumed=True,
+        return dict(schema=self.preflight.evidence_schema, status="HOST_INTENT_DURABLE", window_consumed=True,
             owner_issued=False, allow_run=False, intent_sha256=self.intent_sha256,
             directory_identity=dict(self.directory_identity), window=dict(self.preflight.origin),
-            actual=self._budget(observed))
+            actual=self._budget(observed), **self.preflight._operator_fields())
 
     def close(self):
         if not self.closed:
@@ -474,3 +704,69 @@ def verify_existing(location, binding, window, expected_intent_sha256):
             held.verify(); directory.verify()
             return dict(schema=EVIDENCE_SCHEMA, status="CONSUMED_READ_ONLY", allow_run=False,
                 window_consumed=True, owner_issued=False, intent_sha256=held.sha256, intent=value, snapshot=observed)
+
+
+def verify_existing_ordinary(location, binding, window, expected_intent_sha256):
+    """Explicit v2 readback, with a fresh stable same-owner reader.
+
+    The retained issuer's groups/GID are historical facts, not a permanent
+    credential pin for this new reader. Neither identity grants another run.
+    The production kernel/FS-read boundaries remain unchanged.
+    """
+    location = c.validate_location(location); c.validate_binding(binding, location)
+    c.digest(expected_intent_sha256); origin = c.validate_window(window.fields())
+    reader = _current_operator()
+    owner_uid = reader["uid"][1]
+    owners = frozenset({0, owner_uid})
+
+    def guard():
+        require(_current_operator() == reader, "HOST_WINDOW_OPERATOR_CHANGED")
+        require(window.fields() == origin, "HOST_WINDOW_ORIGIN_CHANGED")
+        window.guard()
+
+    guard()
+    require(_boot(guard) == location["expected_boot_id"], "HOST_WINDOW_BOOT_CHANGED")
+    with io.HeldPath(location["directory"], guard, directory=True, allowed_uids=owners) as directory:
+        _protected_chain_ordinary(directory)
+        guard()
+        directory_info = os.fstat(directory.fd)
+        require(directory_info.st_uid == owner_uid and stat.S_IMODE(directory_info.st_mode) == 0o700,
+            "HOST_WINDOW_DIRECTORY_IDENTITY")
+        with io.HeldPath(location["directory"] + "/" + c.INTENT_NAME, guard,
+                allowed_uids=owners) as held:
+            # Check owner/type before reading: allowing root-owned ancestors
+            # does not authorize a different issuer's leaf content.
+            guard()
+            info = os.fstat(held.fd)
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == owner_uid
+                and info.st_dev == directory_info.st_dev and stat.S_IMODE(info.st_mode) == 0o400,
+                "HOST_WINDOW_INTENT_IDENTITY")
+            _ordinary_acl_absent(held.fd, guard)
+            raw = io._read(held.fd, guard, INTENT_LIMIT)
+            require(sha(raw) == expected_intent_sha256, "RECONCILIATION_PIN_DIGEST")
+            value = c.verify_intent_ordinary(raw, binding, location)
+            require(value["window"] == origin, "HOST_WINDOW_ORIGIN_CHANGED")
+            issuer = value["operator"]
+            require(issuer["uid"][1] == owner_uid and info.st_gid == issuer["gid"][1],
+                "HOST_WINDOW_INTENT_IDENTITY")
+            require(value["directory_identity"] == _identity(directory_info), "HOST_WINDOW_DIRECTORY_CHANGED")
+            parent = io.metadata(os.fstat(directory.chain[-2][1]))
+            historical_parent = value["precheck"]["parent_metadata"]
+            require(all(parent[key] == historical_parent[key] for key in io.ANCESTOR_FIELDS),
+                "HOST_WINDOW_PARENT_CHANGED")
+            observed = io.snapshot(location["directory"], guard, allowed_uids=owners)
+            require({row["relative_path"] for row in observed["entries"]} == {".", c.INTENT_NAME}
+                and observed["bytes"] <= c.BYTE_LIMIT and observed["inodes"] <= c.INODE_LIMIT
+                and sum(row["source_metadata"]["size"] for row in observed["entries"]) <= c.LOGICAL_LIMIT,
+                "HOST_WINDOW_EXISTING_MEMBERS")
+            # Snapshot and held read must describe the same exact immutable
+            # file, rather than merely a member with the same relative name.
+            rows = {row["relative_path"]: row for row in observed["entries"]}
+            require(rows[c.INTENT_NAME]["source_metadata"] == io.metadata(info)
+                and rows[c.INTENT_NAME].get("sha256") == expected_intent_sha256,
+                "HOST_WINDOW_INTENT_CHANGED")
+            held.verify(); directory.verify(); _protected_chain_ordinary(directory)
+            guard()
+            return dict(schema=ORDINARY_EVIDENCE_SCHEMA, status="CONSUMED_READ_ONLY", allow_run=False,
+                window_consumed=True, owner_issued=False, intent_sha256=expected_intent_sha256,
+                operator=copy.deepcopy(issuer), reader_operator=copy.deepcopy(reader), intent=value, snapshot=observed)
