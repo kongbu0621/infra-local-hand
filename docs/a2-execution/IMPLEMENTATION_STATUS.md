@@ -27,6 +27,11 @@ Linux **2746 PASS / 51 SKIP**，Windows **714 PASS / 995 SKIP**，各新增 78 P
 错误返回点。项目 `--wait/--pipe` 在该版本走 system bus，不经过本仓库 broker。
 该交付仅为静态来源研究，没有新的程序实现、现场调用或测试通过计数。
 
+下一具体候选已固定为[H07 cgroup 监督原语实验 A `71c7e842`](../governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)：
+以 clone3 原子入组，把全部合成任务启动者纳入同一可停止子树，由独立 guardian
+核验关闭与原流。三层方案已完成独立静态审查；新 scope **OPEN，尚未编码/派发**。
+提案仅 F1–F4、六例及最多三轮有界 CI，原 Q2/原机/冻结 runtime 不进入实验。
+
 旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、实际 H07 机制、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见

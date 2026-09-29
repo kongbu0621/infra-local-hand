@@ -594,6 +594,28 @@ are unchanged; real root-only collector coverage is mandatory alongside the
 ordinary-user suite. Exact native CI outcomes are distinct from cloud skips
 and do not establish original-host readiness or Q2 acceptance.
 
+### H07 cgroup fence qualification spike (proposed)
+
+Scope `LH-Q2-H07-CGROUP-FENCE-SPIKE-v1` is **OPEN** at exact proposed A
+`71c7e842c724650a0e949a63bb898699b41107be`. Its
+[baseline record](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md) pins the
+[requirements](docs/a2-execution/q2-h07-cgroup-fence-spike/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-h07-cgroup-fence-spike/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-h07-cgroup-fence-spike/IMPLEMENTATION_PLAN.md).
+Unchanged R/source/integrity, Owner mandate/authority, no exceptions and change
+rules remain those above. There is no Owner B or independent CLOSED C for this scope.
+Do not create its helper, test implementation or workflow before that closure.
+
+The proposed F1–F4 experiment uses atomic clone3 placement and a separately
+observed guardian to close a subtree containing every synthetic workload producer.
+It includes a bounded temporary hosted-Linux fixture, manual-only GitHub workflow,
+and at most three dispatched rounds (initial plus two justified source-repair
+verifications), each with six fixed cases. It is not existing H4 guest authority,
+a production backend, original-host provisioning, frozen runtime replacement or
+permission to issue/consume the original Q2 batch. Successful local fencing would
+not qualify first remote dispatch, cross-clock mapping, FS or full billing.
+This registration is proposal bookkeeping, not a CLOSED record or implementation.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
