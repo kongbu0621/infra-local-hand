@@ -632,11 +632,11 @@ this stop condition or alter the original run's evidence.
 
 ### H07 round 1 bounded continuation proposal
 
-Scope `LH-Q2-H07-R1-CONTINUATION-v1` is **PROPOSED / Gate OPEN**, U1–U4.
+Scope `LH-Q2-H07-R1-CONTINUATION-v1` is **CLOSED for U1–U4**.
 The [requirements](docs/a2-execution/q2-h07-r1-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-h07-r1-continuation/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-h07-r1-continuation/IMPLEMENTATION_PLAN.md)
-propose accepting only run `36577764454`'s historical cleanup unknown as no longer
+authorize accepting only run `36577764454`'s historical cleanup unknown as no longer
 independently blocking the remaining two rounds. Its original failure, cleanup
 unknown and consumed round remain unchanged; all later stopping conditions stay.
 The proposal also separates observed account identity from admitted cleanup
@@ -645,12 +645,16 @@ Rule R/source/integrity, Owner-only Authority, adoption mandate and no exception
 remain as above. The exact new documentation baseline is
 `a08a5055c35009a896ad6c6059d709758cc78436`; its
 [baseline record](docs/governance/Q2_H07_R1_CONTINUATION_BASELINE.md) pins all three
-document digests and the precise historical acceptance requested. New B and C
-are absent. An exact Owner decision and independent bookkeeping C are required
-before affected implementation D or another laboratory dispatch.
-The instruction to continue preparing this proposal is not closure of its
-not-yet-pinned A. Unaffected original CLOSED scopes remain valid; the current
-round 1 stop condition remains effective until a valid new C exists.
+document digests and the precise historical acceptance. Owner B at 2026-09-29
+22:38:51 +08, event `LH-Q2-H07-R1-CONTINUATION-CLOSURE-20260929-01`, is retained in
+[the accurate decision record](docs/governance/Q2_H07_R1_CONTINUATION_OWNER_DECISION.md).
+This independent bookkeeping-only commit is new C; affected implementation D
+must descend from it. New A's three original documents and historical OPEN
+labels are unchanged. Its requirements' unique supersede table controls both
+old cross-round stop clauses only for the named round 1 historical event.
+All later stopping conditions, original consumed 1/3, exact new-source and
+environment admission, and the requirement for justified remaining rounds stay.
+Unaffected original CLOSED scopes remain valid. This closure consumes no round.
 
 ### Continuing constraints
 
