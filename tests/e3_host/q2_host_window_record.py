@@ -49,6 +49,7 @@ ALLOCATION_BOUND = 16 * BLOCK
 INTENT_LIMIT = c.LOGICAL_LIMIT - BLOCK
 FS_IOC_GETFLAGS = 0x80086601
 FS_INDEX_FL, FS_EXTENTS_FL = 0x1000, 0x80000
+EXT4_FEATURE_INCOMPAT_EA_INODE = 0x400
 BOOT_PATH = "/proc/sys/kernel/random/boot_id"
 
 
@@ -227,8 +228,9 @@ def _geometry(raw):
         "HOST_WINDOW_EXT4_SUPERBLOCK")
     block_log, cluster_log = struct.unpack_from("<II", raw, 24)
     compat, incompat, rocompat = struct.unpack_from("<III", raw, 92)
+    # EA values can occupy hidden inodes absent from directory snapshots.
     require(block_log == cluster_log == 2 and compat & 0x4 and not compat & 0x20 and incompat & 0x40
-        and not incompat & (0x1 | 0x8 | 0x8000 | 0x10000 | 0x20000)
+        and not incompat & (0x1 | 0x8 | EXT4_FEATURE_INCOMPAT_EA_INODE | 0x8000 | 0x10000 | 0x20000)
         and not rocompat & 0x200, "HOST_WINDOW_EXT4_GEOMETRY")
     return BLOCK, BLOCK
 

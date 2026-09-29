@@ -383,5 +383,17 @@ class HostWindowExt4Geometry(unittest.TestCase):
             with self.subTest(offset=offset,value=value),self.assertRaises(ValueError):
                 r._geometry(bytes(raw))
 
+    def test_ea_inode_rejected_from_the_incompatible_feature_field(self):
+        # The same numeric bit in compat/rocompat has a different meaning.
+        # These controls preserve parsing behavior, not full FS qualification.
+        for compat, rocompat in ((0x4, 0), (0x404, 0), (0x4, 0x400), (0x404, 0x400)):
+            raw = self.superblock()
+            struct.pack_into("<III", raw, 92, compat, 0x40, rocompat)
+            with self.subTest(compat=compat, rocompat=rocompat):
+                self.assertEqual((4096, 4096), r._geometry(bytes(raw)))
+                struct.pack_into("<I", raw, 96, 0x440)
+                with self.assertRaisesRegex(ValueError, "HOST_WINDOW_EXT4_GEOMETRY"):
+                    r._geometry(bytes(raw))
+
 
 if __name__=="__main__":unittest.main()
