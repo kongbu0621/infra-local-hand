@@ -22,6 +22,11 @@ Linux **2746 PASS / 51 SKIP**，Windows **714 PASS / 995 SKIP**，各新增 78 P
 [H07 路线审查](Q2_H07_MECHANISM_ROUTE_REVIEW.md)已确认旁挂 broker 无法覆盖冻结直连；
 [FS／费用来源合同](Q2_FS_BILLING_SOURCE_CONTRACT.md)保留准确缺项，当前无充分实际接线方案。
 
+后续[未决启动请求源码复核](Q2_H07_PENDING_REQUEST_SOURCE_REVIEW.md)确认所查 systemd
+版本的等待超时、断连、AddRef 和一般错误回复均不提供启动撤销事务；入队后仍有
+错误返回点。项目 `--wait/--pipe` 在该版本走 system bus，不经过本仓库 broker。
+该交付仅为静态来源研究，没有新的程序实现、现场调用或测试通过计数。
+
 旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、实际 H07 机制、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见

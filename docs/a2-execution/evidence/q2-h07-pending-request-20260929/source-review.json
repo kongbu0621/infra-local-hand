@@ -1,0 +1,106 @@
+{
+  "review_kind": "static-source-only",
+  "repository_baseline": "ff0fdcd591507b55b43d5884297602f1c9f06b4a",
+  "upstream_repository": "systemd/systemd",
+  "upstream_commit": "db11bab38ccf1ed257f310d29070843d4c58ea01",
+  "source_digest_basis": "UTF-8 encoding of retrieved file content",
+  "sources": [
+    {
+      "path": "src/run/run.c",
+      "bytes": 79537,
+      "sha256": "675238d084c864121f3ea84dd11c6cc251577a4dbe9b9365d7fdbce33cb7beb4",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/run/run.c"
+    },
+    {
+      "path": "src/core/dbus-manager.c",
+      "bytes": 149645,
+      "sha256": "3630c37996b915a57e786cf8d47b8e6240d9f9922e256dff5febaf1fb65f47b2",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/core/dbus-manager.c"
+    },
+    {
+      "path": "src/libsystemd/sd-bus/sd-bus.c",
+      "bytes": 136855,
+      "sha256": "d2429760b59c0d475681f7c8742856e775cf7d3472b463f6b4c97abb76aff18a",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/libsystemd/sd-bus/sd-bus.c"
+    },
+    {
+      "path": "src/shared/bus-util.c",
+      "bytes": 22255,
+      "sha256": "5c840f09bd2fb5a416a6a1d339c96e7815ed3d1c7423041a64f0503802ef890b",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/shared/bus-util.c"
+    },
+    {
+      "path": "src/core/dbus-unit.c",
+      "bytes": 103083,
+      "sha256": "62445cc8de15136e2e7717d8cb5d497b8357d5476a0997ff9c66fc5ccce86725",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/core/dbus-unit.c"
+    },
+    {
+      "path": "src/core/dbus-job.c",
+      "bytes": 11504,
+      "sha256": "e713f9bc2401bcf6ef7e3c0feb0a24838f129f4e658bd2a80aa294a3236c5e7c",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/core/dbus-job.c"
+    },
+    {
+      "path": "src/core/unit.c",
+      "bytes": 229411,
+      "sha256": "d3c14e765dceeafd8e2d1fe94ed685c5dfc1c35f0a32c8459046a0459a1c57c4",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/core/unit.c"
+    },
+    {
+      "path": "src/core/job.c",
+      "bytes": 60864,
+      "sha256": "fb29150d98411357be03ae526b56ad71f612a8f6a454f7a66e0b92afda67fe65",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/core/job.c"
+    },
+    {
+      "path": "src/core/service.c",
+      "bytes": 206313,
+      "sha256": "63f6d0b5aa92b7fa4338616aaa5203c73dd0578e10365f8dbbf3bd95aa58705e",
+      "url": "https://github.com/systemd/systemd/blob/db11bab38ccf1ed257f310d29070843d4c58ea01/src/core/service.c"
+    }
+  ],
+  "project_call_sites": [
+    {
+      "path": "tests/e3_host/q2_startup_retry_entry.py",
+      "symbol": "guest_command",
+      "bytes": 26881,
+      "sha256": "f050e2ce87312c7265b4c6cd51adcf1fba417fe0fa8770ae4f2af2c2402d8b80"
+    },
+    {
+      "path": "tests/e3_host/q2_prepare_run.py",
+      "symbol": "command",
+      "bytes": 36164,
+      "sha256": "412fe15594f9d187cfe01c3323bb6a58a73918f62ec98f844825dd95f93aa64f"
+    },
+    {
+      "path": "tests/e3_host/q2_supervisor.py",
+      "symbol": "command",
+      "bytes": 44421,
+      "sha256": "4beadbe3c1e5cb6795093776761a26fdadca592487e3cc5c28ee593c86f50528"
+    },
+    {
+      "path": "tools/admin/local_hand_quota_observer/q2_runtime.py",
+      "symbol": "command",
+      "bytes": 20784,
+      "sha256": "082fcee5ba07d634fe4f3b2f85166375a58a9ac1dab1fd0ba0d97f7d96c2f3bd"
+    }
+  ],
+  "findings": [
+    "wait_or_pipe_selects_system_bus_in_pinned_upstream",
+    "client_timeout_or_disconnect_is_not_start_cancellation",
+    "generic_error_can_follow_job_insertion",
+    "unit_AddRef_is_not_kill_on_disconnect",
+    "service_job_sender_loss_does_not_provide_gc_cancellation"
+  ],
+  "limits": {
+    "original_host_version_qualified": false,
+    "systemd_experiment_executed": false,
+    "original_host_contacted": false,
+    "marker_created": false,
+    "startup_issued": false,
+    "actual_fence_proven": false,
+    "q2_accepted": false,
+    "new_test_pass_count": null
+  }
+}

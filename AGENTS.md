@@ -578,6 +578,14 @@ actual route is currently established. The [FS/billing source contract](docs/a2-
 retains precise missing sources and proof duties. These records authorize no host
 action, retry, new facility or new startup batch.
 
+The subsequent [pending-request source review](docs/a2-execution/Q2_H07_PENDING_REQUEST_SOURCE_REVIEW.md)
+traces pinned upstream systemd control flow: client timeout/disconnect, AddRef
+release and a generic error reply are not an atomic start cancellation. Failures
+can occur after job insertion. The project's wait/pipe calls select the system
+bus in that upstream version; bypassing this repository's broker must not be
+misdescribed as necessarily using the manager's private socket. This is static
+research, not original-host version qualification or new execution authority.
+
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at
 `3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe`. These remain inside existing CLOSED
