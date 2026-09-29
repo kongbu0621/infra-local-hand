@@ -2,7 +2,7 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前接续（2026-09-28）：K4 完整本地观察回执已收到并核验，结果为 `OBSERVED_PARTIAL`；Q2、E3 与生产支持仍未验收。** 见[完整回执复核](docs/a2-execution/Q2_KERNEL_FACT_READ_FULL_RETURN_REVIEW.md)和[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。当前继续离线核对来源缺口，无需重复粘贴 JSON、重跑预检或再次批准已关闭的相同范围。
+**当前接续（2026-09-29）：固定本地补证 L1–L6 限定任务已完成，结果仍为 `OBSERVED_PARTIAL`；完整 Q2、E3 与生产支持未验收。** 已继续完成范围内的离线组件，见[费用来源复核](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)和[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。实际 H07、完整账单和 FS 资格仍需闭合；无需重复已有 11 项采集或权限维护。
 
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 
@@ -56,5 +56,6 @@ K4 已完成限定的完整回执核验，完整账单、H07 首次远端截止�
 随后[固定本地来源补证](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_BASELINE.md)准确 A `b8b9ec3d` 已获[Owner 关闭决定](docs/governance/Q2_LOCAL_SOURCE_EVIDENCE_OWNER_DECISION.md)，授权 L1–L6；独立 C `8e754519` 后已完成 最终 D `411a9f05` 的 L1–L4 实现、相关回归和准确 RAM 交付，见[实现复核](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_IMPLEMENTATION_REVIEW.md)。[首次 L5 回执](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_FIELD_REVIEW.md)已收到并核对：父目录保护阻断，11项均未尝试、4份原文未取得；L6阻断复核完成，Q2仍未验收。
 后续89c725ef诊断、rerun1及rerun2的BLOCKED历史均保留。2026-09-29已完成盘点、六文件维护及[rerun3完整回执复核](docs/a2-execution/Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)：11项匹配，四份控制原文返回，结果为`OBSERVED_PARTIAL / final_local_recheck`；固定本地补证L1–L6限定任务完成。随后[显式 wrapper profile 修复](docs/a2-execution/Q2_WRAPPER_PROFILE_IMPLEMENTATION_REVIEW.md)在原 H1/H4 内完成，准确 D `22efa42`、143 个不同定向测试通过；旧默认及现场门保持。普通操作者的[显式 v2 记录组件](docs/a2-execution/Q2_ORDINARY_WRITER_IMPLEMENTATION_REVIEW.md)随后在原 H1/H2/H4 内完成，准确 D `c2373313` 的 CI 3/3 成功，旧 v1 root 合同、内核读取与现场门保持；组件验证不代表原机准入。本轮[首次父目录增量计费修复](docs/a2-execution/Q2_PARENT_ALLOCATION_IMPLEMENTATION_REVIEW.md)在 H2/H3/H4 内完成，准确 D `530a2a45` 的 CI 3/3 成功；同一原预留内准确分配 actual/future，父旧基数与完整现场资格仍未证明。当前按[执行准入差额与方案](docs/a2-execution/Q2_POST_SOURCE_ADMISSION_PLAN.md)处理实际来源/环境绑定、H07、完整账单、普通身份现场装配与FS峰值/持久资格；既有回执中的12KiB索引父目录仍超出writer窄profile。无需重做同一采集或权限维护。
 随后完成[H07 固定域与队列一致性组件](docs/a2-execution/Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)，准确 D `293cb51f` 的 CI 3/3 成功、Linux 新增 84 项通过：分别保留两条请求边的提交/排队/未知状态，模型不能生成现场停止或运行许可；同时补拒 ext4 EA_INODE。当前仍需实际首次远端监督、完整费用和 FS 资格。
+现已增加[离线费用来源／覆盖主张组件](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)，初次实现 `7e802685` 的本地相关回归 223 PASS / 0 SKIP；修复 Windows 大输入用例名后，最终 D `24b5536c` 的原生 CI **3/3 成功**，Linux／Windows 各新增 78 项通过。严格引用、别名与重复抵扣核对不产生完整账单。参见[H07 接线边界](docs/a2-execution/Q2_H07_MECHANISM_ROUTE_REVIEW.md)和[FS／费用具体缺项](docs/a2-execution/Q2_FS_BILLING_SOURCE_CONTRACT.md)。
 旧提交的通用 CI 失败记录保留；后续[CI 装配与平台边界修复](docs/a2-execution/CI_REPAIR_20260928.md)记录准确修复版本及验证结果。源码／CI 通过与 K4 完成均不构成完整 Q2 验收。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。

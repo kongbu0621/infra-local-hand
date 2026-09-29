@@ -1,0 +1,54 @@
+{
+  "allow_consume": false,
+  "allow_run": false,
+  "baseline_parent_cost_proven": false,
+  "cross_source_total_produced": false,
+  "diagnostic_codes": [],
+  "field_ready": false,
+  "filesystem_proven": false,
+  "final_helper_bytes_equal_to_applied_helper": true,
+  "final_implementation_commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+  "full_bill_proven": false,
+  "helper_sha256": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238",
+  "implementation_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+  "implementation_tree": "b36bbf901fb03a4151e6188b8b838b4ceb62834d",
+  "input_sources": [
+    {
+      "bytes": 34013,
+      "id": "K4",
+      "sha256": "281ff17ffd7bb83f7afd0bcae7488f5fa5b9bf551852f63494ceb8d84cc5cab9"
+    },
+    {
+      "bytes": 32439,
+      "id": "R3",
+      "sha256": "700a17989fec4271973a0620e87dccee64ce30ef4f7082a97ab42e5b6648f119"
+    }
+  ],
+  "manifest_sha256": "ddae3fd91fb9d5e56a7f8208f7f8197f921fc8b4d1a44bdb315372305debe550",
+  "marker_pool_adjustment_performed": false,
+  "observation_completion_proven": false,
+  "original_host_accessed": false,
+  "payload_executed": false,
+  "q2_accepted": false,
+  "report_sha256": "3607fad1891adba3b5045c7769f8fb52c05418272c0cc623d63c46de63622e6c",
+  "schema": "q2-cost-source-real-input-check/v1",
+  "selected_object_count": 13,
+  "selected_reference_arithmetic": {
+    "B_K4": 4096,
+    "B_R3": 12288,
+    "M7": 10502144,
+    "T4": 16384,
+    "files_only": 10518528,
+    "same_epoch_or_current_inventory_proven": false
+  },
+  "source_adoption_proven": false,
+  "source_count": 2,
+  "source_group_count": 2,
+  "source_group_subtotals": [
+    null,
+    null
+  ],
+  "status": "PASS_FOR_RETAINED_BYTE_REFERENCE_APPLICATION",
+  "unknown_commitment_count": 2,
+  "unknown_identity_count": 13
+}

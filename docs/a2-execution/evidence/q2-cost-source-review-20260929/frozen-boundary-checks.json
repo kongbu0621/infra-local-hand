@@ -1,0 +1,160 @@
+{
+  "H_C_is_ancestor": true,
+  "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+  "field_readiness_changed": false,
+  "files": [
+    {
+      "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "path": "docs/a2-execution/q2-host-window-consumption/REQUIREMENTS.md",
+      "sha256": "400fe60987be3de44f78ea747b51458f4ccdd08f21cff7654be0b9dd7e2d66cc",
+      "unchanged": true
+    },
+    {
+      "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "path": "docs/a2-execution/q2-host-window-consumption/ARCHITECTURE.md",
+      "sha256": "82daca9a1a3dd31df423aa6e0904fd44d5e5c6aa19a6364ad3a632dcae84ac7c",
+      "unchanged": true
+    },
+    {
+      "baseline": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+      "path": "docs/a2-execution/q2-host-window-consumption/IMPLEMENTATION_PLAN.md",
+      "sha256": "8e74f4721017b86c5957a120d6ee1ba33a814d66ffb801443234b6dda76f5881",
+      "unchanged": true
+    },
+    {
+      "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "path": "docs/a2-execution/q2-kernel-fact-read/REQUIREMENTS.md",
+      "sha256": "8fff20a7a6c9b08a427ff6768b567d4a38cd0441e4a54ceaf8b3786c6abb1268",
+      "unchanged": true
+    },
+    {
+      "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "path": "docs/a2-execution/q2-kernel-fact-read/ARCHITECTURE.md",
+      "sha256": "c18ef78c8fa22994d0270ce8e731d5a690c1f38fa5d2ba9fdb23491127572954",
+      "unchanged": true
+    },
+    {
+      "baseline": "887b640b394f9983f37dfe97c58ba35aaa099359",
+      "path": "docs/a2-execution/q2-kernel-fact-read/IMPLEMENTATION_PLAN.md",
+      "sha256": "810c0f2d274b18536249076e0de8278b012b00d5f23fb6ea0ed6d569f65d61f8",
+      "unchanged": true
+    },
+    {
+      "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "path": "docs/a2-execution/q2-local-source-evidence/REQUIREMENTS.md",
+      "sha256": "0ae9ee2403851191be6863c4fdd685d477586d94fccfb9312e11d19f160b15f7",
+      "unchanged": true
+    },
+    {
+      "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "path": "docs/a2-execution/q2-local-source-evidence/ARCHITECTURE.md",
+      "sha256": "b31f342c6fbef4411daa63af1c4c7993cc28507fa989438959816c3e086bbc2d",
+      "unchanged": true
+    },
+    {
+      "baseline": "b8b9ec3da3de43b72e4e17416ea6633494d50c1d",
+      "path": "docs/a2-execution/q2-local-source-evidence/IMPLEMENTATION_PLAN.md",
+      "sha256": "9452714bcab444c68089e790f3e5ee378ec0c368fcd13f7fe5d0edc49212c200",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_host_kernel_facts.py",
+      "sha256": "947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_reconciliation_entry.py",
+      "sha256": "79b163c4a36ad69683910c1e595d3ec9675d269a6d00426869b44d4e58898bf7",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "sha256": "c19ea692b7a04950a4bee69763a1af16878db897c1a2874bfce320936dbc81e6",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_reconciliation_driver.py",
+      "sha256": "09dddf2490921dcca5afbb68a31198cb72baa20e4cfd763df1f9aaafe5e43d73",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_reconciliation_backend.py",
+      "sha256": "c15741bcc9b1186e9073e35f16b462bffaf56f13b0221ba22f868d6fd844e165",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_supervisor.py",
+      "sha256": "4beadbe3c1e5cb6795093776761a26fdadca592487e3cc5c28ee593c86f50528",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_prepare_run.py",
+      "sha256": "412fe15594f9d187cfe01c3323bb6a58a73918f62ec98f844825dd95f93aa64f",
+      "unchanged": true
+    },
+    {
+      "baseline": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+      "path": "tests/e3_host/q2_prepare_run.py",
+      "sha256": "412fe15594f9d187cfe01c3323bb6a58a73918f62ec98f844825dd95f93aa64f",
+      "unchanged": true
+    },
+    {
+      "baseline": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+      "path": "tests/e3_host/q2_supervisor.py",
+      "sha256": "4beadbe3c1e5cb6795093776761a26fdadca592487e3cc5c28ee593c86f50528",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_host_window_record.py",
+      "sha256": "d6e95e9b5fd42554b507f586c7bae3074fc35565ff77043dbb01417e409fb274",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_host_window_billing.py",
+      "sha256": "c95c940282e6311b1995f106d4463e1c5befafc6dd749a7532e0da82f457c660",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_reconciliation_bootstrap.py",
+      "sha256": "d67c0798972511c829ce38bcf2e2ced86a2dfbdddd9eac74f4992211de8aa820",
+      "unchanged": true
+    },
+    {
+      "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+      "path": "tests/e3_host/q2_host_window_contract.py",
+      "sha256": "1afdf2b0faf230795ec7bb26f27639e2d1d06b8eeef078b6a7dae2e192ee288b",
+      "unchanged": true
+    }
+  ],
+  "implementation_commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+  "implementation_tree": "25f5b1fb1c0de29f5fd73df96a9af4fe06e51320",
+  "initial_implementation_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+  "old_tracked_source_changed": false,
+  "runtime_changed": false,
+  "schema": "local-hand-q2-cost-source-frozen-boundaries/v1",
+  "source_files": [
+    {
+      "bytes": 18091,
+      "git_blob": "953155c07839dd6398d3a2856f492bf981a5b4fb",
+      "path": "tests/e3_host/q2_cost_source_review.py",
+      "sha256": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238"
+    },
+    {
+      "bytes": 32937,
+      "git_blob": "889230929c020917200d60d6646dc61e2b0caf7e",
+      "path": "tests/test_e3_q2_cost_source_review.py",
+      "sha256": "9ea66aa586846a0f6b8ca5ce634ebff925385400211243c6ba57ea196c2aa100"
+    }
+  ],
+  "source_syntax_python310": true
+}

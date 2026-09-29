@@ -1,0 +1,120 @@
+{
+  "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+  "field_ready": false,
+  "filesystem_proven": false,
+  "fixed_file_comparisons": 22,
+  "full_bill_proven": false,
+  "h07_proven": false,
+  "historical_failed_commits_rewritten": false,
+  "implementation_commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+  "implementation_tree": "25f5b1fb1c0de29f5fd73df96a9af4fe06e51320",
+  "independent_new_tests": {
+    "implementation_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+    "log": {
+      "bytes": 179,
+      "sha256": "daf70526e7b82a25a3a057956789a51e089e6494a88f9427f64b7f08cc5402c6"
+    },
+    "passed": 78,
+    "seconds": 0.59,
+    "skipped": 0,
+    "subset_of_root_targeted": true
+  },
+  "initial_implementation_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+  "local_targeted": {
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "-rs",
+      "tests/test_e3_q2_cost_source_review.py",
+      "tests/test_e3_q2_host_window_billing.py",
+      "tests/test_e3_q2_host_window_ordinary_inputs.py",
+      "tests/test_e3_q2_host_window_parent_allocation_inputs.py",
+      "tests/test_e3_q2_reconciliation_billing.py",
+      "--junitxml=<private-analysis-report>"
+    ],
+    "exit_code": 0,
+    "failed": 0,
+    "files": 5,
+    "implementation_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+    "junit": {
+      "bytes": 257394,
+      "sha256": "b6c5e8f416025a79a91e4e77e73b51b59b9858059473e29a036b4407974e62fe"
+    },
+    "log": {
+      "bytes": 433,
+      "sha256": "170f5fd4f25764474fa0ea4e1602fceed7176d92f54281c1b5ca5e92056b4804"
+    },
+    "passed": 223,
+    "pytest": "8.4.2",
+    "python": "3.12.14",
+    "seconds": 7.55,
+    "skipped": 0,
+    "source_files": [
+      {
+        "bytes": 18091,
+        "git_blob": "953155c07839dd6398d3a2856f492bf981a5b4fb",
+        "path": "tests/e3_host/q2_cost_source_review.py",
+        "sha256": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238"
+      },
+      {
+        "bytes": 32863,
+        "git_blob": "d46cfb71500657602922220e0e882ed3feae613e",
+        "path": "tests/test_e3_q2_cost_source_review.py",
+        "sha256": "643c4094bf75180f39770851d3354f38dbeca7a363e82114febec585073a3c5f"
+      }
+    ]
+  },
+  "original_host_accessed": false,
+  "parent": "7e8026858962828102a6e3403edb3e43b82c1cee",
+  "payload_executed": false,
+  "portable_test_id_followup": {
+    "ast_equal_after_removing_added_ids": true,
+    "bytes": 32937,
+    "changed_path": "tests/test_e3_q2_cost_source_review.py",
+    "diff_scope": "Only two explicit short pytest parameter ids; original byte expressions and assertions unchanged.",
+    "implementation_commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+    "implementation_tree": "25f5b1fb1c0de29f5fd73df96a9af4fe06e51320",
+    "independent_review_must_fix": [],
+    "module_bytes_unchanged": true,
+    "parent": "7e8026858962828102a6e3403edb3e43b82c1cee",
+    "reason": "Initial exact-D Windows CI hit the 32767-character environment-variable limit while setting PYTEST_CURRENT_TEST for the huge auto-generated parameter id. That case did not execute; setup and teardown each errored.",
+    "root_tests": {
+      "exit_code": 0,
+      "failed": 0,
+      "junit": {
+        "bytes": 28436,
+        "sha256": "e691ad44fa5b3ec33c7b82d024df6e015c281c0c9468867749d4cc62f86263db"
+      },
+      "log": {
+        "bytes": 276,
+        "sha256": "19039275effa39011dcbc937f48f4b88d830da1c96fe18e5f51310e3f2af5ed9"
+      },
+      "passed": 78,
+      "seconds": 0.59,
+      "skipped": 0
+    },
+    "sha256": "9ea66aa586846a0f6b8ca5ce634ebff925385400211243c6ba57ea196c2aa100"
+  },
+  "q2_accepted": false,
+  "retained_prefreeze_targeted": {
+    "cause": "The membership limit fixture reached the diagnostic limit first; fixture corrected without changing source.",
+    "exact_test_bytes_not_sealed_for_this_prefreeze_run": true,
+    "exit_code": 1,
+    "failed": 1,
+    "junit": {
+      "bytes": 260441,
+      "sha256": "418c703dd7cc54c387180ceaee3ee23d5644f68b63d7bb754575a862439ebc49"
+    },
+    "log": {
+      "bytes": 3470,
+      "sha256": "3a3fd5ea996041d30874f998562a0889be930fe189644fcdc3fc877ec074c49c"
+    },
+    "passed": 222,
+    "seconds": 9.03
+  },
+  "schema": "local-hand-q2-cost-source-verification/v1",
+  "source_review_must_fix": [],
+  "startup_batch": "NOT_ISSUED"
+}

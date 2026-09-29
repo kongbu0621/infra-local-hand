@@ -12,6 +12,16 @@
 
 本轮新增[H07 固定域与队列一致性组件](Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)，准确 D `293cb51f` 的 CI **3/3 成功**、Linux 新增 84 项通过：重新核对传入原件，按固定计划派生域，分别保留两条内部请求边的未决状态；其他动态域明确缺证。模型不能生成 fence、实际停止或执行许可。另补 ext4 EA_INODE 漏拒，仍不证明当前 FS 资格。
 
+新增[离线费用来源与覆盖主张组件](Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)，准确 D
+`7e802685`，原 CLOSED H1/H3/H4 内完成；本地五文件 **223 PASS / 0 SKIP**。
+随后仅修复 Windows 大输入用例名，最终 D `24b5536c` 的原生 CI **3/3 成功**：
+Linux **2746 PASS / 51 SKIP**，Windows **714 PASS / 995 SKIP**，各新增 78 PASS、SKIP 不变。
+首次 D 的 Windows 失败记录保留，完整安装／系统场景结果见复核记录。
+它核对来源字节／字段引用和别名、覆盖、抵扣冲突，不把 source SHA 当观察时点，
+不释放义务或生成可准入账单。旧 bill/writer/入口保持。
+[H07 路线审查](Q2_H07_MECHANISM_ROUTE_REVIEW.md)已确认旁挂 broker 无法覆盖冻结直连；
+[FS／费用来源合同](Q2_FS_BILLING_SOURCE_CONTRACT.md)保留准确缺项，当前无充分实际接线方案。
+
 旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、实际 H07 机制、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
 K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回执复核见

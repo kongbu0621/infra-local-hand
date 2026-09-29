@@ -1,0 +1,219 @@
+{
+  "baseline": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+  "binding_status": "FROZEN_SOURCE_BYTES_MATCH_EXACT_PUBLISHED_D",
+  "documentation_review": {
+    "evidence": "Drafts distinguish selected-field arithmetic from actual/current/lower-bound accounting and retain all field gaps. The resource paragraph includes all four newly explicit limits. CROSS_RECEIPT diagnostic names denote cross-source containers, not authenticated receipt or epoch status.",
+    "must_fix": [],
+    "scope": [
+      "AGENTS.md",
+      "README.md",
+      "docs/a2-execution/Q2_POST_SOURCE_ADMISSION_PLAN.md",
+      "docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md",
+      "docs/a2-execution/Q2_FS_BILLING_SOURCE_CONTRACT.md"
+    ],
+    "status": "PASS_FOR_SCOPED_WORDING"
+  },
+  "files": [
+    {
+      "bytes": 18091,
+      "path": "tests/e3_host/q2_cost_source_review.py",
+      "sha256": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238"
+    },
+    {
+      "bytes": 32863,
+      "path": "tests/test_e3_q2_cost_source_review.py",
+      "sha256": "643c4094bf75180f39770851d3354f38dbeca7a363e82114febec585073a3c5f"
+    }
+  ],
+  "fixed_limits": {
+    "diagnostics": 2048,
+    "distinct_reference_encoded_bytes": 4194304,
+    "evidence_per_row": 8,
+    "json_depth": 64,
+    "json_nodes_per_document": 100000,
+    "manifest_bytes": 262144,
+    "maximum_integer": 9223372036854775807,
+    "objects": 512,
+    "obligations": 128,
+    "output_bytes": 2097152,
+    "pointer_bytes": 4096,
+    "pointer_segments": 64,
+    "reference_encoded_bytes": 262144,
+    "relation_memberships": 2048,
+    "relations": 512,
+    "source_bytes": 8388608,
+    "sources": 32,
+    "total_source_bytes": 16777216
+  },
+  "implementation_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+  "implementation_tree": "b36bbf901fb03a4151e6188b8b838b4ceb62834d",
+  "must_fix": [],
+  "portable_test_id_followup_review": {
+    "ast_equal_after_removing_added_ids": true,
+    "bytes": 32937,
+    "changed_path": "tests/test_e3_q2_cost_source_review.py",
+    "diff_scope": "Only two explicit short pytest parameter ids; original byte expressions and assertions unchanged.",
+    "implementation_commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+    "implementation_tree": "25f5b1fb1c0de29f5fd73df96a9af4fe06e51320",
+    "independent_review_must_fix": [],
+    "module_bytes_unchanged": true,
+    "parent": "7e8026858962828102a6e3403edb3e43b82c1cee",
+    "reason": "Initial exact-D Windows CI hit the 32767-character environment-variable limit while setting PYTEST_CURRENT_TEST for the huge auto-generated parameter id. That case did not execute; setup and teardown each errored.",
+    "root_tests": {
+      "exit_code": 0,
+      "failed": 0,
+      "junit": {
+        "bytes": 28436,
+        "sha256": "e691ad44fa5b3ec33c7b82d024df6e015c281c0c9468867749d4cc62f86263db"
+      },
+      "log": {
+        "bytes": 276,
+        "sha256": "19039275effa39011dcbc937f48f4b88d830da1c96fe18e5f51310e3f2af5ed9"
+      },
+      "passed": 78,
+      "seconds": 0.59,
+      "skipped": 0
+    },
+    "sha256": "9ea66aa586846a0f6b8ca5ce634ebff925385400211243c6ba57ea196c2aa100"
+  },
+  "private_application_report_review": {
+    "cross_source_total_produced": false,
+    "execution_attribution": "The component author ran the trusted helper on two retained original byte documents. The independent reviewer checked the resulting artifacts, not a new field observation.",
+    "helper_sha256": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238",
+    "manifest_bytes": 4177,
+    "manifest_sha256": "ddae3fd91fb9d5e56a7f8208f7f8197f921fc8b4d1a44bdb315372305debe550",
+    "object_count": 13,
+    "original_host_accessed": false,
+    "payload_executed": false,
+    "private_report_bytes": 19665,
+    "private_report_sha256": "3607fad1891adba3b5045c7769f8fb52c05418272c0cc623d63c46de63622e6c",
+    "relations": 0,
+    "reviewer_actions": [
+      "Read the local application script and sanitized result.",
+      "Independently hashed the retained claim manifest and private report and matched both to the summary.",
+      "Read the private report and checked unknown identity/commitment, false observation fields and null group sums."
+    ],
+    "reviewer_reexecuted_application": false,
+    "same_epoch_or_current_inventory_proven": false,
+    "source_count": 2,
+    "source_group_subtotals": [
+      null,
+      null
+    ],
+    "status": "PASS_FOR_RECORDED_REFERENCE_APPLICATION",
+    "unknown_commitment_count": 2,
+    "unknown_identity_count": 13
+  },
+  "resolved_findings": [
+    {
+      "id": "CONTAINER_NOT_EPOCH",
+      "resolution": "Sources are grouped only by original-byte SHA. Every group has observation_epoch_proven=false and subtotal_eligible_as_observation=false; separate identity/quantity pointers never prove one observation."
+    },
+    {
+      "id": "ACTUAL_SOURCE_MAP_BOUND",
+      "resolution": "Exact dict and 1..32 entries are required before iterating keys/values; exact str keys and bytes values precede exact declared-set and pin checks."
+    },
+    {
+      "id": "RELATION_WORK_BOUND",
+      "resolution": "Claim comparisons use an identity/object index. Total selected object memberships and diagnostics each have a hard 2048 limit. Original manifest/object/source/output and reference-encoding limits remain fixed."
+    }
+  ],
+  "review_date": "2026-09-29",
+  "review_status": "PASS_FOR_SCOPED_COMPONENT",
+  "reviewer_field_operations_performed": false,
+  "reviewer_product_source_edited": false,
+  "schema": "local-hand-q2-cost-source-independent-review/v1",
+  "scope": {
+    "additional_gate_required_for_this_slice": false,
+    "baseline_A": "8402f0cc82d8a0ac0b9a56716bf276f41cafea37",
+    "closed_tasks": [
+      "H1",
+      "H3",
+      "H4"
+    ],
+    "closure_C": "271c07cd16140aa5942dcf3fad468003c58b6b0e",
+    "description": "Separate bounded review of supplied byte references and pending cost claims. No source adoption or operational authority.",
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
+  },
+  "source_checks": [
+    {
+      "evidence": "The manifest is bounded and decoded first; every declared source length/SHA and exact source set are checked before any source JSON is decoded.",
+      "id": "PINS_BEFORE_SOURCE_DECODE",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Duplicate keys, floats/nonfinite values, bad Unicode, out-of-range integers, unknown claim fields, invalid JSON pointers and noncanonical paths are rejected. Typed quantities reject bool.",
+      "id": "STRICT_JSON_AND_POINTERS",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Null pointer and a referenced JSON null remain distinguishable through ref metadata; incomplete metadata/identity prevents a subtotal. Unknown commitment and unspent remain null. No empty inventory is fabricated.",
+      "id": "UNKNOWN_IS_NOT_ZERO",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Device/inode/blocks are selected from one metadata object. Machine/boot/path/phase association and completed observation are not authenticated. Partial before-stat, caller SUCCESS and a multi-time container never confer authority.",
+      "id": "REFERENCES_NOT_OBSERVATIONS",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Physical identity collisions, path identity/ancestry, repeated obligation credit, reused commitment references, duplicate coverage, coverage overlap and repeated/cross-source credits are diagnostic only. Relations select explicit IDs without subtree expansion.",
+      "id": "RELATION_CONFLICTS",
+      "status": "PASS"
+    },
+    {
+      "evidence": "No B classification, G/future derivation, marker-pool change, obligation release, credit application or cross-source bill is produced. Known marker commitment claims must equal 65536 bytes and 4 inodes.",
+      "id": "NO_ACCOUNTING_TRANSITION",
+      "status": "PASS"
+    },
+    {
+      "evidence": "Byte/node/depth/count/integer/reference/output limits plus indexed memberships bound work. The API does not assert a measured execution deadline.",
+      "id": "BOUNDED_WORK",
+      "status": "PASS"
+    },
+    {
+      "evidence": "After normal Python module loading, the public function uses only supplied values and stdlib operations. It has no dynamic helper import, path read, filesystem mutation, clock sampling, subprocess or payload execution.",
+      "id": "PURE_CALL_BOUNDARY",
+      "status": "PASS"
+    },
+    {
+      "evidence": "The source slice adds only one module and one independent test file. Existing bill/v2, writer, bootstrap, entry, workflow and frozen runtime are not modified or connected to this API.",
+      "id": "OLD_ENTRY_BOUNDARIES",
+      "status": "PASS"
+    },
+    {
+      "evidence": "CLAIMS_REVIEWED is not acceptance. Source adoption, observation completion, baseline parent coverage, full bill, filesystem, field readiness, Q2 and both consume/run permissions remain false.",
+      "id": "ALL_ADMISSION_FALSE",
+      "status": "PASS"
+    }
+  ],
+  "tests": {
+    "independent_test_author_final": {
+      "log_bytes": 179,
+      "log_sha256": "daf70526e7b82a25a3a057956789a51e089e6494a88f9427f64b7f08cc5402c6",
+      "passed": 78,
+      "reviewer_read_actual_log": true,
+      "seconds": 0.59,
+      "skipped": 0
+    },
+    "native_ci": "NOT_RUN_AT_STATIC_REVIEW_TIME; use the later exact-D native CI evidence, never an earlier D result.",
+    "retained_failure": "An earlier pre-freeze membership-limit fixture reached the diagnostic limit first. The test fixture was corrected to isolate the membership bound; source bytes did not change. Earlier failed logs are retained, not restated as passed.",
+    "reviewer_repeated_tests": false,
+    "root_final_targeted": {
+      "evidence_at_review": "Root-reported final run; root retains and publishes its exact run evidence separately.",
+      "files": 5,
+      "passed": 223,
+      "seconds": 7.55,
+      "skipped": 0
+    },
+    "synthetic_boundary": "Public tests use synthetic bytes. The no-I/O test blocks operations after importing the module; normal Python module loading is outside that claim."
+  },
+  "unproven": [
+    "Authenticity, completion or adoption of any observation source.",
+    "Association of identity and quantities within a single observation epoch.",
+    "Current physical inventory, lower bound, category coverage or baseline parent B payment.",
+    "Causal parent growth, simultaneous or peak allocations, FS1-FS6 qualification and native audit costs.",
+    "Release of original historical/marker obligations or any complete actual/pending bill.",
+    "Actual H07 supervision, startup issuance, field readiness or complete Q2 acceptance."
+  ]
+}

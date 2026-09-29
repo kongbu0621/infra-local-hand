@@ -563,6 +563,21 @@ does not qualify the current indexed parent, all allocation costs or durability.
 Exact D, test and native CI evidence belong to the linked component review.
 No original-host action or new operational authority follows from these repairs.
 
+The subsequent [cost-source claims component review](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)
+records a bounded stdlib-only, pure-bytes API within CLOSED H1/H3/H4. Final D
+`24b5536ccf98c081212c7a05a6a883863d6f96fc` retains the initial module bytes and
+repairs only two oversized pytest parameter IDs; its native CI is 3/3 successful,
+with 78 new passing cases on each platform. The initial Windows failure is retained. It checks
+source pins, exact field references and coverage/credit claim conflicts. A source
+digest groups a container, not an observation epoch; selected-field arithmetic is
+not actual inventory or a current lower bound. It does not release obligations,
+apply credits, derive G/future, adopt sources or qualify the field. Existing bills,
+writer, entry and frozen runtime stay unchanged. The [H07 route review](docs/a2-execution/Q2_H07_MECHANISM_ROUTE_REVIEW.md)
+records why a side broker cannot cover the frozen direct manager calls; no complete
+actual route is currently established. The [FS/billing source contract](docs/a2-execution/Q2_FS_BILLING_SOURCE_CONTRACT.md)
+retains precise missing sources and proof duties. These records authorize no host
+action, retry, new facility or new startup batch.
+
 The subsequent [CI repair review](docs/a2-execution/CI_REPAIR_20260928.md)
 records test-fixture and platform-collection repairs at
 `3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe`. These remain inside existing CLOSED

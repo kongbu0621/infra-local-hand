@@ -1,0 +1,938 @@
+{
+  "schema": "infra-local-hand-q2-cost-source-native-ci-review/v1",
+  "repository": "kongbu0621/infra-local-hand",
+  "source_commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+  "source_tree": "25f5b1fb1c0de29f5fd73df96a9af4fe06e51320",
+  "source_parent": "7e8026858962828102a6e3403edb3e43b82c1cee",
+  "initial_component_parent": "65047d64934468acfca8e4f94aebe99ea56e6f93",
+  "source_files": [
+    {
+      "path": "tests/e3_host/q2_cost_source_review.py",
+      "bytes": 18091,
+      "sha256": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238",
+      "git_blob_sha": "953155c07839dd6398d3a2856f492bf981a5b4fb"
+    },
+    {
+      "path": "tests/test_e3_q2_cost_source_review.py",
+      "bytes": 32937,
+      "sha256": "9ea66aa586846a0f6b8ca5ce634ebff925385400211243c6ba57ea196c2aa100",
+      "git_blob_sha": "889230929c020917200d60d6646dc61e2b0caf7e"
+    }
+  ],
+  "source_binding": "Exact published D1 files and exact published D2 test bytes were read through GitHub. D2 changes only the test file and descends directly from D1; the production component bytes are unchanged. Final file sizes and SHA-256 digests match the reviewed worktree.",
+  "workflow_changed": false,
+  "run": {
+    "id": 36548011444,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36548011444",
+    "event": "push",
+    "attempt": 1,
+    "status": "completed",
+    "conclusion": "success",
+    "started_at_utc": "2026-09-29T09:15:41Z",
+    "updated_at_utc": "2026-09-29T09:27:15Z"
+  },
+  "observed_at_utc": "2026-09-29T09:39:45.808762+00:00",
+  "jobs_successful": 3,
+  "jobs_failed": 0,
+  "linux": {
+    "job_id": 109339023680,
+    "conclusion": "success",
+    "source": {
+      "passed": 2746,
+      "skipped": 51,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 416.57,
+      "summary_timestamp_utc": "2026-09-29T09:23:02.5312205Z",
+      "skip_groups": {
+        "tests/test_e3_q2_host_window_record.py": 21,
+        "tests/test_e3_q2_reconciliation_collect.py": 16,
+        "tests/test_e3_q2_reconciliation_io_records.py": 1,
+        "tests/test_e3_quota_q2_namespace.py": 1,
+        "tests/test_local_hand_jobs_quota_client.py": 11,
+        "tests/test_local_hand_jobs_runner.py": 1
+      }
+    },
+    "exact_checkout_identity_step": "success",
+    "checked_out_sha_present_in_log": true,
+    "installed_wheel": {
+      "status": "PASS",
+      "checks": 94,
+      "commands": 292,
+      "summary_timestamp_utc": "2026-09-29T09:27:10.0260206Z"
+    },
+    "evidence_archive": "success",
+    "root_collector": {
+      "passed": 16,
+      "skipped": 0,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 0.69,
+      "summary_timestamp_utc": "2026-09-29T09:16:05.0277347Z",
+      "gate_marker": "ROOT_COLLECTION_REAL_FILES=16 PASS, 0 SKIP"
+    },
+    "ordinary_reader": {
+      "identity": "ordinary",
+      "noatime": "PASS",
+      "ancestor_acl": "PASS",
+      "metadata": "STABLE"
+    },
+    "plugin_build": "success",
+    "bootstrap_syntax": "success",
+    "repeat_bootstrap_smoke_identity": "PASS"
+  },
+  "windows": {
+    "job_id": 109339023700,
+    "conclusion": "success",
+    "source": {
+      "passed": 714,
+      "skipped": 995,
+      "failed": 0,
+      "errors": 0,
+      "duration_seconds": 354.8,
+      "summary_timestamp_utc": "2026-09-29T09:22:10.5204318Z"
+    },
+    "exact_checkout_identity_step": "success",
+    "checked_out_sha_present_in_log": true,
+    "installed_wheel": {
+      "status": "PASS",
+      "checks": 10,
+      "commands": 10,
+      "summary_timestamp_utc": "2026-09-29T09:22:24.6267697Z"
+    },
+    "evidence_archive": "success",
+    "platform_smoke_steps": {
+      "16": "success",
+      "17": "success",
+      "18": "success",
+      "19": "success",
+      "20": "success",
+      "21": "success",
+      "22": "success",
+      "23": "success"
+    }
+  },
+  "new_test_coverage": {
+    "path": "tests/test_e3_q2_cost_source_review.py",
+    "test_functions": 56,
+    "parameterized_pytest_cases": 78,
+    "platform_guard_added": false,
+    "linux_new_test_skip_entries": [],
+    "windows_new_test_skip_entries": [],
+    "assessment": "Exact-source enumeration, complete successful Linux and Windows suites, no new-test skip entries, unchanged skip counts and +78 PASS on each platform support completion of all 78 new synthetic cases on both platforms.",
+    "evidence_granularity": "Source suites use pytest -q -rs. The evidence is aggregate counts and complete skip lists, not individual-node PASS records or source-suite JUnit. The root collector separately validates its own JUnit.",
+    "aggregate_cross_check": {
+      "previous_run_id": 36540605278,
+      "previous_source_commit": "293cb51f2318ebd82761f8f7855ba8bbc945d3c3",
+      "previous_linux_passed": 2668,
+      "previous_linux_skipped": 51,
+      "added_linux_passes": 78,
+      "additional_linux_skips": 0,
+      "previous_windows_passed": 636,
+      "previous_windows_skipped": 995,
+      "added_windows_passes": 78,
+      "additional_windows_skips": 0
+    },
+    "retained_linux_skips": "Of 51 source-suite skips, the 16 root-only collector cases execute in the mandatory root step (16 PASS, 0 SKIP). The other 35 existing conditional skips remain.",
+    "boundary": "Synthetic supplied-byte reference consistency does not prove source authenticity/adoption, completed observations or a shared epoch, current inventory, paid baseline parent costs, a full bill, filesystem qualification, original-host facts, H07, field readiness, dispatch, Q2 acceptance or consume/run permission."
+  },
+  "initial_failure": {
+    "source_commit": "7e8026858962828102a6e3403edb3e43b82c1cee",
+    "source_tree": "b36bbf901fb03a4151e6188b8b838b4ceb62834d",
+    "run": {
+      "id": 36546965469,
+      "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36546965469",
+      "event": "push",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at_utc": "2026-09-29T09:06:09Z",
+      "updated_at_utc": "2026-09-29T09:19:25Z"
+    },
+    "jobs_successful": 2,
+    "jobs_failed": 1,
+    "linux": {
+      "job_id": 109335675035,
+      "conclusion": "success",
+      "source": {
+        "passed": 2746,
+        "skipped": 51,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 479.26,
+        "summary_timestamp_utc": "2026-09-29T09:14:55.7113518Z",
+        "skip_groups": {
+          "tests/test_e3_q2_host_window_record.py": 21,
+          "tests/test_e3_q2_reconciliation_collect.py": 16,
+          "tests/test_e3_q2_reconciliation_io_records.py": 1,
+          "tests/test_e3_quota_q2_namespace.py": 1,
+          "tests/test_local_hand_jobs_quota_client.py": 11,
+          "tests/test_local_hand_jobs_runner.py": 1
+        }
+      },
+      "exact_checkout_identity_step": "success",
+      "checked_out_sha_present_in_log": true,
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 94,
+        "commands": 292,
+        "summary_timestamp_utc": "2026-09-29T09:19:20.6270064Z"
+      },
+      "evidence_archive": "success",
+      "root_collector": {
+        "passed": 16,
+        "skipped": 0,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 1.8,
+        "summary_timestamp_utc": "2026-09-29T09:06:55.8172485Z",
+        "gate_marker": "ROOT_COLLECTION_REAL_FILES=16 PASS, 0 SKIP"
+      },
+      "ordinary_reader": {
+        "identity": "ordinary",
+        "noatime": "PASS",
+        "ancestor_acl": "PASS",
+        "metadata": "STABLE"
+      },
+      "plugin_build": "success",
+      "bootstrap_syntax": "success",
+      "repeat_bootstrap_smoke_identity": "PASS"
+    },
+    "windows": {
+      "job_id": 109335675225,
+      "conclusion": "failure",
+      "source": {
+        "passed": 713,
+        "skipped": 995,
+        "failed": 0,
+        "errors": 2,
+        "duration_seconds": 370.33,
+        "summary_timestamp_utc": "2026-09-29T09:13:06.9806411Z"
+      },
+      "exact_checkout_identity_step": "success",
+      "checked_out_sha_present_in_log": true,
+      "installed_wheel": {
+        "status": "NOT_RUN",
+        "step_conclusion": "skipped"
+      },
+      "evidence_archive": "success",
+      "platform_smoke_steps": {
+        "16": "skipped",
+        "17": "skipped",
+        "18": "skipped",
+        "19": "skipped",
+        "20": "skipped",
+        "21": "skipped",
+        "22": "skipped",
+        "23": "skipped"
+      }
+    },
+    "failure": {
+      "step": 10,
+      "node_function": "test_source_depth_and_node_bounds_report_valueerror_not_recursionerror",
+      "parameter": "100000-node synthetic JSON bytes",
+      "stage": [
+        "setup",
+        "teardown"
+      ],
+      "exception": "ValueError: the environment variable is longer than 32767 characters",
+      "cause": "pytest expanded the large bytes parameter into its automatic node ID, then _pytest.runner._update_current_test_var exceeded the Windows PYTEST_CURRENT_TEST environment-value limit. One test body did not run; setup and teardown produced two errors.",
+      "production_assertion_failure_observed": false,
+      "historical_result_preserved": "The initial run remains failure. Later D2 success is a different source identity, not a rerun or a rewrite of D1."
+    },
+    "jobs": [
+      {
+        "id": 109335566471,
+        "name": "classify-change",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [
+          {
+            "number": 1,
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "number": 2,
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "conclusion": "success"
+          },
+          {
+            "number": 3,
+            "name": "Classify verification scope",
+            "conclusion": "success"
+          },
+          {
+            "number": 6,
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "conclusion": "success"
+          },
+          {
+            "number": 7,
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "id": 109335675035,
+        "name": "semantic-core (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [
+          {
+            "number": 1,
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "number": 2,
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "conclusion": "success"
+          },
+          {
+            "number": 3,
+            "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+            "conclusion": "success"
+          },
+          {
+            "number": 4,
+            "name": "Install isolated build and test dependencies",
+            "conclusion": "success"
+          },
+          {
+            "number": 5,
+            "name": "Install hash-locked optional MCP dependencies for Linux verification",
+            "conclusion": "success"
+          },
+          {
+            "number": 6,
+            "name": "Validate exact checked-out commit identity",
+            "conclusion": "success"
+          },
+          {
+            "number": 7,
+            "name": "Compile Local Hand shared core and tests",
+            "conclusion": "success"
+          },
+          {
+            "number": 8,
+            "name": "Prepare isolated protected parent for ordinary local-read tests",
+            "conclusion": "success"
+          },
+          {
+            "number": 9,
+            "name": "Verify root-only collector against isolated real root-owned files",
+            "conclusion": "success"
+          },
+          {
+            "number": 10,
+            "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+            "conclusion": "success"
+          },
+          {
+            "number": 11,
+            "name": "Build separately sealed unconfigured Plugin (Linux)",
+            "conclusion": "success"
+          },
+          {
+            "number": 12,
+            "name": "Build and verify an independently installed wheel",
+            "conclusion": "success"
+          },
+          {
+            "number": 13,
+            "name": "Validate PR whitespace and diff boundary",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 14,
+            "name": "Validate Linux bootstrap syntax",
+            "conclusion": "success"
+          },
+          {
+            "number": 15,
+            "name": "Prove Linux repeat-bootstrap smoke identity",
+            "conclusion": "success"
+          },
+          {
+            "number": 16,
+            "name": "Validate Windows bootstrap parses",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 17,
+            "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 18,
+            "name": "Execute PowerShell 7 startup contract without mutation",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 19,
+            "name": "Validate Windows exact ACL replacement",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 20,
+            "name": "Prove exact command-scoped Git trust under Local Service",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 21,
+            "name": "Prove Local Service accepts runtime private-key ACL",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 22,
+            "name": "Validate Windows runner propagates native worker exit code",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 23,
+            "name": "Validate Windows Junction roots fail closed",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 24,
+            "name": "Preserve isolated acceptance evidence",
+            "conclusion": "success"
+          },
+          {
+            "number": 47,
+            "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+            "conclusion": "success"
+          },
+          {
+            "number": 48,
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "conclusion": "success"
+          },
+          {
+            "number": 49,
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "id": 109335675225,
+        "name": "semantic-core (windows-latest)",
+        "status": "completed",
+        "conclusion": "failure",
+        "steps": [
+          {
+            "number": 1,
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "number": 2,
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "conclusion": "success"
+          },
+          {
+            "number": 3,
+            "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+            "conclusion": "success"
+          },
+          {
+            "number": 4,
+            "name": "Install isolated build and test dependencies",
+            "conclusion": "success"
+          },
+          {
+            "number": 5,
+            "name": "Install hash-locked optional MCP dependencies for Linux verification",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 6,
+            "name": "Validate exact checked-out commit identity",
+            "conclusion": "success"
+          },
+          {
+            "number": 7,
+            "name": "Compile Local Hand shared core and tests",
+            "conclusion": "success"
+          },
+          {
+            "number": 8,
+            "name": "Prepare isolated protected parent for ordinary local-read tests",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 9,
+            "name": "Verify root-only collector against isolated real root-owned files",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 10,
+            "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+            "conclusion": "failure"
+          },
+          {
+            "number": 11,
+            "name": "Build separately sealed unconfigured Plugin (Linux)",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 12,
+            "name": "Build and verify an independently installed wheel",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 13,
+            "name": "Validate PR whitespace and diff boundary",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 14,
+            "name": "Validate Linux bootstrap syntax",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 15,
+            "name": "Prove Linux repeat-bootstrap smoke identity",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 16,
+            "name": "Validate Windows bootstrap parses",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 17,
+            "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 18,
+            "name": "Execute PowerShell 7 startup contract without mutation",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 19,
+            "name": "Validate Windows exact ACL replacement",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 20,
+            "name": "Prove exact command-scoped Git trust under Local Service",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 21,
+            "name": "Prove Local Service accepts runtime private-key ACL",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 22,
+            "name": "Validate Windows runner propagates native worker exit code",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 23,
+            "name": "Validate Windows Junction roots fail closed",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 24,
+            "name": "Preserve isolated acceptance evidence",
+            "conclusion": "success"
+          },
+          {
+            "number": 47,
+            "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+            "conclusion": "skipped"
+          },
+          {
+            "number": 48,
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "conclusion": "success"
+          },
+          {
+            "number": 49,
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ]
+  },
+  "test_only_repair": {
+    "commit": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+    "changed_path": "tests/test_e3_q2_cost_source_review.py",
+    "explicit_parameter_ids": [
+      "excessive-depth",
+      "excessive-node-count"
+    ],
+    "production_component_sha256_unchanged": "f70da92778d4fc8926e9742daee1cceedda8a68dc6c1a7c49437cf4647122238",
+    "ast_equal_after_removing_only_new_ids": true,
+    "test_input_and_assertion_changes": false,
+    "cases_removed_or_skipped": 0
+  },
+  "log_digests": {
+    "definition": "SHA-256 over UTF-8 encoding of complete decoded job text returned by github_fetch_workflow_job_logs, not a ZIP digest. Initial failed Windows text was retained before the repaired run.",
+    "d1_linux": {
+      "job_id": 109335675035,
+      "decoded_log_utf8_bytes": 98003,
+      "decoded_log_utf8_sha256": "1a4a8c6f82ee0edf343669548bfa3689c5a79029ece9f8d53f2e43492728e1d3"
+    },
+    "d2_linux": {
+      "job_id": 109339023680,
+      "decoded_log_utf8_bytes": 98005,
+      "decoded_log_utf8_sha256": "84238d3b57757675043807fa7eb3ef0db199677dc5015e61ff124a60bead3d11"
+    },
+    "d2_windows": {
+      "job_id": 109339023700,
+      "decoded_log_utf8_bytes": 204267,
+      "decoded_log_utf8_sha256": "003ea1b0acc2a7cbdfaed9b12090ab09f166c7f82ba843c9d35270d9d4138438"
+    },
+    "d1_classifier": {
+      "job_id": 109335566471,
+      "decoded_log_utf8_bytes": 22287,
+      "decoded_log_utf8_sha256": "17096ef2d4c8ed78bb0982f78f92b120ae15e2e4751d2a94012278cea18e777d"
+    },
+    "d2_classifier": {
+      "job_id": 109338981146,
+      "decoded_log_utf8_bytes": 22289,
+      "decoded_log_utf8_sha256": "4740b00986bc96728e56ab4df8fb36635e690385197cd9963f730ed531d4836d"
+    },
+    "d1_windows": {
+      "job_id": 109335675225,
+      "decoded_log_utf8_bytes": 550366,
+      "decoded_log_utf8_sha256": "ba13926d7c00d2a196f538a7a4a36c388ee70dfa2d24106c6a1da0f883c659ec"
+    }
+  },
+  "jobs": [
+    {
+      "id": 109338981146,
+      "name": "classify-change",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 1,
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 3,
+          "name": "Classify verification scope",
+          "conclusion": "success"
+        },
+        {
+          "number": 6,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109339023680,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 1,
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 3,
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 4,
+          "name": "Install isolated build and test dependencies",
+          "conclusion": "success"
+        },
+        {
+          "number": 5,
+          "name": "Install hash-locked optional MCP dependencies for Linux verification",
+          "conclusion": "success"
+        },
+        {
+          "number": 6,
+          "name": "Validate exact checked-out commit identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Compile Local Hand shared core and tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 8,
+          "name": "Prepare isolated protected parent for ordinary local-read tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 9,
+          "name": "Verify root-only collector against isolated real root-owned files",
+          "conclusion": "success"
+        },
+        {
+          "number": 10,
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "conclusion": "success"
+        },
+        {
+          "number": 11,
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "conclusion": "success"
+        },
+        {
+          "number": 12,
+          "name": "Build and verify an independently installed wheel",
+          "conclusion": "success"
+        },
+        {
+          "number": 13,
+          "name": "Validate PR whitespace and diff boundary",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 14,
+          "name": "Validate Linux bootstrap syntax",
+          "conclusion": "success"
+        },
+        {
+          "number": 15,
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 16,
+          "name": "Validate Windows bootstrap parses",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 17,
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 18,
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 19,
+          "name": "Validate Windows exact ACL replacement",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 20,
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 21,
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 22,
+          "name": "Validate Windows runner propagates native worker exit code",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 23,
+          "name": "Validate Windows Junction roots fail closed",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 24,
+          "name": "Preserve isolated acceptance evidence",
+          "conclusion": "success"
+        },
+        {
+          "number": 47,
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 48,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 49,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 109339023700,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "number": 1,
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "number": 2,
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 3,
+          "name": "Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 4,
+          "name": "Install isolated build and test dependencies",
+          "conclusion": "success"
+        },
+        {
+          "number": 5,
+          "name": "Install hash-locked optional MCP dependencies for Linux verification",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 6,
+          "name": "Validate exact checked-out commit identity",
+          "conclusion": "success"
+        },
+        {
+          "number": 7,
+          "name": "Compile Local Hand shared core and tests",
+          "conclusion": "success"
+        },
+        {
+          "number": 8,
+          "name": "Prepare isolated protected parent for ordinary local-read tests",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 9,
+          "name": "Verify root-only collector against isolated real root-owned files",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 10,
+          "name": "Run platform-scoped source tests (A2 jobs are Linux only)",
+          "conclusion": "success"
+        },
+        {
+          "number": 11,
+          "name": "Build separately sealed unconfigured Plugin (Linux)",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 12,
+          "name": "Build and verify an independently installed wheel",
+          "conclusion": "success"
+        },
+        {
+          "number": 13,
+          "name": "Validate PR whitespace and diff boundary",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 14,
+          "name": "Validate Linux bootstrap syntax",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 15,
+          "name": "Prove Linux repeat-bootstrap smoke identity",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 16,
+          "name": "Validate Windows bootstrap parses",
+          "conclusion": "success"
+        },
+        {
+          "number": 17,
+          "name": "Prove Windows PowerShell 5.1 is rejected explicitly",
+          "conclusion": "success"
+        },
+        {
+          "number": 18,
+          "name": "Execute PowerShell 7 startup contract without mutation",
+          "conclusion": "success"
+        },
+        {
+          "number": 19,
+          "name": "Validate Windows exact ACL replacement",
+          "conclusion": "success"
+        },
+        {
+          "number": 20,
+          "name": "Prove exact command-scoped Git trust under Local Service",
+          "conclusion": "success"
+        },
+        {
+          "number": 21,
+          "name": "Prove Local Service accepts runtime private-key ACL",
+          "conclusion": "success"
+        },
+        {
+          "number": 22,
+          "name": "Validate Windows runner propagates native worker exit code",
+          "conclusion": "success"
+        },
+        {
+          "number": 23,
+          "name": "Validate Windows Junction roots fail closed",
+          "conclusion": "success"
+        },
+        {
+          "number": 24,
+          "name": "Preserve isolated acceptance evidence",
+          "conclusion": "success"
+        },
+        {
+          "number": 47,
+          "name": "Post Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+          "conclusion": "success"
+        },
+        {
+          "number": 48,
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "conclusion": "success"
+        },
+        {
+          "number": 49,
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "review_actions": {
+    "source_or_workflow_modified": false,
+    "native_ci_rerun_requested": false,
+    "local_tests_run_by_ci_reviewer": false,
+    "original_host_read": false,
+    "evidence_file_written": true
+  }
+}
