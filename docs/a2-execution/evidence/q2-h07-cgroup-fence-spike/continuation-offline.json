@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "execution_kind": "isolated_offline_source_verification",
+  "scope": "LH-Q2-H07-R1-CONTINUATION-v1",
+  "approved_A": "a08a5055c35009a896ad6c6059d709758cc78436",
+  "closure_C": "7d33c698ff6c1bf34733ee2429d0404ace2abd55",
+  "source_sha256": {
+    "tests/e3_host/spikes/q2_cgroup_fence/account_evidence.py": "36cc01ee2bb1c44f73aec3e5215cf9c51cf6d8b13ed350293740472a63b9d270",
+    "tests/e3_host/spikes/q2_cgroup_fence/continuation.py": "7b829011b4d6aeb72e8dcbba4939b5a2960ac43852c74ac4902b9355fbbb9844",
+    "tests/e3_host/spikes/q2_cgroup_fence/run_fixture.py": "6e038caf2de53a60f066601b8f4e884db26503a7d7e1202e724f20a1734c0bf1",
+    "tests/e3_host/spikes/q2_cgroup_fence/test_account_evidence.py": "3f4592b9874953e85d893ecca41cc37ada18cb3dab9f3aaac0f70c789bc75fcb",
+    "tests/e3_host/spikes/q2_cgroup_fence/test_continuation.py": "4258b9fa7bd34ea37a084414b578525779e938b5e5d24bc408a056fe459c21dd",
+    "tests/e3_host/spikes/q2_cgroup_fence/test_fixture_admission.py": "35cbba0b553b2a2daf5d2824c254c4717fc3a5d2e3187a813a362432ebc23f3a",
+    "tests/e3_host/spikes/q2_cgroup_fence/test_verify_receipt.py": "d149708b5f9561181ace799bd3d94e8b2f9f77ca5cab1d1c776fe613a93979d3",
+    "tests/e3_host/spikes/q2_cgroup_fence/verify_receipt.py": "a58b99582937690c5fa785ec3010f09cf6469ccc10257c0488e117555aeb2702",
+    ".github/workflows/q2-cgroup-fence-spike.yml": "5319fea1b5f31a728f785cc75cda8ba525e5159b216efc746c9c1bd43e8e6688"
+  },
+  "unchanged_helper_sha256": "d9dbefdb82f811660baf32f57f97723e731465954d3630cde8eed41e6d19de32",
+  "command": "python -B -m pytest -q -p no:cacheprovider tests/e3_host/spikes/q2_cgroup_fence",
+  "python": "3.12.14",
+  "pytest": "8.4.2",
+  "exit_code": 0,
+  "passed": 317,
+  "skipped": 0,
+  "failed": 0,
+  "log_sha256": "193bbfa4a15400943cca48d9755691407a03504836bb135b423331dd87645af8",
+  "log_bytes": 420,
+  "log_text": "........................................................................ [ 22%]\n........................................................................ [ 45%]\n........................................................................ [ 68%]\n........................................................................ [ 90%]\n.............................                                            [100%]\n317 passed in 1.85s\n",
+  "original_round_1_report_sha256": "9799682e04878ce583a6e446003f8d2e9fd49559adb1cc85b3bf6c650b5a013b",
+  "reviewed_failure_boundaries": [
+    "original exit without two EOFs cannot certify cleanup",
+    "wait continues checking original MONOTONIC and BOOTTIME cutoff",
+    "uninterpretable observed account facts retain failure and UNKNOWN"
+  ],
+  "privileged_fixture_invoked": false,
+  "ordinary_ci_status": "PENDING_EXACT_IMPLEMENTATION_COMMIT",
+  "laboratory_dispatches_consumed": 1,
+  "laboratory_dispatch_limit": 3,
+  "round_2_dispatched": false
+}

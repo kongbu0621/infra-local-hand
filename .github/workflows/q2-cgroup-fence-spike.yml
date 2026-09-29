@@ -9,14 +9,15 @@ on:
         required: true
         type: string
       round:
-        description: Owner-approved round (maximum three; never rerun a job)
+        description: Remaining approved round; executor must first verify all prior runs/attempts
         required: true
         type: choice
-        options: ["1", "2", "3"]
+        options: ["2", "3"]
       reason:
-        description: Initial verification or the recorded source repair reason
+        description: Reviewed account repair (round 2) or source-bound further repair (round 3)
         required: true
         type: string
+        default: Account profile and bounded account evidence repair under LH-Q2-H07-R1-CONTINUATION-v1
 
 permissions:
   contents: read
@@ -43,25 +44,39 @@ jobs:
         id: identity
         shell: bash
         run: |
-          /usr/bin/python3 - <<'PY'
-          import os, re, subprocess
+          /usr/bin/python3 -B - <<'PY'
+          import os, re, subprocess, sys
+          from pathlib import Path
           expected = os.environ["EXPECTED_COMMIT"]
           assert re.fullmatch(r"[0-9a-f]{40}", expected), "full D required"
           assert os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch"
+          assert os.environ["GITHUB_ACTIONS"] == "true"
+          assert os.environ["GITHUB_REPOSITORY"] == "kongbu0621/infra-local-hand"
           assert os.environ["GITHUB_RUN_ATTEMPT"] == "1", "rerun not authorized"
           assert os.environ["RUNNER_ENVIRONMENT"] == "github-hosted"
           assert os.environ["RUNNER_ARCH"] == "X64"
-          assert os.environ["LAB_ROUND"] in {"1", "2", "3"}
+          assert os.environ["RUNNER_OS"] == "Linux"
+          assert os.environ["ImageOS"] == "ubuntu24"
+          assert os.environ["LAB_ROUND"] in {"2", "3"}
           reason = os.environ["LAB_REASON"]
           assert 1 <= len(reason.encode()) <= 512 and not any(ord(c) < 32 for c in reason)
           actual = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
           assert expected == actual == os.environ["GITHUB_SHA"], "D mismatch; not dispatched into fixture"
           assert not subprocess.check_output(["git", "status", "--porcelain"]), "dirty checkout"
           subprocess.run(["git", "merge-base", "--is-ancestor",
-                          "8deeed492edeb7e5fa79cbe95c123a27e69f9f92", expected], check=True)
+                          "7d33c698ff6c1bf34733ee2429d0404ace2abd55", expected], check=True)
+          sys.path.insert(0, str(Path("tests/e3_host/spikes/q2_cgroup_fence").resolve()))
+          import continuation
+          from run_fixture import source_identity
+          source = source_identity(Path.cwd(), expected, dict(os.environ))
+          boot = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+          continuation.admit_continuation(
+              Path.cwd(), run={"id": os.environ["GITHUB_RUN_ID"], "attempt": 1,
+                               "round": int(os.environ["LAB_ROUND"])},
+              source=source, provenance={"boot_id": boot}, reason=reason)
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
               stream.write("admitted=true\n")
-          print("Exact D admitted; fixture capability is not yet established.")
+          print("Exact continuation D and retained history admitted; live global quota remains an executor pre-dispatch check.")
           PY
       - name: Compile and run the bounded isolated experiment
         if: steps.identity.outputs.admitted == 'true'

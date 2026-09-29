@@ -15,8 +15,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import pwd
-import grp
 import re
 import resource
 import selectors
@@ -65,15 +63,18 @@ class CommandFailure(Refusal):
 class Deadline:
     def __init__(self, seconds: float):
         self.seconds = seconds
-        self.mono = time.monotonic()
-        self.boot = time.clock_gettime(time.CLOCK_BOOTTIME)
+        self.start_mono_ns = time.monotonic_ns()
+        self.start_boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        self.deadline_mono_ns = self.start_mono_ns + int(seconds * 1_000_000_000)
+        self.deadline_boot_ns = self.start_boot_ns + int(seconds * 1_000_000_000)
 
     def elapsed(self) -> float:
-        return max(time.monotonic() - self.mono,
-                   time.clock_gettime(time.CLOCK_BOOTTIME) - self.boot)
+        return max(time.monotonic_ns() - self.start_mono_ns,
+                   time.clock_gettime_ns(time.CLOCK_BOOTTIME) - self.start_boot_ns) / 1_000_000_000
 
     def remaining(self) -> float:
-        return max(0.0, self.seconds - self.elapsed())
+        return max(0.0, min(self.deadline_mono_ns - time.monotonic_ns(),
+                           self.deadline_boot_ns - time.clock_gettime_ns(time.CLOCK_BOOTTIME)) / 1_000_000_000)
 
     def check(self) -> None:
         if self.remaining() <= 0:
@@ -104,6 +105,7 @@ def git(repo: Path, *args: str) -> bytes:
 
 
 def source_identity(repo: Path, expected: str, env: dict[str, str]) -> dict:
+    import continuation
     if not re.fullmatch(r"[0-9a-f]{40}", expected):
         raise Refusal("expected_commit must be a complete lower-case commit SHA")
     head = git(repo, "rev-parse", "HEAD").decode().strip()
@@ -112,6 +114,7 @@ def source_identity(repo: Path, expected: str, env: dict[str, str]) -> dict:
     if git(repo, "status", "--porcelain", "--untracked-files=normal"):
         raise Refusal("checkout is not clean")
     git(repo, "merge-base", "--is-ancestor", C, expected)
+    git(repo, "merge-base", "--is-ancestor", continuation.CONTINUATION_C, expected)
     paths = git(repo, "ls-tree", "-r", "--name-only", expected, "--", SCOPE_DIR).decode().splitlines()
     if not paths or SCOPE_DIR + "/run_fixture.py" not in paths:
         raise Refusal("frozen experimental source closure is absent")
@@ -121,6 +124,9 @@ def source_identity(repo: Path, expected: str, env: dict[str, str]) -> dict:
     paths += [WORKFLOW, "AGENTS.md",
               "docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_OWNER_DECISION.md"]
     paths += ["docs/a2-execution/q2-h07-cgroup-fence-spike/" + name for name in PINNED_DOCUMENTS]
+    paths += sorted(continuation.REQUIRED_SOURCE_PATHS)
+    if (repo / continuation.ROUND2_RECORD_PATH).exists():
+        paths.append(continuation.ROUND2_RECORD_PATH)
     closure = {}
     for relative in sorted(set(paths)):
         target = repo / relative
@@ -135,8 +141,14 @@ def source_identity(repo: Path, expected: str, env: dict[str, str]) -> dict:
     for name, sha in PINNED_DOCUMENTS.items():
         if closure["docs/a2-execution/q2-h07-cgroup-fence-spike/" + name] != sha:
             raise Refusal("approved three-document baseline changed")
+    for relative, sha in {**continuation.CONTINUATION_DOCUMENTS,
+                          **continuation.PINNED_FACTS}.items():
+        if closure[relative] != sha:
+            raise Refusal("approved continuation baseline changed")
     return {"expected_commit": expected, "github_sha": env["GITHUB_SHA"], "head": head,
-            "closure_sha256": closure, "approved_A": A, "closure_C": C}
+            "closure_sha256": closure, "approved_A": A, "closure_C": C,
+            "approved_continuation_A": continuation.CONTINUATION_A,
+            "closure_continuation_C": continuation.CONTINUATION_C}
 
 
 def admission(env: dict[str, str], round_number: int) -> tuple[str, Path, dict]:
@@ -148,7 +160,7 @@ def admission(env: dict[str, str], round_number: int) -> tuple[str, Path, dict]:
         if env.get(key) != value:
             raise Refusal("fixture admission rejected " + key)
     run_id = env.get("GITHUB_RUN_ID", "")
-    if not re.fullmatch(r"[1-9][0-9]{0,18}", run_id) or round_number not in (1, 2, 3):
+    if not re.fullmatch(r"[1-9][0-9]{0,18}", run_id) or round_number not in (2, 3):
         raise Refusal("invalid run identity/round")
     reason = env.get("LAB_REASON", "")
     if not 1 <= len(reason.encode()) <= 512 or any(ord(ch) < 32 for ch in reason):
@@ -191,6 +203,18 @@ class Fixture:
         self.native_started = False
         self.facts = {"account": None, "cgroup_objects": [], "resource_observations": []}
         self.pending_commands: list[subprocess.Popen] = []
+        self.last_command_audit: dict | None = None
+        self.account_commands_blocked = False
+        self.account_command_sequence = 0
+        from account_evidence import AccountLifecycle
+        self.account_lifecycle = AccountLifecycle(self)
+
+    def observer_deadline(self, parent: Deadline) -> Deadline:
+        parent.check()
+        child = Deadline(2)
+        child.deadline_mono_ns = min(child.deadline_mono_ns, parent.deadline_mono_ns)
+        child.deadline_boot_ns = min(child.deadline_boot_ns, parent.deadline_boot_ns)
+        return child
 
     def diagnostic(self, data: bytes) -> None:
         capacity = LIMITS["diagnostic_bytes"] - len(self.diagnostics)
@@ -299,6 +323,141 @@ class Fixture:
             raise CommandFailure("subprocess deadline/output bound exceeded; retained stdout is a bounded prefix", bytes(out))
         return result, bytes(out)
 
+    def audit_command(self, argv: list[str], deadline: Deadline, *, role: str,
+                      stdout_limit: int = 8192, cleanup: bool = False) -> tuple[int, bytes, dict]:
+        """Collect account operations against their original two-clock window.
+
+        Both streams consume the existing cumulative diagnostic allowance. A
+        signal request, pipe close or later cleanup cannot supply missing EOF,
+        original exit, or timely completion to this immutable operation record.
+        """
+        self.account_command_sequence += 1
+        audit = {"command_id": f"{self.run_id}-{self.round}-{self.account_command_sequence}",
+                 "role": role, "attempted": False, "started": False,
+                 "exit_observed": False, "rc": None, "timeout": False,
+                 "termination_requested": False, "deadline_met": False, "pending": False,
+                 "start_mono_ns": time.monotonic_ns(),
+                 "start_boot_ns": time.clock_gettime_ns(time.CLOCK_BOOTTIME),
+                 "deadline_mono_ns": deadline.deadline_mono_ns,
+                 "deadline_boot_ns": deadline.deadline_boot_ns,
+                 "end_mono_ns": 0, "end_boot_ns": 0}
+        chunks = {"stdout": bytearray(), "stderr": bytearray()}
+        eof = {"stdout": False, "stderr": False}
+        truncated = {"stdout": False, "stderr": False}
+        process = None
+        selector = None
+        failure = None
+
+        def stop_original() -> None:
+            if process is not None and not audit["termination_requested"]:
+                audit["termination_requested"] = True
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+        try:
+            if self.account_commands_blocked:
+                raise Refusal("earlier account operation is incomplete or late; no further account action")
+            deadline.check()
+            if self.diagnostic_exceeded or len(self.diagnostics) >= LIMITS["diagnostic_bytes"]:
+                raise Refusal("diagnostic ceiling exhausted; no further account action")
+
+            def child_limits() -> None:
+                resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024**2, 8 * 1024**2))
+                os.umask(0o077)
+
+            audit["attempted"] = True
+            process = subprocess.Popen(
+                argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True, close_fds=True, cwd=self.build,
+                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C", "LC_ALL": "C",
+                     "TMPDIR": str(self.build), "PYTHONDONTWRITEBYTECODE": "1"},
+                preexec_fn=child_limits,
+            )
+            audit["started"] = True
+            self.pending_commands.append(process)
+            selector = selectors.DefaultSelector()
+            for stream, kind in ((process.stdout, "stdout"), (process.stderr, "stderr")):
+                assert stream is not None
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, kind)
+            while selector.get_map():
+                if deadline.remaining() <= 0:
+                    audit["timeout"] = True
+                    raise Refusal("account subprocess original deadline exceeded")
+                for key, _ in selector.select(min(deadline.remaining(), 0.025)):
+                    try:
+                        chunk = os.read(key.fileobj.fileno(), 8192)
+                    except BlockingIOError:
+                        continue
+                    kind = key.data
+                    if not chunk:
+                        eof[kind] = True
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
+                    capacity = LIMITS["diagnostic_bytes"] - len(self.diagnostics)
+                    if kind == "stdout":
+                        capacity = min(capacity, stdout_limit - len(chunks[kind]))
+                    retained = chunk[:max(0, capacity)]
+                    chunks[kind].extend(retained)
+                    self.diagnostic(retained)
+                    if len(retained) != len(chunk):
+                        truncated[kind] = True
+                        # Stream overflow also closes this attempt; no later
+                        # observation is permitted to replace the missing data.
+                        if len(self.diagnostics) >= LIMITS["diagnostic_bytes"]:
+                            self.diagnostic_exceeded = True
+                        raise Refusal("account subprocess output bound exceeded")
+            while not audit["exit_observed"]:
+                remaining = deadline.remaining()
+                if remaining <= 0:
+                    audit["timeout"] = True
+                    raise Refusal("account subprocess exit not observed within original deadline")
+                try:
+                    # Recheck BOOTTIME as well as MONOTONIC throughout wait;
+                    # a single long wait would miss suspension time.
+                    audit["rc"] = process.wait(timeout=min(remaining, 0.025))
+                    audit["exit_observed"] = True
+                    self.pending_commands.remove(process)
+                except subprocess.TimeoutExpired:
+                    continue
+        except (Refusal, OSError, subprocess.SubprocessError) as exc:
+            failure = str(exc)
+            stop_original()
+            # Only an immediately observable original exit can be recorded;
+            # cleanup may reap later but never edits this receipt or its clock.
+            if process is not None and not audit["exit_observed"]:
+                rc = process.poll()
+                if rc is not None:
+                    audit["exit_observed"] = True
+                    audit["rc"] = rc
+                    if process in self.pending_commands:
+                        self.pending_commands.remove(process)
+        finally:
+            if selector is not None:
+                for key in list(selector.get_map().values()):
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                selector.close()
+            audit["end_mono_ns"] = time.monotonic_ns()
+            audit["end_boot_ns"] = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+            audit["deadline_met"] = (audit["end_mono_ns"] <= audit["deadline_mono_ns"]
+                                     and audit["end_boot_ns"] <= audit["deadline_boot_ns"])
+            if audit["started"] and not audit["deadline_met"]:
+                audit["timeout"] = True
+            for kind in ("stdout", "stderr"):
+                audit[kind] = {"eof": eof[kind], "complete": eof[kind] and not truncated[kind],
+                               "bytes": len(chunks[kind]), "sha256": digest(bytes(chunks[kind]))}
+            audit["pending"] = audit["started"] and not (audit["exit_observed"] and all(eof.values()))
+            self.last_command_audit = audit
+        if failure or not audit["deadline_met"]:
+            self.account_commands_blocked = True
+            raise CommandFailure(failure or "account subprocess completion was late", bytes(chunks["stdout"]))
+        return audit["rc"], bytes(chunks["stdout"]), audit
+
     def initialize_output(self) -> None:
         self.mkdir(self.output)
         self.mkdir(self.evidence)
@@ -326,32 +485,10 @@ class Fixture:
         return {"path": str(compiler), "version": version.decode("utf-8", "replace")[:8192]}
 
     def create_account(self, deadline: Deadline) -> None:
-        for getter in (pwd.getpwnam, grp.getgrnam):
-            try:
-                getter(self.account)
-            except KeyError:
-                continue
-            raise Refusal("dedicated account/group name already exists")
-        self.account_attempted = True
-        # CREATE_MAIL_SPOOL is a useradd-defaults setting, not a --key
-        # login.defs item. --system suppresses mail and, without -F, subids.
-        rc, raw = self.command([
-            "/usr/sbin/useradd", "--system", "--user-group", "--no-create-home",
-            "--no-log-init", "--home-dir", "/nonexistent", "--shell", "/usr/sbin/nologin",
-            self.account,
-        ], deadline)
-        self.diagnostic(raw)
-        if rc:
-            raise Refusal("dedicated account creation failed; inspect partial objects")
-        entry = pwd.getpwnam(self.account)
-        group = grp.getgrnam(self.account)
-        self.account_id = (entry.pw_uid, entry.pw_gid)
-        if (entry.pw_uid == 0 or group.gr_gid != entry.pw_gid or group.gr_mem
-                or entry.pw_dir != "/nonexistent" or entry.pw_shell != "/usr/sbin/nologin"
-                or os.getgrouplist(self.account, entry.pw_gid) != [entry.pw_gid]):
-            raise Refusal("dedicated account does not have the approved fixed identity")
-        self.facts["account"] = {"uid": entry.pw_uid, "gid": entry.pw_gid,
-                                 "supplementary_groups": [], "home_created": False}
+        try:
+            self.account_lifecycle.create(deadline)
+        except (RuntimeError, ValueError) as exc:
+            raise Refusal(str(exc)) from exc
 
     def check_cgroup_parent(self) -> tuple[list[str], list[str]]:
         mount_lines = read_small(Path("/proc/self/mountinfo"), 256 * 1024).splitlines()
@@ -553,45 +690,21 @@ class Fixture:
                                 "operation": "reap", "identity_match": True, "removed": True})
             except (OSError, subprocess.TimeoutExpired):
                 residuals.append("original external subprocess exit remains unobserved")
-        if self.account_id is not None and not residuals:
+        if self.account_commands_blocked:
+            # A later reap cannot repair this operation's original EOF/clock
+            # evidence, even when no account mutation had started yet.
+            residuals.append("account operation original completion/capture remains unverified")
+        if not residuals:
             try:
-                entry = pwd.getpwnam(self.account)
-                if (entry.pw_uid, entry.pw_gid) != self.account_id:
-                    raise Refusal("account identity mismatch")
-                # userdel never receives --remove: there was no home/mail to delete.
-                rc, raw = self.command(["/usr/sbin/userdel", self.account], deadline, cleanup=True)
-                self.diagnostic(raw)
-                if rc:
-                    raise Refusal("userdel did not complete")
-                try:
-                    group = grp.getgrnam(self.account)
-                except KeyError:
-                    group = None
-                if group is not None:
-                    if group.gr_gid != self.account_id[1] or group.gr_mem:
-                        raise Refusal("dedicated group identity mismatch")
-                    rc, raw = self.command(["/usr/sbin/groupdel", self.account], deadline, cleanup=True)
-                    self.diagnostic(raw)
-                    if rc:
-                        raise Refusal("groupdel did not complete")
-                try:
-                    pwd.getpwnam(self.account)
-                except KeyError:
-                    pass
-                else:
-                    raise Refusal("dedicated account still exists")
-                try:
-                    grp.getgrnam(self.account)
-                except KeyError:
-                    pass
-                else:
-                    raise Refusal("dedicated group still exists")
-                records.append({"object": "dedicated-account", "operation": "delete",
-                                "identity_match": True, "removed": True})
-            except (KeyError, OSError, Refusal) as exc:
+                verified, account_residuals = self.account_lifecycle.cleanup(deadline)
+                residuals.extend(account_residuals)
+                if verified and self.account_id is not None:
+                    records.append({"object": "dedicated-account", "operation": "delete",
+                                    "identity_match": True, "removed": True})
+            except (RuntimeError, ValueError, OSError) as exc:
                 residuals.append("account cleanup: " + str(exc))
-        elif self.account_attempted and self.account_id is None:
-            residuals.append("account creation was attempted but its exact identity is not established")
+        elif self.account_attempted or self.account_id is not None:
+            residuals.append("account cleanup withheld while original process/cgroup cleanup is unresolved")
         # Only the precise registered binary can be unlinked. Intermediate files
         # that were not registered remain evidence of incomplete cleanup.
         if self.helper in self.created_files:
@@ -643,7 +756,7 @@ def encode_report(report: dict) -> bytes:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-commit", required=True)
-    parser.add_argument("--round", required=True, type=int, choices=(1, 2, 3))
+    parser.add_argument("--round", required=True, type=int, choices=(2, 3))
     args = parser.parse_args(argv)
     prep = Deadline(LIMITS["prep_seconds"])
     env = dict(os.environ)
@@ -653,13 +766,19 @@ def main(argv: list[str] | None = None) -> int:
         source = source_identity(repo, args.expected_commit, env)
         run_id, output, release = admission(env, args.round)
         facts = provenance(env, release)
+        import continuation
+        continuation_record = continuation.admit_continuation(
+            repo, run={"id": run_id, "attempt": 1, "round": args.round},
+            source=source, provenance=facts, reason=env["LAB_REASON"])
         prep.check()
     except (Refusal, OSError, ValueError, subprocess.SubprocessError) as exc:
         print("H07 fixture REJECTED before setup: " + str(exc), file=sys.stderr)
         return 4
     fixture = Fixture(repo, output, run_id, args.round)
     facts["fixture"] = fixture.facts
-    report = {"schema_version": 1, "source": source,
+    report = {"schema_version": 2, "source": source,
+              "account_setup": fixture.account_lifecycle.record,
+              "continuation": continuation_record,
               "run": {"id": run_id, "attempt": 1, "round": args.round},
               "provenance": facts, "limits": dict(LIMITS), "capability": None, "cases": [],
               "cleanup": {"verified": False, "records": [], "residuals": []},
@@ -718,7 +837,8 @@ def main(argv: list[str] | None = None) -> int:
             report["status"] = "UNKNOWN_RETAINED"
     except (Refusal, OSError, ValueError, subprocess.SubprocessError) as exc:
         report["reason"] = str(exc)[:4096]
-        if fixture.native_started or fixture.native_timed_out or report["cases"]:
+        if (fixture.native_started or fixture.native_timed_out or report["cases"]
+                or fixture.account_lifecycle.record["observations"]):
             report["status"] = "UNKNOWN_RETAINED"
     finally:
         if not report["budget"]["prep_elapsed_seconds"]:
@@ -740,6 +860,12 @@ def main(argv: list[str] | None = None) -> int:
         fixture.write_artifact("diagnostics.txt", bytes(fixture.diagnostics))
         report["budget"]["diagnostic_bytes"] = len(fixture.diagnostics)
         report["budget"].update(fixture.inventory())
+        # The v2 receiver verifies the exact serialized report byte budget.
+        for _ in range(6):
+            size = len(encode_report(report))
+            if report["budget"]["report_bytes"] == size:
+                break
+            report["budget"]["report_bytes"] = size
         derived = derive_report(report)
         report["status"] = derived["status"]
         if derived["errors"]:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -385,3 +386,289 @@ def test_explicit_collection_failure_is_not_erased_by_complete_aggregate_fields(
     r = retained_case()
     r["reason"] = reason
     assert not v.derive_case(r)["case_expectation_met"]
+
+
+def seal_report_size(report):
+    """Use the fixture's unchanged final encoding, including its LF."""
+    for _ in range(6):
+        size = len((json.dumps(report, sort_keys=True, ensure_ascii=True,
+                               separators=(",", ":")) + "\n").encode())
+        if report["budget"]["report_bytes"] == size:
+            return report
+        report["budget"]["report_bytes"] = size
+    raise AssertionError("synthetic report byte bill did not converge")
+
+
+def retained_v2_envelope():
+    """Only the envelope; account/continuation facts are deliberately missing."""
+    report = retained_report()
+    report["schema_version"] = 2
+    report["run"] = dict(id="36599999999", attempt=1, round=2)
+    report["provenance"]["boot_id"] = "11111111-1111-4111-8111-111111111111"
+    for record in report["cleanup"]["records"]:
+        record["object"] = record["object"].replace("q2-h07-123-1-r1", "q2-h07-36599999999-1-r2")
+    source = report["source"]
+    source.update(approved_continuation_A=v.APPROVED_CONTINUATION_A,
+                  closure_continuation_C=v.CLOSURE_CONTINUATION_C)
+    source["closure_sha256"].update({name: "b" * 64 for name in
+                                     v.REQUIRED_CONTINUATION_SOURCE_PATHS - v.REQUIRED_SOURCE_PATHS})
+    source["closure_sha256"].update({v.CONTINUATION_DOCUMENT_DIR + name: sha
+                                     for name, sha in v.CONTINUATION_DOCUMENT_HASHES.items()})
+    report.update(account_setup=None, continuation=None)
+    return seal_report_size(report)
+
+
+def test_schema_one_has_identical_verdict_and_no_backfilled_fields():
+    report = retained_report()
+    before = copy.deepcopy(report)
+    assert v.validate_report(report) == v._validate_report_v1(report) == []
+    assert v.derive_report(report)["status"] == "QUALIFIED_IN_FIXTURE"
+    assert report == before
+    assert "account_setup" not in report and "continuation" not in report
+    report.update(status="UNKNOWN_RETAINED", reason="account preparation failed", capability=None,
+                  cases=[], cleanup=dict(verified=False, records=[], residuals=["account unknown"]))
+    report["budget"]["suite_stream_bytes"] = 0
+    assert v.validate_report(report) == v._validate_report_v1(report) == []
+    assert v.derive_report(report)["status"] == "UNKNOWN_RETAINED"
+
+
+@pytest.mark.parametrize("version", [0, 3, "2", True, None])
+def test_unknown_or_coerced_report_versions_are_not_guessed(version):
+    report = retained_v2_envelope()
+    report["schema_version"] = version
+    assert v.derive_report(report)["status"] == "REJECTED"
+
+
+@pytest.mark.parametrize("field", ["account_setup", "continuation"])
+def test_schema_two_does_not_fill_missing_new_evidence(field):
+    report = retained_v2_envelope()
+    del report[field]
+    assert any("missing" in error and field in error for error in v.validate_report(report))
+    assert v.derive_report(report)["status"] == "REJECTED"
+
+
+def test_new_fields_cannot_be_attached_to_schema_one_to_change_its_contract():
+    report = retained_report()
+    report["account_setup"] = {}
+    report["continuation"] = {}
+    assert v.derive_report(report)["status"] == "REJECTED"
+
+
+@pytest.mark.parametrize("field", ["approved_A", "closure_C", "approved_continuation_A", "closure_continuation_C"])
+def test_schema_two_requires_both_original_and_continuation_authorizations(field):
+    report = retained_v2_envelope()
+    report["source"][field] = "d" * 40
+    seal_report_size(report)
+    assert any("A/C identity" in error for error in v.validate_report(report))
+
+
+@pytest.mark.parametrize("name", sorted(v.REQUIRED_CONTINUATION_SOURCE_PATHS))
+def test_schema_two_source_closure_cannot_omit_a_required_input(name):
+    report = retained_v2_envelope()
+    del report["source"]["closure_sha256"][name]
+    seal_report_size(report)
+    assert any("source closure missing" in error for error in v.validate_report(report))
+
+
+@pytest.mark.parametrize("name", sorted(v.CONTINUATION_DOCUMENT_HASHES))
+def test_schema_two_requires_the_exact_approved_continuation_documents(name):
+    report = retained_v2_envelope()
+    report["source"]["closure_sha256"][v.CONTINUATION_DOCUMENT_DIR + name] = "0" * 64
+    seal_report_size(report)
+    assert "approved continuation document bytes differ" in v.validate_report(report)
+
+
+def test_schema_two_extra_fields_and_duplicate_new_nested_keys_are_rejected():
+    report = retained_v2_envelope()
+    report["account_approved"] = True
+    assert any("extra" in error for error in v.validate_report(report))
+    report = retained_v2_envelope()
+    report["source"]["new_authority"] = True
+    seal_report_size(report)
+    assert any("extra" in error for error in v.validate_report(report))
+    with pytest.raises(v.ReceiptError, match="duplicate JSON key"):
+        v.load_report(b'{"schema_version":2,"continuation":{"limit":3,"limit":99}}')
+
+
+def test_schema_two_has_one_complete_report_budget_without_sidecar_allowance():
+    report = retained_v2_envelope()
+    report["budget"]["report_bytes"] -= 1
+    assert any("byte bill" in error for error in v.validate_report(report))
+    report["reason"] = "x" * v.MAX_REPORT
+    assert v.derive_report(report)["status"] == "REJECTED"
+
+
+def test_schema_two_success_booleans_without_account_facts_cannot_qualify():
+    report = retained_v2_envelope()
+    report["account_setup"] = {"admitted": True, "cleanup_verified": True}
+    report["continuation"] = {"admitted": True}
+    seal_report_size(report)
+    result = v.derive_report(report)
+    assert result["status"] == "REJECTED"
+    assert any("account_setup" in error for error in result["errors"])
+
+
+def retained_account_setup(report):
+    """Pure account originals with no observer, account tools, or NSS calls."""
+    account = v._support_module("account_evidence")
+    run = report["run"]
+    target = "q2hf" + run["id"][-15:] + "r" + str(run["round"])
+    identity = dict(name=target, uid=60001, gid=60001, home="/nonexistent",
+                    shell="/usr/sbin/nologin", supplementary_gids=[60001], group_member_count=0)
+    empty_hash = hashlib.sha256(b"").hexdigest()
+
+    def audit(role, seq, start, raw=b""):
+        return dict(command_id=run["id"] + "-" + str(run["round"]) + "-" + str(seq),
+            role=role, attempted=True, started=True, exit_observed=True, rc=0,
+            timeout=False, termination_requested=False, deadline_met=True, pending=False,
+            stdout=dict(eof=True, complete=True, bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()),
+            stderr=dict(eof=True, complete=True, bytes=0, sha256=empty_hash),
+            start_mono_ns=start, start_boot_ns=start + 50_000_000_000,
+            end_mono_ns=start + 30, end_boot_ns=start + 50_000_000_030,
+            deadline_mono_ns=start + 100, deadline_boot_ns=start + 50_000_000_100)
+
+    def observation(phase, seq, start, present, expected):
+        value = dict(schema_version=1, target=target, expected_uid=60001 if expected else None,
+            expected_gid=60001 if expected else None, classification="EXACT_PAIR" if present else "ABSENT_BOTH",
+            complete=True, reason=None,
+            sources=[dict(path=path, dev=1, ino=i + 1, size=10, mtime_ns=1, ctime_ns=1,
+                          sha256="a" * 64) for i, path in enumerate(account.SOURCE_LIMITS)],
+            providers=dict(passwd=["files"], group=["files"], initgroups=["files"]),
+            identity=copy.deepcopy(identity) if present else None,
+            group=dict(name=target, gid=60001, member_count=0) if present else None,
+            conflicts=dict(uid_aliases=0, gid_aliases=0, other_primary_refs=0, group_members=0),
+            nss_match=True, stable=True,
+            clocks=dict(start_mono_ns=start + 10, end_mono_ns=start + 20,
+                        start_boot_ns=start + 50_000_000_010, end_boot_ns=start + 50_000_000_020))
+        raw = (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
+        return dict(phase=phase, audit=audit(phase, seq, start, raw), observation=value)
+
+    setup = dict(schema_version=1, target=target, run_id=run["id"], round=run["round"],
+        assumptions=copy.deepcopy(account.ASSUMPTIONS),
+        tools=[dict(path=path, sha256="b" * 64, size=12, version=None,
+                    version_basis="not_invoked", dev=1, ino=i + 1, mtime_ns=1, ctime_ns=1)
+               for i, path in enumerate(account.TOOLS)],
+        observations=[observation("pre_create", 1, 1000, False, False),
+                      observation("post_create", 3, 3000, True, False),
+                      observation("pre_cleanup", 4, 220_000_000_000, True, True),
+                      observation("post_userdel", 6, 220_000_002_000, False, True)],
+        create_command=audit("useradd", 2, 2000),
+        observed_identity=copy.deepcopy(identity), admitted_identity=copy.deepcopy(identity),
+        delete_commands=[audit("userdel", 5, 220_000_001_000)], cleanup_verified=True, failure=None)
+    assert account.validate_account_setup(setup, run=run,
+        fixture_account=report["provenance"]["fixture"]["account"], cleanup=report["cleanup"]) == []
+    return setup
+
+
+def retained_v2_report():
+    report = retained_v2_envelope()
+    continuation = v._support_module("continuation")
+    source = report["source"]
+    source["closure_sha256"].update({path: "b" * 64 for path in continuation.REQUIRED_SOURCE_PATHS})
+    source["closure_sha256"].update(continuation.PINNED_DOCUMENTS)
+    source["closure_sha256"].update(continuation.PINNED_FACTS)
+    report["continuation"] = continuation.build_continuation(Path(__file__).resolve().parents[4],
+        run=report["run"], source=source, provenance=report["provenance"], reason=continuation.ROUND2_REASON)
+    report["account_setup"] = retained_account_setup(report)
+    report["budget"]["diagnostic_bytes"] = v._account_facts(report)["diagnostic_bytes"]
+    return seal_report_size(report)
+
+
+def test_schema_two_full_pure_transcript_preserves_native_unknown_controls():
+    report = retained_v2_report()
+    before = copy.deepcopy(report)
+    result = v.derive_report(v.load_report((json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n").encode()))
+    assert result["errors"] == []
+    assert result["status"] == "QUALIFIED_IN_FIXTURE"
+    assert [r["classification"] for r in result["case_results"]] == [
+        "OBSERVED", "OBSERVED", "UNKNOWN_RETAINED", "OBSERVED", "OBSERVED", "UNKNOWN_RETAINED"]
+    assert all(r["case_expectation_met"] for r in result["case_results"])
+    assert report == before
+
+
+@pytest.mark.parametrize("where,field,value", [
+    ("setup", "admitted_identity", None), ("setup", "run_id", "123"),
+    ("setup", "cleanup_verified", False), ("create", "rc", 3),
+    ("create", "rc", True), ("create", "exit_observed", False),
+    ("create", "pending", True), ("create", "timeout", True),
+    ("stdout", "eof", False), ("stdout", "complete", False),
+    ("identity", "uid", 60002), ("identity", "home", "/home/other"),
+])
+def test_schema_two_native_work_requires_original_account_admission(where, field, value):
+    report = retained_v2_report()
+    setup = report["account_setup"]
+    target = {"setup": setup, "create": setup["create_command"],
+              "stdout": setup["create_command"]["stdout"], "identity": setup["admitted_identity"]}[where]
+    target[field] = value
+    seal_report_size(report)
+    result = v.derive_report(report)
+    assert result["status"] == "REJECTED"
+    assert any("account_setup" in error for error in result["errors"])
+
+
+@pytest.mark.parametrize("field", ["diagnostic_bytes", "prep_elapsed_seconds", "cleanup_elapsed_seconds"])
+def test_schema_two_account_evidence_uses_the_existing_budget(field):
+    report = retained_v2_report()
+    report["budget"][field] = 0
+    seal_report_size(report)
+    result = v.derive_report(report)
+    assert result["status"] == "REJECTED"
+    assert any("account_setup" in error and "bill" in error for error in result["errors"])
+
+
+@pytest.mark.parametrize("field,value", [
+    ("used_before", 0), ("limit", 4), ("disposition", "CLEANED"),
+    ("current_boot_sha256", "0" * 64), ("prior_boot_sha256", "0" * 64),
+    ("approved_continuation_A", "0" * 40), ("closure_continuation_C", "0" * 40),
+])
+def test_schema_two_account_success_cannot_replace_continuation_evidence(field, value):
+    report = retained_v2_report()
+    report["continuation"][field] = value
+    seal_report_size(report)
+    result = v.derive_report(report)
+    assert result["status"] == "REJECTED"
+    assert any("continuation" in error for error in result["errors"])
+
+
+def test_schema_two_cannot_rewrite_the_historical_unknown_as_cleanup_success():
+    report = retained_v2_report()
+    prior = report["continuation"]["prior_records"][0]
+    value = json.loads(prior["content"])
+    value["cleanup"]["verified"] = True
+    prior["content"] = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    raw = prior["content"].encode()
+    prior.update(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+    report["source"]["closure_sha256"][prior["path"]] = prior["sha256"]
+    seal_report_size(report)
+    assert v.derive_report(report)["status"] == "REJECTED"
+
+
+def test_schema_two_observed_but_unadmitted_account_remains_unknown():
+    report = retained_v2_report()
+    setup = report["account_setup"]
+    setup["create_command"]["rc"] = 3
+    setup.update(observations=setup["observations"][:2], admitted_identity=None,
+                 delete_commands=[], cleanup_verified=False, failure="account_creation_not_confirmed")
+    report.update(capability=None, cases=[], status="UNKNOWN_RETAINED",
+                  reason="account_creation_not_confirmed",
+                  cleanup=dict(verified=False, records=[], residuals=["dedicated-account"]))
+    report["provenance"]["fixture"]["account"] = {}
+    report["budget"]["diagnostic_bytes"] = v._account_facts(report)["diagnostic_bytes"]
+    seal_report_size(report)
+    result = v.derive_report(report)
+    assert result == dict(status="UNKNOWN_RETAINED", errors=[], case_results=[])
+    assert setup["observed_identity"] is not None and setup["admitted_identity"] is None
+    report["cleanup"]["verified"] = True
+    report["cleanup"]["residuals"] = []
+    seal_report_size(report)
+    assert any("outer cleanup hides account unknown" in error for error in v.validate_report(report))
+
+
+@pytest.mark.parametrize("field", ["run", "provenance", "budget", "cleanup", "account_setup", "continuation"])
+@pytest.mark.parametrize("value", [None, True, [], "missing"])
+def test_schema_two_malformed_nested_evidence_fails_closed(field, value):
+    report = retained_v2_report()
+    report[field] = value
+    if field != "budget":
+        seal_report_size(report)
+    assert v.derive_report(report)["status"] == "REJECTED"

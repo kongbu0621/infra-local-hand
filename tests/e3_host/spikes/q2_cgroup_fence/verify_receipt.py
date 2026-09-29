@@ -9,15 +9,19 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import importlib.util
 import json
 import math
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
 MAX_REPORT = 2 * 1024 * 1024
 APPROVED_A = "71c7e842c724650a0e949a63bb898699b41107be"
 CLOSURE_C = "8deeed492edeb7e5fa79cbe95c123a27e69f9f92"
+APPROVED_CONTINUATION_A = "a08a5055c35009a896ad6c6059d709758cc78436"
+CLOSURE_CONTINUATION_C = "7d33c698ff6c1bf34733ee2429d0404ace2abd55"
 SOURCE_DIR = "tests/e3_host/spikes/q2_cgroup_fence/"
 DOCUMENT_DIR = "docs/a2-execution/q2-h07-cgroup-fence-spike/"
 DOCUMENT_HASHES = {
@@ -30,6 +34,22 @@ REQUIRED_SOURCE_PATHS = {
     ".github/workflows/q2-cgroup-fence-spike.yml", "AGENTS.md",
     "docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_OWNER_DECISION.md",
 } | {DOCUMENT_DIR + name for name in DOCUMENT_HASHES}
+CONTINUATION_DOCUMENT_DIR = "docs/a2-execution/q2-h07-r1-continuation/"
+CONTINUATION_DOCUMENT_HASHES = {
+    "REQUIREMENTS.md": "74ad594f4446cdf49c4b8d72ff4e5ffb3bd411780e91eeee5a130e58d03eb7f2",
+    "ARCHITECTURE.md": "18a248d9398f73405e8836a9586e9c98b8ed9aab2c71242ecdc1c8eaa3823e2b",
+    "IMPLEMENTATION_PLAN.md": "9c5726f80f4cb779f658b4d075ee50568ff9818b9f49814e57de71c07aedbe2b",
+}
+REQUIRED_CONTINUATION_SOURCE_PATHS = REQUIRED_SOURCE_PATHS | {
+    SOURCE_DIR + name for name in (
+        "account_evidence.py", "test_account_evidence.py", "continuation.py",
+        "test_continuation.py", "test_fixture_admission.py", "test_verify_receipt.py")
+} | {CONTINUATION_DOCUMENT_DIR + name for name in CONTINUATION_DOCUMENT_HASHES} | {
+    "docs/governance/Q2_H07_R1_CONTINUATION_OWNER_DECISION.md",
+    "docs/governance/Q2_H07_R1_CONTINUATION_BASELINE.md",
+    "docs/a2-execution/evidence/q2-h07-cgroup-fence-spike/round-1-verification.json",
+    "docs/a2-execution/evidence/q2-h07-cgroup-fence-spike/round-1-repair-ci.json",
+}
 LIMITS = {
     "prep_seconds": 120, "cases_seconds": 180, "cleanup_seconds": 30,
     "case_seconds": 20, "stop_seconds": 3,
@@ -68,6 +88,9 @@ NATIVE_KEYS = {
 }
 TOP_KEYS = {"schema_version", "source", "run", "provenance", "limits",
             "capability", "cases", "cleanup", "status", "budget", "reason"}
+TOP_V2_KEYS = TOP_KEYS | {"account_setup", "continuation"}
+SOURCE_KEYS = {"expected_commit", "github_sha", "head", "closure_sha256", "approved_A", "closure_C"}
+SOURCE_V2_KEYS = SOURCE_KEYS | {"approved_continuation_A", "closure_continuation_C"}
 
 
 class ReceiptError(ValueError):
@@ -532,7 +555,7 @@ def _validate_fixture(fixture: Any, case_count: int) -> list[str]:
     return errors
 
 
-def validate_report(report: Any) -> list[str]:
+def _validate_report_v1(report: Any) -> list[str]:
     errors: list[str] = []
     try:
         _bounded(report)
@@ -657,6 +680,169 @@ def validate_report(report: Any) -> list[str]:
     return errors
 
 
+_SUPPORT_MODULES: dict[str, Any] = {}
+
+
+def _support_module(name: str) -> Any:
+    """Load only fixed sibling validators; schema 1 never imports new code."""
+    if name not in {"account_evidence", "continuation"}:
+        raise ReceiptError("unknown receipt support module")
+    if name not in _SUPPORT_MODULES:
+        spec = importlib.util.spec_from_file_location(
+            __name__ + "_" + name, Path(__file__).with_name(name + ".py"))
+        if spec is None or spec.loader is None:
+            raise ReceiptError("receipt support module unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(spec.name, None)
+            raise
+        _SUPPORT_MODULES[name] = module
+    return _SUPPORT_MODULES[name]
+
+
+def _v2_encoding_size(report: dict[str, Any]) -> int:
+    """Bound direct Python inputs as well as bytes passed through load_report."""
+    size = 1  # The fixture's final LF is part of its existing report ceiling.
+    try:
+        encoder = json.JSONEncoder(ensure_ascii=True, allow_nan=False, sort_keys=True,
+                                   separators=(",", ":"))
+        for chunk in encoder.iterencode(report):
+            size += len(chunk.encode("utf-8", "strict"))
+            if size > MAX_REPORT:
+                raise ReceiptError("report byte limit")
+    except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
+        raise ReceiptError("invalid schema 2 JSON encoding") from exc
+    return size
+
+
+def _account_facts(report: dict[str, Any]) -> dict[str, Any]:
+    return _support_module("account_evidence").account_setup_facts(report["account_setup"])
+
+
+def _bind_account_budget(report: dict[str, Any], account: Any) -> list[str]:
+    """Count original captures in the one diagnostic bill and stage windows."""
+    setup = report["account_setup"]
+    errors: list[str] = []
+    observations = setup["observations"]
+    audits = [row["audit"] for row in observations]
+    if setup["create_command"] is not None:
+        audits.append(setup["create_command"])
+    audits.extend(setup["delete_commands"])
+    if any(account.validate_audit(audit) for audit in audits):
+        return []  # The strict account validator supplies shape diagnostics.
+    captured = sum(audit[stream]["bytes"] for audit in audits for stream in ("stdout", "stderr"))
+    budget = report["budget"]
+    if not _integer(budget.get("diagnostic_bytes")) or captured > budget["diagnostic_bytes"]:
+        errors.append("account captures exceed the original diagnostic byte bill")
+    prep = [audit for audit in audits if audit["role"] in ("pre_create", "useradd", "post_create")]
+    cleanup = [audit for audit in audits if audit["role"] in
+               ("pre_cleanup", "userdel", "post_userdel", "groupdel", "post_groupdel")]
+    for stage, entries in (("prep", prep), ("cleanup", cleanup)):
+        if not entries:
+            continue
+        elapsed = budget.get(stage + "_elapsed_seconds")
+        for clock in ("mono", "boot"):
+            span = max(a["end_" + clock + "_ns"] for a in entries) - min(
+                a["start_" + clock + "_ns"] for a in entries)
+            if not _number(elapsed) or span > (elapsed + 0.000000001) * 1_000_000_000:
+                errors.append("account " + stage + " clocks exceed the original stage bill")
+    capability = report["capability"]
+    if capability is not None and not validate_native(capability):
+        if not prep or any(max(a["end_" + c + "_ns"] for a in prep) > capability["start_" + c + "_ns"]
+                           for c in ("mono", "boot")):
+            errors.append("capability preceded completed account admission")
+        native = [capability] + report["cases"]
+        if cleanup and all(not validate_native(receipt) for receipt in native) and any(
+                min(a["start_" + c + "_ns"] for a in cleanup) < max(
+                    r["end_" + c + "_ns"] for r in native) for c in ("mono", "boot")):
+            errors.append("account cleanup preceded completion of native work")
+    return errors
+
+
+def _validate_report_v2(report: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    try:
+        _bounded(report)
+        report_size = _v2_encoding_size(report)
+    except ReceiptError as exc:
+        return [str(exc)]
+    if not _shape(report, TOP_V2_KEYS, "report schema 2", errors):
+        return errors
+    if (not isinstance(report["budget"], dict) or
+            type(report["budget"].get("report_bytes")) is not int or
+            report["budget"]["report_bytes"] != report_size):
+        errors.append("schema 2 report byte bill differs from its complete encoded envelope")
+    source = report["source"]
+    if not _shape(source, SOURCE_V2_KEYS, "source schema 2", errors):
+        return errors
+    if (source["approved_continuation_A"] != APPROVED_CONTINUATION_A or
+            source["closure_continuation_C"] != CLOSURE_CONTINUATION_C):
+        errors.append("approved continuation A/C identity mismatch")
+    closure = source["closure_sha256"]
+    if isinstance(closure, dict):
+        if not REQUIRED_CONTINUATION_SOURCE_PATHS <= closure.keys():
+            errors.append("source closure missing mandatory continuation paths")
+        if any(closure.get(CONTINUATION_DOCUMENT_DIR + name) != value
+               for name, value in CONTINUATION_DOCUMENT_HASHES.items()):
+            errors.append("approved continuation document bytes differ")
+    # Check the unchanged native/fixture contract using a new shallow envelope.
+    # No retained original is filled, migrated, or modified, and schema 1 keeps
+    # its own original validation path and verdicts.
+    common = {key: report[key] for key in TOP_KEYS}
+    common["schema_version"] = 1
+    common["source"] = {key: source[key] for key in SOURCE_KEYS}
+    try:
+        errors.extend(_validate_report_v1(common))
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
+        errors.append("malformed schema 2 common facts: " + type(exc).__name__)
+    # The sibling pure validators bind account evidence and continuation facts
+    # to the same run, provenance and registered cleanup; neither grants native
+    # capability, fencing, or historical cleanup credit.
+    try:
+        account = _support_module("account_evidence")
+        provenance = report["provenance"]
+        fixture = provenance.get("fixture") if isinstance(provenance, dict) else None
+        fixture_account = fixture.get("account") if isinstance(fixture, dict) else None
+        account_errors = account.validate_account_setup(
+            report["account_setup"], run=report["run"], fixture_account=fixture_account,
+            cleanup=report["cleanup"])
+        errors.extend("account_setup: " + error for error in account_errors)
+        if not account_errors:
+            errors.extend("account_setup: " + error for error in _bind_account_budget(report, account))
+        facts = account.account_setup_facts(report["account_setup"])
+        if (report["capability"] is not None or report["cases"]) and (
+                facts["errors"] or facts["admitted"] is not True):
+            errors.append("account_setup: native work without a fully admitted identity")
+        if report["status"] == "QUALIFIED_IN_FIXTURE" and (
+                facts["errors"] or facts["admitted"] is not True or
+                facts["cleanup_verified"] is not True):
+            errors.append("account_setup: qualification lacks independently derived account cleanup")
+    except (ImportError, OSError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        errors.append("account_setup validator unavailable or malformed facts: " + type(exc).__name__)
+    try:
+        continuation = _support_module("continuation")
+        errors.extend("continuation: " + error for error in continuation.validate_continuation(
+            report["continuation"], run=report["run"], source=source,
+            provenance=report["provenance"]))
+    except (ImportError, OSError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        errors.append("continuation validator unavailable or malformed facts: " + type(exc).__name__)
+    return errors
+
+
+def validate_report(report: Any) -> list[str]:
+    """Select an explicit contract, with no default or legacy promotion."""
+    if not isinstance(report, dict) or type(report.get("schema_version")) is not int:
+        return ["report schema version"]
+    if report["schema_version"] == 1:
+        return _validate_report_v1(report)
+    if report["schema_version"] == 2:
+        return _validate_report_v2(report)
+    return ["report schema version"]
+
+
 def _bind_fixture_receipts(report: dict[str, Any]) -> list[str]:
     """Join native held FDs and original intervals to the outer fixture ledger."""
     errors: list[str] = []
@@ -702,7 +888,12 @@ def derive_report(report: dict[str, Any]) -> dict[str, Any]:
     results = [derive_case(case) for case in report["cases"]]
     cap = report["capability"]
     supported = bool(cap and derive_capability(cap)["supported"])
-    if (supported and not report["reason"] and len(results) == 6 and
+    account_qualified = True
+    if report["schema_version"] == 2:
+        facts = _account_facts(report)
+        account_qualified = (not facts["errors"] and facts["admitted"] is True and
+                             facts["cleanup_verified"] is True)
+    if (supported and account_qualified and not report["reason"] and len(results) == 6 and
             all(c["case_expectation_met"] for c in results) and report["cleanup"]["verified"]):
         status = "QUALIFIED_IN_FIXTURE"
     elif any(c["classification"] == "INCONCLUSIVE" for c in results):
