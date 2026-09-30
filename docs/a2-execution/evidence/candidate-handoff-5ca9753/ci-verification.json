@@ -1,0 +1,124 @@
+{
+  "artifact_bytes_downloaded_and_verified": true,
+  "ci_run_and_job_identity_source": "GitHub API, checked separately against exact candidate",
+  "conclusion": "success",
+  "deployment_performed": false,
+  "event": "push",
+  "full_wheel_payload_verified_against_commit": true,
+  "jobs": [
+    {
+      "conclusion": "success",
+      "id": 109826052203,
+      "name": "classify-change",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "id": 109826109542,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "id": 109826109553,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed"
+    }
+  ],
+  "local_scoped_regression": {
+    "command": "python -B -m pytest -q -p no:cacheprovider tests/test_e3_q4_cancel_handoff.py tests/test_e3_quota_q2_prepare_run.py tests/test_e3_q4_cancel_contract.py tests/test_e3_q4_cancel_runtime.py tests/test_e3_quota_q2_prepare_driver.py tests/test_e3_quota_q2_supervisor.py tests/test_e3_quota_q2_evidence_review.py tests/test_e3_q2_reconciliation_collect.py",
+    "independent_new_handoff": {
+      "passed": 22,
+      "seconds": 2.28
+    },
+    "passed": 167,
+    "seconds": 7.54,
+    "skipped": 1
+  },
+  "platforms": [
+    {
+      "all_command_records_and_stream_digests_verified": true,
+      "archive_sha256": "f4d2ab732f50380b7b4309094e2a5eee02f695c03ba35b7cb41f9c9d642f28f9",
+      "archive_size_bytes": 279076,
+      "artifact_id": 11088835074,
+      "artifact_name": "local-hand-Windows-36696638094-1",
+      "core_package_digest": "b06b2ba36a6bdd79f014167db46133d0c8f19b21cbd5976cd6b7548da8d9522d",
+      "fixture_only": true,
+      "full_payload_digest": "f75a18f2b7b8d52dadb51285e0a7ae392541076855164e85aac45b7abcc4972e",
+      "installed_check_status_counts": {
+        "PASS": 9,
+        "SKIP": 1
+      },
+      "installed_checks": 10,
+      "installed_commands": 10,
+      "installed_report_sha256": "b314e6a6a4ab81a3d29f7ebd4933db5602b4dcac22894edc45294e8e9beb476e",
+      "installed_result": "PASS",
+      "job_id": 109826109542,
+      "linux_fixture_wheel_admission": "REJECTED_BUILD_DISTRIBUTION_CRLF_METADATA",
+      "payload_file_count": 53,
+      "physical_node_tested": false,
+      "platform": "Windows",
+      "plugin": null,
+      "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+      "root_collector": null,
+      "source_tests": {
+        "passed": 1131,
+        "skipped": 1057
+      },
+      "wheel_member": "dist/infra_local_hand-0.2.0a1-py3-none-any.whl",
+      "wheel_sha256": "0578c45b2812a84f2d3bc74e0c1761166e00f1e80cd6013a0c8debc00a379310",
+      "wheel_size_bytes": 269595
+    },
+    {
+      "all_command_records_and_stream_digests_verified": true,
+      "archive_sha256": "bd9822e3e7eeef1d6baaf43ef19650fe6b04275ff7a3ac1893580da8e655bff1",
+      "archive_size_bytes": 686475,
+      "artifact_id": 11088696405,
+      "artifact_name": "local-hand-Linux-36696638094-1",
+      "core_package_digest": "b06b2ba36a6bdd79f014167db46133d0c8f19b21cbd5976cd6b7548da8d9522d",
+      "fixture_only": true,
+      "full_payload_digest": "f75a18f2b7b8d52dadb51285e0a7ae392541076855164e85aac45b7abcc4972e",
+      "installed_check_status_counts": {
+        "PASS": 94
+      },
+      "installed_checks": 94,
+      "installed_commands": 292,
+      "installed_report_sha256": "46ac7af50c046c80dbd0e51f7b00480e5ba71d2cf590c50d06f04786ba7a14e1",
+      "installed_result": "PASS",
+      "job_id": 109826109553,
+      "linux_fixture_wheel_admission": "PASS",
+      "payload_file_count": 53,
+      "physical_node_tested": false,
+      "platform": "Linux",
+      "plugin": {
+        "connection_state": "UNCONFIGURED_E4_REQUIRED",
+        "sha256": "d7eb1f63c03d775cc35dd6761e0a0d970ec8d7b7462f58b42b114588d6241ad2",
+        "size_bytes": 19217,
+        "source_files_verified": 12
+      },
+      "python": "3.12.14 (main, Aug 13 2026, 02:47:42) [GCC 13.3.0]",
+      "root_collector": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 16
+      },
+      "source_tests": {
+        "passed": 3265,
+        "skipped": 51
+      },
+      "wheel_member": "dist/infra_local_hand-0.2.0a1-py3-none-any.whl",
+      "wheel_sha256": "64e73a11c23e1e59b4e0500268043539697afe22b405633f677b236689ed3111",
+      "wheel_size_bytes": 269571
+    }
+  ],
+  "real_systemd_fixture_accepted": false,
+  "run_attempt": 1,
+  "run_id": 36696638094,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36696638094",
+  "schema": "infra-local-hand-ci-artifact-verification/v1",
+  "source_commit": "5ca9753cc777c246cdabe99e4a00f92078b0df08",
+  "source_test_counts_source": "Exact GitHub job logs, checked separately; not inferred from artifact",
+  "source_tree": "648a3aa484cc06d0369e71c522c20501db51f665",
+  "status": "completed"
+}

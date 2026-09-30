@@ -2,7 +2,11 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前接续（2026-09-30）：固定本地补证 L1–L6 限定任务已完成，结果仍为 `OBSERVED_PARTIAL`；完整 Q2、E3 与生产支持未验收。** 已继续完成范围内的离线组件，见[费用来源复核](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)和[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)。实际 H07、完整账单和 FS 资格仍需闭合；无需重复已有 11 项采集或权限维护。
+**当前阶段（2026-09-30）：E3 真实隔离验收准备。** 已补齐固定取消场景的外层交接，源码候选为 `5ca9753`；准确 CI、产物与现场装配输入见[最新候选交接](docs/a2-execution/CANDIDATE_HANDOFF_20260930.md)。下一步先做正常链真实验收，再做独立取消场景。Q2/Q3、生产启用、E4–E6 和 NAS 尚未验收；已退役 H07 实验不会恢复。已有 11 项历史补证继续复用。
+
+以下为此前接续沿革；当前路线以上述候选交接及[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)为准。
+
+固定本地补证 L1–L6 限定任务已完成，结果仍为 `OBSERVED_PARTIAL`。已完成范围内的离线组件，见[费用来源复核](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)。完整账单和 FS 资格仍需闭合；无需重复已有采集或权限维护。
 
 已进入[H07 cgroup 监督原语隔离实验](docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)，准确 A `71c7e842`；Owner 已批准 F1–F4，独立 C 为 `8deeed49`。现已完成两轮，第二轮失败后的事实与停止边界见[第二轮结果复核](docs/a2-execution/Q2_H07_ROUND2_RESULT_REVIEW.md)；局部实验不等于原 Q2 已准入。
 

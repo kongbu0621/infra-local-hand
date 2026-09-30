@@ -2,6 +2,14 @@
 
 ## 2026-09-30 当前接续
 
+当前处于 **E3 真实隔离验收准备**。已修复内部 Q4 取消场景无法进入外层 one-shot owner 的
+接线缺口，准确源码候选为 `5ca9753`；正常 Q2 合同、原预算、原进程身份与完整退出判据保持。
+最新 CI、产物核验、来源 pins、现场输入和执行顺序见[候选交接](CANDIDATE_HANDOFF_20260930.md)。
+下一步是现场装配与正常链真实验收，再做独立取消及剩余故障场景。原 Q2 startup、Q3、生产
+资格、E4–E6 和 NAS 尚未完成。已退役 H07 实验不再作为后续依赖，第三轮不会派发。
+
+## 此前接续沿革
+
 **固定本地来源补证L1–L6限定任务已完成。** 最新89c725ef rerun3完整回执为`OBSERVED_PARTIAL / final_local_recheck`：11项均匹配且各自读前后元数据稳定，四份控制原文已返回；收件及静态依赖复核完成。见[限定完成复核](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)。
 
 随后已完成原 H1/H4 内的[有限 wrapper profile 兼容修复](Q2_WRAPPER_PROFILE_IMPLEMENTATION_REVIEW.md)，准确 D `22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3`，143 个不同定向测试通过。新 profile 显式选入；旧默认和全部现场门保持。原件仅静态匹配，未执行或采用为执行来源。

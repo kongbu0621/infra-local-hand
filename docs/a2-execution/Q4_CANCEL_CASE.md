@@ -102,12 +102,15 @@ Job、原父级为空、原客户端退出及双 EOF，才沿用实际核心的�
 本地验证覆盖真实 policy/request 装配、真实 Broker/SQLite 的取消和资源保留，以及采用明确
 OS/传输替身的停止时序、错误、版本和结果一致性负例。这些测试不等于实际 systemd 验收。
 
-2026-09-30 最终本地集成回归：**668 passed，3 skipped**（37.04 秒）。范围为全部新增 Q4
+2026-09-30 内部 driver 候选当时的本地集成回归：**668 passed，3 skipped**（37.04 秒）。范围为当时新增 Q4
 测试、既有 Q2 harness 测试、resident/chain、quota lifecycle 和 runner；三个跳过项保留。
 其中新增取消用例覆盖取消已提交但 API 尚未返回、读账本期间取消完成、停止命令发出前失败、
 原 ACK 丢失、自然先结束、缺 RUNNING、日志超限/日志异常、预算/owner/原实例冲突，以及旧新
 报告混搭。独立只读审查未发现剩余阻塞。没有真实 Linux systemd 或 Windows 运行结论；
 Windows 分支的导入保护不替代实际 Windows CI。
+
+上述计数属于外层交接修复前的内部 driver 验证；本次外层回归为前述 167 passed / 1 skipped，
+准确新候选及其 CI、产物和现场交接见[最新候选记录](CANDIDATE_HANDOFF_20260930.md)。
 
 当前没有与新候选匹配的现场 fixture，本轮不执行 SSH、安装、真实任务或主机状态修改。
 实际运行仍须先核对新源码与 Linux wheel、真实安装和现场身份，以及两次场景各自的独立
