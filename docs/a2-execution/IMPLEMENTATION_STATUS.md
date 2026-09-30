@@ -27,26 +27,34 @@ Linux **2746 PASS / 51 SKIP**，Windows **714 PASS / 995 SKIP**，各新增 78 P
 错误返回点。项目 `--wait/--pipe` 在该版本走 system bus，不经过本仓库 broker。
 该交付仅为静态来源研究，没有新的程序实现、现场调用或测试通过计数。
 
-下一具体候选已固定为[H07 cgroup 监督原语实验 A `71c7e842`](../governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)：
+已实施的隔离实验固定为[H07 cgroup 监督原语实验 A `71c7e842`](../governance/Q2_H07_CGROUP_FENCE_SPIKE_BASELINE.md)：
 以 clone3 原子入组，把全部合成任务启动者纳入同一可停止子树，由独立 guardian
 核验关闭与原流。三层方案已完成独立静态审查；Owner 已明确批准，独立 C 为 `8deeed492edeb7e5fa79cbe95c123a27e69f9f92`。
 关闭仅 F1–F4、六例及最多三轮有界 CI，原 Q2/原机/冻结 runtime 不进入实验。
 准确实现/验证/派发状态以[实验实施复核](Q2_H07_CGROUP_FENCE_SPIKE_IMPLEMENTATION_REVIEW.md)为准，不能把 Gate CLOSED 当成运行 PASS。
-首轮 `36577764454` 在 F1 账户 setup 失败，probe/C1–C6 均为 NOT_RUN，额度 **1/3**；
+首轮 `36577764454` 在 F1 账户 setup 失败，probe/C1–C6 均为 NOT_RUN，首轮当时额度 **1/3**；
 参数修复及 88 项离线验证已完成，准确修复 `9596c784` 的普通 CI **3/3 成功**。
 原 **UNKNOWN_RETAINED / cleanup.verified=false** 保留。
 [首轮历史异常的限定续验变更](q2-h07-r1-continuation/REQUIREMENTS.md)已获 Owner 批准，
 准确 A `a08a5055` 的 U1–U4 **CLOSED**，独立 C 为 `7d33c698ff6c1bf34733ee2429d0404ace2abd55`。
 该决定只接受指定首轮历史未知不再单独阻断剩余限定续验；后续新增 UNKNOWN、清理未知等停止条件不变。
 
-续验修复 D `d4dd8c6ea4284d0d9e8802073df6ea1cc9c52029` 的普通 CI
-[36592634218](https://github.com/kongbu0621/infra-local-hand/actions/runs/36592634218) attempt 1 已 **3/3 成功**：
+准确运行 HEAD `9d8328cf742fa130c265de23b1b9085b9e8a0581` 的普通 CI
+[36655111148](https://github.com/kongbu0621/infra-local-hand/actions/runs/36655111148) attempt 1 已 **3/3 成功**：
 Linux 源码 **3063 PASS / 51 SKIP**、独立真实 root collector **16 PASS / 0 SKIP**，
-Windows 源码 **996 PASS / 996 SKIP**。准确记录见[最终 CI 证据](evidence/q2-h07-cgroup-fence-spike/continuation-final-ci.json)。
-**第二轮尚未派发**，额度仍为 1/3；下一次重新准入须绑定本次纯文档登记发布后的准确 HEAD，
-核对实验实现与已验证 D 的字节关系，完成该 HEAD 的普通 CI，并核对全部运行和 attempts、剩余额度及托管环境，再经 GitHub 页面手动派发。
-可选第三轮的真实报告生产路径尚有可达性缺口，详见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
-该缺口不阻断第二轮，不允许改写原件状态、弱化收件器或借剩余额度直接派发第三轮。
+Linux installed **94 checks / 292 commands PASS**；Windows 源码 **996 PASS / 996 SKIP**，
+installed **10 checks / 10 commands PASS**。准确记录见[第二轮前普通 CI](evidence/q2-h07-cgroup-fence-spike/round-2-ordinary-ci.json)，旧 D 的 CI 记录另行保留。
+
+同一 HEAD 的第二轮 [36662298613](https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613) attempt 1 已 **FAILURE**。
+probe 支持；账户创建与删除完成，原报告 `cleanup.verified=true`、`residuals=[]`。
+C1 在 `s_created` 后约 2.075 ms 记录 `s_exit=-9`，早于 `close_requested` / `b_kill`，
+未取得 `s_armed`、`s_credentials`、request 或 worker 证据，C2–C6 均为 NOT_RUN。
+原报告状态为 **UNKNOWN_RETAINED**，原因 `final report verification: C1: launcher/account binding missing`；
+收件器的派生拒绝不替代原报告状态，也不能从退出值推断信号发出者或根因。
+已核对全部 **75/75** 项运行历史及相关 attempts，实验仅首轮与第二轮，额度 **2/3**；
+**第三轮 BLOCKED / NOT_DISPATCHED**。第二轮新增 UNKNOWN 触发原停止条件，旧 A 和仅接受首轮历史未知的新 A 均未豁免它。
+根因继续只读定位；详细证据见[第二轮结果复核](Q2_H07_ROUND2_RESULT_REVIEW.md)和[第二轮清单](evidence/q2-h07-cgroup-fence-spike/round-2-verification.json)。
+可选第三轮的报告生产路径缺口仍见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)，修复该缺口不能解除本轮新增阻断。
 
 旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、实际 H07 机制、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 
@@ -61,7 +69,7 @@ K4 的准确实现 D 为 `e15c633adbdfbf1e29cb12b2410975fe4911458d`，完整回�
 | host 窗口消费 | A `8402f0cc82d8a0ac0b9a56716bf276f41cafea37` 的 H1–H6 已 CLOSED；完整现场派发仍因证据缺口 NOT READY。 |
 | 固定内核事实读取 | A `887b640b394f9983f37dfe97c58ba35aaa099359` 的 K0–K4 已 CLOSED；K1–K4 各自限定任务已完成，含完整回执接收及核验。 |
 | 固定本地来源补证 | A `b8b9ec3da3de43b72e4e17416ea6633494d50c1d` 的 L0–L6 已 CLOSED；独立 C `8e7545199bde66583e1d643656dece867ab1dbda` 后完成实现与交付。最新诊断 D `89c725efd61dad11b0cc9ae11c3c08a941e3111a` 的 [rerun3](Q2_LOCAL_SOURCE_EVIDENCE_COMPLETION_REVIEW.md)为11 MATCHED / 4 raw，L5收件与L6限定静态复核完成；不是完整Q2准入。 |
-| H07 首轮限定续验 | A `a08a5055` 的 U1–U4 已 CLOSED，独立 C `7d33c698`；D `d4dd8c6e` 普通 CI 3/3 成功。首轮 UNKNOWN/cleanup=false 保留，已用 1/3；第二轮尚未派发，第三轮须另满足前轮事实与明确修复条件。 |
+| H07 首轮限定续验 | A `a08a5055` 的 U1–U4 已 CLOSED，独立 C `7d33c698`；运行 HEAD `9d8328cf` 普通 CI 3/3 成功。第二轮 `36662298613` FAILURE，原报告 UNKNOWN_RETAINED / cleanup=true；首轮 UNKNOWN/cleanup=false 保留。额度 2/3，第三轮 BLOCKED / NOT_DISPATCHED。 |
 
 以上准确 R/A、Owner 决定和独立 C 以根 [AGENTS.md](../../AGENTS.md)及其引用记录为准。
 冻结设计文件的历史 OPEN 标签保留，不覆盖后续有效关闭记录；本状态更新不产生新授权或新批次。

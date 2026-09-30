@@ -2,13 +2,20 @@
 
 2026-09-29。仅 `LH-Q2-H07-CGROUP-FENCE-SPIKE-v1` 的 F1–F4。
 
-当前状态（2026-09-30）：首轮已运行，额度 **1/3**；账户 setup 失败，probe 与六案
-均为 NOT_RUN，原报告 **UNKNOWN_RETAINED / cleanup.verified=false** 保留。
-随后 Owner 已批准限定续验 A `a08a5055`，独立 C `7d33c698` 将 U1–U4 登记为 CLOSED；
-仅指定首轮历史未知不再单独阻断剩余限定续验，后续停止条件保持。
-续验修复 D `d4dd8c6e` 的普通 CI `36592634218` attempt 1 已 3/3 成功，
-见[最终 CI 证据](evidence/q2-h07-cgroup-fence-spike/continuation-final-ci.json)。
-**第二轮尚未派发**；当前准入与可选第三轮缺口见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
+当前状态（2026-09-30）：两轮已运行，额度 **2/3**；**第三轮 BLOCKED / NOT_DISPATCHED**。
+首轮账户 setup 失败、probe 与六案 NOT_RUN，原报告 **UNKNOWN_RETAINED / cleanup.verified=false** 保留。
+Owner 批准的限定续验 A `a08a5055`、独立 C `7d33c698` 仅接受指定首轮历史未知；后续停止条件保持。
+
+准确 HEAD `9d8328cf742fa130c265de23b1b9085b9e8a0581` 的普通 CI `36655111148`
+attempt 1 已 3/3 成功，见[准确证据](evidence/q2-h07-cgroup-fence-spike/round-2-ordinary-ci.json)。
+同一 HEAD 的第二轮 `36662298613` attempt 1 为 **FAILURE**：probe 支持，
+账户创建与删除完成，原报告 `cleanup.verified=true`、`residuals=[]`；但 C1 缺
+launcher/account binding，原报告为 **UNKNOWN_RETAINED**，C2–C6 为 NOT_RUN。
+C1 的 `s_exit=-9` 在 `s_created` 后约 2.075 ms，早于 `close_requested` / `b_kill`；
+未取得 `s_armed`、`s_credentials`、request 或 worker 证据。该时间线不证明信号发出者或根因。
+第二轮新增 UNKNOWN 触发停止条件，首轮限定豁免不覆盖它；当前仅继续只读定位。
+完整结果和原件身份见[第二轮结果复核](Q2_H07_ROUND2_RESULT_REVIEW.md)及[第二轮清单](evidence/q2-h07-cgroup-fence-spike/round-2-verification.json)，
+续验边界及第三轮既有缺口见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
 以下原实现、0/3、[首轮记录](#round-1-2026-09-29)及当时停止状态保留其历史时点，不覆盖后续准确决定。
 
 ## Authority 与准确边界
@@ -20,6 +27,8 @@
 - 实验实现提交必须从 C 下降；本记录和源码属于随后独立的实现提交。
 
 ## 交付与阶段状态
+
+下表保留首个实现交付时的阶段缺口；第二轮已取得的 probe、C1 与清理事实见页首及第二轮复核，不能由历史 NOT_RUN 覆盖。
 
 | 阶段 | 已交付 | 仍待真实证据 |
 | --- | --- | --- |

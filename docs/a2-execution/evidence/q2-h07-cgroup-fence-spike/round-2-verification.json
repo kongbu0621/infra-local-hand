@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-30",
+  "observed_at": "2026-09-30T03:05:33.424431+00:00",
+  "scope": "LH-Q2-H07-CGROUP-FENCE-SPIKE-v1 / LH-Q2-H07-R1-CONTINUATION-v1",
+  "record_kind": "sanitized_real_hosted_lab_round_review",
+  "R": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "source": {
+    "approved_A": "71c7e842c724650a0e949a63bb898699b41107be",
+    "approved_continuation_A": "a08a5055c35009a896ad6c6059d709758cc78436",
+    "closure_C": "8deeed492edeb7e5fa79cbe95c123a27e69f9f92",
+    "closure_continuation_C": "7d33c698ff6c1bf34733ee2429d0404ace2abd55",
+    "closure_sha256": {
+      ".github/workflows/q2-cgroup-fence-spike.yml": "5319fea1b5f31a728f785cc75cda8ba525e5159b216efc746c9c1bd43e8e6688",
+      "AGENTS.md": "0aee452e8b404986c5587f1696cce8d79b960aa66293a4c03a8cee355f38c941",
+      "docs/a2-execution/evidence/q2-h07-cgroup-fence-spike/round-1-repair-ci.json": "9752e58e63a3612082d52ed1b51535ba3a64fab7bc71e99bde0348e2f2beae83",
+      "docs/a2-execution/evidence/q2-h07-cgroup-fence-spike/round-1-verification.json": "821668e202cd0919a68b2407ddc8b0628ed308b28c6e48eb8d5a195139408bdb",
+      "docs/a2-execution/q2-h07-cgroup-fence-spike/ARCHITECTURE.md": "6b7ef2487658e759df565084393e5de010db8f35de4966a4790320eea060116c",
+      "docs/a2-execution/q2-h07-cgroup-fence-spike/IMPLEMENTATION_PLAN.md": "0bd3dab26e10e2fa9717ef218fa70846cf5ad3b5888ad2f17596c7b7b385e99d",
+      "docs/a2-execution/q2-h07-cgroup-fence-spike/REQUIREMENTS.md": "41706c5b07cfceea319f10dcab1fcc8b2606995b029566f3e13bb00e41affd51",
+      "docs/a2-execution/q2-h07-r1-continuation/ARCHITECTURE.md": "18a248d9398f73405e8836a9586e9c98b8ed9aab2c71242ecdc1c8eaa3823e2b",
+      "docs/a2-execution/q2-h07-r1-continuation/IMPLEMENTATION_PLAN.md": "9c5726f80f4cb779f658b4d075ee50568ff9818b9f49814e57de71c07aedbe2b",
+      "docs/a2-execution/q2-h07-r1-continuation/REQUIREMENTS.md": "74ad594f4446cdf49c4b8d72ff4e5ffb3bd411780e91eeee5a130e58d03eb7f2",
+      "docs/governance/Q2_H07_CGROUP_FENCE_SPIKE_OWNER_DECISION.md": "e42c3b17c7ddb8677eb02a1ad59b558ef323e333aa3cc1c7686fe3a38e425cc1",
+      "docs/governance/Q2_H07_R1_CONTINUATION_BASELINE.md": "aad7f395eb5ad3d36a686d103b48c89c3e78d548ead1c1f6cc47b1be991aeb21",
+      "docs/governance/Q2_H07_R1_CONTINUATION_OWNER_DECISION.md": "79525c8031c5a1f2b304df4f416ac35b34481b1677c9dc40cd1523d46a098162",
+      "tests/e3_host/spikes/q2_cgroup_fence/account_evidence.py": "36cc01ee2bb1c44f73aec3e5215cf9c51cf6d8b13ed350293740472a63b9d270",
+      "tests/e3_host/spikes/q2_cgroup_fence/continuation.py": "7b829011b4d6aeb72e8dcbba4939b5a2960ac43852c74ac4902b9355fbbb9844",
+      "tests/e3_host/spikes/q2_cgroup_fence/helper.c": "d9dbefdb82f811660baf32f57f97723e731465954d3630cde8eed41e6d19de32",
+      "tests/e3_host/spikes/q2_cgroup_fence/run_fixture.py": "6e038caf2de53a60f066601b8f4e884db26503a7d7e1202e724f20a1734c0bf1",
+      "tests/e3_host/spikes/q2_cgroup_fence/test_account_evidence.py": "7e567c289ccbad789243a87be0889d4b8a4ff9e38471e1246ceb62889994f67d",
+      "tests/e3_host/spikes/q2_cgroup_fence/test_continuation.py": "4258b9fa7bd34ea37a084414b578525779e938b5e5d24bc408a056fe459c21dd",
+      "tests/e3_host/spikes/q2_cgroup_fence/test_fixture_admission.py": "35cbba0b553b2a2daf5d2824c254c4717fc3a5d2e3187a813a362432ebc23f3a",
+      "tests/e3_host/spikes/q2_cgroup_fence/test_verify_receipt.py": "d149708b5f9561181ace799bd3d94e8b2f9f77ca5cab1d1c776fe613a93979d3",
+      "tests/e3_host/spikes/q2_cgroup_fence/verify_receipt.py": "a58b99582937690c5fa785ec3010f09cf6469ccc10257c0488e117555aeb2702"
+    },
+    "expected_commit": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+    "github_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+    "head": "9d8328cf742fa130c265de23b1b9085b9e8a0581"
+  },
+  "run": {
+    "attempt": 1,
+    "id": "36662298613",
+    "round": 2,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613",
+    "event": "workflow_dispatch",
+    "head_branch": "main",
+    "conclusion": "failure",
+    "job_id": 109719488299,
+    "fixture_exit_code": 3,
+    "created_at": "2026-09-30T02:58:41Z",
+    "updated_at": "2026-09-30T02:58:52Z"
+  },
+  "inputs": {
+    "expected_commit": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+    "round": "2",
+    "reason": "Account profile and bounded account evidence repair under LH-Q2-H07-R1-CONTINUATION-v1"
+  },
+  "ordinary_ci_run_id": 36655111148,
+  "ordinary_ci_conclusion": "success",
+  "identity_admission": "success",
+  "artifact_upload": "success",
+  "artifact": {
+    "id": 11074538056,
+    "name": "q2-h07-36662298613-1-r2",
+    "bytes": 13719,
+    "sha256": "21c2c19d081adb1a89d8b9f2ad62297d86761f88947842705554db70e3c66373",
+    "expires_at": "2026-10-30T02:58:49Z",
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613/artifacts/11074538056",
+    "archive_digest_verified": true,
+    "original_zip_separately_retained": true,
+    "files": {
+      "C1.json": {
+        "bytes": 2561,
+        "sha256": "abf5dfd31d6986ab6a23d0e665ebc4a59ba613c820b1591808c7bea898d8417a"
+      },
+      "probe.json": {
+        "bytes": 2978,
+        "sha256": "d943f9029ce4dbab5b8ce4f7426ddd301f68767d77ac727e3188b62f71162bae"
+      },
+      "diagnostics.txt": {
+        "bytes": 5140,
+        "sha256": "8c678e58156162334c3da2266fcac4156953ce7750c005e56de0fd90c8989ef8"
+      },
+      "report.json": {
+        "bytes": 36612,
+        "sha256": "99d6def38ae46a417a1cfc25b0e6588028813bc0d3b27cee60b083929ad99a54"
+      },
+      "manifest.json": {
+        "bytes": 3997,
+        "sha256": "de88c6663b9ff5ef5e66b931a8121fc543d48f9d94951f5ea26a1e22ca3018aa"
+      }
+    }
+  },
+  "decoded_job_log_digest": {
+    "job_id": 109719488299,
+    "bytes": 25671,
+    "sha256": "5142e30b79c4cb388045cc694e6b20e242899c7493de70dfac59781ede0e04e3",
+    "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+  },
+  "manifest_files_verified": true,
+  "manifest_source_and_run_match": true,
+  "source_closure_files_verified": 22,
+  "native_files_equal_report_objects": true,
+  "status": "UNKNOWN_RETAINED",
+  "reason": "final report verification: C1: launcher/account binding missing",
+  "capability_executed": true,
+  "capability_derived": {
+    "supported": true,
+    "errors": []
+  },
+  "cases_executed": 1,
+  "case_statuses": {
+    "C1": "UNKNOWN_RETAINED",
+    "C2": "NOT_RUN",
+    "C3": "NOT_RUN",
+    "C4": "NOT_RUN",
+    "C5": "NOT_RUN",
+    "C6": "NOT_RUN"
+  },
+  "case_1_derived": {
+    "case_id": "C1",
+    "case_expectation_met": false,
+    "fence_observed": false,
+    "identity_complete": true,
+    "tree_empty": true,
+    "streams_eof": true,
+    "guardian_exit_observed": true,
+    "deadline_met": true,
+    "cleanup_verified": true,
+    "classification": "UNKNOWN_RETAINED",
+    "errors": [
+      "guardian summary contradicts retained independent facts"
+    ]
+  },
+  "case_1_observations": {
+    "launcher_wait_code": -9,
+    "launcher_signal": "SIGKILL",
+    "launcher_armed_recorded": false,
+    "launcher_credentials_recorded": false,
+    "request_sent_recorded": false,
+    "worker_events_recorded": false,
+    "exit_before_recorded_close_request_and_b_kill": true,
+    "signal_source_and_cause": "NOT_ESTABLISHED_BY_RETAINED_EVIDENCE"
+  },
+  "account": {
+    "validation_errors": [],
+    "derived_facts": {
+      "errors": [],
+      "admitted": true,
+      "cleanup_verified": true,
+      "diagnostic_bytes": 4874
+    },
+    "budget_binding_errors": [],
+    "create_rc": 0,
+    "delete_rcs": [
+      0
+    ],
+    "observation_phases": [
+      "pre_create",
+      "post_create",
+      "pre_cleanup",
+      "post_userdel"
+    ]
+  },
+  "cleanup": {
+    "records": [
+      {
+        "identity_match": true,
+        "object": "q2-h07-36662298613-1-r2/B/W",
+        "operation": "rmdir",
+        "removed": true
+      },
+      {
+        "identity_match": true,
+        "object": "q2-h07-36662298613-1-r2/B/S",
+        "operation": "rmdir",
+        "removed": true
+      },
+      {
+        "identity_match": true,
+        "object": "q2-h07-36662298613-1-r2/B",
+        "operation": "rmdir",
+        "removed": true
+      },
+      {
+        "identity_match": true,
+        "object": "q2-h07-36662298613-1-r2/G",
+        "operation": "rmdir",
+        "removed": true
+      },
+      {
+        "identity_match": true,
+        "object": "q2-h07-36662298613-1-r2",
+        "operation": "rmdir",
+        "removed": true
+      },
+      {
+        "identity_match": true,
+        "object": "dedicated-account",
+        "operation": "delete",
+        "removed": true
+      },
+      {
+        "identity_match": true,
+        "object": "build/helper",
+        "operation": "unlink",
+        "removed": true
+      }
+    ],
+    "residuals": [],
+    "verified": true
+  },
+  "cleanup_interpretation": "Independent component review supports cleanup of the seven registered experiment objects. It does not establish whole-OS rollback or full-report acceptance and does not repair round 1 cleanup unknown.",
+  "independent_receipt_verifier": {
+    "exit_code": 2,
+    "stdout_sha256": "88aab449415145c1568d83da2dcc38a6725d922c2303a75002cfa8630b1a28f7",
+    "stderr_bytes": 0,
+    "result": {
+      "case_results": [],
+      "errors": [
+        "C1: launcher/account binding missing"
+      ],
+      "status": "REJECTED"
+    }
+  },
+  "receiver_interpretation": "REJECTED is the independent receiver result with a validation error. Original report status remains UNKNOWN_RETAINED; this is not the clean REJECTED round-3 admission path.",
+  "lab_inventory": {
+    "total_count": 75,
+    "fetched_count": 75,
+    "h07": [
+      {
+        "id": 36662298613,
+        "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+        "attempt": 1,
+        "status": "completed",
+        "conclusion": "failure"
+      },
+      {
+        "id": 36577764454,
+        "head_sha": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+        "attempt": 1,
+        "status": "completed",
+        "conclusion": "failure"
+      }
+    ]
+  },
+  "lab_dispatches_consumed": 2,
+  "lab_dispatches_limit": 3,
+  "remaining_quota": 1,
+  "round_3": "BLOCKED / NOT_DISPATCHED",
+  "further_dispatch_blocked": true,
+  "stop_basis": "Original F1-F4 plan blocks unexpected UNKNOWN except expected C3/C6 with proven cleanup. Continuation U1-U4 accepts only run 36577764454 historical unknown; it does not accept this new C1 unknown.",
+  "original_Q2_startup_issued": false,
+  "publication_note": "Sanitized review, source identities and original digests only. Original ZIP is separately retained unchanged; no raw machine artifact or raw job log is added to the public repository.",
+  "live_fixture_invoked_during_review": false,
+  "source_diagnosis": {
+    "classification": "SOURCE_MATCHED_ROOT_CAUSE_CANDIDATE_NOT_EXACT_KERNEL_PROOF",
+    "observed_kernel": "6.17.0-1022-azure",
+    "upstream_fix_commit": "8e359920216689b3b79e0fe8961a77fe312a511f",
+    "upstream_fix_url": "https://github.com/torvalds/linux/commit/8e359920216689b3b79e0fe8961a77fe312a511f",
+    "mechanism": "Affected kernel snapshots parent kill_seq for CLONE_INTO_CGROUP; after probe kills B subtree, G and reused target B/S sequences differ, matching immediate launcher SIGKILL.",
+    "exact_azure_patchset_verified": false,
+    "kernel_signal_source_recorded": false,
+    "source_changed_during_review": false,
+    "candidate_does_not_clear_unknown_or_stop": true
+  }
+}

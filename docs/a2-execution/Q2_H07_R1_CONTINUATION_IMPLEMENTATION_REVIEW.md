@@ -19,7 +19,8 @@
   清理核对原 name/UID/GID/home/shell/groups 及共享身份，userdel 后继续绑定原 UID/GID。
 - `continuation.py` 固定旧/新 A/C、首轮原件索引及原状态、额度与 boot 比较。
   首轮 `UNKNOWN_RETAINED` / cleanup=false 仍保留，仅该历史事件获限定接受。
-  当前没有第二轮完整索引，第三轮会拒绝；以后也须独立检查前轮原件和另一明确修复。
+  首次实现时没有第二轮完整索引，第三轮会拒绝；第二轮现已运行并新增 UNKNOWN，
+  当前第三轮继续阻断，不能仅补齐索引或找到另一源码缺陷便解除停止条件。
 - `verify_receipt.py` 显式分支校验 schema 1/2。新报告必须有账户及续验事实，
   严格核对字段、原双钟、身份、捕获摘要、来源闭包和原预算；账户总布尔不授予资格。
   原 native/helper 与 C1–C6 判据不变。
@@ -39,21 +40,26 @@
 集成期间旧测试夹具补齐新闭包和新的账户监督接口；交叉审查还修复了前查退出但
 缺 EOF 被误当清理成功，以及长 wait 未持续复核 BOOTTIME 两处边界。
 
-2026-09-30 当前登记：修复 D `d4dd8c6e` 的普通 CI 已通过，准确结果见下节；
-**第二轮尚未派发**，总额度仍已用 **1/3**。首轮 `36577764454` 的原
-UNKNOWN_RETAINED、cleanup.verified=false、probe/C1–C6 NOT_RUN 均保留。
-后续必须冻结本次纯文档及证据登记发布后的准确 HEAD，作为新的 `expected_commit`，
-核对实验实现/workflow 与已验证 D 的字节关系、新 C 祖先关系，完成该 HEAD 的普通 CI，再核对全部实验历史及 attempts、
-剩余额度与托管环境依据，再通过 GitHub 页面手动派发 round=2。
-不能在 main 前进后仍填写旧 D，或把普通 CI 通过当成真实实验通过。
-纯文档变更不会自动触发当前普通 CI 的 push 路径；须使用该普通 workflow 的手动入口。
-它不消费 H07 实验额度。普通 CI 成功后保持准确 HEAD 不变再派发实验，结果随后合并登记，避免登记提交再次改变派发身份。
-取得 run ID 即计 **2/3**，失败也计入。
-页面或账号不可用则保留未派发，不改用 push/rerun/其他执行通道。
+2026-09-30 当前登记：准确运行 HEAD 为 `9d8328cf742fa130c265de23b1b9085b9e8a0581`。
+该 HEAD 的普通 CI [36655111148](https://github.com/kongbu0621/infra-local-hand/actions/runs/36655111148)
+attempt 1 已 3/3 SUCCESS：Linux 源码 3063 PASS / 51 SKIP、root collector 16 PASS / 0 SKIP、
+installed 94 checks / 292 commands PASS；Windows 源码 996 PASS / 996 SKIP、installed 10 checks / 10 commands PASS。
+准确结果见[第二轮前普通 CI](evidence/q2-h07-cgroup-fence-spike/round-2-ordinary-ci.json)，此前 D 的结果继续按下节分别保留。
 
-第二轮任何新增 UNKNOWN、清理未知、根本环境不支持或其他原停止条件都继续生效。
-若第二轮已获资格即结束；不能为 C5 竞态或剩余额度而重跑。第三轮还需要明确另一
-源码缺陷、准确修复、离线及普通 CI、第二轮完整证据和无新增阻断。
+同一 HEAD 的第二轮 [36662298613](https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613)
+attempt 1 已 FAILURE。账户创建与删除完成，probe 支持，原报告 `cleanup.verified=true`、`residuals=[]`；
+C1 在 `s_created` 后约 2.075 ms 记录 `s_exit=-9`，早于 `close_requested` / `b_kill`，
+没有 `s_armed`、`s_credentials`、request 或 worker 证据，C2–C6 均 NOT_RUN。
+原报告保持 **UNKNOWN_RETAINED**，原因是 `final report verification: C1: launcher/account binding missing`。
+收件器的派生 REJECTED 不能重写该原状态；退出值与先后关系也不足以确定信号发出者或根因。
+
+全部 **75/75** 项运行历史及相关 attempts 已核对，H07 实验只有首轮和第二轮，额度已用 **2/3**。
+首轮 `36577764454` 的原 UNKNOWN_RETAINED、cleanup.verified=false、probe/C1–C6 NOT_RUN 均保留。
+**第三轮 BLOCKED / NOT_DISPATCHED**：第二轮新增 UNKNOWN 已触发原停止条件，
+旧 A 与仅接受首轮历史未知的新 A 均未豁免该事件。剩余一轮额度不是派发依据，不能 Re-run 或换 runner 重试。
+当前只读定位与证据复核见[第二轮结果复核](Q2_H07_ROUND2_RESULT_REVIEW.md)及[第二轮清单](evidence/q2-h07-cgroup-fence-spike/round-2-verification.json)。
+在不存在新增阻断时，第三轮原本还要求另一明确源码缺陷、准确修复、离线及普通 CI 和第二轮完整证据；
+这些必要条件本身不能解除已经触发的停止条件。
 本实验不签发原 Q2 startup，不代表原机器、真实远程链、文件系统或完整计费已合格。
 
 ## 首次实现与普通 CI 的保留结果
@@ -94,7 +100,6 @@ attempt 1 已完成，三个 job 全部 SUCCESS；[准确证据](evidence/q2-h07
 当前 `continuation.py` 的第三轮检查要求第二轮原报告经真实收件器验证为无错误的
 REJECTED 且 cleanup 已证；但 `run_fixture.py` 尚无可达的该类完整报告生产路径，
 `test_continuation.py` 的相应正例替换了收件器，只证明该层输入检查，未证明整链可达。
-该缺口不阻断已批准的第二轮。第三轮若确有需要，须先依据第二轮原件和明确源码缺陷
-完成准确修复及验证，并继续满足全部原停止条件；不得改写第二轮原件状态、放宽收件判据
-或把剩余额度作为派发理由。第二轮已获资格即结束，新增 UNKNOWN、清理未知或
-UNSUPPORTED 等停止条件不能用这项缺口豁免。
+该缺口在第二轮派发前不阻断当时已批准的第二轮；第二轮现已产生新的 UNKNOWN，
+第三轮因此 BLOCKED。即使以后完成报告生产路径的准确修复及验证，也不能据此豁免新增阻断；
+不得改写第二轮原件状态、放宽收件判据或把剩余额度作为派发理由。

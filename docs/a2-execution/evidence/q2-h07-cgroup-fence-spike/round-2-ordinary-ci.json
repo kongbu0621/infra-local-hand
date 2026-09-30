@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "record_kind": "ordinary_ci_observation_not_lab_acceptance",
+  "observed_at": "2026-09-30T03:05:33.424431+00:00",
+  "source_commit": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+  "source_tree": "69f378cf28b0a4364e3ee1615a5dbcb2a3c9e0aa",
+  "run": {
+    "id": 36655111148,
+    "event": "workflow_dispatch",
+    "run_attempt": 1,
+    "status": "completed",
+    "conclusion": "success",
+    "head_branch": "main",
+    "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36655111148",
+    "created_at": "2026-09-30T01:26:20Z",
+    "updated_at": "2026-09-30T01:39:21Z"
+  },
+  "jobs": [
+    {
+      "id": 109697666804,
+      "name": "classify-change",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "started_at": "2026-09-30T01:26:24Z",
+      "completed_at": "2026-09-30T01:26:30Z"
+    },
+    {
+      "id": 109697699560,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "started_at": "2026-09-30T01:26:32Z",
+      "completed_at": "2026-09-30T01:33:16Z"
+    },
+    {
+      "id": 109697699564,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "started_at": "2026-09-30T01:26:32Z",
+      "completed_at": "2026-09-30T01:39:20Z"
+    }
+  ],
+  "test_summary": {
+    "linux": {
+      "source_passed": 3063,
+      "source_skipped": 51,
+      "root_collector_passed": 16,
+      "installed_checks": 94,
+      "installed_commands": 292
+    },
+    "windows": {
+      "source_passed": 996,
+      "source_skipped": 996,
+      "installed_checks": 10,
+      "installed_commands": 10
+    }
+  },
+  "artifacts": [
+    {
+      "id": 11072255924,
+      "name": "local-hand-Windows-36655111148-1",
+      "size_in_bytes": 278177,
+      "digest": "sha256:16b959556a776db6f340807455eda88fa5386a71d33364f058b66ea2e389a90b",
+      "expired": false,
+      "created_at": "2026-09-30T01:33:12Z",
+      "expires_at": "2026-12-29T01:26:22Z"
+    },
+    {
+      "id": 11072176802,
+      "name": "local-hand-Linux-36655111148-1",
+      "size_in_bytes": 685797,
+      "digest": "sha256:6ec37c4259da46f25ff46af083e4ee8c9c97ea2d6e12910680466003bd89def9",
+      "expired": false,
+      "created_at": "2026-09-30T01:39:18Z",
+      "expires_at": "2026-12-29T01:26:22Z"
+    }
+  ],
+  "decoded_job_log_digests": [
+    {
+      "job_id": 109697666804,
+      "bytes": 22307,
+      "sha256": "56f2c8472307609143c7ce582b0642ad0d163d36b6573013654f22559ff404ab",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    },
+    {
+      "job_id": 109697699560,
+      "bytes": 204870,
+      "sha256": "7776db79fea3235072f342571a3a49b33d24a67277715a6aa93862accdc22afb",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    },
+    {
+      "job_id": 109697699564,
+      "bytes": 98547,
+      "sha256": "67d782517bfba7ec9f92dd156ad4bac0cc378e4713ad09bf1799679c9afc6ae8",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    }
+  ],
+  "interpretation": "All three ordinary CI jobs passed on the exact source dispatched for lab round 2. This ordinary run consumes no H07 quota and does not qualify H07, Q2 or E3."
+}
