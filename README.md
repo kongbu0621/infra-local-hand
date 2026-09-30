@@ -16,6 +16,8 @@
 同一 HEAD 的第二轮 [36662298613](https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613) attempt 1 为 **FAILURE**：probe 支持，但 C1 缺 launcher/account binding，原报告保持 **UNKNOWN_RETAINED**；账户创建与删除已完成，`cleanup.verified=true`、`residuals=[]`，C2–C6 为 NOT_RUN。
 当前额度 **2/3**，**第三轮 BLOCKED / NOT_DISPATCHED**。第二轮新增 UNKNOWN 已触发停止条件，首轮限定豁免不覆盖它；继续只读定位与证据复核，不派发第三轮。原件、时间线和剩余缺口见[第二轮结果复核](docs/a2-execution/Q2_H07_ROUND2_RESULT_REVIEW.md)及[续验实施复核](docs/a2-execution/Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
 
+第二轮后的[准备复核](docs/a2-execution/Q2_H07_R2_PREPARATION_REVIEW.md)已确认准确Ubuntu源码包缺少相关内核修复，并完成旧范围测试修复`824f4be4`（318项定向测试通过）。新的[最后一轮限定修复方案](docs/a2-execution/q2-h07-r2-continuation/REQUIREMENTS.md)已形成三层文档，**V1–V4 PROPOSED / Gate OPEN**；涉及逐例独立cgroup和版本化诊断/收件，尚未实现，仍待准确A的Owner决定。
+
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 
 **GX10 首轮复现入口：** [原始 S1 任务书](docs/GX10_S1_RUNBOOK.md) 固定到 `b763bd6`，保留原始输入身份。验证后续修复时使用 [复核记录](docs/S1_FOLLOWUP_REVIEW.md) 指定的新候选，仍须新 checkout、独立 build/runtime venv；不同候选的结果分别记录。

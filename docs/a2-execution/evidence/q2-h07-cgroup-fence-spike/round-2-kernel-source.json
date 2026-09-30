@@ -1,0 +1,100 @@
+{
+  "scope": "read-only exact Ubuntu source-package investigation",
+  "date": "2026-09-30",
+  "source_package": {
+    "name": "linux-azure-6.17",
+    "version": "6.17.0-1022.22",
+    "format": "1.0",
+    "dsc_fetched_from_official_https_archive": true,
+    "dsc_pgp_signature_independently_verified": false,
+    "tar_and_diff_sha256_match_dsc": true,
+    "cgroup_c_reconstruction": "Read only tar member linux-6.17/kernel/cgroup/cgroup.c and apply every cgroup.c hunk from version diff; patch exit 0 without fuzz or rejects.",
+    "cgroup_patch_hunks": 2,
+    "cgroup_patch_only_changes": "cgroup_get_from_id refactor at original lines 6373 and 6403; no kill_seq changes"
+  },
+  "files": {
+    "linux-azure-6.17_6.17.0-1022.22.dsc": {
+      "bytes": 5339,
+      "sha256": "52c559ca2f980cad03b4107da9d95d76f6f94da3597fa4e16afd5bdd1c0f01f4",
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/l/linux-azure-6.17/linux-azure-6.17_6.17.0-1022.22.dsc"
+    },
+    "linux-azure-6.17_6.17.0.orig.tar.gz": {
+      "bytes": 248671329,
+      "sha256": "a5623ec5af79da8807e1467e43a1888461c7a445fb1e17533fe45f0fdf4394e3",
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/l/linux-azure-6.17/linux-azure-6.17_6.17.0.orig.tar.gz"
+    },
+    "linux-azure-6.17_6.17.0-1022.22.diff.gz": {
+      "bytes": 3218463,
+      "sha256": "cb0154101fc7e337228a00c1caae7760b88afcb033f75c01756b3669dd376c54",
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/l/linux-azure-6.17/linux-azure-6.17_6.17.0-1022.22.diff.gz"
+    },
+    "original-cgroup.c": {
+      "bytes": 195583,
+      "sha256": "296c1faa1ab3a5ef915c91f465327f036d9631bdee46e211672f6bebf6c0fd5b"
+    },
+    "cgroup.patch": {
+      "bytes": 1244,
+      "sha256": "50077d747888aa5873b85acce6cddbf6760af507c36a02522a94287da594e294"
+    },
+    "cgroup.c": {
+      "bytes": 195921,
+      "sha256": "fe7ce87fe8d71125ba4f6d8dc3e6764c1285ef13c774a7f9cd7ead178728a389"
+    },
+    "upstream-fix.json": {
+      "bytes": 7981,
+      "sha256": "94f484546d8ceb38e200895cf863a82b885d0b34202039900caeea624e553763"
+    },
+    "runner-image-readme.md": {
+      "bytes": 16329,
+      "sha256": "e86c2f8590f50c553c7ec7f8e1be82fab5c0c7fbbffde13d32c3eeed0a448b48"
+    }
+  },
+  "upstream_fix": {
+    "commit": "8e359920216689b3b79e0fe8961a77fe312a511f",
+    "url": "https://github.com/torvalds/linux/commit/8e359920216689b3b79e0fe8961a77fe312a511f",
+    "title": "cgroup: fix spurious SIGKILL of CLONE_INTO_CGROUP children"
+  },
+  "source_findings": {
+    "fix_missing_from_exact_package_source": true,
+    "parent_snapshot_lines": [
+      6597,
+      6600
+    ],
+    "target_assignment_without_resnapshot_lines": [
+      6662,
+      6664
+    ],
+    "post_fork_target_read_lines": [
+      6795,
+      6801
+    ],
+    "sequence_comparison_line": 6836,
+    "signal_send_lines": [
+      6859,
+      6861
+    ],
+    "kill_sequence_increment_line": 4089,
+    "descendant_sweep_lines": [
+      4112,
+      4115
+    ]
+  },
+  "runtime_binding": {
+    "observed_release": "6.17.0-1022-azure",
+    "observed_image": "20260920.314.1",
+    "official_matching_image_readme_url": "https://github.com/actions/runner-images/blob/ubuntu24/20260920.314/images/ubuntu/Ubuntu2404-Readme.md",
+    "report_records_release_only_not_full_build_version": true,
+    "runtime_kernel_binary_digest_recorded": false,
+    "runtime_package_version_or_digest_recorded": false,
+    "runtime_livepatch_state_recorded": false,
+    "signal_origin_recorded": false
+  },
+  "conclusion": "Exact official Ubuntu source package lacks the upstream fix and retains the defective parent-vs-target kill_seq path. This removes the source-package uncertainty. It is strong source-level support for the H07 failure mechanism, not runtime attestation of the original kernel binary or a recorded proof of the actual SIGKILL sender.",
+  "safety": {
+    "live_fixture_run": false,
+    "reproducer_executed": false,
+    "host_cgroups_modified": false,
+    "repository_modified": false,
+    "stop_cleared": false
+  }
+}

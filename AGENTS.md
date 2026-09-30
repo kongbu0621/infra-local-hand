@@ -656,6 +656,34 @@ All later stopping conditions, original consumed 1/3, exact new-source and
 environment admission, and the requirement for justified remaining rounds stay.
 Unaffected original CLOSED scopes remain valid. This closure consumes no round.
 
+### H07 round 2 repair and final-round proposal
+
+Scope `LH-Q2-H07-R2-CONTINUATION-v1` is **PROPOSED / Gate OPEN for V1–V4**.
+The [requirements](docs/a2-execution/q2-h07-r2-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-h07-r2-continuation/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-h07-r2-continuation/IMPLEMENTATION_PLAN.md)
+propose accepting only the precisely recorded round 2 historical failure and
+introducing separate bounded cgroup generations, explicit diagnostics and
+versioned receipt/admission contracts before the sole remaining round.
+The exact documentation A will be registered after its reviewed commit exists;
+there is no Owner B or independent CLOSED C for this new scope yet.
+Rule R, readable source/integrity, Owner-only Authority, mandate, no exceptions
+and change control remain unchanged. Do not implement this affected scope until
+exact A → Owner B → independent C; no native helper, new schema, new generation
+tests or workflow admission change follows from this proposed declaration.
+
+Round 2 run `36662298613` remains UNKNOWN_RETAINED with recorded-object cleanup
+verified; the whole-report receiver's REJECTED result with validation errors is
+separate. Quota is 2/3 and round 3 remains BLOCKED / NOT_DISPATCHED. The original
+and R1 six documents, both prior verification indexes and original artifacts
+remain unchanged. Unaffected CLOSED work remains valid: the separate U2 test
+repair at `824f4be40fc02a68fe64df4934966471e146b222` isolates a missing-index
+fixture and confirms that the real retained index is still refused; it changes
+no runtime or dispatch permission. See the
+[preparation review](docs/a2-execution/Q2_H07_R2_PREPARATION_REVIEW.md).
+Owner's current location on PRO6000 does not expand the hosted-only fixture or
+authorize any original-host run, deployment or Q2 startup.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
