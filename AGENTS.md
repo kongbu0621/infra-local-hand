@@ -665,8 +665,10 @@ The [requirements](docs/a2-execution/q2-h07-r2-continuation/REQUIREMENTS.md),
 propose accepting only the precisely recorded round 2 historical failure and
 introducing separate bounded cgroup generations, explicit diagnostics and
 versioned receipt/admission contracts before the sole remaining round.
-The exact documentation A will be registered after its reviewed commit exists;
-there is no Owner B or independent CLOSED C for this new scope yet.
+The exact proposed documentation A is `eac5e65449e3a4b7083bc91b9123a253e0cb8320`;
+its [baseline record](docs/governance/Q2_H07_R2_CONTINUATION_BASELINE.md) fixes the
+three document digests and exact historical event. There is no Owner B or
+independent CLOSED C for this new scope yet.
 Rule R, readable source/integrity, Owner-only Authority, mandate, no exceptions
 and change control remain unchanged. Do not implement this affected scope until
 exact A → Owner B → independent C; no native helper, new schema, new generation
