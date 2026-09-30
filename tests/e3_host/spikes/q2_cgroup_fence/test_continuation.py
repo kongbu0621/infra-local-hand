@@ -133,15 +133,36 @@ def test_first_round_boot_cannot_be_reused(monkeypatch):
     assert any("boot reuse" in message for message in validate(context))
 
 
-def test_third_round_currently_lacks_second_round_original_and_must_refuse():
+def test_third_round_without_second_round_index_must_refuse(tmp_path):
     value, run, source, provenance = round_two_context()
     run["round"] = 3
-    assert not (REPO / c.ROUND2_RECORD_PATH).exists()
+    historical = tmp_path / c.ROUND1_RECORD_PATH
+    historical.parent.mkdir(parents=True)
+    historical.write_bytes((REPO / c.ROUND1_RECORD_PATH).read_bytes())
+    assert not (tmp_path / c.ROUND2_RECORD_PATH).exists()
     with pytest.raises(c.ContinuationError, match="prior verification index"):
-        c.admit_continuation(REPO, run=run, source=source, provenance=provenance,
+        c.admit_continuation(tmp_path, run=run, source=source, provenance=provenance,
                              reason="Another independently verified source defect")
     value["used_before"] = 2
     assert c.validate_continuation(value, run=run, source=source, provenance=provenance)
+
+
+def test_retained_round_two_failure_index_does_not_authorize_third_round():
+    _, run, source, provenance = round_two_context()
+    run["round"] = 3
+    provenance["boot_id"] = BOOT3
+    original = (REPO / c.ROUND2_RECORD_PATH).read_bytes()
+    record = json.loads(original)
+    assert record["run"]["id"] == "36662298613"
+    assert record["status"] == "UNKNOWN_RETAINED"
+    assert record["further_dispatch_blocked"] is True
+    source["closure_sha256"][c.ROUND2_RECORD_PATH] = hashlib.sha256(original).hexdigest()
+    # This published review retains the actual failure. It is not the separate
+    # clean-REJECTED admission contract expected by the current continuation.
+    with pytest.raises(c.ContinuationError, match="round-two verification index schema"):
+        c.admit_continuation(REPO, run=run, source=source, provenance=provenance,
+                             reason="Another independently verified source defect")
+    assert (REPO / c.ROUND2_RECORD_PATH).read_bytes() == original
 
 
 def future_index(context, status="REJECTED"):
