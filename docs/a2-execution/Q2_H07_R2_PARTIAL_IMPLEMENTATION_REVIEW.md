@@ -59,8 +59,23 @@ PRO6000/GX10/guest未被调用。
 原报告的`UNKNOWN_RETAINED`未改。九份权威文档、两轮索引及固定R完整性均再次核对一致。
 
 发布前GitHub全部76项运行盘点仍只有两轮H07实验，均attempt1，没有第三轮。
-本实现提交尚未在本记录中取得准确D普通CI结果；随后自动普通CI即使通过，也只补充
-此纯数据提交的回归证据，不建立实际fixture或最后一轮资格。当前不是V1–V4完成声明。
+随后准确实现D `20dcb92835b7b6d2e1f9d34d6780d841e88ef1ec`的普通CI
+[36671189768](https://github.com/kongbu0621/infra-local-hand/actions/runs/36671189768)
+已于2026-09-30核验为 **3/3 SUCCESS**，push事件、attempt 1；运行HEAD与D相同。
+三个job为`109746327945`（classify-change）、`109746357922`（Windows）、
+`109746357957`（Linux），均completed/success。
+
+| 准确D验证 | 日志结果 |
+| --- | --- |
+| Linux源码测试 | 3184 passed，51 skipped |
+| Linux独立root collector | 16 passed |
+| Linux安装后验证 | PASS，94 checks / 292 commands |
+| Windows源码测试 | 1117 passed，996 skipped |
+| Windows安装后验证 | PASS，10 checks / 10 commands |
+
+两平台完整job日志均已读取并核对上述结果；平台限定的SKIP保持SKIP。普通CI只补充
+此纯数据提交的回归证据，不消费实验额度，也不建立实际fixture或最后一轮资格。
+当前仍不是V1–V4完成声明。
 
 此前独立测试修复`824f4be40fc02a68fe64df4934966471e146b222`的普通CI
 [36666922354](https://github.com/kongbu0621/infra-local-hand/actions/runs/36666922354)
