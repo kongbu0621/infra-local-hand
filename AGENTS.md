@@ -656,35 +656,39 @@ All later stopping conditions, original consumed 1/3, exact new-source and
 environment admission, and the requirement for justified remaining rounds stay.
 Unaffected original CLOSED scopes remain valid. This closure consumes no round.
 
-### H07 round 2 repair and final-round proposal
+### H07 round 2 repair and final-round continuation
 
-Scope `LH-Q2-H07-R2-CONTINUATION-v1` is **PROPOSED / Gate OPEN for V1–V4**.
-The [requirements](docs/a2-execution/q2-h07-r2-continuation/REQUIREMENTS.md),
+Scope `LH-Q2-H07-R2-CONTINUATION-v1` is **CLOSED for V1–V4** at exact A
+`eac5e65449e3a4b7083bc91b9123a253e0cb8320`. Its
+[requirements](docs/a2-execution/q2-h07-r2-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-h07-r2-continuation/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-h07-r2-continuation/IMPLEMENTATION_PLAN.md)
-propose accepting only the precisely recorded round 2 historical failure and
-introducing separate bounded cgroup generations, explicit diagnostics and
-versioned receipt/admission contracts before the sole remaining round.
-The exact proposed documentation A is `eac5e65449e3a4b7083bc91b9123a253e0cb8320`;
-its [baseline record](docs/governance/Q2_H07_R2_CONTINUATION_BASELINE.md) fixes the
-three document digests and exact historical event. There is no Owner B or
-independent CLOSED C for this new scope yet.
-Rule R, readable source/integrity, Owner-only Authority, mandate, no exceptions
-and change control remain unchanged. Do not implement this affected scope until
-exact A → Owner B → independent C; no native helper, new schema, new generation
-tests or workflow admission change follows from this proposed declaration.
+retain their approved original bytes and historical OPEN labels; the
+[baseline record](docs/governance/Q2_H07_R2_CONTINUATION_BASELINE.md) fixes their
+hashes and the exact historical event. Owner B at 2026-09-30 12:35:14 +08,
+event `LH-Q2-H07-R2-CONTINUATION-CLOSURE-20260930-01`, is retained in the
+[accurate decision record](docs/governance/Q2_H07_R2_CONTINUATION_OWNER_DECISION.md).
+This independent bookkeeping-only commit is new CLOSED C; affected implementation
+D must descend from it. It contains no new implementation and changes no A document.
+Rule R/source/integrity, Owner-only Authority, mandate, no exceptions and change
+control remain unchanged.
 
-Round 2 run `36662298613` remains UNKNOWN_RETAINED with recorded-object cleanup
-verified; the whole-report receiver's REJECTED result with validation errors is
-separate. Quota is 2/3 and round 3 remains BLOCKED / NOT_DISPATCHED. The original
-and R1 six documents, both prior verification indexes and original artifacts
-remain unchanged. Unaffected CLOSED work remains valid: the separate U2 test
-repair at `824f4be40fc02a68fe64df4934966471e146b222` isolates a missing-index
-fixture and confirms that the real retained index is still refused; it changes
-no runtime or dispatch permission. See the
-[preparation review](docs/a2-execution/Q2_H07_R2_PREPARATION_REVIEW.md).
-Owner's current location on PRO6000 does not expand the hosted-only fixture or
-authorize any original-host run, deployment or Q2 startup.
+The requirements' precise supersede table accepts only round 2 run `36662298613`
+as a historical UNKNOWN no longer independently blocking the sole final round.
+Its original UNKNOWN_RETAINED, C1 failure, C2–C6 NOT_RUN, recorded-object cleanup
+verified and whole-report REJECTED with validation errors remain distinct facts.
+Round 1 UNKNOWN/cleanup=false and its accurate historical acceptance remain.
+Both previous A sets and verification indexes retain their original bytes.
+
+V1–V4 authorizes the bounded fixed cgroup generations, diagnostics, explicit
+native v2/report v3/continuation v2, offline validation and conditional final
+hosted experiment in exact A. Quota remains 2/3 used; round 3 is NOT_DISPATCHED
+and requires accurate D, ordinary CI and every documented admission predicate.
+No rerun, quota reset or fourth round; later unknowns and stopping rules remain.
+The Owner permits in-scope implementation and qualified remaining dispatch without
+per-item reconfirmation. PRO6000/GX10/guest, deployment, frozen runtime changes
+and original Q2 startup remain outside this closure. Unaffected CLOSED work and
+the prior U2 test repair `824f4be40fc02a68fe64df4934966471e146b222` remain valid.
 
 ### Continuing constraints
 
