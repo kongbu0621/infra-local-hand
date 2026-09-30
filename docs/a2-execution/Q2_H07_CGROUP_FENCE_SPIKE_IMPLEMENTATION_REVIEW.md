@@ -2,9 +2,14 @@
 
 2026-09-29。仅 `LH-Q2-H07-CGROUP-FENCE-SPIKE-v1` 的 F1–F4。
 
-当前状态：首轮已运行，额度 **1/3**；账户 setup 失败，原报告
-**UNKNOWN_RETAINED / cleanup 未证**，后续实验派发停止。详见文末
-[首轮记录](#round-1-2026-09-29)。以下原实现、0/3 与普通 CI 段保留其历史时点。
+当前状态（2026-09-30）：首轮已运行，额度 **1/3**；账户 setup 失败，probe 与六案
+均为 NOT_RUN，原报告 **UNKNOWN_RETAINED / cleanup.verified=false** 保留。
+随后 Owner 已批准限定续验 A `a08a5055`，独立 C `7d33c698` 将 U1–U4 登记为 CLOSED；
+仅指定首轮历史未知不再单独阻断剩余限定续验，后续停止条件保持。
+续验修复 D `d4dd8c6e` 的普通 CI `36592634218` attempt 1 已 3/3 成功，
+见[最终 CI 证据](evidence/q2-h07-cgroup-fence-spike/continuation-final-ci.json)。
+**第二轮尚未派发**；当前准入与可选第三轮缺口见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
+以下原实现、0/3、[首轮记录](#round-1-2026-09-29)及当时停止状态保留其历史时点，不覆盖后续准确决定。
 
 ## Authority 与准确边界
 

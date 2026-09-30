@@ -1,10 +1,11 @@
 # H07 首轮限定续验实现
 
-本记录对应 `LH-Q2-H07-R1-CONTINUATION-v1` 的 U1–U4。准确新 A 为
+本记录对应已 CLOSED 的 `LH-Q2-H07-R1-CONTINUATION-v1` U1–U4。准确新 A 为
 `a08a5055c35009a896ad6c6059d709758cc78436`，Owner 决定及原文见
 [独立决定记录](../governance/Q2_H07_R1_CONTINUATION_OWNER_DECISION.md)。
 独立 CLOSED C 为 `7d33c698ff6c1bf34733ee2429d0404ace2abd55`，tree
-`c66e43ca0a28d88fa50d92bef8fbe1ec19406387`；实现提交以 C 为直接父提交。
+`c66e43ca0a28d88fa50d92bef8fbe1ec19406387`；首次实现提交以 C 为直接父提交，
+随后测试名称修复 D `d4dd8c6ea4284d0d9e8802073df6ea1cc9c52029` 沿该链下降。
 原 R、旧 A/C、新 A 三文档及首轮原件均不改写。
 
 ## 实现与证据边界
@@ -38,9 +39,16 @@
 集成期间旧测试夹具补齐新闭包和新的账户监督接口；交叉审查还修复了前查退出但
 缺 EOF 被误当清理成功，以及长 wait 未持续复核 BOOTTIME 两处边界。
 
-本实现记录提交时，新的准确 D 普通 CI 尚待远端结果；第二轮尚未派发，
-总额度仍已用 **1/3**。后续必须先核对准确 D 的普通 CI、全部实验历史、托管环境
-依据，再通过 GitHub 页面手动派发 round=2。取得 run ID 即计 **2/3**，失败也计入。
+2026-09-30 当前登记：修复 D `d4dd8c6e` 的普通 CI 已通过，准确结果见下节；
+**第二轮尚未派发**，总额度仍已用 **1/3**。首轮 `36577764454` 的原
+UNKNOWN_RETAINED、cleanup.verified=false、probe/C1–C6 NOT_RUN 均保留。
+后续必须冻结本次纯文档及证据登记发布后的准确 HEAD，作为新的 `expected_commit`，
+核对实验实现/workflow 与已验证 D 的字节关系、新 C 祖先关系，完成该 HEAD 的普通 CI，再核对全部实验历史及 attempts、
+剩余额度与托管环境依据，再通过 GitHub 页面手动派发 round=2。
+不能在 main 前进后仍填写旧 D，或把普通 CI 通过当成真实实验通过。
+纯文档变更不会自动触发当前普通 CI 的 push 路径；须使用该普通 workflow 的手动入口。
+它不消费 H07 实验额度。普通 CI 成功后保持准确 HEAD 不变再派发实验，结果随后合并登记，避免登记提交再次改变派发身份。
+取得 run ID 即计 **2/3**，失败也计入。
 页面或账号不可用则保留未派发，不改用 push/rerun/其他执行通道。
 
 第二轮任何新增 UNKNOWN、清理未知、根本环境不支持或其他原停止条件都继续生效。
@@ -61,5 +69,32 @@ Windows 错误发生在同一个超大输入用例的 setup/teardown，原因是
 
 后续修复仅为五个账户输入负例设置固定短 ID，测试输入、断言和所有 runtime 文件不变。
 再次整套离线 317 PASS / 0 SKIP；317 个收集节点最长 215 字符，见
-`continuation-ci-repair-offline.json`。修复后的准确提交仍须普通 CI 通过。
+`continuation-ci-repair-offline.json`。该离线检查时，修复后的准确提交普通 CI 尚待结果；
+后续已取得的准确结果单列如下，不改写首次 CI 失败。
 此次 CI 与测试名称修复均未派发实验，额度仍为 1/3。
+
+## 修复后的准确普通 CI
+
+准确 D 为 `d4dd8c6ea4284d0d9e8802073df6ea1cc9c52029`。
+[run 36592634218](https://github.com/kongbu0621/infra-local-hand/actions/runs/36592634218)
+attempt 1 已完成，三个 job 全部 SUCCESS；[准确证据](evidence/q2-h07-cgroup-fence-spike/continuation-final-ci.json)
+与首次失败、短测试名称修复离线记录分别保留。
+
+| 检查 | 结果 |
+| --- | --- |
+| Linux 源码测试 | 3063 PASS / 51 SKIP |
+| Linux 独立真实 root collector | 16 PASS / 0 SKIP |
+| Windows 源码测试 | 996 PASS / 996 SKIP |
+
+这些结果只归属于上述准确 D。普通 CI 和本次纯文档登记均未派发实验，不消费实验轮次，
+不补首轮 cleanup，不证明当前 runner 的原语能力或原 Q2 准入。
+
+## 可选第三轮的可达性缺口
+
+当前 `continuation.py` 的第三轮检查要求第二轮原报告经真实收件器验证为无错误的
+REJECTED 且 cleanup 已证；但 `run_fixture.py` 尚无可达的该类完整报告生产路径，
+`test_continuation.py` 的相应正例替换了收件器，只证明该层输入检查，未证明整链可达。
+该缺口不阻断已批准的第二轮。第三轮若确有需要，须先依据第二轮原件和明确源码缺陷
+完成准确修复及验证，并继续满足全部原停止条件；不得改写第二轮原件状态、放宽收件判据
+或把剩余额度作为派发理由。第二轮已获资格即结束，新增 UNKNOWN、清理未知或
+UNSUPPORTED 等停止条件不能用这项缺口豁免。

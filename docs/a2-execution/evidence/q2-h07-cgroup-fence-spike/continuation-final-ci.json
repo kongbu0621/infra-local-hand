@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "record_kind": "ordinary_ci_observation_not_lab_acceptance",
+  "observed_at": "2026-09-30T01:09:08.535398+00:00",
+  "source_commit": "d4dd8c6ea4284d0d9e8802073df6ea1cc9c52029",
+  "source_tree": "8fcb2d48da8c844f4623184d288cb8b3c3c28cfb",
+  "run_id": 36592634218,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36592634218",
+  "event": "push",
+  "run_attempt": 1,
+  "status": "completed",
+  "conclusion": "success",
+  "created_at": "2026-09-29T15:45:32Z",
+  "jobs_completed_at": "2026-09-29T15:58:16Z",
+  "jobs": [
+    {
+      "id": 109489368077,
+      "name": "classify-change",
+      "conclusion": "success",
+      "started_at": "2026-09-29T15:45:35Z",
+      "completed_at": "2026-09-29T15:45:39Z"
+    },
+    {
+      "id": 109489414486,
+      "name": "semantic-core (windows-latest)",
+      "conclusion": "success",
+      "started_at": "2026-09-29T15:45:42Z",
+      "completed_at": "2026-09-29T15:53:04Z"
+    },
+    {
+      "id": 109489414583,
+      "name": "semantic-core (ubuntu-latest)",
+      "conclusion": "success",
+      "started_at": "2026-09-29T15:45:42Z",
+      "completed_at": "2026-09-29T15:58:16Z"
+    }
+  ],
+  "linux": {
+    "source_passed": 3063,
+    "source_skipped": 51,
+    "root_collector_passed": 16,
+    "installed_checks_passed": 94,
+    "installed_commands": 292
+  },
+  "windows": {
+    "source_passed": 996,
+    "source_skipped": 996,
+    "installed_checks_passed": 10,
+    "installed_commands": 10
+  },
+  "decoded_job_log_digests": [
+    {
+      "job_id": 109489414486,
+      "bytes": 204870,
+      "sha256": "6dcf0f070e0a72d8c26f6746c68a55c61796b64d68862e73a7480ce120e635b0",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    },
+    {
+      "job_id": 109489414583,
+      "bytes": 98549,
+      "sha256": "0a596d375cc231c48c7cd78200a4abfa3f61f524bca7027f1c7c1c4b86445eca",
+      "representation": "GitHub connector decoded log encoded as UTF-8; original line endings preserved"
+    }
+  ],
+  "lab_inventory": {
+    "all_workflow_runs_returned": 73,
+    "all_workflow_runs_total": 73,
+    "workflow_id": 370084731,
+    "runs": [
+      {
+        "id": 36577764454,
+        "head_sha": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+        "attempt": 1,
+        "event": "workflow_dispatch",
+        "conclusion": "failure"
+      }
+    ]
+  },
+  "lab_dispatches_consumed": 1,
+  "lab_dispatches_limit": 3,
+  "new_lab_dispatches": 0,
+  "round_2": "NOT_DISPATCHED",
+  "original_round_1_status": "UNKNOWN_RETAINED",
+  "original_cleanup_verified": false,
+  "approved_continuation_A": "a08a5055c35009a896ad6c6059d709758cc78436",
+  "closure_continuation_C": "7d33c698ff6c1bf34733ee2429d0404ace2abd55",
+  "original_Q2_startup": "NOT_ISSUED",
+  "interpretation": "Ordinary source and installed checks passed for the exact source commit. They do not supply round 1 cleanup evidence, consume a lab round, prove round 2/3 execution, qualify complete Q2/E3 or change the approved future stopping conditions. Any new dispatch must separately bind its actual main SHA and that SHA ordinary CI."
+}
