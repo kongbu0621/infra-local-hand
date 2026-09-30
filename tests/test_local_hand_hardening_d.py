@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 from pathlib import Path
@@ -502,7 +503,9 @@ class LocalHandHardeningDTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/local-hand-v0-1-validation.yml").read_text(encoding="utf-8")
         for marker in (
             "classify-change:",
-            'event.get("before")',
+            'base_sha = os.environ["PR_BASE_SHA"]',
+            'head = os.environ["PR_HEAD_SHA"]',
+            "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
             "classifier uncertainty -> runtime_changed=true",
             "runtime_changed",
             "needs: classify-change",
@@ -542,7 +545,7 @@ class LocalHandHardeningDTests(unittest.TestCase):
 
         classifier_start = workflow.index('event_name = os.environ["EVENT_NAME"]')
         pr_classifier_start = workflow.index(
-            'event = json.loads(Path(os.environ["EVENT_PATH"])',
+            'names = []',
             classifier_start,
         )
         exact_commit_block = workflow[classifier_start:pr_classifier_start]
@@ -563,6 +566,95 @@ class LocalHandHardeningDTests(unittest.TestCase):
         ):
             self.assertIn(marker, identity_block)
         self.assertLess(identity_start, compile_start)
+
+    def _run_ci_classifier(self, event: dict, *, base_sha: str = "", event_name: str = "pull_request",
+                           ref: str = "refs/pull/1/merge") -> tuple[subprocess.CompletedProcess[str], dict]:
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/local-hand-v0-1-validation.yml").read_text(encoding="utf-8")
+        script = textwrap.dedent(workflow.split("          python - <<'PY'\n", 1)[1].split("\n          PY", 1)[0])
+        event_path, output = self.root / "event.json", self.root / "classification.txt"
+        event_path.write_text(json.dumps(event), encoding="utf-8")
+        output.unlink(missing_ok=True)
+        head = self._git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        environment = dict(os.environ, EVENT_NAME=event_name, EVENT_PATH=str(event_path),
+                           PR_BASE_REF="main", PR_BASE_SHA=base_sha, PR_HEAD_SHA=head, EXACT_SHA=head,
+                           EXACT_REF=ref, GITHUB_OUTPUT=str(output))
+        result = subprocess.run([sys.executable, "-X", "utf8", "-c", script], cwd=self.repo, env=environment,
+                                capture_output=True, encoding="utf-8")
+        values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines()) if output.exists() else {}
+        return result, values
+
+    def _commit_ci_fixture_file(self, name: str) -> str:
+        path = self.repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fixture\n", encoding="utf-8")
+        self._git(self.repo, "add", "--", name)
+        self._git(self.repo, "commit", "-qm", "classifier fixture")
+        return self._git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+    def test_ci_classifier_keeps_runtime_checks_after_docs_only_pr_update(self) -> None:
+        base = self._git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        self._git(self.repo, "update-ref", "refs/remotes/origin/main", base)
+        before = self._commit_ci_fixture_file("tools/local_hand/candidate.py")
+        head = self._commit_ci_fixture_file("docs/review.md")
+        # Model the remote branch moving after this event. Its newer value must
+        # not erase changes from the candidate's original event baseline.
+        self._git(self.repo, "update-ref", "refs/remotes/origin/main", before)
+        result, values = self._run_ci_classifier({"action": "synchronize", "before": before, "after": head}, base_sha=base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values["runtime_changed"], "true")
+        self.assertEqual(values["compared_range"], f"{base}..{head}")
+
+    def test_ci_classifier_skips_only_a_wholly_docs_only_pr(self) -> None:
+        base = self._git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        self._git(self.repo, "update-ref", "refs/remotes/origin/main", base)
+        before = self._commit_ci_fixture_file("docs/first.md")
+        head = self._commit_ci_fixture_file("docs/review.md")
+        for event in ({"action": "opened"}, {"action": "synchronize", "before": before, "after": head}):
+            with self.subTest(action=event["action"]):
+                result, values = self._run_ci_classifier(event, base_sha=base)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(values["runtime_changed"], "false")
+                self.assertEqual(values["compared_range"], f"{base}..{head}")
+
+    def test_ci_classifier_base_uncertainty_requires_runtime_checks(self) -> None:
+        self._commit_ci_fixture_file("docs/review.md")
+        result, values = self._run_ci_classifier({"action": "synchronize"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values["runtime_changed"], "true")
+        self.assertEqual(values["compared_range"], "classifier-fallback-runtime=true")
+        self.assertIn("classifier uncertainty -> runtime_changed=true", result.stdout)
+
+    def test_ci_classifier_preserves_unicode_runtime_paths(self) -> None:
+        base = self._git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        self._git(self.repo, "update-ref", "refs/remotes/origin/main", base)
+        head = self._commit_ci_fixture_file("tests/回归.py")
+        result, values = self._run_ci_classifier({"action": "opened"}, base_sha=base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values["runtime_changed"], "true")
+        self.assertEqual(values["compared_range"], f"{base}..{head}")
+
+    def test_ci_classifier_runtime_file_moved_to_docs_still_requires_checks(self) -> None:
+        base = self._commit_ci_fixture_file("tools/local_hand/candidate.py")
+        self._git(self.repo, "update-ref", "refs/remotes/origin/main", base)
+        (self.repo / "docs").mkdir()
+        self._git(self.repo, "mv", "tools/local_hand/candidate.py", "docs/candidate.md")
+        self._git(self.repo, "commit", "-qm", "move runtime fixture")
+        result, values = self._run_ci_classifier({"action": "opened"}, base_sha=base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values["runtime_changed"], "true")
+
+    def test_ci_classifier_main_push_and_manual_run_always_verify_exact_commit(self) -> None:
+        head = self._commit_ci_fixture_file("docs/review.md")
+        for event_name in ("push", "workflow_dispatch"):
+            with self.subTest(event_name=event_name):
+                result, values = self._run_ci_classifier({}, event_name=event_name, ref="refs/heads/main")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(values["runtime_changed"], "true")
+                self.assertEqual(values["compared_range"], f"exact-commit:{head}")
+                rejected, outputs = self._run_ci_classifier({}, event_name=event_name, ref="refs/heads/other")
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("must target refs/heads/main", rejected.stderr)
+                self.assertEqual(outputs, {})
 
     def test_mailbox_fetch_contract_shallow_filtered_sparse_and_no_lazy_admission(self) -> None:
         root = Path(__file__).resolve().parents[1]

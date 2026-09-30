@@ -1,0 +1,1964 @@
+{
+  "schema": "local-hand-ci-failure-audit/v1",
+  "repository": "kongbu0621/infra-local-hand",
+  "snapshot_at": "2026-09-30T08:45:00.324Z",
+  "audited_main": "21a2646b70bf2069ccb6ffd734f0f6e19fe5d348",
+  "scope": "All Actions runs returned by pages 1 and 2, and all current branch heads/open PRs; snapshot before this repair publication.",
+  "totals": {
+    "workflow_runs": 80,
+    "success": 53,
+    "failure": 27,
+    "ordinary_failures_fixed_in_main": 25,
+    "retired_experiment_failures": 2,
+    "failed_job_logs_read": 37,
+    "branches": 8,
+    "open_prs": 0
+  },
+  "historical_failures_preserved": true,
+  "historical_runs_rerun": false,
+  "raw_job_logs_published": false,
+  "limitations": [
+    "Historical ENOTEMPTY writer was not directly sampled; automatic-maintenance mitigation and regression retained.",
+    "Retired laboratory is not qualified; its failures are not rewritten as success.",
+    "CI does not complete real isolated systemd, Q2/E3 or deployment acceptance."
+  ],
+  "runs": [
+    {
+      "id": 36684713611,
+      "head_sha": "21a2646b70bf2069ccb6ffd734f0f6e19fe5d348",
+      "title": "test: make cancellation fixture path checks portable",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-30T07:36:55Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684713611"
+    },
+    {
+      "id": 36684496707,
+      "head_sha": "6ec995e2f0b1ead0715b4631463164f1a445c055",
+      "title": "test: add fixed systemd cancellation case with bounded diagnostics",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-30T07:34:42Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684496707"
+    },
+    {
+      "id": 36679838718,
+      "head_sha": "8b723063caa2a628c491435a98e8e1d8f80c8e55",
+      "title": "fix: honor quota helper cancellation and retire native experiment",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-30T06:44:44Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36679838718"
+    },
+    {
+      "id": 36671189768,
+      "head_sha": "20dcb92835b7b6d2e1f9d34d6780d841e88ef1ec",
+      "title": "test: add partial H07 v3 receipt and exact history validation",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-30T04:57:26Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36671189768"
+    },
+    {
+      "id": 36666922354,
+      "head_sha": "824f4be40fc02a68fe64df4934966471e146b222",
+      "title": "test: isolate missing H07 history and retain round 2 rejection",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-30T04:00:22Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36666922354"
+    },
+    {
+      "id": 36662298613,
+      "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "title": "H07 lab round 2 at 9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "workflow_path": ".github/workflows/q2-cgroup-fence-spike.yml",
+      "branch": "main",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-30T02:58:41Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613"
+    },
+    {
+      "id": 36655111148,
+      "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "title": "Local Hand v0.1 Validation",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-30T01:26:20Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36655111148"
+    },
+    {
+      "id": 36592634218,
+      "head_sha": "d4dd8c6ea4284d0d9e8802073df6ea1cc9c52029",
+      "title": "Bound H07 test parameter IDs for Windows and retain initial CI outcome",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T15:45:32Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36592634218"
+    },
+    {
+      "id": 36586633992,
+      "head_sha": "78fc0a3ca0cbc54e4c6def38338d04afe4d7449d",
+      "title": "Implement approved H07 bounded continuation after independent closure",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-29T14:58:38Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36586633992"
+    },
+    {
+      "id": 36579157335,
+      "head_sha": "9596c784932dc8990e0225e0f46bf292d7e7b3ea",
+      "title": "fix: correct H07 account setup and retain round 1 cleanup stop",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T13:58:48Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36579157335"
+    },
+    {
+      "id": 36577764454,
+      "head_sha": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+      "title": "H07 lab round 1 at 6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+      "workflow_path": ".github/workflows/q2-cgroup-fence-spike.yml",
+      "branch": "main",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-29T13:47:50Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36577764454"
+    },
+    {
+      "id": 36562115482,
+      "head_sha": "e10dbfcb7f354f27b009c1b63c533fb72ac1a677",
+      "title": "test: implement approved bounded H07 cgroup fence laboratory",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T11:30:00Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36562115482"
+    },
+    {
+      "id": 36548011444,
+      "head_sha": "24b5536ccf98c081212c7a05a6a883863d6f96fc",
+      "title": "test: keep large cost-source case IDs portable on Windows",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T09:15:41Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36548011444"
+    },
+    {
+      "id": 36546965469,
+      "head_sha": "7e8026858962828102a6e3403edb3e43b82c1cee",
+      "title": "feat: add bounded offline Q2 cost source claim review",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-29T09:06:09Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36546965469"
+    },
+    {
+      "id": 36540605278,
+      "head_sha": "293cb51f2318ebd82761f8f7855ba8bbc945d3c3",
+      "title": "feat: review fixed H07 queue evidence and reject EA inode geometry",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T08:06:00Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36540605278"
+    },
+    {
+      "id": 36536347779,
+      "head_sha": "530a2a45bc6e96270771ccf266793e471d8408ee",
+      "title": "fix: bind first Q2 parent allocation to explicit host billing",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T07:23:33Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36536347779"
+    },
+    {
+      "id": 36531956523,
+      "head_sha": "c2373313eb78aa55373cb0318d08d5f60424dafd",
+      "title": "fix: add explicit ordinary-identity Q2 record and bill binding",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T06:36:34Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36531956523"
+    },
+    {
+      "id": 36527720495,
+      "head_sha": "22efa42ab362ab3ea4b811fc1c1519ddc2ef2bb3",
+      "title": "fix: add bounded opt-in env Bash wrapper profile",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-29T05:46:01Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36527720495"
+    },
+    {
+      "id": 36424977072,
+      "head_sha": "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe",
+      "title": "test: repair protected CI fixtures and Linux/Windows collection bound…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-28T12:55:22Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36424977072"
+    },
+    {
+      "id": 36409235607,
+      "head_sha": "777926655284e52db296fa0682d3c606e0671f25",
+      "title": "docs: record blocked Q2 field receipt and bounded diagnostic repair",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-28T10:21:38Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36409235607"
+    },
+    {
+      "id": 36393186487,
+      "head_sha": "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+      "title": "test: place fixed-source fixture under a separately verified root anc…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-28T07:43:13Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36393186487"
+    },
+    {
+      "id": 36392913200,
+      "head_sha": "317b09f30054779bcfd37a77374ad14418cc5ba3",
+      "title": "test: require real ordinary identity in an isolated protected Q2 fixture",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-28T07:40:15Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36392913200"
+    },
+    {
+      "id": 36391489578,
+      "head_sha": "4c1285a346ad7afabbfbdf54830bcbaca177da17",
+      "title": "feat: add bounded fixed Q2 local source evidence reader and RAM delivery",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-28T07:24:35Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36391489578"
+    },
+    {
+      "id": 36385294117,
+      "head_sha": "14d19f1f52d687afa360353aadecd6ea17725310",
+      "title": "fix: bind host window v1 identities across records and billing",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-28T06:12:17Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36385294117"
+    },
+    {
+      "id": 36331451304,
+      "head_sha": "ad405506abf46952f271f3fb309ed7bd873e3d1c",
+      "title": "release: publish exact approved Q2 kernel fact implementation",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T15:57:44Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36331451304"
+    },
+    {
+      "id": 36331366647,
+      "head_sha": "a829a8a7194d1f56953fb19200377d30d2151d51",
+      "title": "build: import exact Owner-approved Q2 kernel fact history",
+      "workflow_path": ".github/workflows/import-q2-kernel-fact-read-20260927.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-27T15:56:15Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36331366647"
+    },
+    {
+      "id": 36324126279,
+      "head_sha": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+      "title": "Implement approved read-only host preflight with bounded RAM delivery",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T13:56:19Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36324126279"
+    },
+    {
+      "id": 36317652508,
+      "head_sha": "f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff",
+      "title": "Implement bounded host window components; retain pre-field readiness …",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T12:02:03Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36317652508"
+    },
+    {
+      "id": 36313382679,
+      "head_sha": "8fd84521cdd25b455ff148e0c0fed6b5d8e39fe1",
+      "title": "feat(q2): implement bounded reconciliation components and contain hos…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T10:42:11Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36313382679"
+    },
+    {
+      "id": 36298482316,
+      "head_sha": "78589e6871cdf5eba72008ee2b27a350a0dfdc03",
+      "title": "feat(q2): add bounded dual-predecessor startup retry tooling",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-27T05:53:04Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36298482316"
+    },
+    {
+      "id": 36295204218,
+      "head_sha": "b49d3df3d1e76813faf08e59ab4975e25279c2fc",
+      "title": "fix(q2): verify the complete launcher controller path",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-27T04:44:55Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36295204218"
+    },
+    {
+      "id": 36291609770,
+      "head_sha": "15af5f19b27211f237f1d66f7e11c9aeef59a3a5",
+      "title": "Implement approved single-window Q2 CPU quota retry with preserved ev…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T03:30:32Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36291609770"
+    },
+    {
+      "id": 36288350559,
+      "head_sha": "9a556322183f0fa80d4edeada4b03c74a26524a5",
+      "title": "Fix systemd CPU quota precision and preserve retained delivery digests",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T02:22:58Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36288350559"
+    },
+    {
+      "id": 36285458941,
+      "head_sha": "1b7d178975e131e51df1f9c834100c053504c87f",
+      "title": "feat(q2): resume the attested account failure within one bounded window",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-27T01:24:58Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36285458941"
+    },
+    {
+      "id": 36233223726,
+      "head_sha": "56b6ca430e65acffba927aae89d50b42a2903b0f",
+      "title": "fix(q2): correct account provisioning and expose command failures",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-26T09:35:06Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36233223726"
+    },
+    {
+      "id": 36228040236,
+      "head_sha": "d581098252c7e6422d798230359510c2ad9b1d8e",
+      "title": "Implement authorized isolated Q2 fixture preparation and original han…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-26T07:51:13Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36228040236"
+    },
+    {
+      "id": 36223849535,
+      "head_sha": "2ea59b8d1b262632bae5636938107ef2f002a59b",
+      "title": "fix(q2): bind independent evidence store, repair CI test, and propose…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-26T06:28:20Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36223849535"
+    },
+    {
+      "id": 36222011920,
+      "head_sha": "303f9ca027a883f62763ed23279afd3174293b5e",
+      "title": "Add one-pass read-only Q2 guest handoff and repair installed fixture …",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-26T05:51:06Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36222011920"
+    },
+    {
+      "id": 36167230650,
+      "head_sha": "bd9d952f598ac2c1fa568425c5333c2d42af9444",
+      "title": "Add bounded Q2 fixture and retained evidence review with supervisor f…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T17:27:23Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36167230650"
+    },
+    {
+      "id": 36153093866,
+      "head_sha": "b881f6ea3079706da026c548a3a60bc95738f474",
+      "title": "Compose original Q2 three-phase chain and independent controller closure",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T15:16:49Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36153093866"
+    },
+    {
+      "id": 36142992108,
+      "head_sha": "599d102d15e9a5fd9cefa38ccda7043efe17705e",
+      "title": "Implement isolated Q2 resident assembly and preflight launcher",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T13:45:26Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36142992108"
+    },
+    {
+      "id": 36130605599,
+      "head_sha": "b8178fc9488a746b4daf160183bf5ef006551c19",
+      "title": "Add credentialed resident quota bridge and prepared phase coordinator",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T11:39:43Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36130605599"
+    },
+    {
+      "id": 36125012802,
+      "head_sha": "ae63052cdf9d67534bcd35347cbf2596651c3246",
+      "title": "Bind Q2 phase progression to original six-stage closure and add fixtu…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T10:37:49Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36125012802"
+    },
+    {
+      "id": 36119356829,
+      "head_sha": "007cbdf49ca61005c91f092a982a6c9b9240e6f0",
+      "title": "Implement pinned Q2 runtime and durable broker receipt binding",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T09:36:08Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36119356829"
+    },
+    {
+      "id": 36114173591,
+      "head_sha": "b0934c2aeb157e550cb49fb7c1ae472bcd1f094c",
+      "title": "docs(quota): record second Q2 batch verification and publication iden…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T08:40:08Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36114173591"
+    },
+    {
+      "id": 36108246932,
+      "head_sha": "5d72553a6b88f9bcc1c0285bbdfcbb07917edd86",
+      "title": "docs(quota): record Q2 client validation and retained IPC block",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-25T07:33:31Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36108246932"
+    },
+    {
+      "id": 35975888188,
+      "head_sha": "97e12d86d52243747f694827415066c593f851b0",
+      "title": "docs(q1): record default-root regression and retained real-test boundary",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-24T08:32:57Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35975888188"
+    },
+    {
+      "id": 35956624107,
+      "head_sha": "8cc2b2b8255502d1407f8b820be86b47cc813559",
+      "title": "docs(q1): preserve launch verification and publication boundary",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-24T04:40:11Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35956624107"
+    },
+    {
+      "id": 35937512985,
+      "head_sha": "4dcf46cd586f7af5642fb49326da79fc6f2fc768",
+      "title": "Retain first Windows CI failure and scoped test-model repair evidence",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-24T00:14:33Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35937512985"
+    },
+    {
+      "id": 35936686250,
+      "head_sha": "6e1a25be40b5a4364a425301049c55b3e1eaabae",
+      "title": "Record Q1 experiment entry verification and retained development evid…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-24T00:04:24Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35936686250"
+    },
+    {
+      "id": 35920369590,
+      "head_sha": "fbae9133bf924edee71ac71c61d35eda75900b46",
+      "title": "docs: record Q1 offline fixture verification and real-test handoff",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T21:06:44Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35920369590"
+    },
+    {
+      "id": 35900688639,
+      "head_sha": "41485273de87d6c3aabc3d0e53fe81a9f422d2c6",
+      "title": "docs: retain Windows collection failure and exact Q1 test repair veri…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T18:10:57Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35900688639"
+    },
+    {
+      "id": 35900165257,
+      "head_sha": "3b309c220f04b39f8acb8630888341a8629c667d",
+      "title": "docs: record Q1 runtime verification and keep development evidence in…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-23T18:06:16Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35900165257"
+    },
+    {
+      "id": 35894750295,
+      "head_sha": "ec2fac0f41c4430f7b18d9b9ce99f32b2e65c6df",
+      "title": "Add fixed quota object validation and bounded query observation core",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T17:18:57Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35894750295"
+    },
+    {
+      "id": 35889668562,
+      "head_sha": "eb7ca61d109f00a699de8591fcf0e0f92717019b",
+      "title": "feat: add isolated Q1 quota FD query primitive and errno evidence",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T16:34:17Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35889668562"
+    },
+    {
+      "id": 35857781291,
+      "head_sha": "88b78b6ef908026b763f307c4d78ab3d0c0e6521",
+      "title": "Fix E3 host probe parsing of nsfs namespace mount roots",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T12:00:02Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35857781291"
+    },
+    {
+      "id": 35846205021,
+      "head_sha": "287f6b92408ee43b7898acefba48eb226160e6fe",
+      "title": "Prepare bounded read-only E3 host inventory and document acceptance b…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T10:00:03Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35846205021"
+    },
+    {
+      "id": 35842009312,
+      "head_sha": "95f65ddbab86ca358d12bda57a2a3e72e50639a3",
+      "title": "Isolate supervised result collection and validate fixed NAS quota res…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T09:16:58Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35842009312"
+    },
+    {
+      "id": 35833475491,
+      "head_sha": "4be98b8c03a4346d80d24663b0c655248b48e744",
+      "title": "feat: supervise fixed job startup preparation",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T07:46:21Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833475491"
+    },
+    {
+      "id": 35833259954,
+      "head_sha": "4be98b8c03a4346d80d24663b0c655248b48e744",
+      "title": "Supervise fixed job startup preparation",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "codex/supervised-bootstrap",
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T07:43:59Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833259954"
+    },
+    {
+      "id": 35826930309,
+      "head_sha": "fd55c07e93f590afb14da3720f54ce2fcb872199",
+      "title": "fix: contain interruptions and harden A2 evidence recovery",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T06:28:44Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35826930309"
+    },
+    {
+      "id": 35821923399,
+      "head_sha": "e349a83fde7ee1901d966303aba135b171d3d18d",
+      "title": "fix: persist operation budgets across helper phases",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T05:19:20Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35821923399"
+    },
+    {
+      "id": 35818614373,
+      "head_sha": "d71934a19a47931c208a18099f4d599005965796",
+      "title": "fix: close partial-read, shared-budget and stale-admission gaps",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T04:30:31Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35818614373"
+    },
+    {
+      "id": 35815185797,
+      "head_sha": "330dbfd8f6e12c90fa29dc13e913fdd1ea9fa93d",
+      "title": "fix: bind isolated execution resources and validate complete evidence…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T03:39:21Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35815185797"
+    },
+    {
+      "id": 35810885472,
+      "head_sha": "b4146d750873f8a49b4bf0f4ee6702301b3f66c1",
+      "title": "fix: bind private configuration and evidence writes and contain clean…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T02:34:17Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35810885472"
+    },
+    {
+      "id": 35806411316,
+      "head_sha": "2be2be5203f0514ddf5108d1109fa4552cfc8bbe",
+      "title": "fix: preserve preflight ownership and contain evidence and service cl…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-23T01:28:15Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35806411316"
+    },
+    {
+      "id": 35782465353,
+      "head_sha": "85b5a926d4a364b5468197b81f4110d4ac64d8a6",
+      "title": "fix: preserve cleanup failures and descriptor ownership across execut…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-22T20:46:33Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35782465353"
+    },
+    {
+      "id": 35777070507,
+      "head_sha": "6f2972794565268b3169c9adb2280777ef7dd70a",
+      "title": "fix: close result, launch, artifact and evidence boundaries",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-22T19:57:04Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35777070507"
+    },
+    {
+      "id": 35771436119,
+      "head_sha": "1921ea14bf241544539b18e8bbbe7a0b5d0c7908",
+      "title": "fix: compare retained wheel identity through consistent descriptor APIs",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-22T19:04:50Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35771436119"
+    },
+    {
+      "id": 35769636440,
+      "head_sha": "11225c1072d4490ecfa59c0431ae7d424d673b58",
+      "title": "fix: retain execution results and durable artifact identities across …",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-22T18:48:30Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35769636440"
+    },
+    {
+      "id": 35764764639,
+      "head_sha": "69461b40bf2e1ac7826e470bea642e5e3d837863",
+      "title": "fix: close A2 recovery, authentication and artifact publication gaps",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-22T18:04:19Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35764764639"
+    },
+    {
+      "id": 35758947374,
+      "head_sha": "b0b37cd8714497fd6d6edc3c1115c274af8ad17e",
+      "title": "test: contain automatic Git maintenance within fixture lifetimes",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-22T17:10:28Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35758947374"
+    },
+    {
+      "id": 35757160205,
+      "head_sha": "f109a4df4237a42fe2c6edb9c2435e4b0104fcdd",
+      "title": "fix: preserve A2 identities and supervision across boundary failures",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-22T16:54:08Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35757160205"
+    },
+    {
+      "id": 35750476529,
+      "head_sha": "c8176b06792880507ff8fb3fb4b0786656713121",
+      "title": "fix: harden A2 authorization, recovery and evidence boundaries",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "created_at": "2026-09-22T15:54:35Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35750476529"
+    },
+    {
+      "id": 35746249867,
+      "head_sha": "d500384fb008118e08eaf9c2141662d075444891",
+      "title": "docs: record exact E1-E3 implementation checkpoint and retained valid…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-22T15:17:09Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35746249867"
+    },
+    {
+      "id": 35711147672,
+      "head_sha": "b12e9c06cdee0094bd79661eb28201fb10a26db3",
+      "title": "Harden S1 outbox recovery evidence",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-22T09:34:24Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35711147672"
+    },
+    {
+      "id": 35600713655,
+      "head_sha": "03a78e2b27463b049a81fd9eaffa8478faa8a6b3",
+      "title": "fix: preserve conflict visibility and recovery before accepting results",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-21T12:38:31Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35600713655"
+    },
+    {
+      "id": 35594194058,
+      "head_sha": "a1bc0ebf05313c9bce4fc85ac7c315c4c417ed99",
+      "title": "docs: align implementation notes with repaired publication",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-21T11:27:59Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35594194058"
+    },
+    {
+      "id": 35578834478,
+      "head_sha": "3a8591cf8d175d7ab157aca68ba5bc488c51733a",
+      "title": "release: publish approved S1 candidate with original history and GX10…",
+      "workflow_path": ".github/workflows/local-hand-v0-1-validation.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "created_at": "2026-09-21T08:37:04Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35578834478"
+    },
+    {
+      "id": 35578331863,
+      "head_sha": "43c9d528e9441ecbc75dc96d3932b4a79a82c884",
+      "title": "build: import only the Owner-approved independent S1 history",
+      "workflow_path": ".github/workflows/import-approved-candidate.yml",
+      "branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 2,
+      "created_at": "2026-09-21T08:31:19Z",
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35578331863"
+    }
+  ],
+  "failed_run_audit": [
+    {
+      "run_id": 35578834478,
+      "head_sha": "3a8591cf8d175d7ab157aca68ba5bc488c51733a",
+      "cause": "Windows mistakenly ran Linux bootstrap through bash/WSL; invalid_profile stderr absent.",
+      "repair_commits": [
+        "c8176b06792880507ff8fb3fb4b0786656713121"
+      ],
+      "current_evidence": "tests/test_local_hand_configuration.py:135 uses native PowerShell 7 bootstrap on Windows and Linux bootstrap on POSIX; original rejection/no-mutation assertions retained.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106266768781,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run all Local Hand semantic and hardening tests"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35578834478"
+    },
+    {
+      "run_id": 35594194058,
+      "head_sha": "a1bc0ebf05313c9bce4fc85ac7c315c4c417ed99",
+      "cause": "Same bootstrap failure plus fixture .gitignore CRLF/committed-blob mismatch.",
+      "repair_commits": [
+        "c8176b06792880507ff8fb3fb4b0786656713121"
+      ],
+      "current_evidence": "Native bootstrap branch plus tests/test_local_hand_configuration.py:222 fixture .gitattributes eol=lf and write_bytes() for tracked LF source.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106315199793,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run all Local Hand semantic and hardening tests"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35594194058"
+    },
+    {
+      "run_id": 35600713655,
+      "head_sha": "03a78e2b27463b049a81fd9eaffa8478faa8a6b3",
+      "cause": "Same bootstrap failure plus clean-build fixture reported dirty checkout due to newline conversions.",
+      "repair_commits": [
+        "c8176b06792880507ff8fb3fb4b0786656713121"
+      ],
+      "current_evidence": "Native bootstrap branch plus byte-preserving fixture .gitattributes and write_bytes; provenance strictness unchanged.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106335924241,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run all Local Hand semantic and hardening tests"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35600713655"
+    },
+    {
+      "run_id": 35711147672,
+      "head_sha": "b12e9c06cdee0094bd79661eb28201fb10a26db3",
+      "cause": "Bootstrap failure, fixture .gitignore blob mismatch, three conflict tests expected LF bytes but fixture wrote CRLF.",
+      "repair_commits": [
+        "c8176b06792880507ff8fb3fb4b0786656713121"
+      ],
+      "current_evidence": "Native bootstrap and fixed build fixture; tests/test_local_hand_hardening_b.py:40 retains actual sample_bytes, hashes those bytes and compares unchanged bytes at lines 339/355/383/413.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106691818848,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run all Local Hand semantic and hardening tests"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35711147672"
+    },
+    {
+      "run_id": 35746249867,
+      "head_sha": "d500384fb008118e08eaf9c2141662d075444891",
+      "cause": "Bootstrap failure, build fixture dirty checkout, same three conflict LF/CRLF mismatches.",
+      "repair_commits": [
+        "c8176b06792880507ff8fb3fb4b0786656713121"
+      ],
+      "current_evidence": "Same c8176b0 repairs remain in current main with original rejection/barrier checks.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106808576299,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35746249867"
+    },
+    {
+      "run_id": 35757160205,
+      "head_sha": "f109a4df4237a42fe2c6edb9c2435e4b0104fcdd",
+      "cause": "Temporary bare mailbox.git teardown ENOTEMPTY in StateLookupChainTests.test_conflict_lookup_error_never_executes_blocked_task.",
+      "repair_commits": [
+        "b0b37cd8714497fd6d6edc3c1115c274af8ad17e"
+      ],
+      "current_evidence": "tests/test_local_hand_connect.py:61 configures temporary receive-pack repository maintenance.auto=false/gc.auto=0/receive.autoGC=false and line89 scopes fixture git commands; test_local_hand_maintenance_chain.py:16 exercises real chain and asserts no maintenance child.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106845754728,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35757160205"
+    },
+    {
+      "run_id": 35769636440,
+      "head_sha": "11225c1072d4490ecfa59c0431ae7d424d673b58",
+      "cause": "Two retained-wheel tests prematurely failed wheel changed during verification due to Windows path-stat/fstat ctime semantics.",
+      "repair_commits": [
+        "1921ea14bf241544539b18e8bbbe7a0b5d0c7908"
+      ],
+      "current_evidence": "tools/local_hand/installation.py:82 named_identity opens descriptor and compares os.fstat on both handles at lines99/140; test_local_hand_build_identity.py regression for different path/descriptor timestamp semantics retained.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 106887841646,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35769636440"
+    },
+    {
+      "run_id": 35900165257,
+      "head_sha": "3b309c220f04b39f8acb8630888341a8629c667d",
+      "cause": "Windows collection NameError NOW in tests/test_e3_quota_runtime_capture.py.",
+      "repair_commits": [
+        "d117cbe1aca7a29fa3ea2c84b653ff3ddec669e1"
+      ],
+      "current_evidence": "tests/test_e3_quota_runtime_capture.py:17 imports portable binding/decode/fixture/NOW before Linux-only import branch.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 107314040571,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35900165257"
+    },
+    {
+      "run_id": 35936686250,
+      "head_sha": "6e1a25be40b5a4364a425301049c55b3e1eaabae",
+      "cause": "Three offline evidence encoder tests gave FD_MODE because synthetic Linux reports were decoded against Windows os flags (missing O_PATH).",
+      "repair_commits": [
+        "273eb0a77538a4617f157fa79f9b32cac4a3fa2f"
+      ],
+      "current_evidence": "tests/test_e3_quota_experiment_evidence.py:64 locally models Linux O_ACCMODE/O_PATH via SimpleNamespace for synthetic fixture tests; production admission still rejects unknown host ABI.",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 107435202820,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35936686250"
+    },
+    {
+      "run_id": 36222011920,
+      "head_sha": "303f9ca027a883f62763ed23279afd3174293b5e",
+      "cause": "非 root CI 在 O_NOATIME 打开 / 时先收到 EPERM；旧负向测试只接受 ValueError。",
+      "repair_commits": [
+        "2ea59b8d1b262632bae5636938107ef2f002a59b"
+      ],
+      "current_evidence": "test_e3_quota_q2_host_export.py 拆成 4 个独立边界：真实临时路径只接受 EPERM 或 UNPROTECTED_OBJECT；单测 modeled writable ancestor；禁止 O_NOATIME 降级重试；非规范路径在 open 前拒绝。实现读取权限不放松。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108348921678,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36222011920"
+    },
+    {
+      "run_id": 36285458941,
+      "head_sha": "1b7d178975e131e51df1f9c834100c053504c87f",
+      "cause": "Windows 执行 Linux pwd/getuid/st_blocks/O_DIRECTORY 专用恢复测试，另无参数入口提前采样 Linux 时钟导致 return code 1。",
+      "repair_commits": [
+        "eb8a54ab413396df26a393ff730e958e68fac00a"
+      ],
+      "current_evidence": "Linux 原生恢复用例逐项/按类显式范围限定；可移植时钟/无参数入口测试拆到 ClockAndEntryTests；q2_recovery_driver.main 先处理参数和平台，再 first_clock。所有 Linux 测试仍在 Linux CI 中执行。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108525274217,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36285458941"
+    },
+    {
+      "run_id": 36288350559,
+      "head_sha": "9a556322183f0fa80d4edeada4b03c74a26524a5",
+      "cause": "Windows 收集 CPUQuota native parser 测试时导入 Linux runtime，fcntl 缺失。",
+      "repair_commits": [
+        "15af5f19b27211f237f1d66f7e11c9aeef59a3a5"
+      ],
+      "current_evidence": "test_e3_cpu_quota_serialization.py 在任何 Linux imports 前显式平台范围检查；该文件的 systemd native parser 覆盖仍由 Linux CI 执行。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108533402218,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36288350559"
+    },
+    {
+      "run_id": 36291609770,
+      "head_sha": "15af5f19b27211f237f1d66f7e11c9aeef59a3a5",
+      "cause": "Windows 同 36285458941；Linux q2_retry 的 3 个 ledger 与 1 个 snapshot 用例因 O_NOATIME 应用于 root-owned 只做 stat 的祖先 / 导致 EPERM。",
+      "repair_commits": [
+        "eb8a54ab413396df26a393ff730e958e68fac00a"
+      ],
+      "current_evidence": "q2_prepare.opened 区分 metadata-only ancestor 和真正 read/list leaf，只为 leaf 保留 O_NOATIME，叶权限失败绝不降级重试。新 ProtectedReads 测试覆盖 leaf read/list atime、不允许重试、路径权限和链接拒绝。Windows 恢复边界修复同上。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108542663493,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108542663609,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36291609770"
+    },
+    {
+      "run_id": 36313382679,
+      "head_sha": "8fd84521cdd25b455ff148e0c0fed6b5d8e39fe1",
+      "cause": "Linux: 1 个 numeric proc 正例观察 runner-owned Python 被 RECON_PROC_EXECUTABLE 拒绝；13 个 root-only collector 正例误用普通 CI 用户 home 触发 RECONCILIATION_UNPROTECTED_PATH。Windows: reconciliation backend 导入 fcntl 失败。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "固定 /usr/bin/sleep 独立子进程满足未放松的 root executable 合同，10 秒观察 deadline 和有限清理；新增 5 个不合格 executable 负例。root collector 在专用 root-owned 临时目录单独必跑，JUnit >=16 PASS 且 0 SKIP/error/failure；普通 suite 保持普通身份。backend 在 Linux imports 前范围检查。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108603457879,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108603457919,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36313382679"
+    },
+    {
+      "run_id": 36317652508,
+      "head_sha": "f1814b27adbc1bcdb6d6ac14875e9d2ec6a795ff",
+      "cause": "Linux 同 36313382679 的 14 个失败；Windows 4 个模块收集失败：delivery import-time /proc boot_id、record/backend/host_inputs fcntl。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "Linux proc/collector 修复同上。delivery 的合同 BOOT 改固定模拟身份，真实 /proc 仅 Linux transport 测试调用；record/backend 在 Linux imports 前范围检查；host_inputs 去掉顶层 native import，真实 record 测试单独 Linux 标记而 marker-shape 合同仍跨平台运行。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108615308452,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108615308501,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36317652508"
+    },
+    {
+      "run_id": 36324126279,
+      "head_sha": "0a456a909821fd1fc6a4fdec43b9e16bc88679f2",
+      "cause": "Linux 21 失败 = 既有 14 + 7 个 preflight 用例因 runner home ACL 返回 HOST_LOCAL_ACL_PRESENT；Windows 6 个模块收集错误包含 delivery/proc、preflight/record/backend/host_inputs fcntl、receiver termios。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "3d9b9ff 修复上述 proc/collector/Windows 范围；preflight.fixture_parent 使用 LOCAL_HAND_Q2_TEST_PARENT 的独立普通用户目录，并严格检查完整祖先/ACL，配置坏路径不 fallback/skip。workflow 只创建新受保护夹具，未改宿主 home ACL；真实读/ACL拒绝测试保留。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108633494401,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108633494415,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36324126279"
+    },
+    {
+      "run_id": 36331451304,
+      "head_sha": "ad405506abf46952f271f3fb309ed7bd873e3d1c",
+      "cause": "Linux 和 Windows 与 36324126279 相同失败族：21 个 Linux 失败和 6 个 Windows 收集错误。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "同 36324126279 的明确源码和 workflow 修复；当前 main 中均存在。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108654081724,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108654081824,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36331451304"
+    },
+    {
+      "run_id": 36385294117,
+      "head_sha": "14d19f1f52d687afa360353aadecd6ea17725310",
+      "cause": "Windows 6 项 Linux 依赖收集错误；Linux 21 项 ACL、collector root 属主和 executable owner 夹具失败。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "已修复；同上。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108809360238,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108809360372,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36385294117"
+    },
+    {
+      "run_id": 36391489578,
+      "head_sha": "4c1285a346ad7afabbfbdf54830bcbaca177da17",
+      "cause": "Linux 55 项夹具/保护前提失败，含固定来源 ACL；Windows 6 项 Linux 依赖收集错误。",
+      "repair_commits": [
+        "317b09f30054779bcfd37a77374ad14418cc5ba3",
+        "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "已修复；修正真实普通身份、保护目录、root 专用夹具及平台收集。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108828137249,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108828137379,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36391489578"
+    },
+    {
+      "run_id": 36392913200,
+      "head_sha": "317b09f30054779bcfd37a77374ad14418cc5ba3",
+      "cause": "Linux 隔离测试目录继承 /opt ACL，准备步骤拒绝；Windows 6 项 Linux 依赖收集错误。",
+      "repair_commits": [
+        "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "已修复；隔离目录移至经验证祖先下，保留 ACL 拒绝；平台收集另修。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108832582803,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Prepare isolated protected parent for local-source tests"
+          ]
+        },
+        {
+          "job_id": 108832582874,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36392913200"
+    },
+    {
+      "run_id": 36393186487,
+      "head_sha": "411a9f054d0ee85c3e82296a1fdd3a9ed4ae6239",
+      "cause": "Windows 6 项 Linux 依赖收集错误；Linux 21 项 ACL、collector root 属主和 executable owner 夹具失败。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "已修复；同上。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108833454305,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108833454373,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36393186487"
+    },
+    {
+      "run_id": 36409235607,
+      "head_sha": "777926655284e52db296fa0682d3c606e0671f25",
+      "cause": "Windows 6 项 Linux 依赖收集错误；Linux 21 项 ACL、collector root 属主和 executable owner 夹具失败。",
+      "repair_commits": [
+        "3d9b9ff306bc6c4cfc48bafbeaaad4f114a5dafe"
+      ],
+      "current_evidence": "已修复；真实保护目录、独立强制 root collector、Linux 导入边界和真实系统 executable。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 1,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 108885272714,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        },
+        {
+          "job_id": 108885272874,
+          "name": "semantic-core (ubuntu-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36409235607"
+    },
+    {
+      "run_id": 36546965469,
+      "head_sha": "7e8026858962828102a6e3403edb3e43b82c1cee",
+      "cause": "两项 pytest 参数 ID 过长，使 PYTEST_CURRENT_TEST 超过 Windows 32767 字符限制。",
+      "repair_commits": [
+        "24b5536ccf98c081212c7a05a6a883863d6f96fc"
+      ],
+      "current_evidence": "已修复；保留深度/节点超限输入，显式使用短 ID。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 109335675225,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36546965469"
+    },
+    {
+      "run_id": 36577764454,
+      "head_sha": "6b085d9ceb536b9785ea683cd108e92cd8a4eec4",
+      "cause": "独立实验账户参数 CREATE_MAIL_SPOOL 使用错误；原清理状态 UNKNOWN。",
+      "repair_commits": [
+        "9596c784932dc8990e0225e0f46bf292d7e7b3ea",
+        "8b723063caa2a628c491435a98e8e1d8f80c8e55"
+      ],
+      "current_evidence": "参数代码已修，实验路线已退休；历史 UNKNOWN/失败保留，不重跑。",
+      "disposition": "retired_unqualified",
+      "workflow": ".github/workflows/q2-cgroup-fence-spike.yml",
+      "passed": 0,
+      "total": 1,
+      "failed_jobs": [
+        {
+          "job_id": 109437700015,
+          "name": "bounded-experiment",
+          "steps": [
+            "Compile and run the bounded isolated experiment"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36577764454"
+    },
+    {
+      "run_id": 36586633992,
+      "head_sha": "78fc0a3ca0cbc54e4c6def38338d04afe4d7449d",
+      "cause": "两项 pytest 参数 ID 过长，使 PYTEST_CURRENT_TEST 超过 Windows 32767 字符限制。",
+      "repair_commits": [
+        "d4dd8c6ea4284d0d9e8802073df6ea1cc9c52029"
+      ],
+      "current_evidence": "已修复；保留原大输入，显式使用有限长度案例 ID。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 109468675878,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36586633992"
+    },
+    {
+      "run_id": 36662298613,
+      "head_sha": "9d8328cf742fa130c265de23b1b9085b9e8a0581",
+      "cause": "独立实验 C1 身份证据缺失，report 拒绝；固定工作负载未取得完整证据。",
+      "repair_commits": [
+        "8b723063caa2a628c491435a98e8e1d8f80c8e55"
+      ],
+      "current_evidence": "实验路线已退休；未声称该实验通过，不继续修改或重跑。",
+      "disposition": "retired_unqualified",
+      "workflow": ".github/workflows/q2-cgroup-fence-spike.yml",
+      "passed": 0,
+      "total": 1,
+      "failed_jobs": [
+        {
+          "job_id": 109719488299,
+          "name": "bounded-experiment",
+          "steps": [
+            "Compile and run the bounded isolated experiment"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613"
+    },
+    {
+      "run_id": 36684496707,
+      "head_sha": "6ec995e2f0b1ead0715b4631463164f1a445c055",
+      "cause": "Windows 测试夹具使用系统分隔符索引 POSIX 路径字典，KeyError。",
+      "repair_commits": [
+        "21a2646b70bf2069ccb6ffd734f0f6e19fe5d348"
+      ],
+      "current_evidence": "已修复；夹具统一 as_posix，并覆盖 PureWindowsPath。",
+      "disposition": "fixed_in_audited_main",
+      "workflow": ".github/workflows/local-hand-v0-1-validation.yml",
+      "passed": 2,
+      "total": 3,
+      "failed_jobs": [
+        {
+          "job_id": 109787170664,
+          "name": "semantic-core (windows-latest)",
+          "steps": [
+            "Run platform-scoped source tests (A2 jobs are Linux only)"
+          ]
+        }
+      ],
+      "html_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684496707"
+    }
+  ],
+  "branches": [
+    {
+      "branch": "candidate/q2-kernel-fact-read-e15c633adbdf",
+      "sha": "e15c633adbdfbf1e29cb12b2410975fe4911458d",
+      "checks": [],
+      "status_count": 0,
+      "run_links": []
+    },
+    {
+      "branch": "candidate/s1-b763bd6",
+      "sha": "b763bd6714721d22278086db559fa3f6684aad7b",
+      "checks": [],
+      "status_count": 0,
+      "run_links": []
+    },
+    {
+      "branch": "codex/e3-host-readiness",
+      "sha": "287f6b92408ee43b7898acefba48eb226160e6fe",
+      "checks": [
+        {
+          "name": "semantic-core (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107132921239,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35846205021/job/107132921239"
+        },
+        {
+          "name": "semantic-core (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107132921210,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35846205021/job/107132921210"
+        },
+        {
+          "name": "classify-change",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107132885382,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35846205021/job/107132885382"
+        }
+      ],
+      "status_count": 0,
+      "run_links": [
+        "https://github.com/kongbu0621/infra-local-hand/actions/runs/35846205021"
+      ]
+    },
+    {
+      "branch": "codex/e3-nsfs-readiness",
+      "sha": "88b78b6ef908026b763f307c4d78ab3d0c0e6521",
+      "checks": [
+        {
+          "name": "semantic-core (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107170387587,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35857781291/job/107170387587"
+        },
+        {
+          "name": "semantic-core (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107170387577,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35857781291/job/107170387577"
+        },
+        {
+          "name": "classify-change",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107170339344,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35857781291/job/107170339344"
+        }
+      ],
+      "status_count": 0,
+      "run_links": [
+        "https://github.com/kongbu0621/infra-local-hand/actions/runs/35857781291"
+      ]
+    },
+    {
+      "branch": "codex/supervised-bootstrap",
+      "sha": "4be98b8c03a4346d80d24663b0c655248b48e744",
+      "checks": [
+        {
+          "name": "semantic-core (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107091325367,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833475491/job/107091325367"
+        },
+        {
+          "name": "semantic-core (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107091325271,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833475491/job/107091325271"
+        },
+        {
+          "name": "classify-change",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107091281135,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833475491/job/107091281135"
+        },
+        {
+          "name": "semantic-core (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107090614843,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833259954/job/107090614843"
+        },
+        {
+          "name": "semantic-core (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107090614786,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833259954/job/107090614786"
+        },
+        {
+          "name": "classify-change",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107090574048,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833259954/job/107090574048"
+        }
+      ],
+      "status_count": 0,
+      "run_links": [
+        "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833475491",
+        "https://github.com/kongbu0621/infra-local-hand/actions/runs/35833259954"
+      ]
+    },
+    {
+      "branch": "codex/supervised-result-reader",
+      "sha": "95f65ddbab86ca358d12bda57a2a3e72e50639a3",
+      "checks": [
+        {
+          "name": "semantic-core (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107119094717,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35842009312/job/107119094717"
+        },
+        {
+          "name": "semantic-core (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107119094707,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35842009312/job/107119094707"
+        },
+        {
+          "name": "classify-change",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 107119054649,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/35842009312/job/107119054649"
+        }
+      ],
+      "status_count": 0,
+      "run_links": [
+        "https://github.com/kongbu0621/infra-local-hand/actions/runs/35842009312"
+      ]
+    },
+    {
+      "branch": "main",
+      "sha": "21a2646b70bf2069ccb6ffd734f0f6e19fe5d348",
+      "checks": [
+        {
+          "name": "semantic-core (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 109787838102,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684713611/job/109787838102"
+        },
+        {
+          "name": "semantic-core (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 109787838095,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684713611/job/109787838095"
+        },
+        {
+          "name": "classify-change",
+          "status": "completed",
+          "conclusion": "success",
+          "check_id": 109787800248,
+          "details_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684713611/job/109787800248"
+        }
+      ],
+      "status_count": 0,
+      "run_links": [
+        "https://github.com/kongbu0621/infra-local-hand/actions/runs/36684713611"
+      ]
+    },
+    {
+      "branch": "publication/approved-workflow",
+      "sha": "2e522fc0363b58c5ac55f9f432210bb24868fde3",
+      "checks": [],
+      "status_count": 0,
+      "run_links": []
+    }
+  ]
+}

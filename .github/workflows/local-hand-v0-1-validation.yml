@@ -69,15 +69,13 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_PATH: ${{ github.event_path }}
-          PR_BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EXACT_SHA: ${{ github.sha }}
           EXACT_REF: ${{ github.ref }}
         run: |
           python - <<'PY'
-          import json, os, subprocess
-          from pathlib import Path
+          import os, subprocess
 
           event_name = os.environ["EVENT_NAME"]
           if event_name in {"push", "workflow_dispatch"}:
@@ -94,26 +92,20 @@ jobs:
               print("compared_range=", compared)
               raise SystemExit(0)
 
-          event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
-          action = event.get("action", "")
-          before = event.get("before")
-          after = event.get("after") or os.environ["PR_HEAD_SHA"]
           names = []
           runtime = True  # fail-safe: classifier uncertainty means verify, never silently skip.
           compared = "classifier-fallback-runtime=true"
 
           try:
-              if action == "synchronize" and before and after:
-                  subprocess.run(["git", "cat-file", "-e", f"{before}^{{commit}}"], check=True,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                  subprocess.run(["git", "cat-file", "-e", f"{after}^{{commit}}"], check=True,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                  base, head = before, after
-              else:
-                  base_ref = f"refs/remotes/origin/{os.environ['PR_BASE_REF']}"
-                  head = os.environ["PR_HEAD_SHA"]
-                  base = subprocess.check_output(["git", "merge-base", base_ref, head], text=True).strip()
-              names = subprocess.check_output(["git", "diff", "--name-only", base, head], text=True).splitlines()
+              # A docs-only follow-up must not hide an earlier unverified runtime
+              # change in the same PR. Classify the complete candidate every time.
+              base_sha = os.environ["PR_BASE_SHA"]
+              head = os.environ["PR_HEAD_SHA"]
+              base = subprocess.check_output(["git", "merge-base", base_sha, head], text=True).strip()
+              raw_names = subprocess.check_output(
+                  ["git", "diff", "--name-only", "-z", "--no-renames", base, head, "--"]
+              )
+              names = [name.decode("utf-8") for name in raw_names.split(b"\0") if name]
               runtime = any(
                   name.startswith("tools/local_hand/")
                   or name.startswith("tools/local_hand_connect/")
@@ -305,12 +297,12 @@ jobs:
       - name: Validate PR whitespace and diff boundary
         if: runner.os == 'Linux' && github.event_name == 'pull_request'
         env:
-          PR_BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git cat-file -e "${PR_HEAD_SHA}^{commit}"
-          git rev-parse --verify "refs/remotes/origin/${PR_BASE_REF}^{commit}"
-          MERGE_BASE="$(git merge-base "refs/remotes/origin/${PR_BASE_REF}" "${PR_HEAD_SHA}")"
+          git cat-file -e "${PR_BASE_SHA}^{commit}"
+          MERGE_BASE="$(git merge-base "${PR_BASE_SHA}" "${PR_HEAD_SHA}")"
           test -n "${MERGE_BASE}"
           git diff --check "${MERGE_BASE}...${PR_HEAD_SHA}"
       - name: Validate Linux bootstrap syntax

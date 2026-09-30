@@ -72,4 +72,6 @@ K4 已完成限定的完整回执核验，完整账单、H07 首次远端截止�
 随后完成[H07 固定域与队列一致性组件](docs/a2-execution/Q2_H07_MODEL_IMPLEMENTATION_REVIEW.md)，准确 D `293cb51f` 的 CI 3/3 成功、Linux 新增 84 项通过：分别保留两条请求边的提交/排队/未知状态，模型不能生成现场停止或运行许可；同时补拒 ext4 EA_INODE。当前仍需实际首次远端监督、完整费用和 FS 资格。
 现已增加[离线费用来源／覆盖主张组件](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)，初次实现 `7e802685` 的本地相关回归 223 PASS / 0 SKIP；修复 Windows 大输入用例名后，最终 D `24b5536c` 的原生 CI **3/3 成功**，Linux／Windows 各新增 78 项通过。严格引用、别名与重复抵扣核对不产生完整账单。参见[H07 接线边界](docs/a2-execution/Q2_H07_MECHANISM_ROUTE_REVIEW.md)和[FS／费用具体缺项](docs/a2-execution/Q2_FS_BILLING_SOURCE_CONTRACT.md)。
 旧提交的通用 CI 失败记录保留；后续[CI 装配与平台边界修复](docs/a2-execution/CI_REPAIR_20260928.md)记录准确修复版本及验证结果。源码／CI 通过与 K4 完成均不构成完整 Q2 验收。
+
+[2026-09-30 全仓红叉核查](docs/a2-execution/CI_FAILURE_AUDIT_20260930.md)逐项核对了发布前全部 80 次运行：25 次普通 CI 历史失败已有修复，2 次失败属于已退休实验；本轮另修复 PR 累计变更、中文路径和移动文件导致的测试漏跑。旧失败记录保留，当前检查以准确提交的 CI 为准。
 **这不是可部署或 A2 实机验收完成声明。** 真实连接、GX10 [S2 切换](docs/s2/REQUIREMENTS.md) 和 NAS 验收仍分别满足后续门槛。
