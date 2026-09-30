@@ -6,7 +6,7 @@ import importlib.util
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 import sys
 import threading
@@ -49,12 +49,16 @@ class LauncherBoundaryTests(unittest.TestCase):
         paths = ["tests/e3_host/q4_cancel_runtime.py", "tests/e3_host/q4_cancel_case.py"]
         blobs = {name: b"PINNED_TEST_ONLY = True\n" for name in paths}
         value["source"] = {"files": {name: hashlib.sha256(raw).hexdigest() for name, raw in blobs.items()}}
-        with mock.patch.object(launcher, "protected", side_effect=lambda path, limit: blobs[str(Path(path).relative_to("/fixed"))]):
-            modules = launcher.load_cancel_modules(value, Path("/fixed"))
-            self.assertTrue(all(module.PINNED_TEST_ONLY for module in modules))
-            value["source"]["files"][paths[1]] = "0" * 64
-            with self.assertRaisesRegex(ValueError, "CANCEL_SOURCE_DIGEST"):
-                launcher.load_cancel_modules(value, Path("/fixed"))
+        for root in (Path("/fixed"), PureWindowsPath("C:/fixed")):
+            value["source"]["files"][paths[1]] = hashlib.sha256(blobs[paths[1]]).hexdigest()
+            def read(path, limit):
+                return blobs[type(root)(path).relative_to(root).as_posix()]
+            with self.subTest(root=str(root)), mock.patch.object(launcher, "protected", side_effect=read):
+                modules = launcher.load_cancel_modules(value, root)
+                self.assertTrue(all(module.PINNED_TEST_ONLY for module in modules))
+                value["source"]["files"][paths[1]] = "0" * 64
+                with self.assertRaisesRegex(ValueError, "CANCEL_SOURCE_DIGEST"):
+                    launcher.load_cancel_modules(value, root)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux Q4 management model")
