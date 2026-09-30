@@ -1,0 +1,95 @@
+{
+  "artifact_bytes_downloaded_and_verified": true,
+  "conclusion": "success",
+  "deployment_performed": false,
+  "event": "push",
+  "full_wheel_payload_verified_against_commit": true,
+  "jobs": [
+    {
+      "conclusion": "success",
+      "id": 109772663750,
+      "name": "classify-change"
+    },
+    {
+      "conclusion": "success",
+      "id": 109772693496,
+      "name": "semantic-core (ubuntu-latest)"
+    },
+    {
+      "conclusion": "success",
+      "id": 109772693598,
+      "name": "semantic-core (windows-latest)"
+    }
+  ],
+  "linux_root_collector": {
+    "passed": 16,
+    "skipped": 0
+  },
+  "local_scoped_regression": {
+    "passed": 114,
+    "skipped": 1
+  },
+  "platforms": [
+    {
+      "archive_sha256": "343bbe742755155620216adbc65052ad276dc3cb5adebcf38ea5ee558e07d2dc",
+      "artifact_id": 11081034897,
+      "fixture_only": true,
+      "full_payload_digest": "f75a18f2b7b8d52dadb51285e0a7ae392541076855164e85aac45b7abcc4972e",
+      "installed_checks": 94,
+      "installed_commands": 292,
+      "installed_report_sha256": "8cc4a6ea04e908e2455452899d7c77e604f949c83382b0b888693ff3a8637848",
+      "installed_result": "PASS",
+      "job_id": 109772693496,
+      "linux_fixture_wheel_admission": "PASS",
+      "payload_file_count": 53,
+      "physical_node_tested": false,
+      "platform": "Linux",
+      "plugin": {
+        "sha256": "0e9d11b89f196dda2bf23a2995cf20ddf5e203a74c71f67fcb14369a17769bb4",
+        "size_bytes": 19216
+      },
+      "python": "3.12.14 (main, Aug 13 2026, 02:47:42) [GCC 13.3.0]",
+      "source_commit": "8b723063caa2a628c491435a98e8e1d8f80c8e55",
+      "source_tests": {
+        "passed": 3190,
+        "skipped": 51
+      },
+      "wheel_member": "dist/infra_local_hand-0.2.0a1-py3-none-any.whl",
+      "wheel_sha256": "2bc97156c8a360d398065841b49120210f093981fed8e6f136ce80e85624a0fb",
+      "wheel_size_bytes": 269394
+    },
+    {
+      "archive_sha256": "450edee53362665968d2cc4185cd4724fd95e4358f79a11c4031759071129237",
+      "artifact_id": 11081801663,
+      "fixture_only": true,
+      "full_payload_digest": "f75a18f2b7b8d52dadb51285e0a7ae392541076855164e85aac45b7abcc4972e",
+      "installed_checks": 10,
+      "installed_commands": 10,
+      "installed_report_sha256": "0e8222694b6fbfc6f194208809f064da7178de6ba09b72f44b5a1d511ede79a6",
+      "installed_result": "PASS",
+      "job_id": 109772693598,
+      "linux_fixture_wheel_admission": "REJECTED_BUILD_DISTRIBUTION_CRLF_METADATA",
+      "payload_file_count": 53,
+      "physical_node_tested": false,
+      "platform": "Windows",
+      "plugin": null,
+      "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+      "source_commit": "8b723063caa2a628c491435a98e8e1d8f80c8e55",
+      "source_tests": {
+        "passed": 1117,
+        "skipped": 996
+      },
+      "wheel_member": "dist/infra_local_hand-0.2.0a1-py3-none-any.whl",
+      "wheel_sha256": "79b31614ad894ab37330596f0851630d9d438112d82ec6a130acd3dd5b83c420",
+      "wheel_size_bytes": 269415
+    }
+  ],
+  "real_systemd_fixture_accepted": false,
+  "run_attempt": 1,
+  "run_id": 36679838718,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/36679838718",
+  "schema": "infra-local-hand-ci-artifact-verification/v1",
+  "source_commit": "8b723063caa2a628c491435a98e8e1d8f80c8e55",
+  "source_tree": "68d8adbc23e157629c3362346ffd0aa2e6f3df34",
+  "status": "completed"
+}

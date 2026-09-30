@@ -98,3 +98,11 @@ Manager/cgroup facts in these tests are modeled; anonymous pipes and child exit
 observations are real where stated by the existing test fixtures. This is not
 real systemd/cgroup qualification, a host deployment, NAS acceptance or a claim
 that the whole product is now deployable.
+
+The published byte-equivalent candidate is
+`8b723063caa2a628c491435a98e8e1d8f80c8e55`. Its ordinary CI run `36679838718`
+completed with all three jobs successful. Both platform artifacts, complete wheel
+payloads and installed reports have been downloaded and checked. The exact
+results, Linux installation input and remaining real-case gaps are retained in
+[the acceptance handoff](SYSTEMD_ACCEPTANCE_HANDOFF.md). This does not change the
+real-host or production qualification recorded above.
