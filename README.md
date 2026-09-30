@@ -14,9 +14,9 @@
 准确运行 HEAD `9d8328cf742fa130c265de23b1b9085b9e8a0581` 的普通 CI
 [36655111148](https://github.com/kongbu0621/infra-local-hand/actions/runs/36655111148) attempt 1 已 **3/3 成功**，见[准确 CI 证据](docs/a2-execution/evidence/q2-h07-cgroup-fence-spike/round-2-ordinary-ci.json)。
 同一 HEAD 的第二轮 [36662298613](https://github.com/kongbu0621/infra-local-hand/actions/runs/36662298613) attempt 1 为 **FAILURE**：probe 支持，但 C1 缺 launcher/account binding，原报告保持 **UNKNOWN_RETAINED**；账户创建与删除已完成，`cleanup.verified=true`、`residuals=[]`，C2–C6 为 NOT_RUN。
-当前额度 **2/3**，**第三轮 BLOCKED / NOT_DISPATCHED**。第二轮新增 UNKNOWN 已触发停止条件，首轮限定豁免不覆盖它；继续只读定位与证据复核，不派发第三轮。原件、时间线和剩余缺口见[第二轮结果复核](docs/a2-execution/Q2_H07_ROUND2_RESULT_REVIEW.md)及[续验实施复核](docs/a2-execution/Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
+当前额度 **2/3**，**第三轮 NOT_DISPATCHED**。第二轮结束时新增 UNKNOWN 触发原停止条件；Owner 随后批准下述准确限定续验，但实际实现和准入尚未闭合，仍不能派发。原件、时间线和历史缺口见[第二轮结果复核](docs/a2-execution/Q2_H07_ROUND2_RESULT_REVIEW.md)及[首轮续验实施复核](docs/a2-execution/Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)。
 
-第二轮后的[准备复核](docs/a2-execution/Q2_H07_R2_PREPARATION_REVIEW.md)已确认准确Ubuntu源码包缺少相关内核修复，并完成旧范围测试修复`824f4be4`（318项定向测试通过）。新的[最后一轮限定修复方案](docs/a2-execution/q2-h07-r2-continuation/REQUIREMENTS.md)已形成三层文档，**V1–V4 PROPOSED / Gate OPEN**，准确[A `eac5e654`](docs/governance/Q2_H07_R2_CONTINUATION_BASELINE.md)已登记；涉及逐例独立cgroup和版本化诊断/收件，尚未实现，仍待准确A的Owner决定。
+第二轮后的[准备复核](docs/a2-execution/Q2_H07_R2_PREPARATION_REVIEW.md)确认准确Ubuntu源码包缺少相关内核修复；旧范围测试修复`824f4be4`的普通CI已3/3成功。准确[A `eac5e654`](docs/governance/Q2_H07_R2_CONTINUATION_BASELINE.md)现已获[Owner批准](docs/governance/Q2_H07_R2_CONTINUATION_OWNER_DECISION.md)，**V1–V4 CLOSED**，独立C为`eb96b873`。当前仅完成可分离的纯数据组件；原生实现被平台自动检查阻断，整体 **PARTIAL**，实际fixture与最后一轮未运行。见[准确实现与阻断记录](docs/a2-execution/Q2_H07_R2_PARTIAL_IMPLEMENTATION_REVIEW.md)。
 
 **S1 发布沿革：原始候选 `b763bd6` 已公开，GX10 隔离验收后的修复候选 `1e2f9dc` 也已发布主干。** 后续修复、验证结果及其平台范围见 [S1 后续复核](docs/S1_FOLLOWUP_REVIEW.md)。Windows 延后；新版现役服务切换和 artifact-ledger A2 尚未完成。暂不添加许可证，实机原始证据保留本地。准确发布范围见 [首次公开决定](docs/governance/PUBLICATION_OWNER_DECISION.md)、[GX10 修复发布决定](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md) 和 [发布复核](docs/PUBLICATION_VERIFICATION.md)。
 

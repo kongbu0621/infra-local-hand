@@ -52,11 +52,11 @@ C1 在 `s_created` 后约 2.075 ms 记录 `s_exit=-9`，早于 `close_requested`
 原报告状态为 **UNKNOWN_RETAINED**，原因 `final report verification: C1: launcher/account binding missing`；
 收件器的派生拒绝不替代原报告状态，也不能从退出值推断信号发出者或根因。
 已核对全部 **75/75** 项运行历史及相关 attempts，实验仅首轮与第二轮，额度 **2/3**；
-**第三轮 BLOCKED / NOT_DISPATCHED**。第二轮新增 UNKNOWN 触发原停止条件，旧 A 和仅接受首轮历史未知的新 A 均未豁免它。
+**当时第三轮 BLOCKED / NOT_DISPATCHED**。第二轮新增 UNKNOWN 触发原停止条件，旧 A 和仅接受首轮历史未知的 A 均未豁免它；后续准确限定批准见下段。
 根因继续只读定位；详细证据见[第二轮结果复核](Q2_H07_ROUND2_RESULT_REVIEW.md)和[第二轮清单](evidence/q2-h07-cgroup-fence-spike/round-2-verification.json)。
-可选第三轮的报告生产路径缺口仍见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)，修复该缺口不能解除本轮新增阻断。
+可选第三轮的报告生产路径缺口仍见[续验实施复核](Q2_H07_R1_CONTINUATION_IMPLEMENTATION_REVIEW.md)，单靠修复该缺口不能解除当时的新增阻断。
 
-后续[源码包复核](Q2_H07_ROUND2_KERNEL_SOURCE_REVIEW.md)已确认官方Ubuntu `6.17.0-1022.22` 缺少上游kill_seq修复，运行二进制绑定与实际发信来源仍未动态证实。旧U2测试修复`824f4be4`的318项定向测试通过，未改变准入。新的[第二轮限定续验方案](q2-h07-r2-continuation/REQUIREMENTS.md)为V1–V4 **PROPOSED / Gate OPEN**；逐例独立世代与新收件版本尚未实现。准确验证、独立审查和下一步边界见[准备复核](Q2_H07_R2_PREPARATION_REVIEW.md)。
+后续[源码包复核](Q2_H07_ROUND2_KERNEL_SOURCE_REVIEW.md)确认官方Ubuntu `6.17.0-1022.22` 缺少上游kill_seq修复，运行二进制绑定与发信来源仍未动态证实。旧U2修复`824f4be4`的普通CI已3/3成功。准确A `eac5e654`的[第二轮限定续验方案](q2-h07-r2-continuation/REQUIREMENTS.md)现为V1–V4 **CLOSED**，准确B于2026-09-30 12:35:14 +08，独立C `eb96b873`。仅指定历史异常接受生效；当前纯数据组件与离线校验为 **PARTIAL**，原生实现受到平台自动检查阻断，真实生成方/准入未闭合，第三轮仍NOT_DISPATCHED。见[准确实现与阻断复核](Q2_H07_R2_PARTIAL_IMPLEMENTATION_REVIEW.md)，原[准备复核](Q2_H07_R2_PREPARATION_REVIEW.md)保留当时状态。
 
 旧四份BLOCKED、11文件/8目录盘点和六文件维护各自保留。无需再采集同一11项或改权限。下一步按[执行准入差额](Q2_POST_SOURCE_ADMISSION_PLAN.md)处理来源与环境绑定、实际 H07 机制、完整账单、普通身份现场装配及FS资格；当前Q2仍未验收，共享依赖仍UNKNOWN。
 

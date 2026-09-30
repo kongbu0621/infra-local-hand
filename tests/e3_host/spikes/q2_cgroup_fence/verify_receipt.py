@@ -685,7 +685,7 @@ _SUPPORT_MODULES: dict[str, Any] = {}
 
 def _support_module(name: str) -> Any:
     """Load only fixed sibling validators; schema 1 never imports new code."""
-    if name not in {"account_evidence", "continuation"}:
+    if name not in {"account_evidence", "continuation", "receipt_v3"}:
         raise ReceiptError("unknown receipt support module")
     if name not in _SUPPORT_MODULES:
         spec = importlib.util.spec_from_file_location(
@@ -840,6 +840,8 @@ def validate_report(report: Any) -> list[str]:
         return _validate_report_v1(report)
     if report["schema_version"] == 2:
         return _validate_report_v2(report)
+    if report["schema_version"] == 3:
+        return _support_module("receipt_v3").validate_report(report)
     return ["report schema version"]
 
 
@@ -882,6 +884,8 @@ def _bind_fixture_receipts(report: dict[str, Any]) -> list[str]:
 
 
 def derive_report(report: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(report, dict) and type(report.get("schema_version")) is int and report["schema_version"] == 3:
+        return _support_module("receipt_v3").derive_report(report)
     errors = validate_report(report)
     if errors:
         return {"status": "REJECTED", "errors": errors, "case_results": []}
