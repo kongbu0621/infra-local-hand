@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import unittest
 from unittest import mock
 
@@ -53,6 +54,85 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(all(part["quota_exit"][key] for key in q.EXIT_FLAGS))
         self.assertEqual(1,sum(args[0]=="stop" for args in calls))
         self.assertEqual(result,life.observe(manager,part,runner._unknown))
+
+    def test_running_stage_honors_stop_request_before_deadline(self):
+        for request in ("stop_requested", "cancel_event"):
+            with self.subTest(request=request):
+                part,props,manager,calls=self.setup_part()
+                props.update(SubState="running", ExecMainCode="0")
+                if request == "stop_requested":
+                    part[request]=True
+                else:
+                    part[request]=threading.Event();part[request].set()
+                result=life.observe(manager,part,runner._unknown)
+                self.assertEqual(1,sum(args[0]=="stop" for args in calls))
+                self.assertEqual("UNKNOWN",result["state"])
+                self.assertFalse(result["tree_exited"])
+                self.assertNotIn("quota_terminal",part)
+                self.assertNotIn("quota_exit",part)
+                # A later original terminal observation, not the pre-stop
+                # running snapshot, supplies the exit status.
+                props.update(ExecMainCode="1",ExecMainStatus="0")
+                result=life.observe(manager,part,runner._unknown)
+                self.assertEqual("EXITED",result["state"])
+                self.assertEqual("inactive",part["quota_terminal"]["ActiveState"])
+
+    def test_cancel_then_collection_without_original_terminal_stays_unknown(self):
+        part,props,manager,calls=self.setup_part()
+        props.update(SubState="running",ExecMainCode="0")
+        part["stop_requested"]=True
+        life.observe(manager,part,runner._unknown)
+        self.assertEqual(1,sum(args[0]=="stop" for args in calls))
+        self.unload(props)
+        with self.assertRaisesRegex(q.QuotaError,"ORIGINAL_UNIT_MISSING"):
+            life.observe(manager,part,runner._unknown)
+        self.assertNotIn("quota_exit",part)
+
+    def test_cancel_rejects_replaced_identity_and_configuration_before_stopping(self):
+        for fault in ("invocation", "cgroup", "restart", "boot"):
+            with self.subTest(fault=fault):
+                part,props,manager,calls=self.setup_part()
+                part.update(stop_requested=True,invocation_id="a"*32)
+                props.update(SubState="running",ExecMainCode="0")
+                if fault=="invocation":props["InvocationID"]="b"*32
+                if fault=="cgroup":props["ControlGroup"]="/fixed.slice/other.service"
+                if fault=="restart":props["Restart"]="always"
+                if fault=="boot":part["boot_id"]="0"*36
+                with self.assertRaises(q.QuotaError):life.observe(manager,part,runner._unknown)
+                self.assertEqual(0,sum(args[0]=="stop" for args in calls))
+                self.assertNotIn("quota_exit",part)
+
+    def test_lost_stop_ack_retries_only_the_same_observed_invocation(self):
+        for failure in ("returncode", "exception", "replaced"):
+            with self.subTest(failure=failure):
+                part,props,manager,calls=self.setup_part()
+                part["stop_requested"]=True
+                props.update(SubState="running",ExecMainCode="0")
+                original=manager._command
+                failed=[]
+                def command(*args):
+                    if args[0]=="stop" and not failed:
+                        failed.append(args)
+                        if failure=="exception":
+                            raise runner.RunnerError("IO_UNCERTAIN","stop acknowledgement lost")
+                        return subprocess.CompletedProcess(args,1,b"",b"")
+                    return original(*args)
+                manager._command=command
+                if failure=="exception":
+                    with self.assertRaises(runner.RunnerError):life.observe(manager,part,runner._unknown)
+                else:
+                    self.assertEqual("UNKNOWN",life.observe(manager,part,runner._unknown)["state"])
+                self.assertNotIn("quota_exit",part)
+                if failure=="replaced":
+                    props["InvocationID"]="b"*32
+                    with self.assertRaises(q.QuotaError):life.observe(manager,part,runner._unknown)
+                    self.assertEqual(0,sum(args[0]=="stop" for args in calls))
+                else:
+                    result=life.observe(manager,part,runner._unknown)
+                    self.assertEqual("UNKNOWN",result["state"])
+                    self.assertEqual(1,sum(args[0]=="stop" for args in calls))
+                self.assertEqual(1,len(failed))
+                self.assertNotIn("quota_exit",part)
 
     def unload(self, props):
         props.update(LoadState="not-found", ActiveState="inactive", SubState="dead",

@@ -914,6 +914,76 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(proof["future_start_blocked"])
         self.assertFalse(proof["tree_exited"])
 
+    def test_quota_stop_uses_original_observer_without_polling_or_early_stop(self):
+        class Pending:
+            def poll(self):
+                raise AssertionError("piped client completion cannot gate cancellation")
+        for stage in ("bootstrap", "helper", "result_reader"):
+            for invocation in (None, "a" * 32):
+                with self.subTest(stage=stage, invocation=invocation):
+                    manager = runner.SystemdManager()
+                    handle = {"stage": stage, "unit": "original.service", "boot_id": "original-boot",
+                        "cgroup_parent": "/sys/fs/cgroup/original.slice", "invocation_id": invocation,
+                        "launch": Pending(), "launch_acked": invocation is not None,
+                        "stop_requested": False, "stop_acked": False, "quota_transport": object()}
+                    with patch.object(Path, "read_text", return_value="original-boot"), \
+                            patch.object(manager, "_command", side_effect=AssertionError(
+                                "stop must follow the complete original quota observation")) as command:
+                        proof = manager.stop(handle)
+                    self.assertTrue(handle["stop_requested"])
+                    self.assertFalse(handle["stop_acked"])
+                    self.assertEqual(handle["invocation_id"], invocation)
+                    self.assertEqual(handle["launch_acked"], invocation is not None)
+                    self.assertEqual(proof["state"], "UNKNOWN")
+                    self.assertFalse(proof["future_start_blocked"])
+                    self.assertFalse(proof["tree_exited"])
+                    command.assert_not_called()
+
+    def test_quota_cancel_reaches_original_running_helper_via_inspect(self):
+        import subprocess
+        from local_hand_jobs import quota_lifecycle as life
+
+        class Pending:
+            def poll(self): return None
+
+        manager = runner.SystemdManager()
+        unit, invocation = "original.service", "a" * 32
+        pin = {"path": "/original.slice", "device": 4, "inode": 81}
+        capture = life.Transport(65536)
+        part = {"stage": "helper", "unit": unit, "boot_id": "original-boot",
+            "cgroup_parent": "/sys/fs/cgroup/original.slice", "invocation_id": None,
+            "launch": Pending(), "launch_acked": False, "stop_requested": False,
+            "stop_acked": False, "quota_transport": capture, "quota_parent": pin,
+            "phase_deadline_boottime_ns": 30_000_000_000, "execution_id": "original",
+            "cancel_event": threading.Event(), "pipe_nonblocking": True}
+        values = dict.fromkeys(life.FIELDS, "")
+        values.update(Id=unit, LoadState="loaded", ActiveState="active", SubState="running",
+            ControlGroup=pin["path"] + "/" + unit, InvocationID=invocation, ExecMainCode="0",
+            ExecMainStatus="0", Result="success", Restart="no", KillMode="control-group",
+            Type="exec", ExitType="cgroup", RemainAfterExit="yes")
+        calls = []
+        def command(*args):
+            calls.append(args)
+            raw = ((values["InvocationID"] + "\n").encode() if "--value" in args else
+                   "".join(key + "=" + value + "\n" for key, value in values.items()).encode())
+            return subprocess.CompletedProcess(args, 0, raw)
+        with patch.object(Path, "read_text", return_value="original-boot"), \
+                patch.object(runner.budget, "current_clock", return_value={
+                    "boot_id": "original-boot", "boottime_ns": 2_000_000_000}), \
+                patch.object(capture, "pump"), patch.object(life, "parent", return_value=(pin, False)), \
+                patch.object(manager, "_command", side_effect=command):
+            requested = manager.stop(part)
+            self.assertEqual(calls, [])
+            proof = manager.inspect(part)
+        self.assertEqual([call for call in calls if call[0] == "stop"], [("stop", unit)])
+        self.assertEqual(part["invocation_id"], invocation)
+        self.assertTrue(part["launch_acked"])
+        for pending in (requested, proof):
+            self.assertEqual(pending["state"], "UNKNOWN")
+            self.assertFalse(pending["future_start_blocked"])
+            self.assertFalse(pending["tree_exited"])
+        self.assertNotIn("quota_exit", part)
+
     def test_nas_quota_is_explicitly_unsupported_not_boolean_admitted(self):
         class AdmittedManagerProbe(runner.SystemdManager):
             def support(self): return {"supported": True}

@@ -699,6 +699,28 @@ live eligibility; V1–V4 remains PARTIAL and round 3 remains NOT_DISPATCHED.
 The accurate Owner closure remains valid; this is an implementation-environment
 block, not missing approval or a new consumed laboratory round.
 
+### Native spike retirement and existing executor repairs
+
+The later Owner direction on 2026-09-30 is retained in
+[SYSTEMD_CANCELLATION_REPAIR.md](docs/a2-execution/SYSTEMD_CANCELLATION_REPAIR.md).
+It permits replacing or removing unnecessary implementation while preserving
+the product's functionality and requirements. The independent native cgroup
+spike is now **RETIRED_UNQUALIFIED**; stop extending its native helper, generation
+fixture, report producer and final-round admission. Its laboratory workflow job
+is disabled. Round 3 is not to be dispatched. The two consumed rounds, all
+historical failures and approved document bytes remain unchanged; no quota is
+reset and no experiment is recorded as passed.
+
+This supersedes the preceding forward plan to finish V1–V4, not its historical
+R/A/B/C or evidence. The spike was never imported by the production backend or
+packaged in the wheel. Repairs now use the already CLOSED E1–E3 and E3 quota
+architecture: the existing Broker/Runner/systemd lifecycle, original identities,
+bounded observation and UNKNOWN with retained resource barriers. A cancellation
+implementation repair within those unchanged contracts is not a new architecture
+or permission to activate the production backend. E3 real qualification,
+the original Q2 first-remote contract, E4–E6 and NAS remain separately unverified.
+Do not resume the retired candidate as a dependency of those functions.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

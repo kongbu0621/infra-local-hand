@@ -1094,6 +1094,12 @@ class _SystemdExecutionCore:
 
     def _stop_unit(self, handle):
         handle["stop_requested"] = True
+        if "quota_transport" in handle:
+            # The original piped client waits for the service to stop. Its exit
+            # cannot gate cancellation. The quota observer binds the complete
+            # original unit facts before issuing bounded StopUnit requests;
+            # stopping here first could discard those facts through unit GC.
+            return _unknown("stop requested; awaiting original quota unit observation")
         if not handle.get("boot_id"):
             return _unknown("original boot identity is unavailable; stop not retargeted")
         if handle.get("boot_id") and Path("/proc/sys/kernel/random/boot_id").read_text().strip() != handle["boot_id"]:

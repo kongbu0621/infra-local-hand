@@ -28,7 +28,9 @@ concurrency:
 
 jobs:
   bounded-experiment:
-    if: github.repository == 'kongbu0621/infra-local-hand' && github.ref == 'refs/heads/main'
+    # Retired by Owner direction on 2026-09-30. Retain historical experiment
+    # source and evidence; see docs/a2-execution/SYSTEMD_CANCELLATION_REPAIR.md.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:

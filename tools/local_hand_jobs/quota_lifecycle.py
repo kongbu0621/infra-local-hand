@@ -136,14 +136,21 @@ def observe(manager, part, unknown):
         if part.get("reader") is not None:
             part["reader"].bind_reader(identity)
         terminal = _terminal(values)
-        if (terminal or expired or cap.error) and not part.get("quota_stop_attempted"):
+        if terminal:
+            # A running pre-stop snapshot cannot prove exit after unit GC.
+            # Keep the first actual terminal observation of this invocation.
+            part.setdefault("quota_terminal", values)
+        cancel = part.get("cancel_event")
+        requested = part.get("stop_requested") or (cancel is not None and cancel.is_set())
+        if (terminal or expired or cap.error or requested) and not part.get("quota_stop_ok"):
             part["quota_stop_attempted"] = True
-            part["quota_terminal"] = values
             # Recheck original identity immediately before the bounded StopUnit.
+            # A lost/failed ACK permits another stop only after this same full
+            # identity check; it never permits another start or adoption.
             same = manager._command("show", part["unit"], "--property=InvocationID", "--value")
             q.require(same.returncode == 0 and same.stdout.decode().strip() == inv, "ORIGINAL_INVOCATION_CHANGED")
             part["quota_stop_ok"] = manager._command("stop", part["unit"]).returncode == 0
-            return {**unknown(), "identity": identity}
+            return {**unknown("stop requested; original unit exit and pipe EOF remain unproven"), "identity": identity}
         if not terminal:
             return {**unknown(), "state": "RUNNING", "identity": identity}
     else:
