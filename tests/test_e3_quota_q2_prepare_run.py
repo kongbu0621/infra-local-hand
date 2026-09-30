@@ -83,7 +83,8 @@ class FailureDiagnosticTests(unittest.TestCase):
              mock.patch.object(r, "protected", return_value=b"{}"), \
              mock.patch.object(r, "document", return_value={"plan": {"template": {}}}), \
              mock.patch.object(r, "modules", return_value=(s, mock.Mock(), launcher)), \
-             mock.patch.object(r, "envelope", return_value={"plan": {"declarations": {}}}), \
+             mock.patch.object(r, "envelope", return_value={"plan": {"schema": r.SCHEMA,
+                 "purpose": "ONE_ORIGINAL_Q2_HANDOFF", "declarations": {}}}), \
              mock.patch.object(q2_config, "pinned_directory", side_effect=error), \
              mock.patch("builtins.print") as output:
             self.assertEqual(3, r.main(["--bind", "--envelope", "/private/envelope", "--sha256", "a" * 64]))
@@ -255,7 +256,10 @@ class SamePidTests(unittest.TestCase):
         checker.check.side_effect = lambda *_a, **_k: calls.append(("check", os.getpid())) or {"status": "CHECKED"}
         bound = copy.deepcopy(self.value["fixture"])
         bound["supervisor_envelope"]["controller"].update({key: original[key] for key in r.DYNAMIC})
-        result = dict(status="CONTROLLER_CLOSED", sealed=True)
+        result = dict(schema=r.record_schema(self.plan, "supervisor-result"), status="CONTROLLER_CLOSED", sealed=True,
+            scope="TARGET_CONTROLLER_CLOSURE_ONLY", seal_required=True, q3_accepted=False,
+            production_supported=False, independent_supervisor_stop_required=True,
+            launcher_status="CANCEL_CASE_RECORDED" if r.cancellation(self.plan) else "CHAIN_CLOSED", controller_stopped=True)
         event = mock.Mock(); event.is_set.return_value = False; event.wait.return_value = True
         with mock.patch.object(r, "same_pid_bind", return_value=(bound, original)), \
              mock.patch.object(q2_config, "pinned_directory", side_effect=lambda _: os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)), \
@@ -303,7 +307,7 @@ class OriginalClientTests(unittest.TestCase):
         self.real_save = launcher.save
 
     def start(self, argv, **kwargs):
-        summary = json.dumps(dict(schema=r.RESULT_SCHEMA, status="CONTROLLER_CLOSED", q3_accepted=False, production_supported=False))
+        summary = json.dumps(r.child_summary(self.plan, "CONTROLLER_CLOSED"))
         exit_code = 7 if self.fault == "nonzero" else 0
         code = "import signal,time,pathlib,os\ndef stop(*_):\n"
         if self.fault == "missing_eof":

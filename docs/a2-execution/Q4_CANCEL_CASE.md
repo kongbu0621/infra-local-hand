@@ -20,6 +20,10 @@ RUNNING 后，由同一 owner 调用真实 `broker.cancel`。它复用现有 Bro
 | resident 声明 | `local-hand-q4-cancel-resident/v1` |
 | 场景快照 | `local-hand-q4-cancel-snapshot/v1` |
 | 场景证据 | `local-hand-q4-cancel-case/v1` |
+| 原始外层交接计划 | `local-hand-q4-cancel-original-handoff/v1` |
+| 原期限交接声明 | `local-hand-q4-cancel-issued-handoff/v1` |
+| 独立监督返回标记 | `local-hand-q4-cancel-supervisor-handoff-result/v1` |
+| 外层交接结果 / 封存 | `local-hand-q4-cancel-handoff-result/v1` / `local-hand-q4-cancel-handoff-seal/v1` |
 
 监督、launcher 和 resident 的 purpose 都是 `ISOLATED_Q4_CANCEL_HELPER`。
 原 Q2 正常链的 schema、权限和完整关闭判据保持原义。
@@ -32,6 +36,35 @@ policy。该 policy 显式赋予同一合成 owner 既有 `lh:cancel` 能力，�
 继续使用 `q2_resident.py`、`q2_launcher.py`、`q2_supervisor.py` 的受保护入口；新模式明确
 绑定 `q4_cancel_case.py` 和 `q4_cancel_runtime.py` 的源码摘要。resident 的 `cancel_case`
 只能指向固定相邻模块，不能接受任意脚本。正常安装 wheel 不包含这些测试文件。
+
+### 外层交接接线修复
+
+候选装配复核发现：内部 supervisor/launcher/resident 已支持上述取消场景，但
+`q2_prepare_run.static_template()` 仍只接受 Q2 正常链。旧入口实际拒绝新的取消计划并返回
+`HANDOFF_SCHEMA`，因此仅完成内部场景不足以从现有管理入口启动。
+
+本次在原入口增加显式 Q4 family：计划 purpose 为 `ONE_ORIGINAL_Q4_CANCEL_HANDOFF`，
+其模板、launcher、单 preflight resident、issued envelope、child result、marker、summary、
+reservation、result 和 seal 必须属于同一场景。正常 Q2 的合同不变，两个场景不能混搭。
+旧 `q2_prepare_driver`、startup retry 和 reconciliation 仍仅消费原 Q2 合同。
+
+真实装配仍须先提供独立的取消场景事实，经 `q2_prepare_assembly.assemble()` 生成模板，
+再形成上述原始外层计划。此接线不提供新资源，不把旧 Q2 provisioner 变成取消 provisioner，
+也不把已消费批次转换成 Q4。原管理 endpoint、同 MainPID、受保护来源 pins、create-only
+记录、最多 120 秒 owner 期限、原停止余量、原客户端及双 EOF 判据均沿用原实现。
+
+Q4 外层结果与封存明确 `ordinary_phase_closed=false`、
+`independent_ordinary_cleanup_required=true`；监督服务关闭不能代替普通任务的独立清理。
+原管理 endpoint 的自身退出仍由调用者持有原客户端和流来证明，结果继续保留
+`owner_self_exit_verified=false`、`original_management_session_exit_required=true`。
+该修复在现有 CLOSED Q4 范围内，不新增实验轮次或生产资格。
+
+本次外层交接定向回归为 **167 passed，1 skipped**（7.54 秒），覆盖 Q4 handoff、
+既有 owner、Q4 contract/runtime、原 preparation driver、supervisor、evidence review 和
+reconciliation collector。独立复跑新增 handoff 文件为 **22 passed**，独立只读审查
+未发现阻塞。首次局部回归曾因旧诊断测试替身缺少 schema 而失败，补齐替身合同后通过；
+跳过项未计入成功。实际命令为 `python -B -m pytest -q -p no:cacheprovider`，后接上述八个
+`tests/test_e3_*.py` 文件；未使用真实主机服务、账户或 quota。这些结果不替代新候选 CI。
 
 ## 一次请求及有界日志
 

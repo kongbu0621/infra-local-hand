@@ -1,4 +1,4 @@
-"""Explicit one-shot Q2 handoff from an existing root management endpoint.
+"""Explicit one-shot normal-chain or fixed-cancel management handoff.
 
 The endpoint owns the original client and both pipes. Its child binds real
 service identity in the same MainPID before checking and entering the existing
@@ -26,6 +26,9 @@ from types import ModuleType
 SCHEMA = "local-hand-q2-original-handoff/v1"
 ENVELOPE_SCHEMA = "local-hand-q2-issued-handoff/v1"
 RESULT_SCHEMA = "local-hand-q2-handoff-result/v1"
+CANCEL_SCHEMA = "local-hand-q4-cancel-original-handoff/v1"
+CANCEL_PURPOSE = "ONE_ORIGINAL_Q4_CANCEL_HANDOFF"
+CANCEL_TEMPLATE_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 LIMIT = 2 * 1024 * 1024
 RECORD_LIMIT = 131072
 PIPE_LIMIT = 32768
@@ -171,13 +174,60 @@ def protected(path, limit=LIMIT):
         os.close(fd)
 
 
-def static_template(value):
+def cancellation(plan):
+    pair = plan.get("schema"), plan.get("purpose")
+    require(pair in ((SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"), (CANCEL_SCHEMA, CANCEL_PURPOSE)), "HANDOFF_SCHEMA")
+    return pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
+
+
+def record_schema(plan, suffix):
+    return ("local-hand-q4-cancel-" if cancellation(plan) else "local-hand-q2-") + suffix + "/v1"
+
+
+def case_limits(plan):
+    # Outer service exit never closes an ordinary quota phase or its ledger.
+    return (dict(q2_accepted=False, ordinary_phase_closed=False, independent_ordinary_cleanup_required=True)
+            if cancellation(plan) else {})
+
+
+def child_summary(plan, status):
+    return dict(schema=record_schema(plan, "handoff-result"), status=status, q3_accepted=False,
+                production_supported=False, **case_limits(plan))
+
+
+def cancel_child_result(plan, result):
+    if not cancellation(plan):
+        # The legacy result contract stays unchanged, but it cannot consume a
+        # newly versioned cancellation result behind an old outer marker.
+        require(type(result) is dict
+                and result.get("schema") != "local-hand-q4-cancel-supervisor-result/v1"
+                and result.get("launcher_status") != "CANCEL_CASE_RECORDED", "HANDOFF_CHILD_SCENARIO")
+        return
+    require(type(result) is dict and result.get("schema") == record_schema(plan, "supervisor-result")
+            and result.get("scope") == "TARGET_CONTROLLER_CLOSURE_ONLY"
+            and result.get("seal_required") is True and result.get("q3_accepted") is False
+            and result.get("production_supported") is False
+            and result.get("independent_supervisor_stop_required") is True, "HANDOFF_CANCEL_CHILD_SCOPE")
+    if result.get("status") == "CONTROLLER_CLOSED":
+        require(result.get("launcher_status") == "CANCEL_CASE_RECORDED"
+                and result.get("controller_stopped") is True, "HANDOFF_CANCEL_CHILD_STATUS")
+
+
+def static_template(value, *, cancel=False):
     keys(value, {"schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"})
-    require(value["schema"] == "local-hand-q2-supervisor/v1" and value["purpose"] == "ISOLATED_Q2_SUPERVISION",
+    expected = (("local-hand-q4-cancel-supervisor/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+                ("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"))
+    require((value["schema"], value["purpose"]) == expected,
             "HANDOFF_TEMPLATE_SCHEMA")
     nested = value["launcher"]
-    require(nested.get("schema") == "local-hand-q2-launcher/v2" and nested.get("purpose") == "ISOLATED_Q2_CHAIN",
-            "HANDOFF_THREE_PHASE_REQUIRED")
+    expected = (("local-hand-q4-cancel-launcher/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+                ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"))
+    require((nested.get("schema"), nested.get("purpose")) == expected,
+            "HANDOFF_CANCEL_REQUIRED" if cancel else "HANDOFF_THREE_PHASE_REQUIRED")
+    if cancel:
+        resident = nested.get("resident", {})
+        require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
+                ("local-hand-q4-cancel-resident/v1", CANCEL_TEMPLATE_PURPOSE, ["preflight"]), "HANDOFF_CANCEL_RESIDENT")
     for env in (value["supervisor_envelope"], nested["controller_envelope"]):
         keys(env, {"controller", "output_bytes", "storage_bytes", "storage_inodes"})
         require(type(env["controller"]) is dict and not DYNAMIC.intersection(env["controller"]), "HANDOFF_FUTURE_IDENTITY")
@@ -188,10 +238,10 @@ def decode(raw, digest):
     value = document(raw, digest)
     keys(value, {"schema", "purpose", "preparation_id", "boot_id", "template", "supervisor_parent",
                  "output", "declarations", "owner_envelope"})
-    require(value["schema"] == SCHEMA and value["purpose"] == "ONE_ORIGINAL_Q2_HANDOFF", "HANDOFF_SCHEMA")
+    cancel = cancellation(value)
     require(type(value["preparation_id"]) is str and re.fullmatch(r"[0-9a-f]{32}", value["preparation_id"]), "HANDOFF_PREPARATION")
     require(type(value["boot_id"]) is str and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value["boot_id"]), "HANDOFF_BOOT")
-    static_template(value["template"])
+    static_template(value["template"], cancel=cancel)
     keys(value["owner_envelope"], OWNER_KEYS)
     owner = value["owner_envelope"]
     for key, amount in owner.items(): integer(amount, 1)
@@ -235,7 +285,7 @@ def issue(plan, supervisor, now):
     """Pure issuance of both original deadlines exactly once, before launch."""
     require(now["boot_id"] == plan["boot_id"], "HANDOFF_BOOT")
     value = copy.deepcopy(plan["template"])
-    static_template(value)
+    static_template(value, cancel=cancellation(plan))
     issued = integer(now["boottime_ns"], plan["owner_envelope"]["issued_ns"])
     for env in (value["supervisor_envelope"], value["launcher"]["controller_envelope"]):
         candidate = supervisor.candidate(env["controller"])
@@ -244,15 +294,15 @@ def issue(plan, supervisor, now):
     require(target["deadline_ns"] + target["controller"]["timeout_stop_usec"] * 1000 + 2_000_000_000
             <= own["deadline_ns"] and own["deadline_ns"] + own["controller"]["timeout_stop_usec"] * 1000 + 2_000_000_000
             <= plan["owner_envelope"]["deadline_ns"], "HANDOFF_ORIGINAL_CLEANUP_BUDGET")
-    return dict(schema=ENVELOPE_SCHEMA, plan=copy.deepcopy(plan), fixture=value)
+    return dict(schema=record_schema(plan, "issued-handoff"), plan=copy.deepcopy(plan), fixture=value)
 
 
 def envelope(raw, digest, supervisor):
     value = document(raw, digest)
     keys(value, {"schema", "plan", "fixture"})
-    require(value["schema"] == ENVELOPE_SCHEMA, "HANDOFF_ENVELOPE_SCHEMA")
     plan_raw = encoded(value["plan"], LIMIT)
     plan = decode(plan_raw, sha(plan_raw))
+    require(value["schema"] == record_schema(plan, "issued-handoff"), "HANDOFF_ENVELOPE_SCHEMA")
     issued = value["fixture"]["supervisor_envelope"]["issued_ns"]
     require(value == issue(plan, supervisor, dict(boot_id=plan["boot_id"], boottime_ns=issued)), "HANDOFF_ENVELOPE_CHANGED")
     return value
@@ -376,12 +426,12 @@ def bound_role(value, supervisor, checker, launcher, repository):
         # Direct function call in the exact checked MainPID. No exec or fork.
         result = supervisor.supervise(bound, launcher, repository)
         require(os.getpid() == original["pid"], "HANDOFF_MAINPID_CHANGED")
-        marker = dict(schema="local-hand-q2-supervisor-handoff-result/v1", envelope_sha256=sha(encoded(value, LIMIT)),
+        cancel_child_result(plan, result)
+        marker = dict(schema=record_schema(plan, "supervisor-handoff-result"), envelope_sha256=sha(encoded(value, LIMIT)),
                       original=original, result=result, completed_ns=clock(plan)["boottime_ns"],
                       bound_fixture_sha256=sha(raw))
         publish(output, "supervisor-result.json", encoded(marker), launcher)
-        print(json.dumps(dict(schema=RESULT_SCHEMA, status=result["status"], q3_accepted=False,
-                              production_supported=False), sort_keys=True), flush=True)
+        print(json.dumps(child_summary(plan, result["status"]), sort_keys=True), flush=True)
         # Independently stopped after durable result publication. The owner
         # must still prove this client's actual exit and both original EOFs.
         while not stopped.wait(0.025):
@@ -453,13 +503,14 @@ def marker(value, original, launcher):
     except FileNotFoundError: return None
     item = document(raw, sha(raw), RECORD_LIMIT)
     keys(item, {"schema", "envelope_sha256", "original", "result", "completed_ns", "bound_fixture_sha256"})
-    require(item["schema"] == "local-hand-q2-supervisor-handoff-result/v1" and item["original"] == original
+    require(item["schema"] == record_schema(value["plan"], "supervisor-handoff-result") and item["original"] == original
             and item["envelope_sha256"] == sha(encoded(value, LIMIT)), "HANDOFF_CHILD_RESULT_BINDING")
     integer(item["completed_ns"], value["fixture"]["supervisor_envelope"]["issued_ns"],
             value["fixture"]["supervisor_envelope"]["deadline_ns"] - 1)
     require(type(item["result"]) is dict and item["result"].get("q3_accepted") is False
             and item["result"].get("production_supported") is False
             and item["result"].get("independent_supervisor_stop_required") is True, "HANDOFF_CHILD_SCOPE")
+    cancel_child_result(value["plan"], item["result"])
     bound = copy.deepcopy(value["fixture"])
     bound["supervisor_envelope"]["controller"].update({key: original[key] for key in DYNAMIC})
     require(sha(encoded(bound, LIMIT)) == item["bound_fixture_sha256"], "HANDOFF_CHILD_FIXTURE_CHANGED")
@@ -469,9 +520,10 @@ def marker(value, original, launcher):
 def run_original(plan, repository, *, loaded=None):
     """One explicit handoff. The caller supplies its original finite envelope."""
     plan_raw = encoded(plan, LIMIT); plan = decode(plan_raw, sha(plan_raw))
-    result = dict(schema=RESULT_SCHEMA, status="BLOCKED", q2_accepted=False, q3_accepted=False,
+    result = dict(schema=record_schema(plan, "handoff-result"), status="BLOCKED", q2_accepted=False, q3_accepted=False,
                   production_supported=False, original_management_session_exit_required=True,
-                  owner_self_exit_verified=False, scope="ONE_ORIGINAL_Q2_HANDOFF", sealed=False)
+                  owner_self_exit_verified=False, scope=plan["purpose"], sealed=False)
+    result.update(case_limits(plan))
     output = declarations = None; process = worker = controls = None
     original = child = value = None; capture = {}; stop = {}; storage_admitted = False
     stage = "source_load"
@@ -500,7 +552,7 @@ def run_original(plan, repository, *, loaded=None):
         result.update(status="INCOMPLETE", evidence=plan["output"]["path"])
         envelope_raw = encoded(value, LIMIT)
         stage = "owner_reservation"
-        launcher.save(output, "reservation.json", encoded(dict(schema=SCHEMA, plan_sha256=sha(plan_raw), owner=owner,
+        launcher.save(output, "reservation.json", encoded(dict(schema=plan["schema"], plan_sha256=sha(plan_raw), owner=owner,
                       envelope_sha256=sha(envelope_raw), costs=admitted["costs_with_owner"]), LIMIT))
         # A concurrent loser at the create-only reservation must not add its
         # failure records to the successful original owner's directory.
@@ -544,7 +596,7 @@ def run_original(plan, repository, *, loaded=None):
         require(capture.get("complete") is True and capture.get("returncode") == 0 and capture.get("stderr") == b"",
                 "HANDOFF_ORIGINAL_CAPTURE_INCOMPLETE")
         summary = document(capture["stdout"], sha(capture["stdout"]), PIPE_LIMIT)
-        require(summary == dict(schema=RESULT_SCHEMA, status="CONTROLLER_CLOSED", q3_accepted=False, production_supported=False)
+        require(summary == child_summary(plan, "CONTROLLER_CLOSED")
                 and child["result"].get("status") == "CONTROLLER_CLOSED" and child["result"].get("sealed") is True,
                 "HANDOFF_SUPERVISOR_NOT_CLOSED")
         stage = "owner_final_exit"
@@ -592,10 +644,12 @@ def run_original(plan, repository, *, loaded=None):
                     clock(plan)
                     require(controls.empty(), "HANDOFF_SEAL_PARENT_NOT_EMPTY")
                     files = seal_members(plan, output, declarations, launcher)
-                    launcher.save(output, "seal.json", encoded(dict(schema="local-hand-q2-handoff-seal/v1",
+                    payload = dict(schema=record_schema(plan, "handoff-seal"),
                         status="SUPERVISOR_CLOSED", envelope_sha256=sha(encoded(value, LIMIT)), original=original,
                         files=files, owner_self_exit_verified=False, original_management_session_exit_required=True,
-                        q2_accepted=False, q3_accepted=False, production_supported=False)))
+                        q2_accepted=False, q3_accepted=False, production_supported=False)
+                    payload.update(case_limits(plan))
+                    launcher.save(output, "seal.json", encoded(payload))
                 retain(seal, "HANDOFF_SEAL_UNPROVEN")
                 if not failures: result["sealed"] = True
         for descriptor in (output, declarations):
@@ -627,12 +681,14 @@ def main(argv=None):
             loaded = modules(preliminary["plan"]["template"], repository)
             stage = "envelope_validation"
             value = envelope(raw, args.sha256, loaded[0])
+            result.update(schema=record_schema(value["plan"], "handoff-result"), **case_limits(value["plan"]))
             stage = "bound_role"
             return bound_role(value, *loaded, repository)
         stage = "plan_read"
         raw = protected(args.plan)
         stage = "plan_decode"
         plan = decode(raw, args.sha256)
+        result.update(schema=record_schema(plan, "handoff-result"), **case_limits(plan))
         stage = "owner_run"
         result = run_original(plan, repository)
     except Exception as error:
