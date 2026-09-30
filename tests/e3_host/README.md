@@ -23,6 +23,14 @@ The entries above require prepared resources and never provision accounts,
 mounts, quota or cgroups. None replays a consumed experiment. Missing inputs
 report BLOCKED rather than synthesizing private values from unit-test fixtures.
 
+## 固定取消场景
+
+[Q4 固定 helper 取消场景](../../docs/a2-execution/Q4_CANCEL_CASE.md)使用明确版本的独立 fixture，
+通过上述受保护入口装配 `q4_cancel_case.py` / `q4_cancel_runtime.py`。仅在原 preflight helper
+RUNNING 后由同一 owner 调用既有 `broker.cancel`，日志分开记录行为命中、停止及退出事实、
+账本与资源状态。`CANCEL_CASE_RECORDED` 不等于正常 phase/chain 关闭。正常链必须先通过现场
+验收；编码和本地替身测试不提供现场启动许可。无参数入口继续 BLOCKED。
+
 ## Separately authorized fixture preparation
 
 `LH-Q2-FIXTURE-PREP-v1` is closed at the exact baseline and Owner decision in

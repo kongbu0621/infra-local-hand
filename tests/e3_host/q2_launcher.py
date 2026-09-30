@@ -21,9 +21,12 @@ import subprocess
 import sys
 import threading
 from types import SimpleNamespace
+from types import ModuleType
 
 SCHEMA = "local-hand-q2-launcher/v1"
 CHAIN_SCHEMA = "local-hand-q2-launcher/v2"
+CANCEL_SCHEMA = "local-hand-q4-cancel-launcher/v1"
+CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 PHASES = ("preflight", "business", "evidence")
 LIMIT = 2 * 1024 * 1024
 SOURCE_ROOTS = frozenset({"admin", "local_hand", "local_hand_jobs", "local_hand_connect", "local_hand_mcp"})
@@ -92,7 +95,7 @@ def decode(raw, digest):
     require(type(value) is dict and set(value) == {"schema", "purpose", "source", "resident", "assembly",
             "controller_envelope", "setpriv", "output", "declarations", "session"}
             and (value["schema"], value["purpose"]) in ((SCHEMA, "ISOLATED_Q2_PREFLIGHT"),
-                (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN")), "LAUNCHER_SCHEMA")
+                (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN"), (CANCEL_SCHEMA, CANCEL_PURPOSE)), "LAUNCHER_SCHEMA")
     return value
 
 
@@ -144,6 +147,9 @@ def source(value, repository):
             require(path.relative_to(repository).as_posix() in files, "LAUNCHER_SOURCE_MISSING")
     for name in ("q2_launcher", "q2_resident"):
         require("tests/e3_host/" + name + ".py" in files, "LAUNCHER_ENTRY_MISSING")
+    if value.get("schema") == CANCEL_SCHEMA:
+        for name in ("q4_cancel_case", "q4_cancel_runtime"):
+            require("tests/e3_host/" + name + ".py" in files, "LAUNCHER_ENTRY_MISSING")
     # Only these existing administrative namespace packages are synthetic.
     # Every other application package and module must have explicit source.
     for name in ("admin", "admin.local_hand_quota_observer"):
@@ -159,6 +165,42 @@ def source(value, repository):
     sys.meta_path.insert(0, Pinned(sources))
     from local_hand import provenance
     require(provenance.source_commit(require_clean=True) == pin["commit"], "LAUNCHER_SOURCE_IDENTITY")
+
+
+def load_cancel_modules(value, repository):
+    """Two fixed test-only modules, from retained protected and pinned bytes."""
+    require((value["schema"], value["purpose"]) == (CANCEL_SCHEMA, CANCEL_PURPOSE), "CANCEL_LAUNCHER_SCHEMA")
+    loaded = {}
+    for name in ("q4_cancel_runtime", "q4_cancel_case"):
+        relative = "tests/e3_host/" + name + ".py"
+        filename = str(repository / relative)
+        raw = protected(filename, LIMIT)
+        require(value["source"]["files"].get(relative) == hashlib.sha256(raw).hexdigest(), "CANCEL_SOURCE_DIGEST")
+        module = ModuleType("_pinned_" + name)
+        module.__file__ = filename
+        exec(compile(raw, filename, "exec", dont_inherit=True), module.__dict__)
+        loaded[name] = module
+    return loaded["q4_cancel_runtime"], loaded["q4_cancel_case"]
+
+
+def validate_cancel_result(result, resident, report):
+    """Case recording is separate from task exit, phase closure and acceptance."""
+    require(type(result) is dict and result.get("schema") == "local-hand-q4-cancel-launcher-result/v1"
+            and result.get("status") == "CANCEL_CASE_RECORDED"
+            and result.get("q3_accepted") is False and result.get("production_supported") is False
+            and result.get("ordinary_phase_closed") is False
+            and result.get("independent_ordinary_cleanup_required") is True, "CANCEL_LAUNCHER_RESULT")
+    case = result.get("case")
+    require(not report.validate_report(case), "CANCEL_CASE_REPORT")
+    require(case.get("ready_for_finish") is True and case.get("chain_closed") is False,
+            "CANCEL_CASE_UNFINISHED")
+    # The report decoder owns its field semantics; the fixed identity must also
+    # match the private resident that was launched for this exact operation.
+    require(case.get("operation_id") == resident["request"]["operation_id"]
+            and case.get("request_digest") == resident["request"]["request_digest"]
+            and case.get("principal_id") == resident["principal"]["principal_id"], "CANCEL_CASE_OPERATION")
+    require(len(report.encode_report(case)) <= 16384, "CANCEL_CASE_REPORT_LIMIT")
+    return case
 
 
 def controller(value, template, declared_totals=None):
@@ -201,7 +243,8 @@ def controller(value, template, declared_totals=None):
         memory_bytes=spec.memory_bytes, pids=spec.tasks_max,
         # Resident pipes, manager-control captures and the outer summary have
         # independent finite buffers; none is charged as zero.
-        output_bytes=phase_count * envelope["output_bytes"] + 32768 + 4096)
+        output_bytes=phase_count * envelope["output_bytes"] + 32768
+                     + (32768 if value["schema"] == CANCEL_SCHEMA else 4096))
     for key, amount in costs.items():
         require(q.integer(amount + totals[key]) <= capacity["management"][key], "LAUNCHER_CONTROLLER_CAPACITY")
     for kind in ("bytes", "inodes"):
@@ -394,6 +437,8 @@ def run(value, repository):
     from admin.local_hand_quota_observer.q2_capture import capture_existing
     raw = encoded(value["assembly"], LIMIT)
     chained = value["schema"] == CHAIN_SCHEMA
+    cancelled = value["schema"] == CANCEL_SCHEMA
+    cancel_runtime, cancel_report = load_cancel_modules(value, repository) if cancelled else (None, None)
     phases = PHASES if chained else ("preflight",)
     chain = chains.decode(raw, hashlib.sha256(raw).hexdigest()) if chained else None
     template = chains.phase_template(chain, "preflight") if chained else assembly.decode(raw, hashlib.sha256(raw).hexdigest())
@@ -414,6 +459,9 @@ def run(value, repository):
             phase_work = next(root for root in chain.data()["phases"][phase]["grant"]["roots"] if root["role"] == "work")
             require((phase_work["uid"], phase_work["gid"]) == (resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
                     "LAUNCHER_ORDINARY_ACCOUNT")
+    if cancelled:
+        require(resident["schema"] == "local-hand-q4-cancel-resident/v1"
+                and resident["purpose"] == CANCEL_PURPOSE, "LAUNCHER_RESIDENT_BINDING")
     require(resident["entry"]["path"] == str(repository / "tests/e3_host/q2_resident.py")
             and resident["entry"]["sha256"] == value["source"]["files"]["tests/e3_host/q2_resident.py"], "LAUNCHER_RESIDENT_ENTRY")
     require(resident["ordinary"]["parent"] == t["peer"]["parent"] and
@@ -447,9 +495,12 @@ def run(value, repository):
     clock = controller(value, template, chains.declared_totals(chain)) if chained else controller(value, template)
     end = value["controller_envelope"]["deadline_ns"]
     output = declarations = None; channel = record = None; process = None; sockets = []; capture = {}; worker = None
-    phase_result = None; configs = []; plans = {}; closures = {}; grants = {}; broker_session = None
-    result = dict(schema="local-hand-q2-launcher-result/v2" if chained else "local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
+    phase_result = coordinator = None; configs = []; plans = {}; closures = {}; grants = {}; broker_session = None
+    result = dict(schema="local-hand-q4-cancel-launcher-result/v1" if cancelled else
+                  "local-hand-q2-launcher-result/v2" if chained else "local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
                   production_supported=False, independent_controller_stop_required=True)
+    if cancelled:
+        result.update(ordinary_phase_closed=False, independent_ordinary_cleanup_required=True)
     try:
         output = directory(value["output"], 0o700)
         declarations = directory(value["declarations"], 0o755)
@@ -525,10 +576,21 @@ def run(value, repository):
             config = installed["config"]
             m.controller(config, value["controller_envelope"])
             record = m.RunRecord(installed["management_record"])
-            phase_result = Coordinator(config, value["controller_envelope"], record, bridge.Client(channel)).run()
+            coordinator = (cancel_runtime.Coordinator(config, value["controller_envelope"], record,
+                bridge.Client(channel), report=cancel_report, request=resident["request"],
+                principal_id=resident["principal"]["principal_id"]) if cancelled else
+                Coordinator(config, value["controller_envelope"], record, bridge.Client(channel)))
+            phase_result = coordinator.run()
             save(output, "phase-" + phase + ".json" if chained else "phase.json", encoded(phase_result))
-            require(phase_result["status"] == "PHASE_CLOSED" and phase_result["q3_accepted"] is False
+            require(phase_result["status"] == ("CANCEL_CASE_RECORDED" if cancelled else "PHASE_CLOSED")
+                    and phase_result["q3_accepted"] is False
                     and phase_result["production_supported"] is False, "LAUNCHER_PHASE_UNCLOSED")
+            if cancelled:
+                require(phase_result["ordinary_phase_closed"] is False
+                        and phase_result["independent_ordinary_cleanup_required"] is True,
+                        "CANCEL_UNEXPECTED_PHASE_CLOSURE")
+                result["case"] = phase_result["case"]
+                continue
             closures[phase] = quota_closure.digest({"phase": phase, "fence": phase_result["fence"]})
             grants[phase] = grant.digest; plans[phase] = plan; configs.append(config)
             if chained:
@@ -543,8 +605,13 @@ def run(value, repository):
         channel.close(); channel = None
         while worker.is_alive() and budget.current_clock()["boottime_ns"] < end: worker.join(0.025)
         require(bool(capture) and capture["complete"] and capture["returncode"] == 0, "LAUNCHER_RESIDENT_CAPTURE")
-        summary = q._load(capture["stdout"], 4096, 4)
-        if chained:
+        summary = q._load(capture["stdout"], 32768 if cancelled else 4096, 20 if cancelled else 4)
+        if cancelled:
+            q._keys(summary, {"schema", "status", "operation_id", "phase", "case", "q3_accepted", "production_supported"})
+            require(summary["schema"] == "local-hand-q4-cancel-resident-result/v1"
+                    and summary["status"] == "CANCEL_CASE_RECORDED" and summary["phase"] == "preflight"
+                    and summary["case"] == result["case"], "CANCEL_RESIDENT_RESULT")
+        elif chained:
             q._keys(summary, {"schema", "status", "operation_id", "phases", "closure_digests", "q3_accepted", "production_supported"})
             require(summary["schema"] == "local-hand-q2-resident-result/v2" and summary["status"] == "CHAIN_CLOSED"
                     and summary["phases"] == list(phases) and summary["closure_digests"] == closures, "LAUNCHER_RESIDENT_RESULT")
@@ -555,10 +622,19 @@ def run(value, repository):
         require(summary["operation_id"] == prepared["identity"]
                 and summary["q3_accepted"] is False and summary["production_supported"] is False
                 and capture["stderr"] == b"", "LAUNCHER_RESIDENT_RESULT")
-        result.update(status="CHAIN_CLOSED" if chained else "PREFLIGHT_CLOSED")
+        result.update(status="CANCEL_CASE_RECORDED" if cancelled else "CHAIN_CLOSED" if chained else "PREFLIGHT_CLOSED")
         result.update(dict(grant_digests=grants, closure_digests=closures) if chained else dict(grant_digest=grant.digest))
+        if cancelled:
+            validate_cancel_result(result, resident, cancel_report)
     except Exception as error:
+        result["status"] = "INCOMPLETE"
         result["reason"] = reason(error)
+        if cancelled and coordinator is not None:
+            # These are already validated original observations, not a claim
+            # that a failed controller completed the case or ordinary cleanup.
+            if coordinator.last_case is not None:
+                result["case"] = coordinator.last_case
+            result["case_events"] = coordinator.events
     finally:
         failures = []
         def cleanup(action, code):
@@ -612,7 +688,7 @@ def main(argv=None):
     # Full records and host identities stay in the private fixture directory.
     print(json.dumps({key: result[key] for key in ("schema", "status", "q3_accepted", "production_supported",
           "independent_controller_stop_required", "reason", "evidence") if key in result}, sort_keys=True))
-    return 0 if result["status"] in ("PREFLIGHT_CLOSED", "CHAIN_CLOSED") else 3
+    return 0 if result["status"] in ("PREFLIGHT_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED") else 3
 
 
 if __name__ == "__main__": raise SystemExit(main())

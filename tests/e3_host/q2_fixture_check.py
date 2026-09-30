@@ -1,4 +1,4 @@
-"""Read-only batch admission of the exact supervisor/v1 + launcher/v2 fixture.
+"""Read-only admission of an exact normal-chain or fixed cancellation fixture.
 
 Run with the same already supervised root service and original envelope as the
 supervisor. No reservation, grant, database, socket, target service or quota is
@@ -26,6 +26,9 @@ from types import ModuleType
 SCHEMA = "local-hand-q2-fixture-check/v1"
 LIMIT = 2 * 1024 * 1024
 PHASES = ("preflight", "business", "evidence")
+CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
+CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
+CANCEL_RESIDENT = "local-hand-q4-cancel-resident/v1"
 PACKAGES = ("local_hand", "local_hand_connect", "local_hand_jobs", "local_hand_mcp")
 
 
@@ -155,7 +158,8 @@ def bootstrap(raw, digest, repository):
     supervisor.__file__ = str(repository / "tests/e3_host/q2_supervisor.py")
     exec(compile(retained["q2_supervisor"], supervisor.__file__, "exec", dont_inherit=True), supervisor.__dict__)
     value = supervisor.decode(raw, digest)
-    require(supervisor.expected_status(value["launcher"]) == "CHAIN_CLOSED", "FIXTURE_THREE_PHASE_REQUIRED")
+    require(supervisor.expected_status(value["launcher"]) in ("CHAIN_CLOSED", "CANCEL_CASE_RECORDED"),
+            "FIXTURE_SCENARIO_REQUIRED")
     launcher = supervisor.load_source(value, repository)
     return value, supervisor, launcher
 
@@ -165,6 +169,7 @@ class Report:
         self.rows = []
         self.values = {}
         self.guard = None
+        self.cancel = False
 
     def probe(self, name, action, *, needs=()):
         if any(key not in self.values for key in needs):
@@ -184,13 +189,16 @@ class Report:
             return None
 
     def result(self):
-        return dict(schema=SCHEMA, status="CHECKED" if self.rows and all(row["status"] == "PASS" for row in self.rows)
+        required = ["original_grant_reservation", "ordinary_identity_and_namespace", "quota_and_enforcement",
+                    "original_exit_and_eof", "supervisor_external_stop"]
+        required[3:3] = ["normal_chain_acceptance", "fixed_cancel_case_execution"] if self.cancel else ["three_phase_execution"]
+        return dict(schema="local-hand-q4-cancel-fixture-check/v1" if self.cancel else SCHEMA,
+                    status="CHECKED" if self.rows and all(row["status"] == "PASS" for row in self.rows)
                     else "BLOCKED", scope="READ_ONLY_EXISTING_PREREQUISITES", checks=self.rows,
                     q2_accepted=False, q3_accepted=False, production_supported=False,
                     quota_state="NOT_OBSERVED", execution_state="NOT_RUN", capacity_peak="NOT_MEASURED",
                     independent_supervisor_stop_required=True,
-                    future_admission_required=["original_grant_reservation", "ordinary_identity_and_namespace",
-                        "quota_and_enforcement", "three_phase_execution", "original_exit_and_eof", "supervisor_external_stop"])
+                    future_admission_required=required)
 
 
 def directory(pin, mode=0o700, owner=0, *, empty=True, gid=None):
@@ -236,10 +244,19 @@ def static_binding(value, supervisor, repository):
     """Resident/installation binding checked without composing a mutable broker."""
     from local_hand_jobs import quota_contract as q
     nested = value["launcher"]; resident = nested["resident"]; install = resident["installation"]
-    q._keys(resident, {"schema", "purpose", "entry", "installation", "policy", "ordinary", "principal",
-                       "request", "plan", "phases"})
-    require(resident["schema"] == "local-hand-q2-resident/v2" and resident["purpose"] == "ISOLATED_Q2_CHAIN"
-            and resident["phases"] == list(PHASES), "FIXTURE_RESIDENT_VERSION")
+    cancel = supervisor.cancel_fixture(value)
+    fields = {"schema", "purpose", "entry", "installation", "policy", "ordinary", "principal", "request", "plan", "phases"}
+    q._keys(resident, fields | {"cancel_case"} if cancel else fields)
+    expected = (CANCEL_RESIDENT, CANCEL_PURPOSE, ["preflight"]) if cancel else (
+        "local-hand-q2-resident/v2", "ISOLATED_Q2_CHAIN", list(PHASES))
+    require((resident["schema"], resident["purpose"], resident["phases"]) == expected, "FIXTURE_RESIDENT_VERSION")
+    if cancel:
+        relative = "tests/e3_host/q4_cancel_case.py"
+        require(resident["cancel_case"] == dict(path=str(repository / relative),
+                sha256=nested["source"]["files"].get(relative)), "FIXTURE_CANCEL_SOURCE")
+        q.match(resident["cancel_case"]["sha256"], r"[0-9a-f]{64}")
+        require(sha(protected(resident["cancel_case"]["path"], LIMIT)) == resident["cancel_case"]["sha256"],
+                "FIXTURE_CANCEL_SOURCE")
     q.match(nested["session"], r"[0-9a-f]{64}")
     q._keys(install, {"package_root", "source_commit", "payload_digest", "files", "programs"})
     q._keys(install["programs"], {"python", "systemctl", "systemd_run"})
@@ -339,6 +356,8 @@ def resident_paths(nested):
     # q2_resident.protected opens EVERY directory with O_RDONLY|O_DIRECTORY;
     # its ancestors therefore need read+search, not only pathname traversal.
     paths = [(resident["entry"]["path"], 0, 4)]
+    if nested["schema"] == CANCEL_LAUNCHER:
+        paths.append((resident["cancel_case"]["path"], 0, 4))
     paths += [(installation["package_root"] + "/" + name, 0, 4) for name in
               (*installation["files"], "local_hand/" + provenance.METADATA_NAME)]
     paths += [(pin["path"], 0, 5) for pin in installation["programs"].values()]
@@ -372,6 +391,44 @@ def resident_paths(nested):
         os.close(fd)
 
 
+def cancel_policy_binding(nested, policy):
+    """Pure single-preflight equivalent of the normal chain's policy binding."""
+    from local_hand_jobs import contract, policy as p, bootstrap_roots
+    from admin.local_hand_quota_observer import q2_assembly as assembly
+    resident = nested["resident"]; pin = resident["principal"]
+    require(set(pin) == {"principal_id", "scopes"} and type(pin["scopes"]) is list
+            and len(set(pin["scopes"])) == len(pin["scopes"])
+            and set(pin["scopes"]) == {"lh:submit", "lh:read", "lh:evidence", "lh:cancel"}
+            and re.fullmatch(r"q2-synthetic-[a-z0-9-]{1,64}", pin["principal_id"]), "FIXTURE_CANCEL_SCOPES")
+    request = contract.validate_submit(resident["request"])
+    require(request["kind"] == "host.inspect" and request["inputs"] == {}, "FIXTURE_CANCEL_REQUEST")
+    principal = contract.Principal(pin["principal_id"], frozenset(pin["scopes"]))
+    for scope in ("lh:submit", "lh:cancel"):
+        policy.authorize(principal, scope, request=request, owner=principal.principal_id)
+    require(policy.config.get("local_peers", {}).get(str(resident["ordinary"]["uid"])) == principal.principal_id
+            and request["expected"] == policy.expected(request["profile_ref"]), "FIXTURE_CANCEL_OWNER")
+    raw = assembly.q._canonical(nested["assembly"], assembly.c.LIMIT)
+    template = assembly.decode(raw, sha(raw)).data()
+    allocation = bootstrap_roots.validate_grant(template["grant"]["allocation"])
+    profile = p.thaw(policy.profile(request["profile_ref"]))
+    slots = {slot["slot_id"]: slot for slot in profile.get("bootstrap_slots", [])}
+    slot = slots.get(allocation["slot_id"])
+    require(slot is not None, "FIXTURE_CANCEL_POLICY_SLOT")
+    uid = policy.config.get("process_manager", {}).get("uid")
+    require(type(uid) is int and uid > 0 and uid == resident["ordinary"]["uid"]
+            and policy.source_commit == template["installation"]["source_commit"]
+            and all(root["uid"] == uid for root in template["grant"]["roots"]), "FIXTURE_CANCEL_ROOT_OWNER")
+    roots = {role: root["path"] for role, root in slot["roots"].items()}
+    paths = {root["path"]: {key: root[key] for key in ("device", "inode", "uid")}
+             for root in slot["roots"].values()}
+    require(allocation["roots"] == roots and allocation["paths"] == paths
+            and allocation["retained_paths"] == [], "FIXTURE_CANCEL_POLICY_ROOTS")
+    require(allocation["operation_id"] == allocation["record_id"] == request["operation_id"]
+            and allocation["phase"] == "preflight" and allocation["namespace"] == "job"
+            and allocation["execution_id"] == "job-" + request["operation_id"] + "-preflight",
+            "FIXTURE_CANCEL_ALLOCATION")
+
+
 def policy_snapshot(nested):
     from local_hand_jobs import policy as p, contract
     resident = nested["resident"]; pin = resident["policy"]; ordinary = resident["ordinary"]
@@ -394,6 +451,8 @@ def policy_snapshot(nested):
         chain_raw = q2_chain.q._canonical(nested["assembly"], q2_chain.c.LIMIT)
         chain = q2_chain.decode(chain_raw, sha(chain_raw))
         q2_chain.check_policy(chain, policy, resident["request"]["profile_ref"])
+    elif nested["schema"] == CANCEL_LAUNCHER:
+        cancel_policy_binding(nested, policy)
     return policy
 
 
@@ -499,13 +558,15 @@ def check(raw, digest, repository, *, admitted=None):
             return bootstrap(raw, digest, repository)
         value, supervisor, launcher = admitted
         require(supervisor.decode(raw, digest) == value, "FIXTURE_ADMITTED_BYTES")
-        require(supervisor.expected_status(value["launcher"]) == "CHAIN_CLOSED", "FIXTURE_THREE_PHASE_REQUIRED")
+        require(supervisor.expected_status(value["launcher"]) in ("CHAIN_CLOSED", "CANCEL_CASE_RECORDED"),
+                "FIXTURE_SCENARIO_REQUIRED")
         return value, supervisor, launcher
     loaded = report.probe("protected_source", original_source)
     if loaded is None:
         report.probe("fixture_checks", lambda: None, needs=("protected_source",))
         return report.result()
     value, supervisor, launcher = loaded
+    report.cancel = supervisor.cancel_fixture(value)
     from local_hand_jobs import budget, quota_lifecycle
     clock = report.probe("clock", budget.current_clock)
     binding = report.probe("declaration_capacity_geometry", lambda: supervisor.validate(value, launcher, clock), needs=("clock",))

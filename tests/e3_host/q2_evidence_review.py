@@ -13,10 +13,11 @@ import copy
 import hashlib
 import json
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
+from types import ModuleType
 
 SCHEMA = "local-hand-q2-offline-evidence-review/v1"
 SCOPE = "OFFLINE_TARGET_CONTROLLER_ARTIFACT_CONSISTENCY_ONLY"
@@ -31,6 +32,9 @@ SEAL_LIMIT = 65536
 PIPE_LIMIT = 32768
 COST_KEYS = frozenset(("storage_bytes", "storage_inodes", "cpu_ns", "memory_bytes", "pids", "output_bytes"))
 DYNAMIC = frozenset(("invocation_id", "cgroup_device", "cgroup_inode"))
+CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
+CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
+CANCEL_SUPERVISOR = "local-hand-q4-cancel-supervisor/v1"
 
 
 def require(ok, code):
@@ -54,6 +58,79 @@ def token(value, pattern, code):
 
 def keys(value, expected, code="REVIEW_SCHEMA"):
     require(type(value) is dict and set(value) == set(expected), code)
+
+
+def cancel_fixture(fixture):
+    """Reject cross-scenario wrappers before interpreting any retained status."""
+    pair = fixture.get("schema"), fixture.get("purpose")
+    require(pair in (("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"),
+                     (CANCEL_SUPERVISOR, CANCEL_PURPOSE)), "REVIEW_FIXTURE_VERSION")
+    nested = fixture["launcher"]
+    cancel = pair == (CANCEL_SUPERVISOR, CANCEL_PURPOSE)
+    require(cancel == (nested.get("schema") == CANCEL_LAUNCHER), "REVIEW_SCENARIO_BINDING")
+    if cancel:
+        require(nested.get("purpose") == CANCEL_PURPOSE, "REVIEW_LAUNCHER_VERSION")
+    return cancel
+
+
+def record_schema(cancel, suffix):
+    return ("local-hand-q4-cancel-" if cancel else "local-hand-q2-") + suffix + "/v1"
+
+
+def case_contract():
+    """Load this reviewer's fixed local decoder, never a path from evidence."""
+    path = Path(__file__).with_name("q4_cancel_case.py")
+    with path.open("rb") as source:
+        raw = source.read(FILE_LIMIT + 1)
+    require(len(raw) <= FILE_LIMIT, "REVIEW_DECODER_LIMIT")
+    module = ModuleType("_q4_cancel_offline_contract")
+    module.__file__ = str(path)
+    # Compile retained local bytes explicitly; a read-only review must not
+    # create a .pyc cache even when its caller omitted Python's -B option.
+    exec(compile(raw, str(path), "exec", dont_inherit=True), module.__dict__)
+    return module
+
+
+def cancel_case_facts(result, fixture, completed_ns=None):
+    """Bind a recorded case to its fixture; recording proves no task closure."""
+    require(cancel_fixture(fixture), "REVIEW_CANCEL_FIXTURE")
+    nested = fixture["launcher"]; resident = nested["resident"]; assembly = nested["assembly"]
+    require(resident.get("schema") == "local-hand-q4-cancel-resident/v1"
+            and resident.get("purpose") == CANCEL_PURPOSE and resident.get("phases") == ["preflight"],
+            "REVIEW_CANCEL_RESIDENT")
+    require(result.get("schema") == "local-hand-q4-cancel-launcher-result/v1"
+            and result.get("status") == "CANCEL_CASE_RECORDED"
+            and result.get("q3_accepted") is False and result.get("production_supported") is False
+            and result.get("ordinary_phase_closed") is False
+            and result.get("independent_ordinary_cleanup_required") is True,
+            "REVIEW_CANCEL_SCOPE")
+    entry = absolute(resident["entry"]["path"])
+    suffix = "/tests/e3_host/q2_resident.py"
+    require(entry.endswith(suffix), "REVIEW_SOURCE_ENTRY_LAYOUT")
+    relative = "tests/e3_host/q4_cancel_case.py"
+    pin = resident["cancel_case"]
+    keys(pin, ("path", "sha256"), "REVIEW_CANCEL_SOURCE")
+    require(pin["path"] == entry[:-len(suffix)] + "/" + relative
+            and pin["sha256"] == nested["source"]["files"].get(relative), "REVIEW_CANCEL_SOURCE")
+    token(pin["sha256"], r"[0-9a-f]{64}", "REVIEW_CANCEL_SOURCE")
+    case = result.get("case")
+    contract = case_contract()
+    require(not contract.validate_report(case), "REVIEW_CANCEL_REPORT")
+    require(case["ready_for_finish"] is True and case["chain_closed"] is False, "REVIEW_CANCEL_UNFINISHED")
+    request = resident["request"]
+    require(case["operation_id"] == request["operation_id"] and case["request_digest"] == request["request_digest"]
+            and case["principal_id"] == resident["principal"]["principal_id"] and case["phase"] == "preflight"
+            and case["target_execution_id"] == assembly["grant"]["allocation"]["execution_id"]
+            and case["boot_id"] == assembly["installation"]["capacity"]["boot_id"], "REVIEW_CANCEL_BINDING")
+    for observation in ([case["trigger"], case["helper"]] + case["stops"]):
+        identity = observation.get("identity") if observation is not None else None
+        if identity is not None:
+            require(identity["cgroup"] == resident["ordinary"]["parent"]["path"] + "/" + identity["unit"],
+                    "REVIEW_CANCEL_PARENT")
+    envelope = nested["controller_envelope"]
+    require(envelope["issued_ns"] <= case["observed_ns"] < envelope["deadline_ns"]
+            and (completed_ns is None or case["observed_ns"] <= completed_ns), "REVIEW_CANCEL_TIME")
+    return case
 
 
 def encoded(value):
@@ -253,7 +330,12 @@ def management_facts(records, stop, static):
 
 def capacity_facts(fixture, reservation, member_bytes):
     nested = fixture["launcher"]; assembly = nested["assembly"]
-    if nested["schema"] == "local-hand-q2-launcher/v1":
+    cancel = cancel_fixture(fixture)
+    if cancel:
+        require(assembly.get("schema") == "local-hand-q2-assembly/v1"
+                and assembly.get("purpose") == "ISOLATED_Q2_PREFLIGHT", "REVIEW_CANCEL_ASSEMBLY")
+        phase_grants = [assembly["grant"]]; status = "CANCEL_CASE_RECORDED"
+    elif nested["schema"] == "local-hand-q2-launcher/v1":
         require(nested["purpose"] == "ISOLATED_Q2_PREFLIGHT", "REVIEW_LAUNCHER_VERSION")
         phase_grants = [assembly["grant"]]; status = "PREFLIGHT_CLOSED"
     else:
@@ -273,7 +355,8 @@ def capacity_facts(fixture, reservation, member_bytes):
         for name in COST_KEYS:
             costs[name] += integer(management[name], 1) if name.startswith("storage_") else sum(
                 integer(item[name], 1) for item in management["stages"].values())
-    for env, extra in ((nested["controller_envelope"], (len(phase_grants) - 1) * PIPE_LIMIT + PIPE_LIMIT + 4096),
+    for env, extra in ((nested["controller_envelope"], (len(phase_grants) - 1) * PIPE_LIMIT
+                       + PIPE_LIMIT + (PIPE_LIMIT if cancel else 4096)),
                        (fixture["supervisor_envelope"], 2 * PIPE_LIMIT + 4096)):
         spec = env["controller"]
         for name in ("storage_bytes", "storage_inodes"): costs[name] += integer(env[name], 1)
@@ -340,17 +423,16 @@ def delivery_digest(fixture, fixture_sha, *, cpu_quota_format=None):
 
 
 def facts(output, declarations, seal, member_bytes):
-    require(seal.get("schema") == "local-hand-q2-controller-seal/v1"
+    fixture = decode(declarations["supervisor.json"])
+    keys(fixture, ("schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"))
+    cancel = cancel_fixture(fixture)
+    require(seal.get("schema") == record_schema(cancel, "controller-seal")
             and seal.get("scope") == "TARGET_CONTROLLER_CLOSURE_ONLY" and seal.get("status") == "CONTROLLER_CLOSED",
             "REVIEW_SEAL_SCOPE")
     keys(seal, ("schema", "scope", "files", "original", "fixture_sha256", "closed_ns", "status", "q3_accepted",
                 "production_supported", "independent_supervisor_stop_required"))
     limited_scope(seal, stop="independent_supervisor_stop_required")
     original = identity(seal["original"])
-    fixture = decode(declarations["supervisor.json"])
-    keys(fixture, ("schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"))
-    require(fixture["schema"] == "local-hand-q2-supervisor/v1" and fixture["purpose"] == "ISOLATED_Q2_SUPERVISION",
-            "REVIEW_FIXTURE_VERSION")
     fixture_sha = digest(declarations["supervisor.json"])
     require(declarations["supervisor.json"] == encoded(fixture) and seal["fixture_sha256"] == fixture_sha,
             "REVIEW_FIXTURE_BINDING")
@@ -360,7 +442,7 @@ def facts(output, declarations, seal, member_bytes):
             and reservation["target_static"] == fixture["launcher"]["controller_envelope"], "REVIEW_RESERVATION_BINDING")
     require(decode(output["invocation.json"]) == original == marker["controller"] == result["original"],
             "REVIEW_ORIGINAL_BINDING")
-    require(marker["schema"] == "local-hand-q2-controller-result/v1" and marker["fixture_sha256"] == fixture_sha
+    require(marker["schema"] == record_schema(cancel, "controller-result") and marker["fixture_sha256"] == fixture_sha
             and decode(declarations["controller-result.json"]) == marker, "REVIEW_MARKER_BINDING")
     nested = copy.deepcopy(fixture["launcher"]); static = nested["controller_envelope"]["controller"]
     require(not set(static) & DYNAMIC, "REVIEW_STATIC_IDENTITY")
@@ -368,15 +450,18 @@ def facts(output, declarations, seal, member_bytes):
     require(decode(declarations["launcher.json"]) == nested, "REVIEW_LAUNCHER_BINDING")
     launcher_status, capacity = capacity_facts(fixture, reservation, member_bytes)
     limited_scope(result, stop="independent_supervisor_stop_required")
-    require(result["schema"] == "local-hand-q2-supervisor-result/v1" and result["status"] == "CLOSURE_OBSERVED_SEAL_PENDING"
+    require(result["schema"] == record_schema(cancel, "supervisor-result") and result["status"] == "CLOSURE_OBSERVED_SEAL_PENDING"
             and result["scope"] == seal["scope"] and result["seal_required"] is True and result["sealed"] is False
             and result["cleanup_errors"] == [] and "reason" not in result and result["controller_stopped"] is True
             and result["closed_ns"] == seal["closed_ns"] and result["launcher_status"] == launcher_status,
             "REVIEW_PROVISIONAL_RESULT")
     limited_scope(marker["result"], stop="independent_controller_stop_required")
-    expected_schema = "local-hand-q2-launcher-result/" + fixture["launcher"]["schema"].rsplit("/", 1)[1]
+    expected_schema = ("local-hand-q4-cancel-launcher-result/v1" if cancel else
+                       "local-hand-q2-launcher-result/" + fixture["launcher"]["schema"].rsplit("/", 1)[1])
     require(marker["result"]["schema"] == expected_schema and marker["result"]["status"] == launcher_status,
             "REVIEW_LAUNCHER_NOT_CLOSED")
+    if cancel:
+        cancel_case_facts(marker["result"], fixture, marker["completed_ns"])
     summary = {name: marker["result"][name] for name in ("schema", "status", "q3_accepted", "production_supported",
                                                        "independent_controller_stop_required")}
     require(decode(output["controller.stdout"]) == summary and output["controller.stderr"] == b"", "REVIEW_CLIENT_OUTPUT")
@@ -470,6 +555,12 @@ def review(evidence, declarations, expected_seal):
         result = base_result()
         result.update(status="OFFLINE_ARTIFACTS_CONSISTENT", seal_sha256=expected_seal, sealed_members=13,
                       sealed_bytes=total, recorded_launcher_status=launcher_status)
+        if cancel_fixture(fixture):
+            case = decode(blobs[0]["controller-result.json"])["result"]["case"]
+            result.update(schema="local-hand-q4-cancel-offline-evidence-review/v1",
+                          cancellation_case_record_reviewed=True, cancellation_case_status=case["status"],
+                          helper_exit_proven=case["helper_exit_proven"], ordinary_phase_closed=False,
+                          independent_ordinary_cleanup_required=True)
         return result
     finally:
         for directory in reversed(directories): directory.close()

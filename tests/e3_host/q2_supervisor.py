@@ -25,6 +25,9 @@ import time
 from types import ModuleType, SimpleNamespace
 
 SCHEMA = "local-hand-q2-supervisor/v1"
+CANCEL_SCHEMA = "local-hand-q4-cancel-supervisor/v1"
+CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
+CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
 LIMIT = 2 * 1024 * 1024
 RECORD_LIMIT = 65536
 PIPE_LIMIT = 32768
@@ -120,17 +123,33 @@ def decode(raw, digest):
             if type(item) is int: require(0 <= item < 2**63, "SUPERVISOR_NUMBER")
     finite(value)
     require(type(value) is dict and set(value) == {"schema", "purpose", "launcher", "controller_parent",
-            "supervisor_envelope", "output", "declarations"} and value["schema"] == SCHEMA
-            and value["purpose"] == "ISOLATED_Q2_SUPERVISION", "SUPERVISOR_SCHEMA")
-    expected_status(value["launcher"])
+            "supervisor_envelope", "output", "declarations"}, "SUPERVISOR_SCHEMA")
+    cancel_fixture(value)
     return value
+
+
+def cancel_fixture(value):
+    """A cancellation record cannot enter the legacy phase-closure contract."""
+    pair = value.get("schema"), value.get("purpose")
+    require(pair in ((SCHEMA, "ISOLATED_Q2_SUPERVISION"), (CANCEL_SCHEMA, CANCEL_PURPOSE)),
+            "SUPERVISOR_SCHEMA")
+    nested = value["launcher"]
+    status = expected_status(nested)
+    cancel = pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
+    require(cancel == (status == "CANCEL_CASE_RECORDED"), "SUPERVISOR_SCENARIO_BINDING")
+    return cancel
+
+
+def record_schema(value, suffix):
+    return ("local-hand-q4-cancel-" if value.get("schema") == CANCEL_SCHEMA else "local-hand-q2-") + suffix + "/v1"
 
 
 def expected_status(launcher):
     require(type(launcher) is dict, "SUPERVISOR_LAUNCHER_SCHEMA")
     pair = (launcher.get("schema"), launcher.get("purpose"))
     statuses = {("local-hand-q2-launcher/v1", "ISOLATED_Q2_PREFLIGHT"): "PREFLIGHT_CLOSED",
-                ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED"}
+                ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
+                (CANCEL_LAUNCHER, CANCEL_PURPOSE): "CANCEL_CASE_RECORDED"}
     require(pair in statuses, "SUPERVISOR_LAUNCHER_SCHEMA")
     return statuses[pair]
 
@@ -152,7 +171,7 @@ def load_source(value, repository):
 
 
 def templates(launcher):
-    if expected_status(launcher) == "PREFLIGHT_CLOSED":
+    if expected_status(launcher) != "CHAIN_CLOSED":
         from admin.local_hand_quota_observer import q2_assembly
         raw = encoded(launcher["assembly"], LIMIT)
         return [q2_assembly.decode(raw, sha(raw)).data()]
@@ -178,13 +197,14 @@ def validate(value, launcher, clock):
     """Pure finite geometry/capacity checks before reservation or unit delivery."""
     from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c
     from local_hand_jobs import quota_contract as q, quota_grant as g
+    cancel = cancel_fixture(value)
     nested = value["launcher"]
     target_envelope = nested["controller_envelope"]
     own_envelope = value["supervisor_envelope"]
     for env in (target_envelope, own_envelope): q._keys(env, ENVELOPE)
     target = candidate(target_envelope["controller"])
     own = guard.decode_controller(own_envelope["controller"])
-    phase_count = 1 if expected_status(nested) == "PREFLIGHT_CLOSED" else 3
+    phase_count = 3 if expected_status(nested) == "CHAIN_CLOSED" else 1
     complete = copy.deepcopy(nested)
     complete["controller_envelope"]["controller"] = {"schema": guard.SCHEMA, **asdict(target)}
     raw = encoded(complete, LIMIT)
@@ -230,7 +250,8 @@ def validate(value, launcher, clock):
         require(not c.overlap(p["path"], parent["path"]), "SUPERVISOR_TARGET_OVERLAP")
     # Account resident pipes + launcher summary, then the additional original
     # controller pipes, supervisor admission captures and supervisor summary.
-    for part in (costs(target_envelope, target, (phase_count - 1) * target_envelope["output_bytes"] + PIPE_LIMIT + 4096),
+    for part in (costs(target_envelope, target, (phase_count - 1) * target_envelope["output_bytes"]
+                      + PIPE_LIMIT + (PIPE_LIMIT if cancel else 4096)),
                  costs(own_envelope, own, 2 * PIPE_LIMIT + 4096)):
         for key, amount in part.items(): totals[key] += amount
     for key, amount in totals.items():
@@ -556,7 +577,7 @@ def read_marker(value, original, launcher):
     except FileNotFoundError: return None
     marker = json.loads(raw, object_pairs_hook=unique)
     require(set(marker) == {"schema", "fixture_sha256", "controller", "result", "completed_ns"}
-            and marker["schema"] == "local-hand-q2-controller-result/v1"
+            and marker["schema"] == record_schema(value, "controller-result")
             and marker["fixture_sha256"] == sha(encoded(value, LIMIT))
             and marker["controller"] == original, "SUPERVISOR_RESULT_BINDING")
     require(type(marker["completed_ns"]) is int and value["launcher"]["controller_envelope"]["issued_ns"]
@@ -565,6 +586,12 @@ def read_marker(value, original, launcher):
     result = marker["result"]
     require(type(result) is dict and result.get("q3_accepted") is False and result.get("production_supported") is False
             and result.get("independent_controller_stop_required") is True, "SUPERVISOR_RESULT_SCOPE")
+    if cancel_fixture(value):
+        entry = value["launcher"]["resident"]["entry"]["path"]
+        repository = Path(entry).parents[2]
+        require(str(repository / "tests/e3_host/q2_resident.py") == entry, "SUPERVISOR_RESIDENT_ENTRY")
+        _, report = launcher.load_cancel_modules(value["launcher"], repository)
+        launcher.validate_cancel_result(result, value["launcher"]["resident"], report)
     return marker
 
 
@@ -611,7 +638,7 @@ def controller_role(value, launcher, repository):
         now = budget.current_clock()
         require(now["boot_id"] == binding["boot_id"] and now["boottime_ns"] < nested["controller_envelope"]["deadline_ns"],
                 "SUPERVISOR_CHILD_DEADLINE")
-        marker = dict(schema="local-hand-q2-controller-result/v1", fixture_sha256=sha(encoded(value, LIMIT)),
+        marker = dict(schema=record_schema(value, "controller-result"), fixture_sha256=sha(encoded(value, LIMIT)),
                       controller=identity, result=result, completed_ns=now["boottime_ns"])
         publish_marker(output, encoded(marker), launcher)
         summary = {key: result[key] for key in ("schema", "status", "q3_accepted", "production_supported",
@@ -629,7 +656,7 @@ def controller_role(value, launcher, repository):
 def supervise(value, launcher, repository):
     from admin.local_hand_quota_observer import q2_capture
     from local_hand_jobs import budget
-    result = dict(schema="local-hand-q2-supervisor-result/v1", status="BLOCKED", q3_accepted=False,
+    result = dict(schema=record_schema(value, "supervisor-result"), status="BLOCKED", q3_accepted=False,
                   production_supported=False, independent_supervisor_stop_required=True,
                   scope="TARGET_CONTROLLER_CLOSURE_ONLY", seal_required=True, sealed=False)
     output = declarations = None
@@ -652,7 +679,7 @@ def supervise(value, launcher, repository):
         storage_admitted = True
         result["status"] = "INCOMPLETE"
         result["evidence"] = value["output"]["path"]
-        launcher.save(output, "reservation.json", encoded(dict(schema=SCHEMA, fixture_sha256=sha(encoded(value, LIMIT)),
+        launcher.save(output, "reservation.json", encoded(dict(schema=value["schema"], fixture_sha256=sha(encoded(value, LIMIT)),
             owner=owner, target_static=value["launcher"]["controller_envelope"], capacity_costs=binding["totals"])))
         fixture_raw = encoded(value, LIMIT)
         launcher.save(declarations, "supervisor.json", fixture_raw)
@@ -729,7 +756,7 @@ def supervise(value, launcher, repository):
                     controls.clock(value["supervisor_envelope"]["deadline_ns"])
                     files = seal_files(value, output, declarations, launcher)
                     require(controls.empty(), "SUPERVISOR_SEAL_TREE_NOT_EMPTY")
-                    payload = dict(schema="local-hand-q2-controller-seal/v1", scope=result["scope"], files=files,
+                    payload = dict(schema=record_schema(value, "controller-seal"), scope=result["scope"], files=files,
                         original=original, fixture_sha256=sha(encoded(value, LIMIT)), closed_ns=result["closed_ns"],
                         status="CONTROLLER_CLOSED", q3_accepted=False, production_supported=False,
                         independent_supervisor_stop_required=True)

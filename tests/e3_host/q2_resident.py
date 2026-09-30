@@ -21,6 +21,7 @@ import sys
 
 SCHEMA = "local-hand-q2-resident/v1"
 CHAIN_SCHEMA = "local-hand-q2-resident/v2"
+CANCEL_SCHEMA = "local-hand-q4-cancel-resident/v1"
 LIMIT = 262144
 PHASES = ("preflight",)
 CHAIN_PHASES = ("preflight", "business", "evidence")
@@ -40,9 +41,12 @@ def unique(items):
 
 
 def fixture_phases(value):
-    phases = PHASES if value.get("schema") == SCHEMA else CHAIN_PHASES if value.get("schema") == CHAIN_SCHEMA else ()
+    variants = {SCHEMA: (PHASES, "ISOLATED_Q2_RESIDENT"),
+                CHAIN_SCHEMA: (CHAIN_PHASES, "ISOLATED_Q2_CHAIN"),
+                CANCEL_SCHEMA: (PHASES, "ISOLATED_Q4_CANCEL_HELPER")}
+    phases, purpose = variants.get(value.get("schema"), ((), None))
     require(bool(phases) and value.get("phases") == list(phases)
-            and value.get("purpose") == ("ISOLATED_Q2_RESIDENT" if phases == PHASES else "ISOLATED_Q2_CHAIN"),
+            and value.get("purpose") == purpose,
             "RESIDENT_SCHEMA")
     return phases
 
@@ -112,9 +116,11 @@ def bootstrap(path, digest):
     require(type(digest) is str and re.fullmatch(r"[0-9a-f]{64}", digest)
             and hashlib.sha256(raw).hexdigest() == digest, "RESIDENT_FIXTURE_DIGEST")
     value = json.loads(raw, object_pairs_hook=unique)
-    require(type(value) is dict and set(value) == {
+    require(type(value) is dict, "RESIDENT_SCHEMA")
+    extra = {"cancel_case"} if value.get("schema") == CANCEL_SCHEMA else set()
+    require(set(value) == {
         "schema", "purpose", "entry", "installation", "policy", "ordinary", "principal",
-        "request", "plan", "phases", "bridge"}, "RESIDENT_SCHEMA")
+        "request", "plan", "phases", "bridge"} | extra, "RESIDENT_SCHEMA")
     fixture_phases(value)
     entry = value["entry"]
     require(type(entry) is dict and set(entry) == {"path", "sha256"}
@@ -142,6 +148,22 @@ def bootstrap(path, digest):
     require(not any(name.split(".")[0] in allowed for name in sys.modules), "RESIDENT_PREIMPORTED")
     sys.meta_path.insert(0, Pinned(sources))
     return value
+
+
+def load_cancel_case(value):
+    """Only this adjacent, separately pinned test module may observe the core."""
+    require(value["schema"] == CANCEL_SCHEMA, "RESIDENT_CANCEL_SCHEMA")
+    pin = value["cancel_case"]
+    path = str(Path(__file__).with_name("q4_cancel_case.py"))
+    require(type(pin) is dict and set(pin) == {"path", "sha256"}
+            and pin["path"] == path, "RESIDENT_CANCEL_ENTRY")
+    raw = protected(path, 512 * 1024)
+    require(hashlib.sha256(raw).hexdigest() == pin["sha256"], "RESIDENT_CANCEL_DIGEST")
+    from types import ModuleType
+    module = ModuleType("_q4_resident_cancel_case")
+    module.__file__ = path
+    exec(compile(raw, path, "exec", dont_inherit=True), module.__dict__)
+    return module
 
 
 def process_start(pid):
@@ -222,7 +244,7 @@ def host_admission(value, policy, manager):
                 "RESIDENT_CONTROLLERS")
 
 
-def compose(value):
+def compose(value, *, cancel_module=None):
     from local_hand_jobs import cli, deployment, policy as policy_module
     from local_hand_jobs.runner import _SystemdExecutionCore
     from local_hand_jobs import quota_contract as q
@@ -253,7 +275,13 @@ def compose(value):
                 == pin["sha256"], "RESIDENT_PROGRAM_BINDING")
     require(all(os.path.realpath(profile["python"]) == programs["python"]["path"]
                 for profile in policy.profiles.values()), "RESIDENT_INTERPRETER_BINDING")
-    manager = _SystemdExecutionCore(policy.config.get("process_manager"))
+    manager_class = _SystemdExecutionCore
+    if value["schema"] == CANCEL_SCHEMA:
+        require(cancel_module is not None, "RESIDENT_CANCEL_ENTRY")
+        manager_class = cancel_module.observe_manager(_SystemdExecutionCore)
+    else:
+        require(cancel_module is None, "RESIDENT_CANCEL_SCHEMA")
+    manager = manager_class(policy.config.get("process_manager"))
     host_admission(value, policy, manager)
     broker = cli._compose_broker(policy, manager, quota_required=True)
     try:
@@ -274,8 +302,11 @@ def prepare_request(value, broker):
     pin = value["principal"]
     require(type(pin["principal_id"]) is str and re.fullmatch(r"q2-synthetic-[a-z0-9-]{1,64}", pin["principal_id"]),
             "RESIDENT_SYNTHETIC_PRINCIPAL")
+    scopes = {"lh:submit", "lh:read", "lh:evidence"}
+    if value.get("schema") == CANCEL_SCHEMA:
+        scopes.add("lh:cancel")
     require(type(pin["scopes"]) is list and len(set(pin["scopes"])) == len(pin["scopes"])
-            and set(pin["scopes"]) == {"lh:submit", "lh:read", "lh:evidence"}, "RESIDENT_SCOPES")
+            and set(pin["scopes"]) == scopes, "RESIDENT_SCOPES")
     request = contract.validate_submit(value["request"])
     require(request["kind"] == "host.inspect" and request["inputs"] == {}
             and fixture_phases(value), "RESIDENT_SYNTHETIC_REQUEST")
@@ -419,8 +450,57 @@ def run_phase(broker, identity, phase, channel, *, chain=None):
                 return reply["closed"]
 
 
-def run(value, channel, broker):
+def run_cancel(value, channel, broker, module, identity, principal):
+    """One fixed case; finish ends recording, never closes a quota phase."""
+    from local_hand_jobs import quota_bridge
+    case = module.Case(broker, identity, principal)
+    result = dict(schema="local-hand-q4-cancel-resident-result/v1", status="INCOMPLETE",
+                  operation_id=identity, phase="preflight", q3_accepted=False,
+                  production_supported=False)
+    started = False
+    recording_done = False
+    try:
+        case.attach(broker.runner.manager)
+        handler = quota_bridge.Phase(broker, "job", identity, "preflight")
+        broker._start("job", identity, "preflight")
+        channel.send(dict(event="prepared", namespace="job", identity=identity,
+                          phase="preflight", snapshot=handler.snapshot()))
+        while True:
+            channel._time()
+            if started and not recording_done:
+                broker.tick()
+            case.poll()
+            recording_done = case.snapshot()["ready_for_finish"]
+            require(broker.state.healthy, "RESIDENT_LEDGER_UNHEALTHY")
+            if not select.select([channel.sock], [], [], 0.05)[0]:
+                continue
+            command = channel.receive()
+            require(type(command) is dict and set(command) == {"action", "value"}, "RESIDENT_COMMAND")
+            if command == {"action": "finish", "value": None}:
+                require(started and recording_done, "RESIDENT_CANCEL_NOT_READY")
+                result["status"] = "CANCEL_CASE_RECORDED"
+                break
+            require(command["action"] in ("snapshot", "bind", "start"), "RESIDENT_CANCEL_ACTION")
+            require(command["action"] != "start" or not started, "RESIDENT_START_REPLAY")
+            snapshot = handler.handle(command)
+            if command["action"] == "start":
+                started = True
+            case.poll()
+            channel.send(dict(schema="local-hand-q4-cancel-snapshot/v1", phase=snapshot, case=case.snapshot()))
+    except Exception as error:
+        result["reason"] = failure_reason(error)
+    finally:
+        case.close()
+        case.poll()
+        result["case"] = case.snapshot()
+    return result
+
+
+def run(value, channel, broker, *, cancel_module=None):
     identity, principal = prepare_request(value, broker)
+    if value["schema"] == CANCEL_SCHEMA:
+        require(cancel_module is not None, "RESIDENT_CANCEL_ENTRY")
+        return run_cancel(value, channel, broker, cancel_module, identity, principal)
     from local_hand_jobs import quota_closure
     if fixture_phases(value) == CHAIN_PHASES:
         chain = Chain(broker, identity, value["plan"])
@@ -455,9 +535,16 @@ def main(argv=None):
     try:
         require(args.fixture and args.sha256, "EXPLICIT_PRIVATE_FIXTURE_REQUIRED")
         value = bootstrap(args.fixture, args.sha256)
+        if value["schema"] == CANCEL_SCHEMA:
+            result["schema"] = "local-hand-q4-cancel-resident-result/v1"
+        cancel_module = load_cancel_case(value) if value["schema"] == CANCEL_SCHEMA else None
         channel = channel_from_pin(value["bridge"], version=2 if value["schema"] == CHAIN_SCHEMA else 1)
-        broker = compose(value)
-        result = run(value, channel, broker)
+        if cancel_module is None:
+            broker = compose(value)
+            result = run(value, channel, broker)
+        else:
+            broker = compose(value, cancel_module=cancel_module)
+            result = run(value, channel, broker, cancel_module=cancel_module)
     except Exception as error:
         result.update(status="INCOMPLETE" if broker is not None else "BLOCKED",
                       reason=failure_reason(error))
@@ -470,13 +557,13 @@ def main(argv=None):
         if broker is not None:
             try:
                 from local_hand_jobs.cli import close_service
-                close_service(broker, None, failed=result["status"] not in ("PHASE_CLOSED", "CHAIN_CLOSED"))
+                close_service(broker, None, failed=result["status"] not in ("PHASE_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED"))
             except Exception as error:
                 result.update(status="INCOMPLETE", reason=failure_reason(error))
     output = json.dumps(result, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    require(len(output) <= 4096, "RESIDENT_SUMMARY_LIMIT")
+    require(len(output) <= (24576 if result["schema"] == "local-hand-q4-cancel-resident-result/v1" else 4096), "RESIDENT_SUMMARY_LIMIT")
     os.write(1, output + b"\n")
-    return 0 if result["status"] in ("PHASE_CLOSED", "CHAIN_CLOSED") else 3
+    return 0 if result["status"] in ("PHASE_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED") else 3
 
 
 if __name__ == "__main__":
