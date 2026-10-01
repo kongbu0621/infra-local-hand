@@ -728,6 +728,36 @@ the next protected case's finite time budgets, and adds bounded failure metadata
 Its offline checks do not establish Q2 acceptance; old evidence and obligations
 remain retained, and the next guest normal chain is a single explicit attempt.
 
+### Q2 system-manager startup repair proposal
+
+Scope `LH-Q2-SYSTEM-MANAGER-REPAIR-v1` is **OPEN** at documentation A
+`ae50aea2639c32021794ecb70730f4b9e781c8d6`. Its
+[baseline registration](docs/governance/Q2_SYSTEM_MANAGER_REPAIR_BASELINE.md) pins
+the [requirements](docs/a2-execution/q2-system-manager-repair/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-system-manager-repair/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-system-manager-repair/IMPLEMENTATION_PLAN.md).
+Unchanged R/source/integrity, Owner-only decision authority, mandate and change
+control remain as declared above. There is no Owner closure B or CLOSED C yet.
+
+The [complete failure review](docs/a2-execution/Q2_APPARMOR_FAILURE_REVIEW.md)
+establishes an AppArmor capability-setup failure before the earlier listener
+timeout; the later empty-ledger attempt stopped at retained user-manager inventory.
+Do not call the timeout budget change a verified fix for this root cause.
+The proposed repair uses a fixed privileged launcher inside the existing controller
+and PID 1 to start ordinary workers with all original identity and isolation checks.
+It changes the approved user-manager geometry and adds a trusted launch responsibility;
+it is not a one-property repair or an extension of the quota observer's read-only API.
+
+M1–M4 covers explicit manager/handle/evidence versions, nested bounded ordinary
+slice, complete old-producer admission, source-pinned new payload using the old
+interpreter, targeted validation and one guarded original-guest package execution.
+Old objects, unknown outcomes and resource obligations remain retained. No global
+AppArmor change, reinstallation, old-manager restart, cleanup, automatic retry or
+production activation is proposed. Implementation remains at `7780364`; these
+documentation commits contain no new program, test or runtime configuration.
+Unaffected CLOSED work remains valid; do not implement this new scope before its
+accurate R/A/B/C sequence. Do not ask for a cyber access qualification.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
