@@ -721,6 +721,13 @@ or permission to activate the production backend. E3 real qualification,
 the original Q2 first-remote contract, E4–E6 and NAS remain separately unverified.
 Do not resume the retired candidate as a dependency of those functions.
 
+The subsequent [Q2 management timeout repair](docs/a2-execution/Q2_MANAGEMENT_TIMEOUT_REPAIR.md)
+records an original listener runtime timeout after the broker-session repair.
+It retains the original per-stage bounds and all identity checks, redistributes
+the next protected case's finite time budgets, and adds bounded failure metadata.
+Its offline checks do not establish Q2 acceptance; old evidence and obligations
+remain retained, and the next guest normal chain is a single explicit attempt.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

@@ -4,10 +4,93 @@ import importlib.abc
 import importlib.util
 import json
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
+
+DIAGNOSTIC_SCHEMA = "local-hand-q2-entry-diagnostic/v1"
+DIAGNOSTIC_LIMIT = 2048
+DIAGNOSTIC_SOURCES = tuple("admin/local_hand_quota_observer/" + name + ".py" for name in (
+    "q2_entry", "q2_listener", "q2_runtime", "q2_peer", "q2_service", "q2_journal",
+    "q2_config", "systemd_runtime", "admission", "protected_inputs", "controller_guard")) + (
+    "local_hand_jobs/quota_contract.py", "local_hand_jobs/quota_grant.py",
+    "local_hand_jobs/quota_closure.py", "local_hand_jobs/quota_client.py")
+BOOTSTRAP_CODES = frozenset(("BOOTSTRAP_PATH", "BOOTSTRAP_PROTECTION", "BOOTSTRAP_SIZE",
+    "BOOTSTRAP_CHANGED", "UNPINNED_MODULE", "ISOLATED_PYTHON_REQUIRED", "CONFIG_DIGEST",
+    "DUPLICATE_KEY", "ENTRY_PATH", "ENTRY_DIGEST", "PACKAGE_COUNT", "PACKAGE_PATH",
+    "PACKAGE_DIGEST", "PACKAGE_ALIAS", "PREIMPORTED_PACKAGE", "PACKAGE_PARENT", "ARGUMENTS"))
+
+
+def safe_diagnostic(value):
+    """Accept only our finite metadata schema, never arbitrary captured stderr."""
+    if type(value) is not dict or set(value) != {
+            "schema", "role", "type", "code", "errno", "frames", "frames_truncated"}:
+        return None
+    if (value["schema"] != DIAGNOSTIC_SCHEMA or value["role"] not in
+            ("entry", "listener", "admission", "query", "native")
+            or type(value["type"]) is not str or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", value["type"]) is None
+            or (value["code"] is not None and (type(value["code"]) is not str
+                or re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", value["code"]) is None))
+            or (value["errno"] is not None and (type(value["errno"]) is not int or not 0 <= value["errno"] <= 4095))
+            or type(value["frames_truncated"]) is not bool
+            or type(value["frames"]) is not list or len(value["frames"]) > 8):
+        return None
+    for frame in value["frames"]:
+        if (type(frame) is not dict or set(frame) != {"source", "function", "line"}
+                or frame["source"] not in DIAGNOSTIC_SOURCES
+                or type(frame["function"]) is not str
+                or re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]{0,63}|<module>|<lambda>)", frame["function"]) is None
+                or type(frame["line"]) is not int or not 1 <= frame["line"] <= 1_000_000):
+            return None
+    return value
+
+
+def diagnostic(error, role):
+    """Source labels and exception metadata only; no I/O or exception text."""
+    root = Path(__file__).absolute().parents[2]
+    allowed = {str(root.joinpath(*name.split("/"))): name for name in DIAGNOSTIC_SOURCES}
+    identity = (type(error).__module__, type(error).__name__)
+    code = getattr(error, "code", None) if identity in (
+        ("local_hand_jobs.quota_contract", "QuotaError"), ("local_hand_jobs.contract", "JobError")) else None
+    if code is None and len(error.args) == 1 and type(error.args[0]) is str:
+        if error.args[0] in BOOTSTRAP_CODES or identity == ("admin.local_hand_quota_observer.admission", "Rejected"):
+            code = error.args[0]
+    if type(code) is not str or re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code) is None:
+        code = None
+    kind = type(error).__name__
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", kind) is None:
+        kind = "Exception"
+    number = error.errno if isinstance(error, OSError) else None
+    if type(number) is not int or not 0 <= number <= 4095:
+        number = None
+    frames = []; trace = error.__traceback__; examined = 0; omitted = False
+    while trace is not None and examined < 64:
+        source = allowed.get(trace.tb_frame.f_code.co_filename)
+        function = trace.tb_frame.f_code.co_name
+        if source is not None and re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]{0,63}|<module>|<lambda>)", function):
+            frames.append(dict(source=source, function=function, line=trace.tb_lineno))
+            if len(frames) > 8:
+                del frames[0]; omitted = True
+        trace = trace.tb_next; examined += 1
+    return dict(schema=DIAGNOSTIC_SCHEMA, role=role if role in
+        ("listener", "admission", "query", "native") else "entry", type=kind,
+        code=code, errno=number, frames=frames, frames_truncated=omitted or trace is not None)
+
+
+def report_failure(error, role):
+    """Best effort on the already owned pipe; never replace the entry result."""
+    try:
+        value = diagnostic(error, role)
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode() + b"\n"
+        if len(raw) > DIAGNOSTIC_LIMIT:
+            value.update(frames=[], frames_truncated=True)
+            raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode() + b"\n"
+        if safe_diagnostic(value) is not None and len(raw) <= DIAGNOSTIC_LIMIT:
+            os.write(2, b"Q2_ENTRY_REJECTED\n" + raw)
+    except Exception:
+        pass
+
 
 def _bootstrap_read(filename, maximum):
     """Small independent loader: do not import unverified neighboring modules."""
@@ -127,11 +210,13 @@ def bootstrap(path, digest):
 
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
+    role = "entry"
     try:
         if len(args) not in (3, 4) or args[0] not in ("listener", "admission", "query", "native"):
             raise ValueError("ARGUMENTS")
         if (args[0] == "native") != (len(args) == 4):
             raise ValueError("ARGUMENTS")
+        role = args[0]
         config = bootstrap(args[1], args[2])
         if args[0] in ("listener", "admission"):
             from admin.local_hand_quota_observer import q2_listener
@@ -143,8 +228,8 @@ def main(argv=None):
             else:
                 q2_runtime.query(config)
         return 0
-    except (OSError, ValueError, TypeError, KeyError, RuntimeError, ImportError):
-        os.write(2, b"Q2_ENTRY_REJECTED\n")
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError, ImportError) as error:
+        report_failure(error, role)
         return 2
 
 

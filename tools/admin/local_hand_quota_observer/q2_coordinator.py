@@ -7,12 +7,15 @@ ordinary bridge response. No provisioning, retries, refund or restart adoption.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from pathlib import PurePosixPath
+import re
 import stat
 import time
 
 from local_hand_jobs import quota_contract as q, quota_closure as close, quota_lifecycle, budget
-from . import q2_config as c, q2_management as m
+from . import q2_config as c, q2_management as m, q2_entry as entry
 from .q2_journal import Journal
 from .q2_service import Service
 from .systemd_runtime import boottime_ns
@@ -20,6 +23,92 @@ from .systemd_runtime import boottime_ns
 SNAPSHOT_POLLS = 48  # Plus initial snapshot/bind/start/close stays below 64.
 MANAGEMENT_POLLS = 10
 MANAGEMENT_STOP_POLLS = 3
+DIAGNOSTIC_LIMIT = 4096
+
+
+def _entry_stderr(raw):
+    """Relay only validated entry metadata, never arbitrary stderr text."""
+    if len(raw) > 32768:
+        return None
+    def unique(items):
+        value = {}
+        for key, item in items:
+            if key in value:
+                raise ValueError("DUPLICATE_DIAGNOSTIC_KEY")
+            value[key] = item
+        return value
+    try:
+        result = None
+        lines = raw.splitlines(keepends=True)
+        for marker, line in zip(lines, lines[1:]):
+            if marker != b"Q2_ENTRY_REJECTED\n" or not line.endswith(b"\n") or len(line) > entry.DIAGNOSTIC_LIMIT:
+                continue
+            try:
+                value = entry.safe_diagnostic(json.loads(line, object_pairs_hook=unique))
+            except (ValueError, TypeError, UnicodeError, RecursionError):
+                continue
+            if value is not None:
+                if result is not None:
+                    return None  # Multiple complete diagnostics are ambiguous.
+                result = value
+        return result
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        return None
+
+
+def _unit_diagnostic(value):
+    if type(value) is not dict:
+        return None
+    result = {}
+    for name in ("LoadState", "ActiveState", "SubState", "Result"):
+        item = value.get(name)
+        if type(item) is str and re.fullmatch(r"[a-z][a-z-]{0,31}", item):
+            result[name] = item
+    for name in ("ExecMainCode", "ExecMainStatus", "MainPID"):
+        item = value.get(name)
+        if type(item) is str and re.fullmatch(r"[0-9]{1,10}", item):
+            result[name] = item
+    item = value.get("InvocationID")
+    if type(item) is str and re.fullmatch(r"[0-9a-f]{32}", item):
+        result["InvocationID"] = item
+    return result
+
+
+def management_failure(role, part):
+    """Retain already captured failure facts without another poll/read/query."""
+    try:
+        cap = part["capture"]
+        # Capture.exited/done/settled call poll(). Only the original check may
+        # do that; diagnostics read the cached returncode and captured prefix.
+        returncode = None if cap.process is None else cap.process.returncode
+        if type(returncode) is not int or not -(2**31) <= returncode < 2**31:
+            returncode = None
+        stdout, stderr = bytes(cap.stdout), bytes(cap.stderr)
+        if len(stdout) + len(stderr) > 32768:
+            return
+        invocation = part.get("invocation")
+        if type(invocation) is not str or re.fullmatch(r"[0-9a-f]{32}", invocation) is None:
+            invocation = None
+        value = dict(schema="local-hand-q2-management-diagnostic/v1", reason="MANAGEMENT_CLIENT_FAILED",
+            role=role if role in ("listener", "admission") else "unknown", invocation_id=invocation,
+            returncode=returncode, capture_error=cap.error if cap.error in
+                (None, "CAPTURE_SETUP_UNCERTAIN", "CAPTURE_IO_UNCERTAIN", "CAPTURE_BYTE_LIMIT", "CAPTURE_CLOSE_UNCERTAIN")
+                else "UNKNOWN_CAPTURE_ERROR", eof=[name for name in ("stdout", "stderr") if name in cap.eof],
+            captured_stdout_bytes=len(stdout), captured_stderr_bytes=len(stderr),
+            captured_stdout_sha256=hashlib.sha256(stdout).hexdigest(),
+            captured_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+            entry_diagnostic=_entry_stderr(stderr), terminal=_unit_diagnostic(part.get("terminal")),
+            after=_unit_diagnostic(part.get("after")),
+            stop_attempted=part.get("stop_attempted") is True, stop_ok=part.get("stop_ok") is True,
+            q2_accepted=False, production_supported=False)
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode() + b"\n"
+        if len(raw) > DIAGNOSTIC_LIMIT:
+            value["entry_diagnostic"] = None
+            raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode() + b"\n"
+        if len(raw) <= DIAGNOSTIC_LIMIT:
+            os.write(2, raw)
+    except Exception:
+        pass  # Evidence failure cannot replace or suppress the original refusal.
 
 
 def ready(path, uid, gid, mode):
@@ -58,9 +147,13 @@ class Coordinator:
         q.require(boottime_ns() < self.end, 'COORDINATOR_DEADLINE')
         if self.management_closed:return
         q.require(boottime_ns() < self.management.end, 'MANAGEMENT_DEADLINE')
-        for part in self.management.runs.values():
+        for role, part in self.management.runs.items():
             cap=part['capture'];cap.pump()
-            q.require(cap.error is None and (not cap.exited or cap.process.returncode == 0), 'MANAGEMENT_CLIENT_FAILED')
+            try:
+                q.require(cap.error is None and (not cap.exited or cap.process.returncode == 0), 'MANAGEMENT_CLIENT_FAILED')
+            except q.QuotaError:
+                management_failure(role, part)
+                raise
 
     def _wait_socket(self, path, gid, mode):
         while True:
