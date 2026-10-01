@@ -52,6 +52,12 @@ system backend 的观察间隔为 0.5 s，旧 user backend 仍为 0.05 s。
 Windows 收集路径保留平台条件，不在导入阶段无条件加载 Linux IPC 模块。
 CI 的变更过滤器已包含新的独立管理模块目录。
 
+准确实现 `6470592` 的原生 CI 随后发现两组新增 Linux 装配测试遗漏类级平台
+条件：Windows 下 9 项调用不存在的 `os.getuid` 失败。后续修复仅补齐这两组
+Linux 测试的平台条件，未更改运行实现或削减 Linux 覆盖。对应 Linux 模块
+重新通过，并在缺少 `os.getuid` 的 Windows 平台模型中确认 9 项明确跳过。
+原失败记录保留；新准确提交仍需独立运行完整原生 CI。
+
 当前执行环境的 procfs 与 PID namespace 不一致，并对部分 AF_UNIX 操作及
 普通身份映射有限制。相关真实检查明确跳过；测试替身的通过不替代这些检查，
 也不代表原 guest 的 systemd/AppArmor 路径已通过。未在云端启动原 guest 正常链。

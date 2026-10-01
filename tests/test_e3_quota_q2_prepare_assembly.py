@@ -46,6 +46,7 @@ def system_facts(root="/synthetic-q2"):
     return value
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Q2 Linux system-manager assembly")
 class SystemAssemblyTests(unittest.TestCase):
     def test_explicit_system_versions_policy_and_protected_geometry_agree(self):
         from local_hand_jobs.policy import Policy

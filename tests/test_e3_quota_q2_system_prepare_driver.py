@@ -1,5 +1,6 @@
 """System preparation is explicit, measured and charged within the old pools."""
 import copy
+import sys
 import unittest
 
 from test_e3_quota_q2_prepare_driver import d, fixture, ModelFiles
@@ -39,6 +40,7 @@ def translate(plan, receipt):
     return d.facts_from_observed(plan, observed, children, dict(schema="synthetic-authority/v1"))
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Q2 Linux system-manager preparation")
 class SystemPreparationTests(unittest.TestCase):
     def test_explicit_versions_are_paired_and_legacy_keeps_shape(self):
         plan, receipt = fixture()
