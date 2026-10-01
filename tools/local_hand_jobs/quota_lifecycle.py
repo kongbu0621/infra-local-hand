@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Mapping
 
-from . import budget, quota_closure as close, quota_contract as q
+from . import budget, manager_binding as bindings, quota_closure as close, quota_contract as q
 from .contract import JobError
 
 FIELDS = ("Id", "LoadState", "ActiveState", "SubState", "ControlGroup", "InvocationID", "Job",
@@ -116,6 +117,13 @@ def observe(manager, part, unknown):
     q.require(not part.get("recovered"), "ORIGINAL_TRANSPORT_LOST")
     now = budget.current_clock()
     q.require(now["boot_id"] == part["boot_id"], "BOOT_CHANGED")
+    configuration = getattr(manager, "configuration", {})
+    expected = bindings.from_configuration(configuration) if isinstance(configuration, Mapping) else None
+    bound = bindings.check(expected, part.get("manager_binding"))
+    if bound is not None:
+        bindings.validate(bound, boot_id=now["boot_id"], parent=part["quota_parent"])
+        q.require(part["cgroup_parent"] == "/sys/fs/cgroup" + bound["parent"]["path"],
+                  "ORIGINAL_MANAGER_PARENT_CHANGED")
     if part.get("quota_final") is not None:
         return part["quota_final"]
     cap = part["quota_transport"]
@@ -186,6 +194,8 @@ def observe(manager, part, unknown):
         part["reader"].finish()
     evidence = dict(identity=identity, terminal=terminal, after=values, transport=cap.record(part["launch"]),
                     parent=part["quota_parent"])
+    if bound is not None:
+        evidence["manager_binding"] = bound
     stage = dict.fromkeys(q.EXIT_FLAGS, True)
     stage.update(identity=dict(identity, unit=part["unit"], parent=part["quota_parent"]),
                  proof_digest=close.digest(evidence), observed_ns=now["boottime_ns"])

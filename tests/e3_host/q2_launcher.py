@@ -25,6 +25,7 @@ from types import ModuleType
 
 SCHEMA = "local-hand-q2-launcher/v1"
 CHAIN_SCHEMA = "local-hand-q2-launcher/v2"
+SYSTEM_SCHEMA = "local-hand-q2-system-launcher/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-launcher/v1"
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 PHASES = ("preflight", "business", "evidence")
@@ -94,8 +95,10 @@ def decode(raw, digest):
     finite(value)
     require(type(value) is dict and set(value) == {"schema", "purpose", "source", "resident", "assembly",
             "controller_envelope", "setpriv", "output", "declarations", "session"}
+            | ({"system_geometry"} if value.get("schema") == SYSTEM_SCHEMA else set())
             and (value["schema"], value["purpose"]) in ((SCHEMA, "ISOLATED_Q2_PREFLIGHT"),
-                (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN"), (CANCEL_SCHEMA, CANCEL_PURPOSE)), "LAUNCHER_SCHEMA")
+                (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN"), (SYSTEM_SCHEMA, "ISOLATED_Q2_CHAIN"),
+                (CANCEL_SCHEMA, CANCEL_PURPOSE)), "LAUNCHER_SCHEMA")
     return value
 
 
@@ -203,6 +206,58 @@ def validate_cancel_result(result, resident, report):
     return case
 
 
+def system_parent_admission(value, spec, boot_id):
+    """Verify the approved real sibling geometry and unchanged parent limits."""
+    from admin.local_hand_quota_observer import q2_config as c
+    from local_hand_jobs import manager_binding, quota_contract as q
+    ordinary = value["resident"]["ordinary"]
+    geometry = value["system_geometry"]
+    q._keys(geometry, {"schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent"})
+    require(geometry["schema"] == "local-hand-q2-system-geometry/v1", "LAUNCHER_SYSTEM_GEOMETRY")
+    outer = geometry["controller_parent"]["parent"]
+    child = geometry["ordinary_parent"]["parent"]
+    old = geometry["retained_ordinary_parent"]["parent"]
+    manager_binding.validate(ordinary["manager_binding"], boot_id=boot_id, parent=child)
+    require(child == ordinary["parent"] and str(Path(child["path"]).parent) == outer["path"]
+            and str(Path(spec.cgroup).parent) == outer["path"]
+            and not c.overlap(child["path"], spec.cgroup)
+            and not c.overlap(old["path"], outer["path"])
+            and len({(p["device"], p["inode"]) for p in (outer, child, old)}) == 3,
+            "LAUNCHER_SYSTEM_GEOMETRY")
+    require(spec.memory_bytes == 256 * 1024**2 and spec.tasks_max == 32
+            and spec.cpu_quota_per_sec_usec == 1_000_000, "LAUNCHER_SYSTEM_TARGET_LIMITS")
+    for role, memory, tasks, owner in (("controller_parent", 512 * 1024**2, 64, 0),
+            ("ordinary_parent", 256 * 1024**2, 32, 0),
+            ("retained_ordinary_parent", 256 * 1024**2, 64, ordinary["uid"])):
+        record = geometry[role]
+        q._keys(record, {"parent", "memory_bytes", "tasks_max", "cpu_quota_per_sec_usec", "memory_swap_max"})
+        require(all(type(record[k]) is int and record[k] == n for k, n in
+            (("memory_bytes", memory), ("tasks_max", tasks), ("cpu_quota_per_sec_usec", 1_000_000),
+             ("memory_swap_max", 0))), "LAUNCHER_SYSTEM_PARENT_LIMITS")
+        pin = record["parent"]
+        descriptor = c.pinned_directory(dict(pin, path="/sys/fs/cgroup" + pin["path"]))
+        try:
+            info = os.fstat(descriptor)
+            require(info.st_uid == owner and not info.st_mode & 0o022, "LAUNCHER_SYSTEM_PARENT_OWNER")
+            readings = {}
+            for name in ("memory.max", "memory.swap.max", "pids.max", "cpu.max"):
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                             dir_fd=descriptor)
+                try:
+                    raw = os.read(fd, 257)
+                    require(len(raw) <= 256, "LAUNCHER_SYSTEM_PARENT_READ")
+                    readings[name] = raw.decode("ascii").strip()
+                finally:
+                    os.close(fd)
+            require(readings["memory.max"] == str(memory) and readings["memory.swap.max"] == "0"
+                    and readings["pids.max"] == str(tasks), "LAUNCHER_SYSTEM_PARENT_LIMITS")
+            cpu = readings["cpu.max"].split()
+            require(len(cpu) == 2 and all(re.fullmatch(r"[1-9][0-9]{0,15}", x) for x in cpu)
+                    and int(cpu[0]) == int(cpu[1]), "LAUNCHER_SYSTEM_PARENT_LIMITS")
+        finally:
+            os.close(descriptor)
+
+
 def controller(value, template, declared_totals=None):
     """Verify independent controller before the first file or process mutation."""
     from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c, q2_management as controller_management
@@ -220,7 +275,7 @@ def controller(value, template, declared_totals=None):
               <= envelope["issued_ns"] + spec.runtime_max_usec * 1000, "LAUNCHER_DEADLINE")
     q.integer(envelope["output_bytes"], 1, 32768)
     q.integer(envelope["storage_bytes"], 1024 * 1024)
-    phase_count = 3 if value["schema"] == CHAIN_SCHEMA else 1
+    phase_count = 3 if value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA) else 1
     q.integer(envelope["storage_inodes"], max(8, 6 + phase_count))
     # Capacity must fund the controller/resident before the resident reserves
     # anything. Static costs do not need, and must not invent, its future phase
@@ -244,7 +299,8 @@ def controller(value, template, declared_totals=None):
         # Resident pipes, manager-control captures and the outer summary have
         # independent finite buffers; none is charged as zero.
         output_bytes=phase_count * envelope["output_bytes"] + 32768
-                     + (32768 if value["schema"] == CANCEL_SCHEMA else 4096))
+                     + (32768 if value["schema"] == CANCEL_SCHEMA else 4096)
+                     + (4 * 1024**2 if value["schema"] == SYSTEM_SCHEMA else 0))
     for key, amount in costs.items():
         require(q.integer(amount + totals[key]) <= capacity["management"][key], "LAUNCHER_CONTROLLER_CAPACITY")
     for kind in ("bytes", "inodes"):
@@ -252,7 +308,8 @@ def controller(value, template, declared_totals=None):
         used += sum(domain["hard_" + kind] for domain in capacity["domains"])
         require(q.integer(used) <= capacity["ceiling_" + kind], "LAUNCHER_CONTROLLER_STORAGE")
     ordinary = value["resident"]["ordinary"]
-    q._keys(ordinary, {"uid", "gid", "parent", "broker_cgroup", "initial_userns"})
+    q._keys(ordinary, {"uid", "gid", "parent", "broker_cgroup", "initial_userns"}
+            | ({"manager_binding"} if value["schema"] == SYSTEM_SCHEMA else set()))
     q.integer(ordinary["uid"], 1); q.integer(ordinary["gid"], 1)
     q._keys(data["initial_userns"], {"device", "inode"})
     for number in data["initial_userns"].values(): q.integer(number, 1)
@@ -274,6 +331,12 @@ def controller(value, template, declared_totals=None):
     before = controller_management.host_identity(adapter, manifest, spec)
     guard._cgroup_identity(spec)
     guard._check_manager(guard._show_once(adapter, spec), spec, before[0])
+    if value["schema"] == SYSTEM_SCHEMA:
+        system_parent_admission(value, spec, clock["boot_id"])
+        guard._cgroup_identity(spec)
+        require(before == controller_management.host_identity(adapter, manifest, spec), "LAUNCHER_CONTROLLER_CHANGED")
+        require(budget.current_clock()["boottime_ns"] < envelope["deadline_ns"], "LAUNCHER_DEADLINE")
+        return clock
     # Delegation belongs to the enclosing system user manager service, never
     # its -.slice. Observe the fixed UID's existing service without installing
     # or changing it. Its child ordinary slice must be in that exact subtree.
@@ -423,7 +486,9 @@ def validate_phase_plan(resident, prepared, grant, previous_plans):
         store = plan.get("evidence_store_root")
         require(prep["allocation"]["retained_paths"] == [store], "LAUNCHER_SNAPSHOT_STORE")
         row["record"]["frozen_snapshot"] = frozen
-    expected = phase_plan(row, phase, prep["budget"], allocation=prep["allocation"], evidence_store_root=store)
+    expected = phase_plan(row, phase, prep["budget"], allocation=prep["allocation"], evidence_store_root=store,
+        manager_binding=(resident["ordinary"]["manager_binding"]
+                         if resident.get("schema") == "local-hand-q2-system-resident/v1" else None))
     require(plan == expected, "LAUNCHER_PHASE_PLAN_CHANGED")
     require(grant.as_dict()["budget"] == prep["budget"] and grant.as_dict()["allocation"] == prep["allocation"],
             "LAUNCHER_PHASE_GRANT")
@@ -436,7 +501,8 @@ def run(value, repository):
     from admin.local_hand_quota_observer.q2_coordinator import Coordinator
     from admin.local_hand_quota_observer.q2_capture import capture_existing
     raw = encoded(value["assembly"], LIMIT)
-    chained = value["schema"] == CHAIN_SCHEMA
+    system = value["schema"] == SYSTEM_SCHEMA
+    chained = value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA)
     cancelled = value["schema"] == CANCEL_SCHEMA
     cancel_runtime, cancel_report = load_cancel_modules(value, repository) if cancelled else (None, None)
     phases = PHASES if chained else ("preflight",)
@@ -453,7 +519,8 @@ def run(value, repository):
             and resident["installation"]["source_commit"] == t["installation"]["source_commit"] == value["source"]["commit"],
             "LAUNCHER_RESIDENT_BINDING")
     if chained:
-        require(resident["schema"] == "local-hand-q2-resident/v2" and resident["purpose"] == "ISOLATED_Q2_CHAIN",
+        require(resident["schema"] == ("local-hand-q2-system-resident/v1" if system else
+                "local-hand-q2-resident/v2") and resident["purpose"] == "ISOLATED_Q2_CHAIN",
                 "LAUNCHER_RESIDENT_BINDING")
         for phase in phases:
             phase_work = next(root for root in chain.data()["phases"][phase]["grant"]["roots"] if root["role"] == "work")
@@ -496,7 +563,10 @@ def run(value, repository):
     end = value["controller_envelope"]["deadline_ns"]
     output = declarations = None; channel = record = None; process = None; sockets = []; capture = {}; worker = None
     phase_result = coordinator = None; configs = []; plans = {}; closures = {}; grants = {}; broker_session = None
-    result = dict(schema="local-hand-q4-cancel-launcher-result/v1" if cancelled else
+    gateway = gateway_worker = manager_channel = None
+    manager_sockets = []; gateway_failures = []
+    result = dict(schema="local-hand-q2-system-launcher-result/v1" if system else
+                  "local-hand-q4-cancel-launcher-result/v1" if cancelled else
                   "local-hand-q2-launcher-result/v2" if chained else "local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
                   production_supported=False, independent_controller_stop_required=True)
     if cancelled:
@@ -504,22 +574,54 @@ def run(value, repository):
     try:
         output = directory(value["output"], 0o700)
         declarations = directory(value["declarations"], 0o755)
-        save(output, "reservation.json", encoded(dict(schema="local-hand-q2-launcher-reservation/v1",
+        save(output, "reservation.json", encoded(dict(schema="local-hand-q2-system-launcher-reservation/v1" if system else
+            "local-hand-q2-launcher-reservation/v1",
             fixture_digest=hashlib.sha256(encoded(value, LIMIT)).hexdigest(), session=value["session"],
             controller=value["controller_envelope"], started_ns=clock["boottime_ns"])))
         left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET); sockets = [left, right]
         for sock in sockets: sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
         declaration = dict(resident, bridge=dict(fd=right.fileno(), pid=os.getpid(), uid=0, gid=0,
             start_ticks=start_ticks(os.getpid()), session=value["session"], boot_id=clock["boot_id"], deadline_ns=end))
+        if system:
+            manager_left, manager_right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            manager_sockets = [manager_left, manager_right]
+            for sock in manager_sockets:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+            manager_session = hashlib.sha256((value["session"] + ":system-manager").encode("ascii")).hexdigest()
+            declaration["manager_channel"] = dict(declaration["bridge"], fd=manager_right.fileno(),
+                                                   session=manager_session)
         raw = encoded(declaration, 262144)
         save(declarations, "resident.json", raw, 0o644)
         path = value["declarations"]["path"] + "/resident.json"
         argv = command(value, path, hashlib.sha256(raw).hexdigest())
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            bufsize=0, close_fds=True, pass_fds=(right.fileno(),), cwd="/", env={"PATH": "/usr/bin:/bin",
+            bufsize=0, close_fds=True, pass_fds=((right.fileno(), manager_right.fileno()) if system else
+                (right.fileno(),)), cwd="/", env={"PATH": "/usr/bin:/bin",
             "XDG_RUNTIME_DIR": "/run/user/" + str(resident["ordinary"]["uid"])})
         right.close(); sockets = [left]
         child_start = start_ticks(process.pid)
+        if system:
+            from local_hand_jobs.system_manager_protocol import Channel as ManagerChannel
+            from admin.local_hand_system_manager.server import Gateway
+            manager_right.close(); manager_sockets = [manager_left]
+            manager_channel = ManagerChannel(manager_left,
+                peer=(process.pid, resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
+                peer_start_ticks=child_start, session_id=manager_session, boot_id=clock["boot_id"], deadline_ns=end)
+            info = os.fstat(output)
+            gateway = Gateway(manager_channel, manager_binding=resident["ordinary"]["manager_binding"],
+                ordinary_uid=resident["ordinary"]["uid"], ordinary_gid=resident["ordinary"]["gid"],
+                python_path=resident["installation"]["programs"]["python"]["path"],
+                runner_path=t["peer"]["runner"]["path"], parent_mount_namespace=os.readlink("/proc/self/ns/mnt"),
+                intent_directory=value["output"]["path"], intent_pin={"device": info.st_dev, "inode": info.st_ino},
+                programs={name: t["installation"]["programs"][name] for name in ("systemctl", "systemd_run")},
+                deadline_ns=end)
+            def serve_manager():
+                try:
+                    gateway.serve()
+                except Exception as error:
+                    gateway_failures.append(reason(error))
+            gateway_worker = threading.Thread(target=serve_manager, name="q2-system-manager", daemon=True)
+            gateway_worker.start()
         channel = bridge.Channel(left, peer=(process.pid, resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
             session=value["session"], boot_id=clock["boot_id"], deadline_ns=end, version=2 if chained else 1)
         require(start_ticks(process.pid) == child_start, "LAUNCHER_CHILD_REPLACED")
@@ -575,6 +677,9 @@ def run(value, repository):
                 bootstrap_argv=argv, session=session, clock=budget.current_clock())
             config = installed["config"]
             m.controller(config, value["controller_envelope"])
+            if system:
+                require(not gateway_failures and gateway.failure is None, "LAUNCHER_SYSTEM_MANAGER_FAILED")
+                gateway.authorize_phase(plan, execution, grant, config)
             record = m.RunRecord(installed["management_record"])
             coordinator = (cancel_runtime.Coordinator(config, value["controller_envelope"], record,
                 bridge.Client(channel), report=cancel_report, request=resident["request"],
@@ -585,6 +690,9 @@ def run(value, repository):
             require(phase_result["status"] == ("CANCEL_CASE_RECORDED" if cancelled else "PHASE_CLOSED")
                     and phase_result["q3_accepted"] is False
                     and phase_result["production_supported"] is False, "LAUNCHER_PHASE_UNCLOSED")
+            if system:
+                require(not gateway_failures and gateway.failure is None, "LAUNCHER_SYSTEM_MANAGER_FAILED")
+                gateway.close_phase(phase_result["fence"])
             if cancelled:
                 require(phase_result["ordinary_phase_closed"] is False
                         and phase_result["independent_ordinary_cleanup_required"] is True,
@@ -601,6 +709,12 @@ def run(value, repository):
                     channel.send(dict(action="advance", value={"from": phase, "to": following,
                                                                "closure_digest": closures[phase]}))
                     channel.advance_phase(following)
+        if system:
+            gateway.close()
+            while gateway_worker.is_alive() and budget.current_clock()["boottime_ns"] < end:
+                gateway_worker.join(0.025)
+            require(not gateway_worker.is_alive() and not gateway_failures and gateway.failure is None,
+                    "LAUNCHER_SYSTEM_MANAGER_UNSETTLED")
         channel.send(dict(action="finish", value=None))
         channel.close(); channel = None
         while worker.is_alive() and budget.current_clock()["boottime_ns"] < end: worker.join(0.025)
@@ -613,7 +727,8 @@ def run(value, repository):
                     and summary["case"] == result["case"], "CANCEL_RESIDENT_RESULT")
         elif chained:
             q._keys(summary, {"schema", "status", "operation_id", "phases", "closure_digests", "q3_accepted", "production_supported"})
-            require(summary["schema"] == "local-hand-q2-resident-result/v2" and summary["status"] == "CHAIN_CLOSED"
+            require(summary["schema"] == ("local-hand-q2-system-resident-result/v1" if system else
+                    "local-hand-q2-resident-result/v2") and summary["status"] == "CHAIN_CLOSED"
                     and summary["phases"] == list(phases) and summary["closure_digests"] == closures, "LAUNCHER_RESIDENT_RESULT")
         else:
             q._keys(summary, {"schema", "status", "operation_id", "phase", "closure_digest", "q3_accepted", "production_supported"})
@@ -645,6 +760,24 @@ def run(value, repository):
         if channel is not None: cleanup(channel.close, "LAUNCHER_CHANNEL_CLOSE")
         for sock in sockets: cleanup(sock.close, "LAUNCHER_SOCKET_CLOSE")
         if record is not None: cleanup(record.close, "LAUNCHER_RECORD_CLOSE")
+        if gateway is not None:
+            cleanup(gateway.close, "LAUNCHER_SYSTEM_MANAGER_CLOSE")
+        if manager_channel is not None:
+            cleanup(manager_channel.close, "LAUNCHER_SYSTEM_CHANNEL_CLOSE")
+        for sock in manager_sockets:
+            cleanup(sock.close, "LAUNCHER_SYSTEM_SOCKET_CLOSE")
+        if gateway_worker is not None:
+            def await_gateway():
+                while gateway_worker.is_alive() and budget.current_clock()["boottime_ns"] < end:
+                    gateway_worker.join(0.025)
+                require(not gateway_worker.is_alive(), "LAUNCHER_SYSTEM_MANAGER_UNSETTLED")
+            cleanup(await_gateway, "LAUNCHER_SYSTEM_MANAGER_UNSETTLED")
+        if gateway is not None and output is not None:
+            cleanup(lambda: save(output, "gateway.json", encoded(gateway.snapshot(), 32768)),
+                    "LAUNCHER_SYSTEM_DIAGNOSTIC_PERSIST")
+        if system and gateway_failures:
+            result["gateway_failure"] = gateway_failures[0]
+            result["status"] = "INCOMPLETE"
         # Never kill a client to invent complete EOF. The independent original
         # controller runtime bounds surviving work; retain the delivery PID.
         if worker is not None:

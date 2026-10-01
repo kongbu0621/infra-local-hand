@@ -35,6 +35,9 @@ DYNAMIC = frozenset(("invocation_id", "cgroup_device", "cgroup_inode"))
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
 CANCEL_SUPERVISOR = "local-hand-q4-cancel-supervisor/v1"
+SYSTEM_SUPERVISOR = "local-hand-q2-system-supervisor/v1"
+SYSTEM_LAUNCHER = "local-hand-q2-system-launcher/v1"
+SYSTEM_WIRE_LIMIT = 4 * 1024 * 1024
 
 
 def require(ok, code):
@@ -64,17 +67,29 @@ def cancel_fixture(fixture):
     """Reject cross-scenario wrappers before interpreting any retained status."""
     pair = fixture.get("schema"), fixture.get("purpose")
     require(pair in (("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"),
+                     (SYSTEM_SUPERVISOR, "ISOLATED_Q2_SUPERVISION"),
                      (CANCEL_SUPERVISOR, CANCEL_PURPOSE)), "REVIEW_FIXTURE_VERSION")
     nested = fixture["launcher"]
     cancel = pair == (CANCEL_SUPERVISOR, CANCEL_PURPOSE)
     require(cancel == (nested.get("schema") == CANCEL_LAUNCHER), "REVIEW_SCENARIO_BINDING")
+    system = pair[0] == SYSTEM_SUPERVISOR
+    require(system == (nested.get("schema") == SYSTEM_LAUNCHER), "REVIEW_MANAGER_BINDING")
+    if system:
+        require(nested.get("purpose") == "ISOLATED_Q2_CHAIN", "REVIEW_LAUNCHER_VERSION")
     if cancel:
         require(nested.get("purpose") == CANCEL_PURPOSE, "REVIEW_LAUNCHER_VERSION")
     return cancel
 
 
-def record_schema(cancel, suffix):
-    return ("local-hand-q4-cancel-" if cancel else "local-hand-q2-") + suffix + "/v1"
+def system_fixture(fixture):
+    cancel_fixture(fixture)
+    return fixture["schema"] == SYSTEM_SUPERVISOR
+
+
+def record_schema(cancel, suffix, *, system=False):
+    require(type(cancel) is bool and type(system) is bool and not (cancel and system), "REVIEW_RECORD_KIND")
+    return ("local-hand-q4-cancel-" if cancel else "local-hand-q2-system-" if system
+            else "local-hand-q2-") + suffix + "/v1"
 
 
 def case_contract():
@@ -328,6 +343,61 @@ def management_facts(records, stop, static):
     return decoded
 
 
+def system_geometry_facts(fixture):
+    """Check recorded new geometry only; no claim about current host admission."""
+    require(system_fixture(fixture), "REVIEW_SYSTEM_FIXTURE")
+    nested = fixture["launcher"]; resident = nested["resident"]
+    require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
+            ("local-hand-q2-system-resident/v1", "ISOLATED_Q2_CHAIN", ["preflight", "business", "evidence"]),
+            "REVIEW_SYSTEM_RESIDENT")
+    ordinary = resident["ordinary"]; geometry = nested.get("system_geometry")
+    keys(geometry, ("schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent"),
+         "REVIEW_SYSTEM_GEOMETRY")
+    require(geometry["schema"] == "local-hand-q2-system-geometry/v1", "REVIEW_SYSTEM_GEOMETRY")
+    for name, memory, tasks in (("controller_parent", 512 * 1024**2, 64),
+                                ("ordinary_parent", 256 * 1024**2, 32),
+                                ("retained_ordinary_parent", 256 * 1024**2, 64)):
+        record = geometry[name]
+        keys(record, ("parent", "memory_bytes", "tasks_max", "cpu_quota_per_sec_usec", "memory_swap_max"),
+             "REVIEW_SYSTEM_PARENT_BUDGET")
+        keys(record["parent"], ("path", "device", "inode"), "REVIEW_SYSTEM_PARENT")
+        absolute(record["parent"]["path"])
+        integer(record["parent"]["device"]); integer(record["parent"]["inode"], 1)
+        require(all(type(record[key]) is int and record[key] == wanted for key, wanted in
+                    (("memory_bytes", memory), ("tasks_max", tasks), ("cpu_quota_per_sec_usec", 1_000_000),
+                     ("memory_swap_max", 0))), "REVIEW_SYSTEM_PARENT_BUDGET")
+    outer = geometry["controller_parent"]["parent"]
+    child = geometry["ordinary_parent"]["parent"]
+    old = geometry["retained_ordinary_parent"]["parent"]
+    require(outer == fixture["controller_parent"] and outer["path"] == "/lhqq2controller.slice"
+            and child == ordinary["parent"] and str(PurePosixPath(child["path"]).parent) == outer["path"]
+            and re.fullmatch(r"lhqq2controller-[a-z0-9_]+\.slice", PurePosixPath(child["path"]).name),
+            "REVIEW_SYSTEM_PARENT_GEOMETRY")
+    uid = integer(ordinary["uid"], 1)
+    require(old["path"] == "/user.slice/user-" + str(uid) + ".slice/user@" + str(uid)
+            + ".service/lhqq2ordinary.slice"
+            and len({(pin["device"], pin["inode"]) for pin in (outer, child, old)}) == 3,
+            "REVIEW_SYSTEM_RETAINED_PARENT")
+    target = nested["controller_envelope"]["controller"]
+    require(str(PurePosixPath(target["cgroup"]).parent) == outer["path"]
+            and target["cgroup"] != child["path"] and target["cgroup"] == ordinary["broker_cgroup"],
+            "REVIEW_SYSTEM_SIBLING_GEOMETRY")
+    require(all(type(target[key]) is int and target[key] == wanted for key, wanted in
+                (("memory_bytes", 256 * 1024**2), ("tasks_max", 32), ("cpu_quota_per_sec_usec", 1_000_000),
+                 ("runtime_max_usec", 85_000_000), ("timeout_stop_usec", 1_000_000), ("limit_cpu_seconds", 85))),
+            "REVIEW_SYSTEM_TARGET_BUDGET")
+    binding = ordinary.get("manager_binding")
+    keys(binding, ("schema", "manager_kind", "authority_id", "boot_id", "parent"), "REVIEW_SYSTEM_BINDING")
+    require(binding["schema"] == "local-hand-manager-binding/v1" and binding["manager_kind"] == "system"
+            and binding["parent"] == child
+            and binding["boot_id"] == nested["assembly"]["installation"]["capacity"]["boot_id"],
+            "REVIEW_SYSTEM_BINDING")
+    token(binding["authority_id"], r"[a-z0-9][a-z0-9._-]{0,127}", "REVIEW_SYSTEM_BINDING")
+    for phase in ("preflight", "business", "evidence"):
+        require(nested["assembly"]["phases"][phase]["peer"]["parent"] == child, "REVIEW_SYSTEM_PHASE_PARENT")
+    return geometry
+
+
 def capacity_facts(fixture, reservation, member_bytes):
     nested = fixture["launcher"]; assembly = nested["assembly"]
     cancel = cancel_fixture(fixture)
@@ -339,7 +409,8 @@ def capacity_facts(fixture, reservation, member_bytes):
         require(nested["purpose"] == "ISOLATED_Q2_PREFLIGHT", "REVIEW_LAUNCHER_VERSION")
         phase_grants = [assembly["grant"]]; status = "PREFLIGHT_CLOSED"
     else:
-        require(nested["schema"] == "local-hand-q2-launcher/v2" and nested["purpose"] == "ISOLATED_Q2_CHAIN",
+        require(nested["schema"] in ("local-hand-q2-launcher/v2", SYSTEM_LAUNCHER)
+                and nested["purpose"] == "ISOLATED_Q2_CHAIN",
                 "REVIEW_LAUNCHER_VERSION")
         keys(assembly["phases"], ("preflight", "business", "evidence"))
         phase_grants = [assembly["phases"][phase]["grant"] for phase in ("preflight", "business", "evidence")]
@@ -366,6 +437,11 @@ def capacity_facts(fixture, reservation, member_bytes):
         costs["memory_bytes"] += integer(spec["memory_bytes"], 1)
         costs["pids"] += integer(spec["tasks_max"], 1)
         costs["output_bytes"] += PIPE_LIMIT + extra
+    if system_fixture(fixture):
+        system_geometry_facts(fixture)
+        # The gateway is inside the existing target process/memory envelope;
+        # its bounded control bytes are charged once, separately from captures.
+        costs["output_bytes"] += SYSTEM_WIRE_LIMIT
     require(costs == reservation["capacity_costs"], "REVIEW_CAPACITY_COSTS")
     for key in COST_KEYS:
         integer(reservation["capacity_costs"][key])
@@ -426,7 +502,8 @@ def facts(output, declarations, seal, member_bytes):
     fixture = decode(declarations["supervisor.json"])
     keys(fixture, ("schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"))
     cancel = cancel_fixture(fixture)
-    require(seal.get("schema") == record_schema(cancel, "controller-seal")
+    system = system_fixture(fixture)
+    require(seal.get("schema") == record_schema(cancel, "controller-seal", system=system)
             and seal.get("scope") == "TARGET_CONTROLLER_CLOSURE_ONLY" and seal.get("status") == "CONTROLLER_CLOSED",
             "REVIEW_SEAL_SCOPE")
     keys(seal, ("schema", "scope", "files", "original", "fixture_sha256", "closed_ns", "status", "q3_accepted",
@@ -442,7 +519,7 @@ def facts(output, declarations, seal, member_bytes):
             and reservation["target_static"] == fixture["launcher"]["controller_envelope"], "REVIEW_RESERVATION_BINDING")
     require(decode(output["invocation.json"]) == original == marker["controller"] == result["original"],
             "REVIEW_ORIGINAL_BINDING")
-    require(marker["schema"] == record_schema(cancel, "controller-result") and marker["fixture_sha256"] == fixture_sha
+    require(marker["schema"] == record_schema(cancel, "controller-result", system=system) and marker["fixture_sha256"] == fixture_sha
             and decode(declarations["controller-result.json"]) == marker, "REVIEW_MARKER_BINDING")
     nested = copy.deepcopy(fixture["launcher"]); static = nested["controller_envelope"]["controller"]
     require(not set(static) & DYNAMIC, "REVIEW_STATIC_IDENTITY")
@@ -450,13 +527,14 @@ def facts(output, declarations, seal, member_bytes):
     require(decode(declarations["launcher.json"]) == nested, "REVIEW_LAUNCHER_BINDING")
     launcher_status, capacity = capacity_facts(fixture, reservation, member_bytes)
     limited_scope(result, stop="independent_supervisor_stop_required")
-    require(result["schema"] == record_schema(cancel, "supervisor-result") and result["status"] == "CLOSURE_OBSERVED_SEAL_PENDING"
+    require(result["schema"] == record_schema(cancel, "supervisor-result", system=system) and result["status"] == "CLOSURE_OBSERVED_SEAL_PENDING"
             and result["scope"] == seal["scope"] and result["seal_required"] is True and result["sealed"] is False
             and result["cleanup_errors"] == [] and "reason" not in result and result["controller_stopped"] is True
             and result["closed_ns"] == seal["closed_ns"] and result["launcher_status"] == launcher_status,
             "REVIEW_PROVISIONAL_RESULT")
     limited_scope(marker["result"], stop="independent_controller_stop_required")
     expected_schema = ("local-hand-q4-cancel-launcher-result/v1" if cancel else
+                       "local-hand-q2-system-launcher-result/v1" if system else
                        "local-hand-q2-launcher-result/" + fixture["launcher"]["schema"].rsplit("/", 1)[1])
     require(marker["result"]["schema"] == expected_schema and marker["result"]["status"] == launcher_status,
             "REVIEW_LAUNCHER_NOT_CLOSED")
@@ -555,6 +633,9 @@ def review(evidence, declarations, expected_seal):
         result = base_result()
         result.update(status="OFFLINE_ARTIFACTS_CONSISTENT", seal_sha256=expected_seal, sealed_members=13,
                       sealed_bytes=total, recorded_launcher_status=launcher_status)
+        if system_fixture(fixture):
+            result.update(schema="local-hand-q2-system-offline-evidence-review/v1", manager_kind="system",
+                          q2_accepted=False)
         if cancel_fixture(fixture):
             case = decode(blobs[0]["controller-result.json"])["result"]["case"]
             result.update(schema="local-hand-q4-cancel-offline-evidence-review/v1",

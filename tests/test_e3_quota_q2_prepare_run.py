@@ -207,6 +207,67 @@ class OriginalDeclarationTests(unittest.TestCase):
         self.assertNotIn("--controller", command)
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux system handoff declarations")
+class SystemHandoffDeclarationTests(unittest.TestCase):
+    def setUp(self):
+        self.plan = plan()
+        self.plan["schema"] = r.SYSTEM_SCHEMA
+        self.plan["template"]["schema"] = "local-hand-q2-system-supervisor/v1"
+        nested = self.plan["template"]["launcher"]
+        nested["schema"] = "local-hand-q2-system-launcher/v1"
+        nested["resident"].update(schema="local-hand-q2-system-resident/v1", purpose="ISOLATED_Q2_CHAIN",
+                                   phases=["preflight", "business", "evidence"])
+
+    def decode(self):
+        raw = r.encoded(self.plan, r.LIMIT)
+        return r.decode(raw, r.sha(raw))
+
+    def child(self):
+        return dict(schema="local-hand-q2-system-supervisor-result/v1", status="CONTROLLER_CLOSED",
+            scope="TARGET_CONTROLLER_CLOSURE_ONLY", seal_required=True, q3_accepted=False,
+            production_supported=False, independent_supervisor_stop_required=True,
+            launcher_status="CHAIN_CLOSED", controller_stopped=True)
+
+    def test_system_handoff_retains_single_original_deadlines_and_explicit_records(self):
+        self.assertEqual(self.plan, self.decode())
+        before = copy.deepcopy(self.plan)
+        issued = r.issue(self.plan, s, dict(boot_id=BOOT, boottime_ns=2 * SECOND))
+        self.assertEqual(before, self.plan)
+        self.assertEqual("local-hand-q2-system-issued-handoff/v1", issued["schema"])
+        self.assertEqual(87 * SECOND, issued["fixture"]["launcher"]["controller_envelope"]["deadline_ns"])
+        raw = r.encoded(issued, r.LIMIT)
+        self.assertEqual(issued, r.envelope(raw, r.sha(raw), s))
+        r.cancel_child_result(self.plan, self.child())
+
+    def test_new_handoff_cannot_use_legacy_supervisor_launcher_or_resident(self):
+        mutations = (
+            lambda p: p.update(schema=r.SCHEMA),
+            lambda p: p["template"].update(schema="local-hand-q2-supervisor/v1"),
+            lambda p: p["template"]["launcher"].update(schema="local-hand-q2-launcher/v2"),
+            lambda p: p["template"]["launcher"]["resident"].update(schema="local-hand-q2-resident/v2"),
+            lambda p: p["template"]["launcher"]["resident"].update(phases=["preflight"]),
+        )
+        original = copy.deepcopy(self.plan)
+        for mutate in mutations:
+            self.plan = copy.deepcopy(original); mutate(self.plan)
+            with self.subTest(mutation=mutate), self.assertRaises(ValueError): self.decode()
+
+    def test_system_and_legacy_results_cannot_be_relabelled_as_each_other(self):
+        with self.assertRaisesRegex(ValueError, "HANDOFF_CHILD_MANAGER_VERSION"):
+            r.cancel_child_result(plan(), self.child())
+        value = self.child(); value["schema"] = "local-hand-q2-supervisor-result/v1"
+        with self.assertRaisesRegex(ValueError, "HANDOFF_CHILD_MANAGER_VERSION"):
+            r.cancel_child_result(self.plan, value)
+
+    def test_system_closure_requires_original_full_chain_and_stop_scope(self):
+        for field, value in (("launcher_status", "PREFLIGHT_CLOSED"), ("controller_stopped", False),
+                             ("seal_required", False), ("q3_accepted", True),
+                             ("production_supported", True), ("independent_supervisor_stop_required", False)):
+            child = self.child(); child[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                r.cancel_child_result(self.plan, child)
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux actual descriptor identity model")
 class SamePidTests(unittest.TestCase):
     def setUp(self):

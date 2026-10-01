@@ -25,6 +25,88 @@ def host_module(name):
     return module
 
 
+def system_facts(root="/synthetic-q2"):
+    """The approved containment uses synthetic pins, never a live system manager."""
+    value = facts(root)
+    value["schema"] = a.SYSTEM_SCHEMA
+    ordinary = value["ordinary"]
+    old = copy.deepcopy(ordinary["parent"])
+    outer = value["controllers"]["controller_parent"]
+    stem = Path(outer["path"]).name.removesuffix(".slice")
+    ordinary["parent"] = dict(path=outer["path"] + "/" + stem + "-ordinary.slice", device=outer["device"], inode=451)
+    ordinary["manager_binding"] = dict(schema="local-hand-manager-binding/v1", manager_kind="system",
+        authority_id=value["identity"]["authority_id"], boot_id=value["capacity"]["boot_id"],
+        parent=copy.deepcopy(ordinary["parent"]))
+    value["controllers"]["target"]["memory_bytes"] = 256 * 1024**2
+    envelope = lambda parent, memory, tasks: dict(parent=copy.deepcopy(parent), memory_bytes=memory * 1024**2,
+        tasks_max=tasks, cpu_quota_per_sec_usec=1_000_000, memory_swap_max=0)
+    value["system_geometry"] = dict(schema="local-hand-q2-system-geometry/v1",
+        controller_parent=envelope(outer, 512, 64), ordinary_parent=envelope(ordinary["parent"], 256, 32),
+        retained_ordinary_parent=envelope(old, 256, 64))
+    return value
+
+
+class SystemAssemblyTests(unittest.TestCase):
+    def test_explicit_system_versions_policy_and_protected_geometry_agree(self):
+        from local_hand_jobs.policy import Policy
+        value = system_facts(); before = copy.deepcopy(value)
+        result = a.assemble(value)
+        self.assertEqual(before, value)
+        self.assertEqual("lh-policy-v2", Policy(result["policy"]).config["schema_version"])
+        self.assertEqual(value["ordinary"]["manager_binding"], result["policy"]["process_manager"]["manager_binding"])
+        self.assertEqual(value["system_geometry"], result["launcher"]["system_geometry"])
+        for name in ("resident", "launcher"):
+            self.assertEqual("local-hand-q2-system-" + name + "/v1", result[name]["schema"])
+        self.assertEqual("local-hand-q2-system-supervisor/v1", result["supervisor_template"]["schema"])
+        supervisor = host_module("q2_supervisor"); checker = host_module("q2_fixture_check")
+        template = result["supervisor_template"]
+        raw = supervisor.encoded(template, supervisor.LIMIT)
+        self.assertTrue(supervisor.system_fixture(supervisor.decode(raw, supervisor.sha(raw))))
+        checker.static_binding(template, supervisor, Path(value["source"]["root"]))
+
+    def test_new_geometry_is_not_a_legacy_parent_exception(self):
+        value = system_facts(); value["schema"] = a.SCHEMA
+        del value["system_geometry"]; del value["ordinary"]["manager_binding"]
+        with self.assertRaisesRegex(ValueError, "PREP_ASSEMBLY_PARENT_OVERLAP"):
+            a.assemble(value)
+
+    def test_nested_parent_budget_binding_alias_and_output_fail_before_any_host_access(self):
+        from local_hand_jobs.contract import JobError
+        for fault in ("outer", "ordinary", "old", "target", "alias", "authority", "boot", "wire", "swap"):
+            value = system_facts()
+            geometry = value["system_geometry"]
+            if fault == "outer": geometry["controller_parent"]["memory_bytes"] += 1
+            if fault == "ordinary": geometry["ordinary_parent"]["tasks_max"] += 1
+            if fault == "old": geometry["retained_ordinary_parent"]["memory_bytes"] -= 1
+            if fault == "target": value["controllers"]["target"]["memory_bytes"] += 1
+            if fault == "alias": geometry["retained_ordinary_parent"]["parent"].update(
+                device=geometry["ordinary_parent"]["parent"]["device"], inode=geometry["ordinary_parent"]["parent"]["inode"])
+            if fault == "authority": value["ordinary"]["manager_binding"]["authority_id"] = "wrong-authority"
+            if fault == "boot": value["ordinary"]["manager_binding"]["boot_id"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+            if fault == "wire": value["capacity"]["management"]["output_bytes"] = 4 * 1024**2
+            if fault == "swap": geometry["ordinary_parent"]["memory_swap_max"] = 1
+            with self.subTest(fault=fault), mock.patch.object(a.os, "open", side_effect=AssertionError("host access")), \
+                    self.assertRaises((ValueError, JobError)):
+                a.assemble(value)
+
+    def test_supervisor_charges_control_wire_once_and_rejects_mixed_versions(self):
+        value = system_facts(); result = a.assemble(value)
+        supervisor = host_module("q2_supervisor"); launcher = host_module("q2_launcher")
+        template = result["supervisor_template"]
+        for envelope in (template["supervisor_envelope"], template["launcher"]["controller_envelope"]):
+            envelope.update(issued_ns=10**9, deadline_ns=10**9 + envelope["controller"]["runtime_max_usec"] * 1000)
+        template["supervisor_envelope"]["controller"].update(invocation_id="a"*32, cgroup_device=70, cgroup_inode=999)
+        binding = supervisor.validate(template, launcher, dict(boot_id=value["capacity"]["boot_id"], boottime_ns=2*10**9))
+        expected = (9 * 32768 + 135168 + 102400 + 4 * 1024**2)
+        self.assertEqual(expected, binding["totals"]["output_bytes"])
+        for key, schema in (("schema", supervisor.SCHEMA), ("launcher", "local-hand-q2-launcher/v2")):
+            changed = copy.deepcopy(template)
+            if key == "schema": changed[key] = schema
+            else: changed[key]["schema"] = schema
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "SUPERVISOR_MANAGER_VERSION"):
+                supervisor.cancel_fixture(changed)
+
+
 def facts(root="/synthetic-q2"):
     """Explicit synthetic OS facts, actual source file manifests and real policy inputs."""
     from local_hand_jobs import quota_grant as g

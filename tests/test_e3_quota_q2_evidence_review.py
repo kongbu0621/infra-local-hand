@@ -26,6 +26,34 @@ if sys.platform.startswith("linux"):
     from test_e3_quota_q2_supervisor import s, launcher, fixture, running, BOOT, SECOND, guard, budget
 
 
+def system_fixture(value):
+    """Synthetic declarations; this does not run the gateway or host workload."""
+    value = copy.deepcopy(value)
+    nested = value["launcher"]; resident = nested["resident"]
+    value["schema"] = "local-hand-q2-system-supervisor/v1"
+    nested["schema"] = "local-hand-q2-system-launcher/v1"
+    outer = dict(path="/lhqq2controller.slice", device=22, inode=400)
+    child = dict(path=outer["path"] + "/lhqq2controller-test.slice", device=22, inode=500)
+    old = dict(path="/user.slice/user-1100.slice/user@1100.service/lhqq2ordinary.slice", device=22, inode=501)
+    value["controller_parent"] = outer
+    target = nested["controller_envelope"]["controller"]
+    target.update(cgroup=outer["path"] + "/" + target["unit"], memory_bytes=256 * 1024**2,
+                  tasks_max=32, cpu_quota_per_sec_usec=1_000_000, runtime_max_usec=85_000_000,
+                  timeout_stop_usec=1_000_000, limit_cpu_seconds=85)
+    binding = dict(schema="local-hand-manager-binding/v1", manager_kind="system", authority_id="synthetic-authority",
+                   boot_id=BOOT, parent=child)
+    resident.update(schema="local-hand-q2-system-resident/v1", purpose="ISOLATED_Q2_CHAIN",
+                    phases=["preflight", "business", "evidence"])
+    resident["ordinary"].update(uid=1100, gid=1100, parent=child, broker_cgroup=target["cgroup"], manager_binding=binding)
+    nested["system_geometry"] = dict(schema="local-hand-q2-system-geometry/v1", **{
+        name: dict(parent=pin, memory_bytes=memory * 1024**2, tasks_max=tasks,
+                   cpu_quota_per_sec_usec=1_000_000, memory_swap_max=0)
+        for name, pin, memory, tasks in (("controller_parent", outer, 512, 64),
+            ("ordinary_parent", child, 256, 32), ("retained_ordinary_parent", old, 256, 64))})
+    for phase in nested["assembly"]["phases"].values(): phase["peer"]["parent"] = child
+    return value
+
+
 class DefaultTests(unittest.TestCase):
     def test_actual_default_entry_is_bounded_blocked_and_does_not_claim_acceptance(self):
         completed = subprocess.run([sys.executable, "-I", "-B", str(PATH)], capture_output=True, timeout=10)
@@ -74,6 +102,8 @@ class RetainedReviewTests(unittest.TestCase):
             for phase in chain["phases"].values():
                 phase["grant"]["management"]["capacity_digest"] = quota_grant.digest(capacity)
             value["launcher"].update(schema="local-hand-q2-launcher/v2", purpose="ISOLATED_Q2_CHAIN", assembly=chain)
+        if getattr(cls, "system", False):
+            value = system_fixture(value)
         for name in ("output", "declarations"):
             path = root / name; path.mkdir(mode=0o700); info = path.stat()
             value[name] = dict(path=str(path), device=info.st_dev, inode=info.st_ino)
@@ -86,6 +116,8 @@ class RetainedReviewTests(unittest.TestCase):
         owner = dict(controller=value["supervisor_envelope"]["controller"], boot_id=BOOT, pid=4241,
                      stdout=[10, 111], stderr=[10, 112])
         initial = running(value)
+        if getattr(cls, "system", False):
+            initial.update(RuntimeMaxUSec="1min 25s", LimitCPU="85", LimitCPUSoft="85")
 
         def modeled_client():
             script = """
@@ -96,11 +128,12 @@ identity = dict(invocation_id='c'*32, pid=os.getpid(), cgroup_device=22, cgroup_
 nested = value['launcher']
 nested['controller_envelope']['controller'].update({k: identity[k] for k in ('invocation_id','cgroup_device','cgroup_inode')})
 (directory/'launcher.json').write_text(json.dumps(nested,sort_keys=True,separators=(',',':'))+'\\n')
-chained=nested['schema']=='local-hand-q2-launcher/v2'
-summary=dict(schema='local-hand-q2-launcher-result/v2' if chained else 'local-hand-q2-launcher-result/v1',
+system=nested['schema']=='local-hand-q2-system-launcher/v1'
+chained=system or nested['schema']=='local-hand-q2-launcher/v2'
+summary=dict(schema='local-hand-q2-system-launcher-result/v1' if system else 'local-hand-q2-launcher-result/v2' if chained else 'local-hand-q2-launcher-result/v1',
              status='CHAIN_CLOSED' if chained else 'PREFLIGHT_CLOSED',q3_accepted=False,
              production_supported=False,independent_controller_stop_required=True)
-marker=dict(schema='local-hand-q2-controller-result/v1',fixture_sha256=sys.argv[3],controller=identity,
+marker=dict(schema='local-hand-q2-system-controller-result/v1' if system else 'local-hand-q2-controller-result/v1',fixture_sha256=sys.argv[3],controller=identity,
             result=summary,completed_ns=time.clock_gettime_ns(time.CLOCK_BOOTTIME))
 print(json.dumps(summary), flush=True)
 pending=directory/'controller-result.pending'
@@ -372,6 +405,75 @@ while True: time.sleep(.01)
             return value
         with mock.patch.object(r, "facts", side_effect=changed), self.assertRaisesRegex(ValueError, "REVIEW_MEMBER_CHANGED"):
             self.review()
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux modeled system manager with real outer pipes")
+class SystemReviewTests(unittest.TestCase):
+    chain = True
+    system = True
+    setUpClass = classmethod(RetainedReviewTests.setUpClass.__func__)
+    tearDownClass = classmethod(RetainedReviewTests.tearDownClass.__func__)
+    setUp = RetainedReviewTests.setUp
+    review = RetainedReviewTests.review
+    rewrite = RetainedReviewTests.rewrite
+    reseal = RetainedReviewTests.reseal
+
+    def fixture(self):
+        return json.loads((self.root / "declarations/supervisor.json").read_bytes())
+
+    def test_system_outer_producer_roundtrip_retains_scoped_not_live_acceptance(self):
+        before = {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        with mock.patch.object(subprocess, "Popen", side_effect=AssertionError("read-only review")):
+            result = self.review()
+        self.assertEqual("local-hand-q2-system-offline-evidence-review/v1", result["schema"])
+        self.assertEqual("system", result["manager_kind"])
+        self.assertEqual("CHAIN_CLOSED", result["recorded_launcher_status"])
+        for name in ("q2_accepted", "q3_accepted", "production_supported", "launcher_phase_evidence_reviewed",
+                     "host_provenance_proven", "live_state_proven"):
+            self.assertFalse(result[name])
+        self.assertEqual(before, {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+
+    def test_outer_wrapper_cannot_swap_system_and_user_manager_versions(self):
+        fixture = self.fixture()
+        mutations = (
+            lambda f: f.update(schema="local-hand-q2-supervisor/v1"),
+            lambda f: f["launcher"].update(schema="local-hand-q2-launcher/v2"),
+        )
+        for mutate in mutations:
+            changed = copy.deepcopy(fixture); mutate(changed)
+            with self.assertRaisesRegex(ValueError, "REVIEW_MANAGER_BINDING"):
+                r.cancel_fixture(changed)
+
+    def test_recorded_system_geometry_rejects_old_parent_alias_and_manager_mutations(self):
+        fixture = self.fixture()
+        mutations = (
+            lambda f: f["launcher"]["system_geometry"]["ordinary_parent"].update(tasks_max=33),
+            lambda f: f["launcher"]["system_geometry"]["retained_ordinary_parent"]["parent"].update(inode=500),
+            lambda f: f["launcher"]["resident"]["ordinary"]["manager_binding"].update(manager_kind="user"),
+            lambda f: f["launcher"]["resident"]["ordinary"]["manager_binding"].update(boot_id="wrong-boot"),
+            lambda f: f["launcher"]["resident"].update(schema="local-hand-q2-resident/v2"),
+            lambda f: f["launcher"]["assembly"]["phases"]["business"]["peer"].update(parent={"path": "/wrong", "device": 22, "inode": 50}),
+        )
+        r.system_geometry_facts(fixture)
+        for mutate in mutations:
+            changed = copy.deepcopy(fixture); mutate(changed)
+            with self.subTest(mutation=mutate), self.assertRaises(ValueError): r.system_geometry_facts(changed)
+
+    def test_gateway_wire_cost_cannot_be_dropped(self):
+        self.rewrite("reservation.json", lambda data: data["capacity_costs"].update(
+            output_bytes=data["capacity_costs"]["output_bytes"] - r.SYSTEM_WIRE_LIMIT))
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "REVIEW_CAPACITY_COSTS"): self.review()
+
+    def test_legacy_result_cannot_be_relabelled_under_system_seal(self):
+        self.rewrite("result.json", lambda data: data.update(schema="local-hand-q2-supervisor-result/v1"))
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "REVIEW_PROVISIONAL_RESULT"): self.review()
+
+    def test_system_capture_still_requires_original_dual_eof_and_zero_exit(self):
+        self.rewrite("capture.json", lambda data: data.update(eof=["stdout"]))
+        self.reseal()
+        with self.assertRaisesRegex(ValueError, "REVIEW_ORIGINAL_CAPTURE"): self.review()
 
 
 if __name__ == "__main__": unittest.main()

@@ -89,6 +89,42 @@ class DefaultEntryTests(unittest.TestCase):
             s.expected_status(dict(schema="local-hand-q2-launcher/v2", purpose="ISOLATED_Q2_PREFLIGHT"))
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux system-manager closure model")
+class SystemParentClosureTests(unittest.TestCase):
+    def test_parent_empty_checks_shared_ancestor_not_only_target_or_worker(self):
+        from test_e3_quota_q2_prepare_assembly import a, system_facts
+        from admin.local_hand_quota_observer.systemd_runtime import Q1Controller
+        value = a.assemble(system_facts())["supervisor_template"]
+        controls = s.Controls(value, {})
+        with mock.patch.object(Q1Controller, "_parent_empty", return_value=False) as check:
+            self.assertFalse(controls.empty())
+        controller, binding = check.call_args.args
+        expected = value["controller_parent"]
+        self.assertEqual(expected["path"], binding.manifest.cgroup_parent)
+        self.assertEqual(expected["inode"], controller.config.cgroup_parent_inode)
+        self.assertNotEqual(value["launcher"]["resident"]["ordinary"]["parent"]["path"], binding.manifest.cgroup_parent)
+
+    def test_original_target_exit_does_not_close_live_ordinary_sibling(self):
+        from test_e3_quota_q2_prepare_assembly import a, system_facts
+        value = a.assemble(system_facts())["supervisor_template"]
+        before = running(value)
+        before.update(RuntimeMaxUSec="1min 25s", LimitCPU="85", LimitCPUSoft="85")
+        after = dict(before, ActiveState="inactive", SubState="dead", MainPID="0", ControlGroup="")
+        controls = mock.Mock()
+        controls.show.side_effect = [before, after]
+        controls.empty.return_value = False
+        controls.clock.return_value = 3 * SECOND
+        original = dict(invocation_id="c"*32, pid=4242, cgroup_device=22, cgroup_inode=45)
+        record = {}
+        with mock.patch.object(guard, "_cgroup_identity"), self.assertRaisesRegex(ValueError, "SUPERVISOR_CONTROLLER_TREE_NOT_EMPTY"):
+            s.stop_original(controls, value["launcher"]["controller_envelope"]["controller"], original, 100*SECOND, record)
+        controls.call.assert_called_once_with(("stop", before["Id"]), 100*SECOND)
+        self.assertTrue(record["acknowledged"])
+        self.assertFalse(record["parent_empty"])
+        self.assertNotIn("complete", record)
+        self.assertEqual("local-hand-q2-system-supervisor-result/v1", s.record_schema(value, "supervisor-result"))
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux supervisor fixture declarations")
 class DeclarationTests(unittest.TestCase):
     def setUp(self):

@@ -62,6 +62,8 @@ class ChainLauncherTests(unittest.TestCase):
             return descriptor
         def spawn(argv, **kwargs):
             event("spawn")
+            if hasattr(self, "on_spawn"):
+                self.on_spawn(argv, kwargs)
             with socket.socket(fileno=os.dup(kwargs["pass_fds"][0])) as inherited:
                 self.assertEqual(socket.SOCK_SEQPACKET,inherited.getsockopt(socket.SOL_SOCKET,socket.SO_TYPE))
             return SimpleNamespace(pid=os.getpid(),stdout=io.BytesIO(),stderr=io.BytesIO())
@@ -88,7 +90,8 @@ class ChainLauncherTests(unittest.TestCase):
             event("capture")
             digests = {phase:quota_closure.digest(dict(phase=phase,fence=fence)) for phase,fence in self.closed.items()}
             if self.false_summary: digests["business"] = "f"*64
-            summary = dict(schema="local-hand-q2-resident-result/v2",status="CHAIN_CLOSED",operation_id="fixture",
+            summary = dict(schema="local-hand-q2-system-resident-result/v1" if self.value["schema"] == launcher.SYSTEM_SCHEMA
+                else "local-hand-q2-resident-result/v2",status="CHAIN_CLOSED",operation_id="fixture",
                 phases=list(PHASES),closure_digests=digests,q3_accepted=False,production_supported=False)
             return dict(complete=not self.incomplete_capture,returncode=0,stdout=raw(summary),stderr=b"",error=None)
         def plan(resident,packet,grant,previous_plans):

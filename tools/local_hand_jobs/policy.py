@@ -146,7 +146,7 @@ class Policy:
         _keys(config, {"schema_version", "authority_id", "node_id", "install_uuid", "deployment_epoch",
             "generation", "broker_root", "authority_root", "forbidden_roots", "limits", "profiles", "principals",
             "installed_payload_digest", "execution_entrypoint", "source_commit"}, {"local_peers", "process_manager"})
-        if config["schema_version"] != "lh-policy-v1":
+        if config["schema_version"] not in ("lh-policy-v1", "lh-policy-v2"):
             raise _bad()
         for field in ("authority_id", "node_id"):
             _ref(config[field])
@@ -303,7 +303,12 @@ class Policy:
                 raise _bad()
         if "process_manager" in config:
             manager = config["process_manager"]
-            _keys(manager, {"uid", "slice", "cgroup"})
+            if config["schema_version"] == "lh-policy-v2":
+                from . import manager_binding
+                _keys(manager, manager_binding.SYSTEM_CONFIGURATION_KEYS)
+                manager_binding.from_configuration(manager, authority_id=config["authority_id"])
+            else:
+                _keys(manager, {"uid", "slice", "cgroup"})
             _positive(manager["uid"], allow_zero=True)
             if (type(manager["slice"]) is not str or
                     re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,100}\.slice", manager["slice"]) is None):
@@ -311,6 +316,8 @@ class Policy:
             _path(manager["cgroup"])
             if not manager["cgroup"].startswith("/sys/fs/cgroup/"):
                 raise _bad()
+        elif config["schema_version"] == "lh-policy-v2":
+            raise _bad()
         # Bootstrap pools are private deployment admission, never caller paths.
         # Validate declared identities without touching any mounted directory.
         from .bootstrap_roots import validate_root, validate_slots

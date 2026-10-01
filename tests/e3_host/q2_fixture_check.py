@@ -24,6 +24,8 @@ import time
 from types import ModuleType
 
 SCHEMA = "local-hand-q2-fixture-check/v1"
+SYSTEM_SCHEMA = "local-hand-q2-system-fixture-check/v1"
+SYSTEM_LAUNCHER = "local-hand-q2-system-launcher/v1"
 LIMIT = 2 * 1024 * 1024
 PHASES = ("preflight", "business", "evidence")
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
@@ -170,6 +172,7 @@ class Report:
         self.values = {}
         self.guard = None
         self.cancel = False
+        self.system = False
 
     def probe(self, name, action, *, needs=()):
         if any(key not in self.values for key in needs):
@@ -192,7 +195,7 @@ class Report:
         required = ["original_grant_reservation", "ordinary_identity_and_namespace", "quota_and_enforcement",
                     "original_exit_and_eof", "supervisor_external_stop"]
         required[3:3] = ["normal_chain_acceptance", "fixed_cancel_case_execution"] if self.cancel else ["three_phase_execution"]
-        return dict(schema="local-hand-q4-cancel-fixture-check/v1" if self.cancel else SCHEMA,
+        return dict(schema=SYSTEM_SCHEMA if self.system else "local-hand-q4-cancel-fixture-check/v1" if self.cancel else SCHEMA,
                     status="CHECKED" if self.rows and all(row["status"] == "PASS" for row in self.rows)
                     else "BLOCKED", scope="READ_ONLY_EXISTING_PREREQUISITES", checks=self.rows,
                     q2_accepted=False, q3_accepted=False, production_supported=False,
@@ -245,10 +248,11 @@ def static_binding(value, supervisor, repository):
     from local_hand_jobs import quota_contract as q
     nested = value["launcher"]; resident = nested["resident"]; install = resident["installation"]
     cancel = supervisor.cancel_fixture(value)
+    system = supervisor.system_fixture(value)
     fields = {"schema", "purpose", "entry", "installation", "policy", "ordinary", "principal", "request", "plan", "phases"}
     q._keys(resident, fields | {"cancel_case"} if cancel else fields)
     expected = (CANCEL_RESIDENT, CANCEL_PURPOSE, ["preflight"]) if cancel else (
-        "local-hand-q2-resident/v2", "ISOLATED_Q2_CHAIN", list(PHASES))
+        "local-hand-q2-system-resident/v1" if system else "local-hand-q2-resident/v2", "ISOLATED_Q2_CHAIN", list(PHASES))
     require((resident["schema"], resident["purpose"], resident["phases"]) == expected, "FIXTURE_RESIDENT_VERSION")
     if cancel:
         relative = "tests/e3_host/q4_cancel_case.py"
@@ -260,7 +264,8 @@ def static_binding(value, supervisor, repository):
     q.match(nested["session"], r"[0-9a-f]{64}")
     q._keys(install, {"package_root", "source_commit", "payload_digest", "files", "programs"})
     q._keys(install["programs"], {"python", "systemctl", "systemd_run"})
-    q._keys(resident["ordinary"], {"uid", "gid", "parent", "broker_cgroup", "initial_userns"})
+    q._keys(resident["ordinary"], {"uid", "gid", "parent", "broker_cgroup", "initial_userns"}
+        | ({"manager_binding"} if system else set()))
     q.integer(resident["ordinary"]["uid"], 1, 2**32-2); q.integer(resident["ordinary"]["gid"], 1, 2**32-2)
     require(1 <= len(install["files"]) <= 512, "FIXTURE_INSTALLED_FILE_COUNT")
     require(resident["entry"] == dict(path=str(repository / "tests/e3_host/q2_resident.py"),
@@ -270,6 +275,9 @@ def static_binding(value, supervisor, repository):
         q.match(name, r"(?:local_hand|local_hand_jobs|local_hand_mcp|local_hand_connect)/[a-z_][a-z0-9_]*\.py")
         require(nested["source"]["files"].get("tools/" + name) == digest, "FIXTURE_INSTALLED_SOURCE")
     templates = supervisor.templates(nested)
+    if system:
+        supervisor.validate_system_geometry(nested, value["controller_parent"], nested["controller_envelope"]["controller"],
+            boot_id=templates[0]["installation"]["capacity"]["boot_id"])
     for template in templates:
         ordinary = resident["ordinary"]; peer = template["peer"]
         require(install["source_commit"] == template["installation"]["source_commit"] == nested["source"]["commit"],
@@ -446,7 +454,14 @@ def policy_snapshot(nested):
             and policy.execution_entrypoint == resident["installation"]["package_root"] + "/local_hand_jobs/cli.py",
             "FIXTURE_POLICY_BINDING")
     require(policy.config["process_manager"]["cgroup"] == "/sys/fs/cgroup" + ordinary["parent"]["path"], "FIXTURE_POLICY_PARENT")
-    if nested["schema"] == "local-hand-q2-launcher/v2":
+    if nested["schema"] == SYSTEM_LAUNCHER:
+        from local_hand_jobs import manager_binding
+        require(policy.config["schema_version"] == "lh-policy-v2", "FIXTURE_POLICY_MANAGER_VERSION")
+        manager_binding.check(ordinary["manager_binding"], manager_binding.from_configuration(
+            policy.config["process_manager"], authority_id=policy.authority_id))
+    else:
+        require(policy.config["schema_version"] == "lh-policy-v1", "FIXTURE_POLICY_MANAGER_VERSION")
+    if nested["schema"] in ("local-hand-q2-launcher/v2", SYSTEM_LAUNCHER):
         from admin.local_hand_quota_observer import q2_chain
         chain_raw = q2_chain.q._canonical(nested["assembly"], q2_chain.c.LIMIT)
         chain = q2_chain.decode(chain_raw, sha(chain_raw))
@@ -523,6 +538,47 @@ def manager_delegation(controls, ordinary, end):
         require({b"cpu", b"memory", b"pids"} <= set(data.split()), "FIXTURE_CONTROLLERS")
 
 
+def system_manager_geometry(controls, nested, end):
+    """Read exact new/root and retained/user cgroup limits; no manager mutation."""
+    ordinary = nested["resident"]["ordinary"]
+    geometry = nested["system_geometry"]
+    for role in ("controller_parent", "ordinary_parent", "retained_ordinary_parent"):
+        record = geometry[role]; pin = record["parent"]
+        owner = ordinary["uid"] if role == "retained_ordinary_parent" else 0
+        root = "/sys/fs/cgroup" + pin["path"]
+        fd = opened(root, owner=owner, directory=True)
+        try:
+            info = os.fstat(fd)
+            require((info.st_dev, info.st_ino) == (pin["device"], pin["inode"]), "FIXTURE_SYSTEM_PARENT_IDENTITY")
+            if owner == 0:
+                require(info.st_uid == info.st_gid == 0, "FIXTURE_SYSTEM_PARENT_OWNER")
+        finally:
+            os.close(fd)
+        for filename, key in (("memory.max", "memory_bytes"), ("memory.swap.max", "memory_swap_max"),
+                              ("pids.max", "tasks_max")):
+            require(protected(root + "/" + filename, 4096, owner=owner).strip() == str(record[key]).encode(),
+                "FIXTURE_SYSTEM_PARENT_LIMIT")
+        parts = protected(root + "/cpu.max", 4096, owner=owner).split()
+        require(len(parts) == 2 and all(part.isdigit() for part in parts), "FIXTURE_SYSTEM_PARENT_CPU")
+        quota, period = map(int, parts)
+        require(quota > 0 and period > 0 and quota * 1_000_000 == period * record["cpu_quota_per_sec_usec"],
+            "FIXTURE_SYSTEM_PARENT_CPU")
+        # A freshly created leaf slice may have no enabled subtree controls
+        # until PID 1 creates its first child. The shared parent already has
+        # that child and must expose all three controllers to both siblings.
+        filenames = ("cgroup.controllers", "cgroup.subtree_control") if role == "controller_parent" else ("cgroup.controllers",)
+        for filename in filenames:
+            require({b"cpu", b"memory", b"pids"} <= set(protected(root + "/" + filename, 4096, owner=owner).split()),
+                "FIXTURE_SYSTEM_PARENT_CONTROLLERS")
+        if owner == 0:
+            fields = {"Id", "LoadState", "ActiveState", "SubState", "ControlGroup"}
+            unit = Path(pin["path"]).name
+            raw = controls.call(("show", unit, "--all", "--property=" + ",".join(sorted(fields))), end)
+            facts = unique(line.split("=", 1) for line in raw.decode("ascii").splitlines())
+            require(facts == dict(Id=unit, LoadState="loaded", ActiveState="active", SubState="active",
+                ControlGroup=pin["path"]), "FIXTURE_SYSTEM_PARENT_UNIT")
+
+
 def storage_geometry(value, supervisor):
     descriptors = []
     try:
@@ -567,6 +623,7 @@ def check(raw, digest, repository, *, admitted=None):
         return report.result()
     value, supervisor, launcher = loaded
     report.cancel = supervisor.cancel_fixture(value)
+    report.system = supervisor.system_fixture(value)
     from local_hand_jobs import budget, quota_lifecycle
     clock = report.probe("clock", budget.current_clock)
     binding = report.probe("declaration_capacity_geometry", lambda: supervisor.validate(value, launcher, clock), needs=("clock",))
@@ -623,10 +680,14 @@ def check(raw, digest, repository, *, admitted=None):
             require(facts["Id"] == binding["target"].unit and facts["LoadState"] == "not-found" and facts["Job"] in ("", "0"),
                     "FIXTURE_TARGET_CONSUMED")
         report.probe("target_not_started", target_absent)
-        report.probe("ordinary_manager_delegation", lambda: manager_delegation(controls, resident["ordinary"], end))
+        if report.system:
+            report.probe("ordinary_system_manager_geometry", lambda: system_manager_geometry(controls, nested, end))
+        else:
+            report.probe("ordinary_manager_delegation", lambda: manager_delegation(controls, resident["ordinary"], end))
         report.probe("original_deadline_after_checks", lambda: controls.clock(end))
     else:
-        for name in ("target_not_started", "ordinary_manager_delegation", "original_deadline_after_checks"):
+        for name in ("target_not_started", "ordinary_system_manager_geometry" if report.system else "ordinary_manager_delegation",
+                     "original_deadline_after_checks"):
             report.probe(name, lambda: None, needs=("original_supervisor",))
     return report.result()
 

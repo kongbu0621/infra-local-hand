@@ -27,6 +27,7 @@ SCHEMA = "local-hand-q2-original-handoff/v1"
 ENVELOPE_SCHEMA = "local-hand-q2-issued-handoff/v1"
 RESULT_SCHEMA = "local-hand-q2-handoff-result/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-original-handoff/v1"
+SYSTEM_SCHEMA = "local-hand-q2-system-original-handoff/v1"
 CANCEL_PURPOSE = "ONE_ORIGINAL_Q4_CANCEL_HANDOFF"
 CANCEL_TEMPLATE_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 LIMIT = 2 * 1024 * 1024
@@ -176,12 +177,20 @@ def protected(path, limit=LIMIT):
 
 def cancellation(plan):
     pair = plan.get("schema"), plan.get("purpose")
-    require(pair in ((SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"), (CANCEL_SCHEMA, CANCEL_PURPOSE)), "HANDOFF_SCHEMA")
+    require(pair in ((SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"), (CANCEL_SCHEMA, CANCEL_PURPOSE),
+                    (SYSTEM_SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF")), "HANDOFF_SCHEMA")
     return pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
 
 
+def system_manager(plan):
+    cancellation(plan)
+    return plan["schema"] == SYSTEM_SCHEMA
+
+
 def record_schema(plan, suffix):
-    return ("local-hand-q4-cancel-" if cancellation(plan) else "local-hand-q2-") + suffix + "/v1"
+    prefix = ("local-hand-q4-cancel-" if cancellation(plan) else
+              "local-hand-q2-system-" if system_manager(plan) else "local-hand-q2-")
+    return prefix + suffix + "/v1"
 
 
 def case_limits(plan):
@@ -202,6 +211,18 @@ def cancel_child_result(plan, result):
         require(type(result) is dict
                 and result.get("schema") != "local-hand-q4-cancel-supervisor-result/v1"
                 and result.get("launcher_status") != "CANCEL_CASE_RECORDED", "HANDOFF_CHILD_SCENARIO")
+        system = system_manager(plan)
+        require(system == (result.get("schema") == "local-hand-q2-system-supervisor-result/v1"),
+                "HANDOFF_CHILD_MANAGER_VERSION")
+        if system:
+            require(result.get("scope") == "TARGET_CONTROLLER_CLOSURE_ONLY"
+                    and result.get("seal_required") is True and result.get("q3_accepted") is False
+                    and result.get("production_supported") is False
+                    and result.get("independent_supervisor_stop_required") is True,
+                    "HANDOFF_SYSTEM_CHILD_SCOPE")
+            if result.get("status") == "CONTROLLER_CLOSED":
+                require(result.get("launcher_status") == "CHAIN_CLOSED"
+                        and result.get("controller_stopped") is True, "HANDOFF_SYSTEM_CHILD_STATUS")
         return
     require(type(result) is dict and result.get("schema") == record_schema(plan, "supervisor-result")
             and result.get("scope") == "TARGET_CONTROLLER_CLOSURE_ONLY"
@@ -213,14 +234,17 @@ def cancel_child_result(plan, result):
                 and result.get("controller_stopped") is True, "HANDOFF_CANCEL_CHILD_STATUS")
 
 
-def static_template(value, *, cancel=False):
+def static_template(value, *, cancel=False, system=False):
+    require(type(cancel) is bool and type(system) is bool and not (cancel and system), "HANDOFF_TEMPLATE_KIND")
     keys(value, {"schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"})
     expected = (("local-hand-q4-cancel-supervisor/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+                ("local-hand-q2-system-supervisor/v1", "ISOLATED_Q2_SUPERVISION") if system else
                 ("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"))
     require((value["schema"], value["purpose"]) == expected,
             "HANDOFF_TEMPLATE_SCHEMA")
     nested = value["launcher"]
     expected = (("local-hand-q4-cancel-launcher/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+                ("local-hand-q2-system-launcher/v1", "ISOLATED_Q2_CHAIN") if system else
                 ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"))
     require((nested.get("schema"), nested.get("purpose")) == expected,
             "HANDOFF_CANCEL_REQUIRED" if cancel else "HANDOFF_THREE_PHASE_REQUIRED")
@@ -228,6 +252,11 @@ def static_template(value, *, cancel=False):
         resident = nested.get("resident", {})
         require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
                 ("local-hand-q4-cancel-resident/v1", CANCEL_TEMPLATE_PURPOSE, ["preflight"]), "HANDOFF_CANCEL_RESIDENT")
+    if system:
+        resident = nested.get("resident", {})
+        require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
+                ("local-hand-q2-system-resident/v1", "ISOLATED_Q2_CHAIN", ["preflight", "business", "evidence"]),
+                "HANDOFF_SYSTEM_RESIDENT")
     for env in (value["supervisor_envelope"], nested["controller_envelope"]):
         keys(env, {"controller", "output_bytes", "storage_bytes", "storage_inodes"})
         require(type(env["controller"]) is dict and not DYNAMIC.intersection(env["controller"]), "HANDOFF_FUTURE_IDENTITY")
@@ -241,7 +270,7 @@ def decode(raw, digest):
     cancel = cancellation(value)
     require(type(value["preparation_id"]) is str and re.fullmatch(r"[0-9a-f]{32}", value["preparation_id"]), "HANDOFF_PREPARATION")
     require(type(value["boot_id"]) is str and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value["boot_id"]), "HANDOFF_BOOT")
-    static_template(value["template"], cancel=cancel)
+    static_template(value["template"], cancel=cancel, system=system_manager(value))
     keys(value["owner_envelope"], OWNER_KEYS)
     owner = value["owner_envelope"]
     for key, amount in owner.items(): integer(amount, 1)
@@ -285,7 +314,7 @@ def issue(plan, supervisor, now):
     """Pure issuance of both original deadlines exactly once, before launch."""
     require(now["boot_id"] == plan["boot_id"], "HANDOFF_BOOT")
     value = copy.deepcopy(plan["template"])
-    static_template(value, cancel=cancellation(plan))
+    static_template(value, cancel=cancellation(plan), system=system_manager(plan))
     issued = integer(now["boottime_ns"], plan["owner_envelope"]["issued_ns"])
     for env in (value["supervisor_envelope"], value["launcher"]["controller_envelope"]):
         candidate = supervisor.candidate(env["controller"])

@@ -521,13 +521,23 @@ def request(socket_path, tool, arguments, *, timeout=2):
                     raise JobError("IO_UNCERTAIN", "Local transport cleanup is unresolved; retain the original ID") from exc
 
 
-def _known_manager_units(rows):
+def _known_manager_units(rows, *, manager_binding=None):
     """Derive every unit from the durable layout, never arbitrary saved names."""
     from .bootstrap_roots import validate_grant
+    from . import manager_binding as bindings
     units = set()
     for row in rows:
         record = row["record"]
         for phase, handle in record.get("handles", {}).items():
+            bindings.check(manager_binding, handle.get("manager_binding"))
+            saved = handle.get("manager", {})
+            if type(saved) is dict:
+                for name in ("bootstrap", "helper", "result_reader"):
+                    part = saved.get(name)
+                    if type(part) is dict:
+                        bindings.check(manager_binding, part.get("manager_binding"))
+                    elif manager_binding is not None and part is not None:
+                        raise JobError("IO_UNCERTAIN", "Durable manager stage identity is unresolved")
             execution_id = f"{row['namespace']}-{row['id']}-{phase}"
             if (phase not in ("preflight", "business", "evidence", "reconcile")
                     or handle.get("execution_id") != execution_id):
@@ -607,6 +617,15 @@ def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
     from .runner import Runner
     from .state import StateStore
     from .evidence import EvidenceStore
+    from . import manager_binding as bindings
+    from collections.abc import Mapping
+    configuration = getattr(policy, "config", {}).get("process_manager", {})
+    expected_manager = bindings.from_configuration(configuration, authority_id=policy.authority_id)
+    actual_configuration = getattr(manager, "configuration", {})
+    if isinstance(actual_configuration, Mapping):
+        bindings.check(expected_manager, bindings.from_configuration(actual_configuration))
+    elif expected_manager is not None:
+        raise JobError("IO_UNCERTAIN", "Admitted system manager configuration is unavailable")
     evidence_root, evidence_identity = _admitted_evidence_store(policy)
     verify_local_filesystem(policy.broker_root)
     verify_local_filesystem(policy.authority_root)
@@ -647,7 +666,7 @@ def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
         state = StateStore(Path(policy.broker_root) / "jobs.sqlite", policy.authority_id,
                            ledger_id, initialize=initialize)
         with state.transaction() as tx:
-            units = _known_manager_units(state.all(tx))
+            units = _known_manager_units(state.all(tx), manager_binding=expected_manager)
         inventory = manager.scan(units)
         if inventory.get("status") != "READY":
             raise JobError("IO_UNCERTAIN", "Supervisor inventory has orphaned or unresolved executions")

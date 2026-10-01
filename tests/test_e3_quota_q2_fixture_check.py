@@ -82,6 +82,78 @@ class EntryTests(unittest.TestCase):
         self.assertEqual(["FIXTURE_ORIGINAL_DEADLINE"] * 2, [row["reason"] for row in report.rows])
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux cgroup context is explicitly modeled")
+class SystemGeometryTests(unittest.TestCase):
+    def setUp(self):
+        from test_e3_quota_q2_prepare_assembly import a, system_facts
+        result = a.assemble(system_facts())
+        self.nested = result["launcher"]
+        self.geometry = self.nested["system_geometry"]
+        self.active = {}
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.reads = []; self.calls = []
+        self.values = {}
+        self.pins = {}
+        for role, record in self.geometry.items():
+            if role == "schema": continue
+            root = "/sys/fs/cgroup" + record["parent"]["path"]
+            self.pins[root] = record["parent"]
+            self.values.update({root + "/memory.max": str(record["memory_bytes"]).encode(),
+                root + "/memory.swap.max": b"0", root + "/pids.max": str(record["tasks_max"]).encode(),
+                root + "/cpu.max": b"100000 100000", root + "/cgroup.controllers": b"cpu memory pids",
+                root + "/cgroup.subtree_control": b"cpu memory pids"})
+
+    def opened(self, path, **kwargs):
+        fd = os.open(self.temp.name, os.O_RDONLY | os.O_DIRECTORY)
+        pin = self.pins[path]
+        self.active[fd] = SimpleNamespace(st_dev=pin["device"], st_ino=pin["inode"], st_uid=0, st_gid=0)
+        return fd
+
+    def protected(self, path, maximum, **kwargs):
+        self.reads.append(path)
+        return self.values[path]
+
+    def call(self, args, end):
+        self.calls.append(args)
+        record = next(record for role, record in self.geometry.items() if role != "schema"
+            and Path(record["parent"]["path"]).name == args[1])
+        return ("Id=" + args[1] + "\nLoadState=loaded\nActiveState=active\nSubState=active\nControlGroup="
+            + record["parent"]["path"] + "\n").encode()
+
+    def check(self):
+        with mock.patch.object(c, "opened", self.opened), mock.patch.object(c.os, "fstat", lambda fd: self.active[fd]), \
+                mock.patch.object(c, "protected", self.protected):
+            c.system_manager_geometry(SimpleNamespace(call=self.call), self.nested, 10**9)
+
+    def test_new_and_retained_limits_read_once_without_querying_old_user_manager(self):
+        self.check()
+        self.assertEqual(2, len(self.calls))
+        self.assertTrue(all(args[0] == "show" and "--user" not in args for args in self.calls))
+        self.assertEqual(len(self.reads), len(set(self.reads)))
+        old = self.geometry["retained_ordinary_parent"]["parent"]["path"]
+        self.assertIn("/sys/fs/cgroup" + old + "/memory.max", self.reads)
+        # An empty newly created child need not yet have subtree controllers.
+        new = self.geometry["ordinary_parent"]["parent"]["path"]
+        self.assertNotIn("/sys/fs/cgroup" + new + "/cgroup.subtree_control", self.reads)
+
+    def test_wrong_kernel_limits_unlimited_cpu_or_missing_controller_reject(self):
+        root = "/sys/fs/cgroup" + self.geometry["ordinary_parent"]["parent"]["path"]
+        for filename, changed in (("memory.max", b"max"), ("memory.swap.max", b"1"),
+                ("pids.max", b"64"), ("cpu.max", b"max 100000"), ("cpu.max", b"200000 100000"),
+                ("cgroup.controllers", b"cpu memory")):
+            path = root + "/" + filename; before = self.values[path]; self.values[path] = changed
+            with self.subTest(filename=filename, changed=changed), self.assertRaises(ValueError): self.check()
+            self.values[path] = before
+
+    def test_system_report_cannot_be_mislabelled_as_legacy_acceptance(self):
+        report = c.Report(); report.system = True; report.probe("snapshot", lambda: None)
+        result = report.result()
+        self.assertEqual(c.SYSTEM_SCHEMA, result["schema"])
+        self.assertEqual("CHECKED", result["status"])
+        self.assertFalse(result["q2_accepted"])
+        self.assertEqual("NOT_RUN", result["execution_state"])
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux no-follow descriptors")
 class LocalReadTests(unittest.TestCase):
     def setUp(self):

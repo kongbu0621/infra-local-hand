@@ -17,6 +17,9 @@ import re
 import sys
 
 SCHEMA = "local-hand-q2-preparation-result/v1"
+SYSTEM_SETTINGS_SCHEMA = "local-hand-q2-system-preparation-settings/v1"
+SYSTEM_PLAN_SCHEMA = "local-hand-q2-system-preparation-plan/v1"
+SYSTEM_GATEWAY_OUTPUT_BYTES = 4 * 1024**2
 LIMIT = 2 * 1024 * 1024
 
 
@@ -50,7 +53,9 @@ def pin(value):
 def validate_settings(settings):
     """Reject malformed or unbounded settings before any provisioning effect."""
     c = helper("q2_prepare_contract")
-    c.keys(settings, ("identity", "original_budgets", "limits", "management", "controllers", "capacity_management", "owner"))
+    system = type(settings) is dict and settings.get("schema") == SYSTEM_SETTINGS_SCHEMA
+    names = {"identity", "original_budgets", "limits", "management", "controllers", "capacity_management", "owner"}
+    c.keys(settings, names | ({"schema"} if system else set()))
     identity = settings["identity"]
     c.keys(identity, ("id", "authority_id", "node_id", "install_uuid", "deployment_epoch", "generation", "operation_id",
         "profile_ref", "principal_id", "epoch", "slot_generation", "expires_at", "session", "ledger_id"))
@@ -135,12 +140,24 @@ def validate_settings(settings):
         used["memory_bytes"] += control["memory_bytes"]; used["pids"] += control["tasks_max"]
         used["output_bytes"] += 32768 + extra_output
     for key in used: used[key] += owner[key]
+    # System-manager wire traffic is an output charge within the existing
+    # management capacity. It does not allocate another file/log storage pool.
+    if system:
+        used["output_bytes"] += SYSTEM_GATEWAY_OUTPUT_BYTES
     require(all(used[key] <= cap[key] for key in used), "DRIVER_COMBINED_CAPACITY")
     return copy.deepcopy(settings)
 
 
 def validate_plan(plan):
     settings = validate_settings(plan["settings"])
+    system = plan.get("schema") == SYSTEM_PLAN_SCHEMA
+    require(system == (settings.get("schema") == SYSTEM_SETTINGS_SCHEMA), "DRIVER_SCHEMA_FAMILY")
+    if system:
+        c = helper("q2_prepare_contract")
+        c.keys(plan["retained_ordinary_parent"], ("path", "device", "inode"))
+        c.path(plan["retained_ordinary_parent"]["path"])
+        for field in ("device", "inode"):
+            c.number(plan["retained_ordinary_parent"][field], 1)
     budget = settings["original_budgets"]
     require(len(plan["roots"]) == 7, "DRIVER_ROOT_COUNT")
     slots = {key: [] for key in ("a", "b", "store")}
@@ -172,6 +189,7 @@ def facts_from_observed(plan, observed, children, authority):
     """
     a = helper("q2_prepare_assembly")
     settings = validate_plan(plan)
+    system = plan.get("schema") == SYSTEM_PLAN_SCHEMA
     installation = observed["installation"]
     require(installation["ordinary_verified"] is True, "DRIVER_ORDINARY_INSTALLATION")
     require(installation["source"]["commit"] == plan["candidate"]["commit"]
@@ -179,6 +197,13 @@ def facts_from_observed(plan, observed, children, authority):
     ordinary = {key: observed["ordinary"][key] for key in ("uid", "gid")}
     ordinary.update(parent=pin(observed["parents"]["ordinary"]), initial_userns=observed["host"]["initial_userns"])
     require(all(ordinary[k] == plan["account"][k] for k in ("uid", "gid")), "DRIVER_ACCOUNT_CHANGED")
+    if system:
+        ordinary["manager_binding"] = dict(schema="local-hand-manager-binding/v1", manager_kind="system",
+            authority_id=settings["identity"]["authority_id"], boot_id=observed["host"]["boot_id"],
+            parent=copy.deepcopy(ordinary["parent"]))
+    else:
+        require("system_geometry" not in observed and "manager_binding" not in observed["ordinary"],
+            "DRIVER_SCHEMA_FAMILY")
     directories = observed["directories"]
     for role, original in plan["directories"].items():
         require(directories[role]["path"] == original["path"], "DRIVER_DIRECTORY_CHANGED")
@@ -219,17 +244,27 @@ def facts_from_observed(plan, observed, children, authority):
             cgroup=observed["parents"][parentrole]["path"] + "/" + spec["unit"])
     controls.update({role + "_parent": pin(observed["parents"][role])
         for role in ("query", "management", "controller", "supervisor")})
+    geometry = None
+    if system:
+        geometry = a._system_geometry(observed["system_geometry"], ordinary, controls,
+            observed["host"]["boot_id"], settings["identity"]["authority_id"])
+        require(geometry["retained_ordinary_parent"]["parent"] == plan["retained_ordinary_parent"],
+            "DRIVER_RETAINED_PARENT_CHANGED")
+        manifest["system_geometry"] = copy.deepcopy(geometry)
+        identity["manifest_digest"] = sha(encoded(manifest))
     paths = dict(broker_root=directories["state"]["path"], authority_root=directories["authority"]["path"],
         policy=directories["authority"]["path"] + "/policy.json", profile_roots={role: directories["profile_" + role]["path"]
         for role in ("work", "evidence", "temporary")}, forbidden_roots=[old["path"] for old in plan["retained"]],
         journal=pin(directories["journal"]), endpoint_dir=directories["control"]["path"],
         management_evidence=children["management_evidence"], phase_outputs={phase: children[phase] for phase in a.PHASES},
         **{key: children[key] for key in ("launcher_output", "launcher_declarations", "supervisor_output", "supervisor_declarations")})
-    facts = dict(schema=a.SCHEMA, identity=identity, source={key: installation["source"][key] for key in ("root", "commit", "files")},
+    facts = dict(schema=a.SYSTEM_SCHEMA if system else a.SCHEMA, identity=identity, source={key: installation["source"][key] for key in ("root", "commit", "files")},
         installation=installation["installed"], admin=installation["admin"], python_identity=installation["python_identity"],
         ordinary=ordinary, paths=paths, slots=[slots["a"], slots["b"]], store=store, capacity=capacity,
         management=settings["management"], controllers=controls, setpriv=plan["tools"]["setpriv"],
         original_budgets=settings["original_budgets"], limits=settings["limits"])
+    if system:
+        facts["system_geometry"] = geometry
     return facts, authority, manifest
 
 
@@ -318,7 +353,8 @@ def complete(plan, receipt, *, files, command, clock):
     require(now["boot_id"] == observed["host"]["boot_id"], "DRIVER_BOOT_CHANGED")
     owner = dict(settings["owner"]); duration = owner.pop("runtime_ns")
     owner.update(issued_ns=now["boottime_ns"], deadline_ns=now["boottime_ns"] + duration)
-    envelope = dict(schema=handoff.SCHEMA, purpose="ONE_ORIGINAL_Q2_HANDOFF", preparation_id=facts["identity"]["id"],
+    envelope = dict(schema=handoff.SYSTEM_SCHEMA if plan.get("schema") == SYSTEM_PLAN_SCHEMA else handoff.SCHEMA,
+        purpose="ONE_ORIGINAL_Q2_HANDOFF", preparation_id=facts["identity"]["id"],
         boot_id=now["boot_id"], template=assembled["supervisor_template"], supervisor_parent=assembled["supervisor_parent"],
         output=children["owner_output"], declarations=children["owner_declarations"], owner_envelope=owner)
     raw = encoded(envelope); handoff.decode(raw, sha(raw))

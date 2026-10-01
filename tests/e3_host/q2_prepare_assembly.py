@@ -16,6 +16,7 @@ from pathlib import Path
 import stat
 
 SCHEMA = "local-hand-q2-assembly-facts/v1"
+SYSTEM_SCHEMA = "local-hand-q2-system-assembly-facts/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-assembly-facts/v1"
 PHASES = ("preflight", "business", "evidence")
 DYNAMIC = {"invocation_id", "cgroup_device", "cgroup_inode"}
@@ -66,6 +67,45 @@ def _allocation(slot, phase, operation, source_roots, store):
     return b.validate_grant(value)
 
 
+def _system_geometry(value, ordinary, controllers, boot_id, authority_id):
+    """The one approved sibling layout, without refunding the retained user tree."""
+    from admin.local_hand_quota_observer import q2_config as c
+    from local_hand_jobs import manager_binding
+    _keys(value, {"schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent"})
+    require(value["schema"] == "local-hand-q2-system-geometry/v1", "PREP_SYSTEM_GEOMETRY_SCHEMA")
+    fixed = {"controller_parent": (512 * 1024**2, 64), "ordinary_parent": (256 * 1024**2, 32),
+             "retained_ordinary_parent": (256 * 1024**2, 64)}
+    for name, (memory, tasks) in fixed.items():
+        record = value[name]
+        _keys(record, {"parent", "memory_bytes", "tasks_max", "cpu_quota_per_sec_usec", "memory_swap_max"})
+        c.identity(record["parent"])
+        require(all(type(record[key]) is int and record[key] == expected for key, expected in
+            (("memory_bytes", memory), ("tasks_max", tasks), ("cpu_quota_per_sec_usec", 1_000_000),
+             ("memory_swap_max", 0))), "PREP_SYSTEM_PARENT_BUDGET")
+    outer = value["controller_parent"]["parent"]
+    child = value["ordinary_parent"]["parent"]
+    old = value["retained_ordinary_parent"]["parent"]
+    require(outer == controllers["controller_parent"] and child == ordinary["parent"], "PREP_SYSTEM_PARENT_BINDING")
+    require(str(Path(outer["path"]).parent) == "/" and str(Path(child["path"]).parent) == outer["path"]
+        and Path(child["path"]).name.startswith(Path(outer["path"]).name.removesuffix(".slice") + "-")
+        and Path(child["path"]).name.endswith(".slice"), "PREP_SYSTEM_PARENT_GEOMETRY")
+    require(str(Path(old["path"]).parent) == "/user.slice/user-" + str(ordinary["uid"]) +
+        ".slice/user@" + str(ordinary["uid"]) + ".service" and Path(old["path"]).name.endswith(".slice"),
+        "PREP_SYSTEM_RETAINED_PARENT")
+    pins = (outer, child, old)
+    require(len({(pin["device"], pin["inode"]) for pin in pins}) == len(pins)
+        and not c.overlap(old["path"], outer["path"]), "PREP_SYSTEM_PARENT_ALIAS")
+    target = controllers["target"]
+    require(target["memory_bytes"] == 256 * 1024**2 and target["tasks_max"] == 32
+        and target["cpu_quota_per_sec_usec"] == 1_000_000 and target["runtime_max_usec"] == 85_000_000
+        and target["timeout_stop_usec"] == 1_000_000 and target["limit_cpu_seconds"] == 85,
+        "PREP_SYSTEM_TARGET_BUDGET")
+    require(str(Path(target["cgroup"]).parent) == outer["path"]
+        and not c.overlap(target["cgroup"], child["path"]), "PREP_SYSTEM_SIBLING_GEOMETRY")
+    manager_binding.validate(ordinary["manager_binding"], authority_id=authority_id, boot_id=boot_id, parent=child)
+    return copy.deepcopy(value)
+
+
 def assemble(facts):
     """Return private policy + resident/chain/launcher/static-supervisor objects.
 
@@ -83,9 +123,11 @@ def assemble(facts):
     from admin.local_hand_quota_observer import q2_chain, q2_config, controller_guard
 
     f = copy.deepcopy(facts)
+    system = f.get("schema") == SYSTEM_SCHEMA
     _keys(f, {"schema", "identity", "source", "installation", "admin", "python_identity", "ordinary",
-        "paths", "slots", "store", "capacity", "management", "controllers", "setpriv", "original_budgets", "limits"})
-    require(f["schema"] in (SCHEMA, CANCEL_SCHEMA), "PREP_ASSEMBLY_SCHEMA")
+        "paths", "slots", "store", "capacity", "management", "controllers", "setpriv", "original_budgets", "limits"}
+        | ({"system_geometry"} if system else set()))
+    require(f["schema"] in (SCHEMA, CANCEL_SCHEMA, SYSTEM_SCHEMA), "PREP_ASSEMBLY_SCHEMA")
     cancellation = f["schema"] == CANCEL_SCHEMA
     ident = f["identity"]
     _keys(ident, {"id", "authority_id", "node_id", "install_uuid", "deployment_epoch", "generation",
@@ -125,7 +167,7 @@ def assemble(facts):
     require(f["setpriv"]["path"] == "/usr/bin/setpriv", "PREP_ASSEMBLY_SETPRIV")
     q.match(f["setpriv"]["sha256"], r"[0-9a-f]{64}")
     ordinary = f["ordinary"]
-    _keys(ordinary, {"uid", "gid", "parent", "initial_userns"})
+    _keys(ordinary, {"uid", "gid", "parent", "initial_userns"} | ({"manager_binding"} if system else set()))
     q.integer(ordinary["uid"], 1, 2**32-2); q.integer(ordinary["gid"], 1, 2**32-2)
     q2_config.identity(ordinary["parent"]); q2_config.identity(ordinary["initial_userns"], path=False)
     q2_config.identity(f["python_identity"], path=False)
@@ -165,9 +207,11 @@ def assemble(facts):
     require(str(Path(controllers["target"]["cgroup"]).parent) == controllers["controller_parent"]["path"] and
             str(Path(controllers["supervisor"]["cgroup"]).parent) == controllers["supervisor_parent"]["path"], "PREP_ASSEMBLY_CONTROLLER_PARENT")
     parents = [ordinary["parent"], *(controllers[key] for key in ("controller_parent", "query_parent", "management_parent", "supervisor_parent"))]
-    require(all(not q2_config.overlap(left["path"], right["path"]) and
+    if system:
+        _system_geometry(f["system_geometry"], ordinary, controllers, f["capacity"]["boot_id"], ident["authority_id"])
+    require(all((system and i == 0 and j == 1 or not q2_config.overlap(left["path"], right["path"])) and
         (left["device"], left["inode"]) != (right["device"], right["inode"])
-        for i, left in enumerate(parents) for right in parents[i+1:]), "PREP_ASSEMBLY_PARENT_OVERLAP")
+        for i, left in enumerate(parents) for j, right in enumerate(parents[i+1:], i+1)), "PREP_ASSEMBLY_PARENT_OVERLAP")
     profile = dict((role + "_root", path) for role, path in paths["profile_roots"].items())
     budgets = {kind: copy.deepcopy(f["original_budgets"]) for kind in (*contract.KINDS, "reconcile")}
     # The inaccessible NAS kind still needs a well-formed dormant policy budget.
@@ -187,6 +231,9 @@ def assemble(facts):
         execution_entrypoint=install["package_root"] + "/local_hand_jobs/cli.py", source_commit=source["commit"],
         local_peers={str(ordinary["uid"]): ident["principal_id"]}, process_manager=dict(uid=ordinary["uid"],
         slice=Path(ordinary["parent"]["path"]).name, cgroup="/sys/fs/cgroup" + ordinary["parent"]["path"]))
+    if system:
+        config["schema_version"] = "lh-policy-v2"
+        config["process_manager"].update(gid=ordinary["gid"], manager_binding=copy.deepcopy(ordinary["manager_binding"]))
     policy = p.Policy(config)
     request = dict(schema_version="lh-job-v1", operation_id=ident["operation_id"], kind="host.inspect",
         profile_ref=ident["profile_ref"], expected=policy.expected(ident["profile_ref"]), inputs={}, expires_at=ident["expires_at"])
@@ -242,6 +289,10 @@ def assemble(facts):
     supervisor = dict(schema="local-hand-q2-supervisor/v1", purpose="ISOLATED_Q2_SUPERVISION", launcher=launcher,
         controller_parent=controllers["controller_parent"], supervisor_envelope=envelope("supervisor"),
         output=paths["supervisor_output"], declarations=paths["supervisor_declarations"])
+    if system:
+        resident["schema"] = "local-hand-q2-system-resident/v1"
+        launcher.update(schema="local-hand-q2-system-launcher/v1", system_geometry=copy.deepcopy(f["system_geometry"]))
+        supervisor["schema"] = "local-hand-q2-system-supervisor/v1"
     if cancellation:
         # All facts and conservative capacity checks below remain unchanged.
         # Only one original preflight is selected; unused roots are not reused
@@ -259,6 +310,9 @@ def assemble(facts):
     # Account both original controller levels before any time is issued. This
     # is the same finite conservative charge the running supervisor verifies.
     totals = q2_chain.declared_totals(checked)
+    if system:
+        # One cumulative control-wire grant; no separate persisted log pool.
+        totals["output_bytes"] += 4 * 1024**2
     for name, output in (("target", 3 * 32768 + 32768 + 4096), ("supervisor", 3 * 32768 + 4096)):
         spec = controllers[name]
         amount = dict(storage_bytes=controllers[name + "_storage_bytes"], storage_inodes=controllers[name + "_storage_inodes"],
@@ -283,7 +337,8 @@ def assemble(facts):
             "PREP_ASSEMBLY_ORDINARY_OUTPUT_OVERLAP")
     require(all((pin["device"], pin["inode"]) != (root["device"], root["inode"])
                 for pin in pins for root in roots), "PREP_ASSEMBLY_ORDINARY_OUTPUT_ALIAS")
-    return dict(schema="local-hand-q4-cancel-static-assembly/v1" if cancellation else "local-hand-q2-static-assembly/v1",
+    return dict(schema="local-hand-q2-system-static-assembly/v1" if system else
+        "local-hand-q4-cancel-static-assembly/v1" if cancellation else "local-hand-q2-static-assembly/v1",
         status="ASSEMBLED", policy=config,
         policy_digest=policy.policy_digest, resident=resident, chain=chain, launcher=launcher,
         supervisor_template=supervisor, supervisor_parent=controllers["supervisor_parent"],

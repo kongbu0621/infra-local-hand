@@ -14,7 +14,7 @@ import time
 import uuid
 
 from .contract import JobError, Principal, validate_submit, validate_tool_args
-from . import bootstrap_roots, budget
+from . import bootstrap_roots, budget, manager_binding as bindings
 from .resources import ResourceManager
 from .state import encoded
 
@@ -27,7 +27,8 @@ def thaw(value):
     return value
 
 
-def phase_plan(row, phase, grant, *, allocation=None, observation=None, parent=None, evidence_store_root=None):
+def phase_plan(row, phase, grant, *, allocation=None, observation=None, parent=None, evidence_store_root=None,
+               manager_binding=None):
     """Pure phase declaration used by original delivery and trusted inspection.
 
     Callers obtain row/grant/allocation through the existing durable authority
@@ -36,6 +37,13 @@ def phase_plan(row, phase, grant, *, allocation=None, observation=None, parent=N
     namespace, identity = row["namespace"], row["id"]
     plan = dict(thaw(row["plan"]), phase=phase, execution_id=f"{namespace}-{identity}-{phase}",
                 budget_grant=thaw(grant), budgets=thaw(grant["limits"]))
+    if manager_binding is not None:
+        bound = bindings.validate(manager_binding, boot_id=grant["boot_id"])
+        if "manager_binding" in plan:
+            bindings.check(bound, plan["manager_binding"])
+        plan["manager_binding"] = bound
+    elif "manager_binding" in plan:
+        bindings.check(None, plan["manager_binding"])
     if allocation is not None:
         plan["bootstrap_allocation"] = thaw(allocation)
         plan["supervision_version"] = 3
@@ -80,6 +88,9 @@ class Broker:
             # controlled cancellation remain available; new grants fail closed.
             pass
         self.state, self.policy, self.registry = state, policy, registry
+        self.manager_binding = bindings.from_configuration(
+            getattr(policy, "config", {}).get("process_manager", {}),
+            authority_id=getattr(policy, "authority_id", None))
         self.runner, self.evidence = runner, evidence
         if type(quota_required) is not bool:
             raise ValueError("quota_required must be an installation boolean")
@@ -426,7 +437,10 @@ class Broker:
                     phase = record["phase"].lower()
                     handle = record.get("handles", {}).get(phase)
                     if handle is not None:
+                        bindings.check(self.manager_binding, handle.get("manager_binding"))
                         plan = dict(row["plan"], phase=phase)
+                        if self.manager_binding is not None:
+                            plan["manager_binding"] = thaw(handle["manager_binding"])
                         try:
                             grant = budget.stored_grant(row, phase)
                         except JobError:
@@ -539,6 +553,11 @@ class Broker:
         if set(record.get("handles", {})) != phases:
             return False
         try:
+            for handle in record["handles"].values():
+                bindings.check(self.manager_binding, handle.get("manager_binding"))
+        except JobError:
+            return False
+        try:
             prior = budget.stored_grant(row, observed)
         except JobError:
             return False
@@ -574,6 +593,8 @@ class Broker:
         if len(history) > 15:
             return False  # Three phases; one intent/enqueue and up to three fixed deliveries each.
         expected_intent = {"execution_id": evidence_id, "intent_only": True}
+        if self.manager_binding is not None:
+            expected_intent["manager_binding"] = self.manager_binding
         version = record.get("handles", {}).get("evidence", {}).get("supervision_version")
         if version is not None:
             if type(version) is not int or version != 3:
@@ -772,6 +793,9 @@ class Broker:
                     except ValueError as error:
                         raise JobError("IO_UNCERTAIN", "Quota observation binding is unresolved") from error
                 handles[phase] = {"execution_id": execution_id, "intent_only": True}
+                if self.manager_binding is not None:
+                    bindings.validate(self.manager_binding, boot_id=grant["boot_id"])
+                    handles[phase]["manager_binding"] = thaw(self.manager_binding)
                 if allocation is not None:
                     # This immutable intent fixes the CPU split and the complete
                     # unit inventory even if the first manager receipt is lost.
@@ -784,13 +808,15 @@ class Broker:
                     "helper_started": row["record"]["helper_started"] if row["record"]["helper_started"] is True or phase == "business" else None})
                 plan = phase_plan(row, phase, grant, allocation=allocation,
                     observation=None if observation is None else observation.as_dict(), parent=parent,
-                    evidence_store_root=str(self.evidence.root) if phase == "evidence" else None)
+                    evidence_store_root=str(self.evidence.root) if phase == "evidence" else None,
+                    manager_binding=self.manager_binding)
             # The runner enqueues locally; its manager provides the delayed-launch fence.
             self._execution_owners[execution_id] = (namespace, identity)
             handle = self.runner.start(row["parent"], execution_id, plan)
             # A failed acknowledgement COMMIT must still leave the accepted
             # execution reachable by the ledger-failure controlled-stop path.
             self._active[(namespace, identity)] = handle
+            bindings.check(self.manager_binding, handle.get("manager_binding"))
             with self.state.transaction() as tx:
                 saved = self.state.get(namespace, identity, tx)["record"]["handles"]
                 saved[phase] = thaw(handle)
@@ -822,6 +848,7 @@ class Broker:
                 record = row["record"]
                 phase = record["phase"].lower()
                 handle = record.get("handles", {}).get(phase, {})
+                bindings.check(self.manager_binding, handle.get("manager_binding"))
                 if handle.get("execution_id") != execution_id or record["cancel_requested"]:
                     return None
                 if record.get("recovered") and not (
@@ -860,9 +887,11 @@ class Broker:
                                         "AND kind='EXECUTION_INTENT' ORDER BY seq DESC LIMIT 1",
                                         (namespace, identity)).fetchone()
                     intent_data = json.loads(intent["data_json"]) if intent else {}
+                    expected_intent = {"execution_id": execution_id, "intent_only": True, "supervision_version": 3}
+                    if self.manager_binding is not None:
+                        expected_intent["manager_binding"] = self.manager_binding
                     if (intent_data.get("phase") != record["phase"]
-                            or intent_data.get("handles", {}).get(phase) !=
-                                {"execution_id": execution_id, "intent_only": True, "supervision_version": 3}):
+                            or intent_data.get("handles", {}).get(phase) != expected_intent):
                         raise JobError("IO_UNCERTAIN", "Result reader reservation differs from immutable execution intent")
                     budget.substage_limits(grant, "result_reader", supervision_version=3)
                     proof = thaw(helper_proof)
@@ -1072,14 +1101,17 @@ class Broker:
             key, record = (row["namespace"], row["id"]), row["record"]
             if key in self._active:
                 try:
+                    bindings.check(self.manager_binding, self._active[key].get("manager_binding"))
                     proof = (self.runner.stop(self._active[key]) if record["cancel_requested"]
                              else self.runner.inspect(self._active[key]))
                     recovery = proof.get("recovery_handle")
                     if recovery is not None:
+                        bindings.check(self.manager_binding, recovery.get("manager_binding"))
                         with self.state.transaction() as tx:
                             current = self.state.get(*key, tx)["record"]
                             phase = current["phase"].lower()
                             saved = dict(current["handles"])
+                            bindings.check(self.manager_binding, saved[phase].get("manager_binding"))
                             handle = dict(saved[phase], **thaw(recovery))
                             if saved[phase] != handle:
                                 saved[phase] = handle

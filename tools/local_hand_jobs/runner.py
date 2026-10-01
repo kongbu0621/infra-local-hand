@@ -27,11 +27,11 @@ import time
 from typing import Mapping
 
 if __package__:
-    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, result_reader
+    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader
     from .contract import JobError
 else:  # fixed -I script entry: importing only this installed sibling
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, result_reader
+    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader
     from local_hand_jobs.contract import JobError
 
 
@@ -87,11 +87,15 @@ class Runner:
         if not isinstance(execution_id, str) or not re.fullmatch(r"[a-zA-Z0-9:_.-]{1,200}", execution_id):
             raise RunnerError("UNSUPPORTED", "invalid server execution identity")
         frozen = _plain(plan)
+        binding = self.manager.execution_binding() if hasattr(self.manager, "execution_binding") else None
+        manager_binding.check(binding, frozen.get("manager_binding"))
         phase = frozen.get("phase", "business")
         if phase not in ("preflight", "business", "reconcile", "evidence"):
             raise RunnerError("UNSUPPORTED", "unknown fixed execution phase")
         identity = {"job_key": str(job_key), "execution_id": execution_id, "phase": phase,
                     "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        if binding is not None:
+            identity["manager_binding"] = binding
         if "supervision_version" in frozen:
             identity["supervision_version"] = frozen["supervision_version"]
         with self._lock:
@@ -105,10 +109,14 @@ class Runner:
 
     @staticmethod
     def _same_handle(left, right):
-        return all(left.get(key) == right.get(key) for key in ("job_key", "execution_id", "phase", "unit"))
+        return all(left.get(key) == right.get(key) for key in
+                   ("job_key", "execution_id", "phase", "unit", "manager_binding"))
 
     def reattach(self, handle, plan):
         """Reobserve the original identity; never call manager.start again."""
+        binding = self.manager.execution_binding() if hasattr(self.manager, "execution_binding") else None
+        manager_binding.check(binding, handle.get("manager_binding"))
+        manager_binding.check(binding, plan.get("manager_binding"))
         execution_id = handle.get("execution_id")
         if not isinstance(execution_id, str) or not re.fullmatch(r"[a-zA-Z0-9:_.-]{1,200}", execution_id):
             raise RunnerError("UNSUPPORTED", "invalid recovery identity")
@@ -172,6 +180,9 @@ class Runner:
                 delivery_error = getattr(error, "code", "IO_UNCERTAIN")
             item.manager_handle = handle
             item.launch_complete = True
+            interval = self.manager.observation_interval() if hasattr(self.manager, "observation_interval") else 0.05
+            if type(interval) not in (int, float) or not 0 < interval <= 0.5:
+                raise RunnerError("IO_UNCERTAIN", "Process manager observation cadence is invalid")
             while True:
                 try:
                     if item.cancel.is_set(): self.manager.stop(handle)
@@ -196,7 +207,7 @@ class Runner:
                     return
                 if proof.get("terminal_observation"):
                     return
-                item.cancel.wait(0.05) if not item.cancel.is_set() else time.sleep(0.05)
+                item.cancel.wait(interval) if not item.cancel.is_set() else time.sleep(interval)
         except RunnerError as error:
             proof = _unknown(str(error))
             proof["result"] = {"outcome": "UNKNOWN", "error": error.code}
@@ -406,6 +417,22 @@ class _SystemdExecutionCore:
             raise RunnerError("CONFLICT", "the process manager already belongs to a broker startup fence")
         self._start_guard = callback
 
+    def execution_binding(self):
+        """Private manager authority, fixed before any durable execution intent."""
+        return manager_binding.from_configuration(self.configuration)
+
+    def observation_interval(self):
+        """Legacy transport cadence; an admitted backend may poll less often."""
+        return 0.05
+
+    def _check_manager_binding(self, *records):
+        try:
+            expected = self.execution_binding()
+            for record in records:
+                manager_binding.check(expected, record.get("manager_binding"))
+        except JobError as error:
+            raise RunnerError(error.code, str(error)) from error
+
     def support(self):
         # Actual OS admission shared by production and the isolated harness.
         # Production qualification is a separate, permanently closed wrapper.
@@ -527,7 +554,7 @@ class _SystemdExecutionCore:
             "PrivateUsers": "yes", "PrivateMounts": "yes", "PrivateNetwork": "yes", "PrivateDevices": "yes",
             "RestrictSUIDSGID": "yes", "ProtectKernelTunables": "yes", "ProtectKernelModules": "yes",
             "ProtectControlGroups": "yes", "RestrictNamespaces": "yes", "LockPersonality": "yes", "UMask": "0077",
-            "InaccessiblePaths": "/tmp /var/tmp /dev/shm /run/dbus /run/user/" + str(os.geteuid()),
+            "InaccessiblePaths": "/tmp /var/tmp /dev/shm /run/dbus /run/user/" + str(self.configuration.get("uid", os.geteuid())),
             "StandardOutput": "null", "StandardError": "null",
             "ReadWritePaths": " ".join(execution["writable"]),
             "ReadOnlyPaths": " ".join(execution.get("readonly", []))}
@@ -553,7 +580,8 @@ class _SystemdExecutionCore:
         identity, execution = handle["identity"], handle["execution"]
         unit = (self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else
                 self._result_reader_unit(identity["execution_id"]) if stage == "result_reader" else identity["unit"])
-        return {"unit": unit, "boot_id": execution["budget_grant"]["boot_id"],
+        return {**({"manager_binding": _plain(handle["manager_binding"])} if "manager_binding" in handle else {}),
+            "unit": unit, "boot_id": execution["budget_grant"]["boot_id"],
             "result_path": execution["result_path"], "cgroup_parent": self.configuration["cgroup"],
             "cancel_event": handle["cancel_event"], "launch": None, "launch_acked": False,
             "stop_acked": False, "stop_requested": False, "started": time.monotonic(),
@@ -570,6 +598,7 @@ class _SystemdExecutionCore:
             raise RunnerError(error.code, str(error)) from error
 
     def _deliver_stage_impl(self, handle, stage, *, bootstrap_proof=None, helper_proof=None):
+        self._check_manager_binding(handle, handle["identity"])
         execution = handle["execution"]
         part = handle[stage] = self._new_stage(handle, stage)
         properties = self._properties(execution, stage)
@@ -630,9 +659,7 @@ class _SystemdExecutionCore:
             # The durable guard records each unique stage before entering here.
             # Neither a Popen exception nor a lost return proves no delivery.
             handle["delivery_attempted"] = part["delivery_attempted"] = True
-            part["launch"] = subprocess.Popen(command, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE if stage == "result_reader" or full_capture else subprocess.DEVNULL,
-                stderr=subprocess.PIPE if full_capture else subprocess.DEVNULL, env=environment)
+            part["launch"] = self._launch_stage(handle, part, command, environment)
             if stage == "result_reader" or full_capture:
                 os.set_blocking(part["launch"].stdout.fileno(), False)
                 if full_capture:
@@ -654,7 +681,15 @@ class _SystemdExecutionCore:
             part["cancel_before_launch"] = True
         return part
 
+    def _launch_stage(self, handle, part, command, environment):
+        """The sole launch transport seam; stage admission and intent stay above."""
+        full_capture = "quota_grant_digest" in handle["execution"]
+        return subprocess.Popen(command, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE if part["stage"] == "result_reader" or full_capture else subprocess.DEVNULL,
+            stderr=subprocess.PIPE if full_capture else subprocess.DEVNULL, env=environment)
+
     def _start(self, identity, plan, cancel_event):
+        self._check_manager_binding(identity, plan)
         plan = dict(plan, execution_id=identity["execution_id"])
         supervision_version = plan.get("supervision_version", 2)
         if type(supervision_version) is not int or supervision_version not in (2, 3):
@@ -693,6 +728,8 @@ class _SystemdExecutionCore:
             "delivery_attempted": False, "recovered": False, "helper_attempted": False,
             "bootstrap_proof": None, "transition_error": None,
             "result_reader": None, "reader_attempted": False, "helper_proof": None, "reader_error": None}
+        if "manager_binding" in identity:
+            handle["manager_binding"] = _plain(identity["manager_binding"])
         if observation is not None:
             handle["quota_observation_grant"] = _plain(observation)
         self._runs[identity["unit"]] = handle
@@ -705,9 +742,11 @@ class _SystemdExecutionCore:
             return None
         fields = ("unit", "boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked",
                   "invocation_id", "execution_id", "phase_deadline_boottime_ns", "delivery_attempted")
-        return {key: handle.get(key) for key in fields}
+        return {**{key: handle.get(key) for key in fields},
+                **({"manager_binding": _plain(handle["manager_binding"])} if "manager_binding" in handle else {})}
 
     def export_handle(self, handle):
+        self._check_manager_binding(handle, handle["identity"])
         if handle.get("version") in (2, 3):
             return {**handle["identity"], "manager": {"version": handle["version"], "stage": handle["stage"],
                 "bootstrap": self._export_unit(handle["bootstrap"]), "helper": self._export_unit(handle["helper"]),
@@ -729,6 +768,7 @@ class _SystemdExecutionCore:
                 "bootstrap_exit_proof": _plain(proof)}
 
     def inspect(self, handle):
+        self._check_manager_binding(handle, handle.get("identity", handle))
         if handle.get("version") not in (2, 3):
             return self._inspect_unit(handle)
         def observe(part):
@@ -942,6 +982,7 @@ class _SystemdExecutionCore:
         return proof
 
     def stop(self, handle):
+        self._check_manager_binding(handle, handle.get("identity", handle))
         if handle.get("version") not in (2, 3):
             return self._stop_unit(handle)
         handle["cancel_event"].set()
@@ -960,6 +1001,7 @@ class _SystemdExecutionCore:
         return _unknown("all original supervised stage identities are being stopped")
 
     def reattach(self, identity, plan, cancel_event):
+        self._check_manager_binding(identity, plan)
         saved = identity.get("manager", {})
         version = plan.get("supervision_version", 2)
         if type(version) is not int or version not in (2, 3):
@@ -1008,6 +1050,8 @@ class _SystemdExecutionCore:
             "bootstrap_proof": None, "transition_error": None, "result_reader": None,
             "reader_attempted": True, "helper_proof": None, "reader_error": None}
         handle["identity"]["supervision_version"] = version
+        if "manager_binding" in identity:
+            handle["manager_binding"] = _plain(identity["manager_binding"])
         for stage in (("bootstrap", "helper", "result_reader") if version == 3 else ("bootstrap", "helper")):
             prior = saved.get(stage)
             unit = (self._bootstrap_unit(identity["execution_id"]) if stage == "bootstrap" else
@@ -1021,7 +1065,10 @@ class _SystemdExecutionCore:
                 "stop_requested": False, "invocation_id": None, "execution_id": identity["execution_id"],
                 "cancel_before_launch": False, "recovered": True, "budget_grant": grant,
                 "phase_deadline_boottime_ns": deadline, "stage": stage}
+            if "manager_binding" in identity:
+                part["manager_binding"] = _plain(identity["manager_binding"])
             if prior is not None:
+                self._check_manager_binding(prior)
                 if (prior.get("unit") != part["unit"] or prior.get("result_path") != part["result_path"] or
                         prior.get("execution_id") != identity["execution_id"] or
                         prior.get("cgroup_parent") != self.configuration["cgroup"] or
@@ -1093,6 +1140,7 @@ class _SystemdExecutionCore:
         return handle
 
     def _stop_unit(self, handle):
+        self._check_manager_binding(handle)
         handle["stop_requested"] = True
         if "quota_transport" in handle:
             # The original piped client waits for the service to stop. Its exit
@@ -1167,6 +1215,7 @@ class _SystemdExecutionCore:
             return None
 
     def _inspect_unit(self, handle):
+        self._check_manager_binding(handle)
         if "quota_transport" in handle:
             from . import quota_lifecycle
             return quota_lifecycle.observe(self, handle, _unknown)

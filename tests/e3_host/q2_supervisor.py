@@ -25,6 +25,9 @@ import time
 from types import ModuleType, SimpleNamespace
 
 SCHEMA = "local-hand-q2-supervisor/v1"
+SYSTEM_SCHEMA = "local-hand-q2-system-supervisor/v1"
+SYSTEM_LAUNCHER = "local-hand-q2-system-launcher/v1"
+SYSTEM_WIRE_BYTES = 4 * 1024**2
 CANCEL_SCHEMA = "local-hand-q4-cancel-supervisor/v1"
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
@@ -131,17 +134,26 @@ def decode(raw, digest):
 def cancel_fixture(value):
     """A cancellation record cannot enter the legacy phase-closure contract."""
     pair = value.get("schema"), value.get("purpose")
-    require(pair in ((SCHEMA, "ISOLATED_Q2_SUPERVISION"), (CANCEL_SCHEMA, CANCEL_PURPOSE)),
+    require(pair in ((SCHEMA, "ISOLATED_Q2_SUPERVISION"), (SYSTEM_SCHEMA, "ISOLATED_Q2_SUPERVISION"),
+                    (CANCEL_SCHEMA, CANCEL_PURPOSE)),
             "SUPERVISOR_SCHEMA")
     nested = value["launcher"]
     status = expected_status(nested)
     cancel = pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
     require(cancel == (status == "CANCEL_CASE_RECORDED"), "SUPERVISOR_SCENARIO_BINDING")
+    require((pair[0] == SYSTEM_SCHEMA) == (nested["schema"] == SYSTEM_LAUNCHER), "SUPERVISOR_MANAGER_VERSION")
     return cancel
 
 
+def system_fixture(value):
+    cancel_fixture(value)
+    return value["schema"] == SYSTEM_SCHEMA
+
+
 def record_schema(value, suffix):
-    return ("local-hand-q4-cancel-" if value.get("schema") == CANCEL_SCHEMA else "local-hand-q2-") + suffix + "/v1"
+    prefix = ("local-hand-q2-system-" if value.get("schema") == SYSTEM_SCHEMA else
+              "local-hand-q4-cancel-" if value.get("schema") == CANCEL_SCHEMA else "local-hand-q2-")
+    return prefix + suffix + "/v1"
 
 
 def expected_status(launcher):
@@ -149,6 +161,7 @@ def expected_status(launcher):
     pair = (launcher.get("schema"), launcher.get("purpose"))
     statuses = {("local-hand-q2-launcher/v1", "ISOLATED_Q2_PREFLIGHT"): "PREFLIGHT_CLOSED",
                 ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
+                (SYSTEM_LAUNCHER, "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
                 (CANCEL_LAUNCHER, CANCEL_PURPOSE): "CANCEL_CASE_RECORDED"}
     require(pair in statuses, "SUPERVISOR_LAUNCHER_SCHEMA")
     return statuses[pair]
@@ -193,6 +206,48 @@ def costs(envelope, spec, additional_output):
         memory_bytes=spec.memory_bytes, pids=spec.tasks_max, output_bytes=envelope["output_bytes"] + additional_output)
 
 
+def validate_system_geometry(nested, controller_parent, target, *, boot_id):
+    """Validate the sole new containment; retained costs keep their own domain."""
+    from admin.local_hand_quota_observer import q2_config as c
+    from local_hand_jobs import quota_contract as q, manager_binding
+    require(nested["schema"] == SYSTEM_LAUNCHER
+        and nested["resident"]["schema"] == "local-hand-q2-system-resident/v1", "SUPERVISOR_MANAGER_VERSION")
+    geometry = nested["system_geometry"]
+    q._keys(geometry, {"schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent"})
+    require(geometry["schema"] == "local-hand-q2-system-geometry/v1", "SUPERVISOR_SYSTEM_GEOMETRY_SCHEMA")
+    fixed = {"controller_parent": (512 * 1024**2, 64), "ordinary_parent": (256 * 1024**2, 32),
+             "retained_ordinary_parent": (256 * 1024**2, 64)}
+    for name, (memory, tasks) in fixed.items():
+        record = geometry[name]
+        q._keys(record, {"parent", "memory_bytes", "tasks_max", "cpu_quota_per_sec_usec", "memory_swap_max"})
+        c.identity(record["parent"])
+        require(all(type(record[key]) is int and record[key] == expected for key, expected in
+            (("memory_bytes", memory), ("tasks_max", tasks), ("cpu_quota_per_sec_usec", 1_000_000),
+             ("memory_swap_max", 0))), "SUPERVISOR_SYSTEM_PARENT_BUDGET")
+    ordinary = nested["resident"]["ordinary"]
+    outer, child, old = (geometry[name]["parent"] for name in fixed)
+    require(outer == controller_parent and child == ordinary["parent"], "SUPERVISOR_SYSTEM_PARENT_BINDING")
+    require(str(Path(outer["path"]).parent) == "/" and str(Path(child["path"]).parent) == outer["path"]
+        and Path(child["path"]).name.startswith(Path(outer["path"]).name.removesuffix(".slice") + "-")
+        and Path(child["path"]).name.endswith(".slice"), "SUPERVISOR_SYSTEM_PARENT_GEOMETRY")
+    require(str(Path(old["path"]).parent) == "/user.slice/user-" + str(ordinary["uid"]) +
+        ".slice/user@" + str(ordinary["uid"]) + ".service" and Path(old["path"]).name.endswith(".slice"),
+        "SUPERVISOR_SYSTEM_RETAINED_PARENT")
+    require(len({(pin["device"], pin["inode"]) for pin in (outer, child, old)}) == 3
+        and not c.overlap(old["path"], outer["path"]), "SUPERVISOR_SYSTEM_PARENT_ALIAS")
+    spec = target if type(target) is dict else asdict(target)
+    require(all(type(spec[key]) is int and spec[key] == expected for key, expected in
+        (("memory_bytes", 256 * 1024**2), ("tasks_max", 32), ("cpu_quota_per_sec_usec", 1_000_000),
+         ("runtime_max_usec", 85_000_000), ("timeout_stop_usec", 1_000_000), ("limit_cpu_seconds", 85))),
+        "SUPERVISOR_SYSTEM_TARGET_BUDGET")
+    require(str(Path(spec["cgroup"]).parent) == outer["path"]
+        and not c.overlap(spec["cgroup"], child["path"]), "SUPERVISOR_SYSTEM_SIBLING_GEOMETRY")
+    # Policy.expected carries a policy digest, not an authority_id. The
+    # protected policy snapshot checks authority equality before delivery.
+    manager_binding.validate(ordinary["manager_binding"], boot_id=boot_id, parent=child)
+    return copy.deepcopy(geometry)
+
+
 def validate(value, launcher, clock):
     """Pure finite geometry/capacity checks before reservation or unit delivery."""
     from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c
@@ -229,6 +284,9 @@ def validate(value, launcher, clock):
     installation = installations[0]
     capacity = g.decode_capacity(q._canonical(installation["capacity"], g.GRANT_LIMIT))
     require(clock["boot_id"] == capacity["boot_id"], "SUPERVISOR_BOOT")
+    system = system_fixture(value)
+    if system:
+        validate_system_geometry(nested, p, target, boot_id=capacity["boot_id"])
     totals = {key: 0 for key in capacity["management"]}
     parents = [p, c.identity(nested["resident"]["ordinary"]["parent"])]
     for item in supplied:
@@ -246,7 +304,7 @@ def validate(value, launcher, clock):
     own_parent = str(Path(own.cgroup).parent)
     for parent in parents:
         require(not c.overlap(own_parent, parent["path"]), "SUPERVISOR_PARENT_OVERLAP")
-    for parent in parents[1:]:
+    for parent in parents[2:] if system else parents[1:]:
         require(not c.overlap(p["path"], parent["path"]), "SUPERVISOR_TARGET_OVERLAP")
     # Account resident pipes + launcher summary, then the additional original
     # controller pipes, supervisor admission captures and supervisor summary.
@@ -254,6 +312,8 @@ def validate(value, launcher, clock):
                       + PIPE_LIMIT + (PIPE_LIMIT if cancel else 4096)),
                  costs(own_envelope, own, 2 * PIPE_LIMIT + 4096)):
         for key, amount in part.items(): totals[key] += amount
+    if system:
+        totals["output_bytes"] += SYSTEM_WIRE_BYTES
     for key, amount in totals.items():
         require(q.integer(amount) <= capacity["management"][key], "SUPERVISOR_COMBINED_CAPACITY")
     for kind in ("bytes", "inodes"):

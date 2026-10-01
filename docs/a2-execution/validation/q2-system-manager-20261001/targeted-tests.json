@@ -1,0 +1,175 @@
+{
+  "modules": [
+    "test_e3_quota_q2_management",
+    "test_e3_quota_q2_launcher",
+    "test_e3_quota_q2_prepare_run",
+    "test_local_hand_jobs_quota_resident_chain",
+    "test_e3_quota_q2_launcher_chain",
+    "test_e3_quota_q2_fixture_check",
+    "test_e3_quota_q2_prepare",
+    "test_local_hand_jobs_quota_contract",
+    "test_e3_quota_q2_retry_driver",
+    "test_e3_quota_q2_closure",
+    "test_local_hand_jobs_bootstrap_broker",
+    "test_e3_quota_q2_system_prepare_driver",
+    "test_local_hand_jobs_quota_grant",
+    "test_e3_quota_q2_startup_retry_driver",
+    "test_e3_quota_q2_evidence_review",
+    "test_e3_quota_q2_launcher_source",
+    "test_local_hand_jobs_broker",
+    "test_e3_quota_q2_chain",
+    "test_local_hand_jobs_bootstrap_policy",
+    "test_e3_quota_q2_startup_retry_collect",
+    "test_e3_quota_q2_startup_retry_entry",
+    "test_local_hand_jobs_system_manager",
+    "test_e3_quota_q2_startup_retry_delivery",
+    "test_e3_quota_q2_recovery_driver",
+    "test_local_hand_jobs_quota_client",
+    "test_e3_quota_q2_coordinator",
+    "test_e3_quota_q2_retry_contract",
+    "test_local_hand_jobs_quota_closure",
+    "test_local_hand_jobs_quota_lifecycle",
+    "test_local_hand_jobs_cli",
+    "test_local_hand_jobs_runner",
+    "test_local_hand_jobs_policy",
+    "test_e3_quota_q2_namespace",
+    "test_e3_quota_q2_batch_source",
+    "test_e3_quota_q2_chain_capacity",
+    "test_e3_quota_q2_prepare_build",
+    "test_local_hand_jobs_quota_binding",
+    "test_e3_quota_q2_prepare_contract",
+    "test_local_hand_jobs_bootstrap",
+    "test_e3_system_manager_gateway",
+    "test_local_hand_jobs_bootstrap_preparation",
+    "test_e3_quota_q2_retry_bundle",
+    "test_e3_quota_q2_host_export",
+    "test_e3_quota_q2_prepare_driver",
+    "test_local_hand_jobs_bootstrap_composition",
+    "test_e3_quota_q2_retry_delivery",
+    "test_e3_quota_q2_journal_chain",
+    "test_e3_quota_q2_system_launcher",
+    "test_e3_quota_q2_prepare_recovery",
+    "test_e3_quota_q2_diagnostics",
+    "test_e3_quota_q2_retry",
+    "test_e3_quota_q2_service",
+    "test_local_hand_jobs_manager_binding",
+    "test_local_hand_jobs_quota_bridge",
+    "test_e3_quota_q2_prepare_delivery",
+    "test_local_hand_jobs_quota_bootstrap",
+    "test_e3_quota_q2_capture",
+    "test_local_hand_jobs_quota_resident",
+    "test_e3_quota_q2_supervisor",
+    "test_e3_quota_q2_recovery_delivery",
+    "test_local_hand_jobs_system_manager_protocol",
+    "test_e3_quota_q2_assembly",
+    "test_e3_quota_q2_runtime",
+    "test_e3_quota_q2_retry_collect",
+    "test_local_hand_jobs_quota_payload",
+    "test_local_hand_jobs_bootstrap_roots",
+    "test_e3_quota_q2_prepare_assembly"
+  ],
+  "tests": 985,
+  "failures": 0,
+  "errors": 0,
+  "skipped": [
+    {
+      "test": "test_bound_receipt_from_another_request_is_rejected_after_complete_ipc (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_bound_receipt_from_another_request_is_rejected_after_complete_ipc)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_complete_json_without_transport_eof_is_not_complete (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_complete_json_without_transport_eof_is_not_complete)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_connection_error_is_sanitized_and_not_retried (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_connection_error_is_sanitized_and_not_retried)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_endpoint_replacement_after_connection_is_rejected (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_endpoint_replacement_after_connection_is_rejected)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_expired_boot_mismatch_invalid_request_and_roots_send_nothing (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_expired_boot_mismatch_invalid_request_and_roots_send_nothing)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_fragmented_response_and_eof_return_immutable_bound_facts (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_fragmented_response_and_eof_return_immutable_bound_facts)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_os_peer_must_match_installed_socket_owner (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_os_peer_must_match_installed_socket_owner)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_partial_header_body_zero_oversize_and_trailing_data_are_rejected_once (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_partial_header_body_zero_oversize_and_trailing_data_are_rejected_once)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_rights_in_header_body_or_after_frame_are_closed_before_rejection (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_rights_in_header_body_or_after_frame_are_closed_before_rejection)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_slow_fragments_do_not_refresh_deadline (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_slow_fragments_do_not_refresh_deadline)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_unprotected_parent_world_socket_and_symlink_fail_before_connect (test_local_hand_jobs_quota_client.QuotaClientSocketTests.test_unprotected_parent_world_socket_and_symlink_fail_before_connect)",
+      "reason": "executor denied AF_UNIX socket creation: errno=1; IPC UNVERIFIED"
+    },
+    {
+      "test": "test_real_unix_socket_roundtrip_when_host_permits (test_local_hand_jobs_cli.CliTests.test_real_unix_socket_roundtrip_when_host_permits)",
+      "reason": "UNSUPPORTED: host policy prohibits AF_UNIX sockets; synthetic transport tests are separate"
+    },
+    {
+      "test": "test_real_delegated_cgroup_integration_is_not_a_simulated_pass (test_local_hand_jobs_runner.RunnerTests.test_real_delegated_cgroup_integration_is_not_a_simulated_pass)",
+      "reason": "UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; PID 1 is not systemd; no predelegated manager admission; dedicated non-root account is required"
+    },
+    {
+      "test": "test_actual_credentials_and_two_distinct_readonly_pipes (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_actual_credentials_and_two_distinct_readonly_pipes)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_bad_start_time_cannot_open_channel (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_bad_start_time_cannot_open_channel)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_call_and_wire_limits_are_cumulative_and_pending_call_cannot_reenter (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_call_and_wire_limits_are_cumulative_and_pending_call_cannot_reenter)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_duplicate_extra_keys_replay_and_truncated_packets_rejected (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_duplicate_extra_keys_replay_and_truncated_packets_rejected)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_foreign_credentials_poison_before_request_use (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_foreign_credentials_poison_before_request_use)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_original_peer_alive_but_closed_channel_cannot_deliver (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_original_peer_alive_but_closed_channel_cannot_deliver)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_real_child_exit_cannot_be_replaced_by_same_pid_number (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_real_child_exit_cannot_be_replaced_by_same_pid_number)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_rejected_rights_are_closed_including_wrong_access_and_count (test_local_hand_jobs_system_manager_protocol.ProtocolTests.test_rejected_rights_are_closed_including_wrong_access_and_count)",
+      "reason": "Current PID namespace has a different procfs namespace; real peer binding is unsupported"
+    },
+    {
+      "test": "test_real_fd_handoff_request_and_response_with_supervision_modeled (test_e3_quota_q2_runtime.ListenerIPCTests.test_real_fd_handoff_request_and_response_with_supervision_modeled)",
+      "reason": "AF_UNIX unavailable"
+    },
+    {
+      "test": "test_empty_ledger_create_once_and_generation_is_real (test_e3_quota_q2_prepare_assembly.AssemblyTests.test_empty_ledger_create_once_and_generation_is_real)",
+      "reason": "65534 is not mapped in this executor; ordinary-credential ledger validation requires guest"
+    }
+  ],
+  "successful": true,
+  "classification": "TARGETED_OFFLINE_VERIFICATION",
+  "guest_executed": false,
+  "systemd_qualified": false,
+  "q2_accepted": false,
+  "q3_accepted": false,
+  "production_supported": false
+}
