@@ -83,7 +83,9 @@ def build_grant(template, snapshot, *, session, clock):
     """
     template = decode(template.wire, template.digest)
     value = template.data()
-    q.match(session, r"[0-9a-f]{64}")
+    # Broker preparation uses uuid4().hex, independently of the 64-hex
+    # inherited bridge transport nonce. Keep the original broker identity.
+    q.match(session, r"[0-9a-f]{32}")
     budget._validate_clock(clock)
     q._keys(snapshot, {"preparation", "observation", "pending", "closed"})
     q.require(all(snapshot[k] is None for k in ("observation", "pending", "closed")), "ASSEMBLY_ALREADY_STARTED")

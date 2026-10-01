@@ -71,7 +71,7 @@ class ChainLauncherTests(unittest.TestCase):
             def receive(inner):
                 event("prepared")
                 packet = copy.deepcopy(self.prepared[self.phase])
-                if self.foreign_session == self.phase: packet["snapshot"]["preparation"]["session"] = "b"*64
+                if self.foreign_session == self.phase: packet["snapshot"]["preparation"]["session"] = "b"*32
                 return packet
             def send(inner, packet):
                 if packet["action"] == "finish": event("finish"); self.finish.set(); return

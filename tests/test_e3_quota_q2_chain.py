@@ -281,7 +281,7 @@ class DeclarationTests(unittest.TestCase):
             elif fault == "limits": prep["budget"]["limits"]["cpu_seconds"] += 1
             elif fault == "operation": prep["budget"]["operation_id"] = "foreign"
             elif fault == "allocation": next(iter(prep["allocation"]["paths"].values()))["inode"] += 1
-            elif fault == "session": prep["session"] = "b" * 64
+            elif fault == "session": prep["session"] = "b" * 32
             elif fault == "generation": prep["generation"] = [1, 2]
             elif fault == "started": prep["budget"]["started_boottime_ns"] += 1
             else: snap[fault] = {}
@@ -292,6 +292,65 @@ class DeclarationTests(unittest.TestCase):
         for phase in ("business", "evidence"):
             with self.subTest(phase=phase), self.assertRaises(ValueError):
                 chain.build_grant(decoded(self.value), preparation(self.value, self.original, phase), session=SESSION, clock=clock(phase))
+
+    def test_broker_session_format_is_exact_and_still_binds_original_preparation(self):
+        contract = decoded(self.value)
+        for session in ("a" * 64, "g" * 32, "A" * 32, "a" * 31, "a" * 33):
+            snap = preparation(self.value, self.original, "preflight")
+            snap["preparation"]["session"] = session
+            with self.subTest(session=session), self.assertRaisesRegex(q.QuotaError, "^IDENTITY$"):
+                chain.build_grant(contract, snap, session=session, clock=clock("preflight"))
+        with self.assertRaisesRegex(q.QuotaError, "^ASSEMBLY_PREPARATION$"):
+            chain.build_grant(contract, preparation(self.value, self.original, "preflight"),
+                              session="b" * 32, clock=clock("preflight"))
+
+    def test_real_broker_preparation_session_reaches_both_original_grant_builders(self):
+        # Real Broker, SQLite reservation/event and Phase.snapshot; only host
+        # identities, limits and manager execution are synthetic fixture data.
+        from local_hand_jobs import quota_bridge
+        from test_local_hand_jobs_quota_binding import BrokerBindingTests
+        fixture = BrokerBindingTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        profile_ref = fixture.f.request["profile_ref"]
+        profile = copy.deepcopy(fixture.f.policy.profiles[profile_ref])
+        for role, root in profile["bootstrap_slots"][0]["roots"].items():
+            root["path"] = "/synthetic/broker-slot/" + role
+        fixture.f.policy.profiles[profile_ref] = profile
+        prepared = fixture.prepare()
+        session = fixture.broker._quota_session
+        self.assertRegex(session, r"^[0-9a-f]{32}$")
+        self.assertEqual(session, prepared["session"])
+        snap = quota_bridge.Phase(fixture.broker, "job", fixture.id, "preflight").snapshot()
+        self.assertEqual(prepared, snap["preparation"])
+        value = copy.deepcopy(self.value)
+        value["original_budgets"] = fixture.row()["plan"]["budgets"]
+        value["broker_generation"] = prepared["generation"]
+        for index, phase in enumerate(PHASES):
+            allocation = None
+            if phase != "evidence":
+                allocation = copy.deepcopy(prepared["allocation"])
+                if phase == "business":
+                    allocation.update(phase=phase, fresh=False,
+                        execution_id="job-" + fixture.id + "-" + phase)
+                    allocation.pop("grant_digest")
+                    allocation["grant_digest"] = bootstrap_roots._digest(allocation)
+            data = grant_data(number=index + 1, phase=phase, operation=fixture.id,
+                              offset=20 if phase == "evidence" else 0, allocation=allocation)
+            fixed = value["phases"][phase]["grant"]
+            data["request"].pop("deadline_ns")
+            fixed.update({key: data[key] for key in ("request", "allocation", "roots")})
+        contract = decoded(value)
+        current = dict(boot_id=BOOT, boottime_ns=fixture.now)
+        first = chain.build_grant(contract, snap, session=session, clock=current)
+        single_value = chain.phase_template(contract, "preflight").data()
+        single_value["purpose"] = "ISOLATED_Q2_PREFLIGHT"
+        single = a.build_grant(a.Template(q._canonical(single_value, c.LIMIT)), snap,
+                              session=session, clock=current)
+        self.assertEqual(first.as_dict(), single.as_dict())
+        self.assertEqual(prepared["budget"], first.as_dict()["budget"])
+        self.assertEqual(prepared["allocation"], first.as_dict()["allocation"])
+        self.assertEqual([], fixture.runner.starts)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux real create-only chain journal")
@@ -477,7 +536,7 @@ class PersistenceTests(unittest.TestCase):
             self.build("business", snap=snap)
         self.assertEqual(before, self.retained())
 
-        session = "b" * 64
+        session = "b" * 32
         snap = preparation(self.value, self.original, "business")
         snap["preparation"]["session"] = session
         grant = chain.build_grant(self.contract, snap, previousconfigs=tuple(self.configs),

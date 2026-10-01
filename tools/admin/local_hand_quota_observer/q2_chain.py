@@ -275,7 +275,9 @@ def build_grant(chain, snapshot, *, previousconfigs=(), session, clock):
     chain = decode(chain.wire, chain.digest); value = chain.data()
     previous, unused, unused_pin = _previous(chain, previousconfigs)
     phase = PHASES[len(previousconfigs)]; fixed = value["phases"][phase]["grant"]
-    q.match(session, r"[0-9a-f]{64}")
+    # Broker preparation uses uuid4().hex, independently of the 64-hex
+    # inherited bridge transport nonce. Keep the original broker identity.
+    q.match(session, r"[0-9a-f]{32}")
     try: budget._validate_clock(clock)
     except JobError: raise q.QuotaError("ASSEMBLY_CLOCK") from None
     q._keys(snapshot, {"preparation", "observation", "pending", "closed"})

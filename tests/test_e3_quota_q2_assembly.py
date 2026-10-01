@@ -19,7 +19,7 @@ if sys.platform.startswith("linux"):
     from admin.local_hand_quota_observer.q2_journal import Journal
     from test_e3_quota_q2_runtime import declaration, fixture_open
 
-SESSION = "a" * 64
+SESSION = "a" * 32  # Broker preparation identity, not the bridge transport nonce.
 
 
 def declaration_template():
@@ -87,7 +87,7 @@ class OriginalBudgetTests(unittest.TestCase):
             if fault == "limits": prep["budget"]["limits"]["cpu_seconds"] += 1
             if fault == "operation": prep["budget"]["operation_id"] = "other"
             if fault == "root": next(iter(prep["allocation"]["paths"].values()))["inode"] += 1
-            if fault == "session": prep["session"] = "b"*64
+            if fault == "session": prep["session"] = "b"*32
             if fault == "generation": prep["generation"] = [1, 2]
             if fault == "started": prep["budget"]["started_boottime_ns"] += 1
             if fault == "boot": prep["budget"]["boot_id"] = "99999999-2222-3333-4444-555555555555"
@@ -98,6 +98,15 @@ class OriginalBudgetTests(unittest.TestCase):
         for clock in (dict(self.clock, boottime_ns=29*SECOND), dict(self.clock, boottime_ns=0),
                       dict(self.clock, boot_id="99999999-2222-3333-4444-555555555555")):
             with self.subTest(clock=clock), self.assertRaises(ValueError): self.build(clock=clock)
+
+    def test_broker_session_format_is_exact_and_cannot_be_replaced_by_transport_nonce(self):
+        for session in ("a" * 64, "g" * 32, "A" * 32, "a" * 31, "a" * 33):
+            snap = copy.deepcopy(self.snapshot)
+            snap["preparation"]["session"] = session
+            with self.subTest(session=session), self.assertRaisesRegex(q.QuotaError, "^IDENTITY$"):
+                a.build_grant(template(self.value), snap, session=session, clock=self.clock)
+        with self.assertRaisesRegex(q.QuotaError, "^ASSEMBLY_PREPARATION$"):
+            a.build_grant(template(self.value), self.snapshot, session="b" * 32, clock=self.clock)
 
     def test_observed_pending_closed_or_extra_snapshot_fields_rejected(self):
         for field in ("observation", "pending", "closed", "untrusted_path"):
