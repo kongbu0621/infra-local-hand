@@ -728,16 +728,20 @@ the next protected case's finite time budgets, and adds bounded failure metadata
 Its offline checks do not establish Q2 acceptance; old evidence and obligations
 remain retained, and the next guest normal chain is a single explicit attempt.
 
-### Q2 system-manager startup repair proposal
+### Q2 system-manager startup repair
 
-Scope `LH-Q2-SYSTEM-MANAGER-REPAIR-v1` is **OPEN** at documentation A
+Scope `LH-Q2-SYSTEM-MANAGER-REPAIR-v1` is **CLOSED for M1–M4** at documentation A
 `ae50aea2639c32021794ecb70730f4b9e781c8d6`. Its
 [baseline registration](docs/governance/Q2_SYSTEM_MANAGER_REPAIR_BASELINE.md) pins
 the [requirements](docs/a2-execution/q2-system-manager-repair/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-system-manager-repair/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-system-manager-repair/IMPLEMENTATION_PLAN.md).
 Unchanged R/source/integrity, Owner-only decision authority, mandate and change
-control remain as declared above. There is no Owner closure B or CLOSED C yet.
+control remain as declared above. Owner B at 2026-10-01 21:01:22 +08:00,
+event `LH-Q2-SYSTEM-MANAGER-REPAIR-CLOSURE-20261001-01`, is retained verbatim in
+[the Owner decision](docs/governance/Q2_SYSTEM_MANAGER_REPAIR_OWNER_DECISION.md).
+This independent bookkeeping-only commit is CLOSED C. A's three documents and
+historical OPEN labels remain byte-identical; implementation D must descend from C.
 
 The [complete failure review](docs/a2-execution/Q2_APPARMOR_FAILURE_REVIEW.md)
 establishes an AppArmor capability-setup failure before the earlier listener
@@ -753,10 +757,11 @@ slice, complete old-producer admission, source-pinned new payload using the old
 interpreter, targeted validation and one guarded original-guest package execution.
 Old objects, unknown outcomes and resource obligations remain retained. No global
 AppArmor change, reinstallation, old-manager restart, cleanup, automatic retry or
-production activation is proposed. Implementation remains at `7780364`; these
-documentation commits contain no new program, test or runtime configuration.
-Unaffected CLOSED work remains valid; do not implement this new scope before its
-accurate R/A/B/C sequence. Do not ask for a cyber access qualification.
+production activation is authorized. At this closure, implementation remains at
+`7780364`; this C contains no new program, test or runtime configuration and consumes
+no field run. The complete M1–M4 batch is authorized without repeated per-item
+approval; material changes retain R's change rule. Unaffected CLOSED work remains
+valid. Do not ask for a cyber access qualification.
 
 ### Continuing constraints
 
