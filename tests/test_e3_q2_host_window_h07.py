@@ -464,3 +464,223 @@ def test_previously_bound_job_cannot_reappear_or_change_after_absence(replacemen
     with pytest.raises(ValueError, match="H07_MODEL_JOB_CHANGED"):
         model([event(edge, "SUBMITTED"), event(edge, "QUEUED", dict(job_id=42)),
             event(edge, "JOB_ABSENT"), event(edge, "QUEUED", dict(job_id=replacement))])
+
+
+def qualification_fixture():
+    """All facts here are invented; independent external pins remain untrusted."""
+    contract = m.qualification_contract(implementation_commit="c" * 40, source_binding_sha256="a" * 64)
+    clocks = {role: dict(boot_id=str(index) * 8 + "-" + str(index) * 4 + "-" + str(index) * 4 +
+        "-" + str(index) * 4 + "-" + str(index) * 12,
+        monotonic_issued_ns=index * 1000 * NS, boottime_issued_ns=(index * 1000 + 10) * NS,
+        monotonic_deadline_ns=(index * 1000 + 300) * NS, boottime_deadline_ns=(index * 1000 + 310) * NS)
+        for index, role in enumerate(("host", "guest"), 1)}
+    limits = dict(allocated_bytes=10000, inodes=10000, output_bytes=10000, cpu_ns=10000, calls=10000)
+    budget = dict(ledger_sha256="b" * 64, reserves=dict(stop_ns=1, eof_ns=2, fsync_ns=3, seal_ns=4),
+        reservations={"d" * 64: limits})
+    requests, records = {}, []
+    for index, edge in enumerate(contract["request_edges"], 1):
+        requests[edge["id"]] = dict(request_sha256=m.sha(("request" + str(index)).encode()),
+            intent_sha256=m.sha(("intent" + str(index)).encode()), command_sha256=m.sha(("command" + str(index)).encode()),
+            deadline_ns=clocks[edge["clock_domain"]]["boottime_deadline_ns"],
+            job_id=index if edge["manager_start"] else None,
+            instance=dict(unit="synthetic-" + str(index) + ".service" if edge["manager_start"] else None,
+                cgroup="/synthetic.slice/instance-" + str(index), invocation_id=f"{index:032x}" if edge["manager_start"] else None,
+                pid=1000 + index, start_ticks=2000 + index, cgroup_device=3, cgroup_inode=3000 + index),
+            clients={role: dict(pid=4000 + index * 2 + offset, start_ticks=5000 + index * 2 + offset)
+                for offset, role in enumerate(edge["client_roles"])}, reservation_sha256="d" * 64)
+        records.append(dict(edge=edge["id"], events=[], usage=dict.fromkeys(m.USAGE_FIELDS, 1)))
+    fixture = dict(implementation_commit="c" * 40, source_binding_sha256="a" * 64,
+        clocks=clocks, requests=requests, budget=budget)
+    trace_value = dict(schema="local-hand-q2-h07-current-route-model/v1", contract_sha256=m.sha(m.encoded(contract)),
+        clocks_sha256=m.sha(m.encoded(clocks)), requests_sha256=m.sha(m.encoded(requests)), budget_sha256=m.sha(m.encoded(budget)),
+        system_manager_calls=0, root_control_calls=0, records=records)
+    return fixture, trace_value, contract
+
+
+def qualification_event(fixture, edge, kind, data=None, *, offset=1):
+    _, _, contract = qualification_fixture()
+    descriptor = next(row for row in contract["request_edges"] if row["id"] == edge)
+    clock = fixture["clocks"][descriptor["clock_domain"]]
+    return dict(kind=kind, monotonic_ns=clock["monotonic_issued_ns"] + offset,
+        boottime_ns=clock["boottime_issued_ns"] + offset, data={} if data is None else copy.deepcopy(data))
+
+
+def qualification_events(fixture, edge):
+    pin = fixture["requests"][edge]
+    event_data = [("SUBMITTED", {name: pin[name] for name in ("request_sha256", "intent_sha256", "command_sha256")})]
+    if pin["job_id"] is not None:
+        event_data.append(("QUEUED", dict(job_id=pin["job_id"])))
+    event_data.append(("INSTANCE_BOUND", dict(instance=pin["instance"])))
+    for kind in ("STOP_REQUESTED", "STOP_ACK"):
+        event_data.append((kind, dict(instance_sha256=m.sha(m.encoded(pin["instance"])))))
+    event_data.extend([("JOB_ABSENT", {}), ("TREE_EMPTY", {})])
+    for role, client in pin["clients"].items():
+        client_pin = dict(client_role=role, client_sha256=m.sha(m.encoded(client)))
+        event_data.append(("CLIENT_EXIT", dict(client_pin, returncode=0)))
+        event_data.extend(("EOF", dict(client_pin, stream=stream)) for stream in ("stdout", "stderr"))
+    return [qualification_event(fixture, edge, kind, data, offset=index)
+        for index, (kind, data) in enumerate(event_data, 1)]
+
+
+def qualification_record(value, edge):
+    return next(row for row in value["records"] if row["edge"] == edge)
+
+
+def qualification_review(fixture, value):
+    return m.review_qualification_model(m.encoded(value), **fixture)
+
+
+def assert_qualification_unknown(result):
+    assert result["qualification"] == "UNKNOWN"
+    assert result["evidence_use"] == "UNTRUSTED_MODEL_ONLY"
+    assert result["whole_run_rate_pause_proven"] is result["future_activation_fenced"] is False
+    for key in FALSE_FIELDS:
+        assert result[key] is result["contract"][key] is False
+    assert all(row["qualification"] == "UNKNOWN" and row["actual_closed"] is False for row in result["edges"])
+
+
+def test_current_route_contract_covers_nine_stages_and_existing_native_children_without_new_geometry():
+    _, _, contract = qualification_fixture()
+    ids = {row["id"] for row in contract["request_edges"]}
+    expected = {"host_ssh", "ssh_session", "session_shell", "shell_sudo", "first_probe", "guest_loader", "loader_outer",
+        "outer_owner", "owner_supervisor", "supervisor_target", "target_gateway", "host_collector", "remote_collector",
+        "stop_finalizer", "pre_dispatch_supervision", "same_channel_evidence"}
+    for phase in ("preflight", "business", "evidence"):
+        expected.update("gateway_" + phase + "_" + stage for stage in ("bootstrap", "helper", "result_reader"))
+        expected.update(phase + "_" + role for role in ("listener", "admission", "request", "worker_handoff", "query"))
+        expected.add("management_" + phase)
+        expected.update(phase + "_native_" + role for role in ("work", "evidence", "temporary"))
+    expected.add("evidence_native_retained_store")
+    assert ids == expected and len(ids) == len(contract["request_edges"]) == 53
+    assert {row["id"] for row in contract["request_edges"] if row["coverage"] == "RETAINED_LEGACY_COUNTEREXAMPLE"} == {
+        "first_probe", "host_collector", "remote_collector"}
+    assert contract["proposed_delivery"] == "ONE_SSH_WITH_SAME_CHANNEL_COLLECTION_NO_SECOND_SSH"
+    assert contract["parent_geometry"] == dict(controller_memory_bytes=512 * 1024**2, controller_tasks=64,
+        target_memory_bytes=256 * 1024**2, target_tasks=32, ordinary_memory_bytes=256 * 1024**2, ordinary_tasks=32,
+        ordinary_relation="CONTROLLER_CHILD_SIBLING_OF_TARGET")
+    assert contract["existing_limits"] == dict(ordinary_deliveries=9, system_manager_calls=256, root_control_calls=256)
+
+
+def test_complete_synthetic_route_still_has_no_future_fence_or_actual_qualification():
+    fixture, value, _ = qualification_fixture()
+    for row in value["records"]:
+        row["events"] = qualification_events(fixture, row["edge"])
+    result = qualification_review(fixture, value)
+    assert_qualification_unknown(result)
+    assert all(row["missing"] == ["FUTURE_ADMISSION_FENCE_NOT_PROVEN"] for row in result["edges"])
+    assert result["budget_usage"]["d" * 64] == dict.fromkeys(m.USAGE_FIELDS, 53)
+
+
+def test_lost_reply_cannot_be_closed_by_stop_absence_and_original_client_eof():
+    fixture, value, _ = qualification_fixture()
+    edge = "gateway_business_helper"
+    events = qualification_events(fixture, edge)
+    qualification_record(value, edge)["events"] = [row for row in events if row["kind"] not in ("QUEUED", "INSTANCE_BOUND")]
+    result = qualification_review(fixture, value)
+    row = model_edge(result, edge)
+    assert row["state"] == "MODEL_UNOBSERVED_PENDING"
+    assert "ORIGINAL_INSTANCE_UNPROVEN" in row["missing"]
+    assert_qualification_unknown(result)
+
+
+@pytest.mark.parametrize("kind", ["QUEUED", "INSTANCE_BOUND"])
+def test_late_queue_or_activation_after_stop_and_empty_tree_restores_missing_proof(kind):
+    fixture, value, _ = qualification_fixture()
+    edge = "gateway_evidence_result_reader"
+    events = qualification_events(fixture, edge)
+    data = dict(job_id=fixture["requests"][edge]["job_id"]) if kind == "QUEUED" else dict(instance=fixture["requests"][edge]["instance"])
+    events.append(qualification_event(fixture, edge, kind, data, offset=19))
+    qualification_record(value, edge)["events"] = events
+    result = qualification_review(fixture, value)
+    row = model_edge(result, edge)
+    assert row["late_queue" if kind == "QUEUED" else "late_activation"] is True
+    assert "ORIGINAL_STOP_UNPROVEN" in row["missing"] and "TREE_EMPTY_UNPROVEN" in row["missing"]
+    assert_qualification_unknown(result)
+
+
+def test_target_closure_does_not_close_ordinary_sibling_or_finalizer_endpoint():
+    fixture, value, _ = qualification_fixture()
+    for edge in ("supervisor_target", "gateway_business_helper", "stop_finalizer"):
+        events = qualification_events(fixture, edge)
+        if edge == "gateway_business_helper":
+            events = [row for row in events if row["kind"] in ("SUBMITTED", "QUEUED", "INSTANCE_BOUND")]
+        elif edge == "stop_finalizer":
+            events = [row for row in events if row["kind"] != "CLIENT_EXIT" and
+                not (row["kind"] == "EOF" and row["data"]["stream"] == "stderr")]
+        qualification_record(value, edge)["events"] = events
+    result = qualification_review(fixture, value)
+    assert model_edge(result, "supervisor_target")["missing"] == ["FUTURE_ADMISSION_FENCE_NOT_PROVEN"]
+    assert "ORIGINAL_STOP_UNPROVEN" in model_edge(result, "gateway_business_helper")["missing"]
+    endpoint = model_edge(result, "stop_finalizer")
+    assert "ORIGINAL_CLIENT_EXIT_UNPROVEN" in endpoint["missing"] and "ORIGINAL_DOUBLE_EOF_UNPROVEN" in endpoint["missing"]
+    assert_qualification_unknown(result)
+
+
+@pytest.mark.parametrize("fault", ["domain_omitted", "domain_repeated", "request_changed", "job_changed", "instance_changed",
+    "client_changed", "clock_reverse", "clock_expired", "clock_bool", "budget_overflow", "calls_overflow", "self_fence"])
+def test_current_route_strict_bindings_deadlines_budget_and_no_self_fence(fault):
+    fixture, value, _ = qualification_fixture()
+    edge = "gateway_business_helper"
+    row = qualification_record(value, edge)
+    row["events"] = qualification_events(fixture, edge)
+    if fault == "domain_omitted": value["records"].pop()
+    elif fault == "domain_repeated": value["records"][-1] = copy.deepcopy(value["records"][0])
+    elif fault == "request_changed": row["events"][0]["data"]["intent_sha256"] = "f" * 64
+    elif fault == "job_changed": row["events"][1]["data"]["job_id"] += 1
+    elif fault == "instance_changed": row["events"][2]["data"]["instance"]["start_ticks"] += 1
+    elif fault == "client_changed": next(event for event in row["events"] if event["kind"] == "EOF")["data"]["client_sha256"] = "f" * 64
+    elif fault == "clock_reverse": row["events"][-1]["monotonic_ns"] = row["events"][0]["monotonic_ns"]
+    elif fault == "clock_expired": row["events"][-1]["boottime_ns"] = fixture["requests"][edge]["deadline_ns"]
+    elif fault == "clock_bool": row["events"][-1]["monotonic_ns"] = True
+    elif fault == "budget_overflow": row["usage"]["output_bytes"] = 10001
+    elif fault == "calls_overflow": value["root_control_calls"] = 257
+    else: row["events"].append(qualification_event(fixture, edge, "FENCE", offset=19))
+    with pytest.raises(ValueError):
+        qualification_review(fixture, value)
+
+
+@pytest.mark.parametrize("field", ["contract_sha256", "clocks_sha256", "requests_sha256", "budget_sha256", "schema"])
+def test_current_qualification_external_pins_cannot_be_rebound_by_trace(field):
+    fixture, value, _ = qualification_fixture()
+    value[field] = "f" * 64
+    with pytest.raises(ValueError, match="H07_QUALIFICATION_BINDING"):
+        qualification_review(fixture, value)
+
+
+@pytest.mark.parametrize("name", ["stop_ns", "eof_ns", "fsync_ns", "seal_ns"])
+def test_independent_existing_reserves_cannot_be_missing_or_zero(name):
+    fixture, value, _ = qualification_fixture()
+    fixture["budget"]["reserves"][name] = 0
+    with pytest.raises(ValueError):
+        qualification_review(fixture, value)
+
+
+def test_same_ledger_budget_is_shared_across_request_edges():
+    fixture, value, _ = qualification_fixture()
+    fixture["budget"]["reservations"]["d" * 64]["inodes"] = 52
+    value["budget_sha256"] = m.sha(m.encoded(fixture["budget"]))
+    with pytest.raises(ValueError):
+        qualification_review(fixture, value)
+
+
+def test_current_qualification_model_performs_no_field_operation(monkeypatch):
+    import builtins
+    import os
+    import socket
+    import subprocess
+    import time
+    fixture, value, _ = qualification_fixture()
+    raw = m.encoded(value)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("qualification model attempted a field operation")
+    with monkeypatch.context() as guard:
+        guard.setattr(builtins, "open", forbidden)
+        for name in ("open", "read_bytes", "read_text", "stat", "lstat", "iterdir"):
+            guard.setattr(Path, name, forbidden)
+        for name in ("open", "stat", "lstat", "scandir", "listdir", "system"):
+            guard.setattr(os, name, forbidden)
+        guard.setattr(subprocess, "Popen", forbidden)
+        guard.setattr(socket, "socket", forbidden)
+        guard.setattr(time, "clock_gettime_ns", forbidden)
+        result = m.review_qualification_model(raw, **fixture)
+    assert_qualification_unknown(result)

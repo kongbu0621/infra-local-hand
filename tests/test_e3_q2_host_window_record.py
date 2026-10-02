@@ -373,25 +373,38 @@ class HostWindowExt4Geometry(unittest.TestCase):
         raw=bytearray(1024)
         struct.pack_into("<H",raw,56,0xEF53)
         struct.pack_into("<II",raw,24,2,2)
-        struct.pack_into("<III",raw,92,0x4,0x40,0)
+        struct.pack_into("<III",raw,92,0x4,0x42,0)
         return raw
 
     def test_non_bigalloc_exact_geometry_only(self):
         self.assertEqual((4096,4096),r._geometry(bytes(self.superblock())))
-        for offset,value in ((24,3),(28,3),(100,0x200),(96,0x8040),(96,0x10040)):
+        for offset,value in ((24,3),(28,3),(100,0x200),(96,0x8042),(96,0x10042)):
             raw=self.superblock();struct.pack_into("<I",raw,offset,value)
             with self.subTest(offset=offset,value=value),self.assertRaises(ValueError):
                 r._geometry(bytes(raw))
+
+    def test_filetype_required_in_the_incompatible_feature_field(self):
+        self.assertEqual(0x2, r.EXT4_FEATURE_INCOMPAT_FILETYPE)
+        for compat, rocompat in ((0x4, 0), (0x6, 0), (0x4, 0x2), (0x6, 0x2)):
+            raw = self.superblock()
+            # FILETYPE belongs to incompat. Numerically equal bits in the
+            # other namespaces cannot supply the missing directory type bit.
+            struct.pack_into("<III", raw, 92, compat, 0x40, rocompat)
+            with self.subTest(compat=compat, rocompat=rocompat):
+                with self.assertRaisesRegex(ValueError, "HOST_WINDOW_EXT4_GEOMETRY"):
+                    r._geometry(bytes(raw))
+                struct.pack_into("<I", raw, 96, 0x42)
+                self.assertEqual((4096, 4096), r._geometry(bytes(raw)))
 
     def test_ea_inode_rejected_from_the_incompatible_feature_field(self):
         # The same numeric bit in compat/rocompat has a different meaning.
         # These controls preserve parsing behavior, not full FS qualification.
         for compat, rocompat in ((0x4, 0), (0x404, 0), (0x4, 0x400), (0x404, 0x400)):
             raw = self.superblock()
-            struct.pack_into("<III", raw, 92, compat, 0x40, rocompat)
+            struct.pack_into("<III", raw, 92, compat, 0x42, rocompat)
             with self.subTest(compat=compat, rocompat=rocompat):
                 self.assertEqual((4096, 4096), r._geometry(bytes(raw)))
-                struct.pack_into("<I", raw, 96, 0x440)
+                struct.pack_into("<I", raw, 96, 0x442)
                 with self.assertRaisesRegex(ValueError, "HOST_WINDOW_EXT4_GEOMETRY"):
                     r._geometry(bytes(raw))
 

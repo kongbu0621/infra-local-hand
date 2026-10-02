@@ -1,0 +1,71 @@
+{
+  "schema": "local-hand-q2-field-gap-ci-observation/v1",
+  "observed_at": "2026-10-02T19:54:01+08:00",
+  "candidate_commit": "6cce996d17ccde1aa4fe48feaaa4cec226d834c0",
+  "source_repair_commit": "661e96772c64433d1cd0eebf122e165781d8c11c",
+  "candidate_tree": "e36fa71a40448613fb6c51c563691c1db621acf5",
+  "run": {
+    "id": 37000830396,
+    "url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/37000830396",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "jobs": [
+    {
+      "name": "classify-change",
+      "id": 110817896862,
+      "status": "completed",
+      "conclusion": "success",
+      "compared_range": "exact-commit:6cce996d17ccde1aa4fe48feaaa4cec226d834c0"
+    },
+    {
+      "name": "semantic-core (ubuntu-latest)",
+      "id": 110817928133,
+      "status": "completed",
+      "conclusion": "success",
+      "source_tests": {
+        "passed": 3751,
+        "skipped": 51,
+        "failed": 0
+      },
+      "root_collector": {
+        "passed": 16,
+        "skipped": 0,
+        "failed": 0
+      },
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 94,
+        "commands": 292
+      }
+    },
+    {
+      "name": "semantic-core (windows-latest)",
+      "id": 110817928162,
+      "status": "completed",
+      "conclusion": "success",
+      "source_tests": {
+        "passed": 1465,
+        "skipped": 1173,
+        "failed": 0
+      },
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 10,
+        "commands": 10
+      },
+      "scope": "Existing platform-scoped S1 verification; A2 jobs/MCP/Plugin excluded by retained workflow."
+    }
+  ],
+  "evidence_use": "Read-only GitHub API job status and exact-run log summaries. Applies only to the named commit; does not cover subsequent source changes.",
+  "skipped_are_passed": false,
+  "field_ready": false,
+  "allow_run": false,
+  "guest_executed": false,
+  "normal_chain_executions": 0,
+  "h07_qualified": false,
+  "filesystems_qualified": false,
+  "namespace_alignment": "EXTERNAL_ASSUMPTION_NOT_PROVEN",
+  "p4_event_issued": false
+}

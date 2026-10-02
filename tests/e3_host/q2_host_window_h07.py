@@ -52,6 +52,249 @@ MISSING = (
     "ALL_DOMAIN_STOP_AND_EOF_NOT_PROVEN",
     "SUPERVISION_AND_NATIVE_AUDIT_COST_NOT_PROVEN",
 )
+QUALIFICATION_SCHEMA = "local-hand-q2-h07-current-route-contract/v1"
+QUALIFICATION_MODEL_SCHEMA = "local-hand-q2-h07-current-route-model/v1"
+QUALIFICATION_LIMIT = 256 * 1024
+QUALIFICATION_EVENT_LIMIT = 20
+USAGE_FIELDS = ("allocated_bytes", "inodes", "output_bytes", "cpu_ns", "calls")
+
+
+def qualification_contract(*, implementation_commit, source_binding_sha256):
+    """Fixed existing route obligations, without adopting supplied source pins."""
+    c.commit(implementation_commit); c.digest(source_binding_sha256)
+    edges = []
+
+    def add(key, source, target, *, clock="guest", manager=False, clients=("original",)):
+        coverage = "RETAINED_LEGACY_COUNTEREXAMPLE" if key in (
+            "first_probe", "host_collector", "remote_collector") else (
+            "UNPROVEN_QUALIFICATION_OBLIGATION" if key in (
+                "pre_dispatch_supervision", "stop_finalizer", "same_channel_evidence") else "CURRENT_SOURCE_OBLIGATION")
+        edges.append(dict(id=key, source=source, target=target, clock_domain=clock,
+            manager_start=manager, client_roles=list(clients), coverage=coverage))
+
+    for key, source, target, clock, manager in (
+        ("host_ssh", "host_consumer", "host_client", "host", False),
+        ("ssh_session", "host_client", "guest_session", "guest", False),
+        ("session_shell", "guest_session", "guest_shell", "guest", False),
+        ("shell_sudo", "guest_shell", "guest_sudo", "guest", False),
+        ("first_probe", "guest_sudo", "first_probe", "guest", False),
+        ("guest_loader", "guest_sudo", "guest_loader", "guest", False),
+        ("loader_outer", "guest_loader", "outer", "guest", True),
+        ("outer_owner", "outer", "owner", "guest", False),
+        ("owner_supervisor", "owner", "supervisor", "guest", True),
+        ("supervisor_target", "supervisor", "target", "guest", True),
+        ("target_gateway", "target", "gateway", "guest", False),
+        ("host_collector", "host_consumer", "collector_client", "host", False),
+        ("remote_collector", "collector_client", "collector", "guest", False),
+        ("same_channel_evidence", "guest_loader", "same_ssh_evidence_stream", "guest", False),
+        ("stop_finalizer", "supervisor", "stop_finalizer_endpoint", "guest", False),
+        ("pre_dispatch_supervision", "pre_dispatch_supervision", "host_client", "host", False),
+    ):
+        add(key, source, target, clock=clock, manager=manager)
+    for phase in ("preflight", "business", "evidence"):
+        for stage in ("bootstrap", "helper", "result_reader"):
+            add("gateway_" + phase + "_" + stage, "gateway", "ordinary." + phase + "." + stage,
+                manager=True, clients=("original", "manager"))
+        add("management_" + phase, "target", "management." + phase)
+        for role in ("listener", "admission"):
+            add(phase + "_" + role, "management." + phase, "quota." + phase + "." + role, manager=True)
+        add(phase + "_request", "ordinary." + phase + ".bootstrap", "quota." + phase + ".listener")
+        add(phase + "_worker_handoff", "quota." + phase + ".listener", "quota." + phase + ".admission")
+        add(phase + "_query", "quota." + phase + ".admission", "quota." + phase + ".query", manager=True)
+        roots = ("work", "evidence", "temporary") + (("retained_store",) if phase == "evidence" else ())
+        for root in roots:
+            add(phase + "_native_" + root, "quota." + phase + ".query", "quota." + phase + ".native." + root)
+    domains = sorted({edge[key] for edge in edges for key in ("source", "target")})
+    return dict(schema=QUALIFICATION_SCHEMA, implementation_commit=implementation_commit,
+        source_binding_sha256=source_binding_sha256, domains=domains, request_edges=edges,
+        topology="SOURCE_OBLIGATIONS_AND_LEGACY_COUNTEREXAMPLES_NOT_DEPLOYED",
+        proposed_delivery="ONE_SSH_WITH_SAME_CHANNEL_COLLECTION_NO_SECOND_SSH",
+        parent_geometry=dict(controller_memory_bytes=512 * 1024**2, controller_tasks=64,
+            target_memory_bytes=256 * 1024**2, target_tasks=32,
+            ordinary_memory_bytes=256 * 1024**2, ordinary_tasks=32,
+            ordinary_relation="CONTROLLER_CHILD_SIBLING_OF_TARGET"),
+        existing_limits=dict(ordinary_deliveries=9, system_manager_calls=256, root_control_calls=256),
+        requirements=list(MISSING), evidence_use="UNTRUSTED_MODEL_ONLY", qualification="UNKNOWN",
+        **dict.fromkeys(FALSE_FIELDS, False))
+
+
+def _qualification_clocks(clocks):
+    c.keys(clocks, ("host", "guest"))
+    for window in clocks.values():
+        c.keys(window, ("boot_id", "monotonic_issued_ns", "boottime_issued_ns",
+            "monotonic_deadline_ns", "boottime_deadline_ns"))
+        c.token(window["boot_id"], r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+        for clock in ("monotonic", "boottime"):
+            origin = c.number(window[clock + "_issued_ns"], 1)
+            end = c.number(window[clock + "_deadline_ns"], origin + 1)
+            require(end - origin <= 300 * h.NS, "H07_QUALIFICATION_WINDOW")
+
+
+def _qualification_instance(value, *, manager):
+    if value is None:
+        return
+    c.keys(value, ("unit", "cgroup", "invocation_id", "pid", "start_ticks", "cgroup_device", "cgroup_inode"))
+    c.path(value["cgroup"])
+    for name in ("pid", "start_ticks", "cgroup_device", "cgroup_inode"):
+        c.number(value[name], 0 if name == "cgroup_device" else 1)
+    if manager:
+        c.token(value["unit"], r"[a-zA-Z0-9_.@-]+\.service", maximum=255)
+        c.token(value["invocation_id"], r"[0-9a-f]{32}")
+        require(value["invocation_id"] != "0" * 32, "H07_QUALIFICATION_INVOCATION")
+    else:
+        require(value["unit"] is value["invocation_id"] is None, "H07_QUALIFICATION_PROCESS")
+
+
+def review_qualification_model(trace_raw, *, implementation_commit, source_binding_sha256,
+                               clocks, requests, budget):
+    """Check a bounded synthetic trace against separately supplied original pins.
+
+    Supplied clock, request, identity and budget pins are not authenticated facts.
+    No source adoption, clock-rate/pause proof or future-admission fence operation
+    is supported. A complete-looking trace therefore still returns UNKNOWN.
+    """
+    contract = qualification_contract(implementation_commit=implementation_commit,
+        source_binding_sha256=source_binding_sha256)
+    _qualification_clocks(clocks)
+    edges = {row["id"]: row for row in contract["request_edges"]}
+    c.keys(requests, edges)
+    c.keys(budget, ("ledger_sha256", "reserves", "reservations"))
+    c.digest(budget["ledger_sha256"])
+    c.keys(budget["reserves"], ("stop_ns", "eof_ns", "fsync_ns", "seal_ns"))
+    reserve = sum(c.number(value, 1) for value in budget["reserves"].values())
+    c.number(reserve, 1)
+    reservations = budget["reservations"]
+    require(type(reservations) is dict and 0 < len(reservations) <= len(edges), "H07_QUALIFICATION_BUDGET")
+    for pin, limits in reservations.items():
+        c.digest(pin); c.keys(limits, USAGE_FIELDS)
+        for value in limits.values():
+            c.number(value)
+    used_reservations = set()
+    for key, pin in requests.items():
+        edge = edges[key]; window = clocks[edge["clock_domain"]]
+        c.keys(pin, ("request_sha256", "intent_sha256", "command_sha256", "deadline_ns", "job_id",
+            "instance", "clients", "reservation_sha256"))
+        for name in ("request_sha256", "intent_sha256", "command_sha256", "reservation_sha256"):
+            c.digest(pin[name])
+        require(pin["reservation_sha256"] in reservations, "H07_QUALIFICATION_RESERVATION")
+        used_reservations.add(pin["reservation_sha256"])
+        c.number(pin["deadline_ns"], window["boottime_issued_ns"] + 1, window["boottime_deadline_ns"])
+        if pin["job_id"] is not None:
+            require(edge["manager_start"], "H07_QUALIFICATION_JOB")
+            c.number(pin["job_id"], 1, 2**32 - 1)
+        _qualification_instance(pin["instance"], manager=edge["manager_start"])
+        c.keys(pin["clients"], edge["client_roles"])
+        for client in pin["clients"].values():
+            c.keys(client, ("pid", "start_ticks"))
+            c.number(client["pid"], 1); c.number(client["start_ticks"], 1)
+    require(used_reservations == set(reservations), "H07_QUALIFICATION_UNUSED_RESERVATION")
+    _raw(trace_raw, QUALIFICATION_LIMIT, "H07_QUALIFICATION_TRACE")
+    trace = c.document(trace_raw, limit=QUALIFICATION_LIMIT)
+    c.keys(trace, ("schema", "contract_sha256", "clocks_sha256", "requests_sha256", "budget_sha256",
+        "system_manager_calls", "root_control_calls", "records"))
+    require(trace["schema"] == QUALIFICATION_MODEL_SCHEMA and
+        all(trace[name + "_sha256"] == sha(encoded(value)) for name, value in (
+            ("contract", contract), ("clocks", clocks), ("requests", requests), ("budget", budget))),
+        "H07_QUALIFICATION_BINDING")
+    for name in ("system_manager_calls", "root_control_calls"):
+        c.number(trace[name], 0, contract["existing_limits"][name])
+    records = trace["records"]
+    require(type(records) is list and len(records) == len(edges), "H07_QUALIFICATION_RECORDS")
+    totals = {pin: dict.fromkeys(USAGE_FIELDS, 0) for pin in reservations}
+    states = []
+    seen = set()
+    for row in records:
+        c.keys(row, ("edge", "events", "usage"))
+        key = row["edge"]
+        require(type(key) is str and key in edges and key not in seen, "H07_QUALIFICATION_EDGE")
+        seen.add(key); edge = edges[key]; pin = requests[key]; window = clocks[edge["clock_domain"]]
+        c.keys(row["usage"], USAGE_FIELDS)
+        for name, value in row["usage"].items():
+            c.number(value); totals[pin["reservation_sha256"]][name] += value
+            c.number(totals[pin["reservation_sha256"]][name], 0, reservations[pin["reservation_sha256"]][name])
+        events = row["events"]
+        require(type(events) is list and len(events) <= QUALIFICATION_EVENT_LIMIT, "H07_QUALIFICATION_EVENTS")
+        state = dict(edge=key, submitted=False, job_id=None, instance_bound=False, stop_requested=False,
+            stop_ack=False, job_absent=False, tree_empty=False, exits=[], eof=[], late_queue=False,
+            late_activation=False, state="MODEL_UNSUBMITTED", qualification="UNKNOWN", actual_closed=False)
+        last_mono, last_boot = window["monotonic_issued_ns"], window["boottime_issued_ns"]
+        for event in events:
+            c.keys(event, ("kind", "monotonic_ns", "boottime_ns", "data"))
+            mono = c.number(event["monotonic_ns"], last_mono, window["monotonic_deadline_ns"] - 1)
+            boot = c.number(event["boottime_ns"], last_boot, pin["deadline_ns"] - 1)
+            require(abs((boot - window["boottime_issued_ns"]) - (mono - window["monotonic_issued_ns"])) <= 2 * h.NS,
+                "H07_QUALIFICATION_CLOCK_DIVERGED")
+            last_mono, last_boot = mono, boot
+            kind, data = event["kind"], event["data"]
+            require(type(kind) is str and kind in ("SUBMITTED", "QUEUED", "INSTANCE_BOUND", "STOP_REQUESTED",
+                "STOP_ACK", "JOB_ABSENT", "TREE_EMPTY", "CLIENT_EXIT", "EOF"), "H07_QUALIFICATION_EVENT_KIND")
+            if kind == "SUBMITTED":
+                c.keys(data, ("request_sha256", "intent_sha256", "command_sha256"))
+                require(not state["submitted"] and all(data[name] == pin[name] for name in data),
+                    "H07_QUALIFICATION_REQUEST")
+                require(boot + reserve < pin["deadline_ns"] and mono + reserve < window["monotonic_deadline_ns"],
+                    "H07_QUALIFICATION_RESERVES")
+                state["submitted"] = True
+                continue
+            require(state["submitted"], "H07_QUALIFICATION_BEFORE_SUBMISSION")
+            if kind == "QUEUED":
+                c.keys(data, ("job_id",)); job = c.number(data["job_id"], 1, 2**32 - 1)
+                require(edge["manager_start"] and pin["job_id"] == job and state["job_id"] in (None, job),
+                    "H07_QUALIFICATION_JOB")
+                state["late_queue"] |= state["job_absent"] or state["stop_ack"] or state["tree_empty"]
+                state["job_id"] = job
+            elif kind == "INSTANCE_BOUND":
+                c.keys(data, ("instance",))
+                _qualification_instance(data["instance"], manager=edge["manager_start"])
+                require(pin["instance"] is not None and data["instance"] == pin["instance"],
+                    "H07_QUALIFICATION_INSTANCE")
+                state["late_activation"] |= state["stop_ack"] or state["tree_empty"]
+                state["instance_bound"] = True
+            elif kind in ("STOP_REQUESTED", "STOP_ACK"):
+                c.keys(data, ("instance_sha256",))
+                expected = None if pin["instance"] is None else sha(encoded(pin["instance"]))
+                require(data["instance_sha256"] == expected, "H07_QUALIFICATION_STOP_INSTANCE")
+                require(not state["stop_requested"] if kind == "STOP_REQUESTED" else
+                    state["stop_requested"] and not state["stop_ack"], "H07_QUALIFICATION_STOP_ORDER")
+                state["stop_requested" if kind == "STOP_REQUESTED" else "stop_ack"] = True
+            elif kind in ("JOB_ABSENT", "TREE_EMPTY"):
+                c.keys(data, ())
+                state["job_absent" if kind == "JOB_ABSENT" else "tree_empty"] = True
+            else:
+                c.keys(data, ("client_role", "client_sha256", "returncode" if kind == "CLIENT_EXIT" else "stream"))
+                role = data["client_role"]
+                require(type(role) is str and role in pin["clients"] and
+                    data["client_sha256"] == sha(encoded(pin["clients"][role])), "H07_QUALIFICATION_CLIENT")
+                if kind == "CLIENT_EXIT":
+                    c.number(data["returncode"], 0, 255)
+                    require(role not in state["exits"], "H07_QUALIFICATION_EXIT")
+                    state["exits"].append(role)
+                else:
+                    require(type(data["stream"]) is str and data["stream"] in ("stdout", "stderr"), "H07_QUALIFICATION_EOF")
+                    label = role + "." + data["stream"]
+                    require(label not in state["eof"], "H07_QUALIFICATION_EOF")
+                    state["eof"].append(label)
+        state["state"] = "MODEL_ORIGINAL_INSTANCE" if state["instance_bound"] else (
+            "MODEL_UNOBSERVED_PENDING" if state["submitted"] else "MODEL_UNSUBMITTED")
+        state["missing"] = ["FUTURE_ADMISSION_FENCE_NOT_PROVEN"]
+        for condition, reason in ((state["instance_bound"], "ORIGINAL_INSTANCE_UNPROVEN"),
+            (state["instance_bound"] and state["stop_ack"] and not state["late_activation"] and not state["late_queue"], "ORIGINAL_STOP_UNPROVEN"),
+            (state["job_absent"] or not edge["manager_start"], "JOB_TERMINAL_UNPROVEN"),
+            (state["tree_empty"] and not state["late_activation"] and not state["late_queue"], "TREE_EMPTY_UNPROVEN"),
+            (set(state["exits"]) == set(edge["client_roles"]), "ORIGINAL_CLIENT_EXIT_UNPROVEN"),
+            (set(state["eof"]) == {role + "." + stream for role in edge["client_roles"]
+                for stream in ("stdout", "stderr")}, "ORIGINAL_DOUBLE_EOF_UNPROVEN")):
+            if not condition:
+                state["missing"].append(reason)
+        states.append(state)
+    result = dict(schema=QUALIFICATION_MODEL_SCHEMA, contract=contract, model_trace_consistent=True,
+        trace_sha256=sha(trace_raw), clocks_sha256=trace["clocks_sha256"], requests_sha256=trace["requests_sha256"],
+        budget_sha256=trace["budget_sha256"], budget_usage=totals, edges=states, qualification="UNKNOWN",
+        missing=list(MISSING),
+        evidence_use="UNTRUSTED_MODEL_ONLY", whole_run_rate_pause_proven=False,
+        future_activation_fenced=False, **dict.fromkeys(FALSE_FIELDS, False))
+    encoded(result, limit=REPORT_LIMIT)
+    return result
 
 
 def _raw(value, limit, reason):
