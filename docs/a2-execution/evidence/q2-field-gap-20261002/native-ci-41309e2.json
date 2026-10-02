@@ -1,0 +1,99 @@
+{
+  "schema": "local-hand-q2-field-gap-native-ci/v1",
+  "observed_at": "2026-10-02T20:46:19+08:00",
+  "run_id": 37007087897,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/37007087897",
+  "head_commit": "41309e2369ddad201ecc7a27c965028d820fecf4",
+  "head_tree": "c142963b33494da9eed1f121e59cb822ad8bf1be",
+  "status": "completed",
+  "conclusion": "success",
+  "created_at": "2026-10-02T12:30:29Z",
+  "updated_at": "2026-10-02T12:43:23Z",
+  "jobs": [
+    {
+      "id": 110837796836,
+      "name": "classify-change",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 110837835114,
+      "name": "semantic-core (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "source_tests": {
+        "passed": 3783,
+        "skipped": 51,
+        "failed": 0,
+        "elapsed_seconds": 472.41
+      },
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 94,
+        "commands": 292
+      },
+      "root_collection": {
+        "passed": 16,
+        "skipped": 0,
+        "evidence": "isolated real root-owned files"
+      }
+    },
+    {
+      "id": 110837835252,
+      "name": "semantic-core (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "source_tests": {
+        "passed": 1465,
+        "skipped": 1173,
+        "failed": 0,
+        "elapsed_seconds": 409.71
+      },
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 10,
+        "commands": 10
+      }
+    }
+  ],
+  "source_mapping": {
+    "implementation_commit": "b707f1b0a4755aa0b2b6455d53ea8eae641182cd",
+    "implementation_tree": "055aa585817f3d46f56275c224eba0e4b2734c6b",
+    "ci_head_is_document_only_descendant": true,
+    "source_build_workflow_paths_unchanged": [
+      "tests",
+      "tools",
+      "plugins",
+      "pyproject.toml",
+      "setup.py",
+      "requirements-build.txt",
+      "requirements-mcp-linux-x86_64-py312.lock",
+      ".github/workflows/local-hand-v0-1-validation.yml"
+    ],
+    "source_pins_index": "committed-source.json"
+  },
+  "private_evidence": {
+    "run.json": {
+      "bytes": 13111,
+      "sha256": "0031df2a0489bab821bc1a62594b6dbc098801554dc6a95212d055b3175351d1",
+      "retention": "Private validation directory; raw contents not copied"
+    },
+    "jobs.json": {
+      "bytes": 14000,
+      "sha256": "4fc9c6bf9dadadc2dfb425933b75ea9aa0213d3b5c24dcce6c5d443c1eca1350",
+      "retention": "Private validation directory; raw contents not copied"
+    },
+    "native-ci.log": {
+      "bytes": 617572,
+      "sha256": "cc66c5b8976f7c686cff87ccf9b3e1e767cd291df1af99638be79b7eeb92bb87",
+      "retention": "Private validation directory; raw contents not copied"
+    }
+  },
+  "evidence_use": "exact head source and installed-chain CI only; no field qualification, source adoption, supervisor or filesystem/namespace proof; existing Windows scope only",
+  "namespace_gate_state": "OPEN",
+  "field_ready": false,
+  "allow_run": false,
+  "guest_executed": false,
+  "normal_chain_executions": 0,
+  "p4_event_issued": false
+}

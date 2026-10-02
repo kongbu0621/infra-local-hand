@@ -19,6 +19,8 @@
 3. **FS2/FS3 静态复核。** 已有来源索引、准确 feature 谓词和两个落盘路径的操作/首错表
    见[文件系统工作单](Q2_FS_QUALIFICATION_WORK_ORDER_20261002.md)。
    合成峰值、端点 G 和真实组件 IO 均未冒称原机资格，未实施 consumer 写入路径仍单独标出。
+   [FS4/FS6 属性与同步核对](Q2_FS_ATTRIBUTE_SYNC_SOURCE_REVIEW_20261002.md)补上九条
+   准确源码映射，包括 default/access ACL、创建结果、五次同步、读回及首错留存的限度。
 4. **namespace 最小设计。** 原终端启动固定 G，持有直系 R/O 的进程与 namespace FD，
    在固定本地匿名通道中交叉核对；明确新增终端/执行端点来源前提、读取边界和预算。
    方案只证明该活体观察器会话，不转给另一个 PID、将来窗口或 Q2 consumer。
@@ -27,7 +29,8 @@
 首次为 **649 PASS / 21 SKIP / 0 FAIL**，6.59 秒；顺序修复后的完整同组回归为
 **651 PASS / 21 SKIP / 0 FAIL**，6.62 秒。21 项是既有 root 专用 protected-record 测试。
 普通 writer 的真实隔离 syscall 组已执行；四份源码在测试前后摘要完全相同。
-本轮未重复全库，不借用上轮全库统计；准确源字节、私有 log/JUnit 的长度/摘要、
+本地未手工重复全库；完整源测试由准确候选的 CI 完成，不借用上轮统计。
+准确源字节、私有 log/JUnit 的长度/摘要、
 原批准文档摘要及结果在[验证索引](evidence/q2-field-gap-20261002/verification.json)。
 [顺序修复验证](evidence/q2-field-gap-20261002/closure-order-verification.json)追加保留失败与最终字节，
 不覆盖首次结果。[H07 独立定向复核](Q2_H07_CURRENT_ROUTE_OFFLINE_REVIEW.md)最终
@@ -43,6 +46,17 @@ installed wheel 94 checks / 292 commands PASS；Windows 1465 PASS / 1173 SKIP、
 wheel 10 checks / 10 commands PASS。
 [准确候选 CI 记录](evidence/q2-field-gap-20261002/source-ci-38a9e15.json)不覆盖后续顺序修复；
 后继源码的 CI 必须另定位准确 head，不能借用这次 PASS。
+
+顺序修复和六份文档登记一起推送后的准确 head
+`41309e2369ddad201ecc7a27c965028d820fecf4`，tree
+`c142963b33494da9eed1f121e59cb822ad8bf1be`，其
+[CI 37007087897](https://github.com/kongbu0621/infra-local-hand/actions/runs/37007087897)
+已 **3/3 SUCCESS**：Linux 源码 **3783 PASS / 51 SKIP**，root collector
+**16 PASS / 0 SKIP**，wheel **94 checks / 292 commands PASS**；Windows 既有范围
+**1465 PASS / 1173 SKIP**，wheel **10 checks / 10 commands PASS**。
+[最终 CI 索引](evidence/q2-field-gap-20261002/native-ci-41309e2.json)登记原始私有 API/log
+的 bytes/SHA，以及 b707f1b→41309e2 的源码/build/workflow 无变化映射。
+后续 FS4/FS6 和本 CI 摘要为文档补充；CI 结论仍精确归属 41309e2，不扩大为实机资格。
 
 上轮准确 `6cce996d17ccde1aa4fe48feaaa4cec226d834c0` 的
 [CI 37000830396](https://github.com/kongbu0621/infra-local-hand/actions/runs/37000830396)已完成，
