@@ -498,6 +498,69 @@ class ClientTests(unittest.TestCase):
     def test_resumed_final_keeps_verified_identity_through_all_durability_barriers(self):
         self._final_mutation_during_sync_is_rejected(True)
 
+    def test_final_content_is_rechecked_after_all_barriers_with_equal_timestamps(self):
+        payload = b"expected verified evidence"
+        mutated = b"x" * len(payload)
+        artifact = {"artifact_id": "fixture.manifest", "role": "manifest",
+                    "size": len(payload), "sha256": _hash(payload)}
+        for resumed in (False, True):
+            for target in ("file", "download", "root"):
+                with self.subTest(target=target, resumed=resumed):
+                    writer = BoundedFileWriter(self.root / (target + "-collision-" + str(resumed)))
+                    self.addCleanup(writer.close)
+                    writer.prepare(artifact)
+                    writer.write(0, payload)
+                    if resumed:
+                        writer.finish(lambda _: None)
+                        writer.close()
+                        writer = BoundedFileWriter(writer.root)
+                        self.addCleanup(writer.close)
+                        self.assertEqual(writer.prepare(artifact), len(payload))
+                    original = (writer.final if resumed else writer.partial).stat()
+                    real_same, real_sync, real_read = evidence_client._same, os.fsync, os.read
+                    original_identity = real_same(original)
+                    changed, final_sync_fds, verification_reads = [], [], []
+                    target_path = {"file": writer.final, "download": writer.directory,
+                                   "root": writer.root}[target]
+
+                    def colliding_timestamps(info):
+                        identity = real_same(info)
+                        if (info.st_dev, info.st_ino) == (original.st_dev, original.st_ino):
+                            return (*identity[:-2], *original_identity[-2:])
+                        return identity
+
+                    def mutate_during_sync(fd):
+                        info = os.fstat(fd)
+                        if (info.st_dev, info.st_ino) == (original.st_dev, original.st_ino):
+                            final_sync_fds.append(fd)
+                        path = Path(os.readlink(Path("/proc/self/fd") / str(fd)))
+                        if not changed and path == target_path:
+                            before = writer.final.stat()
+                            writer.final.write_bytes(mutated)
+                            after = writer.final.stat()
+                            self.assertEqual((before.st_dev, before.st_ino, before.st_size),
+                                             (after.st_dev, after.st_ino, after.st_size))
+                            self.assertEqual(colliding_timestamps(before), colliding_timestamps(after))
+                            changed.append(True)
+                        real_sync(fd)
+
+                    def track_verification_read(fd, maximum):
+                        data = real_read(fd, maximum)
+                        if changed:
+                            info = os.fstat(fd)
+                            if (info.st_dev, info.st_ino) == (original.st_dev, original.st_ino):
+                                verification_reads.append(fd)
+                        return data
+
+                    with mock.patch.object(evidence_client, "_same", side_effect=colliding_timestamps), \
+                            mock.patch.object(evidence_client.os, "fsync", side_effect=mutate_during_sync), \
+                            mock.patch.object(evidence_client.os, "read", side_effect=track_verification_read):
+                        self.assertCode("CONFLICT", lambda: writer.finish(lambda _: None))
+                    self.assertEqual(changed, [True])
+                    self.assertTrue(verification_reads)
+                    self.assertEqual(set(verification_reads), {final_sync_fds[-1]})
+                    self.assertEqual(writer.final.read_bytes(), mutated)
+
     def test_parent_replacement_during_validation_never_returns_foreign_bytes(self):
         payload = b"expected validated bytes"
         artifact = {"artifact_id": "fixture.manifest", "role": "manifest",

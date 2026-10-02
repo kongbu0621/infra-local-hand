@@ -265,6 +265,79 @@ class ResultReaderTests(unittest.TestCase):
                     (self.root / "saved-evidence").rename(self.path.parent)
                 self.path.write_bytes(raw)
 
+    def test_same_inode_same_size_rewrite_with_equal_timestamps_is_rejected(self):
+        raw = self.path.read_bytes()
+        changed = raw.replace(b"SUCCEEDED", b"CANCELLED")
+        before = self.path.stat()
+        real_read, real_state = os.read, result_reader._file_state
+        fired = False
+        descriptors = []
+
+        def colliding_timestamps(info):
+            value = real_state(info)
+            if (info.st_dev, info.st_ino) == (before.st_dev, before.st_ino):
+                return (*value[:-2], before.st_mtime_ns, before.st_ctime_ns)
+            return value
+
+        def read(descriptor, maximum):
+            nonlocal fired
+            descriptors.append(descriptor)
+            data = real_read(descriptor, maximum)
+            if data and not fired:
+                fired = True
+                self.path.write_bytes(changed)
+                after = self.path.stat()
+                self.assertEqual((before.st_dev, before.st_ino, before.st_size),
+                                 (after.st_dev, after.st_ino, after.st_size))
+                self.assertEqual(real_state(before), colliding_timestamps(after))
+            return data
+
+        self.assertNotEqual(raw, changed)
+        self.assertEqual(len(raw), len(changed))
+        with mock.patch.object(result_reader, "_file_state", side_effect=colliding_timestamps), \
+             mock.patch.object(os, "read", side_effect=read), \
+             self.assertRaisesRegex(JobError, "content changed during collection"):
+            self.collect()
+        self.assertTrue(fired)
+        self.assertGreaterEqual(len(descriptors), 3)
+        self.assertEqual(1, len(set(descriptors)))
+        self.assertEqual(changed, self.path.read_bytes())
+
+    def test_content_recheck_keeps_original_deadline_after_blocked_read_returns(self):
+        real_seek, real_read, real_clock = os.lseek, os.read, budget.current_clock
+        rechecking = expired = False
+        descriptors = []
+
+        def seek(descriptor, offset, whence):
+            nonlocal rechecking
+            self.assertEqual((0, os.SEEK_SET), (offset, whence))
+            rechecking = True
+            descriptors.append(descriptor)
+            return real_seek(descriptor, offset, whence)
+
+        def read(descriptor, maximum):
+            nonlocal expired
+            data = real_read(descriptor, maximum)
+            if rechecking:
+                descriptors.append(descriptor)
+                expired = True
+            return data
+
+        def clock():
+            return ({"boot_id": self.helper["boot_id"],
+                     "boottime_ns": self.payload["phase_deadline_boottime_ns"]}
+                    if expired else real_clock())
+
+        with mock.patch.object(os, "lseek", side_effect=seek), \
+             mock.patch.object(os, "read", side_effect=read), \
+             mock.patch.object(budget, "current_clock", side_effect=clock), \
+             self.assertRaises(JobError):
+            self.collect()
+        self.assertTrue(rechecking)
+        self.assertTrue(expired)
+        self.assertEqual(2, len(descriptors))
+        self.assertEqual(1, len(set(descriptors)))
+
     def test_os_read_overflow_and_declared_size_limit_are_both_rejected(self):
         real_read = os.read
         extended = False

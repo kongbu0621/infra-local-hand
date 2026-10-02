@@ -1,0 +1,443 @@
+{
+  "absolute_machine_paths_included": false,
+  "additional_retained_tool_results": [
+    {
+      "cause": "Test expected FACT label for rejected bool integer; corrected to INTEGER.",
+      "failed": 1,
+      "id": "unsupported-root-offline-smoke",
+      "passed": 62,
+      "python": "3.10.12",
+      "retention": "conversation tool output",
+      "supported_version_acceptance": false
+    },
+    {
+      "failed": 0,
+      "id": "unsupported-consumer-protocol-smoke",
+      "passed": 157,
+      "python": "3.10.12",
+      "retention": "independent agent tool output",
+      "supported_version_acceptance": false
+    },
+    {
+      "failed": 0,
+      "id": "unsupported-accounting-initial-smoke",
+      "passed": 75,
+      "python": "3.10.12",
+      "retention": "independent agent tool output",
+      "supported_version_acceptance": false
+    },
+    {
+      "failed": 0,
+      "id": "unsupported-accounting-alias-fix-smoke",
+      "passed": 77,
+      "python": "3.10.12",
+      "retention": "independent agent tool output",
+      "supported_version_acceptance": false
+    },
+    {
+      "failed": 0,
+      "field_proof": false,
+      "id": "independent-pure-final",
+      "passed": 266,
+      "python": "3.12.14",
+      "retention": "independent agent tool output",
+      "skipped": 0
+    },
+    {
+      "failed": 1,
+      "id": "evidence-client-baseline-reproduction",
+      "passed": 1,
+      "python": "3.12.14",
+      "retention": "independent agent tool output"
+    },
+    {
+      "failed": 1,
+      "id": "evidence-client-deterministic-collision-before-repair",
+      "python": "3.12.14",
+      "retention": "independent agent tool output"
+    },
+    {
+      "failed": 0,
+      "id": "evidence-client-fixed-focused",
+      "passed": 3,
+      "python": "3.12.14",
+      "retention": "independent agent tool output"
+    },
+    {
+      "failed": 0,
+      "id": "evidence-client-and-store-fixed",
+      "passed": 96,
+      "python": "3.12.14",
+      "retention": "independent agent tool output",
+      "skipped": 0
+    }
+  ],
+  "authority": {
+    "authoritative_documents_byte_unchanged": {
+      "docs/a2-execution/q2-old-producer-admission-retry/ARCHITECTURE.md": {
+        "bytes": 22863,
+        "sha256": "c1ebab031fe52403fe005b3848c80981ef06243af1cc51aca7602d0d9b36268e"
+      },
+      "docs/a2-execution/q2-old-producer-admission-retry/IMPLEMENTATION_PLAN.md": {
+        "bytes": 24022,
+        "sha256": "f295cf6b165134e92bc41400820897b93342fb7c9bb23d147e591307fb3e284d"
+      },
+      "docs/a2-execution/q2-old-producer-admission-retry/REQUIREMENTS.md": {
+        "bytes": 27936,
+        "sha256": "99cda6cece535d8cff49721f9daf117d69dbf373f82c8f89f3b6dc33725085d1"
+      }
+    },
+    "baseline": "68424df2ddbf812b9479ffa7a64dcaa59a2a9f76",
+    "closure": "179652cb9487163d83c004d358e4d4b49409694c",
+    "direct_pinned_rule_read": true,
+    "head_descends_from_closure": true,
+    "owner_event": "LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-CLOSURE-20261002-01",
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
+  },
+  "base_commit": "50c5590995fc75ca68e2970730b9384a5b816302",
+  "base_commit_contains_current_changes": false,
+  "date": "2026-10-02",
+  "environment_round_limits": {
+    "full-final": "Final 13 source-file snapshot, ordinary host identity, umask 0022, TMPDIR=/tmp; no field fixture supplied.",
+    "full-source": "First whole-source run collected before final two offline integer-bound tests and before evidence-client repair. Failure retained.",
+    "targeted-final": "Ordinary host identity; per-process umask 0022; TMPDIR=/tmp; protected temporary fixture parent.",
+    "targeted-first": "Sandbox ancestors map root owners to UID 65534; inherited umask 0002. Retained qualification failures.",
+    "targeted-qualified": "Ordinary host identity; per-process umask 0077; no system settings changed."
+  },
+  "field_state": {
+    "allow_run": false,
+    "e3_real_supervision": "E3_SUPERVISION_UNVERIFIED",
+    "field_ready": false,
+    "future_package_contract_complete": false,
+    "guest_connection_attempted": false,
+    "guest_executed": false,
+    "h07": "OPEN",
+    "historical_failure_retained": true,
+    "host_marker_created": false,
+    "live_package_generated": false,
+    "namespace_alignment": "EXTERNAL_ASSUMPTION_NOT_PROVEN",
+    "normal_chain_executions": 0,
+    "p4_contract_qualified": false,
+    "parent_filesystem_peak_and_persistence_qualification": "OPEN",
+    "resource_refund": false,
+    "task_txt_generated": false,
+    "technical_rollback_proof": false
+  },
+  "frozen_field_product": {
+    "artifacts": {
+      "code-manifest.json": "c764a4f6a05d2b6aaa6f8c1d35617a520dba1c1e91fad54b0e93e02ba856fe86",
+      "source.bundle": "36fddae6dd57b2d80b90b4eff5d5bf40cb2f6a29d91d946c1bbefabdb5ae2fc0",
+      "wheel": "76a2573f9b5f0a1e9e260bf215f57d6cd011f49736653e0939ebd1b2ba034d9a"
+    },
+    "commit": "1a900e4a38e9567655f21cbf3c3f17941de1a8d5",
+    "payload_sha256": "fbd773a9a669440ad015dfe0967b3d505d3cabc91b11fee7ddb4015d90aae118",
+    "tree": "ffffce7258036a974d44f6dc8b3ed022d4127aac"
+  },
+  "new_implementation_commit": null,
+  "raw_machine_evidence_published": false,
+  "record_kind": "LOCAL_SOURCE_AND_SYNTHETIC_MODEL_VALIDATION",
+  "rounds": [
+    {
+      "artifacts": {
+        "targeted-first.log": {
+          "bytes": 50049,
+          "sha256": "a97dbb52962016e62b7e1b57d74340dcb87df0aeb8c1fd2d269fd25edf0c1798"
+        },
+        "targeted-first.xml": {
+          "bytes": 109799,
+          "sha256": "9a6b59e37809f740f9e27125a4275081791eea950627120a96ad3364bb623bee"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 31,
+        "passed": 324,
+        "skipped": 1,
+        "tests": 356
+      },
+      "failed_nodes": [
+        "tests.test_local_hand_jobs_result_reader.ResultReaderTests::test_child_emits_ready_only_after_real_supervision_checks_and_result_after_read",
+        "tests.test_local_hand_jobs_result_reader.ResultReaderTests::test_content_recheck_keeps_original_deadline_after_blocked_read_returns",
+        "tests.test_local_hand_jobs_result_reader.ResultReaderTests::test_os_read_overflow_and_declared_size_limit_are_both_rejected",
+        "tests.test_local_hand_jobs_result_reader.ResultReaderTests::test_same_inode_same_size_rewrite_and_name_replacement_during_read_are_rejected",
+        "tests.test_local_hand_jobs_result_reader.ResultReaderTests::test_same_inode_same_size_rewrite_with_equal_timestamps_is_rejected",
+        "tests.test_local_hand_jobs_result_reader.ResultReaderTests::test_strict_result_json_preserves_large_metadata_and_floats",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_actual_allocation_budget_rejects_and_retains_created_directory",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_actual_allocation_complete_tree_and_cross_root_dedup",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_ancestor_permission_change_still_blocks_held_read",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_authorized_sibling_creation_does_not_claim_ancestor_times_preserved",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_concurrent_extra_member_after_create_blocks_without_cleanup",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_content_and_mode_drift_after_read_are_rejected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_deadline_after_first_file_retains_no_seal",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_different_replay_and_added_alias_fail_retaining_original",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_directory_renaming_after_open_rejected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_exclusive_durable_five_files_and_readonly_same_value_replay",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_file_replacement_after_fd_read_is_detected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_fsync_at_seal_failure_never_returns_new_execution_permission",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_fsync_failure_before_seal_retains_partial_output",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_full_metadata_content_and_atime_preserved_and_held_reverified",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_hardlink_and_world_writable_ancestor_rejected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_link_is_rejected_before_readlink_on_relatime_mount",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_open_noatime_denial_has_no_unprotected_retry",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_other_device_member_rejected_before_content_open",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_partial_directory_is_not_repaired_or_reused",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_pin_mismatch_does_not_change_access_time",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_same_inode_content_drift_with_equal_timestamps_is_rejected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_short_write_is_retained_and_cannot_be_retried",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_symlink_ancestor_and_lexical_alias_rejected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_symlink_without_exact_target_pin_is_rejected",
+        "tests.test_e3_q2_reconciliation_io_records.ProtectedFiles::test_unknown_or_missing_expected_member_rejected"
+      ],
+      "id": "targeted-first",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {
+        "Real ordinary-owner chown requires root": 1
+      },
+      "status": "FAIL"
+    },
+    {
+      "artifacts": {
+        "targeted-qualified.log": {
+          "bytes": 717,
+          "sha256": "488662044c94d521e935b2bdbee607d99d81c23a7329858b99feddc9e3f0a570"
+        },
+        "targeted-qualified.xml": {
+          "bytes": 63167,
+          "sha256": "5a387faaa534f56e4a7ecbf1d281924bb07fd86abb16aab146b01ee57bc8c12c"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "passed": 355,
+        "skipped": 1,
+        "tests": 356
+      },
+      "failed_nodes": [],
+      "id": "targeted-qualified",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {
+        "Real ordinary-owner chown requires root": 1
+      },
+      "status": "PASS_WITH_RETAINED_SKIPS"
+    },
+    {
+      "artifacts": {
+        "offline-final.log": {
+          "bytes": 277,
+          "sha256": "aeb517eb3d1728deba9f7f052a8b4bfec1f2a7cf99b3472d377977caa88ae50c"
+        },
+        "offline-final.xml": {
+          "bytes": 14599,
+          "sha256": "845e8a76a7cb292c427e9b49d048df0920d46a37fc1bfe38d39a4f59b0790927"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "passed": 81,
+        "skipped": 0,
+        "tests": 81
+      },
+      "failed_nodes": [],
+      "id": "offline-final",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {},
+      "status": "PASS"
+    },
+    {
+      "artifacts": {
+        "targeted-final.log": {
+          "bytes": 793,
+          "sha256": "950a007973259ea0349cfb5fb76f02e719c14cec99dce0e9b80e0789be5505e9"
+        },
+        "targeted-final.xml": {
+          "bytes": 68902,
+          "sha256": "dd22e5e11fec3a416857a0541a757b59a428d4d3711bc37682ccbd3ae299011f"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "passed": 386,
+        "skipped": 1,
+        "tests": 387
+      },
+      "failed_nodes": [],
+      "id": "targeted-final",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {
+        "Real ordinary-owner chown requires root": 1
+      },
+      "status": "PASS_WITH_RETAINED_SKIPS"
+    },
+    {
+      "artifacts": {
+        "full-source.log": {
+          "bytes": 15363,
+          "sha256": "135db6f4745810bc1f94239a1f6fa2c351752bcfb0f26cc2d8d1a58473097356"
+        },
+        "full-source.xml": {
+          "bytes": 676504,
+          "sha256": "b84d53c6224c42e54eb95e7affdda5bb648bb5a0d3ea65237b99858fba3bc007"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 1,
+        "passed": 3709,
+        "skipped": 89,
+        "tests": 3799
+      },
+      "failed_nodes": [
+        "tests.test_local_hand_jobs_evidence_client.ClientTests::test_new_final_keeps_verified_identity_through_all_durability_barriers"
+      ],
+      "id": "full-source",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {
+        "Linux root protected temporary files": 21,
+        "Optional pinned MCP extra is not installed": 37,
+        "Real ordinary-owner chown requires root": 1,
+        "Requires isolated root child to drop capabilities": 1,
+        "Requires real root credentials; mandatory Linux CI root-fixture step covers this class": 16,
+        "UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; no predelegated manager admission; dedicated non-root account is required": 1,
+        "protected root-owned endpoint fixture requires isolated Linux root executor": 11,
+        "systemd 255 shared library unavailable; pure serialization tests still apply": 1
+      },
+      "status": "FAIL"
+    },
+    {
+      "artifacts": {
+        "full-failure-diagnostic.log": {
+          "bytes": 206,
+          "sha256": "0f08c2b53240cd9947cb2da33d46d9a050dbe72be4948316e88fe5d773d6611a"
+        },
+        "full-failure-diagnostic.xml": {
+          "bytes": 709,
+          "sha256": "8e26ab9c27bda0989c2e59cc24f07b9d93f28f1f4be6326f9741b6586f54c8f5"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "passed": 3,
+        "skipped": 0,
+        "tests": 3
+      },
+      "failed_nodes": [],
+      "id": "full-failure-diagnostic",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {},
+      "status": "PASS"
+    },
+    {
+      "artifacts": {
+        "full-final.log": {
+          "bytes": 14393,
+          "sha256": "0800514314495f51bb921502dd9a7389201321009895ab4c1b9b2fc4c776849b"
+        },
+        "full-final.xml": {
+          "bytes": 676126,
+          "sha256": "c817b67f7c5919d2800282fac9ea2243b18ca27f337b01f0ca50226f77dcbb68"
+        }
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "passed": 3713,
+        "skipped": 89,
+        "tests": 3802
+      },
+      "failed_nodes": [],
+      "id": "full-final",
+      "raw_retention": "private local isolated validation directory; available at record creation",
+      "skip_reasons": {
+        "Linux root protected temporary files": 21,
+        "Optional pinned MCP extra is not installed": 37,
+        "Real ordinary-owner chown requires root": 1,
+        "Requires isolated root child to drop capabilities": 1,
+        "Requires real root credentials; mandatory Linux CI root-fixture step covers this class": 16,
+        "UNSUPPORTED real systemd/cgroup integration: E3_SUPERVISION_UNVERIFIED; no predelegated manager admission; dedicated non-root account is required": 1,
+        "protected root-owned endpoint fixture requires isolated Linux root executor": 11,
+        "systemd 255 shared library unavailable; pure serialization tests still apply": 1
+      },
+      "status": "PASS_WITH_RETAINED_SKIPS"
+    }
+  ],
+  "schema": "local-hand-q2-offline-contract-repair-validation/v1",
+  "source_files": {
+    "tests/e3_host/q2_old_producer_admission_retry_accounting.py": {
+      "bytes": 22151,
+      "sha256": "f2f4b57b4a34bbfabe483b20865275246cdf35d3497a1c24b375deb7a508ae1b"
+    },
+    "tests/e3_host/q2_old_producer_admission_retry_consumer.py": {
+      "bytes": 10856,
+      "sha256": "1774be264d9c3b1d383d57093627ab94a953cab1fa264fd2714016f667c12599"
+    },
+    "tests/e3_host/q2_old_producer_admission_retry_offline.py": {
+      "bytes": 23454,
+      "sha256": "fce60371ddfffbb9f9864f8ef559267f7412c2cd18efbe14d0f346a87cb440fb"
+    },
+    "tests/e3_host/q2_old_producer_admission_retry_protocol.py": {
+      "bytes": 9829,
+      "sha256": "10083b880f394c21e15fc8ee01a00a9a771dcc1d0a8d9dc43eae19a9d6ba57e6"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_accounting.py": {
+      "bytes": 20499,
+      "sha256": "3dd5de70e27fa62a0653d29c0e80275d326dd2bf1ecb98e77542fc253afda6ef"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_consumer.py": {
+      "bytes": 15980,
+      "sha256": "2d086f0e95a47626fef6dda504675f1b4d16a29e73ea50d8fdd0f3accb49f257"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_offline.py": {
+      "bytes": 24469,
+      "sha256": "3e06355f5bdeff9c858fa4bc74143c658eef9d68f5b96e25a6208953a69c17e9"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_protocol.py": {
+      "bytes": 13446,
+      "sha256": "dbe6b2450bdaf65a975514b5e42df2065c39360a90db92ea32145a0fed51591b"
+    },
+    "tests/test_e3_q2_reconciliation_io_records.py": {
+      "bytes": 19458,
+      "sha256": "afa5b7ad863c61b95597b25ffa37194bf0a2f5ed309a54a28efd1cd7ccfea506"
+    },
+    "tests/test_local_hand_jobs_evidence_client.py": {
+      "bytes": 60164,
+      "sha256": "eb41365c66a75442bc19ca9ac1d71dd8f9500dd419704ebf84f8b3a90368002c"
+    },
+    "tests/test_local_hand_jobs_result_reader.py": {
+      "bytes": 19740,
+      "sha256": "2a7f46cf457d32e16293bf0a071d782d92a7feae72a27e537532d7b01f2fc63e"
+    },
+    "tools/local_hand_jobs/evidence_client.py": {
+      "bytes": 35721,
+      "sha256": "6e9e375e0eae69c11e627736f222e5591eaa2bafe14e4bd73c2ecee7fd89f1af"
+    },
+    "tools/local_hand_jobs/result_reader.py": {
+      "bytes": 18757,
+      "sha256": "2e2b4ee6dc6465e7b6fe12ff422ab06cd80a2b274a08b8349fbc0a3b2ebddc79"
+    }
+  },
+  "source_snapshot_matches_final_full_run": true,
+  "toolchain": {
+    "installation": "isolated temporary prefix and venv",
+    "pytest": "8.4.2",
+    "python": "3.12.14",
+    "python_source": "https://www.python.org/ftp/python/3.12.14/Python-3.12.14.tar.xz",
+    "python_xz": {
+      "bytes": 20820300,
+      "sha256": "5c8462af5790baf43a321a1559dbe0db06d1be4300fb85fb53c40060668e548a"
+    },
+    "requirements_build_unchanged": true,
+    "sqlite_header_source": "https://www.sqlite.org/2022/sqlite-amalgamation-3370200.zip",
+    "sqlite_header_zip": {
+      "bytes": 2502722,
+      "sha256": "cb25df0fb90b77be6660f6ace641bbea88f3d0441110d394ce418f35f7561bb0"
+    },
+    "sqlite_library": "existing system library",
+    "sqlite_library_version": "3.37.2",
+    "system_configuration_changed": false
+  },
+  "working_tree_uncommitted": true
+}

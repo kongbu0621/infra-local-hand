@@ -437,6 +437,12 @@ class BoundedFileWriter:
             self._assert_bound()
             if _same(os.fstat(fd)) != _same(final_stat):
                 raise EvidenceError("CONFLICT", "evidence changed during persistence")
+            # A same-size rewrite during a durability barrier can retain both
+            # timestamps. Rehash the same held file after all barriers before
+            # returning its name; metadata equality alone cannot verify bytes.
+            os.lseek(fd, 0, os.SEEK_SET)
+            self._verify_descriptor(fd)
+            self._assert_bound()
         return self.final
 
     def close(self) -> None:

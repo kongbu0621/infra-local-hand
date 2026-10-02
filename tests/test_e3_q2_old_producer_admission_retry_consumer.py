@@ -85,7 +85,7 @@ def clocks(monkeypatch):
     return events
 
 
-def successful_reader(monkeypatch, calls):
+def successful_reader(monkeypatch, calls, *, mountinfo=MOUNTINFO):
     def read_fact(kind, guard, report):
         calls.append(kind)
         guard()
@@ -93,7 +93,7 @@ def successful_reader(monkeypatch, calls):
         report.update(status="OBSERVED", target=kind,
             maximum_bytes=64 if kind == "boot" else 1024**2,
             qualification={"content_open_noatime": False})
-        return (BOOT + "\n").encode() if kind == "boot" else MOUNTINFO
+        return (BOOT + "\n").encode() if kind == "boot" else mountinfo
     monkeypatch.setattr(m.kernel, "read_fact", read_fact)
 
 
@@ -290,6 +290,91 @@ def test_reader_error_is_not_downgraded_or_retried(monkeypatch):
 ])
 def test_mountinfo_parser_rejects_malformed_or_ambiguous_inputs(raw):
     with pytest.raises(ValueError):
+        m.parse_mountinfo(raw)
+
+
+@pytest.mark.parametrize("namespace", ["cgroup", "ipc", "mnt", "net", "pid",
+    "time", "user", "uts"])
+def test_namespace_root_is_preserved_only_as_nsfs_root(namespace):
+    root = namespace + ":[4026531840]"
+    raw = f"13 10 0:4 {root} /run/snapd/ns/example.mnt rw - nsfs nsfs rw\n".encode()
+
+    row, = m.parse_mountinfo(raw)
+
+    assert row["root"] == root
+    assert row["mountpoint"] == "/run/snapd/ns/example.mnt"
+    assert row["filesystem"] == "nsfs"
+
+
+def test_unrelated_nsfs_mount_preserves_ext4_parent_observation(monkeypatch):
+    manifest, locator, context = package()
+    stable_identity(monkeypatch)
+    clocks(monkeypatch)
+    calls = []
+    mountinfo = MOUNTINFO + (
+        b"13 10 0:4 mnt:[4026531840] /run/snapd/ns/example.mnt rw - nsfs nsfs rw\n"
+    )
+    successful_reader(monkeypatch, calls, mountinfo=mountinfo)
+
+    result = observe(manifest, locator, context)
+
+    assert calls == ["boot", "mountinfo"]
+    assert {role: value["containing_mount"]["mount_id"]
+        for role, value in result["parents"].items()} == {"consumption": 12, "evidence": 11}
+    assert all(value["containing_mount"]["filesystem"] == "ext4"
+        and value["filesystem_qualified"] is False
+        and value["peak_and_persistence_qualified"] is False
+        for value in result["parents"].values())
+    assert result["status"] == "OBSERVED_NOT_READY"
+    assert all(result[name] is False for name in ("field_ready", "allow_run",
+        "guest_executed", "remote_attempted", "host_persistence_attempted"))
+
+
+def test_nsfs_parent_overlay_is_observed_without_ext4_or_readiness_claim(monkeypatch):
+    manifest, locator, context = package()
+    stable_identity(monkeypatch)
+    clocks(monkeypatch)
+    calls = []
+    mountinfo = MOUNTINFO + (
+        b"13 11 0:4 mnt:[4026531840] /private/evidence-parent rw - nsfs nsfs rw\n"
+    )
+    successful_reader(monkeypatch, calls, mountinfo=mountinfo)
+    # Mount selection must retain namespace mounts. Dropping them would hide
+    # a more specific containing mount from future filesystem qualification.
+    rows = m.parse_mountinfo(mountinfo)
+    selected = m._containing_mount(rows, "/private/evidence-parent/child")
+    assert selected["mount_id"] == 13
+    assert selected["filesystem"] == "nsfs"
+    result = observe(manifest, locator, context)
+    evidence = result["parents"]["evidence"]
+    assert evidence["containing_mount"]["mount_id"] == 13
+    assert evidence["containing_mount"]["filesystem"] == "nsfs"
+    assert evidence["filesystem_qualified"] is False
+    assert evidence["peak_and_persistence_qualified"] is False
+    assert result["field_ready"] is False
+    assert result["allow_run"] is False
+    assert calls == ["boot", "mountinfo"]
+
+
+@pytest.mark.parametrize("root", [
+    "mnt:[]", "mnt:[0]", "mnt:[01]", "mnt:[-1]", "mnt:[+1]", "mnt:[a]",
+    "mnt:[1", "mnt:1]", "mnt:[1]/child", "unknown:[1]",
+    "mnt:[9223372036854775808]", "mnt:[" + "1" * 100 + "]",
+])
+def test_invalid_namespace_root_notation_is_rejected(root):
+    raw = f"13 10 0:4 {root} /run/example.mnt rw - nsfs nsfs rw\n".encode()
+    with pytest.raises(ValueError, match="NSFS_ROOT"):
+        m.parse_mountinfo(raw)
+
+
+@pytest.mark.parametrize("raw", [
+    b"13 10 8:1 mnt:[4026531840] /run/example.mnt rw - ext4 /dev/root rw\n",
+    b"13 10 0:4 mnt:[4026531840] mnt:[4026531840] rw - nsfs nsfs rw\n",
+    b"13 10 0:4 mnt:[4026531840] /../run/example.mnt rw - nsfs nsfs rw\n",
+    b"13 10 0:4 /../root /run/example.mnt rw - nsfs nsfs rw\n",
+])
+def test_nsfs_root_exception_does_not_bypass_other_path_checks(raw):
+    with pytest.raises(ValueError, match="MOUNTINFO_PATH"):
         m.parse_mountinfo(raw)
 
 

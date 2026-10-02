@@ -19,8 +19,10 @@ from e3_host import q2_reconciliation_records as records
 class ProtectedFiles(unittest.TestCase):
     def setUp(self):
         # /tmp and the Work workspace have writable ancestors. They correctly
-        # fail the production walker; use the caller's protected home for tests.
-        home = Path.home()
+        # fail the production walker; use an explicitly supplied protected
+        # fixture parent, or the caller's protected home for tests.
+        supplied = os.environ.get("LOCAL_HAND_Q2_TEST_PARENT")
+        home = Path(io.absolute(supplied)) if supplied is not None else Path.home()
         if any(os.stat(p).st_mode & 0o022 for p in (home, *home.parents)):
             self.skipTest("No protected local temporary parent")
         self.tmp = tempfile.TemporaryDirectory(prefix="q2-reconciliation-test-", dir=home)
@@ -179,12 +181,38 @@ class ProtectedFiles(unittest.TestCase):
         path = self.file()
         with io.read_pinned(path, self.guard) as held:
             path.write_bytes(b'{"key":"other"}\n')
-            with self.assertRaisesRegex(ValueError, "METADATA_CHANGED"):
+            # A same-size rewrite may retain its timestamps; the held byte
+            # comparison must still reject it when the metadata comparison does not.
+            with self.assertRaisesRegex(ValueError, "METADATA_CHANGED|CONTENT_CHANGED"):
                 io.verify_held(held)
         with io.read_pinned(path, self.guard) as held:
             path.chmod(0o400)
             with self.assertRaisesRegex(ValueError, "METADATA_CHANGED"):
                 io.verify_held(held)
+
+    def test_same_inode_content_drift_with_equal_timestamps_is_rejected(self):
+        path = self.file()
+        real_metadata = io.metadata
+        with io.read_pinned(path, self.guard) as held:
+            before = dict(held.metadata)
+            path.write_bytes(b'{"key":"other"}\n')
+            after = real_metadata(path.stat())
+            self.assertEqual((before["device"], before["inode"], before["size"]),
+                             (after["device"], after["inode"], after["size"]))
+
+            def colliding_timestamps(info):
+                value = real_metadata(info)
+                if (value["device"], value["inode"]) == (before["device"], before["inode"]):
+                    for name in ("mtime_ns", "ctime_ns"):
+                        value[name] = before[name]
+                return value
+
+            # Preserve real bytes, inode and all other metadata. Only the target
+            # file's observed timestamp precision is simulated.
+            with patch.object(io, "metadata", side_effect=colliding_timestamps):
+                self.assertEqual(before, io.metadata(path.stat()))
+                with self.assertRaisesRegex(ValueError, "RECONCILIATION_CONTENT_CHANGED"):
+                    io.verify_held(held)
 
     def test_directory_renaming_after_open_rejected(self):
         tree = self.root / "tree"

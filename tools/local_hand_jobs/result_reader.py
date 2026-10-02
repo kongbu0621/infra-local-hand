@@ -304,8 +304,32 @@ def _read_result(payload, allocation, deadline):
                 or _file_state(os.stat(root, follow_symlinks=False)) != root_before
                 or str(Path(root).resolve()) != root):
             raise _invalid("Result file or evidence root changed during collection")
+        raw = b"".join(chunks)
+        # An in-place, same-size rewrite can retain the same mtime/ctime on a
+        # filesystem with coalesced timestamp updates. Recheck the bytes through
+        # the original descriptor, within the original reader deadline and bound.
         runner._deadline_remaining(deadline)
-        return _result(_strict_json(b"".join(chunks), MAX_RESULT_BYTES), payload["execution_id"], payload["phase"])
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        verified = 0
+        while True:
+            runner._deadline_remaining(deadline)
+            chunk = os.read(descriptor, min(65536, MAX_RESULT_BYTES + 1 - verified))
+            runner._deadline_remaining(deadline)
+            if not chunk:
+                break
+            if verified + len(chunk) > MAX_RESULT_BYTES:
+                raise _invalid("Result file exceeds its fixed byte bound")
+            if chunk != raw[verified:verified + len(chunk)]:
+                raise _invalid("Result file content changed during collection")
+            verified += len(chunk)
+        if (verified != len(raw) or _file_state(os.fstat(descriptor)) != _file_state(before)
+                or _file_state(os.stat(payload["result_name"], dir_fd=parent, follow_symlinks=False)) != _file_state(before)
+                or _file_state(os.fstat(parent)) != root_before
+                or _file_state(os.stat(root, follow_symlinks=False)) != root_before
+                or str(Path(root).resolve()) != root):
+            raise _invalid("Result file or evidence root changed during collection")
+        runner._deadline_remaining(deadline)
+        return _result(_strict_json(raw, MAX_RESULT_BYTES), payload["execution_id"], payload["phase"])
     finally:
         bootstrap._close_all(([descriptor] if descriptor is not None else []) + [parent], sys.exc_info()[1])
 

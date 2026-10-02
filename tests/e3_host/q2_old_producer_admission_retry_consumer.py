@@ -44,6 +44,7 @@ _BOOT_BYTES = re.compile(
     rb"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\n")
 _DEVICE = re.compile(r"[0-9]+:[0-9]+")
 _ESCAPE = re.compile(r"\\(040|011|012|134)")
+_NSFS_ROOT = re.compile(r"(?:cgroup|ipc|mnt|net|pid|time|user|uts):\[([1-9][0-9]*)\]")
 
 
 def _require(condition, reason):
@@ -113,6 +114,17 @@ def _mount_path(value):
     return value
 
 
+def _mount_root(value, filesystem):
+    # Namespace dentries have a kernel name such as mnt:[4026531840], not a
+    # filesystem path. This exception applies only to an nsfs row's root.
+    if filesystem == "nsfs" and not value.startswith("/"):
+        match = _NSFS_ROOT.fullmatch(value)
+        _require(match is not None and len(match[1]) <= 19
+            and int(match[1]) < 2**63, "OLD_PRODUCER_MOUNTINFO_NSFS_ROOT")
+        return value
+    return _mount_path(value)
+
+
 def parse_mountinfo(raw):
     """Purely parse the one bounded mountinfo byte string returned by K."""
     _require(type(raw) is bytes and 0 < len(raw) <= MOUNTINFO_LIMIT
@@ -147,7 +159,7 @@ def parse_mountinfo(raw):
             "mount_id": mount_id,
             "parent_mount_id": parent_mount_id,
             "device": fields[2],
-            "root": _mount_path(_unescape(fields[3])),
+            "root": _mount_root(_unescape(fields[3]), fields[split + 1]),
             "mountpoint": _mount_path(_unescape(fields[4])),
             "mount_options": mount_options,
             "optional_fields": fields[6:split],
