@@ -18,6 +18,9 @@ Q2 使用既有 CLOSED `LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1` 的 P1–P3
 其祖先。当时修改仍在工作区，未形成新的已提交 D，不能把该 HEAD 当作包含本轮修改的
 候选。最终变更源码的大小与 SHA-256 见
 [验证索引](evidence/q2-offline-contract-repair-20261002/validation.json)。
+后续准确源码提交 `661e96772c64433d1cd0eebf122e165781d8c11c` 的逐文件映射见
+[提交映射](evidence/q2-offline-contract-repair-20261002/committed-source.json)，剩余资格见
+[三项实机条件复核](Q2_FIELD_GAP_REVIEW_20261002.md)。
 A 的三份文档、Owner 决定、历史失败和既有 partial prototype 保持原字节及原语义。
 固定现场产品 `1a900e4a38e9567655f21cbf3c3f17941de1a8d5` 及其 artifact pins 不变。
 

@@ -1,0 +1,86 @@
+{
+  "allow_run": false,
+  "date": "2026-10-02",
+  "field_ready": false,
+  "frozen_field_product": {
+    "artifacts": {
+      "code-manifest.json": "c764a4f6a05d2b6aaa6f8c1d35617a520dba1c1e91fad54b0e93e02ba856fe86",
+      "source.bundle": "36fddae6dd57b2d80b90b4eff5d5bf40cb2f6a29d91d946c1bbefabdb5ae2fc0",
+      "wheel": "76a2573f9b5f0a1e9e260bf215f57d6cd011f49736653e0939ebd1b2ba034d9a"
+    },
+    "commit": "1a900e4a38e9567655f21cbf3c3f17941de1a8d5",
+    "payload_sha256": "fbd773a9a669440ad015dfe0967b3d505d3cabc91b11fee7ddb4015d90aae118",
+    "tree": "ffffce7258036a974d44f6dc8b3ed022d4127aac"
+  },
+  "full_validation": {
+    "errors": 0,
+    "failures": 0,
+    "passed": 3713,
+    "skipped": 89,
+    "tests": 3802
+  },
+  "guest_executed": false,
+  "normal_chain_executions": 0,
+  "publication_target": "origin/main",
+  "schema": "local-hand-q2-offline-contract-committed-source-mapping/v1",
+  "source_commit": "661e96772c64433d1cd0eebf122e165781d8c11c",
+  "source_file_pins": {
+    "tests/e3_host/q2_old_producer_admission_retry_accounting.py": {
+      "bytes": 22151,
+      "sha256": "f2f4b57b4a34bbfabe483b20865275246cdf35d3497a1c24b375deb7a508ae1b"
+    },
+    "tests/e3_host/q2_old_producer_admission_retry_consumer.py": {
+      "bytes": 10856,
+      "sha256": "1774be264d9c3b1d383d57093627ab94a953cab1fa264fd2714016f667c12599"
+    },
+    "tests/e3_host/q2_old_producer_admission_retry_offline.py": {
+      "bytes": 23454,
+      "sha256": "fce60371ddfffbb9f9864f8ef559267f7412c2cd18efbe14d0f346a87cb440fb"
+    },
+    "tests/e3_host/q2_old_producer_admission_retry_protocol.py": {
+      "bytes": 9829,
+      "sha256": "10083b880f394c21e15fc8ee01a00a9a771dcc1d0a8d9dc43eae19a9d6ba57e6"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_accounting.py": {
+      "bytes": 20499,
+      "sha256": "3dd5de70e27fa62a0653d29c0e80275d326dd2bf1ecb98e77542fc253afda6ef"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_consumer.py": {
+      "bytes": 15980,
+      "sha256": "2d086f0e95a47626fef6dda504675f1b4d16a29e73ea50d8fdd0f3accb49f257"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_offline.py": {
+      "bytes": 24469,
+      "sha256": "3e06355f5bdeff9c858fa4bc74143c658eef9d68f5b96e25a6208953a69c17e9"
+    },
+    "tests/test_e3_q2_old_producer_admission_retry_protocol.py": {
+      "bytes": 13446,
+      "sha256": "dbe6b2450bdaf65a975514b5e42df2065c39360a90db92ea32145a0fed51591b"
+    },
+    "tests/test_e3_q2_reconciliation_io_records.py": {
+      "bytes": 19458,
+      "sha256": "afa5b7ad863c61b95597b25ffa37194bf0a2f5ed309a54a28efd1cd7ccfea506"
+    },
+    "tests/test_local_hand_jobs_evidence_client.py": {
+      "bytes": 60164,
+      "sha256": "eb41365c66a75442bc19ca9ac1d71dd8f9500dd419704ebf84f8b3a90368002c"
+    },
+    "tests/test_local_hand_jobs_result_reader.py": {
+      "bytes": 19740,
+      "sha256": "2a7f46cf457d32e16293bf0a071d782d92a7feae72a27e537532d7b01f2fc63e"
+    },
+    "tools/local_hand_jobs/evidence_client.py": {
+      "bytes": 35721,
+      "sha256": "6e9e375e0eae69c11e627736f222e5591eaa2bafe14e4bd73c2ecee7fd89f1af"
+    },
+    "tools/local_hand_jobs/result_reader.py": {
+      "bytes": 18757,
+      "sha256": "2e2b4ee6dc6465e7b6fe12ff422ab06cd80a2b274a08b8349fbc0a3b2ebddc79"
+    }
+  },
+  "source_parent": "50c5590995fc75ca68e2970730b9384a5b816302",
+  "source_tree": "2e977e9887f9e6e1a97b86082d1664772c0f7e3b",
+  "validation_snapshot": "docs/a2-execution/evidence/q2-offline-contract-repair-20261002/validation.json",
+  "validation_snapshot_is_historical": true,
+  "validation_snapshot_sha256": "f1d1d9f4b99b42c47a1aef77bbf554e330dcda1c4a86ea8825f8e448532e7816"
+}
