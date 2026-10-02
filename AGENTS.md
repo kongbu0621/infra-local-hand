@@ -794,11 +794,21 @@ program, test, executable prototype, dependency, runtime configuration or field 
 implementation D must descend from C. Product implementation
 `1a900e4a38e9567655f21cbf3c3f17941de1a8d5` is not this scope's D.
 
+Implementation D is `4b71824a4660723d064969cbf0c39cd4325dd62a`, tree
+`1fe7a678ce857611b617ba2429a8298da2cc6141`, with C as its direct parent.  Its
+[implementation review](docs/a2-execution/Q2_OLD_PRODUCER_ADMISSION_RETRY_IMPLEMENTATION_REVIEW.md)
+records the four-field parser adoption proof, the two-view consumer integration and
+the bounded validation results.  The generated archive is explicitly a partial,
+non-executable contract prototype: it has no `TASK.txt`, reports both future-package
+contract completion and P4 qualification false, and grants no field authority.
+
 P4 remains independently **BLOCKED**. H07 and both parent filesystems' qualification,
 evidence peak and persistence proofs are open; current materials must remain
 `field_ready=false`, `allow_run=false` and without executable `TASK.txt`. No live ZIP,
-host consumption object or guest connection is authorized. Even after accurate package
-and qualification work, Owner must issue a separate stable P4 event binding exact
+host consumption object or guest connection is authorized. Original-host terminal and
+proc/PID namespace alignment remains `EXTERNAL_ASSUMPTION_NOT_PROVEN`; it is not supplied
+by the fixed reader or the governance premise. Even after accurate package and
+qualification work, Owner must issue a separate stable P4 event binding exact
 scope/batch/A/C/D/package/evidence limits and once/no-retry terms. Bare
 “continue/authorized continue”, B/C/D, CI/READY, a ZIP or TASK cannot replace it.
 

@@ -1,0 +1,111 @@
+{
+  "artifacts": {
+    "corrected_source": {
+      "basename": "local-hand-system-manager-1a900e4-20261001e-corrected.zip",
+      "bytes": 3887651,
+      "mode": "0600",
+      "nlink": 1,
+      "sha256": "5805dcd2a45f150f0e5b7062a17b46137d53e889e1ea160601d7c75fb529e886"
+    },
+    "non_executable_prototype": {
+      "allow_run": false,
+      "basename": "local-hand-old-producer-admission-retry-20261002a-PARTIAL-NON-EXECUTABLE-4b71824.zip",
+      "bytes": 9516,
+      "contains_task_txt": false,
+      "field_ready": false,
+      "future_package_contract_complete": false,
+      "member_count": 5,
+      "mode": "0600",
+      "nlink": 1,
+      "p4_contract_qualified": false,
+      "sha256": "fd83b6a2fd8eed3a8bb4b5372c12c100652d6d37a1529d52504f592e009ae1f7",
+      "status": "OFFLINE_PARTIAL_PROTOTYPE_VERIFIED"
+    },
+    "parser_repair": {
+      "adoption_status": "OFFLINE_REPAIR_ADOPTION_VERIFIED",
+      "archive_only_status": "OFFLINE_REPAIR_ARCHIVE_PIN_VERIFIED",
+      "basename": "local-hand-system-manager-1a900e4-old-producer-parser-fix-20261002.zip",
+      "bytes": 12864,
+      "exact_insertion": {
+        "bytes": 353,
+        "offset": 28558,
+        "sha256": "0fc6d020b99346e159de5496b82f1c5dbd268bae179d1f7934545aaf4511c39e"
+      },
+      "mode": "0600",
+      "nlink": 1,
+      "original_helper_sha256": "4014a80998469607f8a279a4fc7b7abbeff61e349657b7d8224429d142dfa8db",
+      "patched_helper_sha256": "3e6521f6065a3bb61e12b0f2cdcbf1c7f2d40e138269bf85d386aeb2741ab21a",
+      "sha256": "2ddb55db15f73738116377de6fb8fa8fba9c5cc2cf23f1f59e2dc112ce63be70"
+    }
+  },
+  "authority": {
+    "baseline": "68424df2ddbf812b9479ffa7a64dcaa59a2a9f76",
+    "closure": "179652cb9487163d83c004d358e4d4b49409694c",
+    "owner_decision_event": "LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-CLOSURE-20261002-01",
+    "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
+  },
+  "blockers": [
+    "P2_FUTURE_PACKAGE_CONTRACT_INCOMPLETE",
+    "H07_RATE_PAUSE_AND_INDEPENDENT_REMOTE_STOP_UNPROVEN",
+    "CONSUMPTION_PARENT_FILESYSTEM_UNPROVEN",
+    "CONSUMPTION_PARENT_PEAK_AND_PERSISTENCE_UNPROVEN",
+    "EVIDENCE_PARENT_FILESYSTEM_UNPROVEN",
+    "EVIDENCE_PARENT_LIMITS_PEAK_AND_PERSISTENCE_UNPROVEN",
+    "ORIGINAL_HOST_PROC_PID_NAMESPACE_ALIGNMENT_UNPROVEN",
+    "OWNER_P4_STABLE_EVENT_NOT_ISSUED"
+  ],
+  "field_activity": {
+    "consumption_object_created": false,
+    "executable_zip_generated": false,
+    "guest_contacted": false,
+    "ssh_attempted": false,
+    "task_member_generated": false
+  },
+  "implementation": {
+    "commit": "4b71824a4660723d064969cbf0c39cd4325dd62a",
+    "direct_parent_is_closure": true,
+    "parent": "179652cb9487163d83c004d358e4d4b49409694c",
+    "tree": "1fe7a678ce857611b617ba2429a8298da2cc6141"
+  },
+  "qualifications": {
+    "contract_completeness": "PARTIAL_NON_EXECUTABLE_PROTOTYPE",
+    "namespace_alignment": "EXTERNAL_ASSUMPTION_NOT_PROVEN",
+    "p4_contract_qualified": false,
+    "trusted_storage_no_same_uid_tamper_owner_accepted": true,
+    "trusted_storage_no_same_uid_tamper_technical_proof": false
+  },
+  "schema": "local-hand-q2-old-producer-admission-retry-implementation-review/v1",
+  "scope": "LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1",
+  "status": "OFFLINE_IMPLEMENTATION_VERIFIED_P4_BLOCKED",
+  "tests": {
+    "diagnostic_full_suite_umask_0002": {
+      "failed": 70,
+      "passed": 3347,
+      "skipped": 89
+    },
+    "kernel_and_consumer_umask_0002": {
+      "failed": 0,
+      "passed": 61,
+      "skipped": 0
+    },
+    "related_regression_umask_0002": {
+      "failed": 0,
+      "passed": 478,
+      "skipped": 21
+    },
+    "standard_full_suite_umask_0022": {
+      "failed": 2,
+      "failures": [
+        "ProtectedFiles.test_content_and_mode_drift_after_read_are_rejected",
+        "ResultReaderTests.test_same_inode_same_size_rewrite_and_name_replacement_during_read_are_rejected"
+      ],
+      "passed": 3415,
+      "skipped": 89
+    },
+    "targeted_new_scope": {
+      "failed": 0,
+      "passed": 86,
+      "skipped": 0
+    }
+  }
+}
