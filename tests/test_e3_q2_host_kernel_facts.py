@@ -34,6 +34,12 @@ def proc(monkeypatch):
         pid = str(os.getpid())
         (root / "proc" / pid).mkdir()
         (root / "proc" / pid / "mountinfo").write_bytes(b"1 0 0:1 / / rw - proc proc rw\n")
+        for protected in (root / "proc", root / "proc/sys",
+                root / "proc/sys/kernel", root / "proc/sys/kernel/random",
+                root / "proc" / pid):
+            protected.chmod(0o755)
+        (root / "proc/sys/kernel/random/boot_id").chmod(0o644)
+        (root / "proc" / pid / "mountinfo").chmod(0o644)
         real_open, real_close = os.open, os.close
         calls, opened, closed = [], set(), set()
         def tracked_open(name, flags, **kwargs):
@@ -215,6 +221,7 @@ def test_name_replacement_before_read_is_detected(proc, monkeypatch):
     def replace(self, **kwargs):
         proc.boot.rename(proc.boot.with_name("original"))
         proc.boot.write_bytes(BOOT)
+        proc.boot.chmod(0o644)
         return original(self, **kwargs)
     monkeypatch.setattr(m._Reader, "verify", replace)
     monkeypatch.setattr(m.os, "read", lambda *a: pytest.fail("No read before name check"))
@@ -306,6 +313,13 @@ except OSError as error:
 spec=importlib.util.spec_from_file_location("reader", sys.argv[1])
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 results=[]
+try:
+    fd=os.open("/proc/sys/kernel/random/boot_id",
+        os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK|os.O_NOATIME)
+except OSError as error:
+    noatime_errno=error.errno
+else:
+    os.close(fd); noatime_errno=0
 for kind in ("boot", "mountinfo"):
     report={}
     try:
@@ -313,7 +327,8 @@ for kind in ("boot", "mountinfo"):
     except m.KernelFactError:
         pass
     results.append(dict(kind=kind, status=report["status"], error=report.get("error")))
-print(json.dumps(dict(euid=os.geteuid(), results=results)))
+print(json.dumps(dict(euid=os.geteuid(), noatime_errno=noatime_errno,
+    results=results)))
 '''
     result = subprocess.run([sys.executable, "-I", "-B", "-S", "-c", code, str(source)],
         text=True, capture_output=True, timeout=15, check=True)
@@ -321,6 +336,7 @@ print(json.dumps(dict(euid=os.geteuid(), results=results)))
     if outcome.get("status") == "IDENTITY_UNAVAILABLE":
         pytest.skip("Real ordinary identity unavailable, errno=" + str(outcome["errno"]))
     assert outcome["euid"] != 0
+    assert outcome["noatime_errno"] == errno.EPERM
     blocked = [row for row in outcome["results"] if row["status"] != "OBSERVED"]
     if blocked:
         pytest.skip("Real ordinary proc qualification BLOCKED: " + json.dumps(blocked, sort_keys=True))
