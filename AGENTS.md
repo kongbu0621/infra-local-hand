@@ -763,9 +763,10 @@ no field run. The complete M1–M4 batch is authorized without repeated per-item
 approval; material changes retain R's change rule. Unaffected CLOSED work remains
 valid. Do not ask for a cyber access qualification.
 
-### Q2 old-producer admission retry proposal
+### Q2 old-producer admission retry
 
-Scope `LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1` is **PROPOSED / Gate OPEN** at
+Scope `LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1` is **CLOSED for P1–P3 implementation
+and P4 contract/qualification verification** at
 documentation A `68424df2ddbf812b9479ffa7a64dcaa59a2a9f76`. Its
 [baseline registration](docs/governance/Q2_OLD_PRODUCER_ADMISSION_RETRY_BASELINE.md)
 pins the [requirements](docs/a2-execution/q2-old-producer-admission-retry/REQUIREMENTS.md),
@@ -773,21 +774,24 @@ pins the [requirements](docs/a2-execution/q2-old-producer-admission-retry/REQUIR
 [implementation plan](docs/a2-execution/q2-old-producer-admission-retry/IMPLEMENTATION_PLAN.md).
 R, source/integrity, Owner-only authority, mandate and change control remain those
 declared above. The current executor directly read the private pinned rule at R and
-verified its recorded SHA-256. This scope remains OPEN because there is no Owner B;
-this registration does not substitute an Owner decision.
+verified its recorded SHA-256. Owner B at 2026-10-02 12:59:30 +08:00, event
+`LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-CLOSURE-20261002-01`, is retained verbatim in
+[the Owner decision](docs/governance/Q2_OLD_PRODUCER_ADMISSION_RETRY_OWNER_DECISION.md).
+Owner explicitly accepted A's disclosed trusted-storage/no-same-UID-tamper governance
+premise; this does not make it a technical anti-rollback proof.
 
 The consumed `20261001e` M4 remains `FAILED_RETAINED`: its private admission helper
 raised `KeyError: ExecStartPre` before provision and before any normal-chain execution.
-The proposal retains that batch and introduces a separate create-only `20261002a`
-contract for the four omitted empty Exec-array fields. It also proposes the bounded
+The approved plan retains that batch and defines a separate create-only `20261002a`
+contract for the four omitted empty Exec-array fields. It also authorizes the bounded
 integration of the CLOSED K reader into this new consumer for boot_id and its own
 mountinfo only, after exact ordinary-identity verification. The old K authorization
 covered local preflight only and grants no consumer, package, batch or field authority.
 
-There is no Owner B, bookkeeping-only C or implementation D for this scope. Until an
-exact B binds A and accepts the disclosed trusted-storage/no-same-UID-tamper governance
-premise, only documentation and read-only review are allowed. After B, C must be a
-separate closure-only commit; D must descend from C. Product implementation
+This commit is the independent bookkeeping-only C. A's three documents, their historical
+OPEN labels and the OPEN baseline registration remain byte-identical. C contains no new
+program, test, executable prototype, dependency, runtime configuration or field action;
+implementation D must descend from C. Product implementation
 `1a900e4a38e9567655f21cbf3c3f17941de1a8d5` is not this scope's D.
 
 P4 remains independently **BLOCKED**. H07 and both parent filesystems' qualification,
