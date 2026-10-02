@@ -1,0 +1,155 @@
+{
+  "schema": "local-hand-q2-namespace-fixture-readiness-review/v1",
+  "observed_at": "2026-10-02T21:54:22+08:00",
+  "review_base_commit": "d142b99a10edda2e846caaa42538ba0eb81d1349",
+  "review_base_tree": "4c76da1de2e705696820f2517c25c1025bdb1ec6",
+  "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "scope": "LH-Q2-NAMESPACE-REFERENCE-v1",
+  "proposed_A": "dfdd653dd48388d8ab1a2554d16bf5b610edba10",
+  "authoritative_A_bytes_unchanged": true,
+  "gate_state": "OPEN",
+  "owner_closure_decision": null,
+  "independent_closure_commit": null,
+  "result": {
+    "admission_inputs": "NOT_PREPARED",
+    "existing_environment_fitness": "NOT_PROVEN",
+    "native_qualification": "BLOCKED / NOT_RUN",
+    "physical_fixture_absence_proven": false,
+    "physical_support_impossibility_proven": false,
+    "collector_implementation": "NOT_IMPLEMENTED_NOT_AUTHORIZED",
+    "historical_Q1_Q2_evidence_preserved": true
+  },
+  "missing_environment_bindings": [
+    "exact supplied fixture/reference/runtime/ordinary context",
+    "existing ordinary supervisor and stdio-only launcher source/qualification",
+    "aggregate 128MiB RAM / 5s CPU and 3-task /24-per-process/72-FD binding",
+    "original 30s dual-clock, external G stop/wait/stdout+stderr EOF support",
+    "N09 already supplied local pause fixture support",
+    "native audit / receiver / supervision incremental costs"
+  ],
+  "deferred_post_authorization_results": [
+    "collector D and final artifact/context pins",
+    "N01-N12 collector-native observations and session receipts"
+  ],
+  "reviewed_git_sources": {
+    "AGENTS.md": {
+      "git_blob": "cee03025df40d3900bb619653ebea85ba17f7429",
+      "bytes": 66076,
+      "sha256": "464e5ce0392f5330d672ace543839fc2baeb82dc76c98638f32d83bb7fd74122"
+    },
+    "docs/governance/Q2_NAMESPACE_REFERENCE_BASELINE.md": {
+      "git_blob": "0843641aff7eb84c65d7cbb7ceb4a1703b844464",
+      "bytes": 3429,
+      "sha256": "3cfec54ad7fa145772c83ef61fe13005b0bf2c3443819cfd8abbb1fa9f3b4909"
+    },
+    "docs/a2-execution/q2-namespace-reference/REQUIREMENTS.md": {
+      "git_blob": "23500ef971de35bbf25dd20fdb6c83d877db486f",
+      "bytes": 12935,
+      "sha256": "e00c6ceae866d1ca6d8111b5440220d327f70701eb6e72d840ecc88b513bf5db"
+    },
+    "docs/a2-execution/q2-namespace-reference/ARCHITECTURE.md": {
+      "git_blob": "5b62ef8255583eb394868f2c12df0664af598db5",
+      "bytes": 18112,
+      "sha256": "7d1a9fa9dac7ab17e0de351bcde4be381ead708b091a23d9e645d31510fbf564"
+    },
+    "docs/a2-execution/q2-namespace-reference/IMPLEMENTATION_PLAN.md": {
+      "git_blob": "54173aad751370ec12aa88d77ecb349c8e32ad96",
+      "bytes": 9576,
+      "sha256": "24698ea512ed510bde894771b316b44343c1c7a1ecbb09a7f91ad240c24c6ea0"
+    },
+    "docs/a2-execution/E3_QUOTA_Q1_CLOSEOUT_REVIEW.md": {
+      "git_blob": "58e0356767854d444cc5f4f7e806072c0f8ef6ff",
+      "bytes": 10095,
+      "sha256": "96993f1f13671bec028e796a52018005ed7367150ed4b4f59fea309ae2008209"
+    },
+    "docs/a2-execution/Q2_SUPERVISOR_STARTUP_REPAIR_VERIFICATION.md": {
+      "git_blob": "bfb9bce632470af67173393c8f046771c84f8307",
+      "bytes": 11920,
+      "sha256": "76c5105188c493567bd024dd534651d7f4bb71fbba64277eb00b53084f30bf12"
+    },
+    "docs/a2-execution/Q2_FIXTURE_PREPARATION_VERIFICATION.md": {
+      "git_blob": "f60b8fc67fbee81d89554b3165a1d6e15b0f72ec",
+      "bytes": 5567,
+      "sha256": "f7624aeabe845efec13e9966134baeda81cd6af8e1ea2a5354982afca07c6e0c"
+    },
+    "docs/a2-execution/evidence/q2-readonly-return-20260927/manifest.json": {
+      "git_blob": "352eae9cdd835c9669a8a4eb857da7d7a12779bc",
+      "bytes": 8565,
+      "sha256": "15c6e3461cd552a11fd9555a83f2235bf0ec895f2ea7079b0df551f936e6652f"
+    },
+    "docs/a2-execution/evidence/q2-field-gap-20261002/closure-order-verification.json": {
+      "git_blob": "e62a3d113a1d27607ad7f12c84bc1f71a0558e25",
+      "bytes": 4148,
+      "sha256": "323885059b98a0c3fdd6777ab247f6895e83fae6a4efaca3446f7793e99c5fb0"
+    },
+    "docs/a2-execution/evidence/q2-field-gap-20261002/native-ci-41309e2.json": {
+      "git_blob": "799c71ae730a6bb591a85147fec4b1461effadd5",
+      "bytes": 3074,
+      "sha256": "f72938e41667323f48833f4162e83455a734d0e972a25366ddc10e556a1397d6"
+    },
+    "docs/a2-execution/SYSTEMD_CANCELLATION_REPAIR.md": {
+      "git_blob": "9213aa16f269309d055bc54ef31ecfd3c0f3ece9",
+      "bytes": 6257,
+      "sha256": "6592b0cbed864911b7192bafb2a5cecea91539a13894cd3583c99e340efccfed"
+    },
+    "tests/e3_host/q2_supervisor.py": {
+      "git_blob": "b7c87aa8c2b70ee157107d138835fa6e011871d3",
+      "bytes": 49654,
+      "sha256": "5e8c1747fd8104d94f6e7dbe02212d64e9086a167c1e854477501222b9c4305a"
+    },
+    "tests/e3_host/q2_fixture_check.py": {
+      "git_blob": "293b96b4beaf51766c0640e1d2e6cd97c1679319",
+      "bytes": 40233,
+      "sha256": "d1730583c3b6be090d398785d57eb6c5d20c0cf55f5b5efb090e833aa8211b9c"
+    },
+    "tools/verify_installed.py": {
+      "git_blob": "38671dc027a6f0ca8fd21d2f7d90b704381da932",
+      "bytes": 117482,
+      "sha256": "e527af068e65abc94e30023af69386d64a0068e4d77862eb8eb002265cf2090c"
+    },
+    "tests/test_local_hand_jobs_runner.py": {
+      "git_blob": "0b92ed20a9e675e13c91d5b0704b42401b7aa9dc",
+      "bytes": 78813,
+      "sha256": "26dc2a26785eb3213217963479fa1ac1569159e046400320f0d01965b8961b97"
+    },
+    "tests/test_e3_q2_reconciliation_collect.py": {
+      "git_blob": "07c3c6584c7dfef18ca52898beb50bd12174f156",
+      "bytes": 28018,
+      "sha256": "6912147df000ad6ac40b0020783eda7df027d903b367aedd6eb59001b33b458e"
+    },
+    ".github/workflows/local-hand-v0-1-validation.yml": {
+      "git_blob": "3722d5a89be3c513af4051c14ce93531ad5c7462",
+      "bytes": 42707,
+      "sha256": "eb8cc48eee1558c0bba24e2f80bc45aac67890823007bda3e62665e90dfb5cf6"
+    },
+    ".github/workflows/q2-cgroup-fence-spike.yml": {
+      "git_blob": "b1dbdad3f1508bfbe6831314bedabbf9cccd2b6c",
+      "bytes": 6386,
+      "sha256": "d12ecd021b8a5720974dc708984b5d92c444c2e6f38071b037932a5920ed99a4"
+    }
+  },
+  "retained_private_ci_evidence": {
+    "bytes": 617572,
+    "sha256": "cc66c5b8976f7c686cff87ccf9b3e1e767cd291df1af99638be79b7eeb92bb87",
+    "retention": "Private validation directory; raw contents not copied",
+    "source_index": "docs/a2-execution/evidence/q2-field-gap-20261002/native-ci-41309e2.json",
+    "selected_lines": {
+      "root_collector": 681,
+      "ordinary_component_tests": 721,
+      "real_supervision_skip": 812,
+      "installed_wheel": 1082
+    }
+  },
+  "review_method": "read-only existing Git bytes, indexes and retained development/CI outputs; no full-machine absence scan",
+  "new_source_or_test_created": false,
+  "test_or_probe_executed": false,
+  "guest_contacted": false,
+  "proc_status_or_nsfd_observed": false,
+  "fixture_provisioned": false,
+  "system_configuration_changed": false,
+  "retired_spike_resumed": false,
+  "field_ready": false,
+  "allow_run": false,
+  "guest_executed": false,
+  "normal_chain_executions": 0
+}

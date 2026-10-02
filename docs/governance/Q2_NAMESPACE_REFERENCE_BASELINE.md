@@ -40,3 +40,8 @@ NS3 原 host local-only 采集、NS4 consumer 集成及 P4 包发行/实际消�
 被保留并由独立 bookkeeping-only C 登记后，才能从其后实施 NS1–NS2；不能将 A、C 和
 实现 squash。Material scope/source/premise/permission/caps/用途变更保留 R 的 reopen 规则。
 当前 `field_ready=false`、`allow_run=false`、`guest_executed=false`，真实正常链计数为 0。
+
+[NS2 现成 fixture 只读复核](../a2-execution/Q2_NAMESPACE_FIXTURE_READINESS_REVIEW_20261002.md)
+现已登记：准入资料 NOT_PREPARED，环境对本提案的适用性 NOT_PROVEN，native 资格
+BLOCKED / NOT_RUN。它保留历史 Q1/Q2 的已证明范围，不断言物理环境不存在，不改变 A，
+也不是 Owner B 或 CLOSED C；原终端前提、NS3/NS4 和 P4 权限仍未由此取得。
