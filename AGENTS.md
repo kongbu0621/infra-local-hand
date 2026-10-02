@@ -763,6 +763,40 @@ no field run. The complete M1–M4 batch is authorized without repeated per-item
 approval; material changes retain R's change rule. Unaffected CLOSED work remains
 valid. Do not ask for a cyber access qualification.
 
+### Q2 old-producer admission retry proposal
+
+Scope `LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1` is **PROPOSED / Gate OPEN** at
+documentation A `68424df2ddbf812b9479ffa7a64dcaa59a2a9f76`. Its
+[baseline registration](docs/governance/Q2_OLD_PRODUCER_ADMISSION_RETRY_BASELINE.md)
+pins the [requirements](docs/a2-execution/q2-old-producer-admission-retry/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-old-producer-admission-retry/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-old-producer-admission-retry/IMPLEMENTATION_PLAN.md).
+R, source/integrity, Owner-only authority, mandate and change control remain those
+declared above. The current executor cannot read the private pinned R source, so this
+scope remains OPEN; this registration does not substitute a readable R or Owner decision.
+
+The consumed `20261001e` M4 remains `FAILED_RETAINED`: its private admission helper
+raised `KeyError: ExecStartPre` before provision and before any normal-chain execution.
+The proposal retains that batch and introduces a separate create-only `20261002a`
+contract for the four omitted empty Exec-array fields. It also proposes the bounded
+integration of the CLOSED K reader into this new consumer for boot_id and its own
+mountinfo only, after exact ordinary-identity verification. The old K authorization
+covered local preflight only and grants no consumer, package, batch or field authority.
+
+There is no Owner B, bookkeeping-only C or implementation D for this scope. Until an
+exact B binds A and accepts the disclosed trusted-storage/no-same-UID-tamper governance
+premise, only documentation and read-only review are allowed. After B, C must be a
+separate closure-only commit; D must descend from C. Product implementation
+`1a900e4a38e9567655f21cbf3c3f17941de1a8d5` is not this scope's D.
+
+P4 remains independently **BLOCKED**. H07 and both parent filesystems' qualification,
+evidence peak and persistence proofs are open; current materials must remain
+`field_ready=false`, `allow_run=false` and without executable `TASK.txt`. No live ZIP,
+host consumption object or guest connection is authorized. Even after accurate package
+and qualification work, Owner must issue a separate stable P4 event binding exact
+scope/batch/A/C/D/package/evidence limits and once/no-retry terms. Bare
+“continue/authorized continue”, B/C/D, CI/READY, a ZIP or TASK cannot replace it.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
