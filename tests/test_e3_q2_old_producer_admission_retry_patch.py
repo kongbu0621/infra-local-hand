@@ -8,6 +8,7 @@ import io
 import json
 from pathlib import Path
 import stat
+import sys
 import zipfile
 
 import pytest
@@ -317,6 +318,8 @@ def test_archive_only_verification_cannot_claim_adoption(synthetic_archive):
         value.verify_repair_adoption(original + b"changed", raw)
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"),
+    reason="Exact-file admission uses Linux open flags and symlink semantics")
 def test_explicit_path_api_has_no_discovery_and_reads_exact_file(synthetic_archive, tmp_path):
     value, *_rest, raw = synthetic_archive
     target = tmp_path / "caller-selected.zip"
@@ -391,6 +394,8 @@ def test_helper_digest_api_rejects_either_unpinned_input(synthetic_archive):
         value.verify_helper_pair(original, patched + b"changed")
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"),
+    reason="Exact-file admission uses Linux open flags")
 def test_explicit_path_errors_do_not_retain_private_path_in_exception_cause(tmp_path):
     value = module()
     missing = tmp_path / "private-name.zip"

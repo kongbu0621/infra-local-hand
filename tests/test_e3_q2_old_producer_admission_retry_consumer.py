@@ -5,10 +5,15 @@ import ast
 import copy
 import inspect
 from pathlib import Path
+import sys
 
 import pytest
 
 from e3_host import q2_old_producer_admission_retry_consumer as m
+
+
+pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"),
+    reason="Old-producer identity and fixed kernel readers are Linux-only")
 
 
 D = "a" * 40
