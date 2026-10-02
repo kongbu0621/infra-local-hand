@@ -3,7 +3,8 @@
 - Rule R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`。
 - 规则来源及 SHA-256：继承根 `AGENTS.md` 的直接固定来源与
   `c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5`；
-  当前执行环境不能复读私有 pinned source，因此本范围继续保持 OPEN，未据此产生关闭决定。
+  本次 executor 已从 private companion source 的固定 commit 直接完整读取规则，commit 与
+  内容 SHA-256 均匹配。本范围因尚无 Owner B 而继续保持 OPEN。
 - Documentation A：`68424df2ddbf812b9479ffa7a64dcaa59a2a9f76`。
 - A tree：`2cc3158e3269db5fbdd01ab16185a2f34db29144`。
 - Scope：`LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1`，P1–P4。

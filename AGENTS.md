@@ -772,8 +772,9 @@ pins the [requirements](docs/a2-execution/q2-old-producer-admission-retry/REQUIR
 [architecture](docs/a2-execution/q2-old-producer-admission-retry/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-old-producer-admission-retry/IMPLEMENTATION_PLAN.md).
 R, source/integrity, Owner-only authority, mandate and change control remain those
-declared above. The current executor cannot read the private pinned R source, so this
-scope remains OPEN; this registration does not substitute a readable R or Owner decision.
+declared above. The current executor directly read the private pinned rule at R and
+verified its recorded SHA-256. This scope remains OPEN because there is no Owner B;
+this registration does not substitute an Owner decision.
 
 The consumed `20261001e` M4 remains `FAILED_RETAINED`: its private admission helper
 raised `KeyError: ExecStartPre` before provision and before any normal-chain execution.
