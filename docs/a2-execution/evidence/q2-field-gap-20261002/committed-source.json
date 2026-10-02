@@ -1,0 +1,133 @@
+{
+  "schema": "local-hand-q2-field-gap-committed-source/v1",
+  "created_at": "2026-10-02T20:29:00+08:00",
+  "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "candidates": {
+    "initial_source": {
+      "commit": "38a9e15697469f6590e54ddd89754a5d3344f23e",
+      "tree": "4afeabb8e818638b4ec620ba3d96798f23a87ba1",
+      "parent": "6cce996d17ccde1aa4fe48feaaa4cec226d834c0",
+      "sources": {
+        "tests/e3_host/q2_host_window_h07.py": {
+          "git_blob": "211a4d61de0a178d811302e4e9a38f5ab552bacc",
+          "bytes": 32872,
+          "sha256": "a54a3a52a340f4a3d2478ebd7c670098bfcbf62f32a005380cec26917fa85faa"
+        },
+        "tests/e3_host/q2_host_window_record.py": {
+          "git_blob": "0ba8d6bf2d268d794a8761b36fa3b6c0591340a1",
+          "bytes": 39701,
+          "sha256": "aac66e2f9c9072ad1eb1059884f640c685d75f86241dd879438ccf6f999cd6c2"
+        },
+        "tests/test_e3_q2_host_window_h07.py": {
+          "git_blob": "4f41e10f6f01086dc2e8fc29033397e343e9432b",
+          "bytes": 36744,
+          "sha256": "b26aad838fa3ff558315a0cc27e804a70db80e68c873b4bdb85de4971c2ff921"
+        },
+        "tests/test_e3_q2_host_window_record.py": {
+          "git_blob": "04c8012f3034030bad8c9d55fcfa8f90731bef78",
+          "bytes": 20137,
+          "sha256": "47102c952c6f71d5136178f8b09a5fcc33ddb2d91cbf7bd78d2348c3fb19e0d6"
+        }
+      },
+      "targeted_validation_file": "verification.json",
+      "targeted_validation": {
+        "exit_code": 0,
+        "passed": 649,
+        "skipped": 21,
+        "failed": 0,
+        "errors": 0,
+        "elapsed_seconds": 6.59,
+        "scope": "13 targeted source groups: H07, FILETYPE record/ordinary inputs, consumer/P2 arithmetic/offline, gateway/lifecycle/system manager",
+        "skip_reason": "21 existing root-only protected record tests; not passed",
+        "source_snapshot_unchanged": true,
+        "source_full_suite_rerun": false
+      }
+    },
+    "ordering_repair": {
+      "commit": "b707f1b0a4755aa0b2b6455d53ea8eae641182cd",
+      "tree": "055aa585817f3d46f56275c224eba0e4b2734c6b",
+      "parent": "dfdd653dd48388d8ab1a2554d16bf5b610edba10",
+      "sources": {
+        "tests/e3_host/q2_host_window_h07.py": {
+          "git_blob": "819c2e38610056b98e88a02f5d826688723392a1",
+          "bytes": 33197,
+          "sha256": "518fa2f60a182986cc9a511a33591f9fe503217859ebacdcb41e85e43d033049"
+        },
+        "tests/e3_host/q2_host_window_record.py": {
+          "git_blob": "0ba8d6bf2d268d794a8761b36fa3b6c0591340a1",
+          "bytes": 39701,
+          "sha256": "aac66e2f9c9072ad1eb1059884f640c685d75f86241dd879438ccf6f999cd6c2"
+        },
+        "tests/test_e3_q2_host_window_h07.py": {
+          "git_blob": "30b6934753e0191682c3d6642b450178e140f6e8",
+          "bytes": 37999,
+          "sha256": "8c0aea1de1ede10cf53e6f31c3c4398b0d8c12afb7af4a8eab571a3232a0114e"
+        },
+        "tests/test_e3_q2_host_window_record.py": {
+          "git_blob": "04c8012f3034030bad8c9d55fcfa8f90731bef78",
+          "bytes": 20137,
+          "sha256": "47102c952c6f71d5136178f8b09a5fcc33ddb2d91cbf7bd78d2348c3fb19e0d6"
+        }
+      },
+      "targeted_validation_file": "closure-order-verification.json",
+      "targeted_validation": {
+        "exit_code": 0,
+        "passed": 651,
+        "skipped": 21,
+        "failed": 0,
+        "errors": 0,
+        "elapsed_seconds": 6.62,
+        "scope": "13 targeted source groups after H07 stop/snapshot ordering repair",
+        "skip_reason": "21 existing root-only protected record tests; not passed",
+        "source_snapshot_unchanged": true,
+        "source_full_suite_rerun": false
+      }
+    }
+  },
+  "validation_artifacts": {
+    "verification.json": {
+      "bytes": 2985,
+      "sha256": "f469c41d0bbe0d42206a1bef4719eeded127561f478fc87073dd45ada726d03c"
+    },
+    "closure-order-verification.json": {
+      "bytes": 4148,
+      "sha256": "323885059b98a0c3fdd6777ab247f6895e83fae6a4efaca3446f7793e99c5fb0"
+    },
+    "prior-native-ci.json": {
+      "bytes": 2093,
+      "sha256": "04cdb5a5fdde03fae091dd735981bf044086d90280198451ef8ad4673c35cd19"
+    },
+    "source-ci-38a9e15.json": {
+      "bytes": 1716,
+      "sha256": "aa097f8f573143db36be23450bfa422f00ad9b4bbf0a972c08a313d84b0aa0e9"
+    }
+  },
+  "historical_validation_records_unchanged": true,
+  "source_snapshots_match_committed_bytes": true,
+  "old_producer_A_documents_match_exact_approved_commit": true,
+  "filetype_pre_repair_counterexample": {
+    "bytes": 433,
+    "sha256": "77e0bacae893426d1e30e0a490a521f7d990986ad8266866276ce2e56b1722ea",
+    "evidence_use": "SYNTHETIC_PRE_REPAIR_OBSERVATION; not a pytest or machine failure",
+    "old_record_source_sha256": "d6e95e9b5fd42554b507f586c7bae3074fc35565ff77043dbb01417e409fb274",
+    "retention": "Private validation directory; raw contents not copied"
+  },
+  "namespace_proposal": {
+    "scope": "LH-Q2-NAMESPACE-REFERENCE-v1",
+    "state": "OPEN",
+    "A": "dfdd653dd48388d8ab1a2554d16bf5b610edba10",
+    "tree": "763bec60189e801913c66186c9f83543c1083452",
+    "proposed_stages": [
+      "NS1",
+      "NS2"
+    ],
+    "owner_decision": null,
+    "closure_commit": null,
+    "new_collector_implementation": false
+  },
+  "field_ready": false,
+  "allow_run": false,
+  "guest_executed": false,
+  "normal_chain_executions": 0,
+  "p4_event_issued": false
+}

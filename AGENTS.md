@@ -812,6 +812,32 @@ qualification work, Owner must issue a separate stable P4 event binding exact
 scope/batch/A/C/D/package/evidence limits and once/no-retry terms. Bare
 “continue/authorized continue”, B/C/D, CI/READY, a ZIP or TASK cannot replace it.
 
+### Q2 namespace reference proposal
+
+Scope `LH-Q2-NAMESPACE-REFERENCE-v1` is **OPEN**. Its proposed documentation A is
+`dfdd653dd48388d8ab1a2554d16bf5b610edba10`; the
+[baseline registration](docs/governance/Q2_NAMESPACE_REFERENCE_BASELINE.md) pins the
+[requirements](docs/a2-execution/q2-namespace-reference/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-namespace-reference/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-namespace-reference/IMPLEMENTATION_PLAN.md).
+R, readable direct source and integrity, Owner-only authority, mandate, no exceptions
+and change control remain those above. This registration is a proposal, not Owner B
+or CLOSED C; the three documents retain their accurate pre-approval OPEN labels.
+
+The proposed closure is NS1–NS2 only: a bounded standalone G/R/O collector contract
+and isolated synthetic/native fixture qualification. It introduces fixed status and
+pid/mnt namespace-FD sources, narrow proc-to-nsfs leaf exceptions, direct-child pidfd
+binding and anonymous IPC. Its original-terminal provenance and endpoint execution
+integrity premises are explicit candidate design inputs, not accepted facts or
+extensions of the previous storage premise. Existing qualified ordinary supervision
+and fixture audit/resource/stop/EOF evidence are required; absence stays BLOCKED.
+No fixture provisioning, privilege/system change or retired H07 facility restart is
+proposed. NS3 original-host collection, NS4 actual consumer integration and P4 issuance
+are excluded. No new collector source/test/prototype or field collection is authorized
+until exact Owner B and independent bookkeeping-only C precede D. Unaffected existing
+CLOSED repairs remain valid. Proposed A and publication do not prove namespace
+alignment or alter `field_ready=false`, `allow_run=false` or the zero normal-run count.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

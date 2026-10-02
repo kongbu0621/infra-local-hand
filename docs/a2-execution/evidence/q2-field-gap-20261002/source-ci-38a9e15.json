@@ -1,0 +1,61 @@
+{
+  "schema": "local-hand-q2-field-gap-native-ci/v1",
+  "observed_at": "2026-10-02T20:27:20+08:00",
+  "run_id": 37005186888,
+  "run_url": "https://github.com/kongbu0621/infra-local-hand/actions/runs/37005186888",
+  "head_commit": "38a9e15697469f6590e54ddd89754a5d3344f23e",
+  "head_tree": "4afeabb8e818638b4ec620ba3d96798f23a87ba1",
+  "status": "completed",
+  "conclusion": "success",
+  "created_at": "2026-10-02T12:11:05Z",
+  "updated_at": "2026-10-02T12:24:14Z",
+  "jobs": [
+    {
+      "id": 110831683338,
+      "name": "classify-change",
+      "conclusion": "success"
+    },
+    {
+      "id": 110831713390,
+      "name": "semantic-core (ubuntu-latest)",
+      "conclusion": "success",
+      "source_tests": {
+        "passed": 3781,
+        "skipped": 51,
+        "failed": 0,
+        "elapsed_seconds": 486.55
+      },
+      "root_collection": {
+        "passed": 16,
+        "skipped": 0,
+        "evidence": "isolated real root-owned files"
+      },
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 94,
+        "commands": 292
+      }
+    },
+    {
+      "id": 110831713440,
+      "name": "semantic-core (windows-latest)",
+      "conclusion": "success",
+      "source_tests": {
+        "passed": 1465,
+        "skipped": 1173,
+        "failed": 0,
+        "elapsed_seconds": 428.41
+      },
+      "installed_wheel": {
+        "status": "PASS",
+        "checks": 10,
+        "commands": 10
+      }
+    }
+  ],
+  "evidence_use": "exact named source candidate only; excludes subsequent H07 ordering repair; no field readiness or namespace/source adoption; existing Windows scope only",
+  "field_ready": false,
+  "allow_run": false,
+  "guest_executed": false,
+  "normal_chain_executions": 0
+}
