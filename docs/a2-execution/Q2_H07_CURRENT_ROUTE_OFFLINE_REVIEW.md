@@ -4,8 +4,8 @@
 不新增监督机制、来源采用、权限、现场读取或生产入口。H07 真实资格仍为
 UNKNOWN，`field_ready=false`，`allow_run=false`；未形成可执行 P4 交付。
 
-本轮工作区基于 `6cce996d17ccde1aa4fe48feaaa4cec226d834c0`。
-下列 SHA 固定本轮受测实现字节；最终提交 D 由独立集成记录定位，
+首次扩展工作区基于 `6cce996d17ccde1aa4fe48feaaa4cec226d834c0`。
+下列 SHA 固定首次受测实现字节；最终提交 D 由独立集成记录定位，
 本文不预写尚未形成的提交身份。
 
 | 受测文件 | SHA-256 |
@@ -71,7 +71,8 @@ FENCE/CLOSED 操作，Caller 不能插入一个事件自授准入。
 
 定向验证使用私有 Python 3.12.14 / pytest 8.4.2、普通 umask 022 和隔离临时目录。
 首次与末次均 **112 PASS / 0 SKIP / 0 FAIL**，分别为 4.35 秒、4.36 秒；
-新增 29 项是其中子集，不重复累计。本轮没有发生失败，首次原始输出仍完整保留。
+首次扩展新增 29 项是其中子集，不重复累计。上述两轮没有发生失败；
+后续精度修复的失败另列于下文，首次原始输出完整保留。
 日志与 JUnit 留在私有验证目录，公开仅记录摘要：
 
 | 验证原件 | SHA-256 |
@@ -90,6 +91,31 @@ Caller 自报 fence。阻断 open/stat/process/socket/live-clock 操作的测试
 `git diff --check` 通过。实际 gateway/lifecycle 的正常终态及丢 seal ACK
 fail-closed 路径无需因本轮模型而扩大 runtime 修复。
 完整集成回归由根执行器另行记录，本定向统计不冒充全源码或真实系统验证。
+
+后续独立审查发现纯模型的部分缺项判断过宽：stop ACK 前的 Job 缺席和空树
+快照仍会被用于最终判断，迟到入队/实例绑定也没有清除相应旧快照。
+总状态当时仍是 UNKNOWN/false，但这些局部字段不准确。
+本次只修正 `review_qualification_model`：stop ACK 使先前两类快照失效，
+QUEUED 清除 job-absent、INSTANCE_BOUND 清除 tree-empty；最终相应事实只接受
+stop ACK 后且未被更新事件失效的观察。原 v1 API 和八个既有函数继续不变。
+
+先在旧实现上增强两项迟到事件断言并新增两项 pre-stop snapshot 反例，实际得到
+**4 FAIL / 110 DESELECTED**，0.15 秒；原始 log/JUnit 保留，未改为成功。
+修复后完整 H07 定向为 **114 PASS / 0 SKIP / 0 FAIL**，4.35 秒。
+相对原 v1 的扩展用例现为 **31 项**，包含首次 29 项与本次新增 2 项。
+所有真实资格标志仍为 UNKNOWN/false，无新机制、来源或权限。
+
+| 后续精度修复受测文件/原件 | SHA-256 |
+| --- | --- |
+| `tests/e3_host/q2_host_window_h07.py` | `518fa2f60a182986cc9a511a33591f9fe503217859ebacdcb41e85e43d033049` |
+| `tests/test_e3_q2_host_window_h07.py` | `8c0aea1de1ede10cf53e6f31c3c4398b0d8c12afb7af4a8eab571a3232a0114e` |
+| before repair log | `a2725a3dc71d38829339dac85f2085174255e6274f89417ba9d892f475623dde` |
+| before repair JUnit | `b1f1a20cac21b650d59407c5a5bad7afbd44bc5bb8b1b173d6e4b109fd8376e5` |
+| after repair log | `8e524207746078894d5949224a62fbef41f737104c2a134fffa4633f3e64e65f` |
+| after repair JUnit | `10d1417053c53952de13f6e53264abcba6ef9cebddfa7b8b8f41f008d0caa712` |
+
+后续原件仍仅留在私有验证目录，本文只列摘要和失败关联；当前实现提交身份
+由本次独立集成记录固定，不覆盖首次扩展的受测字节或统计。
 
 下一步可在已有 CLOSED 范围内将准确保留材料映射到该合同并审查缺项。
 真正补足首次远端前监督、服务端迟到请求控制、全程 rate/pause 或新 FS 权威

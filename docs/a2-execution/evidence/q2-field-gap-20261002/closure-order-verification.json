@@ -1,0 +1,100 @@
+{
+  "schema": "local-hand-q2-field-gap-source-validation/v1",
+  "created_at": "2026-10-02T20:27:20+08:00",
+  "validation_base_commit": "dfdd653dd48388d8ab1a2554d16bf5b610edba10",
+  "working_tree_uncommitted_at_validation": true,
+  "new_implementation_commit": null,
+  "rule": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
+  "old_producer_baseline": "68424df2ddbf812b9479ffa7a64dcaa59a2a9f76",
+  "old_producer_closure": "179652cb9487163d83c004d358e4d4b49409694c",
+  "approved_documents": {
+    "docs/a2-execution/q2-old-producer-admission-retry/REQUIREMENTS.md": "99cda6cece535d8cff49721f9daf117d69dbf373f82c8f89f3b6dc33725085d1",
+    "docs/a2-execution/q2-old-producer-admission-retry/ARCHITECTURE.md": "c1ebab031fe52403fe005b3848c80981ef06243af1cc51aca7602d0d9b36268e",
+    "docs/a2-execution/q2-old-producer-admission-retry/IMPLEMENTATION_PLAN.md": "f295cf6b165134e92bc41400820897b93342fb7c9bb23d147e591307fb3e284d"
+  },
+  "sources": {
+    "tests/e3_host/q2_host_window_h07.py": {
+      "bytes": 33197,
+      "sha256": "518fa2f60a182986cc9a511a33591f9fe503217859ebacdcb41e85e43d033049"
+    },
+    "tests/e3_host/q2_host_window_record.py": {
+      "bytes": 39701,
+      "sha256": "aac66e2f9c9072ad1eb1059884f640c685d75f86241dd879438ccf6f999cd6c2"
+    },
+    "tests/test_e3_q2_host_window_h07.py": {
+      "bytes": 37999,
+      "sha256": "8c0aea1de1ede10cf53e6f31c3c4398b0d8c12afb7af4a8eab571a3232a0114e"
+    },
+    "tests/test_e3_q2_host_window_record.py": {
+      "bytes": 20137,
+      "sha256": "47102c952c6f71d5136178f8b09a5fcc33ddb2d91cbf7bd78d2348c3fb19e0d6"
+    }
+  },
+  "supported_python": "3.12.14",
+  "pytest": "8.4.2",
+  "validation": {
+    "exit_code": 0,
+    "passed": 651,
+    "skipped": 21,
+    "failed": 0,
+    "errors": 0,
+    "elapsed_seconds": 6.62,
+    "scope": "13 targeted source groups after H07 stop/snapshot ordering repair",
+    "skip_reason": "21 existing root-only protected record tests; not passed",
+    "source_snapshot_unchanged": true,
+    "source_full_suite_rerun": false
+  },
+  "private_evidence": {
+    "targeted.log": {
+      "bytes": 3004,
+      "sha256": "e93bafdd543c773deba12dc54472d9b507ff5a41cf7205c60069aaabe0a1a3f5",
+      "retention": "Private validation directory; no raw contents copied"
+    },
+    "targeted.xml": {
+      "bytes": 118833,
+      "sha256": "6c7787df7489c7cc6332778d07491209e63761c090eaaeb6dd10288fb068528d",
+      "retention": "Private validation directory; no raw contents copied"
+    },
+    "targeted-run.json": {
+      "bytes": 1838,
+      "sha256": "16fb1856ee2ad1cf48a186bb9dc172ff1ce8215f33983988d28d281bee9ed913",
+      "retention": "Private validation directory; no raw contents copied"
+    },
+    "h07-before.log": {
+      "bytes": 5731,
+      "sha256": "a2725a3dc71d38829339dac85f2085174255e6274f89417ba9d892f475623dde",
+      "retention": "Private validation directory; no raw contents copied"
+    },
+    "h07-before.junit.xml": {
+      "bytes": 5546,
+      "sha256": "b1f1a20cac21b650d59407c5a5bad7afbd44bc5bb8b1b173d6e4b109fd8376e5",
+      "retention": "Private validation directory; no raw contents copied"
+    },
+    "h07-final.log": {
+      "bytes": 322,
+      "sha256": "8e524207746078894d5949224a62fbef41f737104c2a134fffa4633f3e64e65f",
+      "retention": "Private validation directory; no raw contents copied"
+    },
+    "h07-final.junit.xml": {
+      "bytes": 18193,
+      "sha256": "10d1417053c53952de13f6e53264abcba6ef9cebddfa7b8b8f41f008d0caa712",
+      "retention": "Private validation directory; no raw contents copied"
+    }
+  },
+  "retained_pre_repair_failure": {
+    "scope": "4 new or strengthened H07 stop/snapshot ordering counterexamples against prior model source",
+    "base_source_commit": "38a9e15697469f6590e54ddd89754a5d3344f23e",
+    "failed": 4,
+    "deselected": 110,
+    "elapsed_seconds": 0.15,
+    "evidence_use": "SYNTHETIC_MODEL_COUNTEREXAMPLE; not a machine qualification failure"
+  },
+  "field_ready": false,
+  "allow_run": false,
+  "guest_executed": false,
+  "normal_chain_executions": 0,
+  "h07_qualified": false,
+  "filesystems_qualified": false,
+  "namespace_alignment": "EXTERNAL_ASSUMPTION_NOT_PROVEN",
+  "p4_event_issued": false
+}

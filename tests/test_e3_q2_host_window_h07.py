@@ -594,7 +594,30 @@ def test_late_queue_or_activation_after_stop_and_empty_tree_restores_missing_pro
     result = qualification_review(fixture, value)
     row = model_edge(result, edge)
     assert row["late_queue" if kind == "QUEUED" else "late_activation"] is True
+    assert row["job_absent" if kind == "QUEUED" else "tree_empty"] is False
+    if kind == "QUEUED":
+        assert "JOB_TERMINAL_UNPROVEN" in row["missing"]
     assert "ORIGINAL_STOP_UNPROVEN" in row["missing"] and "TREE_EMPTY_UNPROVEN" in row["missing"]
+    assert_qualification_unknown(result)
+
+
+@pytest.mark.parametrize("kind,missing", [("JOB_ABSENT", "JOB_TERMINAL_UNPROVEN"),
+    ("TREE_EMPTY", "TREE_EMPTY_UNPROVEN")])
+def test_snapshot_before_stop_ack_cannot_supply_final_closure_fact(kind, missing):
+    fixture, value, _ = qualification_fixture()
+    edge = "gateway_business_helper"
+    events = qualification_events(fixture, edge)
+    snapshot = next(event for event in events if event["kind"] == kind)
+    events.remove(snapshot)
+    ack_index = next(index for index, event in enumerate(events) if event["kind"] == "STOP_ACK")
+    events.insert(ack_index, snapshot)
+    qualification_record(value, edge)["events"] = [qualification_event(fixture, edge,
+        event["kind"], event["data"], offset=index) for index, event in enumerate(events, 1)]
+    result = qualification_review(fixture, value)
+    row = model_edge(result, edge)
+    assert row["stop_ack"] is True and row["late_queue"] is row["late_activation"] is False
+    assert row["job_absent" if kind == "JOB_ABSENT" else "tree_empty"] is False
+    assert missing in row["missing"]
     assert_qualification_unknown(result)
 
 

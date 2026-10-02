@@ -243,6 +243,7 @@ def review_qualification_model(trace_raw, *, implementation_commit, source_bindi
                     "H07_QUALIFICATION_JOB")
                 state["late_queue"] |= state["job_absent"] or state["stop_ack"] or state["tree_empty"]
                 state["job_id"] = job
+                state["job_absent"] = False
             elif kind == "INSTANCE_BOUND":
                 c.keys(data, ("instance",))
                 _qualification_instance(data["instance"], manager=edge["manager_start"])
@@ -250,6 +251,7 @@ def review_qualification_model(trace_raw, *, implementation_commit, source_bindi
                     "H07_QUALIFICATION_INSTANCE")
                 state["late_activation"] |= state["stop_ack"] or state["tree_empty"]
                 state["instance_bound"] = True
+                state["tree_empty"] = False
             elif kind in ("STOP_REQUESTED", "STOP_ACK"):
                 c.keys(data, ("instance_sha256",))
                 expected = None if pin["instance"] is None else sha(encoded(pin["instance"]))
@@ -257,6 +259,9 @@ def review_qualification_model(trace_raw, *, implementation_commit, source_bindi
                 require(not state["stop_requested"] if kind == "STOP_REQUESTED" else
                     state["stop_requested"] and not state["stop_ack"], "H07_QUALIFICATION_STOP_ORDER")
                 state["stop_requested" if kind == "STOP_REQUESTED" else "stop_ack"] = True
+                if kind == "STOP_ACK":
+                    # Pre-stop snapshots cannot describe the final stopped state.
+                    state["job_absent"] = state["tree_empty"] = False
             elif kind in ("JOB_ABSENT", "TREE_EMPTY"):
                 c.keys(data, ())
                 state["job_absent" if kind == "JOB_ABSENT" else "tree_empty"] = True
@@ -279,8 +284,8 @@ def review_qualification_model(trace_raw, *, implementation_commit, source_bindi
         state["missing"] = ["FUTURE_ADMISSION_FENCE_NOT_PROVEN"]
         for condition, reason in ((state["instance_bound"], "ORIGINAL_INSTANCE_UNPROVEN"),
             (state["instance_bound"] and state["stop_ack"] and not state["late_activation"] and not state["late_queue"], "ORIGINAL_STOP_UNPROVEN"),
-            (state["job_absent"] or not edge["manager_start"], "JOB_TERMINAL_UNPROVEN"),
-            (state["tree_empty"] and not state["late_activation"] and not state["late_queue"], "TREE_EMPTY_UNPROVEN"),
+            ((state["stop_ack"] and state["job_absent"]) or not edge["manager_start"], "JOB_TERMINAL_UNPROVEN"),
+            (state["stop_ack"] and state["tree_empty"] and not state["late_activation"] and not state["late_queue"], "TREE_EMPTY_UNPROVEN"),
             (set(state["exits"]) == set(edge["client_roles"]), "ORIGINAL_CLIENT_EXIT_UNPROVEN"),
             (set(state["eof"]) == {role + "." + stream for role in edge["client_roles"]
                 for stream in ("stdout", "stderr")}, "ORIGINAL_DOUBLE_EOF_UNPROVEN")):
