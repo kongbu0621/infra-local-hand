@@ -812,17 +812,19 @@ qualification work, Owner must issue a separate stable P4 event binding exact
 scope/batch/A/C/D/package/evidence limits and once/no-retry terms. Bare
 “continue/authorized continue”, B/C/D, CI/READY, a ZIP or TASK cannot replace it.
 
-### Q2 namespace reference proposal
+### Q2 namespace proposal history
 
-Scope `LH-Q2-NAMESPACE-REFERENCE-v1` is **OPEN**. Its proposed documentation A is
+Scope `LH-Q2-NAMESPACE-REFERENCE-v1` is
+**SUPERSEDED_PROPOSAL_NOT_APPROVED**. Its historical proposed documentation A is
 `dfdd653dd48388d8ab1a2554d16bf5b610edba10`; the
 [baseline registration](docs/governance/Q2_NAMESPACE_REFERENCE_BASELINE.md) pins the
 [requirements](docs/a2-execution/q2-namespace-reference/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-namespace-reference/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-namespace-reference/IMPLEMENTATION_PLAN.md).
 R, readable direct source and integrity, Owner-only authority, mandate, no exceptions
-and change control remain those above. This registration is a proposal, not Owner B
-or CLOSED C; the three documents retain their accurate pre-approval OPEN labels.
+and change control remain those above. That registration was a proposal, not Owner B
+or CLOSED C; the three documents retain their accurate pre-approval OPEN labels and
+were never approved for implementation.
 
 The proposed closure is NS1–NS2 only: a bounded standalone G/R/O collector contract
 and isolated synthetic/native fixture qualification. It introduces fixed status and
@@ -844,6 +846,29 @@ this exact NS2 contract NOT_PROVEN; native qualification remains BLOCKED / NOT_R
 Historical Q1/Q2 guest evidence remains valid in its own scope. This read-only finding
 does not assert that no physical fixture exists, change A, adopt a root supervisor or
 authorize provisioning, probes or the retired H07 laboratory. No Owner B/C is recorded.
+
+The successor scope `LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1` is **OPEN** for F0–F4 only.
+Its exact proposed documentation A is `ad5abaee642cba02d997149badf75a08c219a35c`;
+the [baseline registration](docs/governance/Q2_NAMESPACE_FIXTURE_DELIVERY_BASELINE.md)
+pins the [requirements](docs/a2-execution/q2-namespace-fixture-delivery/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-namespace-fixture-delivery/ARCHITECTURE.md),
+[implementation plan](docs/a2-execution/q2-namespace-fixture-delivery/IMPLEMENTATION_PLAN.md)
+and [design review](docs/a2-execution/Q2_NAMESPACE_FIXTURE_DELIVERY_DESIGN_20261002.md).
+R, direct readable source/integrity, Owner-only authority, mandate, no exceptions and
+change control remain unchanged.
+
+This candidate jointly proposes offline binding, implementation and synthetic
+verification after closure, one conditional isolated-guest delivery, at most one
+`BATCH_RELEASE`, no more than twelve unique native cases and final receipt/accounting.
+It requires an already installed and exactly qualified sealed native watchdog W; it
+does not authorize installing, uploading, compiling or replacing W, provisioning an
+account/manager/unit/mount, changing system configuration or contacting the guest
+before exact Owner B and independent bookkeeping-only C. Missing static inputs remain
+`NOT_ISSUED`; later incomplete identity/status/EOF/accounting remains BLOCKED or UNKNOWN
+under the candidate's exact rules. Proposed A and this registration are not Owner B,
+CLOSED C, implementation D, field readiness or execution authority. Preserve
+R → exact A → exact Owner B → independent C → D, without squashing C into implementation.
+The old proposal and its readiness review remain historical evidence only.
 
 ### Continuing constraints
 

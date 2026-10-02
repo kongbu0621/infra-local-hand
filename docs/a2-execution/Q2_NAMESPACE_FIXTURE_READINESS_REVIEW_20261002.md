@@ -69,3 +69,17 @@ integration 为 SKIP：缺 predelegated manager admission / `E3_SUPERVISION_UNVE
 原三文档/既有 CLOSED 范围及全部历史失败保持，当前无本提案 Owner B/C，
 `field_ready=false`、`allow_run=false`、`guest_executed=false`、真实正常链计数 0。
 脱敏出处/源码摘要和分层状态在[复核索引](evidence/q2-namespace-fixture-20261002/review.json)。
+
+## 后继候选状态（2026-10-03）
+
+本复核针对的旧 scope `LH-Q2-NAMESPACE-REFERENCE-v1` 与 proposed A `dfdd653…` 现登记为
+`SUPERSEDED_PROPOSAL_NOT_APPROVED`；上述只读观察、来源和限定结论继续按审计时点保留，不回写成
+后继候选的当前现场事实，也不追认旧 Owner B/C。
+
+后继 `LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1` 的准确 proposed A
+`ad5abaee642cba02d997149badf75a08c219a35c` 见
+[新基线登记](../governance/Q2_NAMESPACE_FIXTURE_DELIVERY_BASELINE.md)。新候选把离线 plan、既有 sealed
+watchdog W 的严格静态资格、实现/合成验证、一次 conditional guest delivery、最多十二个 native case
+和最终收件列入同一 F0–F4 提案；它仍不授权安装 W、补建环境、连接 guest 或执行现场任务。缺 W 或
+其它固定输入时仍须 `NOT_ISSUED`/BLOCKED，不得把本复核升级为 readiness PASS。新候选同样 Gate OPEN，
+尚无 Owner B、CLOSED C、implementation D 或 live run。

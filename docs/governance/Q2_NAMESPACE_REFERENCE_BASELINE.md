@@ -45,3 +45,14 @@ NS3 原 host local-only 采集、NS4 consumer 集成及 P4 包发行/实际消�
 现已登记：准入资料 NOT_PREPARED，环境对本提案的适用性 NOT_PROVEN，native 资格
 BLOCKED / NOT_RUN。它保留历史 Q1/Q2 的已证明范围，不断言物理环境不存在，不改变 A，
 也不是 Owner B 或 CLOSED C；原终端前提、NS3/NS4 和 P4 权限仍未由此取得。
+
+## 后继候选状态（2026-10-03）
+
+本 scope 与 proposed A 现登记为 **`SUPERSEDED_PROPOSAL_NOT_APPROVED`**。它从未取得 Owner B、
+CLOSED C 或 implementation authority；本文件、旧三文档及 readiness 复核继续作为历史原件保留，
+不回写、不追认为曾获批准。
+
+后继 scope `LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1` 的准确 proposed A
+`ad5abaee642cba02d997149badf75a08c219a35c` 由
+[独立基线登记](Q2_NAMESPACE_FIXTURE_DELIVERY_BASELINE.md)定位。后继候选仍为 Gate OPEN；它不继承
+旧候选不存在的权限，也不构成 Owner B、CLOSED C、implementation、guest 连接或 live run。
