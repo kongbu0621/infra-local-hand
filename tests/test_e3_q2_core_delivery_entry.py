@@ -1,0 +1,503 @@
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import os
+from pathlib import Path
+import struct
+import threading
+from types import SimpleNamespace
+
+import pytest
+
+
+def load(name):
+    path = Path(__file__).parent / "e3_host" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location("_test_" + name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+e = load("q2_core_delivery_entry")
+c = e.contract
+
+
+def hello():
+    return {
+        "schema": "local-hand-q2-core-carrier-hello/v1",
+        "scope": c.SCOPE,
+        "loader_sha256": "1" * 64,
+        "bootstrap_sha256": "2" * 64,
+        "guest_boot_id": "11111111-2222-3333-4444-555555555555",
+        "guest_boottime_origin_ns": 100,
+        "guest_monotonic_origin_ns": 200,
+        "pid": 1,
+        "uid": 0,
+        "gid": 0,
+        "euid": 0,
+        "egid": 0,
+        "python": {
+            "path": "/usr/bin/python3", "dev": 1, "ino": 2, "mode": 0o755,
+            "uid": 0, "gid": 0, "nlink": 1, "bytes": 3, "sha256": "3" * 64,
+        },
+        "carrier_unit": {
+            "name": c.CARRIER_UNIT,
+            "control_group": "/system.slice/" + c.CARRIER_UNIT,
+            "invocation_id": "4" * 32, "active_state": "active",
+            "sub_state": "running", "runtime_max_usec": 800_000_000,
+            "timeout_stop_usec": 30_000_000, "memory_max": 1_073_741_824,
+            "memory_swap_max": 0, "tasks_max": 128,
+            "cpu_quota_per_sec_usec": 1_000_000, "restart": "no",
+            "kill_mode": "control-group", "exit_type": "cgroup",
+        },
+        "process_limits": {
+            "cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
+            "nofile_hard": 256, "fsize_soft": 67_108_864,
+            "fsize_hard": 67_108_864, "umask": 0o077,
+        },
+    }
+
+
+def remote_result(cases=None):
+    cases = [] if cases is None else cases
+    return {
+        "schema": "local-hand-q2-core-remote-result/v1",
+        "session_id": c.SESSION_ID,
+        "consumption_sha256": "3" * 64,
+        "state": "REMOTE_STOP_AND_RETAIN",
+        "cases": cases,
+        "h01_business_execution": {},
+        "h01_result_package": {},
+        "usage": {},
+        "missing": [],
+    }
+
+
+def not_run_output(consumption_sha256, stdin_bytes):
+    cases = [{"index": fixed["index"], "case_id": fixed["case_id"],
+              "status": "NOT_RUN", "semantic_pass": False,
+              "verdict_path": None, "verdict_sha256": None}
+             for fixed in c.CASES]
+    result = {
+        "schema": "local-hand-q2-core-remote-result/v1",
+        "session_id": c.SESSION_ID, "consumption_sha256": consumption_sha256,
+        "state": "REMOTE_STOP_AND_RETAIN", "cases": cases,
+        "h01_business_execution": {
+            "status": "NOT_RUN", "operation_id": None, "execution_id": None,
+            "unit": None, "invocation_id": None, "wait_status": None,
+            "business_started": False, "outcome": "NOT_RUN", "evidence_sha256": None,
+        },
+        "h01_result_package": {
+            "status": "NOT_RUN", "result_member": None, "result_sha256": None,
+            "required_members_sha256": None,
+        },
+        "usage": {
+            "guest_elapsed_ns": 1, "carrier_cpu_ns": 1,
+            "carrier_memory_peak_bytes": 1, "carrier_pids_peak": 1,
+            "stdin_bytes_received": stdin_bytes, "output_frame_bytes": 0,
+            "guest_allocated_bytes": 0, "guest_allocated_inodes": 0,
+            "job_units_started": 0, "controller_units_started": 0,
+            "quota_query_units_started": 0, "dynamic_quota_units_started": 0,
+            "native_children_started": 0,
+        },
+        "missing": [],
+    }
+    manifest = {
+        "schema": "local-hand-q2-core-output-package/v1", "session_id": c.SESSION_ID,
+        "remote_result": result, "cases": cases, "members": [],
+        "limits": dict(e.OUTPUT_LIMITS),
+    }
+    for _ in range(8):
+        raw = e.frame(c.OUTPUT_MAGIC, manifest, json_limit=1_048_576)
+        if result["usage"]["output_frame_bytes"] == len(raw):
+            return raw
+        result["usage"]["output_frame_bytes"] = len(raw)
+    raise AssertionError("frame length did not converge")
+
+
+def test_fixed_remote_tokens_and_wrapper_profile():
+    loader = b"pass\n"
+    bootstrap = b"x=1\n"
+    tokens = e.remote_tokens(loader, bootstrap)
+    assert tokens[:11] == [
+        "exec", "/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i",
+        "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "SYSTEMD_COLORS=0",
+    ]
+    assert tokens[-7:-3] == ["/usr/bin/python3", "-I", "-B", "-c"]
+    wrapper = (Path(__file__).parents[2] / "labs" / "infra-local-hand-q1" / "vm" / "ssh.sh")
+    # CI does not carry the private fixture; use the exact admitted source bytes.
+    raw = (b"#!/usr/bin/env bash\nset -euo pipefail\n"
+           b"q1_vm=/mnt/data1/work/labs/infra-local-hand-q1/vm\n"
+           b"exec ssh -F /dev/null \\\n"
+           b"  -i \"$q1_vm/id_ed25519\" -p 22221 \\\n"
+           b"  -o IdentitiesOnly=yes -o BatchMode=yes \\\n"
+           b"  -o StrictHostKeyChecking=accept-new \\\n"
+           b"  -o UserKnownHostsFile=\"$q1_vm/known_hosts\" \\\n"
+           b"  -o ConnectTimeout=10 \\\n"
+           b"  q1admin@127.0.0.1 \"$@\"\n")
+    assert hashlib.sha256(raw).hexdigest() == e.WRAPPER_SHA256
+    argv = e.wrapper_argv(str(wrapper), raw, tokens)
+    assert argv[:3] == ["/usr/bin/env", "bash", "-c"]
+    assert e.argv_digest(argv) == hashlib.sha256(c.canonical({
+        "schema": c.CARRIER_ARGV_SCHEMA, "argv": argv,
+    }, newline=True)).hexdigest()
+
+
+def test_controlled_environment_drops_agent_and_startup_injection():
+    value = e.controlled_environment({
+        "HOME": "/h", "USER": "u", "LOGNAME": "u", "SSH_AUTH_SOCK": "/bad",
+        "SSH_AGENT_PID": "42", "BASH_ENV": "/bad", "ENV": "/bad", "PATH": "/bad",
+    })
+    assert value == {
+        "HOME": "/h", "USER": "u", "LOGNAME": "u", "PATH": "/usr/bin:/bin",
+        "LANG": "C", "LC_ALL": "C", "SYSTEMD_COLORS": "0",
+    }
+
+
+def test_arg_environment_checks_current_arg_max(monkeypatch):
+    monkeypatch.setattr(e.os, "sysconf", lambda name: 8)
+    with pytest.raises(c.ContractError, match="CORE_LOCAL_ARG_ENV_LIMIT"):
+        e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
+
+
+def test_current_dispatcher_release_gate_is_hard_closed_before_field_action():
+    raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
+                           "dispatcher_sha256": digest}}
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    assert e.dispatcher_contract.field_readiness()["releasable"] is False
+    with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
+        e.field_release_gate(manifest, {"field/dispatcher.py": raw})
+
+
+def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
+        monkeypatch, tmp_path):
+    loader, bootstrap = b"loader\n", b"bootstrap\n"
+    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+    entry = {"loader_path": "field/loader.py",
+             "bootstrap_path": "field/bootstrap.py",
+             "dispatcher_path": "field/dispatcher.py",
+             "dispatcher_sha256": hashlib.sha256(dispatcher).hexdigest()}
+    manifest = {"entry": entry}
+    members = {"field/loader.py": loader, "field/bootstrap.py": bootstrap,
+               "field/dispatcher.py": dispatcher}
+    original_helper = e._helper
+    monkeypatch.setattr(e, "_helper", lambda name: (
+        SimpleNamespace(parse_package=lambda _raw: (manifest, members))
+        if name == "q2_core_delivery_package" else original_helper(name)))
+    monkeypatch.setattr(e, "requalify_management_anchor",
+                        lambda *_args, **_kwargs: pytest.fail("anchor touched"))
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
+            e.deliver_once(
+                directory_fd, binding={}, package_basename="blocked.lhfp",
+                package_raw=b"syntactically-valid-placeholder", loader_raw=loader,
+                bootstrap_raw=bootstrap, wrapper_raw=b"", popen_factory=lambda *_a, **_k:
+                pytest.fail("request issued"))
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        os.close(directory_fd)
+
+
+def identity(path, sha="a" * 64):
+    return {"path": path, "dev": 1, "ino": 2, "mode": 0o755, "uid": 0, "gid": 0,
+            "nlink": 1, "bytes": 10, "sha256": sha}
+
+
+def test_management_binding_discloses_broad_sudo_and_binds_command():
+    loader = b"pass\n"
+    bootstrap = b"x=1\n"
+    tokens = e.remote_tokens(loader, bootstrap)
+    wrapper_raw = (b"#!/usr/bin/env bash\nset -euo pipefail\n"
+                   b"q1_vm=/mnt/data1/work/labs/infra-local-hand-q1/vm\n"
+                   b"exec ssh -F /dev/null \\\n"
+                   b"  -i \"$q1_vm/id_ed25519\" -p 22221 \\\n"
+                   b"  -o IdentitiesOnly=yes -o BatchMode=yes \\\n"
+                   b"  -o StrictHostKeyChecking=accept-new \\\n"
+                   b"  -o UserKnownHostsFile=\"$q1_vm/known_hosts\" \\\n"
+                   b"  -o ConnectTimeout=10 \\\n"
+                   b"  q1admin@127.0.0.1 \"$@\"\n")
+    wrapper_path = "/mnt/data1/work/labs/infra-local-hand-q1/vm/ssh.sh"
+    argv = e.wrapper_argv(wrapper_path, wrapper_raw, tokens)
+    binding = {
+        "schema": c.MANAGEMENT_BINDING_SCHEMA,
+        "wrapper": identity(wrapper_path, e.WRAPPER_SHA256),
+        "fixture_start": identity("/mnt/data1/work/labs/infra-local-hand-q1/vm/start.sh",
+                                   e.START_SHA256),
+        "fixture_cloud_config": identity(
+            "/mnt/data1/work/labs/infra-local-hand-q1/vm/user-data", e.CLOUD_CONFIG_SHA256),
+        "profile": "env-bash-literal-ssh-v1",
+        "environment": {"HOME": "/home/u", "USER": "u", "LOGNAME": "u",
+                        "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
+                        "SYSTEMD_COLORS": "0"},
+        "dependencies": [dict(identity(path), role=role) for role, path in (
+            ("env", "/usr/bin/env"), ("bash", "/usr/bin/bash"),
+            ("ssh", "/usr/bin/ssh"), ("ssh-keygen", "/usr/bin/ssh-keygen"))],
+        "identity": {"path": "/private/id_ed25519", "dev": 1, "ino": 3, "mode": 0o600,
+                     "uid": 1000, "gid": 1000, "nlink": 1, "bytes": 399,
+                     "derived_public_key_sha256": e.PUBLIC_KEY_SHA256},
+        "identity_public": identity("/private/id_ed25519.pub", e.PUBLIC_KEY_SHA256),
+        "known_hosts": identity("/private/known_hosts", e.KNOWN_HOSTS_SHA256),
+        "cwd": {"path": "/work", "dev": 1, "ino": 4, "mode": 0o755,
+                "uid": 1000, "gid": 1000},
+        "remote": {
+            "account": "q1admin", "uid": 1000, "gid": 1000, "login_shell": "/bin/bash",
+            "parser_profile": "noninteractive-c-v1", "shell": identity("/bin/bash"),
+            "sudo": identity("/usr/bin/sudo"), "env": identity("/usr/bin/env"),
+            "systemd_run": identity("/usr/bin/systemd-run"),
+            "python": identity("/usr/bin/python3"),
+            "remote_tokens_sha256": hashlib.sha256(c.canonical(tokens)).hexdigest(),
+            "remote_command_sha256": hashlib.sha256(e.shlex.join(tokens).encode()).hexdigest(),
+        },
+        "transport": {
+            "no_pty": True, "stdin_binary": True, "stdout_stderr_separate": True,
+            "known_host_preexisting": True, "batch_mode": True,
+            "invocation_matches_frozen_command": True, "sudo_noninteractive": True,
+            "sudo_no_password": True, "sudo_policy_is_exact": False,
+            "fixture_policy_broader_than_command": True,
+        },
+    }
+    digest = e.management_binding_digest(binding, tokens=tokens, argv=argv,
+                                         wrapper_raw=wrapper_raw)
+    assert digest == hashlib.sha256(c.canonical(binding, newline=True)).hexdigest()
+    binding["transport"]["sudo_policy_is_exact"] = True
+    with pytest.raises(c.ContractError, match="CORE_MANAGEMENT_TRANSPORT"):
+        e.management_binding_digest(binding, tokens=tokens, argv=argv,
+                                    wrapper_raw=wrapper_raw)
+
+
+def test_host_window_and_bind_mapping_are_not_refreshed():
+    values = iter((10_000, 20_000))
+    origins = e.freeze_host_window(lambda _clock: next(values))
+    package = b"package"
+    entry = {
+        "loader_path": "field/loader.py", "loader_bytes": 1,
+        "loader_sha256": "1" * 64,
+        "bootstrap_path": "field/bootstrap.py", "bootstrap_bytes": 1,
+        "bootstrap_sha256": "2" * 64,
+        "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
+        "dispatcher_sha256": "3" * 64,
+        "carrier_argv_sha256": "4" * 64,
+        "management_entry_binding_sha256": "5" * 64,
+    }
+    bind = e.build_bind(hello(), "a" * 64, "only.lhfp", package, origins,
+                        package_entry=entry, boot_bind_ns=30_000,
+                        mono_bind_ns=40_000)
+    assert bind["host_remaining_floor_ns"] == 899_999_000_000
+    assert bind["mapped_duration_ns"] == 882_999_000_000
+    assert bind["guest_duration_ns"] == 750_000_000_000
+    changed = dict(bind,
+                   host_boottime_deadline_ns=bind["host_boottime_deadline_ns"] + 1_000_000,
+                   host_monotonic_deadline_ns=bind["host_monotonic_deadline_ns"] + 1_000_000)
+    with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
+        c.validate_bind(changed)
+
+
+def test_frame_rejects_duplicate_and_trailing_json():
+    raw = e.frame(c.HELLO_MAGIC, hello(), json_limit=4096)
+    value, rest = e.parse_frame(raw, c.HELLO_MAGIC, json_limit=4096, total_limit=4112)
+    assert value == hello() and rest == b""
+    duplicate = c.HELLO_MAGIC + struct.pack(">Q", 14) + b'{"a":1,"a":2}\n'
+    with pytest.raises(c.ContractError, match="CORE_JSON_DUPLICATE_KEY"):
+        e.parse_frame(duplicate, c.HELLO_MAGIC, json_limit=4096, total_limit=4112)
+    with pytest.raises(c.ContractError, match="CORE_FRAME_BOUNDARY"):
+        e.parse_frame(raw + b"x", c.HELLO_MAGIC, json_limit=4096, total_limit=4112)
+
+
+def marker_value(origins):
+    return e.consumption_record(
+        implementation={"commit": "4" * 40, "tree": "5" * 40},
+        package={"basename": "only.lhfp", "bytes": 1, "sha256": "6" * 64,
+                 "manifest_sha256": "7" * 64},
+        management_entry_binding_sha256="8" * 64,
+        carrier_argv_sha256="9" * 64,
+        origins=origins,
+    )
+
+
+def test_marker_is_final_name_exclusive_and_never_replaced(tmp_path):
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        origins = {
+            "host_boottime_origin_ns": 1,
+            "host_monotonic_origin_ns": 2,
+            "host_boottime_deadline_ns": 1 + e.HOST_WINDOW_NS,
+            "host_monotonic_deadline_ns": 2 + e.HOST_WINDOW_NS,
+        }
+        result = e.create_consumption_marker(directory_fd, marker_value(origins))
+        assert result["object_created"] is True and result["record_complete"] is True
+        before = (tmp_path / c.MARKER_BASENAME).read_bytes()
+        with pytest.raises(e.ConsumedError, match="ALREADY_CONSUMED"):
+            e.create_consumption_marker(directory_fd, marker_value(origins))
+        assert (tmp_path / c.MARKER_BASENAME).read_bytes() == before
+    finally:
+        os.close(directory_fd)
+
+
+def test_marker_and_bind_reject_refreshed_or_non_exact_host_window():
+    origins = {
+        "host_boottime_origin_ns": 10,
+        "host_monotonic_origin_ns": 20,
+        "host_boottime_deadline_ns": 10 + 1_200_000_000_000,
+        "host_monotonic_deadline_ns": 20 + 1_200_000_000_000,
+    }
+    with pytest.raises(c.ContractError, match="CORE_MARKER_HOST_WINDOW"):
+        marker_value(origins)
+    entry = {
+        "loader_path": "field/loader.py", "loader_bytes": 1,
+        "loader_sha256": "1" * 64,
+        "bootstrap_path": "field/bootstrap.py", "bootstrap_bytes": 1,
+        "bootstrap_sha256": "2" * 64,
+        "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
+        "dispatcher_sha256": "3" * 64, "carrier_argv_sha256": "4" * 64,
+        "management_entry_binding_sha256": "5" * 64,
+    }
+    with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
+        e.build_bind(hello(), "a" * 64, "only.lhfp", b"p", origins,
+                     package_entry=entry, boot_bind_ns=30, mono_bind_ns=40)
+
+
+def test_absence_checks_treat_any_existing_type_as_consumed(tmp_path):
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        assert e.marker_absent(directory_fd)
+        os.mkdir(tmp_path / c.MARKER_BASENAME)
+        with pytest.raises(e.ConsumedError, match="ALREADY_CONSUMED"):
+            e.marker_absent(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def test_capture_file_is_create_only_and_stable(tmp_path):
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        basename = c.OUTPUT_BASENAMES["stderr_basename"]
+        item = e.create_capture_file(directory_fd, basename, b"stderr", limit=1024)
+        assert item["bytes"] == 6 and item["mode"] == 0o600 and item["nlink"] == 1
+        with pytest.raises(FileExistsError):
+            e.create_capture_file(directory_fd, basename, b"again", limit=1024)
+    finally:
+        os.close(directory_fd)
+
+
+def test_output_frame_checks_order_digest_and_true_eof():
+    members = [
+        {"path": "carrier/a", "case_id": "carrier", "role": "session", "mode": 384,
+         "bytes": 1, "sha256": hashlib.sha256(b"a").hexdigest()},
+        {"path": "carrier/b", "case_id": "carrier", "role": "admission", "mode": 384,
+         "bytes": 1, "sha256": hashlib.sha256(b"b").hexdigest()},
+    ]
+    result = remote_result([])
+    manifest = {
+        "schema": "local-hand-q2-core-output-package/v1",
+        "session_id": c.SESSION_ID,
+        "remote_result": result,
+        "cases": [],
+        "members": members,
+        "limits": {},
+    }
+    raw = e.frame(c.OUTPUT_MAGIC, manifest, json_limit=1_048_576) + b"ab"
+    checked, values = e.parse_output(raw)
+    assert checked == manifest and values == {"carrier/a": b"a", "carrier/b": b"b"}
+    with pytest.raises(c.ContractError, match="CORE_OUTPUT_TRAILING"):
+        e.parse_output(raw + b"x")
+    bad = dict(manifest, members=list(reversed(members)))
+    with pytest.raises(c.ContractError, match="CORE_OUTPUT_ORDER"):
+        e.parse_output(e.frame(c.OUTPUT_MAGIC, bad, json_limit=1_048_576) + b"ba")
+
+
+def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    origins = e.freeze_host_window()
+    marker = e.create_consumption_marker(directory_fd, marker_value(origins))
+    package_raw = b"bounded-package"
+    argv = ["/usr/bin/env", "fixed-fake-carrier"]
+    entry = {
+        "loader_path": "field/loader.py", "loader_bytes": 1,
+        "loader_sha256": "1" * 64,
+        "bootstrap_path": "field/bootstrap.py", "bootstrap_bytes": 1,
+        "bootstrap_sha256": "2" * 64,
+        "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
+        "dispatcher_sha256": "3" * 64,
+        "carrier_argv_sha256": e.argv_digest(argv),
+        "management_entry_binding_sha256": "5" * 64,
+    }
+    environment = {"HOME": "/h", "USER": "u", "LOGNAME": "u",
+                   "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
+                   "SYSTEMD_COLORS": "0"}
+    calls = []
+
+    class FakePopen:
+        def __init__(self):
+            input_read, input_write = os.pipe()
+            output_read, output_write = os.pipe()
+            error_read, error_write = os.pipe()
+            self.stdin = os.fdopen(input_write, "wb", buffering=0)
+            self.stdout = os.fdopen(output_read, "rb", buffering=0)
+            self.stderr = os.fdopen(error_read, "rb", buffering=0)
+            self.returncode = None
+
+            def child():
+                try:
+                    os.write(output_write, e.frame(c.HELLO_MAGIC, hello(), json_limit=4096))
+                    received = bytearray()
+                    while True:
+                        chunk = os.read(input_read, 65_536)
+                        if not chunk:
+                            break
+                        received.extend(chunk)
+                    os.write(output_write, not_run_output(marker["sha256"], len(received)))
+                    self.returncode = 0
+                finally:
+                    os.close(input_read); os.close(output_write); os.close(error_write)
+
+            self.thread = threading.Thread(target=child, daemon=True)
+            self.thread.start()
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            self.thread.join(timeout)
+            if self.thread.is_alive():
+                raise TimeoutError
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+    def factory(*args, **kwargs):
+        calls.append((args, kwargs))
+        return FakePopen()
+
+    try:
+        exchange = e.execute_carrier_once(
+            argv=argv, environment=environment, cwd=str(tmp_path), origins=origins,
+            marker=marker, package_basename="only.lhfp", package_raw=package_raw,
+            package_entry=entry, popen_factory=factory)
+        assert len(calls) == 1
+        assert exchange["transport"] == {
+            "execve_succeeded": True, "hello_valid": True, "bind_written": True,
+            "package_written": True,
+            "stdin_bytes_written": exchange["bind_frame_bytes"] + len(package_raw),
+            "stdin_eof": True,
+        }
+        assert exchange["wait"] == {
+            "status": 0, "stdout_eof": True, "stderr_eof": True,
+            "host_deadline_met": True,
+        }
+        final = e.finalize_carrier(directory_fd, marker=marker, exchange=exchange)
+        assert final["receipt"]["state"] == "STOP_AND_RETAIN"
+        assert final["receipt"]["real_task_execution"]["status"] == "NO"
+        assert final["receipt"]["result_evidence_collection"]["status"] == "NO"
+        assert final["receipt"]["remote_result"]["present"] is True
+        assert final["total_allocated_bytes"] <= e.CAPTURE_LIMIT
+        assert final["total_inodes"] == 6
+    finally:
+        os.close(directory_fd)
