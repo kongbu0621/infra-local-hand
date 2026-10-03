@@ -937,6 +937,24 @@ no production activation, cutover, E4–E6, system configuration change or succe
 UNKNOWN/missing evidence. Material premise, artifact, object, budget, deadline, management-entry
 or execution-rule changes retain R's reopen rule.
 
+The subsequent partial implementation D is
+`520f77f578b90d31870517e33e29bee42918f3c0`, tree
+`bcffbf66209008ff8dd5db312f53af8ced824cff`, with C as its direct parent. Its
+[implementation review](docs/a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md)
+records exact source hashes, targeted validation, the non-passing full-suite attempt, static-member
+freeze and all retained blockers. D is fail-closed and **not releasable**: the local entry checks an
+exact dispatcher-digest release gate before management reads, object-absence checks, clocks, marker
+or request; its allowlist is empty and dispatcher readiness is false.
+
+Only the 859-member static closure is frozen. No `.lhfp` was serialized; package remains `null`,
+issuance `NOT_ISSUED`, and six remote management identities plus three approved-input relations are
+missing. Eight high-level field effects, deep raw-evidence cross-binding and finalizer deadline
+closure remain incomplete. Marker/request/H01/Q4/H11/task/result/evidence counts remain zero.
+Tests using fake effects/pipes are code tests only and must never be cited as live PASS. Before any
+release digest is added, all blockers in the review must close and a complete package must pass
+independent build/parse verification. namespace/watchdog remains paused and production
+`E3_SUPERVISION_UNVERIFIED` remains unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
