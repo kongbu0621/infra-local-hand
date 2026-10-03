@@ -17,6 +17,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.contract import JobError, Principal, request_digest
+from local_hand_jobs.runner import Runner, RunnerError, _unknown
 from local_hand_jobs.state import StateStore
 
 
@@ -400,7 +401,11 @@ class BrokerTests(unittest.TestCase):
                 return dict(super().resolve(request, policy, **kwargs),
                             resource_ids=[request["operation_id"]])
         class FailedAttachment(SupervisorFixture):
+            def __init__(self):
+                super().__init__()
+                self.reattaches = 0
             def reattach(self, handle, plan):
+                self.reattaches += 1
                 raise OSError("synthetic temporary manager lookup failure")
         self.policy.limits = dict(self.policy.limits, max_running=1)
         registry = IndependentRegistry()
@@ -408,11 +413,14 @@ class BrokerTests(unittest.TestCase):
         self.submit(); self.broker.tick()
         replacement = FailedAttachment()
         recovered = Broker(self.db, self.policy, registry, replacement)
-        recovered.recover()
-        self.assertFalse(recovered._active)
-        following = self.make_request()
-        recovered.call("lh_job_submit", following, self.owner)
-        recovered.tick()
+        with mock.patch("local_hand_jobs.broker.time.monotonic", return_value=100.0):
+            recovered.recover()
+            self.assertFalse(recovered._active)
+            following = self.make_request()
+            recovered.call("lh_job_submit", following, self.owner)
+            recovered.tick()
+        self.assertEqual(1, replacement.reattaches,
+                         "a retryable recovery error must respect its backoff")
         self.assertFalse(replacement.starts,
                          "an unobserved pre-crash process must not free its global execution slot")
         self.assertEqual("QUEUED", recovered.status(following["operation_id"], self.owner)["phase"])
@@ -423,6 +431,222 @@ class BrokerTests(unittest.TestCase):
         recovered.recover(); recovered.tick()
         self.assertEqual([following["operation_id"]], [item[0] for item in replacement.starts])
         self.assertEqual("UNKNOWN", recovered.status(self.request["operation_id"], self.owner)["outcome"])
+
+    def test_cancel_retries_exact_recovery_attachment_without_replaying_start(self):
+        class TransientAttachment(SupervisorFixture):
+            def __init__(self):
+                super().__init__()
+                self.reattaches = 0
+            def reattach(self, handle, plan):
+                self.reattaches += 1
+                if self.reattaches == 1:
+                    raise OSError("synthetic temporary manager lookup failure")
+                return handle
+
+        self.submit(); self.broker.tick()
+        execution = self.runner.starts[0][1]
+        replacement = TransientAttachment()
+        recovered = Broker(self.db, self.policy, RegistryFixture(), replacement)
+        recovered.recover()
+        self.assertEqual(1, replacement.reattaches)
+        self.assertFalse(recovered._active)
+        cancelled = recovered.call("lh_job_cancel", {"operation_id": self.request["operation_id"],
+            "expected_request_digest": self.request["request_digest"], "target": {"kind": "job"}}, self.owner)
+        self.assertEqual("UNKNOWN", cancelled["outcome"])
+        self.assertEqual("RECONCILE_REQUIRED", cancelled["lifecycle"])
+        with self.assertRaises(JobError) as blocked:
+            recovered.call("lh_job_submit", self.make_request(), self.owner)
+        self.assertEqual("RESOURCE_BUSY", blocked.exception.code)
+        replacement.finish(execution)
+
+        recovered.tick()
+
+        self.assertEqual(2, replacement.reattaches)
+        self.assertEqual([execution], replacement.stops)
+        self.assertFalse(replacement.starts)
+        status = recovered.status(self.request["operation_id"], self.owner)
+        self.assertEqual("TERMINAL", status["lifecycle"])
+        self.assertEqual("CANCELLED", status["outcome"])
+        self.assertTrue(status["cancel_requested"])
+
+    def test_cancel_retries_recovery_after_proved_observer_thread_no_start(self):
+        class RecoveryManager:
+            def __init__(self):
+                self.reattaches = self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("recovery must not replay manager.start")
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                return dict(handle)
+            def stop(self, handle):
+                self.stops += 1
+            def inspect(self, handle):
+                if self.stops:
+                    return {**_unknown(), "state": "EXITED", "future_start_blocked": True,
+                            "tree_exited": True, "collectors_stopped": True, "writers_stopped": True,
+                            "effects_checked": True, "exit_code": 1,
+                            "result": {"outcome": "CANCELLED", "business_started": True}}
+                return {**_unknown("original manager identity is running"), "state": "RUNNING"}
+
+        self.submit(); self.broker.tick()
+        manager = RecoveryManager()
+        recovered_runner = Runner(manager)
+        recovered = Broker(self.db, self.policy, RegistryFixture(), recovered_runner)
+        try:
+            with mock.patch("local_hand_jobs.runner.threading.Thread.start",
+                            side_effect=RuntimeError("synthetic thread start refusal")):
+                recovered.recover()
+            self.assertFalse(recovered._active)
+            self.assertTrue(recovered._recovering)
+            self.assertEqual(0, manager.reattaches)
+            recovered.call("lh_job_cancel", {
+                "operation_id": self.request["operation_id"],
+                "expected_request_digest": self.request["request_digest"],
+                "target": {"kind": "job"}}, self.owner)
+
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                recovered.tick()
+                if recovered.status(self.request["operation_id"], self.owner)["lifecycle"] == "TERMINAL":
+                    break
+                time.sleep(.01)
+            status = recovered.status(self.request["operation_id"], self.owner)
+
+            self.assertEqual("TERMINAL", status["lifecycle"])
+            self.assertEqual("CANCELLED", status["outcome"])
+            self.assertEqual(1, manager.reattaches)
+            self.assertEqual(1, manager.stops)
+            self.assertEqual(0, manager.starts)
+        finally:
+            recovered.close()
+
+    def test_initial_observer_thread_no_start_has_terminal_cancel_proof(self):
+        class NeverCalledManager:
+            def __init__(self):
+                self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("proved observer refusal cannot reach manager.start")
+            def stop(self, handle):
+                self.stops += 1
+
+        manager = NeverCalledManager()
+        actual_runner = Runner(manager)
+        broker = Broker(self.db, self.policy, RegistryFixture(), actual_runner)
+        self.broker = broker
+        self.submit()
+        try:
+            actual_start = threading.Thread.start
+            def scheduled_then_refused(observer):
+                # The native target is already waiting at Runner's deny gate;
+                # an exception after that point still cannot reach manager.start.
+                actual_start(observer)
+                raise RuntimeError("synthetic post-native-start interruption")
+            with mock.patch("local_hand_jobs.runner.threading.Thread.start",
+                            new=scheduled_then_refused):
+                broker.tick()
+            self.assertEqual(0, manager.starts)
+            self.assertEqual(1, len(broker._active))
+            cancelled = self.cancel()
+            self.assertTrue(cancelled["cancel_requested"])
+
+            broker.tick()
+            status = self.status()
+
+            self.assertEqual("TERMINAL", status["lifecycle"])
+            self.assertEqual("CANCELLED", status["outcome"])
+            self.assertTrue(status["exit_proof"]["future_start_blocked"])
+            self.assertTrue(status["exit_proof"]["tree_exited"])
+            self.assertEqual(0, manager.starts)
+            self.assertEqual(0, manager.stops)
+            broker.call("lh_job_submit", self.make_request(), self.owner)
+        finally:
+            broker.close()
+
+    def test_permanent_synchronous_recovery_refusal_is_not_hot_polled(self):
+        class PermanentAttachment(SupervisorFixture):
+            def __init__(self):
+                super().__init__()
+                self.reattaches = 0
+            def reattach(self, handle, plan):
+                self.reattaches += 1
+                raise JobError("CONFLICT", "synthetic permanent recovery mismatch")
+
+        self.submit(); self.broker.tick()
+        replacement = PermanentAttachment()
+        recovered = Broker(self.db, self.policy, RegistryFixture(), replacement)
+        recovered.recover()
+        for _ in range(4):
+            recovered.tick()
+
+        self.assertEqual(1, replacement.reattaches)
+        self.assertFalse(recovered._active)
+        self.assertFalse(recovered._recovering)
+        self.assertCode("RESOURCE_BUSY", lambda: recovered.call(
+            "lh_job_submit", self.make_request(), self.owner))
+        self.assertEqual("UNKNOWN", recovered.status(
+            self.request["operation_id"], self.owner)["outcome"])
+
+    def test_durable_cancel_reaches_runner_after_async_restart_attachment_failure(self):
+        class TransientManager:
+            def __init__(self):
+                self.available = threading.Event()
+                self.first_attempt = threading.Event()
+                self.reattaches = self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("recovery must not replay manager.start")
+            def recovery_attachment_retryable(self, error):
+                return getattr(error, "code", None) == "IO_UNCERTAIN"
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                self.first_attempt.set()
+                if not self.available.is_set():
+                    raise RunnerError("IO_UNCERTAIN", "synthetic transient attachment failure")
+                return dict(handle)
+            def stop(self, handle):
+                self.stops += 1
+            def inspect(self, handle):
+                if self.stops:
+                    return {**_unknown(), "state": "EXITED", "future_start_blocked": True,
+                            "tree_exited": True, "collectors_stopped": True, "writers_stopped": True,
+                            "effects_checked": True, "exit_code": 1,
+                            "result": {"outcome": "CANCELLED", "business_started": True}}
+                return {**_unknown("original manager identity is running"), "state": "RUNNING"}
+
+        self.submit(); self.broker.tick()
+        execution = self.runner.starts[0][1]
+        manager = TransientManager()
+        recovered_runner = Runner(manager)
+        recovered = Broker(self.db, self.policy, RegistryFixture(), recovered_runner)
+        try:
+            recovered.recover()
+            self.assertTrue(manager.first_attempt.wait(1))
+            cancelled = recovered.call("lh_job_cancel", {
+                "operation_id": self.request["operation_id"],
+                "expected_request_digest": self.request["request_digest"],
+                "target": {"kind": "job"}}, self.owner)
+            self.assertEqual("UNKNOWN", cancelled["outcome"])
+            manager.available.set()
+
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                recovered.tick()
+                if recovered.status(self.request["operation_id"], self.owner)["lifecycle"] == "TERMINAL":
+                    break
+                time.sleep(.01)
+            status = recovered.status(self.request["operation_id"], self.owner)
+
+            self.assertEqual("TERMINAL", status["lifecycle"])
+            self.assertEqual("CANCELLED", status["outcome"])
+            self.assertEqual(0, manager.starts)
+            self.assertGreaterEqual(manager.reattaches, 2)
+            self.assertEqual(1, manager.stops)
+            self.assertEqual(execution,
+                             recovered_runner._executions[execution].handle["execution_id"])
+        finally:
+            recovered.close()
 
     def test_unhealthy_db_cannot_report_missing(self):
         self.db.healthy = False

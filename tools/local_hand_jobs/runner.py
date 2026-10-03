@@ -45,6 +45,10 @@ class _NoStartError(RunnerError):
     """Internal manager proof that no delivery was attempted, not an error-code inference."""
 
 
+class _ObserverStartError(RunnerError):
+    """A local observer was proved not to have reached its supervisor."""
+
+
 def _plain(value):
     if isinstance(value, Mapping): return {k: _plain(v) for k, v in value.items()}
     if isinstance(value, (tuple, list)): return [_plain(v) for v in value]
@@ -66,6 +70,8 @@ class _Execution:
     proof: dict = field(default_factory=_unknown)
     manager_handle: object = None
     launch_complete: bool = False
+    observer: object = None
+    observer_start_done: threading.Event = field(default_factory=threading.Event)
 
 
 class Runner:
@@ -74,6 +80,70 @@ class Runner:
         self.manager = manager if manager is not None else SystemdManager()
         self._executions = {}
         self._lock = threading.Lock()
+        self._shutdown = threading.Event()
+
+    def _launch_supervisor(self, item, name):
+        """Start one gated observer or contain every interrupted start."""
+        permitted = threading.Event()
+        aborted = threading.Event()
+        def observe():
+            permitted.wait()
+            if not aborted.is_set():
+                self._supervise(item)
+        thread = threading.Thread(target=observe, daemon=True, name=name)
+        with self._lock:
+            if self._shutdown.is_set():
+                if self._executions.get(item.handle["execution_id"]) is item:
+                    del self._executions[item.handle["execution_id"]]
+                raise RunnerError("IO_UNCERTAIN", "runner observer service is closed")
+            item.observer = thread
+        try:
+            thread.start()
+            permitted.set()
+        except BaseException as error:
+            if permitted.is_set():
+                # Permission may already have been consumed. Retain the exact
+                # identity and UNKNOWN barrier; never infer no-start. Event.set
+                # itself can be interrupted after its flag changes but before
+                # notifying waiters, so abort and publish the wakeup again.
+                aborted.set()
+                permitted.set()
+                raise
+            # start() may be interrupted after native thread creation but
+            # before its CPython handshake returns, or permit publication may
+            # itself be interrupted. Close the gate before releasing the target.
+            aborted.set()
+            permitted.set()
+            if isinstance(error, Exception):
+                if not item.plan.get("_reattach"):
+                    # The manager delivery function was unreachable, so this
+                    # exact execution is conclusively blocked from starting.
+                    # Retain the identity and expose normal terminal proof;
+                    # neither this process nor recovery replays manager.start.
+                    proof = _unknown()
+                    proof.update(state="EXITED", future_start_blocked=True, tree_exited=True,
+                                 collectors_stopped=True, writers_stopped=True, effects_checked=True,
+                                 exit_code=None, result={"outcome": "FAILED", "error": "IO_UNCERTAIN",
+                                                        "business_started": False, "helper_started": False},
+                                 missing=[])
+                    with item.lock:
+                        item.proof = proof
+                    return
+                with self._lock:
+                    if self._executions.get(item.handle["execution_id"]) is item:
+                        del self._executions[item.handle["execution_id"]]
+                raise _ObserverStartError(
+                    "IO_UNCERTAIN", "local execution observer did not start") from error
+            # Process-control exceptions keep the identity and UNKNOWN proof.
+            # The aborted gate still prevents any delayed manager delivery.
+            raise
+        finally:
+            item.observer_start_done.set()
+
+    @staticmethod
+    def recovery_attachment_retryable(error):
+        """Classify only failures before a local observer was launched."""
+        return isinstance(error, (OSError, _ObserverStartError))
 
     def set_start_guard(self, callback):
         """Bind the broker's durable startup/cancel fence in trusted code only."""
@@ -99,12 +169,13 @@ class Runner:
         if "supervision_version" in frozen:
             identity["supervision_version"] = frozen["supervision_version"]
         with self._lock:
+            if self._shutdown.is_set():
+                raise RunnerError("IO_UNCERTAIN", "runner observer service is closed")
             if execution_id in self._executions:
                 raise RunnerError("CONFLICT", "an execution identity is never started twice")
             item = _Execution(identity, frozen)
             self._executions[execution_id] = item
-        threading.Thread(target=self._supervise, args=(item,), daemon=True,
-                         name="lh-supervisor-" + execution_id[-12:]).start()
+        self._launch_supervisor(item, "lh-supervisor-" + execution_id[-12:])
         return dict(identity)
 
     @staticmethod
@@ -126,14 +197,15 @@ class Runner:
         identity = dict(handle, unit=unit, phase=handle.get("phase", plan.get("phase", "business")),
                         job_key=handle.get("job_key", plan.get("operation_id", "")))
         with self._lock:
+            if self._shutdown.is_set():
+                raise RunnerError("IO_UNCERTAIN", "runner observer service is closed")
             if execution_id in self._executions:
                 if not self._same_handle(self._executions[execution_id].handle, identity):
                     raise RunnerError("CONFLICT", "recovery identity differs")
                 return dict(self._executions[execution_id].handle)
             item = _Execution(identity, dict(_plain(plan), _reattach=True))
             self._executions[execution_id] = item
-        threading.Thread(target=self._supervise, args=(item,), daemon=True,
-                         name="lh-reattach-" + execution_id[-12:]).start()
+        self._launch_supervisor(item, "lh-reattach-" + execution_id[-12:])
         return dict(identity)
 
     def inspect(self, handle):
@@ -154,6 +226,8 @@ class Runner:
 
     def _supervise(self, item):
         try:
+            if self._shutdown.is_set():
+                return
             # The manager performs its own support and OS-boundary checks here,
             # outside the broker fence and database transactions.
             if item.cancel.is_set() and not item.plan.get("_reattach"):
@@ -164,26 +238,64 @@ class Runner:
                 with item.lock: item.proof = proof
                 return
             delivery_error = None
-            try:
-                handle = (self.manager.reattach(item.handle, item.plan, item.cancel) if item.plan.get("_reattach")
-                          else self.manager.start(item.handle, item.plan, item.cancel))
-            except Exception as error:
-                # A manager can retain a delivered request even when returning
-                # its receipt failed. Adopt only that exact in-memory identity;
-                # never retry start or reinterpret the exception as no-start.
-                if isinstance(error, _NoStartError) or item.plan.get("_reattach"):
-                    raise
-                recover = getattr(self.manager, "_retained_delivery", None)
-                handle = recover(item.handle) if recover is not None else None
-                if handle is None:
-                    raise
-                delivery_error = getattr(error, "code", "IO_UNCERTAIN")
+            if item.plan.get("_reattach"):
+                # Reattachment is observation of one already-persisted manager
+                # identity, not another delivery.  A transient manager lookup
+                # must remain live so a later durable cancel can still reach
+                # stop; retrying manager.start here would replay side effects.
+                retry_delay = 0.05
+                cancel_wake_used = False
+                while not self._shutdown.is_set():
+                    try:
+                        handle = self.manager.reattach(item.handle, item.plan, item.cancel)
+                        break
+                    except Exception as error:
+                        proof = _unknown(str(error) or "manager recovery attachment is unavailable")
+                        proof["result"] = {"outcome": "UNKNOWN",
+                                           "error": getattr(error, "code", "IO_UNCERTAIN")}
+                        with item.lock:
+                            item.proof = proof
+                        retryable = getattr(self.manager, "recovery_attachment_retryable", None)
+                        if not callable(retryable) or retryable(error) is not True:
+                            raise
+                        # One newly persisted cancellation wakes attachment
+                        # immediately so it can reach stop. Permanent failure
+                        # thereafter uses capped backoff; shutdown is distinct
+                        # from cancellation and never changes manager state.
+                        if item.cancel.is_set() and not cancel_wake_used:
+                            cancel_wake_used = True
+                            continue
+                        if item.cancel.is_set():
+                            if self._shutdown.wait(retry_delay):
+                                return
+                        else:
+                            if item.cancel.wait(retry_delay):
+                                cancel_wake_used = True
+                        retry_delay = min(retry_delay * 2, 0.5)
+                else:
+                    return
+            else:
+                try:
+                    handle = self.manager.start(item.handle, item.plan, item.cancel)
+                except Exception as error:
+                    # A manager can retain a delivered request even when returning
+                    # its receipt failed. Adopt only that exact in-memory identity;
+                    # never retry start or reinterpret the exception as no-start.
+                    if isinstance(error, _NoStartError):
+                        raise
+                    recover = getattr(self.manager, "_retained_delivery", None)
+                    handle = recover(item.handle) if recover is not None else None
+                    if handle is None:
+                        raise
+                    delivery_error = getattr(error, "code", "IO_UNCERTAIN")
             item.manager_handle = handle
             item.launch_complete = True
             interval = self.manager.observation_interval() if hasattr(self.manager, "observation_interval") else 0.05
             if type(interval) not in (int, float) or not 0 < interval <= 0.5:
                 raise RunnerError("IO_UNCERTAIN", "Process manager observation cadence is invalid")
             while True:
+                if self._shutdown.is_set():
+                    return
                 try:
                     if item.cancel.is_set(): self.manager.stop(handle)
                     proof = self.manager.inspect(handle)
@@ -219,6 +331,22 @@ class Runner:
             with item.lock: item.proof = proof
         except BaseException:
             with item.lock: item.proof = _unknown("manager operation is uncertain")
+
+    def close(self):
+        """Stop only local observer threads; manager-owned work is untouched."""
+        self._shutdown.set()
+        with self._lock:
+            observers = [(item, item.observer) for item in self._executions.values()
+                         if item.observer is not None]
+        deadline = time.monotonic() + 0.6
+        current = threading.current_thread()
+        for item, observer in observers:
+            if observer is current:
+                continue
+            remaining = max(0.0, deadline - time.monotonic())
+            if not item.observer_start_done.wait(remaining) or observer.ident is None:
+                continue
+            observer.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 class _Dqblk(ctypes.Structure):
@@ -424,6 +552,10 @@ class _SystemdExecutionCore:
     def observation_interval(self):
         """Legacy transport cadence; an admitted backend may poll less often."""
         return 0.05
+
+    def recovery_attachment_retryable(self, error):
+        """Whether this manager can retry the same observation transport."""
+        return isinstance(error, OSError)
 
     def _check_manager_binding(self, *records):
         try:

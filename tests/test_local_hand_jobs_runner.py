@@ -1,6 +1,7 @@
 """Trusted DI simulations are distinguished from real cgroup integration."""
 import contextlib
 from fractions import Fraction
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -621,6 +622,343 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(manager.reattaches, 1)
         recovered.reattach(handle, {"phase": "business"})
         self.assertEqual(manager.reattaches, 1)
+
+    def test_transient_recovery_failure_keeps_observer_alive_for_observation_and_cancel(self):
+        class TransientRecoveryManager:
+            def __init__(self, requires_stop):
+                self.available = threading.Event()
+                self.first_attempt = threading.Event()
+                self.requires_stop = requires_stop
+                self.reattaches = 0
+                self.starts = 0
+                self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("recovery must not replay manager.start")
+            def recovery_attachment_retryable(self, error):
+                return getattr(error, "code", None) == "IO_UNCERTAIN"
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                self.first_attempt.set()
+                if not self.available.is_set():
+                    raise runner.RunnerError("IO_UNCERTAIN", "synthetic manager lookup failure")
+                return dict(handle)
+            def stop(self, handle):
+                self.stops += 1
+            def inspect(self, handle):
+                if self.available.is_set() and (self.stops or not self.requires_stop):
+                    return {**runner._unknown(), "state": "EXITED", "future_start_blocked": True,
+                            "tree_exited": True, "collectors_stopped": True, "writers_stopped": True,
+                            "effects_checked": True, "exit_code": 1 if self.requires_stop else 0,
+                            "result": {"outcome": "CANCELLED" if self.requires_stop else "SUCCEEDED",
+                                       "business_started": True}}
+                return {**runner._unknown("original manager identity is still running"), "state": "RUNNING"}
+
+        execution_id = "job-transient-recovery-business"
+        handle = {"job_key": "job", "execution_id": execution_id, "phase": "business",
+                  "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel):
+                manager = TransientRecoveryManager(requires_stop=cancel)
+                recovered = runner.Runner(manager)
+                recovered_handle = recovered.reattach(handle, {"phase": "business"})
+                self.assertTrue(manager.first_attempt.wait(1))
+                first = recovered.inspect(recovered_handle)
+                self.assertEqual("UNKNOWN", first["state"])
+                self.assertFalse(first["future_start_blocked"])
+
+                if cancel:
+                    recovered.stop(recovered_handle)
+                manager.available.set()
+                proof = await_state(recovered, recovered_handle, "EXITED")
+
+                self.assertGreaterEqual(manager.reattaches, 2)
+                self.assertEqual(1 if cancel else 0, manager.stops)
+                self.assertEqual(0, manager.starts)
+                self.assertTrue(proof["future_start_blocked"])
+                self.assertTrue(proof["tree_exited"])
+                self.assertEqual(execution_id, recovered_handle["execution_id"])
+
+    def test_reattach_thread_start_failure_rolls_back_before_safe_retry(self):
+        class RecoveryManager:
+            def __init__(self):
+                self.reattaches = self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("recovery must not replay manager.start")
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                return dict(handle)
+            def stop(self, handle):
+                self.stops += 1
+            def inspect(self, handle):
+                if self.stops:
+                    return {**runner._unknown(), "state": "EXITED", "future_start_blocked": True,
+                            "tree_exited": True, "collectors_stopped": True, "writers_stopped": True,
+                            "effects_checked": True, "exit_code": 1,
+                            "result": {"outcome": "CANCELLED", "business_started": True}}
+                return {**runner._unknown("original manager identity is running"), "state": "RUNNING"}
+
+        execution_id = "job-thread-start-recovery-business"
+        handle = {"job_key": "job", "execution_id": execution_id, "phase": "business",
+                  "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        manager = RecoveryManager()
+        recovered = runner.Runner(manager)
+        with patch("local_hand_jobs.runner.threading.Thread.start",
+                   side_effect=RuntimeError("synthetic thread start refusal")):
+            with self.assertRaises(runner.RunnerError) as caught:
+                recovered.reattach(handle, {"phase": "business"})
+        self.assertEqual("IO_UNCERTAIN", caught.exception.code)
+        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
+        self.assertNotIn(execution_id, recovered._executions)
+        self.assertEqual(0, manager.reattaches)
+
+        recovered_handle = recovered.reattach(handle, {"phase": "business"})
+        recovered.stop(recovered_handle)
+        proof = await_state(recovered, recovered_handle, "EXITED")
+
+        self.assertEqual(1, manager.reattaches)
+        self.assertEqual(1, manager.stops)
+        self.assertEqual(0, manager.starts)
+        self.assertTrue(proof["future_start_blocked"])
+        recovered.close()
+
+    def test_interrupted_native_observer_start_retains_unknown_without_delivery(self):
+        class NeverCalledManager:
+            def __init__(self):
+                self.starts = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("an interrupted observer gate cannot deliver")
+
+        manager = NeverCalledManager()
+        supervisor = runner.Runner(manager)
+        execution_id = "job-interrupted-observer-business"
+        actual_start = threading.Thread.start
+        def scheduled_then_interrupted(observer):
+            actual_start(observer)
+            raise KeyboardInterrupt("synthetic process-control interruption")
+        with patch("local_hand_jobs.runner.threading.Thread.start",
+                   new=scheduled_then_interrupted):
+            with self.assertRaises(KeyboardInterrupt):
+                supervisor.start("job", execution_id, {"phase": "business"})
+
+        item = supervisor._executions[execution_id]
+        item.observer.join(1)
+        self.assertFalse(item.observer.is_alive())
+        self.assertEqual("UNKNOWN", supervisor.inspect(item.handle)["state"])
+        self.assertFalse(supervisor.inspect(item.handle)["future_start_blocked"])
+        self.assertEqual(0, manager.starts)
+        supervisor.close()
+
+    def test_interrupted_permit_publication_aborts_observer_without_leak(self):
+        class NeverCalledManager:
+            def __init__(self):
+                self.starts = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("an unpublished observer permit cannot deliver")
+
+        class InterruptOnce:
+            def __init__(self, event):
+                self.event = event
+                self.interrupted = False
+            def set(self):
+                if not self.interrupted:
+                    self.interrupted = True
+                    raise KeyboardInterrupt("synthetic permit publication interruption")
+                self.event.set()
+            def wait(self, timeout=None):
+                return self.event.wait(timeout)
+            def is_set(self):
+                return self.event.is_set()
+
+        class InterruptAfterFlag:
+            def __init__(self):
+                self.condition = threading.Condition()
+                self.flag = False
+                self.interrupted = False
+                self.wait_entered = actual_event()
+            def set(self):
+                if not self.interrupted:
+                    if not self.wait_entered.wait(1):
+                        raise AssertionError("observer did not enter the permit wait")
+                with self.condition:
+                    self.flag = True
+                    if not self.interrupted:
+                        self.interrupted = True
+                        raise KeyboardInterrupt("synthetic interruption before permit notify")
+                    self.condition.notify_all()
+            def wait(self, timeout=None):
+                with self.condition:
+                    self.wait_entered.set()
+                    return self.condition.wait_for(lambda: self.flag, timeout)
+            def is_set(self):
+                with self.condition:
+                    return self.flag
+
+        actual_event = threading.Event
+        for mode in ("before_flag", "after_flag_before_notify"):
+            with self.subTest(mode=mode):
+                manager = NeverCalledManager()
+                supervisor = runner.Runner(manager)
+                execution_id = "job-interrupted-permit-" + mode
+                created = 0
+                def event_factory():
+                    nonlocal created
+                    created += 1
+                    if created != 1:
+                        return actual_event()
+                    return (InterruptOnce(actual_event()) if mode == "before_flag"
+                            else InterruptAfterFlag())
+                with patch("local_hand_jobs.runner.threading.Event", side_effect=event_factory):
+                    with self.assertRaises(KeyboardInterrupt):
+                        supervisor.start("job", execution_id, {"phase": "business"})
+
+                item = supervisor._executions[execution_id]
+                item.observer.join(1)
+                self.assertFalse(item.observer.is_alive())
+                proof = supervisor.inspect(item.handle)
+                self.assertEqual("UNKNOWN", proof["state"])
+                self.assertFalse(proof["future_start_blocked"])
+                self.assertEqual(0, manager.starts)
+                supervisor.close()
+
+    def test_close_waits_for_observer_start_handshake_without_manager_work(self):
+        class NeverCalledManager:
+            def __init__(self):
+                self.reattaches = self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                return dict(handle)
+            def stop(self, handle):
+                self.stops += 1
+
+        execution_id = "job-close-start-handshake-business"
+        handle = {"job_key": "job", "execution_id": execution_id, "phase": "business",
+                  "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        manager = NeverCalledManager()
+        supervisor = runner.Runner(manager)
+        begin = threading.Event()
+        start_entered = threading.Event()
+        release_start = threading.Event()
+        close_begin = threading.Event()
+        errors = []
+        actual_start = threading.Thread.start
+        def delayed_start(observer):
+            actual_start(observer)
+            start_entered.set()
+            release_start.wait(1)
+        def attach():
+            begin.wait(1)
+            try:
+                supervisor.reattach(handle, {"phase": "business"})
+            except BaseException as error:
+                errors.append(error)
+        def close():
+            close_begin.wait(1)
+            try:
+                supervisor.close()
+            except BaseException as error:
+                errors.append(error)
+
+        attaching = threading.Thread(target=attach)
+        closing = threading.Thread(target=close)
+        attaching.start(); closing.start()
+        try:
+            with patch("local_hand_jobs.runner.threading.Thread.start", new=delayed_start):
+                begin.set()
+                self.assertTrue(start_entered.wait(1))
+                close_begin.set()
+                self.assertTrue(supervisor._shutdown.wait(1))
+                release_start.set()
+            attaching.join(1); closing.join(1)
+        finally:
+            release_start.set()
+            begin.set(); close_begin.set()
+            attaching.join(1); closing.join(1)
+
+        self.assertFalse(attaching.is_alive())
+        self.assertFalse(closing.is_alive())
+        self.assertEqual([], errors)
+        self.assertEqual(0, manager.reattaches)
+        self.assertEqual(0, manager.starts)
+        self.assertEqual(0, manager.stops)
+
+    def test_nonretryable_recovery_failure_does_not_poll_or_restart(self):
+        class PermanentFailureManager:
+            def __init__(self):
+                self.first_attempt = threading.Event()
+                self.reattaches = self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("recovery must not replay manager.start")
+            def recovery_attachment_retryable(self, error):
+                return False
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                self.first_attempt.set()
+                raise runner.RunnerError("CONFLICT", "synthetic permanent identity mismatch")
+            def stop(self, handle):
+                self.stops += 1
+
+        execution_id = "job-permanent-recovery-business"
+        handle = {"job_key": "job", "execution_id": execution_id, "phase": "business",
+                  "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        manager = PermanentFailureManager()
+        recovered = runner.Runner(manager)
+        recovered_handle = recovered.reattach(handle, {"phase": "business"})
+        self.assertTrue(manager.first_attempt.wait(1))
+        observer = recovered._executions[execution_id].observer
+        observer.join(1)
+        self.assertFalse(observer.is_alive())
+        recovered.stop(recovered_handle)
+        time.sleep(.08)
+
+        proof = recovered.inspect(recovered_handle)
+        self.assertEqual(1, manager.reattaches)
+        self.assertEqual(0, manager.starts)
+        self.assertEqual(0, manager.stops)
+        self.assertEqual("UNKNOWN", proof["state"])
+        self.assertEqual("CONFLICT", proof["result"]["error"])
+        recovered.close()
+
+    def test_close_ends_retrying_recovery_observer_without_stopping_manager(self):
+        class UnavailableManager:
+            def __init__(self):
+                self.first_attempt = threading.Event()
+                self.reattaches = self.starts = self.stops = 0
+            def start(self, handle, plan, cancel):
+                self.starts += 1
+                raise AssertionError("recovery must not replay manager.start")
+            def recovery_attachment_retryable(self, error):
+                return True
+            def reattach(self, handle, plan, cancel):
+                self.reattaches += 1
+                self.first_attempt.set()
+                raise OSError("synthetic unavailable observation transport")
+            def stop(self, handle):
+                self.stops += 1
+
+        execution_id = "job-close-recovery-business"
+        handle = {"job_key": "job", "execution_id": execution_id, "phase": "business",
+                  "unit": "lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service"}
+        manager = UnavailableManager()
+        recovered = runner.Runner(manager)
+        recovered.reattach(handle, {"phase": "business"})
+        self.assertTrue(manager.first_attempt.wait(1))
+        observer = recovered._executions[execution_id].observer
+
+        recovered.close()
+        attempts_at_close = manager.reattaches
+        time.sleep(.08)
+
+        self.assertFalse(observer.is_alive())
+        self.assertEqual(attempts_at_close, manager.reattaches)
+        self.assertEqual(0, manager.starts)
+        self.assertEqual(0, manager.stops)
 
     def test_production_default_honestly_reports_unsupported(self):
         manager = runner.SystemdManager()

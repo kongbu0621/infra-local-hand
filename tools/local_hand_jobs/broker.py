@@ -103,6 +103,10 @@ class Broker:
         self._shutdown = threading.Event()
         self._thread = None
         self._active = {}
+        # A synchronous reattach refusal must not strand a durable execution
+        # intent forever. Keep only the exact persisted identity and plan for
+        # bounded observation retries; recovery never calls runner.start.
+        self._recovering = {}
         self._execution_owners = {}
         if hasattr(self.runner, "set_start_guard"):
             self.runner.set_start_guard(self._guard_start)
@@ -471,12 +475,50 @@ class Broker:
                         reconnect.append(((row["namespace"], row["id"]), handle, plan))
         for key, handle, plan in reconnect:
             if hasattr(self.runner, "reattach"):
+                pending = self._recovering.get(key)
+                if (pending is None or pending["handle"] != handle or
+                        pending["plan"] != plan):
+                    self._recovering[key] = {
+                        "handle": handle, "plan": plan,
+                        "retry_delay": 0.05, "next_retry": 0.0,
+                        "cancel_wake_used": False,
+                    }
+                self._retry_recovery(key, force=True)
+
+    def _retry_recovery(self, key, *, force=False):
+        """Enqueue bounded observation of one identity, never a fresh start."""
+        pending = self._recovering.get(key)
+        if pending is None:
+            return "ATTACHED" if key in self._active else "BLOCKED"
+        now = time.monotonic()
+        if not force and now < pending["next_retry"]:
+            return "PENDING"
+        try:
+            attached = self.runner.reattach(pending["handle"], pending["plan"])
+            self._active[key] = attached if attached is not None else pending["handle"]
+        except Exception as error:
+            classifier = getattr(self.runner, "recovery_attachment_retryable", None)
+            if callable(classifier):
                 try:
-                    attached = self.runner.reattach(handle, plan)
-                    self._active[key] = attached if attached is not None else handle
+                    retryable = classifier(error) is True
                 except Exception:
-                    # A missing/uncertain manager never erases the persisted barrier.
-                    pass
+                    retryable = False
+            else:
+                retryable = (isinstance(error, OSError) or
+                             getattr(error, "code", None) == "IO_UNCERTAIN")
+            if not retryable:
+                # A structural refusal cannot be repaired by polling. The
+                # durable intent, capacity and resource barriers remain owned.
+                self._recovering.pop(key, None)
+                return "BLOCKED"
+            delay = pending["retry_delay"]
+            # Backoff starts after even a badly behaved synchronous adapter
+            # returns, rather than from the beginning of that adapter call.
+            pending["next_retry"] = time.monotonic() + delay
+            pending["retry_delay"] = min(delay * 2, 0.5)
+            return "PENDING"
+        self._recovering.pop(key, None)
+        return "ATTACHED"
 
     def _unknown(self, namespace, identity, gap):
         with self.state.transaction() as tx:
@@ -1099,6 +1141,15 @@ class Broker:
             rows = self.state.all(tx)
         for row in rows:
             key, record = (row["namespace"], row["id"]), row["record"]
+            if key in self._recovering and key not in self._active:
+                pending = self._recovering[key]
+                cancel_wake = (record["cancel_requested"] is True and
+                               not pending["cancel_wake_used"])
+                if cancel_wake:
+                    pending["cancel_wake_used"] = True
+                if self._retry_recovery(key, force=cancel_wake) != "ATTACHED":
+                    self._unknown(*key, "Supervisor recovery attachment is temporarily unavailable")
+                    continue
             if key in self._active:
                 try:
                     bindings.check(self.manager_binding, self._active[key].get("manager_binding"))
@@ -1182,6 +1233,8 @@ class Broker:
         self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=1)
+        if hasattr(self.runner, "close"):
+            self.runner.close()
         # Supervised executions remain recorded. No implicit cancellation or deletion.
 
     def register_seal(self, seal):
