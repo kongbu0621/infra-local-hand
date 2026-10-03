@@ -17,7 +17,6 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.contract import JobError, Principal, request_digest
-from local_hand_jobs.runner import Runner, RunnerError, _unknown
 from local_hand_jobs.state import StateStore
 
 
@@ -470,6 +469,8 @@ class BrokerTests(unittest.TestCase):
         self.assertTrue(status["cancel_requested"])
 
     def test_cancel_retries_recovery_after_proved_observer_thread_no_start(self):
+        from local_hand_jobs.runner import Runner, _unknown
+
         class RecoveryManager:
             def __init__(self):
                 self.reattaches = self.starts = self.stops = 0
@@ -522,6 +523,8 @@ class BrokerTests(unittest.TestCase):
             recovered.close()
 
     def test_initial_observer_thread_no_start_has_terminal_cancel_proof(self):
+        from local_hand_jobs.runner import Runner
+
         class NeverCalledManager:
             def __init__(self):
                 self.starts = self.stops = 0
@@ -589,6 +592,8 @@ class BrokerTests(unittest.TestCase):
             self.request["operation_id"], self.owner)["outcome"])
 
     def test_durable_cancel_reaches_runner_after_async_restart_attachment_failure(self):
+        from local_hand_jobs.runner import Runner, RunnerError, _unknown
+
         class TransientManager:
             def __init__(self):
                 self.available = threading.Event()
