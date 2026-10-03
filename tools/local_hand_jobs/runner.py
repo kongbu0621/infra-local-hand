@@ -61,6 +61,15 @@ def _unknown(reason="process ownership not yet proven"):
             "exit_code": None, "facts": {}, "result": {}, "missing": [reason]}
 
 
+def _h11_held():
+    """Fixture-only live hold; never an exit or uncertainty decision."""
+    return {"state": "RUNNING", "future_start_blocked": False, "tree_exited": False,
+            "collectors_stopped": False, "writers_stopped": False,
+            "effects_checked": False, "exit_code": None,
+            "facts": {"h11_delivery_barrier": True}, "result": {},
+            "missing": ["result reader is deliberately held before collector start"]}
+
+
 @dataclass
 class _Execution:
     handle: dict
@@ -771,7 +780,8 @@ class _SystemdExecutionCore:
             payload.update(reader_unit=part["unit"], unit=part["unit"], helper_identity=helper_identity,
                            result_name=Path(execution["result_path"]).name)
             part["reader"] = result_reader.PipeReader(execution["execution_id"], execution["phase"], part["unit"], helper_identity)
-            part.update(pipe_error=None, pipe_closed=False, client_stopped=False, pipe_nonblocking=False)
+            part.update(pipe_error=None, pipe_closed=False, client_stopped=False, pipe_nonblocking=False,
+                        collector_started=False)
             command.extend(["--", execution["python"], "-I", "-B", script,
                             "--result-reader", result_reader.encode_payload(payload)])
         environment = {"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": "/run/user/" + str(os.geteuid())}
@@ -874,8 +884,16 @@ class _SystemdExecutionCore:
             return None
         fields = ("unit", "boot_id", "result_path", "cgroup_parent", "launch_acked", "stop_acked",
                   "invocation_id", "execution_id", "phase_deadline_boottime_ns", "delivery_attempted")
-        return {**{key: handle.get(key) for key in fields},
-                **({"manager_binding": _plain(handle["manager_binding"])} if "manager_binding" in handle else {})}
+        value = {**{key: handle.get(key) for key in fields},
+                 **({"manager_binding": _plain(handle["manager_binding"])} if "manager_binding" in handle else {})}
+        # H11 freezes only its result reader after the exact delivery/identity
+        # receipt and before the first anonymous-pipe read. Preserve those two
+        # finite facts in the durable recovery handle. They are absent on all
+        # normal paths, so the ordinary handle shape remains unchanged.
+        for key in ("collector_started", "h11_delivery_barrier"):
+            if key in handle:
+                value[key] = handle[key]
+        return value
 
     def export_handle(self, handle):
         self._check_manager_binding(handle, handle["identity"])
@@ -907,8 +925,20 @@ class _SystemdExecutionCore:
             try:
                 if part is None:
                     return _unknown("stage has not been delivered")
-                if part.get("stage") == "result_reader" and not part.get("recovered") and "quota_transport" not in part:
-                    self._drain_reader(part)
+                if part.get("stage") == "result_reader" and not part.get("recovered"):
+                    # A test-only system manager may bind the exact invocation
+                    # and hold here before *any* local collector read. Check at
+                    # the common observation seam so earlier-stage uncertainty
+                    # cannot bypass the barrier through a best-effort branch.
+                    if self._hold_result_reader_for_recovery(handle, part):
+                        # This is an intentional fixture hold on a known live
+                        # execution, not an uncertain manager observation.  A
+                        # generic UNKNOWN proof would make Broker.tick() append
+                        # EXECUTION_UNCERTAIN and destroy the exact RUNNING
+                        # ledger state required by the crash barrier.
+                        return _h11_held()
+                    if "quota_transport" not in part:
+                        self._drain_reader(part)
                 proof = self._inspect_unit(part)
                 if part.get("reader") is not None and proof.get("identity"):
                     try:
@@ -934,10 +964,11 @@ class _SystemdExecutionCore:
             # never resume the transition or manufacture a new start.
             second = observe(handle["helper"])
             third = observe(handle["result_reader"]) if handle["version"] == 3 else None
-            if not first_exited:
+            first_tree_exited = self._recovered_stage_exited(first)
+            if not first_tree_exited:
                 return _unknown("bootstrap exit is unresolved; all original stage identities were independently observed")
             if third is not None:
-                if not self._stage_exited(second) or not self._stage_exited(third):
+                if not self._recovered_stage_exited(second) or not self._recovered_stage_exited(third):
                     return _unknown("original helper or result reader exit is unresolved; recovery never redelivers")
                 # The fixed systemd-run client issues StartTransientUnit once
                 # and then only observes. After all three accepted units have
@@ -997,12 +1028,26 @@ class _SystemdExecutionCore:
             ("future_start_blocked", "tree_exited", "collectors_stopped", "writers_stopped")))
 
     @staticmethod
+    def _recovered_stage_exited(proof):
+        """OS-only restart proof; the vanished local collector stays false."""
+        return (proof.get("state") == "EXITED"
+                and proof.get("future_start_blocked") is True
+                and proof.get("tree_exited") is True
+                and proof.get("writers_stopped") is True
+                and proof.get("collectors_stopped") is False)
+
+    @staticmethod
     def _unavailable_result(helper_proof, reason):
         return {**helper_proof, "effects_checked": False, "helper_result_verified": False,
                 "result": {"outcome": "UNKNOWN", "helper_started": True}, "facts": {}, "missing": [reason]}
 
+    def _hold_result_reader_for_recovery(self, handle, part):
+        """Optional fixture-only post-delivery/pre-collection barrier."""
+        return False
+
     def _drain_reader(self, part, *, terminal=False):
         """Read only a nonblocking anonymous pipe, with a fixed per-tick bound."""
+        part["collector_started"] = True
         launch = part.get("launch")
         if launch is None or getattr(launch, "stdout", None) is None or part.get("pipe_closed"):
             return True
@@ -1873,8 +1918,16 @@ def _helper(plan):
     members.append(target.relative_to(evidence).as_posix())
     output["evidence_snapshot"] = {"root": str(evidence), "members": sorted(set(members))}
     raw = json.dumps(output, sort_keys=True, separators=(",", ":")).encode()
-    with target.open("xb") as stream:
-        stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    # The reader rejects group/world-writable results.  Create with the same
+    # protection independently of the caller's ambient umask, then pin the
+    # exact mode before publishing any bytes.
+    result_fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        os.fchmod(result_fd, 0o600)
+        with os.fdopen(result_fd, "wb", closefd=False) as stream:
+            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    finally:
+        os.close(result_fd)
     fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
     try: os.fsync(fd)
     finally: os.close(fd)

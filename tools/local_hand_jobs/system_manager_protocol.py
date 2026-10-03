@@ -23,7 +23,9 @@ WIRE_LIMIT = 4 * 1024 * 1024
 CALL_LIMIT = 256
 PHASES = ("preflight", "business", "evidence")
 STAGES = ("bootstrap", "helper", "result_reader")
-OPS = {"support", "inventory", "observe", "stop", "launch", "client_poll", "client_stop", "seal"}
+RECOVERY_PLAN_SCHEMA = "local-hand-q4-h11-recovery-plan/v1"
+OPS = {"support", "inventory", "observe", "stop", "launch", "client_poll", "client_stop", "seal",
+       "recovery_arm", "recovery_finish"}
 
 
 def start_ticks(pid):
@@ -45,12 +47,39 @@ def reference(value):
     return value
 
 
+def recovery_plan(value):
+    """Finite test-only identity handoff; it contains no launch authority."""
+    q._keys(value, {"schema", "namespace", "operation_id", "request_digest", "phase",
+                    "execution_id", "event_seq", "handle_sha256", "budget_deadline_ns",
+                    "phase_deadline_ns", "controller_deadline_ns", "units",
+                    "collector_started"})
+    q.require(value["schema"] == RECOVERY_PLAN_SCHEMA and value["namespace"] == "job",
+              "SYSTEM_RECOVERY_PLAN")
+    q.match(value["operation_id"], r"[0-9a-f-]{36}")
+    q.match(value["request_digest"], r"[0-9a-f]{64}")
+    q.require(value["phase"] in PHASES and
+              value["execution_id"] == "job-" + value["operation_id"] + "-" + value["phase"],
+              "SYSTEM_RECOVERY_PLAN")
+    q.integer(value["event_seq"], 1)
+    q.match(value["handle_sha256"], r"[0-9a-f]{64}")
+    q.integer(value["budget_deadline_ns"], 1)
+    q.integer(value["phase_deadline_ns"], 1)
+    q.integer(value["controller_deadline_ns"], value["budget_deadline_ns"])
+    q.require(value["phase_deadline_ns"] <= value["budget_deadline_ns"]
+              and value["collector_started"] is False, "SYSTEM_RECOVERY_PLAN")
+    q._keys(value["units"], set(STAGES))
+    for unit in value["units"].values():
+        q.match(unit, r"lhj-[0-9a-f]{64}\.service")
+    q.require(len(set(value["units"].values())) == len(STAGES), "SYSTEM_RECOVERY_PLAN")
+    return value
+
+
 def request_body(op, body):
     q.require(op in OPS, "SYSTEM_OPERATION")
     fields = {"support": set(), "inventory": set(), "observe": {"ref", "view"},
               "stop": {"ref", "invocation_id"}, "launch": {"ref", "bindings"},
               "client_poll": {"ref", "token"}, "client_stop": {"ref", "token"},
-              "seal": {"ref", "token"}}
+              "seal": {"ref", "token"}, "recovery_arm": {"plan"}, "recovery_finish": set()}
     q._keys(body, fields[op])
     if "ref" in body:
         reference(body["ref"])
@@ -62,6 +91,8 @@ def request_body(op, body):
         q._keys(body["bindings"], {"allocation_digest", "grant_digest"})
         for value in body["bindings"].values():
             q.match(value, r"[0-9a-f]{64}")
+    if op == "recovery_arm":
+        recovery_plan(body["plan"])
     if "token" in body:
         q.match(body["token"], r"[0-9a-f]{64}")
     return body

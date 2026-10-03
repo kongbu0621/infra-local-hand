@@ -18,6 +18,7 @@ import stat
 SCHEMA = "local-hand-q2-assembly-facts/v1"
 SYSTEM_SCHEMA = "local-hand-q2-system-assembly-facts/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-assembly-facts/v1"
+H11_SCHEMA = "local-hand-q4-h11-assembly-facts/v1"
 PHASES = ("preflight", "business", "evidence")
 DYNAMIC = {"invocation_id", "cgroup_device", "cgroup_inode"}
 
@@ -123,11 +124,12 @@ def assemble(facts):
     from admin.local_hand_quota_observer import q2_chain, q2_config, controller_guard
 
     f = copy.deepcopy(facts)
-    system = f.get("schema") == SYSTEM_SCHEMA
+    h11 = f.get("schema") == H11_SCHEMA
+    system = f.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA)
     _keys(f, {"schema", "identity", "source", "installation", "admin", "python_identity", "ordinary",
         "paths", "slots", "store", "capacity", "management", "controllers", "setpriv", "original_budgets", "limits"}
         | ({"system_geometry"} if system else set()))
-    require(f["schema"] in (SCHEMA, CANCEL_SCHEMA, SYSTEM_SCHEMA), "PREP_ASSEMBLY_SCHEMA")
+    require(f["schema"] in (SCHEMA, CANCEL_SCHEMA, SYSTEM_SCHEMA, H11_SCHEMA), "PREP_ASSEMBLY_SCHEMA")
     cancellation = f["schema"] == CANCEL_SCHEMA
     ident = f["identity"]
     _keys(ident, {"id", "authority_id", "node_id", "install_uuid", "deployment_epoch", "generation",
@@ -138,11 +140,12 @@ def assemble(facts):
     q.match(ident["principal_id"], r"q2-synthetic-[a-z0-9-]{1,64}")
     q.match(ident["ledger_id"], r"[a-z0-9][a-z0-9._-]{0,127}")
     source, install, admin = f["source"], f["installation"], f["admin"]
-    _keys(source, {"root", "commit", "files"})
+    _keys(source, {"root", "commit", "manifest_sha256", "files"})
     _keys(install, {"package_root", "source_commit", "payload_digest", "files", "programs"})
     _keys(admin, {"programs", "entry", "abi", "package_files"})
     require(source["commit"] == install["source_commit"], "PREP_ASSEMBLY_SOURCE")
-    q.match(source["commit"], r"[0-9a-f]{40}"); q.canonical_path(source["root"])
+    q.match(source["commit"], r"[0-9a-f]{40}"); q.match(source["manifest_sha256"], r"[0-9a-f]{64}")
+    q.canonical_path(source["root"])
     q._keys(install["programs"], {"python", "systemctl", "systemd_run"})
     q._keys(admin["programs"], {"python", "native", "systemctl", "systemd_run"})
     require(1 <= len(source["files"]) <= 512 and 1 <= len(install["files"]) <= 512, "PREP_ASSEMBLY_FILES")
@@ -159,6 +162,8 @@ def assemble(facts):
     if cancellation:
         for entry in ("q4_cancel_case", "q4_cancel_runtime"):
             require("tests/e3_host/" + entry + ".py" in source["files"], "PREP_ASSEMBLY_ENTRY")
+    if h11:
+        require("tests/e3_host/q4_h11_recovery.py" in source["files"], "PREP_ASSEMBLY_ENTRY")
     require(admin["entry"] == dict(path=source["root"] + "/tools/admin/local_hand_quota_observer/q2_entry.py",
         sha256=admin["package_files"].get("admin/local_hand_quota_observer/q2_entry.py")), "PREP_ASSEMBLY_ADMIN_ENTRY")
     for key in ("python", "systemctl", "systemd_run"):
@@ -283,7 +288,8 @@ def assemble(facts):
         request=request, plan=plan, phases=list(PHASES))
     envelope = lambda key: dict(controller=controllers[key], output_bytes=32768,
         storage_bytes=controllers[key + "_storage_bytes"], storage_inodes=controllers[key + "_storage_inodes"])
-    launcher = dict(schema="local-hand-q2-launcher/v2", purpose="ISOLATED_Q2_CHAIN", source={key: source[key] for key in ("commit", "files")},
+    launcher = dict(schema="local-hand-q2-launcher/v2", purpose="ISOLATED_Q2_CHAIN",
+        source={key: source[key] for key in ("commit", "manifest_sha256", "files")},
         resident=resident, assembly=chain, controller_envelope=envelope("target"), setpriv=f["setpriv"],
         output=paths["launcher_output"], declarations=paths["launcher_declarations"], session=ident["session"])
     supervisor = dict(schema="local-hand-q2-supervisor/v1", purpose="ISOLATED_Q2_SUPERVISION", launcher=launcher,
@@ -293,6 +299,19 @@ def assemble(facts):
         resident["schema"] = "local-hand-q2-system-resident/v1"
         launcher.update(schema="local-hand-q2-system-launcher/v1", system_geometry=copy.deepcopy(f["system_geometry"]))
         supervisor["schema"] = "local-hand-q2-system-supervisor/v1"
+    if h11:
+        # H11 consumes one original preflight operation under the system-manager
+        # geometry.  The origin and recovery residents are two peers of the same
+        # launcher/controller, never two owners or two phase grants.
+        purpose = "ISOLATED_Q4_H11_RECOVERY"
+        resident.update(schema="local-hand-q4-h11-origin-resident/v1",
+            purpose="ISOLATED_Q4_H11_ORIGIN", phases=["preflight"])
+        launcher.update(schema="local-hand-q4-h11-launcher/v1", purpose=purpose,
+            assembly=dict(q2_chain.phase_template(checked, "preflight").data(),
+                          purpose="ISOLATED_Q2_PREFLIGHT"),
+            recovery_case=dict(path=source["root"] + "/tests/e3_host/q4_h11_recovery.py",
+                sha256=source["files"]["tests/e3_host/q4_h11_recovery.py"]))
+        supervisor.update(schema="local-hand-q4-h11-supervisor/v1", purpose=purpose)
     if cancellation:
         # All facts and conservative capacity checks below remain unchanged.
         # Only one original preflight is selected; unused roots are not reused
@@ -337,7 +356,8 @@ def assemble(facts):
             "PREP_ASSEMBLY_ORDINARY_OUTPUT_OVERLAP")
     require(all((pin["device"], pin["inode"]) != (root["device"], root["inode"])
                 for pin in pins for root in roots), "PREP_ASSEMBLY_ORDINARY_OUTPUT_ALIAS")
-    return dict(schema="local-hand-q2-system-static-assembly/v1" if system else
+    return dict(schema="local-hand-q4-h11-static-assembly/v1" if h11 else
+        "local-hand-q2-system-static-assembly/v1" if system else
         "local-hand-q4-cancel-static-assembly/v1" if cancellation else "local-hand-q2-static-assembly/v1",
         status="ASSEMBLED", policy=config,
         policy_digest=policy.policy_digest, resident=resident, chain=chain, launcher=launcher,

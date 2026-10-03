@@ -52,6 +52,22 @@ def plan():
                             pids=8, output_bytes=2 * r.PIPE_LIMIT + 4096))
 
 
+def h11_plan():
+    from test_e3_quota_q2_prepare_assembly import a, h11_facts
+    facts = h11_facts()
+    assembled = a.assemble(facts)
+    return dict(schema=r.H11_SCHEMA, purpose=r.H11_PURPOSE,
+        preparation_id=facts["identity"]["id"], boot_id=BOOT,
+        template=assembled["supervisor_template"],
+        supervisor_parent=assembled["supervisor_parent"],
+        output=dict(path="/owner-output", device=70, inode=910),
+        declarations=dict(path="/owner-declarations", device=70, inode=911),
+        owner_envelope=dict(issued_ns=SECOND, deadline_ns=120 * SECOND,
+            storage_bytes=8 * 1024**2, storage_inodes=32, cpu_ns=10 * SECOND,
+            memory_bytes=64 * 1024**2, pids=8,
+            output_bytes=2 * r.PIPE_LIMIT + 4096))
+
+
 class EntryTests(unittest.TestCase):
     def test_real_no_argument_entry_is_blocked_without_importing_core(self):
         run = subprocess.run([sys.executable, "-I", "-B", str(PATH)], capture_output=True, timeout=10)
@@ -263,6 +279,53 @@ class SystemHandoffDeclarationTests(unittest.TestCase):
         for field, value in (("launcher_status", "PREFLIGHT_CLOSED"), ("controller_stopped", False),
                              ("seal_required", False), ("q3_accepted", True),
                              ("production_supported", True), ("independent_supervisor_stop_required", False)):
+            child = self.child(); child[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                r.cancel_child_result(self.plan, child)
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux H11 handoff declarations")
+class H11HandoffDeclarationTests(unittest.TestCase):
+    def setUp(self):
+        self.plan = h11_plan()
+
+    def decode(self):
+        raw = r.encoded(self.plan, r.LIMIT)
+        return r.decode(raw, r.sha(raw))
+
+    def child(self):
+        return dict(schema="local-hand-q4-h11-supervisor-result/v1",
+            status="CONTROLLER_CLOSED", scope="TARGET_CONTROLLER_CLOSURE_ONLY",
+            seal_required=True, q3_accepted=False, production_supported=False,
+            independent_supervisor_stop_required=True,
+            launcher_status="RECOVERY_RECORDED", controller_stopped=True)
+
+    def test_one_owner_issues_one_unchanged_controller_deadline_for_both_peers(self):
+        before = copy.deepcopy(self.plan)
+        self.assertEqual(self.plan, self.decode())
+        self.assertTrue(r.h11(self.plan)); self.assertTrue(r.system_manager(self.plan))
+        self.assertFalse(r.cancellation(self.plan))
+        issued = r.issue(self.plan, s, dict(boot_id=BOOT, boottime_ns=2 * SECOND))
+        self.assertEqual(before, self.plan)
+        self.assertEqual("local-hand-q4-h11-issued-handoff/v1", issued["schema"])
+        self.assertEqual(87 * SECOND,
+                         issued["fixture"]["launcher"]["controller_envelope"]["deadline_ns"])
+        self.assertNotIn("deadline_ns", self.plan["template"]["launcher"]["resident"])
+        raw = r.encoded(issued, r.LIMIT)
+        self.assertEqual(issued, r.envelope(raw, r.sha(raw), s))
+        r.cancel_child_result(self.plan, self.child())
+        self.assertEqual(dict(q2_accepted=False, ordinary_phase_closed=False,
+                              independent_ordinary_cleanup_required=True),
+                         r.case_limits(self.plan))
+
+    def test_h11_cannot_be_relabelled_as_system_chain_or_recovery_without_stop(self):
+        changed = copy.deepcopy(self.plan)
+        changed["schema"] = r.SYSTEM_SCHEMA
+        changed["purpose"] = "ONE_ORIGINAL_Q2_HANDOFF"
+        with self.assertRaises(ValueError):
+            r.decode(r.encoded(changed, r.LIMIT), r.sha(r.encoded(changed, r.LIMIT)))
+        for field, value in (("launcher_status", "CHAIN_CLOSED"),
+                             ("controller_stopped", False), ("seal_required", False)):
             child = self.child(); child[field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
                 r.cancel_child_result(self.plan, child)

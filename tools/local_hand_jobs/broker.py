@@ -1031,7 +1031,8 @@ class Broker:
                         self.state.update(tx, namespace, identity, "QUOTA_EXIT_PENDING", {
                             "quota_event_phase": phase, "quota_pending": dict(record.get("quota_pending", {}),
                                 **{phase: {"phase": phase, "proof": thaw(proof)}}),
-                            "gaps": ["Original management and ordinary phase closure is pending"]})
+                            "gaps": ["Original management and ordinary phase closure is pending"],
+                            **({"exit_proof": thaw(proof)} if record.get("recovered") else {})})
                     else:
                         original = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")
                         if original["proof"] != thaw(proof):

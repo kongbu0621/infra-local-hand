@@ -1,4 +1,4 @@
-"""Explicit one-shot normal-chain or fixed-cancel management handoff.
+"""Explicit one-shot normal-chain, fixed-cancel or H11 management handoff.
 
 The endpoint owns the original client and both pipes. Its child binds real
 service identity in the same MainPID before checking and entering the existing
@@ -28,8 +28,11 @@ ENVELOPE_SCHEMA = "local-hand-q2-issued-handoff/v1"
 RESULT_SCHEMA = "local-hand-q2-handoff-result/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-original-handoff/v1"
 SYSTEM_SCHEMA = "local-hand-q2-system-original-handoff/v1"
+H11_SCHEMA = "local-hand-q4-h11-original-handoff/v1"
 CANCEL_PURPOSE = "ONE_ORIGINAL_Q4_CANCEL_HANDOFF"
 CANCEL_TEMPLATE_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
+H11_PURPOSE = "ONE_ORIGINAL_Q4_H11_HANDOFF"
+H11_TEMPLATE_PURPOSE = "ISOLATED_Q4_H11_RECOVERY"
 LIMIT = 2 * 1024 * 1024
 RECORD_LIMIT = 131072
 PIPE_LIMIT = 32768
@@ -178,17 +181,24 @@ def protected(path, limit=LIMIT):
 def cancellation(plan):
     pair = plan.get("schema"), plan.get("purpose")
     require(pair in ((SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"), (CANCEL_SCHEMA, CANCEL_PURPOSE),
-                    (SYSTEM_SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF")), "HANDOFF_SCHEMA")
+                    (SYSTEM_SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"),
+                    (H11_SCHEMA, H11_PURPOSE)), "HANDOFF_SCHEMA")
     return pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
+
+
+def h11(plan):
+    cancellation(plan)
+    return (plan["schema"], plan["purpose"]) == (H11_SCHEMA, H11_PURPOSE)
 
 
 def system_manager(plan):
     cancellation(plan)
-    return plan["schema"] == SYSTEM_SCHEMA
+    return plan["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
 
 
 def record_schema(plan, suffix):
-    prefix = ("local-hand-q4-cancel-" if cancellation(plan) else
+    prefix = ("local-hand-q4-h11-" if h11(plan) else
+              "local-hand-q4-cancel-" if cancellation(plan) else
               "local-hand-q2-system-" if system_manager(plan) else "local-hand-q2-")
     return prefix + suffix + "/v1"
 
@@ -196,7 +206,7 @@ def record_schema(plan, suffix):
 def case_limits(plan):
     # Outer service exit never closes an ordinary quota phase or its ledger.
     return (dict(q2_accepted=False, ordinary_phase_closed=False, independent_ordinary_cleanup_required=True)
-            if cancellation(plan) else {})
+            if cancellation(plan) or h11(plan) else {})
 
 
 def child_summary(plan, status):
@@ -205,6 +215,18 @@ def child_summary(plan, status):
 
 
 def cancel_child_result(plan, result):
+    if h11(plan):
+        require(type(result) is dict and result.get("schema") == record_schema(plan, "supervisor-result")
+                and result.get("scope") == "TARGET_CONTROLLER_CLOSURE_ONLY"
+                and result.get("seal_required") is True and result.get("q3_accepted") is False
+                and result.get("production_supported") is False
+                and result.get("independent_supervisor_stop_required") is True,
+                "HANDOFF_H11_CHILD_SCOPE")
+        if result.get("status") == "CONTROLLER_CLOSED":
+            require(result.get("launcher_status") == "RECOVERY_RECORDED"
+                    and result.get("controller_stopped") is True,
+                    "HANDOFF_H11_CHILD_STATUS")
+        return
     if not cancellation(plan):
         # The legacy result contract stays unchanged, but it cannot consume a
         # newly versioned cancellation result behind an old outer marker.
@@ -234,16 +256,20 @@ def cancel_child_result(plan, result):
                 and result.get("controller_stopped") is True, "HANDOFF_CANCEL_CHILD_STATUS")
 
 
-def static_template(value, *, cancel=False, system=False):
-    require(type(cancel) is bool and type(system) is bool and not (cancel and system), "HANDOFF_TEMPLATE_KIND")
+def static_template(value, *, cancel=False, system=False, h11=False):
+    require(all(type(item) is bool for item in (cancel, system, h11))
+            and not (cancel and system) and not (cancel and h11)
+            and (not h11 or system), "HANDOFF_TEMPLATE_KIND")
     keys(value, {"schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"})
-    expected = (("local-hand-q4-cancel-supervisor/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+    expected = (("local-hand-q4-h11-supervisor/v1", H11_TEMPLATE_PURPOSE) if h11 else
+                ("local-hand-q4-cancel-supervisor/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
                 ("local-hand-q2-system-supervisor/v1", "ISOLATED_Q2_SUPERVISION") if system else
                 ("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"))
     require((value["schema"], value["purpose"]) == expected,
             "HANDOFF_TEMPLATE_SCHEMA")
     nested = value["launcher"]
-    expected = (("local-hand-q4-cancel-launcher/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+    expected = (("local-hand-q4-h11-launcher/v1", H11_TEMPLATE_PURPOSE) if h11 else
+                ("local-hand-q4-cancel-launcher/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
                 ("local-hand-q2-system-launcher/v1", "ISOLATED_Q2_CHAIN") if system else
                 ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"))
     require((nested.get("schema"), nested.get("purpose")) == expected,
@@ -252,7 +278,12 @@ def static_template(value, *, cancel=False, system=False):
         resident = nested.get("resident", {})
         require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
                 ("local-hand-q4-cancel-resident/v1", CANCEL_TEMPLATE_PURPOSE, ["preflight"]), "HANDOFF_CANCEL_RESIDENT")
-    if system:
+    if h11:
+        resident = nested.get("resident", {})
+        require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
+                ("local-hand-q4-h11-origin-resident/v1", "ISOLATED_Q4_H11_ORIGIN", ["preflight"]),
+                "HANDOFF_H11_RESIDENT")
+    elif system:
         resident = nested.get("resident", {})
         require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
                 ("local-hand-q2-system-resident/v1", "ISOLATED_Q2_CHAIN", ["preflight", "business", "evidence"]),
@@ -270,7 +301,7 @@ def decode(raw, digest):
     cancel = cancellation(value)
     require(type(value["preparation_id"]) is str and re.fullmatch(r"[0-9a-f]{32}", value["preparation_id"]), "HANDOFF_PREPARATION")
     require(type(value["boot_id"]) is str and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", value["boot_id"]), "HANDOFF_BOOT")
-    static_template(value["template"], cancel=cancel, system=system_manager(value))
+    static_template(value["template"], cancel=cancel, system=system_manager(value), h11=h11(value))
     keys(value["owner_envelope"], OWNER_KEYS)
     owner = value["owner_envelope"]
     for key, amount in owner.items(): integer(amount, 1)
@@ -314,7 +345,7 @@ def issue(plan, supervisor, now):
     """Pure issuance of both original deadlines exactly once, before launch."""
     require(now["boot_id"] == plan["boot_id"], "HANDOFF_BOOT")
     value = copy.deepcopy(plan["template"])
-    static_template(value, cancel=cancellation(plan), system=system_manager(plan))
+    static_template(value, cancel=cancellation(plan), system=system_manager(plan), h11=h11(plan))
     issued = integer(now["boottime_ns"], plan["owner_envelope"]["issued_ns"])
     for env in (value["supervisor_envelope"], value["launcher"]["controller_envelope"]):
         candidate = supervisor.candidate(env["controller"])

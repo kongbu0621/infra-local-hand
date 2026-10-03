@@ -2,7 +2,8 @@
 
 Creates only finite evidence/configuration files in declared existing fixture
 directories. The external supervisor must own this controller's original
-deadline, output pipes and independent stop. No host provisioning or recovery.
+deadline, output pipes and independent stop. It never provisions a host; its
+H11 test-only branch reattaches one already-delivered execution identity.
 """
 from __future__ import annotations
 
@@ -12,9 +13,10 @@ import importlib.abc
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import select
+import signal
 import socket
 import stat
 import subprocess
@@ -27,10 +29,26 @@ SCHEMA = "local-hand-q2-launcher/v1"
 CHAIN_SCHEMA = "local-hand-q2-launcher/v2"
 SYSTEM_SCHEMA = "local-hand-q2-system-launcher/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-launcher/v1"
+H11_SCHEMA = "local-hand-q4-h11-launcher/v1"
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
+H11_PURPOSE = "ISOLATED_Q4_H11_RECOVERY"
 PHASES = ("preflight", "business", "evidence")
 LIMIT = 2 * 1024 * 1024
 SOURCE_ROOTS = frozenset({"admin", "local_hand", "local_hand_jobs", "local_hand_connect", "local_hand_mcp"})
+SOURCE_PROJECTION_SCHEMA = "local-hand-q2-source-projection/v1"
+SOURCE_PROJECTION_MANIFEST = ".local-hand-source-projection.json"
+SOURCE_PROJECTION_HARNESS = frozenset({
+    "tests/e3_host/q2_fixture_check.py",
+    "tests/e3_host/q2_launcher.py",
+    "tests/e3_host/q2_prepare_assembly.py",
+    "tests/e3_host/q2_prepare_driver.py",
+    "tests/e3_host/q2_prepare_run.py",
+    "tests/e3_host/q2_resident.py",
+    "tests/e3_host/q2_supervisor.py",
+    "tests/e3_host/q4_cancel_case.py",
+    "tests/e3_host/q4_cancel_runtime.py",
+    "tests/e3_host/q4_h11_recovery.py",
+})
 
 
 def require(condition, code):
@@ -95,10 +113,11 @@ def decode(raw, digest):
     finite(value)
     require(type(value) is dict and set(value) == {"schema", "purpose", "source", "resident", "assembly",
             "controller_envelope", "setpriv", "output", "declarations", "session"}
-            | ({"system_geometry"} if value.get("schema") == SYSTEM_SCHEMA else set())
+            | ({"system_geometry"} if value.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA) else set())
+            | ({"recovery_case"} if value.get("schema") == H11_SCHEMA else set())
             and (value["schema"], value["purpose"]) in ((SCHEMA, "ISOLATED_Q2_PREFLIGHT"),
                 (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN"), (SYSTEM_SCHEMA, "ISOLATED_Q2_CHAIN"),
-                (CANCEL_SCHEMA, CANCEL_PURPOSE)), "LAUNCHER_SCHEMA")
+                (CANCEL_SCHEMA, CANCEL_PURPOSE), (H11_SCHEMA, H11_PURPOSE)), "LAUNCHER_SCHEMA")
     return value
 
 
@@ -124,16 +143,60 @@ class Pinned(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         exec(compile(raw, filename, "exec", dont_inherit=True), module.__dict__)
 
 
+def projection_path(name):
+    if type(name) is not str:
+        return False
+    path = PurePosixPath(name)
+    module = re.fullmatch(r"tools/(?:admin/(?:local_hand_quota_observer|local_hand_system_manager)|"
+                          r"local_hand|local_hand_connect|local_hand_jobs|local_hand_mcp)/"
+                          r"[a-z_][a-z0-9_]*\.py", name)
+    return (not path.is_absolute() and ".." not in path.parts and path.as_posix() == name
+            and name != SOURCE_PROJECTION_MANIFEST
+            and (name in SOURCE_PROJECTION_HARNESS or module is not None)
+            and "namespace" not in name.lower() and "watchdog" not in name.lower())
+
+
+def projection_manifest(repository, pin):
+    """Bind the runtime file map to the installer's canonical projection."""
+    raw = protected(str(repository / SOURCE_PROJECTION_MANIFEST), 256 * 1024)
+    require(type(pin.get("manifest_sha256")) is str
+            and re.fullmatch(r"[0-9a-f]{64}", pin["manifest_sha256"])
+            and hashlib.sha256(raw).hexdigest() == pin["manifest_sha256"],
+            "LAUNCHER_PROJECTION_DIGEST")
+    value = json.loads(raw, object_pairs_hook=unique,
+        parse_constant=lambda _: (_ for _ in ()).throw(ValueError("LAUNCHER_NUMBER")))
+    require(type(value) is dict
+            and set(value) == {"schema", "source_commit", "source_tree", "files"}
+            and value["schema"] == SOURCE_PROJECTION_SCHEMA
+            and value["source_commit"] == pin["commit"]
+            and re.fullmatch(r"[0-9a-f]{40}", value["source_tree"] or "")
+            and type(value["files"]) is dict and 1 <= len(value["files"]) <= 512
+            and (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii") == raw,
+            "LAUNCHER_PROJECTION_MANIFEST")
+    files = {}
+    for name, record in value["files"].items():
+        require(projection_path(name) and type(record) is dict and set(record) == {"mode", "sha256"}
+                and type(record["mode"]) is int and record["mode"] in (0o644, 0o755)
+                and type(record["sha256"]) is str
+                and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]),
+                "LAUNCHER_PROJECTION_MANIFEST")
+        files[name] = record["sha256"]
+    require(files == pin["files"] and SOURCE_PROJECTION_HARNESS <= set(files),
+            "LAUNCHER_PROJECTION_FILES")
+    return value
+
+
 def source(value, repository):
     pin = value["source"]
-    require(type(pin) is dict and set(pin) == {"commit", "files"}
+    require(type(pin) is dict and set(pin) == {"commit", "manifest_sha256", "files"}
             and re.fullmatch(r"[0-9a-f]{40}", pin["commit"]), "LAUNCHER_SOURCE")
     files = pin["files"]
     require(type(files) is dict and 1 <= len(files) <= 512, "LAUNCHER_SOURCE_FILES")
+    projection_manifest(repository, pin)
     require(not any(name.split(".")[0] in SOURCE_ROOTS for name in sys.modules), "LAUNCHER_PREIMPORTED")
     sources = {}
     for name, digest in files.items():
-        require(type(name) is str and re.fullmatch(r"(?:tools|tests/e3_host)/(?:[a-z_][a-z0-9_]*/)*[a-z_][a-z0-9_]*\.py", name)
+        require(projection_path(name)
                 and type(digest) is str and re.fullmatch(r"[0-9a-f]{64}", digest), "LAUNCHER_SOURCE_PATH")
         filename = str(repository / name)
         raw = protected(filename, LIMIT)
@@ -153,6 +216,14 @@ def source(value, repository):
     if value.get("schema") == CANCEL_SCHEMA:
         for name in ("q4_cancel_case", "q4_cancel_runtime"):
             require("tests/e3_host/" + name + ".py" in files, "LAUNCHER_ENTRY_MISSING")
+    if value.get("schema") == H11_SCHEMA:
+        require("tests/e3_host/q4_h11_recovery.py" in files, "LAUNCHER_ENTRY_MISSING")
+        recovery = value["recovery_case"]
+        expected = str(repository / "tests/e3_host/q4_h11_recovery.py")
+        require(type(recovery) is dict and set(recovery) == {"path", "sha256"}
+                and recovery["path"] == expected
+                and recovery["sha256"] == files["tests/e3_host/q4_h11_recovery.py"],
+                "LAUNCHER_RECOVERY_ENTRY")
     # Only these existing administrative namespace packages are synthetic.
     # Every other application package and module must have explicit source.
     for name in ("admin", "admin.local_hand_quota_observer"):
@@ -204,6 +275,50 @@ def validate_cancel_result(result, resident, report):
             and case.get("principal_id") == resident["principal"]["principal_id"], "CANCEL_CASE_OPERATION")
     require(len(report.encode_report(case)) <= 16384, "CANCEL_CASE_REPORT_LIMIT")
     return case
+
+
+def validate_h11_result(result, resident):
+    """Bind an H11 marker to the one origin operation and its recovery barrier."""
+    require(type(result) is dict
+            and result.get("schema") == "local-hand-q4-h11-launcher-result/v1"
+            and result.get("status") == "RECOVERY_RECORDED"
+            and result.get("q3_accepted") is False
+            and result.get("production_supported") is False
+            and result.get("independent_controller_stop_required") is True
+            and result.get("ordinary_phase_closed") is False
+            and result.get("independent_ordinary_cleanup_required") is True
+            and result.get("collectors_stopped") is False
+            and result.get("result_reread") is False
+            and result.get("start_replayed") is False, "H11_LAUNCHER_RESULT")
+    origin = result.get("original_resident_pid")
+    recovery_pid = result.get("recovery_resident_pid")
+    require(type(origin) is int and type(recovery_pid) is int and origin > 0
+            and recovery_pid > 0 and origin != recovery_pid, "H11_RESIDENT_IDENTITY")
+    capture = result.get("origin_capture")
+    require(type(capture) is dict and capture.get("complete") is True
+            and capture.get("returncode") == -signal.SIGKILL, "H11_ORIGIN_EXIT_PROOF")
+    coordinator = result.get("origin_coordinator")
+    require(coordinator == {"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_PEER_EXITED"},
+            "H11_ORIGIN_COORDINATOR_EXIT")
+    proof = result.get("recovery")
+    require(type(proof) is dict
+            and proof.get("schema") == "local-hand-q4-h11-recovery-result/v1"
+            and proof.get("status") == "RECOVERY_RECORDED"
+            and proof.get("operation_id") == resident["request"]["operation_id"]
+            and result.get("operation_id") == proof.get("operation_id")
+            and result.get("execution_id") == proof.get("execution_id")
+            and proof.get("future_start_blocked") is True
+            and proof.get("tree_exited") is True
+            and proof.get("writers_stopped") is True
+            and proof.get("collectors_stopped") is False
+            and proof.get("effects_checked") is False
+            and proof.get("leases_retained") is True
+            and proof.get("result_reread") is False
+            and proof.get("start_replayed") is False
+            and proof.get("outcome") == "UNKNOWN"
+            and proof.get("q3_accepted") is False
+            and proof.get("production_supported") is False, "H11_RECOVERY_PROOF")
+    return proof
 
 
 def system_parent_admission(value, spec, boot_id):
@@ -275,6 +390,7 @@ def controller(value, template, declared_totals=None):
               <= envelope["issued_ns"] + spec.runtime_max_usec * 1000, "LAUNCHER_DEADLINE")
     q.integer(envelope["output_bytes"], 1, 32768)
     q.integer(envelope["storage_bytes"], 1024 * 1024)
+    system = value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
     phase_count = 3 if value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA) else 1
     q.integer(envelope["storage_inodes"], max(8, 6 + phase_count))
     # Capacity must fund the controller/resident before the resident reserves
@@ -300,7 +416,8 @@ def controller(value, template, declared_totals=None):
         # independent finite buffers; none is charged as zero.
         output_bytes=phase_count * envelope["output_bytes"] + 32768
                      + (32768 if value["schema"] == CANCEL_SCHEMA else 4096)
-                     + (4 * 1024**2 if value["schema"] == SYSTEM_SCHEMA else 0))
+                     + (4 * 1024**2 if system else 0)
+                     + (8192 if value["schema"] == H11_SCHEMA else 0))
     for key, amount in costs.items():
         require(q.integer(amount + totals[key]) <= capacity["management"][key], "LAUNCHER_CONTROLLER_CAPACITY")
     for kind in ("bytes", "inodes"):
@@ -309,7 +426,7 @@ def controller(value, template, declared_totals=None):
         require(q.integer(used) <= capacity["ceiling_" + kind], "LAUNCHER_CONTROLLER_STORAGE")
     ordinary = value["resident"]["ordinary"]
     q._keys(ordinary, {"uid", "gid", "parent", "broker_cgroup", "initial_userns"}
-            | ({"manager_binding"} if value["schema"] == SYSTEM_SCHEMA else set()))
+            | ({"manager_binding"} if system else set()))
     q.integer(ordinary["uid"], 1); q.integer(ordinary["gid"], 1)
     q._keys(data["initial_userns"], {"device", "inode"})
     for number in data["initial_userns"].values(): q.integer(number, 1)
@@ -331,7 +448,7 @@ def controller(value, template, declared_totals=None):
     before = controller_management.host_identity(adapter, manifest, spec)
     guard._cgroup_identity(spec)
     guard._check_manager(guard._show_once(adapter, spec), spec, before[0])
-    if value["schema"] == SYSTEM_SCHEMA:
+    if system:
         system_parent_admission(value, spec, clock["boot_id"])
         guard._cgroup_identity(spec)
         require(before == controller_management.host_identity(adapter, manifest, spec), "LAUNCHER_CONTROLLER_CHANGED")
@@ -501,7 +618,8 @@ def run(value, repository):
     from admin.local_hand_quota_observer.q2_coordinator import Coordinator
     from admin.local_hand_quota_observer.q2_capture import capture_existing
     raw = encoded(value["assembly"], LIMIT)
-    system = value["schema"] == SYSTEM_SCHEMA
+    h11 = value["schema"] == H11_SCHEMA
+    system = value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
     chained = value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA)
     cancelled = value["schema"] == CANCEL_SCHEMA
     cancel_runtime, cancel_report = load_cancel_modules(value, repository) if cancelled else (None, None)
@@ -529,6 +647,10 @@ def run(value, repository):
     if cancelled:
         require(resident["schema"] == "local-hand-q4-cancel-resident/v1"
                 and resident["purpose"] == CANCEL_PURPOSE, "LAUNCHER_RESIDENT_BINDING")
+    if h11:
+        require(resident["schema"] == "local-hand-q4-h11-origin-resident/v1"
+                and resident["purpose"] == "ISOLATED_Q4_H11_ORIGIN"
+                and resident["phases"] == ["preflight"], "LAUNCHER_RESIDENT_BINDING")
     require(resident["entry"]["path"] == str(repository / "tests/e3_host/q2_resident.py")
             and resident["entry"]["sha256"] == value["source"]["files"]["tests/e3_host/q2_resident.py"], "LAUNCHER_RESIDENT_ENTRY")
     require(resident["ordinary"]["parent"] == t["peer"]["parent"] and
@@ -564,17 +686,22 @@ def run(value, repository):
     output = declarations = None; channel = record = None; process = None; sockets = []; capture = {}; worker = None
     phase_result = coordinator = None; configs = []; plans = {}; closures = {}; grants = {}; broker_session = None
     gateway = gateway_worker = manager_channel = None
-    manager_sockets = []; gateway_failures = []
-    result = dict(schema="local-hand-q2-system-launcher-result/v1" if system else
+    manager_sockets = []; gateway_failures = []; resident_pidfd = -1
+    origin_capture = None; origin_pid = None; coordinator_worker = None; coordinator_errors = []
+    result = dict(schema="local-hand-q4-h11-launcher-result/v1" if h11 else
+                  "local-hand-q2-system-launcher-result/v1" if system else
                   "local-hand-q4-cancel-launcher-result/v1" if cancelled else
                   "local-hand-q2-launcher-result/v2" if chained else "local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
                   production_supported=False, independent_controller_stop_required=True)
     if cancelled:
         result.update(ordinary_phase_closed=False, independent_ordinary_cleanup_required=True)
+    if h11:
+        result.update(ordinary_phase_closed=False, independent_ordinary_cleanup_required=True)
     try:
         output = directory(value["output"], 0o700)
         declarations = directory(value["declarations"], 0o755)
-        save(output, "reservation.json", encoded(dict(schema="local-hand-q2-system-launcher-reservation/v1" if system else
+        save(output, "reservation.json", encoded(dict(schema="local-hand-q4-h11-launcher-reservation/v1" if h11 else
+            "local-hand-q2-system-launcher-reservation/v1" if system else
             "local-hand-q2-launcher-reservation/v1",
             fixture_digest=hashlib.sha256(encoded(value, LIMIT)).hexdigest(), session=value["session"],
             controller=value["controller_envelope"], started_ns=clock["boottime_ns"])))
@@ -600,6 +727,8 @@ def run(value, repository):
             "XDG_RUNTIME_DIR": "/run/user/" + str(resident["ordinary"]["uid"])})
         right.close(); sockets = [left]
         child_start = start_ticks(process.pid)
+        if h11:
+            resident_pidfd = os.pidfd_open(process.pid, 0)
         if system:
             from local_hand_jobs.system_manager_protocol import Channel as ManagerChannel
             from admin.local_hand_system_manager.server import Gateway
@@ -625,24 +754,26 @@ def run(value, repository):
         channel = bridge.Channel(left, peer=(process.pid, resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
             session=value["session"], boot_id=clock["boot_id"], deadline_ns=end, version=2 if chained else 1)
         require(start_ticks(process.pid) == child_start, "LAUNCHER_CHILD_REPLACED")
-        def collect():
+        def collect(proc, target, started_ns):
             try:
-                captured = capture_existing(process, boot_id=clock["boot_id"], started_ns=clock["boottime_ns"],
+                captured = capture_existing(proc, boot_id=clock["boot_id"], started_ns=started_ns,
                                             deadline_ns=end, limit=32768)
             except Exception as error:
                 # A rejected capture setup has no verified pipe/exit evidence.
                 # Keep it finite and incomplete, including direct JobError.
                 closes = []
                 for name in ("stdout", "stderr"):
-                    try: getattr(process, name).close()
+                    try: getattr(proc, name).close()
                     except Exception: closes.append(name)
-                captured = dict(schema="local-hand-q2-outer-capture/v1", client_pid=process.pid,
+                captured = dict(schema="local-hand-q2-outer-capture/v1", client_pid=proc.pid,
                     returncode=None, stdout=b"", stderr=b"", eof=[], pipe_identities={},
                     error=reason(error), close_errors=closes, complete=False,
                     started_ns=clock["boottime_ns"], deadline_ns=end, independent_stop_required=True,
                     production_supported=False, q3_accepted=False)
-            capture.update(captured)
-        worker = threading.Thread(target=collect, name="q2-resident-capture", daemon=True); worker.start()
+            target.update(captured)
+        worker = threading.Thread(target=collect, args=(process, capture, clock["boottime_ns"]),
+                                  name="q2-resident-capture", daemon=True)
+        worker.start()
         for index, phase in enumerate(phases):
             while not select.select([left], [], [], 0.025)[0]: channel._time()
             prepared = channel.receive()
@@ -685,6 +816,154 @@ def run(value, repository):
                 bridge.Client(channel), report=cancel_report, request=resident["request"],
                 principal_id=resident["principal"]["principal_id"]) if cancelled else
                 Coordinator(config, value["controller_envelope"], record, bridge.Client(channel)))
+            if h11:
+                coordinator_result = []
+                def drive_origin():
+                    try:
+                        coordinator_result.append(coordinator.run())
+                    except Exception as error:
+                        coordinator_errors.append(reason(error))
+                coordinator_worker = threading.Thread(target=drive_origin,
+                    name="q4-h11-origin-coordinator", daemon=True)
+                coordinator_worker.start()
+                while not gateway.recovery_arm_ack:
+                    current = budget.current_clock()
+                    require(current["boot_id"] == clock["boot_id"]
+                            and current["boottime_ns"] < end, "H11_ARM_DEADLINE")
+                    require(not gateway_failures and gateway.failure is None
+                            and process.poll() is None and not coordinator_result
+                            and not coordinator_errors, "H11_ARM_FAILED")
+                    coordinator_worker.join(0.025)
+                recovery_plan = json.loads(json.dumps(gateway.recovery_plan,
+                    sort_keys=True, separators=(",", ":")))
+                require(recovery_plan is not None
+                        and recovery_plan["controller_deadline_ns"] == end,
+                        "H11_ARM_PLAN")
+                # The arm response is the old session's final committed frame.
+                # Do not inject the crash until the old serving loop has returned
+                # with no pending request left behind.
+                while (gateway_worker.is_alive()
+                       and budget.current_clock()["boottime_ns"] < end):
+                    gateway_worker.join(0.01)
+                require(not gateway_worker.is_alive() and not gateway_failures
+                        and gateway.failure is None, "H11_ARM_UNSETTLED")
+                # Kill only the exact admitted origin PID.  The pidfd was opened
+                # before any H11 work and start time is checked again here.
+                require(resident_pidfd >= 0 and process.poll() is None
+                        and start_ticks(process.pid) == child_start,
+                        "H11_ORIGIN_REPLACED")
+                signal.pidfd_send_signal(resident_pidfd, signal.SIGKILL, None, 0)
+                while ((worker.is_alive() or gateway_worker.is_alive()
+                        or coordinator_worker.is_alive())
+                       and budget.current_clock()["boottime_ns"] < end):
+                    worker.join(0.01); gateway_worker.join(0.01); coordinator_worker.join(0.01)
+                require(not worker.is_alive() and not gateway_worker.is_alive()
+                        and not coordinator_worker.is_alive(), "H11_ORIGIN_THREADS_UNSETTLED")
+                require(bool(select.select([resident_pidfd], [], [], 0)[0]),
+                        "H11_ORIGIN_PIDFD_UNPROVEN")
+                require(capture.get("complete") is True
+                        and capture.get("returncode") == -signal.SIGKILL
+                        and capture.get("stdout") == capture.get("stderr") == b"",
+                        "H11_ORIGIN_CAPTURE_UNPROVEN")
+                require(not coordinator_result
+                        and coordinator_errors == ["BRIDGE_PEER_EXITED"],
+                        "H11_ORIGIN_COORDINATOR_UNSETTLED")
+                require(gateway.failure is None and gateway.recovery_armed is True
+                        and gateway.recovery_arm_ack is True,
+                        "H11_ORIGIN_MANAGER_UNSETTLED")
+                os.close(resident_pidfd); resident_pidfd = -1
+                origin_pid = process.pid
+                origin_capture = dict(capture)
+                for stream_name in ("stdout", "stderr"):
+                    save(output, "origin-resident." + stream_name, origin_capture.pop(stream_name))
+                save(output, "origin-capture.json", encoded(origin_capture))
+                channel.close(); channel = None
+                record.close(); record = None
+
+                # Reuse the same root Gateway, original parts, original absolute
+                # deadline and original ledger.  Only the ordinary peer/channel
+                # are replaced; no business request or execution is resubmitted.
+                recovery_left, recovery_right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+                manager_sockets = [recovery_left, recovery_right]
+                for sock in (recovery_left, recovery_right):
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+                recovery_session = hashlib.sha256(
+                    (manager_session + ":h11-recovery").encode("ascii")).hexdigest()
+                recovery_declaration = dict(
+                    schema="local-hand-q4-h11-recovery-resident/v1",
+                    purpose="ISOLATED_Q4_H11_RECOVERY",
+                    entry=resident["entry"], installation=resident["installation"],
+                    policy=resident["policy"], ordinary=resident["ordinary"],
+                    recovery=recovery_plan, recovery_case=value["recovery_case"],
+                    manager_channel=dict(fd=recovery_right.fileno(), pid=os.getpid(), uid=0, gid=0,
+                        start_ticks=start_ticks(os.getpid()), session=recovery_session,
+                        boot_id=clock["boot_id"], deadline_ns=end))
+                recovery_raw = encoded(recovery_declaration, 262144)
+                save(declarations, "recovery-resident.json", recovery_raw, 0o644)
+                recovery_path = value["declarations"]["path"] + "/recovery-resident.json"
+                process = subprocess.Popen(command(value, recovery_path,
+                    hashlib.sha256(recovery_raw).hexdigest()), stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                    close_fds=True, pass_fds=(recovery_right.fileno(),), cwd="/",
+                    env={"PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": "/run/user/" +
+                         str(resident["ordinary"]["uid"])})
+                recovery_right.close()
+                manager_sockets = [recovery_left]
+                child_start = start_ticks(process.pid)
+                manager_channel = ManagerChannel(recovery_left,
+                    peer=(process.pid, resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
+                    peer_start_ticks=child_start, session_id=recovery_session,
+                    boot_id=clock["boot_id"], deadline_ns=end)
+                gateway.rebind_recovery(manager_channel)
+                gateway_worker = threading.Thread(target=serve_manager,
+                    name="q4-h11-recovery-manager", daemon=True)
+                gateway_worker.start()
+                capture = {}
+                recovery_started = budget.current_clock()["boottime_ns"]
+                worker = threading.Thread(target=collect,
+                    args=(process, capture, recovery_started),
+                    name="q4-h11-recovery-capture", daemon=True)
+                worker.start()
+                while ((worker.is_alive() or gateway_worker.is_alive())
+                       and budget.current_clock()["boottime_ns"] < end):
+                    worker.join(0.025); gateway_worker.join(0.025)
+                require(not worker.is_alive() and not gateway_worker.is_alive()
+                        and capture.get("complete") is True and capture.get("returncode") == 0
+                        and capture.get("stderr") == b"" and gateway.failure is None
+                        and gateway.recovery_finished is True, "H11_RECOVERY_CAPTURE")
+                summary = q._load(capture["stdout"], 8192, 20)
+                q._keys(summary, {"schema", "status", "operation_id", "execution_id", "phase",
+                    "original_event_seq", "recovery_event_seq", "event_kinds", "ticks", "units",
+                    "original_deadline_ns", "phase_deadline_ns", "controller_deadline_ns", "future_start_blocked",
+                    "tree_exited", "writers_stopped", "collectors_stopped", "effects_checked",
+                    "outcome", "leases_retained", "result_reread", "start_replayed",
+                    "q3_accepted", "production_supported"})
+                require(summary["schema"] == "local-hand-q4-h11-recovery-result/v1"
+                        and summary["status"] == "RECOVERY_RECORDED"
+                        and summary["operation_id"] == recovery_plan["operation_id"]
+                        and summary["execution_id"] == recovery_plan["execution_id"]
+                        and summary["phase"] == recovery_plan["phase"]
+                        and summary["original_event_seq"] == recovery_plan["event_seq"]
+                        and summary["units"] == recovery_plan["units"]
+                        and summary["original_deadline_ns"] == recovery_plan["budget_deadline_ns"]
+                        and summary["phase_deadline_ns"] == recovery_plan["phase_deadline_ns"]
+                        and summary["controller_deadline_ns"] == end
+                        and all(summary[name] is True for name in
+                            ("future_start_blocked", "tree_exited", "writers_stopped", "leases_retained"))
+                        and all(summary[name] is False for name in
+                            ("collectors_stopped", "effects_checked", "result_reread", "start_replayed",
+                             "q3_accepted", "production_supported"))
+                        and summary["outcome"] == "UNKNOWN", "H11_RECOVERY_RESULT")
+                save(output, "recovery.json", encoded(summary, 8192))
+                result.update(status="RECOVERY_RECORDED", operation_id=summary["operation_id"],
+                    execution_id=summary["execution_id"], original_resident_pid=origin_pid,
+                    recovery_resident_pid=process.pid, recovery=summary,
+                    origin_capture=origin_capture,
+                    origin_coordinator={"status": "ORIGIN_PEER_EXITED",
+                                        "reason": coordinator_errors[0]},
+                    collectors_stopped=False, result_reread=False, start_replayed=False)
+                validate_h11_result(result, resident)
+                return result
             phase_result = coordinator.run()
             save(output, "phase-" + phase + ".json" if chained else "phase.json", encoded(phase_result))
             require(phase_result["status"] == ("CANCEL_CASE_RECORDED" if cancelled else "PHASE_CLOSED")
@@ -772,6 +1051,13 @@ def run(value, repository):
                     gateway_worker.join(0.025)
                 require(not gateway_worker.is_alive(), "LAUNCHER_SYSTEM_MANAGER_UNSETTLED")
             cleanup(await_gateway, "LAUNCHER_SYSTEM_MANAGER_UNSETTLED")
+        if coordinator_worker is not None:
+            def await_coordinator():
+                while coordinator_worker.is_alive() and budget.current_clock()["boottime_ns"] < end:
+                    coordinator_worker.join(0.025)
+            cleanup(await_coordinator, "H11_COORDINATOR_WAIT")
+        if resident_pidfd >= 0:
+            cleanup(lambda: os.close(resident_pidfd), "H11_PIDFD_CLOSE")
         if gateway is not None and output is not None:
             cleanup(lambda: save(output, "gateway.json", encoded(gateway.snapshot(), 32768)),
                     "LAUNCHER_SYSTEM_DIAGNOSTIC_PERSIST")
@@ -821,7 +1107,8 @@ def main(argv=None):
     # Full records and host identities stay in the private fixture directory.
     print(json.dumps({key: result[key] for key in ("schema", "status", "q3_accepted", "production_supported",
           "independent_controller_stop_required", "reason", "evidence") if key in result}, sort_keys=True))
-    return 0 if result["status"] in ("PREFLIGHT_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED") else 3
+    return 0 if result["status"] in ("PREFLIGHT_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED",
+                                     "RECOVERY_RECORDED") else 3
 
 
 if __name__ == "__main__": raise SystemExit(main())

@@ -46,8 +46,46 @@ def system_facts(root="/synthetic-q2"):
     return value
 
 
+def h11_facts(root="/synthetic-q2"):
+    value = system_facts(root)
+    value["schema"] = a.H11_SCHEMA
+    return value
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Q2 Linux system-manager assembly")
 class SystemAssemblyTests(unittest.TestCase):
+    def test_h11_assembly_is_one_original_preflight_with_two_peer_contract(self):
+        value = h11_facts(); before = copy.deepcopy(value)
+        result = a.assemble(value)
+        self.assertEqual(before, value)
+        self.assertEqual("local-hand-q4-h11-static-assembly/v1", result["schema"])
+        resident, nested = result["resident"], result["launcher"]
+        self.assertEqual(("local-hand-q4-h11-origin-resident/v1", "ISOLATED_Q4_H11_ORIGIN", ["preflight"]),
+                         (resident["schema"], resident["purpose"], resident["phases"]))
+        self.assertEqual(("local-hand-q4-h11-launcher/v1", "ISOLATED_Q4_H11_RECOVERY"),
+                         (nested["schema"], nested["purpose"]))
+        self.assertEqual("local-hand-q4-h11-supervisor/v1", result["supervisor_template"]["schema"])
+        self.assertEqual(value["identity"]["operation_id"], resident["request"]["operation_id"])
+        self.assertEqual(result["chain"]["phases"]["preflight"],
+                         {key: nested["assembly"][key] for key in
+                          ("grant", "output", "peer", "service")})
+        self.assertEqual(dict(path=value["source"]["root"] + "/tests/e3_host/q4_h11_recovery.py",
+                              sha256=value["source"]["files"]["tests/e3_host/q4_h11_recovery.py"]),
+                         nested["recovery_case"])
+        supervisor = host_module("q2_supervisor")
+        raw = supervisor.encoded(result["supervisor_template"], supervisor.LIMIT)
+        checked = supervisor.decode(raw, supervisor.sha(raw))
+        self.assertTrue(supervisor.h11_fixture(checked))
+        self.assertTrue(supervisor.system_fixture(checked))
+        self.assertEqual("RECOVERY_RECORDED", supervisor.expected_status(nested))
+        checker = host_module("q2_fixture_check")
+        from local_hand_jobs.policy import Policy
+        checker.h11_policy_binding(nested, Policy(result["policy"]))
+        recovery_raw = (ROOT / "tests/e3_host/q4_h11_recovery.py").read_bytes()
+        with mock.patch.object(checker, "protected", return_value=recovery_raw):
+            self.assertEqual(1, len(checker.static_binding(
+                result["supervisor_template"], supervisor, Path(value["source"]["root"]))))
+
     def test_explicit_system_versions_policy_and_protected_geometry_agree(self):
         from local_hand_jobs.policy import Policy
         value = system_facts(); before = copy.deepcopy(value)
@@ -110,11 +148,14 @@ class SystemAssemblyTests(unittest.TestCase):
 
 def facts(root="/synthetic-q2"):
     """Explicit synthetic OS facts, actual source file manifests and real policy inputs."""
+    from e3_host import q2_prepare_build as build
     from local_hand_jobs import quota_grant as g
     root = str(root)
     checksum = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
-    source_files = {p.relative_to(ROOT).as_posix(): checksum(p) for folder in (ROOT / "tools", ROOT / "tests/e3_host")
-                    for p in folder.rglob("*.py")}
+    all_source_files = {p.relative_to(ROOT).as_posix(): checksum(p)
+                        for folder in (ROOT / "tools", ROOT / "tests/e3_host")
+                        for p in folder.rglob("*.py")}
+    source_files = build.projection_files(all_source_files)
     installed = {name.removeprefix("tools/"): value for name, value in source_files.items()
                  if name.split("/")[0] == "tools" and name.split("/")[1] in
                  ("local_hand", "local_hand_jobs", "local_hand_mcp", "local_hand_connect")}
@@ -153,7 +194,8 @@ def facts(root="/synthetic-q2"):
         project_id=r["project_id"],hard_bytes=r["hard_bytes"],hard_inodes=r["hard_inodes"]) for r in roots],
         ceiling_bytes=1024**3,ceiling_inodes=50000,retained_bytes=196*1024**2,retained_inodes=4096,
         management=dict(storage_bytes=32*1024**2,storage_inodes=1024,cpu_ns=400*10**9,memory_bytes=1024**3,pids=1024,output_bytes=16*1024**2))
-    return dict(schema=a.SCHEMA,identity=ident,source=dict(root=root+"/source",commit="c"*40,files=source_files),
+    return dict(schema=a.SCHEMA,identity=ident,
+        source=dict(root=root+"/source",commit="c"*40,manifest_sha256="f"*64,files=source_files),
         installation=dict(package_root=root+"/runtime/lib/python3.12/site-packages",source_commit="c"*40,payload_digest="d"*64,
                           files=installed,programs=prog),
         admin=dict(programs=dict(prog,native=dict(path=root+"/native/quota_fd_query",sha256="e"*64)),

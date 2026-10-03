@@ -7,6 +7,7 @@ it cannot send argv, unit properties, paths, credentials or bus requests.
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -96,10 +97,16 @@ No ordinary signal targets a root PID. kill() requests only this pinned token.
 
 class SystemManager(_SystemdExecutionCore):
     """Private system transport, selectable only by protected Q2 composition."""
-    def __init__(self, configuration, *, channel):
+    def __init__(self, configuration, *, channel, recovery=False, h11_origin=False):
         super().__init__(configuration)
         q.require(self.execution_binding() is not None, "SYSTEM_BINDING_REQUIRED")
+        q.require(type(recovery) is bool and type(h11_origin) is bool and
+                  not (recovery and h11_origin), "SYSTEM_RECOVERY_MODE")
         self.channel = channel
+        self.recovery = recovery
+        self.h11_origin = h11_origin
+        self._h11_reader_barrier = None
+        self._recovery_finished = False
         self._channel_lock = threading.Lock()
         self._failed = False
 
@@ -121,6 +128,9 @@ class SystemManager(_SystemdExecutionCore):
                 raise RunnerError("IO_UNCERTAIN", "Original system manager channel is unavailable")
             fds = ()
             try:
+                if self.recovery:
+                    q.require(op in ("support", "inventory", "observe", "stop", "recovery_finish"),
+                              "SYSTEM_RECOVERY_OPERATION")
                 metadata, fds = self.channel.request(op, **body)
                 q.require(type(metadata) is dict, "SYSTEM_RESPONSE")
                 if op == "support":
@@ -130,11 +140,20 @@ class SystemManager(_SystemdExecutionCore):
                               all(type(item) is str for item in metadata["reasons"]), "SYSTEM_SUPPORT")
                     manager_binding.check(self.execution_binding(), metadata["manager_binding"])
                 elif op in ("inventory", "observe", "stop"):
-                    q._keys(metadata, {"returncode", "stdout", "stderr"} |
-                            ({"client_state"} if op != "inventory" else set()))
+                    state = ({"recovery_history"} if self.recovery and op == "observe" else
+                             set() if op == "inventory" or self.recovery else {"client_state"})
+                    q._keys(metadata, {"returncode", "stdout", "stderr"} | state)
                     q.require(type(metadata["returncode"]) is int and
                               type(metadata["stdout"]) is str and type(metadata["stderr"]) is str,
                               "SYSTEM_COMMAND_STATUS")
+                elif op == "recovery_finish":
+                    q._keys(metadata, {"closed"})
+                    q.require(self.recovery and metadata["closed"] is True,
+                              "SYSTEM_RECOVERY_FINISH")
+                elif op == "recovery_arm":
+                    q._keys(metadata, {"armed"})
+                    q.require(not self.recovery and metadata["armed"] is True,
+                              "SYSTEM_RECOVERY_ARM")
                 else:
                     q._keys(metadata, {"client_state"} | ({"closed"} if op == "seal" else set()))
                     if op == "seal":
@@ -205,6 +224,45 @@ class SystemManager(_SystemdExecutionCore):
         else:
             client.update(state)
 
+    @staticmethod
+    def _adopt_recovery_history(part, history):
+        """Retain only the root gateway's original stop/terminal observation."""
+        q._keys(history, {"invocation_id", "stop_ok", "sealed", "identity", "terminal"})
+        invocation = history["invocation_id"]
+        q.require(invocation is None or type(invocation) is str and
+                  re.fullmatch(r"[0-9a-f]{32}", invocation),
+                  "SYSTEM_RECOVERY_HISTORY")
+        q.require(type(history["stop_ok"]) is bool and type(history["sealed"]) is bool
+                  and (history["identity"] is None or type(history["identity"]) is dict)
+                  and (history["terminal"] is None or type(history["terminal"]) is dict),
+                  "SYSTEM_RECOVERY_HISTORY")
+        saved = part.get("invocation_id")
+        q.require(saved in (None, invocation) and
+                  (not history["stop_ok"] or invocation is not None and history["identity"] is not None),
+                  "SYSTEM_RECOVERY_HISTORY")
+        if history["identity"] is not None:
+            q._keys(history["identity"], set(quota_lifecycle.FIELDS))
+            q.require(history["identity"]["Id"] == part["unit"]
+                      and history["identity"]["InvocationID"] == invocation
+                      and history["identity"]["LoadState"] == "loaded",
+                      "SYSTEM_RECOVERY_HISTORY")
+        if history["terminal"] is not None:
+            q._keys(history["terminal"], set(quota_lifecycle.FIELDS))
+            q.require(history["terminal"]["Id"] == part["unit"]
+                      and history["terminal"]["InvocationID"] == invocation
+                      and history["terminal"]["LoadState"] == "loaded"
+                      and quota_lifecycle._terminal(history["terminal"]),
+                      "SYSTEM_RECOVERY_HISTORY")
+        if invocation is not None:
+            part["invocation_id"] = invocation
+        if history["identity"] is not None:
+            part["recovery_identity"] = dict(history["identity"])
+        if history["stop_ok"]:
+            part["recovery_stop_attempted"] = True
+            part["recovery_stop_ok"] = True
+            if history["terminal"] is not None:
+                part["recovery_terminal"] = dict(history["terminal"])
+
     def _command(self, *arguments, timeout=3):
         """Translate only the shared core's fixed queries, never arbitrary argv."""
         if arguments == ("list-units", "lhj-*.service", "--all", "--plain", "--no-legend"):
@@ -224,12 +282,75 @@ class SystemManager(_SystemdExecutionCore):
                 q.require(arguments in views, "SYSTEM_FIXED_COMMAND")
                 value, _ = self._request("observe", ref=ref, view=views[arguments])
             try:
-                self._refresh(part, value["client_state"])
+                if self.recovery and arguments not in (("stop", unit), ("stop", "--no-block", unit)):
+                    self._adopt_recovery_history(part, value["recovery_history"])
+                self._refresh(part, None if self.recovery else value["client_state"])
             except (ValueError, JobError) as error:
                 self.close()
                 raise RunnerError("IO_UNCERTAIN", "Original system client identity is unresolved") from error
         return subprocess.CompletedProcess(arguments, value["returncode"],
             value["stdout"].encode("utf-8"), value["stderr"].encode("utf-8"))
+
+    def finish_recovery(self):
+        """End the one observation-only session after the broker is quiescent."""
+        q.require(self.recovery and not self._recovery_finished, "SYSTEM_RECOVERY_FINISH")
+        self._request("recovery_finish")
+        self._recovery_finished = True
+
+    def arm_recovery(self, plan):
+        """H11 origin handshake after the complete receipt is durable."""
+        q.require(not self.recovery and self.h11_origin and
+                  type(self._h11_reader_barrier) is dict, "SYSTEM_RECOVERY_ARM")
+        plan = wire.recovery_plan(plan)
+        barrier = self._h11_reader_barrier
+        handle = self._runs.get(plan["units"]["helper"])
+        q.require(handle is not None and handle["identity"]["execution_id"] == plan["execution_id"]
+                  and barrier.get("execution_id") == plan["execution_id"]
+                  and barrier.get("unit") == plan["units"]["result_reader"]
+                  and plan["collector_started"] is False,
+                  "SYSTEM_RECOVERY_ARM")
+        reader = handle.get("result_reader")
+        q.require(reader is not None and reader.get("h11_delivery_barrier") is True
+                  and reader.get("collector_started") is False
+                  and reader.get("invocation_id") == barrier.get("invocation_id")
+                  and reader.get("pipe_closed") is False
+                  and reader.get("client_stopped") is False
+                  and reader.get("reader") is not None
+                  and reader["reader"].result is None
+                  and budget.phase_deadline_ns(reader["budget_grant"]) == plan["phase_deadline_ns"],
+                  "SYSTEM_RECOVERY_ARM")
+        self._request("recovery_arm", plan=plan)
+
+    def _hold_result_reader_for_recovery(self, handle, part):
+        """Bind H11's exact reader identity without touching either pipe."""
+        if not self.h11_origin:
+            return False
+        q.require(not self.recovery and part.get("stage") == "result_reader"
+                  and part.get("delivery_attempted") is True
+                  and part.get("launch") is not None
+                  and part.get("collector_started") is False,
+                  "SYSTEM_RECOVERY_BARRIER")
+        expected = dict(execution_id=part["execution_id"], unit=part["unit"],
+                        invocation_id=part.get("invocation_id"))
+        if self._h11_reader_barrier is None:
+            observed = self._command("show", part["unit"], "--property=InvocationID,ControlGroup")
+            values = dict(line.split("=", 1) for line in observed.stdout.decode().splitlines() if "=" in line)
+            invocation = values.get("InvocationID", "")
+            group = values.get("ControlGroup", "")
+            cgroup = self.execution_binding()["parent"]["path"] + "/" + part["unit"]
+            q.require(observed.returncode == 0 and re.fullmatch(r"[0-9a-f]{32}", invocation)
+                      and group == cgroup and part.get("invocation_id") in (None, invocation),
+                      "SYSTEM_RECOVERY_BARRIER")
+            part["invocation_id"] = invocation
+            part["launch_acked"] = True
+            part["h11_delivery_barrier"] = True
+            self._h11_reader_barrier = dict(execution_id=part["execution_id"],
+                                             unit=part["unit"], invocation_id=invocation)
+        else:
+            q.require(self._h11_reader_barrier == expected
+                      and part.get("h11_delivery_barrier") is True,
+                      "SYSTEM_RECOVERY_BARRIER")
+        return True
 
     def _launch_stage(self, handle, part, command, environment):
         self._check_manager_binding(handle, part)
@@ -258,7 +379,10 @@ class SystemManager(_SystemdExecutionCore):
     def _inspect_unit(self, part):
         self._check_stage_binding(part)
         if part.get("recovered"):
-            return _unknown("original system pipes were lost; no stage replay is authorized")
+            # Recovery can reobserve and stop the exact persisted unit through
+            # the fixed root gateway.  It cannot reacquire the original
+            # anonymous pipes, target a saved PID or read a result file.
+            return quota_lifecycle.observe_recovered(self, part, _unknown)
         proof = super()._inspect_unit(part)
         if proof.get("state") != "EXITED" or part.get("cancel_before_launch"):
             return proof

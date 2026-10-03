@@ -3,6 +3,8 @@ import copy
 import hashlib
 import os
 from pathlib import Path
+import select
+import socket
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,7 @@ from unittest import mock
 if sys.platform.startswith("linux"):
     from admin.local_hand_system_manager import server
     from local_hand_jobs import budget, quota_contract as q, runner, result_reader
+    from local_hand_jobs import system_manager_protocol as wire
     from q2_fixtures import BOOT, SECOND, make_grant
 
 
@@ -33,12 +36,21 @@ class GatewayTests(unittest.TestCase):
         gateway.programs = {"systemd_run": dict(path="/usr/bin/systemd-run", sha256="e" * 64)}
         gateway.lock = threading.RLock(); gateway.closed = False; gateway.failure = None
         gateway.parts = {}; gateway.phases = {}; gateway.closed_phases = []
+        gateway.retired_wire_bytes = gateway.retired_calls = 0
+        gateway.control_bytes = gateway.controls = 0
+        gateway.session_failures = []
+        gateway.recovery_only = gateway.recovery_finished = False
+        gateway.recovery_rebinds = 0; gateway.recovery_armed = False; gateway.recovery_arm_ack = False
+        gateway.recovery_plan = None; gateway._serving = False
+        gateway.pending_control = None
         gateway.channel = SimpleNamespace(session_id="a" * 64)
-        gateway.end = 50 * SECOND
+        gateway.end = 100 * SECOND
         gateway._time = lambda: 2 * SECOND
         gateway._parent = mock.Mock(return_value=gateway.binding["parent"])
-        grant = make_grant(); data = grant.as_dict()
+        operation = "11111111-2222-4333-8444-555555555555"
+        grant = make_grant(operation=operation); data = grant.as_dict()
         plan = dict(phase="preflight", execution_id=data["budget"]["execution_id"],
+            request_digest="f" * 64,
             budget_grant=data["budget"], budgets=data["budget"]["limits"], bootstrap_allocation=data["allocation"],
             supervision_version=3, quota_observation_grant=data, manager_binding=gateway.binding,
             execution=dict(python=gateway.python_path, kind="host.inspect", operation_id=data["budget"]["operation_id"],
@@ -49,6 +61,28 @@ class GatewayTests(unittest.TestCase):
         self.clock = mock.patch.object(budget, "current_clock", return_value=dict(boot_id=BOOT, boottime_ns=2 * SECOND))
         self.clock.start(); self.addCleanup(self.clock.stop)
         return gateway, item
+
+    def recovery_plan(self, gateway, item):
+        return dict(schema="local-hand-q4-h11-recovery-plan/v1", namespace="job",
+            operation_id=item["execution"]["operation_id"], request_digest="f" * 64,
+            phase="preflight", execution_id=item["execution"]["execution_id"],
+            event_seq=17, handle_sha256="e" * 64,
+            budget_deadline_ns=item["execution"]["budget_grant"]["deadline_boottime_ns"],
+            phase_deadline_ns=budget.phase_deadline_ns(item["execution"]["budget_grant"]),
+            controller_deadline_ns=gateway.end, collector_started=False,
+            units={stage: server._unit(item["execution"]["execution_id"], stage)
+                   for stage in ("bootstrap", "helper", "result_reader")})
+
+    def arm(self, gateway, item):
+        plan = self.recovery_plan(gateway, item)
+        for index, (stage, unit) in enumerate(plan["units"].items(), 1):
+            gateway.parts["preflight", stage] = dict(unit=unit,
+                invocation_id=format(index, "x") * 32,
+                stop_ok=False, sealed=False, process=None, pidfd=-1, properties={},
+                pipe_identities={"stdout": {"device": 1, "inode": index * 2},
+                                   "stderr": {"device": 1, "inode": index * 2 + 1}})
+        self.assertEqual(({"armed": True}, ()), gateway.dispatch("recovery_arm", {"plan": plan}))
+        return plan
 
     def test_commands_rebuilt_from_exact_grant_and_predecessor_no_input_argv(self):
         gateway, item = self.gateway()
@@ -117,6 +151,53 @@ class GatewayTests(unittest.TestCase):
                 self.assertNotIn(b"argv", files[0].read_bytes())
                 self.assertIn(b"command_template_digest", files[0].read_bytes())
             finally:
+                os.close(gateway.directory)
+
+    def test_launch_pins_both_original_pipe_identities_for_recovery_evidence(self):
+        gateway, item = self.gateway()
+        real_popen = subprocess.Popen
+        with tempfile.TemporaryDirectory() as directory:
+            gateway.directory = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            process = None
+            try:
+                gateway._predecessor = mock.Mock()
+                unit = server._unit(item["execution"]["execution_id"], "bootstrap")
+                gateway._command = mock.Mock(return_value=dict(returncode=0,
+                    stdout=f"Id={unit}\nLoadState=not-found\nJob=\n", stderr=""))
+                body = dict(ref=dict(execution_id=item["execution"]["execution_id"],
+                    phase="preflight", stage="bootstrap"), bindings=dict(
+                    allocation_digest=item["execution"]["bootstrap_allocation"]["grant_digest"],
+                    grant_digest=item["grant"].digest))
+                def popen(*unused_args, **kwargs):
+                    return real_popen([sys.executable, "-c", "import time;time.sleep(30)"],
+                        stdin=kwargs["stdin"], stdout=kwargs["stdout"], stderr=kwargs["stderr"],
+                        close_fds=True)
+                with mock.patch.object(server.subprocess, "Popen", side_effect=popen):
+                    _, fds = gateway._launch(body)
+                part = gateway.parts["preflight", "bootstrap"]
+                process = part["process"]
+                expected = {name: {"device": os.fstat(fd).st_dev, "inode": os.fstat(fd).st_ino}
+                            for name, fd in zip(("stdout", "stderr"), fds)}
+                self.assertEqual(expected, part["pipe_identities"])
+                self.assertNotEqual(expected["stdout"], expected["stderr"])
+                process.terminate(); process.wait(timeout=3)
+                gateway._discard_original_clients()
+                self.assertEqual(expected, part["abandoned_client"]["pipe_identities"])
+                gateway.channel.total = gateway.channel.sequence = 0
+                stage = gateway.snapshot()["stages"][0]
+                self.assertEqual(expected, stage["pipe_identities"])
+                self.assertEqual(expected, stage["abandoned_client"]["pipe_identities"])
+            finally:
+                if process is not None and process.poll() is None:
+                    process.terminate(); process.wait(timeout=3)
+                if process is not None:
+                    for name in ("stdout", "stderr"):
+                        stream = getattr(process, name)
+                        if not stream.closed:
+                            stream.close()
+                part = gateway.parts.get(("preflight", "bootstrap"))
+                if part is not None and part.get("pidfd", -1) >= 0:
+                    os.close(part["pidfd"]); part["pidfd"] = -1
                 os.close(gateway.directory)
 
     def test_unknown_inventory_and_unsealed_predecessor_fail_closed(self):
@@ -201,6 +282,28 @@ class GatewayTests(unittest.TestCase):
                            ("SendSIGKILL", "no"), ("RestrictNamespaces", "true")):
             with self.subTest(key=key), self.assertRaises(q.QuotaError): observe(dict(values, **{key: value}))
 
+    def test_recovery_stop_ack_and_retained_identity_survive_immediate_unit_gc(self):
+        gateway, _ = self.gateway()
+        unit = "lhj-" + "a" * 64 + ".service"
+        loaded = dict.fromkeys(server._ALL_FIELDS, "")
+        loaded.update(Id=unit, LoadState="loaded", ActiveState="active", SubState="running",
+                      InvocationID="b" * 32,
+                      ControlGroup=gateway.binding["parent"]["path"] + "/" + unit, Job="")
+        absent = dict.fromkeys(server._ALL_FIELDS, "")
+        absent.update(Id=unit, LoadState="not-found", ActiveState="inactive", SubState="dead",
+                      InvocationID="", ControlGroup="", Job="")
+        part = dict(unit=unit, invocation_id="b" * 32, stop_ok=True,
+                    identity_observation=loaded, properties={})
+        gateway._command = mock.Mock(return_value=dict(returncode=0, stderr="",
+            stdout="".join(key + "=" + value + "\n" for key, value in absent.items())))
+        gateway.recovery_only = True
+        _, values = gateway._show(part)
+        self.assertEqual("not-found", values["LoadState"])
+        self.assertNotIn("terminal", part)
+        gateway.recovery_only = False
+        with self.assertRaisesRegex(q.QuotaError, "SYSTEM_ORIGINAL_UNIT_MISSING"):
+            gateway._show(part)
+
     def test_runtime_shrinks_after_intent_io_and_expiry_never_delivers(self):
         for late_ns in (6 * SECOND, 12 * SECOND):
             with self.subTest(late_ns=late_ns):
@@ -229,3 +332,121 @@ class GatewayTests(unittest.TestCase):
                         self.assertLess(int(runtime.split("=")[-1][:-2]), original_runtime)
                     else:
                         launch.assert_not_called()
+
+    def test_arm_binds_exact_plan_and_freezes_all_old_session_operations(self):
+        gateway, item = self.gateway()
+        plan = self.arm(gateway, item)
+        before = copy.deepcopy(gateway.parts)
+        ref = dict(execution_id=plan["execution_id"], phase="preflight", stage="bootstrap")
+        attempts = (("observe", dict(ref=ref, view="full")),
+                    ("launch", dict(ref=ref, bindings=dict(
+                        allocation_digest=item["execution"]["bootstrap_allocation"]["grant_digest"],
+                        grant_digest=item["grant"].digest))),
+                    ("client_stop", dict(ref=ref, token="c" * 64)),
+                    ("seal", dict(ref=ref, token="c" * 64)))
+        for op, body in attempts:
+            with self.subTest(op=op), self.assertRaisesRegex(q.QuotaError, "SYSTEM_RECOVERY_ARMED"):
+                gateway.dispatch(op, body)
+        self.assertEqual(before, gateway.parts)
+        self.assertEqual(plan, gateway.recovery_plan)
+        self.assertFalse(gateway.recovery_arm_ack)
+
+    def test_arm_rejects_invocation_identity_reused_across_distinct_units(self):
+        gateway, item = self.gateway()
+        plan = self.recovery_plan(gateway, item)
+        for stage, unit in plan["units"].items():
+            gateway.parts["preflight", stage] = dict(unit=unit, invocation_id="a" * 32,
+                stop_ok=False, sealed=False, process=None, pidfd=-1, properties={},
+                pipe_identities={"stdout": {"device": 1, "inode": 2},
+                                   "stderr": {"device": 1, "inode": 3}})
+        with self.assertRaisesRegex(q.QuotaError, "SYSTEM_RECOVERY_ARM"):
+            gateway.dispatch("recovery_arm", {"plan": plan})
+        self.assertFalse(gateway.recovery_armed)
+
+    def test_arm_is_not_published_until_response_is_committed(self):
+        gateway, item = self.gateway(); self.arm(gateway, item)
+        entered = threading.Event(); release = threading.Event()
+        class Channel:
+            session_id = "a" * 64
+            sequence = 0
+            total = 0
+            pending = "recovery_arm"
+            def respond(inner, request, result, fds=()):
+                entered.set(); release.wait(2)
+                inner.sequence += 1; inner.pending = None
+        gateway.channel = Channel()
+        request = dict(op="recovery_arm", sequence=0, body={"plan": gateway.recovery_plan})
+        thread = threading.Thread(target=gateway._respond, args=(request, {"armed": True}))
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(1))
+            self.assertTrue(gateway.recovery_armed)
+            self.assertFalse(gateway.recovery_arm_ack)
+            release.set(); thread.join(1)
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(gateway.recovery_arm_ack)
+        finally:
+            release.set(); thread.join(1)
+
+    def test_real_peer_exit_is_required_before_single_rebind_and_budgets_accumulate(self):
+        clock = budget.current_clock()
+        end = clock["boottime_ns"] + 10 * SECOND
+        processes = []; channels = []; peers = []
+        def peer_channel(session):
+            left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            process = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(30)"],
+                pass_fds=(right.fileno(),), close_fds=True)
+            right.close(); peers.append(left); processes.append(process)
+            channel = wire.Channel(left, peer=(process.pid, os.getuid(), os.getgid()),
+                peer_start_ticks=wire.start_ticks(process.pid), session_id=session,
+                boot_id=clock["boot_id"], deadline_ns=end)
+            channels.append(channel)
+            return process, channel
+        old_process = new_process = None
+        gateway = server.Gateway.__new__(server.Gateway)
+        try:
+            old_process, old = peer_channel("a" * 64)
+            gateway.lock = threading.RLock(); gateway.closed = False; gateway._serving = False
+            gateway.recovery_only = gateway.recovery_finished = False
+            gateway.recovery_rebinds = 0; gateway.recovery_armed = False
+            gateway.recovery_arm_ack = False
+            gateway.recovery_plan = dict(phase_deadline_ns=end, budget_deadline_ns=end)
+            gateway.pending_control = None; gateway.failure = None; gateway.session_failures = []
+            gateway.binding = dict(boot_id=clock["boot_id"]); gateway.uid = os.getuid(); gateway.gid = os.getgid()
+            gateway.end = end; gateway.channel = old; gateway.peer_pidfd = os.dup(old.pidfd)
+            gateway.retired_wire_bytes = gateway.retired_calls = gateway.control_bytes = 0
+            gateway.parts = {("preflight", stage): dict(unit="unit-" + stage,
+                process=None, pidfd=-1,
+                pipe_identities={"stdout": {"device": 1, "inode": index * 2},
+                                   "stderr": {"device": 1, "inode": index * 2 + 1}})
+                for index, stage in enumerate(wire.STAGES, 1)}
+            new_session = hashlib.sha256((old.session_id + ":h11-recovery").encode()).hexdigest()
+            new_process, new = peer_channel(new_session)
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_RECOVERY_STATE"):
+                gateway.rebind_recovery(new)
+            gateway.recovery_armed = gateway.recovery_arm_ack = True
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_RECOVERY_OLD_PEER"):
+                gateway.rebind_recovery(new)
+            old.total = 123; old.sequence = 4
+            old_process.terminate(); old_process.wait(timeout=3)
+            for _ in range(100):
+                if select.select([gateway.peer_pidfd], [], [], 0.01)[0]: break
+            gateway.rebind_recovery(new)
+            self.assertTrue(gateway.recovery_only)
+            self.assertEqual((123, 4), (gateway.retired_wire_bytes, gateway.retired_calls))
+            self.assertTrue(all(part["collectors_lost"] for part in gateway.parts.values()))
+            self.assertTrue(all(part["abandoned_client"]["pipe_identities"] == part["pipe_identities"]
+                                for part in gateway.parts.values()))
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_RECOVERY_STATE"):
+                gateway.rebind_recovery(new)
+        finally:
+            try: gateway.channel.close()
+            except Exception: pass
+            if getattr(gateway, "peer_pidfd", -1) >= 0:
+                os.close(gateway.peer_pidfd); gateway.peer_pidfd = -1
+            for process in processes:
+                if process.poll() is None:
+                    process.terminate(); process.wait(timeout=3)
+            for channel in channels:
+                try: channel.close()
+                except Exception: pass

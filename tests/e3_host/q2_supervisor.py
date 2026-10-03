@@ -31,6 +31,9 @@ SYSTEM_WIRE_BYTES = 4 * 1024**2
 CANCEL_SCHEMA = "local-hand-q4-cancel-supervisor/v1"
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
+H11_SCHEMA = "local-hand-q4-h11-supervisor/v1"
+H11_PURPOSE = "ISOLATED_Q4_H11_RECOVERY"
+H11_LAUNCHER = "local-hand-q4-h11-launcher/v1"
 LIMIT = 2 * 1024 * 1024
 RECORD_LIMIT = 65536
 PIPE_LIMIT = 32768
@@ -135,23 +138,31 @@ def cancel_fixture(value):
     """A cancellation record cannot enter the legacy phase-closure contract."""
     pair = value.get("schema"), value.get("purpose")
     require(pair in ((SCHEMA, "ISOLATED_Q2_SUPERVISION"), (SYSTEM_SCHEMA, "ISOLATED_Q2_SUPERVISION"),
-                    (CANCEL_SCHEMA, CANCEL_PURPOSE)),
+                    (CANCEL_SCHEMA, CANCEL_PURPOSE), (H11_SCHEMA, H11_PURPOSE)),
             "SUPERVISOR_SCHEMA")
     nested = value["launcher"]
     status = expected_status(nested)
     cancel = pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
     require(cancel == (status == "CANCEL_CASE_RECORDED"), "SUPERVISOR_SCENARIO_BINDING")
-    require((pair[0] == SYSTEM_SCHEMA) == (nested["schema"] == SYSTEM_LAUNCHER), "SUPERVISOR_MANAGER_VERSION")
+    expected_manager = {SYSTEM_SCHEMA: SYSTEM_LAUNCHER, H11_SCHEMA: H11_LAUNCHER}.get(pair[0])
+    require((expected_manager is None and nested["schema"] not in (SYSTEM_LAUNCHER, H11_LAUNCHER))
+            or nested["schema"] == expected_manager, "SUPERVISOR_MANAGER_VERSION")
     return cancel
 
 
 def system_fixture(value):
     cancel_fixture(value)
-    return value["schema"] == SYSTEM_SCHEMA
+    return value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
+
+
+def h11_fixture(value):
+    cancel_fixture(value)
+    return value["schema"] == H11_SCHEMA
 
 
 def record_schema(value, suffix):
-    prefix = ("local-hand-q2-system-" if value.get("schema") == SYSTEM_SCHEMA else
+    prefix = ("local-hand-q4-h11-" if value.get("schema") == H11_SCHEMA else
+              "local-hand-q2-system-" if value.get("schema") == SYSTEM_SCHEMA else
               "local-hand-q4-cancel-" if value.get("schema") == CANCEL_SCHEMA else "local-hand-q2-")
     return prefix + suffix + "/v1"
 
@@ -162,7 +173,8 @@ def expected_status(launcher):
     statuses = {("local-hand-q2-launcher/v1", "ISOLATED_Q2_PREFLIGHT"): "PREFLIGHT_CLOSED",
                 ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
                 (SYSTEM_LAUNCHER, "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
-                (CANCEL_LAUNCHER, CANCEL_PURPOSE): "CANCEL_CASE_RECORDED"}
+                (CANCEL_LAUNCHER, CANCEL_PURPOSE): "CANCEL_CASE_RECORDED",
+                (H11_LAUNCHER, H11_PURPOSE): "RECOVERY_RECORDED"}
     require(pair in statuses, "SUPERVISOR_LAUNCHER_SCHEMA")
     return statuses[pair]
 
@@ -210,8 +222,10 @@ def validate_system_geometry(nested, controller_parent, target, *, boot_id):
     """Validate the sole new containment; retained costs keep their own domain."""
     from admin.local_hand_quota_observer import q2_config as c
     from local_hand_jobs import quota_contract as q, manager_binding
-    require(nested["schema"] == SYSTEM_LAUNCHER
-        and nested["resident"]["schema"] == "local-hand-q2-system-resident/v1", "SUPERVISOR_MANAGER_VERSION")
+    pair = nested["schema"], nested["resident"]["schema"]
+    require(pair in ((SYSTEM_LAUNCHER, "local-hand-q2-system-resident/v1"),
+                     (H11_LAUNCHER, "local-hand-q4-h11-origin-resident/v1")),
+            "SUPERVISOR_MANAGER_VERSION")
     geometry = nested["system_geometry"]
     q._keys(geometry, {"schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent"})
     require(geometry["schema"] == "local-hand-q2-system-geometry/v1", "SUPERVISOR_SYSTEM_GEOMETRY_SCHEMA")
@@ -253,6 +267,7 @@ def validate(value, launcher, clock):
     from admin.local_hand_quota_observer import controller_guard as guard, q2_config as c
     from local_hand_jobs import quota_contract as q, quota_grant as g
     cancel = cancel_fixture(value)
+    h11 = h11_fixture(value)
     nested = value["launcher"]
     target_envelope = nested["controller_envelope"]
     own_envelope = value["supervisor_envelope"]
@@ -309,7 +324,8 @@ def validate(value, launcher, clock):
     # Account resident pipes + launcher summary, then the additional original
     # controller pipes, supervisor admission captures and supervisor summary.
     for part in (costs(target_envelope, target, (phase_count - 1) * target_envelope["output_bytes"]
-                      + PIPE_LIMIT + (PIPE_LIMIT if cancel else 4096)),
+                      + PIPE_LIMIT + (PIPE_LIMIT if cancel else 4096)
+                      + (8192 if h11 else 0)),
                  costs(own_envelope, own, 2 * PIPE_LIMIT + 4096)):
         for key, amount in part.items(): totals[key] += amount
     if system:
@@ -652,6 +668,8 @@ def read_marker(value, original, launcher):
         require(str(repository / "tests/e3_host/q2_resident.py") == entry, "SUPERVISOR_RESIDENT_ENTRY")
         _, report = launcher.load_cancel_modules(value["launcher"], repository)
         launcher.validate_cancel_result(result, value["launcher"]["resident"], report)
+    if h11_fixture(value):
+        launcher.validate_h11_result(result, value["launcher"]["resident"])
     return marker
 
 

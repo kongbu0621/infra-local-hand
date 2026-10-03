@@ -23,6 +23,8 @@ SCHEMA = "local-hand-q2-resident/v1"
 CHAIN_SCHEMA = "local-hand-q2-resident/v2"
 SYSTEM_SCHEMA = "local-hand-q2-system-resident/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-resident/v1"
+ORIGIN_SCHEMA = "local-hand-q4-h11-origin-resident/v1"
+RECOVERY_SCHEMA = "local-hand-q4-h11-recovery-resident/v1"
 LIMIT = 262144
 PHASES = ("preflight",)
 CHAIN_PHASES = ("preflight", "business", "evidence")
@@ -45,6 +47,7 @@ def fixture_phases(value):
     variants = {SCHEMA: (PHASES, "ISOLATED_Q2_RESIDENT"),
                 CHAIN_SCHEMA: (CHAIN_PHASES, "ISOLATED_Q2_CHAIN"),
                 SYSTEM_SCHEMA: (CHAIN_PHASES, "ISOLATED_Q2_CHAIN"),
+                ORIGIN_SCHEMA: (PHASES, "ISOLATED_Q4_H11_ORIGIN"),
                 CANCEL_SCHEMA: (PHASES, "ISOLATED_Q4_CANCEL_HELPER")}
     phases, purpose = variants.get(value.get("schema"), ((), None))
     require(bool(phases) and value.get("phases") == list(phases)
@@ -120,12 +123,21 @@ def bootstrap(path, digest):
     value = json.loads(raw, object_pairs_hook=unique)
     require(type(value) is dict, "RESIDENT_SCHEMA")
     extra = {"cancel_case"} if value.get("schema") == CANCEL_SCHEMA else set()
-    if value.get("schema") == SYSTEM_SCHEMA:
+    if value.get("schema") == RECOVERY_SCHEMA:
+        extra = {"recovery", "recovery_case", "manager_channel"}
+        required = {"schema", "purpose", "entry", "installation", "policy", "ordinary"} | extra
+        require(set(value) == required and value.get("purpose") == "ISOLATED_Q4_H11_RECOVERY",
+                "RESIDENT_SCHEMA")
+    else:
+        required = {
+            "schema", "purpose", "entry", "installation", "policy", "ordinary", "principal",
+            "request", "plan", "phases", "bridge"} | extra
+    if value.get("schema") in (SYSTEM_SCHEMA, ORIGIN_SCHEMA):
         extra.add("manager_channel")
-    require(set(value) == {
-        "schema", "purpose", "entry", "installation", "policy", "ordinary", "principal",
-        "request", "plan", "phases", "bridge"} | extra, "RESIDENT_SCHEMA")
-    fixture_phases(value)
+        required.add("manager_channel")
+    require(set(value) == required, "RESIDENT_SCHEMA")
+    if value.get("schema") != RECOVERY_SCHEMA:
+        fixture_phases(value)
     entry = value["entry"]
     require(type(entry) is dict and set(entry) == {"path", "sha256"}
             and entry["path"] == os.path.abspath(__file__)
@@ -170,6 +182,25 @@ def load_cancel_case(value):
     return module
 
 
+def load_recovery_case(value):
+    """Load only the adjacent, pinned H11 recovery contract."""
+    require(value["schema"] == RECOVERY_SCHEMA, "RESIDENT_RECOVERY_SCHEMA")
+    pin = value["recovery_case"]
+    path = str(Path(__file__).with_name("q4_h11_recovery.py"))
+    require(type(pin) is dict and set(pin) == {"path", "sha256"}
+            and pin["path"] == path, "RESIDENT_RECOVERY_ENTRY")
+    raw = protected(path, 512 * 1024)
+    require(hashlib.sha256(raw).hexdigest() == pin["sha256"], "RESIDENT_RECOVERY_DIGEST")
+    from types import ModuleType
+    module = ModuleType("_q4_h11_recovery_case")
+    module.__file__ = path
+    exec(compile(raw, path, "exec", dont_inherit=True), module.__dict__)
+    module.validate(value["recovery"])
+    require(value["recovery"]["controller_deadline_ns"] ==
+            value["manager_channel"]["deadline_ns"], "H11_ORIGINAL_DEADLINE")
+    return module
+
+
 def process_start(pid):
     with open("/proc/" + str(pid) + "/stat", "rb") as stream:
         raw = stream.read(4097)
@@ -204,7 +235,7 @@ def host_admission(value, policy, manager):
     """Actual existing account, initial namespace, delegation and parent pins."""
     from local_hand_jobs import budget, quota_contract as q, quota_lifecycle
     pin = value["ordinary"]
-    system = value["schema"] == SYSTEM_SCHEMA
+    system = value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA)
     q._keys(pin, {"uid", "gid", "parent", "broker_cgroup", "initial_userns"}
             | ({"manager_binding"} if system else set()))
     q.integer(pin["uid"], 1)
@@ -225,8 +256,9 @@ def host_admission(value, policy, manager):
     require({"device": namespace.st_dev, "inode": namespace.st_ino} == pin["initial_userns"],
             "RESIDENT_USER_NAMESPACE")
     clock = budget.current_clock()
-    require(clock["boot_id"] == value["bridge"]["boot_id"]
-            and 0 < value["bridge"]["deadline_ns"] - clock["boottime_ns"] <= 600 * budget.NANOSECONDS,
+    envelope = value["manager_channel"] if value["schema"] == RECOVERY_SCHEMA else value["bridge"]
+    require(clock["boot_id"] == envelope["boot_id"]
+            and 0 < envelope["deadline_ns"] - clock["boottime_ns"] <= 600 * budget.NANOSECONDS,
             "RESIDENT_ORIGINAL_DEADLINE")
     support = manager.support()
     require(support["supported"] is True, "RESIDENT_HOST_UNSUPPORTED")
@@ -236,7 +268,10 @@ def host_admission(value, policy, manager):
     q.integer(parent["inode"], 1)
     require(policy.config["process_manager"]["cgroup"] == "/sys/fs/cgroup" + parent["path"],
             "RESIDENT_MANAGER_PARENT")
-    require(quota_lifecycle.parent(policy.config["process_manager"]["cgroup"], parent)[1], "RESIDENT_PARENT_OCCUPIED")
+    _, parent_empty = quota_lifecycle.parent(policy.config["process_manager"]["cgroup"], parent)
+    # A normal admission requires an empty target.  H11 must instead admit the
+    # populated original parent so it can observe/stop those exact old units.
+    require(value["schema"] == RECOVERY_SCHEMA or parent_empty, "RESIDENT_PARENT_OCCUPIED")
     own = Path("/proc/self/cgroup").read_text()
     require(own == "0::" + pin["broker_cgroup"] + "\n" and pin["broker_cgroup"] != parent["path"]
             and not pin["broker_cgroup"].startswith(parent["path"] + "/"), "RESIDENT_CONTROL_SEPARATION")
@@ -266,7 +301,7 @@ def host_admission(value, policy, manager):
                 "RESIDENT_CONTROLLERS")
 
 
-def compose(value, *, cancel_module=None, manager_channel=None):
+def _compose(value, *, cancel_module=None, manager_channel=None):
     from local_hand_jobs import cli, deployment, policy as policy_module
     from local_hand_jobs.runner import _SystemdExecutionCore
     from local_hand_jobs import quota_contract as q
@@ -298,7 +333,7 @@ def compose(value, *, cancel_module=None, manager_channel=None):
     require(all(os.path.realpath(profile["python"]) == programs["python"]["path"]
                 for profile in policy.profiles.values()), "RESIDENT_INTERPRETER_BINDING")
     manager_class = _SystemdExecutionCore
-    if value["schema"] == SYSTEM_SCHEMA:
+    if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA):
         from local_hand_jobs.system_manager import SystemManager
         require(cancel_module is None and manager_channel is not None, "RESIDENT_SYSTEM_CHANNEL")
         manager_class = SystemManager
@@ -307,12 +342,18 @@ def compose(value, *, cancel_module=None, manager_channel=None):
         manager_class = cancel_module.observe_manager(_SystemdExecutionCore)
     else:
         require(cancel_module is None, "RESIDENT_CANCEL_SCHEMA")
-    if value["schema"] != SYSTEM_SCHEMA:
+    if value["schema"] not in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA):
         require(manager_channel is None, "RESIDENT_SYSTEM_CHANNEL")
-    manager = (manager_class(policy.config.get("process_manager"), channel=manager_channel)
-        if value["schema"] == SYSTEM_SCHEMA else manager_class(policy.config.get("process_manager")))
+    manager = (manager_class(policy.config.get("process_manager"), channel=manager_channel,
+                             recovery=value["schema"] == RECOVERY_SCHEMA,
+                             h11_origin=value["schema"] == ORIGIN_SCHEMA)
+        if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA) else manager_class(policy.config.get("process_manager")))
     host_admission(value, policy, manager)
-    broker = cli._compose_broker(policy, manager, quota_required=True)
+    return cli._compose_broker(policy, manager, quota_required=True)
+
+
+def compose(value, *, cancel_module=None, manager_channel=None):
+    broker = _compose(value, cancel_module=cancel_module, manager_channel=manager_channel)
     try:
         # Explicitly supplied existing empty ledger only. A former request or
         # retained reservation is evidence to stop, never a resume invitation.
@@ -323,6 +364,128 @@ def compose(value, *, cancel_module=None, manager_channel=None):
     except BaseException:
         cli.close_service(broker, None, failed=True)
         raise
+
+
+def compose_recovery(value, module, *, manager_channel):
+    """Open the original nonempty ledger through the separate H11 schema."""
+    require(value["schema"] == RECOVERY_SCHEMA, "RESIDENT_RECOVERY_SCHEMA")
+    broker = _compose(value, manager_channel=manager_channel)
+    try:
+        # The module admits the exact single retained operation before it may
+        # append RECOVERY_BARRIER.  The normal compose() empty-ledger check is
+        # intentionally unchanged and is never bypassed for normal schemas.
+        module._admit(broker, value["recovery"])
+        return broker
+    except BaseException:
+        from local_hand_jobs import cli
+        cli.close_service(broker, None, failed=True)
+        raise
+
+
+def h11_plan(broker, identity, controller_deadline_ns):
+    """Freeze the exact durable three-stage receipt used by H11 recovery."""
+    from local_hand_jobs import budget, quota_contract as q
+    with broker.fence, broker.state.transaction() as tx:
+        rows = broker.state.all(tx)
+        require(len(rows) == 1, "H11_LEDGER_SCOPE")
+        row = rows[0]
+        require(row["namespace"] == "job" and row["id"] == row["parent"] == identity
+                and row["record"]["phase"] == "PREFLIGHT", "H11_LEDGER_IDENTITY")
+        record = row["record"]
+        handle = record.get("handles", {}).get("preflight")
+        execution_id = "job-" + identity + "-preflight"
+        expected_delivery = [execution_id + ":" + stage
+                             for stage in ("bootstrap", "helper", "result_reader")]
+        delivered = record.get("delivery_intents", [])
+        require(type(delivered) is list and delivered == expected_delivery[:len(delivered)]
+                and len(delivered) <= len(expected_delivery), "H11_MANAGER_RECEIPT")
+        require(record["lifecycle"] == "RUNNING" and record["cancel_requested"] is False
+                and record.get("recovered") is not True
+                and not record.get("quota_pending") and not record.get("quota_closed"),
+                "H11_CRASH_NOT_READY")
+        if (delivered != expected_delivery or type(handle) is not dict
+                or handle.get("execution_id") != execution_id
+                or handle.get("supervision_version") != 3):
+            raise ValueError("H11_CRASH_NOT_READY")
+        manager = handle.get("manager")
+        if type(manager) is not dict or manager.get("stage") != "result_reader":
+            raise ValueError("H11_CRASH_NOT_READY")
+        require(manager.get("version") == 3, "H11_MANAGER_RECEIPT")
+        units = {}
+        invocations = []
+        for stage in ("bootstrap", "helper", "result_reader"):
+            part = manager.get(stage)
+            if (type(part) is not dict or part.get("delivery_attempted") is not True
+                    or not re.fullmatch(r"[0-9a-f]{32}", part.get("invocation_id") or "")):
+                raise ValueError("H11_CRASH_NOT_READY")
+            suffix = "" if stage == "helper" else ":" + stage
+            expected = "lhj-" + hashlib.sha256((execution_id + suffix).encode()).hexdigest() + ".service"
+            require(type(part) is dict and part.get("unit") == expected
+                    and part.get("execution_id") == execution_id
+                    and part.get("delivery_attempted") is True,
+                    "H11_MANAGER_RECEIPT")
+            units[stage] = expected
+            invocations.append(part["invocation_id"])
+        require(len(set(invocations)) == 3, "H11_MANAGER_IDENTITY_REUSE")
+        reader = manager["result_reader"]
+        require(reader.get("h11_delivery_barrier") is True
+                and reader.get("collector_started") is False,
+                "H11_COLLECTOR_BARRIER")
+        grant = budget.stored_grant(row, "preflight")
+        phase_deadline_ns = budget.phase_deadline_ns(grant)
+        grace_ns = grant["limits"]["terminate_grace_seconds"] * budget.NANOSECONDS
+        require(all(manager[stage].get("phase_deadline_boottime_ns") == phase_deadline_ns - grace_ns
+                    for stage in ("bootstrap", "helper", "result_reader")),
+                "H11_ORIGINAL_DEADLINE")
+        q.integer(controller_deadline_ns, grant["deadline_boottime_ns"])
+        require(bool(tx.execute("SELECT 1 FROM leases LIMIT 1").fetchone()), "H11_RETAINED_LEASES")
+        return dict(schema="local-hand-q4-h11-recovery-plan/v1", namespace="job",
+            operation_id=identity, request_digest=row["digest"], phase="preflight",
+            execution_id=execution_id, event_seq=record["event_seq"],
+            handle_sha256=hashlib.sha256(q._canonical(handle, LIMIT)).hexdigest(),
+            budget_deadline_ns=grant["deadline_boottime_ns"],
+            phase_deadline_ns=phase_deadline_ns,
+            controller_deadline_ns=controller_deadline_ns, units=units,
+            collector_started=False)
+
+
+def run_h11_origin(value, channel, broker):
+    """Run normally until the exact durable crash barrier, then freeze."""
+    from local_hand_jobs import budget, quota_bridge
+    identity, _ = prepare_request(value, broker)
+    handler = quota_bridge.Phase(broker, "job", identity, "preflight")
+    broker._start("job", identity, "preflight")
+    channel.send(dict(event="prepared", namespace="job", identity=identity,
+                      phase="preflight", snapshot=handler.snapshot()))
+    started = False
+    while True:
+        channel._time()
+        if started:
+            broker.tick()
+            try:
+                plan = h11_plan(broker, identity, value["manager_channel"]["deadline_ns"])
+            except ValueError as error:
+                if str(error) != "H11_CRASH_NOT_READY":
+                    raise
+            else:
+                broker.runner.manager.arm_recovery(plan)
+                # No more broker tick, start, result read, or deadline mutation.
+                # The root launcher observes the ACK in its retained Gateway and
+                # kills this exact resident through its already-open pidfd.
+                while budget.current_clock()["boottime_ns"] < plan["controller_deadline_ns"]:
+                    channel._time()
+                    select.select([], [], [], 0.025)
+                raise ValueError("H11_CRASH_NOT_DELIVERED")
+        require(broker.state.healthy, "RESIDENT_LEDGER_UNHEALTHY")
+        if not select.select([channel.sock], [], [], 0.05)[0]:
+            continue
+        command = channel.receive()
+        require(type(command) is dict and (command.get("action") != "start" or not started),
+                "RESIDENT_START_REPLAY")
+        reply = handler.handle(command)
+        channel.send(reply)
+        if command["action"] == "start":
+            started = True
 
 
 def prepare_request(value, broker):
@@ -570,16 +733,29 @@ def main(argv=None):
             result["schema"] = "local-hand-q4-cancel-resident-result/v1"
         elif value["schema"] == SYSTEM_SCHEMA:
             result["schema"] = "local-hand-q2-system-resident-result/v1"
+        elif value["schema"] == ORIGIN_SCHEMA:
+            result["schema"] = "local-hand-q4-h11-origin-result/v1"
+        elif value["schema"] == RECOVERY_SCHEMA:
+            result["schema"] = "local-hand-q4-h11-recovery-result/v1"
         cancel_module = load_cancel_case(value) if value["schema"] == CANCEL_SCHEMA else None
-        channel = channel_from_pin(value["bridge"], version=2 if value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA) else 1)
-        if value["schema"] == SYSTEM_SCHEMA:
+        recovery_module = load_recovery_case(value) if value["schema"] == RECOVERY_SCHEMA else None
+        if value["schema"] != RECOVERY_SCHEMA:
+            channel = channel_from_pin(value["bridge"], version=2 if value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA) else 1)
+        if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA):
             from local_hand_jobs.system_manager import channel_from_pin as manager_from_pin
-            require(value["manager_channel"]["fd"] != value["bridge"]["fd"], "RESIDENT_CHANNEL_ALIAS")
-            require(all(value["manager_channel"][k] == value["bridge"][k] for k in
-                    ("pid", "uid", "gid", "start_ticks", "boot_id", "deadline_ns")), "RESIDENT_SYSTEM_PEER_BINDING")
+            if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA):
+                require(value["manager_channel"]["fd"] != value["bridge"]["fd"], "RESIDENT_CHANNEL_ALIAS")
+                require(all(value["manager_channel"][k] == value["bridge"][k] for k in
+                        ("pid", "uid", "gid", "start_ticks", "boot_id", "deadline_ns")), "RESIDENT_SYSTEM_PEER_BINDING")
             manager_channel = manager_from_pin(value["manager_channel"])
-            broker = compose(value, manager_channel=manager_channel)
-            result = run(value, channel, broker)
+            if value["schema"] == RECOVERY_SCHEMA:
+                broker = compose_recovery(value, recovery_module, manager_channel=manager_channel)
+                result = recovery_module.run(broker, value["recovery"])
+                broker.runner.manager.finish_recovery()
+            else:
+                broker = compose(value, manager_channel=manager_channel)
+                result = (run_h11_origin(value, channel, broker)
+                          if value["schema"] == ORIGIN_SCHEMA else run(value, channel, broker))
         elif cancel_module is None:
             broker = compose(value)
             result = run(value, channel, broker)
@@ -598,7 +774,8 @@ def main(argv=None):
         if broker is not None:
             try:
                 from local_hand_jobs.cli import close_service
-                close_service(broker, None, failed=result["status"] not in ("PHASE_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED"))
+                close_service(broker, None, failed=result["status"] not in (
+                    "PHASE_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED", "RECOVERY_RECORDED"))
             except Exception as error:
                 result.update(status="INCOMPLETE", reason=failure_reason(error))
         if manager_channel is not None:
@@ -607,9 +784,10 @@ def main(argv=None):
             except Exception as error:
                 result.update(status="INCOMPLETE", reason=failure_reason(error))
     output = json.dumps(result, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    require(len(output) <= (24576 if result["schema"] == "local-hand-q4-cancel-resident-result/v1" else 4096), "RESIDENT_SUMMARY_LIMIT")
+    require(len(output) <= (24576 if result["schema"] == "local-hand-q4-cancel-resident-result/v1"
+            else 8192 if result["schema"] == "local-hand-q4-h11-recovery-result/v1" else 4096), "RESIDENT_SUMMARY_LIMIT")
     os.write(1, output + b"\n")
-    return 0 if result["status"] in ("PHASE_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED") else 3
+    return 0 if result["status"] in ("PHASE_CLOSED", "CHAIN_CLOSED", "CANCEL_CASE_RECORDED", "RECOVERY_RECORDED") else 3
 
 
 if __name__ == "__main__":

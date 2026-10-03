@@ -9,11 +9,13 @@ import os
 import subprocess
 import sys
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 from local_hand_jobs import budget, manager_binding, quota_contract as q
 from q2_fixtures import BOOT, SECOND
+from q2_fixtures import make_grant
 if sys.platform.startswith("linux"):
     from local_hand_jobs import quota_lifecycle as life, runner, system_manager as system
 
@@ -40,6 +42,9 @@ class Channel:
         if not pending:
             self.finish()
         self.part = None
+        self.recovery = False
+        self.recovery_stop_ok = False
+        self.history = None
 
     def finish(self):
         for fd in self.writes:
@@ -67,27 +72,45 @@ class Channel:
         if operation == "inventory":
             return dict(returncode=0, stdout="", stderr=""), ()
         if operation == "stop":
+            self.recovery_stop_ok = True
             self.props.update(ActiveState="inactive", SubState="dead", ControlGroup="")
-            return dict(returncode=0, stdout="", stderr="", client_state=dict(self.state)), ()
+            value = dict(returncode=0, stdout="", stderr="")
+            if not self.recovery: value["client_state"] = dict(self.state)
+            return value, ()
         if operation == "observe":
             view = body["view"]
             raw = (self.props["InvocationID"] + "\n" if view == "invocation" else
                    "".join(key + "=" + value + "\n" for key, value in self.props.items()))
-            return dict(returncode=0, stdout=raw, stderr="", client_state=dict(self.state)), ()
+            value = dict(returncode=0, stdout=raw, stderr="")
+            if self.recovery:
+                retained = self.props if self.history is None else self.history
+                terminal = (copy.deepcopy(retained) if retained["SubState"] in ("exited", "dead")
+                            or retained["ActiveState"] in ("inactive", "failed") else None)
+                value["recovery_history"] = dict(invocation_id=retained["InvocationID"],
+                    stop_ok=self.recovery_stop_ok, sealed=False,
+                    identity=copy.deepcopy(retained), terminal=terminal)
+            else:
+                value["client_state"] = dict(self.state)
+            return value, ()
         if operation == "seal":
             if not (self.part["launch"].stdout.closed and self.part["launch"].stderr.closed):
                 raise AssertionError("ordinary pipes must close before root seal")
             return dict(closed=True, client_state=dict(self.state)), ()
         if operation == "client_stop":
             return dict(client_state=dict(self.state)), ()
+        if operation == "recovery_finish":
+            return dict(closed=True), ()
+        if operation == "recovery_arm":
+            return dict(armed=True), ()
         raise AssertionError(operation)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux pipe supervision")
 class SystemManagerTests(unittest.TestCase):
-    def fixture(self, *, pending=False):
+    def fixture(self, *, pending=False, recovery=False):
         channel = Channel(self, pending=pending)
-        manager = system.SystemManager(configuration(), channel=channel)
+        channel.recovery = recovery
+        manager = system.SystemManager(configuration(), channel=channel, recovery=recovery)
         binding = manager.execution_binding()
         identity = dict(job_key="fixture", execution_id="fixture:preflight", phase="preflight",
                         unit="lhj-" + "a" * 64 + ".service", manager_binding=binding)
@@ -128,6 +151,53 @@ class SystemManagerTests(unittest.TestCase):
                             os.fstat(part["launch"].stderr.fileno()).st_ino)
         self.assertEqual(0, part["launch"].poll())
         self.assertEqual(1, len(channel.calls))  # poll is the observed original state, not another RPC.
+
+    def test_h11_identity_barrier_uses_one_fixed_observe_and_never_reads_pipes(self):
+        manager, handle, part, channel = self.fixture(pending=True)
+        manager.h11_origin = True
+        handle["helper"] = None
+        handle["result_reader"] = part
+        part.update(stage="result_reader", delivery_attempted=True, collector_started=False,
+                    pipe_closed=False, client_stopped=False)
+        self.assertTrue(manager._hold_result_reader_for_recovery(handle, part))
+        self.assertTrue(manager._hold_result_reader_for_recovery(handle, part))
+        self.assertEqual("a" * 32, part["invocation_id"])
+        self.assertTrue(part["h11_delivery_barrier"])
+        self.assertFalse(part["collector_started"])
+        self.assertEqual(["launch", "observe"], [op for op, _ in channel.calls])
+        self.assertFalse(part["launch"].stdout.closed)
+        self.assertFalse(part["launch"].stderr.closed)
+
+    def test_arm_requires_exact_unstarted_reader_and_original_phase_deadline(self):
+        operation = "11111111-2222-4333-8444-555555555555"
+        grant = make_grant(operation=operation).as_dict()["budget"]
+        execution = grant["execution_id"]
+        units = {stage: "lhj-" + char * 64 + ".service"
+                 for stage, char in (("bootstrap", "a"), ("helper", "b"), ("result_reader", "c"))}
+        manager = system.SystemManager(configuration(), channel=mock.Mock(), h11_origin=True)
+        identity = dict(job_key=operation, execution_id=execution, phase="preflight",
+                        unit=units["helper"], manager_binding=manager.execution_binding())
+        reader = dict(unit=units["result_reader"], execution_id=execution,
+            invocation_id="c" * 32, h11_delivery_barrier=True, collector_started=False,
+            pipe_closed=False, client_stopped=False, reader=SimpleNamespace(result=None),
+            budget_grant=grant)
+        handle = dict(identity=identity, result_reader=reader)
+        manager._runs[units["helper"]] = handle
+        manager._h11_reader_barrier = dict(execution_id=execution,
+            unit=units["result_reader"], invocation_id="c" * 32)
+        plan = dict(schema="local-hand-q4-h11-recovery-plan/v1", namespace="job",
+            operation_id=operation, request_digest="f" * 64, phase="preflight",
+            execution_id=execution, event_seq=1, handle_sha256="e" * 64,
+            budget_deadline_ns=grant["deadline_boottime_ns"],
+            phase_deadline_ns=budget.phase_deadline_ns(grant),
+            controller_deadline_ns=grant["deadline_boottime_ns"],
+            collector_started=False, units=units)
+        with mock.patch.object(manager, "_request") as request:
+            manager.arm_recovery(plan)
+            request.assert_called_once_with("recovery_arm", plan=plan)
+        reader["collector_started"] = True
+        with self.assertRaises(q.QuotaError):
+            manager.arm_recovery(plan)
 
     def test_shared_observer_requires_dual_eof_client_exit_stop_and_root_seal(self):
         manager, handle, part, channel = self.fixture()
@@ -214,10 +284,73 @@ class SystemManagerTests(unittest.TestCase):
 
     def test_recovery_does_not_reconstruct_lost_pipes_or_redeliver(self):
         manager, handle, part, channel = self.fixture()
+        manager.recovery = True; channel.recovery = True
+        for stream in (part["launch"].stdout, part["launch"].stderr):
+            stream.close()
+        part["launch"] = None
         part["recovered"] = True
         before = len(channel.calls)
         self.assertEqual("UNKNOWN", manager._inspect_unit(part)["state"])
-        self.assertEqual(before, len(channel.calls))
+        proof = manager._inspect_unit(part)
+        self.assertEqual("EXITED", proof["state"])
+        self.assertTrue(proof["future_start_blocked"])
+        self.assertTrue(proof["tree_exited"])
+        self.assertTrue(proof["writers_stopped"])
+        self.assertFalse(proof["collectors_stopped"])
+        self.assertFalse(proof["effects_checked"])
+        self.assertEqual("UNKNOWN", proof["result"]["outcome"])
+        calls = [name for name, _ in channel.calls[before:]]
+        self.assertEqual(["observe", "observe", "stop", "observe"], calls)
+        self.assertNotIn("launch", calls)
+        self.assertNotIn("seal", calls)
+        self.assertNotIn("client_stop", calls)
+        manager.finish_recovery()
+        self.assertEqual("recovery_finish", channel.calls[-1][0])
+
+    def test_recovery_accepts_gc_only_with_same_gateway_retained_terminal_and_stop_ack(self):
+        manager, _, part, channel = self.fixture()
+        for stream in (part["launch"].stdout, part["launch"].stderr): stream.close()
+        part.update(launch=None, recovered=True, invocation_id="a" * 32)
+        manager.recovery = True; channel.recovery = True
+        channel.history = copy.deepcopy(channel.props)
+        channel.recovery_stop_ok = True
+        channel.props.update(LoadState="not-found", ActiveState="inactive", SubState="dead",
+                             ControlGroup="", InvocationID="", Job="")
+        proof = manager._inspect_unit(part)
+        self.assertEqual("EXITED", proof["state"])
+        self.assertFalse(proof["collectors_stopped"])
+        self.assertEqual(["observe"], [op for op, _ in channel.calls[1:]])
+
+    def test_recovery_accepts_immediate_gc_after_exact_stop_without_exit_status(self):
+        manager, _, part, channel = self.fixture()
+        for stream in (part["launch"].stdout, part["launch"].stderr): stream.close()
+        part.update(launch=None, recovered=True, invocation_id="a" * 32)
+        manager.recovery = True; channel.recovery = True
+        # The root retained the full loaded identity before StopUnit, but the
+        # transient unit was collected before a loaded terminal poll existed.
+        channel.history = dict(channel.props, ActiveState="active", SubState="running",
+                               ExecMainCode="0", ExecMainStatus="0")
+        channel.recovery_stop_ok = True
+        channel.props.update(LoadState="not-found", ActiveState="inactive", SubState="dead",
+                             ControlGroup="", InvocationID="", Job="")
+        proof = manager._inspect_unit(part)
+        self.assertEqual("EXITED", proof["state"])
+        self.assertIsNone(proof["exit_code"])
+        self.assertFalse(proof["collectors_stopped"])
+        self.assertEqual("UNKNOWN", proof["result"]["outcome"])
+        self.assertEqual(["observe"], [op for op, _ in channel.calls[1:]])
+
+    def test_recovery_rejects_gc_history_for_another_invocation(self):
+        manager, _, part, channel = self.fixture()
+        for stream in (part["launch"].stdout, part["launch"].stderr): stream.close()
+        part.update(launch=None, recovered=True, invocation_id="a" * 32)
+        manager.recovery = True; channel.recovery = True
+        channel.history = dict(channel.props, InvocationID="b" * 32)
+        channel.recovery_stop_ok = True
+        channel.props.update(LoadState="not-found", ActiveState="inactive", SubState="dead",
+                             ControlGroup="", InvocationID="", Job="")
+        with self.assertRaises(runner.RunnerError):
+            manager._inspect_unit(part)
 
     def test_runner_freezes_manager_identity_before_enqueuing(self):
         manager = system.SystemManager(configuration(), channel=mock.Mock())

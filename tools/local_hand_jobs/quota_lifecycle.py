@@ -213,3 +213,101 @@ def observe(manager, part, unknown):
                  identity=identity, missing=[])
     part["quota_final"] = proof
     return proof
+
+
+def observe_recovered(manager, part, unknown):
+    """Observe and stop one persisted unit after its local pipes were lost.
+
+    Recovery is deliberately weaker than :func:`observe`.  It may establish
+    the original unit identity, an empty process tree and the absence of a
+    queued start, but it never reconstructs the old anonymous pipes, reads a
+    result file or treats the root client's state as a replacement collector.
+    Consequently every terminal proof produced here retains
+    ``collectors_stopped=False`` and ``effects_checked=False``.
+    """
+    q.require(part.get("recovered") is True, "RECOVERY_IDENTITY_REQUIRED")
+    now = budget.current_clock()
+    q.require(now["boot_id"] == part["boot_id"], "BOOT_CHANGED")
+    configuration = getattr(manager, "configuration", {})
+    expected = bindings.from_configuration(configuration) if isinstance(configuration, Mapping) else None
+    bound = bindings.check(expected, part.get("manager_binding"))
+    parent_pin = part.get("quota_parent")
+    if bound is not None:
+        bound = bindings.validate(bound, boot_id=now["boot_id"])
+        if parent_pin is None:
+            parent_pin = bound["parent"]
+        q.require(parent_pin == bound["parent"]
+                  and part["cgroup_parent"] == "/sys/fs/cgroup" + bound["parent"]["path"],
+                  "ORIGINAL_MANAGER_PARENT_CHANGED")
+    q.require(type(parent_pin) is dict, "ORIGINAL_MANAGER_PARENT_CHANGED")
+    part["quota_parent"] = parent_pin
+    if part.get("recovery_final") is not None:
+        return part["recovery_final"]
+
+    response = manager._command("show", part["unit"], "--all", "--property=" + ",".join(FIELDS))
+    q.require(response.returncode == 0, "UNIT_SHOW_FAILED")
+    pairs = [line.split("=", 1) for line in response.stdout.decode().splitlines()]
+    q.require(all(len(pair) == 2 for pair in pairs)
+              and len({pair[0] for pair in pairs}) == len(pairs), "UNIT_PROPERTIES")
+    values = dict(pairs)
+    for hook in ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"):
+        values.setdefault(hook, "")
+    q._keys(values, set(FIELDS))
+
+    if values["LoadState"] == "loaded":
+        identity = _loaded_identity(part, values)
+        part["invocation_id"] = identity["invocation_id"]
+        part.setdefault("recovery_identity", values)
+        terminal = _terminal(values)
+        if terminal:
+            part.setdefault("recovery_terminal", values)
+        # H11 is an observe/stop recovery, not a passive wait for the old
+        # deadline.  The full InvocationID is rechecked immediately below
+        # before stopping this exact original unit.
+        if not part.get("recovery_stop_ok"):
+            same = manager._command("show", part["unit"], "--property=InvocationID", "--value")
+            q.require(same.returncode == 0 and same.stdout.decode().strip() == identity["invocation_id"],
+                      "ORIGINAL_INVOCATION_CHANGED")
+            part["recovery_stop_attempted"] = True
+            part["recovery_stop_ok"] = manager._command("stop", part["unit"]).returncode == 0
+            return {**unknown("original unit stop was requested; recovered pipes remain unavailable"),
+                    "identity": identity, "collectors_stopped": False}
+        if not terminal:
+            return {**unknown("original unit stop is acknowledged but tree exit remains unproven"),
+                    "state": "RUNNING", "identity": identity, "collectors_stopped": False}
+    else:
+        q.require(values["LoadState"] == "not-found" and values["Id"] == part["unit"]
+                  and values["InvocationID"] == "" and values["ControlGroup"] == ""
+                  and values["ActiveState"] == "inactive" and values["SubState"] == "dead"
+                  and values["Job"] in ("", "0")
+                  and part.get("recovery_stop_attempted") is True
+                  and part.get("recovery_stop_ok") is True
+                  and type(part.get("recovery_identity")) is dict,
+                  "ORIGINAL_UNIT_MISSING")
+        identity = _loaded_identity(part, part["recovery_identity"])
+
+    terminal = part.get("recovery_terminal")
+    q.require(terminal is None or type(terminal) is dict and _terminal(terminal)
+              and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit(),
+              "ORIGINAL_EXIT_STATUS")
+    _, empty = parent(part["cgroup_parent"], parent_pin)
+    after = budget.current_clock()
+    q.require(after["boot_id"] == part["boot_id"]
+              and part.get("recovery_stop_ok") is True
+              and values["ActiveState"] in ("inactive", "failed")
+              and values["Job"] in ("", "0") and empty,
+              "ORIGINAL_EXIT_UNPROVEN")
+    code = None if terminal is None else int(terminal["ExecMainStatus"])
+    evidence = dict(identity=identity, terminal=terminal, after=values,
+                    parent=parent_pin, transport="LOST_ON_BROKER_RESTART")
+    if bound is not None:
+        evidence["manager_binding"] = bound
+    proof = dict(state="EXITED", future_start_blocked=True, tree_exited=True,
+                 collectors_stopped=False, writers_stopped=True, effects_checked=False,
+                 exit_code=code, execution_id=part["execution_id"], unit=part["unit"],
+                 facts={}, result={"outcome": "UNKNOWN", "helper_started": True},
+                 identity=identity,
+                 proof_digest=close.digest(evidence), observed_ns=after["boottime_ns"],
+                 missing=["original anonymous pipes and local collector were lost on broker restart"])
+    part["recovery_final"] = proof
+    return proof

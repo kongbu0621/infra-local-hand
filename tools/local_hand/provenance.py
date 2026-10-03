@@ -7,7 +7,7 @@ import importlib.util
 import json
 import marshal
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
@@ -22,10 +22,161 @@ BUILD_SCHEMA = "infra-local-hand-build/v1"
 VERSION = "0.2.0a1"
 PAYLOAD_PACKAGES = ("local_hand", "local_hand_connect", "local_hand_jobs", "local_hand_mcp")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+SOURCE_PROJECTION_SCHEMA = "local-hand-q2-source-projection/v1"
+SOURCE_PROJECTION_MANIFEST = ".local-hand-source-projection.json"
+_SOURCE_PROJECTION_HARNESS = frozenset({
+    "tests/e3_host/q2_fixture_check.py",
+    "tests/e3_host/q2_launcher.py",
+    "tests/e3_host/q2_prepare_assembly.py",
+    "tests/e3_host/q2_prepare_driver.py",
+    "tests/e3_host/q2_prepare_run.py",
+    "tests/e3_host/q2_resident.py",
+    "tests/e3_host/q2_supervisor.py",
+    "tests/e3_host/q4_cancel_case.py",
+    "tests/e3_host/q4_cancel_runtime.py",
+    "tests/e3_host/q4_h11_recovery.py",
+})
+_SOURCE_PROJECTION_REQUIRED = _SOURCE_PROJECTION_HARNESS | frozenset({
+    "tools/admin/local_hand_quota_observer/q2_entry.py",
+    "tools/admin/local_hand_system_manager/__init__.py",
+    "tools/admin/local_hand_system_manager/server.py",
+    "tools/local_hand/__init__.py",
+    "tools/local_hand/provenance.py",
+    "tools/local_hand_connect/__init__.py",
+    "tools/local_hand_jobs/__init__.py",
+    "tools/local_hand_mcp/__init__.py",
+})
 
 
 def _bad(message: str) -> LocalHandError:
     return LocalHandError("provenance_mismatch", message, "indeterminate")
+
+
+def _projection_path(name: object) -> bool:
+    if not isinstance(name, str):
+        return False
+    path = PurePosixPath(name)
+    module = re.fullmatch(r"tools/(?:admin/(?:local_hand_quota_observer|local_hand_system_manager)|"
+                          r"local_hand|local_hand_connect|local_hand_jobs|local_hand_mcp)/"
+                          r"[a-z_][a-z0-9_]*\.py", name)
+    return (not path.is_absolute() and ".." not in path.parts and path.as_posix() == name
+            and name != SOURCE_PROJECTION_MANIFEST
+            and (name in _SOURCE_PROJECTION_HARNESS or module is not None)
+            and "namespace" not in name.lower() and "watchdog" not in name.lower())
+
+
+def _projection_read(path: Path, maximum: int) -> bytes:
+    try:
+        before = path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_size > maximum or before.st_mode & 0o6022):
+            raise _bad("projected source entry is not a protected regular file")
+        raw = path.read_bytes()
+        after = path.lstat()
+    except OSError as exc:
+        raise _bad("cannot read projected source entry") from exc
+    fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+    if len(raw) > maximum or any(getattr(before, key) != getattr(after, key) for key in fields):
+        raise _bad("projected source changed while it was verified")
+    return raw
+
+
+def _source_projection_identity(root: Path) -> dict[str, Any]:
+    """Verify one complete manifest-bound installed source projection."""
+    try:
+        root_info = root.lstat()
+    except OSError as exc:
+        raise _bad("projected source root is unavailable") from exc
+    if (not stat.S_ISDIR(root_info.st_mode) or stat.S_ISLNK(root_info.st_mode)
+            or root_info.st_mode & 0o022):
+        raise _bad("projected source root is not protected")
+    manifest_path = root / SOURCE_PROJECTION_MANIFEST
+    raw = _projection_read(manifest_path, 256 * 1024)
+    try:
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate key")
+                value[key] = item
+            return value
+        value = json.loads(raw, object_pairs_hook=unique,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError("number")))
+        canonical = (json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=True) + "\n").encode("ascii")
+    except (UnicodeError, ValueError, TypeError) as exc:
+        raise _bad("projected source manifest is malformed") from exc
+    if (not isinstance(value, dict)
+            or set(value) != {"schema", "source_commit", "source_tree", "files"}
+            or value["schema"] != SOURCE_PROJECTION_SCHEMA
+            or not _COMMIT.fullmatch(value.get("source_commit", ""))
+            or not _COMMIT.fullmatch(value.get("source_tree", ""))
+            or not isinstance(value.get("files"), dict)
+            or not 1 <= len(value["files"]) <= 512
+            or canonical != raw):
+        raise _bad("projected source manifest is invalid")
+    records: dict[str, dict[str, Any]] = {}
+    for name, record in value["files"].items():
+        if (not _projection_path(name) or not isinstance(record, dict)
+                or set(record) != {"mode", "sha256"}
+                or type(record["mode"]) is not int or record["mode"] not in (0o644, 0o755)
+                or not isinstance(record["sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None):
+            raise _bad("projected source manifest entry is invalid")
+        records[name] = record
+    if not _SOURCE_PROJECTION_REQUIRED <= set(records):
+        raise _bad("projected source manifest omits a required core entry")
+    expected_files = set(records) | {SOURCE_PROJECTION_MANIFEST}
+    expected_dirs = {"."}
+    for name in records:
+        parent = Path(name).parent
+        while parent != Path("."):
+            expected_dirs.add(parent.as_posix())
+            parent = parent.parent
+    seen_files: set[str] = set()
+    seen_dirs = {"."}
+    pending = [root]
+    total = 0; count = 1
+    while pending:
+        directory = pending.pop()
+        try:
+            entries = list(directory.iterdir())
+        except OSError as exc:
+            raise _bad("cannot enumerate projected source") from exc
+        for path in entries:
+            count += 1
+            if count > 8192:
+                raise _bad("projected source exceeds its entry limit")
+            try:
+                info = path.lstat()
+            except OSError as exc:
+                raise _bad("cannot inspect projected source") from exc
+            relative = path.relative_to(root).as_posix()
+            if stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+                if info.st_mode & 0o022:
+                    raise _bad("projected source directory is writable")
+                seen_dirs.add(relative); pending.append(path)
+                continue
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or relative not in expected_files):
+                raise _bad("projected source contains an unmanifested entry")
+            content = _projection_read(path, 16 * 1024 * 1024)
+            total += len(content)
+            if total > 256 * 1024 * 1024:
+                raise _bad("projected source exceeds its byte limit")
+            seen_files.add(relative)
+            if relative == SOURCE_PROJECTION_MANIFEST:
+                if content != raw or stat.S_IMODE(info.st_mode) != 0o644:
+                    raise _bad("projected source manifest changed")
+            else:
+                record = records[relative]
+                if (stat.S_IMODE(info.st_mode) != record["mode"]
+                        or hashlib.sha256(content).hexdigest() != record["sha256"]):
+                    raise _bad("projected source differs from its manifest")
+    if seen_files != expected_files or seen_dirs != expected_dirs:
+        raise _bad("projected source inventory differs from its manifest")
+    return {"commit": value["source_commit"], "tree": value["source_tree"],
+            "files": {name: record["sha256"] for name, record in records.items()}}
 
 
 def core_digest() -> str:
@@ -160,6 +311,9 @@ def _verify_ignored_tree(root: Path, tracked: set[str], *, allow_build_outputs: 
 def source_commit(*, require_clean: bool = False, _allow_build_outputs: bool = False) -> str:
     root=Path(__file__).resolve().parents[2]
     if not (root/".git").exists():
+        manifest = root / SOURCE_PROJECTION_MANIFEST
+        if manifest.exists():
+            return _source_projection_identity(root)["commit"]
         raise _bad("neither build metadata nor an exact source checkout is available")
     def git(args):
         result=run_hardened_git(root,args,allow_ssh=False,timeout=10,max_stdout=1024*1024,max_stderr=8192,text=True)

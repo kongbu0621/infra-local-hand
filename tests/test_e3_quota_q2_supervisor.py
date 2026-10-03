@@ -91,6 +91,39 @@ class DefaultEntryTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux system-manager closure model")
 class SystemParentClosureTests(unittest.TestCase):
+    def test_h11_system_fixture_validates_one_phase_and_lost_collector_result(self):
+        from test_e3_quota_q2_prepare_assembly import a, h11_facts
+        value = a.assemble(h11_facts())["supervisor_template"]
+        for envelope in (value["supervisor_envelope"], value["launcher"]["controller_envelope"]):
+            envelope.update(issued_ns=SECOND,
+                            deadline_ns=SECOND + envelope["controller"]["runtime_max_usec"] * 1000)
+        value["supervisor_envelope"]["controller"].update(
+            invocation_id="a" * 32, cgroup_device=70, cgroup_inode=999)
+        binding = s.validate(value, launcher, dict(boot_id=BOOT, boottime_ns=2 * SECOND))
+        self.assertTrue(s.h11_fixture(value)); self.assertTrue(s.system_fixture(value))
+        self.assertEqual("RECOVERY_RECORDED", s.expected_status(value["launcher"]))
+        self.assertGreaterEqual(binding["totals"]["output_bytes"], s.SYSTEM_WIRE_BYTES + 8192)
+
+        operation = value["launcher"]["resident"]["request"]["operation_id"]
+        proof = dict(schema="local-hand-q4-h11-recovery-result/v1", status="RECOVERY_RECORDED",
+            operation_id=operation, execution_id="job-" + operation + "-preflight",
+            future_start_blocked=True, tree_exited=True, writers_stopped=True,
+            collectors_stopped=False, effects_checked=False, leases_retained=True,
+            result_reread=False, start_replayed=False, outcome="UNKNOWN",
+            q3_accepted=False, production_supported=False)
+        result = dict(schema="local-hand-q4-h11-launcher-result/v1", status="RECOVERY_RECORDED",
+            q3_accepted=False, production_supported=False, independent_controller_stop_required=True,
+            ordinary_phase_closed=False, independent_ordinary_cleanup_required=True,
+            collectors_stopped=False, result_reread=False, start_replayed=False,
+            original_resident_pid=1001, recovery_resident_pid=1002,
+            origin_capture=dict(complete=True, returncode=-signal.SIGKILL),
+            origin_coordinator=dict(status="ORIGIN_PEER_EXITED", reason="BRIDGE_PEER_EXITED"),
+            operation_id=operation, execution_id=proof["execution_id"], recovery=proof)
+        self.assertIs(proof, launcher.validate_h11_result(result, value["launcher"]["resident"]))
+        changed = copy.deepcopy(result); changed["collectors_stopped"] = True
+        with self.assertRaisesRegex(ValueError, "H11_LAUNCHER_RESULT"):
+            launcher.validate_h11_result(changed, value["launcher"]["resident"])
+
     def test_parent_empty_checks_shared_ancestor_not_only_target_or_worker(self):
         from test_e3_quota_q2_prepare_assembly import a, system_facts
         from admin.local_hand_quota_observer.systemd_runtime import Q1Controller

@@ -2,7 +2,10 @@
 
 Only root in-process configuration can register a phase. The inherited channel
 accepts references, never commands, paths, properties, process IDs or grants.
-All intents remain after failure; this module has no recovery or cleanup API.
+All intents remain after failure.  The test-only H11 launcher may replace a
+definitively exited ordinary peer with one observation-only recovery session;
+that session can only inspect/stop retained identities and cannot reacquire the
+old anonymous pipes, launch, seal or target a saved client PID.
 """
 from __future__ import annotations
 
@@ -115,6 +118,7 @@ class Gateway:
         q.require(channel.peer[1:] == (self.uid, self.gid) and channel.boot_id == self.binding["boot_id"],
                   "SYSTEM_GATEWAY_PEER")
         self.channel = channel
+        self.peer_pidfd = -1
         self.end = q.integer(deadline_ns, 1)
         q.require(self.end <= channel.end, "SYSTEM_GATEWAY_DEADLINE")
         self.python_path = q.canonical_path(python_path)
@@ -132,6 +136,12 @@ class Gateway:
         self.phases = {}; self.parts = {}; self.closed_phases = []
         self.lock = threading.RLock()
         self.failure = None; self.closed = False; self.controls = 0; self.control_bytes = 0
+        self.retired_wire_bytes = 0; self.retired_calls = 0
+        self.session_failures = []
+        self.recovery_only = False; self.recovery_finished = False
+        self.recovery_rebinds = 0; self.recovery_armed = False; self.recovery_arm_ack = False
+        self.recovery_plan = None
+        self._serving = False
         self.pending_control = None
         self.directory = -1
         q._keys(intent_pin, {"device", "inode"})
@@ -144,7 +154,10 @@ class Gateway:
                 for count, entry in enumerate(entries, 1):
                     q.require(count <= 64 and not entry.name.startswith("gateway-"), "SYSTEM_INTENT_REPLAY")
             self._time(); self._parent()
+            self.peer_pidfd = os.dup(channel.pidfd)
         except BaseException:
+            if self.peer_pidfd >= 0:
+                os.close(self.peer_pidfd); self.peer_pidfd = -1
             os.close(self.directory); self.directory = -1
             raise
 
@@ -152,9 +165,116 @@ class Gateway:
         now = budget.current_clock()
         q.require(not self.closed and self.failure is None and now["boot_id"] == self.binding["boot_id"]
                   and now["boottime_ns"] < self.end, "SYSTEM_GATEWAY_UNAVAILABLE")
-        q.require(self.control_bytes + self.channel.total <= wire.WIRE_LIMIT, "SYSTEM_AGGREGATE_OUTPUT_LIMIT")
+        q.require(self.control_bytes + self.retired_wire_bytes + self.channel.total <= wire.WIRE_LIMIT,
+                  "SYSTEM_AGGREGATE_OUTPUT_LIMIT")
+        # Channel.receive_request() enforces the strict pre-request bound.  Once
+        # the final permitted response commits, bookkeeping/phase closure must
+        # still be able to observe the exact cumulative limit without admitting
+        # a 257th call.
+        q.require(self.retired_calls + self.channel.sequence <= wire.CALL_LIMIT,
+                  "SYSTEM_CALL_LIMIT")
         self.channel._time()
         return now["boottime_ns"]
+
+    def _recovery_time(self):
+        """Recovery never receives a fresh observation/stop window."""
+        now = self._time()
+        q.require(type(self.recovery_plan) is dict
+                  and now < min(self.recovery_plan["phase_deadline_ns"],
+                                self.recovery_plan["budget_deadline_ns"], self.end),
+                  "SYSTEM_RECOVERY_DEADLINE")
+        return now
+
+    def _discard_original_clients(self):
+        """Permanently abandon local pipe/PID ownership before H11 reattach."""
+        for part in self.parts.values():
+            pipes = part.get("pipe_identities")
+            q.require(type(pipes) is dict and set(pipes) == {"stdout", "stderr"}
+                      and all(type(pipes[name]) is dict
+                              and set(pipes[name]) == {"device", "inode"}
+                              and type(pipes[name]["device"]) is int
+                              and type(pipes[name]["inode"]) is int
+                              and pipes[name]["device"] >= 0
+                              and pipes[name]["inode"] > 0
+                              for name in pipes)
+                      and (pipes["stdout"]["device"], pipes["stdout"]["inode"])
+                          != (pipes["stderr"]["device"], pipes["stderr"]["inode"]),
+                      "SYSTEM_RECOVERY_PIPE_IDENTITY")
+            process = part.get("process")
+            if process is not None:
+                for name in ("stdout", "stderr"):
+                    stream = getattr(process, name, None)
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except OSError:
+                            pass
+                # poll() is evidence only.  Recovery never signals or waits on
+                # this PID and never treats its exit as unit/tree proof.
+                part["abandoned_client"] = dict(pid=process.pid,
+                    start_ticks=part.get("start_ticks"), returncode=process.poll(),
+                    pipe_identities=copy.deepcopy(pipes))
+                part["process"] = None
+            else:
+                # Component tests may model an already-reaped local client;
+                # the immutable pipe identities remain mandatory evidence.
+                part.setdefault("abandoned_client", dict(pid=None,
+                    start_ticks=part.get("start_ticks"), returncode=None,
+                    pipe_identities=copy.deepcopy(pipes)))
+            if part.get("pidfd", -1) >= 0:
+                os.close(part["pidfd"]); part["pidfd"] = -1
+            part["collectors_lost"] = True
+
+    def rebind_recovery(self, channel):
+        """Bind one new ordinary peer without refreshing identity or budget.
+
+        The original server loop must already have ended and its exact peer
+        must be dead.  A pending request cannot be carried across sessions.
+        Calls and bytes remain cumulative across both channels.
+        """
+        with self.lock:
+            old = self.channel
+            now = budget.current_clock()
+            q.require(not self.closed and not self._serving and not self.recovery_only
+                      and self.recovery_rebinds == 0 and self.pending_control is None
+                      and self.recovery_armed is True and self.recovery_arm_ack is True
+                      and self.recovery_plan is not None,
+                      "SYSTEM_RECOVERY_STATE")
+            q.require(old.pending is None and self.peer_pidfd >= 0
+                      and bool(select.select([self.peer_pidfd], [], [], 0)[0]),
+                      "SYSTEM_RECOVERY_OLD_PEER")
+            q.require(channel.peer[0] != old.peer[0]
+                      and channel.peer[1:] == (self.uid, self.gid)
+                      and channel.boot_id == self.binding["boot_id"] == now["boot_id"]
+                      and channel.end == self.end and now["boottime_ns"] < self.end
+                      and channel.sequence == channel.total == 0 and channel.pending is None
+                      and channel.session_id == hashlib.sha256(
+                          (old.session_id + ":h11-recovery").encode("ascii")).hexdigest(),
+                      "SYSTEM_RECOVERY_PEER")
+            q.require(now["boottime_ns"] < min(self.recovery_plan["phase_deadline_ns"],
+                                               self.recovery_plan["budget_deadline_ns"]),
+                      "SYSTEM_RECOVERY_DEADLINE")
+            q.require(self.failure in (None, "SYSTEM_PEER_CHANGED", "SYSTEM_CHANNEL_DISCONNECTED")
+                      and self.parts and len(self.parts) == 3
+                      and {stage for _, stage in self.parts} == set(wire.STAGES)
+                      and len({phase for phase, _ in self.parts}) == 1,
+                      "SYSTEM_RECOVERY_SCOPE")
+            self.retired_wire_bytes += old.total
+            self.retired_calls += old.sequence
+            q.require(self.control_bytes + self.retired_wire_bytes <= wire.WIRE_LIMIT
+                      and self.retired_calls < wire.CALL_LIMIT,
+                      "SYSTEM_RECOVERY_BUDGET")
+            if self.failure is not None:
+                self.session_failures.append(self.failure)
+            old.close()
+            os.close(self.peer_pidfd)
+            self.peer_pidfd = os.dup(channel.pidfd)
+            self._discard_original_clients()
+            self.channel = channel
+            self.failure = None
+            self.recovery_only = True
+            self.recovery_rebinds = 1
+            self.recovery_finished = False
 
     def _parent(self, *, empty=False):
         pin, is_empty = life.parent(self.configuration["cgroup"], self.binding["parent"])
@@ -265,6 +385,7 @@ class Gateway:
         if values["LoadState"] == "loaded":
             identity = life._loaded_identity(part, {key: values[key] for key in life.FIELDS})
             part["invocation_id"] = identity["invocation_id"]
+            part.setdefault("identity_observation", values)
             q.require(values["ControlGroup"] == identity["cgroup"] or life._terminal(values),
                       "SYSTEM_ACTIVE_PARENT_MISSING")
             properties = part["properties"]
@@ -295,7 +416,9 @@ class Gateway:
                       and values["ControlGroup"] == "" and values["ActiveState"] == "inactive"
                       and values["SubState"] == "dead" and values["Job"] in ("", "0"), "SYSTEM_UNIT_MISSING")
             # Before a delayed first delivery, absence remains pending only.
-            q.require(part["invocation_id"] is None or part["stop_ok"] and "terminal" in part,
+            q.require(part["invocation_id"] is None or part["stop_ok"] and
+                      ("terminal" in part or self.recovery_only and
+                       type(part.get("identity_observation")) is dict),
                       "SYSTEM_ORIGINAL_UNIT_MISSING")
         part["after"] = values
         return result, values
@@ -420,9 +543,15 @@ class Gateway:
             stderr=subprocess.PIPE, close_fds=True, env=ENVIRONMENT)
         part["start_ticks"] = wire.start_ticks(part["process"].pid)
         part["pidfd"] = os.pidfd_open(part["process"].pid, 0)
-        fds = tuple(getattr(part["process"], name).fileno() for name in ("stdout", "stderr"))
+        streams = {name: getattr(part["process"], name).fileno()
+                   for name in ("stdout", "stderr")}
+        identities = {name: wire.readonly_pipe(fd) for name, fd in streams.items()}
+        q.require(len(set(identities.values())) == 2, "SYSTEM_PIPE_ALIAS")
+        part["pipe_identities"] = {name: {"device": identity[0], "inode": identity[1]}
+                                   for name, identity in identities.items()}
+        fds = tuple(streams[name] for name in ("stdout", "stderr"))
         for fd in fds:
-            wire.readonly_pipe(fd); os.set_blocking(fd, False)
+            os.set_blocking(fd, False)
         return dict(client_state=self._state(part)), fds
 
     def _seal(self, part):
@@ -445,6 +574,12 @@ class Gateway:
     def dispatch(self, op, body):
         with self.lock:
             self._time(); wire.request_body(op, body)
+            q.require(not (self.recovery_armed and not self.recovery_only),
+                      "SYSTEM_RECOVERY_ARMED")
+            if self.recovery_only:
+                q.require(op in ("support", "inventory", "observe", "stop", "recovery_finish"),
+                          "SYSTEM_RECOVERY_OPERATION")
+                self._recovery_time()
             if op == "support":
                 self._parent()
                 return dict(supported=True, status="CANDIDATE", reasons=[], manager_binding=self.binding), ()
@@ -460,11 +595,64 @@ class Gateway:
                 return result, ()
             if op == "launch":
                 return self._launch(body)
+            if op == "recovery_arm":
+                plan = wire.recovery_plan(body["plan"])
+                phase = plan["phase"]
+                item = self.phases.get(phase)
+                expected_parts = {(phase, stage) for stage in wire.STAGES}
+                expected_units = {stage: self.parts[phase, stage]["unit"] for stage in wire.STAGES}
+                q.require(not self.recovery_only and not self.recovery_armed
+                          and self.pending_control is None and len(self.parts) == 3
+                          and set(self.parts) == expected_parts and item is not None
+                          and plan["units"] == expected_units
+                          and item["execution"]["execution_id"] == plan["execution_id"]
+                          and item["execution"]["operation_id"] == plan["operation_id"]
+                          and item["plan"].get("request_digest") == plan["request_digest"]
+                          and item["execution"]["budget_grant"]["deadline_boottime_ns"]
+                              == plan["budget_deadline_ns"]
+                          and budget.phase_deadline_ns(item["execution"]["budget_grant"])
+                              == plan["phase_deadline_ns"]
+                          and plan["controller_deadline_ns"] == self.end
+                          and plan["collector_started"] is False
+                          and self._time() < plan["phase_deadline_ns"]
+                          and all(re.fullmatch(r"[0-9a-f]{32}", part.get("invocation_id") or "")
+                              for part in self.parts.values())
+                          and len({part["invocation_id"] for part in self.parts.values()}) == 3,
+                          "SYSTEM_RECOVERY_ARM")
+                self.recovery_plan = copy.deepcopy(plan)
+                self.recovery_armed = True
+                return dict(armed=True), ()
+            if op == "recovery_finish":
+                q.require(self.recovery_only and not self.recovery_finished and self.pending_control is None
+                          and all(part.get("recovery_observed") is True
+                              and part.get("collectors_lost") is True
+                              and part.get("process") is None and part.get("pidfd") == -1
+                              and part.get("stop_ok") is True
+                              and type(part.get("identity_observation")) is dict
+                              and part["identity_observation"].get("InvocationID") == part.get("invocation_id")
+                              and part.get("after", {}).get("ActiveState") in ("inactive", "failed")
+                              and part.get("after", {}).get("Job") in ("", "0")
+                              for part in self.parts.values()),
+                          "SYSTEM_RECOVERY_INCOMPLETE")
+                self._parent(empty=True)
+                self.recovery_finished = True
+                return dict(closed=True), ()
             item, part = self._get(body["ref"])
             if "token" in body:
                 q.require(body["token"] == part["token"], "SYSTEM_CLIENT_TOKEN")
             if op == "observe":
                 result, values = self._show(part)
+                if self.recovery_only:
+                    part["recovery_observed"] = True
+                    terminal = part.get("terminal")
+                    result["recovery_history"] = dict(
+                        invocation_id=part.get("invocation_id"),
+                        stop_ok=part.get("stop_ok") is True,
+                        sealed=part.get("sealed") is True,
+                        identity=(None if part.get("identity_observation") is None else
+                                  {key: part["identity_observation"][key] for key in life.FIELDS}),
+                        terminal=(None if terminal is None else
+                                  {key: terminal[key] for key in life.FIELDS}))
                 if body["view"] == "invocation":
                     result["stdout"] = values["InvocationID"] + "\n"
                 elif body["view"] == "identity":
@@ -472,7 +660,8 @@ class Gateway:
                         ("Id", "LoadState", "ActiveState", "SubState", "InvocationID", "ControlGroup", "Job")) + "\n"
                 else:
                     result["stdout"] = "\n".join(k + "=" + values[k] for k in life.FIELDS) + "\n"
-                result["client_state"] = self._state(part)
+                if not self.recovery_only:
+                    result["client_state"] = self._state(part)
                 return result, ()
             if op == "stop":
                 _, values = self._show(part)
@@ -481,7 +670,8 @@ class Gateway:
                           "SYSTEM_STOP_IDENTITY")
                 result = self._command("stop", part["unit"])
                 part["stop_ok"] = result["returncode"] == 0
-                result["client_state"] = self._state(part)
+                if not self.recovery_only:
+                    result["client_state"] = self._state(part)
                 return result, ()
             if op == "client_stop":
                 if self._state(part)["returncode"] is None:
@@ -495,8 +685,15 @@ class Gateway:
             return dict(client_state=self._state(part)), ()
 
     def serve(self):
+        with self.lock:
+            q.require(not self._serving and not self.closed, "SYSTEM_GATEWAY_SERVE")
+            self._serving = True
         try:
-            while not self.closed:
+            # A successful arm ACK is the exact crash injection barrier.  Stop
+            # consuming the old peer before any later observer RPC can move the
+            # retained identity; the launcher will next kill that exact peer.
+            while (not self.closed and not self.recovery_finished
+                   and not (self.recovery_armed and not self.recovery_only)):
                 if not select.select([self.channel.sock], [], [], 0.025)[0]:
                     self._time(); continue
                 request = self.channel.receive_request()
@@ -505,19 +702,29 @@ class Gateway:
                 except Exception:
                     self._respond(request, dict(error="SYSTEM_GATEWAY_REJECTED"))
                     raise
+                if self.recovery_only:
+                    self._recovery_time()
                 self._respond(request, result, fds=fds)
         except Exception as error:
             if not self.closed:
                 code = str(error)
                 self.failure = code if len(code) <= 96 and code.replace("_", "").isalnum() else type(error).__name__
             self.channel.close()
+        finally:
+            with self.lock:
+                self._serving = False
 
     def _respond(self, request, result, fds=()):
         raw = q._canonical(dict(schema=wire.SCHEMA, session_id=self.channel.session_id,
             sequence=self.channel.sequence, op=request["op"], body=result), wire.RESPONSE_LIMIT)
-        q.require(self.control_bytes + self.channel.total + len(raw) + 12 + 4 * len(fds) <= wire.WIRE_LIMIT,
+        q.require(self.control_bytes + self.retired_wire_bytes + self.channel.total
+                  + len(raw) + 12 + 4 * len(fds) <= wire.WIRE_LIMIT,
                   "SYSTEM_AGGREGATE_OUTPUT_LIMIT")
         self.channel.respond(request, result, fds=fds)
+        if request["op"] == "recovery_arm":
+            q.require(self.recovery_armed and self.channel.pending is None,
+                      "SYSTEM_RECOVERY_ARM_ACK")
+            self.recovery_arm_ack = True
 
     def snapshot(self):
         """Finite original identities only; never raw request/argv/environment."""
@@ -529,10 +736,28 @@ class Gateway:
                     pid=None if process is None else process.pid, start_ticks=part.get("start_ticks"),
                     returncode=None if process is None else process.poll(), invocation_id=part["invocation_id"],
                     stop_ack=part["stop_ok"], sealed=part["sealed"], command_digest=part.get("command_digest"),
-                    runtime_max=part["properties"]["RuntimeMaxSec"]))
+                    runtime_max=part["properties"]["RuntimeMaxSec"],
+                    pipe_identities=copy.deepcopy(part.get("pipe_identities")),
+                    abandoned_client=copy.deepcopy(part.get("abandoned_client")),
+                    collectors_lost=part.get("collectors_lost") is True,
+                    recovery_observed=part.get("recovery_observed") is True,
+                    identity_observation=(None if part.get("identity_observation") is None else
+                        {key: part["identity_observation"][key] for key in life.FIELDS}),
+                    terminal=(None if part.get("terminal") is None else
+                        {key: part["terminal"][key] for key in life.FIELDS}),
+                    after=(None if part.get("after") is None else
+                        {key: part["after"][key] for key in life.FIELDS})))
             value = dict(schema=wire.SCHEMA, manager_binding=self.binding, failure=self.failure,
                 closed_phases=list(self.closed_phases), stages=parts, wire_bytes=self.channel.total,
-                calls=self.channel.sequence, control_calls=self.controls, control_output_bytes=self.control_bytes)
+                calls=self.retired_calls + self.channel.sequence,
+                aggregate_wire_bytes=self.retired_wire_bytes + self.channel.total,
+                recovery_only=self.recovery_only, recovery_finished=self.recovery_finished,
+                recovery_rebinds=self.recovery_rebinds, recovery_armed=self.recovery_armed,
+                recovery_arm_ack=self.recovery_arm_ack,
+                recovery_plan_sha256=(None if self.recovery_plan is None else
+                    hashlib.sha256(q._canonical(self.recovery_plan, wire.REQUEST_LIMIT)).hexdigest()),
+                session_failures=list(self.session_failures),
+                control_calls=self.controls, control_output_bytes=self.control_bytes)
             cap = self.pending_control
             value["pending_control"] = None if cap is None else dict(
                 pid=None if cap.process is None else cap.process.pid,
@@ -546,6 +771,8 @@ class Gateway:
         with self.lock:
             self.closed = True
             self.channel.close()
+            if getattr(self, "peer_pidfd", -1) >= 0:
+                os.close(self.peer_pidfd); self.peer_pidfd = -1
             if self.pending_control is not None:
                 self.pending_control.close_pipes()
             for part in self.parts.values():

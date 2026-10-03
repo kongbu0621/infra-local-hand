@@ -1437,18 +1437,23 @@ class RunnerTests(unittest.TestCase):
             mount = {"source": "fixture", "root": "/", "type": "ext4", "options": "ro"}
             # Host admission and input preparation are synthetic; business child,
             # result file, directory fsync failure and reader IPC are exercised.
-            with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
-                    patch.object(os, "readlink", return_value="private-namespace"), \
-                    patch.object(os, "access", return_value=False), patch.object(runner, "_mount_for", return_value=mount), \
-                    patch.object(runner, "_verify_cgroup_limits", return_value={}), \
-                    patch.object(runner.bootstrap, "verify_roots"), \
-                    patch.object(runner.ledger_jobs, "verify_inputs", return_value={"inputs_stable": True}), \
-                    patch.object(runner.ledger_jobs, "copy_verified_source"), \
-                    patch.object(os, "fsync", side_effect=failed_result_directory_sync):
-                with self.assertRaisesRegex(OSError, "result directory durability unavailable"):
-                    runner._helper(plan)
+            prior_umask = os.umask(0o002)
+            try:
+                with patch.dict(os.environ, {}, clear=True), patch.object(tempfile, "tempdir", None), \
+                        patch.object(os, "readlink", return_value="private-namespace"), \
+                        patch.object(os, "access", return_value=False), patch.object(runner, "_mount_for", return_value=mount), \
+                        patch.object(runner, "_verify_cgroup_limits", return_value={}), \
+                        patch.object(runner.bootstrap, "verify_roots"), \
+                        patch.object(runner.ledger_jobs, "verify_inputs", return_value={"inputs_stable": True}), \
+                        patch.object(runner.ledger_jobs, "copy_verified_source"), \
+                        patch.object(os, "fsync", side_effect=failed_result_directory_sync):
+                    with self.assertRaisesRegex(OSError, "result directory durability unavailable"):
+                        runner._helper(plan)
+            finally:
+                os.umask(prior_umask)
             self.assertTrue(sync_failed)
             self.assertEqual((Path(roots["work"]) / "business-complete").read_text(), "done")
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
             candidate = json.loads(target.read_text())
             self.assertEqual(candidate["outcome"], "SUCCEEDED")
             self.assertTrue(candidate["effects_checked"])

@@ -18,6 +18,12 @@ import unittest
 
 ENTRY = Path(__file__).parent / "e3_host" / "q2_launcher.py"
 COMMIT = "a" * 40
+TREE = "b" * 40
+HARNESS = (
+    "q2_fixture_check", "q2_launcher", "q2_prepare_assembly", "q2_prepare_driver",
+    "q2_prepare_run", "q2_resident", "q2_supervisor", "q4_cancel_case",
+    "q4_cancel_runtime", "q4_h11_recovery",
+)
 
 
 class SourceLoadingTests(unittest.TestCase):
@@ -34,8 +40,8 @@ class SourceLoadingTests(unittest.TestCase):
         self.add("tools/local_hand_jobs/__init__.py", b"")
         self.add("tools/local_hand_jobs/fixed.py", b"answer = 41\n")
         self.add("tools/admin/local_hand_quota_observer/fixed.py", b"answer = 42\n")
-        self.add("tests/e3_host/q2_launcher.py", b"# synthetic pinned entry\n")
-        self.add("tests/e3_host/q2_resident.py", b"# synthetic pinned entry\n")
+        for name in HARNESS:
+            self.add("tests/e3_host/" + name + ".py", b"# synthetic pinned entry\n")
 
     def add(self, relative, raw):
         path = self.root / relative
@@ -46,7 +52,14 @@ class SourceLoadingTests(unittest.TestCase):
 
     def child(self, body, *, before=""):
         fixture = self.root / "fixture.json"
-        fixture.write_text(json.dumps({"source": {"commit": COMMIT, "files": self.files}}))
+        manifest = {"schema": "local-hand-q2-source-projection/v1", "source_commit": COMMIT,
+                    "source_tree": TREE,
+                    "files": {name: {"mode": 0o644, "sha256": digest}
+                              for name, digest in sorted(self.files.items())}}
+        manifest_raw = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        (self.root / ".local-hand-source-projection.json").write_bytes(manifest_raw)
+        fixture.write_text(json.dumps({"source": {"commit": COMMIT,
+            "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(), "files": self.files}}))
         script = """
 import importlib, importlib.util, json, sys, types
 from pathlib import Path
@@ -152,6 +165,33 @@ print('OPTIONAL_PINNED')
         result = self.child("raise AssertionError('wrong bytes accepted')")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("LAUNCHER_SOURCE_CHANGED", result.stderr)
+
+    def test_projection_manifest_is_required_and_exact(self):
+        manifest = self.root / ".local-hand-source-projection.json"
+        result = self.child("print('accepted')", before="")
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest.unlink()
+        # child() recreates the manifest, so poison it after fixture setup in
+        # the isolated process and before source admission.
+        result = self.child("raise AssertionError('projection accepted')", before="""
+value_manifest = root / '.local-hand-source-projection.json'
+projection = json.loads(value_manifest.read_text())
+projection['source_tree'] = 'c' * 40
+value_manifest.write_text(json.dumps(projection, sort_keys=True, separators=(',', ':')) + '\\n')
+""")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("LAUNCHER_PROJECTION_DIGEST", result.stderr)
+
+    def test_namespace_and_watchdog_entries_are_rejected(self):
+        for relative in ("tests/e3_host/q2_namespace_fixture.py", "tools/q2_watchdog.py",
+                         "/tools/local_hand/escape.py", "tools/local_hand/../escape.py",
+                         "tools//local_hand/escape.py", ".local-hand-source-projection.json"):
+            with self.subTest(relative=relative):
+                self.files[relative] = hashlib.sha256(b"OUT_OF_SCOPE").hexdigest()
+                result = self.child("raise AssertionError('out-of-scope source accepted')")
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("LAUNCHER_PROJECTION_MANIFEST", result.stderr)
+                self.files.pop(relative)
 
 
 if __name__ == "__main__":

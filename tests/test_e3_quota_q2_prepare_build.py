@@ -17,6 +17,7 @@ from unittest.mock import patch
 import zipfile
 
 from e3_host import q2_prepare_build as b
+from local_hand import provenance
 
 
 def command(argv):
@@ -156,6 +157,68 @@ class BuildGit(unittest.TestCase):
         commit, tree = command(["git", "-C", str(self.root), "rev-parse", "HEAD", "HEAD^{tree}"]).decode().split()
         actual = b.verify_source(self.root, commit, tree, command)
         self.assertEqual(len(actual), 642)
+
+
+@unittest.skipUnless(os.name == "posix", "POSIX projected source admission")
+class BuildProjection(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = Path(__file__).resolve().parents[1]
+        self.commit = "a" * 40; self.tree = "b" * 40
+        self.source_files = {path.relative_to(self.source).as_posix(): b.sha(path.read_bytes())
+            for folder in (self.source / "tools", self.source / "tests/e3_host")
+            for path in folder.rglob("*.py")}
+
+    def project(self, name):
+        target = self.root / name; b.mkdir_new(target)
+        files = b.install_projection(self.source, target, self.commit, self.tree, self.source_files)
+        return target, files
+
+    def test_projection_is_reproducible_explicit_and_namespace_free(self):
+        first, files = self.project("first")
+        second, second_files = self.project("second")
+        self.assertEqual(files, second_files)
+        self.assertEqual((first / b.SOURCE_PROJECTION_MANIFEST).read_bytes(),
+                         (second / b.SOURCE_PROJECTION_MANIFEST).read_bytes())
+        self.assertTrue(b.SOURCE_PROJECTION_HARNESS <= set(files))
+        self.assertFalse(any("namespace" in name.lower() or "watchdog" in name.lower()
+                             for name in files))
+        self.assertFalse((first / "tools/q2_namespace_delivery.py").exists())
+        self.assertFalse((first / "tests/e3_host/q2_namespace_fixture.py").exists())
+        identity = provenance._source_projection_identity(first)
+        self.assertEqual((self.commit, self.tree, files),
+                         (identity["commit"], identity["tree"], identity["files"]))
+
+    def test_manifest_bytes_file_bytes_and_extra_directories_fail_closed(self):
+        target, files = self.project("projection")
+        selected = target / "tests/e3_host/q2_launcher.py"
+        selected.write_bytes(selected.read_bytes() + b"# drift\n")
+        with self.assertRaisesRegex(ValueError, "BUILD_PROJECTION_BYTES"):
+            b.verify_projection(target, self.commit, self.tree, files)
+        selected.write_bytes((self.source / "tests/e3_host/q2_launcher.py").read_bytes())
+        (target / "unmanifested").mkdir(mode=0o755)
+        (target / "unmanifested").chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "BUILD_PROJECTION_FILES"):
+            b.verify_projection(target, self.commit, self.tree, files)
+        with self.assertRaisesRegex(Exception, "projected source inventory differs"):
+            provenance._source_projection_identity(target)
+
+    def test_projection_paths_reject_absolute_traversal_alias_and_control_names(self):
+        rejected = ("/tools/local_hand/provenance.py", "tools/local_hand/../provenance.py",
+                    "tools//local_hand/provenance.py", "./tools/local_hand/provenance.py",
+                    b.SOURCE_PROJECTION_MANIFEST,
+                    "tests/e3_host/q2_namespace_fixture.py", "tools/local_hand/watchdog.py")
+        for name in rejected:
+            with self.subTest(name=name):
+                self.assertFalse(b.projection_path(name))
+                self.assertFalse(provenance._projection_path(name))
+
+    def test_full_checkout_provenance_remains_the_default_when_git_exists(self):
+        expected = command(["git", "-C", str(self.source), "rev-parse", "HEAD"]).decode().strip()
+        with patch.object(provenance, "_source_projection_identity",
+                          side_effect=AssertionError("projection path selected")):
+            self.assertEqual(expected, provenance.source_commit())
 
 
 @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("cc"), "Linux headers and C compiler")

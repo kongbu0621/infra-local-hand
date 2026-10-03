@@ -27,6 +27,30 @@ MAX_BYTES = 256 * 1024 * 1024
 FILE_LIMIT = 16 * 1024 * 1024
 MAX_FILES = 8192
 METADATA = "local_hand/_build_metadata.json"
+SOURCE_PROJECTION_SCHEMA = "local-hand-q2-source-projection/v1"
+SOURCE_PROJECTION_MANIFEST = ".local-hand-source-projection.json"
+SOURCE_PROJECTION_HARNESS = frozenset({
+    "tests/e3_host/q2_fixture_check.py",
+    "tests/e3_host/q2_launcher.py",
+    "tests/e3_host/q2_prepare_assembly.py",
+    "tests/e3_host/q2_prepare_driver.py",
+    "tests/e3_host/q2_prepare_run.py",
+    "tests/e3_host/q2_resident.py",
+    "tests/e3_host/q2_supervisor.py",
+    "tests/e3_host/q4_cancel_case.py",
+    "tests/e3_host/q4_cancel_runtime.py",
+    "tests/e3_host/q4_h11_recovery.py",
+})
+SOURCE_PROJECTION_REQUIRED = SOURCE_PROJECTION_HARNESS | frozenset({
+    "tools/admin/local_hand_quota_observer/q2_entry.py",
+    "tools/admin/local_hand_system_manager/__init__.py",
+    "tools/admin/local_hand_system_manager/server.py",
+    "tools/local_hand/__init__.py",
+    "tools/local_hand/provenance.py",
+    "tools/local_hand_connect/__init__.py",
+    "tools/local_hand_jobs/__init__.py",
+    "tools/local_hand_mcp/__init__.py",
+})
 
 
 def require(test, code):
@@ -166,6 +190,122 @@ def verify_source(source, source_commit, source_tree, command):
     return files
 
 
+def projection_path(name):
+    """Admit only product/admin modules and the fixed core field harness."""
+    if type(name) is not str:
+        return False
+    path = PurePosixPath(name)
+    module = re.fullmatch(r"tools/(?:admin/(?:local_hand_quota_observer|local_hand_system_manager)|"
+                          r"local_hand|local_hand_connect|local_hand_jobs|local_hand_mcp)/"
+                          r"[a-z_][a-z0-9_]*\.py", name)
+    return (not path.is_absolute() and ".." not in path.parts and path.as_posix() == name
+            and name != SOURCE_PROJECTION_MANIFEST
+            and (name in SOURCE_PROJECTION_HARNESS or module is not None)
+            and "namespace" not in name.lower() and "watchdog" not in name.lower())
+
+
+def projection_files(source_files):
+    """Select the deterministic namespace/watchdog-free installed source view."""
+    require(type(source_files) is dict and source_files, "BUILD_PROJECTION_SOURCE")
+    files = {name: digest for name, digest in sorted(source_files.items()) if projection_path(name)}
+    require(SOURCE_PROJECTION_REQUIRED <= set(files) and 1 <= len(files) <= 512
+            and all(re.fullmatch(r"[0-9a-f]{64}", digest or "") for digest in files.values()),
+            "BUILD_PROJECTION_SOURCE")
+    return files
+
+
+def projection_bytes(source_commit, source_tree, entries):
+    value = {"schema": SOURCE_PROJECTION_SCHEMA, "source_commit": source_commit,
+             "source_tree": source_tree, "files": entries}
+    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii")
+
+
+def projection_document(raw):
+    value = document(raw)
+    require(type(value) is dict and set(value) == {"schema", "source_commit", "source_tree", "files"}
+            and value["schema"] == SOURCE_PROJECTION_SCHEMA
+            and re.fullmatch(r"[0-9a-f]{40}", value["source_commit"] or "")
+            and re.fullmatch(r"[0-9a-f]{40}", value["source_tree"] or "")
+            and type(value["files"]) is dict and 1 <= len(value["files"]) <= 512
+            and projection_bytes(value["source_commit"], value["source_tree"], value["files"]) == raw,
+            "BUILD_PROJECTION_MANIFEST")
+    entries = {}
+    for name, record in value["files"].items():
+        require(projection_path(name) and type(record) is dict and set(record) == {"mode", "sha256"}
+                and record["mode"] in (0o644, 0o755)
+                and re.fullmatch(r"[0-9a-f]{64}", record["sha256"] or ""),
+                "BUILD_PROJECTION_MANIFEST")
+        entries[name] = record
+    require(SOURCE_PROJECTION_REQUIRED <= set(entries), "BUILD_PROJECTION_MANIFEST")
+    return value
+
+
+def verify_projection(root, source_commit, source_tree, expected_files=None):
+    """Verify the complete projected tree; omitted candidate files cannot appear."""
+    root = canonical(root); parents(root)
+    raw = regular(root / SOURCE_PROJECTION_MANIFEST, 256 * 1024)
+    manifest = projection_document(raw)
+    require((manifest["source_commit"], manifest["source_tree"]) == (source_commit, source_tree),
+            "BUILD_PROJECTION_IDENTITY")
+    files = {name: record["sha256"] for name, record in manifest["files"].items()}
+    if expected_files is not None:
+        require(files == expected_files, "BUILD_PROJECTION_FILES")
+    expected = set(files) | {SOURCE_PROJECTION_MANIFEST}
+    expected_directories = {"."}
+    for name in files:
+        parent = PurePosixPath(name).parent
+        while parent != PurePosixPath("."):
+            expected_directories.add(parent.as_posix()); parent = parent.parent
+    actual = set(); actual_directories = {"."}; total = 0; count = 0; pending = [root]
+    while pending:
+        directory = pending.pop()
+        info = directory.lstat(); count += 1
+        require(stat.S_ISDIR(info.st_mode) and not info.st_mode & 0o022, "BUILD_PROJECTION_ENTRY")
+        for path in directory.iterdir():
+            child = path.lstat(); relative = path.relative_to(root).as_posix(); count += 1
+            require(count <= MAX_FILES and not stat.S_ISLNK(child.st_mode), "BUILD_PROJECTION_ENTRY")
+            if stat.S_ISDIR(child.st_mode):
+                require(not child.st_mode & 0o022, "BUILD_PROJECTION_ENTRY")
+                actual_directories.add(relative)
+                pending.append(path)
+                continue
+            require(stat.S_ISREG(child.st_mode) and child.st_nlink == 1 and relative in expected,
+                    "BUILD_PROJECTION_ENTRY")
+            content = regular(path, FILE_LIMIT); total += len(content); actual.add(relative)
+            require(total <= MAX_BYTES, "BUILD_PROJECTION_LIMIT")
+            if relative == SOURCE_PROJECTION_MANIFEST:
+                require(content == raw and stat.S_IMODE(child.st_mode) == 0o644,
+                        "BUILD_PROJECTION_MANIFEST")
+            else:
+                record = manifest["files"][relative]
+                require(sha(content) == record["sha256"] and stat.S_IMODE(child.st_mode) == record["mode"],
+                        "BUILD_PROJECTION_BYTES")
+    require(actual == expected and actual_directories == expected_directories, "BUILD_PROJECTION_FILES")
+    return files
+
+
+def install_projection(source, destination, source_commit, source_tree, source_files):
+    """Create the exact installed projection from an already verified checkout."""
+    selected = projection_files(source_files)
+    entries = {}; directories = {destination}
+    for name, digest in selected.items():
+        path = source / name; raw = regular(path)
+        require(sha(raw) == digest, "BUILD_PROJECTION_SOURCE_CHANGED")
+        mode = 0o755 if path.lstat().st_mode & 0o111 else 0o644
+        relative = PurePosixPath(name); parent = destination
+        for component in relative.parts[:-1]:
+            parent /= component
+            if parent not in directories:
+                require(not os.path.lexists(parent), "BUILD_PROJECTION_PATH")
+                mkdir_new(parent); directories.add(parent)
+        target = destination.joinpath(*relative.parts)
+        write_new(target, raw, mode)
+        entries[name] = {"mode": mode, "sha256": digest}
+    write_new(destination / SOURCE_PROJECTION_MANIFEST,
+              projection_bytes(source_commit, source_tree, entries))
+    return verify_projection(destination, source_commit, source_tree, selected)
+
+
 def verify_wheel(wheel, wheel_sha256, source_commit, source_files):
     raw = regular(wheel, 32 * 1024 * 1024)
     require(sha(raw) == wheel_sha256, "BUILD_WHEEL_DIGEST")
@@ -295,20 +435,11 @@ def install_candidate(*, source, source_commit, source_tree, wheel, wheel_sha256
     verified = verify_wheel(wheel, wheel_sha256, source_commit, source_files)
     mkdir_new(destination)
     installed_source = destination / "source"; mkdir_new(installed_source)
-    git(installed_source, command, "init", "--quiet")
-    git(installed_source, command, "-c", "protocol.file.allow=always", "fetch", "--depth=1", "--no-tags",
-        source.as_uri(), source_commit)
-    git(installed_source, command, "checkout", "--quiet", "--detach", source_commit)
-    copied = verify_source(installed_source, source_commit, source_tree, command)
-    require(copied == source_files, "BUILD_COPIED_SOURCE")
-    # Root's 077 umask must not make executable source inaccessible to the
-    # ordinary resident. No owner or content of old objects is changed.
-    for folder, dirs, names in os.walk(installed_source):
-        Path(folder).chmod(0o755)
-        for name in names:
-            path = Path(folder) / name
-            require(not path.is_symlink(), "BUILD_SOURCE_LINK")
-            path.chmod(0o755 if path.stat().st_mode & 0o111 else 0o644)
+    # The full clean checkout is an installation input, not the installed
+    # harness.  Copy only the deterministic core projection; its canonical
+    # manifest binds every admitted byte back to the verified candidate.
+    copied = install_projection(source, installed_source, source_commit, source_tree, source_files)
+    projection_manifest_sha256 = sha(regular(installed_source / SOURCE_PROJECTION_MANIFEST, 256 * 1024))
     runtime = destination / "runtime"
     command([str(python), "-I", "-B", "-m", "venv", "--copies", "--without-pip", str(runtime)])
     runtime_python = runtime / "bin/python3"
@@ -337,7 +468,10 @@ def install_candidate(*, source, source_commit, source_tree, wheel, wheel_sha256
             require(not path.is_symlink(), "BUILD_RUNTIME_SYMLINK")
             path.chmod(0o755 if path.stat().st_mode & 0o111 else 0o644)
     native_dir = destination / "native"; mkdir_new(native_dir)
-    native_build = compile_native(installed_source, native_dir, compiler, command)
+    # Native build inputs remain the twice-verified full candidate.  Their
+    # digests are retained in native_build; C/header inputs are not executable
+    # Python source and are not copied into the field projection.
+    native_build = compile_native(source, native_dir, compiler, command)
     ordinary_code = (
         "import json,os,importlib.metadata as m; from local_hand.provenance import implementation_commit,full_payload_digest; "
         "print(json.dumps({'uid':os.getuid(),'euid':os.geteuid(),'gid':os.getgid(),'groups':os.getgroups(),"
@@ -356,16 +490,16 @@ def install_candidate(*, source, source_commit, source_tree, wheel, wheel_sha256
             and status["NoNewPrivs"].strip() == "1", "BUILD_ORDINARY_CAPABILITIES")
     require(pin(python) == python_pin and pin(compiler) == compiler_pin
             and verify_source(source, source_commit, source_tree, command) == source_files
-            and verify_source(installed_source, source_commit, source_tree, command) == source_files,
+            and verify_projection(installed_source, source_commit, source_tree, copied) == copied,
             "BUILD_FINAL_IDENTITY")
     runtime_pin = pin(runtime_python); info = runtime_python.stat()
-    files = {name: digest for name, digest in source_files.items() if name.endswith(".py")
-             and (name.startswith("tools/") or name.startswith("tests/e3_host/"))}
+    files = copied
     admin_files = {name[6:]: digest for name, digest in files.items() if name.startswith("tools/")
                    and "/" in name[6:]}
     require(len(files) <= 512 and len(admin_files) <= 256, "BUILD_PACKAGE_LIMIT")
     result = {"schema": SCHEMA, "status": "INSTALLED",
-        "source": {"root": str(installed_source), "commit": source_commit, "tree": source_tree, "files": files},
+        "source": {"root": str(installed_source), "commit": source_commit, "tree": source_tree,
+                   "manifest_sha256": projection_manifest_sha256, "files": files},
         "installed": {"package_root": str(site), "source_commit": source_commit,
             "payload_digest": verified["payload_digest"],
             "files": {k: v for k, v in verified["files"].items() if k.endswith(".py")},

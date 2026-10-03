@@ -156,6 +156,39 @@ def reader_lifecycle(*, phase="preflight", helper_exit=0, guard=None):
 
 
 class ResultReaderRunnerTests(unittest.TestCase):
+    def test_h11_delivery_barrier_precedes_every_reader_observe_and_pipe_read(self):
+        """Even an already-exited short reader cannot finish in its delivery tick."""
+        with reader_lifecycle() as flow:
+            held = []
+            def barrier(handle, part):
+                held.append(part["unit"])
+                part["invocation_id"] = "c" * 32
+                part["launch_acked"] = True
+                part["h11_delivery_barrier"] = True
+                return True
+            flow.manager._hold_result_reader_for_recovery = barrier
+            flow.reader_state = "EXITED"
+            observed = []
+            original = flow.observe
+            def observe(part):
+                observed.append(part["stage"])
+                return original(part)
+            with patch.object(flow.manager, "_inspect_unit", side_effect=observe), \
+                 patch.object(flow.manager, "_drain_reader", side_effect=AssertionError("reader collected")):
+                first = flow.manager.inspect(flow.handle)
+                second = flow.manager.inspect(flow.handle)
+            reader = flow.handle["result_reader"]
+            self.assertEqual("RUNNING", first["state"])
+            self.assertEqual("RUNNING", second["state"])
+            self.assertEqual(["bootstrap", "helper", "bootstrap", "helper"], observed)
+            self.assertEqual([reader["unit"], reader["unit"]], held)
+            self.assertFalse(reader["collector_started"])
+            self.assertTrue(reader["h11_delivery_barrier"])
+            saved = flow.manager.export_handle(flow.handle)["manager"]["result_reader"]
+            self.assertEqual("c" * 32, saved["invocation_id"])
+            self.assertFalse(saved["collector_started"])
+            self.assertTrue(saved["h11_delivery_barrier"])
+
     def test_cancel_stops_original_reader_unit_while_pipe_client_is_alive(self):
         with reader_lifecycle() as flow:
             flow.inspect()
@@ -242,9 +275,10 @@ class ResultReaderRunnerTests(unittest.TestCase):
                     def observe(part):
                         seen.append(part["unit"])
                         result = flow.observe(part)
+                        result["collectors_stopped"] = False
                         if part["stage"] == "result_reader":
                             result.update(state="EXITED", future_start_blocked=True, tree_exited=True,
-                                          collectors_stopped=True, writers_stopped=True)
+                                          collectors_stopped=False, writers_stopped=True)
                         return result
                     with patch.object(flow.manager, "_inspect_unit", side_effect=observe):
                         proof = flow.manager.inspect(restored)
@@ -256,6 +290,39 @@ class ResultReaderRunnerTests(unittest.TestCase):
                     self.assertFalse(proof["effects_checked"])
                     self.assertEqual([restored[name]["unit"] for name in ("bootstrap", "helper", "result_reader")], original_units)
             self.assertEqual(len(flow.launches), 3)
+
+    def test_recovered_three_stage_os_exit_retains_lost_collector_barrier(self):
+        with admitted_plan() as (manager, identity, plan):
+            plan["supervision_version"] = 3
+            with patch.object(runner.subprocess, "Popen", side_effect=AssertionError("recovery launch")), \
+                    patch.object(result_reader, "_read_result", side_effect=AssertionError("recovery result read")):
+                handle = manager.reattach(identity, plan, threading.Event())
+                observed = []
+                def exited(part):
+                    observed.append(part["stage"])
+                    return {**runner._unknown(), "state": "EXITED",
+                        "future_start_blocked": True, "tree_exited": True,
+                        "collectors_stopped": False, "writers_stopped": True,
+                        "effects_checked": False, "exit_code": 0,
+                        "result": {"outcome": "UNKNOWN"},
+                        "identity": {"unit": part["unit"]}}
+                with patch.object(manager, "_inspect_unit", side_effect=exited):
+                    proof = manager.inspect(handle)
+            self.assertEqual(["bootstrap", "helper", "result_reader"], observed)
+            self.assertEqual("EXITED", proof["state"])
+            self.assertTrue(proof["future_start_blocked"])
+            self.assertTrue(proof["tree_exited"])
+            self.assertTrue(proof["writers_stopped"])
+            self.assertFalse(proof["collectors_stopped"])
+            self.assertFalse(proof["effects_checked"])
+            self.assertEqual("UNKNOWN", proof["result"]["outcome"])
+
+    def test_recovered_stage_rejects_claimed_old_collector_completion(self):
+        proof = dict(state="EXITED", future_start_blocked=True, tree_exited=True,
+                     writers_stopped=True, collectors_stopped=True)
+        self.assertFalse(runner._SystemdExecutionCore._recovered_stage_exited(proof))
+        proof["collectors_stopped"] = False
+        self.assertTrue(runner._SystemdExecutionCore._recovered_stage_exited(proof))
 
     def test_reader_guard_refusal_or_precancel_cannot_promote_helper_exit_zero(self):
         for mode in ("refused", "cancelled"):
@@ -390,7 +457,7 @@ class ResultReaderRunnerTests(unittest.TestCase):
         def observe(part):
             observed.append(part["stage"])
             return {**runner._unknown(), "state": "EXITED", "future_start_blocked": True,
-                    "tree_exited": True, "collectors_stopped": True, "writers_stopped": True,
+                    "tree_exited": True, "collectors_stopped": False, "writers_stopped": True,
                     "execution_id": execution_id, "unit": part["unit"], "exit_code": 0,
                     "identity": {"boot_id": plan["budget_grant"]["boot_id"],
                         "invocation_id": "a" * 32, "cgroup": "/fixture/" + part["unit"]}}

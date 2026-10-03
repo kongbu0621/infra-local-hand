@@ -258,7 +258,8 @@ def facts_from_observed(plan, observed, children, authority):
         journal=pin(directories["journal"]), endpoint_dir=directories["control"]["path"],
         management_evidence=children["management_evidence"], phase_outputs={phase: children[phase] for phase in a.PHASES},
         **{key: children[key] for key in ("launcher_output", "launcher_declarations", "supervisor_output", "supervisor_declarations")})
-    facts = dict(schema=a.SYSTEM_SCHEMA if system else a.SCHEMA, identity=identity, source={key: installation["source"][key] for key in ("root", "commit", "files")},
+    facts = dict(schema=a.SYSTEM_SCHEMA if system else a.SCHEMA, identity=identity,
+        source={key: installation["source"][key] for key in ("root", "commit", "manifest_sha256", "files")},
         installation=installation["installed"], admin=installation["admin"], python_identity=installation["python_identity"],
         ordinary=ordinary, paths=paths, slots=[slots["a"], slots["b"]], store=store, capacity=capacity,
         management=settings["management"], controllers=controls, setpriv=plan["tools"]["setpriv"],
