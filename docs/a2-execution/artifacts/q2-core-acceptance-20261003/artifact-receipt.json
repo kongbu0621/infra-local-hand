@@ -1,0 +1,36 @@
+{
+  "candidate": {
+    "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
+    "parent": "607100a57206f7dc7cfcbd6cae8507cfa599b813",
+    "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4"
+  },
+  "installed_verification": {
+    "checks": 94,
+    "commands": 292,
+    "fixture_only": true,
+    "physical_node_tested": false,
+    "report_bytes": 364843,
+    "report_retained_in_artifact_set": false,
+    "report_sha256": "54ec1ec834511623b3817dc28c11ae365cef8c322125c3978a897a3611f7d479",
+    "status": "PASS"
+  },
+  "projection": {
+    "basename": ".local-hand-source-projection.json",
+    "bytes": 11811,
+    "file_count": 89,
+    "sha256": "55f555fc225edca943b8c86cee8119c4878f5ec1e9503a084ba7a560cf2c991d"
+  },
+  "schema": "local-hand-q2-core-artifact-receipt/v1",
+  "wheel": {
+    "basename": "infra_local_hand-0.2.0a1-py3-none-any.whl",
+    "builds_byte_identical": true,
+    "bytes": 288375,
+    "canonical_payload_digest": "b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23",
+    "independent_builds": 2,
+    "member_count": 62,
+    "reuse_rule": "EXACT_HASH_ONLY",
+    "sha256": "ce31fa11caf5995a3c62611660a3908b78d68b88ee80196900bf69a7702856c9",
+    "workspace_retention": "dist/infra_local_hand-0.2.0a1-py3-none-any.whl",
+    "workspace_retention_tracked": false
+  }
+}
