@@ -955,6 +955,42 @@ release digest is added, all blockers in the review must close and a complete pa
 independent build/parse verification. namespace/watchdog remains paused and production
 `E3_SUPERVISION_UNVERIFIED` remains unchanged.
 
+### Core binding and finalization amendment proposal
+
+Scope `LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1` is **PROPOSED / OPEN /
+AWAITING OWNER** at exact documentation A
+`0a843218a1614b62c62e7dad8578748f911dad27`. Its
+[baseline registration](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)
+pins the [requirements](docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md).
+R, its directly read source/integrity, Owner-only authority, mandate, no exceptions and change
+control remain unchanged. This registration is not Owner B or a closure.
+
+The proposal addresses material package/current-guest binding, receipt self-proof,
+source-horizon and host capture-allocation gaps discovered after the existing core scope's partial
+D. It does not alter the old A/B/C bytes or make that partial D releasable. It retains the exact
+candidate/wheel/harness, cases, objects, original physical/admission/CPU/peak/input/outer-output/
+capture budgets, 900/800/750-second outer deadlines, one marker/request and H01→Q4→H11 order. It
+narrows actual stdout+stderr capture to 52 MiB and adds exact source, loaded-module,
+filesystem-static, receipt-v2/attestation and restart-degradation contracts within those field
+ceilings. A host-only prebuilt kernel-source object-proof dependency is never copied into the
+field package/capture and does not grant field action.
+
+The exact A requests three and only three new governance premises: post-entry JIT guest
+self-observation; governed source-horizon completeness; and a local trusted single-writer/stable
+capture-kernel window. None is accepted yet. Current trusted loaded-ext4 measurement, reviewed
+kernel/ext4 model, proof archive, integrated D and frozen package are not established. Package
+remains null/`NOT_ISSUED`; marker, request, H01, Q4, H11, task, exit confirmation, result and
+field-evidence counts all remain zero.
+
+No source/test/prototype/package/allowlist or field implementation may descend from this proposal
+until an exact Owner B and a separate bookkeeping-only CLOSED C exist; D must descend directly
+from C. Documentation and read-only audit remain allowed under R. The old unissued batch cannot be
+replayed, and no second request, reconnect/retry, host sudo/configuration change, production enable
+or UNKNOWN/restart-attestation success promotion is proposed. namespace/watchdog remains paused;
+production `E3_SUPERVISION_UNVERIFIED` remains unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
