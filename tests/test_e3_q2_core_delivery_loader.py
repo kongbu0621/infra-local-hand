@@ -30,6 +30,7 @@ def test_loader_limit_is_checked_after_decode():
         loader.decode_bootstrap(base64.b64encode(raw).decode("ascii"), hashlib.sha256(raw).hexdigest())
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Loader runtime is Linux only")
 def test_exact_loader_blob_executes_bootstrap_under_isolated_python():
     source = Path(loader.__file__).read_bytes()
     bootstrap = b'import sys;sys.stdout.write("BOOTSTRAP_EXECUTED")\n'
@@ -44,6 +45,7 @@ def test_exact_loader_blob_executes_bootstrap_under_isolated_python():
     assert result.stderr == b""
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Loader runtime is Linux only")
 def test_loader_rejects_extra_argument_before_bootstrap_execution():
     source = Path(loader.__file__).read_bytes()
     bootstrap = b'raise AssertionError("must not execute")\n'

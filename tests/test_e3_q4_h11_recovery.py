@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import sys
 import unittest
 from unittest import mock
+
+if not sys.platform.startswith("linux"):
+    raise unittest.SkipTest("H11 recovery uses the Linux runner and original Q2 fixtures")
 
 from e3_host import q2_resident as resident
 from e3_host import q4_h11_recovery as recovery

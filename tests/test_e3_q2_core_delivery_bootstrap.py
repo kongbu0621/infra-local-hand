@@ -2,9 +2,14 @@ import hashlib
 import io
 from pathlib import Path
 import struct
+import sys
 import time
 
 import pytest
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Core bootstrap requires Linux resource limits and CLOCK_BOOTTIME",
+                allow_module_level=True)
 
 from e3_host import q2_core_delivery_bootstrap as b
 from e3_host import q2_core_delivery_package as p

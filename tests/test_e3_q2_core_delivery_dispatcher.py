@@ -11,8 +11,13 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import struct
+import sys
 
 import pytest
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Core dispatcher requires Linux resource limits and protected directory FDs",
+                allow_module_level=True)
 
 
 PATH = Path(__file__).parent / "e3_host/q2_core_delivery_dispatcher.py"

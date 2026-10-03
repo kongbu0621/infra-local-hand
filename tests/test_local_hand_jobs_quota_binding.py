@@ -182,15 +182,51 @@ class ManagerReceiptTests(unittest.TestCase):
                         result=None;until=time.monotonic()+(0.15 if fault=='no_eof' else 2)
                         while time.monotonic()<until:
                             result=manager._bootstrap_receipt(part,{'ActiveState':'inactive'})
-                            if result is not None or part['quota_pipe'].eof:break
+                            # EOF can precede process exit. Keep collecting until
+                            # receipt validation completes or rejects the frame.
+                            if result is not None or part['quota_pipe'].error:break
                             time.sleep(.005)
-                        if fault is None:self.assertEqual(grant.digest,result['grant_digest'])
+                        if fault is None:
+                            self.assertIsNotNone(result)
+                            self.assertEqual(grant.digest,result['grant_digest'])
                         else:self.assertIsNone(result)
                         if fault=='no_eof':self.assertFalse(part['quota_pipe'].eof)
+                        else:
+                            self.assertTrue(part['quota_pipe'].eof)
+                            self.assertEqual(0,client.poll())
+                            self.assertEqual(fault=='truncated',part['quota_pipe'].error)
                         stop.assert_called_once_with('stop','fixed-bootstrap.service')
                 finally:
                     if client.poll() is None:client.kill()
                     client.wait(timeout=3);client.stdout.close()
+
+    def test_bootstrap_receipt_waits_for_client_exit_after_eof(self):
+        import subprocess
+        from local_hand_jobs import runner
+        grant=make_grant();packet=b.frame(observed(grant))
+        read_fd,write_fd=os.pipe()
+        try:
+            os.write(write_fd,packet)
+        finally:
+            os.close(write_fd)
+        with os.fdopen(read_fd,'rb') as stdout:
+            os.set_blocking(stdout.fileno(),False)
+            client=mock.Mock(stdout=stdout,poll=mock.Mock(side_effect=[None,0]))
+            part={'quota_pipe':b.Pipe(),'quota_grant':grant,'launch':client,
+                  'pipe_nonblocking':True,'unit':'fixed-bootstrap.service'}
+            manager=runner.SystemdManager({})
+            with mock.patch.object(manager,'_command',return_value=subprocess.CompletedProcess([],0,b'')) as stop,\
+                 mock.patch.object(budget,'current_clock',return_value={'boot_id':grant.request.as_dict()['boot_id'],'boottime_ns':2*SECOND}):
+                self.assertIsNone(manager._bootstrap_receipt(part,{'ActiveState':'inactive'}))
+                self.assertTrue(part['quota_pipe'].eof)
+                self.assertFalse(part['quota_pipe'].error)
+                self.assertFalse(stdout.closed)
+                result=manager._bootstrap_receipt(part,{'ActiveState':'inactive'})
+                self.assertIsNotNone(result)
+                self.assertEqual(grant.digest,result['grant_digest'])
+                self.assertTrue(stdout.closed)
+                self.assertEqual(2,client.poll.call_count)
+                stop.assert_called_once_with('stop','fixed-bootstrap.service')
 
     def test_three_units_expose_endpoint_only_to_bootstrap(self):
         from local_hand_jobs import runner

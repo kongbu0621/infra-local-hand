@@ -5,10 +5,15 @@ import importlib.util
 import os
 from pathlib import Path
 import struct
+import sys
 import threading
 from types import SimpleNamespace
 
 import pytest
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Core delivery entry requires Linux clocks, ownership and pipe I/O",
+                allow_module_level=True)
 
 
 def load(name):

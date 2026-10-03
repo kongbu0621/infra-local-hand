@@ -6,10 +6,15 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
 import tarfile
 from types import SimpleNamespace
 
 import pytest
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Core freeze requires Linux protected FDs and executable ownership checks",
+                allow_module_level=True)
 
 from e3_host import q2_core_delivery_freeze as f
 
