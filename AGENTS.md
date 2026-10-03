@@ -847,27 +847,35 @@ Historical Q1/Q2 guest evidence remains valid in its own scope. This read-only f
 does not assert that no physical fixture exists, change A, adopt a root supervisor or
 authorize provisioning, probes or the retired H07 laboratory. No Owner B/C is recorded.
 
-The successor scope `LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1` is **OPEN** for F0–F4 only.
-Its exact proposed documentation A is `ad5abaee642cba02d997149badf75a08c219a35c`;
+The successor scope `LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1` is **CLOSED for F0–F4 only**
+at exact documentation A `ad5abaee642cba02d997149badf75a08c219a35c`;
 the [baseline registration](docs/governance/Q2_NAMESPACE_FIXTURE_DELIVERY_BASELINE.md)
 pins the [requirements](docs/a2-execution/q2-namespace-fixture-delivery/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-namespace-fixture-delivery/ARCHITECTURE.md),
 [implementation plan](docs/a2-execution/q2-namespace-fixture-delivery/IMPLEMENTATION_PLAN.md)
 and [design review](docs/a2-execution/Q2_NAMESPACE_FIXTURE_DELIVERY_DESIGN_20261002.md).
 R, direct readable source/integrity, Owner-only authority, mandate, no exceptions and
-change control remain unchanged.
+change control remain unchanged. Owner B at 2026-10-03 09:32:57 +08:00, event
+`LH-Q2-NAMESPACE-FIXTURE-DELIVERY-CLOSURE-20261003-01`, is retained verbatim in
+[the Owner decision](docs/governance/Q2_NAMESPACE_FIXTURE_DELIVERY_OWNER_DECISION.md).
+This independent bookkeeping-only commit is CLOSED C. It contains no implementation,
+test source, executable prototype, dependency, runtime configuration, bundle or field action;
+implementation D must descend from it. A's four files, historical OPEN labels and proposal
+registration remain byte-identical.
 
-This candidate jointly proposes offline binding, implementation and synthetic
-verification after closure, one conditional isolated-guest delivery, at most one
+The approved scope jointly authorizes offline binding, implementation and synthetic
+verification after this C, one conditional isolated-guest delivery, at most one
 `BATCH_RELEASE`, no more than twelve unique native cases and final receipt/accounting.
 It requires an already installed and exactly qualified sealed native watchdog W; it
 does not authorize installing, uploading, compiling or replacing W, provisioning an
 account/manager/unit/mount, changing system configuration or contacting the guest
-before exact Owner B and independent bookkeeping-only C. Missing static inputs remain
-`NOT_ISSUED`; later incomplete identity/status/EOF/accounting remains BLOCKED or UNKNOWN
-under the candidate's exact rules. Proposed A and this registration are not Owner B,
-CLOSED C, implementation D, field readiness or execution authority. Preserve
-R → exact A → exact Owner B → independent C → D, without squashing C into implementation.
+before this exact Owner B and independent bookkeeping-only C. Owner expressly accepts A's
+sole new `fixture endpoint execution integrity` premise, exact objects, budgets, one carrier
+request, at most one `BATCH_RELEASE` and at most twelve native cases. Missing static inputs
+remain `NOT_ISSUED`; later incomplete identity/status/EOF/accounting remains BLOCKED or
+UNKNOWN under A's exact rules. Closure does not establish implementation D, field readiness,
+guest readiness or a consumed request. Preserve R → exact A → exact Owner B → independent
+C → D, without squashing C into implementation.
 The old proposal and its readiness review remain historical evidence only.
 
 ### Continuing constraints
