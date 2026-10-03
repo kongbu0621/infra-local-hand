@@ -900,6 +900,37 @@ Public CI run `37093976157` at review head `d45b60062023e39ffc9fe76a45bd822b2639
 completed successfully on Windows and Ubuntu; this repository result does not change any of
 the `NOT_ISSUED` / `NOT_RUN` field states or supply the missing live evidence.
 
+### Local Hand core acceptance delivery proposal
+
+Scope `LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1` is **PROPOSED / Gate OPEN / AWAITING OWNER**
+at exact documentation A `74366b3fe41e675b1aa2d677228714a5606c275c`. Its independent
+[baseline registration](docs/governance/Q2_CORE_ACCEPTANCE_DELIVERY_BASELINE.md) pins the
+[requirements](docs/a2-execution/q2-core-acceptance-delivery/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-acceptance-delivery/ARCHITECTURE.md),
+[implementation plan](docs/a2-execution/q2-core-acceptance-delivery/IMPLEMENTATION_PLAN.md),
+[live-input review](docs/a2-execution/Q2_CORE_LIVE_INPUT_REVIEW_20261003.md) and two bounded
+artifact records. R, direct readable source/integrity, Owner-only authority, mandate, no
+exceptions and change control remain unchanged. There is no Owner B, CLOSED C, implementation
+D, executable package, marker, carrier request or field run for this scope.
+
+A fixes core candidate `4b6e4a7c403362358192086b88679e1326dcb2e1`, its exact wheel/projection,
+one current isolated QEMU guest and a single conditional order: H01 normal chain, Q4 cancellation,
+then H11 same-ledger recovery. H01 retains the empty-ledger gate; H11 must use the original ledger
+and unit identity without resubmitting/restarting business or refreshing deadlines. The sole new
+governance premise is the existing fixture policy's broad `q1admin ALL=(ALL) NOPASSWD:ALL`:
+the proposed caller limits itself to one fixed management argv/request, but the policy is not
+technical exact-command or one-shot containment and cannot exclude other login, concurrent sudo
+or repetition. Owner must explicitly accept that disclosed limitation to close this scope.
+
+The proposal caps total guest physical use at 180 MiB/13440 inodes, admission at 276 MiB/16512,
+CPU at 2090 seconds and serial peak at 2624 MiB/1160 pids, with 32 MiB input, 60 MiB output and
+64 MiB/16-inode local capture. It permits at most one create-only consumption marker and one
+carrier request, with no reconnect or retry, under fixed 900/800/750-second outer limits. The old
+`20261001e` batch remains consumed and cannot be replayed. Current task/result/evidence counts are
+zero. namespace/watchdog remains paused and excluded; production `E3_SUPERVISION_UNVERIFIED`
+remains. A and this OPEN registration authorize no implementation or field action. Preserve
+R → exact A → exact Owner B → independent bookkeeping-only C → D; do not squash C with D.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
