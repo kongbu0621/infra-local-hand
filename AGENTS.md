@@ -878,6 +878,25 @@ guest readiness or a consumed request. Preserve R → exact A → exact Owner B 
 C → D, without squashing C into implementation.
 The old proposal and its readiness review remain historical evidence only.
 
+The subsequent partial implementation D is
+`5926dbe369e221775e32ae8164a571d1128e211f`, tree
+`1fd06ecfa7486a597844acce08e4b4b50b5c7453`, with C as its direct parent. Its
+[implementation review](docs/a2-execution/Q2_NAMESPACE_FIXTURE_DELIVERY_IMPLEMENTATION_REVIEW.md)
+records the exact source/test hashes, targeted validation and retained full-suite failure.
+D supplies fail-closed offline plan/manifest and envelope validation, a pure fixture model,
+a standalone anonymous synthetic reference protocol and low-level native bridge primitives;
+it is not the complete F0–F4 execution body, bundle or a field-ready candidate.
+
+F0 currently remains `NOT_ISSUED` because no real private plan, sealed manifest, qualified
+installed W, target and budget inputs were available. F1/F2 are partial; the RAM bootstrap,
+guardian/root supervisor, owner durable capture, complete cgroup/stop/EOF/cleanup orchestration,
+frozen real bundle and live harness qualification remain absent. F3/F4 remain `NOT_RUN`:
+carrier requests, `BATCH_RELEASE`, native batches and native cases are all zero, and no field
+receipt/seal was accepted. Targeted model/source tests and local native-tail checks do not prove
+real namespace/cgroup execution or `FIXTURE_LIVE_REFERENCE_MATCHED`. The one-request,
+one-release and twelve-case ceilings remain wholly unconsumed. Do not describe this D as
+complete implementation, conditional delivery, artifact/field readiness or native/live PASS.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
