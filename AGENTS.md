@@ -896,6 +896,9 @@ receipt/seal was accepted. Targeted model/source tests and local native-tail che
 real namespace/cgroup execution or `FIXTURE_LIVE_REFERENCE_MATCHED`. The one-request,
 one-release and twelve-case ceilings remain wholly unconsumed. Do not describe this D as
 complete implementation, conditional delivery, artifact/field readiness or native/live PASS.
+Public CI run `37093976157` at review head `d45b60062023e39ffc9fe76a45bd822b2639198a`
+completed successfully on Windows and Ubuntu; this repository result does not change any of
+the `NOT_ISSUED` / `NOT_RUN` field states or supply the missing live evidence.
 
 ### Continuing constraints
 

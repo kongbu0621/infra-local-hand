@@ -98,9 +98,13 @@ signalfd 无法只靠 `fstat`/fdinfo 证明原 OFD 连续性，仍依赖 sealed 
 | 精确文件 `compileall` | PASS |
 | `git diff --check` / staged check | PASS |
 | 已实现 primitive/native bridge 边界的两次独立只读代码审计 | 未发现剩余可复现 HIGH/MEDIUM；总体 coverage audit 同时确认上表实施缺口，不构成 F2/live qualification |
+| [Public CI run 37093976157](https://github.com/kongbu0621/infra-local-hand/actions/runs/37093976157)，head `d45b60062023e39ffc9fe76a45bd822b2639198a` | **SUCCESS**；Windows 7m18s，Ubuntu 12m58s，含平台 source tests、独立 wheel 和 bootstrap/boundary checks |
 
 这些是本轮本机命令结果和 source review 结论，不是 field evidence，也没有作为 raw machine
 evidence 发布。
+
+Public CI success 证明上述提交可通过仓库工作流，不证明真实 private bindings、installed W、
+isolated cgroup native harness、guest execution、durable capture 或 F3/F4 qualification。
 
 八项 skip 被准确保留：五项 sandbox credential transport、一项 sandbox `SO_PASSCRED`、
 一项未提供 explicit native fixture、一项未提供 isolated root cgroup fixture。沙箱外 reference
