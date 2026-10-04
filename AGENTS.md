@@ -958,47 +958,50 @@ independent build/parse verification. namespace/watchdog remains paused and prod
 ### Core binding and finalization amendment proposal
 
 Scope `LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1` is **PROPOSED / OPEN /
-REVISION REQUIRED** at exact documentation A
-`4009e1b560dd873bc3d9b937be539f329b93371a`, superseding unapproved proposal
-`0a843218a1614b62c62e7dad8578748f911dad27`. Its
-[baseline registration](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)
+AWAITING EXACT OWNER DECISION** at documentation A
+`0bdb49cae5586be60a7ba31d4a8e8367854d1e8c`, superseding unapproved
+`4009e1b560dd873bc3d9b937be539f329b93371a` and `0a843218a1614b62c62e7dad8578748f911dad27`.
+The [baseline registration](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)
 pins the [requirements](docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md).
-R, its directly read source/integrity, Owner-only authority, mandate, no exceptions and change
-control remain unchanged. This registration is not Owner B or a closure.
+R, readable direct source/integrity, Owner authority, mandate, no exceptions and change control remain unchanged.
+This OPEN registration is neither Owner B nor CLOSED C.
 
-The proposal addresses material package/current-guest binding, finite finalization/restart design,
-source-horizon and host capture-allocation gaps discovered after the existing core scope's partial
-D. It does not alter the old A/B/C bytes or make that partial D releasable. It retains the exact
-candidate/wheel/harness, cases, objects, original physical/admission/CPU/peak/input/outer-output/
-capture budgets, 900/800/750-second outer deadlines, one marker/request and H01→Q4→H11 order. It
-narrows actual stdout+stderr capture to 52 MiB and adds exact source, loaded-module,
-filesystem-static, receipt-v2/attestation and restart-degradation contracts within those field
-ceilings. A host-only prebuilt kernel-source object-proof dependency is never copied into the
-field package/capture and does not grant field action.
+The retained-material return at `c83dad17040e9f8cec148303083c47311f8b7fb9` is complete. It identifies
+the historical 4 KiB control parent as the correct anchor; a different 12 KiB parent is not that anchor.
+Existing VM images share the host filesystem and no dedicated hard-limit mechanism is established by the records.
+Do not request the same R3/K4 collection again, read VM payloads, build dedicated storage or start a kernel proof project.
 
-The exact A requests three and only three new governance premises: post-entry JIT guest
-self-observation; governed source-horizon completeness; and a local trusted single-writer/stable
-capture-kernel window. None is accepted yet. Current trusted loaded-ext4 measurement, reviewed
-kernel/ext4 model, proof archive, integrated D and frozen package are not established. Package
-remains null/`NOT_ISSUED`; marker, request, H01, Q4, H11, task, exit confirmation, result and
-field-evidence counts all remain zero.
+This proposal returns to six fixed capture files and the original v1 receipt/capture manifest, with COMPLETE
+accepted only by the original live caller after final fsync, same-inode reread, actual allocation and deadline checks.
+It withdraws the seventh attestation, local restart acceptance, loaded-ext4/IKCONFIG measurement, raw-device and
+superblock qualification, kernel Git proofs and complete filesystem allocator model. It retains the exact
+approved-input source relation, corrected sudo semantics, source horizon, package/HELLO JIT and current admission.
 
-The latest review corrected the sudo predicate to match the existing `(ALL)` policy and retained
-partial/full STOP receipts after failed creation sequences. It also corrected the historical-row
-producer description. The prior zero-P0/P1 overall-readiness statement is superseded: actual host
-storage capabilities and permissions remain unestablished, so overall approval is not requested.
-Next, use retained management-host evidence to identify the exact capture anchor, any existing
-bounded storage mechanism and its accounting coverage; preserve the 64 MiB/16-inode ceiling.
-Do not treat a missing kernel/ext4 proof project as an automatically authorized implementation.
+Owner must explicitly accept the material host capture guarantee change: application-enforced logical limits
+and observed scope-owned file allocation, not a full-host-filesystem instantaneous physical peak guarantee.
+Streams total at most 52 MiB; all six role limits total at most 55132160 logical bytes. The 64 MiB/16 ceiling
+applies to application accounting and observed owned-file allocation; at most six files are created.
+Checks after create/write/fsync must stop on unknown identity or observed excess, but cannot claim an excess
+never occurred or that unobserved filesystem metadata/peaks were bounded. Live reporting explicitly sets
+`full_filesystem_peak_proven=false`. Guest resource ceilings and all identity/security checks remain unchanged.
 
-No source/test/prototype/package/allowlist or field implementation may descend from this proposal
-until an exact Owner B and a separate bookkeeping-only CLOSED C exist; D must descend directly
-from C. Documentation and read-only audit remain allowed under R. The old unissued batch cannot be
-replayed, and no second request, reconnect/retry, host sudo/configuration change, production enable
-or UNKNOWN/restart-attestation success promotion is proposed. namespace/watchdog remains paused;
-production `E3_SUPERVISION_UNVERIFIED` remains unchanged.
+The accurate B must also accept JIT self-observation limitations, governed source-horizon completeness and
+the local trusted single-writer premise defined in A. None is accepted by this registration or by a CI result.
+There is no current B/C/D for this amendment. No forward source/test/prototype/package/allowlist implementation
+under it is allowed before exact B and independent bookkeeping-only C; the first D must directly descend from C.
+The previous core A/B/C remains historically accurate and partial D remains non-releasable.
+
+After closure, directly complete approved inputs/JIT, all eight groups of real dispatcher effects, six-file
+finalization and necessary release validation. Cloud work covers repository implementation and testing;
+local Codex handles private source/host binding, independent package verification and the single conditional
+H01→Q4→H11 run. H11 recovers its own origin ledger, never Q4's. Reuse the existing SSH and host preparation;
+only the original A's new-batch create-only candidate placement is allowed, with no historical reinstall or overwrite.
+
+Package is still null/NOT_ISSUED; this core batch has no marker/request/H01/Q4/H11/task/exit/result execution.
+No old batch replay, reconnect, automatic retry, cleanup, host sudo/configuration change or UNKNOWN promotion is allowed.
+namespace/watchdog and other side work remain paused; production `E3_SUPERVISION_UNVERIFIED`, E4–E6 and NAS remain excluded.
 
 ### Continuing constraints
 

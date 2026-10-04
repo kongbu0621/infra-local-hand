@@ -4,7 +4,7 @@
 
 **当前阶段（2026-10-04）：核心任务执行与结果收回的部分实现，尚未跑通现场闭环。** 本轮只推进正常执行、运行中取消、同一任务恢复查询和结果收回。H01/Q4/H11 的真实执行入口仍未接完，完整 field package 未生成，核心批次尚未签发。具体缺项见[核心实现复核](docs/a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md)。
 
-云端助手负责仓库修正、代码验证和审查，本地 Codex 负责只能在真实管理机完成的输入复核与后续现场执行；下一步按[核心协作交接](docs/a2-execution/Q2_CORE_CLOUD_LOCAL_HANDOFF_20261004.md)推进。输入绑定修订当前为 OPEN / REVISION REQUIRED，准确状态见[修订复核登记](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)。namespace、watchdog、旧版扩建和内核证明扩展暂停；生产、E4–E6 与 NAS 不作为本轮新增工作。
+云端助手负责仓库修正、代码验证和审查，本地 Codex 负责只能在真实管理机完成的输入复核与后续现场执行；下一步按[核心协作交接](docs/a2-execution/Q2_CORE_CLOUD_LOCAL_HANDOFF_20261004.md)推进。输入绑定与六文件结果收回的最小修订 A `0bdb49c` 已形成，当前 OPEN、待准确决定；host capture 明确采用应用限额和文件分配观测，不宣称共享文件系统全过程物理硬峰值。准确状态见[修订复核登记](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)。namespace、watchdog、旧版扩建和内核证明扩展暂停；生产、E4–E6 与 NAS 不作为本轮新增工作。
 
 以下为此前接续沿革，不作为重放历史批次或恢复支线的入口。
 
