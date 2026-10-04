@@ -1,5 +1,17 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
+## 最新本地包复核发现固定来源前提冲突
+
+已同步并核对 `e2a40bd4b0e0b17ebe2a2ad3f533bdace318cc05`，CI 3/3 success，
+本地 core 回归 953 passed / 35 skipped。原 859 静态成员、wheel/projection、历史来源与
+本地管理入口身份均复核通过，但完整 approved-input 聚合被 `CORE_POLICY_BASIS_SOURCE_GRANT` 拒绝。
+固定 cloud-init 将 name 和 sudo 分列于同一 users mapping；原批准要求的完整 sudoers 字面行不存在。
+这不是 guest 不支持，也不是删除生产 E3 的理由。详见 [准确复核与最小提案](../Q2_CORE_PRIVATE_PACKAGE_REVIEW_20261005.md)。
+
+只重新打开固定来源转换范围；待 Owner 对其准确 A 批准并独立 C 后才实施。
+原其他批准、预算、时限和条件单次 F1 保留。没有完整 package、marker、carrier 或真实任务结果；
+release allowlist 仍空，支线保持暂停。以下源码接齐记录不代表真实原件或现场门已通过。
+
 ## 最新：核心资源与结果链源码已接齐，进入 C3 私有发行复核
 
 在已批准 A `851a1afe4e55196212aa6913e81e0722deed1032` 的同一范围内，

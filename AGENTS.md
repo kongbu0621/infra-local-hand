@@ -1130,6 +1130,24 @@ The release allowlist remains empty; complete 32-pool observations, remote-resul
 independent review and original private package checks still precede the single conditional F1.
 This checkpoint made no guest connection, marker/request, real core task or result collection.
 
+### Core fixed cloud init grant binding review
+
+The local private-package review at source D `e2a40bd4b0e0b17ebe2a2ad3f533bdace318cc05`
+found a conflict between the pinned cloud-init bytes and the full sudoers literal required by
+binding amendment A `0bdb49cae5586be60a7ba31d4a8e8367854d1e8c`. See
+[the exact review](docs/a2-execution/Q2_CORE_PRIVATE_PACKAGE_REVIEW_20261005.md).
+Scope `LH-Q2-CORE-CLOUD-INIT-GRANT-BINDING-v1` is **OPEN**, only for the proposed fixed-source
+normalization in [requirements](docs/a2-execution/q2-core-cloud-init-grant-binding/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-cloud-init-grant-binding/ARCHITECTURE.md) and
+[G1–G3 plan](docs/a2-execution/q2-core-cloud-init-grant-binding/IMPLEMENTATION_PLAN.md).
+This is not a closure or implementation authorization. Exact A will be registered after this documentation commit;
+Owner B and independent bookkeeping-only C must precede new implementation of this affected conversion.
+Unchanged R, readable direct source/integrity, mandate, Owner authority and no-exception change rules apply.
+The original source hash, account and sudo privilege must not be replaced, and the literal check must not
+be silently deleted. Existing unaffected closures remain valid; original conditional single F1, budgets,
+deadlines, production E3 restriction and paused side work remain. No package or field action was issued
+by this read-only review; historical nonissuance is not current marker-absence evidence.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
