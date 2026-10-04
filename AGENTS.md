@@ -1018,6 +1018,29 @@ All eight real effect groups, v2 local binding integration and complete release 
 F1 is still NOT_ISSUED; no new management observation, marker, carrier or real task was performed.
 The already CLOSED D1–D4 authority remains available; do not seek the same approval again or resume side work.
 
+The subsequent [local v2 review](docs/a2-execution/Q2_CORE_LOCAL_V2_REVIEW_20261004.md)
+records cloud integration `bd4a106`, local repair D `33de2ccd5575f73f7644905008b92011c2f8e7e0`,
+its exact source/validation limits and retained-input verification. Installer child wait4/EOF/stop accounting
+is implemented as a component only; complete guest usage, admission and H01/Q4/H11 effects remain incomplete.
+No marker, carrier or real core task was issued. Do not promote those source tests into field acceptance.
+
+### Core host writer transport proposal
+
+Scope `LH-Q2-CORE-WRITER-TRANSPORT-v1` is **OPEN** for T1–T3 at documentation A
+`60756caedf6a2d978627272e44784d11009ac309`. Its [baseline registration](docs/governance/Q2_CORE_WRITER_TRANSPORT_BASELINE.md)
+pins the [requirements](docs/a2-execution/q2-core-writer-transport/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-writer-transport/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-writer-transport/IMPLEMENTATION_PLAN.md).
+R, direct source/integrity, Owner-only authority and change rules remain unchanged.
+No Owner B or independent C exists for this proposal; do not implement its source/test/schema changes yet.
+
+The prior A requires host writer in marker v2 but does not transport its preimage to the guest.
+The proposal only adds entry.writer in a strict package v3, binding the original held writer and exact marker;
+it does not replace the host with guest identity or weaken the marker digest check. Original A/B/C and
+unaffected CLOSED D1–D4 work remain valid. This is not another fixture project or an extra field authorization:
+all original budgets, deadlines, single marker/request and conditional H01→Q4→H11 rules remain.
+No additional F1, replay, reconnect, retry, cleanup, system change or production activation is proposed.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

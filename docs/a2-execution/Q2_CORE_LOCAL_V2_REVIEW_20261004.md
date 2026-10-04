@@ -45,12 +45,21 @@ O_NOATIME、长度、摘要和稳定性校验；新聚合器解析出 16 locator
 不得记为通过。此前云端 PID 视图失败项在本机通过，产品身份检查未放宽。
 最后增加“已退出且双 EOF 不再 kill”收口后，四个直接相关模块：115 passed / 8 skipped。
 首次新增外层超时负例缺少测试 `io` import，失败已保留并修正；不是现场失败。
-完整 source suite 已启动，最终准确结果另附，不预写 PASS。没有运行 installed release suite。
+完整 source suite 返回 **4204 passed / 99 skipped，431.47s**；报告保留在本机
+`lh-core-v2-source.GRh1fG/results.xml`。使用普通本机用户及子进程局部 umask 022，没有 sudo 或系统配置变更。
+该运行在最后“已 wait 且双 EOF 不再 kill”两行收口和对应断言之前启动/加载模块，故不写成最终 D 的
+全量重跑；最终差异的四模块回归为上述 115/8。最后源码 D 为
+`33de2ccd5575f73f7644905008b92011c2f8e7e0`，tree `773ccf5f5ab1b2e0afa0e794f7cca86337cb49d9`；
+dispatcher 为 199375 B，SHA-256 `40933788491a247afe0be1d1e78d82d47afef518ddaa2854c78741d48b0a5880`。
+bootstrap 保持 48828 B，未扩大 49152 B ceiling。
+[准确 D 的 CI 37183191347](https://github.com/kongbu0621/infra-local-hand/actions/runs/37183191347)
+提交本记录时仍在运行，不能引用旧 CI 当新 D 的 PASS。没有运行本机 installed release suite。
 
 仍直接阻塞：current guest collector/policy、逐 pool 准入、安装内部所有 I/O deadline/执行身份与
 shared-pool accounting、existing-account preparation、plan、H01/Q4/H11 真效果、phase facts 和全量 usage。
 另有原协议缺少 host writer 传输字段的文档缺口，见云端 v2 review；不能用 guest identity 或摘要
-推算替代。该小范围修订须独立准确批准，其余原 CLOSED D 工作仍可继续。
+推算替代。[独立 OPEN 最小方案](../governance/Q2_CORE_WRITER_TRANSPORT_BASELINE.md)已冻结准确 A，
+尚未新增该协议 source/test 实现。该小范围修订须独立准确批准，其余原 CLOSED D 工作仍可继续。
 
 本轮 marker/request/H01/Q4/H11 为 0；没有现场重装、配置变更、清理或重试。
 真实业务任务未执行，退出/结果/证据未收回，package 未发行。namespace/watchdog 仍暂停，production

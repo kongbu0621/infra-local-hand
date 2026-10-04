@@ -2,6 +2,11 @@
 
 2026-10-04 +08:00。本页是执行交接，不替代准确 A/B/C；只推进正常执行、取消、同任务恢复和结果收回。
 
+最新接续：[本机 v2 复核与 D `33de2cc`](Q2_CORE_LOCAL_V2_REVIEW_20261004.md)已保留，
+包括云端 v2 的 CI 失败原因、测试夹具修复、安装子进程 wait/EOF/时限收口及真实 retained-input 复核。
+核心真实链仍未执行。只继续原 CLOSED D 的 collector、prepare/plan、真实执行和全量 usage 缺项；
+[writer 最小协议 A](../governance/Q2_CORE_WRITER_TRANSPORT_BASELINE.md)单独 OPEN，未批准前不实施。
+
 后续 Owner 已准确批准本页 A；独立 C `7598886`、部分 D1 输入组件与 D3 六文件终结现已落地。
 [最新实施/验证记录](Q2_CORE_AMENDMENT_INPUT_CAPTURE_REVIEW_20261004.md)列出准确源码与未完成项；
 不再等待相同 A 的批准，也不把这些输入检查当作 F1。
