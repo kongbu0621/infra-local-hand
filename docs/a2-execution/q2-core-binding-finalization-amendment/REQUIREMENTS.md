@@ -1,93 +1,76 @@
-# Local Hand 核心输入绑定与终结证明修订：需求
+# Local Hand 核心输入绑定与结果收回：最小修订需求
 
-- Authority：Owner；状态：**PROPOSED / Gate OPEN / REVISION REQUIRED**。
+- Authority：Owner；状态：**PROPOSED / Gate OPEN / AWAITING EXACT OWNER DECISION**。
 - Scope：`LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1`。
 - Rule R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`；来源、完整性、Owner-only
   决定权限、无例外和变更规则沿用根 [AGENTS.md](../../../AGENTS.md)。
-- 本文与[架构](ARCHITECTURE.md)、[实施方案](IMPLEMENTATION_PLAN.md)组成独立三文档。
-  当前没有本 scope 的 Owner B、bookkeeping-only CLOSED C、implementation D、field package
-  或现场执行权。
+- 本文与[架构](ARCHITECTURE.md)、[实施方案](IMPLEMENTATION_PLAN.md)组成准确三文档 A。
+  没有本 scope 的准确 Owner B、独立 bookkeeping-only CLOSED C 或集成 D。
 
-本轮复核已修正 sudo predicate 和失败 receipt 的矛盾，但第 6.1 节的 host capture 路线仍缺
-实际可用的权限、loaded-module measurement、reviewed allocation model 和 source proof。
-当前文本不是可直接提请整体批准的就绪方案；须先依据既有 management host 材料收敛该路线，
-保持原 64 MiB/16-inode 上限，不以逻辑字节数或终态 `st_blocks` 替代全过程物理分配边界。
+本修订直接服务于正常任务执行及结果收回、运行中取消、同一任务恢复查询。
+撤回未批准 `4009e1b560dd873bc3d9b937be539f329b93371a` 的第七个 attestation 文件、
+restart 验收扩展、宿主 loaded-ext4 测量、内核源码证明与完整文件系统分配模型。
+保留其已纠正的 approved-input 来源、sudo 语义、package/HELLO JIT 绑定。
+本文 §3 从该版本逐字保留；其余章节由本版替代，不能混用旧 proposal 的字段或前置条件。
 
-## 1. 触发事实和有限边界
+**资源保证发生一项显式变化，必须由 Owner 接受：**本机 capture 改为应用写入硬限额、
+固定六个自有文件，以及每次 write/fsync 后实际文件分配量的观测验收上限。
+64 MiB / 16 inode 保留为这些对象的逻辑总上限和观测验收限额；不再承诺共享宿主文件系统
+包含目录、journal、元数据或未观测瞬时分配在内的全过程物理硬上限。
+逻辑写入限额和 `st_blocks*512` 观测分别报告，不能互相替代或写成原物理保证已证明。
+guest 的 physical/admission/quota/CPU/memory/pid 上界以及全部身份、安全与结果真实性校验不变。
 
-本修订只处理已 CLOSED 的 `LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1`（原 A
-`74366b3fe41e675b1aa2d677228714a5606c275c`、Owner B event
-`LH-Q2-CORE-ACCEPTANCE-DELIVERY-CLOSURE-20261003-01`、独立 C
-`a8dd077392ebb656770c8f94ca3b051e93fc296d`）在部分 D
-`520f77f578b90d31870517e33e29bee42918f3c0` 后的下列合同问题与设计选择：
+## 1. 已知事实与工作边界
 
-1. 原 package 要在 marker/request 前绑定六组 current remote 实体的完整预像，但原 A 又只允许在
-   已消费的唯一 carrier 内读取 current guest；两者不能同时满足。
-2. 原 A 已允许由调用端观察 receipt 的 file/parent fsync 和同 inode 回读完成，不要求 receipt
-   自证未来步骤，也未要求重启验证器返回 COMPLETE。本修订选择增加有限 attestation 与明确的
-   restart 降级；这是新增设计选择，不能仅以“receipt 自证循环”声称原 H01 必然无法推进。
-3. 先前草稿只采用 2026-09-27 的七行 reservation，遗漏随后五个 normal 历史输入、两次 code update
-   和已消费的 `20261001e`；三组 approved input 也尚无确定 schema/preimage。
-4. 原 local capture只汇总child `st_blocks`，未绑定实际host writer、local capture filesystem、parent
-   allocation baseline/endpoint或可前置采用的rounding/metadata上界；guest ext4与当前工具环境事实都不能
-   外推到真实management anchor。
+原核心 scope `LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1` 的准确 A 为
+`74366b3fe41e675b1aa2d677228714a5606c275c`，Owner B event 为
+`LH-Q2-CORE-ACCEPTANCE-DELIVERY-CLOSURE-20261003-01`，独立 C 为
+`a8dd077392ebb656770c8f94ca3b051e93fc296d`；部分 D 为
+`520f77f578b90d31870517e33e29bee42918f3c0`。原 A/B/C 不改写，部分 D 仍不可 release。
 
-[部分实现复核](../Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md)记录现场 package 仍为
-`null` / `NOT_ISSUED`，marker、carrier request、H01、Q4、H11、真实任务、结果和证据计数均为 `0`。
-最新主线 `bd02fbd094a76767c21fbc8a96502c5b894df3c2` 只修复 Linux 测试收集与 quota receipt race，
-不改变这些现场事实，也不解除本阻断。
+1. 原 package 在唯一 request 前要求 current guest 实体预像，同时只允许在该 request 内观察
+   guest，存在时序冲突。本修订用静态 remote expectation 与唯一 carrier 内 JIT HELLO 分开绑定。
+2. approved-input 三组关系缺乏完整 source-horizon、schema 和 preimage；§3 保留准确来源与计费，
+   不漏计历史 commitment、不退款、不以历史记录充当当前 guest 状态。
+3. 原 A 已允许调用端观察 receipt 的 fsync/回读完成，不要求 receipt 自证未来步骤；因此恢复原六文件
+   和 live caller 终结，不另建 attestation/restart 证明链。H11 的 guest 同任务恢复继续属于核心目标。
+4. [本地既有材料回传](../Q2_CORE_LOCAL_HANDOFF_RESULT_20261004.md)在提交
+   `c83dad17040e9f8cec148303083c47311f8b7fb9` 确认：准确 capture anchor 是历史 4 KiB 的
+   control parent，不是另一个 12 KiB 的 host parent；与 VM 镜像共享 ext4，未找到专属硬限额记录。
+   这是保存时点的事实，当前权限、mount 或 quota 仍不能据此认定通过，也不能推断机制必定不存在。
+   不重复索取 K4/R3，不读 VM 内容，不迁移目录、不新建存储或开启内核证明支线。
 
-本 scope 不重写原 A 字节，不追认部分 D 为 releasable，也不授权现场动作。它只在独立 B/C 后有限
-supersede package/HELLO/admission/local-finalization 的冲突字段。原 candidate、wheel、harness、
-logical namespace、三个 case、21 roots、unit、执行顺序和证据闭包保持。
+本次尚未签发的核心批次 package 为 null / NOT_ISSUED，marker、carrier、H01/Q4/H11、真实任务、
+退出确认和结果收回均未发生。既往其它批次的现场事实不被清零，也不因此可重放。
+云端源代码测试和 CI 成功不等于这些真实效果已实现或现场通过。
 
-## 2. 新增治理前提和显式失败边界
+## 2. 需明确接受的治理前提与失败边界
 
-除原 A 已披露并获准的 broad-sudo 前提外，本修订请求 Owner 逐项接受下列
-三项、且仅三项新增治理前提：
+除原 A 已披露的 broad-sudo 前提外，Owner B 须明确接受下列三项前提及上面的 capture 保证变化：
 
-1. **post-entry JIT guest self-observation**：current remote account、login shell，以及
-   shell/sudo/env/systemd-run/Python 的完整实体预像无法在首次且唯一 carrier request
-   前由 retained source 证明；允许 bootstrap 在该 carrier 已进入、但读取 field package 前，以
-   固定 alias 和有限 symlink 算法形成 HELLO；允许 dispatcher 在 package 已验证、但第一个
-   scope-created guest durable object 或 H01 intent 前，各至多一次执行下文固定的
-   `sudo -n -ll -U q1admin` 与 `sshd -T` semantic helper，并以固定 parser/token/profile/predicate
-   形成 admission self-attestation。helper 不是第二 SSH、sudo carrier、systemd-run、unit 或 request；
-   它们不得有意修改配置或业务对象，但可能触发 loader/shared-library/plugin/NSS、atime、journal 或
-   audit 等 incidental effect，这些 effect 必须计入原 carrier CPU/memory/pid/audit 上界。它们只能观察
-   helper 调用时的 current disk/process semantics，不能回溯证明已建立 SSH 或首次 sudo entry 当时的
-   daemon/config/plugin/dependency/inode，也不能排除 change-and-revert、alias race 或 TOCTOU。host 只可
-   校验固定 D 生成的有界 self-attestation 与摘要链，不能在没有 private raw 的情况下声称独立复算
-   guest predicate。上述限制、两次有界 helper action 和残余信任须由 Owner 明确接受。
-2. **governed source-horizon completeness**：本文列出的 `20260927` source、五个 normal
-   batch、`20261001e` 和三个 later-nonissuance record，对 Owner B 当时已批准或已消费的
-   Local Hand Q2 guest capacity obligation/field batch 是完整集；在本唯一批次终结前，
-   Owner 不再授权或签发其它 Q2 batch。这是治理完整性声明，不是文件系统扫描可以
-   技术证明的事实；任何相反 Owner 决定、retained record 或 live 对象都使 package 失效：marker前发现
-   为`NOT_ISSUED`，marker后发现为`STOP_AND_RETAIN`。
-3. **local trusted single-writer and stable capture-kernel window**：从原900秒双钟origin之前的最后一次
-   offline gate结束，到live finalizer最终sample为止，固定management anchor没有其它进程、用户命名空间映射、服务或
-   人工会话以同一filesystem UID/GID或等价DAC越权能力创建、删除、改名、链接、写入、truncate、设置
-   xattr或改变该目录及本scope七个basename。held dirfd、0700、writer credential、目录inventory和
-   endpoint复核只能发现可见漂移，不能技术排除同credential sibling或change-and-revert。相同window内，
-   kernel release/build/config/module、capture mount identity/options/features、ext4 allocator tunables、parent
-   ACL/xattr/project、quota/LSM hook及fixed model的任何其它输入也不被热替换、remount或改变；边界重验只能
-   发现已发生漂移，不能回溯排除中间change-and-revert或超峰。Owner接受这项明确剩余信任。已知竞争者、
-   inventory/qualification漂移或无法维持该window即在marker前`NOT_ISSUED`、marker后
-   `STOP_AND_RETAIN`。本前提不授予host sudo、配置变更、杀进程、加锁服务或第二writer。
+1. **唯一 carrier 内的 JIT 自观察。** bootstrap 进入后、读取 package 前，按 §4 固定 alias 和有限
+   symlink 算法产生 current account/program HELLO；dispatcher 验证 package 后、首个 guest
+   mutation/H01 intent 前，按 §3 各至多一次调用 `sudo -n -ll -U q1admin` 与 `sshd -T` helper。
+   两者不是第二 SSH、carrier、systemd-run、unit 或 request；不有意修改配置或业务对象。
+   loader/shared-library/plugin/NSS/atime/journal/audit 等 incidental effect 仍计入原 carrier
+   CPU/memory/pid/audit 边界。这些观察不能追溯证明已发生的 SSH/sudo entry inode、loaded image、
+   daemon/config/dependency，也不能排除 alias race、change-and-revert 或 TOCTOU。
+   host 只验证固定 D 的有界 self-attestation 与摘要链，不声称拥有 guest private raw 的独立复算。
+2. **source-horizon 完整性。** §3 的 `20260927` source、五个 normal batch、`20261001e` 与
+   三项 later-nonissuance 是 B 时已批准或消费的 Q2 guest obligation/field batch 完整集；本批次
+   终结前不再签发其它 Q2 batch。它是治理责任，文件系统扫描无法独立证明。发现相反决定、记录
+   或 current object，marker 前 NOT_ISSUED，marker 后 STOP_AND_RETAIN。
+3. **本机可信单写者窗口。** 从 origin 前最后 offline gate 至 live final sample，没有同 filesystem
+   credential 或等价 DAC 能力的其它 writer 改动 held anchor 身份/权限及本 scope 六个 basename。
+   writer credentials、namespace、name-to-inode 和 held fd 检查只能发现可见漂移，不能排除不可回溯的
+   change-and-revert。已知竞争者或漂移须停止；此信任不授予 host sudo、杀进程、系统变更或锁服务。
+   不再要求 kernel、allocator 或全宿主 metadata 模型固定来推导一个本版并不承诺的物理峰值。
 
-这些 JIT 摘要和 helper facts 只证明 post-entry current self-observation。shell、sudo、env、
-systemd-run、Python、sshd daemon/config/plugin 和动态依赖已在相应观察前参与 entry 或可能发生变化；
-因此它们不证明实际 entry inode/loaded image，也不消除 alias 更换/TOCTOU。Owner 接受的是这项明确
-限制、两次 helper action、上述 source-horizon 责任和local single-writer/stable-capture-kernel window，
-不是额外登录、第二连接、
-本合同外 probe、系统配置变更、第二 request 或生产信任。
-
-local finalization **不新增时限**：取得成功所依赖的 receipt/attestation 调用都须在原 900 秒内返回。
-已在及时pre-call检查后发起的阻塞调用可能晚返，但晚返只能失败且不得授权后续持久调用。live 进程只有
-在最终 parent fsync 返回后的双钟采样仍严格早于原 deadline 时才可返回 `COMPLETE`；
-restart verifier 无法证明这一终结时点，故最多返回 `RECEIPT_COMPLETE_ATTESTED`，绝不把它提升为
-`COMPLETE`。这个 fail-closed 限制须被 Owner 明确接受；它不是 post-900 尾窗或成功推定。
+原 scope 的准入、UID/GID/PID、文件身份、摘要、凭据、安全 policy、单次消费、失败保留规则均保留。
+任何 UNKNOWN 不提升为 PASS。900 秒总窗口、15 秒 local-final reserve 均不延长。
+原调用进程在 receipt file/parent fsync、同 inode 回读及最终资源检查返回后，双钟采样仍严格早于
+原 deadline 才可接受 COMPLETE。晚返只能失败；磁盘上的 receipt 本身不证明最后步骤或其及时性。
+不实现 local restart COMPLETE；H11 对其自己 origin 的同 ledger/request/execution 恢复不受此删减。
 
 ## 3. canonical approved-input bundle
 
@@ -702,12 +685,11 @@ consumption marker v2 exact top-level key 为：
 ```text
 schema,scope,session_id,baseline,owner_decision,closure,implementation,amendment,
 candidate,package,approved_inputs_sha256,local_management_binding_sha256,writer,
-capture_resource_preflight,
 carrier_argv_sha256,host_boottime_origin_ns,host_monotonic_origin_ns,
 host_boottime_deadline_ns,host_monotonic_deadline_ns,state
 ```
 
-existing marker（任意类型/partial）表示该唯一批次已消费。marker absent 但六个 local output basename
+existing marker（任意类型/partial）表示该唯一批次已消费。marker absent 但五个 local output basename
 任一存在时为 `NOT_ISSUED_CONFLICT`，未消费、不清理。其余 source/package/local gate 失败为
 `NOT_ISSUED`。只有 O_EXCL marker 完整持久化后才可发唯一 carrier request。
 
@@ -749,27 +731,21 @@ HELLO framing magic仍为`LHCHLO1\n`；BIND仍为原`local-hand-q2-core-carrier-
 
 ## 5. marker 前后与 live admission
 
-offline static source/D/package-template release gate结束后，调用端必须立即按BOOTTIME-first、
-MONOTONIC-second取得不可刷新origin并固定`+900s` deadline；此前不得读取任何本scope current
-management anchor/mount/superblock/writer/absence事实。随后在同一900秒窗口中完成held local binding、
-writer、capture qualification/read-only parent baseline、ARG_MAX、exact package双build/parse及release
-digest。PRE_MARKER baseline只允许held read-only stat/statx/getdents/xattr/mount/kernel source读取；所有
-可能记录atime的regular/directory source必须以`O_NOATIME|O_NOFOLLOW|O_CLOEXEC`（directory另加
-`O_DIRECTORY`）从held parent打开且无fallback，pseudo-fs source则须由proof model证明没有本scope
-filesystem durable-atime effect；任一权限不足或未知即`NOT_ISSUED`。不得fsync、写入或触发其它durable
-syscall。marker前 absence gate 只检查 held local management anchor 下
-唯一 marker 与六个 fixed output basename，以及 package 中 guest object name/derivation 的静态 closed set；
-不得声称已检查 current guest。所有pre-marker current sample clocks都必须位于同一原deadline内。
+offline static source/D/package-template release gate结束后，调用端立即按BOOTTIME-first、
+MONOTONIC-second取得不可刷新origin并固定`+900s` deadline；此前不得读取本scope current
+management anchor/writer/absence事实。随后在同一900秒窗口内完成held local binding、writer、
+ARG_MAX、exact package双build/parse及release digest。先完成这些门，再检查held anchor下唯一marker
+和五个fixed output basename的absence；package中的guest object names仅作静态closed-set验证，
+不得声称已检查current guest。原local file/directory只读路径保护与NOATIME要求保持，无权限fallback。
+本版不需要capture kernel/module/superblock/raw-device资格化或内核source proof。
 
 absence PASS后，O_EXCL marker的open/write/file-fsync/reread/parent-fsync是本window第一组durable
-syscall；其完整返回后取得MARKER parent sample。marker raw仍≤16384 B/allocated≤16384 B。任何更早
-fsync/create/write均禁止。marker 后，HELLO/BIND/package/EOF 全部留在唯一 carrier。host 在 marker 前负责把 approved inputs 对
-held local/private raw与Git source逐字验证；guest只验证package内自足canonical artifact、固定transform/
-digest以及current guest predicate，不可能也不得声称重新解析host-only RFC6901 pointer或private raw。
-marker、stdout、stderr、remote-result、capture-manifest、receipt与attestation七个local basename的每次
-验证性回读都必须从同一held parent以
-`O_RDONLY|O_NOFOLLOW|O_NOATIME|O_CLOEXEC`打开、不得fallback，并执行name/fd identity与stable fstat；
-权限不足或atime行为UNKNOWN在marker前为`NOT_ISSUED`、marker后为`STOP_AND_RETAIN`。
+syscall；每次create/write/fsync后的allocation检查均按§6执行。marker完整返回并通过及时性与identity
+检查后，才可发唯一carrier。marker raw仍≤16384 B；它与其余五文件共同受§6的应用与观测限额。
+marker后，HELLO/BIND/package/EOF全部留在唯一carrier；host在marker前把approved inputs对held
+local/private raw与Git source逐字验证。guest仅验证package内自足canonical artifact、固定transform/
+digest与current guest predicate，不可能也不得声称重新解析host-only RFC6901 pointer或private raw。
+六个basename的验证性回读按§6的held parent、NOFOLLOW/NOATIME与同inode身份规则执行。
 guest 验证 package 后、任何 staging/install/
 create-only state/case intent 前，live admission 必须依次完成：
 
@@ -789,407 +765,97 @@ gate 全 PASS 才能创建首个 guest mutation或 H01 intent。
 同时绑定 session 与 remote-result，capture manifest 再绑定完整 output manifest，local receipt 最后绑定
 capture。private approved-input raw 不进入 output。
 
-## 6. finite local finalization
+## 6. 六文件 capture 与 live 终结
 
-local receipt 升级为 `local-hand-q2-core-local-acceptance-receipt/v2`，exact top-level 仍为原 **十二项**：
-`schema,scope,session_id,consumption,transport,remote_result,wait,capture,real_task_execution,
-result_evidence_collection,state,missing`。满足原完整成功条件时，持久 state 只能是
-`COMPLETE_PENDING_ATTESTATION`，不能写 `COMPLETE`。唯一失败 receipt 可尝试写 `STOP_AND_RETAIN`，
-但每一步仍受原 deadline 与原 reserve 的前后检查，绝不为它创建 attestation。receipt 尚未创建且
-检查已不允许下一调用时，保持 absent；`O_EXCL` 成功后任一步失败、晚返或无法确认，保留已形成的
-partial/full receipt，不补写、不覆盖、不删除、不重试。不能预知阻塞调用何时返回，也不能保证
-中途失败后文件不存在。partial/invalid receipt 不生成 derived acceptance；完整且 strict-valid 的
-STOP receipt 只可判 STOP。pending receipt
-已存在后的失败只由非持久LIVE derived result报告，不覆盖pending。receipt 和新增
-`.lhqcore-20261003a.finalization-attestation.json` 都使用以下
-唯一持久化序列：
+### 6.1 对象、写入限额与实际占用
 
-```text
-held-parent openat(O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY|O_CLOEXEC,0600)
--> write-all -> file fsync -> fstat -> close
--> openat(O_RDONLY|O_NOFOLLOW|O_NOATIME|O_CLOEXEC), no fallback
--> same dev/inode, regular, bound-writer fsuid:fsgid, 0600, nlink=1, name-to-inode
--> full reread equal -> stable second fstat -> close
--> parent directory fsync -> parent-allocation phase sample
-```
+沿用原 A 的唯一六个 basename：消费 marker、stdout、stderr、remote-result、capture manifest、
+acceptance receipt；准确名字由原 fixed object table 决定。不得新增 attestation、临时文件、旁路日志、
+持久化 allocation ledger 或额外副本；已存在任何类型的 marker 代表已消费，marker absent 但任一
+五个 output 名存在则 NOT_ISSUED_CONFLICT。不改名、覆盖、truncate、删除、清理或重试。
 
-每次重验都要求 uid/gid 逐字段等于 marker/local binding 的 writer filesystem identity；不得要求或声称
-host 对象是 guest `root:root`。receipt parent fsync 与对应 parent-allocation sample 返回后立即按
-BOOTTIME-first/MONOTONIC-second 采样；两者须严格早于 marker 的原 900 秒双 deadline。及时 sample 且
-receipt 为 pending 才可构造一次 attestation。attestation v1 exact key 为
-`schema,scope,session_id,consumption_sha256,receipt,host_window,state`；`receipt` 恰含
-`basename,bytes,allocated_bytes,sha256,dev,ino,mode,uid,gid,nlink`；`host_window` exact key 为
-`host_boottime_origin_ns,host_monotonic_origin_ns,host_boottime_deadline_ns,
-host_monotonic_deadline_ns,receipt_completed_boottime_ns,receipt_completed_monotonic_ns`，前四值逐字段
-复制 marker、deadline 恰为同名 origin+900秒，后两值分别严格位于同名 origin/deadline 内；state固定
-`RECEIPT_COMPLETED_BEFORE_ORIGINAL_DEADLINE`。raw≤4096 B，allocated≤16384 B/1 inode。
-
-同一LIVE进程从origin后，对marker与六个output basename涉及的每个可能阻塞
-persistence/termination/resource-observation syscall（clock read自身除外）发起前和返回后都重采两钟并
-要求严格早于原deadline；stdout/stderr最终file fsync、wait/reap、EOF、remote-result、capture manifest、
-receipt、attestation、每次parent fsync与parent-allocation sample均在此规则内。最终
-parent fsync、parent-allocation sample 与 post-return clock sample 都及时，且下文 live capture resource
-closure 成立时，才可在该最终 sample 点决定 `COMPLETE`。过期检查后不再发起任何持久化/终结 syscall；
-已发起的阻塞 syscall 若晚返，检测它的 post-return clock read 可以发生在 900 秒后，但只能导致停止。
-不声称调用者随后收到 return 的用户态时点也在 900 秒内。任一失败或 partial/full object都保留、不重试；
-没有 sample+5秒、905秒、尾窗或 deadline扩张。receipt、attestation与derived live check仍须装入原15秒
-local-final reserve。
-
-非持久 derived result schema 为 `local-hand-q2-core-derived-acceptance/v1`，exact key 为：
-
-```text
-schema,scope,session_id,receipt_sha256,attestation_sha256,verification_mode,
-receipt_state,attestation_state,local_state,real_task_execution,
-result_evidence_collection,receipt_completion_timing,
-attestation_completion_timing,host_window,capture_resource,missing
-```
-
-- 只有strict-valid marker/package/capture/receipt-v2 chain才可生成derived object；missing/partial/old/
-  extra-key/identity-drift chain或receipt直接拒绝且不生成derived，不硬塞进STOP枚举。strict-valid
-  `STOP_AND_RETAIN` receipt仍可按下表生成STOP。`receipt_sha256` 因而恒为64-hex；`attestation_sha256` 仅在
-  `attestation_state=VALID` 时为64-hex，其余为 null；
-- `verification_mode` 只可 `LIVE`/`RESTART`，且不得由caller JSON选择。`LIVE`只由创建marker的原host
-  进程直接返回：该进程自身从origin至最终sample不得fork后改由child继续、不得exec，且须连续持有原
-  anchor fd、writer的pid/user/pid namespace与starttime、不可序列化的in-memory syscall/clock/resource
-  result；它为唯一carrier创建受控child不改变其自身LIVE资格，任一child接管、新进程、反序列化或只读磁盘入口固定
-  `RESTART`。`receipt_state` 只可
-  `COMPLETE_PENDING_ATTESTATION`/`STOP_AND_RETAIN`；`attestation_state` 只可
-  `VALID`/`ABSENT`/`INVALID`；
-- `local_state` 只可 `COMPLETE`、`RECEIPT_COMPLETE_ATTESTED`、`UNATTESTED_RETAINED`、
-  `STOP_AND_RETAIN`。只有 `LIVE`、valid pair、最终 sample 及时且 live resource closure成立才可
-  `COMPLETE`；`RESTART` 的有效 pair只能 `RECEIPT_COMPLETE_ATTESTED`；
-- timing 只可 `BEFORE_ORIGINAL_DEADLINE`、`AT_OR_AFTER_ORIGINAL_DEADLINE`、`UNPROVEN`。
-  receipt timing只从valid attestation得到 BEFORE；只有
-  `LIVE+COMPLETE_PENDING_ATTESTATION+VALID`进入terminal attestation/resource sampling：其最终sample及时
-  才令attestation timing为BEFORE，实测晚返为AT_OR_AFTER，无法取样为UNPROVEN；其它LIVE组合与RESTART
-  固定UNPROVEN；
-- `real_task_execution` 与 `result_evidence_collection` 必须逐字复制 receipt 的完整
-  `{status,evidence_sha256}` object，不能只复制字符串或由 pair重算/提升。YES/NO要求64-hex evidence，
-  UNKNOWN要求null；pending成功receipt只能是YES/YES。derived `missing`不复制receipt中已由
-  `receipt_sha256`绑定的三字段missing records，只报告local finalization，允许token全集固定为
-  `RECEIPT_STOP_AND_RETAIN,FINALIZATION_ATTESTATION_ABSENT,FINALIZATION_ATTESTATION_INVALID,
-  FINALIZATION_SAMPLE_AT_OR_AFTER_DEADLINE,FINALIZATION_SAMPLE_UNPROVEN,
-  CAPTURE_RESOURCE_UNPROVEN,CAPTURE_RESOURCE_LIMIT_EXCEEDED,
-  RESTART_CANNOT_PROVE_CAPTURE_RESOURCE,RESTART_CANNOT_PROVE_TERMINAL_TIMING`，输出是所有适用token
-  去重后的ASCII排序数组：任一STOP receipt加入`RECEIPT_STOP_AND_RETAIN`，其attestation若present并被
-  强制INVALID还须加入`FINALIZATION_ATTESTATION_INVALID`；pending+ABSENT/INVALID分别加入对应attestation
-  token；LIVE valid pair的final sample晚返/不可得分别加入对应sample token；LIVE resource envelope或
-  actual observation不闭合加入`CAPTURE_RESOURCE_UNPROVEN`，任何已观察/证明值越界加入
-  `CAPTURE_RESOURCE_LIMIT_EXCEEDED`；RESTART valid pair固定加入两个
-  `RESTART_...` token。除此不得增键或自由文本；成功LIVE为`[]`；
-- `host_window` exact key为上述六项再加
-  `attestation_completed_boottime_ns,attestation_completed_monotonic_ns`。前四项恒复制marker；
-  receipt-completed两项只在valid attestation时复制，否则null；最后两项只在
-  `LIVE+COMPLETE_PENDING_ATTESTATION+VALID`且实际取得final sample时为integer，其它LIVE组合和RESTART
-  恒为null。
-
-状态表恰为：
-
-| mode | receipt | attestation | final/resource | local_state | receipt timing | attestation timing |
-| --- | --- | --- | --- | --- | --- | --- |
-| `LIVE` | `STOP_AND_RETAIN` | `ABSENT` | n/a | `STOP_AND_RETAIN` | `UNPROVEN` | `UNPROVEN` |
-| `LIVE` | `STOP_AND_RETAIN` | present | 强制`INVALID` | `STOP_AND_RETAIN` | `UNPROVEN` | `UNPROVEN` |
-| `LIVE` | `COMPLETE_PENDING_ATTESTATION` | `ABSENT` | n/a | `UNATTESTED_RETAINED` | `UNPROVEN` | `UNPROVEN` |
-| `LIVE` | `COMPLETE_PENDING_ATTESTATION` | `INVALID` | n/a | `STOP_AND_RETAIN` | `UNPROVEN` | `UNPROVEN` |
-| `LIVE` | `COMPLETE_PENDING_ATTESTATION` | `VALID` | final sample BEFORE + resource verified/within | `COMPLETE` | `BEFORE_ORIGINAL_DEADLINE` | `BEFORE_ORIGINAL_DEADLINE` |
-| `LIVE` | `COMPLETE_PENDING_ATTESTATION` | `VALID` | final sample BEFORE + resource unproven/over-limit | `STOP_AND_RETAIN` | `BEFORE_ORIGINAL_DEADLINE` | `BEFORE_ORIGINAL_DEADLINE` |
-| `LIVE` | `COMPLETE_PENDING_ATTESTATION` | `VALID` | final sample AT_OR_AFTER | `STOP_AND_RETAIN` | `BEFORE_ORIGINAL_DEADLINE` | `AT_OR_AFTER_ORIGINAL_DEADLINE` |
-| `LIVE` | `COMPLETE_PENDING_ATTESTATION` | `VALID` | final sample unavailable | `STOP_AND_RETAIN` | `BEFORE_ORIGINAL_DEADLINE` | `UNPROVEN` |
-| `RESTART` | `STOP_AND_RETAIN` | absent/present | present强制`INVALID` | `STOP_AND_RETAIN` | `UNPROVEN` | `UNPROVEN` |
-| `RESTART` | `COMPLETE_PENDING_ATTESTATION` | `ABSENT` | n/a | `UNATTESTED_RETAINED` | `UNPROVEN` | `UNPROVEN` |
-| `RESTART` | `COMPLETE_PENDING_ATTESTATION` | `INVALID` | n/a | `STOP_AND_RETAIN` | `UNPROVEN` | `UNPROVEN` |
-| `RESTART` | `COMPLETE_PENDING_ATTESTATION` | `VALID` | terminal/resource timing不可恢复 | `RECEIPT_COMPLETE_ATTESTED` | `BEFORE_ORIGINAL_DEADLINE` | `UNPROVEN` |
-
-derived object只作为当前调用返回值，不落盘、不成为第七output basename、不耗inode。restart不重写
-receipt/attestation、不连接guest、不恢复transport，也不启动/停止业务；它只证明receipt-completed sample，
-不宣称local COMPLETE或历史capture-resource peak。
-
-### 6.1 capture filesystem 与实际资源闭包
-
-marker前必须生成 `capture_resource_preflight`，exact key为 `schema,filesystem,parent,limits`，schema固定
-`local-hand-q2-core-capture-resource-preflight/v1`。本scope把原60 MiB transport ceiling保留为外层拒绝线，
-但为物理capture峰值闭包把本次实际stdout+stderr logical接收上限**收紧为52 MiB（54525952 B）**；
-超过52 MiB立即STOP，绝不借用剩余8 MiB作为输出。这个收紧不增加任何原预算。
-
-`filesystem` 是 `local-hand-q2-core-capture-filesystem/v1` object，exact key为
-`schema,boot_id,user_namespace,mount_namespace,parent,mount,statfs,qualification_source,
-allocation_profile,immutable_projection_sha256,qualification_sha256`：
-
-- `boot_id`为current host canonical UUID；`user_namespace,mount_namespace`各恰含held namespace
-  `dev,ino`；`parent`恰含`dev,ino,mode,uid,gid,nlink`并逐字段等于binding anchor去掉`path`的六字段
-  projection。`mount`恰含
-  `mount_id,major_minor,root,mountpoint,fstype,source,source_resolved_path,source_identity,options,
-  super_options,fs_uuid`；`mount_id`为正63-bit integer，`major_minor`恰含非负`major,minor`，options两个
-  字段是mountinfo escape严格解码后ASCII排序、无重复的token array，root/mountpoint/source为mountinfo
-  escape严格解码后的canonical absolute ASCII，`source_resolved_path`由held no-follow链唯一解析；
-  `source_identity`恰含`dev,ino,rdev_major_minor,mode,uid,gid,nlink`，数值均为非负63-bit，final target必须
-  以`O_RDONLY|O_NOFOLLOW|O_NOATIME|O_CLOEXEC`打开且无fallback、`S_ISBLK`且
-  `rdev_major_minor`逐字段等于mount major/minor。`fstype=ext4`、UUID为lowercase canonical。
-  held parent fd必须以`statx(AT_EMPTY_PATH|AT_NO_AUTOMOUNT,STATX_MNT_ID)`成功返回同一`mount_id`，该ID在
-  held `/proc/self/mountinfo`中恰解析一行；`mount.major_minor`必须逐字段等于
-  `major(parent.dev)`/`minor(parent.dev)`。`statfs`只能来自同一held parent fd的`fstatfs`并恰含非负
-  `f_type,f_bsize,f_frsize,f_bavail,f_favail`，其中`f_type=0xEF53`且`f_bsize=f_frsize=4096`，所有乘法checked；
-  qualification source的`filesystem.major_minor/fs_uuid`又须逐字段等于同object mount值，superblock raw
-  必须从上述held block-device fd读取并以该UUID/4096-byte block/no-bigalloc交叉验证；同device的另一
-  bind mount、另一mount ID、另一options行或path-only source一律不能替代；
-- `qualification_source` schema固定`local-hand-q2-core-ext4-allocation-source/v1`，exact key为
-  `schema,kernel,filesystem,allocator,parent,write_profile,proof,source_bytes,source_sha256`。`kernel`恰含
-  `release,version,machine,build_id_sha256,config_sha256,ext4_module_sha256,sources,loaded_ext4,
-  model_id,model_sha256`；
-  `filesystem`恰含`major_minor,fs_uuid,superblock_bytes,superblock_sha256,features,features_sha256,
-  mount_options,super_options`；`allocator`恰含
-  `mb_group_prealloc_blocks,mb_stream_req_blocks,stripe_blocks,delalloc,discard,parameters,
-  parameters_sha256`；`parent`恰含
-  `identity,statx,statx_sha256,fiemap,fiemap_sha256,xattrs,xattrs_sha256,acl_state,project_id,
-  entry_count,entries_sha256`；
-  `write_profile`恰含`schema,stream_logical_bytes,chunk_bytes,open_flags,reread_flags,sync_profile,
-  basenames_sha256,no_truncate,no_unlink,no_rename`；`proof`恰含
-  `schema,model_path,model_blob,model_sha256,kernel_source_commit,kernel_source_tree,
-  kernel_source_object_proof,kernel_source_manifest_path,kernel_source_manifest_blob,
-  kernel_source_manifest_sha256,claims_sha256,review_path,review_blob,review_sha256,coverage`。
-  `source_bytes/source_sha256`不允许自引用：令`Q`为从完整qualification source删除这两个key后的exact
-  object，则`source_bytes=len(C(Q))`、`source_sha256=H(C(Q))`，并要求`0<source_bytes<=8192`。所有摘要
-  对应held read-only、前后稳定的current source。kernel/build/config/module identity必须命中D中经独立
-  review的exact ext4 source/model allowlist；仅有superblock、`statfs/st_blksize`、guest evidence、历史
-  snapshot或工具环境事实都不构成证明；
-- `kernel.release/version/machine`必须是非空ASCII string；所有`*_sha256`为lowercase 64-hex，所有Git
-  commit/tree/blob为lowercase 40-hex。`model_id=ext4-4k-seven-object-52m-envelope-v1`，其
-  `model_sha256`须同时等于`proof.model_sha256`和D tree中`proof.model_path/model_blob`的文件摘要。
-  `kernel.sources` exact key为`build_id,config,ext4_image`，三项record exact key均为
-  `source_kind,path,dev,ino,mode,uid,gid,nlink,bytes,preimage_profile,sha256`；source kind依次固定
-  `RUNNING_KERNEL_NOTES_RAW,RUNNING_KERNEL_IKCONFIG_RAW,EXT4_MODULE_IMAGE_RAW`，path必须命中D model/review中对应kind的一个exact
-  canonical absolute allowlist path、不得由caller选择，数值identity/bytes均为正或非负63-bit且held
-  regular single-link raw在读取前后稳定。三项统一以`O_RDONLY|O_NOFOLLOW|O_NOATIME|O_CLOEXEC`打开且
-  无fallback，`preimage_profile=FULL_RAW_FILE_BYTES_NO_TRANSFORM`，单项`0<bytes<=16777216`且三项合计
-  ≤33554432 B；各record SHA逐字
-  等于其完整raw bytes SHA，并分别等于顶层三个同名SHA。config压缩形式只在D parser/review明确接受该
-  exact runtime IKCONFIG raw path/hash时可用；静态`/boot/config-*`或其它非runtime config不得使用。
-  `loaded_ext4` schema固定`local-hand-q2-core-loaded-module-measurement/v1`，exact key为
-  `schema,source_kind,path,dev,ino,mode,uid,gid,nlink,bytes,sha256,module_name,image_sha256,
-  source_row_sha256,preimage_profile`；`source_kind=TRUSTED_LOADED_MODULE_SHA256_MEASUREMENT`、
-  `module_name=ext4`，path必须命中D review从同一running-kernel source closure证明语义的exact pseudo-fs/
-  measurement allowlist，record identity/raw以前述held规则读取且`0<bytes<=1048576`，parser必须从完整raw
-  唯一得到kernel实际admit的loaded-module SHA-256；该值逐字等于`image_sha256`及
-  `sources.ext4_image.sha256`。`source_row_sha256`逐字等于D independent review中唯一exact reviewed row的
-  canonical SHA-256；该row exact key为
-  `release,version,machine,build_id_sha256,config_sha256,ext4_module_sha256,
-  loaded_ext4_image_sha256,kernel_source_commit,kernel_source_tree`，前七项逐字段等于本kernel object及
-  `image_sha256`，后两项逐字段等于proof；review须机械证明该image由该source tree和config构建并由该
-  running kernel admit，不能只凭名称/release/srcversion关联。
-  `preimage_profile=FULL_TRUSTED_MEASUREMENT_RECORD_RAW`。仅磁盘module file/build-id/srcversion、release相等
-  都不足以证明loaded bytes；built-in ext4、缺runtime IKCONFIG、缺trusted loaded measurement、缺文件、权限
-  不足、alternate source或UNKNOWN均不使用null/猜测分支而直接qualification失败。
-  `filesystem.superblock_bytes=1024`；`features,mount_options,super_options`均为ASCII排序无重复string array，
-  `features_sha256=H(C(features))`。allocator三个block数为非负integer，`delalloc/discard`为boolean；
-  `qualification_source.filesystem.major_minor/fs_uuid/mount_options/super_options`分别逐字段等于同object的
-  `mount.major_minor/fs_uuid/options/super_options`；其`superblock_sha256`摘要proof model从同mount source held
-  device取得的exact 1024 raw bytes，`features`必须是D固定parser对该raw的唯一完整解析，不允许caller list。
-  `parameters`是proof model声明的完整source-order array，每项exact key为
-  `name,source_kind,path,major_minor,dev,ino,mode,uid,gid,nlink,bytes,sha256,value`，name为非空ASCII、
-  `major_minor`逐字段等于同mount。`source_kind=HELD_FILE`时path为canonical absolute ASCII，其余identity/
-  bytes/SHA非null且held raw与identity前后稳定；`source_kind=MOUNT_OPTION`时path及dev至sha256全部null，value
-  只能由同object options/super_options确定。value只可integer/boolean/ASCII string。array至少且恰一次覆盖
-  `mb_group_prealloc_blocks,mb_stream_req_blocks,stripe_blocks,delalloc,discard`，前三项必须HELD_FILE、后两项
-  必须MOUNT_OPTION；顶层五值逐项等于同名item parsed value，任何model所引用而array未承载的allocator
-  input都使qualification失败；
-  `parameters_sha256=H(C(parameters))`；
-- `parent.identity`逐字段等于同object顶层parent以及capture filesystem顶层parent。`statx` exact key为
-  `mask,mount_id,dev,ino,mode,uid,gid,nlink,size,blocks,attributes,attributes_mask`；所有字段为非负63-bit，
-  `mount_id`须等于同object mount，mask必须包含TYPE/MODE/NLINK/UID/GID/INO/SIZE/BLOCKS/MNT_ID所需位，
-  attributes只允许D model明确处理且被attributes_mask声明的位。`fiemap`为logical顺序extent array，
-  每项exact key为`logical,physical,length,flags`且均为非负63-bit，`length>0`、checked
-  `logical+length`不溢出、extent严格不重叠；空array只允许size/blocks均为0，否则最后一项必须含
-  `FIEMAP_EXTENT_LAST`，任一unknown/unsupported flag失败。`xattrs`为raw-byte-name ASCII排序array，每项exact key为
-  `name,bytes,sha256`，value raw不直接装入artifact。三个摘要分别为`H(C(statx))`,`H(C(fiemap))`,
-  `H(C(xattrs))`；任何FIEMAP不完整flag、非ASCII xattr name、读取前后identity/size/blocks/xattr set漂移即
-  失败。`acl_state`只可`NO_DEFAULT_ACL`，`project_id/entry_count`为非负integer且baseline
-  `entry_count<=249`，为随后七个create保留到全程256项的硬上界。`write_profile.schema=local-hand-q2-core-capture-write-profile/v1`、
-  `stream_logical_bytes=54525952`、`chunk_bytes=65536`、`open_flags`恰为ASCII排序
-  `[O_CLOEXEC,O_CREAT,O_EXCL,O_NOFOLLOW,O_WRONLY]`、
-  `reread_flags`恰为ASCII排序`[O_CLOEXEC,O_NOATIME,O_NOFOLLOW,O_RDONLY]`且无fallback，
-  `sync_profile=BOUNDED_STREAM_WRITE_THEN_FILE_AND_PARENT_FSYNC_V1`，三个no-*字段均true；
-  `basenames_sha256`摘要以下固定持久化顺序string array canonical no-LF：
-  `[.lhqcore-20261003a.carrier-consumed.json,.lhqcore-20261003a.stdout,
-  .lhqcore-20261003a.stderr,.lhqcore-20261003a.remote-result.json,
-  .lhqcore-20261003a.capture-manifest.json,.lhqcore-20261003a.acceptance-receipt.json,
-  .lhqcore-20261003a.finalization-attestation.json]`。实现可以用更小的单次write，但不得改变profile或超过
-  chunk上界；
-- `proof.schema=local-hand-q2-core-ext4-allocation-proof/v1`；model/review path须为repo-relative ASCII，
-  对应blob和文件摘要必须由最终D tree逐项解析。`kernel_source_object_proof` exact key为
-  `schema,source_kind,repository,object_format,path,dev,ino,mode,uid,gid,nlink,bytes,sha256`；schema固定
-  `local-hand-q2-core-kernel-source-object-proof/v1`、source kind固定
-  `HELD_GIT_SHA1_OBJECT_PROOF_ARCHIVE`、`object_format=sha1`，repository为D independent review冻结的
-  canonical ASCII source repository identity，path为同一review allowlist中的canonical absolute private
-  locator、不得由caller选择。该对象必须是offline gate在origin前以
-  `O_RDONLY|O_NOFOLLOW|O_NOATIME|O_CLOEXEC`无fallback读取且前后identity/size稳定的regular single-link
-  raw，数值identity/bytes为非负63-bit，`0<bytes<=33554432`且SHA摘要完整raw。它是预先生成、host-only、
-  read-only的D release dependency，绝不复制进field package/capture/guest，也不在F1/F2创建，故不扩大
-  32 MiB carrier stdin、physical/admission或64 MiB capture预算；缺失、权限不足或摘要不符即
-  `NOT_ISSUED`。
-  object-proof raw本身必须是canonical `local-hand-q2-core-kernel-source-git-object-archive/v1`：顶层exact
-  key为`schema,repository,object_format,commit,objects`，repository/object_format逐字段等于locator，commit
-  等于`kernel_source_commit`；objects按oid ASCII排序，每项exact key为
-  `oid,type,bytes,sha256,content_base64`，type只可`commit/tree/blob`，strict base64解码后的raw payload长度/
-  SHA-256逐字段等于bytes/SHA，且
-  `SHA1(type + " " + decimal(bytes) + NUL + raw_payload)=oid`。objects必须恰为解析该commit、其root tree、
-  manifest中每个path沿途tree以及最终blob所需的最小闭包，不得缺失或夹带；commit raw中唯一`tree`
-  oid必须逐字等于`kernel_source_tree`，每个manifest path须由该root tree逐component解析到同row blob，
-  每个row `sha256`须等于对应blob raw payload SHA-256。manifest path须为repo-relative ASCII、blob须由
-  final D tree解析到其held bytes；`kernel_source_manifest_sha256`摘要该source-order manifest canonical
-  no-LF（每项exact key `path,blob,sha256`）。任一commit/tree/path/blob/hash/archive relation不成立都失败，
-  不得把manifest当作自述allowlist。kernel source commit/tree必须由D review交叉固定为实际运行kernel
-  build/config/module allowlist所依据的完整source tree；该manifest必须覆盖regular-file data/extent、
-  xattr/EA_INODE、directory htree/
-  insert、delalloc/preallocation、quota/LSM hook、journal/sync和failure-residue的所有allocation路径。
-  `claims_sha256`摘要exact-key
-  `effective_stream_logical_bytes,max_stream_tail_rounding_bytes,child_inode_metadata_bound_bytes,
-  transient_preallocation_bound_bytes,parent_growth_bound_bytes,uncovered_metadata_bound_bytes,
-  uncovered_metadata_inode_bound`且值依次为`54525952,8190,2097152,4194304,2097152,1048576,7`的canonical
-  object；独立review文件必须逐项证明D model可接受的每一组config/module/feature/tunable value class都由
-  该source closure导出并落在bound内；runtime qualification只能命中其中一个exact reviewed row，不能把
-  未知current value在现场加入allowlist。`coverage`固定
-  `ALL_PROFILE_ALLOCATION_PATHS_REVIEWED_NO_UNKNOWN_HOOKS`。任一source file/hook/config关系未知、manifest
-  不完整、review不是final D的held bytes或模型不能证明全过程peak时，qualification失败；本文不预先断言
-  当前field kernel/ext4满足该profile；
-- parent `entries_sha256`的preimage是按raw ASCII name排序的完整held directory inventory，每项exact key
-  `name,dev,ino,mode,uid,gid,nlink`；PRE_MARKER baseline最多249项，随后各phase最多为baseline加已创建
-  fixed-order local basename的source-order subsequence且全程不超过256项；`.`/`..`不入列，非ASCII、重复、
-  读取不闭合即停止。成功路径subsequence必须为完整连续七项；失败路径可以在固定顺序中缺项或提前结束，
-  尤其remote-result缺失后仍可创建capture-manifest与及时STOP receipt，但不得逆序、额外命名或为STOP创建
-  attestation。每个已创建新entry identity必须等于对应file；partial phase只留内部失败证据，不序列化为
-  成功aggregate。
-  `acl_state`与xattr/LSM/quota hook closure、FIEMAP、完整ext4 feature/mount flag及allocator参数必须进入
-  exact model。same-UID/change-and-revert仍由第2节第3项premise承担，不能被endpoint digest冒充为技术排除；
-- `allocation_profile` exact key为
-  `profile,source_kind,source_bytes,source_sha256,block_bytes,cluster_bytes,
-  effective_stream_logical_bytes,max_stream_tail_rounding_bytes,child_inode_metadata_bound_bytes,
-  transient_preallocation_bound_bytes,parent_growth_bound_bytes,uncovered_metadata_bound_bytes,
-  uncovered_metadata_inode_bound`。唯一profile为`ext4-4k-seven-object-52m-envelope-v1`，
-  `source_kind=allowlisted-kernel-ext4-model-and-current-held-facts-v1`，source bytes/SHA逐字段等于上述
-  qualification source，`block_bytes=cluster_bytes=4096`并证明no-bigalloc；其余固定为
-  `54525952,8190,2097152,4194304,2097152,1048576,7`。exact model必须覆盖七个basename的data-tail、
-  worst-case fragmented extent tree、external xattr/EA_INODE、directory htree/insert、delalloc及inode/group
-  preallocation、失败残留和sync allocation；证明child persistent allocation、瞬时allocator reservation、
-  parent growth及未进入child `st_blocks`的bytes/inodes分别不超过这些界。任一hook/source/tunable未知、
-  model不匹配或界无法证明即marker前`NOT_ISSUED`；不得补零、请求host sudo、改配置或使用fallback；
-- 令immutable projection `I`的schema固定`local-hand-q2-core-capture-immutable-projection/v1`，exact key为
-  `schema,boot_id,user_namespace,mount_namespace,parent,mount,statfs_static,kernel,filesystem_static,allocator,
-  parent_policy,write_profile,proof,allocation_claims`。`schema`取上述I schema，`boot_id`至`mount`五项逐字段
-  复制capture filesystem；
-  `statfs_static`恰含并复制`f_type,f_bsize,f_frsize`；kernel/allocator/write_profile/proof复制qualification
-  source同名value。`filesystem_static` exact key为
-  `major_minor,fs_uuid,superblock_bytes,superblock_static,superblock_static_sha256,mount_options,super_options`；
-  除两个superblock-static字段外逐字段复制qualification filesystem。`superblock_static` exact key为
-  `block_bytes,cluster_bytes,inode_bytes,descriptor_bytes,blocks_per_group,clusters_per_group,inodes_per_group,
-  feature_masks,feature_values`；前七个字段为D fixed parser从同一1024-byte raw superblock取得的非负
-  63-bit integer，block/cluster恰为4096且其余必须命中reviewed model row。`feature_masks`和
-  `feature_values`各恰含非负32-bit `compat,incompat,ro_compat`；masks由D model/review固定且不得由caller/
-  field选择，values逐字段等于current raw feature word按位AND同名mask。
-  `superblock_static_sha256=H(C(superblock_static))`。initial qualification仍保留完整raw
-  `filesystem.superblock_sha256`与完整features；D review必须把initial全部feature bits分成上述要求稳定且
-  allocation-relevant的fixed masks，或明确列出的正常运行可变且对本profile分配界无影响的bits。任一
-  unknown/unclassified bit、mask遗漏allocation path或初始非reviewed组合都失败；不得用zero mask规避。
-  每个phase从同一held block-device fd重读完整1024 bytes并重建filesystem_static；允许raw中的free block/
-  inode counters、wtime、kbytes-written、journal/recovery state和随之变化的superblock checksum变化，且仅在
-  D review逐字段证明它们不改变本profile allocation bound时才排除。完整raw SHA只证明initial
-  qualification，不参加phase equality。
-  `parent_policy` exact key为
-  `identity,statx_mask,statx_attributes,statx_attributes_mask,xattrs,xattrs_sha256,acl_state,project_id`；identity及
-  xattrs至project_id复制qualification parent同名value，两个statx字段分别逐字段复制
-  `qualification_source.parent.statx.attributes/attributes_mask`，`statx_mask`复制其`statx.mask`；
-  `allocation_claims`是allocation profile去掉`source_bytes,source_sha256`后的exact object。
-  `immutable_projection_sha256=H(C(I))`。它明确排除仅允许按phase变化的`f_bavail,f_favail`、parent
-  `statx.size/statx.blocks`、`statx_sha256`整体、`fiemap/fiemap_sha256/entry_count/entries_sha256`、
-  filesystem完整raw `superblock_sha256`及上述逐项允许的runtime-mutable superblock fields，以及由完整source派生的
-  `source_bytes/source_sha256/qualification_sha256`，不得排除其它字段。
-- `qualification_sha256`摘要除自身外完整初始filesystem canonical no-LF。marker、每次create边界和LIVE
-  terminal closure都须从held fd重新构造`I`并重验writer；current I必须逐字段等于从marker preflight
-  重建的initial I，且`H(C(I))`等于marker中的`immutable_projection_sha256`。phase-mutable parent事实每次create前必须恰等baseline加已完成fixed-order subsequence、每次
-  file+parent fsync后再按sample合同闭合，且任何其它entry/identity/blocks下降都算漂移。漂移即marker前
-  `NOT_ISSUED`或marker后`UNPROVEN_LIVE/STOP_AND_RETAIN`。
-
-allocation sample schema固定`local-hand-q2-core-capture-parent-sample/v1`，exact key为
-`schema,phase,after_basename,boottime_ns,monotonic_ns,size,blocks,allocated_bytes,sync_state,
-entry_count,entries_sha256`。preflight `parent`是`phase=PRE_MARKER,after_basename=null`的read-only sample，
-`allocated_bytes=blocks*512,sync_state=READ_ONLY_NOT_SYNCED`，其两钟在原origin/deadline内；它不得调用
-fsync。该sample的`size,blocks,entry_count,entries_sha256`须逐字段等于qualification source parent的
-`statx.size,statx.blocks,entry_count,entries_sha256`，其statx identity六字段又须等于filesystem parent；
-所有这些值必须来自同一次held baseline epoch，不能跨时点拼接。后续七phase sample的
-`sync_state=FILE_AND_PARENT_FSYNC_COMPLETE`。`limits` exact key为
-`allocated_bytes,inodes,effective_stream_logical_bytes,qualification_source_bytes,parent_entries`，值固定
-`67108864,16,54525952,8192,256`。同一writer/mount下必须稳定证明
-`f_bavail*f_frsize>=66363390`且`f_favail>=14`，并在紧邻marker前重验；不足/overflow/UNKNOWN即
-`NOT_ISSUED`。
-
-五个非stream object的role-specific raw/base-data ceiling固定为：marker `16384/16384`、remote-result
-`262144/262144`、capture-manifest `1048576/1048576`、receipt `1048576/1048576`、attestation
-`4096/16384` B；后一个数是本envelope保留的4KiB-rounded base-data ceiling，五项合计恰为2392064 B。
-每次对应`O_EXCL`前，完整canonical raw必须已在RAM中且先验证raw长度及
-`ceil(raw_bytes/4096)*4096<=role base ceiling`；失败不得create。缺失/跳过角色的额度不得转给其它对象，
-所有仍可能创建的角色始终按各自完整ceiling保留；extent/xattr等不在base data中的child allocation只能
-使用另列2097152 B model bound。因而2392064是可执行的pre-create上界，不是终态`st_blocks`止损。
-
-pre-marker conservative peak reservation固定为：
-
-| 分量 | bytes | inodes |
+| 对象 | 本版 logical bytes 最大值 | inode 数 |
 | --- | ---: | ---: |
-| 两流logical + 两个4KiB tail | 54534142 | 2 |
-| 七child的worst fragmented extent/xattr metadata | 2097152 | 0 |
-| marker/remote-result/capture-manifest/receipt/attestation base-data ceilings | 2392064 | 5 |
-| child peak小计 | 59023358 | 7 |
-| transient inode/group preallocation | 4194304 | 0 |
-| parent directory growth | 2097152 | 0 |
-| child `st_blocks`外metadata/EA inode | 1048576 | 7 |
-| conservative peak合计 | 66363390 | 14 |
-| 原capture上界 / 剩余 | 67108864 / 745474 | 16 / 2 |
+| marker | 16384 | 1 |
+| stdout，含 HELLO/frame 开销 | 54525952 | 1 |
+| stderr | 4194304 | 1 |
+| remote-result，重复 payload 仍再次计费 | 262144 | 1 |
+| capture manifest | 262144 | 1 |
+| acceptance receipt | 65536 | 1 |
 
-以上是D对固定profile须证明的pre-write/全过程peak界，不是写后`st_blocks`止损。共享ext4 journal/
-superblock的全局写放大只有exact model证明不属本scope独占allocation时才可排除；其它per-object allocation
-必须落入上表。qualification source完整复制进升级后的
-`local-hand-q2-core-capture-manifest/v2`之`resource_qualification`；capture manifest v2顶层在原v1 exact
-keyset增加且仅增加该key（canonical JSON仍按key排序），value exact key为
-`preflight_sha256,qualification_source`，前者摘要完整marker
-preflight canonical no-LF，后者逐字段等于marker中的source。manifest仍≤1048576 B且由receipt绑定；
-v1 capture manifest不能生成成功receipt v2。
+stdout + stderr **合计**不得超过 54525952 B（52 MiB），因此六文件 logical 总量最大
+55132160 B，低于总 application ceiling 67108864 B。固定最多六个文件/inode，同样不超过原 16。
+原 frame 58716144 B 与 carrier 合计 62914560 B 拒绝门保持，但 52 MiB 接收/capture 门更早触发；不能借剩余额度。
+原单次 read 的 remaining+1 sentinel 仍只用于判定溢出，超出的 chunk 不进入 capture，不把探测字节
+伪装成已保存的结果。remote-result 不以内容已在 stdout 中为由去重。
 
-LIVE parent aggregate schema固定`local-hand-q2-core-capture-parent-allocation/v1`，exact key为
-`schema,session_id,consumption_sha256,filesystem_sha256,parent_identity,baseline,phases,final,
-observed_endpoint_positive_growth_bytes,parent_growth_bound_bytes,growth_inodes,
-uncovered_metadata_bytes,uncovered_metadata_inodes,coverage,complete`。`filesystem_sha256`逐字等于marker
-filesystem `qualification_sha256`；`parent_identity`等于binding anchor去掉path的projection；baseline
-的exact type为`local-hand-q2-core-capture-parent-sample/v1`并逐字段等于
-`marker.capture_resource_preflight.parent`，不得塞入整个preflight。成功aggregate的phases必须恰为
-`MARKER,STDOUT,STDERR,REMOTE_RESULT,CAPTURE_MANIFEST,RECEIPT,ATTESTATION`七项，每项使用上述sample并
-在对应file与parent fsync后取得；inventory必须恰为baseline加完整固定顺序七basename，旧entry身份不变、
-新entry身份等于对应file。所有blocks不下降，final等于最后一项，endpoint positive growth恰为
-`max(phases[].allocated_bytes)-baseline.allocated_bytes`且≤2097152；
-`parent_growth_bound_bytes=2097152,growth_inodes=0,
-uncovered_metadata_bytes=1048576,uncovered_metadata_inodes=7,
-coverage=ALL_SEVEN_ENDPOINTS_PLUS_PREQUALIFIED_PEAK_ENVELOPE,complete=true`。endpoint只作漂移/下界复核，
-不冒充中间peak；任何缺项/下降/inventory漂移产生内部partial evidence但不序列化aggregate成功对象。
+固定 writer 必须在每次创建前检查 basename、单次 O_EXCL 与对象数；每次写入前按完整待写 chunk
+检查 role cap、两流合计和总 logical 余额。允许 short-write 的 write-all，但每个实际正返回字节均
+单调计费；禁止 seek 后覆盖、truncate、重新打开追加或释放额度。输入超过本角色 cap 即停止，不能裁剪
+JSON、丢弃 evidence 或借其它对象的余额来写出成功。不得在 six-object 集合之外增加本 scope 的持久 writes。
 
-derived `capture_resource` schema固定`local-hand-q2-core-capture-resource/v1`，exact key为
-`schema,state,filesystem_sha256,parent_allocation,files,file_allocated_bytes,
-child_peak_allocated_bound_bytes,transient_preallocation_bound_bytes,parent_growth_allocated_bytes,
-uncovered_metadata_bytes,uncovered_metadata_inodes,total_allocated_bytes,total_inodes,
-limit_allocated_bytes,limit_inodes,remaining_allocated_bytes,remaining_inodes,within_limits`。
-`state`只可`VERIFIED_LIVE,UNPROVEN_LIVE,UNPROVEN_RESTART`，filesystem SHA恒复制合格marker digest，
-limits恒为67108864/16。
+每次 create、成功 write、file fsync 和 parent fsync 返回后，以 held fd 对已创建的六文件实际集合
+采样 `st_blocks*512`，并重验类型、dev/ino/name、uid/gid、0600、nlink=1、bytes 和稳定性。
+任何 observed 合计 >67108864 B、对象数 >6/16、身份不符或采样失败立即停止后续持久动作并保留。
+保存内存中的 `max_observed_allocated_bytes`，不是只看最后一次；receipt 写前也必须检查已经观察的
+余额与 logical cap，写后仍做真实采样。`st_blksize` 向上取整、free space 或 guest quota 不能替代
+实际值，也不能作为下一次 syscall 物理分配增量的证明。
 
-- `VERIFIED_LIVE`只允许上述complete aggregate；`files`依次为
-  `CONSUMPTION_MARKER,STDOUT,STDERR,REMOTE_RESULT,CAPTURE_MANIFEST,RECEIPT,ATTESTATION`，逐项恰含
-  `role,basename,bytes,allocated_bytes,sha256,dev,ino,mode,uid,gid,nlink`，basename逐项等于固定七名，
-  `(dev,ino)`两两不同、dev等于parent dev、owner等于bound writer、0600/nlink1且稳定。
-  `file_allocated_bytes`为七项`st_blocks*512`之和且不得超过59023358；四个bound/metadata字段依次固定
-  `59023358,4194304,2097152,1048576,7`，`total_allocated_bytes=66363390,total_inodes=14,
-  remaining_allocated_bytes=745474,remaining_inodes=2,within_limits=true`。total是全过程保守peak charge，
-  不以较小final allocation退款；current free已反映actual child时不得第三次加actual。
-- `UNPROVEN_LIVE`或`UNPROVEN_RESTART`时，除`schema,state,filesystem_sha256`和两个fixed limit外，
-  `parent_allocation,files,file_allocated_bytes,child_peak_allocated_bound_bytes,
-  transient_preallocation_bound_bytes,parent_growth_allocated_bytes,uncovered_metadata_bytes,
-  uncovered_metadata_inodes,total_allocated_bytes,total_inodes,remaining_allocated_bytes,remaining_inodes,
-  within_limits`全部为null。LIVE只要profile/endpoint/inventory/file/total任一不闭合即用前者并STOP；
-  RESTART固定后者。不得从当前endpoint、现存文件或valid pair恢复历史peak。
+**观测超限会停止，但可能已经产生超限 allocation；未观测瞬时 allocation 也可能更高。**
+本版不声称上述用户态检查强制了全过程物理上限，不把 parent/journal/共享 ext4 元数据归零或冒充
+已计入六文件 `st_blocks`。不读取 raw block device、superblock、loaded module、runtime IKCONFIG 或
+内核 Git proof archive，也不以缺少它们阻塞这条已明确降低物理保证的路线。普通 host 身份仍需通过
+原 held-path 权限和对象安全检查；历史目录记录不是当前资格证书。
+
+marker 及 output 每次验证性回读都沿用 held parent 的 `O_RDONLY|O_NOFOLLOW|O_NOATIME|O_CLOEXEC`，
+无取消 NOATIME 的 fallback。任一权限不满足，marker 前 NOT_ISSUED，之后 STOP_AND_RETAIN。
+不为满足这些条件索取 host sudo 或修改权限。公开诊断只报告固定 reason code、数字计数/身份与摘要，
+不输出 credentials、private raw、完整私有路径或环境变量。
+
+### 6.2 receipt 与成功判断
+
+capture manifest 保留 `local-hand-q2-core-capture-manifest/v1` 及原完整字段。
+`files` 恰为已创建 marker/stdout/stderr/remote-result 的 basename 排序子集；成功时四项俱全。
+每项 allocated_bytes 都是实际 `st_blocks*512`。manifest 不列自身和未来 receipt；receipt 的
+`capture.bytes/inodes` 仍是此子集，完整六文件总量由 live finalizer 另行实际计算，不能混淆。
+
+receipt 保留 `local-hand-q2-core-local-acceptance-receipt/v1` 与原十二项 exact top-level keys：
+`schema,scope,session_id,consumption,transport,remote_result,wait,capture,real_task_execution,
+result_evidence_collection,state,missing`。state 仍只为原 COMPLETE 或 STOP_AND_RETAIN。
+原 package/output/remote-result/session/admission 摘要链、所有 case semantic PASS、真实 exit status、
+两个 EOF、fsync/reread 与两项 `{status,evidence_sha256}` truth summary 均必须通过，不放宽成字符串或假值。
+在磁盘写 COMPLETE 前这些先决条件必须已满足；写出的值只是待 live caller 完成最后持久化的记录。
+只有下列流程全部成功，live 调用端才能接受并返回成功；单独重读磁盘 COMPLETE 字样没有这项资格。
+
+receipt 的唯一持久化顺序为：held-parent O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY|O_CLOEXEC,0600；
+write-all；file fsync；fstat/close；同 parent 以 NOFOLLOW/NOATIME 重开；同 inode/owner/mode/nlink
+完整回读相等与 stable fstat；close；parent fsync；最终六文件 allocation/identity 采样；双钟终结采样。
+所有步骤复用 marker/local binding 中实际 host writer fsuid/fsgid，不假设是 guest root:root。
+capture manifest 和其它文件也保留原 file/parent fsync、身份与回读要求。
+
+origin 后每个可能阻塞的 persistence/termination/resource-observation syscall（clock read 自身除外）
+发起前和返回后都按 BOOTTIME-first、MONOTONIC-second 检查，严格早于 marker 原 origin+900s。
+最终 receipt parent fsync、allocation/identity 检查及 post-return clock sample 都必须及时；15s local-final
+reserve 从原 transport 留给 finalizer，不增加窗口。及时发起但晚返只能失败，之后不再发起持久/终结
+调用；不增加905秒尾窗，不保证磁盘调用一定能按时返回，也不宣称用户收到函数 return 的时间仍在窗内。
+原 carrier 的超时终止/退出确认规则仍必须在其既有时限内安排，不以本条另发 unit 或 request。
+
+receipt 创建前已知失败，仅在原剩余时间、role/logical 余额与实际观测限额全部允许时，最多尝试一次
+STOP_AND_RETAIN receipt。create 前检查失败就保持 absent；O_EXCL 后任何失败、无法完成的短写/零写入、晚返、fsync/
+回读异常或资源超限保留已形成的 partial/full 对象。已经创建的 COMPLETE receipt 如最终步骤失败，
+不补写或改成 STOP；live 调用报告失败，不能因盘上文字而成功。无重试、补 seal 或 attestation。
+
+成功返回沿用现有 finalizer 的 receipt、capture、semantic、files 与 total_allocated_bytes/total_inodes，
+另附仅存在于该原调用进程返回值中的 `capture_accounting` object，exact keys 为
+`mode,logical_bytes_written,created_inodes,max_observed_allocated_bytes,full_filesystem_peak_proven`。
+mode 固定 `APPLICATION_LIMIT_AND_OBSERVED_FILE_ALLOCATION`，三项数值字段按实际计费；
+`full_filesystem_peak_proven` 恒为 false。该对象不落盘，不成为新 runtime 文件或原 receipt 增键。
+调用端报告功能结果时必须同步说明此计费语义，不能省略后宣称原全物理保证通过。
+
+没有独立的 local restart verifier 或 derived-acceptance schema。进程退出后只保留原始文件供调查；
+它们不自证最后 fsync、deadline 或完整物理峰值，不能导入后重新派生 COMPLETE。
+guest H11 仍严格恢复 H11 自己 origin 的原 ledger/request/execution/unit/grant/deadline，
+只做原允许的查询与恢复确认，不重启业务、不读取/打包业务 result、不新增 grant/unit、不刷新 deadline。
 
 ## 7. 不变项、条件顺序与成功定义
 
@@ -1201,10 +867,10 @@ limits恒为67108864/16。
   `b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23`；projection
   11811 B / SHA-256 `55f555fc225edca943b8c86cee8119c4878f5ec1e9503a084ba7a560cf2c991d` /
   89 entries；原 harness 闭包保持。
-- physical 188743680 B/13440、admission 289406976 B/16512、2090 CPU-s、peak
-  2751463424 B/1160 pids、32 MiB input、60 MiB outer output refusal、64 MiB/16-inode capture 保持；
-  本修订在这些原上界内把本次可接受stdout+stderr实际logical capture进一步收紧为52 MiB，不能使用余下
-  8 MiB。
+- guest physical 188743680 B/13440、admission 289406976 B/16512、2090 CPU-s、peak
+  2751463424 B/1160 pids、32 MiB input、60 MiB outer output refusal 保持；
+  host capture 的 64 MiB/16 inode 按§6改为应用上限与实际文件分配观测验收，绝非原全过程物理保证。
+  本次可接受stdout+stderr实际logical capture收紧为52 MiB，不能使用余下8 MiB。
 - host 900 s、remote unit 800 s、guest cap 750 s、2 s mapping、15 s local final reserve、45 s remote
   reserve、315/150/120 s case/preparation/owner bounds均不延长。
 - 最多一次 O_EXCL marker、最多一次 carrier request、一次 BIND/package/EOF；不 reconnect、retry、
@@ -1229,5 +895,4 @@ logical namespace `lhqcore-20261003a`、installation `local-hand-core-acceptance
 
 只有本 scope 的 A/B/C 后完成实现、全部 static/live/release 门通过、两次独立 package build/parser
 逐字节一致并经独立审计，才可消费仍未消费的唯一现场批次。真实任务执行、退出确认、结果/证据收回
-以及 live local `COMPLETE` 必须分别报告；任一缺失都不能以 source test、package freeze、pending
-receipt、restart attested 状态或批准文字代替。
+以及 live local `COMPLETE` 必须分别报告；任一缺失都不能以 source test、package freeze、磁盘receipt字样或批准文字代替。
