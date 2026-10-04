@@ -1136,19 +1136,24 @@ The local private-package review at source D `e2a40bd4b0e0b17ebe2a2ad3f533bdace3
 found a conflict between the pinned cloud-init bytes and the full sudoers literal required by
 binding amendment A `0bdb49cae5586be60a7ba31d4a8e8367854d1e8c`. See
 [the exact review](docs/a2-execution/Q2_CORE_PRIVATE_PACKAGE_REVIEW_20261005.md).
-Scope `LH-Q2-CORE-CLOUD-INIT-GRANT-BINDING-v1` is **OPEN**, only for the proposed fixed-source
+Scope `LH-Q2-CORE-CLOUD-INIT-GRANT-BINDING-v1` is **CLOSED for G1–G3**, only for the fixed-source
 normalization in [requirements](docs/a2-execution/q2-core-cloud-init-grant-binding/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-cloud-init-grant-binding/ARCHITECTURE.md) and
 [G1–G3 plan](docs/a2-execution/q2-core-cloud-init-grant-binding/IMPLEMENTATION_PLAN.md).
-This is not a closure or implementation authorization. Exact proposed A is
+Exact approved A is
 `018bdd7f09998290f536ab5a3726ccb4123dffa3`; its three document hashes and decision request are in
 [the OPEN baseline record](docs/governance/Q2_CORE_CLOUD_INIT_GRANT_BINDING_BASELINE.md).
-Owner B and independent bookkeeping-only C must precede new implementation of this affected conversion.
+Owner B is retained verbatim in
+[the Owner decision](docs/governance/Q2_CORE_CLOUD_INIT_GRANT_BINDING_OWNER_DECISION.md), event
+`LH-Q2-CORE-CLOUD-INIT-GRANT-BINDING-CLOSURE-20261005-01`. This independent bookkeeping-only
+commit is CLOSED C; it preserves A's exact three documents and historical OPEN baseline bytes and
+adds no implementation. New D must descend from C; do not squash C with implementation.
 Unchanged R, readable direct source/integrity, mandate, Owner authority and no-exception change rules apply.
-The original source hash, account and sudo privilege must not be replaced, and the literal check must not
-be silently deleted. Existing unaffected closures remain valid; original conditional single F1, budgets,
-deadlines, production E3 restriction and paused side work remain. No package or field action was issued
-by this read-only review; historical nonissuance is not current marker-absence evidence.
+The original source hash, account and sudo privilege must not be replaced. Only A's bounded same-mapping
+normalization and explicit source interpretation change are approved; current guest grant/identity checks
+remain. Existing unaffected closures remain valid; original conditional single F1, budgets, deadlines,
+production E3 restriction and paused side work remain. Complete original/new release predicates still precede
+any field action. This C issues no package or field action; historical nonissuance is not current marker-absence evidence.
 
 ### Continuing constraints
 
