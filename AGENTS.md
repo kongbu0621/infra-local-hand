@@ -1085,6 +1085,32 @@ usage evidence remain incomplete. The dispatcher is 262044/262144 bytes; no extr
 candidate/wheel change, budget increase or refreshed deadline is authorized. The release allowlist
 remains empty; this followup issued no marker, carrier or guest task and collected no guest result.
 
+### Core completion adjustment proposal
+
+Scope `LH-Q2-CORE-COMPLETION-ADJUSTMENT-v1` is **OPEN / NOT APPROVED**, with proposed C1–C3 at
+documentation A `851a1afe4e55196212aa6913e81e0722deed1032`, tree
+`5b6c8d3a55d8d0678f2b4543f13df32016630fdd`.
+The [baseline registration](docs/governance/Q2_CORE_COMPLETION_ADJUSTMENT_BASELINE.md) pins its
+[requirements](docs/a2-execution/q2-core-completion-adjustment/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-completion-adjustment/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-completion-adjustment/IMPLEMENTATION_PLAN.md).
+R, direct source/integrity, Owner mandate and Authority, no exceptions, and change control remain unchanged.
+No Owner B or independent CLOSED C exists for this scope; do not infer one from routine instructions to continue.
+
+The proposal changes only the dispatcher source cap to 524288 bytes and replaces unproved instantaneous
+physical-peak guarantees for the eleven non-quota pools with application accounting and complete boundary
+observations. It preserves the 21 existing project-quota roots, credential/identity checks, numerical runtime
+limits, frozen candidate/wheel, original clocks and the conditional single F1. Its remote-result/v2 explicitly
+reports the limited guarantee; original package/session/marker versions and fixed file/member sets remain.
+Cross-device conservative reservations are not consumable budgets. H11 business-result reads remain forbidden.
+
+These changes are documentation only: current source cap remains 262144 and current release blockers remain.
+Only the affected new implementation scope is OPEN. Unaffected CLOSED D1–D4 work remains authorized.
+The original-scope fix `631677039af3b17392f3269e39a4b1f409fc4f08` is already published and its CI is 3/3 success;
+it stops executable binding after late I/O and does not implement this proposal.
+Current admission, usage and complete release review remain incomplete. There is no new field package,
+marker, carrier or case execution from this followup; no observed old guest state is inferred.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

@@ -1,5 +1,53 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
+## 当前核心复核与下一步
+
+已发布修复 D `631677039af3b17392f3269e39a4b1f409fc4f08`，tree
+`8408d12541a9bb421373e43a3ea801f6dd59ccfa`，父提交为本地 Codex 的
+`342c0a59ce9c7b7709ee08e70f7f4cdf2fb8dfe6`。只继续既有 CLOSED 核心范围。
+
+安装执行身份绑定中的 open、fstat、capability xattr、pread、最后按名称 stat 现在各自使用
+原双时钟 guard；晚返回、晚异常后不继续下一次读取或启动子进程。晚取得的 fd 立即关闭，
+原 inode、字节内容、所有者、capability 和名称绑定校验保留。没有增加宽限期或重试。
+这仍不能中断阻塞中的内核调用。
+
+精确旧源 `342c0a5` 的新增回归为 **6 failed / 2 passed**；修复后 **8 passed**，与原三组
+安装测试合计 **65 passed**。核心回归 **680 passed / 1 skipped / 1 deselected**。
+被 deselect 的仍是已记录的云执行环境 PID 与 `/proc/self/stat` 差异测试，其断言没有改动；
+普通 runner 的 CI 仍运行它。准确 D 的
+[CI 37199747854](https://github.com/kongbu0621/infra-local-hand/actions/runs/37199747854)
+已 **3/3 success**：Linux **4599 passed / 85 skipped**，独立 installed verifier
+**94 checks / 292 commands**；Windows **1721 passed / 1253 skipped**，独立 installed
+verifier **10 checks / 10 commands**。前一实现 `3f1c474` 的 CI 37197973710 也已全部成功。
+
+当前 dispatcher **262072 / 262144 B**，SHA-256
+`cd5fd46627c4090ab35c8e81e137c9c51d8b99fdcf00a338aafe790bbcfd731f`。
+本修复没有改源码上限、其他资源限额、固定候选/wheel 或原条件单次 F1。
+
+本轮还定位了两个不能靠追加小修复消除的设计问题：
+
+1. 原 262144 B 源码上限仅剩 72 B。旧完整开发祖先的 admission 最小引用闭包与当前实现合并，
+   在修复前基线已为 **319323 B**，还没有包含移植修正与实际 usage；这是已存在代码的测量，
+   不是“所有可能实现都不能压缩”的证明。继续为该上限反复改写不等于补齐核心链。
+2. 原全过程磁盘物理峰值保证缺少观测来源。外部 compiler/venv 的中途临时文件、SQLite
+   DB/WAL/SHM，以及 journal/capture/carrier 的非 quota 文件，都没有全过程物理峰值证据。
+   目录前后扫描、逻辑大小和结束 seal 不能替代该保证。七根 project quota 的原约束另行保留。
+
+最窄完成调整见 [需求](../q2-core-completion-adjustment/REQUIREMENTS.md)、
+[架构](../q2-core-completion-adjustment/ARCHITECTURE.md)、
+[实施方案](../q2-core-completion-adjustment/IMPLEMENTATION_PLAN.md)。准确 A 为
+`851a1afe4e55196212aa6913e81e0722deed1032`，其
+[OPEN 登记](../../governance/Q2_CORE_COMPLETION_ADJUSTMENT_BASELINE.md)列明全部摘要及决定请求。
+这是 **OPEN 文档提案**，
+不是已批准实现：源码 cap 和存储保证尚未修改，原 blocker 与空 release allowlist 保持。
+既有不受影响 CLOSED 工作可以继续；不能把本轮常规“推进核心”指令编造成对新精确保证的批准。
+
+完成核心的实际顺序是：明确这两项边界后接回 current admission，完成 carrier 实际计数和
+完整资源观察，独立核对最终源码/包，再由本地 Codex 用既有连接执行原条件单次
+H01→Q4→H11。H11 只恢复自己的原 ledger，不能为统计重读业务 result。
+本轮未连接 guest、未发行 marker/request、未运行任何真实核心 case。测试不是现场验收。
+namespace/watchdog 及其他分支功能继续暂停，production E3 限制不变。
+
 ## Current preparation capacity collector followup
 
 Implementation D is `3f1c4745d8ee888f0c0057794532aa78cfcddbbe`, tree
