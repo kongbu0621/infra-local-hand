@@ -39,6 +39,7 @@ require = contract.require
 # frozen D source only to *validate* returned bytes; it never calls dispatch or
 # any field effect.
 dispatcher_contract = _helper("q2_core_delivery_dispatcher")
+capture_contract = _helper("q2_core_capture")
 
 HOST_WINDOW_NS = 900_000_000_000
 CLOCK_MARGIN_NS = 2_000_000_000
@@ -54,6 +55,7 @@ CAPTURE_INODE_LIMIT = 16
 STDERR_LIMIT = 4_194_304
 OUTPUT_FRAME_LIMIT = 58_716_144
 CARRIER_OUTPUT_LIMIT = 62_914_560
+STREAM_CAPTURE_LIMIT = 54_525_952
 HELLO_JSON_LIMIT = 4096
 HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
@@ -675,70 +677,36 @@ def consumption_record(*, implementation, package, management_entry_binding_sha2
     return value
 
 
-def create_consumption_marker(directory_fd, value):
+def create_consumption_marker(directory_fd, value, *, capture):
     """Irreversibly consume the one delivery with a final-name O_EXCL write."""
     raw = contract.canonical(value, newline=True, limit=MARKER_LIMIT)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
-    flags |= getattr(os, "O_NOFOLLOW", 0)
+    require(capture.directory_fd == directory_fd, "CORE_CAPTURE_HELD_PARENT")
+    require(all(value.get(key) == expected for key, expected in capture.deadline.origins.items()),
+            "CORE_MARKER_CAPTURE_WINDOW")
+    if "marker" in capture.attempted:
+        raise ConsumedError("CORE_MARKER_ALREADY_CONSUMED")
     try:
-        fd = os.open(contract.MARKER_BASENAME, flags, 0o600, dir_fd=directory_fd)
+        item = capture.create("marker", raw)
     except FileExistsError as error:
         raise ConsumedError("CORE_MARKER_ALREADY_CONSUMED") from error
-    created_identity = None
-    try:
-        created_identity = os.fstat(fd)
-        require(stat.S_ISREG(created_identity.st_mode) and created_identity.st_nlink == 1
-                and stat.S_IMODE(created_identity.st_mode) == 0o600,
-                "CORE_MARKER_CREATED_IDENTITY")
-        _write_all(fd, raw)
-        os.fsync(fd)
     except BaseException as error:
+        if "marker" not in capture.objects:
+            raise
         raise ConsumedError("CORE_MARKER_PARTIAL_CONSUMED") from error
-    finally:
-        os.close(fd)
-    try:
-        reread, identity = read_regular_at(directory_fd, contract.MARKER_BASENAME,
-                                           limit=MARKER_LIMIT, expected_mode=0o600)
-        require((identity["dev"], identity["ino"]) ==
-                (created_identity.st_dev, created_identity.st_ino) and reread == raw,
-                "CORE_MARKER_REREAD")
-        os.fsync(directory_fd)
-    except BaseException as error:
-        raise ConsumedError("CORE_MARKER_INCOMPLETE_CONSUMED") from error
     return {
         "object_created": True,
         "record_complete": True,
-        "basename": contract.MARKER_BASENAME,
-        "bytes": len(raw),
-        "allocated_bytes": identity["allocated_bytes"],
-        "sha256": hashlib.sha256(raw).hexdigest(),
-        "dev": identity["dev"],
-        "ino": identity["ino"],
-        "mode": identity["mode"],
-        "nlink": identity["nlink"],
+        **item,
     }
 
 
-def create_capture_file(directory_fd, basename, raw, *, limit):
+def create_capture_file(directory_fd, basename, raw, *, limit, capture):
     """Create, fsync and stable-reread one final capture object; never replace."""
     require(type(raw) is bytes and len(raw) <= limit, "CORE_CAPTURE_LIMIT")
     require(basename in set(contract.OUTPUT_BASENAMES.values()), "CORE_CAPTURE_BASENAME")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(basename, flags, 0o600, dir_fd=directory_fd)
-    try:
-        before = os.fstat(fd)
-        _write_all(fd, raw)
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    reread, identity = read_regular_at(directory_fd, basename, limit=limit, expected_mode=0o600)
-    require((before.st_dev, before.st_ino) == (identity["dev"], identity["ino"])
-            and reread == raw, "CORE_CAPTURE_REREAD")
-    os.fsync(directory_fd)
-    return dict(basename=basename, bytes=len(raw), allocated_bytes=identity["allocated_bytes"],
-                sha256=identity["sha256"], dev=identity["dev"], ino=identity["ino"],
-                mode=identity["mode"], nlink=identity["nlink"])
+    require(capture.directory_fd == directory_fd, "CORE_CAPTURE_HELD_PARENT")
+    role = next(key for key, name in capture_contract.BASENAMES.items() if name == basename)
+    return capture.create(role, raw)
 
 
 def parse_output(raw):
@@ -1108,19 +1076,19 @@ def _hello_prefix(raw, package_entry):
     return value, end
 
 
-def _close_pipe(stream):
+def _close_pipe(stream, call):
     if stream is not None:
         try:
-            stream.close()
+            call(stream.close)
         except OSError:
             pass
 
 
-def _stop_process(process, *, kill=False):
-    if process is None or process.poll() is not None:
+def _stop_process(process, call, *, kill=False):
+    if process is None or call(process.poll) is not None:
         return
     try:
-        (process.kill if kill else process.terminate)()
+        call(process.kill if kill else process.terminate)
     except (OSError, ProcessLookupError):
         pass
 
@@ -1149,6 +1117,8 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
             == origins["host_monotonic_origin_ns"] + HOST_WINDOW_NS,
             "CORE_TRANSPORT_HOST_WINDOW")
     consumption_sha256 = marker["sha256"]
+    deadline = capture_contract.Deadline(origins, clock_gettime_ns)
+    call = deadline.call
     result = {
         "transport": {"execve_succeeded": False, "hello_valid": False,
                       "bind_written": False, "package_written": False,
@@ -1159,35 +1129,40 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
         "bind": None, "bind_frame_bytes": 0, "errors": [],
     }
     process = None
+    def started(value):
+        nonlocal process
+        process = value
+        result["transport"]["execve_succeeded"] = True
     try:
-        process = popen_factory(
+        process = call(popen_factory,
             argv, executable=argv[0], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, cwd=cwd, env=environment, shell=False,
-            close_fds=True, bufsize=0,
+            close_fds=True, bufsize=0, returned=started,
         )
         result["transport"]["execve_succeeded"] = True
-    except (OSError, ValueError) as error:
-        result["errors"].append(_missing("CORE_EXECVE_FAILED", "transport",
+    except (OSError, ValueError, capture_contract.CaptureError) as error:
+        result["errors"].append(_missing(
+            "CORE_EXECVE_LATE" if process is not None else "CORE_EXECVE_FAILED", "transport",
                                                  {"errno": getattr(error, "errno", None),
                                                   "type": type(error).__name__}))
         return result
 
-    selector = selector_factory()
+    selector = None
     stdout = bytearray(); stderr = bytearray()
     hello_end = None; bind_frame = b""; input_raw = None; input_offset = 0
     stdin_open = True; terminated = False
     streams = (("stdout", process.stdout), ("stderr", process.stderr))
     try:
+        selector = call(selector_factory)
         require(process.stdin is not None and all(stream is not None for _, stream in streams),
                 "CORE_TRANSPORT_PIPES")
         for role, stream in streams:
-            os.set_blocking(stream.fileno(), False)
-            selector.register(stream.fileno(), selectors.EVENT_READ, role)
-        os.set_blocking(process.stdin.fileno(), False)
+            call(os.set_blocking, stream.fileno(), False)
+            call(selector.register, stream.fileno(), selectors.EVENT_READ, role)
+        call(os.set_blocking, process.stdin.fileno(), False)
 
         while True:
-            boot_now = clock_gettime_ns(time.CLOCK_BOOTTIME)
-            mono_now = clock_gettime_ns(time.CLOCK_MONOTONIC)
+            boot_now, mono_now = deadline.check()
             stop_remaining = min(
                 origins["host_boottime_deadline_ns"] - LOCAL_FINAL_RESERVE_NS - boot_now,
                 origins["host_monotonic_deadline_ns"] - LOCAL_FINAL_RESERVE_NS - mono_now,
@@ -1197,25 +1172,33 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                     "CORE_HOST_TRANSPORT_DEADLINE", "transport",
                     {"boot_now": boot_now, "mono_now": mono_now}))
                 if stdin_open:
-                    _close_pipe(process.stdin); stdin_open = False
-                _stop_process(process); terminated = True
+                    _close_pipe(process.stdin, call); stdin_open = False
+                _stop_process(process, call); terminated = True
                 break
 
             if (result["wait"]["stdout_eof"] and result["wait"]["stderr_eof"]
-                    and process.poll() is not None):
+                    and call(process.poll) is not None):
                 break
             timeout = min(0.1, stop_remaining / 1_000_000_000)
-            events = selector.select(timeout)
-            if not events and process.poll() is not None:
+            events = call(selector.select, timeout)
+            if not events and call(process.poll) is not None:
                 # A final nonblocking selector turn observes pipe EOF.
-                events = selector.select(0)
+                events = call(selector.select, 0)
             for key, mask in events:
                 role = key.data
                 if role == "stdin":
                     if input_raw is None:
                         continue
+                    def input_written(written):
+                        nonlocal input_offset
+                        if written > 0:
+                            input_offset += written
+                            result["transport"]["stdin_bytes_written"] = input_offset
+                            result["transport"]["bind_written"] = input_offset >= len(bind_frame)
+                            result["transport"]["package_written"] = input_offset == len(input_raw)
                     try:
-                        written = os.write(key.fd, input_raw[input_offset:input_offset + 65_536])
+                        written = call(os.write, key.fd, input_raw[input_offset:input_offset + 65_536],
+                                       returned=input_written)
                     except BlockingIOError:
                         continue
                     except BrokenPipeError:
@@ -1224,18 +1207,14 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                             "CORE_STDIN_BROKEN_PIPE", "transport", {"offset": input_offset}))
                     if written <= 0:
                         try:
-                            selector.unregister(key.fd)
+                            call(selector.unregister, key.fd)
                         except (KeyError, ValueError):
                             pass
-                        _close_pipe(process.stdin); stdin_open = False
+                        _close_pipe(process.stdin, call); stdin_open = False
                         continue
-                    input_offset += written
-                    result["transport"]["stdin_bytes_written"] = input_offset
-                    result["transport"]["bind_written"] = input_offset >= len(bind_frame)
-                    result["transport"]["package_written"] = input_offset == len(input_raw)
                     if input_offset == len(input_raw):
-                        selector.unregister(key.fd)
-                        _close_pipe(process.stdin); stdin_open = False
+                        call(selector.unregister, key.fd)
+                        _close_pipe(process.stdin, call); stdin_open = False
                         result["transport"]["stdin_eof"] = True
                     continue
 
@@ -1243,14 +1222,15 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                 role_limit = ((HELLO_FRAME_LIMIT + OUTPUT_FRAME_LIMIT)
                               if role == "stdout" else STDERR_LIMIT)
                 available = min(role_limit - len(target),
-                                CARRIER_OUTPUT_LIMIT - len(stdout) - len(stderr))
+                                CARRIER_OUTPUT_LIMIT - len(stdout) - len(stderr),
+                                STREAM_CAPTURE_LIMIT - len(stdout) - len(stderr))
                 try:
-                    chunk = os.read(key.fd, min(65_536, max(1, available + 1)))
+                    chunk = call(os.read, key.fd, min(65_536, max(1, available + 1)))
                 except BlockingIOError:
                     continue
                 if not chunk:
-                    selector.unregister(key.fd)
-                    _close_pipe(process.stdout if role == "stdout" else process.stderr)
+                    call(selector.unregister, key.fd)
+                    _close_pipe(process.stdout if role == "stdout" else process.stderr, call)
                     result["wait"][role + "_eof"] = True
                     continue
                 if available < 0 or len(chunk) > available:
@@ -1260,11 +1240,11 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                          "additional": len(chunk)}))
                     if stdin_open:
                         try:
-                            selector.unregister(process.stdin.fileno())
+                            call(selector.unregister, process.stdin.fileno())
                         except (KeyError, ValueError):
                             pass
-                        _close_pipe(process.stdin); stdin_open = False
-                    _stop_process(process); terminated = True
+                        _close_pipe(process.stdin, call); stdin_open = False
+                    _stop_process(process, call); terminated = True
                     break
                 target.extend(chunk)
 
@@ -1275,9 +1255,9 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                         result["errors"].append(_missing(
                             "CORE_HELLO_INVALID", "transport", {"reason": str(error)[:96]}))
                         if stdin_open:
-                            _close_pipe(process.stdin); stdin_open = False
+                            _close_pipe(process.stdin, call); stdin_open = False
                         if not terminated:
-                            _stop_process(process); terminated = True
+                            _stop_process(process, call); terminated = True
                         continue
                     if parsed is not None:
                         hello, hello_end = parsed
@@ -1285,8 +1265,7 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                         result["hello"] = hello
                         result["hello_frame_bytes"] = hello_end
                         result["transport"]["hello_valid"] = True
-                        boot_bind = clock_gettime_ns(time.CLOCK_BOOTTIME)
-                        mono_bind = clock_gettime_ns(time.CLOCK_MONOTONIC)
+                        boot_bind, mono_bind = deadline.check()
                         bind = build_bind(
                             hello, consumption_sha256, package_basename, package_raw, origins,
                             package_entry=package_entry, boot_bind_ns=boot_bind,
@@ -1298,7 +1277,7 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                         require(len(input_raw) <= contract.LIMITS["carrier_input_bytes"],
                                 "CORE_CARRIER_INPUT_LIMIT")
                         result["bind"] = bind; result["bind_frame_bytes"] = len(bind_frame)
-                        selector.register(process.stdin.fileno(), selectors.EVENT_WRITE, "stdin")
+                        call(selector.register, process.stdin.fileno(), selectors.EVENT_WRITE, "stdin")
                 elif role == "stdout" and not result["transport"]["stdin_eof"]:
                     # Output before the sole input stream reaches real EOF is
                     # outside the approved protocol and cannot be accepted.
@@ -1308,48 +1287,54 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
 
         if stdin_open:
             try:
-                selector.unregister(process.stdin.fileno())
+                call(selector.unregister, process.stdin.fileno())
             except (KeyError, ValueError):
                 pass
-            _close_pipe(process.stdin); stdin_open = False
-        if terminated and process.poll() is None:
+            _close_pipe(process.stdin, call); stdin_open = False
+        if terminated and call(process.poll) is None:
             try:
-                process.wait(timeout=0.25)
+                call(process.wait, timeout=0.25)
             except (subprocess.TimeoutExpired, TimeoutError):
-                _stop_process(process, kill=True)
+                _stop_process(process, call, kill=True)
                 try:
-                    process.wait(timeout=0.25)
+                    call(process.wait, timeout=0.25)
                 except (subprocess.TimeoutExpired, TimeoutError):
                     pass
-        status = process.poll()
+        status = call(process.poll)
         result["wait"]["status"] = status
-        final_boot = clock_gettime_ns(time.CLOCK_BOOTTIME)
-        final_mono = clock_gettime_ns(time.CLOCK_MONOTONIC)
+        final_boot, final_mono = deadline.check()
         result["wait"]["host_deadline_met"] = (
-            status is not None and final_boot <= origins["host_boottime_deadline_ns"]
-            and final_mono <= origins["host_monotonic_deadline_ns"])
-    except (contract.ContractError, OSError, ValueError) as error:
+            status is not None and final_boot < origins["host_boottime_deadline_ns"]
+            and final_mono < origins["host_monotonic_deadline_ns"])
+    except (contract.ContractError, OSError, ValueError, capture_contract.CaptureError) as error:
         result["errors"].append(_missing(
             "CORE_TRANSPORT_FAILED", "transport", {"reason": str(error)[:96]}))
-        if stdin_open:
-            _close_pipe(process.stdin); stdin_open = False
-        _stop_process(process)
-        try:
-            process.wait(timeout=0.25)
-        except (subprocess.TimeoutExpired, TimeoutError):
-            _stop_process(process, kill=True)
+        if not deadline.failed:
             try:
-                process.wait(timeout=0.25)
-            except (subprocess.TimeoutExpired, TimeoutError):
-                pass
-        result["wait"]["status"] = process.poll()
+                if stdin_open:
+                    _close_pipe(process.stdin, call); stdin_open = False
+                _stop_process(process, call)
+                try:
+                    call(process.wait, timeout=0.25)
+                except (subprocess.TimeoutExpired, TimeoutError):
+                    _stop_process(process, call, kill=True)
+                    try:
+                        call(process.wait, timeout=0.25)
+                    except (subprocess.TimeoutExpired, TimeoutError):
+                        pass
+                result["wait"]["status"] = call(process.poll)
+            except capture_contract.CaptureError:
+                # A late syscall does not create a 905-second cleanup window.
+                result["wait"]["host_deadline_met"] = False
     finally:
-        try:
-            selector.close()
-        except (OSError, ValueError):
-            pass
-        for _, stream in streams:
-            _close_pipe(stream)
+        if not deadline.failed:
+            try:
+                if selector is not None:
+                    call(selector.close)
+                for _, stream in streams:
+                    _close_pipe(stream, call)
+            except (OSError, ValueError, capture_contract.CaptureError):
+                result["wait"]["host_deadline_met"] = False
         result["stdout"] = bytes(stdout)
         result["stderr"] = bytes(stderr)
         result["errors"] = sorted(
@@ -1450,23 +1435,27 @@ def _truth_summaries(semantic, manifest, *, frame_sha256,
     return tuple(results)
 
 
-def finalize_carrier(directory_fd, *, marker, exchange):
+def finalize_carrier(directory_fd, *, marker, exchange, capture):
     """Create the bounded local capture graph and the sole terminal receipt."""
     require(marker.get("record_complete") is True, "CORE_FINAL_MARKER")
+    require(capture.directory_fd == directory_fd and not capture.failed
+            and capture.objects.get("marker", {}).get("complete") is True
+            and capture.objects["marker"].get("sha256") == marker["sha256"],
+            "CORE_FINAL_LIVE_CAPTURE")
     require(type(exchange) is dict and type(exchange.get("stdout")) is bytes
             and type(exchange.get("stderr")) is bytes, "CORE_FINAL_EXCHANGE")
-    output_names_absent(directory_fd)
+    capture.deadline.call(output_names_absent, directory_fd)
     stdout_raw = exchange["stdout"]; stderr_raw = exchange["stderr"]
     require(len(stderr_raw) <= STDERR_LIMIT
-            and len(stdout_raw) + len(stderr_raw) <= CARRIER_OUTPUT_LIMIT,
+            and len(stdout_raw) + len(stderr_raw) <= STREAM_CAPTURE_LIMIT,
             "CORE_FINAL_STREAM_LIMIT")
     files = [_capture_item_from_marker(marker)]
     stdout_item = create_capture_file(
         directory_fd, contract.OUTPUT_BASENAMES["stdout_basename"], stdout_raw,
-        limit=HELLO_FRAME_LIMIT + OUTPUT_FRAME_LIMIT)
+        limit=STREAM_CAPTURE_LIMIT, capture=capture)
     stderr_item = create_capture_file(
         directory_fd, contract.OUTPUT_BASENAMES["stderr_basename"], stderr_raw,
-        limit=STDERR_LIMIT)
+        limit=STDERR_LIMIT, capture=capture)
     files.extend((stdout_item, stderr_item))
 
     errors = list(exchange.get("errors", []))
@@ -1492,7 +1481,7 @@ def finalize_carrier(directory_fd, *, marker, exchange):
             require(len(remote_raw) <= REMOTE_RESULT_LIMIT, "CORE_REMOTE_RESULT_LIMIT")
             remote_item = create_capture_file(
                 directory_fd, contract.OUTPUT_BASENAMES["remote_result_basename"],
-                remote_raw, limit=REMOTE_RESULT_LIMIT)
+                remote_raw, limit=REMOTE_RESULT_LIMIT, capture=capture)
             files.append(remote_item)
         except (contract.ContractError, dispatcher_contract.DispatchError,
                 KeyError, TypeError, ValueError) as error:
@@ -1506,6 +1495,11 @@ def finalize_carrier(directory_fd, *, marker, exchange):
         errors.append(_missing("CORE_OUTPUT_MISSING", "output-package", {"bytes": 0}))
 
     files.sort(key=lambda item: item["basename"].encode("ascii"))
+    capture.sample()
+    current_allocation = {capture_contract.BASENAMES[role]: record["allocated_bytes"]
+                          for role, record in capture.objects.items()}
+    for item in files:
+        item["allocated_bytes"] = current_allocation[item["basename"]]
     logical_bytes = sum(item["bytes"] for item in files)
     allocated_bytes = sum(item["allocated_bytes"] for item in files)
     require(allocated_bytes <= CAPTURE_LIMIT and len(files) <= CAPTURE_INODE_LIMIT,
@@ -1514,7 +1508,7 @@ def finalize_carrier(directory_fd, *, marker, exchange):
         {tuple(sorted(item.items())): item for item in errors}.values(),
         key=lambda item: (item["code"].encode("ascii"), item["role"].encode("ascii"),
                           item["detail_sha256"].encode("ascii")))
-    capture = {
+    capture_document = {
         "schema": "local-hand-q2-core-capture-manifest/v1",
         "session_id": contract.SESSION_ID, "consumption_sha256": marker["sha256"],
         "stdout": {"basename": stdout_item["basename"], "bytes": stdout_item["bytes"],
@@ -1534,12 +1528,12 @@ def finalize_carrier(directory_fd, *, marker, exchange):
         "allocated_bytes": allocated_bytes, "inodes": len(files),
         "fsync_complete": True, "reread_equal": True, "missing": errors,
     }
-    contract.validate_record(capture, "local-hand-q2-core-capture-manifest/v1")
-    _validate_missing(capture["missing"], "CORE_CAPTURE_MISSING")
-    capture_raw = contract.canonical(capture, newline=True, limit=1_048_576)
+    contract.validate_record(capture_document, "local-hand-q2-core-capture-manifest/v1")
+    _validate_missing(capture_document["missing"], "CORE_CAPTURE_MISSING")
+    capture_raw = contract.canonical(capture_document, newline=True, limit=262_144)
     capture_item = create_capture_file(
         directory_fd, contract.OUTPUT_BASENAMES["capture_manifest_basename"],
-        capture_raw, limit=1_048_576)
+        capture_raw, limit=262_144, capture=capture)
     capture_sha256 = capture_item["sha256"]
 
     frame_sha256 = hashlib.sha256(output_tail).hexdigest() if semantic is not None else None
@@ -1579,26 +1573,16 @@ def finalize_carrier(directory_fd, *, marker, exchange):
     }
     contract.validate_record(receipt, "local-hand-q2-core-local-acceptance-receipt/v1")
     _validate_missing(receipt["missing"], "CORE_RECEIPT_MISSING")
-    receipt_raw = contract.canonical(receipt, newline=True, limit=1_048_576)
-    # Keep enough conservative block-rounded room before committing the unique
-    # final receipt.  The post-write actual-allocation check remains binding.
-    block = max(512, os.fstat(directory_fd).st_blksize)
-    projected = (allocated_bytes + capture_item["allocated_bytes"]
-                 + ((len(receipt_raw) + block - 1) // block) * block)
-    require(projected <= CAPTURE_LIMIT and len(files) + 2 <= CAPTURE_INODE_LIMIT,
-            "CORE_CAPTURE_FINAL_BUDGET")
+    receipt_raw = contract.canonical(receipt, newline=True, limit=65_536)
     receipt_item = create_capture_file(
         directory_fd, contract.OUTPUT_BASENAMES["local_receipt_basename"],
-        receipt_raw, limit=1_048_576)
-    final_allocated = (allocated_bytes + capture_item["allocated_bytes"]
-                       + receipt_item["allocated_bytes"])
-    require(final_allocated <= CAPTURE_LIMIT and len(files) + 2 <= CAPTURE_INODE_LIMIT,
-            "CORE_CAPTURE_FINAL_BUDGET")
+        receipt_raw, limit=65_536, capture=capture)
+    accounting = capture.finish()
     return {"receipt": receipt, "receipt_item": receipt_item,
-            "capture_manifest": capture, "capture_item": capture_item,
+            "capture_manifest": capture_document, "capture_item": capture_item,
             "semantic": semantic, "files": files,
-            "total_allocated_bytes": final_allocated,
-            "total_inodes": len(files) + 2}
+            "total_allocated_bytes": capture.allocated,
+            "total_inodes": len(capture.objects), "capture_accounting": accounting}
 
 
 def deliver_once(directory_fd, *, binding, package_basename, package_raw,
@@ -1614,12 +1598,16 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             and members[entry["bootstrap_path"]] == bootstrap_raw,
             "CORE_DELIVERY_ENTRY_BYTES")
     field_release_gate(manifest, members)
+    # A partial v1 binding cannot supply an amendment writer/anchor. This stays
+    # fail-closed until D1's v2 package/local-binding integration is complete.
     contract.relative_path(package_basename, "CORE_DELIVERY_PACKAGE_BASENAME")
     require(package_basename.endswith(".lhfp"), "CORE_DELIVERY_PACKAGE_BASENAME")
     tokens = remote_tokens(loader_raw, bootstrap_raw)
     argv = wrapper_argv(binding["wrapper"]["path"], wrapper_raw, tokens)
     environment = controlled_environment()
     encoded_argv_environment_size(argv, environment)
+    require("anchor" in binding and "writer" in binding, "CORE_LOCAL_WRITER_BINDING_UNBOUND")
+    origins = freeze_host_window(clock_gettime_ns)
     qualification = requalify_management_anchor(
         directory_fd, binding, tokens=tokens, argv=argv, environment=environment)
     try:
@@ -1630,7 +1618,9 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
                 "CORE_DELIVERY_STATIC_BINDING")
         marker_absent(directory_fd)
         output_names_absent(directory_fd)
-        origins = freeze_host_window(clock_gettime_ns)
+        capture = capture_contract.LiveCapture(
+            directory_fd, anchor=binding["anchor"], writer=binding["writer"], origins=origins,
+            clock_gettime_ns=clock_gettime_ns)
         raw_manifest = contract.canonical(manifest, newline=True)
         package_record = {
             "basename": package_basename, "bytes": len(package_raw),
@@ -1641,7 +1631,7 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             implementation=manifest["implementation"], package=package_record,
             management_entry_binding_sha256=entry["management_entry_binding_sha256"],
             carrier_argv_sha256=entry["carrier_argv_sha256"], origins=origins)
-        marker = create_consumption_marker(directory_fd, marker_record)
+        marker = create_consumption_marker(directory_fd, marker_record, capture=capture)
         # qualification.fds and directory_fd are still held here.  Popen is the
         # sole carrier request and returns only after execve success/failure is
         # known; no pathname-selected replacement anchor can be substituted.
@@ -1653,5 +1643,6 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             clock_gettime_ns=clock_gettime_ns)
     finally:
         close_held_management(qualification)
-    finalized = finalize_carrier(directory_fd, marker=marker, exchange=exchange)
+    finalized = finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture)
+    capture.close_handles()
     return {"marker": marker, "exchange": exchange, **finalized}

@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import sys
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -26,6 +27,19 @@ def load(name):
 
 e = load("q2_core_delivery_entry")
 c = e.contract
+
+
+def live_capture(directory_fd, path, origins):
+    """Isolated local file tests, not a field-management binding or F1."""
+    st = os.fstat(directory_fd)
+    anchor = dict(path=str(path), dev=st.st_dev, ino=st.st_ino, mode=0o700,
+                  uid=st.st_uid, gid=st.st_gid, nlink=st.st_nlink)
+    def clock(which):
+        return origins["host_boottime_origin_ns" if which == time.CLOCK_BOOTTIME
+                       else "host_monotonic_origin_ns"]
+    writer = e.capture_contract.observe_writer(e.capture_contract.Deadline(origins, clock).call)
+    return e.capture_contract.LiveCapture(directory_fd, anchor=anchor, writer=writer,
+                                         origins=origins, clock_gettime_ns=clock)
 
 
 def hello():
@@ -390,13 +404,15 @@ def test_marker_is_final_name_exclusive_and_never_replaced(tmp_path):
             "host_boottime_deadline_ns": 1 + e.HOST_WINDOW_NS,
             "host_monotonic_deadline_ns": 2 + e.HOST_WINDOW_NS,
         }
-        result = e.create_consumption_marker(directory_fd, marker_value(origins))
+        capture = live_capture(directory_fd, tmp_path, origins)
+        result = e.create_consumption_marker(directory_fd, marker_value(origins), capture=capture)
         assert result["object_created"] is True and result["record_complete"] is True
         before = (tmp_path / c.MARKER_BASENAME).read_bytes()
         with pytest.raises(e.ConsumedError, match="ALREADY_CONSUMED"):
-            e.create_consumption_marker(directory_fd, marker_value(origins))
+            e.create_consumption_marker(directory_fd, marker_value(origins), capture=capture)
         assert (tmp_path / c.MARKER_BASENAME).read_bytes() == before
     finally:
+        capture.close_handles()
         os.close(directory_fd)
 
 
@@ -436,13 +452,17 @@ def test_absence_checks_treat_any_existing_type_as_consumed(tmp_path):
 
 def test_capture_file_is_create_only_and_stable(tmp_path):
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    origins = e.freeze_host_window()
+    capture = live_capture(directory_fd, tmp_path, origins)
     try:
+        e.create_consumption_marker(directory_fd, marker_value(origins), capture=capture)
         basename = c.OUTPUT_BASENAMES["stderr_basename"]
-        item = e.create_capture_file(directory_fd, basename, b"stderr", limit=1024)
+        item = e.create_capture_file(directory_fd, basename, b"stderr", limit=1024, capture=capture)
         assert item["bytes"] == 6 and item["mode"] == 0o600 and item["nlink"] == 1
-        with pytest.raises(FileExistsError):
-            e.create_capture_file(directory_fd, basename, b"again", limit=1024)
+        with pytest.raises(e.capture_contract.CaptureError, match="CREATE_ONCE"):
+            e.create_capture_file(directory_fd, basename, b"again", limit=1024, capture=capture)
     finally:
+        capture.close_handles()
         os.close(directory_fd)
 
 
@@ -477,10 +497,10 @@ def test_output_frame_checks_order_digest_and_true_eof():
 ])
 def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         monkeypatch, boundary, remaining):
-    # Keep the approved limits unchanged. Their sum makes the combined limit
-    # coincide with stderr's limit when stdout has already reached its own cap.
+    # The amendment's 52 MiB stream gate precedes the retained 60 MiB outer
+    # refusal. Leave exactly `remaining` combined bytes before the sentinel.
     hello_raw = e.frame(c.HELLO_MAGIC, hello(), json_limit=e.HELLO_JSON_LIMIT)
-    stdout_bytes = (e.HELLO_FRAME_LIMIT + e.OUTPUT_FRAME_LIMIT
+    stdout_bytes = (e.STREAM_CAPTURE_LIMIT - e.STDERR_LIMIT
                     if boundary == "combined" else len(hello_raw))
     stderr_bytes = e.STDERR_LIMIT - remaining
     segments = [{"role": "stdout", "raw": hello_raw, "bytes": len(hello_raw)}]
@@ -608,13 +628,14 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
     assert process.stdin.closed and process.stdout.closed and process.stderr.closed
     assert process.terminations == 1 and exchange["wait"]["status"] == -15
     if boundary == "combined":
-        assert stdout_bytes + stderr_bytes + remaining == e.CARRIER_OUTPUT_LIMIT
+        assert stdout_bytes + stderr_bytes + remaining == e.STREAM_CAPTURE_LIMIT
 
 
 def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     origins = e.freeze_host_window()
-    marker = e.create_consumption_marker(directory_fd, marker_value(origins))
+    capture = live_capture(directory_fd, tmp_path, origins)
+    marker = e.create_consumption_marker(directory_fd, marker_value(origins), capture=capture)
     package_raw = b"bounded-package"
     argv = ["/usr/bin/env", "fixed-fake-carrier"]
     entry = {
@@ -694,12 +715,43 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
             "status": 0, "stdout_eof": True, "stderr_eof": True,
             "host_deadline_met": True,
         }
-        final = e.finalize_carrier(directory_fd, marker=marker, exchange=exchange)
+        final = e.finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture)
         assert final["receipt"]["state"] == "STOP_AND_RETAIN"
         assert final["receipt"]["real_task_execution"]["status"] == "NO"
         assert final["receipt"]["result_evidence_collection"]["status"] == "NO"
         assert final["receipt"]["remote_result"]["present"] is True
         assert final["total_allocated_bytes"] <= e.CAPTURE_LIMIT
         assert final["total_inodes"] == 6
+        assert final["capture_accounting"]["full_filesystem_peak_proven"] is False
+        assert final["capture_accounting"]["created_inodes"] == 6
     finally:
+        capture.close_handles()
         os.close(directory_fd)
+
+
+@pytest.mark.parametrize("late_return", [False, True])
+def test_transport_deadline_never_starts_or_retries_late_request(late_return):
+    origins = {"host_boottime_origin_ns": 1, "host_monotonic_origin_ns": 2,
+               "host_boottime_deadline_ns": 1 + e.HOST_WINDOW_NS,
+               "host_monotonic_deadline_ns": 2 + e.HOST_WINDOW_NS}
+    expired = not late_return
+    calls = []
+    def clock(which):
+        return (1 if which == time.CLOCK_BOOTTIME else 2) + (e.HOST_WINDOW_NS if expired else 0)
+    def factory(*args, **kwargs):
+        nonlocal expired
+        calls.append((args, kwargs))
+        expired = True
+        return SimpleNamespace()
+    argv = ["/usr/bin/env", "synthetic-carrier"]
+    exchange = e.execute_carrier_once(argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
+        origins=origins, marker=dict(object_created=True, record_complete=True, sha256="a" * 64),
+        package_basename="only.lhfp", package_raw=b"fixture",
+        package_entry=dict(carrier_argv_sha256=e.argv_digest(argv)),
+        popen_factory=factory, clock_gettime_ns=clock,
+        selector_factory=lambda: pytest.fail("no later I/O after a late request"))
+    assert len(calls) == int(late_return)
+    assert exchange["transport"]["execve_succeeded"] is late_return
+    assert exchange["wait"]["status"] is None
+    assert exchange["wait"]["host_deadline_met"] is False
+    assert exchange["errors"][0]["code"] == ("CORE_EXECVE_LATE" if late_return else "CORE_EXECVE_FAILED")
