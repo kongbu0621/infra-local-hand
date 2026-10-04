@@ -114,7 +114,15 @@ quota 重复/重排/溢出、原 manifest 不可近似复原、sudo group 语义
 423.25s，exit 1。保留的 JUnit 为私有临时测试日志，不公开原始机器路径。
 剩余失败集中于临时 source/evidence/result 文件保护检查；对子进程设置 `umask 022`（不修改系统
 配置或既有文件权限）后，准备快照、证据 seal、结果 JSON 三个原失败样例 **3 passed**。
-这三个样例不等于完整 suite PASS；完整受控测试环境复核尚待实际结果。始终不把 SKIP/UNKNOWN 写成 PASS。
+这三个样例不等于完整 suite PASS。第三次非沙箱、子进程 umask 022 的完整 source 运行实际为
+**1 failed / 4040 passed / 91 skipped**，428.36s，exit 1。唯一失败是既有
+`LocalReadTests.test_real_opened_rejects_noncanonical_and_world_writable_ancestry`：它假定临时目录
+祖先必然 world-writable，但本地 TMPDIR 为受保护路径，所以原保护函数正确接受，测试的拒绝预期不成立。
+修复只在该隔离测试中新建明确 `0777` 的祖先、`0600` 的 leaf，仍要求原 `FIXTURE_PROTECTION` 拒绝；
+不放宽产品保护，不更改系统 TMPDIR 或已有目录。首次完整结果保留，修复后的准确 CI 另行验证。
+本次全量开始时 checkout 为 `d42dca8`；运行中 Windows-only import guard 修复已另提交，Linux 已收集
+的测试与实际 capture/entry 实现未变。不将该次运行冒充后续提交的全量 PASS。
+始终不把 SKIP/UNKNOWN 写成 PASS。
 这些结果不是 D4 独立审计、installed suite 或真实 H01/Q4/H11 验证。
 
 首次发布 `d42dca8a25151010d3dd38edabd285b89bccafa4` 的

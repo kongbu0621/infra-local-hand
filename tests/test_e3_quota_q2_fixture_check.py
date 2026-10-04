@@ -191,9 +191,15 @@ class LocalReadTests(unittest.TestCase):
     def test_real_opened_rejects_noncanonical_and_world_writable_ancestry(self):
         for path in ("relative", "//tmp/a", "/tmp/../etc/passwd", "/tmp/a/", "/"):
             with self.subTest(path=path), self.assertRaises(ValueError): c.opened(path)
-        target = self.root / "read"; target.write_bytes(b"value")
+        # A private TMPDIR may have fully protected ancestry. Construct the
+        # unsafe ancestor in this isolated fixture rather than assuming /tmp.
+        unsafe = self.root / "world-writable"
+        unsafe.mkdir(mode=0o700)
+        unsafe.chmod(0o777)
+        target = unsafe / "read"; target.write_bytes(b"value"); target.chmod(0o600)
         with self.assertRaisesRegex(ValueError, "FIXTURE_PROTECTION"):
-            c.opened(str(target), owner=os.getuid())
+            descriptor = c.opened(str(target), owner=os.getuid())
+            os.close(descriptor)  # no descriptor leak if the expected rejection regresses
 
     def test_directory_consumed_wrong_identity_and_gid_are_separate_failures(self):
         root = self.root / "empty"; root.mkdir(mode=0o700)
