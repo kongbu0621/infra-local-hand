@@ -1,7 +1,7 @@
 # Local Hand 核心输入绑定与终结证明修订：待批准文档基线
 
-2026-10-04 +08:00；Authority：Owner；状态 **PROPOSED / Gate OPEN / AWAITING OWNER**。
-本件只登记已提交并通过三路只读终审的准确方案 A；它不是 Owner B、bookkeeping-only CLOSED C、
+2026-10-04 +08:00；Authority：Owner；状态 **PROPOSED / Gate OPEN / REVISION REQUIRED**。
+本件登记复核后已修正明确矛盾、但 capture 路线仍待收敛的准确方案 A；它不是 Owner B、bookkeeping-only CLOSED C、
 implementation D、field package、marker、carrier request 或现场验收。
 
 - Scope：`LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1`。
@@ -9,22 +9,58 @@ implementation D、field package、marker、carrier request 或现场验收。
 - Direct pinned source：[program-repository-documentation-gate.md](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/workflow/program-repository-documentation-gate.md)。
 - Direct source SHA-256：`c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5`；
   本轮 executor 已直接读取并核对。
-- Documentation A：`0a843218a1614b62c62e7dad8578748f911dad27`。
-- A tree：`58e1503d0c2f3cdfa8a44cf75b48c9f626f3c9a2`。
-- A direct parent：最新已同步主线 `bd02fbd094a76767c21fbc8a96502c5b894df3c2`。
+- Documentation A：`4009e1b560dd873bc3d9b937be539f329b93371a`。
+- A tree：`1739c8aabc1627c42555f95d7e0173ceb0ed4ff4`。
+- A direct parent：`6a93e9d2c6bb03b860fa07139648e4feb3146b76`。
+- Supersedes 未获批准的 proposal A `0a843218a1614b62c62e7dad8578748f911dad27`；原 proposal 和
+  OPEN 登记保留在 Git history。本次只修正文档与复核结论，不补造 Owner 决定。
 - Owner mandate、Owner-only decision authority、no exceptions 和禁止自动改变采用规则继续采用根
   [AGENTS.md](../../AGENTS.md) 的声明。
 
 | A 中的准确文件 | Bytes | SHA-256 |
 | --- | ---: | --- |
-| [需求](../a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md) | 101928 | `1b9e18b3745add8535ccf39a75513164d20ac6d5fa1fe8ee6acc76cd15ecf1d6` |
-| [架构](../a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md) | 23847 | `3f1745815e6f9982fff764a244ec8e08b198f6ed4e50b6c8c8222f135aa00cb9` |
-| [实施计划](../a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md) | 21909 | `e797576a337b2ab5c0c1939905b0fe38a6b9b44f4f9ee4772399696f4813fc40` |
+| [需求](../a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md) | 103363 | `1b504035aa62058c14a85083e61c1aeca3581512fcceeca503a42996cd636cae` |
+| [架构](../a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md) | 24181 | `71f123a7f3add387a287bd0bd0d09350a68172c9c4707d27cfdd23ea055f0468` |
+| [实施计划](../a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md) | 22655 | `3639e789b6c78543f782dcaa5238c87e4746bd9b4374f47daa6f859ba1e26707` |
 
 终审覆盖 source-horizon 与 placement、package/HELLO/admission digest、receipt/attestation 状态机、
 H01/Q4/H11 顺序、capture 全过程资源账、loaded ext4 与 source-tree 机械绑定、held parent/mount/device
-交叉绑定、filesystem-static projection 和失败残留。三路最终结论均为 zero P0/P1；这只是 A 的
-文档一致性结果，不是实现或现场 PASS。
+交叉绑定、filesystem-static projection 和失败残留。后续三路复核发现两个确定 P1 文档矛盾及
+未成立的宿主技术依赖，撤回先前“zero P0/P1、等待整体批准”的就绪表述。两个确定矛盾已修正并经
+定向复核；宿主路线仍未闭合。本次没有新增 runtime/test 实现或执行现场任务。
+
+## 本轮复核结论与最小后续工作
+
+| 项目 | 结论及处置 |
+| --- | --- |
+| sudo predicate | 已修正：原配置是 `(ALL)`，并非 `(ALL:ALL)`；helper 无显式 RunAsGroups 归一化为 `[]`，`!authenticate` 归一化为 NOPASSWD。host ALL 来自已绑定配置，不能从已按 host 筛选的 `-ll` 输出反推。没有修改 guest 权限。 |
+| STOP receipt | 已修正：create 前被截止则不创建；O_EXCL 后失败或晚返保留 partial/full，不补写、删除或创建 attestation。partial/invalid 不生成 derived，strict-valid STOP 只能是 STOP；deadline 未放宽。 |
+| 历史行来源 | 已统一：固定 accounting producer 只验证 projection，修订 transform 生成 enriched rows。 |
+| finite attestation | 方案可保持有限、无自摘要循环；但原 A 已采用调用端终结观察，未要求 receipt 自证未来或 restart COMPLETE，不能把此新增设计描述成 H01 的必然前置阻塞。 |
+| host capture 路线 | **未解决**：强制 runtime IKCONFIG、loaded-ext4 可信测量、raw-device 读取和完整分配模型，但没有实际宿主具备这些能力的证据；批准本 A 不能使它们成立。 |
+
+sudo 语义依据为上游 [display.c](https://github.com/sudo-project/sudo/blob/main/plugins/sudoers/display.c)
+的 `display_cmndspec_long`。普通管理进程对 root 所有模块使用 `O_NOATIME` 也不能由“可读”推出可用：
+[Linux open(2)](https://man7.org/linux/man-pages/man2/open.2.html)要求所有者身份或相应 `CAP_FOWNER`。
+这里没有断言真实宿主必然缺少权限；准确状态是未证实。
+
+已复用而无需重采的历史材料：
+
+- [旧 host/control parent 观察](../a2-execution/evidence/q2-local-source-field-20260928/diagnostic-rerun2-independent-validation.json)：
+  两者当时为 ext4/rw,relatime，但 `allocation_peak_proven=false`。
+- [既有文件系统复核](../a2-execution/Q2_POST_SOURCE_ADMISSION_PLAN.md)：旧 parent 为 12 KiB、EXTENTS+INDEX，
+  不是当前 core anchor 的全过程容量证明。
+- [FS work order](../a2-execution/Q2_FS_QUALIFICATION_WORK_ORDER_20261002.md)：普通身份 raw-device read/
+  O_NOATIME 能力仍 UNKNOWN。
+- [core 部分实现复核](../a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md)：本地 anchor
+  的文件、key、依赖和 cwd 绑定已复核，但没有 host capture 硬配额或固定容量存储证明。
+
+下一步仅需能访问真实管理机既有材料的执行端补齐三个事实：准确 core capture anchor 对应哪个宿主
+mount；该目录是否已有硬配额或固定容量存储及其真实权限/限额；该机制对七对象、parent 增长与额外
+inode/瞬时分配的计费范围。没有记录就报告 UNKNOWN，不以 guest project quota、云端容器或假数据代替。
+本轮不增加 SSH、marker、任务、安装、清理或自动重试，也不要求重采已有 K4/R3。
+在这些事实基础上选择可执行的 capture 路线，保持 64 MiB/16 inode 与 52 MiB 流上限；不得只删除
+物理分配约束，也不把未成立的完整内核证明项目默认为核心交付工作。
 
 ## 与原 core closure 的关系
 
@@ -37,7 +73,7 @@ H01/Q4/H11 顺序、capture 全过程资源账、loaded ext4 与 source-tree 机
 但没有生成 field package、解除 dispatcher release gate 或消费现场批次。
 
 本修订不改写原 A/B/C，不追认部分 D，也不以主线 CI 成功代替现场验收。它只处理部分 D 后暴露的
-material package/current-guest binding 冲突、receipt 自证循环、source-horizon 缺口，以及未证明的
+material package/current-guest binding 冲突、有限终结/restart 合同选择、source-horizon 缺口，以及未证明的
 host capture filesystem/全过程 allocation bound。因为这些是 material contract changes，原 core B/C
 不能自动覆盖；必须保持 R → 本准确 A → 新 Owner B → 独立 bookkeeping-only CLOSED C → 新集成 D。
 
@@ -106,7 +142,8 @@ field qualification 结果。它们是当前准确准备缺项，不得被 sourc
 真实任务 0、退出确认 0、结果 0、现场证据 0。没有 Local Hand 任务被受理或受监督执行，没有结果与证据
 被收回。A 与本 OPEN 登记不改变这些计数，也不消费原未签发的一次性批次。
 
-若 Owner 批准准确 A，下一步只能先保留准确 B，再独立提交 bookkeeping-only CLOSED C。新 D 必须以 C
+capture 路线收敛且文档复核闭合后，才提出可 review 的准确 A。若 Owner 批准该准确 A，先保留准确 B，
+再独立提交 bookkeeping-only CLOSED C。新 D 必须以 C
 为 direct parent，完成 source/test、independent review、proof/model、双 package build/parse 与 release
 digest。origin 前 offline source/model/package-template 门及 origin 后 current host kernel/ext4/capture、
 package/release 与其它 pre-marker local 门全 PASS 后，才可创建 marker、发唯一 carrier request；随后同一
@@ -117,13 +154,11 @@ namespace/watchdog 继续暂停并排除；production `E3_SUPERVISION_UNVERIFIED
 enable/cutover、E4–E6、host sudo/配置改变、第二 request、旧批次重放、UNKNOWN 提升成功或公开 raw
 machine evidence。
 
-## 待 Owner 决定的准确文本
+## 当前决定状态
 
-若 Owner 决定批准，可准确回复：
-
-> 按原 R 10d2a5c827964989f41ca6e8eeac3d44de6d0f04，批准 A 0a843218a1614b62c62e7dad8578748f911dad27 的 LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1；接受 A 披露的三项且仅三项新增治理前提（post-entry JIT guest self-observation、governed source-horizon completeness、local trusted single-writer and stable capture-kernel window），接受原固定 candidate/wheel/harness/对象、physical 180 MiB/13440、admission 276 MiB/16512、2090 CPU-s、peak 2624 MiB/1160 pids、32 MiB input/60 MiB outer output/64 MiB/16-inode capture 预算及 900/800/750 秒外层时限，并接受本修订收紧的 52 MiB 实际 stdout+stderr capture、host-only且不进入carrier/physical/admission/capture预算的最多32 MiB kernel-source object-proof dependency、trusted loaded-ext4 measurement、filesystem-static allocation 与 receipt-v2/attestation/restart 降级合同；继续建立独立 bookkeeping-only CLOSED C，并仅按 A 实施、验证和冻结新的集成 D/package。origin 前 offline source/model/package-template 门及 origin 后 current host kernel/ext4/capture、package/release 和其它 pre-marker local 门全 PASS 后，才允许消费原未签发批次的最多一次 O_EXCL marker 并发一次 carrier request；随后同一 carrier 内的 HELLO/package/policy/capacity/live admission 全 PASS 后，才允许首个 guest mutation/H01 intent，并按 H01_NORMAL→Q4_HELPER_RUNNING_CANCEL_SUBSET→H11_SAME_LEDGER_RECOVERY 条件执行。H11 只使用原 ledger/request/execution/unit/grant/deadline，不重启业务、不重读结果、不新建 grant/unit、不延长 deadline。namespace/watchdog 保持暂停，production E3_SUPERVISION_UNVERIFIED 保持。不授权旧批次复用、第二 request、重连重试、host sudo/系统配置变更、生产启用或把 UNKNOWN/restart attestation 提升为成功。
-
-上句是待决定文本，**不是已经发生的 Owner B**。只有 Owner 的准确回复及稳定 event/reference 可以形成
-B；之后还须单独提交只含关闭登记的 C，且不得与 D squash。任何 material premise、candidate、artifact、
+本轮不请求 Owner 批准尚未落地的 capture 路线；原批准建议已撤回，Gate 保持 OPEN。
+仓库 AGENTS.md 与固定 R 要求 material contract 变化先有准确 A/B/C，再推进受影响实现；
+它们不允许以“已推送”推定 Owner B。只有 Owner 的准确回复及稳定 event/reference 可以形成 B；
+之后还须单独提交只含关闭登记的 C，且不得与 D squash。任何 material premise、candidate、artifact、
 object、budget、deadline、management entry、capture model 或 execution rule 变化继续触发 R 的 reopen
 规则。

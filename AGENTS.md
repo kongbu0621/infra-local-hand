@@ -958,7 +958,8 @@ independent build/parse verification. namespace/watchdog remains paused and prod
 ### Core binding and finalization amendment proposal
 
 Scope `LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1` is **PROPOSED / OPEN /
-AWAITING OWNER** at exact documentation A
+REVISION REQUIRED** at exact documentation A
+`4009e1b560dd873bc3d9b937be539f329b93371a`, superseding unapproved proposal
 `0a843218a1614b62c62e7dad8578748f911dad27`. Its
 [baseline registration](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)
 pins the [requirements](docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md),
@@ -967,7 +968,7 @@ pins the [requirements](docs/a2-execution/q2-core-binding-finalization-amendment
 R, its directly read source/integrity, Owner-only authority, mandate, no exceptions and change
 control remain unchanged. This registration is not Owner B or a closure.
 
-The proposal addresses material package/current-guest binding, receipt self-proof,
+The proposal addresses material package/current-guest binding, finite finalization/restart design,
 source-horizon and host capture-allocation gaps discovered after the existing core scope's partial
 D. It does not alter the old A/B/C bytes or make that partial D releasable. It retains the exact
 candidate/wheel/harness, cases, objects, original physical/admission/CPU/peak/input/outer-output/
@@ -983,6 +984,14 @@ capture-kernel window. None is accepted yet. Current trusted loaded-ext4 measure
 kernel/ext4 model, proof archive, integrated D and frozen package are not established. Package
 remains null/`NOT_ISSUED`; marker, request, H01, Q4, H11, task, exit confirmation, result and
 field-evidence counts all remain zero.
+
+The latest review corrected the sudo predicate to match the existing `(ALL)` policy and retained
+partial/full STOP receipts after failed creation sequences. It also corrected the historical-row
+producer description. The prior zero-P0/P1 overall-readiness statement is superseded: actual host
+storage capabilities and permissions remain unestablished, so overall approval is not requested.
+Next, use retained management-host evidence to identify the exact capture anchor, any existing
+bounded storage mechanism and its accounting coverage; preserve the 64 MiB/16-inode ceiling.
+Do not treat a missing kernel/ext4 proof project as an automatically authorized implementation.
 
 No source/test/prototype/package/allowlist or field implementation may descend from this proposal
 until an exact Owner B and a separate bookkeeping-only CLOSED C exist; D must descend directly
