@@ -478,6 +478,13 @@ def relative_path(value, code="CORE_PATH"):
     return value
 
 
+def validate_package_basename(value, code="CORE_BIND_PACKAGE"):
+    """Match the standalone bootstrap's existing single-file BIND name."""
+    relative_path(value, code)
+    require(re.fullmatch(r"[A-Za-z0-9._-]+\.lhfp", value) is not None, code)
+    return value
+
+
 def absolute_path(value, code="CORE_ABSOLUTE_PATH"):
     require(type(value) is str and value.isascii() and value.startswith("/")
             and not value.startswith("//") and "\\" not in value and "\0" not in value
@@ -865,8 +872,7 @@ def validate_bind(value):
     require(value["scope"] == SCOPE and value["session_id"] == SESSION_ID, "CORE_BIND_AUTHORITY")
     for key in ("hello_sha256", "consumption_sha256", "package_sha256"):
         digest(value[key], "CORE_BIND_DIGEST")
-    relative_path(value["package_basename"], "CORE_BIND_PACKAGE")
-    require(value["package_basename"].endswith(".lhfp"), "CORE_BIND_PACKAGE")
+    validate_package_basename(value["package_basename"])
     integer(value["package_bytes"], 1, PACKAGE_LIMITS["package_bytes"], "CORE_BIND_PACKAGE")
     for key in SCHEMA_FIELDS[value["schema"]][8:]:
         integer(value[key], 1 if key in ("mapped_duration_ns", "guest_duration_ns") else 0,

@@ -1739,8 +1739,7 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             and members[entry["bootstrap_path"]] == bootstrap_raw,
             "CORE_DELIVERY_ENTRY_BYTES")
     field_release_gate(manifest, members)
-    contract.relative_path(package_basename, "CORE_DELIVERY_PACKAGE_BASENAME")
-    require(package_basename.endswith(".lhfp"), "CORE_DELIVERY_PACKAGE_BASENAME")
+    contract.validate_package_basename(package_basename, "CORE_DELIVERY_PACKAGE_BASENAME")
     tokens = remote_tokens(loader_raw, bootstrap_raw)
     argv = wrapper_argv(binding["wrapper"]["path"], wrapper_raw, tokens)
     environment = controlled_environment()
