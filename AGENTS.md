@@ -955,10 +955,9 @@ release digest is added, all blockers in the review must close and a complete pa
 independent build/parse verification. namespace/watchdog remains paused and production
 `E3_SUPERVISION_UNVERIFIED` remains unchanged.
 
-### Core binding and finalization amendment proposal
+### Core binding and finalization amendment
 
-Scope `LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1` is **PROPOSED / OPEN /
-AWAITING EXACT OWNER DECISION** at documentation A
+Scope `LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1` is **CLOSED for D1–D4 and conditional single F1** at documentation A
 `0bdb49cae5586be60a7ba31d4a8e8367854d1e8c`, superseding unapproved
 `4009e1b560dd873bc3d9b937be539f329b93371a` and `0a843218a1614b62c62e7dad8578748f911dad27`.
 The [baseline registration](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)
@@ -966,7 +965,11 @@ pins the [requirements](docs/a2-execution/q2-core-binding-finalization-amendment
 [architecture](docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md).
 R, readable direct source/integrity, Owner authority, mandate, no exceptions and change control remain unchanged.
-This OPEN registration is neither Owner B nor CLOSED C.
+The baseline registration retains its historical OPEN state and bytes. Owner B is retained in
+[Q2_CORE_BINDING_FINALIZATION_AMENDMENT_OWNER_DECISION.md](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_OWNER_DECISION.md),
+event `LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-CLOSURE-20261004-01`.
+This independent bookkeeping-only commit is C; it changes no authoritative A document and adds no
+implementation, test, package or field action. The first D must descend directly from this C.
 
 The retained-material return at `c83dad17040e9f8cec148303083c47311f8b7fb9` is complete. It identifies
 the historical 4 KiB control parent as the correct anchor; a different 12 KiB parent is not that anchor.
@@ -979,7 +982,7 @@ It withdraws the seventh attestation, local restart acceptance, loaded-ext4/IKCO
 superblock qualification, kernel Git proofs and complete filesystem allocator model. It retains the exact
 approved-input source relation, corrected sudo semantics, source horizon, package/HELLO JIT and current admission.
 
-Owner must explicitly accept the material host capture guarantee change: application-enforced logical limits
+Owner explicitly accepts the material host capture guarantee change: application-enforced logical limits
 and observed scope-owned file allocation, not a full-host-filesystem instantaneous physical peak guarantee.
 Streams total at most 52 MiB; all six role limits total at most 55132160 logical bytes. The 64 MiB/16 ceiling
 applies to application accounting and observed owned-file allocation; at most six files are created.
@@ -987,10 +990,10 @@ Checks after create/write/fsync must stop on unknown identity or observed excess
 never occurred or that unobserved filesystem metadata/peaks were bounded. Live reporting explicitly sets
 `full_filesystem_peak_proven=false`. Guest resource ceilings and all identity/security checks remain unchanged.
 
-The accurate B must also accept JIT self-observation limitations, governed source-horizon completeness and
-the local trusted single-writer premise defined in A. None is accepted by this registration or by a CI result.
-There is no current B/C/D for this amendment. No forward source/test/prototype/package/allowlist implementation
-under it is allowed before exact B and independent bookkeeping-only C; the first D must directly descend from C.
+The retained exact B also accepts JIT self-observation limitations, governed source-horizon completeness and
+the local trusted single-writer premise defined in A. This acceptance is a governance decision, not a technical
+proof or a CI result. D1–D4 and conditional single F1 are authorized after this independent C. All original
+input, identity, resource, deadline, release and live admission gates remain required before any execution.
 The previous core A/B/C remains historically accurate and partial D remains non-releasable.
 
 After closure, directly complete approved inputs/JIT, all eight groups of real dispatcher effects, six-file
