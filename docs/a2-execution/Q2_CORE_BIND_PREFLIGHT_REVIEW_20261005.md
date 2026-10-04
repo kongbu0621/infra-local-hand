@@ -39,3 +39,15 @@ marker 规范字节回构，不再手写一个可能漏字段的 entry。
 依据原 R 与 AGENTS 的已消费 F1 声明，先形成新准确批次的三层文档，
 明确一次请求、新旧身份隔离、旧进程当前状态核对和未释放容量，再请求 Owner 对准确 A 决定。
 不重复批准既有代码修复，不另开 namespace/watchdog、NAS 或 production 工作。
+
+## 准确发布与 CI 补记
+
+修复提交 `40f0f989cc1d76f35a17bb1551ea6a1c68da0441` 已推送 main；
+[CI 37221463294](https://github.com/kongbu0621/infra-local-hand/actions/runs/37221463294)
+三项均 completed/success：classify、Windows、Linux。
+Linux 完整源码 **4963 passed / 88 skipped / 524.32s**；独立安装 **94 checks / 292 commands / PASS**。
+这只验证准确修复版本，不补造实机业务通过或重置旧消费。
+
+下一次单次验收的准确三文档 A 为 `0b0f445a36232f6bcd32c395b642f9a6b259d2db`，
+见[OPEN 登记](../governance/Q2_CORE_NEXT_ACCEPTANCE_BASELINE.md)。
+原五个证据 pins、原件总 9318 B、新旧身份和完整保留承诺已交叉复核；该提案尚未获 B/C，尚未实现或现场发行。

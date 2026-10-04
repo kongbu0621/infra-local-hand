@@ -1171,6 +1171,28 @@ verifier (94 checks / 292 commands). Exact reports and retained failures are in 
 same single-F1 record. This repaired D was not field-issued; no further marker or request
 is authorized by these verification results.
 
+### Core next single acceptance proposal
+
+The existing-scope compatibility repair `40f0f989cc1d76f35a17bb1551ea6a1c68da0441` rejects
+package names incompatible with the unchanged guest contract before creating a marker or issuing a request.
+Its six relevant test groups passed 232 tests; exact CI 37221463294 is 3/3 success,
+including 4963 Linux source tests and an independent installed verifier with 94 checks / 292 commands. See the
+[repair review](docs/a2-execution/Q2_CORE_BIND_PREFLIGHT_REVIEW_20261005.md).
+This repair does not reset the original consumed F1 or issue another package/request.
+
+Scope `LH-Q2-CORE-NEXT-ACCEPTANCE-v1` is **OPEN / NOT APPROVED**, N1–N3 only.
+Exact proposed A is `0b0f445a36232f6bcd32c395b642f9a6b259d2db`, tree `c2ee02917768f4f8b6ef905b7fec0159dffd224f`;
+its three authoritative document hashes are in
+[the baseline registration](docs/governance/Q2_CORE_NEXT_ACCEPTANCE_BASELINE.md).
+The proposal requests one new fixed batch and its necessary implementation, retaining the old five raw
+files and all old obligations. It explicitly asks Owner to accept the old historical UNKNOWN remaining
+unknown while requiring current old-scope quiescence inside the one new carrier before installation or cases.
+Old/new identity isolation, conservative per-device admission and no refund are specified in A.
+No new B or CLOSED C has been received at this registration. Existing approvals remain valid only for their
+unchanged scopes. This documentation commit neither implements the proposal nor grants another run.
+R, direct source/integrity, mandate, Owner authority, no exceptions and A→B→independent C→D remain unchanged.
+Paused side work and production E3 restrictions remain. Current guest state is not inferred from this proposal.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
