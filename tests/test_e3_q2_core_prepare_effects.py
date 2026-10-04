@@ -96,7 +96,7 @@ def test_directory_create_only_and_symlink_ancestry(tmp_path):
 def test_project_preparation_checks_actual_returned_values(tmp_path, monkeypatch, fault):
     import fcntl
     e = effect()
-    e._capacity_quota_enforcement = lambda: 16 if fault == "enforcement" else 48
+    e._capacity_quota_enforcement = lambda **kw: 16 if fault == "enforcement" else 48
     planned = dict(d._planned_roots(d.CASES[0])[0], path=str(tmp_path / "root"))
     account = {"uid": os.getuid(), "gid": os.getgid()}
     mount = {"source": "/synthetic-quota-device", "uuid": "synthetic-uuid"}
@@ -230,15 +230,15 @@ def test_preparation_orchestration_uses_original_constructors(case, fault, monke
     intent = d.build_intent(case)
     e.stable_read = lambda *a, **kw: (d.canonical(intent, newline=True), {"uid": 0, "gid": 0})
     steps, writes = [], []
-    def retained():
+    def retained(**kw):
         steps.append("snapshot")
         bad = (fault == "retained_before" and steps.count("snapshot") == 1 or
                fault == "retained_after" and steps.count("snapshot") == 2)
         return ["changed"] if bad else original["retained_before"]
     e._capacity_retained_snapshot = retained
-    e._capacity_quota_inventory = lambda: (original["capacity_observed"]["quota_inventory"] +
+    e._capacity_quota_inventory = lambda **kw: (original["capacity_observed"]["quota_inventory"] +
         ([{"project": case["project_ids"][0]}] if fault == "project_exists" else []))
-    e._capacity_quota_enforcement = lambda: 48
+    e._capacity_quota_enforcement = lambda **kw: 48
     driver = helpers["q2_prepare_driver"]
     helpers["q2_prepare_driver"] = SimpleNamespace(encoded=driver.encoded,
         validate_plan=lambda p: steps.append("validate"), facts_from_observed=driver.facts_from_observed)

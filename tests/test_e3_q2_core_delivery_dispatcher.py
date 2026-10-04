@@ -453,7 +453,6 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
         "unimplemented_effects": [
             "admission.current_guest_collector",
             "installation.shared_pool_peak_accounting",
-            "preparation.current_capacity_collectors",
             "evidence.usage_and_peak_accounting",
         ],
     }

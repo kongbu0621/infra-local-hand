@@ -195,6 +195,7 @@ _phase = _Checks('CORE_DISPATCH_PHASE_')
 _projection = _Checks('CORE_EFFECT_PROJECTION_')
 _check = _Checks('CORE_DISPATCH_')
 _effect = _Checks('CORE_EFFECT_')
+_cap = _Checks('CORE_CAP_')
 
 
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
@@ -297,7 +298,7 @@ PROJECTION_REQUIRED = PROJECTION_HARNESS | frozenset({
 # The self-contained component parser below validates static relations; that
 # must not promote historical inputs into current observed facts.
 UNBOUND_APPROVED_INPUTS = _fields('admission.policy_expected_entities admission.historical_capacity_obligations preparation.retained_paths_and_domains')
-UNIMPLEMENTED_FIELD_EFFECTS = _fields('admission.current_guest_collector installation.shared_pool_peak_accounting preparation.current_capacity_collectors evidence.usage_and_peak_accounting')
+UNIMPLEMENTED_FIELD_EFFECTS = _fields('admission.current_guest_collector installation.shared_pool_peak_accounting evidence.usage_and_peak_accounting')
 
 OUTPUT_MAGIC = b"LHCOUT1\n"
 PACKAGE_MAGIC = b"LHCFP1\n"
@@ -819,28 +820,28 @@ def _validate_resident_gate(value, case):
 
 def _validate_units(value, case):
     phases = case["phases"]
-    _require(type(value) is list and value, "CORE_DISPATCH_UNIT_IDENTITIES")
+    _check(type(value) is list and value, 'UNIT_IDENTITIES')
     stages = ("bootstrap", "helper") if case["index"] == 2 else ("bootstrap", "helper", "result_reader")
     expected_stages = {(phase, stage) for phase in phases
         for stage in stages}
     actual = set()
     last = None
     for row in value:
-        _exact(row, _fields('phase stage unit invocation_id'),
-            "CORE_DISPATCH_UNIT_IDENTITY")
+        _check.exact(row, _fields('phase stage unit invocation_id'),
+            'UNIT_IDENTITY')
         key = (row["phase"], row["stage"])
-        _require(key not in actual and key in expected_stages, "CORE_DISPATCH_UNIT_IDENTITY")
+        _check(key not in actual and key in expected_stages, 'UNIT_IDENTITY')
         actual.add(key)
         expected = next(item for item in _phase_units(case["operation_id"], phases)
             if item["phase"] == row["phase"])
         unit_key = row["stage"] + "_unit" if row["stage"] != "result_reader" else "result_reader_unit"
-        _require(row["unit"] == expected[unit_key]
+        _check(row["unit"] == expected[unit_key]
             and re.fullmatch(r"[0-9a-f]{32}", row["invocation_id"] or "") is not None,
-            "CORE_DISPATCH_UNIT_IDENTITY")
+            'UNIT_IDENTITY')
         ordering = (row["phase"], row["stage"], row["unit"])
-        _require(last is None or last < ordering, "CORE_DISPATCH_UNIT_ORDER")
+        _check(last is None or last < ordering, 'UNIT_ORDER')
         last = ordering
-    _require(actual == expected_stages, "CORE_DISPATCH_UNIT_IDENTITIES")
+    _check(actual == expected_stages, 'UNIT_IDENTITIES')
 
 
 def _validate_stop(stop, owner_deadline):
@@ -1862,8 +1863,8 @@ def _prep_translate(case, plan, receipt, children, helpers):
     driver, assembly = helpers["q2_prepare_driver"], helpers["q2_prepare_assembly"]
     _prep_require(case in CASES and plan["scope"] == SCOPE and plan["baseline"] == BASELINE["commit"]
         and plan["preparation_id"] == case["preparation_id"], 'SCOPE')
-    _exact(receipt, _fields('schema preparation_id plan_sha256 status reason facts q2_accepted q3_accepted production_supported fixture_generated'),
-        "CORE_EFFECT_PREPARATION_RESULT")
+    _effect.exact(receipt, _fields('schema preparation_id plan_sha256 status reason facts q2_accepted q3_accepted production_supported fixture_generated'),
+        'PREPARATION_RESULT')
     _prep_require(receipt["schema"] == "local-hand-q2-fixture-preparation/v1"
         and receipt["preparation_id"] == case["preparation_id"]
         and receipt["plan_sha256"] == _sha(driver.encoded(plan))
@@ -1889,24 +1890,19 @@ def _prep_translate(case, plan, receipt, children, helpers):
     return {"facts": facts, "authority": authority, "manifest": manifest, "assembled": assembled}
 
 
-
-
 class _PrepIO:
     """Guard each syscall; retain late-opened fds for release, never retry I/O."""
     def __init__(self, effects, deadline):
         self.effects, self.deadline, self.fds = effects, deadline, []
 
     def call(self, function, *args, **kwargs):
-        _prep_guard(self.effects, self.deadline)
-        value = function(*args, **kwargs)
-        _prep_guard(self.effects, self.deadline)
-        return value
+        return _guard_call(partial(_prep_guard, self.effects, self.deadline),
+            function, *args, **kwargs)
 
     def open(self, *args, **kwargs):
-        _prep_guard(self.effects, self.deadline)
-        fd = os.open(*args, **kwargs)
+        fd = _guard_call(partial(_prep_guard, self.effects, self.deadline),
+            os.open, *args, release=os.close, **kwargs)
         self.fds.append(fd)
-        _prep_guard(self.effects, self.deadline)
         return fd
 
     def directory(self, path):
@@ -2018,8 +2014,6 @@ def _prep_quota(source, command, project, values=None):
     return {name: getattr(block, name) for name, _ in block._fields_}
 
 
-
-
 def _prep_quota_retained(rows):
     result = copy.deepcopy(rows)
     for row in result:
@@ -2068,7 +2062,8 @@ def _prep_root(effects, planned, account, mount, deadline):
                 'ROOT_CHANGED')
         _prep_require(actual == project and flags & 512 and quota["valid"] & 5 == 5
             and quota["hard"] == 1024 and quota["ihard"] == 128
-            and io.call(effects._capacity_quota_enforcement) & 48 == 48,
+            and io.call(effects._capacity_quota_enforcement,
+                guard=partial(_prep_guard, effects, deadline)) & 48 == 48,
             'QUOTA_ENFORCEMENT')
         return dict(planned, **{k: v for k, v in created.items() if k != "path"},
             filesystem="ext4", filesystem_uuid=mount["uuid"], xflags=flags,
@@ -2124,8 +2119,8 @@ print(json.dumps(value,sort_keys=True,separators=(',',':')))
         ledger = document(effects._installation_command(argv), limit=32768)
     finally:
         effects._effect_guard = original
-    _exact(ledger, _fields('path device inode uid mode ledger_id generation'),
-        "CORE_EFFECT_PREPARATION_LEDGER")
+    _effect.exact(ledger, _fields('path device inode uid mode ledger_id generation'),
+        'PREPARATION_LEDGER')
     _prep_require(ledger["path"] == facts["paths"]["broker_root"] + "/jobs.sqlite"
         and ledger["uid"] == uid and ledger["mode"] == 384
         and ledger["ledger_id"] == facts["identity"]["ledger_id"]
@@ -2148,21 +2143,19 @@ print(json.dumps(value,sort_keys=True,separators=(',',':')))
     prepared["prepared_result"] = result
 
 
-
-
 def _plan_from_prepared(case, prepared, deadlines):
     facts, assembled = prepared["facts"], prepared["assembled"]
     identity = facts["identity"]
-    _require(all(identity.get(key) == val for key, val in _identity(case).items()),
-        "CORE_EFFECT_PLAN_IDENTITY")
+    _effect(all(identity.get(key) == val for key, val in _identity(case).items()),
+        'PLAN_IDENTITY')
     by_project = {root["project_id"]: root for root in prepared["receipt"]["facts"]["roots"]}
     wrappers = []
     for planned in _planned_roots(case):
         root = by_project.get(planned["project_id"])
-        _require(root is not None, "CORE_EFFECT_PLAN_ROOT")
+        _effect(root is not None, 'PLAN_ROOT')
         observed = {key: root[key] for key in _fields('path role device inode uid gid mode filesystem filesystem_uuid project_id xflags hard_bytes accounting enforcement identity_unchanged')}
         actual = next(r for r in prepared["plan"]["roots"] if r["project_id"] == planned["project_id"])
-        _require(observed["path"] == actual["path"], "CORE_EFFECT_PLAN_ROOT_PATH")
+        _effect(observed["path"] == actual["path"], 'PLAN_ROOT_PATH')
         # The case-plan's path is relative; the preparation preimage retains the
         # matching absolute root. No observed identity/quota field is replaced.
         observed["path"] = planned["path"]
@@ -2184,71 +2177,27 @@ def _plan_from_prepared(case, prepared, deadlines):
     return validate_plan(case, build_intent(case), plan, deadlines)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Historical role vector reconstructs the exact approved 4549-byte placement
-# preimage; it never takes its roles from current filesystem observations.
-
-
-
-
-
-
-
-
 class _CapQuota:
     """The candidate's bounded Linux project quota observation UAPI only."""
     def __init__(self, source):
         import ctypes
         import platform
-        _require(platform.system() == 'Linux' and platform.machine() == 'x86_64',
-            'CORE_CAP_QUOTA_ABI')
+        _cap(platform.system() == 'Linux' and platform.machine() == 'x86_64',
+            'QUOTA_ABI')
         self.ct = ctypes
         class Block(ctypes.Structure):
             _fields_ = [(name, ctypes.c_uint64) for name in
                 _fields('hard soft space ihard isoft inodes btime itime')]
             _fields_ += [('valid', ctypes.c_uint32), ('project', ctypes.c_uint32)]
         self.Block = Block
-        _require(ctypes.sizeof(Block) == 72, 'CORE_CAP_QUOTA_ABI')
+        _cap(ctypes.sizeof(Block) == 72, 'QUOTA_ABI')
         self.lib = ctypes.CDLL(None, use_errno=True)
         self.lib.quotactl.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p)
         self.lib.quotactl.restype = ctypes.c_int
         self.device = os.fsencode(source)
 
     def call(self, command, project, buffer):
-        _require(command in (0x800007, 0x800009, (ord('X') << 8) | 8), 'CORE_CAP_QUOTA_READ_ONLY')
+        _cap(command in (0x800007, 0x800009, (ord('X') << 8) | 8), 'QUOTA_READ_ONLY')
         self.ct.set_errno(0)
         if self.lib.quotactl(self.ct.c_int((command << 8) | 2), self.device,
             self.ct.c_int(project), self.ct.byref(buffer)):
@@ -2266,37 +2215,44 @@ class _CapQuota:
             if error.errno == errno.ESRCH:
                 return
             raise
-        _require(all(number == 0 for key, number in value.items() if key != 'valid'),
-            'CORE_CAP_PROJECT_OCCUPIED')
+        _cap(all(number == 0 for key, number in value.items() if key != 'valid'),
+            'PROJECT_OCCUPIED')
 
     def inventory(self, guard):
         import errno
         rows = []; start = 0
         for _ in range(128):
-            guard(); value = self.Block()
+            value = self.Block()
             try:
-                self.call(0x800009, start, value)
+                _guard_call(guard, self.call, 0x800009, start, value)
             except OSError as error:
                 if error.errno == errno.ENOENT:
                     return rows
                 raise
-            guard()
-            _require(start <= value.project < 2**32 - 1, 'CORE_CAP_QUOTA_ORDER')
+            _cap(start <= value.project < 2**32 - 1, 'QUOTA_ORDER')
             rows.append({key: getattr(value, key) for key, _ in value._fields_})
             start = value.project + 1
-        raise DispatchError('CORE_CAP_QUOTA_INVENTORY_LIMIT')
+        raise _cap.error('QUOTA_INVENTORY_LIMIT')
 
     def enforcement(self):
         buffer = self.ct.create_string_buffer(160); buffer[0] = b'\x01'
         self.call((ord('X') << 8) | 8, 0, buffer)
         raw = bytes(buffer); flags = int.from_bytes(raw[2:4], 'little')
-        _require(raw[0] == 1 and flags & 48 == 48, 'CORE_CAP_QUOTA_ENFORCEMENT')
+        _cap(raw[0] == 1 and flags & 48 == 48, 'QUOTA_ENFORCEMENT')
         return flags
 
 
+def _capacity_stat(info):
+    return tuple(getattr(info, key) for key in _fields(
+        'st_dev st_ino st_mode st_uid st_gid st_nlink st_size st_mtime_ns st_ctime_ns'))
 
 
-def _guard_call(guard, function, *args, release=None, **kwargs):
+def _cap_same(before, after):
+    _cap(_capacity_stat(before) == _capacity_stat(after)
+        and before.st_atime_ns == after.st_atime_ns, 'RETAINED_DRIFT')
+
+
+def _guard_call(guard, function, /, *args, release=None, **kwargs):
     """Reject late returns; this cannot interrupt a blocking kernel call."""
     if guard is not None: guard()
     try:
@@ -2313,11 +2269,10 @@ def _guard_call(guard, function, *args, release=None, **kwargs):
 
 
 class _InstallIO:
-    """Private I/O bindings for the exact frozen installer, not global patches.
+    """Private frozen-installer bindings; preserve its checks and control flow.
 
-    Candidate checks and control flow stay intact. Every effect is guarded by
-    the original clocks; closing owned handles is still allowed after expiry.
-    A late kernel return cannot be interrupted and never permits a next write.
+    Guard each effect with original clocks. Late kernel returns cannot be
+    interrupted; only owned-handle closure remains allowed after expiry.
     """
 
     def __init__(self, guard):
@@ -2347,8 +2302,7 @@ class _InstallIO:
                     yield path / name
 
             def resolve(path, strict=False):
-                # These are the installer's only resolve calls. Admission pins
-                # the same literal programs and already rejects aliased ancestry.
+                # Only these admission-pinned, non-aliased literals may resolve.
                 _effect(strict and str(path) in ("/usr/bin/systemctl", "/usr/bin/systemd-run"),
                     "INSTALL_RESOLVE_PATH")
                 for parent in (*reversed(path.parents), path):
@@ -2380,8 +2334,7 @@ class _InstallIO:
         guard()
 
         class Stream:
-            # The frozen writer owns/closes fd. Unbuffered bounded writes mean
-            # neither flush nor exception cleanup can publish a late buffer.
+            # Caller owns fd. Unbuffered writes prevent late cleanup flushes.
             def __enter__(stream):
                 return stream
 
@@ -2470,7 +2423,7 @@ class FieldEffects:
         try:
             boot_id = raw.decode("ascii", "strict").strip()
         except UnicodeError as error:
-            raise DispatchError("CORE_EFFECT_BOOT_ID") from error
+            raise _effect.error('BOOT_ID') from error
         _effect(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
                 boot_id) is not None, "BOOT_ID")
         return {"boot_id": boot_id,
@@ -2488,17 +2441,19 @@ class FieldEffects:
         return parsed
 
     @staticmethod
-    def _held_directory(path, *, guard=None):
+    def _held_directory(path, *, guard=None, validate=None):
         """Walk an absolute directory from a held slash fd without symlinks."""
         parsed = FieldEffects._absolute(path)
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
         call = partial(_guard_call, guard)
         current = call(os.open, "/", flags, release=os.close)
         try:
+            if validate: validate(call(os.fstat, current))
             for component in parsed.parts[1:]:
                 following = call(os.open, component, flags, dir_fd=current, release=os.close)
                 os.close(current)
                 current = following
+                if validate: validate(call(os.fstat, current))
             info = call(os.fstat, current)
             _effect(stat.S_ISDIR(info.st_mode), "DIRECTORY")
             return current
@@ -2513,7 +2468,7 @@ class FieldEffects:
             and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
             and type(maximum) is int and 0 <= maximum <= MEMBER_LIMIT,
             "READ_INPUT")
-        flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
         if noatime:
             flags |= getattr(os, "O_NOATIME", 0)
         call = partial(_guard_call, guard)
@@ -2532,9 +2487,7 @@ class FieldEffects:
                     break
                 raw.extend(part)
             after = call(os.fstat, fd)
-            stable = lambda value: (value.st_dev, value.st_ino, value.st_mode,
-                value.st_uid, value.st_gid, value.st_nlink,
-                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            stable = _capacity_stat
             _effect(len(raw) <= maximum and stable(before) == stable(after)
                 and len(raw) == after.st_size, "READ_CHANGED")
             result = bytes(raw)
@@ -2639,7 +2592,7 @@ class FieldEffects:
         return {"directories": directories, "roots": roots}
 
     def _persistence_path(self, case_id, logical):
-        _path(logical, "CORE_EFFECT_PERSIST_LOGICAL")
+        _effect.path(logical, 'PERSIST_LOGICAL')
         locators = self.context["manifest"]["locators"]
         if logical.startswith("carrier/"):
             suffix = logical.split("/", 1)[1]
@@ -2659,23 +2612,12 @@ class FieldEffects:
             / "reservation" / suffix[len("reservation/"):])
 
 
-
-
-
-
-
-
-
-
-
-
-
     def admit(self, _expected):
-        raise DispatchError("CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE")
+        raise _effect.error('ADMISSION_COLLECTOR_INCOMPLETE')
 
     def install(self, expected):
-        _exact(expected, ("manifest", "members", "admission"),
-            "CORE_EFFECT_INSTALLATION_INPUT")
+        _effect.exact(expected, ("manifest", "members", "admission"),
+            'INSTALLATION_INPUT')
         verified = self.verify_install_inputs()
         _effect(self._admission is not None and expected["admission"] == self._admission,
             "INSTALLATION_ADMISSION_REQUIRED")
@@ -2706,7 +2648,7 @@ class FieldEffects:
                 except FileNotFoundError:
                     pass
                 else:
-                    raise DispatchError("CORE_EFFECT_INSTALLATION_EXISTS")
+                    raise _effect.error('INSTALLATION_EXISTS')
             self._prepare_carrier_storage()
             self._effect_guard()
             staging_fd = self._mkdir_at(parent, STAGING_BASENAME, 0o700, guard=self._effect_guard)
@@ -2872,7 +2814,7 @@ class FieldEffects:
                 # ordinary projection, sys.path or public output.
                 if row["role"] == "approved-inputs":
                     continue
-                relative = PurePosixPath(_path(row["path"], "CORE_EFFECT_INSTALL_MEMBER_PATH"))
+                relative = PurePosixPath(_effect.path(row["path"], 'INSTALL_MEMBER_PATH'))
                 for index in range(1, len(relative.parts)):
                     name = PurePosixPath(*relative.parts[:index]).as_posix()
                     if name not in directories:
@@ -3140,7 +3082,7 @@ class FieldEffects:
                         _effect(error.errno in (errno.ENODATA, errno.ENOTSUP),
                             "INSTALL_PROGRAM_CAPABILITY")
                     else:
-                        raise DispatchError("CORE_EFFECT_INSTALL_PROGRAM_CAPABILITY")
+                        raise _effect.error('INSTALL_PROGRAM_CAPABILITY')
                     _effect((before.st_dev, before.st_ino, stat.S_IMODE(before.st_mode),
                             before.st_uid, before.st_gid, before.st_nlink, before.st_size)
                         == tuple(identity[key] for key in _fields('dev ino mode uid gid nlink bytes'))
@@ -3332,16 +3274,118 @@ class FieldEffects:
         verified = self.verify_install_inputs()
         return {name: self._candidate_helper(name, verified) for name in PREPARATION_HELPERS}
 
+    def _capacity_protection(self, info):
+        _cap(info.st_uid in getattr(self, '_capacity_owners', {0})
+            and not info.st_mode & 0o022, 'PATH_PROTECTION')
+
+    def _capacity_retained_snapshot(self, *, guard=None):
+        """Read only approved roots, with no-atime enumeration and named rechecks."""
+        guard = self._effect_guard if guard is None else guard
+        call = partial(_guard_call, guard)
+        approved = _approved_inputs_envelope(self.context)
+        count = total = 0
+        def directory(path):
+            return self._held_directory(path, guard=guard, validate=self._capacity_protection)
+        def snapshot(fd, path, device, rows, depth=0):
+            nonlocal count, total
+            before = call(os.fstat, fd)
+            self._capacity_protection(before)
+            count += 1
+            _cap(depth <= 64 and len(path) <= 4096 and count <= 32768
+                and before.st_dev == device, 'RETAINED_LIMIT')
+            listing = call(os.open, '.', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
+                os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd, release=os.close)
+            try:
+                entries = call(os.scandir, listing, release=lambda it: it.close())
+                with entries:
+                    names = []
+                    while (entry := call(next, entries, None)) is not None:
+                        names.append(entry.name)
+                        _cap(count + len(names) <= 32768, 'RETAINED_LIMIT')
+                    _cap(len(names) == len(set(names)), 'RETAINED_DRIFT')
+            finally:
+                os.close(listing)
+            rows.append(dict(path=path, identity=list(_capacity_stat(before))))
+            for name in sorted(names):
+                _cap(re.fullmatch(r'[A-Za-z0-9._-]+', name) and name not in ('.', '..'), 'RETAINED_NAME')
+                child = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
+                self._capacity_protection(child)
+                _cap(child.st_dev == device and not stat.S_ISLNK(child.st_mode), 'RETAINED_TYPE')
+                if stat.S_ISDIR(child.st_mode):
+                    opened = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
+                        os.O_NOFOLLOW, dir_fd=fd, release=os.close)
+                    try:
+                        _cap_same(child, call(os.fstat, opened))
+                        snapshot(opened, path + '/' + name, device, rows, depth + 1)
+                    finally:
+                        os.close(opened)
+                else:
+                    count += 1; total += child.st_size
+                    _cap(stat.S_ISREG(child.st_mode) and child.st_nlink == 1 and count <= 32768
+                        and 0 <= child.st_size <= MEMBER_LIMIT and total <= 536870912, 'RETAINED_LIMIT')
+                    raw, pin = self.stable_read_at(fd, name, maximum=child.st_size, guard=guard)
+                    _cap((pin['dev'], pin['ino']) == (child.st_dev, child.st_ino), 'RETAINED_DRIFT')
+                    rows.append(dict(path=path + '/' + name, identity=list(_capacity_stat(child)), sha256=_sha(raw)))
+                named = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
+                _cap_same(child, named)
+            _cap_same(before, call(os.fstat, fd))
+        result = []
+        for root in approved['retained_preparation']['paths']:
+            fd = directory(root['path'])
+            try:
+                before = call(os.fstat, fd)
+                _cap((before.st_dev, before.st_ino) == (root['device'], root['inode']), 'RETAINED_IDENTITY')
+                rows = []
+                snapshot(fd, root['path'], root['device'], rows)
+                named = directory(root['path'])
+                try:
+                    _cap_same(before, call(os.fstat, named))
+                finally:
+                    os.close(named)
+                result.append(dict(root=copy.deepcopy(root), files=sorted(rows, key=lambda row: row['path'])))
+            finally:
+                os.close(fd)
+        return result
+
+    def _capacity_quota(self, inventory, guard):
+        guard = self._effect_guard if guard is None else guard
+        call = partial(_guard_call, guard)
+        detail = getattr(self, '_admission_detail', None)
+        _cap(type(detail) is dict and 'quota_mount' in detail, 'CONTEXT_REQUIRED')
+        mount = detail['quota_mount']
+        source = self._absolute(mount['source'])
+        parent = self._held_directory(str(source.parent), guard=guard, validate=self._capacity_protection)
+        try:
+            before = call(os.stat, source.name, dir_fd=parent, follow_symlinks=False)
+            _cap(stat.S_ISBLK(before.st_mode) and before.st_rdev == mount['device'], 'QUOTA_DEVICE')
+            quota = call(_CapQuota, str(source))
+            result = quota.inventory(guard) if inventory else call(quota.enforcement)
+            after = call(os.stat, source.name, dir_fd=parent, follow_symlinks=False)
+            _cap(_capacity_stat(before) == _capacity_stat(after)
+                and before.st_rdev == after.st_rdev, 'QUOTA_DEVICE_DRIFT')
+            return result
+        finally:
+            os.close(parent)
+
+    def _capacity_quota_inventory(self, *, guard=None):
+        return self._capacity_quota(True, guard)
+
+    def _capacity_quota_enforcement(self, *, guard=None):
+        return self._capacity_quota(False, guard)
+
     def prepare_case(self, case, intent, preparation_deadline_ns):
         _prep_require(case in CASES and intent == build_intent(case), 'INPUT')
-        _integer(preparation_deadline_ns, 1, code="CORE_EFFECT_PREPARATION_DEADLINE")
+        _effect.integer(preparation_deadline_ns, 1, code='PREPARATION_DEADLINE')
         _prep_require(self._installation_receipt is not None and self._persistence_ready
             and self._admission is not None and os.geteuid() == os.getegid() == 0,
             'INSTALLATION_REQUIRED')
-        _prep_require(all(callable(getattr(self, "_capacity_" + name, None)) for name in
+        _prep_require(type(getattr(self, '_admission_detail', None)) is dict
+            and 'retained_before' in self._admission_detail
+            and all(callable(getattr(self, "_capacity_" + name, None)) for name in
                 ("retained_snapshot", "quota_inventory", "quota_enforcement")),
             'CURRENT_FACTS_REQUIRED')
         deadline = preparation_deadline_ns
+        guard = partial(_prep_guard, self, deadline)
         with _PrepIO(self, deadline) as io:
             intent_path = self._persistence_path(case["case_id"], "cases/" + case["case_id"] + "/intent.json")
             actual, pin = io.call(self.stable_read, intent_path, maximum=65536, expected_mode=384)
@@ -3353,8 +3397,8 @@ class FieldEffects:
             plan = _prep_make_plan(self, case, (time.time_ns() + OWNER_NS) // NS)
             driver.validate_plan(plan)
             parents, directories, children = self._admission["parents"], {}, {}
-            before = io.call(self._capacity_retained_snapshot)
-            inventory = io.call(self._capacity_quota_inventory)
+            before = io.call(self._capacity_retained_snapshot, guard=guard)
+            inventory = io.call(self._capacity_quota_inventory, guard=guard)
             _prep_require(before == self._admission_detail["retained_before"]
                 and not set(case["project_ids"]) & {r["project"] for r in inventory},
                 'RETAINED_CHANGED')
@@ -3390,8 +3434,9 @@ class FieldEffects:
                 children[name] = _prep_pin(directory(parent + "/" + name,
                     mode=493 if name == "launcher_declarations" else 448))
             roots = [_prep_root(self, row, account, plan["mounts"]["quota"], deadline) for row in plan["roots"]]
-            after = io.call(self._capacity_retained_snapshot)
-            remaining = [r for r in io.call(self._capacity_quota_inventory) if r["project"] not in case["project_ids"]]
+            after = io.call(self._capacity_retained_snapshot, guard=guard)
+            remaining = [r for r in io.call(self._capacity_quota_inventory, guard=guard)
+                if r["project"] not in case["project_ids"]]
             _prep_require(before == after and _prep_quota_retained(inventory) == _prep_quota_retained(remaining),
                 'RETAINED_CHANGED')
             pins = {}
@@ -3484,7 +3529,7 @@ class FieldEffects:
             for suffix in ("-wal", "-shm", "-journal"):
                 try: os.stat("jobs.sqlite" + suffix, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError: continue
-                raise DispatchError("CORE_EFFECT_EMPTY_LEDGER_SIDECAR")
+                raise _effect.error('EMPTY_LEDGER_SIDECAR')
             raw = os.pread(fd, info.st_size + 1, 0)
             _effect(len(raw) == info.st_size and checker.identity(info) == checker.identity(os.fstat(fd))
                 == checker.identity(os.stat("jobs.sqlite", dir_fd=parent, follow_symlinks=False)),
@@ -3552,7 +3597,7 @@ class FieldEffects:
                     os.stat(name + suffix, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError:
                     continue
-                raise DispatchError("CORE_EFFECT_LEDGER_EXPORT_SIDECAR")
+                raise _effect.error('LEDGER_EXPORT_SIDECAR')
             return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
         def digest():
             value = hashlib.sha256()
@@ -3586,7 +3631,7 @@ class FieldEffects:
                 _effect(type(value) is dict, "LEDGER_EXPORT_TEXT")
                 raw.encode("utf-8", "strict")
             except (ValueError, TypeError, RecursionError, UnicodeError) as error:
-                raise DispatchError("CORE_EFFECT_LEDGER_EXPORT_TEXT") from error
+                raise _effect.error('LEDGER_EXPORT_TEXT') from error
         connection = None
         try:
             before = identity()
@@ -3680,7 +3725,7 @@ class FieldEffects:
             else: self._effect_guard = previous
 
     def _exec_source(self, case, prepared, plan, suffix, role, mode=384):
-        _path(suffix, "CORE_EFFECT_CASE_SOURCE_PATH")
+        _effect.path(suffix, 'CASE_SOURCE_PATH')
         root, relative = suffix.split("/", 1)
         self._exec_guard(plan)
         if role == "result":
@@ -4019,7 +4064,7 @@ class FieldEffects:
             for suffix in ("-wal", "-shm", "-journal"):
                 try: os.stat(path.name + suffix, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError: continue
-                raise DispatchError("CORE_EFFECT_H11_LEDGER_SIDECAR")
+                raise _effect.error('H11_LEDGER_SIDECAR')
             return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
         db = None
         try:
@@ -4064,7 +4109,7 @@ class FieldEffects:
         # Sampled installation allocation is also not the guest-wide peak.
         # Until those observations are integrated, emitting pids=1 or storage=0
         # would turn missing evidence into fabricated successful accounting.
-        raise DispatchError("CORE_EFFECT_USAGE_ACCOUNTING_INCOMPLETE")
+        raise _effect.error('USAGE_ACCOUNTING_INCOMPLETE')
 
 
 def _phase_extract(case, phase, plan, sources, config_api, budget_api, controller_api):
@@ -4201,13 +4246,13 @@ def _phase_raw_binding(case, phase, plan, values, grant_digest, facts):
 
 def _clock(effects, deadlines):
     now = effects.now()
-    _exact(now, ("boot_id", "boottime_ns", "monotonic_ns"), "CORE_DISPATCH_CLOCK_FIELDS")
-    _require(now["boot_id"] == deadlines["boot_id"], "CORE_DISPATCH_BOOT_CHANGED")
-    _integer(now["boottime_ns"], 1, code="CORE_DISPATCH_CLOCK")
-    _integer(now["monotonic_ns"], 1, code="CORE_DISPATCH_CLOCK")
-    _require(now["boottime_ns"] < deadlines["boottime_deadline_ns"]
+    _check.exact(now, ("boot_id", "boottime_ns", "monotonic_ns"), 'CLOCK_FIELDS')
+    _check(now["boot_id"] == deadlines["boot_id"], 'BOOT_CHANGED')
+    _check.integer(now["boottime_ns"], 1, code='CLOCK')
+    _check.integer(now["monotonic_ns"], 1, code='CLOCK')
+    _check(now["boottime_ns"] < deadlines["boottime_deadline_ns"]
         and now["monotonic_ns"] < deadlines["monotonic_deadline_ns"],
-        "CORE_DISPATCH_DEADLINE")
+        'DEADLINE')
     return now
 
 
@@ -4215,8 +4260,8 @@ def _persist(effects, case_id, path, role, value, *, mode=384, raw=False):
     content = value if raw else canonical(value, newline=True)
     returned = effects.persist(case_id, path, content, mode)
     _source(returned, case_id=None if case_id == "carrier" else case_id)
-    _require(returned == {"path": path, "role": role, "mode": mode, "raw": content},
-        "CORE_DISPATCH_PERSIST_RESULT")
+    _check(returned == {"path": path, "role": role, "mode": mode, "raw": content},
+        'PERSIST_RESULT')
     return returned
 
 
@@ -4233,11 +4278,11 @@ def _validate_phase_receipts(case, sources, phase_facts, owner_deadline):
 def _case_outcome(effects, case, intent, intent_source, deadlines):
     effects._active_case_deadlines = dict(deadlines)
     prepared = effects.prepare_case(case, intent, deadlines["preparation_deadline_ns"])
-    _require(type(prepared) is dict, "CORE_DISPATCH_PREPARED")
+    _check(type(prepared) is dict, 'PREPARED')
     now = _clock(effects, effects.context["guest_deadlines"])
-    _require(now["boottime_ns"] < deadlines["preparation_deadline_ns"]
+    _check(now["boottime_ns"] < deadlines["preparation_deadline_ns"]
         and now["monotonic_ns"] < deadlines["preparation_monotonic_deadline_ns"],
-        "CORE_DISPATCH_PREPARATION_DEADLINE")
+        'PREPARATION_DEADLINE')
     owner_deadline = min(now["boottime_ns"] + OWNER_NS, deadlines["remote_final_deadline_ns"])
     owner_mono_deadline = min(now["monotonic_ns"] + OWNER_NS,
         deadlines["remote_final_monotonic_deadline_ns"])
@@ -4251,25 +4296,25 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
         "carrier_deadline_ns": deadlines["carrier_deadline_ns"],
     }
     planned = effects.plan_case(case, prepared, plan_deadlines)
-    _require(type(planned) is dict and set(planned) == {"plan", "sources"},
-        "CORE_DISPATCH_PLANNED")
+    _check(type(planned) is dict and set(planned) == {"plan", "sources"},
+        'PLANNED')
     plan = validate_plan(case, intent, planned["plan"], plan_deadlines)
     sources = [intent_source, *planned["sources"]]
     for source in sources:
         _source(source, case_id=case["case_id"])
     plan_path = "cases/" + case["case_id"] + "/reservation/case-plan.json"
     plan_source = next((item for item in sources if item["path"] == plan_path), None)
-    _require(plan_source == {"path": plan_path, "role": "plan", "mode": 384,
+    _check(plan_source == {"path": plan_path, "role": "plan", "mode": 384,
             "raw": canonical(plan, newline=True)},
-        "CORE_DISPATCH_PLAN_SOURCE")
+        'PLAN_SOURCE')
     if case["index"] == 1:
         outcome = effects.run_h01(case, prepared, plan)
     elif case["index"] == 2:
         outcome = effects.run_q4(case, prepared, plan)
     else:
         outcome = effects.recover_h11(case, prepared, plan)
-    _exact(outcome, _fields('sources observations stop proof seal_id summary'),
-        "CORE_DISPATCH_OUTCOME_FIELDS")
+    _check.exact(outcome, _fields('sources observations stop proof seal_id summary'),
+        'OUTCOME_FIELDS')
     sources.extend(outcome["sources"])
     for source in sources:
         _source(source, case_id=case["case_id"])
@@ -4288,13 +4333,13 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
                 prefix + "reservation/h11-recovery-proof.json",
                 "recovery-proof", proof, mode=384))
     else:
-        _require(proof is None, "CORE_DISPATCH_UNEXPECTED_PROOF")
+        _check(proof is None, 'UNEXPECTED_PROOF')
     # Add a temporary verdict source only after all other exact members exist.
     expected_without_verdict = set(required_paths(case, seal_id=outcome["seal_id"]))
     expected_without_verdict = {row for row in expected_without_verdict if row[1] != "verdict"}
     actual_without_verdict = {(item["path"], item["role"], item["mode"]) for item in sources}
-    _require(actual_without_verdict == expected_without_verdict,
-        "CORE_DISPATCH_PREVERDICT_SET")
+    _check(actual_without_verdict == expected_without_verdict,
+        'PREVERDICT_SET')
     placeholder = {"path": prefix + "reservation/case-verdict.json", "role": "verdict",
         "mode": 384, "raw": b""}
     verdict = _validate_verdict(case, outcome["observations"], outcome["stop"],
@@ -4303,12 +4348,12 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
         "verdict", verdict, mode=384)
     sources.append(verdict_source)
     _validate_source_set(case, sources, seal_id=outcome["seal_id"])
-    _require(type(outcome["summary"]) is dict, "CORE_DISPATCH_SUMMARY")
+    _check(type(outcome["summary"]) is dict, 'SUMMARY')
     if case["index"] == 1:
         summary = _h01_summary(case, sources, outcome["summary"], outcome["seal_id"])
     else:
-        _require(outcome["summary"] == {} and outcome["seal_id"] is None,
-            "CORE_DISPATCH_NON_H01_SUMMARY")
+        _check(outcome["summary"] == {} and outcome["seal_id"] is None,
+            'NON_H01_SUMMARY')
         summary = {"seal_id": None}
     return sources, verdict, summary, owner_mono_deadline
 
@@ -4576,7 +4621,7 @@ def _validate_installation(value, manifest):
 def dispatch(context, effects):
     """Run the exact H01 -> Q4 -> H11 chain and return one complete frame."""
     _validate_context(context)
-    _require(isinstance(effects, FieldEffects) or all(hasattr(effects, name) for name in _fields('now admit install persist prepare_case plan_case run_h01 run_q4 recover_h11 phase_facts usage')), "CORE_DISPATCH_EFFECTS")
+    _check(isinstance(effects, FieldEffects) or all(hasattr(effects, name) for name in _fields('now admit install persist prepare_case plan_case run_h01 run_q4 recover_h11 phase_facts usage')), 'EFFECTS')
     # The first clock/deadline gate precedes every persistent field effect.
     _clock(effects, context["guest_deadlines"])
     admission = _validate_admission(effects.admit({"hello": context["hello"],
@@ -4609,32 +4654,32 @@ def dispatch(context, effects):
                 "semantic_pass": True, "verdict_path": verdict_source["path"],
                 "verdict_sha256": _sha(verdict_source["raw"])})
         if case["index"] == 1:
-            _exact(summary, ("seal_id", "h01_business_execution", "h01_result_package"),
-                "CORE_DISPATCH_H01_SUMMARY_FIELDS")
+            _check.exact(summary, ("seal_id", "h01_business_execution", "h01_result_package"),
+                'H01_SUMMARY_FIELDS')
             h01_execution = summary["h01_business_execution"]
             h01_package = summary["h01_result_package"]
         else:
-            _require(summary == {"seal_id": None}, "CORE_DISPATCH_NON_H01_SUMMARY")
+            _check(summary == {"seal_id": None}, 'NON_H01_SUMMARY')
         all_sources.extend(sources)
     session = _session(context, admission, installation)
     session_source = _persist(effects, "carrier", "carrier/session.json", "session", session)
     all_sources.append(session_source)
     carrier_specs = {(item["path"], item["role"], item["mode"]) for item in all_sources
         if item["path"].startswith("carrier/")}
-    _require(carrier_specs == {("carrier/session.json", "session", 384),
+    _check(carrier_specs == {("carrier/session.json", "session", 384),
             ("carrier/admission.json", "admission", 384),
             ("carrier/installation.json", "installation", 384)},
-        "CORE_DISPATCH_CARRIER_SET")
+        'CARRIER_SET')
     members = []
     raw_by_path = {}
     for source in all_sources:
         _source(source)
-        _require(source["path"] not in raw_by_path, "CORE_DISPATCH_MEMBER_DUPLICATE")
+        _check(source["path"] not in raw_by_path, 'MEMBER_DUPLICATE')
         case_id = "carrier" if source["path"].startswith("carrier/") else source["path"].split("/")[1]
         members.append(_member(source, case_id)); raw_by_path[source["path"]] = source["raw"]
     members.sort(key=lambda row: row["path"].encode("ascii"))
-    _require(len(members) == 3 + 32 + 21 + 26 and len(members) <= MEMBER_COUNT_LIMIT,
-        "CORE_DISPATCH_MEMBER_COUNT")
+    _check(len(members) == 3 + 32 + 21 + 26 and len(members) <= MEMBER_COUNT_LIMIT,
+        'MEMBER_COUNT')
     remote = {"schema": REMOTE_SCHEMA, "session_id": SESSION,
         "consumption_sha256": context["bind"]["consumption_sha256"],
         "state": "REMOTE_FINALIZED", "cases": cases_index,
@@ -4649,17 +4694,17 @@ def dispatch(context, effects):
         raw_manifest = canonical(manifest, newline=True, limit=MANIFEST_LIMIT)
         frame = OUTPUT_MAGIC + struct.pack(">Q", len(raw_manifest)) + raw_manifest + b"".join(
             raw_by_path[item["path"]] for item in members)
-        _require(len(frame) <= FRAME_LIMIT, "CORE_DISPATCH_FRAME_LIMIT")
+        _check(len(frame) <= FRAME_LIMIT, 'FRAME_LIMIT')
         if usage["output_frame_bytes"] == len(frame):
             break
         usage = dict(usage, output_frame_bytes=len(frame))
-    _require(usage["output_frame_bytes"] == len(frame), "CORE_DISPATCH_USAGE_FRAME")
+    _check(usage["output_frame_bytes"] == len(frame), 'USAGE_FRAME')
     remote["usage"] = _usage(usage, context, len(frame))
     raw_manifest = canonical(manifest, newline=True, limit=MANIFEST_LIMIT)
     frame = OUTPUT_MAGIC + struct.pack(">Q", len(raw_manifest)) + raw_manifest + b"".join(
         raw_by_path[item["path"]] for item in members)
-    _require(len(frame) == usage["output_frame_bytes"] and len(frame) <= FRAME_LIMIT,
-        "CORE_DISPATCH_FRAME_LIMIT")
+    _check(len(frame) == usage["output_frame_bytes"] and len(frame) <= FRAME_LIMIT,
+        'FRAME_LIMIT')
     return frame
 
 
