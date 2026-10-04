@@ -304,10 +304,13 @@ def test_real_admit_orders_components_and_never_retries(monkeypatch, stage):
         parents={k: v for k, v in expected['parents'].items() if k not in directory}, absence=[],
         manager={k: expected['guest'][k] for k in manager_keys}))
     argument = {key: context[key] for key in ('manifest', 'hello', 'guest_deadlines')}
+    # Component-ordering fixture has synthetic parents; the actual metadata
+    # observer is covered by temporary-filesystem integration tests.
+    monkeypatch.setattr(d._PoolAccounting, 'observe', result('accounting', None))
     order = ['policies', 'programs', 'guest', 'capacity', 'managers']
     if stage is None:
         assert effect.admit(argument) == expected
-        assert trace == order
+        assert trace == order + ['accounting']
     else:
         with pytest.raises(d.DispatchError, match='TEST_' + stage): effect.admit(argument)
         assert trace == order[:order.index(stage) + 1] and effect._admission is None

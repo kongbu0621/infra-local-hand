@@ -316,15 +316,17 @@ PROJECTION_REQUIRED = PROJECTION_HARNESS | frozenset({
 
 # Static preimages and current-guest collectors are now connected. This is
 # source readiness only, not a claim that a guest has been observed or admitted.
-# Complete application/allocation accounting and the v2 result remain blocked.
+# Source effects are connected. Private release review and the independent host
+# digest allowlist remain separate prerequisites for issuing the one carrier.
 UNBOUND_APPROVED_INPUTS = ()
-UNIMPLEMENTED_FIELD_EFFECTS = _fields('installation.application_and_allocation_accounting evidence.resource_accounting_v2_and_usage')
+UNIMPLEMENTED_FIELD_EFFECTS = ()
 
 OUTPUT_MAGIC = b"LHCOUT1\n"
 PACKAGE_MAGIC = b"LHCFP1\n"
 CONTEXT_SCHEMA = "local-hand-q2-core-bootstrap-context/v1"
 OUTPUT_SCHEMA = "local-hand-q2-core-output-package/v1"
-REMOTE_SCHEMA = "local-hand-q2-core-remote-result/v1"
+REMOTE_SCHEMA = "local-hand-q2-core-remote-result/v2"
+RESOURCE_SCHEMA = "local-hand-q2-core-resource-accounting/v1"
 INTENT_SCHEMA = "local-hand-q2-core-case-intent/v1"
 PLAN_SCHEMA = "local-hand-q2-core-case-plan/v1"
 RECEIPT_SCHEMA = "local-hand-q2-core-phase-receipt/v1"
@@ -1594,7 +1596,7 @@ def field_readiness():
     return {
         "schema": "local-hand-q2-core-field-readiness/v1",
         "scope": SCOPE,
-        "releasable": False,
+        "releasable": not (UNBOUND_APPROVED_INPUTS or UNIMPLEMENTED_FIELD_EFFECTS),
         "unbound_approved_inputs": list(UNBOUND_APPROVED_INPUTS),
         "protocol_blockers": [],
         "unimplemented_effects": list(UNIMPLEMENTED_FIELD_EFFECTS),
@@ -1919,9 +1921,17 @@ class _PrepIO:
         return _guard_call(partial(_prep_guard, self.effects, self.deadline),
             function, *args, **kwargs)
 
-    def open(self, *args, **kwargs):
-        fd = _guard_call(partial(_prep_guard, self.effects, self.deadline),
-            os.open, *args, release=os.close, **kwargs)
+    def mutate(self, path, function, *args, **kwargs):
+        return _accounting_io(getattr(self.effects, '_pool_accounting', None),
+            partial(_prep_guard, self.effects, self.deadline), path, function, *args, **kwargs)
+
+    def open(self, *args, accounting_path=None, **kwargs):
+        if len(args) > 1 and args[1] & os.O_CREAT:
+            _prep_require(accounting_path is not None, 'ACCOUNTING_PATH')
+            fd = self.mutate(accounting_path, os.open, *args, create=True, release=os.close, **kwargs)
+        else:
+            fd = _guard_call(partial(_prep_guard, self.effects, self.deadline),
+                os.open, *args, release=os.close, **kwargs)
         self.fds.append(fd)
         return fd
 
@@ -1948,13 +1958,13 @@ def _prep_directory(effects, path, uid, gid, mode, deadline):
     with _PrepIO(effects, deadline) as io:
         parent = io.directory(str(PurePosixPath(path).parent))
         name = PurePosixPath(path).name
-        io.call(os.mkdir, name, mode, dir_fd=parent)
+        io.mutate(path, os.mkdir, name, mode, dir_fd=parent, create=True)
         fd = io.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
             dir_fd=parent)
         io.call(os.fchown, fd, uid, gid)
         io.call(os.fchmod, fd, mode)
-        io.call(os.fsync, fd)
-        io.call(os.fsync, parent)
+        io.mutate(path, os.fsync, fd)
+        io.mutate(path, os.fsync, parent)
         info = io.call(os.fstat, fd)
         named = io.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
         _prep_require((info.st_dev, info.st_ino) == (named.st_dev, named.st_ino)
@@ -1971,16 +1981,17 @@ def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
         parent = io.directory(str(PurePosixPath(path).parent))
         name = PurePosixPath(path).name
         fd = io.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
-            0o600, dir_fd=parent)
+            0o600, dir_fd=parent, accounting_path=path)
         io.call(os.fchown, fd, uid, gid)
         io.call(os.fchmod, fd, 0o600)
         view = memoryview(raw)
         while view:
-            count = io.call(os.write, fd, view)
+            part = view[:65536]
+            count = io.mutate(path, os.write, fd, part, write=True, requested_bytes=len(part))
             _prep_require(count > 0, 'SHORT_WRITE')
             view = view[count:]
-        io.call(os.fsync, fd)
-        io.call(os.fsync, parent)
+        io.mutate(path, os.fsync, fd)
+        io.mutate(path, os.fsync, parent)
         info = io.call(os.fstat, fd)
         reread = io.call(os.pread, fd, len(raw) + 1, 0)
         _prep_require(reread == raw and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
@@ -2073,7 +2084,7 @@ def _prep_root(effects, planned, account, mount, deadline):
             'PROJECT_ASSIGNMENT')
         io.call(_prep_quota, mount["source"], 0x800008, project,
             {"hard": 1024, "ihard": 128, "valid": 5})
-        io.call(os.fsync, fd)
+        io.mutate(planned['path'], os.fsync, fd)
         flags, _, _, actual, _, _ = struct.unpack("=IIIII8s", io.call(fcntl.ioctl, fd, 0x801c581f, bytes(28)))
         quota = io.call(_prep_quota, mount["source"], 0x800007, project)
         for info in (io.call(os.fstat, fd), io.call(os.stat, planned["path"], follow_symlinks=False)):
@@ -2288,6 +2299,70 @@ def _guard_call(guard, function, /, *args, release=None, **kwargs):
     return value
 
 
+def _accounting_observe(accounting, guard, boundary, pool_ids=None):
+    """Run the observer under the caller's unchanged preparation/owner clocks."""
+    if accounting is None:
+        return
+    try:
+        if guard is not None: guard()
+        accounting.observe(boundary, pool_ids, guard=guard)
+        if guard is not None: guard()
+    except BaseException:
+        for identifier in accounting.by_id if pool_ids is None else pool_ids:
+            accounting.mark_incomplete(identifier, 'last_observation', 'OBSERVATION_BOUNDARY_MISSING')
+        raise
+
+
+def _accounting_io(accounting, guard, path, function, /, *args,
+        create=False, write=False, requested_bytes=0, release=None, **kwargs):
+    """Retain a successful syscall's real charge before checking a late return.
+
+    A late operation leaves its object and accounting record intact. No next
+    observation or filesystem effect is issued after the original clock expires.
+    """
+    if guard is not None: guard()
+    pool = None
+    touched = []
+    if accounting is not None:
+        pool = accounting.before_write(path, requested_bytes=requested_bytes, create=create, guard=guard)
+        touched.append(pool)
+        parent = str(PurePosixPath(path).parent)
+        if any(parent == root or parent.startswith(root + '/')
+                for root, *_ in accounting.roots):
+            parent_pool = accounting.classify(parent)
+            if parent_pool != pool:
+                touched.append(parent_pool)
+    if guard is not None: guard()
+    try:
+        value = function(*args, **kwargs)
+    except BaseException:
+        if accounting is not None:
+            for identifier in touched:
+                accounting.mark_incomplete(identifier, 'last_observation', 'CONTROLLED_IO_EFFECT_FAILED')
+        if guard is not None: guard()
+        raise
+    try:
+        if accounting is not None:
+            accounting.record_io(path, written_bytes=value if write else 0,
+                created_inodes=1 if create else 0)
+            if len(touched) > 1:
+                # A directory entry can allocate blocks in its containing pool.
+                # It is observed there without inventing a second inode create.
+                accounting.record_io(parent)
+        if guard is not None: guard()
+        ordinary = [identifier for identifier in touched
+            if accounting.by_id[identifier]['measurement_kind'] != 'PROJECT_QUOTA']
+        if ordinary:
+            _accounting_observe(accounting, guard, 'CONTROLLED_IO', ordinary)
+    except BaseException:
+        if accounting is not None:
+            for identifier in touched:
+                accounting.mark_incomplete(identifier, 'last_observation', 'CONTROLLED_IO_BOUNDARY_MISSING')
+        if release is not None: release(value)
+        raise
+    return value
+
+
 class _InstallIO:
     """Private frozen-installer bindings; preserve its checks and control flow.
 
@@ -2295,9 +2370,10 @@ class _InstallIO:
     interrupted; only owned-handle closure remains allowed after expiry.
     """
 
-    def __init__(self, guard):
+    def __init__(self, guard, accounting=None):
         from types import SimpleNamespace
         self.guard = guard
+        self.accounting, self.paths = accounting, {}
         self.call = partial(_guard_call, guard)
         call = self.call
 
@@ -2310,11 +2386,11 @@ class _InstallIO:
 
             def mkdir(path, mode=511, parents=False, exist_ok=False):
                 _effect(not parents and not exist_ok, "INSTALL_MKDIR_OPTIONS")
-                return call(os.mkdir, path, mode)
+                return _accounting_io(accounting, guard, str(path), os.mkdir, path, mode, create=True)
 
             def unlink(path, missing_ok=False):
                 _effect(not missing_ok, "INSTALL_UNLINK_OPTIONS")
-                return call(os.unlink, path)
+                return _accounting_io(accounting, guard, str(path), os.unlink, path)
 
             def iterdir(path):
                 for name in call(os.listdir, path):
@@ -2333,13 +2409,31 @@ class _InstallIO:
         self.Path = InstallPath
         self.os = SimpleNamespace(**{name: getattr(os, name) for name in
             _fields('O_RDONLY O_NOFOLLOW O_CLOEXEC O_NONBLOCK O_WRONLY O_CREAT O_EXCL O_DIRECTORY')})
-        for name in _fields('fstat read fchmod fsync getxattr geteuid readlink'):
+        for name in _fields('fstat read fchmod getxattr geteuid readlink'):
             setattr(self.os, name, partial(call, getattr(os, name)))
-        self.os.open = lambda *a, **kw: call(os.open, *a, release=os.close, **kw)
-        self.os.close = os.close
+        self.os.open, self.os.close, self.os.fsync = self.open, self.close, self.fsync
         self.os.fdopen = self.fdopen
         self.os.walk = self.walk
         self.os.path = SimpleNamespace(lexists=self.lexists)
+
+    def open(self, path, flags, mode=0o777, *, dir_fd=None):
+        _effect(dir_fd is None and PurePosixPath(path).is_absolute(), 'INSTALL_IO_PATH')
+        if flags & os.O_CREAT:
+            _effect(flags & os.O_EXCL, 'INSTALL_IO_CREATE')
+            fd = _accounting_io(self.accounting, self.guard, str(path), os.open,
+                path, flags, mode, create=True, release=os.close)
+        else:
+            fd = self.call(os.open, path, flags, mode, release=os.close)
+        self.paths[fd] = str(path)
+        return fd
+
+    def close(self, fd):
+        self.paths.pop(fd, None)
+        os.close(fd)
+
+    def fsync(self, fd):
+        _effect(fd in self.paths, 'INSTALL_IO_DESCRIPTOR')
+        return _accounting_io(self.accounting, self.guard, self.paths[fd], os.fsync, fd)
 
     def lexists(self, path):
         try:
@@ -2351,6 +2445,8 @@ class _InstallIO:
     def fdopen(self, fd, mode, *, closefd):
         _effect(mode == "wb" and closefd is False, "INSTALL_STREAM_OPTIONS")
         call, guard = self.call, self.guard
+        accounting, path = self.accounting, self.paths.get(fd)
+        _effect(accounting is None or path is not None, 'INSTALL_IO_DESCRIPTOR')
         guard()
 
         class Stream:
@@ -2365,7 +2461,9 @@ class _InstallIO:
                 view = memoryview(raw)
                 offset = 0
                 while offset < len(view):
-                    count = call(os.write, fd, view[offset:offset + 65536])
+                    part = view[offset:offset + 65536]
+                    count = _accounting_io(accounting, guard, path, os.write, fd, part,
+                        write=True, requested_bytes=len(part))
                     _effect(type(count) is int and 0 < count <= min(65536, len(view) - offset),
                         "INSTALL_STREAM_WRITE")
                     offset += count
@@ -3147,6 +3245,16 @@ def _admission_absent_paths(locators):
     return paths
 
 
+def _admission_absent_units():
+    units = set()
+    for case in CASES:
+        units.update(row[key] for row in _phase_units(case['operation_id'], case['phases'])
+                     for key in ('bootstrap_unit', 'helper_unit', 'result_reader_unit'))
+        units.update(case['controller_prefix'] + '-' + role + '.service'
+                     for role in ('target', 'supervisor'))
+    return units
+
+
 def _cap_charge(approved, filesystems, path_pool, inventory, locators):
     obligations = approved['historical_capacity_obligations']
     normalized = [dict(id=row['id'], category=row['category'], pool_roles=list(roles),
@@ -3198,6 +3306,489 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
     return [pools[key] for key in sorted(pools)]
 
 
+class _PoolAccounting:
+    """Fixed owned-pool observations; never a full-filesystem peak claim.
+
+    The caller records only successful dispatcher I/O. Child-internal I/O is
+    deliberately absent from that event ledger and is observed at boundaries.
+    """
+    boundaries = frozenset(('ADMISSION', 'CONTROLLED_IO', 'CHILD_BEFORE',
+        'CHILD_AFTER', 'CASE_BOUNDARY', 'FINALIZATION'))
+
+    def __init__(self, effects):
+        self.effects = effects
+        _require(type(effects._admission) is dict, 'CORE_POOL_ADMISSION_REQUIRED')
+        self.locators = effects.context['manifest']['locators']
+        self.definitions = _resource_pools(self.locators)
+        self.by_id = {row['pool_id']: row for row in self.definitions}
+        self.roots = sorted(((root['path'], row['pool_id'], root['parent_role'])
+            for row in self.definitions for root in row['roots']), reverse=True)
+        _require(len({path for path, _, _ in self.roots}) == len(self.roots), 'CORE_POOL_ROOT_ALIAS')
+        self.absence = {r['name'] for r in effects._admission['absence']
+            if r['kind'] == 'path' and r['absent'] is True and r['collision'] is False}
+        self.projects_absent = {r['project_id'] for r in effects._admission['absence']
+            if r['kind'] == 'project' and r['absent'] is True and r['collision'] is False}
+        self.created = set()
+        self.pending = {row['pool_id']: dict(bytes=0, inodes=0) for row in self.definitions}
+        self.dirty = set()
+        self.pins = {}
+        self.quota_pins = {}
+        self.failed = set()
+        self.rows = {}
+        for definition in self.definitions:
+            identifier = definition['pool_id']
+            _require(all(any(root['path'] == path or root['path'].startswith(path + '/')
+                for path in self.absence) for root in definition['roots']), 'CORE_POOL_ABSENCE_BASELINE')
+            if definition['measurement_kind'] == 'PROJECT_QUOTA':
+                _require(definition['project_id'] in self.projects_absent, 'CORE_POOL_PROJECT_BASELINE')
+            self.rows[identifier] = dict(
+                **{key: definition[key] for key in ('pool_id', 'case_id', 'measurement_kind',
+                    'byte_limit', 'inode_limit')}, status='INCOMPLETE',
+                controlled_io=dict(written_bytes=0, created_inodes=0),
+                last_observation=None, bytes_maximum=None, inodes_maximum=None, missing=[])
+            for field in ('last_observation', 'bytes_maximum', 'inodes_maximum'):
+                self._missing(identifier, field, 'NOT_OBSERVED')
+
+    def _guard(self):
+        guard = getattr(self, '_observation_guard', None) or self.effects._effect_guard
+        return guard()
+
+    def _call(self, function, *args, **kwargs):
+        return _guard_call(self._guard, function, *args, **kwargs)
+
+    def _missing(self, identifier, field, reason):
+        row = self.rows[identifier]
+        item = dict(code='CORE_POOL_' + reason, role=identifier + '/' + field,
+            detail_sha256=_sha(canonical(dict(pool_id=identifier, field=field, reason=reason))))
+        if item not in row['missing']:
+            row['missing'].append(item)
+            row['missing'].sort(key=lambda value: (value['code'], value['role'], value['detail_sha256']))
+        row['status'] = 'INCOMPLETE'
+
+    def mark_incomplete(self, identifier, field, reason):
+        _require(identifier in self.rows and type(field) is str and field.isascii() and field
+            and type(reason) is str and reason.isascii() and reason, 'CORE_POOL_MISSING_INPUT')
+        self.failed.add(identifier)
+        self._missing(identifier, field, reason)
+
+    def classify(self, path):
+        self.effects._absolute(path, 'CORE_POOL_PATH')
+        matches = [(root, identifier) for root, identifier, _ in self.roots
+            if path == root or path.startswith(root + '/')]
+        _require(bool(matches), 'CORE_POOL_PATH_OUTSIDE')
+        return max(matches, key=lambda value: len(value[0]))[1]
+
+    def before_write(self, path, requested_bytes=0, create=False, *, guard=None):
+        (guard or self.effects._effect_guard)()
+        _require(type(requested_bytes) is int and requested_bytes >= 0
+            and type(create) is bool, 'CORE_POOL_IO_INPUT')
+        identifier = self.classify(path)
+        row, pending = self.rows[identifier], self.pending[identifier]
+        _require(identifier not in self.failed, 'CORE_POOL_PREVIOUS_FAILURE')
+        observation = row['last_observation']
+        # During project setup these are only known application requests. They
+        # do not purport to be an observed quota amount or an initialized root.
+        _require(observation is not None or row['measurement_kind'] == 'PROJECT_QUOTA',
+            'CORE_POOL_WRITE_OBSERVATION_REQUIRED')
+        amount = observation['allocated_bytes'] if observation is not None else 0
+        inodes = observation['allocated_inodes'] if observation is not None else 0
+        _require(amount + pending['bytes'] + requested_bytes <= row['byte_limit']
+            and inodes + pending['inodes'] + int(create) <= row['inode_limit'], 'CORE_POOL_REQUEST_LIMIT')
+        return identifier
+
+    def record_io(self, path, written_bytes=0, created_inodes=0):
+        # Do not check clocks here: a syscall that returned late still happened.
+        # This method is RAM-only, so the enclosing guard retains its original
+        # failure while the actual successful short write/create is recorded.
+        _require(type(written_bytes) is int and written_bytes >= 0
+            and type(created_inodes) is int and created_inodes in (0, 1), 'CORE_POOL_IO_INPUT')
+        identifier = self.classify(path)
+        row, pending = self.rows[identifier], self.pending[identifier]
+        if created_inodes:
+            _require(path not in self.created, 'CORE_POOL_RECREATE')
+            self.created.add(path)
+        row['controlled_io']['written_bytes'] += written_bytes
+        row['controlled_io']['created_inodes'] += created_inodes
+        pending['bytes'] += written_bytes
+        pending['inodes'] += created_inodes
+        self.dirty.add(identifier)
+        if row['measurement_kind'] == 'PROJECT_QUOTA' and identifier not in self.quota_pins:
+            self._missing(identifier, 'last_observation', 'QUOTA_SETUP_INCOMPLETE')
+        return identifier
+
+    def quota_ready(self, case_id, roots):
+        self.effects._effect_guard()
+        definitions = [p for p in self.definitions if p['case_id'] == case_id
+            and p['measurement_kind'] == 'PROJECT_QUOTA']
+        _require(len(definitions) == 7 and type(roots) is list and len(roots) == 7,
+            'CORE_POOL_QUOTA_BINDING')
+        by_project = {row['project_id']: row for row in roots}
+        _require(len(by_project) == 7 and set(by_project) == {p['project_id'] for p in definitions},
+            'CORE_POOL_QUOTA_BINDING')
+        verified = {}
+        for definition in definitions:
+            identifier = definition['pool_id']
+            _require(identifier not in self.quota_pins, 'CORE_POOL_QUOTA_REINITIALIZATION')
+            pin = by_project[definition['project_id']]
+            mount = self.effects._admission['filesystems']['quota']
+            _require(pin['path'] == definition['roots'][0]['path']
+                and pin['device'] == mount['dev'] and pin['filesystem_uuid'] == mount['fs_uuid']
+                and type(pin['inode']) is int and pin['inode'] > 0
+                and pin['hard_bytes'] == definition['byte_limit']
+                and pin['inode_hard_limit'] == definition['inode_limit']
+                and pin['accounting'] is True and pin['enforcement'] is True
+                and pin['identity_unchanged'] is True and pin['xflags'] & 512
+                and pin['path'] in self.created, 'CORE_POOL_QUOTA_BINDING')
+            verified[identifier] = dict(path=pin['path'], role='POOL_ROOT',
+                dev=pin['device'], ino=pin['inode'], fs_uuid=pin['filesystem_uuid'],
+                project_id=pin['project_id'])
+        all_pins = [*self.quota_pins.values(), *verified.values()]
+        _require(len({(row['dev'], row['ino']) for row in all_pins}) == len(all_pins),
+            'CORE_POOL_QUOTA_ROOT_ALIAS')
+        self.effects._effect_guard()
+        self.quota_pins.update(verified)
+        for identifier in verified:
+            self.dirty.add(identifier)
+
+    @staticmethod
+    def _same(before, after):
+        _require(_capacity_stat(before) == _capacity_stat(after)
+            and before.st_atime_ns == after.st_atime_ns
+            and before.st_blocks == after.st_blocks, 'CORE_POOL_OBJECT_DRIFT')
+
+    def _protect(self, info, device=None, *, allowed_alias=False):
+        if allowed_alias:
+            _require(info.st_uid == info.st_gid == 0 and info.st_nlink == 1,
+                'CORE_POOL_SYMLINK_OWNER')
+        else:
+            self.effects._capacity_protection(info)
+        guest = self.effects._admission['guest']
+        _require(info.st_gid in (0, guest['ordinary_gid'])
+            and (device is None or info.st_dev == device), 'CORE_POOL_OBJECT_PROTECTION')
+        _require(type(info.st_blocks) is int and info.st_blocks >= 0, 'CORE_POOL_ALLOCATION')
+
+    def _locate(self, root):
+        """Hold the admitted parent and every named component through recheck."""
+        role, path = root['parent_role'], root['path']
+        admitted = self.effects._admission['parents'][role]
+        filesystem = self.effects._admission['filesystems'][role]
+        parent_path = self.locators[role + '_parent']
+        _require(admitted['path'] == parent_path and path.startswith(parent_path + '/'),
+            'CORE_POOL_PARENT_BINDING')
+        fds, chain = [], []
+        try:
+            fd = self.effects._held_directory(parent_path, guard=self._guard,
+                validate=self.effects._capacity_protection)
+            fds.append(fd)
+            info = self._call(os.fstat, fd)
+            self._protect(info, filesystem['dev'])
+            _require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+                == tuple(admitted[key] for key in ('dev', 'ino', 'uid', 'gid', 'mode')),
+                'CORE_POOL_PARENT_DRIFT')
+            _require(self._call(_cap_uuid, fd) == filesystem['fs_uuid'], 'CORE_POOL_FILESYSTEM_DRIFT')
+            current = parent_path
+            for part in path[len(parent_path) + 1:].split('/'):
+                before = self._call(os.fstat, fd)
+                try:
+                    named = self._call(os.stat, part, dir_fd=fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    chain.append((fd, before, part, None, None))
+                    return fds, chain, current, before, False
+                self._protect(named, filesystem['dev'])
+                _require(stat.S_ISDIR(named.st_mode), 'CORE_POOL_ROOT_TYPE')
+                child = self._call(os.open, part, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
+                    os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd, release=os.close)
+                fds.append(child)
+                self._same(named, self._call(os.fstat, child))
+                chain.append((fd, before, part, named, child))
+                fd, current = child, current + '/' + part
+            return fds, chain, current, self._call(os.fstat, fd), True
+        except BaseException:
+            for fd in reversed(fds):
+                os.close(fd)
+            raise
+
+    def _recheck_chain(self, chain):
+        for fd, before, name, named, child in reversed(chain):
+            if named is None:
+                try:
+                    self._call(os.stat, name, dir_fd=fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise DispatchError('CORE_POOL_ABSENCE_DRIFT')
+            else:
+                self._same(named, self._call(os.fstat, child))
+                self._same(named, self._call(os.stat, name, dir_fd=fd, follow_symlinks=False))
+            self._same(before, self._call(os.fstat, fd))
+
+    def _walk(self, fd, path, identifier, device, seen, totals, records, depth=0):
+        before = self._call(os.fstat, fd)
+        self._protect(before, device)
+        key = (before.st_dev, before.st_ino)
+        _require(depth <= 64 and len(path) <= 4096 and key not in seen, 'CORE_POOL_SCAN_ALIAS')
+        seen.add(key)
+        records.append((path, before))
+        totals[0] += before.st_blocks * 512
+        totals[1] += 1
+        _require(totals[1] <= self.rows[identifier]['inode_limit'] + 1, 'CORE_POOL_SCAN_LIMIT')
+        listing = self._call(os.open, '.', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
+            os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd, release=os.close)
+        try:
+            entries = self._call(os.scandir, listing, release=lambda value: value.close())
+            with entries:
+                names = []
+                while (entry := self._call(next, entries, None)) is not None:
+                    names.append(entry.name)
+                    _require(len(names) <= 13440, 'CORE_POOL_SCAN_LIMIT')
+                _require(len(names) == len(set(names)), 'CORE_POOL_SCAN_DRIFT')
+        finally:
+            os.close(listing)
+        for name in sorted(names):
+            _require(type(name) is str and name.isascii() and
+                re.fullmatch(r'[A-Za-z0-9._-]+', name) and name not in ('.', '..'), 'CORE_POOL_NAME')
+            child_path = path + '/' + name
+            # Classification precedes stat, open or any payload access. This is
+            # essential for all seven project roots, especially H11 results.
+            if self.classify(child_path) != identifier:
+                continue
+            named = self._call(os.stat, name, dir_fd=fd, follow_symlinks=False)
+            allowed_alias = stat.S_ISLNK(named.st_mode) and identifier == 'shared_install' \
+                and getattr(self.effects, '_venv_alias_pending', False) \
+                and child_path == self.locators['install_parent'] + '/' + INSTALL_BASENAME + '/runtime/lib64'
+            self._protect(named, device, allowed_alias=allowed_alias)
+            if stat.S_ISDIR(named.st_mode):
+                child = self._call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
+                    os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd, release=os.close)
+                try:
+                    self._same(named, self._call(os.fstat, child))
+                    self._walk(child, child_path, identifier, device, seen, totals, records, depth + 1)
+                    self._same(named, self._call(os.fstat, child))
+                finally:
+                    os.close(child)
+            else:
+                _require((stat.S_ISREG(named.st_mode) and named.st_nlink == 1) or allowed_alias,
+                    'CORE_POOL_FILE_TYPE')
+                child = self._call(os.open, name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=fd, release=os.close)
+                try:
+                    self._same(named, self._call(os.fstat, child))
+                    # The original installer validates/removes this one alias.
+                    # Allocation accounting never follows or reads the link;
+                    # readlink itself would mutate an old symlink's atime.
+                    key = (named.st_dev, named.st_ino)
+                    _require(key not in seen, 'CORE_POOL_SCAN_ALIAS')
+                    seen.add(key)
+                    records.append((child_path, named))
+                    totals[0] += named.st_blocks * 512
+                    totals[1] += 1
+                    self._same(named, self._call(os.fstat, child))
+                finally:
+                    os.close(child)
+            self._same(named, self._call(os.stat, name, dir_fd=fd, follow_symlinks=False))
+            _require(totals[1] <= self.rows[identifier]['inode_limit'] + 1, 'CORE_POOL_SCAN_LIMIT')
+        self._same(before, self._call(os.fstat, fd))
+
+    def _recheck_objects(self, records):
+        # Recheck earlier objects after the entire pool scan, including files
+        # changed in place while a later sibling was being visited. Descriptors
+        # are bounded by path depth, not by the number of files in the pool.
+        for path, before in records:
+            parsed = PurePosixPath(path)
+            parent = self.effects._held_directory(str(parsed.parent),
+                guard=self._guard, validate=self.effects._capacity_protection)
+            try:
+                self._same(before, self._call(os.stat, parsed.name, dir_fd=parent, follow_symlinks=False))
+                fd = self._call(os.open, parsed.name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=parent, release=os.close)
+                try:
+                    self._same(before, self._call(os.fstat, fd))
+                    self._same(before, self._call(os.stat, parsed.name, dir_fd=parent, follow_symlinks=False))
+                finally:
+                    os.close(fd)
+            finally:
+                os.close(parent)
+
+    def _owned(self, definition):
+        identifier = definition['pool_id']
+        seen, identities, totals, records = set(), {}, [0, 0], []
+        existing = False
+        for root in definition['roots']:
+            fds, chain, current, info, found = self._locate(root)
+            try:
+                filesystem = self.effects._admission['filesystems'][root['parent_role']]
+                if found:
+                    _require(definition['measurement_kind'] != 'PROJECT_QUOTA',
+                        'CORE_POOL_QUOTA_UNREGISTERED')
+                    existing = True
+                    _require(root['path'] in self.created, 'CORE_POOL_ROOT_CREATION_UNKNOWN')
+                    pin = (info.st_dev, info.st_ino)
+                    previous = self.pins.get(root['path'])
+                    _require(previous is None or previous == pin, 'CORE_POOL_ROOT_REPLACED')
+                    _require(all(other == root['path'] or value != pin for other, value in self.pins.items()),
+                        'CORE_POOL_ROOT_ALIAS')
+                    self.pins[root['path']] = pin
+                    self._walk(fds[-1], root['path'], identifier, filesystem['dev'], seen, totals, records)
+                else:
+                    _require(root['path'] not in self.pins and not any(path == root['path']
+                        or path.startswith(root['path'] + '/') for path in self.created),
+                        'CORE_POOL_UNPROVEN_ABSENCE')
+                identity = dict(path=current, role='POOL_ROOT' if found else 'ABSENCE_PARENT',
+                    dev=info.st_dev, ino=info.st_ino, fs_uuid=filesystem['fs_uuid'], project_id=None)
+                _require(current not in identities or identities[current] == identity, 'CORE_POOL_ROOT_ALIAS')
+                identities[current] = identity
+                self._recheck_chain(chain)
+            finally:
+                for fd in reversed(fds):
+                    os.close(fd)
+        self._recheck_objects(records)
+        _require(1 <= len(identities) <= 16, 'CORE_POOL_IDENTITY_COUNT')
+        return ('OWNED_ALLOCATION' if existing else 'VERIFIED_ABSENCE', totals,
+            [identities[path] for path in sorted(identities)], None)
+
+    def _quota(self, definition, inventory, enforcement):
+        identifier = definition['pool_id']
+        pin = self.quota_pins[identifier]
+        actual = inventory.get(definition['project_id'])
+        _require(actual is not None and actual['hard'] * 1024 == definition['byte_limit']
+            and actual['ihard'] == definition['inode_limit'] and enforcement & 48 == 48,
+            'CORE_POOL_QUOTA_LIMIT')
+        for key in ('space', 'inodes'):
+            _require(type(actual[key]) is int and actual[key] >= 0, 'CORE_POOL_QUOTA_VALUE')
+        quota = dict(project_id=definition['project_id'], hard_bytes=actual['hard'] * 1024,
+            hard_inodes=actual['ihard'], used_bytes=actual['space'], used_inodes=actual['inodes'],
+            enforcement_flags=enforcement)
+        return 'PROJECT_QUOTA', [actual['space'], actual['inodes']], [dict(pin)], quota
+
+    def _observation(self, definition, boundary, values):
+        method, totals, identities, quota = values
+        now = self._call(self.effects.now)
+        deadlines = self.effects.context['guest_deadlines']
+        _require(now['boot_id'] == deadlines['boot_id'], 'CORE_POOL_CLOCK_BOOT')
+        result = dict(method=method, boundary=boundary,
+            boottime_ns=now['boottime_ns'], monotonic_ns=now['monotonic_ns'],
+            allocated_bytes=totals[0], allocated_inodes=totals[1], identities=identities, quota=quota)
+        previous = self.rows[definition['pool_id']]['last_observation']
+        _require(previous is None or all(result[key] >= previous[key]
+            for key in ('boottime_ns', 'monotonic_ns')), 'CORE_POOL_CLOCK_ORDER')
+        result['source_sha256'] = _sha(canonical(dict(pool_id=definition['pool_id'],
+            case_id=definition['case_id'], observation=result)))
+        return result
+
+    def observe(self, boundary, pool_ids=None, *, guard=None):
+        # A caller may supply the original outer finalization guard, including
+        # its reserved interval. No clock origin or deadline is created here.
+        _require(guard is None or callable(guard), 'CORE_POOL_GUARD')
+        _require(getattr(self, '_observation_guard', None) is None, 'CORE_POOL_REENTRANT')
+        self._observation_guard = guard
+        try:
+            return self._observe(boundary, pool_ids)
+        finally:
+            self._observation_guard = None
+
+    def _observe(self, boundary, pool_ids):
+        _require(boundary in self.boundaries, 'CORE_POOL_BOUNDARY')
+        requested = list(self.rows) if pool_ids is None else list(pool_ids)
+        _require(requested and len(requested) == len(set(requested))
+            and set(requested) <= set(self.rows), 'CORE_POOL_SELECTION')
+        selected = [row for row in self.definitions if row['pool_id'] in requested]
+        try:
+            self._guard()
+        except BaseException as error:
+            reason = str(error) if isinstance(error, DispatchError) else type(error).__name__
+            for definition in selected:
+                self.mark_incomplete(definition['pool_id'], 'last_observation', reason)
+            raise
+        inventory = None
+        enforcement = None
+        for definition in selected:
+            identifier = definition['pool_id']
+            _require(identifier not in self.failed, 'CORE_POOL_PREVIOUS_FAILURE')
+            row = self.rows[identifier]
+            try:
+                if definition['measurement_kind'] == 'PROJECT_QUOTA' and identifier in self.quota_pins:
+                    if inventory is None:
+                        enforcement = self._call(self.effects._capacity_quota_enforcement, guard=self._guard)
+                        raw = self._call(self.effects._capacity_quota_inventory, guard=self._guard)
+                        inventory = {item['project']: item for item in raw}
+                        _require(len(inventory) == len(raw) and enforcement ==
+                            self._call(self.effects._capacity_quota_enforcement, guard=self._guard), 'CORE_POOL_QUOTA_DRIFT')
+                    values = self._quota(definition, inventory, enforcement)
+                elif definition['measurement_kind'] == 'PROJECT_QUOTA' and any(path == definition['roots'][0]['path']
+                        or path.startswith(definition['roots'][0]['path'] + '/') for path in self.created):
+                    self._missing(identifier, 'last_observation', 'QUOTA_SETUP_INCOMPLETE')
+                    continue
+                else:
+                    values = self._owned(definition)
+                    _require(definition['measurement_kind'] != 'PROJECT_QUOTA'
+                        or values[0] == 'VERIFIED_ABSENCE', 'CORE_POOL_QUOTA_UNREGISTERED')
+                observed = self._observation(definition, boundary, values)
+                row['last_observation'] = observed
+                for field, amount in (('bytes_maximum', 'allocated_bytes'), ('inodes_maximum', 'allocated_inodes')):
+                    if row[field] is None or observed[amount] >= row[field][amount]:
+                        row[field] = copy.deepcopy(observed)
+                row['missing'] = []
+                row['status'] = 'ABSENT' if observed['method'] == 'VERIFIED_ABSENCE' else 'OBSERVED'
+                self.pending[identifier] = dict(bytes=0, inodes=0)
+                self.dirty.discard(identifier)
+                _require(observed['allocated_bytes'] <= row['byte_limit']
+                    and observed['allocated_inodes'] <= row['inode_limit'], 'CORE_POOL_OBSERVED_LIMIT')
+            except BaseException as error:
+                reason = str(error) if isinstance(error, DispatchError) else type(error).__name__
+                self.mark_incomplete(identifier, 'last_observation', reason)
+                raise
+        self._totals(enforce=True)
+        return [copy.deepcopy(self.rows[row['pool_id']]) for row in selected]
+
+    def _totals(self, *, enforce=False):
+        maxima = [(row['case_id'], row['bytes_maximum'], row['inodes_maximum']) for row in self.rows.values()]
+        if enforce:
+            for case_id in (None, *(case['case_id'] for case in CASES)):
+                selected = maxima if case_id is None else [row for row in maxima if row[0] == case_id]
+                amount = sum(row[1]['allocated_bytes'] for row in selected if row[1] is not None)
+                inodes = sum(row[2]['allocated_inodes'] for row in selected if row[2] is not None)
+                if amount > (188743680 if case_id is None else 37748736) or inodes > (13440 if case_id is None else 2944):
+                    for definition in self.definitions:
+                        if case_id is None or definition['case_id'] == case_id:
+                            if amount > (188743680 if case_id is None else 37748736):
+                                self.mark_incomplete(definition['pool_id'], 'bytes_maximum', 'AGGREGATE_LIMIT')
+                            if inodes > (13440 if case_id is None else 2944):
+                                self.mark_incomplete(definition['pool_id'], 'inodes_maximum', 'AGGREGATE_LIMIT')
+                    raise DispatchError('CORE_POOL_AGGREGATE_LIMIT')
+        if any(row['status'] == 'INCOMPLETE' or row['missing'] for row in self.rows.values()):
+            return dict(bytes=None, inodes=None)
+        return dict(bytes=sum(row[1]['allocated_bytes'] for row in maxima),
+            inodes=sum(row[2]['allocated_inodes'] for row in maxima))
+
+    def snapshot(self, completion_adjustment):
+        # Snapshot does not collect more evidence or hide an earlier failed
+        # boundary. It remains usable after a deadline failure for reporting.
+        rows = copy.deepcopy(list(self.rows.values()))
+        for row in rows:
+            identifier = row['pool_id']
+            if identifier in self.dirty:
+                item = dict(code='CORE_POOL_UNOBSERVED_IO', role=identifier + '/last_observation',
+                    detail_sha256=_sha(canonical(dict(pool_id=identifier, reason='UNOBSERVED_IO'))))
+                if item not in row['missing']:
+                    row['missing'].append(item)
+                row['status'] = 'INCOMPLETE'
+            if row['last_observation'] is None or row['last_observation']['boundary'] != 'FINALIZATION':
+                item = dict(code='CORE_POOL_FINALIZATION_MISSING', role=identifier + '/last_observation',
+                    detail_sha256=_sha(canonical(dict(pool_id=identifier, reason='FINALIZATION_MISSING'))))
+                if item not in row['missing']:
+                    row['missing'].append(item)
+                row['status'] = 'INCOMPLETE'
+            row['missing'].sort(key=lambda value: (value['code'], value['role'], value['detail_sha256']))
+        missing = sorted((item for row in rows for item in row['missing']),
+            key=lambda value: (value['code'], value['role'], value['detail_sha256']))
+        totals = dict(bytes=None, inodes=None) if missing else self._totals()
+        preimage = dict(completion_adjustment=copy.deepcopy(completion_adjustment),
+            pools=rows, observed_maxima_sum=totals)
+        return dict(schema='local-hand-q2-core-resource-accounting/v1',
+            basis='APPLICATION_AND_OBSERVED_OWNED_ALLOCATION', full_guest_filesystem_peak_proven=False,
+            **preimage, snapshot_sha256=_sha(canonical(preimage)), missing=missing)
+
+
 class FieldEffects:
     """Inert construction; protected fd-relative effects. See field_readiness gaps."""
 
@@ -3217,10 +3808,6 @@ class FieldEffects:
         self._venv_alias_pending = False
         self._started_boottime_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         self._started_cpu_ns = time.process_time_ns()
-        self._unit_counts = {"job_units_started": 0, "controller_units_started": 0,
-            "quota_query_units_started": 0,
-            "dynamic_quota_units_started": 0,
-            "native_children_started": 0}
 
     def close(self):
         while self.held:
@@ -3339,26 +3926,29 @@ class FieldEffects:
             os.close(parent)
 
     @staticmethod
-    def create_only_at(directory_fd, name, raw, *, mode, guard=None):
+    def create_only_at(directory_fd, name, raw, *, mode, guard=None, accounting=None, path=None):
         _effect(type(directory_fd) is int and type(name) is str
             and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
             and type(raw) is bytes and mode in (384, 420, 493),
             "CREATE_INPUT")
         call = partial(_guard_call, guard)
+        _effect(accounting is None or type(path) is str, 'CREATE_ACCOUNTING_PATH')
+        mutate = partial(_accounting_io, accounting, guard, path)
         parent_before = call(os.fstat, directory_fd)
         _effect(stat.S_ISDIR(parent_before.st_mode), "CREATE_PARENT")
         flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
             | getattr(os, "O_NOFOLLOW", 0))
-        fd = call(os.open, name, flags, mode, dir_fd=directory_fd, release=os.close)
+        fd = mutate(os.open, name, flags, mode, dir_fd=directory_fd, release=os.close, create=True)
         created = None
         try:
             call(os.fchmod, fd, mode)
             offset = 0
             while offset < len(raw):
-                wrote = call(os.write, fd, raw[offset:])
+                part = raw[offset:offset + 65536]
+                wrote = mutate(os.write, fd, part, write=True, requested_bytes=len(part))
                 _effect(wrote > 0, "CREATE_WRITE")
                 offset += wrote
-            call(os.fsync, fd)
+            mutate(os.fsync, fd)
             created = call(os.fstat, fd)
             _effect(stat.S_ISREG(created.st_mode) and created.st_nlink == 1
                 and created.st_size == len(raw)
@@ -3371,7 +3961,7 @@ class FieldEffects:
         _effect(reread == raw and created is not None
             and (identity["dev"], identity["ino"]) == (created.st_dev, created.st_ino),
             "CREATE_REREAD")
-        call(os.fsync, directory_fd)
+        mutate(os.fsync, directory_fd)
         parent_after = call(os.fstat, directory_fd)
         _effect((parent_before.st_dev, parent_before.st_ino)
             == (parent_after.st_dev, parent_after.st_ino),
@@ -3379,12 +3969,13 @@ class FieldEffects:
         return identity
 
     @staticmethod
-    def create_only(path, raw, *, mode, guard=None):
+    def create_only(path, raw, *, mode, guard=None, accounting=None):
         parsed = FieldEffects._absolute(path)
         _effect(len(parsed.parts) > 1, "CREATE_PATH")
         parent = FieldEffects._held_directory(str(parsed.parent), guard=guard)
         try:
-            return FieldEffects.create_only_at(parent, parsed.name, raw, mode=mode, guard=guard)
+            return FieldEffects.create_only_at(parent, parsed.name, raw, mode=mode,
+                guard=guard, accounting=accounting, path=path)
         finally:
             os.close(parent)
 
@@ -3443,15 +4034,16 @@ class FieldEffects:
     def _capacity_call(self, function, *args, **kwargs):
         return _guard_call(self._effect_guard, function, *args, **kwargs)
 
-    def _capacity_directory(self, path):
-        fd, info, missing = self._capacity_path(path)
+    def _capacity_directory(self, path, *, guard=None):
+        fd, info, missing = self._capacity_path(path) if guard is None else self._capacity_path(path, guard=guard)
         if missing or not stat.S_ISDIR(info.st_mode):
             os.close(fd)
             raise DispatchError('CORE_CAP_DIRECTORY_MISSING')
         return fd
 
-    def _capacity_kernel(self, path, maximum=1048576, *, dir_fd=None):
-        call = self._capacity_call
+    def _capacity_kernel(self, path, maximum=1048576, *, dir_fd=None, guard=None):
+        call = self._capacity_call if guard is None else partial(_guard_call, guard)
+        actual_guard = self._effect_guard if guard is None else guard
         parent = None
         expected = 0x63677270  # CGROUP2_SUPER_MAGIC for fd-relative fixed facts.
         if dir_fd is None:
@@ -3468,7 +4060,7 @@ class FieldEffects:
             else:
                 _cap(path == '/sys/fs/cgroup/cgroup.controllers', 'KERNEL_PATH')
             parsed = PurePosixPath(path)
-            parent = self._held_directory(str(parsed.parent), guard=self._effect_guard,
+            parent = self._held_directory(str(parsed.parent), guard=actual_guard,
                 validate=self._capacity_protection)
             dir_fd, path = parent, parsed.name
         else:
@@ -3529,17 +4121,18 @@ class FieldEffects:
         finally:
             os.close(fd)
 
-    def _capacity_path(self, path, *, absent=False):
+    def _capacity_path(self, path, *, absent=False, guard=None):
+        call = self._capacity_call if guard is None else partial(_guard_call, guard)
         parts = self._absolute(path).parts[1:]
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
-        fd = self._capacity_call(os.open, '/', flags, release=os.close)
+        fd = call(os.open, '/', flags, release=os.close)
         try:
-            self._capacity_protection(self._capacity_call(os.fstat, fd))
+            self._capacity_protection(call(os.fstat, fd))
             for i, part in enumerate(parts):
                 try:
-                    info = self._capacity_call(os.stat, part, dir_fd=fd, follow_symlinks=False)
+                    info = call(os.stat, part, dir_fd=fd, follow_symlinks=False)
                 except FileNotFoundError:
-                    parent = self._capacity_call(os.fstat, fd)
+                    parent = call(os.fstat, fd)
                     return fd, parent, True
                 _require(not stat.S_ISLNK(info.st_mode), 'CORE_CAP_PATH_SYMLINK')
                 self._capacity_protection(info)
@@ -3548,15 +4141,15 @@ class FieldEffects:
                     if not stat.S_ISDIR(info.st_mode):
                         return fd, info, False
                 _require(stat.S_ISDIR(info.st_mode), 'CORE_CAP_PATH_TYPE')
-                child = self._capacity_call(os.open, part, flags, dir_fd=fd, release=os.close)
+                child = call(os.open, part, flags, dir_fd=fd, release=os.close)
                 try:
-                    _cap(_admit_stat(info) == _admit_stat(self._capacity_call(os.fstat, child)), 'PATH_DRIFT')
+                    _cap(_admit_stat(info) == _admit_stat(call(os.fstat, child)), 'PATH_DRIFT')
                 except BaseException:
                     os.close(child)
                     raise
                 os.close(fd); fd = child
             _require(not absent, 'CORE_CAP_OBJECT_EXISTS')
-            return fd, self._capacity_call(os.fstat, fd), False
+            return fd, call(os.fstat, fd), False
         except BaseException:
             os.close(fd)
             raise
@@ -3666,11 +4259,7 @@ class FieldEffects:
             item = geometry[role]
             _require((item['memory_bytes'], item['tasks_max']) == limits and item['memory_swap_max'] == 0
                      and item['cpu_quota_per_sec_usec'] == 1000000, 'CORE_CAP_GEOMETRY_LIMIT')
-        fixed = set()
-        for case in CASES:
-            fixed.update(row[key] for row in _phase_units(case['operation_id'], case['phases'])
-                         for key in ('bootstrap_unit', 'helper_unit', 'result_reader_unit'))
-            fixed.update(case['controller_prefix'] + '-' + role + '.service' for role in ('target', 'supervisor'))
+        fixed = _admission_absent_units()
         for arguments in (['list-units', '--all', '--plain', '--no-legend', '--type=service,slice'],
                           ['list-unit-files', '--no-legend', '--type=service,slice']):
             output = self._capacity_systemctl(arguments, programs['systemctl'])
@@ -3766,6 +4355,12 @@ class FieldEffects:
                          binding=_admission_binding(self.context), **capacity)
         self._effect_guard()
         self._admission = _validate_admission(admission, self.context)
+        try:
+            self._pool_accounting = _PoolAccounting(self)
+            self._pool_accounting.observe('ADMISSION')
+        except BaseException:
+            self._admission = None
+            raise
         return self._admission
 
     def install(self, expected):
@@ -3783,6 +4378,9 @@ class FieldEffects:
         self._verify_install_programs()
         manifest = self.context["manifest"]
         locators = manifest["locators"]
+        staging = str(PurePosixPath(locators["install_parent"]) / STAGING_BASENAME)
+        destination = str(PurePosixPath(locators["install_parent"]) / INSTALL_BASENAME)
+        accounting = getattr(self, '_pool_accounting', None)
         call = partial(_guard_call, self._effect_guard)
         parent = self._held_directory(locators["install_parent"], guard=self._effect_guard)
         try:
@@ -3804,15 +4402,15 @@ class FieldEffects:
                     raise _effect.error('INSTALLATION_EXISTS')
             self._prepare_carrier_storage()
             self._effect_guard()
-            staging_fd = self._mkdir_at(parent, STAGING_BASENAME, 0o700, guard=self._effect_guard)
+            staging_fd = self._mkdir_at(parent, STAGING_BASENAME, 0o700, guard=self._effect_guard,
+                accounting=accounting, path=staging)
         finally:
             os.close(parent)
-        staging = str(PurePosixPath(locators["install_parent"]) / STAGING_BASENAME)
-        destination = str(PurePosixPath(locators["install_parent"]) / INSTALL_BASENAME)
         self._install_roots = [staging, destination]
         try:
             self._effect_guard()
-            temporary_fd = self._mkdir_at(staging_fd, ".build-tmp", 0o700, guard=self._effect_guard)
+            temporary_fd = self._mkdir_at(staging_fd, ".build-tmp", 0o700, guard=self._effect_guard,
+                accounting=accounting, path=staging + '/.build-tmp')
             os.close(temporary_fd)
             self._effect_guard()
             self._install_temp = staging + "/.build-tmp"
@@ -3860,7 +4458,7 @@ class FieldEffects:
             self._effect_guard()
             self.create_only_at(installed_fd, "core-dispatcher.py",
                 bytes(self.context["members"]["field/dispatcher.py"]), mode=420,
-                guard=self._effect_guard)
+                guard=self._effect_guard, accounting=accounting, path=destination + '/core-dispatcher.py')
             self._effect_guard()
             info = call(os.fstat, installed_fd)
         finally:
@@ -3898,6 +4496,7 @@ class FieldEffects:
         parent = self._held_directory(self.context["manifest"]["locators"]["state_parent"],
             guard=self._effect_guard)
         opened = [parent]
+        path = self.context["manifest"]["locators"]["state_parent"]
         try:
             expected = self._admission["parents"]["state"]
             info = _guard_call(self._effect_guard, os.fstat, parent)
@@ -3906,7 +4505,9 @@ class FieldEffects:
                     expected["uid"], expected["gid"]), "CARRIER_PARENT_CHANGED")
             for name, mode in ((SESSION, 0o755), ("carrier", 0o700), ("intents", 0o700)):
                 self._effect_guard()
-                parent = self._mkdir_at(parent, name, mode, guard=self._effect_guard)
+                path += '/' + name
+                parent = self._mkdir_at(parent, name, mode, guard=self._effect_guard,
+                    accounting=getattr(self, '_pool_accounting', None), path=path)
                 opened.append(parent)
                 self._effect_guard()
             self._persistence_ready = True
@@ -3938,12 +4539,14 @@ class FieldEffects:
                     "INSTALL_PROGRAM_CHANGED")
 
     @staticmethod
-    def _mkdir_at(parent, name, mode, *, guard=None):
+    def _mkdir_at(parent, name, mode, *, guard=None, accounting=None, path=None):
         _effect(type(name) is str and re.fullmatch(r"[A-Za-z0-9._-]+", name)
             and name not in (".", "..") and mode in (0o700, 0o755),
             "MKDIR_INPUT")
         call = partial(_guard_call, guard)
-        call(os.mkdir, name, mode, dir_fd=parent)
+        _effect(accounting is None or type(path) is str, 'MKDIR_ACCOUNTING_PATH')
+        mutate = partial(_accounting_io, accounting, guard, path)
+        mutate(os.mkdir, name, mode, dir_fd=parent, create=True)
         fd = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
             dir_fd=parent, release=os.close)
         try:
@@ -3951,8 +4554,8 @@ class FieldEffects:
             info = call(os.fstat, fd)
             _effect(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == mode,
                 "MKDIR_OWNER")
-            call(os.fsync, fd)
-            call(os.fsync, parent)
+            mutate(os.fsync, fd)
+            mutate(os.fsync, parent)
             return fd
         except BaseException:
             os.close(fd)
@@ -3960,6 +4563,8 @@ class FieldEffects:
 
     def _extract_install_members(self, staging_fd):
         directories = {"": staging_fd}
+        staging = self.context['manifest']['locators']['install_parent'] + '/' + STAGING_BASENAME
+        accounting = getattr(self, '_pool_accounting', None)
         try:
             for row in self.context["manifest"]["members"]:
                 self._effect_guard()
@@ -3975,7 +4580,8 @@ class FieldEffects:
                         self._effect_guard()
                         directories[name] = self._mkdir_at(
                             directories["" if previous == "." else previous],
-                            relative.parts[index - 1], 0o700, guard=self._effect_guard)
+                            relative.parts[index - 1], 0o700, guard=self._effect_guard,
+                            accounting=accounting, path=staging + '/' + name)
                         self._effect_guard()
                 parent_name = relative.parent.as_posix()
                 fd = directories["" if parent_name == "." else parent_name]
@@ -3983,7 +4589,8 @@ class FieldEffects:
                 _effect(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
                     "INSTALL_MEMBER_CHANGED")
                 self._effect_guard()
-                self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard)
+                self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard,
+                    accounting=accounting, path=staging + '/' + relative.as_posix())
                 self._effect_guard()
                 reread, identity = self.stable_read_at(fd, relative.name,
                     maximum=row["bytes"], expected_mode=row["mode"], guard=self._effect_guard)
@@ -4079,7 +4686,7 @@ class FieldEffects:
                     module.helper = lambda helper: load(helper) if helper in PREPARATION_HELPERS else \
                         _effect(False, "HELPER_NAME")
                 if name == "q2_prepare_build":
-                    bindings = _InstallIO(self._effect_guard)
+                    bindings = _InstallIO(self._effect_guard, getattr(self, '_pool_accounting', None))
                     module.os, module.Path = bindings.os, bindings.Path
             except BaseException:
                 cache.pop(name, None)
@@ -4273,6 +4880,8 @@ class FieldEffects:
         proc = selector = None
         failure = cleanup_failure = waited = None
         attempted = False
+        accounting = getattr(self, '_pool_accounting', None)
+        child_after_observed = False
         killed = False
         bound_fds = []
 
@@ -4331,6 +4940,7 @@ class FieldEffects:
 
         try:
             actual, binding, environment, bound_fds = self._installation_binding(argv)
+            _accounting_observe(accounting, self._effect_guard, 'CHILD_BEFORE')
             attempted = True
             call(subprocess.Popen, actual, **binding, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, cwd=self._candidate_root, close_fds=True,
@@ -4350,17 +4960,22 @@ class FieldEffects:
                     if key.data in eof:
                         call(selector.unregister, key.fileobj)
                 reap()
-            _effect(proc.returncode == 0, "INSTALL_COMMAND_FAILED")
             self._effect_guard()
             self._venv_alias_pending = list(argv[1:7]) == ["-I", "-B", "-m", "venv", "--copies", "--without-pip"]
             try:
                 self._observe_install_storage()
+                _accounting_observe(accounting, self._effect_guard, 'CHILD_AFTER')
+                child_after_observed = True
             finally:
                 self._venv_alias_pending = False
+            _effect(proc.returncode == 0, "INSTALL_COMMAND_FAILED")
             self._effect_guard()
             return bytes(output["stdout"])
         except BaseException as error:
             failure = str(error)[:128] if isinstance(error, DispatchError) else type(error).__name__
+            if proc is not None and accounting is not None and not child_after_observed:
+                for identifier in accounting.by_id:
+                    accounting.mark_incomplete(identifier, 'last_observation', 'CHILD_AFTER_MISSING')
             if proc is not None:
                 try:
                     # The leader may already be reaped while a descendant
@@ -4410,7 +5025,6 @@ class FieldEffects:
     def persist(self, case_id, path, raw, mode):
         _effect(self._persistence_ready, "PERSISTENCE_NOT_READY")
         target = self._persistence_path(case_id, path)
-        self.create_only(target, raw, mode=mode)
         role = ("session" if path == "carrier/session.json" else
             "admission" if path == "carrier/admission.json" else
             "installation" if path == "carrier/installation.json" else
@@ -4419,7 +5033,29 @@ class FieldEffects:
             "recovery-proof" if path.endswith("/h11-recovery-proof.json") else
             "verdict" if path.endswith("/case-verdict.json") else None)
         _effect(role is not None, "PERSIST_ROLE")
+        if role == 'session':
+            guard = lambda: _clock(self, self.context['guest_deadlines'])
+        elif role in ('phase-receipt', 'recovery-proof', 'verdict'):
+            active = getattr(self, '_active_case_deadlines', {})
+            _effect(type(active.get('owner_deadline_ns')) is int, 'PERSIST_CASE_CLOCK')
+            guard = partial(_prep_guard, self, active['owner_deadline_ns'])
+        elif role == 'intent':
+            active = getattr(self, '_active_case_deadlines', {})
+            _effect(type(active.get('preparation_deadline_ns')) is int, 'PERSIST_CASE_CLOCK')
+            guard = partial(_prep_guard, self, active['preparation_deadline_ns'])
+        else:
+            guard = self._effect_guard
+        self.create_only(target, raw, mode=mode, guard=guard,
+            accounting=getattr(self, '_pool_accounting', None))
         return {"path": path, "role": role, "mode": mode, "raw": raw}
+
+    def accounting_boundary(self, boundary):
+        _effect(boundary == 'CASE_BOUNDARY', 'ACCOUNTING_BOUNDARY')
+        active = getattr(self, '_active_case_deadlines', None)
+        _effect(type(active) is dict and type(active.get('owner_deadline_ns')) is int,
+            'ACCOUNTING_CASE_CLOCK')
+        _accounting_observe(getattr(self, '_pool_accounting', None),
+            partial(_prep_guard, self, active['owner_deadline_ns']), boundary)
 
     def preparation_helpers(self):
         _effect(self._candidate_root is not None, "HELPER_INSTALLATION_REQUIRED")
@@ -4586,6 +5222,10 @@ class FieldEffects:
                 children[name] = _prep_pin(directory(parent + "/" + name,
                     mode=493 if name == "launcher_declarations" else 448))
             roots = [_prep_root(self, row, account, plan["mounts"]["quota"], deadline) for row in plan["roots"]]
+            accounting = getattr(self, '_pool_accounting', None)
+            if accounting is not None:
+                io.call(accounting.quota_ready, case['case_id'], roots)
+                _accounting_observe(accounting, guard, 'CASE_BOUNDARY')
             after = io.call(self._capacity_retained_snapshot, guard=guard)
             remaining = [r for r in io.call(self._capacity_quota_inventory, guard=guard)
                 if r["project"] not in case["project_ids"]]
@@ -4610,6 +5250,7 @@ class FieldEffects:
             prepared["paths"]["retained_store"] = next(r["path"] for r in roots if r["slot"] == "store")
             for name in ("authority", "manifest"): save(reservation + "/" + name + ".json", prepared[name])
             io.call(_prep_initialize, self, prepared, deadline)
+            _accounting_observe(accounting, guard, 'CASE_BOUNDARY')
             return prepared
 
     def plan_case(self, case, prepared, deadlines):
@@ -4656,6 +5297,8 @@ class FieldEffects:
         sources.append({"path": "cases/" + case["case_id"] + "/reservation/case-plan.json",
                 "role": "plan", "mode": 384, "raw": raw})
         prepared["sources"] = list(sources)
+        _accounting_observe(getattr(self, '_pool_accounting', None),
+            partial(_prep_guard, self, deadlines['owner_deadline_ns']), 'CASE_BOUNDARY')
         return {"plan": plan, "sources": sources}
 
     def _exec_empty_ledger_gate(self, case, prepared, plan):
@@ -5004,7 +5647,9 @@ class FieldEffects:
                     "launcher_output/resident.stderr") == b"", "CASE_QUIESCENCE")
             if case["index"] != 3:
                 sources.append(self._exec_ledger_export(case, prepared, plan))
-            return self._exec_observations(case, prepared, plan, sources, stop, verified)
+            outcome = self._exec_observations(case, prepared, plan, sources, stop, verified)
+            self._record_case_usage(case, prepared, plan, sources, outcome['observations'])
+            return outcome
         finally:
             prepared.pop("_exec_ledger_fd", None)
             if fd >= 0: os.close(fd)
@@ -5255,7 +5900,7 @@ class FieldEffects:
         modules = self._candidate_modules(names)
         return _phase_extract(case, phase, plan, sources, *(modules[name] for name in names))
 
-    def _carrier_usage(self):
+    def _carrier_usage(self, *, guard=None):
         """Actual bound-cgroup counters, never process rusage or configured limits.
 
         This is a component observation, not complete usage/resource_accounting.
@@ -5269,16 +5914,19 @@ class FieldEffects:
         _effect(type(bound) is dict and bound['unit'] == hello['name']
             and bound['path'] == hello['control_group']
             and bound['invocation_id'] == hello['invocation_id'], 'USAGE_CARRIER_BINDING')
-        call = self._capacity_call
+        call = self._capacity_call if guard is None else partial(_guard_call, guard)
+        kernel = self._capacity_kernel if guard is None else partial(self._capacity_kernel, guard=guard)
+        directory = self._capacity_directory if guard is None else partial(self._capacity_directory, guard=guard)
+        actual_guard = self._effect_guard if guard is None else guard
         membership = ('0::' + bound['path'] + '\n').encode('ascii')
-        _effect(self._capacity_kernel('/proc/self/cgroup', 4096) == membership, 'USAGE_MEMBERSHIP')
-        fd = self._capacity_directory('/sys/fs/cgroup' + bound['path'])
+        _effect(kernel('/proc/self/cgroup', 4096) == membership, 'USAGE_MEMBERSHIP')
+        fd = directory('/sys/fs/cgroup' + bound['path'])
         try:
             before = call(os.fstat, fd)
             _effect((before.st_dev, before.st_ino) == (bound['device'], bound['inode'])
                 and stat.S_ISDIR(before.st_mode) and before.st_uid == 0,
                 'USAGE_CARRIER_IDENTITY')
-            cpu_raw = self._capacity_kernel('cpu.stat', 4096, dir_fd=fd)
+            cpu_raw = kernel('cpu.stat', 4096, dir_fd=fd)
             cpu = {}
             for line in cpu_raw.decode('ascii', 'strict').splitlines():
                 fields = line.split()
@@ -5291,35 +5939,372 @@ class FieldEffects:
             raw_sources = {'cpu.stat': cpu_raw}
             for filename, field in (('memory.peak', 'carrier_memory_peak_bytes'),
                                     ('pids.peak', 'carrier_pids_peak')):
-                raw = self._capacity_kernel(filename, 64, dir_fd=fd)
+                raw = kernel(filename, 64, dir_fd=fd)
                 _effect(re.fullmatch(rb'[0-9]+\n', raw) is not None, 'USAGE_KERNEL_COUNTER')
                 result[field] = int(raw)
                 raw_sources[filename] = raw
             after = call(os.fstat, fd)
             _effect(_capacity_stat(before) == _capacity_stat(after), 'USAGE_CARRIER_DRIFT')
-            named = self._capacity_directory('/sys/fs/cgroup' + bound['path'])
+            named = directory('/sys/fs/cgroup' + bound['path'])
             try:
                 _effect(_capacity_stat(before) == _capacity_stat(call(os.fstat, named)),
                     'USAGE_CARRIER_DRIFT')
             finally:
                 os.close(named)
-            _effect(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
+            _effect(kernel('/proc/self/cgroup', 4096) == membership,
                 'USAGE_MEMBERSHIP')
             observed_at = self.now()
-            self._effect_guard()
+            actual_guard()
             self._carrier_usage_evidence = dict(binding=copy.deepcopy(bound),
                 observed_at=observed_at, sources=raw_sources, counters=copy.deepcopy(result))
             return result
         finally:
             os.close(fd)
 
+
+    def resource_accounting(self):
+        engine = getattr(self, '_pool_accounting', None)
+        _effect(engine is not None, 'RESOURCE_ACCOUNTING_INCOMPLETE')
+        try:
+            engine.observe('FINALIZATION', guard=lambda: _clock(self, self.context['guest_deadlines']))
+        except (DispatchError, OSError):
+            # The engine retains the failing pool and all previous maxima.
+            # Framing that partial evidence performs no further field mutation.
+            pass
+        return engine.snapshot(_completion_adjustment(self.context))
+
+    def _record_case_usage(self, case, prepared, plan, sources, observations):
+        """Count original invocations, never launch intents or budget ceilings.
+
+        Only existing control evidence is read here: the management RunRecord
+        and the query's native capture. H11 business paths are never inspected.
+        A case is committed atomically after all its actual identities bind.
+        """
+        self._exec_guard(plan)
+        prefix = 'cases/' + case['case_id'] + '/'
+        get = lambda suffix: _parse_source(sources, prefix + suffix)
+        boot = self.context['hello']['guest_boot_id']
+        modules = self._candidate_modules(('admin.local_hand_quota_observer.q2_config',
+            'admin.local_hand_quota_observer.q2_runtime'))
+        config_api = modules['admin.local_hand_quota_observer.q2_config']
+        runtime = modules['admin.local_hand_quota_observer.q2_runtime']
+        rows, evidence = [], []
+        def add(kind, identity, expected_unit, expected_parent):
+            value = _usage_unit_identity(identity, boot, expected_unit, expected_parent)
+            rows.append(dict(kind=kind, **value))
+        controllers = {}
+        for folder, role in (('supervisor_output', 'target'), ('owner_output', 'supervisor')):
+            stop, seal = get(folder + '/stop.json'), get(folder + '/seal.json')
+            original, before = seal['original'], stop['before']
+            spec = plan['controllers'][role]
+            _effect(stop['acknowledged'] is True and stop['complete'] is True
+                and before['LoadState'] == 'loaded' and before['Id'] == spec['unit']
+                and before['InvocationID'] == original['invocation_id']
+                and before['ControlGroup'] == spec['cgroup'], 'USAGE_CONTROLLER_IDENTITY')
+            identity = dict(boot_id=boot, unit=before['Id'],
+                invocation_id=before['InvocationID'], cgroup=before['ControlGroup'])
+            add('controller', identity, spec['unit'], str(PurePosixPath(spec['cgroup']).parent))
+            controllers[role] = identity
+        for phase in case['phases']:
+            facts = self.phase_facts(case, phase, plan, sources)
+            source = next(item for item in sources if item['path'] == prefix + phase + '/observer.json')
+            path = prepared['paths'][phase] + '/observer.json'
+            config = config_api.decode(source['raw'], path, _sha(source['raw']))
+            grant = config.active(); data = grant.as_dict(); request = data['request']
+            _effect(request['boot_id'] == boot and grant.request.digest == facts['quota_request_sha256']
+                and request['execution_id'] == 'job-' + case['operation_id'] + '-' + phase,
+                'USAGE_REQUEST_BINDING')
+            peer = config.data()['peers'][request['request_id']]
+            expected = next(row for row in plan['phases'] if row['phase'] == phase)
+            if case['index'] == 1:
+                fence = get('launcher_output/phase-' + phase + '.json')['fence']
+                _effect(fence['request_digest'] == grant.request.digest and fence['boot_id'] == boot
+                    and fence['execution_id'] == request['execution_id'], 'USAGE_FENCE_BINDING')
+                for stage in ('bootstrap', 'helper', 'result_reader'):
+                    closed = fence['stages']['reader' if stage == 'result_reader' else stage]
+                    add('job', closed['identity'], expected[stage + '_unit'], peer['parent']['path'])
+            elif case['index'] == 2:
+                export = get('records/ledger-export.json')
+                manager = json.loads(export['operation']['record_json'])['handles']['preflight']['manager']
+                _effect(manager['result_reader'] is None, 'USAGE_Q4_READER')
+                for stage in ('bootstrap', 'helper'):
+                    part = manager[stage]
+                    _effect(part['delivery_attempted'] is True
+                        and part['execution_id'] == request['execution_id'], 'USAGE_JOB_DELIVERY')
+                    identity = {key: part[key] for key in ('boot_id', 'unit', 'invocation_id')}
+                    _effect(part['cgroup_parent'] == '/sys/fs/cgroup' + peer['parent']['path'],
+                        'USAGE_Q4_CGROUP_PARENT')
+                    identity['cgroup'] = part['cgroup_parent'].removeprefix('/sys/fs/cgroup') + '/' + part['unit']
+                    add('job', identity, expected[stage + '_unit'], peer['parent']['path'])
+            else:
+                gateway = get('launcher_output/gateway.json')
+                _effect(gateway['recovery_finished'] is True and gateway['recovery_only'] is True
+                    and gateway['failure'] is None, 'USAGE_H11_GATEWAY')
+                _effect(len(gateway['stages']) == 3, 'USAGE_H11_STAGE_SET')
+                for stage in ('bootstrap', 'helper', 'result_reader'):
+                    parts = [row for row in gateway['stages'] if row['stage'] == stage and row['phase'] == phase]
+                    _effect(len(parts) == 1, 'USAGE_H11_STAGE_SET')
+                    identity = _usage_h11_identity(gateway, parts[0], boot,
+                        expected[stage + '_unit'], peer['parent'], plan['identity']['authority_id'])
+                    add('job', identity, expected[stage + '_unit'], peer['parent']['path'])
+            # These are original control files, not a new query or collection run.
+            control_path = str(PurePosixPath(path).parent) + '/management.jsonl'
+            parent = self._held_directory(prepared['paths'][phase], guard=lambda: self._exec_guard(plan))
+            try:
+                current = _guard_call(lambda: self._exec_guard(plan), os.fstat, parent)
+                declared = prepared['children'][phase]
+                _effect((current.st_dev, current.st_ino) == (declared['device'], declared['inode'])
+                    and current.st_uid == current.st_gid == 0 and stat.S_IMODE(current.st_mode) == 448,
+                    'USAGE_MANAGEMENT_PARENT')
+                raw, identity = self.stable_read_at(parent, 'management.jsonl', maximum=65536,
+                    expected_mode=384, guard=lambda: self._exec_guard(plan))
+            finally:
+                os.close(parent)
+            _effect(identity['uid'] == identity['gid'] == 0, 'USAGE_CONTROL_OWNER')
+            management = _usage_management_record(config, raw, controllers['target'],
+                allow_unclosed=case['index'] == 3)
+            evidence.append(dict(path=control_path, identity=identity, kind='management'))
+            for name, value in management.items():
+                add('dynamic', value, facts['listener_unit' if name == 'listener' else 'admission_unit'],
+                    data['management_parent']['path'])
+            query_path = config.data()['evidence']['path'] + '/' + grant.request.digest + '.json'
+            parent = self._held_directory(config.data()['evidence']['path'], guard=lambda: self._exec_guard(plan))
+            try:
+                current = _guard_call(lambda: self._exec_guard(plan), os.fstat, parent)
+                declared = config.data()['evidence']
+                _effect((current.st_dev, current.st_ino) == (declared['device'], declared['inode'])
+                    and current.st_uid == current.st_gid == 0 and stat.S_IMODE(current.st_mode) == 448,
+                    'USAGE_QUERY_PARENT')
+                raw, identity = self.stable_read_at(parent, grant.request.digest + '.json', maximum=MEMBER_LIMIT,
+                    expected_mode=384, guard=lambda: self._exec_guard(plan))
+            finally:
+                os.close(parent)
+            _effect(identity['uid'] == identity['gid'] == 0, 'USAGE_CONTROL_OWNER')
+            query, native = _usage_query_record(config, raw, runtime)
+            add('query', dict(query, boot_id=boot), facts['query_unit'], data['query_parent']['path'])
+            evidence.append(dict(path=query_path, identity=identity, kind='query', native_reports=native))
+            if case['index'] == 1:
+                for name, value in (('query', query), ('collector', management['listener']),
+                    ('admission', management['admission'])):
+                    original = fence['stages'][name]['identity']
+                    _effect(all(original[key] == value[key] for key in ('unit', 'invocation_id', 'cgroup')),
+                        'USAGE_FENCE_IDENTITY')
+            rows.append(dict(kind='native', boot_id=boot, unit=query['unit'],
+                invocation_id=query['invocation_id'], count=native))
+        self._exec_guard(plan)
+        _usage_commit_case(self, case, rows, evidence)
+
+
     def usage(self):
-        # process_time/ru_maxrss cover only this process and cannot account for
-        # its installer/compiler children or the separately managed job units.
-        # Sampled installation allocation is also not the guest-wide peak.
-        # Until those observations are integrated, emitting pids=1 or storage=0
-        # would turn missing evidence into fabricated successful accounting.
-        raise _effect.error('USAGE_ACCOUNTING_INCOMPLETE')
+        """Keep known groups; unknown facts stay null with exact missing roles."""
+        fields = _fields('guest_elapsed_ns carrier_cpu_ns carrier_memory_peak_bytes carrier_pids_peak stdin_bytes_received output_frame_bytes guest_allocated_bytes guest_allocated_inodes job_units_started controller_units_started quota_query_units_started dynamic_quota_units_started native_children_started')
+        value = dict.fromkeys(fields)
+        value.update(stdin_bytes_received=self.context['stdin_bytes_received'], output_frame_bytes=0)
+        missing = []; diagnostics = []
+        def unknown(keys, code):
+            detail = _sha(canonical(dict(code=code, fields=list(keys))))
+            missing.extend(dict(code=code, role='usage/' + key, detail_sha256=detail) for key in keys)
+            diagnostics.append(dict(code=code, fields=list(keys)))
+        counts = _fields('job_units_started controller_units_started quota_query_units_started dynamic_quota_units_started native_children_started')
+        try:
+            cases = getattr(self, '_usage_cases', {})
+            _effect(set(cases) == {case['case_id'] for case in CASES}, 'USAGE_ACCOUNTING_INCOMPLETE')
+            units, native = _usage_merge_cases(cases.values())
+            value.update(job_units_started=sum(row['kind'] == 'job' for row in units.values()),
+                controller_units_started=sum(row['kind'] == 'controller' for row in units.values()),
+                quota_query_units_started=sum(row['kind'] == 'query' for row in units.values()),
+                dynamic_quota_units_started=sum(row['kind'] in ('query', 'dynamic') for row in units.values()),
+                native_children_started=sum(native.values()))
+        except (DispatchError, KeyError, TypeError, ValueError):
+            unknown(counts, 'CORE_USAGE_STARTS_INCOMPLETE')
+        allocated = ('guest_allocated_bytes', 'guest_allocated_inodes')
+        try:
+            snapshot = getattr(self, '_resource_snapshot', None)
+            _effect(type(snapshot) is dict and snapshot.get('missing') == []
+                and snapshot.get('full_guest_filesystem_peak_proven') is False, 'USAGE_RESOURCE_INCOMPLETE')
+            observed = snapshot['observed_maxima_sum']
+            _effect(type(observed) is dict and set(observed) == {'bytes', 'inodes'}
+                and all(type(amount) is int and amount >= 0 for amount in observed.values()),
+                'USAGE_RESOURCE_INCOMPLETE')
+            value.update(guest_allocated_bytes=observed['bytes'], guest_allocated_inodes=observed['inodes'])
+        except (DispatchError, KeyError, TypeError, ValueError):
+            unknown(allocated, 'CORE_USAGE_RESOURCE_INCOMPLETE')
+        carrier = ('carrier_cpu_ns', 'carrier_memory_peak_bytes', 'carrier_pids_peak')
+        guard = lambda: _clock(self, self.context['guest_deadlines'])
+        try:
+            now = guard()
+            origin = self.context['hello']['guest_boottime_origin_ns']
+            _effect(type(origin) is int and now['boottime_ns'] >= origin, 'USAGE_CLOCK')
+            value['guest_elapsed_ns'] = now['boottime_ns'] - origin
+        except (DispatchError, OSError, KeyError, TypeError, ValueError):
+            unknown(('guest_elapsed_ns', *carrier), 'CORE_USAGE_CLOCK_INCOMPLETE')
+        else:
+            try:
+                observed = self._carrier_usage(guard=guard)
+                _effect(set(observed) == set(carrier) and all(type(amount) is int and amount >= 0
+                    for amount in observed.values()), 'USAGE_CARRIER_INCOMPLETE')
+                value.update(observed)
+            except (DispatchError, OSError, KeyError, TypeError, ValueError):
+                # A partially read cgroup lacks the original final identity check.
+                # Keep its raw diagnostic privately, never promote it as a count.
+                unknown(carrier, 'CORE_USAGE_CARRIER_INCOMPLETE')
+        self._usage_missing = sorted(missing, key=lambda row: (row['code'], row['role'], row['detail_sha256']))
+        self._usage_diagnostics = diagnostics
+        return value
+
+
+
+def _usage_h11_identity(gateway, part, boot, unit, parent, authority):
+    """Count the original invocation, retaining raw terminal observations unchanged."""
+    _effect(gateway['manager_binding'] == dict(schema='local-hand-manager-binding/v1',
+        manager_kind='system', authority_id=authority, boot_id=boot, parent=parent),
+        'USAGE_H11_MANAGER_BINDING')
+    observed = part['identity_observation']
+    _effect(part['recovery_observed'] is True and part['unit'] == unit
+        and observed['LoadState'] == 'loaded' and observed['Id'] == unit
+        and observed['InvocationID'] == part['invocation_id'], 'USAGE_H11_IDENTITY')
+    group = observed['ControlGroup']
+    if group == '':
+        # The frozen gateway permits a terminal unit's first observation to
+        # have no remaining leaf cgroup. This is a derived counting key from
+        # the original pinned manager, not a new observed ControlGroup value.
+        after = part['after']
+        _effect((observed['SubState'] == 'exited' or observed['ActiveState'] in ('inactive', 'failed'))
+            and part['stop_ack'] is True and part['collectors_lost'] is True
+            and after['Id'] == unit and after['ActiveState'] in ('inactive', 'failed')
+            and after['Job'] in ('', '0') and after['ControlGroup'] in ('', parent['path'] + '/' + unit)
+            and (after['LoadState'] == 'loaded' and after['InvocationID'] == part['invocation_id']
+                or after['LoadState'] == 'not-found' and after['InvocationID'] == ''),
+            'USAGE_H11_TERMINAL_IDENTITY')
+        group = parent['path'] + '/' + unit
+    return _usage_unit_identity(dict(boot_id=boot, unit=unit,
+        invocation_id=part['invocation_id'], cgroup=group), boot, unit, parent['path'])
+
+
+def _usage_unit_identity(value, boot, unit, parent):
+    _effect(type(value) is dict and value.get('boot_id') == boot
+        and value.get('unit') == unit and value.get('cgroup') == parent + '/' + unit
+        and type(value.get('invocation_id')) is str
+        and re.fullmatch(r'[0-9a-f]{32}', value['invocation_id']) is not None
+        and value['invocation_id'] != '0' * 32, 'USAGE_UNIT_IDENTITY')
+    return {key: value[key] for key in ('boot_id', 'unit', 'invocation_id', 'cgroup')}
+
+
+def _usage_management_record(config, raw, controller, *, allow_unclosed):
+    """Validate the original append-only record before counting actual invocations."""
+    _effect(type(raw) is bytes and 0 < len(raw) <= 65536 and raw.endswith(b'\n'), 'USAGE_MANAGEMENT_RECORD')
+    lines = raw.splitlines(keepends=True)
+    _effect(5 <= len(lines) <= 6, 'USAGE_MANAGEMENT_RECORD')
+    data = config.active().as_dict(); boot = data['request']['boot_id']
+    previous = '0' * 64; delivered = {}; observed = {}; closed = None
+    for index, line in enumerate(lines):
+        row = document(line, limit=32769, newline=True)
+        _effect.exact(row, ('kind', 'value', 'previous_digest'), 'USAGE_MANAGEMENT_RECORD')
+        _effect(row['previous_digest'] == previous and closed is None, 'USAGE_MANAGEMENT_CHAIN')
+        previous = _sha(line); value = row['value']; kind = row['kind']
+        if index == 0:
+            _effect(kind == 'INTENT' and value['config_digest'] == config.digest,
+                'USAGE_MANAGEMENT_INTENT')
+            _effect(all(value['controller'][key] == expected for key, expected in controller.items())
+                and type(value['controller']['observed_ns']) is int
+                and data['management']['issued_ns'] <= value['controller']['observed_ns']
+                < value['deadline_ns'] <= data['request']['deadline_ns'], 'USAGE_MANAGEMENT_CONTROLLER')
+        elif kind in ('DELIVERY', 'INVOCATION'):
+            role = value['role']
+            _effect(role in ('listener', 'admission'), 'USAGE_MANAGEMENT_ROLE')
+            unit = ('lhqoc-' if role == 'listener' else 'lhqoa-') + config.active().request.digest + '.service'
+            _effect(value['unit'] == unit, 'USAGE_MANAGEMENT_UNIT')
+            if kind == 'DELIVERY':
+                _effect(role not in delivered and type(value['command_digest']) is str
+                    and re.fullmatch(r'[0-9a-f]{64}', value['command_digest']) is not None,
+                    'USAGE_MANAGEMENT_DELIVERY')
+                delivered[role] = value
+            else:
+                _effect(role in delivered and role not in observed, 'USAGE_MANAGEMENT_INVOCATION')
+                observed[role] = _usage_unit_identity(dict(value, boot_id=boot,
+                    cgroup=data['management_parent']['path'] + '/' + unit), boot, unit, data['management_parent']['path'])
+        elif kind == 'CLOSED':
+            _effect(set(observed) == {'listener', 'admission'} and index == len(lines) - 1,
+                'USAGE_MANAGEMENT_CLOSED')
+            _effect(value['schema'] == 'local-hand-quota-management-closed/v1'
+                and value['config_digest'] == config.digest
+                and value['request_digest'] == config.active().request.digest
+                and all(value['controller'][key] == expected for key, expected in controller.items()),
+                'USAGE_MANAGEMENT_CLOSED')
+            for role, stage in (('listener', 'collector'), ('admission', 'admission')):
+                _effect(all(value['stages'][stage]['identity'][key] == expected
+                    for key, expected in observed[role].items()), 'USAGE_MANAGEMENT_CLOSED')
+            closed = value
+        else:
+            raise _effect.error('USAGE_MANAGEMENT_RECORD')
+    _effect(set(observed) == {'listener', 'admission'} and (closed is not None or allow_unclosed),
+        'USAGE_MANAGEMENT_INCOMPLETE')
+    return observed
+
+
+def _usage_query_record(config, raw, runtime):
+    """A validated original native-set counts the children that actually ran."""
+    proof = document(raw, limit=MEMBER_LIMIT, newline=False)
+    _effect.exact(proof, ('query', 'terminal', 'stopped', 'captures'), 'USAGE_QUERY_RECORD')
+    query = proof['query']; data = config.active().as_dict()
+    _usage_unit_identity(dict(query, boot_id=data['request']['boot_id']), data['request']['boot_id'],
+        config.active().request.query_unit, data['query_parent']['path'])
+    terminal = proof['terminal']
+    _effect(proof['stopped'] is True and terminal['Id'] == query['unit']
+        and terminal['InvocationID'] == query['invocation_id'] and terminal['ControlGroup'] == query['cgroup']
+        and terminal['LoadState'] == 'loaded' and terminal['Result'] == 'success'
+        and terminal['ExecMainCode'] == '1' and terminal['ExecMainStatus'] == '0', 'USAGE_QUERY_TERMINAL')
+    captures = proof['captures']
+    _effect(type(captures) is list and 1 <= len(captures) <= 64, 'USAGE_QUERY_CAPTURE')
+    for capture in captures:
+        _effect.exact(capture, ('stdout', 'stderr', 'eof', 'error', 'returncode'), 'USAGE_QUERY_CAPTURE')
+        _effect(capture['eof'] == ['stderr', 'stdout'] and capture['error'] is None
+            and type(capture['returncode']) is int and capture['returncode'] == 0
+            and capture['stderr'] == '', 'USAGE_QUERY_CAPTURE')
+    native_raw = captures[-1]['stdout'].encode('ascii', 'strict')
+    native = document(native_raw, limit=MEMBER_LIMIT, newline=False)
+    # Frozen validator checks request/config/query, each root, native ABI, calls,
+    # exit status and complete report count. Never use configured roots as starts.
+    runtime.reports(config, native_raw, query)
+    _effect(type(native['reports']) is list and 1 <= len(native['reports']) <= 4, 'USAGE_NATIVE_REPORTS')
+    return query, len(native['reports'])
+
+
+def _usage_merge_cases(cases):
+    units = {}; native = {}; invocations = {}
+    for case in cases:
+        for row in case['rows']:
+            key = (row['boot_id'], row['unit'])
+            invocation_key = (row['boot_id'], row['invocation_id'])
+            _effect(invocations.get(invocation_key, row['unit']) == row['unit'], 'USAGE_INVOCATION_ALIAS')
+            invocations[invocation_key] = row['unit']
+            if row['kind'] == 'native':
+                native_key = (*key, row['invocation_id'])
+                _effect(type(row['count']) is int and 1 <= row['count'] <= 4
+                    and native.get(native_key, row['count']) == row['count'], 'USAGE_NATIVE_CONFLICT')
+                native[native_key] = row['count']
+            else:
+                _effect(row['kind'] in ('job', 'controller', 'query', 'dynamic')
+                    and units.get(key, row) == row, 'USAGE_IDENTITY_CONFLICT')
+                units[key] = row
+    for key in native:
+        _effect(key[:2] in units and units[key[:2]]['kind'] == 'query'
+            and units[key[:2]]['invocation_id'] == key[2], 'USAGE_NATIVE_BINDING')
+    _effect({key for key, row in units.items() if row['kind'] == 'query'} == {key[:2] for key in native},
+        'USAGE_NATIVE_INCOMPLETE')
+    return units, native
+
+
+def _usage_commit_case(effects, case, rows, evidence):
+    _effect(case in CASES, 'USAGE_CASE')
+    item = dict(rows=copy.deepcopy(rows), evidence=copy.deepcopy(evidence))
+    prior = getattr(effects, '_usage_cases', {})
+    _effect(case['case_id'] not in prior or prior[case['case_id']] == item, 'USAGE_CASE_CHANGED')
+    proposed = dict(prior, **{case['case_id']: item})
+    _usage_merge_cases(proposed.values())
+    effects._usage_cases = proposed
+    effects._usage_evidence = {name: copy.deepcopy(value['evidence']) for name, value in proposed.items()}
+
 
 
 def _phase_extract(case, phase, plan, sources, config_api, budget_api, controller_api):
@@ -5620,11 +6605,216 @@ def _case_deadlines(now, outer):
     }
 
 
-def _usage(value, context, frame_bytes):
+def _completion_adjustment(context):
+    return {"baseline": COMPLETION_ADJUSTMENT_BASELINE,
+        "owner_decision": COMPLETION_ADJUSTMENT_OWNER_DECISION,
+        "closure": COMPLETION_ADJUSTMENT_CLOSURE,
+        "implementation": context["manifest"]["implementation"]}
+
+
+def _resource_missing(rows):
+    _check(type(rows) is list, 'RESOURCE_MISSING')
+    order = []
+    for row in rows:
+        _check.exact(row, _fields('code role detail_sha256'), 'RESOURCE_MISSING')
+        _check(all(type(row[key]) is str and row[key] and row[key].isascii()
+            for key in ('code', 'role')), 'RESOURCE_MISSING')
+        _check.digest(row['detail_sha256'], 'RESOURCE_MISSING')
+        order.append((row['code'], row['role'], row['detail_sha256']))
+    _check(order == sorted(set(order)), 'RESOURCE_MISSING')
+    return rows
+
+
+def _validate_resource_accounting(value, context, *, admission=None, plans=(),
+        installation=None, preparations=(), complete=True):
+    """Check the produced record before framing; the host verifies independently."""
+    _check.exact(value, _fields('schema completion_adjustment basis full_guest_filesystem_peak_proven pools observed_maxima_sum snapshot_sha256 missing'), 'RESOURCE_FIELDS')
+    _check(value['schema'] == RESOURCE_SCHEMA
+        and value['basis'] == 'APPLICATION_AND_OBSERVED_OWNED_ALLOCATION'
+        and value['full_guest_filesystem_peak_proven'] is False, 'RESOURCE_GUARANTEE')
+    _check(value['completion_adjustment'] == _completion_adjustment(context), 'RESOURCE_AUTHORITY')
+    for part in ('commit', 'tree'):
+        _check.commit(context['manifest']['implementation'][part], 'RESOURCE_AUTHORITY')
+        _check(context['manifest']['implementation'][part] != '0' * 40, 'RESOURCE_AUTHORITY')
+    _resource_missing(value['missing'])
+    _check(not complete or not value['missing'], 'RESOURCE_INCOMPLETE')
+    definitions = _resource_pools(context['manifest']['locators'])
+    _check(type(value['pools']) is list and len(value['pools']) == len(definitions) == 32,
+        'RESOURCE_POOL_SET')
+    pins = {}
+    for plan in plans:
+        case = next((case for case in CASES if case['case_id'] == plan.get('case_id')), None)
+        _check(case is not None, 'RESOURCE_PLAN')
+        fixed_paths = {row['path'] for row in _planned_roots(case)}
+        for row in plan['roots']:
+            pin = row['observed']
+            _check(pin['path'] in fixed_paths, 'RESOURCE_PLAN')
+            path = context['manifest']['locators']['quota_parent'] + '/' + pin['path']
+            _check(path not in pins, 'RESOURCE_ROOT_DUPLICATE')
+            pins[path] = dict(dev=pin['device'], ino=pin['inode'],
+                fs_uuid=pin['filesystem_uuid'], project_id=pin['project_id'])
+    if installation is not None:
+        pins[installation['destination']] = dict(dev=installation['dev'], ino=installation['ino'],
+            project_id=None)
+    for prepared in preparations:
+        for pin in prepared['facts']['directories'].values():
+            _check(pin['path'] not in pins, 'RESOURCE_ROOT_DUPLICATE')
+            pins[pin['path']] = dict(dev=pin['device'], ino=pin['inode'], project_id=None)
+    parents = {} if admission is None else admission['parents']
+    absent = set() if admission is None else {row['name'] for row in admission['absence']
+        if row['kind'] == 'path' and row['absent'] is True and row['collision'] is False}
+    known = {}; inode_paths = {}; total = [0, 0]; all_known = True
+    case_totals = {case['case_id']: [0, 0] for case in CASES}
+    for pool, spec in zip(value['pools'], definitions, strict=True):
+        _check.exact(pool, _fields('pool_id case_id measurement_kind byte_limit inode_limit status controlled_io last_observation bytes_maximum inodes_maximum missing'), 'RESOURCE_POOL_FIELDS')
+        _check(all(pool[key] == spec[key] for key in
+            _fields('pool_id case_id measurement_kind byte_limit inode_limit')), 'RESOURCE_POOL_BINDING')
+        _check(pool['status'] in ('OBSERVED', 'ABSENT', 'INCOMPLETE'), 'RESOURCE_STATUS')
+        missing = _resource_missing(pool['missing'])
+        _check(all(row in value['missing'] for row in missing), 'RESOURCE_MISSING_BINDING')
+        roles = {row['role'] for row in missing}
+        io = _check.exact(pool['controlled_io'], _fields('written_bytes created_inodes'), 'RESOURCE_IO')
+        for amount in io.values():
+            if amount is None:
+                _check(pool['status'] == 'INCOMPLETE'
+                    and pool['pool_id'] + '/controlled_io' in roles, 'RESOURCE_IO_MISSING')
+            else:
+                _check.integer(amount, code='RESOURCE_IO')
+        observed = []; local_identities = {}
+        for field in ('last_observation', 'bytes_maximum', 'inodes_maximum'):
+            observation = pool[field]
+            if observation is None:
+                _check(pool['status'] == 'INCOMPLETE' and pool['pool_id'] + '/' + field in roles,
+                    'RESOURCE_OBSERVATION_MISSING')
+                continue
+            _check.exact(observation, _fields('method boundary boottime_ns monotonic_ns allocated_bytes allocated_inodes identities quota source_sha256'), 'RESOURCE_OBSERVATION_FIELDS')
+            method = observation['method']
+            _check(method in (spec['measurement_kind'], 'VERIFIED_ABSENCE')
+                and observation['boundary'] in ('ADMISSION', 'CONTROLLED_IO', 'CHILD_BEFORE',
+                    'CHILD_AFTER', 'CASE_BOUNDARY', 'FINALIZATION'), 'RESOURCE_METHOD')
+            for clock in ('boottime', 'monotonic'):
+                timestamp = _check.integer(observation[clock + '_ns'], code='RESOURCE_WINDOW')
+                _check(context['hello']['guest_' + clock + '_origin_ns'] <= timestamp
+                    < context['guest_deadlines'][clock + '_deadline_ns'], 'RESOURCE_WINDOW')
+            for amount, limit in (('allocated_bytes', spec['byte_limit']),
+                    ('allocated_inodes', spec['inode_limit'])):
+                _check.integer(observation[amount], code='RESOURCE_ALLOCATION')
+                _check(not complete or observation[amount] <= limit, 'RESOURCE_LIMIT')
+            payload = {key: actual for key, actual in observation.items() if key != 'source_sha256'}
+            _check(observation['source_sha256'] == _sha(canonical(dict(pool_id=pool['pool_id'],
+                case_id=pool['case_id'], observation=payload))), 'RESOURCE_SOURCE_DIGEST')
+            identities = observation['identities']
+            _check(admission is not None and type(identities) is list and 1 <= len(identities) <= 16,
+                'RESOURCE_IDENTITIES')
+            present_paths = {identity.get('path') for identity in identities
+                if type(identity) is dict and identity.get('role') == 'POOL_ROOT'}
+            coverage = set(); paths = []
+            for identity in identities:
+                _check.exact(identity, _fields('path role dev ino fs_uuid project_id'), 'RESOURCE_IDENTITY_FIELDS')
+                path = _check.absolute(identity['path'], 'RESOURCE_IDENTITY_PATH'); paths.append(path)
+                _check.integer(identity['dev'], code='RESOURCE_IDENTITY')
+                _check.integer(identity['ino'], 1, code='RESOURCE_IDENTITY')
+                _check(type(identity['fs_uuid']) is str and re.fullmatch(
+                    r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', identity['fs_uuid']) is not None,
+                    'RESOURCE_IDENTITY')
+                role = identity['role']
+                _check(role in ('POOL_ROOT', 'ABSENCE_PARENT'), 'RESOURCE_IDENTITY')
+                matched = []
+                for root in spec['roots']:
+                    parent = parents[root['parent_role']]
+                    match = path == root['path'] if role == 'POOL_ROOT' else (
+                        root['path'] in absent and root['path'] not in present_paths and (path == parent['path']
+                            or (path in known or path in pins) and root['path'].startswith(path + '/')))
+                    if match:
+                        _check(identity['dev'] == parent['dev'] and identity['fs_uuid'] == parent['fs_uuid'],
+                            'RESOURCE_DEVICE_BINDING')
+                        matched.append(root['path'])
+                _check(matched and not coverage.intersection(matched), 'RESOURCE_ROOT_COVERAGE')
+                coverage.update(matched)
+                if role == 'ABSENCE_PARENT':
+                    pin = next((parent for parent in parents.values() if parent.get('path') == path),
+                        known.get(path, pins.get(path)))
+                    _check(pin is not None and all(identity[key] == pin[key] for key in ('dev', 'ino'))
+                        and ('fs_uuid' not in pin or identity['fs_uuid'] == pin['fs_uuid'])
+                        and identity['project_id'] is None, 'RESOURCE_ABSENCE_BINDING')
+                else:
+                    pin = pins.get(path)
+                    _check(identity['project_id'] == spec['project_id']
+                        and (spec['project_id'] is None or pin is not None)
+                        and (pin is None or all(identity[key] == actual for key, actual in pin.items())),
+                        'RESOURCE_PREPARATION_BINDING')
+                    inode = (identity['dev'], identity['ino'])
+                    _check(inode not in inode_paths or inode_paths[inode] == path, 'RESOURCE_ALIAS')
+                    inode_paths[inode] = path
+                key = (path, role)
+                _check(key not in local_identities or local_identities[key] == identity, 'RESOURCE_IDENTITY_DRIFT')
+                local_identities[key] = identity
+            _check(paths == sorted(set(paths)) and coverage == {root['path'] for root in spec['roots']},
+                'RESOURCE_ROOT_COVERAGE')
+            if method == 'PROJECT_QUOTA':
+                quota = _check.exact(observation['quota'],
+                    _fields('project_id hard_bytes hard_inodes used_bytes used_inodes enforcement_flags'), 'RESOURCE_QUOTA')
+                for amount in quota.values():
+                    _check.integer(amount, code='RESOURCE_QUOTA')
+                _check(len(identities) == 1 and identities[0]['role'] == 'POOL_ROOT'
+                    and quota['project_id'] == spec['project_id']
+                    and quota['hard_bytes'] == spec['byte_limit'] and quota['hard_inodes'] == spec['inode_limit']
+                    and quota['used_bytes'] == observation['allocated_bytes']
+                    and quota['used_inodes'] == observation['allocated_inodes']
+                    and quota['enforcement_flags'] & 0x30 == 0x30, 'RESOURCE_QUOTA')
+            else:
+                _check(observation['quota'] is None, 'RESOURCE_QUOTA')
+                if method == 'VERIFIED_ABSENCE':
+                    _check(observation['allocated_bytes'] == observation['allocated_inodes'] == 0
+                        and all(identity['role'] == 'ABSENCE_PARENT' for identity in identities), 'RESOURCE_ABSENCE')
+            observed.append(observation)
+        if pool['status'] == 'INCOMPLETE':
+            _check(not complete and missing, 'RESOURCE_INCOMPLETE'); all_known = False
+        else:
+            method = 'VERIFIED_ABSENCE' if pool['status'] == 'ABSENT' else spec['measurement_kind']
+            _check(not missing and len(observed) == 3 and None not in io.values()
+                and all(item['method'] == method for item in observed), 'RESOURCE_INCOMPLETE')
+            _check(not complete or pool['last_observation']['boundary'] == 'FINALIZATION', 'RESOURCE_FINAL_BOUNDARY')
+            if pool['status'] == 'ABSENT':
+                _check(io == dict(written_bytes=0, created_inodes=0)
+                    and not any(path == root['path'] or path.startswith(root['path'] + '/')
+                        for path in pins for root in spec['roots']), 'RESOURCE_ABSENCE_IO')
+            amounts = [pool['bytes_maximum']['allocated_bytes'], pool['inodes_maximum']['allocated_inodes']]
+            for index, amount in enumerate(amounts):
+                total[index] += amount
+                if pool['case_id'] is not None:
+                    case_totals[pool['case_id']][index] += amount
+        for field, amount in (('bytes_maximum', 'allocated_bytes'), ('inodes_maximum', 'allocated_inodes')):
+            maximum = pool[field]
+            if maximum is not None:
+                _check(all(maximum[amount] >= item[amount] for item in observed), 'RESOURCE_MAXIMUM')
+                if pool['last_observation'] is not None:
+                    _check(all(maximum[clock + '_ns'] <= pool['last_observation'][clock + '_ns']
+                        for clock in ('boottime', 'monotonic')), 'RESOURCE_TIME_ORDER')
+        for (path, role), identity in local_identities.items():
+            if role == 'POOL_ROOT':
+                _check(path not in known or known[path] == identity, 'RESOURCE_IDENTITY_DRIFT')
+                known[path] = identity
+    _check.exact(value['observed_maxima_sum'], ('bytes', 'inodes'), 'RESOURCE_TOTAL_FIELDS')
+    _check(value['observed_maxima_sum'] == dict(zip(('bytes', 'inodes'), total if all_known else (None, None))),
+        'RESOURCE_TOTAL_BINDING')
+    _check(not complete or total[0] <= LIMITS['total_guest_physical_bytes']
+        and total[1] <= LIMITS['total_guest_physical_inodes']
+        and all(amount[0] <= LIMITS['case_physical_bytes'] and amount[1] <= LIMITS['case_physical_inodes']
+            for amount in case_totals.values()), 'RESOURCE_TOTAL_LIMIT')
+    _check(value['snapshot_sha256'] == _sha(canonical({key: value[key] for key in
+        ('completion_adjustment', 'pools', 'observed_maxima_sum')})), 'RESOURCE_SNAPSHOT_DIGEST')
+    return value
+
+
+def _usage(value, context, frame_bytes, *, accounting=None, missing=(), complete=True):
     fields = _fields('guest_elapsed_ns carrier_cpu_ns carrier_memory_peak_bytes carrier_pids_peak stdin_bytes_received output_frame_bytes guest_allocated_bytes guest_allocated_inodes job_units_started controller_units_started quota_query_units_started dynamic_quota_units_started native_children_started')
     _check.exact(value, fields, "USAGE_FIELDS")
     for key in fields:
-        _check.integer(value[key], 0, code="USAGE")
+        if value[key] is None:
+            _check(not complete and any(row['role'] == 'usage/' + key for row in missing), 'USAGE_MISSING')
+        else:
+            _check.integer(value[key], 0, code="USAGE")
     _check(value["stdin_bytes_received"] == context["stdin_bytes_received"]
         and value["output_frame_bytes"] in (0, frame_bytes), "USAGE_BINDING")
     ceilings = {"carrier_cpu_ns": 800 * NS, "carrier_memory_peak_bytes": 1073741824,
@@ -5632,7 +6822,11 @@ def _usage(value, context, frame_bytes):
         "guest_allocated_inodes": 13440, "job_units_started": 15,
         "controller_units_started": 6, "quota_query_units_started": 5,
         "dynamic_quota_units_started": 15, "native_children_started": 16}
-    _check(all(value[key] <= limit for key, limit in ceilings.items()), "USAGE_LIMIT")
+    ceilings['guest_elapsed_ns'] = context['bind']['guest_duration_ns']
+    _check(not complete or all(value[key] <= limit for key, limit in ceilings.items()), "USAGE_LIMIT")
+    if accounting is not None:
+        _check(value['guest_allocated_bytes'] == accounting['observed_maxima_sum']['bytes']
+            and value['guest_allocated_inodes'] == accounting['observed_maxima_sum']['inodes'], 'USAGE_RESOURCE_BINDING')
     return value
 
 
@@ -5766,6 +6960,13 @@ def _validate_admission(value, context):
             and type(item["controllers"]) is list
             and all(controller in ("cpu", "memory", "pids")
                 for controller in item["controllers"]), "CGROUP")
+        expected_unit = (PurePosixPath(locators['retained_ordinary_parent_path']).name
+            if role == 'retained_ordinary_cgroup' else locators[role.removesuffix('_cgroup') + '_parent_unit'])
+        _admit(item['unit'] == expected_unit
+            and item['path'].startswith('/sys/fs/cgroup/')
+            and PurePosixPath(item['path']).name == expected_unit, 'CGROUP_BINDING')
+        if role == 'retained_ordinary_cgroup':
+            _admit(item['path'] == locators['retained_ordinary_parent_path'], 'CGROUP_BINDING')
     filesystems = _admit.exact(value["filesystems"], directory_roles, "FILESYSTEM_FIELDS")
     for role, item in filesystems.items():
         _admit.exact(item, _fields('mount_id dev fs_uuid fstype mount_options bytes_available inodes_available'), "FILESYSTEM")
@@ -5822,6 +7023,11 @@ def _validate_admission(value, context):
         'ABSENCE_PATH_SET')
     _admit({*range(12051, 12058), *(p for case in CASES for p in case['project_ids'])} <=
         {row['project_id'] for row in absence if row['kind'] == 'project'}, 'ABSENCE_PROJECT_SET')
+    unit_absence = [row for row in absence if row['kind'] == 'unit']
+    _admit({row['name'] for row in unit_absence} == _admission_absent_units()
+        and all(row['unit'] == row['name'] and row['parent_dev'] is None
+            and row['parent_ino'] is None and row['project_id'] is None
+            for row in unit_absence), 'ABSENCE_UNIT_SET')
     return value
 
 
@@ -5853,7 +7059,7 @@ def _validate_installation(value, manifest):
 def dispatch(context, effects):
     """Run the exact H01 -> Q4 -> H11 chain and return one complete frame."""
     _validate_context(context)
-    _check(isinstance(effects, FieldEffects) or all(hasattr(effects, name) for name in _fields('now admit install persist prepare_case plan_case run_h01 run_q4 recover_h11 phase_facts usage')), 'EFFECTS')
+    _check(isinstance(effects, FieldEffects) or all(hasattr(effects, name) for name in _fields('now admit install persist prepare_case plan_case run_h01 run_q4 recover_h11 phase_facts usage resource_accounting')), 'EFFECTS')
     # The first clock/deadline gate precedes every persistent field effect.
     _clock(effects, context["guest_deadlines"])
     admission = _validate_admission(effects.admit({"hello": context["hello"],
@@ -5874,12 +7080,15 @@ def dispatch(context, effects):
     for case in CASES:
         now = _clock(effects, context["guest_deadlines"])
         deadlines = _case_deadlines(now, context["guest_deadlines"])
+        effects._active_case_deadlines = dict(deadlines)
         intent = build_intent(case)
         prefix = "cases/" + case["case_id"] + "/"
         intent_source = _persist(effects, case["case_id"], prefix + "intent.json",
             "intent", intent)
         sources, verdict, summary, _owner_mono = _case_outcome(
             effects, case, intent, intent_source, deadlines)
+        if hasattr(effects, 'accounting_boundary'):
+            effects.accounting_boundary('CASE_BOUNDARY')
         _validate_source_set(case, sources, seal_id=summary.get("seal_id"))
         verdict_source = next(item for item in sources if item["role"] == "verdict")
         cases_index.append({"index": case["index"], "case_id": case["case_id"], "status": "PASS",
@@ -5912,17 +7121,31 @@ def dispatch(context, effects):
     members.sort(key=lambda row: row["path"].encode("ascii"))
     _check(len(members) == 3 + 32 + 21 + 26 and len(members) <= MEMBER_COUNT_LIMIT,
         'MEMBER_COUNT')
+    effects._active_case_deadlines = None
+    accounting = effects.resource_accounting()
+    effects._resource_snapshot = copy.deepcopy(accounting)
+    plans = [document(source['raw'], limit=MEMBER_LIMIT, newline=True) for source in all_sources if source['role'] == 'plan']
+    preparations = [document(source['raw'], limit=MEMBER_LIMIT, newline=True) for source in all_sources
+        if source['role'] == 'preparation-result' and '/reservation/' in source['path']]
+    usage = effects.usage()
+    missing = sorted({(row['code'], row['role'], row['detail_sha256']): row
+        for row in accounting['missing'] + list(getattr(effects, '_usage_missing', ()))
+        }.values(), key=lambda row: (row['code'], row['role'], row['detail_sha256']))
+    _resource_missing(missing)
+    complete = not missing
+    _validate_resource_accounting(accounting, context, admission=admission, plans=plans,
+        installation=installation, preparations=preparations, complete=complete)
     remote = {"schema": REMOTE_SCHEMA, "session_id": SESSION,
         "consumption_sha256": context["bind"]["consumption_sha256"],
-        "state": "REMOTE_FINALIZED", "cases": cases_index,
+        "state": "REMOTE_FINALIZED" if complete else "REMOTE_STOP_AND_RETAIN", "cases": cases_index,
         "h01_business_execution": h01_execution, "h01_result_package": h01_package,
-        "usage": None, "missing": []}
+        "usage": None, "resource_accounting": accounting, "missing": missing}
     manifest = {"schema": OUTPUT_SCHEMA, "session_id": SESSION, "remote_result": remote,
         "cases": cases_index, "members": members, "limits": OUTPUT_LIMITS}
     # Frame length participates in usage.  Iterate to the unique fixed point.
-    usage = effects.usage()
     for _ in range(4):
-        remote["usage"] = _usage(usage, context, usage.get("output_frame_bytes", 0))
+        remote["usage"] = _usage(usage, context, usage.get("output_frame_bytes", 0),
+            accounting=accounting, missing=missing, complete=complete)
         raw_manifest = canonical(manifest, newline=True, limit=MANIFEST_LIMIT)
         frame = OUTPUT_MAGIC + struct.pack(">Q", len(raw_manifest)) + raw_manifest + b"".join(
             raw_by_path[item["path"]] for item in members)
@@ -5931,7 +7154,8 @@ def dispatch(context, effects):
             break
         usage = dict(usage, output_frame_bytes=len(frame))
     _check(usage["output_frame_bytes"] == len(frame), 'USAGE_FRAME')
-    remote["usage"] = _usage(usage, context, len(frame))
+    remote["usage"] = _usage(usage, context, len(frame), accounting=accounting,
+        missing=missing, complete=complete)
     raw_manifest = canonical(manifest, newline=True, limit=MANIFEST_LIMIT)
     frame = OUTPUT_MAGIC + struct.pack(">Q", len(raw_manifest)) + raw_manifest + b"".join(
         raw_by_path[item["path"]] for item in members)

@@ -166,6 +166,8 @@ MANAGEMENT_BINDING_SCHEMA = "local-hand-q2-core-local-management-binding/v1"
 LOCAL_WRITER_SCHEMA = "local-hand-q2-core-local-writer/v1"
 TRUTH_EVIDENCE_SCHEMA = "local-hand-q2-core-local-truth-evidence/v1"
 PREPARATION_INPUT_SCHEMA = "local-hand-q2-core-preparation-input/v1"
+REMOTE_RESULT_SCHEMA = "local-hand-q2-core-remote-result/v2"
+RESOURCE_ACCOUNTING_SCHEMA = "local-hand-q2-core-resource-accounting/v1"
 
 PACKAGE_LIMITS = {
     "package_bytes": 33550320,
@@ -316,6 +318,10 @@ SCHEMA_FIELDS = {
     "local-hand-q2-core-remote-result/v1": (
         "schema", "session_id", "consumption_sha256", "state", "cases",
         "h01_business_execution", "h01_result_package", "usage", "missing",
+    ),
+    REMOTE_RESULT_SCHEMA: (
+        "schema", "session_id", "consumption_sha256", "state", "cases",
+        "h01_business_execution", "h01_result_package", "usage", "missing", "resource_accounting",
     ),
     "local-hand-q2-core-output-package/v1": (
         "schema", "session_id", "remote_result", "cases", "members", "limits",
@@ -516,6 +522,274 @@ def make_amendment(implementation):
         "owner_decision": copy.deepcopy(AMENDMENT_OWNER_DECISION),
         "closure": copy.deepcopy(AMENDMENT_CLOSURE),
         "implementation": copy.deepcopy(implementation)})
+
+
+def make_completion_adjustment(implementation):
+    return {"baseline": copy.deepcopy(COMPLETION_ADJUSTMENT_BASELINE),
+            "owner_decision": copy.deepcopy(COMPLETION_ADJUSTMENT_OWNER_DECISION),
+            "closure": copy.deepcopy(COMPLETION_ADJUSTMENT_CLOSURE),
+            "implementation": copy.deepcopy(implementation)}
+
+
+def resource_pool_definitions(locators):
+    """Host-side reading of approved A's fixed classification; no guest effects."""
+    rows = []
+    def add(name, case, amount, inodes, roots, project=None):
+        rows.append(dict(pool_id=name, case_id=case, byte_limit=amount, inode_limit=inodes,
+                         measurement_kind="PROJECT_QUOTA" if project else "OWNED_ALLOCATION",
+                         roots=sorted(roots), project_id=project))
+    def path(role, suffix):
+        parent = absolute_path(locators[role + "_parent"])
+        return parent + "/" + suffix, role
+    add("shared_install", None, 67108864, 4096,
+        [path("install", name) for name in (INSTALL_BASENAME, STAGING_BASENAME)])
+    roles = ("state", "quota", "journal", "evidence")
+    add("carrier_audit", None, 8388608, 512, [path(role, SESSION_ID) for role in roles])
+    for case in CASES:
+        case_id = case["case_id"]; prefix = SESSION_ID + "/" + case_id
+        add(case_id + "/state", case_id, 8388608, 1536, [path(role, prefix) for role in roles])
+        add(case_id + "/journal", case_id, 1048576, 128, [path("journal", prefix + "/journal")])
+        add(case_id + "/capture", case_id, 20971520, 384,
+            [path("evidence", prefix + "/" + name) for name in ("capture", "declarations")])
+        directories = ("profile-work", "profile-evidence", "profile-temporary",
+                       "profile-work", "profile-evidence", "profile-temporary", "store-parent")
+        for ref, directory, project in zip(ROOT_REFS, directories, case["project_ids"], strict=True):
+            add(case_id + "/quota/" + ref, case_id, 1048576, 128,
+                [path("quota", prefix + "/" + directory + "/" + ref)], project)
+    return rows
+
+
+def validate_resource_missing(value):
+    require(type(value) is list, "CORE_RESOURCE_MISSING")
+    order = []
+    for row in value:
+        exact(row, ("code", "role", "detail_sha256"), "CORE_RESOURCE_MISSING")
+        require(all(type(row[key]) is str and row[key].isascii() and row[key]
+                    for key in ("code", "role")), "CORE_RESOURCE_MISSING")
+        digest(row["detail_sha256"], "CORE_RESOURCE_MISSING")
+        order.append((row["code"], row["role"], row["detail_sha256"]))
+    require(order == sorted(set(order)), "CORE_RESOURCE_MISSING")
+    return value
+
+
+def validate_resource_accounting(value, *, implementation, locators, guest_deadlines,
+                                 admission=None, plans=(), installation=None, preparations=(), complete=True):
+    """Independently verify v2's limited guarantee against bound host inputs.
+
+    Digests bind returned evidence; they do not independently prove measurements,
+    child-internal I/O, or filesystem allocation between observation boundaries.
+    """
+    exact(value, ("schema", "completion_adjustment", "basis", "full_guest_filesystem_peak_proven",
+                  "pools", "observed_maxima_sum", "snapshot_sha256", "missing"), "CORE_RESOURCE_FIELDS")
+    require(value["schema"] == RESOURCE_ACCOUNTING_SCHEMA
+            and value["basis"] == "APPLICATION_AND_OBSERVED_OWNED_ALLOCATION"
+            and value["full_guest_filesystem_peak_proven"] is False, "CORE_RESOURCE_GUARANTEE")
+    authority = exact(value["completion_adjustment"],
+        ("baseline", "owner_decision", "closure", "implementation"), "CORE_RESOURCE_AUTHORITY")
+    exact(implementation, ("commit", "tree"), "CORE_RESOURCE_IMPLEMENTATION")
+    for name in ("commit", "tree"):
+        commit(implementation[name], "CORE_RESOURCE_IMPLEMENTATION")
+        require(implementation[name] != "0" * 40, "CORE_RESOURCE_IMPLEMENTATION")
+    require(authority == make_completion_adjustment(implementation), "CORE_RESOURCE_AUTHORITY")
+    definitions = resource_pool_definitions(locators)
+    require(type(value["pools"]) is list and len(value["pools"]) == 32, "CORE_RESOURCE_POOL_SET")
+    top_missing = validate_resource_missing(value["missing"])
+    require(not complete or not top_missing, "CORE_RESOURCE_INCOMPLETE")
+    bound_roots = {}
+    for plan in plans:
+        require(type(plan) is dict and plan.get("case_id") in {case["case_id"] for case in CASES},
+                "CORE_RESOURCE_PLAN")
+        for row in plan["roots"]:
+            identity = row["observed"]
+            relative = relative_path(identity["path"], "CORE_RESOURCE_PLAN_ROOT")
+            path = locators["quota_parent"] + "/" + relative
+            require(any(fixed["case_id"] == plan["case_id"] and fixed["project_id"] == identity["project_id"]
+                        and fixed["roots"] == [(path, "quota")] for fixed in definitions),
+                    "CORE_RESOURCE_PLAN_ROOT")
+            require(path not in bound_roots, "CORE_RESOURCE_PLAN")
+            bound_roots[path] = {"dev": identity["device"], "ino": identity["inode"],
+                                "fs_uuid": identity["filesystem_uuid"],
+                                "project_id": identity["project_id"]}
+    if installation is not None:
+        bound_roots[installation["destination"]] = {
+            "dev": installation["dev"], "ino": installation["ino"], "project_id": None}
+    for prepared in preparations:
+        for directory in prepared["facts"]["directories"].values():
+            path = absolute_path(directory["path"])
+            require(path not in bound_roots, "CORE_RESOURCE_PREPARATION_BINDING")
+            bound_roots[path] = {"dev": directory["device"], "ino": directory["inode"], "project_id": None}
+    parents = {} if admission is None else admission["parents"]
+    absence = set() if admission is None else {
+        row["name"] for row in admission["absence"]
+        if row["kind"] == "path" and row["absent"] is True and row["collision"] is False}
+    known_identity = {}
+    owned_identity_paths = {}
+    bytes_total = inodes_total = 0
+    cases_total = {case["case_id"]: [0, 0] for case in CASES}
+    all_observed = True
+    for pool, fixed in zip(value["pools"], definitions, strict=True):
+        exact(pool, ("pool_id", "case_id", "measurement_kind", "byte_limit", "inode_limit", "status",
+                     "controlled_io", "last_observation", "bytes_maximum", "inodes_maximum", "missing"),
+              "CORE_RESOURCE_POOL_FIELDS")
+        require(all(pool[key] == fixed[key] for key in
+                    ("pool_id", "case_id", "measurement_kind", "byte_limit", "inode_limit")),
+                "CORE_RESOURCE_POOL_BINDING")
+        require(pool["status"] in ("OBSERVED", "ABSENT", "INCOMPLETE"), "CORE_RESOURCE_POOL_STATUS")
+        missing = validate_resource_missing(pool["missing"])
+        require(all(row in top_missing for row in missing), "CORE_RESOURCE_MISSING_BINDING")
+        io = exact(pool["controlled_io"], ("written_bytes", "created_inodes"), "CORE_RESOURCE_IO")
+        for key, actual in io.items():
+            if actual is None:
+                require(pool["status"] == "INCOMPLETE" and any(row["role"] == pool["pool_id"] + "/controlled_io"
+                        for row in missing), "CORE_RESOURCE_IO_MISSING")
+            else:
+                integer(actual, code="CORE_RESOURCE_IO")
+        current_identities = {}
+        observations = []
+        for field in ("last_observation", "bytes_maximum", "inodes_maximum"):
+            item = pool[field]
+            if item is None:
+                require(pool["status"] == "INCOMPLETE" and any(row["role"] == pool["pool_id"] + "/" + field
+                        for row in missing), "CORE_RESOURCE_OBSERVATION_MISSING")
+                continue
+            exact(item, ("method", "boundary", "boottime_ns", "monotonic_ns", "allocated_bytes",
+                         "allocated_inodes", "identities", "quota", "source_sha256"),
+                  "CORE_RESOURCE_OBSERVATION_FIELDS")
+            require(item["method"] in (fixed["measurement_kind"], "VERIFIED_ABSENCE")
+                    and item["boundary"] in ("ADMISSION", "CONTROLLED_IO", "CHILD_BEFORE", "CHILD_AFTER",
+                                              "CASE_BOUNDARY", "FINALIZATION"), "CORE_RESOURCE_METHOD")
+            require(type(guest_deadlines) is dict, "CORE_RESOURCE_WINDOW")
+            for clock in ("boottime", "monotonic"):
+                integer(item[clock + "_ns"], code="CORE_RESOURCE_WINDOW")
+                require(guest_deadlines[clock + "_origin_ns"] <= item[clock + "_ns"]
+                        < guest_deadlines[clock + "_deadline_ns"], "CORE_RESOURCE_WINDOW")
+            for key, limit in (("allocated_bytes", fixed["byte_limit"]),
+                               ("allocated_inodes", fixed["inode_limit"])):
+                integer(item[key], code="CORE_RESOURCE_ALLOCATION")
+                require(not complete or item[key] <= limit, "CORE_RESOURCE_POOL_LIMIT")
+            preimage = {"pool_id": pool["pool_id"], "case_id": pool["case_id"],
+                        "observation": {key: actual for key, actual in item.items() if key != "source_sha256"}}
+            require(item["source_sha256"] == sha256(canonical(preimage)), "CORE_RESOURCE_SOURCE_DIGEST")
+            identities = item["identities"]
+            require(type(identities) is list and 1 <= len(identities) <= 16 and admission is not None,
+                    "CORE_RESOURCE_IDENTITIES")
+            paths = []; covered = set()
+            present_paths = {pin.get("path") for pin in identities
+                             if type(pin) is dict and pin.get("role") == "POOL_ROOT"}
+            for identity in identities:
+                exact(identity, ("path", "role", "dev", "ino", "fs_uuid", "project_id"),
+                      "CORE_RESOURCE_IDENTITY_FIELDS")
+                path = absolute_path(identity["path"], "CORE_RESOURCE_IDENTITY_PATH"); paths.append(path)
+                integer(identity["dev"], code="CORE_RESOURCE_IDENTITY")
+                integer(identity["ino"], 1, code="CORE_RESOURCE_IDENTITY")
+                require(type(identity["fs_uuid"]) is str and re.fullmatch(
+                    r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", identity["fs_uuid"]),
+                    "CORE_RESOURCE_IDENTITY")
+                require(identity["role"] in ("POOL_ROOT", "ABSENCE_PARENT"), "CORE_RESOURCE_IDENTITY")
+                matches = []
+                for root, role in fixed["roots"]:
+                    parent = parents[role]
+                    if identity["role"] == "POOL_ROOT" and path == root:
+                        matches.append(root)
+                    elif identity["role"] == "ABSENCE_PARENT" and root in absence and root not in present_paths:
+                        if path == parent["path"] or root.startswith(path + "/") and (
+                                path in known_identity or path in bound_roots):
+                            matches.append(root)
+                    if root in matches:
+                        require(identity["dev"] == parent["dev"] and identity["fs_uuid"] == parent["fs_uuid"],
+                                "CORE_RESOURCE_DEVICE_BINDING")
+                require(matches and not covered.intersection(matches), "CORE_RESOURCE_ROOT_COVERAGE")
+                covered.update(matches)
+                if identity["role"] == "ABSENCE_PARENT":
+                    expected = next((parent for parent in parents.values() if parent.get("path") == path),
+                                    known_identity.get(path, bound_roots.get(path)))
+                    require(expected is not None and all(identity[key] == expected[key] for key in
+                            ("dev", "ino")) and ("fs_uuid" not in expected or identity["fs_uuid"] == expected["fs_uuid"])
+                            and identity["project_id"] is None,
+                            "CORE_RESOURCE_ABSENCE_BINDING")
+                else:
+                    require(identity["project_id"] == fixed["project_id"], "CORE_RESOURCE_PROJECT_BINDING")
+                    expected = bound_roots.get(path)
+                    require(fixed["project_id"] is None or expected is not None, "CORE_RESOURCE_PREPARATION_BINDING")
+                    require(expected is None or all(identity[key] == actual for key, actual in expected.items()),
+                            "CORE_RESOURCE_PREPARATION_BINDING")
+                    inode_key = (identity["dev"], identity["ino"])
+                    require(inode_key not in owned_identity_paths or owned_identity_paths[inode_key] == path,
+                            "CORE_RESOURCE_ROOT_ALIAS")
+                    owned_identity_paths[inode_key] = path
+                key = (path, identity["role"])
+                require(key not in current_identities or current_identities[key] == identity,
+                        "CORE_RESOURCE_IDENTITY_DRIFT")
+                current_identities[key] = identity
+            require(paths == sorted(set(paths)) and covered == {root for root, _ in fixed["roots"]},
+                    "CORE_RESOURCE_ROOT_COVERAGE")
+            if item["method"] == "VERIFIED_ABSENCE":
+                require(item["allocated_bytes"] == item["allocated_inodes"] == 0
+                        and item["quota"] is None
+                        and all(identity["role"] == "ABSENCE_PARENT" for identity in identities),
+                        "CORE_RESOURCE_ABSENCE")
+            elif item["method"] == "PROJECT_QUOTA":
+                quota = exact(item["quota"], ("project_id", "hard_bytes", "hard_inodes", "used_bytes",
+                                              "used_inodes", "enforcement_flags"), "CORE_RESOURCE_QUOTA")
+                require(len(identities) == 1 and identities[0]["role"] == "POOL_ROOT"
+                        and quota["project_id"] == fixed["project_id"]
+                        and quota["hard_bytes"] == fixed["byte_limit"]
+                        and quota["hard_inodes"] == fixed["inode_limit"]
+                        and quota["used_bytes"] == item["allocated_bytes"]
+                        and quota["used_inodes"] == item["allocated_inodes"], "CORE_RESOURCE_QUOTA")
+                for key in quota:
+                    integer(quota[key], code="CORE_RESOURCE_QUOTA")
+                require(quota["enforcement_flags"] & 0x30 == 0x30, "CORE_RESOURCE_QUOTA_ENFORCEMENT")
+            else:
+                require(item["quota"] is None, "CORE_RESOURCE_QUOTA")
+            observations.append(item)
+        if pool["status"] == "INCOMPLETE":
+            require(missing and not complete, "CORE_RESOURCE_INCOMPLETE")
+            all_observed = False
+        else:
+            require(not missing and len(observations) == 3 and all(actual is not None for actual in io.values()),
+                    "CORE_RESOURCE_INCOMPLETE")
+            method = "VERIFIED_ABSENCE" if pool["status"] == "ABSENT" else fixed["measurement_kind"]
+            require(all(item["method"] == method for item in observations), "CORE_RESOURCE_STATUS_METHOD")
+            require(not complete or pool["last_observation"]["boundary"] == "FINALIZATION",
+                    "CORE_RESOURCE_FINAL_BOUNDARY")
+            if pool["status"] == "ABSENT":
+                require(io == {"written_bytes": 0, "created_inodes": 0}
+                        and not any(path == root or path.startswith(root + "/")
+                                    for root, _ in fixed["roots"] for path in bound_roots),
+                        "CORE_RESOURCE_ABSENCE_IO")
+        last = pool["last_observation"]
+        if last is not None:
+            for field in ("bytes_maximum", "inodes_maximum"):
+                maximum = pool[field]
+                if maximum is not None:
+                    require(all(maximum[clock + "_ns"] <= last[clock + "_ns"]
+                                for clock in ("boottime", "monotonic")), "CORE_RESOURCE_TIME_ORDER")
+        for field, amount in (("bytes_maximum", "allocated_bytes"), ("inodes_maximum", "allocated_inodes")):
+            maximum = pool[field]
+            if maximum is not None:
+                require(all(maximum[amount] >= item[amount] for item in observations), "CORE_RESOURCE_MAXIMUM")
+        for (_, role), identity in current_identities.items():
+            if role == "POOL_ROOT":
+                previous = known_identity.get(identity["path"])
+                require(previous is None or previous == identity, "CORE_RESOURCE_IDENTITY_DRIFT")
+                known_identity[identity["path"]] = identity
+        if pool["status"] != "INCOMPLETE":
+            amounts = (pool["bytes_maximum"]["allocated_bytes"], pool["inodes_maximum"]["allocated_inodes"])
+            bytes_total += amounts[0]; inodes_total += amounts[1]
+            if fixed["case_id"] is not None:
+                subtotal = cases_total[fixed["case_id"]]
+                subtotal[0] += amounts[0]; subtotal[1] += amounts[1]
+    totals = exact(value["observed_maxima_sum"], ("bytes", "inodes"), "CORE_RESOURCE_TOTAL_FIELDS")
+    require(totals == ({"bytes": bytes_total, "inodes": inodes_total} if all_observed
+                       else {"bytes": None, "inodes": None}), "CORE_RESOURCE_TOTAL_BINDING")
+    require(not complete or bytes_total <= LIMITS["total_guest_physical_bytes"]
+            and inodes_total <= LIMITS["total_guest_physical_inodes"]
+            and all(amount[0] <= LIMITS["case_physical_bytes"] and amount[1] <= LIMITS["case_physical_inodes"]
+                    for amount in cases_total.values()), "CORE_RESOURCE_TOTAL_LIMIT")
+    snapshot = {key: value[key] for key in ("completion_adjustment", "pools", "observed_maxima_sum")}
+    require(value["snapshot_sha256"] == sha256(canonical(snapshot)), "CORE_RESOURCE_SNAPSHOT_DIGEST")
+    return value
 
 
 APPROVED_COMPONENTS = (

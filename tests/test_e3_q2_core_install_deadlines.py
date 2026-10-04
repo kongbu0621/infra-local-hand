@@ -130,7 +130,7 @@ def test_late_mkdir_retains_directory_but_does_not_open_it(tmp_path, monkeypatch
 def test_late_extraction_stops_before_second_member(tmp_path, monkeypatch):
     value, now, _ = effects()
     blobs = {"first": b"first bytes", "second": b"second bytes"}
-    value.context.update(members=blobs, manifest={"members": [
+    value.context.update(members=blobs, manifest={"locators": {'install_parent': str(tmp_path)}, "members": [
         {"path": name, "role": "candidate-worktree", "bytes": len(raw),
          "sha256": d._sha(raw), "mode": 420} for name, raw in blobs.items()]})
     parent = value._held_directory(str(tmp_path))

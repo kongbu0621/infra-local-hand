@@ -120,14 +120,17 @@ class FakeEffects:
                           "mode": 0o755, "uid": 0, "gid": 0, "nlink": 2,
                           "mount_id": index + 40, "fs_uuid": uuid}
                    for index, role in enumerate(directory_roles)}
-        cgroups = ("controller_cgroup", "management_cgroup", "supervisor_cgroup",
-                   "query_cgroup", "ordinary_cgroup", "retained_ordinary_cgroup")
-        parents.update({role: {"path": "/" + role.replace("_cgroup", ".slice"),
+        locators = self.context['manifest']['locators']
+        cgroups = {role + '_cgroup': locators[role + '_parent_unit']
+            for role in ('controller', 'management', 'supervisor', 'query', 'ordinary')}
+        cgroups['retained_ordinary_cgroup'] = Path(locators['retained_ordinary_parent_path']).name
+        parents.update({role: {"path": (locators['retained_ordinary_parent_path']
+                                   if role == 'retained_ordinary_cgroup' else '/sys/fs/cgroup/' + unit),
                                "dev": 99, "ino": index + 50,
-                               "unit": role.replace("_cgroup", ".slice"),
+                               "unit": unit,
                                "invocation_id": str(index + 1) * 32,
                                "controllers": ["cpu", "memory", "pids"]}
-                        for index, role in enumerate(cgroups)})
+                        for index, (role, unit) in enumerate(cgroups.items())})
         filesystems = {role: {"mount_id": parents[role]["mount_id"],
                               "dev": parents[role]["dev"], "fs_uuid": uuid,
                               "fstype": "ext4", "mount_options": ["rw", "prjquota"],
@@ -145,6 +148,9 @@ class FakeEffects:
         absence += [dict(kind='project', name=str(project), parent_dev=20, parent_ino=31,
             project_id=project, unit=None, absent=True, collision=False)
             for project in [*range(12051, 12058), *(p for c in d.CASES for p in c['project_ids'])]]
+        absence += [dict(kind='unit', name=unit, parent_dev=None, parent_ino=None,
+            project_id=None, unit=unit, absent=True, collision=False)
+            for unit in d._admission_absent_units()]
         absence.sort(key=lambda row: (row['kind'], row['name']))
         guest = {"hostname": "synthetic-qemu", "dmi_vendor": "QEMU",
                  "dmi_product": "KVM", "initial_userns": {"dev": 4, "ino": 1},
@@ -154,22 +160,24 @@ class FakeEffects:
                  "ordinary_groups": [1100], "user_manager_unit": "user@1100.service",
                  "user_manager_invocation_id": "a" * 32,
                  "user_manager_cgroup": "/user.slice/user-1100.slice/user@1100.service"}
-        return {"guest": guest, "programs": programs, "policies": policies,
+        self._admission = {"guest": guest, "programs": programs, "policies": policies,
                 "parents": parents, "filesystems": filesystems,
                 "capacity": capacity, "absence": absence,
                 "binding": d._admission_binding(self.context)}
+        return self._admission
 
     def install(self, expected):
         self.log.append(("install", None))
-        return {"destination": "/install/" + d.INSTALL_BASENAME,
+        self._installation = {"destination": "/install/" + d.INSTALL_BASENAME,
                 "staging": "/install/" + d.STAGING_BASENAME,
                 "receipt_path": "/state/" + d.SESSION + "/carrier/installation.json",
-                "dev": 1, "ino": 2,
+                "dev": self._admission['parents']['install']['dev'], "ino": 2,
                 "mode": 493, "uid": 0, "gid": 0,
                 "members_sha256": _sha(d.canonical(expected["manifest"]["members"])),
                 "native_sha256": "c" * 64, "projection_sha256": d.PROJECTION["sha256"],
                 "wheel_sha256": d.WHEEL["sha256"], "allocated_bytes": 1024,
                 "allocated_inodes": 10, "status": "INSTALLED"}
+        return self._installation
 
     @staticmethod
     def _role(path):
@@ -199,10 +207,11 @@ class FakeEffects:
                     "policy_digest": "2" * 64, "registry_digest": "3" * 64}
         roots = []
         for planned in d._planned_roots(case):
-            observed = {"path": planned["path"], "role": planned["role"], "device": 10,
+            observed = {"path": planned["path"], "role": planned["role"],
+                        "device": self._admission['parents']['quota']['dev'],
                         "inode": planned["project_id"], "uid": 1000, "gid": 1000,
                         "mode": 0o40700, "filesystem": "ext4",
-                        "filesystem_uuid": "11111111-2222-3333-4444-555555555555",
+                        "filesystem_uuid": self._admission['parents']['quota']['fs_uuid'],
                         "project_id": planned["project_id"], "xflags": 512,
                         "hard_bytes": planned["hard_bytes"], "accounting": True,
                         "enforcement": True, "identity_unchanged": True,
@@ -244,7 +253,8 @@ class FakeEffects:
         sources = [
             _source(prefix + "reservation/case-plan.json", "plan", d.canonical(plan, newline=True)),
             _source(prefix + "reservation/preparation-plan.json", "preparation-plan"),
-            _source(prefix + "reservation/preparation-result.json", "preparation-result"),
+            _source(prefix + "reservation/preparation-result.json", "preparation-result",
+                    d.canonical({'facts': {'directories': {}}}, newline=True)),
             _source(prefix + "reservation/empty-ledger-gate.json", "empty-ledger-gate"),
             _source(prefix + "owner_declarations/fixture-check.json", "fixture-check"),
             _source(prefix + "authority/authority.json", "authority"),
@@ -388,14 +398,84 @@ class FakeEffects:
                 "stage_deadline_ns": owner - 3 * d.NS,
                 "controller_deadline_ns": owner}
 
+    def resource_accounting(self):
+        """Synthetic complete boundary transcript; never a real guest observation."""
+        parents = self._admission['parents']
+        quota_parent = self.context['manifest']['locators']['quota_parent']
+        pins = {}
+        for case in d.CASES:
+            if case['case_id'] not in self.planned:
+                continue
+            for row in self._plan(case)['roots']:
+                observed = row['observed']
+                pins[quota_parent + '/' + observed['path']] = dict(
+                    dev=observed['device'], ino=observed['inode'],
+                    fs_uuid=observed['filesystem_uuid'], project_id=observed['project_id'])
+        pins[self._installation['destination']] = dict(dev=self._installation['dev'],
+            ino=self._installation['ino'], fs_uuid=parents['install']['fs_uuid'], project_id=None)
+        pools = []
+        inode = 1000
+        for definition in d._resource_pools(self.context['manifest']['locators']):
+            present = definition['case_id'] is None or definition['case_id'] in self.planned
+            identities = []
+            for root in definition['roots']:
+                parent = parents[root['parent_role']]
+                if present:
+                    inode += 1
+                    identity = dict(path=root['path'], role='POOL_ROOT',
+                        **pins.get(root['path'], dict(dev=parent['dev'], ino=inode,
+                            fs_uuid=parent['fs_uuid'], project_id=definition['project_id'])))
+                else:
+                    identity = dict(path=parent['path'], role='ABSENCE_PARENT',
+                        dev=parent['dev'], ino=parent['ino'], fs_uuid=parent['fs_uuid'], project_id=None)
+                if identity not in identities:
+                    identities.append(identity)
+            inodes = len(identities) if present else 0
+            amount = inodes * 4096
+            observation = dict(method=definition['measurement_kind'] if present else 'VERIFIED_ABSENCE',
+                boundary='FINALIZATION',
+                boottime_ns=self.context['hello']['guest_boottime_origin_ns'] + self.tick * d.NS,
+                monotonic_ns=self.context['hello']['guest_monotonic_origin_ns'] + self.tick * d.NS,
+                allocated_bytes=amount, allocated_inodes=inodes,
+                identities=sorted(identities, key=lambda row: row['path']), quota=None)
+            if present and definition['project_id'] is not None:
+                observation['quota'] = dict(project_id=definition['project_id'],
+                    hard_bytes=definition['byte_limit'], hard_inodes=definition['inode_limit'],
+                    used_bytes=amount, used_inodes=inodes, enforcement_flags=0x30)
+            observation['source_sha256'] = d._sha(d.canonical(dict(
+                pool_id=definition['pool_id'], case_id=definition['case_id'], observation=observation)))
+            pools.append(dict({key: definition[key] for key in
+                ('pool_id', 'case_id', 'measurement_kind', 'byte_limit', 'inode_limit')},
+                status='OBSERVED' if present else 'ABSENT',
+                controlled_io=dict(written_bytes=0, created_inodes=inodes),
+                last_observation=copy.deepcopy(observation), bytes_maximum=copy.deepcopy(observation),
+                inodes_maximum=copy.deepcopy(observation), missing=[]))
+        accounting = dict(schema=d.RESOURCE_SCHEMA,
+            completion_adjustment=d._completion_adjustment(self.context),
+            basis='APPLICATION_AND_OBSERVED_OWNED_ALLOCATION',
+            full_guest_filesystem_peak_proven=False, pools=pools,
+            observed_maxima_sum=dict(bytes=sum(row['bytes_maximum']['allocated_bytes'] for row in pools),
+                inodes=sum(row['inodes_maximum']['allocated_inodes'] for row in pools)), missing=[])
+        accounting['snapshot_sha256'] = d._sha(d.canonical({key: accounting[key] for key in
+            ('completion_adjustment', 'pools', 'observed_maxima_sum')}))
+        return accounting
+
     def usage(self):
+        accounting = getattr(self, '_resource_snapshot', None) or self.resource_accounting()
+        # These are the successful synthetic observations emitted by each
+        # transcript, including Q4's two jobs and H11's retained third job.
+        transcripts = {'run_h01': (9, 3, 10), 'run_q4': (2, 1, 3), 'recover_h11': (3, 1, 3)}
+        runs = [transcripts[row[0]] for row in self.log if row[0] in transcripts]
+        query_units = sum(row[1] for row in runs)
         return {"guest_elapsed_ns": self.tick * d.NS, "carrier_cpu_ns": d.NS,
                 "carrier_memory_peak_bytes": 1024, "carrier_pids_peak": 1,
                 "stdin_bytes_received": self.context["stdin_bytes_received"],
-                "output_frame_bytes": 0, "guest_allocated_bytes": 4096,
-                "guest_allocated_inodes": 10, "job_units_started": 15,
-                "controller_units_started": 6, "quota_query_units_started": 5,
-                "dynamic_quota_units_started": 15, "native_children_started": 16}
+                "output_frame_bytes": 0, "guest_allocated_bytes": accounting['observed_maxima_sum']['bytes'],
+                "guest_allocated_inodes": accounting['observed_maxima_sum']['inodes'],
+                "job_units_started": sum(row[0] for row in runs),
+                "controller_units_started": 2 * len(runs), "quota_query_units_started": query_units,
+                "dynamic_quota_units_started": 3 * query_units,
+                "native_children_started": sum(row[2] for row in runs)}
 
 
 def test_exact_member_and_phase_raw_source_closures_include_launcher_reservation():
@@ -436,7 +516,7 @@ def test_unbound_inputs_stop_admission_before_host_collection(monkeypatch):
 
     monkeypatch.setattr(d.os, "open", lambda *args, **kwargs: pytest.fail("host file read"))
     monkeypatch.setattr(d.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("helper spawned"))
-    assert d.field_readiness()["releasable"] is False
+    assert d.field_readiness()["releasable"] is True
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
         OnlyClock(value).admit({"hello": value["hello"], "manifest": value["manifest"],
                                 "guest_deadlines": value["guest_deadlines"]})
@@ -447,13 +527,10 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
     assert value == {
         "schema": "local-hand-q2-core-field-readiness/v1",
         "scope": d.SCOPE,
-        "releasable": False,
+        "releasable": True,
         "protocol_blockers": [],
         "unbound_approved_inputs": [],
-        "unimplemented_effects": [
-            "installation.application_and_allocation_accounting",
-            "evidence.resource_accounting_v2_and_usage",
-        ],
+        "unimplemented_effects": [],
     }
 
 
@@ -567,7 +644,7 @@ def test_real_installation_bridge_preserves_private_input_and_create_only(tmp_pa
     assert (carrier / "intents").is_dir()
     source = effects.persist("carrier", "carrier/installation.json", b"{}\n", 384)
     assert (carrier / "installation.json").read_bytes() == source["raw"]
-    assert not effects.readiness()["releasable"]  # installation is not full readiness
+    assert effects.readiness() == d.field_readiness()  # source readiness is not field acceptance
     with pytest.raises(d.DispatchError, match="INSTALLATION_BINDING"):
         effects.install(expected)
     assert len(calls) == 1
@@ -881,8 +958,14 @@ def test_installation_program_identity_drift_precedes_staging(tmp_path, monkeypa
 
 
 def test_real_usage_refuses_to_report_unmeasured_children_and_storage():
-    with pytest.raises(d.DispatchError, match="USAGE_ACCOUNTING_INCOMPLETE"):
-        d.FieldEffects({}).usage()
+    effects = d.FieldEffects(context())
+    effects.now = lambda: (_ for _ in ()).throw(d.DispatchError('CORE_DISPATCH_DEADLINE'))
+    value = effects.usage()
+    assert value['guest_allocated_bytes'] is value['guest_allocated_inodes'] is None
+    assert value['job_units_started'] is value['native_children_started'] is None
+    assert value['stdin_bytes_received'] == effects.context['stdin_bytes_received']
+    roles = {row['role'] for row in effects._usage_missing}
+    assert all('usage/' + key in roles for key, amount in value.items() if amount is None)
 
 
 def test_candidate_helper_executes_held_verified_bytes_without_second_open(tmp_path):
@@ -921,6 +1004,7 @@ def test_deadline_gate_refuses_h01_intent_after_admission_install_without_refres
 def test_plan_rejects_deadline_and_budget_replacement():
     value = context()
     effects = FakeEffects(value)
+    effects.admit({})
     case = d.CASES[0]
     intent = d.build_intent(case)
     deadlines = {"case_origin_ns": 10, "preparation_deadline_ns": 20,
@@ -945,6 +1029,14 @@ def test_isolated_case_transcript_is_strictly_h01_then_q4_then_h11_and_frames_79
     start = len(d.OUTPUT_MAGIC) + 8
     manifest = d.document(frame[start:start + length], limit=d.MANIFEST_LIMIT)
     assert manifest["remote_result"]["state"] == "REMOTE_FINALIZED"
+    remote = manifest['remote_result']
+    assert remote['schema'] == 'local-hand-q2-core-remote-result/v2'
+    assert len(remote['resource_accounting']['pools']) == 32
+    assert remote['resource_accounting']['full_guest_filesystem_peak_proven'] is False
+    assert remote['usage']['job_units_started'] == 14
+    assert remote['usage']['guest_allocated_bytes'] == remote['resource_accounting']['observed_maxima_sum']['bytes']
+    assert remote['usage']['guest_allocated_inodes'] == remote['resource_accounting']['observed_maxima_sum']['inodes']
+    assert remote['usage']['output_frame_bytes'] == len(frame)
     assert [row["status"] for row in manifest["cases"]] == ["PASS", "PASS", "PASS"]
     assert len(manifest["members"]) == 82
     assert [sum(row["case_id"] == case["case_id"] for row in manifest["members"])
@@ -964,6 +1056,47 @@ def test_isolated_case_transcript_is_strictly_h01_then_q4_then_h11_and_frames_79
         following_intent = next(i for i, row in enumerate(effects.log)
                                if row[:3] == ("persist", following, "intent"))
         assert previous_verdict < following_intent
+
+
+@pytest.mark.parametrize('missing_resource', [False, True])
+def test_complete_business_chain_with_missing_final_observation_retains_partial_v2(
+        isolated_case_protocol, missing_resource):
+    class Partial(FakeEffects):
+        def resource_accounting(self):
+            value = super().resource_accounting()
+            if missing_resource:
+                pool = value['pools'][0]
+                pool['status'] = 'INCOMPLETE'
+                pool['last_observation'] = None
+                pool['missing'] = [dict(code='SYNTHETIC_LATE_OBSERVATION',
+                    role='shared_install/last_observation', detail_sha256='a' * 64)]
+                value['missing'] = pool['missing'][:]
+                value['observed_maxima_sum'] = dict(bytes=None, inodes=None)
+                value['snapshot_sha256'] = d._sha(d.canonical({key: value[key] for key in
+                    ('completion_adjustment', 'pools', 'observed_maxima_sum')}))
+            return value
+
+        def usage(self):
+            value = super().usage()
+            keys = ('guest_allocated_bytes', 'guest_allocated_inodes') if missing_resource else ('carrier_pids_peak',)
+            for key in keys:
+                value[key] = None
+            self._usage_missing = [dict(code='SYNTHETIC_UNKNOWN_USAGE', role='usage/' + key,
+                detail_sha256='b' * 64) for key in keys]
+            return value
+
+    frame = d.dispatch(context(), Partial(context()))
+    start = len(d.OUTPUT_MAGIC) + 8
+    size = struct.unpack('>Q', frame[len(d.OUTPUT_MAGIC):start])[0]
+    manifest = d.document(frame[start:start + size], limit=d.MANIFEST_LIMIT)
+    remote = manifest['remote_result']
+    assert remote['state'] == 'REMOTE_STOP_AND_RETAIN'
+    assert [row['status'] for row in remote['cases']] == ['PASS'] * 3
+    assert len(manifest['members']) == 82
+    assert remote['usage']['job_units_started'] == 14
+    assert remote['usage']['output_frame_bytes'] == len(frame)
+    assert remote['resource_accounting']['full_guest_filesystem_peak_proven'] is False
+    assert remote['missing'] and any(amount is None for amount in remote['usage'].values())
 
 
 def test_h11_forbidden_business_result_and_deadline_extension_are_rejected(isolated_case_protocol):

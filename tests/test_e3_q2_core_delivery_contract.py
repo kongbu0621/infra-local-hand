@@ -60,7 +60,9 @@ def test_canonical_json_rejects_duplicate_float_noncanonical_and_newline_mismatc
 
 
 def test_all_protocol_records_have_closed_top_level_keys():
-    assert len(c.SCHEMA_FIELDS) == 17
+    assert len(c.SCHEMA_FIELDS) == 18
+    assert set(c.SCHEMA_FIELDS[c.REMOTE_RESULT_SCHEMA]) == {
+        *c.SCHEMA_FIELDS["local-hand-q2-core-remote-result/v1"], "resource_accounting"}
     for schema, fields in c.SCHEMA_FIELDS.items():
         value = {field: None for field in fields}
         value["schema"] = schema

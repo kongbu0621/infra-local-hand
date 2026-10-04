@@ -207,7 +207,7 @@ def test_changed_writer_marker_stops_before_any_effect_and_does_not_fake_receipt
             pytest.fail("an effect was inspected or called: " + name)
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_CONSUMPTION_BINDING"):
         d.dispatch(value, NoEffects())
-    assert d.field_readiness()["releasable"] is False
+    assert d.field_readiness()["releasable"] is True
     assert not d.field_readiness()["protocol_blockers"]
 
 

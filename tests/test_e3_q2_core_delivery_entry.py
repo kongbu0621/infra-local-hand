@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 from core_writer_fixture import writer, host_marker
+from test_e3_q2_core_resource_result import incomplete_fixture, missing as resource_missing
 
 if not sys.platform.startswith("linux"):
     pytest.skip("Core delivery entry requires Linux clocks, ownership and pipe I/O",
@@ -96,7 +97,7 @@ def hello():
 def remote_result(cases=None):
     cases = [] if cases is None else cases
     return {
-        "schema": "local-hand-q2-core-remote-result/v1",
+        "schema": c.REMOTE_RESULT_SCHEMA,
         "session_id": c.SESSION_ID,
         "consumption_sha256": "3" * 64,
         "state": "REMOTE_STOP_AND_RETAIN",
@@ -105,16 +106,18 @@ def remote_result(cases=None):
         "h01_result_package": {},
         "usage": {},
         "missing": [],
+        "resource_accounting": {},
     }
 
 
 def not_run_output(consumption_sha256, stdin_bytes):
+    accounting, _ = incomplete_fixture()
     cases = [{"index": fixed["index"], "case_id": fixed["case_id"],
               "status": "NOT_RUN", "semantic_pass": False,
               "verdict_path": None, "verdict_sha256": None}
              for fixed in c.CASES]
     result = {
-        "schema": "local-hand-q2-core-remote-result/v1",
+        "schema": c.REMOTE_RESULT_SCHEMA,
         "session_id": c.SESSION_ID, "consumption_sha256": consumption_sha256,
         "state": "REMOTE_STOP_AND_RETAIN", "cases": cases,
         "h01_business_execution": {
@@ -130,12 +133,15 @@ def not_run_output(consumption_sha256, stdin_bytes):
             "guest_elapsed_ns": 1, "carrier_cpu_ns": 1,
             "carrier_memory_peak_bytes": 1, "carrier_pids_peak": 1,
             "stdin_bytes_received": stdin_bytes, "output_frame_bytes": 0,
-            "guest_allocated_bytes": 0, "guest_allocated_inodes": 0,
+            "guest_allocated_bytes": None, "guest_allocated_inodes": None,
             "job_units_started": 0, "controller_units_started": 0,
             "quota_query_units_started": 0, "dynamic_quota_units_started": 0,
             "native_children_started": 0,
         },
-        "missing": [],
+        "resource_accounting": accounting,
+        "missing": sorted(accounting["missing"] + [resource_missing("usage/" + key) for key in
+            ("guest_allocated_bytes", "guest_allocated_inodes")],
+            key=lambda row: (row["code"], row["role"], row["detail_sha256"])),
     }
     manifest = {
         "schema": "local-hand-q2-core-output-package/v1", "session_id": c.SESSION_ID,
@@ -201,7 +207,7 @@ def test_current_dispatcher_release_gate_is_hard_closed_before_field_action():
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
     assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
-    assert e.dispatcher_contract.field_readiness()["releasable"] is False
+    assert e.dispatcher_contract.field_readiness()["releasable"] is True
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})
 
@@ -734,7 +740,11 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
             "status": 0, "stdout_eof": True, "stderr_eof": True,
             "host_deadline_met": True,
         }
-        final = e.finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture)
+        _, resource_context = incomplete_fixture()
+        expected_context = {"manifest": {key: resource_context[key] for key in ("implementation", "locators")},
+                            "hello": hello(), "bind": {"guest_duration_ns": 750_000_000_000}}
+        final = e.finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture,
+                                   expected_context=expected_context)
         assert final["receipt"]["state"] == "STOP_AND_RETAIN"
         assert final["receipt"]["real_task_execution"]["status"] == "NO"
         assert final["receipt"]["result_evidence_collection"]["status"] == "NO"

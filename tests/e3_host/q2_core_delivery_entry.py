@@ -297,8 +297,8 @@ def field_release_gate(manifest, members):
 
     Package syntax and a management preimage are necessary but not sufficient
     to consume the one-shot marker.  This independent digest allowlist stays
-    empty while the dispatcher reports unbound approved inputs or unfinished
-    effects, so the current D cannot issue a carrier even if a caller supplies
+    empty until the independent private release review has verified an exact D.
+    Source readiness alone cannot issue a carrier even if a caller supplies
     otherwise well-formed bytes.
     """
     require(type(manifest) is dict and type(members) is dict,
@@ -790,7 +790,7 @@ def parse_output(raw):
     require(offset == len(payload), "CORE_OUTPUT_TRAILING")
     require(manifest["cases"] == manifest["remote_result"]["cases"],
             "CORE_OUTPUT_CASES")
-    contract.validate_record(manifest["remote_result"], "local-hand-q2-core-remote-result/v1")
+    contract.validate_record(manifest["remote_result"], contract.REMOTE_RESULT_SCHEMA)
     return manifest, values
 
 
@@ -1113,38 +1113,61 @@ def validate_output_semantics(manifest, values, *, consumption_sha256,
             "CORE_OUTPUT_CASE_BYTES")
 
     remote = manifest["remote_result"]
-    contract.validate_record(remote, "local-hand-q2-core-remote-result/v1")
+    contract.validate_record(remote, contract.REMOTE_RESULT_SCHEMA)
     require(remote["session_id"] == contract.SESSION_ID
             and remote["consumption_sha256"] == consumption_sha256
             and manifest["cases"] == remote["cases"], "CORE_REMOTE_AUTHORITY")
     statuses = _validate_case_index(remote["cases"], members)
     require((remote["state"] == "REMOTE_FINALIZED" and statuses == ["PASS"] * 3)
-            or (remote["state"] == "REMOTE_STOP_AND_RETAIN" and statuses != ["PASS"] * 3),
+            or remote["state"] == "REMOTE_STOP_AND_RETAIN",
             "CORE_REMOTE_STATE")
     _validate_missing(remote["missing"])
     require(remote["state"] != "REMOTE_FINALIZED" or remote["missing"] == [],
             "CORE_REMOTE_FINAL_MISSING")
     usage = remote["usage"]
     contract.exact(usage, USAGE_FIELDS, "CORE_REMOTE_USAGE_FIELDS")
+    complete = remote["state"] == "REMOTE_FINALIZED"
     for key in USAGE_FIELDS:
-        contract.integer(usage[key], 0, code="CORE_REMOTE_USAGE")
-    require(usage["guest_elapsed_ns"] <= GUEST_CAP_NS
-            and usage["carrier_cpu_ns"] <= 800_000_000_000
-            and usage["carrier_memory_peak_bytes"] <= 1_073_741_824
-            and usage["carrier_pids_peak"] <= 128
-            and usage["stdin_bytes_received"] == stdin_bytes_received
-            and usage["output_frame_bytes"] == frame_bytes
-            and usage["guest_allocated_bytes"] <= contract.LIMITS["total_guest_physical_bytes"]
-            and usage["guest_allocated_inodes"] <= contract.LIMITS["total_guest_physical_inodes"]
-            and usage["job_units_started"] <= 15
-            and usage["controller_units_started"] <= 6
-            and usage["quota_query_units_started"] <= 5
-            and usage["dynamic_quota_units_started"] <= 15
-            and usage["native_children_started"] <= 16,
-            "CORE_REMOTE_USAGE_LIMIT")
+        if usage[key] is None:
+            require(not complete and any(row["role"] == "usage/" + key for row in remote["missing"]),
+                    "CORE_REMOTE_USAGE_MISSING")
+        else:
+            contract.integer(usage[key], 0, code="CORE_REMOTE_USAGE")
+    ceilings = {"guest_elapsed_ns": GUEST_CAP_NS, "carrier_cpu_ns": 800_000_000_000,
+        "carrier_memory_peak_bytes": 1_073_741_824, "carrier_pids_peak": 128,
+        "guest_allocated_bytes": contract.LIMITS["total_guest_physical_bytes"],
+        "guest_allocated_inodes": contract.LIMITS["total_guest_physical_inodes"],
+        "job_units_started": 15, "controller_units_started": 6, "quota_query_units_started": 5,
+        "dynamic_quota_units_started": 15, "native_children_started": 16}
+    require(all(usage[key] is None or usage[key] <= limit or not complete for key, limit in ceilings.items())
+            and usage["stdin_bytes_received"] in (None, stdin_bytes_received)
+            and usage["output_frame_bytes"] in (None, frame_bytes), "CORE_REMOTE_USAGE_LIMIT")
     execution, package = _validate_h01_summaries(remote, members)
     if any(row["case_id"] == "carrier" for row in members) or statuses[0] == "PASS":
         _validate_carrier_bindings(values, expected_context)
+
+    require(type(expected_context) is dict, "CORE_OUTPUT_FROZEN_CONTEXT_REQUIRED")
+    frozen = expected_context["manifest"]
+    hello, bind = expected_context["hello"], expected_context["bind"]
+    deadlines = {clock + "_" + kind + "_ns": hello["guest_" + clock + "_origin_ns"]
+                 + (bind["guest_duration_ns"] if kind == "deadline" else 0)
+                 for clock in ("boottime", "monotonic") for kind in ("origin", "deadline")}
+    admission = (_document_member(values, "carrier/admission.json")
+                 if "carrier/admission.json" in values else None)
+    installation = (_document_member(values, "carrier/installation.json")
+                    if "carrier/installation.json" in values else None)
+    plans = [_document_member(values, path) for fixed in contract.CASES
+             if (path := "cases/" + fixed["case_id"] + "/reservation/case-plan.json") in values]
+    preparations = [_document_member(values, path) for fixed in contract.CASES
+                    if (path := "cases/" + fixed["case_id"] + "/reservation/preparation-result.json") in values]
+    accounting = contract.validate_resource_accounting(remote["resource_accounting"],
+        implementation=frozen["implementation"], locators=frozen["locators"], guest_deadlines=deadlines,
+        admission=admission, plans=plans, installation=installation, preparations=preparations, complete=complete)
+    require(all(row in remote["missing"] for row in accounting["missing"]), "CORE_REMOTE_RESOURCE_MISSING")
+    require(usage["guest_allocated_bytes"] == accounting["observed_maxima_sum"]["bytes"]
+            and usage["guest_allocated_inodes"] == accounting["observed_maxima_sum"]["inodes"],
+            "CORE_REMOTE_RESOURCE_USAGE")
+    require(complete or statuses != ["PASS"] * 3 or bool(remote["missing"]), "CORE_REMOTE_STOP_MISSING")
 
     for fixed, case_index in zip(dispatcher_contract.CASES, remote["cases"], strict=True):
         if case_index["status"] == "PASS":
