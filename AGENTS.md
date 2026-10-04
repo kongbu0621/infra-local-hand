@@ -1165,6 +1165,11 @@ truths UNKNOWN; remote exit closure is not proven. The original batch is consume
 no second request, reconnect, renamed marker, refreshed deadline or cleanup is authorized.
 The existing CLOSED development scope permits the compatibility repair, not another run.
 Release remains hard-closed after this failure; source/CI PASS cannot reset consumption.
+Repair D `a6638424c5de2ea59f39cf6e24f07b06040d0884` validates the unchanged v3 writer
+in BIND and has passed 4905 source tests (126 skipped) plus the independent installed
+verifier (94 checks / 292 commands). Exact reports and retained failures are in the
+same single-F1 record. This repaired D was not field-issued; no further marker or request
+is authorized by these verification results.
 
 ### Continuing constraints
 

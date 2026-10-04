@@ -60,6 +60,7 @@ host_deadline_met 均未证明。host 停止并保留，未发第二 request、�
 原 live finalizer 返回 STOP_AND_RETAIN：logical bytes 9318、created inodes 5、max observed
 allocated bytes 16384，`full_filesystem_peak_proven=false`。只创建原六名中的五文件，
 remote-result 缺席。后续只读摘要核对不是新增 live 及时性证明。
+guest CPU/memory/pids/完整 usage 没有回传，保持 UNKNOWN；不能把缺失计数填零、退款或释放原义务。
 
 | 原固定文件 | bytes | SHA-256 |
 | --- | ---: | --- |
@@ -84,5 +85,28 @@ remote-result 缺席。后续只读摘要核对不是新增 live 及时性证明
 
 原唯一 marker/request 已消费；源码修复不赋予第二次执行或刷新 deadline 的权限。
 当前 release allowlist 重新置空，marker 不删除/改名，不发行修复后的现场包。
-先冻结修复 D 并验证；若后续需要再验收，必须先形成新的准确批次 A、Owner B 和独立 C，
+修复 D 的冻结和验证见下节；若后续需要再验收，必须先形成新的准确批次 A、Owner B 和独立 C，
 处理本次失败、未确认退出和保留义务。不得复用旧批次、另开探针或直接启用 production E3。
+
+## 修复 D 的最终验证补记
+
+准确修复 D 已推送 main：`a6638424c5de2ea59f39cf6e24f07b06040d0884`，tree
+`708cca586673cca4213f0f147265c10912c7af8f`。host entry SHA-256
+`c01192bcbb3e4c585c09881c040e7ea07627b99d2e9d128c1ef3fb9e09b74f2a`。
+原四条修订 A/B/C 文档、决定、tree 与 C→D 核对通过；field 三文件长度/摘要未变，
+原 runtime candidate/wheel/projection 未变。release allowlist 确认为空，production E3 未改。
+
+- 完整源码 **4905 passed / 126 skipped / 453.30s**，报告
+  `lh-core-bind-source.hOfRZh/source.xml`，SHA-256
+  `f0e1089790fcb43b3b77abf7d1293e4997299998e4e51951b17707d535fa5a13`。
+- 准确 D 独立 clone/build/install：**PASS，94 checks / 292 commands**。报告
+  `lh-core-bind-installed.g7LhoT/acceptance/report.json`，SHA-256
+  `d436184c7a080be60673b5f4177f46027ba4cb40af360976f1fd0b7d1f9ac32d`。
+  测试 wheel SHA-256 `cf823cd70c3646eb1ab160de6356f2fad898dc665d8f0960539fcaf19eb5c7e8`，
+  仅用于安装验证，不是新的现场 wheel。
+- [修复 CI 37220038272](https://github.com/kongbu0621/infra-local-hand/actions/runs/37220038272)
+  在此补记时仍运行；classify-change 和 Windows 已成功，Linux 未提前称为全绿。
+
+本补记没有重新取得现场窗口、发行新包、重连 guest、再次创建 marker/request，
+没有把原 UNKNOWN 转为成功。剩余阻塞是**新的准确一次性批次授权与当前远端退出/准入事实**；
+获批后的新批次仍须真实完成 H01→Q4→H11 和结果证据收回，生产启用另需明确授权。

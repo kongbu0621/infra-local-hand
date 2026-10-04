@@ -9,7 +9,9 @@ host 的 BIND 构造器遗漏 v3 entry 的 `writer` 字段，故在发送 BIND/p
 H01/Q4/H11 未进入提交阶段，没有业务结果包；原回执两项业务 truth 与远端退出闭合保持 UNKNOWN。
 原五个 capture 文件及 marker 保留，未重连、重试、安装或清理。
 
-已在原核心开发范围修复该接线，旧源新增回归 2 failed、修复后定向 82 passed。
+已在原核心开发范围修复该接线，准确修复 D `a6638424c5de2ea59f39cf6e24f07b06040d0884` 已推送。
+旧源新增回归 2 failed；修复后定向 82 passed，完整源码 4905 passed / 126 skipped，
+独立安装 PASS（94 checks / 292 commands）；修复 CI 37220038272 在登记时仍运行。
 release allowlist 重新置空：修复/测试不能授权第二 request；再次验收必须有新的准确批次 A/B/C，
 不能复用本批次或刷新 deadline。生产 E3 保持，支线暂停。
 详见 [完整实测、失败及修复记录](../Q2_CORE_SINGLE_F1_RESULT_20261005.md)。以下均为历史检查点。
