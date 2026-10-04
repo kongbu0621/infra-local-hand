@@ -117,6 +117,13 @@ quota 重复/重排/溢出、原 manifest 不可近似复原、sudo group 语义
 这三个样例不等于完整 suite PASS；完整受控测试环境复核尚待实际结果。始终不把 SKIP/UNKNOWN 写成 PASS。
 这些结果不是 D4 独立审计、installed suite 或真实 H01/Q4/H11 验证。
 
+首次发布 `d42dca8a25151010d3dd38edabd285b89bccafa4` 的
+[CI 37177207849](https://github.com/kongbu0621/infra-local-hand/actions/runs/37177207849)
+在 Windows collection 暴露本轮新测试的平台 guard 顺序错误：先 import Linux-only capture，
+才应用 pytest mark，Windows 没有 `time.clock_gettime_ns`，导致 collection error。
+已将该 Linux-only 模块的 skip 移到 import 前，与既有 entry/bootstrap 测试保持一致。
+这不增加 Windows E3 支持、不改变 Linux 实现或减少 Linux 验收；原失败保留，修复结果另按准确提交记录。
+
 | 阶段 | 本轮准确状态 / 下一直接工作 |
 | --- | --- |
 | D1 | **部分实现**。上述固定输入组件及历史原件复算已完成；还须组装完整 approved-input artifact、独立 parser、local binding、package/HELLO v2 与 current admission。 |

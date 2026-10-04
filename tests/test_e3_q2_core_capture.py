@@ -1,15 +1,19 @@
 import copy
 import os
 import stat
+import sys
 import time
 from types import SimpleNamespace
 
 import pytest
 
-from e3_host import q2_core_capture as cap
+if (not sys.platform.startswith("linux") or not hasattr(time, "CLOCK_BOOTTIME")
+        or not hasattr(os, "O_NOATIME")):
+    # Skip before importing the Linux-only clock/FD implementation, exactly as
+    # the existing entry/bootstrap suites do. A Windows SKIP is not E3 PASS.
+    pytest.skip("Linux-only live capture component", allow_module_level=True)
 
-pytestmark = pytest.mark.skipif(not hasattr(time, "CLOCK_BOOTTIME") or not hasattr(os, "O_NOATIME"),
-                                reason="Linux-only live capture component")
+from e3_host import q2_core_capture as cap
 
 class Clock:
     def __init__(self):
