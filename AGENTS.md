@@ -1063,6 +1063,15 @@ executable binding remain blocked. The dispatcher stays within 262144 bytes; do 
 development checkpoint or add an unapproved field module. Runtime candidate/wheel, original F1 and all
 budgets/deadlines remain unchanged. No field marker/request/task or production activation was performed.
 
+The subsequent [frozen installer deadline followup](docs/a2-execution/q2-core-acceptance-delivery/CORE_EXECUTION_PROGRESS.md)
+records D `247d3ab7de8c323db883a5ed877ab06311ab1cc3`, following `0d2b7c7`'s cancellation and
+executable-identity repair. Private guarded I/O bindings now apply the original clocks inside the
+unchanged frozen installer; late returns stop subsequent effects and retain partial objects.
+Full source and isolated installed checks pass, but this is not guest acceptance. Current admission/capacity collectors,
+complete shared-pool peak accounting and aggregate usage evidence remain blocked. The field allowlist
+stays empty; runtime candidate/wheel, budgets, deadlines and conditional single F1 are unchanged.
+No field connection, marker, request or core task was issued by this followup.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

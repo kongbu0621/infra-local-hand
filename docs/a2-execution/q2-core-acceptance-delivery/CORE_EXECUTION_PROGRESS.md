@@ -1,5 +1,90 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
+## Current frozen installer deadline followup
+
+Implementation D is `247d3ab7de8c323db883a5ed877ab06311ab1cc3`, tree
+`f5798cf1c97eb0174f0339eb4e73b503eaa4b285`, directly following
+`0d2b7c73bd2ff46b666e16e018b2ebc6c7f8898e`. The latter's
+[CI 37193722314](https://github.com/kongbu0621/infra-local-hand/actions/runs/37193722314)
+completed successfully. This continues the existing CLOSED core D2 scope;
+the original R was read directly and the exact Git-blob verifier passed both
+independent C ancestry chains and the unchanged A documents/B decision digests.
+No new approval, runtime candidate, field wheel, budget or deadline is inferred.
+
+### Frozen installer I/O now uses the original clocks
+
+The private held-byte loader supplies only `q2_prepare_build` with guarded OS
+and Path bindings. Its original source remains byte-identical to frozen runtime
+`4b6e4a7c403362358192086b88679e1326dcb2e1`; no candidate function body, wheel,
+projection or extra field module is substituted. Other modules and process-wide
+stdlib bindings are untouched. Source verification, inventory, copies, native
+input reads, metadata and final fsync pass through the original paired-clock
+guard; the existing bounded command runner still owns child execution.
+
+Late opens close the returned descriptor. Late reads, metadata operations,
+writes and fsync stop subsequent operations, including when an operation raises
+ENOENT or a missing-capability error. The frozen writer uses unbuffered chunks
+of at most 65536 bytes and handles short writes; exception cleanup cannot flush
+another buffered write. Only the original owner closes its file descriptor.
+Partial files and directories remain retained, without overwrite or retry.
+The two fixed systemd resolve paths retain admission's no-alias requirement;
+the guarded directory walk rejects aliases rather than following them.
+
+This implements `installation.deadline_guarding`; it does not make a blocked
+kernel call interruptible, prove shared-pool peaks, or complete field admission.
+The original clocks and guest 45-second final reserve are not refreshed.
+
+### Source validation and fixed field size
+
+New frozen-installer regressions: **29 passed**. They execute actual temporary
+file I/O through the frozen code with explicitly injected late returns, plus
+private-loader and alias checks. They are not an installation on the guest.
+Initial test failures used incorrect inventory field names and a 0700 mkdir
+expectation; the assertions were corrected to the unchanged installer's
+`entries` and 0755 behavior, without weakening its checks.
+
+Core regression: **615 passed / 24 skipped**. Full source suite:
+**4526 passed / 115 skipped, 429.73 s**. The retained local report is
+`lh-core-frozen-install-source.EKTYdB/results.xml`, SHA-256
+`4abdd09c3cd3c4df52db2cd116c41a9b9bca91d08cce12bcbd7a7ee9110d32e3`.
+Skipped root/OS-dependent checks remain skipped, not field PASS.
+
+An independent clone of the exact D built and installed a test wheel, then the
+existing installed verifier returned **PASS, 94 checks / 292 commands**. Its
+local report `lh-core-frozen-install-installed.W6o0Mo/acceptance/report.json`
+has SHA-256 `c94a084d31e5afb6a68e2b3d2dd12a73ab3af9342ac9b33c8f906c9c7b6c388d`.
+The test wheel binds source commit D and has SHA-256
+`af572510b1241497878dd7139ce5606735a226ca458d8af35c6914e40596a7cb`;
+it is not a replacement for the approved field wheel. D was pushed to main;
+its [CI 37196149601](https://github.com/kongbu0621/infra-local-hand/actions/runs/37196149601)
+was in progress when this record was prepared, not yet claimed successful.
+
+The dispatcher is **257264 / 262144 bytes**, SHA-256
+`bf3bb0d9d292b7b68fa04c7f5d9a7247bf281c5779cc679162381c8280a192fe`.
+Fixed ordered field-name literals and hanging-indent formatting recover space
+without increasing the cap. Reverse expansion matched the entire preceding
+module AST after excluding only the new I/O adapter, its loader binding, the
+field-name helper and the completed blocker entry. Existing checks, diagnostic
+codes and data ordering remain intact. Loader and bootstrap remain unchanged
+at 2160 and 49102 bytes. No compressed executable payload was introduced.
+
+### Remaining direct field blockers
+
+Current-guest admission and preparation's current-capacity collectors still
+need implementation. Complete shared installation-pool peak accounting and
+aggregate CPU/memory/pids/storage/stream usage evidence are also unresolved.
+Existing private historical inputs are retained; do not ask for those originals
+again or open a separate guest connection to fill current facts. Current guest
+checks belong inside the original single carrier after all offline gates pass.
+
+After these implementation gaps, perform the complete release review and
+independent private package build/parse before permitting the conditional single
+H01→Q4→H11 run. The release allowlist remains empty and no field package was
+issued. This invocation created no field marker, sent no carrier/SSH request,
+and ran no guest core task; it collected no new guest result/evidence. Existing
+guest state was not re-observed. Namespace/watchdog remain paused, and production
+`E3_SUPERVISION_UNVERIFIED` remains enforced.
+
 ## Current cancellation and installation followup
 
 This core-only D followup descends from `5208e43d785f1c3eaacedf632029ed144b37833c`.
