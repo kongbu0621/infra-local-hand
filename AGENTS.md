@@ -1140,7 +1140,9 @@ Scope `LH-Q2-CORE-CLOUD-INIT-GRANT-BINDING-v1` is **OPEN**, only for the propose
 normalization in [requirements](docs/a2-execution/q2-core-cloud-init-grant-binding/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-cloud-init-grant-binding/ARCHITECTURE.md) and
 [G1–G3 plan](docs/a2-execution/q2-core-cloud-init-grant-binding/IMPLEMENTATION_PLAN.md).
-This is not a closure or implementation authorization. Exact A will be registered after this documentation commit;
+This is not a closure or implementation authorization. Exact proposed A is
+`018bdd7f09998290f536ab5a3726ccb4123dffa3`; its three document hashes and decision request are in
+[the OPEN baseline record](docs/governance/Q2_CORE_CLOUD_INIT_GRANT_BINDING_BASELINE.md).
 Owner B and independent bookkeeping-only C must precede new implementation of this affected conversion.
 Unchanged R, readable direct source/integrity, mandate, Owner authority and no-exception change rules apply.
 The original source hash, account and sudo privilege must not be replaced, and the literal check must not
