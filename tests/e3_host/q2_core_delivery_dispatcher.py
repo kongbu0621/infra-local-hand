@@ -3026,6 +3026,7 @@ class FieldEffects:
     def _installation_binding(self, argv):
         """Execute held ELF bytes while retaining Python's approved venv path."""
         _effect(self._admission is not None, "INSTALLATION_ADMISSION_REQUIRED")
+        call = partial(_guard_call, self._effect_guard)
         programs = self._admission["programs"]
         pins = {item["path"]: item for item in programs.values()}
         paths, actual, descriptors, environment = [argv[0]], list(argv), [], {}
@@ -3070,13 +3071,12 @@ class FieldEffects:
                 parsed = PurePosixPath(path)
                 parent = self._held_directory(str(parsed.parent), guard=self._effect_guard)
                 try:
-                    fd = os.open(parsed.name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
-                        dir_fd=parent)
+                    fd = call(os.open, parsed.name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
+                        dir_fd=parent, release=os.close)
                     descriptors.append(fd)
-                    self._effect_guard()
-                    before = os.fstat(fd)
+                    before = call(os.fstat, fd)
                     try:
-                        os.getxattr(fd, "security.capability")
+                        call(os.getxattr, fd, "security.capability")
                     except OSError as error:
                         import errno
                         _effect(error.errno in (errno.ENODATA, errno.ENOTSUP),
@@ -3086,10 +3086,9 @@ class FieldEffects:
                     _effect((before.st_dev, before.st_ino, stat.S_IMODE(before.st_mode),
                             before.st_uid, before.st_gid, before.st_nlink, before.st_size)
                         == tuple(identity[key] for key in _fields('dev ino mode uid gid nlink bytes'))
-                        and os.pread(fd, MEMBER_LIMIT + 1, 0) == raw,
+                        and call(os.pread, fd, MEMBER_LIMIT + 1, 0) == raw,
                         "INSTALL_PROGRAM_CHANGED")
-                    self._effect_guard()
-                    _effect(before == os.fstat(fd) == os.stat(parsed.name, dir_fd=parent, follow_symlinks=False),
+                    _effect(before == call(os.fstat, fd) == call(os.stat, parsed.name, dir_fd=parent, follow_symlinks=False),
                         "INSTALL_PROGRAM_CHANGED")
                 finally:
                     os.close(parent)
