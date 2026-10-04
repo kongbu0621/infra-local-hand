@@ -994,16 +994,27 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                     implementation_commit + "^{tree}")
     c.require(identity.decode("ascii").split() == [implementation_commit, implementation_tree],
               "CORE_FREEZE_IMPLEMENTATION")
-    # C precedes all amendment D commits, including the final integrated D.
-    # Only the *first* D is C's direct child; requiring that of a later freeze
-    # would wrongly select the old, incomplete dispatcher again.
-    closure = c.AMENDMENT_CLOSURE
-    c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
-    closure_identity = _git(repository, git_path, "rev-parse", closure["commit"] + "^{tree}")
-    c.require(closure_identity.decode("ascii").strip() == closure["tree"],
-              "CORE_FREEZE_IMPLEMENTATION_PARENT")
-    _git(repository, git_path, "merge-base", "--is-ancestor", closure["commit"],
-         implementation_commit)
+    # Final D must descend from both independent closures, not just the old C.
+    # Authority stays offline; no replacement wire amendment or extra member.
+    for baseline, decision, closure in (
+            (c.AMENDMENT_BASELINE, c.AMENDMENT_OWNER_DECISION, c.AMENDMENT_CLOSURE),
+            (c.WRITER_TRANSPORT_BASELINE, c.WRITER_TRANSPORT_OWNER_DECISION,
+             c.WRITER_TRANSPORT_CLOSURE)):
+        c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
+        for authority in (baseline, closure):
+            actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")
+            c.require(actual.decode("ascii").strip() == authority["tree"],
+                      "CORE_FREEZE_AUTHORITY_TREE")
+        _git(repository, git_path, "merge-base", "--is-ancestor", baseline["commit"], closure["commit"])
+        _git(repository, git_path, "merge-base", "--is-ancestor", closure["commit"], implementation_commit)
+        for path, expected in baseline["documents_sha256"].items():
+            for commit_id in (baseline["commit"], closure["commit"], implementation_commit):
+                raw = _git(repository, git_path, "show", commit_id + ":" + path, limit=1_048_576)
+                c.require(c.sha256(raw) == expected, "CORE_FREEZE_AUTHORITY_DOCUMENT")
+        for commit_id in (closure["commit"], implementation_commit):
+            raw = _git(repository, git_path, "show", commit_id + ":" + decision["record_path"],
+                       limit=1_048_576)
+            c.require(c.sha256(raw) == decision["record_sha256"], "CORE_FREEZE_OWNER_DECISION")
     source_paths = list(FIELD_SOURCE_PATHS.values())
     tree = _git(repository, git_path, "ls-tree", "-z", implementation_commit, "--",
                 *source_paths)
@@ -1218,7 +1229,7 @@ def _validate_static_freeze(static_freeze):
 
 
 def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inputs_raw):
-    """Bind approved inputs and exact committed field bytes into a v2 package.
+    """Bind approved inputs and exact committed field bytes into a v3 package.
 
     This is an in-memory construction, not a release or an independent review
     of the private source set. The caller obtains ``approved_inputs_raw`` from
@@ -1232,6 +1243,7 @@ def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inpu
         approved_inputs_raw, amendment=amendment)
     approved = c.document(approved_inputs_raw, limit=1_048_576, newline=True)
     binding = local_anchor["binding_preimage"]
+    writer = copy.deepcopy(c.validate_local_writer(binding["writer"]))
     tokens, argv = local_anchor["tokens"], local_anchor["argv"]
     local_digest = entry_api.local_management_binding_digest(
         binding, tokens=tokens, argv=argv, wrapper_raw=local_anchor["wrapper_bytes"])
@@ -1262,7 +1274,7 @@ def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inpu
     rows.append(approved_row)
     values[approved_row["path"]] = approved_inputs_raw
     frozen_entry = {"carrier_argv_sha256": entry_api.argv_digest(argv),
-                    "local_management_binding_sha256": local_digest}
+                    "local_management_binding_sha256": local_digest, "writer": writer}
     for role in ("loader", "bootstrap", "dispatcher"):
         path = f"field/{role}.py"
         raw = values[path]
@@ -1287,6 +1299,8 @@ def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inpu
     second_values = {path: bytes(raw) for path, raw in second_views.items()}
     c.require(first_manifest == second_manifest == manifest and first_values == second_values == values,
               "CORE_FREEZE_PACKAGE_ROUNDTRIP")
+    c.require(c.canonical(first_manifest["entry"]["writer"]) == c.canonical(binding["writer"]),
+              "CORE_FREEZE_WRITER_BINDING")
     return {"schema": FREEZE_SCHEMA, "state": "PACKAGE_FROZEN", "issuance": "NOT_ISSUED",
             "missing": [], "package": {"bytes": len(raw), "sha256": c.sha256(raw)},
             "package_raw": raw, "manifest": manifest, "member_bytes": values,

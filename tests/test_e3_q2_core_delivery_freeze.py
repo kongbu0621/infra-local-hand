@@ -13,6 +13,7 @@ import tarfile
 from types import SimpleNamespace
 
 import pytest
+from core_writer_fixture import writer
 
 if not sys.platform.startswith("linux"):
     pytest.skip("Core freeze requires Linux protected FDs and executable ownership checks",
@@ -245,9 +246,25 @@ def package_fixture(tmp_path, monkeypatch):
 
     implementation = tmp_path / "implementation"
     implementation.mkdir(); _git(implementation, "init", "-q")
-    _git(implementation, "commit", "--allow-empty", "-q", "-m", "closure")
-    closure_commit = _git(implementation, "rev-parse", "HEAD")
-    closure_tree = _git(implementation, "rev-parse", "HEAD^{tree}")
+    for name in ("AMENDMENT", "WRITER_TRANSPORT"):
+        doc = name.lower() + "-requirements.md"
+        (implementation / doc).write_bytes(b"synthetic A\n")
+        _git(implementation, "add", doc)
+        _git(implementation, "commit", "-q", "-m", name + " A")
+        monkeypatch.setattr(f.c, name + "_BASELINE", {
+            "commit": _git(implementation, "rev-parse", "HEAD"),
+            "tree": _git(implementation, "rev-parse", "HEAD^{tree}"),
+            "documents_sha256": {doc: f.c.sha256(b"synthetic A\n")}})
+        decision = name.lower() + "-decision.md"
+        (implementation / decision).write_bytes(b"synthetic B\n")
+        _git(implementation, "add", decision)
+        _git(implementation, "commit", "-q", "-m", name + " C")
+        monkeypatch.setattr(f.c, name + "_OWNER_DECISION", {
+            "event": "synthetic B", "record_path": decision,
+            "record_sha256": f.c.sha256(b"synthetic B\n")})
+        monkeypatch.setattr(f.c, name + "_CLOSURE", {
+            "commit": _git(implementation, "rev-parse", "HEAD"),
+            "tree": _git(implementation, "rev-parse", "HEAD^{tree}")})
     source = implementation / "tests" / "e3_host"
     source.mkdir(parents=True)
     loader = b"def main():\n    return None\n"
@@ -264,7 +281,6 @@ def package_fixture(tmp_path, monkeypatch):
     implementation_tree = _git(implementation, "rev-parse", "HEAD^{tree}")
 
     monkeypatch.setattr(f.c, "CANDIDATE", {"commit": candidate_commit, "tree": candidate_tree})
-    monkeypatch.setattr(f.c, "AMENDMENT_CLOSURE", {"commit": closure_commit, "tree": closure_tree})
     wheel_raw = b"exact-wheel"
     wheel = tmp_path / "unit.whl"; wheel.write_bytes(wheel_raw)
     projection_value = {
@@ -482,6 +498,42 @@ def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
         f.freeze_package_members(**arguments)
 
 
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT"])
+@pytest.mark.parametrize("record", ["BASELINE", "OWNER_DECISION", "CLOSURE"])
+def test_lineage_rejects_wrong_authority_bytes_or_tree(tmp_path, monkeypatch, scope, record):
+    arguments = package_fixture(tmp_path, monkeypatch)
+    authority = dict(getattr(f.c, scope + "_" + record))
+    if record == "BASELINE":
+        authority["documents_sha256"] = dict.fromkeys(authority["documents_sha256"], "0" * 64)
+    elif record == "OWNER_DECISION": authority["record_sha256"] = "0" * 64
+    else: authority["tree"] = "0" * 40
+    monkeypatch.setattr(f.c, scope + "_" + record, authority)
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_AUTHORITY|CORE_FREEZE_OWNER_DECISION"):
+        f.freeze_package_members(**arguments)
+
+
+def test_old_amendment_descendant_without_new_closure_is_not_releasable_d(tmp_path, monkeypatch):
+    arguments = package_fixture(tmp_path, monkeypatch)
+    arguments["implementation_commit"] = f.c.WRITER_TRANSPORT_BASELINE["commit"]
+    arguments["implementation_tree"] = f.c.WRITER_TRANSPORT_BASELINE["tree"]
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_GIT_COMMAND"):
+        f.freeze_package_members(**arguments)
+
+
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT"])
+def test_final_d_cannot_rewrite_approved_document_even_after_valid_c(tmp_path, monkeypatch, scope):
+    arguments = package_fixture(tmp_path, monkeypatch)
+    path = next(iter(getattr(f.c, scope + "_BASELINE")["documents_sha256"]))
+    repository = arguments["implementation_repository"]
+    (repository / path).write_bytes(b"altered after C\n")
+    _git(repository, "add", path)
+    _git(repository, "commit", "-q", "-m", "invalid authority drift")
+    arguments["implementation_commit"] = _git(repository, "rev-parse", "HEAD")
+    arguments["implementation_tree"] = _git(repository, "rev-parse", "HEAD^{tree}")
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_AUTHORITY_DOCUMENT"):
+        f.freeze_package_members(**arguments)
+
+
 def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypatch):
     from e3_host import q2_core_approved_inputs as a
     dispatcher = b"not a releasable dispatcher"
@@ -519,7 +571,8 @@ def frozen_v2_fixture(tmp_path, monkeypatch):
                   "known_hosts": b"fixture-host fixed-key\n"}
     monkeypatch.setattr(policy, "SOURCE_PINS", {name: f.c.sha256(raw)
                                               for name, raw in policy_raw.items()})
-    for name in ("CANDIDATE", "WHEEL", "PROJECTION", "AMENDMENT_CLOSURE"):
+    for name in ("CANDIDATE", "WHEEL", "PROJECTION", "AMENDMENT_BASELINE",
+                 "AMENDMENT_OWNER_DECISION", "AMENDMENT_CLOSURE"):
         monkeypatch.setattr(f.bootstrap_api, name, getattr(f.c, name))
     monkeypatch.setattr(f.bootstrap_api, "LOADER_SHA256", f.c.sha256(
         static["member_bytes"]["field/loader.py"]))
@@ -534,7 +587,7 @@ def frozen_v2_fixture(tmp_path, monkeypatch):
     locators = f.freeze_private_locators(**paths,
         local_management_binding_preimage={}, management_tokens=[], management_argv=[],
         management_wrapper_raw=b"fixture")["locators"]
-    binding = {"remote_expectation": expectation,
+    binding = {"remote_expectation": expectation, "writer": writer(),
                **{role: {"sha256": f.c.sha256(raw), "bytes": len(raw)}
                   for role, raw in policy_raw.items()}}
     basis = f.entry_api.static_policy_basis(source_raw=policy_raw, tokens=tokens)
@@ -553,7 +606,9 @@ def test_v2_freeze_builds_exact_private_member_and_preserves_original_window(tmp
     arguments = frozen_v2_fixture(tmp_path, monkeypatch)
     result = f.build_frozen_package(**arguments)
     manifest, members = f.p.parse_package(result["package_raw"])
-    assert manifest["schema"] == "local-hand-q2-core-field-package/v2"
+    assert manifest["schema"] == "local-hand-q2-core-field-package/v3"
+    assert manifest["entry"]["writer"] == arguments["local_anchor"]["binding_preimage"]["writer"]
+    assert manifest["entry"]["writer"] is not arguments["local_anchor"]["binding_preimage"]["writer"]
     assert members["private/approved-inputs.json"] == arguments["approved_inputs_raw"]
     row = next(row for row in manifest["members"] if row["role"] == "approved-inputs")
     assert row["mode"] == 0o600 and row["origin"]["kind"] == "approved-inputs"

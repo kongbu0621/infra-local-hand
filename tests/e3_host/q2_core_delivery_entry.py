@@ -1049,6 +1049,24 @@ def _validate_carrier_bindings(values, expected):
     })
     dispatcher_contract._validate_installation(installation, frozen)
     marker, bind = expected["marker"], expected["bind"]
+    writer = contract.validate_local_writer(expected["binding"]["writer"])
+    require(contract.canonical(frozen["entry"]["writer"]) == contract.canonical(writer),
+            "CORE_OUTPUT_WRITER_BINDING")
+    marker_record = consumption_record(
+        implementation=frozen["implementation"], amendment=frozen["amendment"],
+        package={"basename": bind["package_basename"], "bytes": bind["package_bytes"],
+                 "sha256": bind["package_sha256"],
+                 "manifest_sha256": contract.sha256(contract.canonical(frozen, newline=True))},
+        approved_inputs_sha256=frozen["approved_inputs"]["sha256"],
+        local_management_binding_sha256=frozen["entry"]["local_management_binding_sha256"],
+        writer=writer, carrier_argv_sha256=frozen["entry"]["carrier_argv_sha256"],
+        origins={key: bind[key] for key in ("host_boottime_origin_ns", "host_monotonic_origin_ns",
+                                          "host_boottime_deadline_ns", "host_monotonic_deadline_ns")})
+    marker_raw = contract.canonical(marker_record, newline=True, limit=MARKER_LIMIT)
+    require(marker["basename"] == contract.MARKER_BASENAME
+            and marker["bytes"] == len(marker_raw)
+            and marker["sha256"] == bind["consumption_sha256"] == contract.sha256(marker_raw),
+            "CORE_OUTPUT_HOST_MARKER_BINDING")
     require(session["consumption"] == {"basename": marker["basename"], "bytes": marker["bytes"],
                 "sha256": marker["sha256"], "state": "CONSUMPTION_RECORD_COMPLETE"},
             "CORE_OUTPUT_CONSUMPTION_BINDING")
@@ -1705,6 +1723,9 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
     environment = controlled_environment()
     encoded_argv_environment_size(argv, environment)
     require("anchor" in binding and "writer" in binding, "CORE_LOCAL_WRITER_BINDING_UNBOUND")
+    contract.validate_local_writer(binding["writer"])
+    require(contract.canonical(entry["writer"]) == contract.canonical(binding["writer"]),
+            "CORE_DELIVERY_WRITER_BINDING")
     # The window starts before current local inspection/package freeze. Never
     # refresh it on entry; caller must pass that same original window.
     require(origins is not None, "CORE_DELIVERY_ORIGIN_REQUIRED")

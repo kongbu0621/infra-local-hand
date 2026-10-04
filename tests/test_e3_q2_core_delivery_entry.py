@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from core_writer_fixture import writer, host_marker
 
 if not sys.platform.startswith("linux"):
     pytest.skip("Core delivery entry requires Linux clocks, ownership and pipe I/O",
@@ -802,9 +803,9 @@ def test_marker_writer_mismatch_rejected_before_exclusive_create(tmp_path):
         os.close(directory_fd)
 
 
-@pytest.mark.parametrize("expired", [False, True])
-def test_delivery_never_refreshes_missing_or_expired_original_window(monkeypatch, expired):
-    entry = {"loader_path": "field/loader.py", "bootstrap_path": "field/bootstrap.py"}
+@pytest.mark.parametrize("expired", [False, True, "writer"])
+def test_delivery_never_refreshes_window_or_substitutes_writer(monkeypatch, expired):
+    entry = {"loader_path": "field/loader.py", "bootstrap_path": "field/bootstrap.py", "writer": writer()}
     members = {"field/loader.py": b"loader", "field/bootstrap.py": b"bootstrap"}
     original_helper = e._helper
     monkeypatch.setattr(e, "_helper", lambda name: SimpleNamespace(
@@ -822,12 +823,15 @@ def test_delivery_never_refreshes_missing_or_expired_original_window(monkeypatch
         pytest.fail("no new window, anchor read, marker or request permitted")
     monkeypatch.setattr(e, "freeze_host_window", forbidden)
     monkeypatch.setattr(e, "requalify_management_anchor", forbidden)
+    monkeypatch.setattr(e, "marker_absent", forbidden)
+    monkeypatch.setattr(e, "create_consumption_marker", forbidden)
+    if expired == "writer": entry["writer"]["process"]["pid"] += 1
     origins = ({"host_boottime_origin_ns": 1, "host_monotonic_origin_ns": 2,
                 "host_boottime_deadline_ns": 1 + e.HOST_WINDOW_NS,
                 "host_monotonic_deadline_ns": 2 + e.HOST_WINDOW_NS} if expired else None)
     with pytest.raises((c.ContractError, e.capture_contract.CaptureError),
-                       match="CORE_DELIVERY_ORIGIN_REQUIRED|CORE_CAPTURE_DEADLINE"):
-        e.deliver_once(-1, binding={"wrapper": {"path": "/fixed"}, "anchor": {}, "writer": {}},
+                       match="CORE_DELIVERY_ORIGIN_REQUIRED|CORE_CAPTURE_DEADLINE|CORE_DELIVERY_WRITER_BINDING"):
+        e.deliver_once(-1, binding={"wrapper": {"path": "/fixed"}, "anchor": {}, "writer": writer()},
             package_basename="only.lhfp", package_raw=b"fixture", loader_raw=b"loader",
             bootstrap_raw=b"bootstrap", wrapper_raw=b"wrapper", origins=origins,
             clock_gettime_ns=lambda _clock: 2 + e.HOST_WINDOW_NS, popen_factory=forbidden)
@@ -852,7 +856,9 @@ def test_changed_session_amendment_is_rejected_even_with_recomputed_raw_digest()
         e._validate_carrier_bindings(values, {"manifest": frozen})
 
 
-def test_carrier_return_uses_original_context_for_admission_and_installation(monkeypatch):
+@pytest.mark.parametrize("drift", [None, "writer", "marker_bytes", "marker_digest", "bind_marker",
+                                  "session_bytes", "session_digest", "package", "clock"])
+def test_carrier_return_uses_original_context_for_admission_and_installation(monkeypatch, drift):
     # Synthetic transport documents exercise both real validators. This is not
     # a current guest observation, approved source closure or field execution.
     spec = importlib.util.spec_from_file_location("_host_return_fixture",
@@ -865,13 +871,11 @@ def test_carrier_return_uses_original_context_for_admission_and_installation(mon
     approved = c.document(approved_raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True)
     binding = {key: {} for key in c.SCHEMA_FIELDS[c.MANAGEMENT_BINDING_SCHEMA]}
     binding.update(schema=c.MANAGEMENT_BINDING_SCHEMA,
-                   remote_expectation=approved["policy_basis"]["remote_expectation"])
+                   remote_expectation=approved["policy_basis"]["remote_expectation"], writer=writer())
     frozen["entry"]["local_management_binding_sha256"] = hashlib.sha256(
         c.canonical(binding, newline=True)).hexdigest()
-    marker = {"basename": c.MARKER_BASENAME, "bytes": 1024,
-              "sha256": context["bind"]["consumption_sha256"]}
-    monkeypatch.setattr(fixture.d, "_consumption_info", lambda _: dict(
-        marker, state="CONSUMPTION_RECORD_COMPLETE"))
+    marker = host_marker(context)[1]
+    context["bind"]["consumption_sha256"] = marker["sha256"]
     effects = fixture.FakeEffects(context)
     admission = effects.admit({})
     installation = effects.install({"manifest": frozen})
@@ -883,6 +887,17 @@ def test_carrier_return_uses_original_context_for_admission_and_installation(mon
         return {"carrier/session.json": c.canonical(session, newline=True),
                 "carrier/admission.json": c.canonical(admission, newline=True),
                 "carrier/installation.json": c.canonical(installation, newline=True)}
+    if drift:
+        if drift == "writer": binding["writer"]["process"]["pid"] += 1
+        elif drift == "marker_bytes": marker["bytes"] += 1
+        elif drift == "marker_digest": marker["sha256"] = "0" * 64
+        elif drift == "bind_marker": context["bind"]["consumption_sha256"] = "0" * 64
+        elif drift == "session_bytes": session["consumption"]["bytes"] += 1
+        elif drift == "session_digest": session["consumption"]["sha256"] = "0" * 64
+        elif drift == "package": context["bind"]["package_sha256"] = "0" * 64
+        elif drift == "clock": context["bind"]["host_monotonic_origin_ns"] += 1
+        with pytest.raises(c.ContractError): e._validate_carrier_bindings(documents(), expected)
+        return
     e._validate_carrier_bindings(documents(), expected)
     installation["members_sha256"] = "0" * 64
     with pytest.raises(e.dispatcher_contract.DispatchError, match="INSTALLATION"):

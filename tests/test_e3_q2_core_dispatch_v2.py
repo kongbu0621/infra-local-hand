@@ -1,7 +1,7 @@
-"""Synthetic v2 transport tests; neither retained-source nor field acceptance.
+"""Synthetic v3 package / v2 session tests, not field acceptance.
 
 The minimal private components below are envelope fixtures, not approved host
-facts.  Full dispatch intentionally stops at the missing host writer preimage.
+facts. Full field release remains blocked by unfinished real effects.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import struct
 import sys
 
 import pytest
+from core_writer_fixture import writer, host_marker
 
 
 if not sys.platform.startswith("linux"):
@@ -24,19 +25,21 @@ d = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(d)
 
 
-def repack(value):
+def repack(value, *, marker=False):
     manifest, blobs = value["manifest"], value["members"]
     raw = d.canonical(manifest, newline=True)
     package = d.PACKAGE_MAGIC + struct.pack(">Q", len(raw)) + raw + b"".join(
         bytes(blobs[row["path"]]) for row in manifest["members"])
     value["bind"].update(package_bytes=len(package), package_sha256=d._sha(package),
                          hello_sha256=d._sha(d.canonical(value["hello"], newline=True)))
+    if marker:
+        value["bind"]["consumption_sha256"] = host_marker(value)[1]["sha256"]
     value["stdin_bytes_received"] = 16 + len(d.canonical(value["bind"], newline=True)) + len(package)
     return value
 
 
 def context_v2(*, guest_duration_ns=750 * d.NS):
-    """Produce a coherent v2 transport envelope, not a releasable package."""
+    """Produce a coherent v3 envelope (legacy helper name), not a release."""
     implementation = {"commit": "9" * 40, "tree": "7" * 40}
     amendment = {"baseline": copy.deepcopy(d.AMENDMENT_BASELINE),
                  "owner_decision": copy.deepcopy(d.AMENDMENT_OWNER_DECISION),
@@ -66,7 +69,8 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
     blobs = {"field/loader.py": b"loader", "field/bootstrap.py": b"bootstrap",
              "field/dispatcher.py": PATH.read_bytes(), d.APPROVED_INPUTS_PATH: approved_raw}
     rows = []
-    entry = {"carrier_argv_sha256": "c" * 64, "local_management_binding_sha256": "d" * 64}
+    entry = {"carrier_argv_sha256": "c" * 64, "local_management_binding_sha256": "d" * 64,
+             "writer": writer()}
     for name in ("loader", "bootstrap", "dispatcher"):
         path, raw = "field/" + name + ".py", blobs["field/" + name + ".py"]
         entry.update({name + "_path": path, name + "_bytes": len(raw), name + "_sha256": d._sha(raw)})
@@ -134,7 +138,7 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                  "boottime_deadline_ns": guest_origin + guest_duration_ns,
                  "monotonic_deadline_ns": guest_origin + d.NS + guest_duration_ns},
              "stdin_bytes_received": 0}
-    return repack(value)
+    return repack(value, marker=True)
 
 
 def test_v2_envelope_and_exact_nine_preimages_are_bound():
@@ -192,15 +196,17 @@ def test_amendment_and_static_remote_expectation_are_not_adopted_from_hello():
         d._validate_context_envelope(value)
 
 
-def test_writer_gap_stops_dispatch_before_any_effect_and_does_not_fake_receipt(deep_context):
+def test_changed_writer_marker_stops_before_any_effect_and_does_not_fake_receipt(deep_context):
     value = deep_context
+    value["manifest"]["entry"]["writer"]["process"]["pid"] += 1
+    repack(value)
     class NoEffects:
         def __getattr__(self, name):
             pytest.fail("an effect was inspected or called: " + name)
-    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_HOST_WRITER_UNBOUND"):
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_CONSUMPTION_BINDING"):
         d.dispatch(value, NoEffects())
     assert d.field_readiness()["releasable"] is False
-    assert "consumption.host_writer_preimage_unbound" in d.field_readiness()["protocol_blockers"]
+    assert not d.field_readiness()["protocol_blockers"]
 
 
 def test_json_signed_integer_and_duplicate_key_limits():
@@ -254,7 +260,7 @@ def _set_approved(value, artifact):
         "approved_source_relation_sha256": descriptor["approved_source_relation_sha256"]})
     for key in ("remote_tokens_sha256", "remote_command_sha256"):
         value["hello"]["remote_management"][key] = artifact["policy_basis"]["remote_expectation"][key]
-    return repack(value)
+    return repack(value, marker=True)
 
 
 @pytest.fixture
@@ -301,8 +307,7 @@ def test_standalone_deep_parser_binds_all_components_without_host_modules(deep_c
     monkeypatch.setattr(a, "validate", lambda *_args, **_kwargs: pytest.fail("host validator invoked"))
     assert d._validate_approved_components(value) is value
     assert d._validate_context_envelope(deep_context) is deep_context
-    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_HOST_WRITER_UNBOUND"):
-        d._validate_context(deep_context)
+    assert d._validate_context(deep_context) is deep_context
 
 
 @pytest.mark.parametrize("change", [

@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from core_writer_fixture import writer
 
 if not sys.platform.startswith("linux"):
     pytest.skip("Core bootstrap requires Linux resource limits and CLOCK_BOOTTIME",
@@ -107,7 +108,7 @@ def package_fixture(monkeypatch):
              "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": len(dispatcher),
              "dispatcher_sha256": hashlib.sha256(dispatcher).hexdigest(),
              "carrier_argv_sha256": "f" * 64,
-             "local_management_binding_sha256": management}
+             "local_management_binding_sha256": management, "writer": writer()}
     locators = {"schema": p.c.LOCATORS_SCHEMA, "observation_record_sha256": "1" * 64,
         "source_relation_sha256": "0" * 64, "state_parent": "/fixture/state",
         "quota_parent": "/fixture/quota", "install_parent": "/fixture/install",
@@ -367,11 +368,16 @@ def test_hello_v2_alias_projection_limit_and_old_schema_rejection():
         b.validate_hello(invalid, "1" * 64)
 
 
-@pytest.mark.parametrize("mutation", ["schema", "amendment", "mode", "source_relation", "legacy_entry"])
-def test_standalone_package_rejects_mixed_or_unbound_v2(monkeypatch, mutation):
+@pytest.mark.parametrize("mutation", ["schema", "v2", "writer_missing", "writer_extra", "writer_invalid",
+                                      "amendment", "mode", "source_relation", "legacy_entry"])
+def test_standalone_package_rejects_mixed_or_unbound_v3(monkeypatch, mutation):
     bootstrap_sha, raw = package_fixture(monkeypatch)
     manifest, members = b.parse_package(raw, bootstrap_sha)
     if mutation == "schema": manifest["schema"] = "local-hand-q2-core-field-package/v1"
+    elif mutation == "v2": manifest["schema"] = "local-hand-q2-core-field-package/v2"
+    elif mutation == "writer_missing": manifest["entry"].pop("writer")
+    elif mutation == "writer_extra": manifest["entry"]["writer_hash"] = "0" * 64
+    elif mutation == "writer_invalid": manifest["entry"]["writer"]["process"]["pid"] = True
     elif mutation == "amendment": manifest["amendment"]["closure"]["commit"] = "f" * 40
     elif mutation == "mode":
         next(row for row in manifest["members"] if row["role"] == "approved-inputs")["mode"] = 0o644

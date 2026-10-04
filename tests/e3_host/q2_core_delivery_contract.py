@@ -73,6 +73,28 @@ AMENDMENT_CLOSURE = {
     "commit": "7598886e15ed6911fe0e09e2f8d66203455f9057",
     "tree": "7f2178942c126f883829a139b842cfc2c2e12159",
 }
+# Offline lineage only: the wire amendment continues to name its original A/B/C.
+WRITER_TRANSPORT_BASELINE = {
+    "commit": "60756caedf6a2d978627272e44784d11009ac309",
+    "tree": "82df6a8ec23fce903dbb09ca3feb51baacac503c",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-writer-transport/REQUIREMENTS.md":
+            "8d2f0dcc113eaab0fb086ef5163376e0ca5c17ab3a96fb4bcc90c1fb12a9d213",
+        "docs/a2-execution/q2-core-writer-transport/ARCHITECTURE.md":
+            "0327482634a6c62abde72b2bfdf8566abda90b6f0dd411fea8f15f1eda175b8f",
+        "docs/a2-execution/q2-core-writer-transport/IMPLEMENTATION_PLAN.md":
+            "1b0d745142929dfe6d377fad826cab2fce9a40d1fffffc583517721d8c97b109",
+    },
+}
+WRITER_TRANSPORT_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-WRITER-TRANSPORT-CLOSURE-20261004-01",
+    "record_path": "docs/governance/Q2_CORE_WRITER_TRANSPORT_OWNER_DECISION.md",
+    "record_sha256": "f62b3fe38c6b39e9063858a6a03e5fe8285fb78f90c3a2810b2163fc28932f3a",
+}
+WRITER_TRANSPORT_CLOSURE = {
+    "commit": "8e891e11fb6e563353013ac94c201f30a1df66c9",
+    "tree": "2c2ae6e075176ca359d411c127267ea1a959ddce",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
@@ -109,7 +131,7 @@ PACKAGE_MAGIC = b"LHCFP1\n"
 HELLO_MAGIC = b"LHCHLO1\n"
 BIND_MAGIC = b"LHCBND1\n"
 OUTPUT_MAGIC = b"LHCOUT1\n"
-PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v2"
+PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v3"
 LOCATORS_SCHEMA = "local-hand-q2-core-private-locators/v1"
 LOCATOR_RELATION_SCHEMA = "local-hand-q2-core-locator-relation/v2"
 CONSUMPTION_SCHEMA = "local-hand-q2-core-carrier-consumption/v2"
@@ -464,6 +486,7 @@ def validate_local_writer(value):
     for item in groups:
         integer(item, code="CORE_LOCAL_WRITER_GROUPS")
     require(groups == sorted(set(groups)), "CORE_LOCAL_WRITER_GROUPS")
+    canonical(value, limit=4096)
     return value
 
 

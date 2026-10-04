@@ -4,6 +4,7 @@ import struct
 import types
 
 import pytest
+from core_writer_fixture import writer
 
 from e3_host import q2_core_delivery_package as p
 
@@ -70,6 +71,7 @@ def fixture(monkeypatch):
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": len(dispatcher),
         "dispatcher_sha256": hashlib.sha256(dispatcher).hexdigest(),
         "carrier_argv_sha256": "f" * 64, "local_management_binding_sha256": management,
+        "writer": writer(),
     }
     locators = {
         "schema": p.c.LOCATORS_SCHEMA, "observation_record_sha256": "1" * 64,
@@ -169,9 +171,10 @@ def _replace_approved(manifest, members, raw):
     row["origin"].update(bytes=len(raw), sha256=p.c.sha256(raw))
 
 
-def test_wire_v1_rejected_even_with_current_magic(monkeypatch):
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_old_wire_rejected_even_with_current_magic(monkeypatch, version):
     manifest, members = fixture(monkeypatch)
-    manifest["schema"] = "local-hand-q2-core-field-package/v1"
+    manifest["schema"] = "local-hand-q2-core-field-package/" + version
     with pytest.raises(p.c.ContractError, match="CORE_PACKAGE_AUTHORITY"):
         p.parse_package(_wire(manifest, members))
 
@@ -180,7 +183,7 @@ def test_wire_v1_rejected_even_with_current_magic(monkeypatch):
 def test_package_refuses_mixed_contracts(monkeypatch, mutation):
     manifest, members = fixture(monkeypatch)
     if mutation == "extra":
-        manifest["entry"]["writer"] = {}
+        manifest["entry"]["extra"] = {}
     elif mutation == "missing":
         del manifest["amendment"]
     elif mutation == "legacy_digest":

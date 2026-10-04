@@ -277,7 +277,7 @@ RECEIPT_SCHEMA = "local-hand-q2-core-phase-receipt/v1"
 VERDICT_SCHEMA = "local-hand-q2-core-case-verdict/v1"
 PROOF_SCHEMA = "local-hand-q2-core-h11-recovery-proof/v1"
 CONSUMPTION_SCHEMA = "local-hand-q2-core-carrier-consumption/v2"
-PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v2"
+PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v3"
 HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
 SESSION_SCHEMA = "local-hand-q2-core-dispatch-session/v2"
 APPROVED_INPUTS_PATH = "private/approved-inputs.json"
@@ -1958,8 +1958,9 @@ def _validate_context_envelope(context):
     entry = manifest["entry"]
     _exact(entry, ("loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
                    "bootstrap_bytes", "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes",
-                   "dispatcher_sha256", "carrier_argv_sha256", "local_management_binding_sha256"),
+                   "dispatcher_sha256", "carrier_argv_sha256", "local_management_binding_sha256", "writer"),
            "CORE_DISPATCH_ENTRY_FIELDS")
+    _validate_local_writer(entry["writer"])
     for key in ("carrier_argv_sha256", "local_management_binding_sha256"):
         _digest(entry[key], "CORE_DISPATCH_ENTRY")
     _require(type(entry) is dict and entry.get("loader_path") == "field/loader.py"
@@ -2063,18 +2064,54 @@ def _validate_context(context):
     return context
 
 
-def _consumption_info(context):
-    """Do not invent the host-only writer needed to recreate a v2 marker.
+def _validate_local_writer(value):
+    """Validate transported host bytes, never sample a guest substitute."""
+    code = "CORE_DISPATCH_HOST_WRITER"
+    _exact(value, ("schema", "user_namespace", "pid_namespace", "process", "uid", "gid",
+                   "supplementary_gids"), code)
+    _require(value["schema"] == "local-hand-q2-core-local-writer/v1", code)
+    for name in ("user_namespace", "pid_namespace", "process", "uid", "gid"):
+        fields = ({"dev": 0, "ino": 1} if name.endswith("namespace") else
+                  {"pid": 1, "starttime_ticks": 0} if name == "process" else
+                  dict.fromkeys(("real", "effective", "saved", "filesystem"), 0))
+        _exact(value[name], fields, code)
+        for key, minimum in fields.items():
+            _integer(value[name][key], minimum, code=code)
+        if name in ("uid", "gid"):
+            _require(len(set(value[name].values())) == 1, code)
+    groups = value["supplementary_gids"]
+    _require(type(groups) is list, code)
+    for item in groups:
+        _integer(item, code=code)
+    _require(groups == sorted(set(groups)), code)
+    canonical(value, limit=4096)
+    return value
 
-    Approved A gives entry only local_management_binding_sha256, while the
-    v2 marker includes the full writer. Neither BIND nor approved-inputs
-    carries that writer. A digest cannot recover its preimage or raw length.
-    Keep the original marker digest/length check fail-closed until an exact
-    approved wire binding supplies those facts; never reuse the guest writer.
-    """
-    _require(context["manifest"]["schema"] == PACKAGE_SCHEMA,
+
+def _consumption_info(context):
+    """Rebuild marker v2 from v3 inputs; this is not host persistence proof."""
+    manifest, bind = context["manifest"], context["bind"]
+    _require(manifest["schema"] == PACKAGE_SCHEMA,
              "CORE_DISPATCH_MANIFEST_AUTHORITY")
-    raise DispatchError("CORE_DISPATCH_HOST_WRITER_UNBOUND")
+    entry = manifest["entry"]
+    writer = _validate_local_writer(entry["writer"])
+    marker = {"schema": "local-hand-q2-core-carrier-consumption/v2",
+        "scope": SCOPE, "session_id": SESSION,
+        **{key: manifest[key] for key in ("baseline", "owner_decision", "closure",
+                                          "implementation", "amendment", "candidate")},
+        "package": {"basename": bind["package_basename"], "bytes": bind["package_bytes"],
+                    "sha256": bind["package_sha256"],
+                    "manifest_sha256": _sha(canonical(manifest, newline=True))},
+        "approved_inputs_sha256": manifest["approved_inputs"]["sha256"],
+        "local_management_binding_sha256": entry["local_management_binding_sha256"],
+        "writer": writer, "carrier_argv_sha256": entry["carrier_argv_sha256"],
+        **{key: bind[key] for key in ("host_boottime_origin_ns", "host_monotonic_origin_ns",
+                                      "host_boottime_deadline_ns", "host_monotonic_deadline_ns")},
+        "state": "CONSUMPTION_RECORD_COMPLETE"}
+    raw = canonical(marker, newline=True, limit=16384)
+    _require(_sha(raw) == bind["consumption_sha256"], "CORE_DISPATCH_CONSUMPTION_BINDING")
+    return {"basename": ".lhqcore-20261003a.carrier-consumed.json", "bytes": len(raw),
+            "sha256": _sha(raw), "state": marker["state"]}
 
 
 def field_readiness():
@@ -2092,7 +2129,7 @@ def field_readiness():
         "scope": SCOPE,
         "releasable": False,
         "unbound_approved_inputs": list(UNBOUND_APPROVED_INPUTS),
-        "protocol_blockers": ["consumption.host_writer_preimage_unbound"],
+        "protocol_blockers": [],
         "unimplemented_effects": list(UNIMPLEMENTED_FIELD_EFFECTS),
     }
 

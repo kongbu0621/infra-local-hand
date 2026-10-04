@@ -59,7 +59,7 @@ MANIFEST_FIELDS = {
 ENTRY_FIELDS = {
     "loader_path", "loader_bytes", "loader_sha256", "bootstrap_path", "bootstrap_bytes",
     "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes", "dispatcher_sha256",
-    "carrier_argv_sha256", "local_management_binding_sha256",
+    "carrier_argv_sha256", "local_management_binding_sha256", "writer",
 }
 LOCATOR_FIELDS = {
     "schema", "observation_record_sha256", "source_relation_sha256", "state_parent",
@@ -257,6 +257,7 @@ def validate_manifest(value):
     for key in ("sha256", "approved_source_relation_sha256"):
         c.digest(approved[key], "CORE_PACKAGE_APPROVED_INPUTS")
     entry = c.exact(value["entry"], ENTRY_FIELDS, "CORE_PACKAGE_ENTRY_FIELDS")
+    c.validate_local_writer(entry["writer"])
     expected_paths = {"loader": "field/loader.py", "bootstrap": "field/bootstrap.py",
                       "dispatcher": "field/dispatcher.py"}
     for name, path in expected_paths.items():

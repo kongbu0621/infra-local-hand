@@ -435,7 +435,7 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
         "schema": "local-hand-q2-core-field-readiness/v1",
         "scope": d.SCOPE,
         "releasable": False,
-        "protocol_blockers": ["consumption.host_writer_preimage_unbound"],
+        "protocol_blockers": [],
         "unbound_approved_inputs": [
             "admission.policy_expected_entities",
             "admission.historical_capacity_obligations",
