@@ -104,6 +104,7 @@ def test_h01_result_reads_original_evidence_slot_not_capture_directory(tmp_path)
 def ledger(tmp_path):
     path = tmp_path / "jobs.sqlite"
     db = sqlite3.connect(path)
+    db.execute("PRAGMA journal_mode=WAL")
     db.executescript("CREATE TABLE events(seq INTEGER,namespace TEXT,id TEXT,kind TEXT);")
     db.execute("INSERT INTO events VALUES(7,'job',?,'ACCEPTED')", (d.CASES[2]["operation_id"],))
     db.commit(); db.close(); path.chmod(0o600)
@@ -114,11 +115,29 @@ def test_h11_accepted_seq_is_observed_not_assumed_one(tmp_path):
     value, plan = effects(tmp_path); path = ledger(tmp_path)
     plan["ledger_path"] = str(path)
     before = path.read_bytes(); fd = os.open(path, os.O_RDONLY)
+    assert before[18:20] == b"\x02\x02"
     try:
         assert value._exec_h11_accepted(d.CASES[2], {"_exec_ledger_fd": fd}, plan) == 7
     finally: os.close(fd)
     assert path.read_bytes() == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["jobs.sqlite"]
+
+
+def test_h11_accepted_rejects_path_replacement_during_sqlite_read(tmp_path, monkeypatch):
+    value, plan = effects(tmp_path); path = ledger(tmp_path)
+    plan["ledger_path"] = str(path); fd = os.open(path, os.O_RDONLY)
+    connect = sqlite3.connect
+    def replaced(database, **kwargs):
+        connection = connect(database, **kwargs)
+        raw = path.read_bytes()
+        path.rename(tmp_path / "original.sqlite")
+        path.write_bytes(raw)
+        return connection
+    monkeypatch.setattr(sqlite3, "connect", replaced)
+    try:
+        with pytest.raises(d.DispatchError, match="LEDGER_CHANGED"):
+            value._exec_h11_accepted(d.CASES[2], {"_exec_ledger_fd": fd}, plan)
+    finally: os.close(fd)
 
 
 def test_h11_accepted_missing_fails_without_export(tmp_path):

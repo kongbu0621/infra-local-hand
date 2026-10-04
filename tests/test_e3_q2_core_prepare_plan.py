@@ -14,6 +14,15 @@ from test_e3_quota_q2_prepare_driver import fixture, d as driver
 from test_e3_quota_q2_system_prepare_driver import system_fixture
 
 
+@pytest.mark.parametrize("case", d.CASES)
+def test_unreleased_actual_preparation_stops_before_mutation(case, monkeypatch):
+    effects = d.FieldEffects({})
+    monkeypatch.setattr(d.os, "open", lambda *a, **kw: pytest.fail("file effect before release"))
+    monkeypatch.setattr(d.os, "mkdir", lambda *a, **kw: pytest.fail("directory effect before release"))
+    with pytest.raises(d.DispatchError, match="EXISTING_ACCOUNT_ADAPTER_INCOMPLETE"):
+        effects.prepare_case(case, d.build_intent(case), 100)
+
+
 def translated(case):
     plan, original = fixture() if case["index"] == 2 else system_fixture()
     plan.update(scope=d.SCOPE, baseline=d.BASELINE["commit"], preparation_id=case["preparation_id"],
@@ -173,6 +182,13 @@ def test_quota_mutator_rejects_other_ids_or_limits_before_kernel(project, values
 
 @pytest.mark.parametrize("case", d.CASES)
 def test_plan_case_creates_original_candidate_handoff_once(case, tmp_path, monkeypatch):
+    # Root ownership is a host premise; keep this decoder/persistence fixture
+    # runnable by an ordinary CI account without changing the production writer.
+    write = d._prep_file
+    def owned_write(*args, **kwargs):
+        kwargs.update(uid=os.getuid(), gid=os.getgid())
+        return write(*args, **kwargs)
+    monkeypatch.setattr(d, "_prep_file", owned_write)
     plan, receipt, children, helpers = translated(case)
     prepared = dict(case=case, plan=plan, receipt=receipt, children=children, paths={"reservation": str(tmp_path)},
         source_objects={}, **d._prep_translate(case, plan, receipt, children, helpers))

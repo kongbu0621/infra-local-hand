@@ -143,6 +143,7 @@ def test_h11_cannot_export_even_if_caller_has_descriptor(ledger):
         ledger[0]._exec_ledger_export(d.CASES[2], ledger[2], ledger[3])
 
 
+@pytest.mark.skipif(os.geteuid() != 0, reason="Carrier directory creation requires root ownership")
 def test_only_session_container_allows_ordinary_traversal(tmp_path):
     info = tmp_path.stat()
     effects = d.FieldEffects({"manifest": {"locators": {"state_parent": str(tmp_path)}}})

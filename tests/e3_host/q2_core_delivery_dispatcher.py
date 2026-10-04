@@ -6,10 +6,10 @@ import another D helper.  ``dispatch`` owns all ordering and validation.  The
 dispatcher so the contract can be tested without substituting modeled case
 results for field evidence.
 
-The default effects include protected file and bounded installation primitives.
-Current-guest admission, complete shared-pool accounting and case execution
-remain fail-closed at their named integration gaps. A successful result is
-never a fallback for missing field evidence.
+The default effects include protected files, bounded installation, original
+case execution and evidence readers. Current-guest admission, actual preparation
+and complete shared-pool accounting remain fail-closed at their named integration
+gaps. Component tests never substitute for original field evidence.
 """
 from __future__ import annotations
 
@@ -259,10 +259,6 @@ UNIMPLEMENTED_FIELD_EFFECTS = (
     "installation.deadline_guarding",
     "installation.program_execution_binding",
     "preparation.existing_account_completion",
-    "execution.h01_normal",
-    "execution.q4_running_cancel_subset",
-    "execution.h11_same_ledger_recovery",
-    "evidence.dynamic_phase_fact_extraction",
     "evidence.usage_and_peak_accounting",
 )
 
@@ -2062,26 +2058,6 @@ def _prep_translate(case, plan, receipt, children, helpers):
     return {"facts": facts, "authority": authority, "manifest": manifest, "assembled": assembled}
 
 
-def _prep_directory(effects, path, uid, gid, mode, deadline):
-    _prep_guard(effects, deadline)
-    parent = effects._held_directory(str(PurePosixPath(path).parent))
-    try:
-        name = PurePosixPath(path).name
-        os.mkdir(name, mode, dir_fd=parent)
-        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=parent)
-        try:
-            os.fchown(fd, uid, gid); os.fchmod(fd, mode); os.fsync(fd); os.fsync(parent)
-            info = os.fstat(fd)
-            _require((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, mode),
-                     "CORE_EFFECT_PREPARATION_DIRECTORY_OWNER")
-            observed = {"path": path, "device": info.st_dev, "inode": info.st_ino,
-                        "uid": uid, "gid": gid, "mode": info.st_mode}
-        finally:
-            os.close(fd)
-    finally:
-        os.close(parent)
-    _prep_guard(effects, deadline)
-    return observed
 
 
 def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
@@ -2170,37 +2146,6 @@ def _prep_quota(source, command, project, values=None):
     return {name: getattr(block, name) for name, _ in block._fields_}
 
 
-def _prep_root(effects, planned, account, mount, deadline):
-    import errno
-    import fcntl
-    _prep_guard(effects, deadline)
-    try:
-        before = _prep_quota(mount["source"], 0x800007, planned["project_id"])
-    except OSError as error:
-        if error.errno != errno.ESRCH: raise
-        before = {}
-    _require(all(v == 0 for k, v in before.items() if k not in ("valid", "project")),
-             "CORE_EFFECT_PREPARATION_PROJECT_EXISTS")
-    measured = _prep_directory(effects, planned["path"], account["uid"], account["gid"], 448, deadline)
-    fd = effects._held_directory(planned["path"])
-    try:
-        raw = fcntl.ioctl(fd, 0x801c581f, bytes(28))
-        flags, extent, count, project, cow, padding = struct.unpack("=IIIII8s", raw)
-        _require(project == 0, "CORE_EFFECT_PREPARATION_INHERITED_PROJECT")
-        _prep_guard(effects, deadline)
-        fcntl.ioctl(fd, 0x401c5820, struct.pack("=IIIII8s", flags | 512, extent, count,
-                                             planned["project_id"], cow, padding))
-        assigned = _prep_quota(mount["source"], 0x800007, planned["project_id"])
-        _require(assigned["inodes"] == 1 and all(assigned[k] == 0 for k in
-            ("hard", "soft", "ihard", "isoft", "btime", "itime")),
-                 "CORE_EFFECT_PREPARATION_PROJECT_ASSIGNMENT")
-        _prep_guard(effects, deadline)
-        _prep_quota(mount["source"], 0x800008, planned["project_id"],
-                    {"hard": 1024, "ihard": 128, "valid": 5})
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    return dict(planned, **{k: v for k, v in measured.items() if k != "path"})
 
 
 def _prep_quota_retained(rows):
@@ -2214,30 +2159,6 @@ def _prep_quota_retained(rows):
     return result
 
 
-def _prep_observe_root(effects, expected, mount, deadline):
-    import fcntl
-    _prep_guard(effects, deadline)
-    fd = effects._held_directory(expected["path"])
-    try:
-        before = os.fstat(fd)
-        flags, _, _, project, _, _ = struct.unpack("=IIIII8s", fcntl.ioctl(fd, 0x801c581f, bytes(28)))
-        quota = _prep_quota(mount["source"], 0x800007, expected["project_id"])
-        after = os.fstat(fd)
-        _require((before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode)
-                 == (after.st_dev, after.st_ino, after.st_uid, after.st_gid, after.st_mode)
-                 == tuple(expected[k] for k in ("device", "inode", "uid", "gid", "mode"))
-                 and project == expected["project_id"] and flags & 512
-                 and quota["valid"] & 5 == 5 and quota["hard"] * 1024 == expected["hard_bytes"]
-                 and quota["ihard"] == expected["inode_hard_limit"],
-                 "CORE_EFFECT_PREPARATION_ROOT_CHANGED")
-    finally:
-        os.close(fd)
-    # Enforcement is re-observed by the capacity collector, not inferred from limits.
-    _require(effects._capacity_quota_enforcement() & 48 == 48,
-             "CORE_EFFECT_PREPARATION_QUOTA_ENFORCEMENT")
-    _prep_guard(effects, deadline)
-    return dict(expected, filesystem="ext4", filesystem_uuid=mount["uuid"], xflags=flags,
-                accounting=True, enforcement=True, identity_unchanged=True)
 
 
 def _plan_from_prepared(case, prepared, deadlines):
@@ -2276,729 +2197,48 @@ def _plan_from_prepared(case, prepared, deadlines):
     return validate_plan(case, build_intent(case), plan, deadlines)
 
 
-def _prep_command(effects, argv, deadline):
-    original = effects._effect_guard
-    def guard():
-        _prep_guard(effects, deadline)
-        return original()
-    effects._effect_guard = guard
-    try:
-        return effects._installation_command(argv)
-    finally:
-        effects._effect_guard = original
 
 
-def _prep_initialize(effects, prepared, deadline):
-    facts, assembled = prepared["facts"], prepared["assembled"]
-    uid, gid = facts["ordinary"]["uid"], facts["ordinary"]["gid"]
-    policy_raw = canonical(assembled["policy"], newline=True)
-    policy_path = facts["paths"]["policy"]
-    prepared["source_objects"]["policy"] = _prep_file(effects, policy_path, policy_raw,
-                                                     deadline, uid=uid, gid=gid)
-    authority_path = facts["paths"]["authority_root"] + "/authority.json"
-    authority = {"authority_id": facts["identity"]["authority_id"],
-                 "ledger_id": facts["identity"]["ledger_id"],
-                 "state_root": facts["paths"]["broker_root"]}
-    prepared["source_objects"]["authority"] = _prep_file(effects, authority_path,
-        canonical(authority, newline=True), deadline, uid=uid, gid=gid)
-    source_path = facts["source"]["root"] + "/tests/e3_host/q2_prepare_assembly.py"
-    # Fixed isolated ordinary child; only final projected source enters its path.
-    # The old driver's command-line branch is not used (its adjacent contract is
-    # intentionally absent from that projection).
-    program = ("import hashlib,importlib.util,json,os,stat,sys; "
-        "source,expected,policy,digest,ledger,tools,installed=sys.argv[1:]; "
-        "fd=os.open(source,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC); "
-        "raw=os.read(fd,262145); before=os.fstat(fd); os.close(fd); "
-        "assert stat.S_ISREG(before.st_mode) and before.st_uid==0 and before.st_nlink==1 "
-        "and not before.st_mode&18 and hashlib.sha256(raw).hexdigest()==expected; "
-        "fd=os.open(policy,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC); "
-        "payload=os.read(fd,65537); info=os.fstat(fd); os.close(fd); "
-        "assert stat.S_ISREG(info.st_mode) and info.st_uid==os.getuid() and info.st_nlink==1 "
-        "and stat.S_IMODE(info.st_mode)==384 and hashlib.sha256(payload).hexdigest()==digest; "
-        "sys.path[:0]=[installed,tools]; "
-        "module=importlib.util.module_from_spec(importlib.util.spec_from_file_location('_core_ledger',source)); "
-        "exec(compile(raw,source,'exec'),module.__dict__); "
-        "value=module.initialize_ledger(json.loads(payload),ledger); "
-        "print(json.dumps(value,sort_keys=True,separators=(',',':')))")
-    argv = [facts["setpriv"]["path"], "--reuid=" + str(uid), "--regid=" + str(gid),
-        "--clear-groups", "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all",
-        "--no-new-privs", facts["installation"]["programs"]["python"]["path"], "-I", "-B", "-c",
-        program, source_path, facts["source"]["files"]["tests/e3_host/q2_prepare_assembly.py"],
-        policy_path, _sha(policy_raw), facts["identity"]["ledger_id"],
-        facts["source"]["root"] + "/tools", facts["installation"]["package_root"]]
-    raw = _prep_command(effects, argv, deadline)
-    ledger = document(raw, limit=32768)
-    _exact(ledger, ("path", "device", "inode", "uid", "mode", "ledger_id", "generation"),
-           "CORE_EFFECT_PREPARATION_LEDGER")
-    _require(ledger["path"] == facts["paths"]["broker_root"] + "/jobs.sqlite"
-             and ledger["uid"] == uid and ledger["mode"] == 384
-             and ledger["ledger_id"] == facts["identity"]["ledger_id"]
-             and ledger["generation"] == assembled["chain"]["broker_generation"],
-             "CORE_EFFECT_PREPARATION_LEDGER")
-    info = os.stat(ledger["path"], follow_symlinks=False)
-    _require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
-             == (ledger["device"], ledger["inode"], uid, gid, 384)
-             and stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
-             "CORE_EFFECT_PREPARATION_LEDGER")
-    result = {"schema": "local-hand-q2-preparation-result/v1", "status": "PREPARED",
-        "source_commit": facts["source"]["commit"], "preparation_id": prepared["case"]["preparation_id"],
-        "policy": {"path": policy_path, "sha256": _sha(policy_raw)}, "ledger": ledger,
-        "authority_sha256": _sha(canonical(prepared["authority"], newline=True)),
-        "manifest_sha256": _sha(canonical(prepared["manifest"], newline=True)),
-        "q2_accepted": False, "q3_accepted": False, "production_supported": False}
-    _prep_file(effects, prepared["paths"]["reservation"] + "/prepared.json",
-               canonical(result, newline=True), deadline)
-    prepared["prepared_result"] = result
 
 
-def _admit_stat(info):
-    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-class _admit_reader:
-    """Held no-follow policy reads, including end-of-snapshot name rechecks."""
-    def __init__(self, guard, home, uid):
-        self.guard, self.home, self.uid = guard, home, uid
-        self.held, self.names, self.objects, self.raw = [], [], {}, {}
-        self.root = self.root_info = None
-
-    def call(self, function, *args, **kwargs):
-        self.guard()
-        value = function(*args, **kwargs)
-        self.guard()
-        return value
-
-    def close(self):
-        while self.held:
-            os.close(self.held.pop())
-
-    def owner(self, path):
-        return self.uid if path == self.home or path.startswith(self.home + "/") else 0
-
-    def protected(self, info, path, *, directory=False):
-        _require(info.st_uid == self.owner(path) and not stat.S_IMODE(info.st_mode) & 0o022
-                 and (stat.S_ISDIR(info.st_mode) if directory else
-                      stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
-                 "CORE_ADMIT_POLICY_PROTECTION")
-
-    def parent(self, path):
-        parts = FieldEffects._absolute(path).parts[1:]
-        _require(0 < len(parts) <= 64, "CORE_ADMIT_POLICY_DEPTH")
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
-        if self.root is None:
-            self.root = self.call(os.open, "/", flags)
-            self.held.append(self.root)
-            self.root_info = self.call(os.fstat, self.root)
-            self.protected(self.root_info, "/", directory=True)
-        fd = self.root
-        current = ""
-        for part in parts[:-1]:
-            current += "/" + part
-            before = self.call(os.stat, part, dir_fd=fd, follow_symlinks=False)
-            self.protected(before, current, directory=True)
-            child = self.call(os.open, part, flags, dir_fd=fd)
-            self.held.append(child)
-            _require(_admit_stat(self.call(os.fstat, child)) == _admit_stat(before),
-                     "CORE_ADMIT_POLICY_DRIFT")
-            self.names.append((fd, part, child, before))
-            fd = child
-        return fd, parts[-1]
-
-    def read(self, path, *, maximum=262144, required=True, directory=False, private=False):
-        _require(path not in self.objects, "CORE_ADMIT_POLICY_REPEAT")
-        parent, name = self.parent(path)
-        try:
-            before = self.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
-        except FileNotFoundError:
-            _require(not required, "CORE_ADMIT_POLICY_MISSING")
-            self.names.append((parent, name, None, None))
-            self.objects[path] = dict(path=path, state="ABSENT", **dict.fromkeys(
-                ("kind", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256")))
-            return None
-        self.protected(before, path, directory=directory)
-        _require(not private or not stat.S_IMODE(before.st_mode) & 0o177,
-                 "CORE_ADMIT_KEY_MODE")
-        _require(directory or 0 <= before.st_size <= maximum, "CORE_ADMIT_POLICY_BYTES")
-        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
-        if directory:
-            flags |= os.O_DIRECTORY
-        fd = self.call(os.open, name, flags, dir_fd=parent)
-        self.held.append(fd)
-        _require(_admit_stat(self.call(os.fstat, fd)) == _admit_stat(before),
-                 "CORE_ADMIT_POLICY_DRIFT")
-        self.names.append((parent, name, fd, before))
-        raw = bytearray()
-        if not directory:
-            while len(raw) <= maximum:
-                block = self.call(os.read, fd, min(65536, maximum + 1 - len(raw)))
-                if not block:
-                    break
-                raw.extend(block)
-            _require(len(raw) == before.st_size and len(raw) <= maximum,
-                     "CORE_ADMIT_POLICY_BYTES")
-        self.objects[path] = dict(path=path, state="PRESENT", kind="directory" if directory else "regular",
-            dev=before.st_dev, ino=before.st_ino, mode=stat.S_IMODE(before.st_mode), uid=before.st_uid,
-            gid=before.st_gid, nlink=before.st_nlink, bytes=None if directory else len(raw),
-            sha256=None if directory else _sha(bytes(raw)))
-        self.raw[path] = bytes(raw)
-        self.recheck()
-        return fd if directory else bytes(raw)
-
-    def recheck(self):
-        if self.root is not None:
-            _require(_admit_stat(self.call(os.fstat, self.root)) == _admit_stat(self.root_info)
-                     and _admit_stat(self.call(os.stat, "/", follow_symlinks=False)) == _admit_stat(self.root_info),
-                     "CORE_ADMIT_ROOT_DRIFT")
-        for parent, name, fd, before in self.names:
-            try:
-                current = self.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
-            except FileNotFoundError:
-                _require(fd is None, "CORE_ADMIT_POLICY_DRIFT")
-                continue
-            _require(fd is not None and _admit_stat(current) == _admit_stat(before)
-                     and _admit_stat(self.call(os.fstat, fd)) == _admit_stat(before),
-                     "CORE_ADMIT_POLICY_DRIFT")
-
-    def listing(self, path, maximum):
-        fd = self.read(path, directory=True)
-        names = []
-        with self.call(os.scandir, fd) as entries:
-            for item in entries:
-                self.guard()
-                _require(len(names) < maximum and item.name.isascii(), "CORE_ADMIT_POLICY_ENTRIES")
-                names.append(item.name)
-        self.recheck()
-        return sorted(names)
 
 
-def _admit_text(raw):
-    try:
-        value = raw.decode("ascii", "strict")
-    except UnicodeError as error:
-        raise DispatchError("CORE_ADMIT_POLICY_ENCODING") from error
-    _require("\0" not in value and "\r" not in value, "CORE_ADMIT_POLICY_ENCODING")
-    return value
 
 
-def _admit_sudo_source(raws, literal):
-    """Only the fixed ordinary sudoers grammar; no custom plugin or alias."""
-    count = includes = 0
-    for path, raw in raws.items():
-        if path == "/etc/sudo.conf":
-            _require(all(not line.strip() or line.lstrip().startswith("#")
-                         for line in _admit_text(raw).splitlines()), "CORE_ADMIT_SUDO_PLUGIN")
-            continue
-        for line in _admit_text(raw).splitlines():
-            line = line.strip()
-            if line in ("@includedir /etc/sudoers.d", "#includedir /etc/sudoers.d"):
-                _require(path == "/etc/sudoers", "CORE_ADMIT_SUDO_INCLUDE")
-                includes += 1
-                continue
-            _require(not line.startswith(("@include", "#include")), "CORE_ADMIT_SUDO_INCLUDE")
-            if not line or line.startswith("#"):
-                continue
-            if line == literal:
-                count += 1
-                continue
-            if line.startswith("Defaults"):
-                _require(re.fullmatch(r'Defaults\s+(?:env_reset|mail_badpass|use_pty|'
-                    r'secure_path="/[A-Za-z0-9_/:.-]+")', line) is not None,
-                    "CORE_ADMIT_SUDO_SOURCE_GRAMMAR")
-                continue
-            _require(re.fullmatch(r'(?:root|%admin|%sudo)\s+ALL\s*=\s*\(ALL(?::ALL)?\)\s+ALL', line)
-                     is not None, "CORE_ADMIT_SUDO_SOURCE_GRAMMAR")
-    _require(count == includes == 1, "CORE_ADMIT_SUDO_SOURCE_GRANT")
-    return count
 
 
-def _admit_sudo_output(raw, grant):
-    text = _admit_text(raw)
-    lines = text.splitlines()
-    _require(lines and re.fullmatch(r'Matching Defaults entries for q1admin on [A-Za-z0-9_.-]+:',
-                                    lines[0]) is not None, "CORE_ADMIT_SUDO_OUTPUT")
-    sections = text.split("\nSudoers entry:\n")
-    _require(len(sections) >= 2, "CORE_ADMIT_SUDO_OUTPUT")
-    header = sections.pop(0).splitlines()
-    _require(all(not line or line.startswith("    ") or re.fullmatch(
-        r"User q1admin may run the following commands on [A-Za-z0-9_.-]+:", line) for line in header[1:]),
-             "CORE_ADMIT_SUDO_OUTPUT")
-    grants = []
-    for section in sections:
-        fields, commands = {}, []
-        command_mode = False
-        for line in section.splitlines():
-            if not line:
-                continue
-            if command_mode:
-                _require(line.startswith("        ") and line.strip() == "ALL", "CORE_ADMIT_SUDO_OUTPUT")
-                commands.append("ALL")
-                continue
-            match = re.fullmatch(r'    (RunAsUsers|RunAsGroups|Options|Commands):(.*)', line)
-            _require(match is not None and match[1] not in fields, "CORE_ADMIT_SUDO_OUTPUT")
-            key, value = match[1], match[2].strip()
-            fields[key] = value
-            if key == "Commands":
-                _require(value == "", "CORE_ADMIT_SUDO_OUTPUT")
-                command_mode = True
-        _require(set(fields) >= {"RunAsUsers", "Commands"}
-                 and set(fields) <= {"RunAsUsers", "RunAsGroups", "Options", "Commands"},
-                 "CORE_ADMIT_SUDO_OUTPUT")
-        _require(fields["RunAsUsers"] == "ALL" and fields.get("RunAsGroups", "") in ("", "ALL")
-                 and fields.get("Options", "authenticate") in ("!authenticate", "authenticate"), "CORE_ADMIT_SUDO_OUTPUT")
-        grants.append(dict(host="ALL", runas_users=["ALL"],
-            runas_groups=["ALL"] if fields.get("RunAsGroups") else [],
-            tags=["NOPASSWD"] if fields.get("Options") == "!authenticate" else ["PASSWD"], commands=commands))
-    _require(grant in grants, "CORE_ADMIT_SUDO_GRANT")
-    return grants
 
 
-def _admit_sshd_source(raws):
-    includes = 0
-    for path, raw in raws.items():
-        for line in _admit_text(raw).splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            _require(not any(char in line for char in ('"', "'", "\\", "`", "$")),
-                     "CORE_ADMIT_SSHD_GRAMMAR")
-            words = line.split()
-            _require(len(words) >= 2, "CORE_ADMIT_SSHD_GRAMMAR")
-            name = words[0].lower()
-            _require(name != "match", "CORE_ADMIT_SSHD_MATCH")
-            if name == "include":
-                _require(path == "/etc/ssh/sshd_config" and words[1:] == ["/etc/ssh/sshd_config.d/*.conf"],
-                         "CORE_ADMIT_SSHD_INCLUDE")
-                includes += 1
-            else:
-                _require(re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', words[0]) is not None
-                         and not any(char in line for char in "*?[]"), "CORE_ADMIT_SSHD_GRAMMAR")
-    _require(includes == 1, "CORE_ADMIT_SSHD_INCLUDE")
 
 
-def _admit_sshd_output(raw, required):
-    values = {}
-    for line in _admit_text(raw).splitlines():
-        words = line.split()
-        _require(len(words) >= 2 and re.fullmatch(r'[a-z][a-z0-9]*', words[0])
-                 and words[0] not in values, "CORE_ADMIT_SSHD_OUTPUT")
-        values[words[0]] = words[1:]
-    effective = {}
-    for key, wanted in required.items():
-        _require(key in values and values[key] == (wanted if type(wanted) is list else [wanted]),
-                 "CORE_ADMIT_SSHD_PREDICATE")
-        effective[key] = wanted
-    return effective
 
 
-def _admit_authorized(raw, path, approved):
-    rows = [(index, line.strip()) for index, line in enumerate(_admit_text(raw).splitlines(), 1)
-            if line.strip() and not line.lstrip().startswith("#")]
-    _require(len(rows) == 1, "CORE_ADMIT_KEY_COUNT")
-    number, line = rows[0]
-    parts = line.split(None, 2)
-    _require(len(parts) >= 2 and parts[0] == approved["type"] == "ssh-ed25519"
-             and parts[1] == approved["key_base64"], "CORE_ADMIT_KEY_MISMATCH")
-    try:
-        key = base64.b64decode(parts[1], validate=True)
-    except (ValueError, TypeError) as error:
-        raise DispatchError("CORE_ADMIT_KEY_ENCODING") from error
-    _require(len(key) == 51 and key[:19] == b'\0\0\0\x0bssh-ed25519\0\0\0 ', "CORE_ADMIT_KEY_ENCODING")
-    return [dict(path=path, line_number=number, key_type=parts[0], key_sha256=_sha(key),
-                 options=[], comment_present=len(parts) == 3)]
 
 
-def _admit_bashrc(raw):
-    lines = _admit_text(raw).splitlines()
-    active = [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
-    # Match only the approved first AST, with whitespace variation, never eval.
-    text = "\n".join(active)
-    guard = re.match(r'case[ \t]+\$-[ \t]+in\s+\*i\*\)[ \t]*;;\s+\*\)[ \t]*return[ \t]*;;\s+esac(?:[ \t]*\n|[ \t]*$)', text)
-    _require(guard is not None, "CORE_ADMIT_BASHRC_GUARD")
-    return True
 
 
-def _admit_program(reader, path, expected=None):
-    """Resolve a bounded executable alias, retain each link and target identity."""
-    pending = list(FieldEffects._absolute(path).parts[1:])
-    resolved, chain, links, seen = [], [], [], set()
-    components = 0
-    while pending:
-        components += 1
-        _require(components <= 64, "CORE_ADMIT_PROGRAM_COMPONENTS")
-        name = pending.pop(0)
-        current = "/" + "/".join(resolved + [name])
-        _require(current not in ("/proc", "/dev/fd"), "CORE_ADMIT_PROGRAM_MAGIC_LINK")
-        parent, leaf = reader.parent(current)
-        info = reader.call(os.stat, leaf, dir_fd=parent, follow_symlinks=False)
-        if stat.S_ISLNK(info.st_mode):
-            _require(current not in seen and len(chain) < 8 and info.st_uid == 0,
-                     "CORE_ADMIT_PROGRAM_LINK")
-            target = reader.call(os.readlink, leaf, dir_fd=parent)
-            _require(type(target) is str and target.isascii() and 0 < len(target) <= 4096
-                     and re.fullmatch(r'[A-Za-z0-9._/-]+', target) is not None
-                     and '//' not in target and all(p not in ('.', '..') for p in target.split('/')),
-                     "CORE_ADMIT_PROGRAM_LINK")
-            seen.add(current); chain.append(dict(path=current, target=target))
-            links.append((parent, leaf, info, target))
-            if target.startswith('/'):
-                resolved = []
-            pending = [p for p in target.split('/') if p] + pending
-        elif pending:
-            reader.protected(info, current, directory=True)
-            resolved.append(name)
-        else:
-            target_path = current
-    raw = reader.read(target_path, maximum=16777216)
-    item = reader.objects[target_path]
-    _require(raw and item["mode"] & 0o111 and item["uid"] == item["gid"] == 0,
-             "CORE_ADMIT_PROGRAM_IDENTITY")
-    for parent, leaf, before, target in links:
-        _require(_admit_stat(reader.call(os.stat, leaf, dir_fd=parent, follow_symlinks=False)) == _admit_stat(before)
-                 and reader.call(os.readlink, leaf, dir_fd=parent) == target, "CORE_ADMIT_PROGRAM_DRIFT")
-    item["kind"] = "executable"
-    value = {key: item[key] for key in PROGRAM_FIELDS if key != "path"}
-    value.update(path=path, resolved_path=target_path, symlink_chain=chain)
-    _require(expected is None or value == expected, "CORE_ADMIT_PROGRAM_BINDING")
-    return value
 
 
-def _admit_run_helper(effects, policy, program_check):
-    """One approved semantic child: bounded streams, CPU limit, real wait4/EOF."""
-    argv, env, limits = policy["argv"], policy["environment"], policy["limits"]
-    seen = getattr(effects, "_admit_helpers_attempted", None)
-    if seen is None:
-        effects._admit_helpers_attempted = seen = set()
-    _require(tuple(argv) not in seen, "CORE_ADMIT_HELPER_REPLAY")
-    effects._effect_guard(); program_check()
-    started = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-    end = started + limits["command_seconds"] * NS
-    proc = None
-    waited = None
-    output = {"stdout": bytearray(), "stderr": bytearray()}
-    observed_bytes = dict.fromkeys(output, 0)
-    eof = set()
-    failure = cleanup = None
-    def guard():
-        effects._effect_guard()
-        _require(time.clock_gettime_ns(time.CLOCK_BOOTTIME) < end, "CORE_ADMIT_HELPER_TIMEOUT")
-    def cpu_limit():
-        resource.setrlimit(resource.RLIMIT_CPU, (limits["command_cpu_seconds"], limits["command_cpu_seconds"]))
-    def poll(stopping=False):
-        nonlocal waited
-        if stopping:
-            _clock(effects, effects.context["guest_deadlines"])
-        else:
-            guard()
-        if waited is None:
-            pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
-            if pid:
-                _require(pid == proc.pid, "CORE_ADMIT_HELPER_WAIT")
-                proc.returncode = os.waitstatus_to_exitcode(status)
-                waited = dict(pid=pid, wait_status=status, user_cpu_ns=math.ceil(usage.ru_utime * NS),
-                              system_cpu_ns=math.ceil(usage.ru_stime * NS), max_rss_bytes=usage.ru_maxrss * 1024)
-        for name in output:
-            if name in eof:
-                continue
-            room = min(limits[name + "_bytes"] - len(output[name]),
-                       limits["combined_output_bytes"] - sum(map(len, output.values())))
-            try:
-                raw = os.read(getattr(proc, name).fileno(), 65536 if stopping else min(65536, max(0, room) + 1))
-            except BlockingIOError:
-                continue
-            if not raw:
-                eof.add(name)
-            else:
-                observed_bytes[name] += len(raw)
-                output[name].extend(raw[:max(0, room)])
-                if not stopping:
-                    _require(len(raw) <= room, "CORE_ADMIT_HELPER_OUTPUT_LIMIT")
-        if not stopping:
-            guard()
-    seen.add(tuple(argv))
-    try:
-        guard()
-        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd="/", env=env, shell=False, close_fds=True,
-            start_new_session=True, preexec_fn=cpu_limit)
-        guard()
-        for name in output:
-            os.set_blocking(getattr(proc, name).fileno(), False)
-            guard()
-        while waited is None or len(eof) != 2:
-            poll()
-            if waited is None or len(eof) != 2:
-                time.sleep(0.002)
-        _require(proc.returncode == 0 and waited["user_cpu_ns"] + waited["system_cpu_ns"] <= limits["command_cpu_seconds"] * NS,
-                 "CORE_ADMIT_HELPER_EXIT")
-        guard(); program_check(); guard()
-    except BaseException as error:
-        failure = str(error) if isinstance(error, DispatchError) else type(error).__name__
-        if proc is not None:
-            try:
-                if waited is None or len(eof) != 2:
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                for name in output:
-                    os.set_blocking(getattr(proc, name).fileno(), False)
-                while waited is None or len(eof) != 2:
-                    poll(stopping=True)
-                    if waited is None or len(eof) != 2:
-                        time.sleep(0.002)
-            except BaseException as error2:
-                cleanup = str(error2) if isinstance(error2, DispatchError) else type(error2).__name__
-        raise
-    finally:
-        finished = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-        usage = getattr(effects, "_admit_helper_usage", None)
-        if usage is None:
-            effects._admit_helper_usage = usage = []
-        usage.append(dict(argv=list(argv), started_boottime_ns=started, finished_boottime_ns=finished,
-            wait4=waited, eof=sorted(eof), failure=failure, cleanup_failure=cleanup,
-            stdout_bytes=observed_bytes["stdout"], stderr_bytes=observed_bytes["stderr"],
-            retained_stdout_bytes=len(output["stdout"]), retained_stderr_bytes=len(output["stderr"])))
-        if proc is not None:
-            proc.stdout.close(); proc.stderr.close()
-    stdout, stderr = bytes(output["stdout"]), bytes(output["stderr"])
-    return stdout, stderr, dict(argv_sha256=_sha(canonical(argv)), environment_sha256=_sha(canonical(env)),
-        started_boottime_ns=started, finished_boottime_ns=finished, exit_status=proc.returncode,
-        stdout_bytes=len(stdout), stdout_sha256=_sha(stdout), stderr_bytes=len(stderr), stderr_sha256=_sha(stderr),
-        combined_bytes=len(stdout) + len(stderr), timed_out=False, stdout_eof=True, stderr_eof=True)
 
 
-def _admit_helper(effects, policy, program_check):
-    _require(policy["argv"] in (["/usr/bin/sudo", "-n", "-ll", "-U", "q1admin"],
-            ["/usr/sbin/sshd", "-T"]), "CORE_ADMIT_HELPER_ARGV")
-    return _admit_run_helper(effects, policy, program_check)
 
 
-def _admit_programs(effects):
-    remote = effects.context["hello"]["remote_management"]
-    programs, resolved = {}, {}
-    aliases = dict(python="/usr/bin/python3", git="/usr/bin/git", cc="/usr/bin/cc",
-                   setpriv="/usr/bin/setpriv", systemctl="/usr/bin/systemctl", systemd_run="/usr/bin/systemd-run")
-    for name, path in aliases.items():
-        reader = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
-        try:
-            item = _admit_program(reader, path, remote.get(name))
-            programs[name] = {key: item[key] for key in PROGRAM_FIELDS}
-            if name in ("python", "git", "cc"):
-                programs[name]["path"] = item["resolved_path"]
-            else:
-                _require(item["resolved_path"] == path, "CORE_ADMIT_FIXED_PROGRAM_ALIAS")
-            resolved[name] = item
-        finally:
-            reader.close()
-    effects._admit_program_entities = resolved
-    return programs
 
 
-def _admit_guest(effects, programs):
-    import pwd
-    import grp
-    import socket
-    call = effects._capacity_call
-    read = effects._capacity_kernel
-    _require(read("/proc/1/comm", 64) == b"systemd\n", "CORE_ADMIT_PID1_COMM")
-    one, current = [], []
-    try:
-        for path, target in (("/proc/1/ns/user", one), ("/proc/self/ns/user", current)):
-            fd = call(os.open, path, os.O_RDONLY | os.O_CLOEXEC)
-            target.append(fd); target.append(call(os.fstat, fd))
-        _require((one[1].st_dev, one[1].st_ino) == (current[1].st_dev, current[1].st_ino),
-                 "CORE_ADMIT_INITIAL_NAMESPACE")
-        namespace = dict(dev=one[1].st_dev, ino=one[1].st_ino)
-    finally:
-        for item in (one, current):
-            if item:
-                os.close(item[0])
-    vendor = _admit_text(read("/sys/devices/virtual/dmi/id/sys_vendor", 256)).strip()
-    product = _admit_text(read("/sys/devices/virtual/dmi/id/product_name", 256)).strip()
-    _require((vendor in ("QEMU", "KVM") or product == "KVM")
-             and 0 < len(vendor) <= 128 and 0 < len(product) <= 128, "CORE_ADMIT_ISOLATED_GUEST")
-    boot = _admit_text(read("/proc/sys/kernel/random/boot_id", 64)).strip()
-    _require(boot == effects.context["hello"]["boot_id"] == effects.context["guest_deadlines"]["boot_id"],
-             "CORE_ADMIT_GUEST_BOOT")
-    controllers = _admit_text(read("/sys/fs/cgroup/cgroup.controllers", 4096)).split()
-    _require(set(("cpu", "memory", "pids")) <= set(controllers), "CORE_ADMIT_CGROUP_V2")
-    locators = effects.context["manifest"]["locators"]
-    account = call(pwd.getpwnam, locators["ordinary_user"])
-    group = call(grp.getgrnam, locators["ordinary_group"])
-    _require(account.pw_uid > 0 and account.pw_gid == group.gr_gid > 0
-             and call(pwd.getpwuid, account.pw_uid) == account
-             and call(grp.getgrgid, group.gr_gid) == group, "CORE_ADMIT_ORDINARY_ACCOUNT")
-    groups = sorted(set(call(os.getgrouplist, account.pw_name, account.pw_gid)))
-    _require(groups == [account.pw_gid], "CORE_ADMIT_ORDINARY_GROUPS")
-    pid1 = call(os.readlink, "/proc/1/exe")
-    _require(pid1 in ("/lib/systemd/systemd", "/usr/lib/systemd/systemd"), "CORE_ADMIT_PID1_PATH")
-    remote = effects.context["hello"]["remote_management"]
-    reader = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
-    try:
-        entity = _admit_program(reader, pid1)
-        def check_pid1():
-            reader.recheck()
-            info = call(os.stat, "/proc/1/exe")
-            _require(call(os.readlink, "/proc/1/exe") == pid1
-                     and (info.st_dev, info.st_ino, info.st_size) ==
-                     (entity["dev"], entity["ino"], entity["bytes"]), "CORE_ADMIT_PID1_DRIFT")
-        policy = dict(argv=[pid1, "--version"],
-            environment={"HOME": "/root", "LANG": "C", "LC_ALL": "C", "LOGNAME": "root",
-                         "PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "SYSTEMD_COLORS": "0", "USER": "root"},
-            limits=dict(command_seconds=5, command_cpu_seconds=2, stdout_bytes=32768,
-                        stderr_bytes=32768, combined_output_bytes=32768))
-        stdout, stderr, _ = _admit_run_helper(effects, policy, check_pid1)
-        lines = _admit_text(stdout).splitlines()
-        _require(not stderr and lines and re.fullmatch(r'systemd [0-9]+(?: [ -~]+)?', lines[0]),
-                 "CORE_ADMIT_PID1_VERSION")
-    finally:
-        reader.close()
-    return dict(hostname=call(socket.gethostname), dmi_vendor=vendor, dmi_product=product,
-        initial_userns=namespace, boot_id=boot, pid1_exe=pid1, pid1_version=lines[0], cgroup_version=2,
-        ordinary_user=account.pw_name, ordinary_uid=account.pw_uid, ordinary_gid=account.pw_gid,
-        ordinary_groups=groups)
 
 
-def _admit_collect_policies(effects, basis, remote):
-    import pwd
-    effects._effect_guard()
-    _require(os.geteuid() == os.getegid() == 0, "CORE_ADMIT_ROOT_REQUIRED")
-    account = pwd.getpwnam(remote["account"])
-    observed = dict(name=account.pw_name, uid=account.pw_uid, gid=account.pw_gid,
-                    home=account.pw_dir, login_shell=account.pw_shell)
-    _require(observed == dict(name=remote["account"], uid=remote["uid"], gid=remote["gid"],
-                             home=remote["home"], login_shell=remote["login_shell"]), "CORE_ADMIT_ACCOUNT_DRIFT")
-    snapshots, policies = {}, {}
-    for name in ("sudo", "sshd", "authorized_keys", "rc"):
-        policy = basis["policies"][name]
-        params, paths = policy["predicate"]["parameters"], policy["paths"]
-        reader = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
-        try:
-            def read_policy(path, required=True, private=False):
-                files = sum(row["kind"] == "regular" for row in reader.objects.values())
-                remaining = paths["limits"]["max_total_bytes"] - sum(map(len, reader.raw.values()))
-                _require(files < paths["limits"]["max_files"] and remaining >= 0, "CORE_ADMIT_POLICY_TOTAL")
-                return reader.read(path, maximum=min(paths["limits"]["max_file_bytes"], remaining),
-                                   required=required, private=private)
-            for item in paths["fixed_paths"]:
-                read_policy(item["path"], required=item["required"])
-            for item in paths["home_relative_paths"]:
-                read_policy(remote["home"] + "/" + item["path"],
-                            required=item["required"], private=name == "authorized_keys")
-            for item in paths["include_roots"]:
-                for leaf in reader.listing(item["path"], paths["limits"]["max_directory_entries"]):
-                    selected = (not leaf.startswith('.') and '.' not in leaf and not leaf.endswith('~')
-                                if name == "sudo" else leaf.endswith('.conf'))
-                    if selected:
-                        read_policy(item["path"] + "/" + leaf)
-            _require(len(reader.raw) <= paths["limits"]["max_files"] + len(paths["include_roots"])
-                     and sum(map(len, reader.raw.values())) <= paths["limits"]["max_total_bytes"],
-                     "CORE_ADMIT_POLICY_TOTAL")
-            raw = {path: value for path, value in reader.raw.items()
-                   if reader.objects[path]["kind"] == "regular"}
-            if name in ("sudo", "sshd"):
-                if name == "sudo":
-                    count = _admit_sudo_source(raw, params["cloud_config_literal"])
-                else:
-                    _admit_sshd_source(raw)
-                executable = policy["execution"]["executable"]
-                pin = remote["sudo"] if name == "sudo" else None
-                program = _admit_program(reader, executable, pin)
-                def check_program():
-                    # Full reread in a fresh bounded reader checks alias and bytes,
-                    # not merely the already open target's inode.
-                    check = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
-                    try:
-                        _admit_program(check, executable, program)
-                    finally:
-                        check.close()
-                    reader.recheck()
-                stdout, stderr, helper = _admit_helper(effects, policy, check_program)
-                _require(not stderr, "CORE_ADMIT_HELPER_STDERR")
-                if name == "sudo":
-                    facts = dict(helper=helper, cloud_config_literal_count=count,
-                                 parsed_grants=_admit_sudo_output(stdout, params["required_grant"]), matched=True)
-                else:
-                    facts = dict(helper=helper, effective=_admit_sshd_output(stdout, params["required_effective"]), matched=True)
-            elif name == "authorized_keys":
-                first, second = [remote["home"] + "/" + path for path in params["authorized_keys_files"]]
-                _require(reader.objects[second]["state"] == "ABSENT", "CORE_ADMIT_SECOND_KEY_FILE")
-                facts = dict(effective_entries=_admit_authorized(raw[first], first, params["approved_key"]), matched=True)
-            else:
-                absent = [dict(path=path, absent=reader.objects[path]["state"] == "ABSENT")
-                          for path in params["required_absent"]]
-                environment = [dict(name=key, absent=key not in os.environ) for key in params["forbidden_environment"]]
-                _require(all(row["absent"] for row in absent + environment), "CORE_ADMIT_RC_ACTIVE")
-                startup = [{key: reader.objects[path][key] for key in ("path", "state", "bytes", "sha256")}
-                           for path in params["shell_startup_paths"]]
-                bashrc = remote["home"] + "/.bashrc"
-                if reader.objects[bashrc]["state"] == "PRESENT":
-                    _admit_bashrc(raw[bashrc])
-                facts = dict(required_absent=absent, shell_startup=startup,
-                    bashrc_guard=dict(path=bashrc, state=reader.objects[bashrc]["state"],
-                        profile=params["bashrc_guard_profile"], matched=True),
-                    forbidden_environment_absent=environment, matched=True)
-            reader.recheck()
-            snapshot = dict(schema="local-hand-q2-core-policy-snapshot/v1", policy=name,
-                account=observed, objects=[reader.objects[path] for path in sorted(reader.objects)], facts=facts)
-            encoded = canonical(snapshot)
-            policies[name] = dict(paths=sorted(reader.objects), bytes=len(encoded), sha256=_sha(encoded),
-                relation=dict(stage="POST_ENTRY_PRE_H01_INTENT", pre_entry_containment=False,
-                    policy_basis_sha256=_sha(canonical(basis)), predicate_sha256=policy["predicate_sha256"],
-                    snapshot_sha256=_sha(encoded), facts_sha256=_sha(canonical(facts)), matched=True))
-            snapshots[name] = snapshot
-        finally:
-            reader.close()
-    return dict(policies=policies, snapshots=snapshots)
 
 
 # Historical role vector reconstructs the exact approved 4549-byte placement
 # preimage; it never takes its roles from current filesystem observations.
-_CAP_ROLES = ('state', 'quota', 'install', 'journal', 'evidence')
-_CAP_SNAPSHOT_ROLES = (
-    ('system',), ('system',), ('system', 'journal', 'evidence'), ('system',),
-    ('system',), ('system', 'journal', 'evidence'), ('system',),
-    *(('system', 'quota'), ('journal',), ('system', 'journal', 'evidence')) * 5,
-    ('system',), ('system',),
-)
 
 
-def _cap_usec(value):
-    parts = re.findall(r"([0-9]+)(us|ms|min|s|h|d)", value)
-    _require(parts and ''.join(number + unit for number, unit in parts) == value.replace(' ', ''),
-             'CORE_CAP_TIME_VALUE')
-    return sum(int(number) * {'us': 1, 'ms': 1000, 's': 1000000, 'min': 60000000,
-                             'h': 3600000000, 'd': 86400000000}[unit] for number, unit in parts)
 
 
-def _cap_mounts(raw):
-    _require(type(raw) is bytes and len(raw) <= 1048576, 'CORE_CAP_MOUNT_LIMIT')
-    rows = {}
-    for line in raw.decode('ascii', 'strict').splitlines():
-        fields = line.split(); separator = fields.index('-')
-        _require(separator >= 6 and len(fields) == separator + 4, 'CORE_CAP_MOUNT_FORMAT')
-        mid = int(fields[0]); major, minor = map(int, fields[2].split(':'))
-        # This scope has simple ASCII paths; do not silently unescape aliases.
-        _require(mid not in rows and not any('\\' in fields[i] for i in (3, 4, separator + 2)),
-                 'CORE_CAP_MOUNT_ALIAS')
-        rows[mid] = dict(mount_id=mid, device=os.makedev(major, minor), root=fields[3],
-            path=fields[4], fstype=fields[separator + 1], source=fields[separator + 2],
-            options=sorted(set(fields[5].split(',') + fields[separator + 3].split(','))))
-    _require(rows, 'CORE_CAP_MOUNT_EMPTY')
-    return rows
 
 
-def _cap_uuid(fd):
-    import fcntl
-    import uuid
-    # Linux ext4.h: _IOR('f', 44, struct fsuuid), sizeof header == 8.
-    # Existing ext4 read-only ioctl, on the held filesystem fd, never a block read.
-    value = bytearray(struct.pack('=II', 16, 0) + bytes(16))
-    fcntl.ioctl(fd, 0x8008662c, value, True)
-    _require(struct.unpack('=II', value[:8]) == (16, 0) and any(value[8:]),
-             'CORE_CAP_FILESYSTEM_UUID')
-    return str(uuid.UUID(bytes=bytes(value[8:])))
 
 
 class _CapQuota:
@@ -3067,55 +2307,6 @@ class _CapQuota:
         return flags
 
 
-def _cap_charge(approved, filesystems, path_pool, inventory):
-    obligations = approved['historical_capacity_obligations']
-    normalized = [dict(id=row['id'], category=row['category'], pool_roles=list(roles),
-                       full_commitment=row['commitment'], no_refund=True)
-                  for row, roles in zip(obligations['snapshot_rows'], _CAP_SNAPSHOT_ROLES, strict=True)]
-    raw = canonical(normalized)
-    _require((len(raw), _sha(raw)) == APPROVED_VECTOR_PINS['placement_normalized'],
-             'CORE_CAP_PLACEMENT_PIN')
-    pools = {}; byrole = {}
-    for role in _CAP_ROLES:
-        fs = filesystems[role]; key = (fs['dev'], fs['fs_uuid']); byrole[role] = key
-        row = pools.setdefault(key, dict(dev=key[0], fs_uuid=key[1], roles=[], historical_bytes=0,
-            historical_inodes=0, new_required_bytes=0, new_required_inodes=0,
-            bytes_available=fs['bytes_available'], inodes_available=fs['inodes_available'], admitted=False))
-        row['roles'].append(role)
-        row['bytes_available'] = min(row['bytes_available'], fs['bytes_available'])
-        row['inodes_available'] = min(row['inodes_available'], fs['inodes_available'])
-    _require(byrole['state'] == byrole['install'], 'CORE_CAP_SYSTEM_POOL_SPLIT')
-    byrole['system'] = byrole['state']
-    def charge(key, values, prefix):
-        for field in ('bytes', 'inodes'):
-            _integer(values[field], 0, 2**63 - 1, 'CORE_CAP_AMOUNT')
-            pools[key][prefix + '_' + field] += values[field]
-    for source, placement in zip(obligations['snapshot_rows'], normalized, strict=True):
-        expected = {byrole[role] for role in placement['pool_roles']}
-        _require({path_pool(path) for path in source['covered_paths']} == expected,
-                 'CORE_CAP_HISTORICAL_PLACEMENT')
-        for key in expected:
-            charge(key, source['commitment'], 'historical')
-    for row in obligations['delta_rows']:
-        key = byrole[row['device_selector'].removesuffix('_parent')]
-        _require({path_pool(path) for path in row['covered_paths']} == {key}, 'CORE_CAP_DELTA_PLACEMENT')
-        charge(key, row['commitment'], 'historical')
-    configured = [dict(project_id=row['project'], hard_bytes=row['hard'] * 1024,
-                       inode_hard_limit=row['ihard']) for row in inventory if row['hard'] > 0]
-    _require(configured == obligations['configured_quota_rows'], 'CORE_CAP_CONFIGURED_QUOTA_CHANGED')
-    for row in configured:
-        charge(byrole['quota'], dict(bytes=row['hard_bytes'], inodes=row['inode_hard_limit']), 'historical')
-    # Three cases; management headroom is only an admission liability.
-    for role, amount, entries in (('state', 3 * (8 + 32) * 1048576 + 8388608, 3 * (1536 + 1024) + 512),
-            ('quota', 21 * 1048576, 21 * 128), ('install', 67108864, 4096),
-            ('journal', 3 * 1048576, 3 * 128), ('evidence', 60 * 1048576, 3 * 384)):
-        charge(byrole[role], dict(bytes=amount, inodes=entries), 'new_required')
-    for row in pools.values():
-        row['roles'].sort()
-        row['admitted'] = all(row[field + '_available'] >= row['historical_' + field] +
-            row['new_required_' + field] for field in ('bytes', 'inodes'))
-        _require(row['admitted'], 'CORE_CAP_INSUFFICIENT')
-    return [pools[key] for key in sorted(pools)]
 
 
 class FieldEffects:
@@ -3368,381 +2559,20 @@ class FieldEffects:
         return str(PurePosixPath(locators["state_parent"]) / SESSION / case_id
                    / "reservation" / suffix[len("reservation/"):])
 
-    def _capacity_call(self, function, *args, **kwargs):
-        self._effect_guard()
-        value = function(*args, **kwargs)
-        self._effect_guard()
-        return value
 
-    def _capacity_protection(self, info):
-        _require(info.st_uid in getattr(self, '_capacity_owners', {0})
-                 and not stat.S_IMODE(info.st_mode) & 0o022, 'CORE_CAP_PATH_PROTECTION')
 
-    def _capacity_directory(self, path):
-        fd, info, missing = self._capacity_path(path)
-        if missing or not stat.S_ISDIR(info.st_mode):
-            os.close(fd)
-            raise DispatchError('CORE_CAP_DIRECTORY_MISSING')
-        return fd
 
-    def _capacity_kernel(self, path, maximum=1048576, *, dir_fd=None):
-        fd = self._capacity_call(os.open, path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=dir_fd)
-        try:
-            before = self._capacity_call(os.fstat, fd)
-            raw = bytearray()
-            while len(raw) <= maximum:
-                part = self._capacity_call(os.read, fd, min(65536, maximum + 1 - len(raw)))
-                if not part:
-                    break
-                raw.extend(part)
-            _require(len(raw) <= maximum, 'CORE_CAP_KERNEL_LIMIT')
-            _require(_admit_stat(before) == _admit_stat(self._capacity_call(os.fstat, fd)),
-                     'CORE_CAP_KERNEL_DRIFT')
-            return bytes(raw)
-        finally:
-            os.close(fd)
 
-    def _capacity_filesystem(self, path, mounts):
-        fd = self._capacity_directory(path)
-        try:
-            before = self._capacity_call(os.fstat, fd)
-            _require(before.st_uid == before.st_gid == 0 and stat.S_IMODE(before.st_mode) in (448, 493),
-                     'CORE_CAP_PARENT_PROTECTION')
-            info = self._capacity_kernel('/proc/self/fdinfo/' + str(fd), 4096).decode('ascii')
-            matches = re.findall(r'^mnt_id:\s*([0-9]+)$', info, re.MULTILINE)
-            _require(len(matches) == 1 and int(matches[0]) in mounts, 'CORE_CAP_MOUNT_BINDING')
-            mount = mounts[int(matches[0])]
-            _require(mount['device'] == before.st_dev and mount['fstype'] == 'ext4'
-                     and mount['root'] == '/' and 'rw' in mount['options'], 'CORE_CAP_FILESYSTEM')
-            value = self._capacity_call(_cap_uuid, fd)
-            fs = self._capacity_call(os.fstatvfs, fd)
-            _require(_admit_stat(before) == _admit_stat(self._capacity_call(os.fstat, fd))
-                     and fs.f_frsize > 0 and fs.f_favail <= fs.f_files,
-                     'CORE_CAP_PARENT_DRIFT')
-            parent = dict(path=path, dev=before.st_dev, ino=before.st_ino,
-                mode=stat.S_IMODE(before.st_mode), uid=before.st_uid, gid=before.st_gid,
-                nlink=before.st_nlink, mount_id=mount['mount_id'], fs_uuid=value)
-            public = dict(mount_id=mount['mount_id'], dev=before.st_dev, fs_uuid=value,
-                fstype=mount['fstype'], mount_options=mount['options'],
-                bytes_available=fs.f_bavail * fs.f_frsize, inodes_available=fs.f_favail)
-            detail = dict(path=mount['path'], source=mount['source'], device=before.st_dev, uuid=value,
-                total_bytes=fs.f_blocks * fs.f_frsize, total_inodes=fs.f_files,
-                available_bytes=public['bytes_available'], free_inodes=fs.f_favail)
-            return parent, public, detail
-        finally:
-            os.close(fd)
 
-    def _capacity_path(self, path, *, absent=False):
-        parts = self._absolute(path).parts[1:]
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
-        fd = self._capacity_call(os.open, '/', flags)
-        try:
-            self._capacity_protection(self._capacity_call(os.fstat, fd))
-            for i, part in enumerate(parts):
-                try:
-                    info = self._capacity_call(os.stat, part, dir_fd=fd, follow_symlinks=False)
-                except FileNotFoundError:
-                    parent = self._capacity_call(os.fstat, fd)
-                    return fd, parent, True
-                _require(not stat.S_ISLNK(info.st_mode), 'CORE_CAP_PATH_SYMLINK')
-                self._capacity_protection(info)
-                if i == len(parts) - 1:
-                    _require(not absent, 'CORE_CAP_OBJECT_EXISTS')
-                    if not stat.S_ISDIR(info.st_mode):
-                        return fd, info, False
-                _require(stat.S_ISDIR(info.st_mode), 'CORE_CAP_PATH_TYPE')
-                child = self._capacity_call(os.open, part, flags, dir_fd=fd)
-                if _admit_stat(info) != _admit_stat(self._capacity_call(os.fstat, child)):
-                    os.close(child)
-                    raise DispatchError('CORE_CAP_PATH_DRIFT')
-                os.close(fd); fd = child
-            _require(not absent, 'CORE_CAP_OBJECT_EXISTS')
-            return fd, self._capacity_call(os.fstat, fd), False
-        except BaseException:
-            os.close(fd)
-            raise
 
-    def _capacity_retained_snapshot(self):
-        approved = _approved_inputs_envelope(self.context)
-        result = []; count = total = 0
-        for root in approved['retained_preparation']['paths']:
-            rootfd = self._capacity_directory(root['path'])
-            try:
-                before = self._capacity_call(os.fstat, rootfd)
-                _require((before.st_dev, before.st_ino) == (root['device'], root['inode']),
-                         'CORE_CAP_RETAINED_IDENTITY')
-            except BaseException:
-                os.close(rootfd)
-                raise
-            pending = [(rootfd, root['path'])]; rows = []
-            try:
-                while pending:
-                    fd, path = pending.pop()
-                    try:
-                        before = self._capacity_call(os.fstat, fd); count += 1
-                        _require(count <= 32768 and before.st_dev == root['device'], 'CORE_CAP_RETAINED_LIMIT')
-                        # Leaf enumeration must not update historical atime.
-                        listing = self._capacity_call(os.open, '.', os.O_RDONLY | os.O_DIRECTORY |
-                            os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd)
-                        try:
-                            names = []
-                            with self._capacity_call(os.scandir, listing) as entries:
-                                for entry in entries:
-                                    self._effect_guard(); names.append(entry.name)
-                                    _require(count + len(pending) + len(names) <= 32768,
-                                             'CORE_CAP_RETAINED_LIMIT')
-                        finally:
-                            os.close(listing)
-                        rows.append(dict(path=path, identity=list(_admit_stat(before))))
-                        for name in sorted(names):
-                            child = self._capacity_call(os.stat, name, dir_fd=fd, follow_symlinks=False)
-                            self._capacity_protection(child)
-                            _require(child.st_dev == root['device'] and not stat.S_ISLNK(child.st_mode),
-                                     'CORE_CAP_RETAINED_TYPE')
-                            if stat.S_ISDIR(child.st_mode):
-                                opened = self._capacity_call(os.open, name, os.O_RDONLY | os.O_DIRECTORY |
-                                    os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=fd)
-                                if _admit_stat(child) != _admit_stat(self._capacity_call(os.fstat, opened)):
-                                    os.close(opened)
-                                    raise DispatchError('CORE_CAP_RETAINED_DRIFT')
-                                pending.append((opened, path + '/' + name))
-                            else:
-                                count += 1; total += child.st_size
-                                _require(stat.S_ISREG(child.st_mode) and child.st_nlink == 1 and
-                                    count <= 32768 and total <= 536870912, 'CORE_CAP_RETAINED_LIMIT')
-                                raw, identity = self._capacity_call(self.stable_read_at, fd, name,
-                                    maximum=min(child.st_size, MEMBER_LIMIT), noatime=True)
-                                _require((identity['dev'], identity['ino']) == (child.st_dev, child.st_ino),
-                                         'CORE_CAP_RETAINED_DRIFT')
-                                rows.append(dict(path=path + '/' + name, identity=list(_admit_stat(child)), sha256=_sha(raw)))
-                        _require(_admit_stat(before) == _admit_stat(self._capacity_call(os.fstat, fd)),
-                                 'CORE_CAP_RETAINED_DRIFT')
-                    finally:
-                        os.close(fd)
-                result.append(dict(root=root, files=sorted(rows, key=lambda row: row['path'])))
-            finally:
-                for fd, _ in pending:
-                    os.close(fd)
-        return result
 
-    def _capacity_quota_inventory(self):
-        quota = _CapQuota(self._admission_detail['quota_mount']['source'])
-        return quota.inventory(self._effect_guard)
 
-    def _capacity_quota_enforcement(self):
-        return self._capacity_call(_CapQuota(self._admission_detail['quota_mount']['source']).enforcement)
 
-    def _capacity_systemctl(self, arguments, program):
-        def verify():
-            reader = _admit_reader(self._effect_guard, '/', 0)
-            try:
-                current = _admit_program(reader, program['path'])
-                _require({key: current[key] for key in PROGRAM_FIELDS} == program, 'CORE_CAP_SYSTEMCTL_CHANGED')
-            finally:
-                reader.close()
-        policy = dict(argv=[program['path'], '--system', '--no-pager', '--no-ask-password', *arguments],
-            environment={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'SYSTEMD_COLORS': '0'},
-            limits=dict(command_seconds=5, command_cpu_seconds=2, stdout_bytes=32768,
-                        stderr_bytes=32768, combined_output_bytes=32768))
-        raw, stderr, receipt = _admit_run_helper(self, policy, verify)
-        _require(not stderr and receipt['exit_status'] == 0, 'CORE_CAP_SYSTEMCTL_FAILED')
-        return raw
 
-    def _capacity_managers(self, programs, ordinary_uid):
-        locators = self.context['manifest']['locators']; hello = self.context['hello']['carrier_unit']
-        roles = {role + '_cgroup': locators[role + '_parent_unit']
-                 for role in ('controller', 'management', 'supervisor', 'query', 'ordinary')}
-        roles['retained_ordinary_cgroup'] = PurePosixPath(locators['retained_ordinary_parent_path']).name
-        roles['user_manager'] = locators['user_manager_unit']; roles['carrier'] = locators['carrier_unit']
-        _require(roles['user_manager'] == 'user@' + str(ordinary_uid) + '.service', 'CORE_CAP_MANAGER_USER')
-        properties = ('Id', 'LoadState', 'ActiveState', 'SubState', 'ControlGroup', 'InvocationID',
-            'MemoryMax', 'MemorySwapMax', 'TasksMax', 'CPUQuotaPerSecUSec', 'Delegate', 'User',
-            'RuntimeMaxUSec', 'TimeoutStopUSec', 'Restart', 'KillMode', 'ExitType')
-        raw = self._capacity_systemctl(['show', *sorted(set(roles.values())), '--property=' + ','.join(properties)],
-                                      programs['systemctl'])
-        units = {}
-        for block in raw.decode('ascii', 'strict').strip().split('\n\n'):
-            rows = [line.split('=', 1) for line in block.splitlines()]
-            _require(all(len(row) == 2 for row in rows) and len({row[0] for row in rows}) == len(rows),
-                     'CORE_CAP_MANAGER_FORMAT')
-            value = dict(rows)
-            _require(set(value) <= set(properties) and {'Id', 'LoadState', 'ActiveState', 'SubState',
-                'ControlGroup', 'InvocationID', 'MemoryMax', 'MemorySwapMax', 'TasksMax',
-                'CPUQuotaPerSecUSec'} <= set(value) and value['Id'] not in units, 'CORE_CAP_MANAGER_FORMAT')
-            units[value['Id']] = value
-        _require(set(units) == set(roles.values()), 'CORE_CAP_MANAGER_SET')
-        parents = {}; observed = {}
-        for role, unit in roles.items():
-            value = units[unit]; logical = value['ControlGroup']
-            _require(value['LoadState'] == 'loaded' and value['ActiveState'] == 'active'
-                     and value['SubState'] in ('active', 'running')
-                     and re.fullmatch(r'[0-9a-f]{32}', value['InvocationID']) is not None,
-                     'CORE_CAP_MANAGER_STATE')
-            self._absolute(logical)
-            if role == 'retained_ordinary_cgroup':
-                _require(logical == locators['retained_ordinary_parent_path'].removeprefix('/sys/fs/cgroup'),
-                         'CORE_CAP_RETAINED_CGROUP_CHANGED')
-            fd = self._capacity_directory('/sys/fs/cgroup' + logical)
-            try:
-                info = self._capacity_call(os.fstat, fd)
-                controllers = self._capacity_kernel('cgroup.controllers', 256, dir_fd=fd).decode('ascii').split()
-                if role != 'user_manager':
-                    for filename, property_name in (('memory.max', 'MemoryMax'), ('memory.swap.max', 'MemorySwapMax'),
-                                                     ('pids.max', 'TasksMax')):
-                        actual = self._capacity_kernel(filename, 64, dir_fd=fd).decode('ascii').strip()
-                        _require(actual == ('max' if value[property_name] == 'infinity' else value[property_name]),
-                                 'CORE_CAP_CGROUP_LIMIT_DRIFT')
-                    cpu = self._capacity_kernel('cpu.max', 128, dir_fd=fd).decode('ascii').split()
-                    _require(len(cpu) == 2 and cpu[1].isdecimal() and int(cpu[1]) > 0,
-                             'CORE_CAP_CGROUP_CPU')
-                    _require(cpu[0] == 'max' if value['CPUQuotaPerSecUSec'] == 'infinity' else
-                             cpu[0].isdecimal() and int(cpu[0]) * 1000000 ==
-                             _cap_usec(value['CPUQuotaPerSecUSec']) * int(cpu[1]), 'CORE_CAP_CGROUP_CPU')
-                if role not in ('carrier', 'user_manager'):
-                    _require({'cpu', 'memory', 'pids'} <= set(controllers), 'CORE_CAP_CONTROLLERS')
-                    parents[role] = dict(path='/sys/fs/cgroup' + logical, dev=info.st_dev, ino=info.st_ino,
-                        unit=unit, invocation_id=value['InvocationID'], controllers=sorted(set(controllers) & {'cpu', 'memory', 'pids'}))
-                observed[role] = dict(path=logical, device=info.st_dev, inode=info.st_ino, unit=unit,
-                                     invocation_id=value['InvocationID'], properties=value)
-                _require(_admit_stat(info) == _admit_stat(self._capacity_call(os.fstat, fd)), 'CORE_CAP_CGROUP_DRIFT')
-            finally:
-                os.close(fd)
-        manager = observed['user_manager']
-        _require(manager['properties']['Delegate'] == 'yes' and manager['properties']['User'] == str(ordinary_uid),
-                 'CORE_CAP_MANAGER_DELEGATION')
-        carrier = observed['carrier']; value = carrier['properties']
-        expected = {'Id': 'name', 'ControlGroup': 'control_group', 'InvocationID': 'invocation_id',
-            'ActiveState': 'active_state', 'SubState': 'sub_state', 'Restart': 'restart',
-            'KillMode': 'kill_mode', 'ExitType': 'exit_type'}
-        _require(all(value[key] == hello[field] for key, field in expected.items()), 'CORE_CAP_CARRIER_DRIFT')
-        for key, field in (('MemoryMax', 'memory_max'), ('MemorySwapMax', 'memory_swap_max'), ('TasksMax', 'tasks_max')):
-            _require(value[key].isdecimal() and int(value[key]) == hello[field], 'CORE_CAP_CARRIER_LIMIT')
-        for key, field in (('RuntimeMaxUSec', 'runtime_max_usec'), ('TimeoutStopUSec', 'timeout_stop_usec'),
-                           ('CPUQuotaPerSecUSec', 'cpu_quota_per_sec_usec')):
-            _require(_cap_usec(value[key]) == hello[field], 'CORE_CAP_CARRIER_LIMIT')
-        membership = self._capacity_kernel('/proc/self/cgroup', 4096).decode('ascii').splitlines()
-        _require(membership == ['0::' + carrier['path']], 'CORE_CAP_CARRIER_MEMBERSHIP')
-        geometry = dict(schema='local-hand-q2-system-geometry/v1')
-        for public, role in (('controller_parent', 'controller_cgroup'), ('ordinary_parent', 'ordinary_cgroup'),
-                             ('retained_ordinary_parent', 'retained_ordinary_cgroup')):
-            observation = observed[role]; current = observation['properties']
-            _require(all(current[key].isdecimal() for key in ('MemoryMax', 'MemorySwapMax', 'TasksMax')),
-                     'CORE_CAP_GEOMETRY_LIMIT')
-            geometry[public] = dict(parent={key: observation[key] for key in ('path', 'device', 'inode')},
-                memory_bytes=int(current['MemoryMax']), memory_swap_max=int(current['MemorySwapMax']),
-                tasks_max=int(current['TasksMax']), cpu_quota_per_sec_usec=_cap_usec(current['CPUQuotaPerSecUSec']))
-        for role, limits in {'controller_parent': (536870912, 64), 'ordinary_parent': (268435456, 32),
-                             'retained_ordinary_parent': (268435456, 64)}.items():
-            item = geometry[role]
-            _require((item['memory_bytes'], item['tasks_max']) == limits and item['memory_swap_max'] == 0
-                     and item['cpu_quota_per_sec_usec'] == 1000000, 'CORE_CAP_GEOMETRY_LIMIT')
-        fixed = set()
-        for case in CASES:
-            fixed.update(row[key] for row in _phase_units(case['operation_id'], case['phases'])
-                         for key in ('bootstrap_unit', 'helper_unit', 'result_reader_unit'))
-            fixed.update(case['controller_prefix'] + '-' + role + '.service' for role in ('target', 'supervisor'))
-        for arguments in (['list-units', '--all', '--plain', '--no-legend', '--type=service,slice'],
-                          ['list-unit-files', '--no-legend', '--type=service,slice']):
-            output = self._capacity_systemctl(arguments, programs['systemctl'])
-            names = {line.split()[0] for line in output.decode('ascii', 'strict').splitlines() if line.split()}
-            _require(not fixed & names, 'CORE_CAP_UNIT_EXISTS')
-        for unit in sorted(fixed):
-            for prefix in ('/etc/systemd/system/', '/run/systemd/system/', '/usr/lib/systemd/system/'):
-                for suffix in ('', '.d'):
-                    fd, _, _ = self._capacity_path(prefix + unit + suffix, absent=True)
-                    os.close(fd)
-        self._admission_detail.update(carrier=carrier, system_geometry=geometry)
-        return dict(parents=parents, manager=dict(user_manager_unit=manager['unit'],
-            user_manager_invocation_id=manager['invocation_id'], user_manager_cgroup=manager['path']),
-            absence=[dict(kind='unit', name=unit, parent_dev=None, parent_ino=None, project_id=None,
-                          unit=unit, absent=True, collision=False) for unit in sorted(fixed)])
 
-    def _capacity_admission(self, programs, ordinary_uid):
-        self._capacity_owners = {0, ordinary_uid}
-        approved = _approved_inputs_envelope(self.context)
-        locators = self.context['manifest']['locators']
-        mounts_raw = self._capacity_kernel('/proc/self/mountinfo')
-        mounts = _cap_mounts(mounts_raw); parents = {}; filesystems = {}; details = {}
-        for role in _CAP_ROLES:
-            parents[role], filesystems[role], details[role] = self._capacity_filesystem(locators[role + '_parent'], mounts)
-        quota_mount = details['quota']
-        _require('prjquota' in filesystems['quota']['mount_options'], 'CORE_CAP_QUOTA_MOUNT')
-        source = self._capacity_call(os.stat, quota_mount['source'], follow_symlinks=False)
-        _require(stat.S_ISBLK(source.st_mode) and source.st_rdev == quota_mount['device'], 'CORE_CAP_QUOTA_DEVICE')
-        quota = _CapQuota(quota_mount['source']); self._capacity_call(quota.enforcement)
-        inventory = quota.inventory(self._effect_guard)
-        byproject = {row['project']: row for row in inventory}
-        for row in approved['retained_preparation']['domains']:
-            actual = byproject.get(row['project_id'])
-            _require(actual is not None and actual['hard'] * 1024 == row['hard_bytes'] and
-                     actual['ihard'] == row['inode_hard_limit'], 'CORE_CAP_RETAINED_QUOTA')
-        def path_pool(path):
-            fd, info, _ = self._capacity_path(path)
-            try:
-                uuid = self._capacity_call(_cap_uuid, fd)
-                _require(info.st_dev == os.fstat(fd).st_dev, 'CORE_CAP_PATH_POOL')
-                return info.st_dev, uuid
-            finally:
-                os.close(fd)
-        capacity = _cap_charge(approved, filesystems, path_pool, inventory)
-        absence = []; paths = {locators['install_parent'] + '/' + name for name in (INSTALL_BASENAME, STAGING_BASENAME)}
-        for role in ('state', 'quota', 'journal', 'evidence'):
-            paths.add(locators[role + '_parent'] + '/' + SESSION)
-        for case in CASES:
-            planned = self.preparation_paths(case, locators)
-            paths.update(row['path'] for row in planned['directories'].values())
-            paths.update(row['path'] for row in planned['roots'])
-            paths.update(locators[role + '_parent'] + '/' + SESSION + '/' + case['case_id']
-                         for role in ('state', 'quota', 'journal', 'evidence'))
-        # Derive reconciliation from the pinned original plan, not a guessed directory.
-        row = next(row for row in approved['source_relation']['locator']['members'] if row['role'] == 'original_plan')
-        raw, _ = self._capacity_call(self.stable_read, '/' + row['path'], maximum=row['bytes'])
-        _require(_sha(raw) == row['sha256'], 'CORE_CAP_ORIGINAL_PLAN_CHANGED')
-        original = _json_object(raw, 'CORE_CAP_ORIGINAL_PLAN')
-        paths.add(original['directories']['reservation']['path'] + '.reconciliation')
-        for path in sorted(paths):
-            fd, parent, missing = self._capacity_path(path, absent=True)
-            try:
-                _require(missing, 'CORE_CAP_OBJECT_EXISTS')
-                absence.append(dict(kind='path', name=path, parent_dev=parent.st_dev if str(PurePosixPath(path).parent) in locators.values() else None,
-                    parent_ino=parent.st_ino if str(PurePosixPath(path).parent) in locators.values() else None, project_id=None, unit=None, absent=True, collision=False))
-            finally:
-                os.close(fd)
-        for project in [*range(12051, 12058), *(p for case in CASES for p in case['project_ids'])]:
-            _require(project not in byproject, 'CORE_CAP_PROJECT_EXISTS')
-            self._capacity_call(quota.unused, project)
-            absence.append(dict(kind='project', name=str(project), parent_dev=quota_mount['device'],
-                parent_ino=parents['quota']['ino'], project_id=project, unit=None, absent=True, collision=False))
-        self._admission_detail = dict(quota_mount=quota_mount, mounts=details, quota_inventory=inventory)
-        self._admission_detail['retained_before'] = self._capacity_retained_snapshot()
-        _require(mounts_raw == self._capacity_kernel('/proc/self/mountinfo'), 'CORE_CAP_MOUNT_DRIFT')
-        return dict(parents=parents, filesystems=filesystems, capacity=capacity,
-                    absence=sorted(absence, key=lambda row: (row['kind'], row['name'])))
 
-    def admit(self, expected):
-        _exact(expected, ("hello", "manifest", "guest_deadlines"), "CORE_EFFECT_ADMISSION_INPUT")
-        _require(all(expected[key] == self.context[key] for key in expected)
-                 and self._admission is None and not getattr(self, "_admit_attempted", False),
-                 "CORE_EFFECT_ADMISSION_BINDING")
-        self._admit_attempted = True
-        self._effect_guard()
-        approved = _approved_inputs_envelope(self.context)
-        _validate_approved_components(approved)
-        current = _admit_collect_policies(self, approved["policy_basis"], self.context["hello"]["remote_management"])
-        self._admission_components = current
-        programs = _admit_programs(self)
-        guest = _admit_guest(self, programs)
-        capacity = self._capacity_admission(programs, guest["ordinary_uid"])
-        managers = self._capacity_managers(programs, guest["ordinary_uid"])
-        guest.update(managers["manager"])
-        capacity["parents"].update(managers["parents"])
-        capacity["absence"] = sorted(capacity["absence"] + managers["absence"],
-                                     key=lambda row: (row["kind"], row["name"]))
-        admission = dict(guest=guest, programs=programs, policies=current["policies"],
-                         binding=_admission_binding(self.context), **capacity)
-        self._effect_guard()
-        self._admission = _validate_admission(admission, self.context)
-        return self._admission
+    def admit(self, _expected):
+        raise DispatchError("CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE")
 
     def install(self, expected):
         _exact(expected, ("manifest", "members", "admission"),
@@ -4298,116 +3128,9 @@ class FieldEffects:
         return {name: self._candidate_helper(name, verified) for name in PREPARATION_HELPERS}
 
     def prepare_case(self, case, intent, preparation_deadline_ns):
-        _require(case in CASES and intent == build_intent(case),
-                 "CORE_EFFECT_PREPARATION_INPUT")
+        _require(case in CASES and intent == build_intent(case), "CORE_EFFECT_PREPARATION_INPUT")
         _integer(preparation_deadline_ns, 1, code="CORE_EFFECT_PREPARATION_DEADLINE")
-        deadline = preparation_deadline_ns
-        now = _prep_guard(self, deadline)
-        _require(self._installation_receipt is not None and self._persistence_ready
-                 and self._admission is not None and os.geteuid() == os.getegid() == 0,
-                 "CORE_EFFECT_PREPARATION_INSTALLATION_REQUIRED")
-        for method in ("_capacity_retained_snapshot", "_capacity_quota_inventory", "_capacity_quota_enforcement"):
-            _require(callable(getattr(self, method, None)), "CORE_EFFECT_PREPARATION_CURRENT_FACTS_REQUIRED")
-        intent_path = self._persistence_path(case["case_id"], "cases/" + case["case_id"] + "/intent.json")
-        actual, pin = self.stable_read(intent_path, maximum=65536, expected_mode=384)
-        _require(actual == canonical(intent, newline=True) and pin["uid"] == pin["gid"] == 0,
-                 "CORE_EFFECT_PREPARATION_INTENT_REQUIRED")
-        helpers = self.preparation_helpers()
-        # This conservative expiry is no later than an owner started immediately.
-        # It is never extended after the preparation preimage is persisted.
-        expires = (time.time_ns() + OWNER_NS) // NS
-        plan = _prep_make_plan(self, case, expires)
-        helpers["q2_prepare_driver"].validate_plan(plan)
-        contract = helpers["q2_prepare_contract"]
-        for row in (*plan["directories"].values(), *plan["roots"]): contract.path(row["path"])
-        _require(plan["settings"] == _prep_settings(case, expires), "CORE_EFFECT_PREPARATION_SETTINGS")
-        before = self._capacity_retained_snapshot()
-        _require(before == self._admission_detail["retained_before"],
-                 "CORE_EFFECT_PREPARATION_RETAINED_CHANGED")
-        inventory = self._capacity_quota_inventory()
-        _require(not set(case["project_ids"]) & {r["project"] for r in inventory},
-                 "CORE_EFFECT_PREPARATION_PROJECT_EXISTS")
-        parent_roles = ("state", "quota", "journal", "evidence")
-        for role in parent_roles:
-            root = self._admission["parents"][role]
-            fd = self._held_directory(root["path"])
-            try:
-                info = os.fstat(fd)
-                _require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
-                         == (root["dev"], root["ino"], root["uid"], root["gid"], root["mode"]),
-                         "CORE_EFFECT_PREPARATION_PARENT_CHANGED")
-            finally: os.close(fd)
-        # Only reservation ancestry may be created before its first raw plan.
-        # Other filesystem case containers follow that durable preimage.
-        state_session = self._admission["parents"]["state"]["path"] + "/" + SESSION
-        _prep_directory(self, state_session + "/" + case["case_id"], 0, 0, 493, deadline)
-        directories = {}
-        reservation = plan["directories"]["reservation"]["path"]
-        directories["reservation"] = _prep_directory(self, reservation, 0, 0, 448, deadline)
-        objects = {"preparation-plan": _prep_file(self, reservation + "/preparation-plan.json",
-            helpers["q2_prepare_driver"].encoded(plan), deadline)}
-        for role in parent_roles:
-            session = self._admission["parents"][role]["path"] + "/" + SESSION
-            if role != "state" and case["index"] == 1:
-                _prep_directory(self, session, 0, 0, 493, deadline)
-            fd = self._held_directory(session)
-            try:
-                st = os.fstat(fd)
-                _require(st.st_uid == st.st_gid == 0 and stat.S_IMODE(st.st_mode) == 493,
-                         "CORE_EFFECT_PREPARATION_SESSION_PROTECTION")
-            finally: os.close(fd)
-            if role != "state":
-                _prep_directory(self, session + "/" + case["case_id"], 0, 0, 493, deadline)
-        account = plan["account"]
-        for role, item in plan["directories"].items():
-            if role == "reservation": continue
-            uid, gid = (account["uid"], account["gid"]) if item["owner"] == "ordinary" else (0, 0)
-            directories[role] = _prep_directory(self, item["path"], uid, gid, item["mode"], deadline)
-        children = {}
-        for name in ("preflight", "business", "evidence", "management_evidence", "launcher_output",
-                     "supervisor_output", "owner_output", "launcher_declarations", "supervisor_declarations",
-                     "owner_declarations"):
-            parent = directories["declarations" if name.endswith("declarations") else "capture"]["path"]
-            children[name] = _prep_pin(_prep_directory(self, parent + "/" + name, 0, 0,
-                493 if name == "launcher_declarations" else 448, deadline))
-        mount = plan["mounts"]["quota"]
-        created = [_prep_root(self, row, account, mount, deadline) for row in plan["roots"]]
-        roots = [_prep_observe_root(self, row, mount, deadline) for row in created]
-        after = self._capacity_retained_snapshot()
-        after_inventory = [r for r in self._capacity_quota_inventory() if r["project"] not in case["project_ids"]]
-        _require(before == after and _prep_quota_retained(inventory) == _prep_quota_retained(after_inventory),
-                 "CORE_EFFECT_PREPARATION_RETAINED_CHANGED")
-        parent_pins = {}
-        for role in ("controller", "management", "query", "supervisor", "ordinary"):
-            key = "retained_ordinary_cgroup" if role == "ordinary" and case["index"] == 2 else role + "_cgroup"
-            parent_pins[role] = _prep_pin(self._admission["parents"][key])
-            parent_pins[role]["path"] = parent_pins[role]["path"].removeprefix("/sys/fs/cgroup")
-        observed = {"host": plan["host"], "ordinary": account, "directories": directories,
-            "parents": parent_pins, "mounts": {"quota": mount}, "roots": roots,
-            "installation": self._installation_receipt,
-            "capacity_observed": {"quota_inventory": inventory},
-            "retained_before": before, "retained_after": after}
-        if case["index"] != 2:
-            _require("system_geometry" in self._admission_detail,
-                     "CORE_EFFECT_PREPARATION_GEOMETRY_REQUIRED")
-            observed["system_geometry"] = copy.deepcopy(self._admission_detail["system_geometry"])
-        result = {"schema": "local-hand-q2-fixture-preparation/v1", "preparation_id": case["preparation_id"],
-            "plan_sha256": _sha(objects["preparation-plan"]["raw"]), "status": "RESOURCES_PREPARED",
-            "reason": None, "facts": observed, "q2_accepted": False, "q3_accepted": False,
-            "production_supported": False, "fixture_generated": False}
-        objects["preparation-result"] = _prep_file(self, reservation + "/preparation-result.json",
-            helpers["q2_prepare_driver"].encoded(result), deadline)
-        translated = _prep_translate(case, plan, result, children, helpers)
-        prepared = {"case": case, "intent": intent, "plan": plan, "receipt": result,
-            "children": children, "source_objects": objects, **translated}
-        prepared["paths"] = {k: v["path"] for k, v in {**directories, **children}.items()}
-        prepared["paths"]["retained_store"] = next(r["path"] for r in roots if r["slot"] == "store")
-        for name in ("authority", "manifest"):
-            _prep_file(self, reservation + "/" + name + ".json",
-                       canonical(prepared[name], newline=True), deadline)
-        _prep_initialize(self, prepared, deadline)
-        _prep_guard(self, deadline)
-        return prepared
+        raise DispatchError("CORE_EFFECT_PREPARATION_EXISTING_ACCOUNT_ADAPTER_INCOMPLETE")
 
     def plan_case(self, case, prepared, deadlines):
         _require(case in CASES and prepared.get("case") == case,
@@ -4996,24 +3719,40 @@ class FieldEffects:
     def _exec_h11_accepted(self, case, prepared, plan):
         import sqlite3
         self._exec_guard(plan)
-        fd = prepared["_exec_ledger_fd"]; before = os.fstat(fd)
-        for suffix in ("-wal", "-shm", "-journal"):
-            try: os.stat(plan["ledger_path"] + suffix, follow_symlinks=False)
-            except FileNotFoundError: continue
-            raise DispatchError("CORE_EFFECT_H11_LEDGER_SIDECAR")
-        db = sqlite3.connect("file:/proc/self/fd/" + str(fd) + "?mode=ro", uri=True, timeout=0)
+        _require(case == CASES[2], "CORE_EFFECT_H11_ACCEPTED_CASE")
+        fd = prepared["_exec_ledger_fd"]
+        path = PurePosixPath(plan["ledger_path"])
+        parent = self._held_directory(str(path.parent))
+        def identity():
+            self._exec_guard(plan)
+            info = os.fstat(fd)
+            named = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            _require(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
+                and info.st_nlink == named.st_nlink == 1
+                and (info.st_dev, info.st_ino) == (named.st_dev, named.st_ino),
+                "CORE_EFFECT_H11_LEDGER_CHANGED")
+            for suffix in ("-wal", "-shm", "-journal"):
+                try: os.stat(path.name + suffix, dir_fd=parent, follow_symlinks=False)
+                except FileNotFoundError: continue
+                raise DispatchError("CORE_EFFECT_H11_LEDGER_SIDECAR")
+            return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        db = None
         try:
+            before = identity()
+            # Closed WAL-format files must not create reader sidecars.
+            db = sqlite3.connect("file:/proc/self/fd/" + str(fd) + "?mode=ro&immutable=1",
+                                 uri=True, timeout=0)
             db.execute("PRAGMA query_only=ON")
             db.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 500)
             rows = db.execute("SELECT seq FROM events WHERE namespace='job' AND id=? AND kind='ACCEPTED'",
                               (case["operation_id"],)).fetchmany(2)
             _require(len(rows) == 1 and type(rows[0][0]) is int and rows[0][0] > 0,
                      "CORE_EFFECT_H11_ACCEPTED_EVENT")
-        finally: db.close()
-        after = os.fstat(fd)
-        _require((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) ==
-            (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns),
-            "CORE_EFFECT_H11_LEDGER_CHANGED")
+            db.close(); db = None
+            _require(identity() == before, "CORE_EFFECT_H11_LEDGER_CHANGED")
+        finally:
+            if db is not None: db.close()
+            os.close(parent)
         self._exec_guard(plan)
         return rows[0][0]
 

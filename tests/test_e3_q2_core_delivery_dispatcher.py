@@ -421,7 +421,7 @@ def test_envelope_accepts_readonly_member_views_and_rejects_mutable_or_wrong_a_b
         d._validate_context_envelope(mutable)
 
 
-def test_real_admission_rejects_synthetic_private_inputs_before_host_collection(monkeypatch):
+def test_unreleased_admission_stops_before_host_collection(monkeypatch):
     value = context()
 
     class OnlyClock(d.FieldEffects):
@@ -430,10 +430,10 @@ def test_real_admission_rejects_synthetic_private_inputs_before_host_collection(
                     "boottime_ns": value["hello"]["guest_boottime_origin_ns"] + d.NS,
                     "monotonic_ns": value["hello"]["guest_monotonic_origin_ns"] + d.NS}
 
-    monkeypatch.setattr(d, "_admit_collect_policies", lambda *args: pytest.fail("host collection reached"))
+    monkeypatch.setattr(d.os, "open", lambda *args, **kwargs: pytest.fail("host file read"))
     monkeypatch.setattr(d.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("helper spawned"))
     assert d.field_readiness()["releasable"] is False
-    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
+    with pytest.raises(d.DispatchError, match="CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE"):
         OnlyClock(value).admit({"hello": value["hello"], "manifest": value["manifest"],
                                 "guest_deadlines": value["guest_deadlines"]})
 
@@ -456,10 +456,6 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
             "installation.deadline_guarding",
             "installation.program_execution_binding",
             "preparation.existing_account_completion",
-            "execution.h01_normal",
-            "execution.q4_running_cancel_subset",
-            "execution.h11_same_ledger_recovery",
-            "evidence.dynamic_phase_fact_extraction",
             "evidence.usage_and_peak_accounting",
         ],
     }

@@ -16,6 +16,13 @@ from test_e3_q2_core_delivery_dispatcher import d
 
 @pytest.fixture
 def ledger_gate(tmp_path, monkeypatch):
+    # Exercise held files as the test account; root-owned fixture ancestry is
+    # modeled separately. Production still creates the gate as root.
+    write = d._prep_file
+    def owned_write(*args, **kwargs):
+        kwargs.update(uid=os.getuid(), gid=os.getgid())
+        return write(*args, **kwargs)
+    monkeypatch.setattr(d, "_prep_file", owned_write)
     state = tmp_path / "state"; state.mkdir(mode=0o700)
     reservation = tmp_path / "reservation"; reservation.mkdir(mode=0o700)
     path = state / "jobs.sqlite"
