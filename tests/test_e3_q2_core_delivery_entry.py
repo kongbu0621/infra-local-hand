@@ -207,6 +207,64 @@ def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
         os.close(directory_fd)
 
 
+def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
+        monkeypatch, tmp_path):
+    loader, bootstrap = b"pass\n", b"x=1\n"
+    entry = {"loader_path": "field/loader.py",
+             "bootstrap_path": "field/bootstrap.py"}
+    manifest = {"entry": entry}
+    members = {"field/loader.py": loader, "field/bootstrap.py": bootstrap}
+    original_helper = e._helper
+    monkeypatch.setattr(e, "_helper", lambda name: (
+        SimpleNamespace(parse_package=lambda _raw: (manifest, members))
+        if name == "q2_core_delivery_package" else original_helper(name)))
+    # Reach the existing ARG_MAX check without changing the production allowlist.
+    monkeypatch.setattr(e, "field_release_gate", lambda *_args: None)
+    environment = e.controlled_environment({
+        "HOME": "/synthetic", "USER": "test", "LOGNAME": "test",
+    })
+    monkeypatch.setattr(e, "controlled_environment", lambda: environment)
+    checked = []
+
+    def arg_max(name):
+        checked.append(name)
+        return 8
+
+    monkeypatch.setattr(e.os, "sysconf", arg_max)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("ARG_MAX rejection must precede anchor, marker and request")
+
+    for name in ("requalify_management_anchor", "marker_absent",
+                 "output_names_absent", "freeze_host_window",
+                 "create_consumption_marker", "execute_carrier_once",
+                 "finalize_carrier"):
+        monkeypatch.setattr(e, name, forbidden)
+    wrapper_raw = (b"#!/usr/bin/env bash\nset -euo pipefail\n"
+                   b"q1_vm=/mnt/data1/work/labs/infra-local-hand-q1/vm\n"
+                   b"exec ssh -F /dev/null \\\n"
+                   b"  -i \"$q1_vm/id_ed25519\" -p 22221 \\\n"
+                   b"  -o IdentitiesOnly=yes -o BatchMode=yes \\\n"
+                   b"  -o StrictHostKeyChecking=accept-new \\\n"
+                   b"  -o UserKnownHostsFile=\"$q1_vm/known_hosts\" \\\n"
+                   b"  -o ConnectTimeout=10 \\\n"
+                   b"  q1admin@127.0.0.1 \"$@\"\n")
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(c.ContractError, match="CORE_LOCAL_ARG_ENV_LIMIT"):
+            e.deliver_once(
+                directory_fd,
+                binding={"wrapper": {"path": "/synthetic/ssh.sh"}},
+                package_basename="only.lhfp", package_raw=b"synthetic-package",
+                loader_raw=loader, bootstrap_raw=bootstrap, wrapper_raw=wrapper_raw,
+                popen_factory=forbidden)
+        assert checked == ["SC_ARG_MAX"]
+        assert list(tmp_path.iterdir()) == []
+        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    finally:
+        os.close(directory_fd)
+
+
 def identity(path, sha="a" * 64):
     return {"path": path, "dev": 1, "ino": 2, "mode": 0o755, "uid": 0, "gid": 0,
             "nlink": 1, "bytes": 10, "sha256": sha}
@@ -412,6 +470,145 @@ def test_output_frame_checks_order_digest_and_true_eof():
     bad = dict(manifest, members=list(reversed(members)))
     with pytest.raises(c.ContractError, match="CORE_OUTPUT_ORDER"):
         e.parse_output(e.frame(c.OUTPUT_MAGIC, bad, json_limit=1_048_576) + b"ba")
+
+
+@pytest.mark.parametrize("boundary, remaining", [
+    ("stderr", 7), ("stderr", 0), ("combined", 7),
+])
+def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
+        monkeypatch, boundary, remaining):
+    # Keep the approved limits unchanged. Their sum makes the combined limit
+    # coincide with stderr's limit when stdout has already reached its own cap.
+    hello_raw = e.frame(c.HELLO_MAGIC, hello(), json_limit=e.HELLO_JSON_LIMIT)
+    stdout_bytes = (e.HELLO_FRAME_LIMIT + e.OUTPUT_FRAME_LIMIT
+                    if boundary == "combined" else len(hello_raw))
+    stderr_bytes = e.STDERR_LIMIT - remaining
+    segments = [{"role": "stdout", "raw": hello_raw, "bytes": len(hello_raw)}]
+    if stdout_bytes > len(hello_raw):
+        segments.append({"role": "stdout", "raw": None,
+                         "bytes": stdout_bytes - len(hello_raw)})
+    segments.extend([
+        {"role": "stderr", "raw": None, "bytes": stderr_bytes},
+        {"role": "stderr", "raw": b"!" * (remaining + 1),
+         "bytes": remaining + 1},
+    ])
+    reads, calls = [], []
+
+    class Stream:
+        def __init__(self, fd):
+            self.fd, self.closed = fd, False
+
+        def fileno(self):
+            return self.fd
+
+        def close(self):
+            self.closed = True
+
+    class Process:
+        def __init__(self):
+            self.stdin, self.stdout, self.stderr = (Stream(fd) for fd in range(100001, 100004))
+            self.returncode = None
+            self.terminations = 0
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.terminations += 1
+            self.returncode = -15
+
+        def kill(self):
+            pytest.fail("terminated fake carrier must not need another stop")
+
+    process = Process()
+    roles = {process.stdout.fd: "stdout", process.stderr.fd: "stderr"}
+
+    class Selector:
+        def __init__(self):
+            self.registered = {}
+
+        def register(self, fd, events, data):
+            self.registered[fd] = SimpleNamespace(fd=fd, data=data)
+
+        def unregister(self, fd):
+            del self.registered[fd]
+
+        def select(self, _timeout):
+            if process.stdin.fd in self.registered:
+                return [(self.registered[process.stdin.fd], e.selectors.EVENT_WRITE)]
+            assert segments, "carrier must stop at the overflowing read"
+            fd = getattr(process, segments[0]["role"]).fd
+            return [(self.registered[fd], e.selectors.EVENT_READ)]
+
+        def close(self):
+            self.registered.clear()
+
+    original_read, original_write = os.read, os.write
+    original_set_blocking = os.set_blocking
+
+    def read(fd, count):
+        if fd not in roles:
+            return original_read(fd, count)
+        segment = segments[0]
+        assert segment["role"] == roles[fd]
+        reads.append((roles[fd], count))
+        size = min(count, segment["bytes"])
+        raw = segment["raw"]
+        result = b"x" * size if raw is None else raw[:size]
+        segment["bytes"] -= size
+        if raw is not None:
+            segment["raw"] = raw[size:]
+        if not segment["bytes"]:
+            segments.pop(0)
+        return result
+
+    def write(fd, raw):
+        if fd == process.stdin.fd:
+            return len(raw)
+        return original_write(fd, raw)
+
+    def set_blocking(fd, blocking):
+        if fd not in roles and fd != process.stdin.fd:
+            original_set_blocking(fd, blocking)
+
+    def factory(*args, **kwargs):
+        calls.append((args, kwargs))
+        return process
+
+    argv = ["/usr/bin/env", "synthetic-carrier"]
+    entry = {
+        "loader_path": "field/loader.py", "loader_bytes": 1,
+        "loader_sha256": "1" * 64,
+        "bootstrap_path": "field/bootstrap.py", "bootstrap_bytes": 1,
+        "bootstrap_sha256": "2" * 64,
+        "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
+        "dispatcher_sha256": "3" * 64,
+        "carrier_argv_sha256": e.argv_digest(argv),
+        "management_entry_binding_sha256": "5" * 64,
+    }
+    origins = e.freeze_host_window()
+    marker = {"object_created": True, "record_complete": True, "sha256": "a" * 64}
+    with monkeypatch.context() as io_patch:
+        io_patch.setattr(e.os, "read", read)
+        io_patch.setattr(e.os, "write", write)
+        io_patch.setattr(e.os, "set_blocking", set_blocking)
+        exchange = e.execute_carrier_once(
+            argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
+            origins=origins, marker=marker, package_basename="only.lhfp",
+            package_raw=b"synthetic-package", package_entry=entry,
+            popen_factory=factory, selector_factory=Selector)
+    assert len(calls) == 1
+    assert reads[-1] == ("stderr", remaining + 1)
+    assert exchange["errors"] == [e._missing(
+        "CORE_CARRIER_OUTPUT_LIMIT", "stderr",
+        {"stdout": stdout_bytes, "stderr": stderr_bytes, "additional": remaining + 1})]
+    assert len(exchange["stdout"]) == stdout_bytes
+    assert exchange["stderr"] == b"x" * stderr_bytes
+    assert exchange["transport"]["stdin_eof"] is True
+    assert process.stdin.closed and process.stdout.closed and process.stderr.closed
+    assert process.terminations == 1 and exchange["wait"]["status"] == -15
+    if boundary == "combined":
+        assert stdout_bytes + stderr_bytes + remaining == e.CARRIER_OUTPUT_LIMIT
 
 
 def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):

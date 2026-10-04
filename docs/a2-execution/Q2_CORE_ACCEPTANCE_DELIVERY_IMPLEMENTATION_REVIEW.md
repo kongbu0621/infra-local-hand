@@ -1,5 +1,9 @@
 # Local Hand core acceptance delivery：部分实现与未签发复核
 
+2026-10-04 接续说明：本文保留部分 D 的实现事实。当前输入绑定修订为 OPEN / REVISION REQUIRED，
+准确路线见[修订复核登记](../governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)和
+[核心协作交接](Q2_CORE_CLOUD_LOCAL_HANDOFF_20261004.md)。后文旧静态预像准备顺序不构成当前现场执行入口。
+
 ## 结论
 
 `LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1` 已按 `R → A → B → C → D` 形成一个
@@ -156,13 +160,32 @@ private locator relation；因此没有序列化 package，也没有 package bas
    `REMOTE_STOP_AND_RETAIN` final frame；
 3. local finalizer 在原 host 双 deadline 内对 capture/fsync/receipt 完成时点的最终检查；当前硬
    release gate 使该路径不可达，但任何 dispatcher digest allowlist 解锁前必须修复并验证；
-4. H11 只附着 Q4 原 ledger/request/execution/unit/grant/deadline，且证明不 restart、不 reread
-   business result、不新建 unit/grant、不延长 deadline；
+4. H11 只附着 H11 自己 origin 的原 ledger/request/execution/unit/grant/deadline，且证明不 restart、
+   不 reread business result、不新建 unit/grant、不延长 deadline。2026-10-04 勘误：原稿将此处
+   错写为 Q4 ledger；原 A 的三个 case 各有自己的 ledger，本次未改变该合同；
 5. 完整 D 的独立审计、两次一致 package build/parser、package basename/bytes/SHA 和 release
    digest allowlist；static freeze 还须把当时实际 `SC_ARG_MAX` 结果纳入资格记录；
 6. carrier output `remaining + 1` sentinel 的直接超限回归，以及 `SC_ARG_MAX` 失败确实先于
-   marker/request 的完整入口顺序回归。当前已有代码审计和局部单元检查，但未以这两个精确场景
-   单独闭合发行测试。
+   marker/request 的完整入口顺序回归。原始部分 D 复核时仅有代码审计和局部单元检查；
+   2026-10-04 已补齐这两个精确场景，见下节。本项完成不解除其它 release 缺项。
+
+## 2026-10-04：两个既有核心入口回归已补齐
+
+本次只补原 CLOSED A 已要求、且不受 OPEN 输入绑定修订影响的离线测试，未修改 runtime、
+schema、预算常量或 dispatcher release allowlist。
+`tests/test_e3_q2_core_delivery_entry.py` 新增：
+
+- `test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request`：走真实 `deliver_once`
+  入口，测试替身只让入口到达现有参数检查；ARG_MAX 不足时不能进入 anchor 重核、marker、
+  request 或 finalizer，目录保持为空，运行源码的 release allowlist 仍为空。
+- `test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow`：三个合成 I/O 场景，
+  分别覆盖 stderr 剩 7 bytes、剩 0 bytes，以及 stdout 达原上限后的合并总量边界。
+  验证超限块不入采集数据、管道关闭、假进程停止及只调用一次 factory。所有原预算常量保持。
+
+指定隔离 venv 的 Python 执行 `-m pytest -q tests/test_e3_q2_core_delivery_entry.py`：
+**18 passed in 0.13s**。初次合成 fixture 因缺 USER/LOGNAME 提前触发环境校验，补齐固定合成环境后通过；
+没有因此修改运行实现。上述结果只验证入口与有界 I/O，不代表任何真实 H01/Q4/H11、现场
+marker/request 或结果收回成功。
 
 ## 可执行的后续验收顺序
 

@@ -2,9 +2,11 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前阶段（2026-09-30）：E3 真实隔离验收准备。** 已补齐固定取消场景的外层交接，源码候选为 `5ca9753`；准确 CI、产物与现场装配输入见[最新候选交接](docs/a2-execution/CANDIDATE_HANDOFF_20260930.md)。下一步先做正常链真实验收，再做独立取消场景。Q2/Q3、生产启用、E4–E6 和 NAS 尚未验收；已退役 H07 实验不会恢复。已有 11 项历史补证继续复用。
+**当前阶段（2026-10-04）：核心任务执行与结果收回的部分实现，尚未跑通现场闭环。** 本轮只推进正常执行、运行中取消、同一任务恢复查询和结果收回。H01/Q4/H11 的真实执行入口仍未接完，完整 field package 未生成，核心批次尚未签发。具体缺项见[核心实现复核](docs/a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md)。
 
-以下为此前接续沿革；当前路线以上述候选交接及[实现状态](docs/a2-execution/IMPLEMENTATION_STATUS.md)为准。
+云端助手负责仓库修正、代码验证和审查，本地 Codex 负责只能在真实管理机完成的输入复核与后续现场执行；下一步按[核心协作交接](docs/a2-execution/Q2_CORE_CLOUD_LOCAL_HANDOFF_20261004.md)推进。输入绑定修订当前为 OPEN / REVISION REQUIRED，准确状态见[修订复核登记](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)。namespace、watchdog、旧版扩建和内核证明扩展暂停；生产、E4–E6 与 NAS 不作为本轮新增工作。
+
+以下为此前接续沿革，不作为重放历史批次或恢复支线的入口。
 
 固定本地补证 L1–L6 限定任务已完成，结果仍为 `OBSERVED_PARTIAL`。已完成范围内的离线组件，见[费用来源复核](docs/a2-execution/Q2_COST_SOURCE_IMPLEMENTATION_REVIEW.md)。完整账单和 FS 资格仍需闭合；无需重复已有采集或权限维护。
 
