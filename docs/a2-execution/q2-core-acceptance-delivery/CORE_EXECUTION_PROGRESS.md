@@ -1,5 +1,84 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
+## Current cancellation and installation followup
+
+This core-only D followup descends from `5208e43d785f1c3eaacedf632029ed144b37833c`.
+It continues the existing CLOSED scopes; candidate, wheel, projection, budgets,
+deadlines, field allowlist and conditional single F1 are unchanged. The preceding
+implementation `0c786ac` has now completed [CI 37191629497](https://github.com/kongbu0621/infra-local-hand/actions/runs/37191629497)
+successfully in all three jobs.
+
+### Corrected original Q4 cancellation
+
+The frozen candidate's runner deliberately does not start a result-reader after
+successful helper-running cancellation. The previous adapter indexed that absent
+receipt and required an InvocationID for it. Q4 now requires the actual bootstrap
+and helper receipts, matching helper boot/unit/InvocationID to the original
+trigger and final report. It also binds durable delivery events to the original
+report and rejects any reader or delivery after cancel. H01/H11 retain their
+three-stage requirements. All three static authorized names remain in the plan.
+
+This follows the original A requirements: static names at lines 176–182, launch
+upper bounds at 200–203, actual identity array at 803–804, and Q4 PASS at
+1132–1140. It changes no authority or acceptance contract. Regression evidence
+uses the original Broker, SQLite ledger and cancellation report code; manager
+and OS observations in that test are explicit doubles, not field evidence.
+
+### Installation execution and internal I/O
+
+Each installation/owner child now executes an already-opened, verified ELF
+descriptor. The six admitted program identities remain checked. New runtime and
+ABI programs are permitted only during the active original installation; their
+held execution identities are retained and checked against its returned receipt.
+The installed runtime also binds the receipt's device/inode. Equal-content inode
+replacement, file capabilities and identity drift are rejected.
+
+The original setpriv flags and credential checks remain. Its second Python hop
+uses the held interpreter descriptor and a fixed `__PYVENV_LAUNCHER__` value to
+preserve the original venv path. No wrapper executable, shell, extra runtime
+module, new privilege, refreshed deadline or retry was added. Actual child exit,
+wait4 usage and both EOFs remain mandatory; descriptors close on failures.
+
+Dispatcher-owned extraction, scans, reads, creates, mkdir, metadata and fsync
+now check the original paired clocks around each operation. Late opens and
+iterators are closed; late writes leave partial objects without further writes.
+Even a late ENOENT is checked before a caller can treat it as an absent object.
+This cannot interrupt a blocked kernel call. Frozen `q2_prepare_build` internal
+multi-step I/O still needs integration, so `installation.deadline_guarding`
+remains a blocker. Directory samples remain observations, not a complete peak.
+
+### Exact validation and remaining work
+
+Dispatcher: **261898 / 262144 bytes**, SHA-256
+`ba990dbac0c1fb9f63f25a353686124aa4f8035535f9b2055e6931fa99041653`.
+Readable shared checks and data construction recovered space without dropping
+predicates or changing diagnostic codes. Independent reverse expansion verified
+the unchanged AST of 40 pure functions and the effect methods before the final
+late-exception fix; ordered source lists, budgets, intents and session values
+were also checked for equality. No compressed executable payload was added.
+
+Local final core result: **608 passed, 1 skipped, 1 deselected (12.98 s)**.
+The deselected unchanged writer test encounters the already-recorded cloud
+`os.getpid()` versus `/proc/self/stat` discrepancy; it remains enabled in CI.
+Installation binding/deadline regression files together: **28 passed**. Real
+held Python created and ran a real temporary venv; the second Python hop retained
+the venv identity. This executor has `CapEff=0`, so full setpriv credential
+transition was not validated here. Root-owned ELF tests explicitly skip on an
+ordinary CI account; two permission-independent rejection tests still run there.
+The exact published commit must additionally complete the ordinary full source
+and installed CI gates. These component results do not establish field PASS.
+
+`installation.program_execution_binding` is implemented. Remaining code gaps are
+current-guest admission, preparation's current-capacity collectors, complete
+shared-pool peak accounting, frozen installer internal deadlines and aggregate
+usage/peak evidence. Continue those core items before D4 release review. The
+oversized development ancestor is a reference, not a deployable replacement.
+
+The release allowlist stays empty. This followup issued no field package, marker,
+request, SSH command or H01/Q4/H11 run. Existing guest state was not re-observed.
+No reinstall, cleanup or automatic retry was performed. Namespace/watchdog and
+other side features remain paused; production E3 remains restricted.
+
 ## Current preparation adapter followup
 
 The current implementation D is `0c786ac2389291f488c60ccc32e7eb468d5e30d0`, tree

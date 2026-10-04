@@ -19,6 +19,8 @@ SPEC.loader.exec_module(d)
 
 def effects(tmp_path):
     value = d.FieldEffects({})
+    # Test this collector independently of the admission/executable binder.
+    value._installation_binding = lambda argv: (list(argv), {}, {}, [])
     value._candidate_root = str(tmp_path)
     now = value.now()
     value.context["guest_deadlines"] = dict(boot_id=now["boot_id"],
@@ -255,3 +257,114 @@ def test_h11_gateway_replay_or_unfinished_recovery_fails(tmp_path, monkeypatch, 
     gateway["raw"] = d.canonical(doc,newline=True)
     with pytest.raises(d.DispatchError, match="GATEWAY_BINDING"):
         effect._exec_h11_proof(case, prepared, plan, sources, verified, launch, report)
+
+
+@pytest.fixture
+def cancelled_transcript():
+    """Original Broker/SQLite/report code; manager, pipes and receipts are modeled."""
+    import io
+    import json
+    from unittest import mock
+    import test_e3_q4_cancel_case as original
+    fixed = d.CASES[1]
+    fixture = original.CancelCaseTests()
+    try:
+        with mock.patch.object(original.uuid, "uuid4", return_value=original.uuid.UUID(fixed["operation_id"])):
+            fixture.setUp()
+        fixture.trigger()
+        fixture.broker.tick()
+        fixture.values.update(ActiveState="inactive", SubState="dead", ExecMainCode="1", ExecMainStatus="0")
+        fixture.part["launch"].returncode = 0
+        fixture.part["launch"].stdout = io.BytesIO()
+        fixture.part["launch"].stderr = io.BytesIO()
+        fixture.part["quota_transport"].eof.update(("stdout", "stderr"))
+        with mock.patch.object(original.life, "parent", return_value=(fixture.pin, True)):
+            fixture.manager._inspect_unit(fixture.part)
+        report = fixture.case.poll()
+        assert original.case_module.validate_report(report) == []
+        assert report["status"] == "EXERCISED" and report["helper_exit_proven"]
+        assert report["ledger"]["reader_delivered"] is False
+        row = fixture.state.get("job", fixed["operation_id"])
+        record = row["record"]
+        names = d._phase_units(fixed["operation_id"], ["preflight"])[0]
+        record["handles"] = {"preflight": {"manager": {
+            "bootstrap": {"unit": names["bootstrap_unit"], "invocation_id": "b" * 32},
+            "helper": dict(report["helper"]["identity"]), "result_reader": None}}}
+        export = {"operation": {"id": fixed["operation_id"], "digest": row["digest"],
+                               "record_json": json.dumps(record)},
+                  "events": [{key: event[key] for key in ("seq", "kind", "data_json")}
+                             for event in fixture.state.events("job", fixed["operation_id"])]}
+        capture = {"complete": True, "returncode": 0, "eof": ["stdout", "stderr"]}
+        launch = {"schema": "local-hand-q4-cancel-launcher-result/v1", "status": "CANCEL_CASE_RECORDED",
+            "q3_accepted": False, "production_supported": False, "ordinary_phase_closed": False,
+            "independent_ordinary_cleanup_required": True, "case": report,
+            "resident_capture": capture, "cleanup_errors": []}
+        prefix = "cases/" + fixed["case_id"] + "/"
+        documents = {"launcher_output/result.json": launch, "launcher_output/capture.json": capture,
+            "launcher_output/phase.json": {"case": report}, "records/ledger-export.json": export,
+            "launcher_output/resident.stdout": {"case": report}}
+        sources = [{"path": prefix + suffix, "role": "test", "mode": 384,
+                    "raw": d.canonical(doc, newline=True)} for suffix, doc in documents.items()]
+        sources.append({"path": prefix + "launcher_output/resident.stderr", "role": "stderr", "mode": 384, "raw": b""})
+        prepared = {"sources": [{"path": prefix + "reservation/empty-ledger-gate.json",
+            "role": "empty-ledger-gate", "mode": 384, "raw": b"{}\n"}], "handoff": {"template": {"launcher": {
+            "resident": {"request": fixture.request, "principal": {"principal_id": fixture.owner.principal_id}}}}}}
+        spec = importlib.util.spec_from_file_location("_fixed_cancel_launcher",
+            Path(__file__).parent / "e3_host/q2_launcher.py")
+        launcher = importlib.util.module_from_spec(spec); spec.loader.exec_module(launcher)
+        modules = {"q2_launcher": launcher, "q4_cancel_case": original.case_module}
+        yield fixed, prepared, {"request": fixture.request}, sources, modules, report
+    finally:
+        fixture.doCleanups()
+
+
+def test_q4_original_cancel_report_needs_no_unstarted_reader(tmp_path, monkeypatch, cancelled_transcript):
+    value, _ = effects(tmp_path)
+    case, prepared, plan, sources, modules, report = cancelled_transcript
+    monkeypatch.setattr(value, "_candidate_modules", lambda names: modules)
+    result = value._exec_observations(case, prepared, plan, sources, {},
+        {"source_files": {"tests/e3_host/q2_resident.py": "a" * 64}})
+    units = result["observations"]["unit_identities"]
+    assert [row["stage"] for row in units] == ["bootstrap", "helper"]
+    assert units[1]["invocation_id"] == report["trigger"]["identity"]["invocation_id"]
+    d._validate_units(units, case)
+    assert result["observations"]["full_h07"] is False
+
+
+@pytest.mark.parametrize("mutation,reason", [("reader", "READER_DELIVERED"),
+    ("late_delivery", "READER_DELIVERED"), ("helper", "HELPER_IDENTITY")])
+def test_q4_ledger_cannot_invent_reader_or_replace_helper(tmp_path, monkeypatch, cancelled_transcript, mutation, reason):
+    import json
+    value, _ = effects(tmp_path)
+    case, prepared, plan, sources, modules, report = cancelled_transcript
+    monkeypatch.setattr(value, "_candidate_modules", lambda names: modules)
+    source = next(row for row in sources if row["path"].endswith("ledger-export.json"))
+    export = d.document(source["raw"], limit=d.MEMBER_LIMIT)
+    record = json.loads(export["operation"]["record_json"])
+    manager = record["handles"]["preflight"]["manager"]
+    if mutation == "reader":
+        manager["result_reader"] = {"unit": d._phase_units(case["operation_id"], ["preflight"])[0]["result_reader_unit"],
+                                    "invocation_id": "c" * 32}
+    elif mutation == "helper":
+        manager["helper"]["invocation_id"] = "c" * 32
+    else:
+        export["events"].append({"seq": max(row["seq"] for row in export["events"]) + 1,
+            "kind": "MANAGER_DELIVERY_INTENT", "data_json": json.dumps({
+                "delivery_intents": [report["target_execution_id"] + ":result_reader"]})})
+    export["operation"]["record_json"] = json.dumps(record)
+    source["raw"] = d.canonical(export, newline=True)
+    with pytest.raises(d.DispatchError, match=reason):
+        value._exec_observations(case, prepared, plan, sources, {},
+            {"source_files": {"tests/e3_host/q2_resident.py": "a" * 64}})
+
+
+@pytest.mark.parametrize("index", [0, 2])
+def test_non_cancel_unit_validation_still_requires_reader(index):
+    case = d.CASES[index]
+    units = [{"phase": phase, "stage": stage, "unit": names[stage + "_unit"], "invocation_id": "a" * 32}
+             for phase in case["phases"]
+             for names in d._phase_units(case["operation_id"], [phase])
+             for stage in ("bootstrap", "helper")]
+    units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
+    with pytest.raises(d.DispatchError, match="UNIT_IDENTITIES"):
+        d._validate_units(units, case)

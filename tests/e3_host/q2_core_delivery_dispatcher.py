@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import csv
 import copy
+from functools import partial
 import hashlib
 import importlib.util
 import io
@@ -44,32 +45,31 @@ def _require(condition, code):
 def _pairs(items):
     result = {}
     for key, value in items:
-        _require(type(key) is str and key not in result, "CORE_DISPATCH_JSON_DUPLICATE")
+        _json(type(key) is str and key not in result, "DUPLICATE")
         result[key] = value
     return result
 
 
 def _nonfinite(_value):
-    raise DispatchError("CORE_DISPATCH_JSON_NONFINITE")
+    raise _json.error("NONFINITE")
 
 
 def _shape(value, depth=0, count=None):
     count = [0] if count is None else count
     count[0] += 1
-    _require(depth <= 32 and count[0] <= 262144, "CORE_DISPATCH_JSON_COMPLEXITY")
-    _require(not isinstance(value, float), "CORE_DISPATCH_JSON_FLOAT")
+    _json(depth <= 32 and count[0] <= 262144, "COMPLEXITY")
+    _json(not isinstance(value, float), "FLOAT")
     if isinstance(value, dict):
-        _require(all(type(key) is str for key in value), "CORE_DISPATCH_JSON_KEY")
+        _json(all(type(key) is str for key in value), "KEY")
         for item in value.values():
             _shape(item, depth + 1, count)
     elif isinstance(value, list):
         for item in value:
             _shape(item, depth + 1, count)
     else:
-        _require(value is None or type(value) in (str, int, bool),
-                 "CORE_DISPATCH_JSON_VALUE")
+        _json(value is None or type(value) in (str, int, bool), "VALUE")
         if type(value) is int:
-            _require(-(2**63) <= value < 2**63, "CORE_DISPATCH_JSON_INTEGER")
+            _json(-(2**63) <= value < 2**63, "INTEGER")
     return value
 
 
@@ -79,30 +79,27 @@ def canonical(value, *, newline=False, limit=None):
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True, allow_nan=False).encode("ascii")
     except (TypeError, ValueError, UnicodeError) as error:
-        raise DispatchError("CORE_DISPATCH_JSON_ENCODE") from error
+        raise _json.error("ENCODE") from error
     if newline:
         raw += b"\n"
     if limit is not None:
-        _require(0 < len(raw) <= limit, "CORE_DISPATCH_JSON_LIMIT")
+        _json(0 < len(raw) <= limit, "LIMIT")
     return raw
 
 
 def document(raw, *, limit, newline=True):
-    _require(type(raw) is bytes and 0 < len(raw) <= limit,
-             "CORE_DISPATCH_JSON_LIMIT")
-    _require(raw.endswith(b"\n") == newline and
-             (not newline or not raw.endswith(b"\n\n")),
-             "CORE_DISPATCH_JSON_NEWLINE")
+    _json(type(raw) is bytes and 0 < len(raw) <= limit, "LIMIT")
+    _json(raw.endswith(b"\n") == newline and
+             (not newline or not raw.endswith(b"\n\n")), "NEWLINE")
     try:
         value = json.loads(raw.decode("ascii"), object_pairs_hook=_pairs,
                            parse_constant=_nonfinite)
     except DispatchError:
         raise
     except (UnicodeError, json.JSONDecodeError) as error:
-        raise DispatchError("CORE_DISPATCH_JSON_DECODE") from error
+        raise _json.error("DECODE") from error
     _shape(value)
-    _require(canonical(value, newline=newline) == raw,
-             "CORE_DISPATCH_JSON_CANONICAL")
+    _json(canonical(value, newline=newline) == raw, "CANONICAL")
     return value
 
 
@@ -140,9 +137,59 @@ def _path(value, code="CORE_DISPATCH_PATH"):
 
 
 def _sha(raw):
-    _require(type(raw) is bytes or (isinstance(raw, memoryview) and raw.readonly),
-             "CORE_DISPATCH_BYTES")
+    _check(type(raw) is bytes or (isinstance(raw, memoryview) and raw.readonly),
+             "BYTES")
     return hashlib.sha256(raw).hexdigest()
+
+
+class _Checks:
+    """Use a stable error-code prefix while retaining the primitive validators."""
+
+    def __init__(self, prefix):
+        self.prefix = prefix
+
+    def __call__(self, condition, code):
+        _require(condition, self.prefix + code)
+
+    def exact(self, value, fields, code):
+        return _exact(value, fields, self.prefix + code)
+
+    def integer(self, value, low=0, high=2**63 - 1, code="INTEGER"):
+        return _integer(value, low, high, self.prefix + code)
+
+    def digest(self, value, code="DIGEST"):
+        return _digest(value, self.prefix + code)
+
+    def commit(self, value, code="COMMIT"):
+        return _commit(value, self.prefix + code)
+
+    def path(self, value, code="PATH"):
+        return _path(value, self.prefix + code)
+
+    def absolute(self, value, code):
+        return _absolute_text(value, self.prefix + code)
+
+    def program(self, value, code):
+        return _program_identity(value, self.prefix + code)
+
+    def error(self, code):
+        return DispatchError(self.prefix + code)
+
+
+_admit = _Checks('CORE_DISPATCH_ADMISSION_')
+_plan = _Checks('CORE_DISPATCH_PLAN_')
+_h11 = _Checks('CORE_DISPATCH_H11_')
+_remote = _Checks('CORE_DISPATCH_REMOTE_')
+_phase_raw = _Checks('CORE_EFFECT_PHASE_')
+_package = _Checks('CORE_EFFECT_PACKAGE_')
+_wheel = _Checks('CORE_EFFECT_WHEEL_')
+_approved = _Checks('CORE_DISPATCH_APPROVED_')
+_json = _Checks('CORE_DISPATCH_JSON_')
+_envelope = _Checks('CORE_DISPATCH_PACKAGE_')
+_phase = _Checks('CORE_DISPATCH_PHASE_')
+_projection = _Checks('CORE_EFFECT_PROJECTION_')
+_check = _Checks('CORE_DISPATCH_')
+_effect = _Checks('CORE_EFFECT_')
 
 
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
@@ -255,7 +302,6 @@ UNIMPLEMENTED_FIELD_EFFECTS = (
     "admission.current_guest_collector",
     "installation.shared_pool_peak_accounting",
     "installation.deadline_guarding",
-    "installation.program_execution_binding",
     "preparation.current_capacity_collectors",
     "evidence.usage_and_peak_accounting",
 )
@@ -391,12 +437,11 @@ def _budget(phases):
         "phases": [{"phase": phase, "wall_seconds": 24, "cpu_seconds": 10,
                     "bootstrap_cpu_seconds": 3, "helper_cpu_seconds": 4,
                     "result_reader_cpu_seconds": 3} for phase in phases],
-        "controller": {"memory_bytes": 536870912, "tasks_max": 64,
-                       "cpu_quota_per_sec_usec": 1000000, "memory_swap_max": 0},
-        "ordinary": {"memory_bytes": 268435456, "tasks_max": 32,
-                     "cpu_quota_per_sec_usec": 1000000, "memory_swap_max": 0},
-        "retained_ordinary": {"memory_bytes": 268435456, "tasks_max": 64,
-                              "cpu_quota_per_sec_usec": 1000000, "memory_swap_max": 0},
+        **{role: {"memory_bytes": memory, "tasks_max": tasks,
+                  "cpu_quota_per_sec_usec": 1000000, "memory_swap_max": 0}
+           for role, memory, tasks in (("controller", 536870912, 64),
+                                      ("ordinary", 268435456, 32),
+                                      ("retained_ordinary", 268435456, 64))},
         "target": {"memory_bytes": 268435456, "tasks_max": 32,
                    "cpu_quota_per_sec_usec": 1000000, "runtime_seconds": 85,
                    "stop_seconds": 1, "storage_bytes": 1048576, "storage_inodes": 64},
@@ -411,14 +456,9 @@ def _budget(phases):
             "output_bytes": 16777216, "storage_bytes": 33554432,
             "storage_inodes": 1024, "manager_wire_bytes": 4194304,
             "receive_seconds": 1, "stop_seconds": 1,
-            "stages": [
-                {"stage": "collector", "memory_bytes": 67108864, "tasks_max": 8,
-                 "cpu_seconds": 2, "output_bytes": 32768, "runtime_seconds": 8},
-                {"stage": "admission", "memory_bytes": 67108864, "tasks_max": 8,
-                 "cpu_seconds": 2, "output_bytes": 32768, "runtime_seconds": 7},
-                {"stage": "query", "memory_bytes": 67108864, "tasks_max": 8,
-                 "cpu_seconds": 2, "output_bytes": 32768, "runtime_seconds": 5},
-            ],
+            "stages": [{"stage": stage, "memory_bytes": 67108864, "tasks_max": 8,
+                        "cpu_seconds": 2, "output_bytes": 32768, "runtime_seconds": seconds}
+                       for stage, seconds in (("collector", 8), ("admission", 7), ("query", 5))],
         },
         "durable": {"state_bytes": 8388608, "state_inodes": 1536,
                     "journal_bytes": 1048576, "journal_inodes": 128,
@@ -431,19 +471,20 @@ def _budget(phases):
 
 def _identity(case, *, full=False):
     seed = (SESSION + ":" + case["case_id"]).encode("ascii")
+    prefix = SESSION + "-" + case["case_id"]
     result = {
         "id": hashlib.sha256(seed + b":identity").hexdigest()[:32],
-        "authority_id": SESSION + "-" + case["case_id"] + "-authority",
+        "authority_id": prefix + "-authority",
         "node_id": SESSION + "-guest",
         "install_uuid": "2ba06c6f-d3e5-4e36-a41f-d5991cdd7232",
         "deployment_epoch": 1, "generation": 1,
         "operation_id": case["operation_id"],
-        "profile_ref": SESSION + "-" + case["case_id"] + "-profile",
+        "profile_ref": prefix + "-profile",
         "principal_id": "q2-synthetic-" + SESSION + "-" + case["case_id"],
         "epoch": hashlib.sha256(seed + b":epoch").hexdigest()[:32],
         "slot_generation": hashlib.sha256(seed + b":slot-generation").hexdigest()[:32],
         "session": hashlib.sha256(seed + b":session").hexdigest(),
-        "ledger_id": SESSION + "-" + case["case_id"] + "-ledger",
+        "ledger_id": prefix + "-ledger",
     }
     if full:
         result.update(authority_digest=None, manifest_digest=None, expires_at=None)
@@ -481,7 +522,7 @@ def _planned_roots(case):
 
 def build_intent(case):
     """Build A's deterministic pre-mutation intent."""
-    _require(case in CASES, "CORE_DISPATCH_CASE")
+    _check(case in CASES, "CASE")
     identity = _identity(case)
     directories = _planned_directories(case)
     roots = _planned_roots(case)
@@ -521,106 +562,115 @@ PLAN_FIELDS = (
 
 def validate_plan(case, intent, plan, deadlines):
     """Validate all D-owned/static plan bindings before owner or submit."""
-    _exact(plan, PLAN_FIELDS, "CORE_DISPATCH_PLAN_FIELDS")
+    _plan.exact(plan, PLAN_FIELDS, "FIELDS")
     expected = {key: intent[key] for key in
                 ("session_id", "index", "case_id", "kind", "predecessor",
                  "preparation_id", "operation_id", "budgets")}
-    _require(plan["schema"] == PLAN_SCHEMA and all(plan[key] == value for key, value in expected.items()),
-             "CORE_DISPATCH_PLAN_BINDING")
-    identity = _exact(plan["identity"], (
+    _plan(plan["schema"] == PLAN_SCHEMA and all(plan[key] == value for key, value in expected.items()),
+             "BINDING")
+    identity = _plan.exact(plan["identity"], (
         "id", "authority_id", "node_id", "install_uuid", "deployment_epoch", "generation",
         "operation_id", "profile_ref", "principal_id", "epoch", "authority_digest",
         "manifest_digest", "slot_generation", "expires_at", "session", "ledger_id",
-    ), "CORE_DISPATCH_PLAN_IDENTITY_FIELDS")
+    ), "IDENTITY_FIELDS")
     logical = intent["identity"]
-    _require(all(identity[key] == value for key, value in logical.items()),
-             "CORE_DISPATCH_PLAN_IDENTITY")
-    _digest(identity["authority_digest"], "CORE_DISPATCH_PLAN_AUTHORITY")
-    _digest(identity["manifest_digest"], "CORE_DISPATCH_PLAN_MANIFEST")
-    _integer(identity["expires_at"], 1, code="CORE_DISPATCH_PLAN_EXPIRY")
+    _plan(all(identity[key] == value for key, value in logical.items()),
+             "IDENTITY")
+    _plan.digest(identity["authority_digest"], "AUTHORITY")
+    _plan.digest(identity["manifest_digest"], "MANIFEST")
+    _plan.integer(identity["expires_at"], 1, code="EXPIRY")
     scopes = ["lh:submit", "lh:read", "lh:evidence"] + (["lh:cancel"] if case["index"] == 2 else [])
-    _require(plan["principal"] == {"principal_id": identity["principal_id"], "scopes": scopes},
-             "CORE_DISPATCH_PLAN_PRINCIPAL")
-    _require(plan["authority_path"].endswith("/authority/authority.json")
-             and plan["ledger_path"].endswith("/state/jobs.sqlite"),
-             "CORE_DISPATCH_PLAN_PATH")
-    request = _exact(plan["request"], (
+    _plan(plan["principal"] == {"principal_id": identity["principal_id"], "scopes": scopes},
+             "PRINCIPAL")
+    _plan(plan["authority_path"].endswith("/authority/authority.json")
+             and plan["ledger_path"].endswith("/state/jobs.sqlite"), "PATH")
+    request = _plan.exact(plan["request"], (
         "schema_version", "operation_id", "kind", "profile_ref", "expected", "inputs",
         "expires_at", "request_digest",
-    ), "CORE_DISPATCH_PLAN_REQUEST_FIELDS")
-    _require(request["schema_version"] == "lh-job-v1"
+    ), "REQUEST_FIELDS")
+    _plan(request["schema_version"] == "lh-job-v1"
              and request["operation_id"] == case["operation_id"]
              and request["kind"] == "host.inspect"
              and request["profile_ref"] == identity["profile_ref"]
              and request["inputs"] == {}
-             and request["expires_at"] == identity["expires_at"],
-             "CORE_DISPATCH_PLAN_REQUEST")
-    _digest(request["request_digest"], "CORE_DISPATCH_PLAN_REQUEST")
-    _exact(request["expected"], (
+             and request["expires_at"] == identity["expires_at"], "REQUEST")
+    _plan.digest(request["request_digest"], "REQUEST")
+    _plan.exact(request["expected"], (
         "node_id", "install_uuid", "deployment_epoch", "profile_digest", "policy_digest",
         "registry_digest",
-    ), "CORE_DISPATCH_PLAN_EXPECTED")
+    ), "EXPECTED")
     for key in ("profile_digest", "policy_digest", "registry_digest"):
-        _digest(request["expected"][key], "CORE_DISPATCH_PLAN_EXPECTED")
-    _require(request["expected"]["node_id"] == identity["node_id"]
+        _plan.digest(request["expected"][key], "EXPECTED")
+    _plan(request["expected"]["node_id"] == identity["node_id"]
              and request["expected"]["install_uuid"] == identity["install_uuid"]
-             and request["expected"]["deployment_epoch"] == 1,
-             "CORE_DISPATCH_PLAN_EXPECTED")
-    _require(type(plan["roots"]) is list and len(plan["roots"]) == 7,
-             "CORE_DISPATCH_PLAN_ROOTS")
+             and request["expected"]["deployment_epoch"] == 1, "EXPECTED")
+    _plan(type(plan["roots"]) is list and len(plan["roots"]) == 7, "ROOTS")
     for wrapper, planned in zip(plan["roots"], intent["planned_roots"], strict=True):
-        _exact(wrapper, ("ref", "slot", "planned", "observed"),
-               "CORE_DISPATCH_PLAN_ROOT_FIELDS")
-        _require(wrapper["ref"] == planned["ref"] and wrapper["slot"] == planned["slot"]
-                 and wrapper["planned"] == planned, "CORE_DISPATCH_PLAN_ROOT")
-        observed = _exact(wrapper["observed"], (
+        _plan.exact(wrapper, ("ref", "slot", "planned", "observed"), "ROOT_FIELDS")
+        _plan(wrapper["ref"] == planned["ref"] and wrapper["slot"] == planned["slot"]
+                 and wrapper["planned"] == planned, "ROOT")
+        observed = _plan.exact(wrapper["observed"], (
             "path", "role", "device", "inode", "uid", "gid", "mode", "filesystem",
             "filesystem_uuid", "project_id", "xflags", "hard_bytes", "accounting",
             "enforcement", "identity_unchanged", "hard_inodes",
-        ), "CORE_DISPATCH_PLAN_OBSERVED_FIELDS")
-        _require(observed["path"] == planned["path"] and observed["role"] == planned["role"]
+        ), "OBSERVED_FIELDS")
+        _plan(observed["path"] == planned["path"] and observed["role"] == planned["role"]
                  and observed["project_id"] == planned["project_id"]
                  and observed["hard_bytes"] == planned["hard_bytes"]
                  and observed["hard_inodes"] == planned["inode_hard_limit"]
                  and observed["mode"] == 16832 and observed["accounting"] is True
                  and observed["enforcement"] is True and observed["identity_unchanged"] is True,
-                 "CORE_DISPATCH_PLAN_OBSERVED")
+                 "OBSERVED")
         for key in ("device", "inode", "uid", "gid", "project_id", "xflags"):
-            _integer(observed[key], 1 if key in ("inode", "project_id") else 0,
-                     code="CORE_DISPATCH_PLAN_OBSERVED")
-    _exact(plan["controllers"], (
+            _plan.integer(observed[key], 1 if key in ("inode", "project_id") else 0,
+                     code="OBSERVED")
+    _plan.exact(plan["controllers"], (
         "target", "supervisor", "controller_parent", "query_parent", "management_parent",
         "supervisor_parent", "target_storage_bytes", "target_storage_inodes",
         "supervisor_storage_bytes", "supervisor_storage_inodes",
-    ), "CORE_DISPATCH_PLAN_CONTROLLERS")
-    _require(plan["controllers"]["target_storage_bytes"] == 1048576
+    ), "CONTROLLERS")
+    _plan(plan["controllers"]["target_storage_bytes"] == 1048576
              and plan["controllers"]["target_storage_inodes"] == 64
              and plan["controllers"]["supervisor_storage_bytes"] == 8388608
              and plan["controllers"]["supervisor_storage_inodes"] == 64,
-             "CORE_DISPATCH_PLAN_CONTROLLER_BUDGET")
+             "CONTROLLER_BUDGET")
     expected_units = _phase_units(case["operation_id"], case["phases"])
-    _require(plan["phases"] == expected_units, "CORE_DISPATCH_PLAN_PHASES")
+    _plan(plan["phases"] == expected_units, "PHASES")
     if case["index"] == 2:
-        _require(plan["system_geometry"] is None, "CORE_DISPATCH_PLAN_GEOMETRY")
+        _plan(plan["system_geometry"] is None, "GEOMETRY")
     else:
-        geometry = _exact(plan["system_geometry"], (
+        geometry = _plan.exact(plan["system_geometry"], (
             "schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent",
-        ), "CORE_DISPATCH_PLAN_GEOMETRY")
-        _require(geometry["schema"] == "local-hand-q2-system-geometry/v1",
-                 "CORE_DISPATCH_PLAN_GEOMETRY")
-    expectation = _exact(plan["empty_ledger_expectation"], (
+        ), "GEOMETRY")
+        _plan(geometry["schema"] == "local-hand-q2-system-geometry/v1",
+                 "GEOMETRY")
+    expectation = _plan.exact(plan["empty_ledger_expectation"], (
         "ledger_path", "authority_id", "ledger_id", "expected_operations",
         "expected_events", "expected_leases", "expected_sidecars",
-    ), "CORE_DISPATCH_PLAN_EMPTY")
-    _require(expectation == {"ledger_path": plan["ledger_path"],
+    ), "EMPTY")
+    _plan(expectation == {"ledger_path": plan["ledger_path"],
                              "authority_id": identity["authority_id"],
                              "ledger_id": identity["ledger_id"],
                              "expected_operations": 0, "expected_events": 0,
                              "expected_leases": 0, "expected_sidecars": []},
-             "CORE_DISPATCH_PLAN_EMPTY")
-    _require(plan["deadlines"] == deadlines, "CORE_DISPATCH_PLAN_DEADLINE")
+             "EMPTY")
+    _plan(plan["deadlines"] == deadlines, "DEADLINE")
     return plan
 
+
+_RESIDENT_SOURCES = (
+    ("launcher_output/result.json", "launcher-result", 384),
+    ("launcher_output/resident.stdout", "stdout", 384),
+    ("launcher_output/resident.stderr", "stderr", 384),
+    ("launcher_output/capture.json", "wait", 384),
+)
+
+_CONTROL_SOURCES = (
+    ("supervisor_output/stop.json", "stop", 384),
+    ("owner_output/stop.json", "stop", 384),
+    ("supervisor_output/seal.json", "control-seal", 384),
+    ("owner_output/seal.json", "control-seal", 384),
+)
 
 COMMON = (
     ("intent.json", "intent", 384),
@@ -635,9 +685,9 @@ COMMON = (
 
 
 def _h01_special(seal_id):
-    _require(type(seal_id) is str and re.fullmatch(
+    _check(type(seal_id) is str and re.fullmatch(
         r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-        seal_id) is not None, "CORE_DISPATCH_H01_SEAL_ID")
+        seal_id) is not None, "H01_SEAL_ID")
     rows = []
     for phase in ("preflight", "business", "evidence"):
         rows.extend(((phase + "/observer.json", "observer-config", 384),
@@ -646,19 +696,13 @@ def _h01_special(seal_id):
     rows.extend((
         ("launcher_output/reservation.json", "launcher-reservation", 384),
         ("launcher_output/gateway.json", "gateway", 384),
-        ("launcher_output/result.json", "launcher-result", 384),
-        ("launcher_output/resident.stdout", "stdout", 384),
-        ("launcher_output/resident.stderr", "stderr", 384),
-        ("launcher_output/capture.json", "wait", 384),
+        *_RESIDENT_SOURCES,
         ("records/ledger-export.json", "ledger", 384),
         ("business/result-03c94c57c840717302854a3f.json", "result", 384),
         ("business-evidence/" + seal_id + "/evidence.zip", "business-evidence-archive", 384),
         ("business-evidence/" + seal_id + "/manifest.json", "business-evidence-manifest", 384),
         ("business-evidence/" + seal_id + "/seal.json", "business-evidence-seal", 384),
-        ("supervisor_output/stop.json", "stop", 384),
-        ("owner_output/stop.json", "stop", 384),
-        ("supervisor_output/seal.json", "control-seal", 384),
-        ("owner_output/seal.json", "control-seal", 384),
+        *_CONTROL_SOURCES,
     ))
     return tuple(rows)
 
@@ -668,15 +712,9 @@ Q4_SPECIAL = (
     ("reservation/phase-preflight-receipt.json", "phase-receipt", 384),
     ("launcher_output/reservation.json", "launcher-reservation", 384),
     ("launcher_output/phase.json", "phase-result", 384),
-    ("launcher_output/result.json", "launcher-result", 384),
-    ("launcher_output/resident.stdout", "stdout", 384),
-    ("launcher_output/resident.stderr", "stderr", 384),
-    ("launcher_output/capture.json", "wait", 384),
+    *_RESIDENT_SOURCES,
     ("records/ledger-export.json", "ledger", 384),
-    ("supervisor_output/stop.json", "stop", 384),
-    ("owner_output/stop.json", "stop", 384),
-    ("supervisor_output/seal.json", "control-seal", 384),
-    ("owner_output/seal.json", "control-seal", 384),
+    *_CONTROL_SOURCES,
 )
 H11_SPECIAL = (
     ("preflight/observer.json", "observer-config", 384),
@@ -688,15 +726,9 @@ H11_SPECIAL = (
     ("launcher_output/origin-resident.stderr", "stderr", 384),
     ("launcher_output/origin-capture.json", "origin-capture", 384),
     ("launcher_output/gateway.json", "gateway", 384),
-    ("launcher_output/result.json", "launcher-result", 384),
-    ("launcher_output/resident.stdout", "stdout", 384),
-    ("launcher_output/resident.stderr", "stderr", 384),
-    ("launcher_output/capture.json", "wait", 384),
+    *_RESIDENT_SOURCES,
     ("reservation/h11-recovery-proof.json", "recovery-proof", 384),
-    ("supervisor_output/stop.json", "stop", 384),
-    ("owner_output/stop.json", "stop", 384),
-    ("supervisor_output/seal.json", "control-seal", 384),
-    ("owner_output/seal.json", "control-seal", 384),
+    *_CONTROL_SOURCES,
 )
 
 
@@ -734,14 +766,13 @@ SOURCE_FIELDS = ("path", "role", "mode", "raw")
 
 
 def _source(value, *, case_id=None):
-    _exact(value, SOURCE_FIELDS, "CORE_DISPATCH_SOURCE_FIELDS")
-    _path(value["path"], "CORE_DISPATCH_SOURCE_PATH")
-    _require(type(value["role"]) is str and value["role"].isascii()
+    _check.exact(value, SOURCE_FIELDS, "SOURCE_FIELDS")
+    _check.path(value["path"], "SOURCE_PATH")
+    _check(type(value["role"]) is str and value["role"].isascii()
              and value["mode"] in (384, 420) and type(value["raw"]) is bytes
-             and len(value["raw"]) <= MEMBER_LIMIT, "CORE_DISPATCH_SOURCE")
+             and len(value["raw"]) <= MEMBER_LIMIT, "SOURCE")
     if case_id is not None:
-        _require(value["path"].startswith("cases/" + case_id + "/"),
-                 "CORE_DISPATCH_SOURCE_CASE")
+        _check(value["path"].startswith("cases/" + case_id + "/"), "SOURCE_CASE")
     return value
 
 
@@ -763,56 +794,55 @@ def _member(source, case_id):
 
 def _validate_source_set(case, sources, *, seal_id):
     expected = required_paths(case, seal_id=seal_id)
-    _require(len(expected) == (32 if case["index"] == 1 else 21 if case["index"] == 2 else 26),
-             "CORE_DISPATCH_INTERNAL_COUNT")
+    _check(len(expected) == (32 if case["index"] == 1 else 21 if case["index"] == 2 else 26),
+             "INTERNAL_COUNT")
     actual = []
     seen = set()
     total = 0
     for source in sources:
         _source(source, case_id=case["case_id"])
         key = source["path"]
-        _require(key not in seen, "CORE_DISPATCH_SOURCE_DUPLICATE")
+        _check(key not in seen, "SOURCE_DUPLICATE")
         seen.add(key); total += len(source["raw"])
         actual.append((key, source["role"], source["mode"]))
-    _require(set(actual) == set(expected) and len(actual) == len(expected),
-             "CORE_DISPATCH_REQUIRED_SET")
-    _require(total <= CASE_BYTES_LIMIT, "CORE_DISPATCH_CASE_BYTES")
+    _check(set(actual) == set(expected) and len(actual) == len(expected),
+             "REQUIRED_SET")
+    _check(total <= CASE_BYTES_LIMIT, "CASE_BYTES")
     if case["index"] == 3:
         forbidden = ("business/result-", "business-evidence/", "ledger-export",
                      "/ledger", "result-receipt", "ledger-identity", "result-identity")
         for source in sources:
             suffix = source["path"].split("/", 2)[-1]
-            _require(not any(token in suffix for token in forbidden),
-                     "CORE_DISPATCH_H11_FORBIDDEN_SOURCE")
+            _h11(not any(token in suffix for token in forbidden),
+                     "FORBIDDEN_SOURCE")
     return sources
 
 
 def _parse_source(sources, path, *, maximum=MEMBER_LIMIT, newline=True):
     source = next((item for item in sources if item["path"] == path), None)
-    _require(source is not None, "CORE_DISPATCH_SOURCE_MISSING")
+    _check(source is not None, "SOURCE_MISSING")
     return document(source["raw"], limit=maximum, newline=newline)
 
 
 def _phase_receipt(case, phase, facts, sources):
-    _exact(facts, ("quota_request_id", "quota_request_sha256", "query_unit", "listener_unit",
+    _phase.exact(facts, ("quota_request_id", "quota_request_sha256", "query_unit", "listener_unit",
                    "admission_unit", "budget_deadline_ns", "phase_deadline_ns",
                    "stage_deadline_ns", "controller_deadline_ns"),
-           "CORE_DISPATCH_PHASE_FACT_FIELDS")
-    digest = _digest(facts["quota_request_sha256"], "CORE_DISPATCH_PHASE_DIGEST")
-    _require(facts["listener_unit"] == "lhqoc-" + digest + ".service"
+           "FACT_FIELDS")
+    digest = _phase.digest(facts["quota_request_sha256"], "DIGEST")
+    _phase(facts["listener_unit"] == "lhqoc-" + digest + ".service"
              and facts["admission_unit"] == "lhqoa-" + digest + ".service"
-             and facts["query_unit"] == "lhqo-" + digest + ".service",
-             "CORE_DISPATCH_PHASE_UNITS")
+             and facts["query_unit"] == "lhqo-" + digest + ".service", "UNITS")
     for key in ("budget_deadline_ns", "phase_deadline_ns", "stage_deadline_ns",
                 "controller_deadline_ns"):
-        _integer(facts[key], 1, code="CORE_DISPATCH_PHASE_DEADLINE")
-    _require(facts["stage_deadline_ns"] < facts["phase_deadline_ns"]
-             <= facts["budget_deadline_ns"], "CORE_DISPATCH_PHASE_DEADLINE")
+        _phase.integer(facts[key], 1, code="DEADLINE")
+    _phase(facts["stage_deadline_ns"] < facts["phase_deadline_ns"]
+             <= facts["budget_deadline_ns"], "DEADLINE")
     expected = phase_source_specs(case, phase)
     refs = []
     for path, role in expected:
         source = next((item for item in sources if item["path"] == path), None)
-        _require(source is not None and source["role"] == role, "CORE_DISPATCH_PHASE_SOURCES")
+        _phase(source is not None and source["role"] == role, "SOURCES")
         refs.append(_reference(source, sealed=None))
     refs.sort(key=lambda row: (row["role"].encode("ascii"), row["path"].encode("ascii")))
     return {
@@ -848,26 +878,26 @@ H11_OBSERVATIONS = (
 
 
 def _validate_gate(value, source):
-    _exact(value, ("path", "bytes", "sha256"), "CORE_DISPATCH_GATE_REF")
-    _require(value == _plain_reference(source), "CORE_DISPATCH_GATE_REF")
+    _check.exact(value, ("path", "bytes", "sha256"), "GATE_REF")
+    _check(value == _plain_reference(source), "GATE_REF")
 
 
 def _validate_resident_gate(value, case):
-    _exact(value, ("passed", "candidate_commit", "resident_source_sha256",
-                   "accepted_operation_id", "accepted_event_seq"),
-           "CORE_DISPATCH_RESIDENT_GATE")
-    _require(value["passed"] is True and value["candidate_commit"] == CANDIDATE["commit"]
+    _check.exact(value, ("passed", "candidate_commit", "resident_source_sha256",
+                   "accepted_operation_id", "accepted_event_seq"), "RESIDENT_GATE")
+    _check(value["passed"] is True and value["candidate_commit"] == CANDIDATE["commit"]
              and value["accepted_operation_id"] == case["operation_id"],
-             "CORE_DISPATCH_RESIDENT_GATE")
-    _digest(value["resident_source_sha256"], "CORE_DISPATCH_RESIDENT_GATE")
-    _integer(value["accepted_event_seq"], 1, code="CORE_DISPATCH_RESIDENT_GATE")
+             "RESIDENT_GATE")
+    _check.digest(value["resident_source_sha256"], "RESIDENT_GATE")
+    _check.integer(value["accepted_event_seq"], 1, code="RESIDENT_GATE")
 
 
 def _validate_units(value, case):
     phases = case["phases"]
     _require(type(value) is list and value, "CORE_DISPATCH_UNIT_IDENTITIES")
+    stages = ("bootstrap", "helper") if case["index"] == 2 else ("bootstrap", "helper", "result_reader")
     expected_stages = {(phase, stage) for phase in phases
-                       for stage in ("bootstrap", "helper", "result_reader")}
+                       for stage in stages}
     actual = set()
     last = None
     for row in value:
@@ -889,17 +919,16 @@ def _validate_units(value, case):
 
 
 def _validate_stop(stop, owner_deadline):
-    _exact(stop, ("requested", "acknowledged", "tree_exited", "writers_stopped", "deadline_ns"),
-           "CORE_DISPATCH_STOP_FIELDS")
-    _require(stop == {"requested": True, "acknowledged": True, "tree_exited": True,
-                      "writers_stopped": True, "deadline_ns": owner_deadline},
-             "CORE_DISPATCH_STOP")
+    _check.exact(stop, ("requested", "acknowledged", "tree_exited", "writers_stopped", "deadline_ns"),
+           "STOP_FIELDS")
+    _check(stop == {"requested": True, "acknowledged": True, "tree_exited": True,
+                      "writers_stopped": True, "deadline_ns": owner_deadline}, "STOP")
 
 
 def _validate_verdict(case, observations, stop, sources, proof, owner_deadline):
     expected_fields = H01_OBSERVATIONS if case["index"] == 1 else (
         Q4_OBSERVATIONS if case["index"] == 2 else H11_OBSERVATIONS)
-    _exact(observations, expected_fields, "CORE_DISPATCH_OBSERVATION_FIELDS")
+    _check.exact(observations, expected_fields, "OBSERVATION_FIELDS")
     gate_path = "cases/" + case["case_id"] + "/reservation/empty-ledger-gate.json"
     gate_source = next(item for item in sources if item["path"] == gate_path)
     _validate_gate(observations["empty_ledger_gate"], gate_source)
@@ -910,23 +939,22 @@ def _validate_verdict(case, observations, stop, sources, proof, owner_deadline):
     if case["index"] == 1:
         for key in expected_fields:
             if key not in ("empty_ledger_gate", "resident_empty_gate", "unit_identities"):
-                _require(observations[key] is True, "CORE_DISPATCH_H01_TRUTH")
+                _check(observations[key] is True, "H01_TRUTH")
     elif case["index"] == 2:
         false = {"chain_closed", "ordinary_phase_closed", "full_h07"}
         for key in expected_fields:
             if key in ("empty_ledger_gate", "resident_empty_gate", "unit_identities"):
                 continue
-            _require(observations[key] is (False if key in false else True),
-                     "CORE_DISPATCH_Q4_TRUTH")
+            _check(observations[key] is (False if key in false else True),
+                     "Q4_TRUTH")
     else:
         _validate_h11_proof(proof, case, sources, owner_deadline)
         for key in ("recovery_plan", "recovery_summary", "launcher_result", "gateway_snapshot",
                     "origin_capture", "ledger_identity", "result_identity"):
-            _require(observations[key] == proof[key], "CORE_DISPATCH_H11_PROJECTION")
+            _h11(observations[key] == proof[key], "PROJECTION")
         proof_source = next(item for item in sources if item["role"] == "recovery-proof")
-        _require(observations["recovery_proof"] == _plain_reference(proof_source),
-                 "CORE_DISPATCH_H11_PROJECTION")
-        _require(observations["outcome"] == "UNKNOWN", "CORE_DISPATCH_H11_TRUTH")
+        _h11(observations["recovery_proof"] == _plain_reference(proof_source), "PROJECTION")
+        _h11(observations["outcome"] == "UNKNOWN", "TRUTH")
         false = {"collectors_stopped", "effects_checked", "result_reread", "start_replayed",
                  "business_evidence_sealed"}
         objects = {"empty_ledger_gate", "resident_empty_gate", "unit_identities", "recovery_plan",
@@ -934,8 +962,7 @@ def _validate_verdict(case, observations, stop, sources, proof, owner_deadline):
                    "ledger_identity", "recovery_proof", "result_identity", "outcome"}
         for key in expected_fields:
             if key not in objects:
-                _require(observations[key] is (False if key in false else True),
-                         "CORE_DISPATCH_H11_TRUTH")
+                _h11(observations[key] is (False if key in false else True), "TRUTH")
     artifacts = [_reference(source, sealed=True) for source in sources
                  if source["role"] != "verdict"]
     artifacts.sort(key=lambda row: row["path"].encode("ascii"))
@@ -945,34 +972,31 @@ def _validate_verdict(case, observations, stop, sources, proof, owner_deadline):
 
 
 def _validate_h11_proof(proof, case, sources, owner_deadline):
-    _exact(proof, ("schema", "session_id", "index", "case_id", "candidate",
+    _h11.exact(proof, ("schema", "session_id", "index", "case_id", "candidate",
                    "ledger_identity", "recovery_plan", "recovery_summary", "launcher_result",
                    "gateway_snapshot", "origin_capture", "control_seal", "result_identity",
-                   "assertions"), "CORE_DISPATCH_H11_PROOF_FIELDS")
-    _require(proof["schema"] == PROOF_SCHEMA and proof["session_id"] == SESSION
-             and proof["index"] == 3 and proof["case_id"] == case["case_id"],
-             "CORE_DISPATCH_H11_PROOF_BINDING")
-    candidate = _exact(proof["candidate"], (
+                   "assertions"), "PROOF_FIELDS")
+    _h11(proof["schema"] == PROOF_SCHEMA and proof["session_id"] == SESSION
+             and proof["index"] == 3 and proof["case_id"] == case["case_id"], "PROOF_BINDING")
+    candidate = _h11.exact(proof["candidate"], (
         "commit", "tree", "h11_source_path", "h11_source_sha256", "resident_source_path",
         "resident_source_sha256", "launcher_source_path", "launcher_source_sha256",
-    ), "CORE_DISPATCH_H11_CANDIDATE")
-    _require(candidate["commit"] == CANDIDATE["commit"] and candidate["tree"] == CANDIDATE["tree"],
-             "CORE_DISPATCH_H11_CANDIDATE")
+    ), "CANDIDATE")
+    _h11(candidate["commit"] == CANDIDATE["commit"] and candidate["tree"] == CANDIDATE["tree"],
+             "CANDIDATE")
     for key in ("h11_source_sha256", "resident_source_sha256", "launcher_source_sha256"):
-        _digest(candidate[key], "CORE_DISPATCH_H11_CANDIDATE")
-    ledger = _exact(proof["ledger_identity"], ("path", "dev", "ino", "unchanged"),
-                    "CORE_DISPATCH_H11_LEDGER")
-    _require(ledger["path"].endswith("/state/jobs.sqlite") and ledger["unchanged"] is True,
-             "CORE_DISPATCH_H11_LEDGER")
-    _integer(ledger["dev"], 0, code="CORE_DISPATCH_H11_LEDGER")
-    _integer(ledger["ino"], 1, code="CORE_DISPATCH_H11_LEDGER")
-    result = _exact(proof["result_identity"], (
+        _h11.digest(candidate[key], "CANDIDATE")
+    ledger = _h11.exact(proof["ledger_identity"], ("path", "dev", "ino", "unchanged"), "LEDGER")
+    _h11(ledger["path"].endswith("/state/jobs.sqlite") and ledger["unchanged"] is True, "LEDGER")
+    _h11.integer(ledger["dev"], 0, code="LEDGER")
+    _h11.integer(ledger["ino"], 1, code="LEDGER")
+    result = _h11.exact(proof["result_identity"], (
         "expected_path", "expected_basename", "stat_performed", "opened", "hashed",
-    ), "CORE_DISPATCH_H11_RESULT_IDENTITY")
-    _require(result["expected_basename"] == "result-f7b176ecb6b8081fac3a7a47.json"
+    ), "RESULT_IDENTITY")
+    _h11(result["expected_basename"] == "result-f7b176ecb6b8081fac3a7a47.json"
              and result["expected_path"].endswith("/" + result["expected_basename"])
              and result["stat_performed"] is False and result["opened"] is False
-             and result["hashed"] is False, "CORE_DISPATCH_H11_RESULT_IDENTITY")
+             and result["hashed"] is False, "RESULT_IDENTITY")
     refs = {
         "recovery_plan": ("launcher_declarations/recovery-resident.json", "recovery-plan"),
         "recovery_summary": ("launcher_output/recovery.json", "recovery-summary"),
@@ -984,37 +1008,35 @@ def _validate_h11_proof(proof, case, sources, owner_deadline):
     prefix = "cases/" + case["case_id"] + "/"
     for key, (suffix, role) in refs.items():
         source = next((item for item in sources if item["path"] == prefix + suffix), None)
-        _require(source is not None and source["role"] == role, "CORE_DISPATCH_H11_REFERENCE")
+        _h11(source is not None and source["role"] == role, "REFERENCE")
         fields = ("path", "bytes", "sha256", "embedded_plan_sha256") if key == "recovery_plan" \
             else ("path", "bytes", "sha256")
-        _exact(proof[key], fields, "CORE_DISPATCH_H11_REFERENCE")
+        _h11.exact(proof[key], fields, "REFERENCE")
         basic = _plain_reference(source)
-        _require(all(proof[key][name] == value for name, value in basic.items()),
-                 "CORE_DISPATCH_H11_REFERENCE")
+        _h11(all(proof[key][name] == value for name, value in basic.items()), "REFERENCE")
         if key == "recovery_plan":
-            _digest(proof[key]["embedded_plan_sha256"], "CORE_DISPATCH_H11_REFERENCE")
-    assertions = _exact(proof["assertions"], (
+            _h11.digest(proof[key]["embedded_plan_sha256"], "REFERENCE")
+    assertions = _h11.exact(proof["assertions"], (
         "same_operation", "same_request_digest", "original_handle_admitted",
         "same_original_stage_units", "same_grant_and_deadlines", "leases_retained",
         "delivery_intents_unchanged", "recovery_launch_forbidden", "gateway_parts_unchanged",
         "recovery_barrier_count", "quota_exit_pending_count", "start_replayed", "result_reread",
         "deadline_extended", "future_start_blocked", "tree_exited", "writers_stopped",
         "collectors_stopped", "effects_checked", "outcome", "business_evidence_sealed",
-    ), "CORE_DISPATCH_H11_ASSERTIONS")
+    ), "ASSERTIONS")
     for key in ("same_operation", "same_request_digest", "original_handle_admitted",
                 "same_original_stage_units", "same_grant_and_deadlines", "leases_retained",
                 "delivery_intents_unchanged", "recovery_launch_forbidden",
                 "gateway_parts_unchanged", "future_start_blocked", "tree_exited", "writers_stopped"):
-        _require(assertions[key] is True, "CORE_DISPATCH_H11_ASSERTIONS")
+        _h11(assertions[key] is True, "ASSERTIONS")
     for key in ("start_replayed", "result_reread", "deadline_extended", "collectors_stopped",
                 "effects_checked", "business_evidence_sealed"):
-        _require(assertions[key] is False, "CORE_DISPATCH_H11_ASSERTIONS")
-    _require(assertions["recovery_barrier_count"] == assertions["quota_exit_pending_count"] == 1
-             and assertions["outcome"] == "UNKNOWN", "CORE_DISPATCH_H11_ASSERTIONS")
+        _h11(assertions[key] is False, "ASSERTIONS")
+    _h11(assertions["recovery_barrier_count"] == assertions["quota_exit_pending_count"] == 1
+             and assertions["outcome"] == "UNKNOWN", "ASSERTIONS")
     reservation = _parse_source(sources, prefix + "launcher_output/reservation.json")
-    _require(type(reservation.get("controller")) is dict
-             and reservation["controller"].get("deadline_ns") == owner_deadline,
-             "CORE_DISPATCH_H11_DEADLINE")
+    _h11(type(reservation.get("controller")) is dict
+             and reservation["controller"].get("deadline_ns") == owner_deadline, "DEADLINE")
     return proof
 
 
@@ -1072,11 +1094,11 @@ def _approved_require(ok, code):
 
 
 def _approved_exact(value, fields):
-    return _exact(value, fields, "CORE_DISPATCH_APPROVED_FIELDS")
+    return _approved.exact(value, fields, "FIELDS")
 
 
 def _approved_absolute(value):
-    return _absolute_text(value, "CORE_DISPATCH_APPROVED_PATH")
+    return _approved.absolute(value, "PATH")
 
 
 def _approved_hash(value):
@@ -1273,7 +1295,7 @@ def _approved_validate_policy(value):
         target = normalized["authorized_keys"]["predicate"]["parameters"]["approved_key"]
         target["key_base64"] = target["source_sha256"] = ""
     except (KeyError, TypeError) as error:
-        raise DispatchError("CORE_DISPATCH_APPROVED_POLICY_KEY") from error
+        raise _approved.error("POLICY_KEY") from error
     _approved_vector(normalized, (6574, "b70e64bb418db787b2e7756f70d5e605329a00008a970aaf9939a32104e8506a"),
             "POLICY_PREDICATE_TEMPLATE")
 
@@ -1288,10 +1310,9 @@ def _approved_key(raw):
         decoded = base64.b64decode(fields[1], validate=True)
         _approved_require(base64.b64encode(decoded).decode("ascii") == fields[1]
                  and decoded == struct.pack(">I", 11) + b"ssh-ed25519"
-                 + struct.pack(">I", 32) + decoded[-32:] and len(decoded) == 51,
-                 "KEY_ENCODING")
+                 + struct.pack(">I", 32) + decoded[-32:] and len(decoded) == 51, "KEY_ENCODING")
     except (UnicodeError, ValueError, IndexError) as error:
-        raise DispatchError("CORE_DISPATCH_APPROVED_POLICY_KEY") from error
+        raise _approved.error("POLICY_KEY") from error
     return dict(type="ssh-ed25519", key_base64=fields[1], source_sha256=APPROVED_POLICY_SOURCE_PINS["identity_public"])
 
 
@@ -1311,108 +1332,97 @@ def _validate_approved_components(value):
     except DispatchError:
         raise
     except (KeyError, TypeError, AttributeError, IndexError, OverflowError, ValueError) as error:
-        raise DispatchError("CORE_DISPATCH_APPROVED_INVALID_SHAPE") from error
+        raise _approved.error("INVALID_SHAPE") from error
 
 
 def _amendment(value, implementation):
-    _exact(value, ("baseline", "owner_decision", "closure", "implementation"),
-           "CORE_DISPATCH_AMENDMENT_FIELDS")
-    _require(value["baseline"] == AMENDMENT_BASELINE
+    _check.exact(value, ("baseline", "owner_decision", "closure", "implementation"),
+           "AMENDMENT_FIELDS")
+    _check(value["baseline"] == AMENDMENT_BASELINE
              and value["owner_decision"] == AMENDMENT_OWNER_DECISION
              and value["closure"] == AMENDMENT_CLOSURE
-             and value["implementation"] == implementation,
-             "CORE_DISPATCH_AMENDMENT_AUTHORITY")
-    _exact(implementation, ("commit", "tree"), "CORE_DISPATCH_IMPLEMENTATION")
+             and value["implementation"] == implementation, "AMENDMENT_AUTHORITY")
+    _check.exact(implementation, ("commit", "tree"), "IMPLEMENTATION")
     for item in implementation.values():
-        _commit(item, "CORE_DISPATCH_IMPLEMENTATION")
-    _require(implementation["commit"] not in (
+        _check.commit(item, "IMPLEMENTATION")
+    _check(implementation["commit"] not in (
         CLOSURE["commit"], AMENDMENT_BASELINE["commit"], AMENDMENT_CLOSURE["commit"],
-        "520f77f578b90d31870517e33e29bee42918f3c0"), "CORE_DISPATCH_IMPLEMENTATION")
+        "520f77f578b90d31870517e33e29bee42918f3c0"), "IMPLEMENTATION")
     return value
 
 
 def _remote_management(value):
-    _exact(value, set(REMOTE_ALIASES) | {
+    _remote.exact(value, set(REMOTE_ALIASES) | {
         "account", "uid", "gid", "home", "login_shell", "parser_profile",
-        "remote_tokens_sha256", "remote_command_sha256"}, "CORE_DISPATCH_REMOTE_FIELDS")
-    _require(value["account"] == "q1admin" and value["home"] == "/home/q1admin"
+        "remote_tokens_sha256", "remote_command_sha256"}, "FIELDS")
+    _remote(value["account"] == "q1admin" and value["home"] == "/home/q1admin"
              and value["login_shell"] == "/bin/bash"
-             and value["parser_profile"] == "bash-noninteractive-c-v1",
-             "CORE_DISPATCH_REMOTE_ACCOUNT")
+             and value["parser_profile"] == "bash-noninteractive-c-v1", "ACCOUNT")
     for key in ("uid", "gid"):
-        _integer(value[key], 1, 2**32 - 2, "CORE_DISPATCH_REMOTE_ACCOUNT")
+        _remote.integer(value[key], 1, 2**32 - 2, "ACCOUNT")
     for key in ("remote_tokens_sha256", "remote_command_sha256"):
-        _digest(value[key], "CORE_DISPATCH_REMOTE_COMMAND")
+        _remote.digest(value[key], "COMMAND")
     total = 0
     for name, alias in REMOTE_ALIASES.items():
-        item = _exact(value[name], PROGRAM_FIELDS | {"resolved_path", "symlink_chain"},
-                      "CORE_DISPATCH_REMOTE_ENTITY_FIELDS")
-        _require(item["path"] == alias, "CORE_DISPATCH_REMOTE_ALIAS")
-        _absolute_text(item["resolved_path"], "CORE_DISPATCH_REMOTE_ENTITY")
+        item = _remote.exact(value[name], PROGRAM_FIELDS | {"resolved_path", "symlink_chain"},
+                      "ENTITY_FIELDS")
+        _remote(item["path"] == alias, "ALIAS")
+        _remote.absolute(item["resolved_path"], "ENTITY")
         for key in ("dev", "uid", "gid"):
-            _integer(item[key], 0, code="CORE_DISPATCH_REMOTE_ENTITY")
-        _integer(item["ino"], 1, code="CORE_DISPATCH_REMOTE_ENTITY")
-        _integer(item["nlink"], 1, 1, "CORE_DISPATCH_REMOTE_ENTITY")
-        _integer(item["mode"], 0, 0o7777, "CORE_DISPATCH_REMOTE_ENTITY")
-        _integer(item["bytes"], 1, 16777216, "CORE_DISPATCH_REMOTE_ENTITY")
-        _require(item["uid"] == item["gid"] == 0 and item["mode"] & 0o111
-                 and not item["mode"] & 0o022, "CORE_DISPATCH_REMOTE_ENTITY")
-        _digest(item["sha256"], "CORE_DISPATCH_REMOTE_ENTITY")
+            _remote.integer(item[key], 0, code="ENTITY")
+        _remote.integer(item["ino"], 1, code="ENTITY")
+        _remote.integer(item["nlink"], 1, 1, "ENTITY")
+        _remote.integer(item["mode"], 0, 0o7777, "ENTITY")
+        _remote.integer(item["bytes"], 1, 16777216, "ENTITY")
+        _remote(item["uid"] == item["gid"] == 0 and item["mode"] & 0o111
+                 and not item["mode"] & 0o022, "ENTITY")
+        _remote.digest(item["sha256"], "ENTITY")
         chain = item["symlink_chain"]
-        _require(type(chain) is list and len(chain) <= 8, "CORE_DISPATCH_REMOTE_ALIAS")
+        _remote(type(chain) is list and len(chain) <= 8, "ALIAS")
         seen = set()
         for link in chain:
-            _exact(link, ("path", "target"), "CORE_DISPATCH_REMOTE_ALIAS")
-            _absolute_text(link["path"], "CORE_DISPATCH_REMOTE_ALIAS")
+            _remote.exact(link, ("path", "target"), "ALIAS")
+            _remote.absolute(link["path"], "ALIAS")
             target = link["target"]
-            _require(type(target) is str and target.isascii() and 0 < len(target) <= 4096
+            _remote(type(target) is str and target.isascii() and 0 < len(target) <= 4096
                      and re.fullmatch(r"[A-Za-z0-9._/-]+", target) is not None
                      and "//" not in target and ".." not in target.split("/")
-                     and len(target.split("/")) <= 64 and link["path"] not in seen,
-                     "CORE_DISPATCH_REMOTE_ALIAS")
+                     and len(target.split("/")) <= 64 and link["path"] not in seen, "ALIAS")
             seen.add(link["path"])
         total += item["bytes"]
-    _require(total <= 83886080, "CORE_DISPATCH_REMOTE_ENTITY_LIMIT")
+    _remote(total <= 83886080, "ENTITY_LIMIT")
     return value
 
 
 def _approved_inputs_envelope(context):
     """Bind preimages, not live facts; raw verification/admission remain required."""
     manifest, members = context["manifest"], context["members"]
-    descriptor = _exact(manifest["approved_inputs"], (
-        "path", "bytes", "sha256", "approved_source_relation_sha256"),
-        "CORE_DISPATCH_APPROVED_DESCRIPTOR")
-    _require(descriptor["path"] == APPROVED_INPUTS_PATH,
-             "CORE_DISPATCH_APPROVED_DESCRIPTOR")
-    _integer(descriptor["bytes"], 1, APPROVED_INPUTS_LIMIT,
-             "CORE_DISPATCH_APPROVED_DESCRIPTOR")
+    descriptor = _approved.exact(manifest["approved_inputs"], (
+        "path", "bytes", "sha256", "approved_source_relation_sha256"), "DESCRIPTOR")
+    _approved(descriptor["path"] == APPROVED_INPUTS_PATH, "DESCRIPTOR")
+    _approved.integer(descriptor["bytes"], 1, APPROVED_INPUTS_LIMIT, "DESCRIPTOR")
     for key in ("sha256", "approved_source_relation_sha256"):
-        _digest(descriptor[key], "CORE_DISPATCH_APPROVED_DESCRIPTOR")
+        _approved.digest(descriptor[key], "DESCRIPTOR")
     view = members.get(APPROVED_INPUTS_PATH)
-    _require(type(view) is bytes or (isinstance(view, memoryview) and view.readonly),
-             "CORE_DISPATCH_APPROVED_MEMBER")
+    _approved(type(view) is bytes or (isinstance(view, memoryview) and view.readonly), "MEMBER")
     raw = bytes(view)
-    _require(len(raw) == descriptor["bytes"] and _sha(raw) == descriptor["sha256"],
-             "CORE_DISPATCH_APPROVED_MEMBER")
+    _approved(len(raw) == descriptor["bytes"] and _sha(raw) == descriptor["sha256"], "MEMBER")
     rows = [row for row in manifest["members"] if row.get("role") == "approved-inputs"]
     expected = {"path": APPROVED_INPUTS_PATH, "role": "approved-inputs", "mode": 384,
                 "bytes": len(raw), "sha256": _sha(raw), "origin": {
                     "kind": "approved-inputs", "bytes": len(raw), "sha256": _sha(raw),
                     "approved_source_relation_sha256": descriptor["approved_source_relation_sha256"]}}
-    _require(rows == [expected], "CORE_DISPATCH_APPROVED_ROW")
+    _approved(rows == [expected], "ROW")
     value = document(raw, limit=APPROVED_INPUTS_LIMIT)
-    _exact(value, ("schema", "scope", "amendment", *ADMISSION_COMPONENTS),
-           "CORE_DISPATCH_APPROVED_FIELDS")
-    _require(value["schema"] == "local-hand-q2-core-approved-inputs/v1"
-             and value["scope"] == SCOPE, "CORE_DISPATCH_APPROVED_SCHEMA")
+    _approved.exact(value, ("schema", "scope", "amendment", *ADMISSION_COMPONENTS), "FIELDS")
+    _approved(value["schema"] == "local-hand-q2-core-approved-inputs/v1"
+             and value["scope"] == SCOPE, "SCHEMA")
     _amendment(value["amendment"], manifest["implementation"])
-    _require(value["amendment"] == manifest["amendment"],
-             "CORE_DISPATCH_APPROVED_AMENDMENT")
+    _approved(value["amendment"] == manifest["amendment"], "AMENDMENT")
     for key in ADMISSION_COMPONENTS:
-        _require(type(value[key]) is dict, "CORE_DISPATCH_APPROVED_COMPONENT")
-    _require(_sha(canonical(value["source_relation"]))
-             == descriptor["approved_source_relation_sha256"],
-             "CORE_DISPATCH_APPROVED_SOURCE_RELATION")
+        _approved(type(value[key]) is dict, "COMPONENT")
+    _approved(_sha(canonical(value["source_relation"]))
+             == descriptor["approved_source_relation_sha256"], "SOURCE_RELATION")
     return value
 
 
@@ -1429,165 +1439,158 @@ def _admission_binding(context):
         "remote_management_sha256": _sha(canonical(context["hello"]["remote_management"])),
     })
     for digest in binding.values():
-        _digest(digest, "CORE_DISPATCH_ADMISSION_BINDING")
+        _admit.digest(digest, "BINDING")
     return binding
 
 
 def _validate_admission_binding(value, context):
     expected = _admission_binding(context)
-    _exact(value, expected, "CORE_DISPATCH_ADMISSION_BINDING_FIELDS")
-    _require(value == expected, "CORE_DISPATCH_ADMISSION_BINDING")
+    _admit.exact(value, expected, "BINDING_FIELDS")
+    _admit(value == expected, "BINDING")
     return value
 
 
 def _validate_context_envelope(context):
     """Validate the v2 transport envelope without claiming admission/consumption."""
-    _exact(context, ("schema", "hello", "bind", "manifest", "members", "guest_deadlines",
-                     "stdin_bytes_received"), "CORE_DISPATCH_CONTEXT_FIELDS")
-    _require(context["schema"] == CONTEXT_SCHEMA, "CORE_DISPATCH_CONTEXT_SCHEMA")
+    _check.exact(context, ("schema", "hello", "bind", "manifest", "members", "guest_deadlines",
+                     "stdin_bytes_received"), "CONTEXT_FIELDS")
+    _check(context["schema"] == CONTEXT_SCHEMA, "CONTEXT_SCHEMA")
     hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
-    _exact(hello, ("schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
+    _check.exact(hello, ("schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
                    "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
                    "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management"),
-           "CORE_DISPATCH_HELLO_FIELDS")
-    _require(hello["schema"] == HELLO_SCHEMA
+           "HELLO_FIELDS")
+    _check(hello["schema"] == HELLO_SCHEMA
              and hello["scope"] == SCOPE and hello["uid"] == hello["gid"] == 0
-             and hello["euid"] == hello["egid"] == 0, "CORE_DISPATCH_HELLO")
+             and hello["euid"] == hello["egid"] == 0, "HELLO")
     for key in ("loader_sha256", "bootstrap_sha256"):
-        _digest(hello[key], "CORE_DISPATCH_HELLO")
+        _check.digest(hello[key], "HELLO")
     for key in ("uid", "gid", "euid", "egid"):
-        _integer(hello[key], 0, 0, "CORE_DISPATCH_HELLO")
+        _check.integer(hello[key], 0, 0, "HELLO")
     for key in ("pid", "guest_boottime_origin_ns", "guest_monotonic_origin_ns"):
-        _integer(hello[key], 1, code="CORE_DISPATCH_HELLO")
-    _require(type(hello["guest_boot_id"]) is str and re.fullmatch(
-        r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", hello["guest_boot_id"]),
-        "CORE_DISPATCH_HELLO")
+        _check.integer(hello[key], 1, code="HELLO")
+    _check(type(hello["guest_boot_id"]) is str and re.fullmatch(
+        r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", hello["guest_boot_id"]), "HELLO")
     remote = _remote_management(hello["remote_management"])
-    _require(hello["python"] == {
+    _check(hello["python"] == {
         key: remote["python"]["resolved_path"] if key == "path" else remote["python"][key]
-        for key in PROGRAM_FIELDS}, "CORE_DISPATCH_PYTHON_PROJECTION")
-    unit = _exact(hello["carrier_unit"], (
+        for key in PROGRAM_FIELDS}, "PYTHON_PROJECTION")
+    unit = _check.exact(hello["carrier_unit"], (
         "name", "control_group", "invocation_id", "active_state", "sub_state",
         "runtime_max_usec", "timeout_stop_usec", "memory_max", "memory_swap_max",
         "tasks_max", "cpu_quota_per_sec_usec", "restart", "kill_mode", "exit_type"),
-        "CORE_DISPATCH_CARRIER_FIELDS")
+        "CARRIER_FIELDS")
     carrier_name = "lhqcore20261003a-carrier.service"
-    _absolute_text(unit["control_group"], "CORE_DISPATCH_CARRIER")
-    _require(unit["name"] == carrier_name and unit["control_group"].endswith("/" + carrier_name)
+    _check.absolute(unit["control_group"], "CARRIER")
+    _check(unit["name"] == carrier_name and unit["control_group"].endswith("/" + carrier_name)
              and type(unit["invocation_id"]) is str
              and re.fullmatch(r"[0-9a-f]{32}", unit["invocation_id"])
              and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
              and unit["restart"] == "no" and unit["kill_mode"] == "control-group"
-             and unit["exit_type"] == "cgroup", "CORE_DISPATCH_CARRIER")
+             and unit["exit_type"] == "cgroup", "CARRIER")
     for key, expected in {"runtime_max_usec": 800000000, "timeout_stop_usec": 30000000,
                           "memory_max": 1073741824, "memory_swap_max": 0, "tasks_max": 128,
                           "cpu_quota_per_sec_usec": 1000000}.items():
-        _integer(unit[key], expected, expected, "CORE_DISPATCH_CARRIER")
+        _check.integer(unit[key], expected, expected, "CARRIER")
     limits = {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256, "nofile_hard": 256,
               "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}
-    _exact(hello["process_limits"], limits, "CORE_DISPATCH_PROCESS_LIMITS")
+    _check.exact(hello["process_limits"], limits, "PROCESS_LIMITS")
     for key, expected in limits.items():
-        _integer(hello["process_limits"][key], expected, expected, "CORE_DISPATCH_PROCESS_LIMITS")
+        _check.integer(hello["process_limits"][key], expected, expected, "PROCESS_LIMITS")
     canonical(hello, newline=True, limit=4096)
-    _exact(bind, ("schema", "scope", "session_id", "hello_sha256", "consumption_sha256",
+    _check.exact(bind, ("schema", "scope", "session_id", "hello_sha256", "consumption_sha256",
                   "package_basename", "package_bytes", "package_sha256",
                   "host_boottime_origin_ns", "host_monotonic_origin_ns",
                   "host_boottime_deadline_ns", "host_monotonic_deadline_ns",
                   "host_boottime_bind_ns", "host_monotonic_bind_ns", "host_remaining_floor_ns",
                   "clock_margin_ns", "local_final_reserve_ns", "mapped_duration_ns",
-                  "guest_duration_cap_ns", "guest_duration_ns"), "CORE_DISPATCH_BIND_FIELDS")
-    _require(bind["schema"] == "local-hand-q2-core-carrier-bind/v1" and bind["scope"] == SCOPE
+                  "guest_duration_cap_ns", "guest_duration_ns"), "BIND_FIELDS")
+    _check(bind["schema"] == "local-hand-q2-core-carrier-bind/v1" and bind["scope"] == SCOPE
              and bind["session_id"] == SESSION and bind["hello_sha256"] == _sha(canonical(hello, newline=True)),
-             "CORE_DISPATCH_BIND")
+             "BIND")
     for key in ("hello_sha256", "consumption_sha256", "package_sha256"):
-        _digest(bind[key], "CORE_DISPATCH_BIND")
+        _check.digest(bind[key], "BIND")
     for key in ("host_boottime_origin_ns", "host_monotonic_origin_ns",
                 "host_boottime_deadline_ns", "host_monotonic_deadline_ns",
                 "host_boottime_bind_ns", "host_monotonic_bind_ns"):
-        _integer(bind[key], 1, code="CORE_DISPATCH_BIND_CLOCK")
-    _require(bind["host_boottime_deadline_ns"]
+        _check.integer(bind[key], 1, code="BIND_CLOCK")
+    _check(bind["host_boottime_deadline_ns"]
              == bind["host_boottime_origin_ns"] + LIMITS["carrier_seconds"] * NS
              and bind["host_monotonic_deadline_ns"]
              == bind["host_monotonic_origin_ns"] + LIMITS["carrier_seconds"] * NS
              and bind["host_boottime_origin_ns"] <= bind["host_boottime_bind_ns"]
              < bind["host_boottime_deadline_ns"]
              and bind["host_monotonic_origin_ns"] <= bind["host_monotonic_bind_ns"]
-             < bind["host_monotonic_deadline_ns"],
-             "CORE_DISPATCH_OUTER_DEADLINE")
+             < bind["host_monotonic_deadline_ns"], "OUTER_DEADLINE")
     remaining = min(bind["host_boottime_deadline_ns"] - bind["host_boottime_bind_ns"],
                     bind["host_monotonic_deadline_ns"] - bind["host_monotonic_bind_ns"])
     floor = remaining // 1_000_000 * 1_000_000
-    _require(remaining > 0 and bind["host_remaining_floor_ns"] == floor
+    _check(remaining > 0 and bind["host_remaining_floor_ns"] == floor
              and bind["clock_margin_ns"] == 2_000_000_000
              and bind["local_final_reserve_ns"] == 15_000_000_000
              and bind["mapped_duration_ns"] == floor - 17_000_000_000 > 0
              and bind["guest_duration_cap_ns"] == 750_000_000_000
              and bind["guest_duration_ns"] == min(bind["mapped_duration_ns"], 750_000_000_000),
-             "CORE_DISPATCH_BIND_MAPPING")
-    _exact(manifest, ("schema", "scope", "rule", "baseline", "owner_decision", "closure",
+             "BIND_MAPPING")
+    _check.exact(manifest, ("schema", "scope", "rule", "baseline", "owner_decision", "closure",
                       "implementation", "candidate", "wheel", "projection", "entry", "locators",
-                      "members", "limits", "amendment", "approved_inputs"), "CORE_DISPATCH_MANIFEST_FIELDS")
-    _require(manifest["schema"] == PACKAGE_SCHEMA
+                      "members", "limits", "amendment", "approved_inputs"), "MANIFEST_FIELDS")
+    _check(manifest["schema"] == PACKAGE_SCHEMA
              and manifest["scope"] == SCOPE and manifest["rule"] == RULE
              and manifest["baseline"] == BASELINE and manifest["owner_decision"] == OWNER_DECISION
              and manifest["closure"] == CLOSURE and manifest["candidate"] == CANDIDATE
              and manifest["wheel"] == WHEEL and manifest["projection"] == PROJECTION
-             and manifest["limits"] == PACKAGE_LIMITS, "CORE_DISPATCH_MANIFEST_AUTHORITY")
-    _exact(manifest["implementation"], ("commit", "tree"), "CORE_DISPATCH_IMPLEMENTATION")
-    _commit(manifest["implementation"]["commit"], "CORE_DISPATCH_IMPLEMENTATION")
-    _commit(manifest["implementation"]["tree"], "CORE_DISPATCH_IMPLEMENTATION")
-    _require(manifest["implementation"] != CLOSURE, "CORE_DISPATCH_IMPLEMENTATION")
+             and manifest["limits"] == PACKAGE_LIMITS, "MANIFEST_AUTHORITY")
+    _check.exact(manifest["implementation"], ("commit", "tree"), "IMPLEMENTATION")
+    _check.commit(manifest["implementation"]["commit"], "IMPLEMENTATION")
+    _check.commit(manifest["implementation"]["tree"], "IMPLEMENTATION")
+    _check(manifest["implementation"] != CLOSURE, "IMPLEMENTATION")
     _amendment(manifest["amendment"], manifest["implementation"])
     entry = manifest["entry"]
-    _exact(entry, ("loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
+    _check.exact(entry, ("loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
                    "bootstrap_bytes", "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes",
                    "dispatcher_sha256", "carrier_argv_sha256", "local_management_binding_sha256", "writer"),
-           "CORE_DISPATCH_ENTRY_FIELDS")
+           "ENTRY_FIELDS")
     _validate_local_writer(entry["writer"])
     for key in ("carrier_argv_sha256", "local_management_binding_sha256"):
-        _digest(entry[key], "CORE_DISPATCH_ENTRY")
-    _require(type(entry) is dict and entry.get("loader_path") == "field/loader.py"
+        _check.digest(entry[key], "ENTRY")
+    _check(type(entry) is dict and entry.get("loader_path") == "field/loader.py"
              and entry.get("bootstrap_path") == "field/bootstrap.py"
              and entry.get("dispatcher_path") == "field/dispatcher.py"
              and hello["loader_sha256"] == entry.get("loader_sha256")
-             and hello["bootstrap_sha256"] == entry.get("bootstrap_sha256"),
-             "CORE_DISPATCH_ENTRY")
-    locators = _exact(manifest["locators"], (
+             and hello["bootstrap_sha256"] == entry.get("bootstrap_sha256"), "ENTRY")
+    locators = _check.exact(manifest["locators"], (
         "schema", "observation_record_sha256", "source_relation_sha256", "state_parent",
         "quota_parent", "install_parent", "journal_parent", "evidence_parent", "ordinary_user",
         "ordinary_group", "user_manager_unit", "query_parent_unit", "controller_parent_unit",
         "management_parent_unit", "supervisor_parent_unit", "ordinary_parent_unit",
-        "retained_ordinary_parent_path", "carrier_unit"), "CORE_DISPATCH_LOCATOR_FIELDS")
-    _require(locators["schema"] == "local-hand-q2-core-private-locators/v1"
-             and locators["carrier_unit"] == carrier_name, "CORE_DISPATCH_LOCATOR")
-    _digest(locators["observation_record_sha256"], "CORE_DISPATCH_LOCATOR")
+        "retained_ordinary_parent_path", "carrier_unit"), "LOCATOR_FIELDS")
+    _check(locators["schema"] == "local-hand-q2-core-private-locators/v1"
+             and locators["carrier_unit"] == carrier_name, "LOCATOR")
+    _check.digest(locators["observation_record_sha256"], "LOCATOR")
     relation = {"schema": "local-hand-q2-core-locator-relation/v2",
                 "local_management_binding_sha256": entry["local_management_binding_sha256"],
                 "observation_record_sha256": locators["observation_record_sha256"],
                 "locators": {key: item for key, item in locators.items()
                              if key != "source_relation_sha256"}}
-    _require(locators["source_relation_sha256"] == _sha(canonical(relation)),
-             "CORE_DISPATCH_LOCATOR_RELATION")
+    _check(locators["source_relation_sha256"] == _sha(canonical(relation)), "LOCATOR_RELATION")
     members = context["members"]
-    _require(type(manifest["members"]) is list and manifest["members"],
-             "CORE_DISPATCH_PACKAGE_MEMBERS")
+    _envelope(type(manifest["members"]) is list and manifest["members"], "MEMBERS")
     paths = []
     for row in manifest["members"]:
-        _exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"),
-               "CORE_DISPATCH_PACKAGE_ROW")
-        paths.append(_path(row["path"], "CORE_DISPATCH_PACKAGE_ROW"))
-        _integer(row["bytes"], 0, MEMBER_LIMIT, "CORE_DISPATCH_PACKAGE_ROW")
-        _digest(row["sha256"], "CORE_DISPATCH_PACKAGE_ROW")
-        _require(type(row["mode"]) is int
+        _envelope.exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"), "ROW")
+        paths.append(_envelope.path(row["path"], "ROW"))
+        _envelope.integer(row["bytes"], 0, MEMBER_LIMIT, "ROW")
+        _envelope.digest(row["sha256"], "ROW")
+        _envelope(type(row["mode"]) is int
                  and ((row["role"] == "approved-inputs" and row["mode"] == 384)
                       or (row["role"] in ("candidate-worktree", "candidate-git-metadata",
                                            "wheel", "projection", "field-code")
-                          and row["mode"] in (420, 493))), "CORE_DISPATCH_PACKAGE_ROW")
-    _require(len(paths) <= MEMBER_COUNT_LIMIT and len(set(paths)) == len(paths)
-             and paths == sorted(paths, key=lambda item: item.encode("ascii")),
-             "CORE_DISPATCH_PACKAGE_MEMBERS")
-    _require(type(members) is dict and set(members) == {row["path"] for row in manifest["members"]},
-             "CORE_DISPATCH_PACKAGE_MEMBERS")
+                          and row["mode"] in (420, 493))), "ROW")
+    _envelope(len(paths) <= MEMBER_COUNT_LIMIT and len(set(paths)) == len(paths)
+             and paths == sorted(paths, key=lambda item: item.encode("ascii")), "MEMBERS")
+    _envelope(type(members) is dict and set(members) == {row["path"] for row in manifest["members"]},
+             "MEMBERS")
     manifest_raw = canonical(manifest, newline=True)
     package_hash = hashlib.sha256()
     package_hash.update(PACKAGE_MAGIC)
@@ -1596,47 +1599,42 @@ def _validate_context_envelope(context):
     package_bytes = len(PACKAGE_MAGIC) + 8 + len(manifest_raw)
     for row in manifest["members"]:
         raw = members[row["path"]]
-        _require((type(raw) is bytes or (isinstance(raw, memoryview) and raw.readonly))
-                 and len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
-                 "CORE_DISPATCH_PACKAGE_MEMBER")
+        _envelope((type(raw) is bytes or (isinstance(raw, memoryview) and raw.readonly))
+                 and len(raw) == row["bytes"] and _sha(raw) == row["sha256"], "MEMBER")
         package_hash.update(raw)
         package_bytes += len(raw)
-    _require(package_bytes == bind["package_bytes"]
-             and package_hash.hexdigest() == bind["package_sha256"],
-             "CORE_DISPATCH_PACKAGE_BINDING")
-    _require(entry.get("dispatcher_bytes") == len(members["field/dispatcher.py"])
-             and entry.get("dispatcher_sha256") == _sha(members["field/dispatcher.py"]),
-             "CORE_DISPATCH_ENTRY")
+    _envelope(package_bytes == bind["package_bytes"]
+             and package_hash.hexdigest() == bind["package_sha256"], "BINDING")
+    _check(entry.get("dispatcher_bytes") == len(members["field/dispatcher.py"])
+             and entry.get("dispatcher_sha256") == _sha(members["field/dispatcher.py"]), "ENTRY")
     for role in ("loader", "bootstrap", "dispatcher"):
         raw = members.get("field/" + role + ".py")
-        _require(raw is not None and type(entry[role + "_bytes"]) is int
+        _check(raw is not None and type(entry[role + "_bytes"]) is int
                  and entry[role + "_bytes"] == len(raw)
-                 and entry[role + "_sha256"] == _sha(raw), "CORE_DISPATCH_ENTRY")
-    deadlines = _exact(context["guest_deadlines"],
+                 and entry[role + "_sha256"] == _sha(raw), "ENTRY")
+    deadlines = _check.exact(context["guest_deadlines"],
                        ("boot_id", "boottime_deadline_ns", "monotonic_deadline_ns"),
-                       "CORE_DISPATCH_GUEST_DEADLINES")
-    _require(deadlines["boot_id"] == hello["guest_boot_id"]
+                       "GUEST_DEADLINES")
+    _check(deadlines["boot_id"] == hello["guest_boot_id"]
              and deadlines["boottime_deadline_ns"] == hello["guest_boottime_origin_ns"] + bind["guest_duration_ns"]
              and deadlines["monotonic_deadline_ns"] == hello["guest_monotonic_origin_ns"] + bind["guest_duration_ns"],
-             "CORE_DISPATCH_GUEST_DEADLINES")
-    _integer(context["stdin_bytes_received"], 1, LIMITS["carrier_input_bytes"],
-             "CORE_DISPATCH_STDIN")
+             "GUEST_DEADLINES")
+    _check.integer(context["stdin_bytes_received"], 1, LIMITS["carrier_input_bytes"], "STDIN")
     expected_stdin = 8 + 8 + len(canonical(bind, newline=True)) + bind["package_bytes"]
-    _require(context["stdin_bytes_received"] == expected_stdin, "CORE_DISPATCH_STDIN")
+    _check(context["stdin_bytes_received"] == expected_stdin, "STDIN")
     approved = _approved_inputs_envelope(context)
     policy = approved["policy_basis"]
-    _require(type(policy.get("remote_expectation")) is dict,
-             "CORE_DISPATCH_REMOTE_EXPECTATION")
+    _remote(type(policy.get("remote_expectation")) is dict, "EXPECTATION")
     expected = policy["remote_expectation"]
-    _exact(expected, ("account", "home_path", "login_shell", "hello_schema", "parser_profile",
+    _remote.exact(expected, ("account", "home_path", "login_shell", "hello_schema", "parser_profile",
                       "aliases", "remote_tokens_sha256", "remote_command_sha256",
-                      "remote_entity_preimages_stage"), "CORE_DISPATCH_REMOTE_EXPECTATION")
-    _require(expected == {
+                      "remote_entity_preimages_stage"), "EXPECTATION")
+    _remote(expected == {
         "account": "q1admin", "home_path": "/home/q1admin", "login_shell": "/bin/bash",
         "hello_schema": HELLO_SCHEMA, "parser_profile": "bash-noninteractive-c-v1",
         "aliases": REMOTE_ALIASES, "remote_tokens_sha256": remote["remote_tokens_sha256"],
         "remote_command_sha256": remote["remote_command_sha256"],
-        "remote_entity_preimages_stage": "HELLO_JIT"}, "CORE_DISPATCH_REMOTE_EXPECTATION")
+        "remote_entity_preimages_stage": "HELLO_JIT"}, "EXPECTATION")
     return context
 
 
@@ -1674,8 +1672,7 @@ def _validate_local_writer(value):
 def _consumption_info(context):
     """Rebuild marker v2 from v3 inputs; this is not host persistence proof."""
     manifest, bind = context["manifest"], context["bind"]
-    _require(manifest["schema"] == PACKAGE_SCHEMA,
-             "CORE_DISPATCH_MANIFEST_AUTHORITY")
+    _check(manifest["schema"] == PACKAGE_SCHEMA, "MANIFEST_AUTHORITY")
     entry = manifest["entry"]
     writer = _validate_local_writer(entry["writer"])
     marker = {"schema": "local-hand-q2-core-carrier-consumption/v2",
@@ -1692,7 +1689,7 @@ def _consumption_info(context):
                                       "host_boottime_deadline_ns", "host_monotonic_deadline_ns")},
         "state": "CONSUMPTION_RECORD_COMPLETE"}
     raw = canonical(marker, newline=True, limit=16384)
-    _require(_sha(raw) == bind["consumption_sha256"], "CORE_DISPATCH_CONSUMPTION_BINDING")
+    _check(_sha(raw) == bind["consumption_sha256"], "CONSUMPTION_BINDING")
     return {"basename": ".lhqcore-20261003a.carrier-consumed.json", "bytes": len(raw),
             "sha256": _sha(raw), "state": marker["state"]}
 
@@ -1710,7 +1707,7 @@ def field_readiness():
 
 
 def _git_blob(raw):
-    _require(type(raw) is bytes, "CORE_EFFECT_PACKAGE_BYTES")
+    _package(type(raw) is bytes, "BYTES")
     return hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
 
 
@@ -1742,74 +1739,66 @@ def _json_object(raw, code):
 
 def _wheel_payload(raw, source_files):
     """Verify the exact wheel and its source/payload binding in memory."""
-    _require(type(raw) is bytes and len(raw) == WHEEL["bytes"]
-             and _sha(raw) == WHEEL["sha256"], "CORE_EFFECT_WHEEL_PIN")
+    _wheel(type(raw) is bytes and len(raw) == WHEEL["bytes"]
+             and _sha(raw) == WHEEL["sha256"], "PIN")
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             infos = archive.infolist()
             names = [item.filename for item in infos]
-            _require(1 <= len(names) <= 1024 and len(names) == len(set(names))
-                     and sum(item.file_size for item in infos) <= 32 * 1024 * 1024,
-                     "CORE_EFFECT_WHEEL_INVENTORY")
+            _wheel(1 <= len(names) <= 1024 and len(names) == len(set(names))
+                     and sum(item.file_size for item in infos) <= 32 * 1024 * 1024, "INVENTORY")
             for item in infos:
                 path = PurePosixPath(item.filename)
                 file_type = stat.S_IFMT(item.external_attr >> 16)
-                _require(not item.is_dir() and not path.is_absolute()
+                _wheel(not item.is_dir() and not path.is_absolute()
                          and path.as_posix() == item.filename
                          and all(part not in ("", ".", "..") for part in path.parts)
                          and item.file_size <= MEMBER_LIMIT
-                         and file_type in (0, stat.S_IFREG),
-                         "CORE_EFFECT_WHEEL_ENTRY")
+                         and file_type in (0, stat.S_IFREG), "ENTRY")
             content = {name: archive.read(name) for name in names}
     except (OSError, zipfile.BadZipFile, RuntimeError) as error:
-        raise DispatchError("CORE_EFFECT_WHEEL_ARCHIVE") from error
-    metadata = _json_object(content.get(WHEEL_METADATA, b""),
-                            "CORE_EFFECT_WHEEL_METADATA")
-    _exact(metadata, ("schema_version", "product_version", "source_commit",
-                      "artifact_kind", "files"), "CORE_EFFECT_WHEEL_METADATA")
-    _require(metadata["schema_version"] == "infra-local-hand-build/v1"
+        raise _wheel.error("ARCHIVE") from error
+    metadata = _json_object(content.get(WHEEL_METADATA, b""), "CORE_EFFECT_WHEEL_METADATA")
+    _wheel.exact(metadata, ("schema_version", "product_version", "source_commit",
+                      "artifact_kind", "files"), "METADATA")
+    _wheel(metadata["schema_version"] == "infra-local-hand-build/v1"
              and metadata["product_version"] == "0.2.0a1"
              and metadata["source_commit"] == CANDIDATE["commit"]
-             and metadata["artifact_kind"] == "wheel", "CORE_EFFECT_WHEEL_METADATA")
+             and metadata["artifact_kind"] == "wheel", "METADATA")
     package_pattern = r"tools/(?:(?:" + "|".join(WHEEL_PACKAGES) + \
         r"))/[a-z_][a-z0-9_]*\.(?:py|sh|ps1)"
     expected = {name[6:]: digest for name, digest in source_files.items()
                 if re.fullmatch(package_pattern, name)}
-    _require(metadata["files"] == expected
-             and all(package + "/__init__.py" in expected for package in WHEEL_PACKAGES),
-             "CORE_EFFECT_WHEEL_SOURCE")
+    _wheel(metadata["files"] == expected
+             and all(package + "/__init__.py" in expected for package in WHEEL_PACKAGES), "SOURCE")
     for name, digest in expected.items():
-        _require(name in content and _sha(content[name]) == digest,
-                 "CORE_EFFECT_WHEEL_PAYLOAD")
+        _wheel(name in content and _sha(content[name]) == digest, "PAYLOAD")
     dist = "infra_local_hand-0.2.0a1.dist-info/"
     extras = set(content) - set(expected) - {WHEEL_METADATA}
-    _require(extras and all(name.startswith(dist)
+    _wheel(extras and all(name.startswith(dist)
                             and len(PurePosixPath(name).parts) == 2 for name in extras)
-             and {dist + name for name in ("METADATA", "WHEEL", "RECORD")} <= extras,
-             "CORE_EFFECT_WHEEL_EXTRAS")
-    _require(b"Name: infra-local-hand\n" in content[dist + "METADATA"]
+             and {dist + name for name in ("METADATA", "WHEEL", "RECORD")} <= extras, "EXTRAS")
+    _wheel(b"Name: infra-local-hand\n" in content[dist + "METADATA"]
              and b"Version: 0.2.0a1\n" in content[dist + "METADATA"]
-             and b"Root-Is-Purelib: true\n" in content[dist + "WHEEL"],
-             "CORE_EFFECT_WHEEL_DISTRIBUTION")
+             and b"Root-Is-Purelib: true\n" in content[dist + "WHEEL"], "DISTRIBUTION")
     try:
         rows = list(csv.reader(io.StringIO(content[dist + "RECORD"].decode("utf-8", "strict"))))
     except (UnicodeError, csv.Error) as error:
-        raise DispatchError("CORE_EFFECT_WHEEL_RECORD") from error
-    _require(len(rows) == len(content) and all(len(row) == 3 for row in rows)
+        raise _wheel.error("RECORD") from error
+    _wheel(len(rows) == len(content) and all(len(row) == 3 for row in rows)
              and len({row[0] for row in rows}) == len(rows)
-             and {row[0] for row in rows} == set(content), "CORE_EFFECT_WHEEL_RECORD")
+             and {row[0] for row in rows} == set(content), "RECORD")
     for name, digest, size in rows:
         if name == dist + "RECORD":
-            _require(digest == size == "", "CORE_EFFECT_WHEEL_RECORD")
+            _wheel(digest == size == "", "RECORD")
         else:
             actual = base64.urlsafe_b64encode(hashlib.sha256(content[name]).digest()) \
                 .rstrip(b"=").decode("ascii")
-            _require(digest == "sha256=" + actual and size == str(len(content[name])),
-                     "CORE_EFFECT_WHEEL_RECORD")
+            _wheel(digest == "sha256=" + actual and size == str(len(content[name])), "RECORD")
     payload = _sha(json.dumps({"schema_version": "infra-local-hand-full-payload/v1",
                                "files": expected}, sort_keys=True, separators=(",", ":"),
                               ensure_ascii=True).encode("ascii"))
-    _require(payload == WHEEL["payload_digest"], "CORE_EFFECT_WHEEL_PAYLOAD_DIGEST")
+    _wheel(payload == WHEEL["payload_digest"], "PAYLOAD_DIGEST")
     return {"files": expected, "payload_digest": payload, "content": content}
 
 
@@ -1819,91 +1808,78 @@ def verify_install_inputs(context):
     if manifest.get("schema") == PACKAGE_SCHEMA:
         _approved_inputs_envelope(context)
     rows = manifest["members"]
-    _require(type(rows) is list and rows
+    _package(type(rows) is list and rows
              and [row.get("path") for row in rows]
              == sorted((row.get("path") for row in rows), key=lambda item: item.encode("ascii")),
-             "CORE_EFFECT_PACKAGE_ORDER")
+             "ORDER")
     source_files = {}
     helper_digests = {}
     wheel_raw = projection_raw = None
     for row in rows:
-        _exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"),
-               "CORE_EFFECT_PACKAGE_ROW")
-        path = _path(row["path"], "CORE_EFFECT_PACKAGE_PATH")
-        _require((row["role"] == "approved-inputs" and row["mode"] == 384
+        _package.exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"), "ROW")
+        path = _package.path(row["path"], "PATH")
+        _package((row["role"] == "approved-inputs" and row["mode"] == 384
                   and path == APPROVED_INPUTS_PATH and manifest.get("schema") == PACKAGE_SCHEMA)
                  or (row["mode"] in (420, 493) and row["role"] in (
                      "candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code")),
-            "CORE_EFFECT_PACKAGE_ROW")
+            "ROW")
         view = members.get(path)
-        _require(type(view) is bytes or (isinstance(view, memoryview) and view.readonly),
-                 "CORE_EFFECT_PACKAGE_MEMBER")
+        _package(type(view) is bytes or (isinstance(view, memoryview) and view.readonly), "MEMBER")
         raw = bytes(view)
-        _require(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
-                 "CORE_EFFECT_PACKAGE_MEMBER")
+        _package(len(raw) == row["bytes"] and _sha(raw) == row["sha256"], "MEMBER")
         origin = row["origin"]
         if row["role"] == "approved-inputs":
             # The envelope check above validates its exact descriptor/origin.
             # Private approved facts never become installation/projection input.
             continue
         if row["role"] == "candidate-worktree":
-            _exact(origin, ("kind", "commit", "path", "blob"),
-                   "CORE_EFFECT_PACKAGE_ORIGIN")
-            name = _path(origin["path"], "CORE_EFFECT_PACKAGE_ORIGIN")
-            _require(origin["kind"] == "candidate-blob"
+            _package.exact(origin, ("kind", "commit", "path", "blob"), "ORIGIN")
+            name = _package.path(origin["path"], "ORIGIN")
+            _package(origin["kind"] == "candidate-blob"
                      and origin["commit"] == CANDIDATE["commit"]
                      and path == "candidate/" + name
                      and origin["blob"] == _git_blob(raw)
-                     and name not in source_files, "CORE_EFFECT_PACKAGE_ORIGIN")
+                     and name not in source_files, "ORIGIN")
             source_files[name] = row["sha256"]
             if name in {"tests/e3_host/" + item + ".py" for item in PREPARATION_HELPERS}:
                 helper_digests[name.rsplit("/", 1)[-1][:-3]] = row["sha256"]
         elif row["role"] == "candidate-git-metadata":
-            _exact(origin, ("kind", "commit", "git_path"),
-                   "CORE_EFFECT_PACKAGE_ORIGIN")
-            name = _path(origin["git_path"], "CORE_EFFECT_PACKAGE_ORIGIN")
-            _require(origin["kind"] == "candidate-git-metadata"
+            _package.exact(origin, ("kind", "commit", "git_path"), "ORIGIN")
+            name = _package.path(origin["git_path"], "ORIGIN")
+            _package(origin["kind"] == "candidate-git-metadata"
                      and origin["commit"] == CANDIDATE["commit"]
-                     and name.startswith(".git/") and path == "candidate/" + name,
-                     "CORE_EFFECT_PACKAGE_ORIGIN")
+                     and name.startswith(".git/") and path == "candidate/" + name, "ORIGIN")
         elif row["role"] in ("wheel", "projection"):
-            _exact(origin, ("kind", "basename", "sha256"),
-                   "CORE_EFFECT_PACKAGE_ORIGIN")
+            _package.exact(origin, ("kind", "basename", "sha256"), "ORIGIN")
             expected = WHEEL if row["role"] == "wheel" else PROJECTION
-            _require(origin == {"kind": row["role"], "basename": expected["basename"],
-                                "sha256": expected["sha256"]},
-                     "CORE_EFFECT_PACKAGE_ORIGIN")
+            _package(origin == {"kind": row["role"], "basename": expected["basename"],
+                                "sha256": expected["sha256"]}, "ORIGIN")
             if row["role"] == "wheel":
-                _require(wheel_raw is None, "CORE_EFFECT_PACKAGE_ARTIFACT")
+                _package(wheel_raw is None, "ARTIFACT")
                 wheel_raw = raw
             else:
-                _require(projection_raw is None, "CORE_EFFECT_PACKAGE_ARTIFACT")
+                _package(projection_raw is None, "ARTIFACT")
                 projection_raw = raw
         else:
-            _exact(origin, ("kind", "commit", "path", "blob"),
-                   "CORE_EFFECT_PACKAGE_ORIGIN")
-            _require(origin["kind"] == "implementation-blob"
+            _package.exact(origin, ("kind", "commit", "path", "blob"), "ORIGIN")
+            _package(origin["kind"] == "implementation-blob"
                      and origin["commit"] == manifest["implementation"]["commit"]
-                     and origin["blob"] == _git_blob(raw), "CORE_EFFECT_PACKAGE_ORIGIN")
-    _require(set(helper_digests) == set(PREPARATION_HELPERS)
-             and wheel_raw is not None and projection_raw is not None,
-             "CORE_EFFECT_PACKAGE_REQUIRED")
+                     and origin["blob"] == _git_blob(raw), "ORIGIN")
+    _package(set(helper_digests) == set(PREPARATION_HELPERS)
+             and wheel_raw is not None and projection_raw is not None, "REQUIRED")
     projection = document(projection_raw, limit=MEMBER_LIMIT, newline=True)
-    _exact(projection, ("schema", "source_commit", "source_tree", "files"),
-           "CORE_EFFECT_PROJECTION")
-    _require(projection["schema"] == "local-hand-q2-source-projection/v1"
+    _effect.exact(projection, ("schema", "source_commit", "source_tree", "files"), "PROJECTION")
+    _effect(projection["schema"] == "local-hand-q2-source-projection/v1"
              and projection["source_commit"] == CANDIDATE["commit"]
              and projection["source_tree"] == CANDIDATE["tree"]
              and type(projection["files"]) is dict
-             and len(projection["files"]) == PROJECTION["file_count"],
-             "CORE_EFFECT_PROJECTION")
+             and len(projection["files"]) == PROJECTION["file_count"], "PROJECTION")
     for name, item in projection["files"].items():
-        _require(_projection_path(name), "CORE_EFFECT_PROJECTION_PATH")
-        _exact(item, ("mode", "sha256"), "CORE_EFFECT_PROJECTION_ENTRY")
-        _require(item["mode"] in (420, 493) and source_files.get(name) == item["sha256"],
-                 "CORE_EFFECT_PROJECTION_ENTRY")
-    _require(PROJECTION_REQUIRED <= set(projection["files"]),
-             "CORE_EFFECT_PROJECTION_REQUIRED")
+        _projection(_projection_path(name), "PATH")
+        _projection.exact(item, ("mode", "sha256"), "ENTRY")
+        _projection(item["mode"] in (420, 493) and source_files.get(name) == item["sha256"],
+                 "ENTRY")
+    _projection(PROJECTION_REQUIRED <= set(projection["files"]), "REQUIRED")
     wheel = _wheel_payload(wheel_raw, source_files)
     return {"source_files": source_files, "projection": projection,
             "wheel_files": wheel["files"], "payload_digest": wheel["payload_digest"],
@@ -2451,6 +2427,22 @@ class _CapQuota:
 
 
 
+def _guard_call(guard, function, *args, release=None, **kwargs):
+    """Reject late returns; this cannot interrupt a blocking kernel call."""
+    if guard is not None: guard()
+    try:
+        value = function(*args, **kwargs)
+    except BaseException:
+        if guard is not None: guard()
+        raise
+    try:
+        if guard is not None: guard()
+    except BaseException:
+        if release is not None: release(value)
+        raise
+    return value
+
+
 class FieldEffects:
     """Inert construction; protected fd-relative effects. See field_readiness gaps."""
 
@@ -2490,13 +2482,13 @@ class FieldEffects:
             try:
                 before = os.fstat(fd)
                 raw = os.read(fd, 65)
-                _require(len(raw) <= 64 and os.read(fd, 1) == b"",
-                         "CORE_EFFECT_BOOT_ID")
+                _effect(len(raw) <= 64 and os.read(fd, 1) == b"",
+                         "BOOT_ID")
                 after = os.fstat(fd)
-                _require(stat.S_ISREG(before.st_mode)
+                _effect(stat.S_ISREG(before.st_mode)
                          and (before.st_dev, before.st_ino, before.st_mode)
                          == (after.st_dev, after.st_ino, after.st_mode),
-                         "CORE_EFFECT_BOOT_ID")
+                         "BOOT_ID")
             finally:
                 os.close(fd)
         finally:
@@ -2505,8 +2497,8 @@ class FieldEffects:
             boot_id = raw.decode("ascii", "strict").strip()
         except UnicodeError as error:
             raise DispatchError("CORE_EFFECT_BOOT_ID") from error
-        _require(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-                              boot_id) is not None, "CORE_EFFECT_BOOT_ID")
+        _effect(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                              boot_id) is not None, "BOOT_ID")
         return {"boot_id": boot_id,
                 "boottime_ns": time.clock_gettime_ns(time.CLOCK_BOOTTIME),
                 "monotonic_ns": time.clock_gettime_ns(time.CLOCK_MONOTONIC)}
@@ -2522,18 +2514,19 @@ class FieldEffects:
         return parsed
 
     @staticmethod
-    def _held_directory(path):
+    def _held_directory(path, *, guard=None):
         """Walk an absolute directory from a held slash fd without symlinks."""
         parsed = FieldEffects._absolute(path)
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-        current = os.open("/", flags)
+        call = partial(_guard_call, guard)
+        current = call(os.open, "/", flags, release=os.close)
         try:
             for component in parsed.parts[1:]:
-                following = os.open(component, flags, dir_fd=current)
+                following = call(os.open, component, flags, dir_fd=current, release=os.close)
                 os.close(current)
                 current = following
-            info = os.fstat(current)
-            _require(stat.S_ISDIR(info.st_mode), "CORE_EFFECT_DIRECTORY")
+            info = call(os.fstat, current)
+            _effect(stat.S_ISDIR(info.st_mode), "DIRECTORY")
             return current
         except BaseException:
             os.close(current)
@@ -2541,34 +2534,35 @@ class FieldEffects:
 
     @staticmethod
     def stable_read_at(directory_fd, name, *, maximum, expected_mode=None,
-                       noatime=True):
-        _require(type(directory_fd) is int and type(name) is str
+                       noatime=True, guard=None):
+        _effect(type(directory_fd) is int and type(name) is str
                  and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
                  and type(maximum) is int and 0 <= maximum <= MEMBER_LIMIT,
-                 "CORE_EFFECT_READ_INPUT")
+                 "READ_INPUT")
         flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
         if noatime:
             flags |= getattr(os, "O_NOATIME", 0)
-        fd = os.open(name, flags, dir_fd=directory_fd)
+        call = partial(_guard_call, guard)
+        fd = call(os.open, name, flags, dir_fd=directory_fd, release=os.close)
         try:
-            before = os.fstat(fd)
-            _require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-                     and 0 <= before.st_size <= maximum, "CORE_EFFECT_READ_FILE")
+            before = call(os.fstat, fd)
+            _effect(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                     and 0 <= before.st_size <= maximum, "READ_FILE")
             if expected_mode is not None:
-                _require(stat.S_IMODE(before.st_mode) == expected_mode,
-                         "CORE_EFFECT_READ_MODE")
+                _effect(stat.S_IMODE(before.st_mode) == expected_mode,
+                         "READ_MODE")
             raw = bytearray()
             while len(raw) <= maximum:
-                part = os.read(fd, min(65536, maximum + 1 - len(raw)))
+                part = call(os.read, fd, min(65536, maximum + 1 - len(raw)))
                 if not part:
                     break
                 raw.extend(part)
-            after = os.fstat(fd)
+            after = call(os.fstat, fd)
             stable = lambda value: (value.st_dev, value.st_ino, value.st_mode,
                                     value.st_uid, value.st_gid, value.st_nlink,
                                     value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-            _require(len(raw) <= maximum and stable(before) == stable(after)
-                     and len(raw) == after.st_size, "CORE_EFFECT_READ_CHANGED")
+            _effect(len(raw) <= maximum and stable(before) == stable(after)
+                     and len(raw) == after.st_size, "READ_CHANGED")
             result = bytes(raw)
             return result, {"dev": after.st_dev, "ino": after.st_ino,
                             "mode": stat.S_IMODE(after.st_mode), "uid": after.st_uid,
@@ -2578,63 +2572,64 @@ class FieldEffects:
             os.close(fd)
 
     @staticmethod
-    def stable_read(path, *, maximum, expected_mode=None, noatime=True):
+    def stable_read(path, *, maximum, expected_mode=None, noatime=True, guard=None):
         parsed = FieldEffects._absolute(path)
-        _require(len(parsed.parts) > 1, "CORE_EFFECT_READ_PATH")
-        parent = FieldEffects._held_directory(str(parsed.parent))
+        _effect(len(parsed.parts) > 1, "READ_PATH")
+        parent = FieldEffects._held_directory(str(parsed.parent), guard=guard)
         try:
             return FieldEffects.stable_read_at(parent, parsed.name, maximum=maximum,
                                                expected_mode=expected_mode,
-                                               noatime=noatime)
+                                               noatime=noatime, guard=guard)
         finally:
             os.close(parent)
 
     @staticmethod
-    def create_only_at(directory_fd, name, raw, *, mode):
-        _require(type(directory_fd) is int and type(name) is str
+    def create_only_at(directory_fd, name, raw, *, mode, guard=None):
+        _effect(type(directory_fd) is int and type(name) is str
                  and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
                  and type(raw) is bytes and mode in (384, 420, 493),
-                 "CORE_EFFECT_CREATE_INPUT")
-        parent_before = os.fstat(directory_fd)
-        _require(stat.S_ISDIR(parent_before.st_mode), "CORE_EFFECT_CREATE_PARENT")
+                 "CREATE_INPUT")
+        call = partial(_guard_call, guard)
+        parent_before = call(os.fstat, directory_fd)
+        _effect(stat.S_ISDIR(parent_before.st_mode), "CREATE_PARENT")
         flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
                  | getattr(os, "O_NOFOLLOW", 0))
-        fd = os.open(name, flags, mode, dir_fd=directory_fd)
+        fd = call(os.open, name, flags, mode, dir_fd=directory_fd, release=os.close)
         created = None
         try:
-            os.fchmod(fd, mode)
+            call(os.fchmod, fd, mode)
             offset = 0
             while offset < len(raw):
-                wrote = os.write(fd, raw[offset:])
-                _require(wrote > 0, "CORE_EFFECT_CREATE_WRITE")
+                wrote = call(os.write, fd, raw[offset:])
+                _effect(wrote > 0, "CREATE_WRITE")
                 offset += wrote
-            os.fsync(fd)
-            created = os.fstat(fd)
-            _require(stat.S_ISREG(created.st_mode) and created.st_nlink == 1
+            call(os.fsync, fd)
+            created = call(os.fstat, fd)
+            _effect(stat.S_ISREG(created.st_mode) and created.st_nlink == 1
                      and created.st_size == len(raw)
                      and stat.S_IMODE(created.st_mode) == mode,
-                     "CORE_EFFECT_CREATE_FILE")
+                     "CREATE_FILE")
         finally:
             os.close(fd)
         reread, identity = FieldEffects.stable_read_at(
-            directory_fd, name, maximum=len(raw), expected_mode=mode)
-        _require(reread == raw and created is not None
+            directory_fd, name, maximum=len(raw), expected_mode=mode, guard=guard)
+        _effect(reread == raw and created is not None
                  and (identity["dev"], identity["ino"]) == (created.st_dev, created.st_ino),
-                 "CORE_EFFECT_CREATE_REREAD")
-        os.fsync(directory_fd)
-        parent_after = os.fstat(directory_fd)
-        _require((parent_before.st_dev, parent_before.st_ino)
+                 "CREATE_REREAD")
+        call(os.fsync, directory_fd)
+        parent_after = call(os.fstat, directory_fd)
+        _effect((parent_before.st_dev, parent_before.st_ino)
                  == (parent_after.st_dev, parent_after.st_ino),
-                 "CORE_EFFECT_CREATE_PARENT_CHANGED")
+                 "CREATE_PARENT_CHANGED")
         return identity
 
     @staticmethod
-    def create_only(path, raw, *, mode):
+    def create_only(path, raw, *, mode, guard=None):
         parsed = FieldEffects._absolute(path)
-        _require(len(parsed.parts) > 1, "CORE_EFFECT_CREATE_PATH")
-        parent = FieldEffects._held_directory(str(parsed.parent))
+        _effect(len(parsed.parts) > 1, "CREATE_PATH")
+        parent = FieldEffects._held_directory(str(parsed.parent), guard=guard)
         try:
-            return FieldEffects.create_only_at(parent, parsed.name, raw, mode=mode)
+            return FieldEffects.create_only_at(parent, parsed.name, raw, mode=mode, guard=guard)
         finally:
             os.close(parent)
 
@@ -2674,18 +2669,18 @@ class FieldEffects:
         locators = self.context["manifest"]["locators"]
         if logical.startswith("carrier/"):
             suffix = logical.split("/", 1)[1]
-            _require("/" not in suffix, "CORE_EFFECT_PERSIST_LOGICAL")
+            _effect("/" not in suffix, "PERSIST_LOGICAL")
             return str(PurePosixPath(locators["state_parent"]) / SESSION / "carrier" / suffix)
         prefix = "cases/" + case_id + "/"
-        _require(case_id in {case["case_id"] for case in CASES}
-                 and logical.startswith(prefix), "CORE_EFFECT_PERSIST_CASE")
+        _effect(case_id in {case["case_id"] for case in CASES}
+                 and logical.startswith(prefix), "PERSIST_CASE")
         suffix = logical[len(prefix):]
         if suffix == "intent.json":
             return str(PurePosixPath(locators["state_parent"]) / SESSION / "carrier"
                        / "intents" / (case_id + ".json"))
-        _require(suffix.startswith("reservation/")
+        _effect(suffix.startswith("reservation/")
                  and "/" not in suffix[len("reservation/"):],
-                 "CORE_EFFECT_PERSIST_LOGICAL")
+                 "PERSIST_LOGICAL")
         return str(PurePosixPath(locators["state_parent"]) / SESSION / case_id
                    / "reservation" / suffix[len("reservation/"):])
 
@@ -2708,38 +2703,39 @@ class FieldEffects:
         _exact(expected, ("manifest", "members", "admission"),
                "CORE_EFFECT_INSTALLATION_INPUT")
         verified = self.verify_install_inputs()
-        _require(self._admission is not None and expected["admission"] == self._admission,
-                 "CORE_EFFECT_INSTALLATION_ADMISSION_REQUIRED")
-        _require(expected["manifest"] == self.context["manifest"]
+        _effect(self._admission is not None and expected["admission"] == self._admission,
+                 "INSTALLATION_ADMISSION_REQUIRED")
+        _effect(expected["manifest"] == self.context["manifest"]
                  and expected["members"] == self.context["members"]
                  and self._installation is None and self._candidate_root is None,
-                 "CORE_EFFECT_INSTALLATION_BINDING")
-        _require(os.geteuid() == os.getegid() == 0, "CORE_EFFECT_INSTALLATION_OWNER")
+                 "INSTALLATION_BINDING")
+        _effect(os.geteuid() == os.getegid() == 0, "INSTALLATION_OWNER")
         self._effect_guard()
         self._verify_install_programs()
         manifest = self.context["manifest"]
         locators = manifest["locators"]
-        parent = self._held_directory(locators["install_parent"])
+        call = partial(_guard_call, self._effect_guard)
+        parent = self._held_directory(locators["install_parent"], guard=self._effect_guard)
         try:
             parent_pin = self._admission["parents"]["install"]
-            info = os.fstat(parent)
-            _require((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode),
+            info = call(os.fstat, parent)
+            _effect((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode),
                       info.st_uid, info.st_gid) ==
                      (parent_pin["dev"], parent_pin["ino"], parent_pin["mode"],
                       parent_pin["uid"], parent_pin["gid"]),
-                     "CORE_EFFECT_INSTALLATION_PARENT_CHANGED")
+                     "INSTALLATION_PARENT_CHANGED")
             # Both names must be absent before the first mutation. O_EXCL
             # remains authoritative if another writer races this observation.
             for name in (STAGING_BASENAME, INSTALL_BASENAME):
                 try:
-                    os.stat(name, dir_fd=parent, follow_symlinks=False)
+                    call(os.stat, name, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError:
                     pass
                 else:
                     raise DispatchError("CORE_EFFECT_INSTALLATION_EXISTS")
             self._prepare_carrier_storage()
             self._effect_guard()
-            staging_fd = self._mkdir_at(parent, STAGING_BASENAME, 0o700)
+            staging_fd = self._mkdir_at(parent, STAGING_BASENAME, 0o700, guard=self._effect_guard)
         finally:
             os.close(parent)
         staging = str(PurePosixPath(locators["install_parent"]) / STAGING_BASENAME)
@@ -2747,7 +2743,7 @@ class FieldEffects:
         self._install_roots = [staging, destination]
         try:
             self._effect_guard()
-            temporary_fd = self._mkdir_at(staging_fd, ".build-tmp", 0o700)
+            temporary_fd = self._mkdir_at(staging_fd, ".build-tmp", 0o700, guard=self._effect_guard)
             os.close(temporary_fd)
             self._effect_guard()
             self._install_temp = staging + "/.build-tmp"
@@ -2761,36 +2757,43 @@ class FieldEffects:
         programs = self._admission["programs"]
         guest = self._admission["guest"]
         self._effect_guard()
-        receipt = build.install_candidate(
-            source=self._candidate_root, source_commit=CANDIDATE["commit"],
-            source_tree=CANDIDATE["tree"], wheel=staging + "/" + wheel_row["path"],
-            wheel_sha256=WHEEL["sha256"], destination=destination,
-            python=programs["python"]["path"], compiler=programs["cc"]["path"],
-            ordinary_uid=guest["ordinary_uid"], ordinary_gid=guest["ordinary_gid"],
-            command=self._installation_command)
+        self._install_build_active = True
+        try:
+            receipt = build.install_candidate(
+                source=self._candidate_root, source_commit=CANDIDATE["commit"],
+                source_tree=CANDIDATE["tree"], wheel=staging + "/" + wheel_row["path"],
+                wheel_sha256=WHEEL["sha256"], destination=destination,
+                python=programs["python"]["path"], compiler=programs["cc"]["path"],
+                ordinary_uid=guest["ordinary_uid"], ordinary_gid=guest["ordinary_gid"],
+                command=self._installation_command)
+        finally:
+            self._install_build_active = False
         self._effect_guard()
+        self._install_build_receipt = receipt
         self._verify_install_programs()
-        _require(type(receipt) is dict and receipt.get("status") == "INSTALLED"
+        _effect(type(receipt) is dict and receipt.get("status") == "INSTALLED"
                  and receipt.get("ordinary_verified") is True
                  and receipt.get("fixture_provisioned") is False
                  and receipt["source"]["commit"] == CANDIDATE["commit"]
                  and receipt["source"]["tree"] == CANDIDATE["tree"]
                  and receipt["source"]["manifest_sha256"] == PROJECTION["sha256"]
                  and receipt["installed"]["payload_digest"] == verified["payload_digest"],
-                 "CORE_EFFECT_INSTALLATION_RECEIPT")
+                 "INSTALLATION_RECEIPT")
         projection_raw, _ = self.stable_read(
-            destination + "/source/.local-hand-source-projection.json", maximum=262144)
-        _require(_sha(projection_raw) == PROJECTION["sha256"],
-                 "CORE_EFFECT_INSTALLATION_PROJECTION")
+            destination + "/source/.local-hand-source-projection.json", maximum=262144,
+            guard=self._effect_guard)
+        _effect(_sha(projection_raw) == PROJECTION["sha256"],
+                 "INSTALLATION_PROJECTION")
         # Only the dispatcher D blob is installed alongside the frozen
         # candidate. Private approved inputs stay exclusively in bootstrap RAM.
-        installed_fd = self._held_directory(destination)
+        installed_fd = self._held_directory(destination, guard=self._effect_guard)
         try:
             self._effect_guard()
             self.create_only_at(installed_fd, "core-dispatcher.py",
-                                bytes(self.context["members"]["field/dispatcher.py"]), mode=420)
+                                bytes(self.context["members"]["field/dispatcher.py"]), mode=420,
+                                guard=self._effect_guard)
             self._effect_guard()
-            info = os.fstat(installed_fd)
+            info = call(os.fstat, installed_fd)
         finally:
             os.close(installed_fd)
         observed = self._observe_install_storage()
@@ -2821,19 +2824,20 @@ class FieldEffects:
         })
 
     def _prepare_carrier_storage(self):
-        _require(not self._persistence_ready and self._admission is not None,
-                 "CORE_EFFECT_CARRIER_STORAGE_STATE")
-        parent = self._held_directory(self.context["manifest"]["locators"]["state_parent"])
+        _effect(not self._persistence_ready and self._admission is not None,
+                 "CARRIER_STORAGE_STATE")
+        parent = self._held_directory(self.context["manifest"]["locators"]["state_parent"],
+                                      guard=self._effect_guard)
         opened = [parent]
         try:
             expected = self._admission["parents"]["state"]
-            info = os.fstat(parent)
-            _require((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
+            info = _guard_call(self._effect_guard, os.fstat, parent)
+            _effect((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
                      == (expected["dev"], expected["ino"], expected["mode"],
-                         expected["uid"], expected["gid"]), "CORE_EFFECT_CARRIER_PARENT_CHANGED")
+                         expected["uid"], expected["gid"]), "CARRIER_PARENT_CHANGED")
             for name, mode in ((SESSION, 0o755), ("carrier", 0o700), ("intents", 0o700)):
                 self._effect_guard()
-                parent = self._mkdir_at(parent, name, mode)
+                parent = self._mkdir_at(parent, name, mode, guard=self._effect_guard)
                 opened.append(parent)
                 self._effect_guard()
             self._persistence_ready = True
@@ -2842,35 +2846,44 @@ class FieldEffects:
                 os.close(fd)
 
     def _verify_install_programs(self):
-        _require(self._admission is not None, "CORE_EFFECT_INSTALLATION_ADMISSION_REQUIRED")
+        _effect(self._admission is not None, "INSTALLATION_ADMISSION_REQUIRED")
         for name in ("python", "git", "cc", "setpriv", "systemctl", "systemd_run"):
             expected = self._admission["programs"][name]
             self._effect_guard()
             raw, identity = self.stable_read(expected["path"], maximum=MEMBER_LIMIT,
-                                             expected_mode=expected["mode"])
-            _require(dict(path=expected["path"], **identity) == expected
+                                             expected_mode=expected["mode"], guard=self._effect_guard)
+            _effect(dict(path=expected["path"], **identity) == expected
                      and identity["uid"] == 0 and not identity["mode"] & 0o6022
                      and identity["mode"] & 0o111 and raw.startswith(b"\x7fELF"),
-                     "CORE_EFFECT_INSTALL_PROGRAM_CHANGED")
-        _require(self._admission["programs"]["git"]["path"] == "/usr/bin/git"
+                     "INSTALL_PROGRAM_CHANGED")
+        _effect(self._admission["programs"]["git"]["path"] == "/usr/bin/git"
                  and self._admission["programs"]["setpriv"]["path"] == "/usr/bin/setpriv",
-                 "CORE_EFFECT_INSTALL_PROGRAM_ALIAS")
+                 "INSTALL_PROGRAM_ALIAS")
+        if hasattr(self, "_install_build_receipt"):
+            receipt = self._install_build_receipt
+            for item in (receipt["installed"]["programs"]["python"], receipt["native_build"]["abi_program"]):
+                expected = self._install_program_pins[item["path"]]
+                _, identity = self.stable_read(item["path"], maximum=MEMBER_LIMIT, guard=self._effect_guard)
+                _effect(dict(path=item["path"], **identity) == expected
+                         and item == {key: expected[key] for key in ("path", "sha256")},
+                         "INSTALL_PROGRAM_CHANGED")
 
     @staticmethod
-    def _mkdir_at(parent, name, mode):
-        _require(type(name) is str and re.fullmatch(r"[A-Za-z0-9._-]+", name)
+    def _mkdir_at(parent, name, mode, *, guard=None):
+        _effect(type(name) is str and re.fullmatch(r"[A-Za-z0-9._-]+", name)
                  and name not in (".", "..") and mode in (0o700, 0o755),
-                 "CORE_EFFECT_MKDIR_INPUT")
-        os.mkdir(name, mode, dir_fd=parent)
-        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
-                     dir_fd=parent)
+                 "MKDIR_INPUT")
+        call = partial(_guard_call, guard)
+        call(os.mkdir, name, mode, dir_fd=parent)
+        fd = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                     dir_fd=parent, release=os.close)
         try:
-            os.fchmod(fd, mode)
-            info = os.fstat(fd)
-            _require(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == mode,
-                     "CORE_EFFECT_MKDIR_OWNER")
-            os.fsync(fd)
-            os.fsync(parent)
+            call(os.fchmod, fd, mode)
+            info = call(os.fstat, fd)
+            _effect(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == mode,
+                     "MKDIR_OWNER")
+            call(os.fsync, fd)
+            call(os.fsync, parent)
             return fd
         except BaseException:
             os.close(fd)
@@ -2893,20 +2906,20 @@ class FieldEffects:
                         self._effect_guard()
                         directories[name] = self._mkdir_at(
                             directories["" if previous == "." else previous],
-                            relative.parts[index - 1], 0o700)
+                            relative.parts[index - 1], 0o700, guard=self._effect_guard)
                         self._effect_guard()
                 parent_name = relative.parent.as_posix()
                 fd = directories["" if parent_name == "." else parent_name]
                 raw = bytes(self.context["members"][row["path"]])
-                _require(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
-                         "CORE_EFFECT_INSTALL_MEMBER_CHANGED")
+                _effect(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
+                         "INSTALL_MEMBER_CHANGED")
                 self._effect_guard()
-                self.create_only_at(fd, relative.name, raw, mode=row["mode"])
+                self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard)
                 self._effect_guard()
                 reread, identity = self.stable_read_at(fd, relative.name,
-                    maximum=row["bytes"], expected_mode=row["mode"])
-                _require(identity["uid"] == identity["gid"] == 0 and reread == raw,
-                         "CORE_EFFECT_INSTALL_MEMBER_CHANGED")
+                    maximum=row["bytes"], expected_mode=row["mode"], guard=self._effect_guard)
+                _effect(identity["uid"] == identity["gid"] == 0 and reread == raw,
+                         "INSTALL_MEMBER_CHANGED")
                 self._observe_install_storage()
                 self._effect_guard()
         finally:
@@ -2915,7 +2928,7 @@ class FieldEffects:
                     os.close(fd)
 
     def _candidate_helper(self, name, verified):
-        _require(name in (*PREPARATION_HELPERS, "q2_prepare_build"), "CORE_EFFECT_HELPER_NAME")
+        _effect(name in (*PREPARATION_HELPERS, "q2_prepare_build"), "HELPER_NAME")
         return self._candidate_modules((name,), verified)[name]
 
     def _candidate_modules(self, names, verified=None):
@@ -2927,7 +2940,7 @@ class FieldEffects:
         pin = _sha(canonical(verified))
         prior = getattr(self, "_candidate_loader", None)
         if prior is not None:
-            _require(prior[0] == pin, "CORE_EFFECT_HELPER_SOURCE_CHANGED")
+            _effect(prior[0] == pin, "HELPER_SOURCE_CHANGED")
             return {name: prior[1](name) for name in names}
         sources = copy.deepcopy(verified)
         cache = {}
@@ -2936,16 +2949,16 @@ class FieldEffects:
         namespaces = {"admin", "admin.local_hand_quota_observer"}
 
         def load(name):
-            _require(type(name) is str and re.fullmatch(r"[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*", name)
+            _effect(type(name) is str and re.fullmatch(r"[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*", name)
                      and (name in helpers or name.split(".")[0] in roots
                           or "tests/e3_host/" + name + ".py" in PROJECTION_HARNESS),
-                     "CORE_EFFECT_HELPER_NAME")
+                     "HELPER_NAME")
             if name in cache:
                 return cache[name]
             package = name in namespaces
             relative = "tools/" + name.replace(".", "/")
             if name in helpers:
-                _require(self._candidate_root is not None, "CORE_EFFECT_HELPER_INSTALLATION_REQUIRED")
+                _effect(self._candidate_root is not None, "HELPER_INSTALLATION_REQUIRED")
                 relative = "tests/e3_host/" + name + ".py"
                 path = self._candidate_root + "/" + relative
                 digest = sources["source_files"].get(relative)
@@ -2953,29 +2966,30 @@ class FieldEffects:
                 path, digest = "<core-namespace>", None
             else:
                 receipt = self._installation_receipt
-                _require(receipt is not None and self._installation is not None,
-                         "CORE_EFFECT_HELPER_INSTALLATION_REQUIRED")
+                _effect(receipt is not None and self._installation is not None,
+                         "HELPER_INSTALLATION_REQUIRED")
                 package = relative + "/__init__.py" in sources["projection"]["files"]
                 relative = (relative + "/__init__.py" if package else relative + ".py") \
                     if name.split(".")[0] in roots else "tests/e3_host/" + name + ".py"
                 entry = sources["projection"]["files"].get(relative)
-                _require(entry is not None and _projection_path(relative), "CORE_EFFECT_HELPER_PROJECTION")
+                _effect(entry is not None and _projection_path(relative), "HELPER_PROJECTION")
                 digest = entry["sha256"]
                 if name.split(".")[0] in WHEEL_PACKAGES:
-                    _require(sources["wheel_files"].get(relative[6:]) == digest,
-                             "CORE_EFFECT_HELPER_WHEEL")
+                    _effect(sources["wheel_files"].get(relative[6:]) == digest,
+                             "HELPER_WHEEL")
                     path = receipt["installed"]["package_root"] + "/" + relative[6:]
                 else:
                     path = receipt["source"]["root"] + "/" + relative
             raw = b""
             if digest is not None:
                 self._effect_guard()
-                raw, identity = self.stable_read(path, maximum=MEMBER_LIMIT, expected_mode=420)
+                raw, identity = self.stable_read(path, maximum=MEMBER_LIMIT, expected_mode=420,
+                                                  guard=self._effect_guard)
                 self._effect_guard()
-                _require(identity["uid"] == identity["gid"] == 0 and _sha(raw) == digest,
-                         "CORE_EFFECT_HELPER_CHANGED")
+                _effect(identity["uid"] == identity["gid"] == 0 and _sha(raw) == digest,
+                         "HELPER_CHANGED")
             else:
-                _require(name in namespaces, "CORE_EFFECT_HELPER_SOURCE_MISSING")
+                _effect(name in namespaces, "HELPER_SOURCE_MISSING")
             parent, _, child = name.rpartition(".")
             if parent:
                 load(parent)
@@ -2994,7 +3008,7 @@ class FieldEffects:
                 exec(compile(raw, path, "exec"), module.__dict__)
                 if name == "q2_prepare_driver":
                     module.helper = lambda helper: load(helper) if helper in PREPARATION_HELPERS else \
-                        _require(False, "CORE_EFFECT_HELPER_NAME")
+                        _effect(False, "HELPER_NAME")
             except BaseException:
                 cache.pop(name, None)
                 raise
@@ -3012,7 +3026,7 @@ class FieldEffects:
                 name = importlib.util.resolve_name("." * level + name, globals["__package__"])
             root = name.split(".")[0]
             if root not in roots and name not in helpers and not name.startswith(("q2_", "q4_")):
-                _require(root in sys.stdlib_module_names, "CORE_EFFECT_HELPER_IMPORT")
+                _effect(root in sys.stdlib_module_names, "HELPER_IMPORT")
                 return builtins.__import__(name, globals, locals, fromlist, 0)
             module = load(name)
             for item in fromlist or ():
@@ -3026,11 +3040,12 @@ class FieldEffects:
 
     def _observe_install_storage(self):
         """Charge actual simultaneous owned files; this is not a peak proof."""
+        call = partial(_guard_call, self._effect_guard)
         total_bytes = total_inodes = 0
         seen = set()
         for root in self._install_roots:
             try:
-                root_fd = self._held_directory(root)
+                root_fd = self._held_directory(root, guard=self._effect_guard)
             except FileNotFoundError:
                 continue
             pending = [(root_fd, root)]
@@ -3038,56 +3053,135 @@ class FieldEffects:
                 while pending:
                     fd, directory = pending.pop()
                     try:
-                        info = os.fstat(fd)
-                        _require(info.st_uid == 0 and not info.st_mode & 0o022,
-                                 "CORE_EFFECT_INSTALL_STORAGE_OWNER")
+                        info = call(os.fstat, fd)
+                        _effect(info.st_uid == 0 and not info.st_mode & 0o022,
+                                 "INSTALL_STORAGE_OWNER")
                         key = (info.st_dev, info.st_ino)
-                        _require(key not in seen, "CORE_EFFECT_INSTALL_STORAGE_ALIAS")
+                        _effect(key not in seen, "INSTALL_STORAGE_ALIAS")
                         seen.add(key)
                         total_bytes += info.st_blocks * 512
                         total_inodes += 1
-                        with os.scandir(fd) as entries:
-                            for entry in entries:
-                                item = entry.stat(follow_symlinks=False)
+                        with call(os.scandir, fd, release=lambda value: value.close()) as entries:
+                            for entry in iter(lambda: call(next, entries, None), None):
+                                item = call(entry.stat, follow_symlinks=False)
                                 if stat.S_ISLNK(item.st_mode):
                                     # The frozen installer removes only this
                                     # venv-generated convenience alias directly
                                     # after the venv child returns. Count its
                                     # inode without traversing it meanwhile.
-                                    _require(self._venv_alias_pending
+                                    _effect(self._venv_alias_pending
                                              and directory == self._install_roots[1] + "/runtime"
                                              and entry.name == "lib64"
-                                             and os.readlink(entry.name, dir_fd=fd) == "lib",
-                                             "CORE_EFFECT_INSTALL_STORAGE_SYMLINK")
+                                             and call(os.readlink, entry.name, dir_fd=fd) == "lib",
+                                             "INSTALL_STORAGE_SYMLINK")
                                     total_bytes += item.st_blocks * 512
                                     total_inodes += 1
                                     continue
                                 if stat.S_ISDIR(item.st_mode):
-                                    pending.append((os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY
-                                        | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd),
+                                    pending.append((call(os.open, entry.name, os.O_RDONLY | os.O_DIRECTORY
+                                        | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd, release=os.close),
                                         directory + "/" + entry.name))
                                 else:
-                                    _require(stat.S_ISREG(item.st_mode) and item.st_nlink == 1
+                                    _effect(stat.S_ISREG(item.st_mode) and item.st_nlink == 1
                                              and item.st_uid == 0 and not item.st_mode & 0o022,
-                                             "CORE_EFFECT_INSTALL_STORAGE_FILE")
+                                             "INSTALL_STORAGE_FILE")
                                     key = (item.st_dev, item.st_ino)
-                                    _require(key not in seen, "CORE_EFFECT_INSTALL_STORAGE_ALIAS")
+                                    _effect(key not in seen, "INSTALL_STORAGE_ALIAS")
                                     seen.add(key)
                                     total_bytes += item.st_blocks * 512
                                     total_inodes += 1
-                                _require(total_bytes <= LIMITS["shared_bytes"]
+                                _effect(total_bytes <= LIMITS["shared_bytes"]
                                          and total_inodes + len(pending) <= LIMITS["shared_inodes"],
-                                         "CORE_EFFECT_INSTALL_STORAGE_LIMIT")
+                                         "INSTALL_STORAGE_LIMIT")
                     finally:
                         os.close(fd)
             finally:
                 for fd, _ in pending:
                     os.close(fd)
-        _require(total_bytes <= LIMITS["shared_bytes"]
-                 and total_inodes <= LIMITS["shared_inodes"], "CORE_EFFECT_INSTALL_STORAGE_LIMIT")
+        _effect(total_bytes <= LIMITS["shared_bytes"]
+                 and total_inodes <= LIMITS["shared_inodes"], "INSTALL_STORAGE_LIMIT")
         self._shared_observed_bytes = max(self._shared_observed_bytes, total_bytes)
         self._shared_observed_inodes = max(self._shared_observed_inodes, total_inodes)
         return {"bytes": total_bytes, "inodes": total_inodes}
+
+    def _installation_binding(self, argv):
+        """Execute held ELF bytes while retaining Python's approved venv path."""
+        _effect(self._admission is not None, "INSTALLATION_ADMISSION_REQUIRED")
+        programs = self._admission["programs"]
+        pins = {item["path"]: item for item in programs.values()}
+        paths, actual, descriptors, environment = [argv[0]], list(argv), [], {}
+        destination = str(PurePosixPath(self.context["manifest"]["locators"]["install_parent"])
+                          / INSTALL_BASENAME)
+        runtime = destination + "/runtime/bin/python3"
+        dynamic = getattr(self, "_install_program_pins", {})
+        self._install_program_pins = dynamic
+        if argv[0] == programs["setpriv"]["path"]:
+            guest = self._admission["guest"]
+            flags = {"--reuid=" + str(guest["ordinary_uid"]),
+                     "--regid=" + str(guest["ordinary_gid"]), "--clear-groups",
+                     "--no-new-privs", "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all"}
+            _effect(len(argv) > 8 and set(argv[1:8]) == flags and argv[8] == runtime,
+                     "INSTALL_PROGRAM_CHAIN")
+            paths.append(runtime)
+            environment["__PYVENV_LAUNCHER__"] = runtime
+        try:
+            for path in paths:
+                self._effect_guard()
+                raw, identity = self.stable_read(path, maximum=MEMBER_LIMIT, guard=self._effect_guard)
+                expected = pins.get(path)
+                observed = dict(path=path, **identity)
+                if expected is None and path in (runtime, destination + "/native/abi"):
+                    _effect(getattr(self, "_install_build_active", False)
+                             or (path == runtime and self._installation_receipt is not None),
+                             "INSTALL_PROGRAM_STAGE")
+                    _effect(path != runtime or identity["sha256"] == programs["python"]["sha256"],
+                             "INSTALL_PROGRAM_CHANGED")
+                    if self._installation_receipt is not None:
+                        receipt = self._installation_receipt
+                        _effect({"path": path, "sha256": identity["sha256"]}
+                                 == receipt["installed"]["programs"]["python"]
+                                 and {"device": identity["dev"], "inode": identity["ino"]}
+                                 == receipt["python_identity"], "INSTALL_PROGRAM_CHANGED")
+                    expected = dynamic.setdefault(path, observed)
+                _effect(observed == expected,
+                         "INSTALL_PROGRAM_CHANGED")
+                _effect(identity["uid"] == identity["gid"] == 0 and identity["nlink"] == 1
+                         and not identity["mode"] & 0o6022 and identity["mode"] & 0o111
+                         and raw.startswith(b"\x7fELF"), "INSTALL_PROGRAM_CHANGED")
+                parsed = PurePosixPath(path)
+                parent = self._held_directory(str(parsed.parent), guard=self._effect_guard)
+                try:
+                    fd = os.open(parsed.name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
+                                 dir_fd=parent)
+                    descriptors.append(fd)
+                    self._effect_guard()
+                    before = os.fstat(fd)
+                    try:
+                        os.getxattr(fd, "security.capability")
+                    except OSError as error:
+                        import errno
+                        _effect(error.errno in (errno.ENODATA, errno.ENOTSUP),
+                                 "INSTALL_PROGRAM_CAPABILITY")
+                    else:
+                        raise DispatchError("CORE_EFFECT_INSTALL_PROGRAM_CAPABILITY")
+                    _effect((before.st_dev, before.st_ino, stat.S_IMODE(before.st_mode),
+                              before.st_uid, before.st_gid, before.st_nlink, before.st_size)
+                             == tuple(identity[key] for key in ("dev", "ino", "mode", "uid", "gid", "nlink", "bytes"))
+                             and os.pread(fd, MEMBER_LIMIT + 1, 0) == raw,
+                             "INSTALL_PROGRAM_CHANGED")
+                    self._effect_guard()
+                    _effect(before == os.fstat(fd) == os.stat(parsed.name, dir_fd=parent, follow_symlinks=False),
+                             "INSTALL_PROGRAM_CHANGED")
+                finally:
+                    os.close(parent)
+            if len(descriptors) == 2:
+                actual[8] = "/proc/self/fd/" + str(descriptors[1])
+            return actual, {"executable": "/proc/self/fd/" + str(descriptors[0]),
+                            "pass_fds": tuple(descriptors)}, environment, descriptors
+        except BaseException:
+            for fd in descriptors:
+                os.close(fd)
+            raise
 
     def _installation_command(self, argv):
         """One real child, wait4 accounting and paired EOF; never retry.
@@ -3097,9 +3191,9 @@ class FieldEffects:
         Child rusage is retained as a measured component, not a substitute for
         the still-missing all-unit CPU/memory/pid/storage accounting.
         """
-        _require(type(argv) in (list, tuple) and 1 <= len(argv) <= 128
+        _effect(type(argv) in (list, tuple) and 1 <= len(argv) <= 128
                  and all(type(arg) is str and "\0" not in arg and len(arg) <= 65536 for arg in argv)
-                 and argv[0].startswith("/"), "CORE_EFFECT_INSTALL_COMMAND")
+                 and argv[0].startswith("/"), "INSTALL_COMMAND")
         self._effect_guard()
         self._observe_install_storage()
         self._effect_guard()
@@ -3109,6 +3203,7 @@ class FieldEffects:
         failure = cleanup_failure = waited = None
         attempted = False
         killed = False
+        bound_fds = []
 
         def call(function, *args, stopping=False, returned=None, **kwargs):
             guard = (lambda: _clock(self, self.context["guest_deadlines"])) if stopping else self._effect_guard
@@ -3136,7 +3231,7 @@ class FieldEffects:
                 nonlocal waited
                 pid, status, usage = value
                 if pid:
-                    _require(pid == proc.pid, "CORE_EFFECT_INSTALL_COMMAND_WAIT_IDENTITY")
+                    _effect(pid == proc.pid, "INSTALL_COMMAND_WAIT_IDENTITY")
                     proc.returncode = os.waitstatus_to_exitcode(status)
                     # Linux ru_maxrss is KiB. Round CPU upward, never to an
                     # optimistic zero for a positive sub-nanosecond value.
@@ -3161,17 +3256,18 @@ class FieldEffects:
             except BlockingIOError:
                 return
             if not stopping:
-                _require(len(block) <= room, "CORE_EFFECT_INSTALL_COMMAND_OUTPUT_LIMIT")
+                _effect(len(block) <= room, "INSTALL_COMMAND_OUTPUT_LIMIT")
 
         try:
+            actual, binding, environment, bound_fds = self._installation_binding(argv)
             attempted = True
-            call(subprocess.Popen, argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            call(subprocess.Popen, actual, **binding, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, cwd=self._candidate_root, close_fds=True,
                 start_new_session=True, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C",
                                             "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1",
                                             "TMPDIR": self._install_temp or self._candidate_root,
                                             "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
-                                            "GIT_CONFIG_GLOBAL": "/dev/null"}, returned=set_process)
+                                            "GIT_CONFIG_GLOBAL": "/dev/null", **environment}, returned=set_process)
             call(selectors.DefaultSelector, returned=set_selector)
             for name in output:
                 stream = getattr(proc, name)
@@ -3183,7 +3279,7 @@ class FieldEffects:
                     if key.data in eof:
                         call(selector.unregister, key.fileobj)
                 reap()
-            _require(proc.returncode == 0, "CORE_EFFECT_INSTALL_COMMAND_FAILED")
+            _effect(proc.returncode == 0, "INSTALL_COMMAND_FAILED")
             self._effect_guard()
             self._venv_alias_pending = list(argv[1:7]) == ["-I", "-B", "-m", "venv", "--copies", "--without-pip"]
             try:
@@ -3223,6 +3319,8 @@ class FieldEffects:
                         if isinstance(cleanup_error, DispatchError) else type(cleanup_error).__name__)
             raise
         finally:
+            for fd in bound_fds:
+                os.close(fd)
             if attempted:
                 self._install_commands.append({"argv": list(argv),
                     "returncode": proc.returncode if proc is not None else None,
@@ -3239,7 +3337,7 @@ class FieldEffects:
                         getattr(proc, name).close()
 
     def persist(self, case_id, path, raw, mode):
-        _require(self._persistence_ready, "CORE_EFFECT_PERSISTENCE_NOT_READY")
+        _effect(self._persistence_ready, "PERSISTENCE_NOT_READY")
         target = self._persistence_path(case_id, path)
         self.create_only(target, raw, mode=mode)
         role = ("session" if path == "carrier/session.json" else
@@ -3249,11 +3347,11 @@ class FieldEffects:
                 "phase-receipt" if "/phase-" in path and path.endswith("-receipt.json") else
                 "recovery-proof" if path.endswith("/h11-recovery-proof.json") else
                 "verdict" if path.endswith("/case-verdict.json") else None)
-        _require(role is not None, "CORE_EFFECT_PERSIST_ROLE")
+        _effect(role is not None, "PERSIST_ROLE")
         return {"path": path, "role": role, "mode": mode, "raw": raw}
 
     def preparation_helpers(self):
-        _require(self._candidate_root is not None, "CORE_EFFECT_HELPER_INSTALLATION_REQUIRED")
+        _effect(self._candidate_root is not None, "HELPER_INSTALLATION_REQUIRED")
         verified = self.verify_install_inputs()
         return {name: self._candidate_helper(name, verified) for name in PREPARATION_HELPERS}
 
@@ -3343,14 +3441,14 @@ class FieldEffects:
             return prepared
 
     def plan_case(self, case, prepared, deadlines):
-        _require(case in CASES and prepared.get("case") == case,
-                 "CORE_EFFECT_PLAN_PREPARATION_REQUIRED")
+        _effect(case in CASES and prepared.get("case") == case,
+                 "PLAN_PREPARATION_REQUIRED")
         now = _prep_guard(self, deadlines["owner_deadline_ns"])
         realtime = time.time_ns()
         expires = prepared["facts"]["identity"]["expires_at"]
-        _require(realtime // NS < expires
+        _effect(realtime // NS < expires
                  and expires * NS <= realtime + deadlines["owner_deadline_ns"] - now["boottime_ns"],
-                 "CORE_EFFECT_PLAN_REQUEST_EXPIRED")
+                 "PLAN_REQUEST_EXPIRED")
         plan = _plan_from_prepared(case, prepared, deadlines)
         owner = dict(prepared["plan"]["settings"]["owner"])
         owner.pop("runtime_ns")
@@ -3396,26 +3494,26 @@ class FieldEffects:
         policy = modules["local_hand_jobs.policy"].Policy(prepared["assembled"]["policy"])
         fd, held = prepared["_exec_ledger_fd"], prepared["_exec_ledger_identity"]
         path, uid = plan["ledger_path"], prepared["facts"]["ordinary"]["uid"]
-        _require(held["path"] == path == policy.broker_root + "/jobs.sqlite",
-                 "CORE_EFFECT_EMPTY_LEDGER_PATH")
+        _effect(held["path"] == path == policy.broker_root + "/jobs.sqlite",
+                 "EMPTY_LEDGER_PATH")
         parent = self._held_directory(policy.broker_root)
         def snapshot():
             self._exec_guard(plan)
             info = os.fstat(fd)
-            _require((info.st_dev, info.st_ino) == (held["dev"], held["ino"])
+            _effect((info.st_dev, info.st_ino) == (held["dev"], held["ino"])
                 and stat.S_ISREG(info.st_mode) and info.st_uid == uid
                 and info.st_gid == prepared["facts"]["ordinary"]["gid"]
                 and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 384
                 and 100 <= info.st_size <= 33554432,
-                "CORE_EFFECT_EMPTY_LEDGER_IDENTITY")
+                "EMPTY_LEDGER_IDENTITY")
             for suffix in ("-wal", "-shm", "-journal"):
                 try: os.stat("jobs.sqlite" + suffix, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError: continue
                 raise DispatchError("CORE_EFFECT_EMPTY_LEDGER_SIDECAR")
             raw = os.pread(fd, info.st_size + 1, 0)
-            _require(len(raw) == info.st_size and checker.identity(info) == checker.identity(os.fstat(fd))
+            _effect(len(raw) == info.st_size and checker.identity(info) == checker.identity(os.fstat(fd))
                 == checker.identity(os.stat("jobs.sqlite", dir_fd=parent, follow_symlinks=False)),
-                "CORE_EFFECT_EMPTY_LEDGER_CHANGED")
+                "EMPTY_LEDGER_CHANGED")
             self._exec_guard(plan)
             return raw, checker.identity(info), checker.identity(os.fstat(parent))
         try:
@@ -3429,12 +3527,12 @@ class FieldEffects:
                 db.execute("PRAGMA query_only=ON")
                 db.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 100)
                 rows = db.execute("SELECT key,value FROM metadata").fetchall()
-                _require(len(rows) == 3 and dict(rows) == {"schema": "1",
+                _effect(len(rows) == 3 and dict(rows) == {"schema": "1",
                     "authority_id": plan["identity"]["authority_id"],
-                    "ledger_id": plan["identity"]["ledger_id"]}, "CORE_EFFECT_EMPTY_LEDGER_METADATA")
+                    "ledger_id": plan["identity"]["ledger_id"]}, "EMPTY_LEDGER_METADATA")
             finally:
                 db.close()
-            _require(snapshot() == before, "CORE_EFFECT_EMPTY_LEDGER_CHANGED")
+            _effect(snapshot() == before, "EMPTY_LEDGER_CHANGED")
         finally:
             os.close(parent)
         gate = {"schema": "local-hand-q2-core-empty-ledger-gate/v1", "session_id": SESSION,
@@ -3458,22 +3556,22 @@ class FieldEffects:
         The descriptor was held before that same original owner was started.
         """
         import sqlite3
-        _require(case in CASES[:2], "CORE_EFFECT_LEDGER_EXPORT_CASE")
+        _effect(case in CASES[:2], "LEDGER_EXPORT_CASE")
         held = prepared["_exec_ledger_identity"]
         fd = prepared["_exec_ledger_fd"]
         path = plan["ledger_path"]
-        _require(held["path"] == path, "CORE_EFFECT_LEDGER_EXPORT_IDENTITY")
+        _effect(held["path"] == path, "LEDGER_EXPORT_IDENTITY")
         parent = self._held_directory(str(PurePosixPath(path).parent))
         name = PurePosixPath(path).name
         def identity():
             self._exec_guard(plan)
             info = os.fstat(fd)
             named = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            _require(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
+            _effect(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
                      and info.st_nlink == named.st_nlink == 1
                      and (info.st_dev, info.st_ino) == (held["dev"], held["ino"])
                      == (named.st_dev, named.st_ino)
-                     and 0 < info.st_size <= 33554432, "CORE_EFFECT_LEDGER_EXPORT_IDENTITY")
+                     and 0 < info.st_size <= 33554432, "LEDGER_EXPORT_IDENTITY")
             for suffix in ("-wal", "-shm", "-journal"):
                 try:
                     os.stat(name + suffix, dir_fd=parent, follow_symlinks=False)
@@ -3490,7 +3588,7 @@ class FieldEffects:
                 if not chunk:
                     break
                 offset += len(chunk)
-                _require(offset <= 33554432, "CORE_EFFECT_LEDGER_EXPORT_SIZE")
+                _effect(offset <= 33554432, "LEDGER_EXPORT_SIZE")
                 value.update(chunk)
             return offset, value.hexdigest()
         def text_object(raw):
@@ -3506,11 +3604,11 @@ class FieldEffects:
                 if not math.isfinite(result):
                     raise ValueError("nonfinite number")
                 return result
-            _require(type(raw) is str, "CORE_EFFECT_LEDGER_EXPORT_TEXT")
+            _effect(type(raw) is str, "LEDGER_EXPORT_TEXT")
             try:
                 value = json.loads(raw, object_pairs_hook=pairs,
                                    parse_constant=number, parse_float=number)
-                _require(type(value) is dict, "CORE_EFFECT_LEDGER_EXPORT_TEXT")
+                _effect(type(value) is dict, "LEDGER_EXPORT_TEXT")
                 raw.encode("utf-8", "strict")
             except (ValueError, TypeError, RecursionError, UnicodeError) as error:
                 raise DispatchError("CORE_EFFECT_LEDGER_EXPORT_TEXT") from error
@@ -3518,7 +3616,7 @@ class FieldEffects:
         try:
             before = identity()
             size, sha = digest()
-            _require(size == before[2], "CORE_EFFECT_LEDGER_EXPORT_CHANGED")
+            _effect(size == before[2], "LEDGER_EXPORT_CHANGED")
             # immutable avoids a read-only WAL connection creating -shm. The
             # prior quiescence/sidecar checks and held-fd reread enforce its premise.
             connection = sqlite3.connect("file:/proc/self/fd/" + str(fd)
@@ -3526,22 +3624,22 @@ class FieldEffects:
             connection.row_factory = sqlite3.Row
             connection.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 100)
             connection.execute("PRAGMA query_only=ON")
-            _require(connection.execute("PRAGMA quick_check").fetchall()[0][0] == "ok",
-                     "CORE_EFFECT_LEDGER_EXPORT_DATABASE")
+            _effect(connection.execute("PRAGMA quick_check").fetchall()[0][0] == "ok",
+                     "LEDGER_EXPORT_DATABASE")
             metadata = dict(connection.execute("SELECT key,value FROM metadata"))
             identity_fields = plan["identity"]
-            _require(metadata == {"schema": "1", "authority_id": identity_fields["authority_id"],
+            _effect(metadata == {"schema": "1", "authority_id": identity_fields["authority_id"],
                                    "ledger_id": identity_fields["ledger_id"]},
-                     "CORE_EFFECT_LEDGER_EXPORT_METADATA")
+                     "LEDGER_EXPORT_METADATA")
             rows = connection.execute("SELECT namespace,id,parent,principal,digest,reserved_bytes,"
                 "request_json,plan_json,record_json FROM operations LIMIT 2").fetchall()
-            _require(len(rows) == 1, "CORE_EFFECT_LEDGER_EXPORT_OPERATION")
+            _effect(len(rows) == 1, "LEDGER_EXPORT_OPERATION")
             operation = dict(rows[0])
-            _require(operation["namespace"] == "job" and operation["id"] == case["operation_id"]
+            _effect(operation["namespace"] == "job" and operation["id"] == case["operation_id"]
                      and operation["principal"] == identity_fields["principal_id"]
                      and operation["digest"] == plan["request"]["request_digest"]
                      and type(operation["reserved_bytes"]) is int and operation["reserved_bytes"] > 0,
-                     "CORE_EFFECT_LEDGER_EXPORT_OPERATION")
+                     "LEDGER_EXPORT_OPERATION")
             for key in ("request_json", "plan_json", "record_json"):
                 text_object(operation[key])
             events = []
@@ -3550,18 +3648,18 @@ class FieldEffects:
             for row in cursor:
                 self._exec_guard(plan)
                 event = dict(row)
-                _require(type(event["seq"]) is int and event["seq"] > 0
+                _effect(type(event["seq"]) is int and event["seq"] > 0
                          and (not events or event["seq"] > events[-1]["seq"])
                          and event["namespace"] == "job" and event["id"] == case["operation_id"]
                          and type(event["kind"]) is str and event["kind"]
                          and re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?", event["observed_at"])
-                         is not None, "CORE_EFFECT_LEDGER_EXPORT_EVENT")
+                         is not None, "LEDGER_EXPORT_EVENT")
                 text_object(event["data_json"])
                 events.append(event)
-                _require(len(events) <= 4096, "CORE_EFFECT_LEDGER_EXPORT_SIZE")
+                _effect(len(events) <= 4096, "LEDGER_EXPORT_SIZE")
             connection.close(); connection = None
-            _require(identity() == before and digest() == (size, sha)
-                     and identity() == before, "CORE_EFFECT_LEDGER_EXPORT_CHANGED")
+            _effect(identity() == before and digest() == (size, sha)
+                     and identity() == before, "LEDGER_EXPORT_CHANGED")
             exported = self.now()["boottime_ns"]
             value = {"schema": "local-hand-q2-core-ledger-export/v1", "session_id": SESSION,
                 "index": case["index"], "case_id": case["case_id"],
@@ -3577,7 +3675,7 @@ class FieldEffects:
             deadline = min(plan["deadlines"]["owner_deadline_ns"],
                 self.context["guest_deadlines"]["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS)
             record = _prep_file(self, destination, raw, deadline)
-            _require(_prep_reread(self, record, deadline) == raw, "CORE_EFFECT_LEDGER_EXPORT_CHANGED")
+            _effect(_prep_reread(self, record, deadline) == raw, "LEDGER_EXPORT_CHANGED")
             return {"path": logical, "role": "ledger", "mode": 384, "raw": raw}
         finally:
             if connection is not None: connection.close()
@@ -3586,11 +3684,11 @@ class FieldEffects:
     def _exec_guard(self, plan, *, parent_guard=None):
         (self._effect_guard if parent_guard is None else parent_guard)()
         now = self.now(); original = getattr(self, "_active_case_deadlines", {})
-        _require(original.get("owner_deadline_ns") == plan["deadlines"]["owner_deadline_ns"]
+        _effect(original.get("owner_deadline_ns") == plan["deadlines"]["owner_deadline_ns"]
             and type(original.get("owner_monotonic_deadline_ns")) is int
             and now["boottime_ns"] < original["owner_deadline_ns"]
             and now["monotonic_ns"] < original["owner_monotonic_deadline_ns"],
-            "CORE_EFFECT_CASE_DEADLINE")
+            "CASE_DEADLINE")
 
     def _exec_child(self, argv, plan):
         """Reuse the bounded original wait4/EOF collector with both earlier clocks."""
@@ -3600,7 +3698,7 @@ class FieldEffects:
         try:
             # 32 KiB is stricter than the owner 68 KiB maximum; overflow fails.
             raw = self._installation_command(argv)
-            _require(self._install_commands[-1]["stderr"] == b"", "CORE_EFFECT_OWNER_STDERR")
+            _effect(self._install_commands[-1]["stderr"] == b"", "OWNER_STDERR")
             return raw
         finally:
             if previous is None: del self._effect_guard
@@ -3611,20 +3709,20 @@ class FieldEffects:
         root, relative = suffix.split("/", 1)
         self._exec_guard(plan)
         if role == "result":
-            _require(case["index"] == 1 and suffix == "business/result-03c94c57c840717302854a3f.json",
-                     "CORE_EFFECT_CASE_RESULT_SOURCE")
+            _effect(case["index"] == 1 and suffix == "business/result-03c94c57c840717302854a3f.json",
+                     "CASE_RESULT_SOURCE")
             physical = prepared["facts"]["slots"][0]["roots"]["evidence"]["path"] + "/" + relative
         elif role.startswith("business-evidence-"):
-            _require(case["index"] == 1, "CORE_EFFECT_CASE_RESULT_SOURCE")
+            _effect(case["index"] == 1, "CASE_RESULT_SOURCE")
             physical = prepared["paths"]["retained_store"] + "/" + relative
         else:
-            _require(root in prepared["paths"], "CORE_EFFECT_CASE_SOURCE_ROOT")
+            _effect(root in prepared["paths"], "CASE_SOURCE_ROOT")
             physical = prepared["paths"][root] + "/" + relative
         raw, identity = self.stable_read(physical, maximum=MEMBER_LIMIT, expected_mode=mode)
         self._exec_guard(plan)
         owner = prepared["facts"]["ordinary"] if role == "result" or role.startswith("business-evidence-") else {"uid": 0, "gid": 0}
-        _require(identity["nlink"] == 1 and identity["uid"] == owner["uid"]
-            and identity["gid"] == owner["gid"], "CORE_EFFECT_CASE_SOURCE_OWNER")
+        _effect(identity["nlink"] == 1 and identity["uid"] == owner["uid"]
+            and identity["gid"] == owner["gid"], "CASE_SOURCE_OWNER")
         source = {"path": "cases/" + case["case_id"] + "/" + suffix,
                   "role": role, "mode": mode, "raw": raw}
         prepared.setdefault("_exec_physical", {})[source["path"]] = physical
@@ -3636,70 +3734,70 @@ class FieldEffects:
                                ("owner_output", "SUPERVISOR_CLOSED")):
             stop = _parse_source(sources, prefix + folder + "/stop.json")
             seal = _parse_source(sources, prefix + folder + "/seal.json")
-            _require(stop.get("attempted") is True and stop.get("acknowledged") is True
+            _effect(stop.get("attempted") is True and stop.get("acknowledged") is True
                 and stop.get("parent_empty") is True and stop.get("complete") is True
                 and type(stop.get("closed_ns")) is int
                 and 0 < stop["closed_ns"] < plan["deadlines"]["owner_deadline_ns"]
                 and seal.get("status") == status and seal.get("production_supported") is False,
-                "CORE_EFFECT_CASE_STOP_UNPROVEN")
+                "CASE_STOP_UNPROVEN")
             before, after = stop["before"], stop["after"]
-            _require(before["Id"] == after["Id"] == plan["controllers"][
+            _effect(before["Id"] == after["Id"] == plan["controllers"][
                     "target" if folder == "supervisor_output" else "supervisor"]["unit"]
                 and before["InvocationID"] == seal["original"]["invocation_id"]
                 and after["MainPID"] == after["ControlPID"] == "0"
                 and (after["LoadState"] == "not-found" or (after["LoadState"] == "loaded"
                     and after["ActiveState"] in ("inactive", "failed")
                     and after["InvocationID"] == before["InvocationID"])),
-                "CORE_EFFECT_CASE_STOP_IDENTITY")
+                "CASE_STOP_IDENTITY")
             for source in sources:
                 physical = prepared["_exec_physical"].get(source["path"])
                 if physical in seal.get("files", {}):
-                    _require(seal["files"][physical] == {"sha256": _sha(source["raw"]),
-                        "bytes": len(source["raw"])}, "CORE_EFFECT_CASE_CONTROL_SEAL")
+                    _effect(seal["files"][physical] == {"sha256": _sha(source["raw"]),
+                        "bytes": len(source["raw"])}, "CASE_CONTROL_SEAL")
             own = next(s for s in sources if s["path"] == prefix + folder + "/stop.json")
-            _require(seal.get("files", {}).get(prepared["_exec_physical"][own["path"]]) ==
-                {"sha256": _sha(own["raw"]), "bytes": len(own["raw"])}, "CORE_EFFECT_CASE_CONTROL_SEAL")
-        _require(child.get("status") == "SUPERVISOR_CLOSED" and child.get("sealed") is True
-            and not child.get("cleanup_errors"), "CORE_EFFECT_CASE_OWNER_UNCLOSED")
+            _effect(seal.get("files", {}).get(prepared["_exec_physical"][own["path"]]) ==
+                {"sha256": _sha(own["raw"]), "bytes": len(own["raw"])}, "CASE_CONTROL_SEAL")
+        _effect(child.get("status") == "SUPERVISOR_CLOSED" and child.get("sealed") is True
+            and not child.get("cleanup_errors"), "CASE_OWNER_UNCLOSED")
         return {"requested": True, "acknowledged": True, "tree_exited": True,
                 "writers_stopped": True, "deadline_ns": plan["deadlines"]["owner_deadline_ns"]}
 
     def _exec_case(self, case, prepared, plan):
-        _require(case in CASES and prepared.get("case") == case
+        _effect(case in CASES and prepared.get("case") == case
             and plan["case_id"] == case["case_id"] and plan["operation_id"] == case["operation_id"],
-            "CORE_EFFECT_CASE_INPUT")
-        _require(not prepared.get("_exec_attempted"), "CORE_EFFECT_CASE_ALREADY_ATTEMPTED")
+            "CASE_INPUT")
+        _effect(not prepared.get("_exec_attempted"), "CASE_ALREADY_ATTEMPTED")
         self._exec_guard(plan)
         handoff = prepared["handoff"]
         for record in prepared["source_objects"].values():
             _prep_reread(self, record, plan["deadlines"]["owner_deadline_ns"])
-        _require(handoff["owner_envelope"]["deadline_ns"] == plan["deadlines"]["owner_deadline_ns"],
-                 "CORE_EFFECT_CASE_OWNER_DEADLINE")
+        _effect(handoff["owner_envelope"]["deadline_ns"] == plan["deadlines"]["owner_deadline_ns"],
+                 "CASE_OWNER_DEADLINE")
         raw, _ = self.stable_read(prepared["handoff_path"], maximum=2097152, expected_mode=384)
-        _require(document(raw, limit=2097152, newline=True) == handoff, "CORE_EFFECT_CASE_HANDOFF_CHANGED")
+        _effect(document(raw, limit=2097152, newline=True) == handoff, "CASE_HANDOFF_CHANGED")
         verified = self.verify_install_inputs()
         source_pin = handoff["template"]["launcher"]["source"]
-        _require(source_pin["commit"] == CANDIDATE["commit"]
+        _effect(source_pin["commit"] == CANDIDATE["commit"]
             and all(verified["source_files"].get(k) == v for k, v in source_pin["files"].items()),
-            "CORE_EFFECT_CASE_CANDIDATE")
+            "CASE_CANDIDATE")
         runtime_root = prepared["facts"]["source"]["root"]
-        _require(runtime_root == self._installation_receipt["source"]["root"],
-                 "CORE_EFFECT_CASE_RUNTIME_ROOT")
+        _effect(runtime_root == self._installation_receipt["source"]["root"],
+                 "CASE_RUNTIME_ROOT")
         for name, digest in source_pin["files"].items():
             content, _ = self.stable_read(runtime_root + "/" + name,
                                           maximum=MEMBER_LIMIT, expected_mode=420)
-            _require(_sha(content) == digest, "CORE_EFFECT_CASE_SOURCE_CHANGED")
+            _effect(_sha(content) == digest, "CASE_SOURCE_CHANGED")
         python = prepared["facts"]["installation"]["programs"]["python"]
         executable, _ = self.stable_read(python["path"], maximum=MEMBER_LIMIT)
-        _require(_sha(executable) == python["sha256"], "CORE_EFFECT_CASE_PYTHON_CHANGED")
+        _effect(_sha(executable) == python["sha256"], "CASE_PYTHON_CHANGED")
         parent = self._held_directory(str(PurePosixPath(plan["ledger_path"]).parent))
         fd = -1
         try:
             fd = os.open("jobs.sqlite", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOATIME,
                          dir_fd=parent)
             info = os.fstat(fd)
-            _require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-                and stat.S_IMODE(info.st_mode) == 384, "CORE_EFFECT_CASE_LEDGER")
+            _effect(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                and stat.S_IMODE(info.st_mode) == 384, "CASE_LEDGER")
             prepared["_exec_ledger_fd"] = fd
             prepared["_exec_ledger_identity"] = {"path": plan["ledger_path"], "dev": info.st_dev, "ino": info.st_ino}
             gate_source = self._exec_empty_ledger_gate(case, prepared, plan)
@@ -3711,8 +3809,8 @@ class FieldEffects:
             for record in prepared["source_objects"].values():
                 _prep_reread(self, record, plan["deadlines"]["owner_deadline_ns"])
             current = os.stat("jobs.sqlite", dir_fd=parent, follow_symlinks=False)
-            _require((current.st_dev, current.st_ino) == (info.st_dev, info.st_ino)
-                and stat.S_ISREG(current.st_mode), "CORE_EFFECT_CASE_LEDGER_CHANGED")
+            _effect((current.st_dev, current.st_ino) == (info.st_dev, info.st_ino)
+                and stat.S_ISREG(current.st_mode), "CASE_LEDGER_CHANGED")
             sources = [gate_source]
             # Only approved fixed names: H11 never touches a business result,
             # raw ledger contents, wildcard or business evidence directory.
@@ -3727,11 +3825,11 @@ class FieldEffects:
             prefix = "cases/" + case["case_id"] + "/"
             cap = _parse_source(sources, prefix + "launcher_output/capture.json")
             launch = _parse_source(sources, prefix + "launcher_output/result.json")
-            _require(cap.get("complete") is True and cap.get("returncode") == 0
+            _effect(cap.get("complete") is True and cap.get("returncode") == 0
                 and set(cap.get("eof", [])) == {"stdout", "stderr"}
                 and launch.get("resident_capture") == cap and not launch.get("cleanup_errors")
                 and next(s["raw"] for s in sources if s["path"] == prefix +
-                         "launcher_output/resident.stderr") == b"", "CORE_EFFECT_CASE_QUIESCENCE")
+                         "launcher_output/resident.stderr") == b"", "CASE_QUIESCENCE")
             if case["index"] != 3:
                 sources.append(self._exec_ledger_export(case, prepared, plan))
             return self._exec_observations(case, prepared, plan, sources, stop, verified)
@@ -3744,13 +3842,13 @@ class FieldEffects:
         prefix = "cases/" + case["case_id"] + "/"
         get = lambda suffix: _parse_source(sources, prefix + suffix)
         launch, capture = get("launcher_output/result.json"), get("launcher_output/capture.json")
-        _require(capture.get("complete") is True and capture.get("returncode") == 0
+        _effect(capture.get("complete") is True and capture.get("returncode") == 0
             and set(capture.get("eof", [])) == {"stdout", "stderr"}
             and launch.get("resident_capture") == capture and not launch.get("cleanup_errors"),
-            "CORE_EFFECT_CASE_RESIDENT_CAPTURE")
+            "CASE_RESIDENT_CAPTURE")
         stdout = next(s["raw"] for s in sources if s["path"] == prefix + "launcher_output/resident.stdout")
         stderr = next(s["raw"] for s in sources if s["path"] == prefix + "launcher_output/resident.stderr")
-        _require(stderr == b"", "CORE_EFFECT_CASE_RESIDENT_STDERR")
+        _effect(stderr == b"", "CASE_RESIDENT_STDERR")
         resident = document(stdout, limit=32768, newline=True)
         gate = next(s for s in prepared["sources"] if s["role"] == "empty-ledger-gate")
         obs = {"empty_ledger_gate": _plain_reference(gate)}
@@ -3773,16 +3871,16 @@ class FieldEffects:
             export = get("records/ledger-export.json"); operation = export["operation"]
             record = json.loads(operation["record_json"])
             events = export["events"]; accepts = [x for x in events if x["kind"] == "ACCEPTED"]
-            _require(len(accepts) == 1 and operation["id"] == case["operation_id"]
-                and operation["digest"] == plan["request"]["request_digest"], "CORE_EFFECT_CASE_ACCEPTED")
+            _effect(len(accepts) == 1 and operation["id"] == case["operation_id"]
+                and operation["digest"] == plan["request"]["request_digest"], "CASE_ACCEPTED")
             accepted = accepts[0]["seq"]
             if case["index"] == 1:
-                _require(launch.get("status") == resident.get("status") == "CHAIN_CLOSED"
+                _effect(launch.get("status") == resident.get("status") == "CHAIN_CLOSED"
                     and resident.get("operation_id") == case["operation_id"]
                     and record.get("lifecycle") == "TERMINAL" and record.get("outcome") == "SUCCEEDED"
-                    and record.get("evidence") == "SEALED", "CORE_EFFECT_H01_TERMINAL")
+                    and record.get("evidence") == "SEALED", "H01_TERMINAL")
                 seals = record.get("seals", [])
-                _require(len(seals) == 1, "CORE_EFFECT_H01_SEAL_REGISTRATION")
+                _effect(len(seals) == 1, "H01_SEAL_REGISTRATION")
                 seal_id = seals[0]["seal_id"]; _h01_special(seal_id)
                 for suffix, role, mode in _h01_special(seal_id):
                     if role == "result" or role.startswith("business-evidence-"):
@@ -3792,41 +3890,41 @@ class FieldEffects:
                 business_value = reader._result(reader._strict_json(business_raw, reader.MAX_RESULT_BYTES),
                     "job-" + case["operation_id"] + "-business", "business")
                 retained = record.get("quota_pending", {}).get("business", {}).get("proof", {})
-                _require(retained.get("helper_result_verified") is True and retained.get("result") == business_value
+                _effect(retained.get("helper_result_verified") is True and retained.get("result") == business_value
                     and business_value.get("outcome") == "SUCCEEDED" and business_value.get("effects_checked") is True,
-                    "CORE_EFFECT_H01_RESULT_BINDING")
+                    "H01_RESULT_BINDING")
                 seal_source = next(s for s in sources if s["path"] == prefix + "business-evidence/" + seal_id + "/seal.json")
                 seal = document(seal_source["raw"], limit=MEMBER_LIMIT, newline=False)
-                _require(all(seal.get(k) == v for k, v in seals[0].items() if k in seal)
+                _effect(all(seal.get(k) == v for k, v in seals[0].items() if k in seal)
                     and seal.get("operation_id") == case["operation_id"] and seal.get("complete") is True
-                    and _sha(seal_source["raw"]) == seals[0]["seal_sha256"], "CORE_EFFECT_H01_BUSINESS_SEAL")
+                    and _sha(seal_source["raw"]) == seals[0]["seal_sha256"], "H01_BUSINESS_SEAL")
                 for artifact in seal["artifacts"]:
                     filename = "evidence.zip" if artifact["role"] == "zip" else "manifest.json"
                     content = next(s["raw"] for s in sources if s["path"] == prefix +
                                    "business-evidence/" + seal_id + "/" + filename)
-                    _require(len(content) == artifact["size"] and _sha(content) == artifact["sha256"],
-                             "CORE_EFFECT_H01_BUSINESS_EVIDENCE")
+                    _effect(len(content) == artifact["size"] and _sha(content) == artifact["sha256"],
+                             "H01_BUSINESS_EVIDENCE")
                 units = []
                 for phase in case["phases"]:
                     value = get("launcher_output/phase-" + phase + ".json")
                     fence = value.get("fence", {})
-                    _require(value.get("status") == "PHASE_CLOSED" and fence.get("execution_id") ==
-                        "job-" + case["operation_id"] + "-" + phase, "CORE_EFFECT_H01_PHASE")
+                    _effect(value.get("status") == "PHASE_CLOSED" and fence.get("execution_id") ==
+                        "job-" + case["operation_id"] + "-" + phase, "H01_PHASE")
                     for stage in ("bootstrap", "helper", "result_reader"):
                         closed = fence["stages"]["reader" if stage == "result_reader" else stage]; identity = closed["identity"]
-                        _require(all(closed.get(k) is True for k in ("delivery_settled", "future_start_blocked", "job_empty",
+                        _effect(all(closed.get(k) is True for k in ("delivery_settled", "future_start_blocked", "job_empty",
                             "unit_terminal", "tree_empty", "collectors_stopped", "stdout_eof", "stderr_eof")),
-                            "CORE_EFFECT_H01_EXIT")
+                            "H01_EXIT")
                         units.append({"phase": phase, "stage": stage, "unit": identity["unit"],
                                       "invocation_id": identity["invocation_id"]})
                 units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
                 _validate_units(units, case)
                 gateway = get("launcher_output/gateway.json")
-                _require(gateway.get("failure") is None, "CORE_EFFECT_H01_GATEWAY")
+                _effect(gateway.get("failure") is None, "H01_GATEWAY")
                 for row in units:
                     match = [x for x in gateway["stages"] if all(x.get(k) == v for k, v in row.items())]
-                    _require(len(match) == 1 and match[0].get("sealed") is True
-                        and type(match[0].get("returncode")) is int, "CORE_EFFECT_H01_GATEWAY_UNIT")
+                    _effect(len(match) == 1 and match[0].get("sealed") is True
+                        and type(match[0].get("returncode")) is int, "H01_GATEWAY_UNIT")
                 business = next(x for x in gateway["stages"] if x["phase"] == "business" and x["stage"] == "helper")
                 summary = {"business_invocation_id": business["invocation_id"], "business_wait_status": business["returncode"]}
                 obs.update({k: True for k in H01_OBSERVATIONS if k not in
@@ -3836,15 +3934,24 @@ class FieldEffects:
                 modules = self._candidate_modules(("q2_launcher", "q4_cancel_case"))
                 report = modules["q2_launcher"].validate_cancel_result(launch,
                     prepared["handoff"]["template"]["launcher"]["resident"], modules["q4_cancel_case"])
-                _require(report == get("launcher_output/phase.json")["case"] == resident.get("case")
+                _effect(report == get("launcher_output/phase.json")["case"] == resident.get("case")
                     and report["status"] == "EXERCISED" and report["helper_exit_proven"] is True,
-                    "CORE_EFFECT_Q4_NOT_EXERCISED")
+                    "Q4_NOT_EXERCISED")
                 cancels = [x for x in events if x["kind"] == "CANCEL_REQUESTED"]
-                _require(len(cancels) == 1 and cancels[0]["seq"] == report["ledger"]["cancel_event"]["seq"]
-                    and record.get("cancel_requested") is True, "CORE_EFFECT_Q4_CANCEL_LEDGER")
+                _effect(len(cancels) == 1 and cancels[0]["seq"] == report["ledger"]["cancel_event"]["seq"]
+                    and record.get("cancel_requested") is True, "Q4_CANCEL_LEDGER")
+                manager = record["handles"]["preflight"]["manager"]
+                deliveries = [{"seq": x["seq"], "delivery_ids": json.loads(x["data_json"])["delivery_intents"]}
+                    for x in events if x["kind"] == "MANAGER_DELIVERY_INTENT"]
+                _effect(manager["result_reader"] is None and report["ledger"]["reader_delivered"] is False
+                    and report["ledger"]["no_delivery_after_cancel"] is True
+                    and deliveries == report["ledger"]["delivery_events"], "Q4_READER_DELIVERED")
+                _effect(all(manager["helper"][key] == report["trigger"]["identity"][key]
+                    == report["helper"]["identity"][key] for key in ("boot_id", "unit", "invocation_id")),
+                    "Q4_HELPER_IDENTITY")
                 units = [{"phase": "preflight", "stage": stage, "unit": item["unit"],
                     "invocation_id": item["invocation_id"]} for stage, item in
-                    record["handles"]["preflight"]["manager"].items() if stage in ("bootstrap", "helper", "result_reader")]
+                    manager.items() if stage in ("bootstrap", "helper")]
                 units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
                 _validate_units(units, case)
                 obs.update({k: True for k in Q4_OBSERVATIONS if k not in
@@ -3867,7 +3974,7 @@ class FieldEffects:
             prepared["handoff"]["template"]["launcher"]["resident"])
         gateway = get("launcher_output/gateway.json")
         origin = get("launcher_output/origin-capture.json")
-        _require(report == resident == get("launcher_output/recovery.json")
+        _effect(report == resident == get("launcher_output/recovery.json")
             and launch["origin_capture"] == origin and origin.get("complete") is True
             and set(origin.get("eof", [])) == {"stdout", "stderr"}
             and origin.get("returncode") == -signal.SIGKILL
@@ -3881,21 +3988,21 @@ class FieldEffects:
             and report["event_kinds"].count("RECOVERY_BARRIER") == 1
             and report["event_kinds"].count("QUOTA_EXIT_PENDING") == 1
             and set(report["event_kinds"]) <= modules["q4_h11_recovery"].RECOVERY_EVENTS,
-            "CORE_EFFECT_H11_ORIGINAL_BINDING")
-        _require(gateway.get("failure") is None and gateway.get("recovery_finished") is True
+            "H11_ORIGINAL_BINDING")
+        _effect(gateway.get("failure") is None and gateway.get("recovery_finished") is True
             and gateway.get("recovery_only") is True and gateway.get("recovery_rebinds") == 1
             and gateway.get("recovery_arm_ack") is True
             and gateway.get("recovery_plan_sha256") == _sha(canonical(recovery)),
-            "CORE_EFFECT_H11_GATEWAY_BINDING")
+            "H11_GATEWAY_BINDING")
         expected_units = _phase_units(case["operation_id"], ["preflight"])[0]
         for stage, unit in recovery["units"].items():
-            _require(unit == expected_units[stage + "_unit"], "CORE_EFFECT_H11_UNIT")
+            _effect(unit == expected_units[stage + "_unit"], "H11_UNIT")
             rows = [r for r in gateway["stages"] if r["stage"] == stage and r["phase"] == "preflight"]
-            _require(len(rows) == 1 and rows[0]["unit"] == unit
-                and rows[0].get("recovery_observed") is True, "CORE_EFFECT_H11_UNIT")
+            _effect(len(rows) == 1 and rows[0]["unit"] == unit
+                and rows[0].get("recovery_observed") is True, "H11_UNIT")
         for stream in ("stdout", "stderr"):
-            _require(item("launcher_output/origin-resident." + stream)["raw"] == b"",
-                     "CORE_EFFECT_H11_ORIGIN_OUTPUT")
+            _effect(item("launcher_output/origin-resident." + stream)["raw"] == b"",
+                     "H11_ORIGIN_OUTPUT")
         refs = {key: _plain_reference(item(suffix)) for key, suffix in (
             ("recovery_plan", "launcher_declarations/recovery-resident.json"),
             ("recovery_summary", "launcher_output/recovery.json"),
@@ -3929,7 +4036,7 @@ class FieldEffects:
     def _exec_h11_accepted(self, case, prepared, plan):
         import sqlite3
         self._exec_guard(plan)
-        _require(case == CASES[2], "CORE_EFFECT_H11_ACCEPTED_CASE")
+        _effect(case == CASES[2], "H11_ACCEPTED_CASE")
         fd = prepared["_exec_ledger_fd"]
         path = PurePosixPath(plan["ledger_path"])
         parent = self._held_directory(str(path.parent))
@@ -3937,10 +4044,10 @@ class FieldEffects:
             self._exec_guard(plan)
             info = os.fstat(fd)
             named = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
-            _require(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
+            _effect(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
                 and info.st_nlink == named.st_nlink == 1
                 and (info.st_dev, info.st_ino) == (named.st_dev, named.st_ino),
-                "CORE_EFFECT_H11_LEDGER_CHANGED")
+                "H11_LEDGER_CHANGED")
             for suffix in ("-wal", "-shm", "-journal"):
                 try: os.stat(path.name + suffix, dir_fd=parent, follow_symlinks=False)
                 except FileNotFoundError: continue
@@ -3956,10 +4063,10 @@ class FieldEffects:
             db.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 500)
             rows = db.execute("SELECT seq FROM events WHERE namespace='job' AND id=? AND kind='ACCEPTED'",
                               (case["operation_id"],)).fetchmany(2)
-            _require(len(rows) == 1 and type(rows[0][0]) is int and rows[0][0] > 0,
-                     "CORE_EFFECT_H11_ACCEPTED_EVENT")
+            _effect(len(rows) == 1 and type(rows[0][0]) is int and rows[0][0] > 0,
+                     "H11_ACCEPTED_EVENT")
             db.close(); db = None
-            _require(identity() == before, "CORE_EFFECT_H11_LEDGER_CHANGED")
+            _effect(identity() == before, "H11_LEDGER_CHANGED")
         finally:
             if db is not None: db.close()
             os.close(parent)
@@ -3967,15 +4074,15 @@ class FieldEffects:
         return rows[0][0]
 
     def run_h01(self, case, prepared, plan):
-        _require(case == CASES[0], "CORE_EFFECT_H01_CASE")
+        _effect(case == CASES[0], "H01_CASE")
         return self._exec_case(case, prepared, plan)
 
     def run_q4(self, case, prepared, plan):
-        _require(case == CASES[1], "CORE_EFFECT_Q4_CASE")
+        _effect(case == CASES[1], "Q4_CASE")
         return self._exec_case(case, prepared, plan)
 
     def recover_h11(self, case, prepared, plan):
-        _require(case == CASES[2], "CORE_EFFECT_H11_CASE")
+        _effect(case == CASES[2], "H11_CASE")
         return self._exec_case(case, prepared, plan)
 
     def phase_facts(self, case, phase, plan, sources):
@@ -3995,33 +4102,32 @@ class FieldEffects:
 
 def _phase_extract(case, phase, plan, sources, config_api, budget_api, controller_api):
     """Rebuild receipts from original candidate bytes, never from plan defaults."""
-    _require(case in CASES and phase in case["phases"], "CORE_EFFECT_PHASE_CASE")
+    _phase_raw(case in CASES and phase in case["phases"], "CASE")
     by_path = {}
     for source in sources:
         _source(source, case_id=case["case_id"])
-        _require(source["path"] not in by_path, "CORE_EFFECT_PHASE_DUPLICATE")
+        _phase_raw(source["path"] not in by_path, "DUPLICATE")
         by_path[source["path"]] = source
     rows = {}
     for path, role in phase_source_specs(case, phase):
         item = by_path.get(path)
-        _require(item is not None and item["role"] == role
-                 and item["mode"] == (420 if role == "recovery-plan" else 384),
-                 "CORE_EFFECT_PHASE_SOURCE")
+        _phase_raw(item is not None and item["role"] == role
+                 and item["mode"] == (420 if role == "recovery-plan" else 384), "SOURCE")
         rows[role] = item
     values = {role: document(item["raw"], limit=MEMBER_LIMIT,
                            newline=role == "preparation-result")
               for role, item in rows.items()}
     try:
         prepared = values["preparation-result"]
-        _exact(prepared, ("schema", "preparation_id", "plan_sha256", "status", "reason",
+        _phase_raw.exact(prepared, ("schema", "preparation_id", "plan_sha256", "status", "reason",
                          "facts", "q2_accepted", "q3_accepted", "production_supported",
-                         "fixture_generated"), "CORE_EFFECT_PHASE_PREPARATION")
-        _require(prepared["schema"] == "local-hand-q2-fixture-preparation/v1"
+                         "fixture_generated"), "PREPARATION")
+        _phase_raw(prepared["schema"] == "local-hand-q2-fixture-preparation/v1"
                  and prepared["status"] == "RESOURCES_PREPARED" and prepared["reason"] is None
                  and prepared["preparation_id"] == plan["preparation_id"]
                  and all(prepared[key] is False for key in
                          ("q2_accepted", "q3_accepted", "production_supported", "fixture_generated")),
-                 "CORE_EFFECT_PHASE_PREPARATION")
+                 "PREPARATION")
         observed = prepared["facts"]
         raw = rows["observer-config"]["raw"]
         path = observed["directories"]["capture"]["path"] + "/" + phase + "/observer.json"
@@ -4029,53 +4135,50 @@ def _phase_extract(case, phase, plan, sources, config_api, budget_api, controlle
         grant = config.active()
         data, request = grant.as_dict(), grant.request.as_dict()
         execution = "job-" + case["operation_id"] + "-" + phase
-        _require(config.data()["source_commit"] == CANDIDATE["commit"]
+        _phase_raw(config.data()["source_commit"] == CANDIDATE["commit"]
                  and request["execution_id"] == execution and request["phase"] == phase
                  and request["boot_id"] == observed["host"]["boot_id"]
                  and request["generation"] == plan["identity"]["slot_generation"]
                  and all(request[key] == plan["identity"][key]
                          for key in ("authority_digest", "manifest_digest", "epoch")),
-                 "CORE_EFFECT_PHASE_GRANT_BINDING")
+                 "GRANT_BINDING")
         budget = data["budget"]
         budget_api.validate_grant(budget, execution_id=execution, phase=phase,
             namespace="job", operation_id=case["operation_id"], record_id=case["operation_id"],
             original_budgets=plan["budgets"]["operation"])
         original_roots = {row["project_id"]: row for row in observed["roots"]}
-        _require(len(original_roots) == 7 and set(original_roots) == set(case["project_ids"]),
-                 "CORE_EFFECT_PHASE_ROOTS")
+        _phase_raw(len(original_roots) == 7 and set(original_roots) == set(case["project_ids"]),
+                 "ROOTS")
         projects = case["project_ids"][3:] if phase == "evidence" else case["project_ids"][:3]
-        _require(len(data["roots"]) == len(projects)
-                 and {row["project_id"] for row in data["roots"]} == set(projects),
-                 "CORE_EFFECT_PHASE_ROOTS")
+        _phase_raw(len(data["roots"]) == len(projects)
+                 and {row["project_id"] for row in data["roots"]} == set(projects), "ROOTS")
         for root in data["roots"]:
             original = original_roots.get(root["project_id"])
-            _require(original is not None and all(original[key] == value for key, value in root.items()),
-                     "CORE_EFFECT_PHASE_ROOTS")
+            _phase_raw(original is not None and all(original[key] == value for key, value in root.items()),
+                     "ROOTS")
         reservation = values["launcher-reservation"]
-        _exact(reservation, ("schema", "fixture_digest", "session", "controller", "started_ns"),
-               "CORE_EFFECT_PHASE_RESERVATION")
-        _require(reservation["schema"] == ("local-hand-q2-system-launcher-reservation/v1"
+        _phase_raw.exact(reservation, ("schema", "fixture_digest", "session", "controller", "started_ns"),
+               "RESERVATION")
+        _phase_raw(reservation["schema"] == ("local-hand-q2-system-launcher-reservation/v1"
                  if case["index"] == 1 else "local-hand-q2-launcher-reservation/v1"
                  if case["index"] == 2 else "local-hand-q4-h11-launcher-reservation/v1")
-                 and reservation["session"] == plan["identity"]["session"],
-                 "CORE_EFFECT_PHASE_RESERVATION")
+                 and reservation["session"] == plan["identity"]["session"], "RESERVATION")
         _digest(reservation["fixture_digest"])
         envelope = reservation["controller"]
-        _exact(envelope, ("controller", "issued_ns", "deadline_ns", "output_bytes",
-                          "storage_bytes", "storage_inodes"), "CORE_EFFECT_PHASE_CONTROLLER")
+        _phase_raw.exact(envelope, ("controller", "issued_ns", "deadline_ns", "output_bytes",
+                          "storage_bytes", "storage_inodes"), "CONTROLLER")
         _integer(envelope["issued_ns"], 1)
         _integer(reservation["started_ns"], 1)
         controller_api.decode_controller(envelope["controller"])
         target = plan["controllers"]["target"]
-        _require(all(envelope["controller"][key] == value for key, value in target.items())
+        _phase_raw(all(envelope["controller"][key] == value for key, value in target.items())
                  and envelope["issued_ns"] <= reservation["started_ns"] < envelope["deadline_ns"]
                  and envelope["deadline_ns"] <= plan["deadlines"]["owner_deadline_ns"]
                  and envelope["deadline_ns"] - envelope["issued_ns"]
                      <= envelope["controller"]["runtime_max_usec"] * 1000
                  and envelope["output_bytes"] == 32768
                  and all(envelope[key] == plan["controllers"]["target_" + key]
-                         for key in ("storage_bytes", "storage_inodes")),
-                 "CORE_EFFECT_PHASE_CONTROLLER")
+                         for key in ("storage_bytes", "storage_inodes")), "CONTROLLER")
         digest = grant.request.digest
         facts = dict(quota_request_id=request["request_id"], quota_request_sha256=digest,
             query_unit=grant.request.query_unit, listener_unit="lhqoc-" + digest + ".service",
@@ -4084,53 +4187,52 @@ def _phase_extract(case, phase, plan, sources, config_api, budget_api, controlle
             phase_deadline_ns=budget_api.phase_deadline_ns(budget),
             stage_deadline_ns=budget_api.phase_deadline_ns(budget) - budget["limits"]["terminate_grace_seconds"] * NS,
             controller_deadline_ns=envelope["deadline_ns"])
-        _require(request["deadline_ns"] <= facts["stage_deadline_ns"]
-                 and facts["budget_deadline_ns"] <= facts["controller_deadline_ns"],
-                 "CORE_EFFECT_PHASE_DEADLINE")
+        _phase_raw(request["deadline_ns"] <= facts["stage_deadline_ns"]
+                 and facts["budget_deadline_ns"] <= facts["controller_deadline_ns"], "DEADLINE")
         _phase_raw_binding(case, phase, plan, values, grant.digest, facts)
         _phase_receipt(case, phase, facts, sources)
         return facts
     except DispatchError:
         raise
     except Exception as error:
-        raise DispatchError("CORE_EFFECT_PHASE_RAW_INVALID") from error
+        raise _phase_raw.error("RAW_INVALID") from error
 
 
 def _phase_raw_binding(case, phase, plan, values, grant_digest, facts):
     launcher = values["launcher-result"]
-    _require(launcher["q3_accepted"] is False and launcher["production_supported"] is False,
-             "CORE_EFFECT_PHASE_LAUNCHER")
+    _phase_raw(launcher["q3_accepted"] is False and launcher["production_supported"] is False,
+             "LAUNCHER")
     if case["index"] != 3:
         result = values["phase-result"]
-        _require(result["grant_digest"] == grant_digest and result["q3_accepted"] is False
-                 and result["production_supported"] is False, "CORE_EFFECT_PHASE_RESULT")
+        _phase_raw(result["grant_digest"] == grant_digest and result["q3_accepted"] is False
+                 and result["production_supported"] is False, "RESULT")
         if case["index"] == 1:
-            _require(result["status"] == "PHASE_CLOSED" and launcher["status"] == "CHAIN_CLOSED"
+            _phase_raw(result["status"] == "PHASE_CLOSED" and launcher["status"] == "CHAIN_CLOSED"
                      and launcher["grant_digests"][phase] == grant_digest
                      and result["fence"]["request_digest"] == facts["quota_request_sha256"],
-                     "CORE_EFFECT_PHASE_RESULT")
+                     "RESULT")
         else:
             report = result["case"]
-            _require(result["status"] == launcher["status"] == "CANCEL_CASE_RECORDED"
+            _phase_raw(result["status"] == launcher["status"] == "CANCEL_CASE_RECORDED"
                      and launcher["grant_digest"] == grant_digest and launcher["case"] == report
                      and report["operation_id"] == case["operation_id"]
                      and report["request_digest"] == plan["request"]["request_digest"]
                      and report["phase_deadline_ns"] == facts["stage_deadline_ns"],
-                     "CORE_EFFECT_PHASE_CANCEL_BINDING")
+                     "CANCEL_BINDING")
     else:
         original = values["recovery-plan"]["recovery"]
         summary = values["recovery-summary"]
-        _require(launcher["status"] == "RECOVERY_RECORDED" and launcher["recovery"] == summary,
-                 "CORE_EFFECT_PHASE_RECOVERY")
+        _phase_raw(launcher["status"] == "RECOVERY_RECORDED" and launcher["recovery"] == summary,
+                 "RECOVERY")
         for item, budget_name in ((original, "budget_deadline_ns"), (summary, "original_deadline_ns")):
-            _require(item["operation_id"] == case["operation_id"] and item["phase"] == phase
+            _phase_raw(item["operation_id"] == case["operation_id"] and item["phase"] == phase
                      and item[budget_name] == facts["budget_deadline_ns"]
                      and all(item[key] == facts[key] for key in ("phase_deadline_ns", "controller_deadline_ns")),
-                     "CORE_EFFECT_PHASE_RECOVERY_DEADLINE")
+                     "RECOVERY_DEADLINE")
         expected = next(row for row in plan["phases"] if row["phase"] == phase)
-        _require(original["units"] == summary["units"] ==
+        _phase_raw(original["units"] == summary["units"] ==
                  {key: expected[key + "_unit"] for key in ("bootstrap", "helper", "result_reader")},
-                 "CORE_EFFECT_PHASE_RECOVERY_UNITS")
+                 "RECOVERY_UNITS")
 
 
 def _clock(effects, deadlines):
@@ -4155,13 +4257,11 @@ def _persist(effects, case_id, path, role, value, *, mode=384, raw=False):
 
 
 def _validate_phase_receipts(case, sources, phase_facts, owner_deadline):
-    _require(type(phase_facts) is dict and set(phase_facts) == set(case["phases"]),
-             "CORE_DISPATCH_PHASE_FACTS")
+    _phase(type(phase_facts) is dict and set(phase_facts) == set(case["phases"]), "FACTS")
     generated = []
     for phase in case["phases"]:
         facts = phase_facts[phase]
-        _require(facts["controller_deadline_ns"] <= owner_deadline,
-                 "CORE_DISPATCH_CONTROLLER_DEADLINE")
+        _check(facts["controller_deadline_ns"] <= owner_deadline, "CONTROLLER_DEADLINE")
         generated.append((phase, _phase_receipt(case, phase, facts, sources)))
     return generated
 
@@ -4250,12 +4350,12 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
 
 
 def _h01_summary(case, sources, observed, seal_id):
-    _exact(observed, ("business_invocation_id", "business_wait_status"),
-           "CORE_DISPATCH_H01_SUMMARY_INPUT")
-    _require(re.fullmatch(r"[0-9a-f]{32}", observed["business_invocation_id"] or "") is not None,
-             "CORE_DISPATCH_H01_SUMMARY_INPUT")
-    _integer(observed["business_wait_status"], 0, 255,
-             "CORE_DISPATCH_H01_SUMMARY_INPUT")
+    _check.exact(observed, ("business_invocation_id", "business_wait_status"),
+           "H01_SUMMARY_INPUT")
+    _check(re.fullmatch(r"[0-9a-f]{32}", observed["business_invocation_id"] or "") is not None,
+             "H01_SUMMARY_INPUT")
+    _check.integer(observed["business_wait_status"], 0, 255,
+             "H01_SUMMARY_INPUT")
     prefix = "cases/" + case["case_id"] + "/"
     result = next(item for item in sources
                   if item["path"] == prefix + "business/result-03c94c57c840717302854a3f.json")
@@ -4287,9 +4387,8 @@ def _h01_summary(case, sources, observed, seal_id):
 def _case_deadlines(now, outer):
     remote_boot = outer["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS
     remote_mono = outer["monotonic_deadline_ns"] - REMOTE_FINAL_RESERVE_NS
-    _require(remote_boot - now["boottime_ns"] >= CASE_GATE_NS
-             and remote_mono - now["monotonic_ns"] >= CASE_GATE_NS,
-             "CORE_DISPATCH_CASE_GATE")
+    _check(remote_boot - now["boottime_ns"] >= CASE_GATE_NS
+             and remote_mono - now["monotonic_ns"] >= CASE_GATE_NS, "CASE_GATE")
     return {
         "case_origin_ns": now["boottime_ns"],
         "preparation_deadline_ns": min(now["boottime_ns"] + PREPARATION_NS,
@@ -4308,18 +4407,17 @@ def _usage(value, context, frame_bytes):
               "guest_allocated_bytes", "guest_allocated_inodes", "job_units_started",
               "controller_units_started", "quota_query_units_started",
               "dynamic_quota_units_started", "native_children_started")
-    _exact(value, fields, "CORE_DISPATCH_USAGE_FIELDS")
+    _check.exact(value, fields, "USAGE_FIELDS")
     for key in fields:
-        _integer(value[key], 0, code="CORE_DISPATCH_USAGE")
-    _require(value["stdin_bytes_received"] == context["stdin_bytes_received"]
-             and value["output_frame_bytes"] in (0, frame_bytes), "CORE_DISPATCH_USAGE_BINDING")
+        _check.integer(value[key], 0, code="USAGE")
+    _check(value["stdin_bytes_received"] == context["stdin_bytes_received"]
+             and value["output_frame_bytes"] in (0, frame_bytes), "USAGE_BINDING")
     ceilings = {"carrier_cpu_ns": 800 * NS, "carrier_memory_peak_bytes": 1073741824,
                 "carrier_pids_peak": 128, "guest_allocated_bytes": 188743680,
                 "guest_allocated_inodes": 13440, "job_units_started": 15,
                 "controller_units_started": 6, "quota_query_units_started": 5,
                 "dynamic_quota_units_started": 15, "native_children_started": 16}
-    _require(all(value[key] <= limit for key, limit in ceilings.items()),
-             "CORE_DISPATCH_USAGE_LIMIT")
+    _check(all(value[key] <= limit for key, limit in ceilings.items()), "USAGE_LIMIT")
     return value
 
 
@@ -4336,21 +4434,14 @@ def _session(context, admission, installation):
         "entry": manifest["entry"], "locators": manifest["locators"],
         "consumption": _consumption_info(context),
         "session_id": SESSION,
-        "outer": {"host_boottime_origin_ns": bind["host_boottime_origin_ns"],
-                  "host_monotonic_origin_ns": bind["host_monotonic_origin_ns"],
-                  "host_boottime_deadline_ns": bind["host_boottime_deadline_ns"],
-                  "host_monotonic_deadline_ns": bind["host_monotonic_deadline_ns"],
-                  "clock_margin_ns": bind["clock_margin_ns"],
-                  "host_boottime_bind_ns": bind["host_boottime_bind_ns"],
-                  "host_monotonic_bind_ns": bind["host_monotonic_bind_ns"],
-                  "hello_sha256": bind["hello_sha256"],
-                  "mapped_duration_ns": bind["mapped_duration_ns"],
-                  "host_remaining_floor_ns": bind["host_remaining_floor_ns"],
-                  "guest_duration_cap_ns": bind["guest_duration_cap_ns"],
-                  "guest_duration_ns": bind["guest_duration_ns"],
-                  "guest_boot_id": hello["guest_boot_id"],
-                  "guest_boottime_origin_ns": hello["guest_boottime_origin_ns"],
-                  "guest_monotonic_origin_ns": hello["guest_monotonic_origin_ns"],
+        "outer": {**{key: bind[key] for key in (
+            "host_boottime_origin_ns", "host_monotonic_origin_ns",
+            "host_boottime_deadline_ns", "host_monotonic_deadline_ns", "clock_margin_ns",
+            "host_boottime_bind_ns", "host_monotonic_bind_ns", "hello_sha256",
+            "mapped_duration_ns", "host_remaining_floor_ns", "guest_duration_cap_ns",
+            "guest_duration_ns")},
+                  **{key: hello[key] for key in (
+                      "guest_boot_id", "guest_boottime_origin_ns", "guest_monotonic_origin_ns")},
                   "guest_boottime_deadline_ns": context["guest_deadlines"]["boottime_deadline_ns"],
                   "guest_monotonic_deadline_ns": context["guest_deadlines"]["monotonic_deadline_ns"],
                   "remote_final_reserve_ns": REMOTE_FINAL_RESERVE_NS,
@@ -4389,46 +4480,43 @@ def _program_identity(value, code):
 
 
 def _validate_admission(value, context):
-    _exact(value, ("guest", "programs", "policies", "parents", "filesystems", "capacity", "absence", "binding"),
-           "CORE_DISPATCH_ADMISSION_FIELDS")
+    _admit.exact(value, ("guest", "programs", "policies", "parents", "filesystems", "capacity", "absence", "binding"),
+           "FIELDS")
     _validate_admission_binding(value["binding"], context)
-    guest = _exact(value["guest"], (
+    guest = _admit.exact(value["guest"], (
         "hostname", "dmi_vendor", "dmi_product", "initial_userns", "boot_id", "pid1_exe",
         "pid1_version", "cgroup_version", "ordinary_user", "ordinary_uid", "ordinary_gid",
         "ordinary_groups", "user_manager_unit", "user_manager_invocation_id",
         "user_manager_cgroup",
-    ), "CORE_DISPATCH_ADMISSION_GUEST_FIELDS")
-    _require(type(guest["hostname"]) is str and 1 <= len(guest["hostname"]) <= 253
+    ), "GUEST_FIELDS")
+    _admit(type(guest["hostname"]) is str and 1 <= len(guest["hostname"]) <= 253
              and (guest["dmi_vendor"] in ("QEMU", "KVM") or guest["dmi_product"] == "KVM")
              and guest["cgroup_version"] == 2
              and type(guest["ordinary_user"]) is str
              and type(guest["ordinary_groups"]) is list
-             and all(type(item) is int and item >= 0 for item in guest["ordinary_groups"]),
-             "CORE_DISPATCH_ADMISSION_GUEST")
-    _exact(guest["initial_userns"], ("dev", "ino"),
-           "CORE_DISPATCH_ADMISSION_NAMESPACE")
-    _integer(guest["initial_userns"]["dev"], 0, code="CORE_DISPATCH_ADMISSION_NAMESPACE")
-    _integer(guest["initial_userns"]["ino"], 1, code="CORE_DISPATCH_ADMISSION_NAMESPACE")
-    _integer(guest["ordinary_uid"], 1, 2**32 - 2, "CORE_DISPATCH_ADMISSION_ACCOUNT")
-    _integer(guest["ordinary_gid"], 1, 2**32 - 2, "CORE_DISPATCH_ADMISSION_ACCOUNT")
-    _absolute_text(guest["pid1_exe"], "CORE_DISPATCH_ADMISSION_PID1")
-    _require(type(guest["pid1_version"]) is str and guest["pid1_version"].startswith("systemd ")
+             and all(type(item) is int and item >= 0 for item in guest["ordinary_groups"]), "GUEST")
+    _admit.exact(guest["initial_userns"], ("dev", "ino"), "NAMESPACE")
+    _admit.integer(guest["initial_userns"]["dev"], 0, code="NAMESPACE")
+    _admit.integer(guest["initial_userns"]["ino"], 1, code="NAMESPACE")
+    _admit.integer(guest["ordinary_uid"], 1, 2**32 - 2, "ACCOUNT")
+    _admit.integer(guest["ordinary_gid"], 1, 2**32 - 2, "ACCOUNT")
+    _admit.absolute(guest["pid1_exe"], "PID1")
+    _admit(type(guest["pid1_version"]) is str and guest["pid1_version"].startswith("systemd ")
              and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
                               guest["boot_id"] or "") is not None
              and re.fullmatch(r"[0-9a-f]{32}", guest["user_manager_invocation_id"] or "")
-             is not None, "CORE_DISPATCH_ADMISSION_GUEST")
-    _absolute_text(guest["user_manager_cgroup"], "CORE_DISPATCH_ADMISSION_GUEST")
-    programs = _exact(value["programs"],
+             is not None, "GUEST")
+    _admit.absolute(guest["user_manager_cgroup"], "GUEST")
+    programs = _admit.exact(value["programs"],
                       ("python", "git", "cc", "setpriv", "systemctl", "systemd_run"),
-                      "CORE_DISPATCH_ADMISSION_PROGRAM_FIELDS")
+                      "PROGRAM_FIELDS")
     for item in programs.values():
-        _program_identity(item, "CORE_DISPATCH_ADMISSION_PROGRAM")
-    _require(programs["setpriv"]["path"] == "/usr/bin/setpriv"
+        _admit.program(item, "PROGRAM")
+    _admit(programs["setpriv"]["path"] == "/usr/bin/setpriv"
              and programs["systemctl"]["path"] == "/usr/bin/systemctl"
-             and programs["systemd_run"]["path"] == "/usr/bin/systemd-run",
-             "CORE_DISPATCH_ADMISSION_PROGRAM")
-    policies = _exact(value["policies"], ("sudo", "sshd", "authorized_keys", "rc"),
-                      "CORE_DISPATCH_ADMISSION_POLICY_FIELDS")
+             and programs["systemd_run"]["path"] == "/usr/bin/systemd-run", "PROGRAM")
+    policies = _admit.exact(value["policies"], ("sudo", "sshd", "authorized_keys", "rc"),
+                      "POLICY_FIELDS")
     basis = _approved_inputs_envelope(context)["policy_basis"]
     for name, item in policies.items():
         relation = _exact(item.get("relation"), ("stage", "pre_entry_containment", "policy_basis_sha256",
@@ -4440,112 +4528,98 @@ def _validate_admission(value, context):
                  and relation["snapshot_sha256"] == item["sha256"], "CORE_ADMIT_POLICY_RELATION")
         for key in ("predicate_sha256", "snapshot_sha256", "facts_sha256"):
             _digest(relation[key], "CORE_ADMIT_POLICY_RELATION")
-        _exact(item, ("paths", "bytes", "sha256", "relation"),
-               "CORE_DISPATCH_ADMISSION_POLICY")
-        _require(type(item["paths"]) is list and item["paths"]
+        _admit.exact(item, ("paths", "bytes", "sha256", "relation"), "POLICY")
+        _admit(type(item["paths"]) is list and item["paths"]
                  and all(type(path) is str and path.startswith("/") for path in item["paths"])
                  and type(item["bytes"]) is int and item["bytes"] >= 0
-                 and type(item["relation"]) is dict, "CORE_DISPATCH_ADMISSION_POLICY")
-        _digest(item["sha256"], "CORE_DISPATCH_ADMISSION_POLICY")
+                 and type(item["relation"]) is dict, "POLICY")
+        _admit.digest(item["sha256"], "POLICY")
     directory_roles = ("state", "quota", "install", "journal", "evidence")
     cgroup_roles = ("controller_cgroup", "management_cgroup", "supervisor_cgroup",
                     "query_cgroup", "ordinary_cgroup", "retained_ordinary_cgroup")
-    parents = _exact(value["parents"], directory_roles + cgroup_roles,
-                     "CORE_DISPATCH_ADMISSION_PARENT_FIELDS")
+    parents = _admit.exact(value["parents"], directory_roles + cgroup_roles, "PARENT_FIELDS")
     for role in directory_roles:
-        item = _exact(parents[role], ("path", "dev", "ino", "mode", "uid", "gid", "nlink",
-                                             "mount_id", "fs_uuid"),
-                      "CORE_DISPATCH_ADMISSION_DIRECTORY")
-        _absolute_text(item["path"], "CORE_DISPATCH_ADMISSION_DIRECTORY")
+        item = _admit.exact(parents[role], ("path", "dev", "ino", "mode", "uid", "gid", "nlink",
+                                             "mount_id", "fs_uuid"), "DIRECTORY")
+        _admit.absolute(item["path"], "DIRECTORY")
         for key in ("dev", "uid", "gid", "mount_id"):
-            _integer(item[key], 0, code="CORE_DISPATCH_ADMISSION_DIRECTORY")
-        _integer(item["ino"], 1, code="CORE_DISPATCH_ADMISSION_DIRECTORY")
-        _require(item["mode"] in (448, 493) and item["nlink"] >= 2
+            _admit.integer(item[key], 0, code="DIRECTORY")
+        _admit.integer(item["ino"], 1, code="DIRECTORY")
+        _admit(item["mode"] in (448, 493) and item["nlink"] >= 2
                  and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-                                  item["fs_uuid"] or "") is not None,
-                 "CORE_DISPATCH_ADMISSION_DIRECTORY")
+                                  item["fs_uuid"] or "") is not None, "DIRECTORY")
     for role in cgroup_roles:
-        item = _exact(parents[role], ("path", "dev", "ino", "unit", "invocation_id", "controllers"),
-                      "CORE_DISPATCH_ADMISSION_CGROUP")
-        _absolute_text(item["path"], "CORE_DISPATCH_ADMISSION_CGROUP")
-        _integer(item["dev"], 0, code="CORE_DISPATCH_ADMISSION_CGROUP")
-        _integer(item["ino"], 1, code="CORE_DISPATCH_ADMISSION_CGROUP")
-        _require(type(item["unit"]) is str and item["unit"].endswith((".slice", ".service"))
+        item = _admit.exact(parents[role], ("path", "dev", "ino", "unit", "invocation_id", "controllers"),
+                      "CGROUP")
+        _admit.absolute(item["path"], "CGROUP")
+        _admit.integer(item["dev"], 0, code="CGROUP")
+        _admit.integer(item["ino"], 1, code="CGROUP")
+        _admit(type(item["unit"]) is str and item["unit"].endswith((".slice", ".service"))
                  and re.fullmatch(r"[0-9a-f]{32}", item["invocation_id"] or "") is not None
                  and type(item["controllers"]) is list
                  and all(controller in ("cpu", "memory", "pids")
-                         for controller in item["controllers"]),
-                 "CORE_DISPATCH_ADMISSION_CGROUP")
-    filesystems = _exact(value["filesystems"], directory_roles,
-                         "CORE_DISPATCH_ADMISSION_FILESYSTEM_FIELDS")
+                         for controller in item["controllers"]), "CGROUP")
+    filesystems = _admit.exact(value["filesystems"], directory_roles, "FILESYSTEM_FIELDS")
     for role, item in filesystems.items():
-        _exact(item, ("mount_id", "dev", "fs_uuid", "fstype", "mount_options",
-                      "bytes_available", "inodes_available"),
-               "CORE_DISPATCH_ADMISSION_FILESYSTEM")
+        _admit.exact(item, ("mount_id", "dev", "fs_uuid", "fstype", "mount_options",
+                      "bytes_available", "inodes_available"), "FILESYSTEM")
         for key in ("mount_id", "dev", "bytes_available", "inodes_available"):
-            _integer(item[key], 0, code="CORE_DISPATCH_ADMISSION_FILESYSTEM")
-        _require(item["mount_id"] == parents[role]["mount_id"]
+            _admit.integer(item[key], 0, code="FILESYSTEM")
+        _admit(item["mount_id"] == parents[role]["mount_id"]
                  and item["dev"] == parents[role]["dev"]
                  and item["fs_uuid"] == parents[role]["fs_uuid"]
                  and item["fstype"] == "ext4"
                  and type(item["mount_options"]) is list
-                 and all(type(option) is str for option in item["mount_options"]),
-                 "CORE_DISPATCH_ADMISSION_FILESYSTEM")
+                 and all(type(option) is str for option in item["mount_options"]), "FILESYSTEM")
     capacity = value["capacity"]
-    _require(type(capacity) is list and capacity, "CORE_DISPATCH_ADMISSION_CAPACITY")
+    _admit(type(capacity) is list and capacity, "CAPACITY")
     ordering = []
     seen_roles = set()
     for row in capacity:
-        _exact(row, ("dev", "fs_uuid", "roles", "historical_bytes", "historical_inodes",
+        _admit.exact(row, ("dev", "fs_uuid", "roles", "historical_bytes", "historical_inodes",
                      "new_required_bytes", "new_required_inodes", "bytes_available",
-                     "inodes_available", "admitted"), "CORE_DISPATCH_ADMISSION_CAPACITY")
+                     "inodes_available", "admitted"), "CAPACITY")
         for key in ("dev", "historical_bytes", "historical_inodes", "new_required_bytes",
                     "new_required_inodes", "bytes_available", "inodes_available"):
-            _integer(row[key], 0, code="CORE_DISPATCH_ADMISSION_CAPACITY")
-        _require(type(row["roles"]) is list and row["roles"]
+            _admit.integer(row[key], 0, code="CAPACITY")
+        _admit(type(row["roles"]) is list and row["roles"]
                  and row["roles"] == sorted(row["roles"])
                  and not (seen_roles & set(row["roles"]))
                  and set(row["roles"]) <= set(directory_roles)
                  and row["admitted"] is True
                  and row["bytes_available"] >= row["historical_bytes"] + row["new_required_bytes"]
                  and row["inodes_available"] >= row["historical_inodes"] + row["new_required_inodes"],
-                 "CORE_DISPATCH_ADMISSION_CAPACITY")
+                 "CAPACITY")
         seen_roles.update(row["roles"]); ordering.append((row["dev"], row["fs_uuid"]))
-    _require(seen_roles == set(directory_roles) and ordering == sorted(ordering),
-             "CORE_DISPATCH_ADMISSION_CAPACITY")
+    _admit(seen_roles == set(directory_roles) and ordering == sorted(ordering), "CAPACITY")
     absence = value["absence"]
-    _require(type(absence) is list and absence, "CORE_DISPATCH_ADMISSION_ABSENCE")
+    _admit(type(absence) is list and absence, "ABSENCE")
     ordering = []
     for row in absence:
-        _exact(row, ("kind", "name", "parent_dev", "parent_ino", "project_id", "unit",
-                     "absent", "collision"), "CORE_DISPATCH_ADMISSION_ABSENCE")
-        _require(row["kind"] in ("path", "project", "unit")
+        _admit.exact(row, ("kind", "name", "parent_dev", "parent_ino", "project_id", "unit",
+                     "absent", "collision"), "ABSENCE")
+        _admit(row["kind"] in ("path", "project", "unit")
                  and type(row["name"]) is str and row["name"]
-                 and row["absent"] is True and row["collision"] is False,
-                 "CORE_DISPATCH_ADMISSION_ABSENCE")
+                 and row["absent"] is True and row["collision"] is False, "ABSENCE")
         for key in ("parent_dev", "parent_ino", "project_id"):
-            _require(row[key] is None or type(row[key]) is int and row[key] >= 0,
-                     "CORE_DISPATCH_ADMISSION_ABSENCE")
-        _require(row["unit"] is None or type(row["unit"]) is str,
-                 "CORE_DISPATCH_ADMISSION_ABSENCE")
+            _admit(row[key] is None or type(row[key]) is int and row[key] >= 0, "ABSENCE")
+        _admit(row["unit"] is None or type(row["unit"]) is str, "ABSENCE")
         ordering.append((row["kind"], row["name"]))
-    _require(ordering == sorted(ordering) and len(ordering) == len(set(ordering)),
-             "CORE_DISPATCH_ADMISSION_ABSENCE")
+    _admit(ordering == sorted(ordering) and len(ordering) == len(set(ordering)), "ABSENCE")
     return value
 
 
 def _validate_installation(value, manifest):
-    _exact(value, ("destination", "staging", "receipt_path", "dev", "ino", "mode", "uid", "gid",
+    _check.exact(value, ("destination", "staging", "receipt_path", "dev", "ino", "mode", "uid", "gid",
                    "members_sha256", "native_sha256", "projection_sha256", "wheel_sha256",
-                   "allocated_bytes", "allocated_inodes", "status"),
-           "CORE_DISPATCH_INSTALLATION_FIELDS")
+                   "allocated_bytes", "allocated_inodes", "status"), "INSTALLATION_FIELDS")
     expected_members = _sha(canonical(manifest["members"]))
     locators = manifest["locators"]
     expected_destination = str(PurePosixPath(locators["install_parent"]) / INSTALL_BASENAME)
     expected_staging = str(PurePosixPath(locators["install_parent"]) / STAGING_BASENAME)
     expected_receipt = str(PurePosixPath(locators["state_parent"]) / SESSION / "carrier"
                            / "installation.json")
-    _require(value["members_sha256"] == expected_members
+    _check(value["members_sha256"] == expected_members
              and value["projection_sha256"] == PROJECTION["sha256"]
              and value["wheel_sha256"] == WHEEL["sha256"] and value["status"] == "INSTALLED"
              and value["destination"] == expected_destination
@@ -4557,9 +4631,8 @@ def _validate_installation(value, manifest):
              and type(value["allocated_bytes"]) is int and value["allocated_bytes"] > 0
              and type(value["allocated_inodes"]) is int and value["allocated_inodes"] > 0
              and value["allocated_bytes"] <= LIMITS["shared_bytes"]
-             and value["allocated_inodes"] <= LIMITS["shared_inodes"],
-             "CORE_DISPATCH_INSTALLATION")
-    _digest(value["native_sha256"], "CORE_DISPATCH_INSTALLATION")
+             and value["allocated_inodes"] <= LIMITS["shared_inodes"], "INSTALLATION")
+    _check.digest(value["native_sha256"], "INSTALLATION")
     return value
 
 

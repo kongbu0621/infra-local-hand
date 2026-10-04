@@ -255,7 +255,7 @@ class FakeEffects:
         for phase in case["phases"]:
             units = next(item for item in d._phase_units(case["operation_id"], case["phases"])
                          if item["phase"] == phase)
-            for stage in ("bootstrap", "helper", "result_reader"):
+            for stage in (("bootstrap", "helper") if case["index"] == 2 else ("bootstrap", "helper", "result_reader")):
                 rows.append({"phase": phase, "stage": stage,
                              "unit": units[stage + "_unit"],
                              "invocation_id": hashlib.md5(
@@ -454,7 +454,6 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
             "admission.current_guest_collector",
             "installation.shared_pool_peak_accounting",
             "installation.deadline_guarding",
-            "installation.program_execution_binding",
             "preparation.current_capacity_collectors",
             "evidence.usage_and_peak_accounting",
         ],
@@ -608,6 +607,9 @@ def test_real_installation_bridge_requires_bound_admission_before_mutation(tmp_p
 
 def _command_effects(tmp_path):
     effects = d.FieldEffects({})
+    # Collector-only tests inject the separate executable-binding boundary.
+    # Real held-executable and venv integration lives in install_binding tests.
+    effects._installation_binding = lambda argv: (list(argv), {}, {}, [])
     effects._candidate_root = str(tmp_path)
     now = effects.now()
     effects.context["guest_deadlines"] = dict(boot_id=now["boot_id"],
@@ -710,7 +712,7 @@ def test_install_command_reserve_gate_precedes_process_creation(tmp_path, monkey
 
 
 def test_running_install_child_is_reaped_at_reserve_boundary_and_files_retained(tmp_path, monkeypatch):
-    effects = d.FieldEffects({})
+    effects = _command_effects(tmp_path)
     effects._candidate_root = str(tmp_path)
     _, observed = _guarded_installation_clock(effects)
     retained = tmp_path / "partial-install.log"
