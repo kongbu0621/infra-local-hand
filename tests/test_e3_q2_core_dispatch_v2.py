@@ -58,7 +58,9 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                    "remote_command_sha256": "b" * 64, "remote_entity_preimages_stage": "HELLO_JIT"}
     approved = {"schema": "local-hand-q2-core-approved-inputs/v1", "scope": d.SCOPE,
                 "amendment": amendment, "source_relation": {"synthetic": "source"},
-                "policy_basis": {"remote_expectation": expectation},
+                "policy_basis": {"remote_expectation": expectation,
+                    "policies": {name: {"predicate_sha256": str(index + 1) * 64}
+                        for index, name in enumerate(("sudo", "sshd", "authorized_keys", "rc"))}},
                 "historical_capacity_obligations": {"synthetic": "obligations"},
                 "retained_preparation": {"synthetic": "retained"},
                 "reconciliation": {"synthetic": "reconciliation"}}
@@ -279,9 +281,11 @@ def deep_context(monkeypatch):
         ("APPROVED_POLICY_SOURCE_PINS", a.policy.SOURCE_PINS),
     ):
         monkeypatch.setattr(d, name, copy.deepcopy(replacement))
-    fixed = copy.deepcopy(d.APPROVED_FIXED)
-    fixed.update(horizon=a._horizon_relation(), placement=a._placement_relation())
-    monkeypatch.setattr(d, "APPROVED_FIXED", fixed)
+    fixed = copy.deepcopy(d.APPROVED_FIXED_PINS)
+    for key in ("horizon", "placement"):
+        raw = d.canonical(getattr(a, "_" + key + "_relation")())
+        fixed[key] = len(raw), d._sha(raw)
+    monkeypatch.setattr(d, "APPROVED_FIXED_PINS", fixed)
     return _set_approved(context_v2(), value)
 
 
@@ -291,14 +295,36 @@ def test_standalone_component_parser_has_no_host_import_or_pin_drift():
     tree = ast.parse(PATH.read_text())
     assert all(not isinstance(node, ast.ImportFrom) or node.level == 0 for node in ast.walk(tree))
     for key in ("locator", "later", "horizon", "producer", "quota", "placement"):
-        assert d.APPROVED_FIXED[key] == getattr(a, "_" + key + "_relation")()
-    assert d.APPROVED_FIXED["legacy"] == a._legacy_fixed()
+        raw = d.canonical(getattr(a, "_" + key + "_relation")())
+        assert d.APPROVED_FIXED_PINS[key] == (len(raw), d._sha(raw))
+    raw = d.canonical(a._legacy_fixed())
+    assert d.APPROVED_FIXED_PINS["legacy"] == (len(raw), d._sha(raw))
+    assert set(d.APPROVED_LEGACY_FIELDS) == set(a._legacy_fixed())
     assert d.APPROVED_VECTOR_PINS == a.horizon.VECTOR_PINS
     assert d.APPROVED_RETAINED_PINS == a.RETAINED_PINS
     assert d.APPROVED_POLICY_SOURCE_PINS == a.policy.SOURCE_PINS
     assert PATH.stat().st_size <= 262144
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
         d._validate_approved_components(d._approved_inputs_envelope(context_v2()))
+
+
+@pytest.mark.parametrize("key", ["locator", "later", "legacy", "horizon", "producer", "quota", "placement"])
+def test_fixed_relation_pin_covers_all_bytes_and_rejects_same_length_substitution(key):
+    from e3_host import q2_core_approved_inputs as a
+    expected = a._legacy_fixed() if key == "legacy" else getattr(a, "_" + key + "_relation")()
+    raw = d.canonical(expected)
+    d._approved_vector(expected, d.APPROVED_FIXED_PINS[key], "FIXED_PIN")
+    # Change one character inside the first JSON key/string. Canonical length
+    # remains identical; the entire original preimage remains SHA-bound.
+    offset = raw.index(b'"') + 1
+    changed = raw[:offset] + (b"z" if raw[offset:offset + 1] != b"z" else b"y") + raw[offset + 1:]
+    import json
+    altered = json.loads(changed)
+    assert len(d.canonical(altered)) == len(raw)
+    with pytest.raises(d.DispatchError, match="FIXED_PIN"):
+        d._approved_vector(altered, d.APPROVED_FIXED_PINS[key], "FIXED_PIN")
+    with pytest.raises(d.DispatchError, match="FIXED_PIN"):
+        d._approved_vector(expected, (len(raw) + 1, d._sha(raw)), "FIXED_PIN")
 
 
 def test_standalone_deep_parser_binds_all_components_without_host_modules(deep_context, monkeypatch):

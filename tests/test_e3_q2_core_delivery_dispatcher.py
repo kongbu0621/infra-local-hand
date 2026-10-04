@@ -106,8 +106,14 @@ class FakeEffects:
                            "uid": 0, "gid": 0, "nlink": 1, "bytes": 100,
                            "sha256": str(index + 1) * 64}
                     for index, (name, path) in enumerate(program_paths.items())}
+        basis = d._approved_inputs_envelope(self.context)["policy_basis"]
         policies = {name: {"paths": ["/etc/" + name], "bytes": 10,
-                           "sha256": str(index + 1) * 64, "relation": {"matched": True}}
+                           "sha256": str(index + 1) * 64, "relation": {
+                               "stage": "POST_ENTRY_PRE_H01_INTENT", "pre_entry_containment": False,
+                               "policy_basis_sha256": d._sha(d.canonical(basis)),
+                               "predicate_sha256": basis["policies"][name]["predicate_sha256"],
+                               "snapshot_sha256": str(index + 1) * 64,
+                               "facts_sha256": "f" * 64, "matched": True}}
                     for index, name in enumerate(("sudo", "sshd", "authorized_keys", "rc"))}
         directory_roles = ("state", "quota", "install", "journal", "evidence")
         parents = {role: {"path": "/" + role, "dev": index + 20, "ino": index + 30,
@@ -415,7 +421,7 @@ def test_envelope_accepts_readonly_member_views_and_rejects_mutable_or_wrong_a_b
         d._validate_context_envelope(mutable)
 
 
-def test_default_high_level_effects_are_explicitly_non_releasable():
+def test_real_admission_rejects_synthetic_private_inputs_before_host_collection(monkeypatch):
     value = context()
 
     class OnlyClock(d.FieldEffects):
@@ -424,7 +430,10 @@ def test_default_high_level_effects_are_explicitly_non_releasable():
                     "boottime_ns": value["hello"]["guest_boottime_origin_ns"] + d.NS,
                     "monotonic_ns": value["hello"]["guest_monotonic_origin_ns"] + d.NS}
 
-    with pytest.raises(d.DispatchError, match="CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE"):
+    monkeypatch.setattr(d, "_admit_collect_policies", lambda *args: pytest.fail("host collection reached"))
+    monkeypatch.setattr(d.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("helper spawned"))
+    assert d.field_readiness()["releasable"] is False
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
         OnlyClock(value).admit({"hello": value["hello"], "manifest": value["manifest"],
                                 "guest_deadlines": value["guest_deadlines"]})
 
@@ -885,6 +894,7 @@ def test_candidate_helper_executes_held_verified_bytes_without_second_open(tmp_p
     if os.geteuid() != 0:
         pytest.skip("protected helper fixture requires container root")
     effects = d.FieldEffects({})
+    effects._effect_guard = lambda: None  # This test isolates the held-byte read contract.
     effects._candidate_root = str(tmp_path)
     relative = "tests/e3_host/q2_prepare_build.py"
     source = tmp_path / relative

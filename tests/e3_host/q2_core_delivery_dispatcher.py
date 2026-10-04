@@ -1028,414 +1028,8 @@ def _validate_h11_proof(proof, case, sources, owner_deadline):
 # Fixed public source descriptors are ordinary Python literals. No module from
 # the host, package candidate or retained evidence is imported or executed.
 # Private raw verification remains the host builder's duty before issuance.
-APPROVED_FIXED = {'horizon': {'archives': [{'basename': 'local-hand-normal-5ca9753-run-20260930b-evidence.zip',
-                           'batch': '20260930b',
-                           'bytes': 289401,
-                           'sha256': 'eeef31dc11bb277caec267cd11590654cb2e6d036485f941607dce0dc9af0ac1'},
-                          {'basename': 'local-hand-normal-5ca9753-run-20261001a-evidence.zip',
-                           'batch': '20261001a',
-                           'bytes': 297168,
-                           'sha256': 'd9e26cdbdd393a83cd83e396e560cbd1ea6b01f84dab10e58d0e1974c00f181d'},
-                          {'basename': 'local-hand-normal-5ca9753-run-20261001b-evidence.zip',
-                           'batch': '20261001b',
-                           'bytes': 308465,
-                           'sha256': 'ae969b050c6d20761af05b0b87c0be0e8c45d059fcd851db0c24f0b605736f43'},
-                          {'basename': 'local-hand-normal-b37935d-run-20261001c-evidence.zip',
-                           'batch': '20261001c',
-                           'bytes': 349790,
-                           'sha256': '2013877a266b87509579ea6b05e539cfb562fbbb2e11275c8a80100cb1ad0264'},
-                          {'basename': 'local-hand-normal-7780364-run-20261001d-evidence.zip',
-                           'batch': '20261001d',
-                           'bytes': 356297,
-                           'sha256': '6707359a14565747a673db4862d435d56e4967fc50aded26e3ac1ec93e90dd5c'},
-                          {'basename': 'local-hand-system-manager-1a900e4-run-20261002-evidence.zip',
-                           'batch': '20261001e',
-                           'bytes': 129584,
-                           'sha256': 'f352d1d8bc70d3d4c419c21de493efca2c51a3453dc90d04fba3ec654e7e33b6'}],
-             'predecessor': {'baseline': 'ae50aea2639c32021794ecb70730f4b9e781c8d6',
-                             'candidate': '1a900e4a38e9567655f21cbf3c3f17941de1a8d5',
-                             'closure': '23702d6e55396d7941389817ab875a4610d3e142',
-                             'corrected_package': {'basename': 'local-hand-system-manager-1a900e4-20261001e-corrected.zip',
-                                                   'bytes': 3887651,
-                                                   'sha256': '5805dcd2a45f150f0e5b7062a17b46137d53e889e1ea160601d7c75fb529e886'},
-                             'event': 'LH-Q2-SYSTEM-MANAGER-REPAIR-CLOSURE-20261001-01',
-                             'evidence_package': {'basename': 'local-hand-system-manager-1a900e4-run-20261002-evidence.zip',
-                                                  'bytes': 129584,
-                                                  'sha256': 'f352d1d8bc70d3d4c419c21de493efca2c51a3453dc90d04fba3ec654e7e33b6'},
-                             'implementation': '6470592cc29efb45b8f38172b8e69a48fcfeab2a'},
-             'snapshot': {'bytes': 21086,
-                          'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0047-historical-issued-obligations.json',
-                          'rows': 24,
-                          'rows_bytes': 11433,
-                          'rows_sha256': '82bdb7a94c85a7450a45d9ee7dff2baa4e5fef7b8a7a7d8f7787a0cb7bea358e',
-                          'sha256': '9e0bfb17a58c8fec064601ef675e391a8ef358269b775daca60f7ea47150cb8e',
-                          'total_bytes': 626790400,
-                          'total_inodes': 32113},
-             'source_members': [{'batch': '20260930b',
-                                 'bytes': 13383,
-                                 'path': 'root/q2-normal-setup-20260930b/resume-plan.json',
-                                 'role': 'plan',
-                                 'sha256': '6836678f2c2a5bc320bb18f40344cd83e162e53801f08140e78d87c75f3e1363'},
-                                {'batch': '20260930b',
-                                 'bytes': 59349,
-                                 'path': 'root/q2-normal-setup-20260930b/observed.json',
-                                 'role': 'observed',
-                                 'sha256': '1458436d63130589b42cea02d438c92c5d151f041e49d76be074fe1d5daa159e'},
-                                {'batch': '20261001a',
-                                 'bytes': 15072,
-                                 'path': 'root/q2-normal-setup-20261001a/resume-plan.json',
-                                 'role': 'plan',
-                                 'sha256': '50f1c8c157d0515f4dd27337c474d2345e010f63271e3866b1d32d96bca0c8f5'},
-                                {'batch': '20261001a',
-                                 'bytes': 62307,
-                                 'path': 'root/q2-normal-setup-20261001a/observed.json',
-                                 'role': 'observed',
-                                 'sha256': 'afaf940b1a0671c152d951e0a8ba2ee670333aef8561e76337b558ca1b8dab18'},
-                                {'batch': '20261001b',
-                                 'bytes': 16838,
-                                 'path': 'root/q2-normal-setup-20261001b/resume-plan.json',
-                                 'role': 'plan',
-                                 'sha256': '998dc901303967660c5bcc19768d03002a00eb594f260cdbbf598fc3acefdd89'},
-                                {'batch': '20261001b',
-                                 'bytes': 65268,
-                                 'path': 'root/q2-normal-setup-20261001b/observed.json',
-                                 'role': 'observed',
-                                 'sha256': 'c2dd6ab190a8e96fd98ea93a0b1f5fb88120f6d482137500e8491db07383df6c'},
-                                {'batch': '20261001c',
-                                 'bytes': 18595,
-                                 'path': 'root/q2-normal-setup-20261001c/resume-plan.json',
-                                 'role': 'plan',
-                                 'sha256': '7144977af9f3ff874f4e41317420a01b40fa601c9c420e288c9c1fab2f55b9a5'},
-                                {'batch': '20261001c',
-                                 'bytes': 68505,
-                                 'path': 'root/q2-normal-setup-20261001c/observed.json',
-                                 'role': 'observed',
-                                 'sha256': '7f62ccabf4063d292b443c034bfb3c4fbd4d0fdb14b633e6003986ae6a0ae14b'},
-                                {'batch': '20261001c',
-                                 'bytes': 519,
-                                 'path': 'opt/local-hand-resume-5ca9753-20261001c/prepare-log/0006-code-update-intent.json',
-                                 'role': 'code-intent',
-                                 'sha256': '2ae23f8d219b265fdb98c8e54d678ca540499b9e1390897b9f8a26ae08b11fd1'},
-                                {'batch': '20261001c',
-                                 'bytes': 45338,
-                                 'path': 'opt/local-hand-code-20261001c/installation.json',
-                                 'role': 'installation',
-                                 'sha256': '56cd30fe64c26923a0bf4aab10f4dab6f8c7793883fa83f056c50d23246a4893'},
-                                {'batch': '20261001d',
-                                 'bytes': 20429,
-                                 'path': 'root/q2-normal-setup-20261001d/resume-plan.json',
-                                 'role': 'plan',
-                                 'sha256': '35aa2fb4fc0f5fc5ea00f1e895fbee330d1fe2825f46cb7f3ca0ddfbda0f85e8'},
-                                {'batch': '20261001d',
-                                 'bytes': 72163,
-                                 'path': 'root/q2-normal-setup-20261001d/observed.json',
-                                 'role': 'observed',
-                                 'sha256': 'b15625827d845ab7d54e8fef42c63a8bc85ce18d5c3ee3289a178d536cd80e88'},
-                                {'batch': '20261001d',
-                                 'bytes': 519,
-                                 'path': 'opt/local-hand-resume-5ca9753-20261001d/prepare-log/0006-code-update-intent.json',
-                                 'role': 'code-intent',
-                                 'sha256': '30e68dd477eaafac70c1142dc567a70c028eaaf05b1696008745e4e731b3bfbd'},
-                                {'batch': '20261001d',
-                                 'bytes': 45338,
-                                 'path': 'opt/local-hand-code-20261001d/installation.json',
-                                 'role': 'installation',
-                                 'sha256': 'df92885a74f4df2b14e06aa4420c2fb876fe987e3d35a722574a37718549f853'},
-                                {'batch': '20261001e',
-                                 'bytes': 47699,
-                                 'path': 'guest/opt/local-hand-code-20261001e/installation.json',
-                                 'role': 'installation',
-                                 'sha256': '1bc8d61538d0c48f604e3bf2fb7002b481bb62e7f0c3c7ffc433c0818ef5b1f5'},
-                                {'batch': '20261001e',
-                                 'bytes': 1402,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/client-log/intent.json',
-                                 'role': 'client-intent',
-                                 'sha256': 'ab57768eb5efe19015c4dcc4e2d4f79db7901684b932c91f65444d2cbd2e1377'},
-                                {'batch': '20261001e',
-                                 'bytes': 305,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/client-log/result.json',
-                                 'role': 'client-result',
-                                 'sha256': 'ef898352c22ffc601f2617327918a0f0baa45d45def99e487bde45e41e1878cd'},
-                                {'batch': '20261001e',
-                                 'bytes': 331,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/consumed.json',
-                                 'role': 'consumed',
-                                 'sha256': 'ba29f6c3dcfab18708f1d67de58a5bb8bff1918b4d01c3fd49b67ee1c70156ee'},
-                                {'batch': '20261001e',
-                                 'bytes': 523,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/staged.json',
-                                 'role': 'staged',
-                                 'sha256': '63fd8aa4b3f8cc406b47b94109d547d4ecdc85d147034e45b068e65e222a08ae'},
-                                {'batch': '20261001e',
-                                 'bytes': 895,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0006-code-update-intent.json',
-                                 'role': 'code-intent',
-                                 'sha256': 'c4e45fc7fa217722fe57f7576d85c72181ad93a9cdf422e0a3919b77a1493a48'},
-                                {'batch': '20261001e',
-                                 'bytes': 326,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0019-code-update-complete.json',
-                                 'role': 'code-complete',
-                                 'sha256': '896066511a5a5656073aa858a6e4c0c23e2b1550faef38597ee7e0603854c97e'},
-                                {'batch': '20261001e',
-                                 'bytes': 30813,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0023-plan.json',
-                                 'role': 'plan',
-                                 'sha256': '85633b837718282ba6590b7a6679d51aa60addfb0f5be39ea929af83de4a45c1'},
-                                {'batch': '20261001e',
-                                 'bytes': 619,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0046-original-budget-bounds.json',
-                                 'role': 'original-budget',
-                                 'sha256': '6e19304516853a0b3c4d89deb4a4011e9a3ea72d287904ef7dfd5b484ff97621'},
-                                {'batch': '20261001e',
-                                 'bytes': 21086,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0047-historical-issued-obligations.json',
-                                 'role': 'historical-snapshot',
-                                 'sha256': '9e0bfb17a58c8fec064601ef675e391a8ef358269b775daca60f7ea47150cb8e'},
-                                {'batch': '20261001e',
-                                 'bytes': 94533,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0048-resource-preflight.json',
-                                 'role': 'preflight',
-                                 'sha256': 'eabe18b207e68967e65b9dc9d114466aad7284063cff6e90814938a0ae9fb086'},
-                                {'batch': '20261001e',
-                                 'bytes': 943,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0053-failure.json',
-                                 'role': 'failure',
-                                 'sha256': '79ccccf1745bcad29089c381e692ca777c7fc2165cd31cc1f54ed825db545b85'}]},
- 'later': [{'batch': '20261002a',
-            'evidence': {'path': 'docs/a2-execution/Q2_OLD_PRODUCER_ADMISSION_RETRY_IMPLEMENTATION_REVIEW.md',
-                         'sha256': 'de276883d2a0b1a68009ef994bf24211ac0adb4fe5a5053da70c349e241c7d9d'},
-            'scope': 'LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1',
-            'state': 'NOT_ISSUED'},
-           {'batch': 'namespace_delivery',
-            'evidence': {'path': 'docs/a2-execution/Q2_NAMESPACE_FIXTURE_DELIVERY_IMPLEMENTATION_REVIEW.md',
-                         'sha256': 'bd5d530652380777bca60905b11ef56caa760c794fee611748ae7c4f1aee5026'},
-            'scope': 'LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1',
-            'state': 'NOT_ISSUED'},
-           {'batch': 'core_20261003a',
-            'evidence': {'path': 'docs/a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md',
-                         'sha256': 'e64f1be1287ac8bed5f582b01e179b66dd79ead0eb91e8ccf1c71d3ea0095da0'},
-            'scope': 'LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1',
-            'state': 'NOT_ISSUED'}],
- 'legacy': {'archive': {'basename': 'q2-history-readonly-return-20260927T151622+0800.tar.gz',
-                        'bytes': 38014204,
-                        'sha256': '869a859fcbe7a952d11e22db6f6534c9b9a3025cec27471fe3e2a054a6a96018'},
-            'chain': {'baseline': 'c65ff4e25ea6373aabf8db25d304ee7614b96eb5',
-                      'closure': '1491765c64c60a63d6bddf10a049308e404885ca',
-                      'implementation': '8fd84521cdd25b455ff148e0c0fed6b5d8e39fe1',
-                      'tree': '5fb64e578d06e2954c1eedbc1b15e00069dc32a4'},
-            'inventory': {'blob_bytes': 5686734,
-                          'forward_entries': 610,
-                          'old_pins': 15,
-                          'reconciliation_rows': 7,
-                          'reservation_inputs': 10,
-                          'trees': 12,
-                          'typed_sources': 47,
-                          'unique_blobs': 48},
-            'manifest': {'bytes': 34010,
-                         'sha256': 'f705d3c77885887c7b6f799f4721dfefd0e9c588dbd11085cc8456fe623c6d40'},
-            'producer_blobs': {'reconciliation_billing': '46f753e39f0185698f105dbf5b2a48941c2cfa42',
-                               'reconciliation_sources': 'b5f904ee7053836be5f57d5e72574fa86f73d97a',
-                               'startup_retry': '8057e5c34c228b456a7ebbb1a1c06c631e499328'}},
- 'locator': {'carriers': [{'bytes': 1835,
-                           'role': 'collection_capture',
-                           'sha256': '56c29ed9ffe2cf79235baca6b000afaec9ae84b51b2356c664e44d6b34a4fb18'},
-                          {'bytes': 20164157,
-                           'role': 'guest_raw',
-                           'sha256': '078b4a5bc198caa42760c31d2a4f8d0be1dd3564090ea316c799bfe6d9e653f7'},
-                          {'bytes': 3419814,
-                           'role': 'guest_manifest',
-                           'sha256': '82c8c13e250ac0be0957b766e84827514dd50cc5cc53d461c126d6dd0523f735'},
-                          {'bytes': 922584,
-                           'role': 'guest_inventory',
-                           'sha256': '0b1f337f219d3b8d06f2d2a22fc30d2d034afef40decfa7db26051c0ea009a62'}],
-             'historical_only': True,
-             'mappings': [{'pointer': '/directories/state/path',
-                           'role': 'state_parent',
-                           'source_role': 'original_plan',
-                           'transform': 'dirname'},
-                          {'pointer': '/mounts/quota/path',
-                           'role': 'quota_parent',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/candidate/destination',
-                           'role': 'install_parent',
-                           'source_role': 'original_plan',
-                           'transform': 'dirname'},
-                          {'pointer': '/mounts/journal/path',
-                           'role': 'journal_parent',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/mounts/evidence/path',
-                           'role': 'evidence_parent',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/account/name',
-                           'role': 'ordinary_user',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/account/name',
-                           'role': 'ordinary_group',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/facts/parents/manager/unit',
-                           'role': 'user_manager_unit',
-                           'source_role': 'retry_preparation',
-                           'transform': 'identity'},
-                          {'pointer': '/parents/query/unit',
-                           'role': 'query_parent_unit',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/parents/controller/unit',
-                           'role': 'controller_parent_unit',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/parents/management/unit',
-                           'role': 'management_parent_unit',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/parents/supervisor/unit',
-                           'role': 'supervisor_parent_unit',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/parents/ordinary/unit',
-                           'role': 'ordinary_parent_unit',
-                           'source_role': 'original_plan',
-                           'transform': 'identity'},
-                          {'pointer': '/facts/parents/ordinary/path',
-                           'role': 'retained_ordinary_parent_path',
-                           'source_role': 'retry_preparation',
-                           'transform': 'identity'},
-                          {'pointer': '/retained',
-                           'role': 'retained_paths',
-                           'source_role': 'original_plan',
-                           'transform': 'source_order_identity_array'},
-                          {'pointer': '/retained_domains',
-                           'role': 'retained_domains',
-                           'source_role': 'original_plan',
-                           'transform': 'source_order_identity_array'}],
-             'members': [{'bytes': 9814,
-                          'carrier_role': 'guest_raw',
-                          'path': 'root/q2-transfer-20260926a/plan.json',
-                          'role': 'original_plan',
-                          'sha256': 'efff343c7967dcc43c54420accafb2e91a5b4fb563419b00a86d41a58817fa7c'},
-                         {'bytes': 61119,
-                          'carrier_role': 'guest_raw',
-                          'path': 'root/q2-retry-setup-20260927a/retry-preparation.json',
-                          'role': 'retry_preparation',
-                          'sha256': '586f0fd79ceb869a8e1ed238d925b6cdbf2cceaddf233687df81ea320bded4fb'}],
-             'schema': 'local-hand-q2-core-locator-source-relation/v1',
-             'zero_mismatch': True},
- 'placement': {'delta_profile': 'FIXED_SINGLE_SELECTOR_POOL_FULL_COMMITMENT',
-               'normalized_rows_bytes': 4549,
-               'normalized_rows_sha256': 'b6153d8c45e5b009bcc1f878406565e08bcf7c7d07c17f18361b562bf1096703',
-               'schema': 'local-hand-q2-core-obligation-placement/v1',
-               'snapshot_profile': 'PINNED_ROLE_POOLS_FULL_COMMITMENT_PER_DISTINCT_LIVE_POOL',
-               'source_member': {'batch': '20261001e',
-                                 'bytes': 94533,
-                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0048-resource-preflight.json',
-                                 'pointer': '/capacity_observed/historical_physical_charges',
-                                 'role': 'preflight',
-                                 'sha256': 'eabe18b207e68967e65b9dc9d114466aad7284063cff6e90814938a0ae9fb086'},
-               'source_rows': 24,
-               'source_rows_bytes': 4327,
-               'source_rows_sha256': 'edcb0bb95508c15e5b3fb60d679c46c93961e95d8e802a338fc1f4397c18ee0d',
-               'split_allowed': False,
-               'zero_mismatch': True},
- 'producer': {'adoption_baseline': '68424df2ddbf812b9479ffa7a64dcaa59a2a9f76',
-              'adoption_closure': '179652cb9487163d83c004d358e4d4b49409694c',
-              'adoption_implementation': '4b71824a4660723d064969cbf0c39cd4325dd62a',
-              'blob': '659df7ee2bab92413fa41d348c17219e4d9de0c7',
-              'categories': [{'category': 'code_pool', 'commitment': {'bytes': 67108864, 'inodes': 4096}},
-                             {'category': 'management', 'commitment': {'bytes': 33554432, 'inodes': 1024}},
-                             {'category': 'state', 'commitment': {'bytes': 8388608, 'inodes': 1536}},
-                             {'category': 'journal', 'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'capture', 'commitment': {'bytes': 20971520, 'inodes': 384}},
-                             {'category': 'quota.work-a', 'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'quota.evidence-a',
-                              'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'quota.temporary-a',
-                              'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'quota.work-b', 'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'quota.evidence-b',
-                              'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'quota.temporary-b',
-                              'commitment': {'bytes': 1048576, 'inodes': 128}},
-                             {'category': 'quota.retained_store',
-                              'commitment': {'bytes': 1048576, 'inodes': 128}}],
-              'commit': '661e96772c64433d1cd0eebf122e165781d8c11c',
-              'device_selectors': {'capture': 'evidence_parent',
-                                   'code_pool': 'install_parent',
-                                   'journal': 'journal_parent',
-                                   'management': 'state_parent',
-                                   'quota.evidence-a': 'quota_parent',
-                                   'quota.evidence-b': 'quota_parent',
-                                   'quota.retained_store': 'quota_parent',
-                                   'quota.temporary-a': 'quota_parent',
-                                   'quota.temporary-b': 'quota_parent',
-                                   'quota.work-a': 'quota_parent',
-                                   'quota.work-b': 'quota_parent',
-                                   'state': 'state_parent'},
-              'file_sha256': 'f2f4b57b4a34bbfabe483b20865275246cdf35d3497a1c24b375deb7a508ae1b',
-              'path': 'tests/e3_host/q2_old_producer_admission_retry_accounting.py',
-              'tree': '2e977e9887f9e6e1a97b86082d1664772c0f7e3b'},
- 'quota': {'project_ids': [10001,
-                           10002,
-                           10003,
-                           10004,
-                           11001,
-                           11002,
-                           11003,
-                           11004,
-                           11005,
-                           11006,
-                           11007,
-                           12001,
-                           12002,
-                           12003,
-                           12004,
-                           12005,
-                           12006,
-                           12007,
-                           12011,
-                           12012,
-                           12013,
-                           12014,
-                           12015,
-                           12016,
-                           12017,
-                           12021,
-                           12022,
-                           12023,
-                           12024,
-                           12025,
-                           12026,
-                           12027,
-                           12031,
-                           12032,
-                           12033,
-                           12034,
-                           12035,
-                           12036,
-                           12037,
-                           12041,
-                           12042,
-                           12043,
-                           12044,
-                           12045,
-                           12046,
-                           12047],
-           'relation': 'UNMATCHED_CONFIGURED_HARD_LIMITS_ADDED_ONCE',
-           'rows_sha256': '95b59d878d643bfbce2eef6ce88145bf1086058694dee127b3de49d13319bde0',
-           'schema': 'local-hand-q2-core-configured-quota-liability/v1',
-           'source_member': {'batch': '20261001e',
-                             'bytes': 94533,
-                             'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0048-resource-preflight.json',
-                             'pointer': '/capacity_observed/quota_inventory',
-                             'role': 'preflight',
-                             'sha256': 'eabe18b207e68967e65b9dc9d114466aad7284063cff6e90814938a0ae9fb086'},
-           'total_bytes': 249561088,
-           'total_inodes': 17792,
-           'zero_mismatch': True}}
+APPROVED_FIXED_PINS = {'horizon': (7402, '7e149980e1fbb5f4494dcba06a11e0da451268a19d0cc30354ed375db2750b9d'), 'later': (795, 'c4ca5a1a83cb0247975c2178f2b8c43831503c771e714ac04147201ca7758481'), 'legacy': (885, '1e022bb0e7f3fb7ed09f5dd00ed61debda9992c7aa17324b8d36bb5cd2aaa585'), 'locator': (2893, '7d8364c8a417ee4879d4598e2ae6a9bb8cc14d14b79dc90d906bbad406bd5531'), 'placement': (790, '3bfbf6dd7417a1605286d3295b42df9b4e9b07202252b30eb46ed51a30f5c7a4'), 'producer': (1778, '851583a3a5268cb43fcd50990b2ef297f45fa7fe6e3ad679e9ea5af8ed978ab1'), 'quota': (847, '53fefd38c4b1795feb316ef9cc22d0d1aca99f1787af521b11af77d8e1ef82c6')}
+APPROVED_LEGACY_FIELDS = ('archive', 'chain', 'inventory', 'manifest', 'producer_blobs')
 
 APPROVED_ADOPTED_RAW = (('second-bootstrap-intent', 556, '58992ee2ff0d66fec5e10c7e138e8de4529089ca35d76f71200db1a05ac160b6'),
  ('second-bootstrap-attestation', 7766, 'cfc6c07265b4edc6d0b26e67a6ca9cfc19c652b4d011a2386b9bd95e945a34cb'))
@@ -1584,8 +1178,8 @@ def _approved_validate_relations(value):
     _approved_exact(relation, {"schema", "locator", "obligations", "later_nonissuance", "zero_mismatch"})
     _approved_require(relation["schema"] == "local-hand-q2-core-approved-source-relation/v1"
              and relation["zero_mismatch"] is True, "SOURCE_RELATION")
-    _approved_equal(relation["locator"], APPROVED_FIXED['locator'], "LOCATOR_RELATION")
-    _approved_equal(relation["later_nonissuance"], APPROVED_FIXED['later'], "LATER_RELATION")
+    _approved_vector(relation["locator"], APPROVED_FIXED_PINS['locator'], "LOCATOR_RELATION")
+    _approved_vector(relation["later_nonissuance"], APPROVED_FIXED_PINS['later'], "LATER_RELATION")
     obligations = relation["obligations"]
     fields = {"schema", "legacy_20260927", "horizon_20261001e", "producer", "configured_quota_liability",
               "placement", "row_relation", "source_horizon", "snapshot_rows_sha256", "delta_rows_sha256",
@@ -1595,12 +1189,12 @@ def _approved_validate_relations(value):
              and obligations["source_horizon"] == "20261001e" and obligations["zero_mismatch"] is True
              and obligations["run_permission_adopted"] is False, "OBLIGATION_RELATION")
     old = obligations["legacy_20260927"]
-    _approved_exact(old, {*APPROVED_FIXED['legacy'], "adoption"})
-    _approved_equal({key: item for key, item in old.items() if key != "adoption"}, APPROVED_FIXED['legacy'], "LEGACY_FIXED")
+    _approved_exact(old, {*APPROVED_LEGACY_FIELDS, "adoption"})
+    _approved_vector({key: item for key, item in old.items() if key != "adoption"}, APPROVED_FIXED_PINS['legacy'], "LEGACY_FIXED")
     _approved_adoption(old["adoption"])
-    for key, expected in (("horizon_20261001e", APPROVED_FIXED['horizon']), ("producer", APPROVED_FIXED['producer']),
-                          ("configured_quota_liability", APPROVED_FIXED['quota']), ("placement", APPROVED_FIXED['placement'])):
-        _approved_equal(obligations[key], expected, "RELATION_" + key.upper())
+    for key, expected in (("horizon_20261001e", APPROVED_FIXED_PINS['horizon']), ("producer", APPROVED_FIXED_PINS['producer']),
+                          ("configured_quota_liability", APPROVED_FIXED_PINS['quota']), ("placement", APPROVED_FIXED_PINS['placement'])):
+        _approved_vector(obligations[key], expected, "RELATION_" + key.upper())
     _approved_vector(obligations["row_relation"], APPROVED_VECTOR_PINS["row_relation"], "ROW_RELATION")
     for field, name in (("snapshot_rows_sha256", "snapshot"), ("delta_rows_sha256", "delta"),
                         ("effective_rows_sha256", "effective")):
@@ -2341,6 +1935,1189 @@ def verify_install_inputs(context):
             "members_sha256": _sha(canonical(rows))}
 
 
+def _prep_guard(effects, deadline):
+    outer = effects.context["guest_deadlines"]
+    active = getattr(effects, "_active_case_deadlines", {})
+    pairs = {active.get("preparation_deadline_ns"): active.get("preparation_monotonic_deadline_ns"),
+             active.get("owner_deadline_ns"): active.get("owner_monotonic_deadline_ns"),
+             active.get("remote_final_deadline_ns"): active.get("remote_final_monotonic_deadline_ns"),
+             outer["boottime_deadline_ns"]: outer["monotonic_deadline_ns"]}
+    mono = pairs.get(deadline)
+    _require(type(mono) is int and deadline <= outer["boottime_deadline_ns"]
+             and mono <= outer["monotonic_deadline_ns"], "CORE_EFFECT_PREPARATION_CLOCK_BINDING")
+    # Original per-case clocks survive suspend; an outer-offset recalculation
+    # could incorrectly extend the case's monotonic deadline.
+    return _clock(effects, {"boot_id": outer["boot_id"],
+        "boottime_deadline_ns": deadline, "monotonic_deadline_ns": mono})
+
+
+def _prep_settings(case, expires_at):
+    b = _budget(case["phases"])
+    identity = dict(_identity(case), expires_at=expires_at)
+    controllers = {}
+    for role in ("target", "supervisor"):
+        v = b[role]
+        controllers[role] = {"unit": case["controller_prefix"] + "-" + role + ".service",
+            "runtime_max_usec": v["runtime_seconds"] * 10**6,
+            "timeout_stop_usec": v["stop_seconds"] * 10**6,
+            "memory_bytes": v["memory_bytes"], "tasks_max": v["tasks_max"],
+            "cpu_quota_per_sec_usec": v["cpu_quota_per_sec_usec"],
+            "limit_cpu_seconds": v["runtime_seconds"],
+            "storage_bytes": v["storage_bytes"], "storage_inodes": v["storage_inodes"]}
+    m = b["management"]
+    settings = {"identity": identity, "original_budgets": b["operation"],
+        "limits": {"max_queued": 1, "max_running": 1, "retained_bytes": 8388608,
+                   "ledger_emergency_bytes": 65536, "requests_per_minute": 1},
+        "controllers": controllers,
+        "management": {"receive_ns": NS, "stop_ns": NS, "storage_bytes": 1048576,
+            "storage_inodes": 64, "accept_ns": NS, "max_connections": 4,
+            "stages": {v["stage"]: {"cpu_ns": v["cpu_seconds"] * NS,
+                "memory_bytes": v["memory_bytes"], "pids": v["tasks_max"],
+                "output_bytes": v["output_bytes"], "runtime_ns": v["runtime_seconds"] * NS}
+                       for v in m["stages"]}},
+        "capacity_management": {"storage_bytes": m["storage_bytes"],
+            "storage_inodes": m["storage_inodes"], "cpu_ns": m["cpu_seconds"] * NS,
+            "memory_bytes": m["memory_bytes"], "pids": m["pids"],
+            "output_bytes": m["output_bytes"]},
+        "owner": {"runtime_ns": OWNER_NS, "cpu_ns": b["owner"]["cpu_seconds"] * NS,
+            "memory_bytes": b["owner"]["memory_bytes"], "pids": b["owner"]["tasks_max"],
+            "storage_bytes": b["owner"]["storage_bytes"],
+            "storage_inodes": b["owner"]["storage_inodes"],
+            "output_bytes": b["owner"]["output_bytes"]}}
+    if case["index"] != 2:
+        settings["schema"] = "local-hand-q2-system-preparation-settings/v1"
+    return settings
+
+
+def _prep_pin(value):
+    return {"path": value["path"], "device": value.get("device", value.get("dev")),
+            "inode": value.get("inode", value.get("ino"))}
+
+
+def _prep_make_plan(effects, case, expires_at):
+    admission = effects._admission
+    detail = getattr(effects, "_admission_detail", None)
+    _require(type(detail) is dict and {"quota_mount", "quota_inventory", "retained_before"}
+             <= set(detail), "CORE_EFFECT_PREPARATION_CURRENT_FACTS_REQUIRED")
+    _require(case["index"] == 2 or type(detail.get("system_geometry")) is dict,
+             "CORE_EFFECT_PREPARATION_GEOMETRY_REQUIRED")
+    paths = effects.preparation_paths(case, effects.context["manifest"]["locators"])
+    guest = admission["guest"]
+    retained = _approved_inputs_envelope(effects.context)["retained_preparation"]
+    plan = {"schema": "local-hand-q2-system-preparation-plan/v1" if case["index"] != 2
+                    else "local-hand-q2-core-preparation-plan/v1",
+        "purpose": "ISOLATED_Q2_CORE_PREPARATION", "scope": SCOPE,
+        "baseline": BASELINE["commit"], "preparation_id": case["preparation_id"],
+        "host": {key: guest[key] for key in ("hostname", "dmi_vendor", "dmi_product", "boot_id")},
+        "account": {"name": guest["ordinary_user"], "uid": guest["ordinary_uid"],
+                    "gid": guest["ordinary_gid"]},
+        "directories": {role: {"path": row["path"], "owner": row["owner"],
+            "mode": row["mode"], "filesystem": row["parent_role"]}
+            for role, row in paths["directories"].items()},
+        "roots": paths["roots"], "candidate": copy.deepcopy(effects._installation_receipt["source"]),
+        "retained": copy.deepcopy(retained["paths"]),
+        "retained_domains": copy.deepcopy(retained["domains"]),
+        "mounts": {"quota": copy.deepcopy(detail["quota_mount"])},
+        "tools": {key: {"path": val["path"], "sha256": val["sha256"]}
+                  for key, val in admission["programs"].items()},
+        "settings": _prep_settings(case, expires_at)}
+    plan["host"]["initial_userns"] = {"device": guest["initial_userns"]["dev"],
+                                        "inode": guest["initial_userns"]["ino"]}
+    if case["index"] != 2:
+        plan["retained_ordinary_parent"] = _prep_pin(admission["parents"]["retained_ordinary_cgroup"])
+        plan["retained_ordinary_parent"]["path"] = plan["retained_ordinary_parent"]["path"].removeprefix("/sys/fs/cgroup")
+    return plan
+
+
+def _prep_translate(case, plan, receipt, children, helpers):
+    """The original candidate constructor is authoritative; only schema changes."""
+    driver, assembly = helpers["q2_prepare_driver"], helpers["q2_prepare_assembly"]
+    _require(case in CASES and plan["scope"] == SCOPE and plan["baseline"] == BASELINE["commit"]
+             and plan["preparation_id"] == case["preparation_id"], "CORE_EFFECT_PREPARATION_SCOPE")
+    _exact(receipt, ("schema", "preparation_id", "plan_sha256", "status", "reason", "facts",
+                    "q2_accepted", "q3_accepted", "production_supported", "fixture_generated"),
+           "CORE_EFFECT_PREPARATION_RESULT")
+    _require(receipt["schema"] == "local-hand-q2-fixture-preparation/v1"
+             and receipt["preparation_id"] == case["preparation_id"]
+             and receipt["plan_sha256"] == _sha(driver.encoded(plan))
+             and receipt["status"] == "RESOURCES_PREPARED" and receipt["reason"] is None
+             and all(receipt[key] is False for key in
+                     ("q2_accepted", "q3_accepted", "production_supported", "fixture_generated")),
+             "CORE_EFFECT_PREPARATION_RESULT")
+    observed = receipt["facts"]
+    _require(observed["retained_before"] == observed["retained_after"],
+             "CORE_EFFECT_PREPARATION_RETAINED_CHANGED")
+    authority = {"schema": "local-hand-q2-preparation-authority/v1", "scope": SCOPE,
+        "baseline": BASELINE["commit"], "plan_sha256": receipt["plan_sha256"],
+        "preparation_id": case["preparation_id"], "receipt_sha256": _sha(driver.encoded(receipt))}
+    original, bound, manifest = driver.facts_from_observed(plan, observed, children, authority)
+    _require(bound == authority, "CORE_EFFECT_PREPARATION_AUTHORITY_CHANGED")
+    facts = copy.deepcopy(original)
+    schemas = {1: "local-hand-q2-system-assembly-facts/v1",
+               2: "local-hand-q4-cancel-assembly-facts/v1", 3: "local-hand-q4-h11-assembly-facts/v1"}
+    _require(original["schema"] == ("local-hand-q2-assembly-facts/v1" if case["index"] == 2
+             else "local-hand-q2-system-assembly-facts/v1"), "CORE_EFFECT_PREPARATION_SCHEMA")
+    facts["schema"] = schemas[case["index"]]
+    assembled = assembly.assemble(facts)
+    return {"facts": facts, "authority": authority, "manifest": manifest, "assembled": assembled}
+
+
+def _prep_directory(effects, path, uid, gid, mode, deadline):
+    _prep_guard(effects, deadline)
+    parent = effects._held_directory(str(PurePosixPath(path).parent))
+    try:
+        name = PurePosixPath(path).name
+        os.mkdir(name, mode, dir_fd=parent)
+        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=parent)
+        try:
+            os.fchown(fd, uid, gid); os.fchmod(fd, mode); os.fsync(fd); os.fsync(parent)
+            info = os.fstat(fd)
+            _require((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, mode),
+                     "CORE_EFFECT_PREPARATION_DIRECTORY_OWNER")
+            observed = {"path": path, "device": info.st_dev, "inode": info.st_ino,
+                        "uid": uid, "gid": gid, "mode": info.st_mode}
+        finally:
+            os.close(fd)
+    finally:
+        os.close(parent)
+    _prep_guard(effects, deadline)
+    return observed
+
+
+def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
+    _require(type(raw) is bytes and len(raw) <= MEMBER_LIMIT,
+             "CORE_EFFECT_PREPARATION_FILE_LIMIT")
+    _prep_guard(effects, deadline)
+    parent = effects._held_directory(str(PurePosixPath(path).parent))
+    fd = None
+    try:
+        name = PurePosixPath(path).name
+        _prep_guard(effects, deadline)
+        fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
+                     0o600, dir_fd=parent)
+        _prep_guard(effects, deadline)
+        os.fchown(fd, uid, gid)
+        _prep_guard(effects, deadline)
+        os.fchmod(fd, 0o600)
+        view = memoryview(raw)
+        while view:
+            _prep_guard(effects, deadline)
+            count = os.write(fd, view)
+            _require(count > 0, "CORE_EFFECT_PREPARATION_SHORT_WRITE")
+            view = view[count:]
+        _prep_guard(effects, deadline)
+        os.fsync(fd)
+        _prep_guard(effects, deadline)
+        os.fsync(parent)
+        _prep_guard(effects, deadline)
+        info = os.fstat(fd)
+        _prep_guard(effects, deadline)
+        reread = os.pread(fd, len(raw) + 1, 0)
+        _prep_guard(effects, deadline)
+        _require(reread == raw and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
+                 and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, 384),
+                 "CORE_EFFECT_PREPARATION_FILE")
+        identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        named = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        _require((named.st_dev, named.st_ino, named.st_size, named.st_mtime_ns, named.st_ctime_ns)
+                 == identity, "CORE_EFFECT_PREPARATION_SOURCE_CHANGED")
+        effects.held.append(fd)
+        result = {"path": path, "fd": fd, "identity": identity, "raw": raw,
+                  "uid": uid, "gid": gid}
+        fd = None
+    finally:
+        if fd is not None: os.close(fd)
+        os.close(parent)
+    _prep_guard(effects, deadline)
+    return result
+
+
+def _prep_reread(effects, record, deadline):
+    _prep_guard(effects, deadline)
+    info = os.fstat(record["fd"])
+    _require((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+             == record["identity"] and info.st_nlink == 1,
+             "CORE_EFFECT_PREPARATION_SOURCE_CHANGED")
+    raw = os.pread(record["fd"], len(record["raw"]) + 1, 0)
+    _prep_guard(effects, deadline)
+    named = os.stat(record["path"], follow_symlinks=False)
+    _prep_guard(effects, deadline)
+    after = os.fstat(record["fd"])
+    _require((named.st_dev, named.st_ino) == record["identity"][:2]
+             and (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+             == record["identity"] and raw == record["raw"], "CORE_EFFECT_PREPARATION_SOURCE_CHANGED")
+    _prep_guard(effects, deadline)
+    return raw
+
+
+def _prep_quota(source, command, project, values=None):
+    """Share the verified read ABI; this mutator accepts only fixed new limits."""
+    _require(command in (0x800007, 0x800008), "CORE_EFFECT_PREPARATION_QUOTA_ABI")
+    if command == 0x800008:
+        _require(project in {i for c in CASES for i in c["project_ids"]}
+                 and values == {"hard": 1024, "ihard": 128, "valid": 5},
+                 "CORE_EFFECT_PREPARATION_QUOTA_MUTATION")
+    quota = _CapQuota(source)
+    if command == 0x800007:
+        _require(values is None, "CORE_EFFECT_PREPARATION_QUOTA_MUTATION")
+        return quota.block(project)
+    block = quota.Block()
+    for key, value in values.items(): setattr(block, key, value)
+    quota.ct.set_errno(0)
+    if quota.lib.quotactl(quota.ct.c_int((command << 8) | 2), quota.device,
+                         quota.ct.c_int(project), quota.ct.byref(block)):
+        raise OSError(quota.ct.get_errno(), "core project quota operation")
+    return {name: getattr(block, name) for name, _ in block._fields_}
+
+
+def _prep_root(effects, planned, account, mount, deadline):
+    import errno
+    import fcntl
+    _prep_guard(effects, deadline)
+    try:
+        before = _prep_quota(mount["source"], 0x800007, planned["project_id"])
+    except OSError as error:
+        if error.errno != errno.ESRCH: raise
+        before = {}
+    _require(all(v == 0 for k, v in before.items() if k not in ("valid", "project")),
+             "CORE_EFFECT_PREPARATION_PROJECT_EXISTS")
+    measured = _prep_directory(effects, planned["path"], account["uid"], account["gid"], 448, deadline)
+    fd = effects._held_directory(planned["path"])
+    try:
+        raw = fcntl.ioctl(fd, 0x801c581f, bytes(28))
+        flags, extent, count, project, cow, padding = struct.unpack("=IIIII8s", raw)
+        _require(project == 0, "CORE_EFFECT_PREPARATION_INHERITED_PROJECT")
+        _prep_guard(effects, deadline)
+        fcntl.ioctl(fd, 0x401c5820, struct.pack("=IIIII8s", flags | 512, extent, count,
+                                             planned["project_id"], cow, padding))
+        assigned = _prep_quota(mount["source"], 0x800007, planned["project_id"])
+        _require(assigned["inodes"] == 1 and all(assigned[k] == 0 for k in
+            ("hard", "soft", "ihard", "isoft", "btime", "itime")),
+                 "CORE_EFFECT_PREPARATION_PROJECT_ASSIGNMENT")
+        _prep_guard(effects, deadline)
+        _prep_quota(mount["source"], 0x800008, planned["project_id"],
+                    {"hard": 1024, "ihard": 128, "valid": 5})
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    return dict(planned, **{k: v for k, v in measured.items() if k != "path"})
+
+
+def _prep_quota_retained(rows):
+    result = copy.deepcopy(rows)
+    for row in result:
+        # Ordinary unassigned directories are charged to project zero before
+        # assignment. Only that unconstrained domain's own usage may advance;
+        # all configured limits and every nonzero historical row stay exact.
+        if row["project"] == 0 and all(row[key] == 0 for key in ("hard", "soft", "ihard", "isoft")):
+            row["space"] = row["inodes"] = 0
+    return result
+
+
+def _prep_observe_root(effects, expected, mount, deadline):
+    import fcntl
+    _prep_guard(effects, deadline)
+    fd = effects._held_directory(expected["path"])
+    try:
+        before = os.fstat(fd)
+        flags, _, _, project, _, _ = struct.unpack("=IIIII8s", fcntl.ioctl(fd, 0x801c581f, bytes(28)))
+        quota = _prep_quota(mount["source"], 0x800007, expected["project_id"])
+        after = os.fstat(fd)
+        _require((before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode)
+                 == (after.st_dev, after.st_ino, after.st_uid, after.st_gid, after.st_mode)
+                 == tuple(expected[k] for k in ("device", "inode", "uid", "gid", "mode"))
+                 and project == expected["project_id"] and flags & 512
+                 and quota["valid"] & 5 == 5 and quota["hard"] * 1024 == expected["hard_bytes"]
+                 and quota["ihard"] == expected["inode_hard_limit"],
+                 "CORE_EFFECT_PREPARATION_ROOT_CHANGED")
+    finally:
+        os.close(fd)
+    # Enforcement is re-observed by the capacity collector, not inferred from limits.
+    _require(effects._capacity_quota_enforcement() & 48 == 48,
+             "CORE_EFFECT_PREPARATION_QUOTA_ENFORCEMENT")
+    _prep_guard(effects, deadline)
+    return dict(expected, filesystem="ext4", filesystem_uuid=mount["uuid"], xflags=flags,
+                accounting=True, enforcement=True, identity_unchanged=True)
+
+
+def _plan_from_prepared(case, prepared, deadlines):
+    facts, assembled = prepared["facts"], prepared["assembled"]
+    identity = facts["identity"]
+    _require(all(identity.get(key) == val for key, val in _identity(case).items()),
+             "CORE_EFFECT_PLAN_IDENTITY")
+    by_project = {root["project_id"]: root for root in prepared["receipt"]["facts"]["roots"]}
+    wrappers = []
+    for planned in _planned_roots(case):
+        root = by_project.get(planned["project_id"])
+        _require(root is not None, "CORE_EFFECT_PLAN_ROOT")
+        observed = {key: root[key] for key in ("path", "role", "device", "inode", "uid", "gid",
+            "mode", "filesystem", "filesystem_uuid", "project_id", "xflags", "hard_bytes",
+            "accounting", "enforcement", "identity_unchanged")}
+        actual = next(r for r in prepared["plan"]["roots"] if r["project_id"] == planned["project_id"])
+        _require(observed["path"] == actual["path"], "CORE_EFFECT_PLAN_ROOT_PATH")
+        # The case-plan's path is relative; the preparation preimage retains the
+        # matching absolute root. No observed identity/quota field is replaced.
+        observed["path"] = planned["path"]
+        observed["hard_inodes"] = root["inode_hard_limit"]
+        wrappers.append({"ref": planned["ref"], "slot": planned["slot"],
+                         "planned": planned, "observed": observed})
+    ledger_path = facts["paths"]["broker_root"] + "/jobs.sqlite"
+    plan = {"schema": PLAN_SCHEMA, **{k: build_intent(case)[k] for k in
+        ("session_id", "index", "case_id", "kind", "predecessor", "preparation_id", "operation_id", "budgets")},
+        "identity": copy.deepcopy(identity), "principal": copy.deepcopy(assembled["resident"]["principal"]),
+        "authority_path": facts["paths"]["authority_root"] + "/authority.json", "ledger_path": ledger_path,
+        "request": copy.deepcopy(assembled["resident"]["request"]), "roots": wrappers,
+        "controllers": copy.deepcopy(facts["controllers"]),
+        "system_geometry": copy.deepcopy(facts.get("system_geometry")),
+        "phases": _phase_units(case["operation_id"], case["phases"]),
+        "empty_ledger_expectation": {"ledger_path": ledger_path, "authority_id": identity["authority_id"],
+            "ledger_id": identity["ledger_id"], "expected_operations": 0, "expected_events": 0,
+            "expected_leases": 0, "expected_sidecars": []}, "deadlines": dict(deadlines)}
+    return validate_plan(case, build_intent(case), plan, deadlines)
+
+
+def _prep_command(effects, argv, deadline):
+    original = effects._effect_guard
+    def guard():
+        _prep_guard(effects, deadline)
+        return original()
+    effects._effect_guard = guard
+    try:
+        return effects._installation_command(argv)
+    finally:
+        effects._effect_guard = original
+
+
+def _prep_initialize(effects, prepared, deadline):
+    facts, assembled = prepared["facts"], prepared["assembled"]
+    uid, gid = facts["ordinary"]["uid"], facts["ordinary"]["gid"]
+    policy_raw = canonical(assembled["policy"], newline=True)
+    policy_path = facts["paths"]["policy"]
+    prepared["source_objects"]["policy"] = _prep_file(effects, policy_path, policy_raw,
+                                                     deadline, uid=uid, gid=gid)
+    authority_path = facts["paths"]["authority_root"] + "/authority.json"
+    authority = {"authority_id": facts["identity"]["authority_id"],
+                 "ledger_id": facts["identity"]["ledger_id"],
+                 "state_root": facts["paths"]["broker_root"]}
+    prepared["source_objects"]["authority"] = _prep_file(effects, authority_path,
+        canonical(authority, newline=True), deadline, uid=uid, gid=gid)
+    source_path = facts["source"]["root"] + "/tests/e3_host/q2_prepare_assembly.py"
+    # Fixed isolated ordinary child; only final projected source enters its path.
+    # The old driver's command-line branch is not used (its adjacent contract is
+    # intentionally absent from that projection).
+    program = ("import hashlib,importlib.util,json,os,stat,sys; "
+        "source,expected,policy,digest,ledger,tools,installed=sys.argv[1:]; "
+        "fd=os.open(source,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC); "
+        "raw=os.read(fd,262145); before=os.fstat(fd); os.close(fd); "
+        "assert stat.S_ISREG(before.st_mode) and before.st_uid==0 and before.st_nlink==1 "
+        "and not before.st_mode&18 and hashlib.sha256(raw).hexdigest()==expected; "
+        "fd=os.open(policy,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC); "
+        "payload=os.read(fd,65537); info=os.fstat(fd); os.close(fd); "
+        "assert stat.S_ISREG(info.st_mode) and info.st_uid==os.getuid() and info.st_nlink==1 "
+        "and stat.S_IMODE(info.st_mode)==384 and hashlib.sha256(payload).hexdigest()==digest; "
+        "sys.path[:0]=[installed,tools]; "
+        "module=importlib.util.module_from_spec(importlib.util.spec_from_file_location('_core_ledger',source)); "
+        "exec(compile(raw,source,'exec'),module.__dict__); "
+        "value=module.initialize_ledger(json.loads(payload),ledger); "
+        "print(json.dumps(value,sort_keys=True,separators=(',',':')))")
+    argv = [facts["setpriv"]["path"], "--reuid=" + str(uid), "--regid=" + str(gid),
+        "--clear-groups", "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all",
+        "--no-new-privs", facts["installation"]["programs"]["python"]["path"], "-I", "-B", "-c",
+        program, source_path, facts["source"]["files"]["tests/e3_host/q2_prepare_assembly.py"],
+        policy_path, _sha(policy_raw), facts["identity"]["ledger_id"],
+        facts["source"]["root"] + "/tools", facts["installation"]["package_root"]]
+    raw = _prep_command(effects, argv, deadline)
+    ledger = document(raw, limit=32768)
+    _exact(ledger, ("path", "device", "inode", "uid", "mode", "ledger_id", "generation"),
+           "CORE_EFFECT_PREPARATION_LEDGER")
+    _require(ledger["path"] == facts["paths"]["broker_root"] + "/jobs.sqlite"
+             and ledger["uid"] == uid and ledger["mode"] == 384
+             and ledger["ledger_id"] == facts["identity"]["ledger_id"]
+             and ledger["generation"] == assembled["chain"]["broker_generation"],
+             "CORE_EFFECT_PREPARATION_LEDGER")
+    info = os.stat(ledger["path"], follow_symlinks=False)
+    _require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+             == (ledger["device"], ledger["inode"], uid, gid, 384)
+             and stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
+             "CORE_EFFECT_PREPARATION_LEDGER")
+    result = {"schema": "local-hand-q2-preparation-result/v1", "status": "PREPARED",
+        "source_commit": facts["source"]["commit"], "preparation_id": prepared["case"]["preparation_id"],
+        "policy": {"path": policy_path, "sha256": _sha(policy_raw)}, "ledger": ledger,
+        "authority_sha256": _sha(canonical(prepared["authority"], newline=True)),
+        "manifest_sha256": _sha(canonical(prepared["manifest"], newline=True)),
+        "q2_accepted": False, "q3_accepted": False, "production_supported": False}
+    _prep_file(effects, prepared["paths"]["reservation"] + "/prepared.json",
+               canonical(result, newline=True), deadline)
+    prepared["prepared_result"] = result
+
+
+def _admit_stat(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+class _admit_reader:
+    """Held no-follow policy reads, including end-of-snapshot name rechecks."""
+    def __init__(self, guard, home, uid):
+        self.guard, self.home, self.uid = guard, home, uid
+        self.held, self.names, self.objects, self.raw = [], [], {}, {}
+        self.root = self.root_info = None
+
+    def call(self, function, *args, **kwargs):
+        self.guard()
+        value = function(*args, **kwargs)
+        self.guard()
+        return value
+
+    def close(self):
+        while self.held:
+            os.close(self.held.pop())
+
+    def owner(self, path):
+        return self.uid if path == self.home or path.startswith(self.home + "/") else 0
+
+    def protected(self, info, path, *, directory=False):
+        _require(info.st_uid == self.owner(path) and not stat.S_IMODE(info.st_mode) & 0o022
+                 and (stat.S_ISDIR(info.st_mode) if directory else
+                      stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
+                 "CORE_ADMIT_POLICY_PROTECTION")
+
+    def parent(self, path):
+        parts = FieldEffects._absolute(path).parts[1:]
+        _require(0 < len(parts) <= 64, "CORE_ADMIT_POLICY_DEPTH")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+        if self.root is None:
+            self.root = self.call(os.open, "/", flags)
+            self.held.append(self.root)
+            self.root_info = self.call(os.fstat, self.root)
+            self.protected(self.root_info, "/", directory=True)
+        fd = self.root
+        current = ""
+        for part in parts[:-1]:
+            current += "/" + part
+            before = self.call(os.stat, part, dir_fd=fd, follow_symlinks=False)
+            self.protected(before, current, directory=True)
+            child = self.call(os.open, part, flags, dir_fd=fd)
+            self.held.append(child)
+            _require(_admit_stat(self.call(os.fstat, child)) == _admit_stat(before),
+                     "CORE_ADMIT_POLICY_DRIFT")
+            self.names.append((fd, part, child, before))
+            fd = child
+        return fd, parts[-1]
+
+    def read(self, path, *, maximum=262144, required=True, directory=False, private=False):
+        _require(path not in self.objects, "CORE_ADMIT_POLICY_REPEAT")
+        parent, name = self.parent(path)
+        try:
+            before = self.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            _require(not required, "CORE_ADMIT_POLICY_MISSING")
+            self.names.append((parent, name, None, None))
+            self.objects[path] = dict(path=path, state="ABSENT", **dict.fromkeys(
+                ("kind", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256")))
+            return None
+        self.protected(before, path, directory=directory)
+        _require(not private or not stat.S_IMODE(before.st_mode) & 0o177,
+                 "CORE_ADMIT_KEY_MODE")
+        _require(directory or 0 <= before.st_size <= maximum, "CORE_ADMIT_POLICY_BYTES")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME
+        if directory:
+            flags |= os.O_DIRECTORY
+        fd = self.call(os.open, name, flags, dir_fd=parent)
+        self.held.append(fd)
+        _require(_admit_stat(self.call(os.fstat, fd)) == _admit_stat(before),
+                 "CORE_ADMIT_POLICY_DRIFT")
+        self.names.append((parent, name, fd, before))
+        raw = bytearray()
+        if not directory:
+            while len(raw) <= maximum:
+                block = self.call(os.read, fd, min(65536, maximum + 1 - len(raw)))
+                if not block:
+                    break
+                raw.extend(block)
+            _require(len(raw) == before.st_size and len(raw) <= maximum,
+                     "CORE_ADMIT_POLICY_BYTES")
+        self.objects[path] = dict(path=path, state="PRESENT", kind="directory" if directory else "regular",
+            dev=before.st_dev, ino=before.st_ino, mode=stat.S_IMODE(before.st_mode), uid=before.st_uid,
+            gid=before.st_gid, nlink=before.st_nlink, bytes=None if directory else len(raw),
+            sha256=None if directory else _sha(bytes(raw)))
+        self.raw[path] = bytes(raw)
+        self.recheck()
+        return fd if directory else bytes(raw)
+
+    def recheck(self):
+        if self.root is not None:
+            _require(_admit_stat(self.call(os.fstat, self.root)) == _admit_stat(self.root_info)
+                     and _admit_stat(self.call(os.stat, "/", follow_symlinks=False)) == _admit_stat(self.root_info),
+                     "CORE_ADMIT_ROOT_DRIFT")
+        for parent, name, fd, before in self.names:
+            try:
+                current = self.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                _require(fd is None, "CORE_ADMIT_POLICY_DRIFT")
+                continue
+            _require(fd is not None and _admit_stat(current) == _admit_stat(before)
+                     and _admit_stat(self.call(os.fstat, fd)) == _admit_stat(before),
+                     "CORE_ADMIT_POLICY_DRIFT")
+
+    def listing(self, path, maximum):
+        fd = self.read(path, directory=True)
+        names = []
+        with self.call(os.scandir, fd) as entries:
+            for item in entries:
+                self.guard()
+                _require(len(names) < maximum and item.name.isascii(), "CORE_ADMIT_POLICY_ENTRIES")
+                names.append(item.name)
+        self.recheck()
+        return sorted(names)
+
+
+def _admit_text(raw):
+    try:
+        value = raw.decode("ascii", "strict")
+    except UnicodeError as error:
+        raise DispatchError("CORE_ADMIT_POLICY_ENCODING") from error
+    _require("\0" not in value and "\r" not in value, "CORE_ADMIT_POLICY_ENCODING")
+    return value
+
+
+def _admit_sudo_source(raws, literal):
+    """Only the fixed ordinary sudoers grammar; no custom plugin or alias."""
+    count = includes = 0
+    for path, raw in raws.items():
+        if path == "/etc/sudo.conf":
+            _require(all(not line.strip() or line.lstrip().startswith("#")
+                         for line in _admit_text(raw).splitlines()), "CORE_ADMIT_SUDO_PLUGIN")
+            continue
+        for line in _admit_text(raw).splitlines():
+            line = line.strip()
+            if line in ("@includedir /etc/sudoers.d", "#includedir /etc/sudoers.d"):
+                _require(path == "/etc/sudoers", "CORE_ADMIT_SUDO_INCLUDE")
+                includes += 1
+                continue
+            _require(not line.startswith(("@include", "#include")), "CORE_ADMIT_SUDO_INCLUDE")
+            if not line or line.startswith("#"):
+                continue
+            if line == literal:
+                count += 1
+                continue
+            if line.startswith("Defaults"):
+                _require(re.fullmatch(r'Defaults\s+(?:env_reset|mail_badpass|use_pty|'
+                    r'secure_path="/[A-Za-z0-9_/:.-]+")', line) is not None,
+                    "CORE_ADMIT_SUDO_SOURCE_GRAMMAR")
+                continue
+            _require(re.fullmatch(r'(?:root|%admin|%sudo)\s+ALL\s*=\s*\(ALL(?::ALL)?\)\s+ALL', line)
+                     is not None, "CORE_ADMIT_SUDO_SOURCE_GRAMMAR")
+    _require(count == includes == 1, "CORE_ADMIT_SUDO_SOURCE_GRANT")
+    return count
+
+
+def _admit_sudo_output(raw, grant):
+    text = _admit_text(raw)
+    lines = text.splitlines()
+    _require(lines and re.fullmatch(r'Matching Defaults entries for q1admin on [A-Za-z0-9_.-]+:',
+                                    lines[0]) is not None, "CORE_ADMIT_SUDO_OUTPUT")
+    sections = text.split("\nSudoers entry:\n")
+    _require(len(sections) >= 2, "CORE_ADMIT_SUDO_OUTPUT")
+    header = sections.pop(0).splitlines()
+    _require(all(not line or line.startswith("    ") or re.fullmatch(
+        r"User q1admin may run the following commands on [A-Za-z0-9_.-]+:", line) for line in header[1:]),
+             "CORE_ADMIT_SUDO_OUTPUT")
+    grants = []
+    for section in sections:
+        fields, commands = {}, []
+        command_mode = False
+        for line in section.splitlines():
+            if not line:
+                continue
+            if command_mode:
+                _require(line.startswith("        ") and line.strip() == "ALL", "CORE_ADMIT_SUDO_OUTPUT")
+                commands.append("ALL")
+                continue
+            match = re.fullmatch(r'    (RunAsUsers|RunAsGroups|Options|Commands):(.*)', line)
+            _require(match is not None and match[1] not in fields, "CORE_ADMIT_SUDO_OUTPUT")
+            key, value = match[1], match[2].strip()
+            fields[key] = value
+            if key == "Commands":
+                _require(value == "", "CORE_ADMIT_SUDO_OUTPUT")
+                command_mode = True
+        _require(set(fields) >= {"RunAsUsers", "Commands"}
+                 and set(fields) <= {"RunAsUsers", "RunAsGroups", "Options", "Commands"},
+                 "CORE_ADMIT_SUDO_OUTPUT")
+        _require(fields["RunAsUsers"] == "ALL" and fields.get("RunAsGroups", "") in ("", "ALL")
+                 and fields.get("Options", "authenticate") in ("!authenticate", "authenticate"), "CORE_ADMIT_SUDO_OUTPUT")
+        grants.append(dict(host="ALL", runas_users=["ALL"],
+            runas_groups=["ALL"] if fields.get("RunAsGroups") else [],
+            tags=["NOPASSWD"] if fields.get("Options") == "!authenticate" else ["PASSWD"], commands=commands))
+    _require(grant in grants, "CORE_ADMIT_SUDO_GRANT")
+    return grants
+
+
+def _admit_sshd_source(raws):
+    includes = 0
+    for path, raw in raws.items():
+        for line in _admit_text(raw).splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            _require(not any(char in line for char in ('"', "'", "\\", "`", "$")),
+                     "CORE_ADMIT_SSHD_GRAMMAR")
+            words = line.split()
+            _require(len(words) >= 2, "CORE_ADMIT_SSHD_GRAMMAR")
+            name = words[0].lower()
+            _require(name != "match", "CORE_ADMIT_SSHD_MATCH")
+            if name == "include":
+                _require(path == "/etc/ssh/sshd_config" and words[1:] == ["/etc/ssh/sshd_config.d/*.conf"],
+                         "CORE_ADMIT_SSHD_INCLUDE")
+                includes += 1
+            else:
+                _require(re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', words[0]) is not None
+                         and not any(char in line for char in "*?[]"), "CORE_ADMIT_SSHD_GRAMMAR")
+    _require(includes == 1, "CORE_ADMIT_SSHD_INCLUDE")
+
+
+def _admit_sshd_output(raw, required):
+    values = {}
+    for line in _admit_text(raw).splitlines():
+        words = line.split()
+        _require(len(words) >= 2 and re.fullmatch(r'[a-z][a-z0-9]*', words[0])
+                 and words[0] not in values, "CORE_ADMIT_SSHD_OUTPUT")
+        values[words[0]] = words[1:]
+    effective = {}
+    for key, wanted in required.items():
+        _require(key in values and values[key] == (wanted if type(wanted) is list else [wanted]),
+                 "CORE_ADMIT_SSHD_PREDICATE")
+        effective[key] = wanted
+    return effective
+
+
+def _admit_authorized(raw, path, approved):
+    rows = [(index, line.strip()) for index, line in enumerate(_admit_text(raw).splitlines(), 1)
+            if line.strip() and not line.lstrip().startswith("#")]
+    _require(len(rows) == 1, "CORE_ADMIT_KEY_COUNT")
+    number, line = rows[0]
+    parts = line.split(None, 2)
+    _require(len(parts) >= 2 and parts[0] == approved["type"] == "ssh-ed25519"
+             and parts[1] == approved["key_base64"], "CORE_ADMIT_KEY_MISMATCH")
+    try:
+        key = base64.b64decode(parts[1], validate=True)
+    except (ValueError, TypeError) as error:
+        raise DispatchError("CORE_ADMIT_KEY_ENCODING") from error
+    _require(len(key) == 51 and key[:19] == b'\0\0\0\x0bssh-ed25519\0\0\0 ', "CORE_ADMIT_KEY_ENCODING")
+    return [dict(path=path, line_number=number, key_type=parts[0], key_sha256=_sha(key),
+                 options=[], comment_present=len(parts) == 3)]
+
+
+def _admit_bashrc(raw):
+    lines = _admit_text(raw).splitlines()
+    active = [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
+    # Match only the approved first AST, with whitespace variation, never eval.
+    text = "\n".join(active)
+    guard = re.match(r'case[ \t]+\$-[ \t]+in\s+\*i\*\)[ \t]*;;\s+\*\)[ \t]*return[ \t]*;;\s+esac(?:[ \t]*\n|[ \t]*$)', text)
+    _require(guard is not None, "CORE_ADMIT_BASHRC_GUARD")
+    return True
+
+
+def _admit_program(reader, path, expected=None):
+    """Resolve a bounded executable alias, retain each link and target identity."""
+    pending = list(FieldEffects._absolute(path).parts[1:])
+    resolved, chain, links, seen = [], [], [], set()
+    components = 0
+    while pending:
+        components += 1
+        _require(components <= 64, "CORE_ADMIT_PROGRAM_COMPONENTS")
+        name = pending.pop(0)
+        current = "/" + "/".join(resolved + [name])
+        _require(current not in ("/proc", "/dev/fd"), "CORE_ADMIT_PROGRAM_MAGIC_LINK")
+        parent, leaf = reader.parent(current)
+        info = reader.call(os.stat, leaf, dir_fd=parent, follow_symlinks=False)
+        if stat.S_ISLNK(info.st_mode):
+            _require(current not in seen and len(chain) < 8 and info.st_uid == 0,
+                     "CORE_ADMIT_PROGRAM_LINK")
+            target = reader.call(os.readlink, leaf, dir_fd=parent)
+            _require(type(target) is str and target.isascii() and 0 < len(target) <= 4096
+                     and re.fullmatch(r'[A-Za-z0-9._/-]+', target) is not None
+                     and '//' not in target and all(p not in ('.', '..') for p in target.split('/')),
+                     "CORE_ADMIT_PROGRAM_LINK")
+            seen.add(current); chain.append(dict(path=current, target=target))
+            links.append((parent, leaf, info, target))
+            if target.startswith('/'):
+                resolved = []
+            pending = [p for p in target.split('/') if p] + pending
+        elif pending:
+            reader.protected(info, current, directory=True)
+            resolved.append(name)
+        else:
+            target_path = current
+    raw = reader.read(target_path, maximum=16777216)
+    item = reader.objects[target_path]
+    _require(raw and item["mode"] & 0o111 and item["uid"] == item["gid"] == 0,
+             "CORE_ADMIT_PROGRAM_IDENTITY")
+    for parent, leaf, before, target in links:
+        _require(_admit_stat(reader.call(os.stat, leaf, dir_fd=parent, follow_symlinks=False)) == _admit_stat(before)
+                 and reader.call(os.readlink, leaf, dir_fd=parent) == target, "CORE_ADMIT_PROGRAM_DRIFT")
+    item["kind"] = "executable"
+    value = {key: item[key] for key in PROGRAM_FIELDS if key != "path"}
+    value.update(path=path, resolved_path=target_path, symlink_chain=chain)
+    _require(expected is None or value == expected, "CORE_ADMIT_PROGRAM_BINDING")
+    return value
+
+
+def _admit_run_helper(effects, policy, program_check):
+    """One approved semantic child: bounded streams, CPU limit, real wait4/EOF."""
+    argv, env, limits = policy["argv"], policy["environment"], policy["limits"]
+    seen = getattr(effects, "_admit_helpers_attempted", None)
+    if seen is None:
+        effects._admit_helpers_attempted = seen = set()
+    _require(tuple(argv) not in seen, "CORE_ADMIT_HELPER_REPLAY")
+    effects._effect_guard(); program_check()
+    started = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+    end = started + limits["command_seconds"] * NS
+    proc = None
+    waited = None
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    observed_bytes = dict.fromkeys(output, 0)
+    eof = set()
+    failure = cleanup = None
+    def guard():
+        effects._effect_guard()
+        _require(time.clock_gettime_ns(time.CLOCK_BOOTTIME) < end, "CORE_ADMIT_HELPER_TIMEOUT")
+    def cpu_limit():
+        resource.setrlimit(resource.RLIMIT_CPU, (limits["command_cpu_seconds"], limits["command_cpu_seconds"]))
+    def poll(stopping=False):
+        nonlocal waited
+        if stopping:
+            _clock(effects, effects.context["guest_deadlines"])
+        else:
+            guard()
+        if waited is None:
+            pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
+            if pid:
+                _require(pid == proc.pid, "CORE_ADMIT_HELPER_WAIT")
+                proc.returncode = os.waitstatus_to_exitcode(status)
+                waited = dict(pid=pid, wait_status=status, user_cpu_ns=math.ceil(usage.ru_utime * NS),
+                              system_cpu_ns=math.ceil(usage.ru_stime * NS), max_rss_bytes=usage.ru_maxrss * 1024)
+        for name in output:
+            if name in eof:
+                continue
+            room = min(limits[name + "_bytes"] - len(output[name]),
+                       limits["combined_output_bytes"] - sum(map(len, output.values())))
+            try:
+                raw = os.read(getattr(proc, name).fileno(), 65536 if stopping else min(65536, max(0, room) + 1))
+            except BlockingIOError:
+                continue
+            if not raw:
+                eof.add(name)
+            else:
+                observed_bytes[name] += len(raw)
+                output[name].extend(raw[:max(0, room)])
+                if not stopping:
+                    _require(len(raw) <= room, "CORE_ADMIT_HELPER_OUTPUT_LIMIT")
+        if not stopping:
+            guard()
+    seen.add(tuple(argv))
+    try:
+        guard()
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, cwd="/", env=env, shell=False, close_fds=True,
+            start_new_session=True, preexec_fn=cpu_limit)
+        guard()
+        for name in output:
+            os.set_blocking(getattr(proc, name).fileno(), False)
+            guard()
+        while waited is None or len(eof) != 2:
+            poll()
+            if waited is None or len(eof) != 2:
+                time.sleep(0.002)
+        _require(proc.returncode == 0 and waited["user_cpu_ns"] + waited["system_cpu_ns"] <= limits["command_cpu_seconds"] * NS,
+                 "CORE_ADMIT_HELPER_EXIT")
+        guard(); program_check(); guard()
+    except BaseException as error:
+        failure = str(error) if isinstance(error, DispatchError) else type(error).__name__
+        if proc is not None:
+            try:
+                if waited is None or len(eof) != 2:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                for name in output:
+                    os.set_blocking(getattr(proc, name).fileno(), False)
+                while waited is None or len(eof) != 2:
+                    poll(stopping=True)
+                    if waited is None or len(eof) != 2:
+                        time.sleep(0.002)
+            except BaseException as error2:
+                cleanup = str(error2) if isinstance(error2, DispatchError) else type(error2).__name__
+        raise
+    finally:
+        finished = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        usage = getattr(effects, "_admit_helper_usage", None)
+        if usage is None:
+            effects._admit_helper_usage = usage = []
+        usage.append(dict(argv=list(argv), started_boottime_ns=started, finished_boottime_ns=finished,
+            wait4=waited, eof=sorted(eof), failure=failure, cleanup_failure=cleanup,
+            stdout_bytes=observed_bytes["stdout"], stderr_bytes=observed_bytes["stderr"],
+            retained_stdout_bytes=len(output["stdout"]), retained_stderr_bytes=len(output["stderr"])))
+        if proc is not None:
+            proc.stdout.close(); proc.stderr.close()
+    stdout, stderr = bytes(output["stdout"]), bytes(output["stderr"])
+    return stdout, stderr, dict(argv_sha256=_sha(canonical(argv)), environment_sha256=_sha(canonical(env)),
+        started_boottime_ns=started, finished_boottime_ns=finished, exit_status=proc.returncode,
+        stdout_bytes=len(stdout), stdout_sha256=_sha(stdout), stderr_bytes=len(stderr), stderr_sha256=_sha(stderr),
+        combined_bytes=len(stdout) + len(stderr), timed_out=False, stdout_eof=True, stderr_eof=True)
+
+
+def _admit_helper(effects, policy, program_check):
+    _require(policy["argv"] in (["/usr/bin/sudo", "-n", "-ll", "-U", "q1admin"],
+            ["/usr/sbin/sshd", "-T"]), "CORE_ADMIT_HELPER_ARGV")
+    return _admit_run_helper(effects, policy, program_check)
+
+
+def _admit_programs(effects):
+    remote = effects.context["hello"]["remote_management"]
+    programs, resolved = {}, {}
+    aliases = dict(python="/usr/bin/python3", git="/usr/bin/git", cc="/usr/bin/cc",
+                   setpriv="/usr/bin/setpriv", systemctl="/usr/bin/systemctl", systemd_run="/usr/bin/systemd-run")
+    for name, path in aliases.items():
+        reader = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
+        try:
+            item = _admit_program(reader, path, remote.get(name))
+            programs[name] = {key: item[key] for key in PROGRAM_FIELDS}
+            if name in ("python", "git", "cc"):
+                programs[name]["path"] = item["resolved_path"]
+            else:
+                _require(item["resolved_path"] == path, "CORE_ADMIT_FIXED_PROGRAM_ALIAS")
+            resolved[name] = item
+        finally:
+            reader.close()
+    effects._admit_program_entities = resolved
+    return programs
+
+
+def _admit_guest(effects, programs):
+    import pwd
+    import grp
+    import socket
+    call = effects._capacity_call
+    read = effects._capacity_kernel
+    _require(read("/proc/1/comm", 64) == b"systemd\n", "CORE_ADMIT_PID1_COMM")
+    one, current = [], []
+    try:
+        for path, target in (("/proc/1/ns/user", one), ("/proc/self/ns/user", current)):
+            fd = call(os.open, path, os.O_RDONLY | os.O_CLOEXEC)
+            target.append(fd); target.append(call(os.fstat, fd))
+        _require((one[1].st_dev, one[1].st_ino) == (current[1].st_dev, current[1].st_ino),
+                 "CORE_ADMIT_INITIAL_NAMESPACE")
+        namespace = dict(dev=one[1].st_dev, ino=one[1].st_ino)
+    finally:
+        for item in (one, current):
+            if item:
+                os.close(item[0])
+    vendor = _admit_text(read("/sys/devices/virtual/dmi/id/sys_vendor", 256)).strip()
+    product = _admit_text(read("/sys/devices/virtual/dmi/id/product_name", 256)).strip()
+    _require((vendor in ("QEMU", "KVM") or product == "KVM")
+             and 0 < len(vendor) <= 128 and 0 < len(product) <= 128, "CORE_ADMIT_ISOLATED_GUEST")
+    boot = _admit_text(read("/proc/sys/kernel/random/boot_id", 64)).strip()
+    _require(boot == effects.context["hello"]["boot_id"] == effects.context["guest_deadlines"]["boot_id"],
+             "CORE_ADMIT_GUEST_BOOT")
+    controllers = _admit_text(read("/sys/fs/cgroup/cgroup.controllers", 4096)).split()
+    _require(set(("cpu", "memory", "pids")) <= set(controllers), "CORE_ADMIT_CGROUP_V2")
+    locators = effects.context["manifest"]["locators"]
+    account = call(pwd.getpwnam, locators["ordinary_user"])
+    group = call(grp.getgrnam, locators["ordinary_group"])
+    _require(account.pw_uid > 0 and account.pw_gid == group.gr_gid > 0
+             and call(pwd.getpwuid, account.pw_uid) == account
+             and call(grp.getgrgid, group.gr_gid) == group, "CORE_ADMIT_ORDINARY_ACCOUNT")
+    groups = sorted(set(call(os.getgrouplist, account.pw_name, account.pw_gid)))
+    _require(groups == [account.pw_gid], "CORE_ADMIT_ORDINARY_GROUPS")
+    pid1 = call(os.readlink, "/proc/1/exe")
+    _require(pid1 in ("/lib/systemd/systemd", "/usr/lib/systemd/systemd"), "CORE_ADMIT_PID1_PATH")
+    remote = effects.context["hello"]["remote_management"]
+    reader = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
+    try:
+        entity = _admit_program(reader, pid1)
+        def check_pid1():
+            reader.recheck()
+            info = call(os.stat, "/proc/1/exe")
+            _require(call(os.readlink, "/proc/1/exe") == pid1
+                     and (info.st_dev, info.st_ino, info.st_size) ==
+                     (entity["dev"], entity["ino"], entity["bytes"]), "CORE_ADMIT_PID1_DRIFT")
+        policy = dict(argv=[pid1, "--version"],
+            environment={"HOME": "/root", "LANG": "C", "LC_ALL": "C", "LOGNAME": "root",
+                         "PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "SYSTEMD_COLORS": "0", "USER": "root"},
+            limits=dict(command_seconds=5, command_cpu_seconds=2, stdout_bytes=32768,
+                        stderr_bytes=32768, combined_output_bytes=32768))
+        stdout, stderr, _ = _admit_run_helper(effects, policy, check_pid1)
+        lines = _admit_text(stdout).splitlines()
+        _require(not stderr and lines and re.fullmatch(r'systemd [0-9]+(?: [ -~]+)?', lines[0]),
+                 "CORE_ADMIT_PID1_VERSION")
+    finally:
+        reader.close()
+    return dict(hostname=call(socket.gethostname), dmi_vendor=vendor, dmi_product=product,
+        initial_userns=namespace, boot_id=boot, pid1_exe=pid1, pid1_version=lines[0], cgroup_version=2,
+        ordinary_user=account.pw_name, ordinary_uid=account.pw_uid, ordinary_gid=account.pw_gid,
+        ordinary_groups=groups)
+
+
+def _admit_collect_policies(effects, basis, remote):
+    import pwd
+    effects._effect_guard()
+    _require(os.geteuid() == os.getegid() == 0, "CORE_ADMIT_ROOT_REQUIRED")
+    account = pwd.getpwnam(remote["account"])
+    observed = dict(name=account.pw_name, uid=account.pw_uid, gid=account.pw_gid,
+                    home=account.pw_dir, login_shell=account.pw_shell)
+    _require(observed == dict(name=remote["account"], uid=remote["uid"], gid=remote["gid"],
+                             home=remote["home"], login_shell=remote["login_shell"]), "CORE_ADMIT_ACCOUNT_DRIFT")
+    snapshots, policies = {}, {}
+    for name in ("sudo", "sshd", "authorized_keys", "rc"):
+        policy = basis["policies"][name]
+        params, paths = policy["predicate"]["parameters"], policy["paths"]
+        reader = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
+        try:
+            def read_policy(path, required=True, private=False):
+                files = sum(row["kind"] == "regular" for row in reader.objects.values())
+                remaining = paths["limits"]["max_total_bytes"] - sum(map(len, reader.raw.values()))
+                _require(files < paths["limits"]["max_files"] and remaining >= 0, "CORE_ADMIT_POLICY_TOTAL")
+                return reader.read(path, maximum=min(paths["limits"]["max_file_bytes"], remaining),
+                                   required=required, private=private)
+            for item in paths["fixed_paths"]:
+                read_policy(item["path"], required=item["required"])
+            for item in paths["home_relative_paths"]:
+                read_policy(remote["home"] + "/" + item["path"],
+                            required=item["required"], private=name == "authorized_keys")
+            for item in paths["include_roots"]:
+                for leaf in reader.listing(item["path"], paths["limits"]["max_directory_entries"]):
+                    selected = (not leaf.startswith('.') and '.' not in leaf and not leaf.endswith('~')
+                                if name == "sudo" else leaf.endswith('.conf'))
+                    if selected:
+                        read_policy(item["path"] + "/" + leaf)
+            _require(len(reader.raw) <= paths["limits"]["max_files"] + len(paths["include_roots"])
+                     and sum(map(len, reader.raw.values())) <= paths["limits"]["max_total_bytes"],
+                     "CORE_ADMIT_POLICY_TOTAL")
+            raw = {path: value for path, value in reader.raw.items()
+                   if reader.objects[path]["kind"] == "regular"}
+            if name in ("sudo", "sshd"):
+                if name == "sudo":
+                    count = _admit_sudo_source(raw, params["cloud_config_literal"])
+                else:
+                    _admit_sshd_source(raw)
+                executable = policy["execution"]["executable"]
+                pin = remote["sudo"] if name == "sudo" else None
+                program = _admit_program(reader, executable, pin)
+                def check_program():
+                    # Full reread in a fresh bounded reader checks alias and bytes,
+                    # not merely the already open target's inode.
+                    check = _admit_reader(effects._effect_guard, remote["home"], remote["uid"])
+                    try:
+                        _admit_program(check, executable, program)
+                    finally:
+                        check.close()
+                    reader.recheck()
+                stdout, stderr, helper = _admit_helper(effects, policy, check_program)
+                _require(not stderr, "CORE_ADMIT_HELPER_STDERR")
+                if name == "sudo":
+                    facts = dict(helper=helper, cloud_config_literal_count=count,
+                                 parsed_grants=_admit_sudo_output(stdout, params["required_grant"]), matched=True)
+                else:
+                    facts = dict(helper=helper, effective=_admit_sshd_output(stdout, params["required_effective"]), matched=True)
+            elif name == "authorized_keys":
+                first, second = [remote["home"] + "/" + path for path in params["authorized_keys_files"]]
+                _require(reader.objects[second]["state"] == "ABSENT", "CORE_ADMIT_SECOND_KEY_FILE")
+                facts = dict(effective_entries=_admit_authorized(raw[first], first, params["approved_key"]), matched=True)
+            else:
+                absent = [dict(path=path, absent=reader.objects[path]["state"] == "ABSENT")
+                          for path in params["required_absent"]]
+                environment = [dict(name=key, absent=key not in os.environ) for key in params["forbidden_environment"]]
+                _require(all(row["absent"] for row in absent + environment), "CORE_ADMIT_RC_ACTIVE")
+                startup = [{key: reader.objects[path][key] for key in ("path", "state", "bytes", "sha256")}
+                           for path in params["shell_startup_paths"]]
+                bashrc = remote["home"] + "/.bashrc"
+                if reader.objects[bashrc]["state"] == "PRESENT":
+                    _admit_bashrc(raw[bashrc])
+                facts = dict(required_absent=absent, shell_startup=startup,
+                    bashrc_guard=dict(path=bashrc, state=reader.objects[bashrc]["state"],
+                        profile=params["bashrc_guard_profile"], matched=True),
+                    forbidden_environment_absent=environment, matched=True)
+            reader.recheck()
+            snapshot = dict(schema="local-hand-q2-core-policy-snapshot/v1", policy=name,
+                account=observed, objects=[reader.objects[path] for path in sorted(reader.objects)], facts=facts)
+            encoded = canonical(snapshot)
+            policies[name] = dict(paths=sorted(reader.objects), bytes=len(encoded), sha256=_sha(encoded),
+                relation=dict(stage="POST_ENTRY_PRE_H01_INTENT", pre_entry_containment=False,
+                    policy_basis_sha256=_sha(canonical(basis)), predicate_sha256=policy["predicate_sha256"],
+                    snapshot_sha256=_sha(encoded), facts_sha256=_sha(canonical(facts)), matched=True))
+            snapshots[name] = snapshot
+        finally:
+            reader.close()
+    return dict(policies=policies, snapshots=snapshots)
+
+
+# Historical role vector reconstructs the exact approved 4549-byte placement
+# preimage; it never takes its roles from current filesystem observations.
+_CAP_ROLES = ('state', 'quota', 'install', 'journal', 'evidence')
+_CAP_SNAPSHOT_ROLES = (
+    ('system',), ('system',), ('system', 'journal', 'evidence'), ('system',),
+    ('system',), ('system', 'journal', 'evidence'), ('system',),
+    *(('system', 'quota'), ('journal',), ('system', 'journal', 'evidence')) * 5,
+    ('system',), ('system',),
+)
+
+
+def _cap_usec(value):
+    parts = re.findall(r"([0-9]+)(us|ms|min|s|h|d)", value)
+    _require(parts and ''.join(number + unit for number, unit in parts) == value.replace(' ', ''),
+             'CORE_CAP_TIME_VALUE')
+    return sum(int(number) * {'us': 1, 'ms': 1000, 's': 1000000, 'min': 60000000,
+                             'h': 3600000000, 'd': 86400000000}[unit] for number, unit in parts)
+
+
+def _cap_mounts(raw):
+    _require(type(raw) is bytes and len(raw) <= 1048576, 'CORE_CAP_MOUNT_LIMIT')
+    rows = {}
+    for line in raw.decode('ascii', 'strict').splitlines():
+        fields = line.split(); separator = fields.index('-')
+        _require(separator >= 6 and len(fields) == separator + 4, 'CORE_CAP_MOUNT_FORMAT')
+        mid = int(fields[0]); major, minor = map(int, fields[2].split(':'))
+        # This scope has simple ASCII paths; do not silently unescape aliases.
+        _require(mid not in rows and not any('\\' in fields[i] for i in (3, 4, separator + 2)),
+                 'CORE_CAP_MOUNT_ALIAS')
+        rows[mid] = dict(mount_id=mid, device=os.makedev(major, minor), root=fields[3],
+            path=fields[4], fstype=fields[separator + 1], source=fields[separator + 2],
+            options=sorted(set(fields[5].split(',') + fields[separator + 3].split(','))))
+    _require(rows, 'CORE_CAP_MOUNT_EMPTY')
+    return rows
+
+
+def _cap_uuid(fd):
+    import fcntl
+    import uuid
+    # Linux ext4.h: _IOR('f', 44, struct fsuuid), sizeof header == 8.
+    # Existing ext4 read-only ioctl, on the held filesystem fd, never a block read.
+    value = bytearray(struct.pack('=II', 16, 0) + bytes(16))
+    fcntl.ioctl(fd, 0x8008662c, value, True)
+    _require(struct.unpack('=II', value[:8]) == (16, 0) and any(value[8:]),
+             'CORE_CAP_FILESYSTEM_UUID')
+    return str(uuid.UUID(bytes=bytes(value[8:])))
+
+
+class _CapQuota:
+    """The candidate's bounded Linux project quota observation UAPI only."""
+    def __init__(self, source):
+        import ctypes
+        import platform
+        _require(platform.system() == 'Linux' and platform.machine() == 'x86_64',
+                 'CORE_CAP_QUOTA_ABI')
+        self.ct = ctypes
+        class Block(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_uint64) for name in
+                        ('hard', 'soft', 'space', 'ihard', 'isoft', 'inodes', 'btime', 'itime')]
+            _fields_ += [('valid', ctypes.c_uint32), ('project', ctypes.c_uint32)]
+        self.Block = Block
+        _require(ctypes.sizeof(Block) == 72, 'CORE_CAP_QUOTA_ABI')
+        self.lib = ctypes.CDLL(None, use_errno=True)
+        self.lib.quotactl.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p)
+        self.lib.quotactl.restype = ctypes.c_int
+        self.device = os.fsencode(source)
+
+    def call(self, command, project, buffer):
+        _require(command in (0x800007, 0x800009, (ord('X') << 8) | 8), 'CORE_CAP_QUOTA_READ_ONLY')
+        self.ct.set_errno(0)
+        if self.lib.quotactl(self.ct.c_int((command << 8) | 2), self.device,
+                             self.ct.c_int(project), self.ct.byref(buffer)):
+            raise OSError(self.ct.get_errno(), 'quota observation failed')
+
+    def block(self, project):
+        value = self.Block(); self.call(0x800007, project, value)
+        return {key: getattr(value, key) for key, _ in value._fields_ if key != 'project'}
+
+    def unused(self, project):
+        import errno
+        try:
+            value = self.block(project)
+        except OSError as error:
+            if error.errno == errno.ESRCH:
+                return
+            raise
+        _require(all(number == 0 for key, number in value.items() if key != 'valid'),
+                 'CORE_CAP_PROJECT_OCCUPIED')
+
+    def inventory(self, guard):
+        import errno
+        rows = []; start = 0
+        for _ in range(128):
+            guard(); value = self.Block()
+            try:
+                self.call(0x800009, start, value)
+            except OSError as error:
+                if error.errno == errno.ENOENT:
+                    return rows
+                raise
+            guard()
+            _require(start <= value.project < 2**32 - 1, 'CORE_CAP_QUOTA_ORDER')
+            rows.append({key: getattr(value, key) for key, _ in value._fields_})
+            start = value.project + 1
+        raise DispatchError('CORE_CAP_QUOTA_INVENTORY_LIMIT')
+
+    def enforcement(self):
+        buffer = self.ct.create_string_buffer(160); buffer[0] = b'\x01'
+        self.call((ord('X') << 8) | 8, 0, buffer)
+        raw = bytes(buffer); flags = int.from_bytes(raw[2:4], 'little')
+        _require(raw[0] == 1 and flags & 48 == 48, 'CORE_CAP_QUOTA_ENFORCEMENT')
+        return flags
+
+
+def _cap_charge(approved, filesystems, path_pool, inventory):
+    obligations = approved['historical_capacity_obligations']
+    normalized = [dict(id=row['id'], category=row['category'], pool_roles=list(roles),
+                       full_commitment=row['commitment'], no_refund=True)
+                  for row, roles in zip(obligations['snapshot_rows'], _CAP_SNAPSHOT_ROLES, strict=True)]
+    raw = canonical(normalized)
+    _require((len(raw), _sha(raw)) == APPROVED_VECTOR_PINS['placement_normalized'],
+             'CORE_CAP_PLACEMENT_PIN')
+    pools = {}; byrole = {}
+    for role in _CAP_ROLES:
+        fs = filesystems[role]; key = (fs['dev'], fs['fs_uuid']); byrole[role] = key
+        row = pools.setdefault(key, dict(dev=key[0], fs_uuid=key[1], roles=[], historical_bytes=0,
+            historical_inodes=0, new_required_bytes=0, new_required_inodes=0,
+            bytes_available=fs['bytes_available'], inodes_available=fs['inodes_available'], admitted=False))
+        row['roles'].append(role)
+        row['bytes_available'] = min(row['bytes_available'], fs['bytes_available'])
+        row['inodes_available'] = min(row['inodes_available'], fs['inodes_available'])
+    _require(byrole['state'] == byrole['install'], 'CORE_CAP_SYSTEM_POOL_SPLIT')
+    byrole['system'] = byrole['state']
+    def charge(key, values, prefix):
+        for field in ('bytes', 'inodes'):
+            _integer(values[field], 0, 2**63 - 1, 'CORE_CAP_AMOUNT')
+            pools[key][prefix + '_' + field] += values[field]
+    for source, placement in zip(obligations['snapshot_rows'], normalized, strict=True):
+        expected = {byrole[role] for role in placement['pool_roles']}
+        _require({path_pool(path) for path in source['covered_paths']} == expected,
+                 'CORE_CAP_HISTORICAL_PLACEMENT')
+        for key in expected:
+            charge(key, source['commitment'], 'historical')
+    for row in obligations['delta_rows']:
+        key = byrole[row['device_selector'].removesuffix('_parent')]
+        _require({path_pool(path) for path in row['covered_paths']} == {key}, 'CORE_CAP_DELTA_PLACEMENT')
+        charge(key, row['commitment'], 'historical')
+    configured = [dict(project_id=row['project'], hard_bytes=row['hard'] * 1024,
+                       inode_hard_limit=row['ihard']) for row in inventory if row['hard'] > 0]
+    _require(configured == obligations['configured_quota_rows'], 'CORE_CAP_CONFIGURED_QUOTA_CHANGED')
+    for row in configured:
+        charge(byrole['quota'], dict(bytes=row['hard_bytes'], inodes=row['inode_hard_limit']), 'historical')
+    # Three cases; management headroom is only an admission liability.
+    for role, amount, entries in (('state', 3 * (8 + 32) * 1048576 + 8388608, 3 * (1536 + 1024) + 512),
+            ('quota', 21 * 1048576, 21 * 128), ('install', 67108864, 4096),
+            ('journal', 3 * 1048576, 3 * 128), ('evidence', 60 * 1048576, 3 * 384)):
+        charge(byrole[role], dict(bytes=amount, inodes=entries), 'new_required')
+    for row in pools.values():
+        row['roles'].sort()
+        row['admitted'] = all(row[field + '_available'] >= row['historical_' + field] +
+            row['new_required_' + field] for field in ('bytes', 'inodes'))
+        _require(row['admitted'], 'CORE_CAP_INSUFFICIENT')
+    return [pools[key] for key in sorted(pools)]
+
+
 class FieldEffects:
     """Field-side effect surface with real, fail-closed storage primitives.
 
@@ -2591,13 +3368,381 @@ class FieldEffects:
         return str(PurePosixPath(locators["state_parent"]) / SESSION / case_id
                    / "reservation" / suffix[len("reservation/"):])
 
+    def _capacity_call(self, function, *args, **kwargs):
+        self._effect_guard()
+        value = function(*args, **kwargs)
+        self._effect_guard()
+        return value
+
+    def _capacity_protection(self, info):
+        _require(info.st_uid in getattr(self, '_capacity_owners', {0})
+                 and not stat.S_IMODE(info.st_mode) & 0o022, 'CORE_CAP_PATH_PROTECTION')
+
+    def _capacity_directory(self, path):
+        fd, info, missing = self._capacity_path(path)
+        if missing or not stat.S_ISDIR(info.st_mode):
+            os.close(fd)
+            raise DispatchError('CORE_CAP_DIRECTORY_MISSING')
+        return fd
+
+    def _capacity_kernel(self, path, maximum=1048576, *, dir_fd=None):
+        fd = self._capacity_call(os.open, path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=dir_fd)
+        try:
+            before = self._capacity_call(os.fstat, fd)
+            raw = bytearray()
+            while len(raw) <= maximum:
+                part = self._capacity_call(os.read, fd, min(65536, maximum + 1 - len(raw)))
+                if not part:
+                    break
+                raw.extend(part)
+            _require(len(raw) <= maximum, 'CORE_CAP_KERNEL_LIMIT')
+            _require(_admit_stat(before) == _admit_stat(self._capacity_call(os.fstat, fd)),
+                     'CORE_CAP_KERNEL_DRIFT')
+            return bytes(raw)
+        finally:
+            os.close(fd)
+
+    def _capacity_filesystem(self, path, mounts):
+        fd = self._capacity_directory(path)
+        try:
+            before = self._capacity_call(os.fstat, fd)
+            _require(before.st_uid == before.st_gid == 0 and stat.S_IMODE(before.st_mode) in (448, 493),
+                     'CORE_CAP_PARENT_PROTECTION')
+            info = self._capacity_kernel('/proc/self/fdinfo/' + str(fd), 4096).decode('ascii')
+            matches = re.findall(r'^mnt_id:\s*([0-9]+)$', info, re.MULTILINE)
+            _require(len(matches) == 1 and int(matches[0]) in mounts, 'CORE_CAP_MOUNT_BINDING')
+            mount = mounts[int(matches[0])]
+            _require(mount['device'] == before.st_dev and mount['fstype'] == 'ext4'
+                     and mount['root'] == '/' and 'rw' in mount['options'], 'CORE_CAP_FILESYSTEM')
+            value = self._capacity_call(_cap_uuid, fd)
+            fs = self._capacity_call(os.fstatvfs, fd)
+            _require(_admit_stat(before) == _admit_stat(self._capacity_call(os.fstat, fd))
+                     and fs.f_frsize > 0 and fs.f_favail <= fs.f_files,
+                     'CORE_CAP_PARENT_DRIFT')
+            parent = dict(path=path, dev=before.st_dev, ino=before.st_ino,
+                mode=stat.S_IMODE(before.st_mode), uid=before.st_uid, gid=before.st_gid,
+                nlink=before.st_nlink, mount_id=mount['mount_id'], fs_uuid=value)
+            public = dict(mount_id=mount['mount_id'], dev=before.st_dev, fs_uuid=value,
+                fstype=mount['fstype'], mount_options=mount['options'],
+                bytes_available=fs.f_bavail * fs.f_frsize, inodes_available=fs.f_favail)
+            detail = dict(path=mount['path'], source=mount['source'], device=before.st_dev, uuid=value,
+                total_bytes=fs.f_blocks * fs.f_frsize, total_inodes=fs.f_files,
+                available_bytes=public['bytes_available'], free_inodes=fs.f_favail)
+            return parent, public, detail
+        finally:
+            os.close(fd)
+
+    def _capacity_path(self, path, *, absent=False):
+        parts = self._absolute(path).parts[1:]
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+        fd = self._capacity_call(os.open, '/', flags)
+        try:
+            self._capacity_protection(self._capacity_call(os.fstat, fd))
+            for i, part in enumerate(parts):
+                try:
+                    info = self._capacity_call(os.stat, part, dir_fd=fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    parent = self._capacity_call(os.fstat, fd)
+                    return fd, parent, True
+                _require(not stat.S_ISLNK(info.st_mode), 'CORE_CAP_PATH_SYMLINK')
+                self._capacity_protection(info)
+                if i == len(parts) - 1:
+                    _require(not absent, 'CORE_CAP_OBJECT_EXISTS')
+                    if not stat.S_ISDIR(info.st_mode):
+                        return fd, info, False
+                _require(stat.S_ISDIR(info.st_mode), 'CORE_CAP_PATH_TYPE')
+                child = self._capacity_call(os.open, part, flags, dir_fd=fd)
+                if _admit_stat(info) != _admit_stat(self._capacity_call(os.fstat, child)):
+                    os.close(child)
+                    raise DispatchError('CORE_CAP_PATH_DRIFT')
+                os.close(fd); fd = child
+            _require(not absent, 'CORE_CAP_OBJECT_EXISTS')
+            return fd, self._capacity_call(os.fstat, fd), False
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _capacity_retained_snapshot(self):
+        approved = _approved_inputs_envelope(self.context)
+        result = []; count = total = 0
+        for root in approved['retained_preparation']['paths']:
+            rootfd = self._capacity_directory(root['path'])
+            try:
+                before = self._capacity_call(os.fstat, rootfd)
+                _require((before.st_dev, before.st_ino) == (root['device'], root['inode']),
+                         'CORE_CAP_RETAINED_IDENTITY')
+            except BaseException:
+                os.close(rootfd)
+                raise
+            pending = [(rootfd, root['path'])]; rows = []
+            try:
+                while pending:
+                    fd, path = pending.pop()
+                    try:
+                        before = self._capacity_call(os.fstat, fd); count += 1
+                        _require(count <= 32768 and before.st_dev == root['device'], 'CORE_CAP_RETAINED_LIMIT')
+                        # Leaf enumeration must not update historical atime.
+                        listing = self._capacity_call(os.open, '.', os.O_RDONLY | os.O_DIRECTORY |
+                            os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd)
+                        try:
+                            names = []
+                            with self._capacity_call(os.scandir, listing) as entries:
+                                for entry in entries:
+                                    self._effect_guard(); names.append(entry.name)
+                                    _require(count + len(pending) + len(names) <= 32768,
+                                             'CORE_CAP_RETAINED_LIMIT')
+                        finally:
+                            os.close(listing)
+                        rows.append(dict(path=path, identity=list(_admit_stat(before))))
+                        for name in sorted(names):
+                            child = self._capacity_call(os.stat, name, dir_fd=fd, follow_symlinks=False)
+                            self._capacity_protection(child)
+                            _require(child.st_dev == root['device'] and not stat.S_ISLNK(child.st_mode),
+                                     'CORE_CAP_RETAINED_TYPE')
+                            if stat.S_ISDIR(child.st_mode):
+                                opened = self._capacity_call(os.open, name, os.O_RDONLY | os.O_DIRECTORY |
+                                    os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=fd)
+                                if _admit_stat(child) != _admit_stat(self._capacity_call(os.fstat, opened)):
+                                    os.close(opened)
+                                    raise DispatchError('CORE_CAP_RETAINED_DRIFT')
+                                pending.append((opened, path + '/' + name))
+                            else:
+                                count += 1; total += child.st_size
+                                _require(stat.S_ISREG(child.st_mode) and child.st_nlink == 1 and
+                                    count <= 32768 and total <= 536870912, 'CORE_CAP_RETAINED_LIMIT')
+                                raw, identity = self._capacity_call(self.stable_read_at, fd, name,
+                                    maximum=min(child.st_size, MEMBER_LIMIT), noatime=True)
+                                _require((identity['dev'], identity['ino']) == (child.st_dev, child.st_ino),
+                                         'CORE_CAP_RETAINED_DRIFT')
+                                rows.append(dict(path=path + '/' + name, identity=list(_admit_stat(child)), sha256=_sha(raw)))
+                        _require(_admit_stat(before) == _admit_stat(self._capacity_call(os.fstat, fd)),
+                                 'CORE_CAP_RETAINED_DRIFT')
+                    finally:
+                        os.close(fd)
+                result.append(dict(root=root, files=sorted(rows, key=lambda row: row['path'])))
+            finally:
+                for fd, _ in pending:
+                    os.close(fd)
+        return result
+
+    def _capacity_quota_inventory(self):
+        quota = _CapQuota(self._admission_detail['quota_mount']['source'])
+        return quota.inventory(self._effect_guard)
+
+    def _capacity_quota_enforcement(self):
+        return self._capacity_call(_CapQuota(self._admission_detail['quota_mount']['source']).enforcement)
+
+    def _capacity_systemctl(self, arguments, program):
+        def verify():
+            reader = _admit_reader(self._effect_guard, '/', 0)
+            try:
+                current = _admit_program(reader, program['path'])
+                _require({key: current[key] for key in PROGRAM_FIELDS} == program, 'CORE_CAP_SYSTEMCTL_CHANGED')
+            finally:
+                reader.close()
+        policy = dict(argv=[program['path'], '--system', '--no-pager', '--no-ask-password', *arguments],
+            environment={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'SYSTEMD_COLORS': '0'},
+            limits=dict(command_seconds=5, command_cpu_seconds=2, stdout_bytes=32768,
+                        stderr_bytes=32768, combined_output_bytes=32768))
+        raw, stderr, receipt = _admit_run_helper(self, policy, verify)
+        _require(not stderr and receipt['exit_status'] == 0, 'CORE_CAP_SYSTEMCTL_FAILED')
+        return raw
+
+    def _capacity_managers(self, programs, ordinary_uid):
+        locators = self.context['manifest']['locators']; hello = self.context['hello']['carrier_unit']
+        roles = {role + '_cgroup': locators[role + '_parent_unit']
+                 for role in ('controller', 'management', 'supervisor', 'query', 'ordinary')}
+        roles['retained_ordinary_cgroup'] = PurePosixPath(locators['retained_ordinary_parent_path']).name
+        roles['user_manager'] = locators['user_manager_unit']; roles['carrier'] = locators['carrier_unit']
+        _require(roles['user_manager'] == 'user@' + str(ordinary_uid) + '.service', 'CORE_CAP_MANAGER_USER')
+        properties = ('Id', 'LoadState', 'ActiveState', 'SubState', 'ControlGroup', 'InvocationID',
+            'MemoryMax', 'MemorySwapMax', 'TasksMax', 'CPUQuotaPerSecUSec', 'Delegate', 'User',
+            'RuntimeMaxUSec', 'TimeoutStopUSec', 'Restart', 'KillMode', 'ExitType')
+        raw = self._capacity_systemctl(['show', *sorted(set(roles.values())), '--property=' + ','.join(properties)],
+                                      programs['systemctl'])
+        units = {}
+        for block in raw.decode('ascii', 'strict').strip().split('\n\n'):
+            rows = [line.split('=', 1) for line in block.splitlines()]
+            _require(all(len(row) == 2 for row in rows) and len({row[0] for row in rows}) == len(rows),
+                     'CORE_CAP_MANAGER_FORMAT')
+            value = dict(rows)
+            _require(set(value) <= set(properties) and {'Id', 'LoadState', 'ActiveState', 'SubState',
+                'ControlGroup', 'InvocationID', 'MemoryMax', 'MemorySwapMax', 'TasksMax',
+                'CPUQuotaPerSecUSec'} <= set(value) and value['Id'] not in units, 'CORE_CAP_MANAGER_FORMAT')
+            units[value['Id']] = value
+        _require(set(units) == set(roles.values()), 'CORE_CAP_MANAGER_SET')
+        parents = {}; observed = {}
+        for role, unit in roles.items():
+            value = units[unit]; logical = value['ControlGroup']
+            _require(value['LoadState'] == 'loaded' and value['ActiveState'] == 'active'
+                     and value['SubState'] in ('active', 'running')
+                     and re.fullmatch(r'[0-9a-f]{32}', value['InvocationID']) is not None,
+                     'CORE_CAP_MANAGER_STATE')
+            self._absolute(logical)
+            if role == 'retained_ordinary_cgroup':
+                _require(logical == locators['retained_ordinary_parent_path'].removeprefix('/sys/fs/cgroup'),
+                         'CORE_CAP_RETAINED_CGROUP_CHANGED')
+            fd = self._capacity_directory('/sys/fs/cgroup' + logical)
+            try:
+                info = self._capacity_call(os.fstat, fd)
+                controllers = self._capacity_kernel('cgroup.controllers', 256, dir_fd=fd).decode('ascii').split()
+                if role != 'user_manager':
+                    for filename, property_name in (('memory.max', 'MemoryMax'), ('memory.swap.max', 'MemorySwapMax'),
+                                                     ('pids.max', 'TasksMax')):
+                        actual = self._capacity_kernel(filename, 64, dir_fd=fd).decode('ascii').strip()
+                        _require(actual == ('max' if value[property_name] == 'infinity' else value[property_name]),
+                                 'CORE_CAP_CGROUP_LIMIT_DRIFT')
+                    cpu = self._capacity_kernel('cpu.max', 128, dir_fd=fd).decode('ascii').split()
+                    _require(len(cpu) == 2 and cpu[1].isdecimal() and int(cpu[1]) > 0,
+                             'CORE_CAP_CGROUP_CPU')
+                    _require(cpu[0] == 'max' if value['CPUQuotaPerSecUSec'] == 'infinity' else
+                             cpu[0].isdecimal() and int(cpu[0]) * 1000000 ==
+                             _cap_usec(value['CPUQuotaPerSecUSec']) * int(cpu[1]), 'CORE_CAP_CGROUP_CPU')
+                if role not in ('carrier', 'user_manager'):
+                    _require({'cpu', 'memory', 'pids'} <= set(controllers), 'CORE_CAP_CONTROLLERS')
+                    parents[role] = dict(path='/sys/fs/cgroup' + logical, dev=info.st_dev, ino=info.st_ino,
+                        unit=unit, invocation_id=value['InvocationID'], controllers=sorted(set(controllers) & {'cpu', 'memory', 'pids'}))
+                observed[role] = dict(path=logical, device=info.st_dev, inode=info.st_ino, unit=unit,
+                                     invocation_id=value['InvocationID'], properties=value)
+                _require(_admit_stat(info) == _admit_stat(self._capacity_call(os.fstat, fd)), 'CORE_CAP_CGROUP_DRIFT')
+            finally:
+                os.close(fd)
+        manager = observed['user_manager']
+        _require(manager['properties']['Delegate'] == 'yes' and manager['properties']['User'] == str(ordinary_uid),
+                 'CORE_CAP_MANAGER_DELEGATION')
+        carrier = observed['carrier']; value = carrier['properties']
+        expected = {'Id': 'name', 'ControlGroup': 'control_group', 'InvocationID': 'invocation_id',
+            'ActiveState': 'active_state', 'SubState': 'sub_state', 'Restart': 'restart',
+            'KillMode': 'kill_mode', 'ExitType': 'exit_type'}
+        _require(all(value[key] == hello[field] for key, field in expected.items()), 'CORE_CAP_CARRIER_DRIFT')
+        for key, field in (('MemoryMax', 'memory_max'), ('MemorySwapMax', 'memory_swap_max'), ('TasksMax', 'tasks_max')):
+            _require(value[key].isdecimal() and int(value[key]) == hello[field], 'CORE_CAP_CARRIER_LIMIT')
+        for key, field in (('RuntimeMaxUSec', 'runtime_max_usec'), ('TimeoutStopUSec', 'timeout_stop_usec'),
+                           ('CPUQuotaPerSecUSec', 'cpu_quota_per_sec_usec')):
+            _require(_cap_usec(value[key]) == hello[field], 'CORE_CAP_CARRIER_LIMIT')
+        membership = self._capacity_kernel('/proc/self/cgroup', 4096).decode('ascii').splitlines()
+        _require(membership == ['0::' + carrier['path']], 'CORE_CAP_CARRIER_MEMBERSHIP')
+        geometry = dict(schema='local-hand-q2-system-geometry/v1')
+        for public, role in (('controller_parent', 'controller_cgroup'), ('ordinary_parent', 'ordinary_cgroup'),
+                             ('retained_ordinary_parent', 'retained_ordinary_cgroup')):
+            observation = observed[role]; current = observation['properties']
+            _require(all(current[key].isdecimal() for key in ('MemoryMax', 'MemorySwapMax', 'TasksMax')),
+                     'CORE_CAP_GEOMETRY_LIMIT')
+            geometry[public] = dict(parent={key: observation[key] for key in ('path', 'device', 'inode')},
+                memory_bytes=int(current['MemoryMax']), memory_swap_max=int(current['MemorySwapMax']),
+                tasks_max=int(current['TasksMax']), cpu_quota_per_sec_usec=_cap_usec(current['CPUQuotaPerSecUSec']))
+        for role, limits in {'controller_parent': (536870912, 64), 'ordinary_parent': (268435456, 32),
+                             'retained_ordinary_parent': (268435456, 64)}.items():
+            item = geometry[role]
+            _require((item['memory_bytes'], item['tasks_max']) == limits and item['memory_swap_max'] == 0
+                     and item['cpu_quota_per_sec_usec'] == 1000000, 'CORE_CAP_GEOMETRY_LIMIT')
+        fixed = set()
+        for case in CASES:
+            fixed.update(row[key] for row in _phase_units(case['operation_id'], case['phases'])
+                         for key in ('bootstrap_unit', 'helper_unit', 'result_reader_unit'))
+            fixed.update(case['controller_prefix'] + '-' + role + '.service' for role in ('target', 'supervisor'))
+        for arguments in (['list-units', '--all', '--plain', '--no-legend', '--type=service,slice'],
+                          ['list-unit-files', '--no-legend', '--type=service,slice']):
+            output = self._capacity_systemctl(arguments, programs['systemctl'])
+            names = {line.split()[0] for line in output.decode('ascii', 'strict').splitlines() if line.split()}
+            _require(not fixed & names, 'CORE_CAP_UNIT_EXISTS')
+        for unit in sorted(fixed):
+            for prefix in ('/etc/systemd/system/', '/run/systemd/system/', '/usr/lib/systemd/system/'):
+                for suffix in ('', '.d'):
+                    fd, _, _ = self._capacity_path(prefix + unit + suffix, absent=True)
+                    os.close(fd)
+        self._admission_detail.update(carrier=carrier, system_geometry=geometry)
+        return dict(parents=parents, manager=dict(user_manager_unit=manager['unit'],
+            user_manager_invocation_id=manager['invocation_id'], user_manager_cgroup=manager['path']),
+            absence=[dict(kind='unit', name=unit, parent_dev=None, parent_ino=None, project_id=None,
+                          unit=unit, absent=True, collision=False) for unit in sorted(fixed)])
+
+    def _capacity_admission(self, programs, ordinary_uid):
+        self._capacity_owners = {0, ordinary_uid}
+        approved = _approved_inputs_envelope(self.context)
+        locators = self.context['manifest']['locators']
+        mounts_raw = self._capacity_kernel('/proc/self/mountinfo')
+        mounts = _cap_mounts(mounts_raw); parents = {}; filesystems = {}; details = {}
+        for role in _CAP_ROLES:
+            parents[role], filesystems[role], details[role] = self._capacity_filesystem(locators[role + '_parent'], mounts)
+        quota_mount = details['quota']
+        _require('prjquota' in filesystems['quota']['mount_options'], 'CORE_CAP_QUOTA_MOUNT')
+        source = self._capacity_call(os.stat, quota_mount['source'], follow_symlinks=False)
+        _require(stat.S_ISBLK(source.st_mode) and source.st_rdev == quota_mount['device'], 'CORE_CAP_QUOTA_DEVICE')
+        quota = _CapQuota(quota_mount['source']); self._capacity_call(quota.enforcement)
+        inventory = quota.inventory(self._effect_guard)
+        byproject = {row['project']: row for row in inventory}
+        for row in approved['retained_preparation']['domains']:
+            actual = byproject.get(row['project_id'])
+            _require(actual is not None and actual['hard'] * 1024 == row['hard_bytes'] and
+                     actual['ihard'] == row['inode_hard_limit'], 'CORE_CAP_RETAINED_QUOTA')
+        def path_pool(path):
+            fd, info, _ = self._capacity_path(path)
+            try:
+                uuid = self._capacity_call(_cap_uuid, fd)
+                _require(info.st_dev == os.fstat(fd).st_dev, 'CORE_CAP_PATH_POOL')
+                return info.st_dev, uuid
+            finally:
+                os.close(fd)
+        capacity = _cap_charge(approved, filesystems, path_pool, inventory)
+        absence = []; paths = {locators['install_parent'] + '/' + name for name in (INSTALL_BASENAME, STAGING_BASENAME)}
+        for role in ('state', 'quota', 'journal', 'evidence'):
+            paths.add(locators[role + '_parent'] + '/' + SESSION)
+        for case in CASES:
+            planned = self.preparation_paths(case, locators)
+            paths.update(row['path'] for row in planned['directories'].values())
+            paths.update(row['path'] for row in planned['roots'])
+            paths.update(locators[role + '_parent'] + '/' + SESSION + '/' + case['case_id']
+                         for role in ('state', 'quota', 'journal', 'evidence'))
+        # Derive reconciliation from the pinned original plan, not a guessed directory.
+        row = next(row for row in approved['source_relation']['locator']['members'] if row['role'] == 'original_plan')
+        raw, _ = self._capacity_call(self.stable_read, '/' + row['path'], maximum=row['bytes'])
+        _require(_sha(raw) == row['sha256'], 'CORE_CAP_ORIGINAL_PLAN_CHANGED')
+        original = _json_object(raw, 'CORE_CAP_ORIGINAL_PLAN')
+        paths.add(original['directories']['reservation']['path'] + '.reconciliation')
+        for path in sorted(paths):
+            fd, parent, missing = self._capacity_path(path, absent=True)
+            try:
+                _require(missing, 'CORE_CAP_OBJECT_EXISTS')
+                absence.append(dict(kind='path', name=path, parent_dev=parent.st_dev if str(PurePosixPath(path).parent) in locators.values() else None,
+                    parent_ino=parent.st_ino if str(PurePosixPath(path).parent) in locators.values() else None, project_id=None, unit=None, absent=True, collision=False))
+            finally:
+                os.close(fd)
+        for project in [*range(12051, 12058), *(p for case in CASES for p in case['project_ids'])]:
+            _require(project not in byproject, 'CORE_CAP_PROJECT_EXISTS')
+            self._capacity_call(quota.unused, project)
+            absence.append(dict(kind='project', name=str(project), parent_dev=quota_mount['device'],
+                parent_ino=parents['quota']['ino'], project_id=project, unit=None, absent=True, collision=False))
+        self._admission_detail = dict(quota_mount=quota_mount, mounts=details, quota_inventory=inventory)
+        self._admission_detail['retained_before'] = self._capacity_retained_snapshot()
+        _require(mounts_raw == self._capacity_kernel('/proc/self/mountinfo'), 'CORE_CAP_MOUNT_DRIFT')
+        return dict(parents=parents, filesystems=filesystems, capacity=capacity,
+                    absence=sorted(absence, key=lambda row: (row['kind'], row['name'])))
+
     def admit(self, expected):
-        _exact(expected, ("hello", "manifest", "guest_deadlines"),
-               "CORE_EFFECT_ADMISSION_INPUT")
-        # The amendment supplies the approved relation; it does not turn the
-        # package bytes into current policy, filesystem or account observations.
-        # Until the actual bounded collector is integrated, no mutation follows.
-        raise DispatchError("CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE")
+        _exact(expected, ("hello", "manifest", "guest_deadlines"), "CORE_EFFECT_ADMISSION_INPUT")
+        _require(all(expected[key] == self.context[key] for key in expected)
+                 and self._admission is None and not getattr(self, "_admit_attempted", False),
+                 "CORE_EFFECT_ADMISSION_BINDING")
+        self._admit_attempted = True
+        self._effect_guard()
+        approved = _approved_inputs_envelope(self.context)
+        _validate_approved_components(approved)
+        current = _admit_collect_policies(self, approved["policy_basis"], self.context["hello"]["remote_management"])
+        self._admission_components = current
+        programs = _admit_programs(self)
+        guest = _admit_guest(self, programs)
+        capacity = self._capacity_admission(programs, guest["ordinary_uid"])
+        managers = self._capacity_managers(programs, guest["ordinary_uid"])
+        guest.update(managers["manager"])
+        capacity["parents"].update(managers["parents"])
+        capacity["absence"] = sorted(capacity["absence"] + managers["absence"],
+                                     key=lambda row: (row["kind"], row["name"]))
+        admission = dict(guest=guest, programs=programs, policies=current["policies"],
+                         binding=_admission_binding(self.context), **capacity)
+        self._effect_guard()
+        self._admission = _validate_admission(admission, self.context)
+        return self._admission
 
     def install(self, expected):
         _exact(expected, ("manifest", "members", "admission"),
@@ -2726,9 +3871,9 @@ class FieldEffects:
             _require((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
                      == (expected["dev"], expected["ino"], expected["mode"],
                          expected["uid"], expected["gid"]), "CORE_EFFECT_CARRIER_PARENT_CHANGED")
-            for name in (SESSION, "carrier", "intents"):
+            for name, mode in ((SESSION, 0o755), ("carrier", 0o700), ("intents", 0o700)):
                 self._effect_guard()
-                parent = self._mkdir_at(parent, name, 0o700)
+                parent = self._mkdir_at(parent, name, mode)
                 opened.append(parent)
                 self._effect_guard()
             self._persistence_ready = True
@@ -2810,21 +3955,114 @@ class FieldEffects:
                     os.close(fd)
 
     def _candidate_helper(self, name, verified):
-        _require(name in (*PREPARATION_HELPERS, "q2_prepare_build")
-                 and self._candidate_root is not None, "CORE_EFFECT_HELPER_NAME")
-        relative = "tests/e3_host/" + name + ".py"
-        raw, identity = self.stable_read(self._candidate_root + "/" + relative,
-                                        maximum=MEMBER_LIMIT, expected_mode=420)
-        _require(identity["uid"] == identity["gid"] == 0
-                 and _sha(raw) == verified["source_files"].get(relative),
-                 "CORE_EFFECT_HELPER_CHANGED")
-        # Execute the already held and verified bytes; a second pathname open
-        # by importlib would reopen a substitution window.
+        _require(name in (*PREPARATION_HELPERS, "q2_prepare_build"), "CORE_EFFECT_HELPER_NAME")
+        return self._candidate_modules((name,), verified)[name]
+
+    def _candidate_modules(self, names, verified=None):
+        """Held-byte imports, including lazy imports, never expose the checkout."""
+        import builtins
+        import sys
         import types
-        module = types.ModuleType("_core_field_" + name)
-        module.__file__ = self._candidate_root + "/" + relative
-        exec(compile(raw, module.__file__, "exec"), module.__dict__)
-        return module
+        verified = self.verify_install_inputs() if verified is None else verified
+        pin = _sha(canonical(verified))
+        prior = getattr(self, "_candidate_loader", None)
+        if prior is not None:
+            _require(prior[0] == pin, "CORE_EFFECT_HELPER_SOURCE_CHANGED")
+            return {name: prior[1](name) for name in names}
+        sources = copy.deepcopy(verified)
+        cache = {}
+        roots = frozenset((*WHEEL_PACKAGES, "admin"))
+        helpers = frozenset((*PREPARATION_HELPERS, "q2_prepare_build"))
+        namespaces = {"admin", "admin.local_hand_quota_observer"}
+
+        def load(name):
+            _require(type(name) is str and re.fullmatch(r"[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*", name)
+                     and (name in helpers or name.split(".")[0] in roots
+                          or "tests/e3_host/" + name + ".py" in PROJECTION_HARNESS),
+                     "CORE_EFFECT_HELPER_NAME")
+            if name in cache:
+                return cache[name]
+            package = name in namespaces
+            relative = "tools/" + name.replace(".", "/")
+            if name in helpers:
+                _require(self._candidate_root is not None, "CORE_EFFECT_HELPER_INSTALLATION_REQUIRED")
+                relative = "tests/e3_host/" + name + ".py"
+                path = self._candidate_root + "/" + relative
+                digest = sources["source_files"].get(relative)
+            elif name in namespaces:
+                path, digest = "<core-namespace>", None
+            else:
+                receipt = self._installation_receipt
+                _require(receipt is not None and self._installation is not None,
+                         "CORE_EFFECT_HELPER_INSTALLATION_REQUIRED")
+                package = relative + "/__init__.py" in sources["projection"]["files"]
+                relative = (relative + "/__init__.py" if package else relative + ".py") \
+                    if name.split(".")[0] in roots else "tests/e3_host/" + name + ".py"
+                entry = sources["projection"]["files"].get(relative)
+                _require(entry is not None and _projection_path(relative), "CORE_EFFECT_HELPER_PROJECTION")
+                digest = entry["sha256"]
+                if name.split(".")[0] in WHEEL_PACKAGES:
+                    _require(sources["wheel_files"].get(relative[6:]) == digest,
+                             "CORE_EFFECT_HELPER_WHEEL")
+                    path = receipt["installed"]["package_root"] + "/" + relative[6:]
+                else:
+                    path = receipt["source"]["root"] + "/" + relative
+            raw = b""
+            if digest is not None:
+                self._effect_guard()
+                raw, identity = self.stable_read(path, maximum=MEMBER_LIMIT, expected_mode=420)
+                self._effect_guard()
+                _require(identity["uid"] == identity["gid"] == 0 and _sha(raw) == digest,
+                         "CORE_EFFECT_HELPER_CHANGED")
+            else:
+                _require(name in namespaces, "CORE_EFFECT_HELPER_SOURCE_MISSING")
+            parent, _, child = name.rpartition(".")
+            if parent:
+                load(parent)
+                if name in cache:
+                    return cache[name]
+            module = types.ModuleType(name)
+            module.__file__, module.__package__ = path, name if package else parent
+            if package:
+                module.__path__ = []
+            module.__dict__["__builtins__"] = dict(vars(builtins), __import__=import_bound)
+            cache[name] = module
+            previous = sys.modules.get(name)
+            existed = name in sys.modules
+            try:
+                sys.modules[name] = module
+                exec(compile(raw, path, "exec"), module.__dict__)
+                if name == "q2_prepare_driver":
+                    module.helper = lambda helper: load(helper) if helper in PREPARATION_HELPERS else \
+                        _require(False, "CORE_EFFECT_HELPER_NAME")
+            except BaseException:
+                cache.pop(name, None)
+                raise
+            finally:
+                if existed:
+                    sys.modules[name] = previous
+                else:
+                    sys.modules.pop(name, None)
+            if parent:
+                setattr(cache[parent], child, module)
+            return module
+
+        def import_bound(name, globals=None, locals=None, fromlist=(), level=0):
+            if level:
+                name = importlib.util.resolve_name("." * level + name, globals["__package__"])
+            root = name.split(".")[0]
+            if root not in roots and name not in helpers and not name.startswith(("q2_", "q4_")):
+                _require(root in sys.stdlib_module_names, "CORE_EFFECT_HELPER_IMPORT")
+                return builtins.__import__(name, globals, locals, fromlist, 0)
+            module = load(name)
+            for item in fromlist or ():
+                if item != "*" and not hasattr(module, item):
+                    load(name + "." + item)
+            return module if fromlist else load(root)
+
+        result = {name: load(name) for name in names}
+        self._candidate_loader = (pin, load)
+        return result
 
     def _observe_install_storage(self):
         """Charge actual simultaneous owned files; this is not a peak proof."""
@@ -3063,25 +4301,739 @@ class FieldEffects:
         _require(case in CASES and intent == build_intent(case),
                  "CORE_EFFECT_PREPARATION_INPUT")
         _integer(preparation_deadline_ns, 1, code="CORE_EFFECT_PREPARATION_DEADLINE")
-        # Approved inputs now carry retained rows, but creating the new case
-        # requires the existing-account adapter, never the old account creator.
-        raise DispatchError("CORE_EFFECT_PREPARATION_EXISTING_ACCOUNT_ADAPTER_INCOMPLETE")
+        deadline = preparation_deadline_ns
+        now = _prep_guard(self, deadline)
+        _require(self._installation_receipt is not None and self._persistence_ready
+                 and self._admission is not None and os.geteuid() == os.getegid() == 0,
+                 "CORE_EFFECT_PREPARATION_INSTALLATION_REQUIRED")
+        for method in ("_capacity_retained_snapshot", "_capacity_quota_inventory", "_capacity_quota_enforcement"):
+            _require(callable(getattr(self, method, None)), "CORE_EFFECT_PREPARATION_CURRENT_FACTS_REQUIRED")
+        intent_path = self._persistence_path(case["case_id"], "cases/" + case["case_id"] + "/intent.json")
+        actual, pin = self.stable_read(intent_path, maximum=65536, expected_mode=384)
+        _require(actual == canonical(intent, newline=True) and pin["uid"] == pin["gid"] == 0,
+                 "CORE_EFFECT_PREPARATION_INTENT_REQUIRED")
+        helpers = self.preparation_helpers()
+        # This conservative expiry is no later than an owner started immediately.
+        # It is never extended after the preparation preimage is persisted.
+        expires = (time.time_ns() + OWNER_NS) // NS
+        plan = _prep_make_plan(self, case, expires)
+        helpers["q2_prepare_driver"].validate_plan(plan)
+        contract = helpers["q2_prepare_contract"]
+        for row in (*plan["directories"].values(), *plan["roots"]): contract.path(row["path"])
+        _require(plan["settings"] == _prep_settings(case, expires), "CORE_EFFECT_PREPARATION_SETTINGS")
+        before = self._capacity_retained_snapshot()
+        _require(before == self._admission_detail["retained_before"],
+                 "CORE_EFFECT_PREPARATION_RETAINED_CHANGED")
+        inventory = self._capacity_quota_inventory()
+        _require(not set(case["project_ids"]) & {r["project"] for r in inventory},
+                 "CORE_EFFECT_PREPARATION_PROJECT_EXISTS")
+        parent_roles = ("state", "quota", "journal", "evidence")
+        for role in parent_roles:
+            root = self._admission["parents"][role]
+            fd = self._held_directory(root["path"])
+            try:
+                info = os.fstat(fd)
+                _require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+                         == (root["dev"], root["ino"], root["uid"], root["gid"], root["mode"]),
+                         "CORE_EFFECT_PREPARATION_PARENT_CHANGED")
+            finally: os.close(fd)
+        # Only reservation ancestry may be created before its first raw plan.
+        # Other filesystem case containers follow that durable preimage.
+        state_session = self._admission["parents"]["state"]["path"] + "/" + SESSION
+        _prep_directory(self, state_session + "/" + case["case_id"], 0, 0, 493, deadline)
+        directories = {}
+        reservation = plan["directories"]["reservation"]["path"]
+        directories["reservation"] = _prep_directory(self, reservation, 0, 0, 448, deadline)
+        objects = {"preparation-plan": _prep_file(self, reservation + "/preparation-plan.json",
+            helpers["q2_prepare_driver"].encoded(plan), deadline)}
+        for role in parent_roles:
+            session = self._admission["parents"][role]["path"] + "/" + SESSION
+            if role != "state" and case["index"] == 1:
+                _prep_directory(self, session, 0, 0, 493, deadline)
+            fd = self._held_directory(session)
+            try:
+                st = os.fstat(fd)
+                _require(st.st_uid == st.st_gid == 0 and stat.S_IMODE(st.st_mode) == 493,
+                         "CORE_EFFECT_PREPARATION_SESSION_PROTECTION")
+            finally: os.close(fd)
+            if role != "state":
+                _prep_directory(self, session + "/" + case["case_id"], 0, 0, 493, deadline)
+        account = plan["account"]
+        for role, item in plan["directories"].items():
+            if role == "reservation": continue
+            uid, gid = (account["uid"], account["gid"]) if item["owner"] == "ordinary" else (0, 0)
+            directories[role] = _prep_directory(self, item["path"], uid, gid, item["mode"], deadline)
+        children = {}
+        for name in ("preflight", "business", "evidence", "management_evidence", "launcher_output",
+                     "supervisor_output", "owner_output", "launcher_declarations", "supervisor_declarations",
+                     "owner_declarations"):
+            parent = directories["declarations" if name.endswith("declarations") else "capture"]["path"]
+            children[name] = _prep_pin(_prep_directory(self, parent + "/" + name, 0, 0,
+                493 if name == "launcher_declarations" else 448, deadline))
+        mount = plan["mounts"]["quota"]
+        created = [_prep_root(self, row, account, mount, deadline) for row in plan["roots"]]
+        roots = [_prep_observe_root(self, row, mount, deadline) for row in created]
+        after = self._capacity_retained_snapshot()
+        after_inventory = [r for r in self._capacity_quota_inventory() if r["project"] not in case["project_ids"]]
+        _require(before == after and _prep_quota_retained(inventory) == _prep_quota_retained(after_inventory),
+                 "CORE_EFFECT_PREPARATION_RETAINED_CHANGED")
+        parent_pins = {}
+        for role in ("controller", "management", "query", "supervisor", "ordinary"):
+            key = "retained_ordinary_cgroup" if role == "ordinary" and case["index"] == 2 else role + "_cgroup"
+            parent_pins[role] = _prep_pin(self._admission["parents"][key])
+            parent_pins[role]["path"] = parent_pins[role]["path"].removeprefix("/sys/fs/cgroup")
+        observed = {"host": plan["host"], "ordinary": account, "directories": directories,
+            "parents": parent_pins, "mounts": {"quota": mount}, "roots": roots,
+            "installation": self._installation_receipt,
+            "capacity_observed": {"quota_inventory": inventory},
+            "retained_before": before, "retained_after": after}
+        if case["index"] != 2:
+            _require("system_geometry" in self._admission_detail,
+                     "CORE_EFFECT_PREPARATION_GEOMETRY_REQUIRED")
+            observed["system_geometry"] = copy.deepcopy(self._admission_detail["system_geometry"])
+        result = {"schema": "local-hand-q2-fixture-preparation/v1", "preparation_id": case["preparation_id"],
+            "plan_sha256": _sha(objects["preparation-plan"]["raw"]), "status": "RESOURCES_PREPARED",
+            "reason": None, "facts": observed, "q2_accepted": False, "q3_accepted": False,
+            "production_supported": False, "fixture_generated": False}
+        objects["preparation-result"] = _prep_file(self, reservation + "/preparation-result.json",
+            helpers["q2_prepare_driver"].encoded(result), deadline)
+        translated = _prep_translate(case, plan, result, children, helpers)
+        prepared = {"case": case, "intent": intent, "plan": plan, "receipt": result,
+            "children": children, "source_objects": objects, **translated}
+        prepared["paths"] = {k: v["path"] for k, v in {**directories, **children}.items()}
+        prepared["paths"]["retained_store"] = next(r["path"] for r in roots if r["slot"] == "store")
+        for name in ("authority", "manifest"):
+            _prep_file(self, reservation + "/" + name + ".json",
+                       canonical(prepared[name], newline=True), deadline)
+        _prep_initialize(self, prepared, deadline)
+        _prep_guard(self, deadline)
+        return prepared
 
-    def plan_case(self, _case, _prepared, _deadlines):
-        raise DispatchError("CORE_EFFECT_PLAN_IMPLEMENTATION_HOOK_UNFILLED")
+    def plan_case(self, case, prepared, deadlines):
+        _require(case in CASES and prepared.get("case") == case,
+                 "CORE_EFFECT_PLAN_PREPARATION_REQUIRED")
+        now = _prep_guard(self, deadlines["owner_deadline_ns"])
+        realtime = time.time_ns()
+        expires = prepared["facts"]["identity"]["expires_at"]
+        _require(realtime // NS < expires
+                 and expires * NS <= realtime + deadlines["owner_deadline_ns"] - now["boottime_ns"],
+                 "CORE_EFFECT_PLAN_REQUEST_EXPIRED")
+        plan = _plan_from_prepared(case, prepared, deadlines)
+        owner = dict(prepared["plan"]["settings"]["owner"])
+        owner.pop("runtime_ns")
+        owner.update(issued_ns=now["boottime_ns"], deadline_ns=deadlines["owner_deadline_ns"])
+        runtime = self._candidate_modules(("q2_prepare_run",))["q2_prepare_run"]
+        schema, purpose = {1: (runtime.SYSTEM_SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"),
+            2: (runtime.CANCEL_SCHEMA, runtime.CANCEL_PURPOSE),
+            3: (runtime.H11_SCHEMA, runtime.H11_PURPOSE)}[case["index"]]
+        handoff = {"schema": schema, "purpose": purpose,
+            "preparation_id": prepared["facts"]["identity"]["id"],
+            "boot_id": self.context["guest_deadlines"]["boot_id"],
+            "template": prepared["assembled"]["supervisor_template"],
+            "supervisor_parent": prepared["assembled"]["supervisor_parent"],
+            "output": prepared["children"]["owner_output"],
+            "declarations": prepared["children"]["owner_declarations"], "owner_envelope": owner}
+        raw = runtime.encoded(handoff)
+        runtime.decode(raw, _sha(raw))
+        prepared["handoff"] = prepared["handoff_plan"] = handoff
+        prepared["handoff_path"] = prepared["paths"]["reservation"] + "/handoff.json"
+        prepared["handoff_sha256"] = _sha(raw)
+        prepared["source_objects"]["handoff"] = _prep_file(self, prepared["handoff_path"], raw,
+                                                           deadlines["owner_deadline_ns"])
+        sources = []
+        for role in ("preparation-plan", "preparation-result", "authority"):
+            record = prepared["source_objects"][role]
+            raw = _prep_reread(self, record, deadlines["owner_deadline_ns"])
+            suffix = "authority/authority.json" if role == "authority" else "reservation/" + role + ".json"
+            sources.append({"path": "cases/" + case["case_id"] + "/" + suffix,
+                            "role": role, "mode": 384, "raw": raw})
+        raw = canonical(plan, newline=True)
+        prepared["source_objects"]["case-plan"] = _prep_file(self,
+            prepared["paths"]["reservation"] + "/case-plan.json", raw, deadlines["owner_deadline_ns"])
+        sources.append({"path": "cases/" + case["case_id"] + "/reservation/case-plan.json",
+                        "role": "plan", "mode": 384, "raw": raw})
+        prepared["sources"] = list(sources)
+        return {"plan": plan, "sources": sources}
 
-    def run_h01(self, _case, _prepared, _plan):
-        raise DispatchError("CORE_EFFECT_H01_IMPLEMENTATION_HOOK_UNFILLED")
+    def _exec_empty_ledger_gate(self, case, prepared, plan):
+        import sqlite3
+        self._exec_guard(plan)
+        modules = self._candidate_modules(("q2_fixture_check", "local_hand_jobs.policy"))
+        checker = modules["q2_fixture_check"]
+        policy = modules["local_hand_jobs.policy"].Policy(prepared["assembled"]["policy"])
+        fd, held = prepared["_exec_ledger_fd"], prepared["_exec_ledger_identity"]
+        path, uid = plan["ledger_path"], prepared["facts"]["ordinary"]["uid"]
+        _require(held["path"] == path == policy.broker_root + "/jobs.sqlite",
+                 "CORE_EFFECT_EMPTY_LEDGER_PATH")
+        parent = self._held_directory(policy.broker_root)
+        def snapshot():
+            self._exec_guard(plan)
+            info = os.fstat(fd)
+            _require((info.st_dev, info.st_ino) == (held["dev"], held["ino"])
+                and stat.S_ISREG(info.st_mode) and info.st_uid == uid
+                and info.st_gid == prepared["facts"]["ordinary"]["gid"]
+                and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 384
+                and 100 <= info.st_size <= 33554432,
+                "CORE_EFFECT_EMPTY_LEDGER_IDENTITY")
+            for suffix in ("-wal", "-shm", "-journal"):
+                try: os.stat("jobs.sqlite" + suffix, dir_fd=parent, follow_symlinks=False)
+                except FileNotFoundError: continue
+                raise DispatchError("CORE_EFFECT_EMPTY_LEDGER_SIDECAR")
+            raw = os.pread(fd, info.st_size + 1, 0)
+            _require(len(raw) == info.st_size and checker.identity(info) == checker.identity(os.fstat(fd))
+                == checker.identity(os.stat("jobs.sqlite", dir_fd=parent, follow_symlinks=False)),
+                "CORE_EFFECT_EMPTY_LEDGER_CHANGED")
+            self._exec_guard(plan)
+            return raw, checker.identity(info), checker.identity(os.fstat(parent))
+        try:
+            before = snapshot()
+            checker.empty_ledger(policy, uid, prepared["assembled"]["chain"]["broker_generation"])
+            self._exec_guard(plan)
+            db = sqlite3.connect(":memory:")
+            try:
+                raw = before[0]
+                db.deserialize(raw[:18] + b"\1\1" + raw[20:])
+                db.execute("PRAGMA query_only=ON")
+                db.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 100)
+                rows = db.execute("SELECT key,value FROM metadata").fetchall()
+                _require(len(rows) == 3 and dict(rows) == {"schema": "1",
+                    "authority_id": plan["identity"]["authority_id"],
+                    "ledger_id": plan["identity"]["ledger_id"]}, "CORE_EFFECT_EMPTY_LEDGER_METADATA")
+            finally:
+                db.close()
+            _require(snapshot() == before, "CORE_EFFECT_EMPTY_LEDGER_CHANGED")
+        finally:
+            os.close(parent)
+        gate = {"schema": "local-hand-q2-core-empty-ledger-gate/v1", "session_id": SESSION,
+            "index": case["index"], "case_id": case["case_id"], "ledger_path": path,
+            "dev": held["dev"], "ino": held["ino"],
+            "authority_id": plan["identity"]["authority_id"], "ledger_id": plan["identity"]["ledger_id"],
+            "snapshot_sha256": _sha(before[0]), "operations": 0, "events": 0, "leases": 0,
+            "sidecars": [], "checked_boottime_ns": self.now()["boottime_ns"],
+            "stage": "fixture", "before_submit": True}
+        raw = canonical(gate, newline=True)
+        _prep_file(self, prepared["paths"]["reservation"] + "/empty-ledger-gate.json", raw,
+                   plan["deadlines"]["owner_deadline_ns"])
+        return {"path": "cases/" + case["case_id"] + "/reservation/empty-ledger-gate.json",
+                "role": "empty-ledger-gate", "mode": 384, "raw": raw}
 
-    def run_q4(self, _case, _prepared, _plan):
-        raise DispatchError("CORE_EFFECT_Q4_IMPLEMENTATION_HOOK_UNFILLED")
+    def _exec_ledger_export(self, case, prepared, plan):
+        """Read the closed original ledger; preserve its SQLite TEXT verbatim.
 
-    def recover_h11(self, _case, _prepared, _plan):
-        # Deliberately no generic run_h11/business-start method exists.
-        raise DispatchError("CORE_EFFECT_H11_IMPLEMENTATION_HOOK_UNFILLED")
+        The case runner calls this only after verifying owner wait/EOF, both
+        control seals and the original units' complete stop acknowledgements.
+        The descriptor was held before that same original owner was started.
+        """
+        import sqlite3
+        _require(case in CASES[:2], "CORE_EFFECT_LEDGER_EXPORT_CASE")
+        held = prepared["_exec_ledger_identity"]
+        fd = prepared["_exec_ledger_fd"]
+        path = plan["ledger_path"]
+        _require(held["path"] == path, "CORE_EFFECT_LEDGER_EXPORT_IDENTITY")
+        parent = self._held_directory(str(PurePosixPath(path).parent))
+        name = PurePosixPath(path).name
+        def identity():
+            self._exec_guard(plan)
+            info = os.fstat(fd)
+            named = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            _require(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
+                     and info.st_nlink == named.st_nlink == 1
+                     and (info.st_dev, info.st_ino) == (held["dev"], held["ino"])
+                     == (named.st_dev, named.st_ino)
+                     and 0 < info.st_size <= 33554432, "CORE_EFFECT_LEDGER_EXPORT_IDENTITY")
+            for suffix in ("-wal", "-shm", "-journal"):
+                try:
+                    os.stat(name + suffix, dir_fd=parent, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                raise DispatchError("CORE_EFFECT_LEDGER_EXPORT_SIDECAR")
+            return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        def digest():
+            value = hashlib.sha256()
+            offset = 0
+            while True:
+                self._exec_guard(plan)
+                chunk = os.pread(fd, min(65536, 33554433 - offset), offset)
+                if not chunk:
+                    break
+                offset += len(chunk)
+                _require(offset <= 33554432, "CORE_EFFECT_LEDGER_EXPORT_SIZE")
+                value.update(chunk)
+            return offset, value.hexdigest()
+        def text_object(raw):
+            def pairs(items):
+                result = {}
+                for key, value in items:
+                    if key in result:
+                        raise ValueError("duplicate key")
+                    result[key] = value
+                return result
+            def number(value):
+                result = float(value)
+                if not math.isfinite(result):
+                    raise ValueError("nonfinite number")
+                return result
+            _require(type(raw) is str, "CORE_EFFECT_LEDGER_EXPORT_TEXT")
+            try:
+                value = json.loads(raw, object_pairs_hook=pairs,
+                                   parse_constant=number, parse_float=number)
+                _require(type(value) is dict, "CORE_EFFECT_LEDGER_EXPORT_TEXT")
+                raw.encode("utf-8", "strict")
+            except (ValueError, TypeError, RecursionError, UnicodeError) as error:
+                raise DispatchError("CORE_EFFECT_LEDGER_EXPORT_TEXT") from error
+        connection = None
+        try:
+            before = identity()
+            size, sha = digest()
+            _require(size == before[2], "CORE_EFFECT_LEDGER_EXPORT_CHANGED")
+            # immutable avoids a read-only WAL connection creating -shm. The
+            # prior quiescence/sidecar checks and held-fd reread enforce its premise.
+            connection = sqlite3.connect("file:/proc/self/fd/" + str(fd)
+                + "?mode=ro&immutable=1", uri=True, timeout=0)
+            connection.row_factory = sqlite3.Row
+            connection.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 100)
+            connection.execute("PRAGMA query_only=ON")
+            _require(connection.execute("PRAGMA quick_check").fetchall()[0][0] == "ok",
+                     "CORE_EFFECT_LEDGER_EXPORT_DATABASE")
+            metadata = dict(connection.execute("SELECT key,value FROM metadata"))
+            identity_fields = plan["identity"]
+            _require(metadata == {"schema": "1", "authority_id": identity_fields["authority_id"],
+                                   "ledger_id": identity_fields["ledger_id"]},
+                     "CORE_EFFECT_LEDGER_EXPORT_METADATA")
+            rows = connection.execute("SELECT namespace,id,parent,principal,digest,reserved_bytes,"
+                "request_json,plan_json,record_json FROM operations LIMIT 2").fetchall()
+            _require(len(rows) == 1, "CORE_EFFECT_LEDGER_EXPORT_OPERATION")
+            operation = dict(rows[0])
+            _require(operation["namespace"] == "job" and operation["id"] == case["operation_id"]
+                     and operation["principal"] == identity_fields["principal_id"]
+                     and operation["digest"] == plan["request"]["request_digest"]
+                     and type(operation["reserved_bytes"]) is int and operation["reserved_bytes"] > 0,
+                     "CORE_EFFECT_LEDGER_EXPORT_OPERATION")
+            for key in ("request_json", "plan_json", "record_json"):
+                text_object(operation[key])
+            events = []
+            cursor = connection.execute("SELECT seq,namespace,id,kind,"
+                "printf('%.17g',observed_at) AS observed_at,data_json FROM events ORDER BY seq")
+            for row in cursor:
+                self._exec_guard(plan)
+                event = dict(row)
+                _require(type(event["seq"]) is int and event["seq"] > 0
+                         and (not events or event["seq"] > events[-1]["seq"])
+                         and event["namespace"] == "job" and event["id"] == case["operation_id"]
+                         and type(event["kind"]) is str and event["kind"]
+                         and re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?", event["observed_at"])
+                         is not None, "CORE_EFFECT_LEDGER_EXPORT_EVENT")
+                text_object(event["data_json"])
+                events.append(event)
+                _require(len(events) <= 4096, "CORE_EFFECT_LEDGER_EXPORT_SIZE")
+            connection.close(); connection = None
+            _require(identity() == before and digest() == (size, sha)
+                     and identity() == before, "CORE_EFFECT_LEDGER_EXPORT_CHANGED")
+            exported = self.now()["boottime_ns"]
+            value = {"schema": "local-hand-q2-core-ledger-export/v1", "session_id": SESSION,
+                "index": case["index"], "case_id": case["case_id"],
+                "authority_id": identity_fields["authority_id"], "ledger_id": identity_fields["ledger_id"],
+                "operation_id": case["operation_id"], "ledger_identity": dict(path=path,
+                    dev=before[0], ino=before[1], bytes=size, sha256=sha),
+                "operation": operation, "events": events, "sidecars": [],
+                "exported_boottime_ns": exported}
+            raw = canonical(value, newline=True, limit=1048576)
+            logical = "cases/" + case["case_id"] + "/records/ledger-export.json"
+            destination = self._persistence_path(case["case_id"],
+                "cases/" + case["case_id"] + "/reservation/ledger-export.json")
+            deadline = min(plan["deadlines"]["owner_deadline_ns"],
+                self.context["guest_deadlines"]["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS)
+            record = _prep_file(self, destination, raw, deadline)
+            _require(_prep_reread(self, record, deadline) == raw, "CORE_EFFECT_LEDGER_EXPORT_CHANGED")
+            return {"path": logical, "role": "ledger", "mode": 384, "raw": raw}
+        finally:
+            if connection is not None: connection.close()
+            os.close(parent)
 
-    def phase_facts(self, _case, _phase, _plan, _sources):
-        raise DispatchError("CORE_EFFECT_PHASE_FACTS_IMPLEMENTATION_HOOK_UNFILLED")
+    def _exec_guard(self, plan, *, parent_guard=None):
+        (self._effect_guard if parent_guard is None else parent_guard)()
+        now = self.now(); original = getattr(self, "_active_case_deadlines", {})
+        _require(original.get("owner_deadline_ns") == plan["deadlines"]["owner_deadline_ns"]
+            and type(original.get("owner_monotonic_deadline_ns")) is int
+            and now["boottime_ns"] < original["owner_deadline_ns"]
+            and now["monotonic_ns"] < original["owner_monotonic_deadline_ns"],
+            "CORE_EFFECT_CASE_DEADLINE")
+
+    def _exec_child(self, argv, plan):
+        """Reuse the bounded original wait4/EOF collector with both earlier clocks."""
+        original = self._effect_guard
+        previous = self.__dict__.get("_effect_guard")
+        self._effect_guard = lambda: self._exec_guard(plan, parent_guard=original)
+        try:
+            # 32 KiB is stricter than the owner 68 KiB maximum; overflow fails.
+            raw = self._installation_command(argv)
+            _require(self._install_commands[-1]["stderr"] == b"", "CORE_EFFECT_OWNER_STDERR")
+            return raw
+        finally:
+            if previous is None: del self._effect_guard
+            else: self._effect_guard = previous
+
+    def _exec_source(self, case, prepared, plan, suffix, role, mode=384):
+        _path(suffix, "CORE_EFFECT_CASE_SOURCE_PATH")
+        root, relative = suffix.split("/", 1)
+        self._exec_guard(plan)
+        if role == "result":
+            _require(case["index"] == 1 and suffix == "business/result-03c94c57c840717302854a3f.json",
+                     "CORE_EFFECT_CASE_RESULT_SOURCE")
+            physical = prepared["facts"]["slots"][0]["roots"]["evidence"]["path"] + "/" + relative
+        elif role.startswith("business-evidence-"):
+            _require(case["index"] == 1, "CORE_EFFECT_CASE_RESULT_SOURCE")
+            physical = prepared["paths"]["retained_store"] + "/" + relative
+        else:
+            _require(root in prepared["paths"], "CORE_EFFECT_CASE_SOURCE_ROOT")
+            physical = prepared["paths"][root] + "/" + relative
+        raw, identity = self.stable_read(physical, maximum=MEMBER_LIMIT, expected_mode=mode)
+        self._exec_guard(plan)
+        owner = prepared["facts"]["ordinary"] if role == "result" or role.startswith("business-evidence-") else {"uid": 0, "gid": 0}
+        _require(identity["nlink"] == 1 and identity["uid"] == owner["uid"]
+            and identity["gid"] == owner["gid"], "CORE_EFFECT_CASE_SOURCE_OWNER")
+        source = {"path": "cases/" + case["case_id"] + "/" + suffix,
+                  "role": role, "mode": mode, "raw": raw}
+        prepared.setdefault("_exec_physical", {})[source["path"]] = physical
+        return source
+
+    def _exec_controls(self, case, prepared, plan, sources, child):
+        prefix = "cases/" + case["case_id"] + "/"
+        for folder, status in (("supervisor_output", "CONTROLLER_CLOSED"),
+                               ("owner_output", "SUPERVISOR_CLOSED")):
+            stop = _parse_source(sources, prefix + folder + "/stop.json")
+            seal = _parse_source(sources, prefix + folder + "/seal.json")
+            _require(stop.get("attempted") is True and stop.get("acknowledged") is True
+                and stop.get("parent_empty") is True and stop.get("complete") is True
+                and type(stop.get("closed_ns")) is int
+                and 0 < stop["closed_ns"] < plan["deadlines"]["owner_deadline_ns"]
+                and seal.get("status") == status and seal.get("production_supported") is False,
+                "CORE_EFFECT_CASE_STOP_UNPROVEN")
+            before, after = stop["before"], stop["after"]
+            _require(before["Id"] == after["Id"] == plan["controllers"][
+                    "target" if folder == "supervisor_output" else "supervisor"]["unit"]
+                and before["InvocationID"] == seal["original"]["invocation_id"]
+                and after["MainPID"] == after["ControlPID"] == "0"
+                and (after["LoadState"] == "not-found" or (after["LoadState"] == "loaded"
+                    and after["ActiveState"] in ("inactive", "failed")
+                    and after["InvocationID"] == before["InvocationID"])),
+                "CORE_EFFECT_CASE_STOP_IDENTITY")
+            for source in sources:
+                physical = prepared["_exec_physical"].get(source["path"])
+                if physical in seal.get("files", {}):
+                    _require(seal["files"][physical] == {"sha256": _sha(source["raw"]),
+                        "bytes": len(source["raw"])}, "CORE_EFFECT_CASE_CONTROL_SEAL")
+            own = next(s for s in sources if s["path"] == prefix + folder + "/stop.json")
+            _require(seal.get("files", {}).get(prepared["_exec_physical"][own["path"]]) ==
+                {"sha256": _sha(own["raw"]), "bytes": len(own["raw"])}, "CORE_EFFECT_CASE_CONTROL_SEAL")
+        _require(child.get("status") == "SUPERVISOR_CLOSED" and child.get("sealed") is True
+            and not child.get("cleanup_errors"), "CORE_EFFECT_CASE_OWNER_UNCLOSED")
+        return {"requested": True, "acknowledged": True, "tree_exited": True,
+                "writers_stopped": True, "deadline_ns": plan["deadlines"]["owner_deadline_ns"]}
+
+    def _exec_case(self, case, prepared, plan):
+        _require(case in CASES and prepared.get("case") == case
+            and plan["case_id"] == case["case_id"] and plan["operation_id"] == case["operation_id"],
+            "CORE_EFFECT_CASE_INPUT")
+        _require(not prepared.get("_exec_attempted"), "CORE_EFFECT_CASE_ALREADY_ATTEMPTED")
+        self._exec_guard(plan)
+        handoff = prepared["handoff"]
+        for record in prepared["source_objects"].values():
+            _prep_reread(self, record, plan["deadlines"]["owner_deadline_ns"])
+        _require(handoff["owner_envelope"]["deadline_ns"] == plan["deadlines"]["owner_deadline_ns"],
+                 "CORE_EFFECT_CASE_OWNER_DEADLINE")
+        raw, _ = self.stable_read(prepared["handoff_path"], maximum=2097152, expected_mode=384)
+        _require(document(raw, limit=2097152, newline=True) == handoff, "CORE_EFFECT_CASE_HANDOFF_CHANGED")
+        verified = self.verify_install_inputs()
+        source_pin = handoff["template"]["launcher"]["source"]
+        _require(source_pin["commit"] == CANDIDATE["commit"]
+            and all(verified["source_files"].get(k) == v for k, v in source_pin["files"].items()),
+            "CORE_EFFECT_CASE_CANDIDATE")
+        runtime_root = prepared["facts"]["source"]["root"]
+        _require(runtime_root == self._installation_receipt["source"]["root"],
+                 "CORE_EFFECT_CASE_RUNTIME_ROOT")
+        for name, digest in source_pin["files"].items():
+            content, _ = self.stable_read(runtime_root + "/" + name,
+                                          maximum=MEMBER_LIMIT, expected_mode=420)
+            _require(_sha(content) == digest, "CORE_EFFECT_CASE_SOURCE_CHANGED")
+        python = prepared["facts"]["installation"]["programs"]["python"]
+        executable, _ = self.stable_read(python["path"], maximum=MEMBER_LIMIT)
+        _require(_sha(executable) == python["sha256"], "CORE_EFFECT_CASE_PYTHON_CHANGED")
+        parent = self._held_directory(str(PurePosixPath(plan["ledger_path"]).parent))
+        fd = -1
+        try:
+            fd = os.open("jobs.sqlite", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOATIME,
+                         dir_fd=parent)
+            info = os.fstat(fd)
+            _require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                and stat.S_IMODE(info.st_mode) == 384, "CORE_EFFECT_CASE_LEDGER")
+            prepared["_exec_ledger_fd"] = fd
+            prepared["_exec_ledger_identity"] = {"path": plan["ledger_path"], "dev": info.st_dev, "ino": info.st_ino}
+            gate_source = self._exec_empty_ledger_gate(case, prepared, plan)
+            prepared.setdefault("sources", []).append(gate_source)
+            prepared["_exec_attempted"] = True
+            child_raw = self._exec_child([python["path"], "-I", "-B", runtime_root +
+                "/tests/e3_host/q2_prepare_run.py", "--plan", prepared["handoff_path"], "--sha256", _sha(raw)], plan)
+            child = document(child_raw, limit=69632, newline=True)
+            for record in prepared["source_objects"].values():
+                _prep_reread(self, record, plan["deadlines"]["owner_deadline_ns"])
+            current = os.stat("jobs.sqlite", dir_fd=parent, follow_symlinks=False)
+            _require((current.st_dev, current.st_ino) == (info.st_dev, info.st_ino)
+                and stat.S_ISREG(current.st_mode), "CORE_EFFECT_CASE_LEDGER_CHANGED")
+            sources = [gate_source]
+            # Only approved fixed names: H11 never touches a business result,
+            # raw ledger contents, wildcard or business evidence directory.
+            rows = _h01_special("00000000-0000-4000-8000-000000000000") if case["index"] == 1 else (
+                Q4_SPECIAL if case["index"] == 2 else H11_SPECIAL)
+            for suffix, role, mode in rows:
+                if role in ("phase-receipt", "recovery-proof", "ledger", "result") or role.startswith("business-evidence-"):
+                    continue
+                sources.append(self._exec_source(case, prepared, plan, suffix, role, mode))
+            sources.append(self._exec_source(case, prepared, plan, "owner_declarations/fixture-check.json", "fixture-check"))
+            stop = self._exec_controls(case, prepared, plan, sources, child)
+            prefix = "cases/" + case["case_id"] + "/"
+            cap = _parse_source(sources, prefix + "launcher_output/capture.json")
+            launch = _parse_source(sources, prefix + "launcher_output/result.json")
+            _require(cap.get("complete") is True and cap.get("returncode") == 0
+                and set(cap.get("eof", [])) == {"stdout", "stderr"}
+                and launch.get("resident_capture") == cap and not launch.get("cleanup_errors")
+                and next(s["raw"] for s in sources if s["path"] == prefix +
+                         "launcher_output/resident.stderr") == b"", "CORE_EFFECT_CASE_QUIESCENCE")
+            if case["index"] != 3:
+                sources.append(self._exec_ledger_export(case, prepared, plan))
+            return self._exec_observations(case, prepared, plan, sources, stop, verified)
+        finally:
+            prepared.pop("_exec_ledger_fd", None)
+            if fd >= 0: os.close(fd)
+            os.close(parent)
+
+    def _exec_observations(self, case, prepared, plan, sources, stop, verified):
+        prefix = "cases/" + case["case_id"] + "/"
+        get = lambda suffix: _parse_source(sources, prefix + suffix)
+        launch, capture = get("launcher_output/result.json"), get("launcher_output/capture.json")
+        _require(capture.get("complete") is True and capture.get("returncode") == 0
+            and set(capture.get("eof", [])) == {"stdout", "stderr"}
+            and launch.get("resident_capture") == capture and not launch.get("cleanup_errors"),
+            "CORE_EFFECT_CASE_RESIDENT_CAPTURE")
+        stdout = next(s["raw"] for s in sources if s["path"] == prefix + "launcher_output/resident.stdout")
+        stderr = next(s["raw"] for s in sources if s["path"] == prefix + "launcher_output/resident.stderr")
+        _require(stderr == b"", "CORE_EFFECT_CASE_RESIDENT_STDERR")
+        resident = document(stdout, limit=32768, newline=True)
+        gate = next(s for s in prepared["sources"] if s["role"] == "empty-ledger-gate")
+        obs = {"empty_ledger_gate": _plain_reference(gate)}
+        proof = seal_id = None; summary = {}
+        if case["index"] == 3:
+            proof = self._exec_h11_proof(case, prepared, plan, sources, verified, launch, resident)
+            obs.update({k: proof[k] for k in ("recovery_plan", "recovery_summary", "launcher_result",
+                "gateway_snapshot", "origin_capture", "ledger_identity", "result_identity")})
+            obs.update({k: proof["assertions"][k] for k in ("future_start_blocked", "tree_exited",
+                "writers_stopped", "collectors_stopped", "effects_checked", "outcome", "leases_retained",
+                "result_reread", "start_replayed", "business_evidence_sealed")})
+            proof_raw = canonical(proof, newline=True)
+            obs.update(original_request_accepted=True, control_closure_sealed=True,
+                recovery_proof={"path": prefix + "reservation/h11-recovery-proof.json",
+                                "bytes": len(proof_raw), "sha256": _sha(proof_raw)})
+            # The exact pinned origin submits once after compose's empty gate;
+            # candidate recovery asserts the unchanged original ACCEPTED row.
+            accepted = self._exec_h11_accepted(case, prepared, plan)
+        else:
+            export = get("records/ledger-export.json"); operation = export["operation"]
+            record = json.loads(operation["record_json"])
+            events = export["events"]; accepts = [x for x in events if x["kind"] == "ACCEPTED"]
+            _require(len(accepts) == 1 and operation["id"] == case["operation_id"]
+                and operation["digest"] == plan["request"]["request_digest"], "CORE_EFFECT_CASE_ACCEPTED")
+            accepted = accepts[0]["seq"]
+            if case["index"] == 1:
+                _require(launch.get("status") == resident.get("status") == "CHAIN_CLOSED"
+                    and resident.get("operation_id") == case["operation_id"]
+                    and record.get("lifecycle") == "TERMINAL" and record.get("outcome") == "SUCCEEDED"
+                    and record.get("evidence") == "SEALED", "CORE_EFFECT_H01_TERMINAL")
+                seals = record.get("seals", [])
+                _require(len(seals) == 1, "CORE_EFFECT_H01_SEAL_REGISTRATION")
+                seal_id = seals[0]["seal_id"]; _h01_special(seal_id)
+                for suffix, role, mode in _h01_special(seal_id):
+                    if role == "result" or role.startswith("business-evidence-"):
+                        sources.append(self._exec_source(case, prepared, plan, suffix, role, mode))
+                reader = self._candidate_modules(("local_hand_jobs.result_reader",))["local_hand_jobs.result_reader"]
+                business_raw = next(s["raw"] for s in sources if s["role"] == "result")
+                business_value = reader._result(reader._strict_json(business_raw, reader.MAX_RESULT_BYTES),
+                    "job-" + case["operation_id"] + "-business", "business")
+                retained = record.get("quota_pending", {}).get("business", {}).get("proof", {})
+                _require(retained.get("helper_result_verified") is True and retained.get("result") == business_value
+                    and business_value.get("outcome") == "SUCCEEDED" and business_value.get("effects_checked") is True,
+                    "CORE_EFFECT_H01_RESULT_BINDING")
+                seal_source = next(s for s in sources if s["path"] == prefix + "business-evidence/" + seal_id + "/seal.json")
+                seal = document(seal_source["raw"], limit=MEMBER_LIMIT, newline=False)
+                _require(all(seal.get(k) == v for k, v in seals[0].items() if k in seal)
+                    and seal.get("operation_id") == case["operation_id"] and seal.get("complete") is True
+                    and _sha(seal_source["raw"]) == seals[0]["seal_sha256"], "CORE_EFFECT_H01_BUSINESS_SEAL")
+                for artifact in seal["artifacts"]:
+                    filename = "evidence.zip" if artifact["role"] == "zip" else "manifest.json"
+                    content = next(s["raw"] for s in sources if s["path"] == prefix +
+                                   "business-evidence/" + seal_id + "/" + filename)
+                    _require(len(content) == artifact["size"] and _sha(content) == artifact["sha256"],
+                             "CORE_EFFECT_H01_BUSINESS_EVIDENCE")
+                units = []
+                for phase in case["phases"]:
+                    value = get("launcher_output/phase-" + phase + ".json")
+                    fence = value.get("fence", {})
+                    _require(value.get("status") == "PHASE_CLOSED" and fence.get("execution_id") ==
+                        "job-" + case["operation_id"] + "-" + phase, "CORE_EFFECT_H01_PHASE")
+                    for stage in ("bootstrap", "helper", "result_reader"):
+                        closed = fence["stages"]["reader" if stage == "result_reader" else stage]; identity = closed["identity"]
+                        _require(all(closed.get(k) is True for k in ("delivery_settled", "future_start_blocked", "job_empty",
+                            "unit_terminal", "tree_empty", "collectors_stopped", "stdout_eof", "stderr_eof")),
+                            "CORE_EFFECT_H01_EXIT")
+                        units.append({"phase": phase, "stage": stage, "unit": identity["unit"],
+                                      "invocation_id": identity["invocation_id"]})
+                units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
+                _validate_units(units, case)
+                gateway = get("launcher_output/gateway.json")
+                _require(gateway.get("failure") is None, "CORE_EFFECT_H01_GATEWAY")
+                for row in units:
+                    match = [x for x in gateway["stages"] if all(x.get(k) == v for k, v in row.items())]
+                    _require(len(match) == 1 and match[0].get("sealed") is True
+                        and type(match[0].get("returncode")) is int, "CORE_EFFECT_H01_GATEWAY_UNIT")
+                business = next(x for x in gateway["stages"] if x["phase"] == "business" and x["stage"] == "helper")
+                summary = {"business_invocation_id": business["invocation_id"], "business_wait_status": business["returncode"]}
+                obs.update({k: True for k in H01_OBSERVATIONS if k not in
+                    ("empty_ledger_gate", "resident_empty_gate", "unit_identities")})
+                obs["unit_identities"] = units
+            else:
+                modules = self._candidate_modules(("q2_launcher", "q4_cancel_case"))
+                report = modules["q2_launcher"].validate_cancel_result(launch,
+                    prepared["handoff"]["template"]["launcher"]["resident"], modules["q4_cancel_case"])
+                _require(report == get("launcher_output/phase.json")["case"] == resident.get("case")
+                    and report["status"] == "EXERCISED" and report["helper_exit_proven"] is True,
+                    "CORE_EFFECT_Q4_NOT_EXERCISED")
+                cancels = [x for x in events if x["kind"] == "CANCEL_REQUESTED"]
+                _require(len(cancels) == 1 and cancels[0]["seq"] == report["ledger"]["cancel_event"]["seq"]
+                    and record.get("cancel_requested") is True, "CORE_EFFECT_Q4_CANCEL_LEDGER")
+                units = [{"phase": "preflight", "stage": stage, "unit": item["unit"],
+                    "invocation_id": item["invocation_id"]} for stage, item in
+                    record["handles"]["preflight"]["manager"].items() if stage in ("bootstrap", "helper", "result_reader")]
+                units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
+                _validate_units(units, case)
+                obs.update({k: True for k in Q4_OBSERVATIONS if k not in
+                    ("empty_ledger_gate", "resident_empty_gate", "unit_identities", "chain_closed", "ordinary_phase_closed", "full_h07")})
+                obs.update(unit_identities=units, chain_closed=False, ordinary_phase_closed=False, full_h07=False)
+        obs["resident_empty_gate"] = {"passed": True, "candidate_commit": CANDIDATE["commit"],
+            "resident_source_sha256": verified["source_files"]["tests/e3_host/q2_resident.py"],
+            "accepted_operation_id": case["operation_id"], "accepted_event_seq": accepted}
+        return {"sources": sources, "observations": obs, "stop": stop, "proof": proof,
+                "seal_id": seal_id, "summary": summary}
+
+    def _exec_h11_proof(self, case, prepared, plan, sources, verified, launch, resident):
+        prefix = "cases/" + case["case_id"] + "/"
+        item = lambda suffix: next(s for s in sources if s["path"] == prefix + suffix)
+        get = lambda suffix: _parse_source(sources, prefix + suffix)
+        declaration = get("launcher_declarations/recovery-resident.json")
+        modules = self._candidate_modules(("q2_launcher", "q4_h11_recovery"))
+        recovery = modules["q4_h11_recovery"].validate(declaration["recovery"])
+        report = modules["q2_launcher"].validate_h11_result(launch,
+            prepared["handoff"]["template"]["launcher"]["resident"])
+        gateway = get("launcher_output/gateway.json")
+        origin = get("launcher_output/origin-capture.json")
+        _require(report == resident == get("launcher_output/recovery.json")
+            and launch["origin_capture"] == origin and origin.get("complete") is True
+            and set(origin.get("eof", [])) == {"stdout", "stderr"}
+            and origin.get("returncode") == -signal.SIGKILL
+            and recovery["operation_id"] == case["operation_id"]
+            and recovery["request_digest"] == plan["request"]["request_digest"]
+            and report["units"] == recovery["units"]
+            and report["original_deadline_ns"] == recovery["budget_deadline_ns"]
+            and report["phase_deadline_ns"] == recovery["phase_deadline_ns"]
+            and report["controller_deadline_ns"] == recovery["controller_deadline_ns"]
+            and report["original_event_seq"] == recovery["event_seq"]
+            and report["event_kinds"].count("RECOVERY_BARRIER") == 1
+            and report["event_kinds"].count("QUOTA_EXIT_PENDING") == 1
+            and set(report["event_kinds"]) <= modules["q4_h11_recovery"].RECOVERY_EVENTS,
+            "CORE_EFFECT_H11_ORIGINAL_BINDING")
+        _require(gateway.get("failure") is None and gateway.get("recovery_finished") is True
+            and gateway.get("recovery_only") is True and gateway.get("recovery_rebinds") == 1
+            and gateway.get("recovery_arm_ack") is True
+            and gateway.get("recovery_plan_sha256") == _sha(canonical(recovery)),
+            "CORE_EFFECT_H11_GATEWAY_BINDING")
+        expected_units = _phase_units(case["operation_id"], ["preflight"])[0]
+        for stage, unit in recovery["units"].items():
+            _require(unit == expected_units[stage + "_unit"], "CORE_EFFECT_H11_UNIT")
+            rows = [r for r in gateway["stages"] if r["stage"] == stage and r["phase"] == "preflight"]
+            _require(len(rows) == 1 and rows[0]["unit"] == unit
+                and rows[0].get("recovery_observed") is True, "CORE_EFFECT_H11_UNIT")
+        for stream in ("stdout", "stderr"):
+            _require(item("launcher_output/origin-resident." + stream)["raw"] == b"",
+                     "CORE_EFFECT_H11_ORIGIN_OUTPUT")
+        refs = {key: _plain_reference(item(suffix)) for key, suffix in (
+            ("recovery_plan", "launcher_declarations/recovery-resident.json"),
+            ("recovery_summary", "launcher_output/recovery.json"),
+            ("launcher_result", "launcher_output/result.json"),
+            ("gateway_snapshot", "launcher_output/gateway.json"),
+            ("origin_capture", "launcher_output/origin-capture.json"),
+            ("control_seal", "owner_output/seal.json"))}
+        refs["recovery_plan"]["embedded_plan_sha256"] = _sha(canonical(recovery))
+        candidate = {"commit": CANDIDATE["commit"], "tree": CANDIDATE["tree"]}
+        for role, name in (("h11", "q4_h11_recovery"), ("resident", "q2_resident"), ("launcher", "q2_launcher")):
+            relative = "tests/e3_host/" + name + ".py"
+            candidate.update({role + "_source_path": relative,
+                              role + "_source_sha256": verified["source_files"][relative]})
+        assertions = {key: report[key] for key in ("future_start_blocked", "tree_exited", "writers_stopped",
+            "collectors_stopped", "effects_checked", "outcome", "leases_retained", "result_reread", "start_replayed")}
+        # These are explicitly the pinned recovery helper's assertions, not
+        # invented raw before-snapshots. validate_h11_result has checked them.
+        assertions.update({key: True for key in ("same_operation", "same_request_digest",
+            "original_handle_admitted", "same_original_stage_units", "same_grant_and_deadlines",
+            "delivery_intents_unchanged", "recovery_launch_forbidden", "gateway_parts_unchanged")})
+        assertions.update(recovery_barrier_count=1, quota_exit_pending_count=1,
+                          deadline_extended=False, business_evidence_sealed=False)
+        basename = "result-f7b176ecb6b8081fac3a7a47.json"
+        return {"schema": PROOF_SCHEMA, "session_id": SESSION, "index": case["index"],
+            "case_id": case["case_id"], "candidate": candidate, **refs,
+            "ledger_identity": {**prepared["_exec_ledger_identity"], "unchanged": True},
+            "result_identity": {"expected_path": prepared["facts"]["slots"][0]["roots"]["evidence"]["path"] + "/" + basename,
+                "expected_basename": basename, "stat_performed": False, "opened": False, "hashed": False},
+            "assertions": assertions}
+
+    def _exec_h11_accepted(self, case, prepared, plan):
+        import sqlite3
+        self._exec_guard(plan)
+        fd = prepared["_exec_ledger_fd"]; before = os.fstat(fd)
+        for suffix in ("-wal", "-shm", "-journal"):
+            try: os.stat(plan["ledger_path"] + suffix, follow_symlinks=False)
+            except FileNotFoundError: continue
+            raise DispatchError("CORE_EFFECT_H11_LEDGER_SIDECAR")
+        db = sqlite3.connect("file:/proc/self/fd/" + str(fd) + "?mode=ro", uri=True, timeout=0)
+        try:
+            db.execute("PRAGMA query_only=ON")
+            db.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 500)
+            rows = db.execute("SELECT seq FROM events WHERE namespace='job' AND id=? AND kind='ACCEPTED'",
+                              (case["operation_id"],)).fetchmany(2)
+            _require(len(rows) == 1 and type(rows[0][0]) is int and rows[0][0] > 0,
+                     "CORE_EFFECT_H11_ACCEPTED_EVENT")
+        finally: db.close()
+        after = os.fstat(fd)
+        _require((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) ==
+            (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+            "CORE_EFFECT_H11_LEDGER_CHANGED")
+        self._exec_guard(plan)
+        return rows[0][0]
+
+    def run_h01(self, case, prepared, plan):
+        _require(case == CASES[0], "CORE_EFFECT_H01_CASE")
+        return self._exec_case(case, prepared, plan)
+
+    def run_q4(self, case, prepared, plan):
+        _require(case == CASES[1], "CORE_EFFECT_Q4_CASE")
+        return self._exec_case(case, prepared, plan)
+
+    def recover_h11(self, case, prepared, plan):
+        _require(case == CASES[2], "CORE_EFFECT_H11_CASE")
+        return self._exec_case(case, prepared, plan)
+
+    def phase_facts(self, case, phase, plan, sources):
+        names = ("admin.local_hand_quota_observer.q2_config", "local_hand_jobs.budget",
+                 "admin.local_hand_quota_observer.controller_guard")
+        modules = self._candidate_modules(names)
+        return _phase_extract(case, phase, plan, sources, *(modules[name] for name in names))
 
     def usage(self):
         # process_time/ru_maxrss cover only this process and cannot account for
@@ -3090,6 +5042,146 @@ class FieldEffects:
         # Until those observations are integrated, emitting pids=1 or storage=0
         # would turn missing evidence into fabricated successful accounting.
         raise DispatchError("CORE_EFFECT_USAGE_ACCOUNTING_INCOMPLETE")
+
+
+def _phase_extract(case, phase, plan, sources, config_api, budget_api, controller_api):
+    """Rebuild receipts from original candidate bytes, never from plan defaults."""
+    _require(case in CASES and phase in case["phases"], "CORE_EFFECT_PHASE_CASE")
+    by_path = {}
+    for source in sources:
+        _source(source, case_id=case["case_id"])
+        _require(source["path"] not in by_path, "CORE_EFFECT_PHASE_DUPLICATE")
+        by_path[source["path"]] = source
+    rows = {}
+    for path, role in phase_source_specs(case, phase):
+        item = by_path.get(path)
+        _require(item is not None and item["role"] == role
+                 and item["mode"] == (420 if role == "recovery-plan" else 384),
+                 "CORE_EFFECT_PHASE_SOURCE")
+        rows[role] = item
+    values = {role: document(item["raw"], limit=MEMBER_LIMIT,
+                           newline=role == "preparation-result")
+              for role, item in rows.items()}
+    try:
+        prepared = values["preparation-result"]
+        _exact(prepared, ("schema", "preparation_id", "plan_sha256", "status", "reason",
+                         "facts", "q2_accepted", "q3_accepted", "production_supported",
+                         "fixture_generated"), "CORE_EFFECT_PHASE_PREPARATION")
+        _require(prepared["schema"] == "local-hand-q2-fixture-preparation/v1"
+                 and prepared["status"] == "RESOURCES_PREPARED" and prepared["reason"] is None
+                 and prepared["preparation_id"] == plan["preparation_id"]
+                 and all(prepared[key] is False for key in
+                         ("q2_accepted", "q3_accepted", "production_supported", "fixture_generated")),
+                 "CORE_EFFECT_PHASE_PREPARATION")
+        observed = prepared["facts"]
+        raw = rows["observer-config"]["raw"]
+        path = observed["directories"]["capture"]["path"] + "/" + phase + "/observer.json"
+        config = config_api.decode(raw, path, _sha(raw))
+        grant = config.active()
+        data, request = grant.as_dict(), grant.request.as_dict()
+        execution = "job-" + case["operation_id"] + "-" + phase
+        _require(config.data()["source_commit"] == CANDIDATE["commit"]
+                 and request["execution_id"] == execution and request["phase"] == phase
+                 and request["boot_id"] == observed["host"]["boot_id"]
+                 and request["generation"] == plan["identity"]["slot_generation"]
+                 and all(request[key] == plan["identity"][key]
+                         for key in ("authority_digest", "manifest_digest", "epoch")),
+                 "CORE_EFFECT_PHASE_GRANT_BINDING")
+        budget = data["budget"]
+        budget_api.validate_grant(budget, execution_id=execution, phase=phase,
+            namespace="job", operation_id=case["operation_id"], record_id=case["operation_id"],
+            original_budgets=plan["budgets"]["operation"])
+        original_roots = {row["project_id"]: row for row in observed["roots"]}
+        _require(len(original_roots) == 7 and set(original_roots) == set(case["project_ids"]),
+                 "CORE_EFFECT_PHASE_ROOTS")
+        projects = case["project_ids"][3:] if phase == "evidence" else case["project_ids"][:3]
+        _require(len(data["roots"]) == len(projects)
+                 and {row["project_id"] for row in data["roots"]} == set(projects),
+                 "CORE_EFFECT_PHASE_ROOTS")
+        for root in data["roots"]:
+            original = original_roots.get(root["project_id"])
+            _require(original is not None and all(original[key] == value for key, value in root.items()),
+                     "CORE_EFFECT_PHASE_ROOTS")
+        reservation = values["launcher-reservation"]
+        _exact(reservation, ("schema", "fixture_digest", "session", "controller", "started_ns"),
+               "CORE_EFFECT_PHASE_RESERVATION")
+        _require(reservation["schema"] == ("local-hand-q2-system-launcher-reservation/v1"
+                 if case["index"] == 1 else "local-hand-q2-launcher-reservation/v1"
+                 if case["index"] == 2 else "local-hand-q4-h11-launcher-reservation/v1")
+                 and reservation["session"] == plan["identity"]["session"],
+                 "CORE_EFFECT_PHASE_RESERVATION")
+        _digest(reservation["fixture_digest"])
+        envelope = reservation["controller"]
+        _exact(envelope, ("controller", "issued_ns", "deadline_ns", "output_bytes",
+                          "storage_bytes", "storage_inodes"), "CORE_EFFECT_PHASE_CONTROLLER")
+        _integer(envelope["issued_ns"], 1)
+        _integer(reservation["started_ns"], 1)
+        controller_api.decode_controller(envelope["controller"])
+        target = plan["controllers"]["target"]
+        _require(all(envelope["controller"][key] == value for key, value in target.items())
+                 and envelope["issued_ns"] <= reservation["started_ns"] < envelope["deadline_ns"]
+                 and envelope["deadline_ns"] <= plan["deadlines"]["owner_deadline_ns"]
+                 and envelope["deadline_ns"] - envelope["issued_ns"]
+                     <= envelope["controller"]["runtime_max_usec"] * 1000
+                 and envelope["output_bytes"] == 32768
+                 and all(envelope[key] == plan["controllers"]["target_" + key]
+                         for key in ("storage_bytes", "storage_inodes")),
+                 "CORE_EFFECT_PHASE_CONTROLLER")
+        digest = grant.request.digest
+        facts = dict(quota_request_id=request["request_id"], quota_request_sha256=digest,
+            query_unit=grant.request.query_unit, listener_unit="lhqoc-" + digest + ".service",
+            admission_unit="lhqoa-" + digest + ".service",
+            budget_deadline_ns=budget["deadline_boottime_ns"],
+            phase_deadline_ns=budget_api.phase_deadline_ns(budget),
+            stage_deadline_ns=budget_api.phase_deadline_ns(budget) - budget["limits"]["terminate_grace_seconds"] * NS,
+            controller_deadline_ns=envelope["deadline_ns"])
+        _require(request["deadline_ns"] <= facts["stage_deadline_ns"]
+                 and facts["budget_deadline_ns"] <= facts["controller_deadline_ns"],
+                 "CORE_EFFECT_PHASE_DEADLINE")
+        _phase_raw_binding(case, phase, plan, values, grant.digest, facts)
+        _phase_receipt(case, phase, facts, sources)
+        return facts
+    except DispatchError:
+        raise
+    except Exception as error:
+        raise DispatchError("CORE_EFFECT_PHASE_RAW_INVALID") from error
+
+
+def _phase_raw_binding(case, phase, plan, values, grant_digest, facts):
+    launcher = values["launcher-result"]
+    _require(launcher["q3_accepted"] is False and launcher["production_supported"] is False,
+             "CORE_EFFECT_PHASE_LAUNCHER")
+    if case["index"] != 3:
+        result = values["phase-result"]
+        _require(result["grant_digest"] == grant_digest and result["q3_accepted"] is False
+                 and result["production_supported"] is False, "CORE_EFFECT_PHASE_RESULT")
+        if case["index"] == 1:
+            _require(result["status"] == "PHASE_CLOSED" and launcher["status"] == "CHAIN_CLOSED"
+                     and launcher["grant_digests"][phase] == grant_digest
+                     and result["fence"]["request_digest"] == facts["quota_request_sha256"],
+                     "CORE_EFFECT_PHASE_RESULT")
+        else:
+            report = result["case"]
+            _require(result["status"] == launcher["status"] == "CANCEL_CASE_RECORDED"
+                     and launcher["grant_digest"] == grant_digest and launcher["case"] == report
+                     and report["operation_id"] == case["operation_id"]
+                     and report["request_digest"] == plan["request"]["request_digest"]
+                     and report["phase_deadline_ns"] == facts["stage_deadline_ns"],
+                     "CORE_EFFECT_PHASE_CANCEL_BINDING")
+    else:
+        original = values["recovery-plan"]["recovery"]
+        summary = values["recovery-summary"]
+        _require(launcher["status"] == "RECOVERY_RECORDED" and launcher["recovery"] == summary,
+                 "CORE_EFFECT_PHASE_RECOVERY")
+        for item, budget_name in ((original, "budget_deadline_ns"), (summary, "original_deadline_ns")):
+            _require(item["operation_id"] == case["operation_id"] and item["phase"] == phase
+                     and item[budget_name] == facts["budget_deadline_ns"]
+                     and all(item[key] == facts[key] for key in ("phase_deadline_ns", "controller_deadline_ns")),
+                     "CORE_EFFECT_PHASE_RECOVERY_DEADLINE")
+        expected = next(row for row in plan["phases"] if row["phase"] == phase)
+        _require(original["units"] == summary["units"] ==
+                 {key: expected[key + "_unit"] for key in ("bootstrap", "helper", "result_reader")},
+                 "CORE_EFFECT_PHASE_RECOVERY_UNITS")
 
 
 def _clock(effects, deadlines):
@@ -3119,13 +5211,14 @@ def _validate_phase_receipts(case, sources, phase_facts, owner_deadline):
     generated = []
     for phase in case["phases"]:
         facts = phase_facts[phase]
-        _require(facts["controller_deadline_ns"] == owner_deadline,
+        _require(facts["controller_deadline_ns"] <= owner_deadline,
                  "CORE_DISPATCH_CONTROLLER_DEADLINE")
         generated.append((phase, _phase_receipt(case, phase, facts, sources)))
     return generated
 
 
 def _case_outcome(effects, case, intent, intent_source, deadlines):
+    effects._active_case_deadlines = dict(deadlines)
     prepared = effects.prepare_case(case, intent, deadlines["preparation_deadline_ns"])
     _require(type(prepared) is dict, "CORE_DISPATCH_PREPARED")
     now = _clock(effects, effects.context["guest_deadlines"])
@@ -3135,6 +5228,8 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
     owner_deadline = min(now["boottime_ns"] + OWNER_NS, deadlines["remote_final_deadline_ns"])
     owner_mono_deadline = min(now["monotonic_ns"] + OWNER_NS,
                               deadlines["remote_final_monotonic_deadline_ns"])
+    effects._active_case_deadlines.update(owner_deadline_ns=owner_deadline,
+                                          owner_monotonic_deadline_ns=owner_mono_deadline)
     plan_deadlines = {
         "case_origin_ns": deadlines["case_origin_ns"],
         "preparation_deadline_ns": deadlines["preparation_deadline_ns"],
@@ -3385,7 +5480,17 @@ def _validate_admission(value, context):
              "CORE_DISPATCH_ADMISSION_PROGRAM")
     policies = _exact(value["policies"], ("sudo", "sshd", "authorized_keys", "rc"),
                       "CORE_DISPATCH_ADMISSION_POLICY_FIELDS")
-    for item in policies.values():
+    basis = _approved_inputs_envelope(context)["policy_basis"]
+    for name, item in policies.items():
+        relation = _exact(item.get("relation"), ("stage", "pre_entry_containment", "policy_basis_sha256",
+            "predicate_sha256", "snapshot_sha256", "facts_sha256", "matched"), "CORE_ADMIT_POLICY_RELATION")
+        _require(relation["stage"] == "POST_ENTRY_PRE_H01_INTENT"
+                 and relation["pre_entry_containment"] is False and relation["matched"] is True
+                 and relation["policy_basis_sha256"] == _sha(canonical(basis))
+                 and relation["predicate_sha256"] == basis["policies"][name]["predicate_sha256"]
+                 and relation["snapshot_sha256"] == item["sha256"], "CORE_ADMIT_POLICY_RELATION")
+        for key in ("predicate_sha256", "snapshot_sha256", "facts_sha256"):
+            _digest(relation[key], "CORE_ADMIT_POLICY_RELATION")
         _exact(item, ("paths", "bytes", "sha256", "relation"),
                "CORE_DISPATCH_ADMISSION_POLICY")
         _require(type(item["paths"]) is list and item["paths"]
