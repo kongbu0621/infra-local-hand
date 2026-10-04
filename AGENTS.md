@@ -1047,6 +1047,13 @@ Original budgets and deadlines remain unchanged. This closure does not complete 
 release before every original gate and this amendment's source-lineage/package verification pass.
 At C, marker/request/H01/Q4/H11 remain unissued; production E3 and paused side scopes remain unchanged.
 
+The subsequent [writer transport implementation review](docs/a2-execution/Q2_CORE_WRITER_TRANSPORT_REVIEW_20261004.md)
+records exact D `0e72ffae85f247e9423ef2cfa9bda26cf8ba6077`, a direct child of independent C
+`8e891e11fb6e563353013ac94c201f30a1df66c9`. Strict v3 writer transport, marker reconstruction,
+host return cross-binding and dual-C offline lineage are implemented. This resolves only the writer protocol gap;
+real D2 effects, full release verification and independent review remain required. Package remains null/NOT_ISSUED,
+the release allowlist remains empty, and no field marker/request/case was issued. A's exact document bytes remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
