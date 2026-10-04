@@ -73,11 +73,16 @@ def _shape(value, depth=0, count=None):
     return value
 
 
+def _fields(names):
+    """Ordered fixed schema names; callers supply source literals only."""
+    return tuple(names.split())
+
+
 def canonical(value, *, newline=False, limit=None):
     _shape(value)
     try:
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"),
-                         ensure_ascii=True, allow_nan=False).encode("ascii")
+            ensure_ascii=True, allow_nan=False).encode("ascii")
     except (TypeError, ValueError, UnicodeError) as error:
         raise _json.error("ENCODE") from error
     if newline:
@@ -90,10 +95,10 @@ def canonical(value, *, newline=False, limit=None):
 def document(raw, *, limit, newline=True):
     _json(type(raw) is bytes and 0 < len(raw) <= limit, "LIMIT")
     _json(raw.endswith(b"\n") == newline and
-             (not newline or not raw.endswith(b"\n\n")), "NEWLINE")
+        (not newline or not raw.endswith(b"\n\n")), "NEWLINE")
     try:
         value = json.loads(raw.decode("ascii"), object_pairs_hook=_pairs,
-                           parse_constant=_nonfinite)
+            parse_constant=_nonfinite)
     except DispatchError:
         raise
     except (UnicodeError, json.JSONDecodeError) as error:
@@ -115,30 +120,30 @@ def _integer(value, low=0, high=2**63 - 1, code="CORE_DISPATCH_INTEGER"):
 
 def _digest(value, code="CORE_DISPATCH_DIGEST"):
     _require(type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value) is not None,
-             code)
+        code)
     return value
 
 
 def _commit(value, code="CORE_DISPATCH_COMMIT"):
     _require(type(value) is str and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
-             code)
+        code)
     return value
 
 
 def _path(value, code="CORE_DISPATCH_PATH"):
     _require(type(value) is str and value.isascii() and 0 < len(value) <= 4096
-             and re.fullmatch(r"[A-Za-z0-9._/-]+", value) is not None
-             and "//" not in value and "\\" not in value and "\0" not in value,
-             code)
+        and re.fullmatch(r"[A-Za-z0-9._/-]+", value) is not None
+        and "//" not in value and "\\" not in value and "\0" not in value,
+        code)
     parsed = PurePosixPath(value)
     _require(not parsed.is_absolute() and parsed.as_posix() == value
-             and all(part not in ("", ".", "..") for part in parsed.parts), code)
+        and all(part not in ("", ".", "..") for part in parsed.parts), code)
     return value
 
 
 def _sha(raw):
     _check(type(raw) is bytes or (isinstance(raw, memoryview) and raw.readonly),
-             "BYTES")
+        "BYTES")
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -203,13 +208,13 @@ BASELINE = {
     "tree": "7df4fd0c876df13af4ec73c6f910272a72d7ea4d",
     "documents_sha256": {
         "docs/a2-execution/Q2_CORE_LIVE_INPUT_REVIEW_20261003.md":
-            "39853b72755e4737b5329856691e1f616cfd2ffdf403d1c06cbeccff89686f1c",
+        "39853b72755e4737b5329856691e1f616cfd2ffdf403d1c06cbeccff89686f1c",
         "docs/a2-execution/q2-core-acceptance-delivery/ARCHITECTURE.md":
-            "7599870a39f04a68a84992dbc2f3035ba202963fc1cc688914f9b5fa596b54ab",
+        "7599870a39f04a68a84992dbc2f3035ba202963fc1cc688914f9b5fa596b54ab",
         "docs/a2-execution/q2-core-acceptance-delivery/IMPLEMENTATION_PLAN.md":
-            "dd128597f90cfdf38d4a9f716fa53fd12acbb12cbc86c261f3f9c760477938c1",
+        "dd128597f90cfdf38d4a9f716fa53fd12acbb12cbc86c261f3f9c760477938c1",
         "docs/a2-execution/q2-core-acceptance-delivery/REQUIREMENTS.md":
-            "8ef192452302ae2c2c55c38dd6889a0a62265404f4baa823be097f0a2524ce76",
+        "8ef192452302ae2c2c55c38dd6889a0a62265404f4baa823be097f0a2524ce76",
     },
 }
 OWNER_DECISION = {
@@ -226,11 +231,11 @@ AMENDMENT_BASELINE = {
     "tree": "ee15aa4fa26fd2e87b40f6fad72828265e5cf9bc",
     "documents_sha256": {
         "docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md":
-            "e6b29c45c550f2ae8b3eaa91baad8d1382851dec6a69e2f807cce9233b14cdb1",
+        "e6b29c45c550f2ae8b3eaa91baad8d1382851dec6a69e2f807cce9233b14cdb1",
         "docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md":
-            "7782e2fb89a28052978d3ce205278906b92752e3ba1add9cd634c0e7c0f92c96",
+        "7782e2fb89a28052978d3ce205278906b92752e3ba1add9cd634c0e7c0f92c96",
         "docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md":
-            "52faaf002d9b5b9d88aef0b6f568e8ed56d2aa49eb0ea41e7eeb85d2d0b64cce",
+        "52faaf002d9b5b9d88aef0b6f568e8ed56d2aa49eb0ea41e7eeb85d2d0b64cce",
     },
 }
 AMENDMENT_OWNER_DECISION = {
@@ -261,10 +266,8 @@ PROJECTION = {
 
 INSTALL_BASENAME = "local-hand-core-acceptance-20261003a"
 STAGING_BASENAME = ".local-hand-core-acceptance-20261003a.staging"
-PREPARATION_HELPERS = (
-    "q2_prepare_contract", "q2_prepare_driver", "q2_prepare_assembly",
-)
-WHEEL_PACKAGES = ("local_hand", "local_hand_connect", "local_hand_jobs", "local_hand_mcp")
+PREPARATION_HELPERS = _fields('q2_prepare_contract q2_prepare_driver q2_prepare_assembly')
+WHEEL_PACKAGES = _fields('local_hand local_hand_connect local_hand_jobs local_hand_mcp')
 WHEEL_METADATA = "local_hand/_build_metadata.json"
 PROJECTION_HARNESS = frozenset({
     "tests/e3_host/q2_fixture_check.py",
@@ -293,18 +296,8 @@ PROJECTION_REQUIRED = PROJECTION_HARNESS | frozenset({
 # unbound to field admission until current-guest cross-checks are implemented.
 # The self-contained component parser below validates static relations; that
 # must not promote historical inputs into current observed facts.
-UNBOUND_APPROVED_INPUTS = (
-    "admission.policy_expected_entities",
-    "admission.historical_capacity_obligations",
-    "preparation.retained_paths_and_domains",
-)
-UNIMPLEMENTED_FIELD_EFFECTS = (
-    "admission.current_guest_collector",
-    "installation.shared_pool_peak_accounting",
-    "installation.deadline_guarding",
-    "preparation.current_capacity_collectors",
-    "evidence.usage_and_peak_accounting",
-)
+UNBOUND_APPROVED_INPUTS = _fields('admission.policy_expected_entities admission.historical_capacity_obligations preparation.retained_paths_and_domains')
+UNIMPLEMENTED_FIELD_EFFECTS = _fields('admission.current_guest_collector installation.shared_pool_peak_accounting preparation.current_capacity_collectors evidence.usage_and_peak_accounting')
 
 OUTPUT_MAGIC = b"LHCOUT1\n"
 PACKAGE_MAGIC = b"LHCFP1\n"
@@ -323,12 +316,9 @@ SESSION_SCHEMA = "local-hand-q2-core-dispatch-session/v2"
 APPROVED_INPUTS_PATH = "private/approved-inputs.json"
 APPROVED_INPUTS_LIMIT = 1048576
 REMOTE_ALIASES = {"shell": "/bin/bash", "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
-                  "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
+    "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
 PROGRAM_FIELDS = {"path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"}
-ADMISSION_COMPONENTS = (
-    "source_relation", "policy_basis", "historical_capacity_obligations",
-    "retained_preparation", "reconciliation",
-)
+ADMISSION_COMPONENTS = _fields('source_relation policy_basis historical_capacity_obligations retained_preparation reconciliation')
 
 NS = 1_000_000_000
 REMOTE_FINAL_RESERVE_NS = 45 * NS
@@ -379,11 +369,7 @@ PACKAGE_LIMITS = {
     "carrier_audit_inodes": 512, "carrier_output_bytes": 62914560,
 }
 
-DIRECTORY_ROLES = (
-    "reservation", "state", "authority", "journal", "capture", "declarations",
-    "session", "control", "profile_work", "profile_evidence", "profile_temporary",
-    "store_parent",
-)
+DIRECTORY_ROLES = _fields('reservation state authority journal capture declarations session control profile_work profile_evidence profile_temporary store_parent')
 ROOT_REFS = (
     ("work-a", "a", "work"), ("evidence-a", "a", "evidence"),
     ("temporary-a", "a", "temporary"), ("work-b", "b", "work"),
@@ -431,41 +417,41 @@ CASES = (
 def _budget(phases):
     return {
         "operation": {"wall_seconds": 72, "terminate_grace_seconds": 1,
-                      "cpu_seconds": 30, "memory_bytes": 67108864, "processes": 8,
-                      "temporary_bytes": 1048576, "nas_bytes": 0, "log_bytes": 98304,
-                      "reservation_bytes": 8388608},
+            "cpu_seconds": 30, "memory_bytes": 67108864, "processes": 8,
+            "temporary_bytes": 1048576, "nas_bytes": 0, "log_bytes": 98304,
+            "reservation_bytes": 8388608},
         "phases": [{"phase": phase, "wall_seconds": 24, "cpu_seconds": 10,
-                    "bootstrap_cpu_seconds": 3, "helper_cpu_seconds": 4,
-                    "result_reader_cpu_seconds": 3} for phase in phases],
+                "bootstrap_cpu_seconds": 3, "helper_cpu_seconds": 4,
+                "result_reader_cpu_seconds": 3} for phase in phases],
         **{role: {"memory_bytes": memory, "tasks_max": tasks,
-                  "cpu_quota_per_sec_usec": 1000000, "memory_swap_max": 0}
+                "cpu_quota_per_sec_usec": 1000000, "memory_swap_max": 0}
            for role, memory, tasks in (("controller", 536870912, 64),
-                                      ("ordinary", 268435456, 32),
-                                      ("retained_ordinary", 268435456, 64))},
+                ("ordinary", 268435456, 32),
+                ("retained_ordinary", 268435456, 64))},
         "target": {"memory_bytes": 268435456, "tasks_max": 32,
-                   "cpu_quota_per_sec_usec": 1000000, "runtime_seconds": 85,
-                   "stop_seconds": 1, "storage_bytes": 1048576, "storage_inodes": 64},
+            "cpu_quota_per_sec_usec": 1000000, "runtime_seconds": 85,
+            "stop_seconds": 1, "storage_bytes": 1048576, "storage_inodes": 64},
         "supervisor": {"memory_bytes": 67108864, "tasks_max": 32,
-                       "cpu_quota_per_sec_usec": 1000000, "runtime_seconds": 100,
-                       "stop_seconds": 1, "storage_bytes": 8388608, "storage_inodes": 64},
+            "cpu_quota_per_sec_usec": 1000000, "runtime_seconds": 100,
+            "stop_seconds": 1, "storage_bytes": 8388608, "storage_inodes": 64},
         "owner": {"wall_seconds": 120, "cpu_seconds": 120, "memory_bytes": 536870912,
-                  "tasks_max": 64, "storage_bytes": 8388608, "storage_inodes": 64,
-                  "output_bytes": 69632},
+            "tasks_max": 64, "storage_bytes": 8388608, "storage_inodes": 64,
+            "output_bytes": 69632},
         "management": {
             "cpu_seconds": 400, "memory_bytes": 1610612736, "pids": 1024,
             "output_bytes": 16777216, "storage_bytes": 33554432,
             "storage_inodes": 1024, "manager_wire_bytes": 4194304,
             "receive_seconds": 1, "stop_seconds": 1,
             "stages": [{"stage": stage, "memory_bytes": 67108864, "tasks_max": 8,
-                        "cpu_seconds": 2, "output_bytes": 32768, "runtime_seconds": seconds}
-                       for stage, seconds in (("collector", 8), ("admission", 7), ("query", 5))],
+                    "cpu_seconds": 2, "output_bytes": 32768, "runtime_seconds": seconds}
+                for stage, seconds in (("collector", 8), ("admission", 7), ("query", 5))],
         },
         "durable": {"state_bytes": 8388608, "state_inodes": 1536,
-                    "journal_bytes": 1048576, "journal_inodes": 128,
-                    "capture_declarations_bytes": 20971520,
-                    "capture_declarations_inodes": 384},
+            "journal_bytes": 1048576, "journal_inodes": 128,
+            "capture_declarations_bytes": 20971520,
+            "capture_declarations_inodes": 384},
         "roots": {"count": 7, "hard_bytes_each": 1048576,
-                  "hard_inodes_each": 128},
+            "hard_inodes_each": 128},
     }
 
 
@@ -493,7 +479,7 @@ def _identity(case, *, full=False):
 
 def _planned_directories(case):
     ordinary = {"state", "authority", "profile_work", "profile_evidence",
-                "profile_temporary", "store_parent"}
+        "profile_temporary", "store_parent"}
     root_755 = {"control", "session", "declarations"}
     parent_for = {
         "reservation": "state", "state": "state", "authority": "state",
@@ -502,22 +488,19 @@ def _planned_directories(case):
         "profile_evidence": "quota", "profile_temporary": "quota", "store_parent": "quota",
     }
     return [{"role": role, "parent_role": parent_for[role],
-             "relative_path": SESSION + "/" + case["case_id"] + "/" + role.replace("_", "-"),
-             "owner": "ordinary" if role in ordinary else "root",
-             "mode": 448 if role in ordinary or role not in root_755 else 493}
-            for role in DIRECTORY_ROLES]
+            "relative_path": SESSION + "/" + case["case_id"] + "/" + role.replace("_", "-"),
+            "owner": "ordinary" if role in ordinary else "root",
+            "mode": 448 if role in ordinary or role not in root_755 else 493}
+        for role in DIRECTORY_ROLES]
 
 
 def _planned_roots(case):
     base = SESSION + "/" + case["case_id"] + "/"
-    paths = ("profile-work/work-a", "profile-evidence/evidence-a",
-             "profile-temporary/temporary-a", "profile-work/work-b",
-             "profile-evidence/evidence-b", "profile-temporary/temporary-b",
-             "store-parent/retained_store")
+    paths = _fields('profile-work/work-a profile-evidence/evidence-a profile-temporary/temporary-a profile-work/work-b profile-evidence/evidence-b profile-temporary/temporary-b store-parent/retained_store')
     return [{"ref": ref, "slot": slot, "role": role, "path": base + path,
-             "project_id": case["project_ids"][index], "hard_bytes": 1048576,
-             "inode_hard_limit": 128}
-            for index, ((ref, slot, role), path) in enumerate(zip(ROOT_REFS, paths, strict=True))]
+            "project_id": case["project_ids"][index], "hard_bytes": 1048576,
+            "inode_hard_limit": 128}
+        for index, ((ref, slot, role), path) in enumerate(zip(ROOT_REFS, paths, strict=True))]
 
 
 def build_intent(case):
@@ -546,114 +529,80 @@ def build_intent(case):
     }
 
 
-INTENT_FIELDS = (
-    "schema", "session_id", "index", "case_id", "kind", "predecessor",
-    "preparation_id", "identity", "operation_id", "controller_prefix", "project_ids",
-    "directory_roles", "planned_directories", "planned_roots",
-    "preparation_input_sha256", "phases", "budgets", "state",
-)
-PLAN_FIELDS = (
-    "schema", "session_id", "index", "case_id", "kind", "predecessor",
-    "preparation_id", "identity", "principal", "authority_path", "ledger_path",
-    "request", "operation_id", "roots", "controllers", "system_geometry", "phases",
-    "empty_ledger_expectation", "deadlines", "budgets",
-)
+INTENT_FIELDS = _fields('schema session_id index case_id kind predecessor preparation_id identity operation_id controller_prefix project_ids directory_roles planned_directories planned_roots preparation_input_sha256 phases budgets state')
+PLAN_FIELDS = _fields('schema session_id index case_id kind predecessor preparation_id identity principal authority_path ledger_path request operation_id roots controllers system_geometry phases empty_ledger_expectation deadlines budgets')
 
 
 def validate_plan(case, intent, plan, deadlines):
     """Validate all D-owned/static plan bindings before owner or submit."""
     _plan.exact(plan, PLAN_FIELDS, "FIELDS")
     expected = {key: intent[key] for key in
-                ("session_id", "index", "case_id", "kind", "predecessor",
-                 "preparation_id", "operation_id", "budgets")}
+        _fields('session_id index case_id kind predecessor preparation_id operation_id budgets')}
     _plan(plan["schema"] == PLAN_SCHEMA and all(plan[key] == value for key, value in expected.items()),
-             "BINDING")
-    identity = _plan.exact(plan["identity"], (
-        "id", "authority_id", "node_id", "install_uuid", "deployment_epoch", "generation",
-        "operation_id", "profile_ref", "principal_id", "epoch", "authority_digest",
-        "manifest_digest", "slot_generation", "expires_at", "session", "ledger_id",
-    ), "IDENTITY_FIELDS")
+        "BINDING")
+    identity = _plan.exact(plan["identity"], _fields('id authority_id node_id install_uuid deployment_epoch generation operation_id profile_ref principal_id epoch authority_digest manifest_digest slot_generation expires_at session ledger_id'), "IDENTITY_FIELDS")
     logical = intent["identity"]
     _plan(all(identity[key] == value for key, value in logical.items()),
-             "IDENTITY")
+        "IDENTITY")
     _plan.digest(identity["authority_digest"], "AUTHORITY")
     _plan.digest(identity["manifest_digest"], "MANIFEST")
     _plan.integer(identity["expires_at"], 1, code="EXPIRY")
     scopes = ["lh:submit", "lh:read", "lh:evidence"] + (["lh:cancel"] if case["index"] == 2 else [])
     _plan(plan["principal"] == {"principal_id": identity["principal_id"], "scopes": scopes},
-             "PRINCIPAL")
+        "PRINCIPAL")
     _plan(plan["authority_path"].endswith("/authority/authority.json")
-             and plan["ledger_path"].endswith("/state/jobs.sqlite"), "PATH")
-    request = _plan.exact(plan["request"], (
-        "schema_version", "operation_id", "kind", "profile_ref", "expected", "inputs",
-        "expires_at", "request_digest",
-    ), "REQUEST_FIELDS")
+        and plan["ledger_path"].endswith("/state/jobs.sqlite"), "PATH")
+    request = _plan.exact(plan["request"], _fields('schema_version operation_id kind profile_ref expected inputs expires_at request_digest'), "REQUEST_FIELDS")
     _plan(request["schema_version"] == "lh-job-v1"
-             and request["operation_id"] == case["operation_id"]
-             and request["kind"] == "host.inspect"
-             and request["profile_ref"] == identity["profile_ref"]
-             and request["inputs"] == {}
-             and request["expires_at"] == identity["expires_at"], "REQUEST")
+        and request["operation_id"] == case["operation_id"]
+        and request["kind"] == "host.inspect"
+        and request["profile_ref"] == identity["profile_ref"]
+        and request["inputs"] == {}
+        and request["expires_at"] == identity["expires_at"], "REQUEST")
     _plan.digest(request["request_digest"], "REQUEST")
-    _plan.exact(request["expected"], (
-        "node_id", "install_uuid", "deployment_epoch", "profile_digest", "policy_digest",
-        "registry_digest",
-    ), "EXPECTED")
+    _plan.exact(request["expected"], _fields('node_id install_uuid deployment_epoch profile_digest policy_digest registry_digest'), "EXPECTED")
     for key in ("profile_digest", "policy_digest", "registry_digest"):
         _plan.digest(request["expected"][key], "EXPECTED")
     _plan(request["expected"]["node_id"] == identity["node_id"]
-             and request["expected"]["install_uuid"] == identity["install_uuid"]
-             and request["expected"]["deployment_epoch"] == 1, "EXPECTED")
+        and request["expected"]["install_uuid"] == identity["install_uuid"]
+        and request["expected"]["deployment_epoch"] == 1, "EXPECTED")
     _plan(type(plan["roots"]) is list and len(plan["roots"]) == 7, "ROOTS")
     for wrapper, planned in zip(plan["roots"], intent["planned_roots"], strict=True):
-        _plan.exact(wrapper, ("ref", "slot", "planned", "observed"), "ROOT_FIELDS")
+        _plan.exact(wrapper, _fields('ref slot planned observed'), "ROOT_FIELDS")
         _plan(wrapper["ref"] == planned["ref"] and wrapper["slot"] == planned["slot"]
-                 and wrapper["planned"] == planned, "ROOT")
-        observed = _plan.exact(wrapper["observed"], (
-            "path", "role", "device", "inode", "uid", "gid", "mode", "filesystem",
-            "filesystem_uuid", "project_id", "xflags", "hard_bytes", "accounting",
-            "enforcement", "identity_unchanged", "hard_inodes",
-        ), "OBSERVED_FIELDS")
+            and wrapper["planned"] == planned, "ROOT")
+        observed = _plan.exact(wrapper["observed"], _fields('path role device inode uid gid mode filesystem filesystem_uuid project_id xflags hard_bytes accounting enforcement identity_unchanged hard_inodes'), "OBSERVED_FIELDS")
         _plan(observed["path"] == planned["path"] and observed["role"] == planned["role"]
-                 and observed["project_id"] == planned["project_id"]
-                 and observed["hard_bytes"] == planned["hard_bytes"]
-                 and observed["hard_inodes"] == planned["inode_hard_limit"]
-                 and observed["mode"] == 16832 and observed["accounting"] is True
-                 and observed["enforcement"] is True and observed["identity_unchanged"] is True,
-                 "OBSERVED")
-        for key in ("device", "inode", "uid", "gid", "project_id", "xflags"):
+            and observed["project_id"] == planned["project_id"]
+            and observed["hard_bytes"] == planned["hard_bytes"]
+            and observed["hard_inodes"] == planned["inode_hard_limit"]
+            and observed["mode"] == 16832 and observed["accounting"] is True
+            and observed["enforcement"] is True and observed["identity_unchanged"] is True,
+            "OBSERVED")
+        for key in _fields('device inode uid gid project_id xflags'):
             _plan.integer(observed[key], 1 if key in ("inode", "project_id") else 0,
-                     code="OBSERVED")
-    _plan.exact(plan["controllers"], (
-        "target", "supervisor", "controller_parent", "query_parent", "management_parent",
-        "supervisor_parent", "target_storage_bytes", "target_storage_inodes",
-        "supervisor_storage_bytes", "supervisor_storage_inodes",
-    ), "CONTROLLERS")
+                code="OBSERVED")
+    _plan.exact(plan["controllers"], _fields('target supervisor controller_parent query_parent management_parent supervisor_parent target_storage_bytes target_storage_inodes supervisor_storage_bytes supervisor_storage_inodes'), "CONTROLLERS")
     _plan(plan["controllers"]["target_storage_bytes"] == 1048576
-             and plan["controllers"]["target_storage_inodes"] == 64
-             and plan["controllers"]["supervisor_storage_bytes"] == 8388608
-             and plan["controllers"]["supervisor_storage_inodes"] == 64,
-             "CONTROLLER_BUDGET")
+        and plan["controllers"]["target_storage_inodes"] == 64
+        and plan["controllers"]["supervisor_storage_bytes"] == 8388608
+        and plan["controllers"]["supervisor_storage_inodes"] == 64,
+        "CONTROLLER_BUDGET")
     expected_units = _phase_units(case["operation_id"], case["phases"])
     _plan(plan["phases"] == expected_units, "PHASES")
     if case["index"] == 2:
         _plan(plan["system_geometry"] is None, "GEOMETRY")
     else:
-        geometry = _plan.exact(plan["system_geometry"], (
-            "schema", "controller_parent", "ordinary_parent", "retained_ordinary_parent",
-        ), "GEOMETRY")
+        geometry = _plan.exact(plan["system_geometry"], _fields('schema controller_parent ordinary_parent retained_ordinary_parent'), "GEOMETRY")
         _plan(geometry["schema"] == "local-hand-q2-system-geometry/v1",
-                 "GEOMETRY")
-    expectation = _plan.exact(plan["empty_ledger_expectation"], (
-        "ledger_path", "authority_id", "ledger_id", "expected_operations",
-        "expected_events", "expected_leases", "expected_sidecars",
-    ), "EMPTY")
+            "GEOMETRY")
+    expectation = _plan.exact(plan["empty_ledger_expectation"], _fields('ledger_path authority_id ledger_id expected_operations expected_events expected_leases expected_sidecars'), "EMPTY")
     _plan(expectation == {"ledger_path": plan["ledger_path"],
-                             "authority_id": identity["authority_id"],
-                             "ledger_id": identity["ledger_id"],
-                             "expected_operations": 0, "expected_events": 0,
-                             "expected_leases": 0, "expected_sidecars": []},
-             "EMPTY")
+            "authority_id": identity["authority_id"],
+            "ledger_id": identity["ledger_id"],
+            "expected_operations": 0, "expected_events": 0,
+            "expected_leases": 0, "expected_sidecars": []},
+        "EMPTY")
     _plan(plan["deadlines"] == deadlines, "DEADLINE")
     return plan
 
@@ -691,8 +640,8 @@ def _h01_special(seal_id):
     rows = []
     for phase in ("preflight", "business", "evidence"):
         rows.extend(((phase + "/observer.json", "observer-config", 384),
-                     ("reservation/phase-" + phase + "-receipt.json", "phase-receipt", 384),
-                     ("launcher_output/phase-" + phase + ".json", "phase-result", 384)))
+                ("reservation/phase-" + phase + "-receipt.json", "phase-receipt", 384),
+                ("launcher_output/phase-" + phase + ".json", "phase-result", 384)))
     rows.extend((
         ("launcher_output/reservation.json", "launcher-reservation", 384),
         ("launcher_output/gateway.json", "gateway", 384),
@@ -747,30 +696,30 @@ def phase_source_specs(case, phase):
     launcher = (prefix + "launcher_output/result.json", "launcher-result")
     if case["index"] == 1:
         rows = (preparation, observer,
-                (prefix + "launcher_output/phase-" + phase + ".json", "phase-result"),
-                launcher, reservation)
+            (prefix + "launcher_output/phase-" + phase + ".json", "phase-result"),
+            launcher, reservation)
     elif case["index"] == 2:
         rows = (preparation, observer,
-                (prefix + "launcher_output/phase.json", "phase-result"), launcher, reservation)
+            (prefix + "launcher_output/phase.json", "phase-result"), launcher, reservation)
     else:
         rows = (preparation, observer,
-                (prefix + "launcher_declarations/recovery-resident.json", "recovery-plan"),
-                (prefix + "launcher_output/recovery.json", "recovery-summary"),
-                (prefix + "launcher_output/gateway.json", "gateway"),
-                (prefix + "launcher_output/origin-capture.json", "origin-capture"),
-                launcher, reservation)
+            (prefix + "launcher_declarations/recovery-resident.json", "recovery-plan"),
+            (prefix + "launcher_output/recovery.json", "recovery-summary"),
+            (prefix + "launcher_output/gateway.json", "gateway"),
+            (prefix + "launcher_output/origin-capture.json", "origin-capture"),
+            launcher, reservation)
     return tuple(sorted(rows, key=lambda row: (row[1].encode("ascii"), row[0].encode("ascii"))))
 
 
-SOURCE_FIELDS = ("path", "role", "mode", "raw")
+SOURCE_FIELDS = _fields('path role mode raw')
 
 
 def _source(value, *, case_id=None):
     _check.exact(value, SOURCE_FIELDS, "SOURCE_FIELDS")
     _check.path(value["path"], "SOURCE_PATH")
     _check(type(value["role"]) is str and value["role"].isascii()
-             and value["mode"] in (384, 420) and type(value["raw"]) is bytes
-             and len(value["raw"]) <= MEMBER_LIMIT, "SOURCE")
+        and value["mode"] in (384, 420) and type(value["raw"]) is bytes
+        and len(value["raw"]) <= MEMBER_LIMIT, "SOURCE")
     if case_id is not None:
         _check(value["path"].startswith("cases/" + case_id + "/"), "SOURCE_CASE")
     return value
@@ -778,24 +727,24 @@ def _source(value, *, case_id=None):
 
 def _reference(source, *, sealed=False):
     return {"role": source["role"], "path": source["path"], "bytes": len(source["raw"]),
-            "sha256": _sha(source["raw"]), **({"sealed": sealed} if sealed is not None else {})}
+        "sha256": _sha(source["raw"]), **({"sealed": sealed} if sealed is not None else {})}
 
 
 def _plain_reference(source):
     return {"path": source["path"], "bytes": len(source["raw"]),
-            "sha256": _sha(source["raw"])}
+        "sha256": _sha(source["raw"])}
 
 
 def _member(source, case_id):
     ref = _reference(source, sealed=None)
     return {"path": ref["path"], "case_id": case_id, "role": ref["role"],
-            "mode": source["mode"], "bytes": ref["bytes"], "sha256": ref["sha256"]}
+        "mode": source["mode"], "bytes": ref["bytes"], "sha256": ref["sha256"]}
 
 
 def _validate_source_set(case, sources, *, seal_id):
     expected = required_paths(case, seal_id=seal_id)
     _check(len(expected) == (32 if case["index"] == 1 else 21 if case["index"] == 2 else 26),
-             "INTERNAL_COUNT")
+        "INTERNAL_COUNT")
     actual = []
     seen = set()
     total = 0
@@ -806,15 +755,14 @@ def _validate_source_set(case, sources, *, seal_id):
         seen.add(key); total += len(source["raw"])
         actual.append((key, source["role"], source["mode"]))
     _check(set(actual) == set(expected) and len(actual) == len(expected),
-             "REQUIRED_SET")
+        "REQUIRED_SET")
     _check(total <= CASE_BYTES_LIMIT, "CASE_BYTES")
     if case["index"] == 3:
-        forbidden = ("business/result-", "business-evidence/", "ledger-export",
-                     "/ledger", "result-receipt", "ledger-identity", "result-identity")
+        forbidden = _fields('business/result- business-evidence/ ledger-export /ledger result-receipt ledger-identity result-identity')
         for source in sources:
             suffix = source["path"].split("/", 2)[-1]
             _h11(not any(token in suffix for token in forbidden),
-                     "FORBIDDEN_SOURCE")
+                "FORBIDDEN_SOURCE")
     return sources
 
 
@@ -825,19 +773,16 @@ def _parse_source(sources, path, *, maximum=MEMBER_LIMIT, newline=True):
 
 
 def _phase_receipt(case, phase, facts, sources):
-    _phase.exact(facts, ("quota_request_id", "quota_request_sha256", "query_unit", "listener_unit",
-                   "admission_unit", "budget_deadline_ns", "phase_deadline_ns",
-                   "stage_deadline_ns", "controller_deadline_ns"),
-           "FACT_FIELDS")
+    _phase.exact(facts, _fields('quota_request_id quota_request_sha256 query_unit listener_unit admission_unit budget_deadline_ns phase_deadline_ns stage_deadline_ns controller_deadline_ns'),
+        "FACT_FIELDS")
     digest = _phase.digest(facts["quota_request_sha256"], "DIGEST")
     _phase(facts["listener_unit"] == "lhqoc-" + digest + ".service"
-             and facts["admission_unit"] == "lhqoa-" + digest + ".service"
-             and facts["query_unit"] == "lhqo-" + digest + ".service", "UNITS")
-    for key in ("budget_deadline_ns", "phase_deadline_ns", "stage_deadline_ns",
-                "controller_deadline_ns"):
+        and facts["admission_unit"] == "lhqoa-" + digest + ".service"
+        and facts["query_unit"] == "lhqo-" + digest + ".service", "UNITS")
+    for key in _fields('budget_deadline_ns phase_deadline_ns stage_deadline_ns controller_deadline_ns'):
         _phase.integer(facts[key], 1, code="DEADLINE")
     _phase(facts["stage_deadline_ns"] < facts["phase_deadline_ns"]
-             <= facts["budget_deadline_ns"], "DEADLINE")
+        <= facts["budget_deadline_ns"], "DEADLINE")
     expected = phase_source_specs(case, phase)
     refs = []
     for path, role in expected:
@@ -853,28 +798,9 @@ def _phase_receipt(case, phase, facts, sources):
     }
 
 
-H01_OBSERVATIONS = (
-    "empty_ledger_gate", "resident_empty_gate", "request_accepted", "grant_issued",
-    "manager_delivered", "unit_identities", "bootstrap_exited", "helper_started",
-    "helper_exited", "result_reader_exited", "result_verified", "client_waited",
-    "stdout_eof", "stderr_eof", "future_start_blocked", "tree_exited",
-    "writers_stopped", "collectors_stopped", "ledger_terminal", "evidence_sealed",
-)
-Q4_OBSERVATIONS = (
-    "empty_ledger_gate", "resident_empty_gate", "request_accepted", "helper_running_seen",
-    "cancel_called", "cancel_durable", "cancel_returned", "no_late_delivery",
-    "unit_identities", "stop_ack", "helper_exited", "exit_flags_complete",
-    "client_returned", "stdout_eof", "stderr_eof", "chain_closed",
-    "ordinary_phase_closed", "independent_ordinary_cleanup_required", "full_h07",
-)
-H11_OBSERVATIONS = (
-    "empty_ledger_gate", "resident_empty_gate", "original_request_accepted", "recovery_plan",
-    "recovery_summary", "launcher_result", "gateway_snapshot", "origin_capture",
-    "ledger_identity", "recovery_proof", "result_identity", "future_start_blocked",
-    "tree_exited", "writers_stopped", "collectors_stopped", "effects_checked", "outcome",
-    "leases_retained", "result_reread", "start_replayed", "business_evidence_sealed",
-    "control_closure_sealed",
-)
+H01_OBSERVATIONS = _fields('empty_ledger_gate resident_empty_gate request_accepted grant_issued manager_delivered unit_identities bootstrap_exited helper_started helper_exited result_reader_exited result_verified client_waited stdout_eof stderr_eof future_start_blocked tree_exited writers_stopped collectors_stopped ledger_terminal evidence_sealed')
+Q4_OBSERVATIONS = _fields('empty_ledger_gate resident_empty_gate request_accepted helper_running_seen cancel_called cancel_durable cancel_returned no_late_delivery unit_identities stop_ack helper_exited exit_flags_complete client_returned stdout_eof stderr_eof chain_closed ordinary_phase_closed independent_ordinary_cleanup_required full_h07')
+H11_OBSERVATIONS = _fields('empty_ledger_gate resident_empty_gate original_request_accepted recovery_plan recovery_summary launcher_result gateway_snapshot origin_capture ledger_identity recovery_proof result_identity future_start_blocked tree_exited writers_stopped collectors_stopped effects_checked outcome leases_retained result_reread start_replayed business_evidence_sealed control_closure_sealed')
 
 
 def _validate_gate(value, source):
@@ -883,11 +809,10 @@ def _validate_gate(value, source):
 
 
 def _validate_resident_gate(value, case):
-    _check.exact(value, ("passed", "candidate_commit", "resident_source_sha256",
-                   "accepted_operation_id", "accepted_event_seq"), "RESIDENT_GATE")
+    _check.exact(value, _fields('passed candidate_commit resident_source_sha256 accepted_operation_id accepted_event_seq'), "RESIDENT_GATE")
     _check(value["passed"] is True and value["candidate_commit"] == CANDIDATE["commit"]
-             and value["accepted_operation_id"] == case["operation_id"],
-             "RESIDENT_GATE")
+        and value["accepted_operation_id"] == case["operation_id"],
+        "RESIDENT_GATE")
     _check.digest(value["resident_source_sha256"], "RESIDENT_GATE")
     _check.integer(value["accepted_event_seq"], 1, code="RESIDENT_GATE")
 
@@ -897,21 +822,21 @@ def _validate_units(value, case):
     _require(type(value) is list and value, "CORE_DISPATCH_UNIT_IDENTITIES")
     stages = ("bootstrap", "helper") if case["index"] == 2 else ("bootstrap", "helper", "result_reader")
     expected_stages = {(phase, stage) for phase in phases
-                       for stage in stages}
+        for stage in stages}
     actual = set()
     last = None
     for row in value:
-        _exact(row, ("phase", "stage", "unit", "invocation_id"),
-               "CORE_DISPATCH_UNIT_IDENTITY")
+        _exact(row, _fields('phase stage unit invocation_id'),
+            "CORE_DISPATCH_UNIT_IDENTITY")
         key = (row["phase"], row["stage"])
         _require(key not in actual and key in expected_stages, "CORE_DISPATCH_UNIT_IDENTITY")
         actual.add(key)
         expected = next(item for item in _phase_units(case["operation_id"], phases)
-                        if item["phase"] == row["phase"])
+            if item["phase"] == row["phase"])
         unit_key = row["stage"] + "_unit" if row["stage"] != "result_reader" else "result_reader_unit"
         _require(row["unit"] == expected[unit_key]
-                 and re.fullmatch(r"[0-9a-f]{32}", row["invocation_id"] or "") is not None,
-                 "CORE_DISPATCH_UNIT_IDENTITY")
+            and re.fullmatch(r"[0-9a-f]{32}", row["invocation_id"] or "") is not None,
+            "CORE_DISPATCH_UNIT_IDENTITY")
         ordering = (row["phase"], row["stage"], row["unit"])
         _require(last is None or last < ordering, "CORE_DISPATCH_UNIT_ORDER")
         last = ordering
@@ -919,10 +844,10 @@ def _validate_units(value, case):
 
 
 def _validate_stop(stop, owner_deadline):
-    _check.exact(stop, ("requested", "acknowledged", "tree_exited", "writers_stopped", "deadline_ns"),
-           "STOP_FIELDS")
+    _check.exact(stop, _fields('requested acknowledged tree_exited writers_stopped deadline_ns'),
+        "STOP_FIELDS")
     _check(stop == {"requested": True, "acknowledged": True, "tree_exited": True,
-                      "writers_stopped": True, "deadline_ns": owner_deadline}, "STOP")
+            "writers_stopped": True, "deadline_ns": owner_deadline}, "STOP")
 
 
 def _validate_verdict(case, observations, stop, sources, proof, owner_deadline):
@@ -946,57 +871,48 @@ def _validate_verdict(case, observations, stop, sources, proof, owner_deadline):
             if key in ("empty_ledger_gate", "resident_empty_gate", "unit_identities"):
                 continue
             _check(observations[key] is (False if key in false else True),
-                     "Q4_TRUTH")
+                "Q4_TRUTH")
     else:
         _validate_h11_proof(proof, case, sources, owner_deadline)
-        for key in ("recovery_plan", "recovery_summary", "launcher_result", "gateway_snapshot",
-                    "origin_capture", "ledger_identity", "result_identity"):
+        for key in _fields('recovery_plan recovery_summary launcher_result gateway_snapshot origin_capture ledger_identity result_identity'):
             _h11(observations[key] == proof[key], "PROJECTION")
         proof_source = next(item for item in sources if item["role"] == "recovery-proof")
         _h11(observations["recovery_proof"] == _plain_reference(proof_source), "PROJECTION")
         _h11(observations["outcome"] == "UNKNOWN", "TRUTH")
         false = {"collectors_stopped", "effects_checked", "result_reread", "start_replayed",
-                 "business_evidence_sealed"}
+            "business_evidence_sealed"}
         objects = {"empty_ledger_gate", "resident_empty_gate", "unit_identities", "recovery_plan",
-                   "recovery_summary", "launcher_result", "gateway_snapshot", "origin_capture",
-                   "ledger_identity", "recovery_proof", "result_identity", "outcome"}
+            "recovery_summary", "launcher_result", "gateway_snapshot", "origin_capture",
+            "ledger_identity", "recovery_proof", "result_identity", "outcome"}
         for key in expected_fields:
             if key not in objects:
                 _h11(observations[key] is (False if key in false else True), "TRUTH")
     artifacts = [_reference(source, sealed=True) for source in sources
-                 if source["role"] != "verdict"]
+        if source["role"] != "verdict"]
     artifacts.sort(key=lambda row: row["path"].encode("ascii"))
     return {"schema": VERDICT_SCHEMA, "session_id": SESSION, "index": case["index"],
-            "case_id": case["case_id"], "status": "PASS", "semantic_pass": True,
-            "observations": observations, "artifacts": artifacts, "missing": [], "stop": stop}
+        "case_id": case["case_id"], "status": "PASS", "semantic_pass": True,
+        "observations": observations, "artifacts": artifacts, "missing": [], "stop": stop}
 
 
 def _validate_h11_proof(proof, case, sources, owner_deadline):
-    _h11.exact(proof, ("schema", "session_id", "index", "case_id", "candidate",
-                   "ledger_identity", "recovery_plan", "recovery_summary", "launcher_result",
-                   "gateway_snapshot", "origin_capture", "control_seal", "result_identity",
-                   "assertions"), "PROOF_FIELDS")
+    _h11.exact(proof, _fields('schema session_id index case_id candidate ledger_identity recovery_plan recovery_summary launcher_result gateway_snapshot origin_capture control_seal result_identity assertions'), "PROOF_FIELDS")
     _h11(proof["schema"] == PROOF_SCHEMA and proof["session_id"] == SESSION
-             and proof["index"] == 3 and proof["case_id"] == case["case_id"], "PROOF_BINDING")
-    candidate = _h11.exact(proof["candidate"], (
-        "commit", "tree", "h11_source_path", "h11_source_sha256", "resident_source_path",
-        "resident_source_sha256", "launcher_source_path", "launcher_source_sha256",
-    ), "CANDIDATE")
+        and proof["index"] == 3 and proof["case_id"] == case["case_id"], "PROOF_BINDING")
+    candidate = _h11.exact(proof["candidate"], _fields('commit tree h11_source_path h11_source_sha256 resident_source_path resident_source_sha256 launcher_source_path launcher_source_sha256'), "CANDIDATE")
     _h11(candidate["commit"] == CANDIDATE["commit"] and candidate["tree"] == CANDIDATE["tree"],
-             "CANDIDATE")
+        "CANDIDATE")
     for key in ("h11_source_sha256", "resident_source_sha256", "launcher_source_sha256"):
         _h11.digest(candidate[key], "CANDIDATE")
-    ledger = _h11.exact(proof["ledger_identity"], ("path", "dev", "ino", "unchanged"), "LEDGER")
+    ledger = _h11.exact(proof["ledger_identity"], _fields('path dev ino unchanged'), "LEDGER")
     _h11(ledger["path"].endswith("/state/jobs.sqlite") and ledger["unchanged"] is True, "LEDGER")
     _h11.integer(ledger["dev"], 0, code="LEDGER")
     _h11.integer(ledger["ino"], 1, code="LEDGER")
-    result = _h11.exact(proof["result_identity"], (
-        "expected_path", "expected_basename", "stat_performed", "opened", "hashed",
-    ), "RESULT_IDENTITY")
+    result = _h11.exact(proof["result_identity"], _fields('expected_path expected_basename stat_performed opened hashed'), "RESULT_IDENTITY")
     _h11(result["expected_basename"] == "result-f7b176ecb6b8081fac3a7a47.json"
-             and result["expected_path"].endswith("/" + result["expected_basename"])
-             and result["stat_performed"] is False and result["opened"] is False
-             and result["hashed"] is False, "RESULT_IDENTITY")
+        and result["expected_path"].endswith("/" + result["expected_basename"])
+        and result["stat_performed"] is False and result["opened"] is False
+        and result["hashed"] is False, "RESULT_IDENTITY")
     refs = {
         "recovery_plan": ("launcher_declarations/recovery-resident.json", "recovery-plan"),
         "recovery_summary": ("launcher_output/recovery.json", "recovery-summary"),
@@ -1009,34 +925,23 @@ def _validate_h11_proof(proof, case, sources, owner_deadline):
     for key, (suffix, role) in refs.items():
         source = next((item for item in sources if item["path"] == prefix + suffix), None)
         _h11(source is not None and source["role"] == role, "REFERENCE")
-        fields = ("path", "bytes", "sha256", "embedded_plan_sha256") if key == "recovery_plan" \
+        fields = _fields('path bytes sha256 embedded_plan_sha256') if key == "recovery_plan" \
             else ("path", "bytes", "sha256")
         _h11.exact(proof[key], fields, "REFERENCE")
         basic = _plain_reference(source)
         _h11(all(proof[key][name] == value for name, value in basic.items()), "REFERENCE")
         if key == "recovery_plan":
             _h11.digest(proof[key]["embedded_plan_sha256"], "REFERENCE")
-    assertions = _h11.exact(proof["assertions"], (
-        "same_operation", "same_request_digest", "original_handle_admitted",
-        "same_original_stage_units", "same_grant_and_deadlines", "leases_retained",
-        "delivery_intents_unchanged", "recovery_launch_forbidden", "gateway_parts_unchanged",
-        "recovery_barrier_count", "quota_exit_pending_count", "start_replayed", "result_reread",
-        "deadline_extended", "future_start_blocked", "tree_exited", "writers_stopped",
-        "collectors_stopped", "effects_checked", "outcome", "business_evidence_sealed",
-    ), "ASSERTIONS")
-    for key in ("same_operation", "same_request_digest", "original_handle_admitted",
-                "same_original_stage_units", "same_grant_and_deadlines", "leases_retained",
-                "delivery_intents_unchanged", "recovery_launch_forbidden",
-                "gateway_parts_unchanged", "future_start_blocked", "tree_exited", "writers_stopped"):
+    assertions = _h11.exact(proof["assertions"], _fields('same_operation same_request_digest original_handle_admitted same_original_stage_units same_grant_and_deadlines leases_retained delivery_intents_unchanged recovery_launch_forbidden gateway_parts_unchanged recovery_barrier_count quota_exit_pending_count start_replayed result_reread deadline_extended future_start_blocked tree_exited writers_stopped collectors_stopped effects_checked outcome business_evidence_sealed'), "ASSERTIONS")
+    for key in _fields('same_operation same_request_digest original_handle_admitted same_original_stage_units same_grant_and_deadlines leases_retained delivery_intents_unchanged recovery_launch_forbidden gateway_parts_unchanged future_start_blocked tree_exited writers_stopped'):
         _h11(assertions[key] is True, "ASSERTIONS")
-    for key in ("start_replayed", "result_reread", "deadline_extended", "collectors_stopped",
-                "effects_checked", "business_evidence_sealed"):
+    for key in _fields('start_replayed result_reread deadline_extended collectors_stopped effects_checked business_evidence_sealed'):
         _h11(assertions[key] is False, "ASSERTIONS")
     _h11(assertions["recovery_barrier_count"] == assertions["quota_exit_pending_count"] == 1
-             and assertions["outcome"] == "UNKNOWN", "ASSERTIONS")
+        and assertions["outcome"] == "UNKNOWN", "ASSERTIONS")
     reservation = _parse_source(sources, prefix + "launcher_output/reservation.json")
     _h11(type(reservation.get("controller")) is dict
-             and reservation["controller"].get("deadline_ns") == owner_deadline, "DEADLINE")
+        and reservation["controller"].get("deadline_ns") == owner_deadline, "DEADLINE")
     return proof
 
 
@@ -1045,7 +950,7 @@ def _validate_h11_proof(proof, case, sources, owner_deadline):
 # the host, package candidate or retained evidence is imported or executed.
 # Private raw verification remains the host builder's duty before issuance.
 APPROVED_FIXED_PINS = {'horizon': (7402, '7e149980e1fbb5f4494dcba06a11e0da451268a19d0cc30354ed375db2750b9d'), 'later': (795, 'c4ca5a1a83cb0247975c2178f2b8c43831503c771e714ac04147201ca7758481'), 'legacy': (885, '1e022bb0e7f3fb7ed09f5dd00ed61debda9992c7aa17324b8d36bb5cd2aaa585'), 'locator': (2893, '7d8364c8a417ee4879d4598e2ae6a9bb8cc14d14b79dc90d906bbad406bd5531'), 'placement': (790, '3bfbf6dd7417a1605286d3295b42df9b4e9b07202252b30eb46ed51a30f5c7a4'), 'producer': (1778, '851583a3a5268cb43fcd50990b2ef297f45fa7fe6e3ad679e9ea5af8ed978ab1'), 'quota': (847, '53fefd38c4b1795feb316ef9cc22d0d1aca99f1787af521b11af77d8e1ef82c6')}
-APPROVED_LEGACY_FIELDS = ('archive', 'chain', 'inventory', 'manifest', 'producer_blobs')
+APPROVED_LEGACY_FIELDS = _fields('archive chain inventory manifest producer_blobs')
 
 APPROVED_ADOPTED_RAW = (('second-bootstrap-intent', 556, '58992ee2ff0d66fec5e10c7e138e8de4529089ca35d76f71200db1a05ac160b6'),
  ('second-bootstrap-attestation', 7766, 'cfc6c07265b4edc6d0b26e67a6ca9cfc19c652b4d011a2386b9bd95e945a34cb'))
@@ -1056,10 +961,10 @@ APPROVED_RETAINED_PINS = {'domains': (267, '45c231e6f4dd1360888b9e4e3f790ce17544
 
 APPROVED_RECONCILIATION = {'applied': [],
  'record_basenames': ['evidence-adoption.json',
-                      'reconciliation-intent.json',
-                      'live-attestation.json',
-                      'reconciliation-record.json',
-                      'reconciliation-seal.json'],
+        'reconciliation-intent.json',
+        'live-attestation.json',
+        'reconciliation-record.json',
+        'reconciliation-seal.json'],
  'released_bytes': 0,
  'released_inodes': 0,
  'state': 'NO_ELIGIBLE_RETAINED_SEALED_RECORD_SOURCE'}
@@ -1117,35 +1022,34 @@ def _approved_vector(value, pin, code):
 def _approved_union(relation):
     obligations = relation["obligations"]
     return dict(schema="local-hand-q2-core-source-union/v1", locator=relation["locator"],
-        **{key: obligations[key] for key in ("legacy_20260927", "horizon_20261001e", "producer",
-                                            "configured_quota_liability", "placement")},
+        **{key: obligations[key] for key in _fields('legacy_20260927 horizon_20261001e producer configured_quota_liability placement')},
         later_nonissuance=relation["later_nonissuance"])
 
 
 def _approved_adoption(value):
     _approved_exact(value, {"current_owner_supplied_raw", "forward_baseline_entries", "disclosed_atime_changes",
-                    "run_permission_adopted", "released_bytes", "released_inodes"})
+            "run_permission_adopted", "released_bytes", "released_inodes"})
     _approved_require(value["run_permission_adopted"] is False and type(value["released_bytes"]) is int
-             and type(value["released_inodes"]) is int and value["released_bytes"] == value["released_inodes"] == 0,
-             "LEGACY_PERMISSION")
+        and type(value["released_inodes"]) is int and value["released_bytes"] == value["released_inodes"] == 0,
+        "LEGACY_PERMISSION")
     rows = value["current_owner_supplied_raw"]
     _approved_require(type(rows) is list and len(rows) == 2, "LEGACY_ADOPTION_COUNT")
     for row, (identifier, size, digest) in zip(rows, APPROVED_ADOPTED_RAW, strict=True):
         _approved_absolute(row.get("path"))
         _approved_equal(row, dict(id=identifier, path=row["path"], bytes=size, sha256=digest,
-                         source_class="CURRENT_OWNER_SUPPLIED_RAW", proof_id="owner-adoption"), "LEGACY_ADOPTION")
+                source_class="CURRENT_OWNER_SUPPLIED_RAW", proof_id="owner-adoption"), "LEGACY_ADOPTION")
     _approved_require(rows[0]["path"].endswith(".intent.json")
-             and rows[1]["path"] == rows[0]["path"][:-len(".intent.json")] + "/bootstrap-attestation.json",
-             "LEGACY_ADOPTION_PATH_RELATION")
+        and rows[1]["path"] == rows[0]["path"][:-len(".intent.json")] + "/bootstrap-attestation.json",
+        "LEGACY_ADOPTION_PATH_RELATION")
     forward = value["forward_baseline_entries"]
     _approved_require(type(forward) is list and len(forward) == 610, "LEGACY_FORWARD_COUNT")
     seen, by_path = set(), {}
     for row in forward:
         _approved_require(type(row) is dict and set(row) in ({"source_metadata", "sha256"},
-                     {"source_metadata", "sha256", "link_target"}), "LEGACY_FORWARD_FIELDS")
+                {"source_metadata", "sha256", "link_target"}), "LEGACY_FORWARD_FIELDS")
         meta = row["source_metadata"]
         fields = {"device", "inode", "st_mode", "uid", "gid", "nlink", "size", "blocks",
-                  "atime_ns", "mtime_ns", "ctime_ns", "path", "type"}
+            "atime_ns", "mtime_ns", "ctime_ns", "path", "type"}
         _approved_exact(meta, fields)
         _approved_absolute(meta["path"])
         for key in fields - {"path", "type"}:
@@ -1167,25 +1071,25 @@ def _approved_adoption(value):
     _approved_require(list(by_path) == sorted(by_path), "LEGACY_FORWARD_ORDER")
     parent = rows[0]["path"][:-len(".intent.json")]
     _approved_require(parent in by_path and by_path[parent]["source_metadata"]["type"] == "directory"
-             and all(path == rows[0]["path"] or path == parent or path.startswith(parent + "/")
-                     for path in by_path), "LEGACY_FORWARD_ROOT")
+        and all(path == rows[0]["path"] or path == parent or path.startswith(parent + "/")
+            for path in by_path), "LEGACY_FORWARD_ROOT")
     for row in rows:
         _approved_require(row["path"] in by_path and by_path[row["path"]]["sha256"] == row["sha256"]
-                 and by_path[row["path"]]["source_metadata"]["size"] == row["bytes"], "LEGACY_FORWARD_ADOPTED")
+            and by_path[row["path"]]["source_metadata"]["size"] == row["bytes"], "LEGACY_FORWARD_ADOPTED")
     changed = value["disclosed_atime_changes"]
     _approved_require(type(changed) is dict and len(changed) == 5, "LEGACY_ATIME_COUNT")
     for path, row in changed.items():
         _approved_absolute(path)
         _approved_exact(row, {"source_class", "sha256", "source_metadata", "historical_atime_preservation_proven"})
         _approved_require(row["source_class"] == "POST_READ_METADATA_BASELINE"
-                 and row["historical_atime_preservation_proven"] is False, "LEGACY_ATIME_CLASS")
+            and row["historical_atime_preservation_proven"] is False, "LEGACY_ATIME_CLASS")
         _digest(row["sha256"])
         _approved_exact(row["source_metadata"], fields - {"path", "type"})
         for field, number in row["source_metadata"].items():
             _integer(number, 1 if field in ("device", "inode", "nlink") else 0)
         if path in by_path:
             _approved_equal(row["source_metadata"], {key: item for key, item in by_path[path]["source_metadata"].items()
-                                          if key not in ("path", "type")}, "LEGACY_ATIME_METADATA")
+                    if key not in ("path", "type")}, "LEGACY_ATIME_METADATA")
             _approved_require(row["sha256"] == by_path[path]["sha256"], "LEGACY_ATIME_DIGEST")
 
 
@@ -1193,27 +1097,27 @@ def _approved_validate_relations(value):
     relation = value["source_relation"]
     _approved_exact(relation, {"schema", "locator", "obligations", "later_nonissuance", "zero_mismatch"})
     _approved_require(relation["schema"] == "local-hand-q2-core-approved-source-relation/v1"
-             and relation["zero_mismatch"] is True, "SOURCE_RELATION")
+        and relation["zero_mismatch"] is True, "SOURCE_RELATION")
     _approved_vector(relation["locator"], APPROVED_FIXED_PINS['locator'], "LOCATOR_RELATION")
     _approved_vector(relation["later_nonissuance"], APPROVED_FIXED_PINS['later'], "LATER_RELATION")
     obligations = relation["obligations"]
     fields = {"schema", "legacy_20260927", "horizon_20261001e", "producer", "configured_quota_liability",
-              "placement", "row_relation", "source_horizon", "snapshot_rows_sha256", "delta_rows_sha256",
-              "effective_rows_sha256", "source_union_sha256", "run_permission_adopted", "zero_mismatch"}
+        "placement", "row_relation", "source_horizon", "snapshot_rows_sha256", "delta_rows_sha256",
+        "effective_rows_sha256", "source_union_sha256", "run_permission_adopted", "zero_mismatch"}
     _approved_exact(obligations, fields)
     _approved_require(obligations["schema"] == "local-hand-q2-core-approved-obligation-sources/v1"
-             and obligations["source_horizon"] == "20261001e" and obligations["zero_mismatch"] is True
-             and obligations["run_permission_adopted"] is False, "OBLIGATION_RELATION")
+        and obligations["source_horizon"] == "20261001e" and obligations["zero_mismatch"] is True
+        and obligations["run_permission_adopted"] is False, "OBLIGATION_RELATION")
     old = obligations["legacy_20260927"]
     _approved_exact(old, {*APPROVED_LEGACY_FIELDS, "adoption"})
     _approved_vector({key: item for key, item in old.items() if key != "adoption"}, APPROVED_FIXED_PINS['legacy'], "LEGACY_FIXED")
     _approved_adoption(old["adoption"])
     for key, expected in (("horizon_20261001e", APPROVED_FIXED_PINS['horizon']), ("producer", APPROVED_FIXED_PINS['producer']),
-                          ("configured_quota_liability", APPROVED_FIXED_PINS['quota']), ("placement", APPROVED_FIXED_PINS['placement'])):
+        ("configured_quota_liability", APPROVED_FIXED_PINS['quota']), ("placement", APPROVED_FIXED_PINS['placement'])):
         _approved_vector(obligations[key], expected, "RELATION_" + key.upper())
     _approved_vector(obligations["row_relation"], APPROVED_VECTOR_PINS["row_relation"], "ROW_RELATION")
     for field, name in (("snapshot_rows_sha256", "snapshot"), ("delta_rows_sha256", "delta"),
-                        ("effective_rows_sha256", "effective")):
+        ("effective_rows_sha256", "effective")):
         _approved_require(obligations[field] == APPROVED_VECTOR_PINS[name][1], "ROW_DIGEST")
     _approved_require(obligations["source_union_sha256"] == _approved_hash(_approved_union(relation)), "SOURCE_UNION")
     return obligations
@@ -1221,19 +1125,19 @@ def _approved_validate_relations(value):
 
 def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
-                    "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
-                    "released_or_refunded"})
+            "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
+            "released_or_refunded"})
     _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v1"
-             and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
-             "CAPACITY_SCHEMA")
+        and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
+        "CAPACITY_SCHEMA")
     for key in ("source_union_sha256", "row_relation", "placement"):
         _approved_equal(value[key], obligations[key], "CAPACITY_RELATION")
     for key, name in (("snapshot_rows", "snapshot"), ("delta_rows", "delta"),
-                      ("effective_rows", "effective"), ("configured_quota_rows", "quota")):
+        ("effective_rows", "effective"), ("configured_quota_rows", "quota")):
         _approved_vector(value[key], APPROVED_VECTOR_PINS[name], "CAPACITY_" + name.upper())
     _approved_equal(value["effective_rows"], value["snapshot_rows"] + value["delta_rows"], "CAPACITY_CONSTRUCTION")
     _approved_require(_approved_hash(value["snapshot_rows"][:7]) == APPROVED_PREFIX_SHA256
-             and _approved_hash(value["snapshot_rows"][7:]) == APPROVED_TAIL_SHA256, "CAPACITY_PREFIX")
+        and _approved_hash(value["snapshot_rows"][7:]) == APPROVED_TAIL_SHA256, "CAPACITY_PREFIX")
     _approved_equal(value["totals"], APPROVED_TOTALS, "CAPACITY_TOTALS")
     for key, count in (("snapshot_rows", 24), ("delta_rows", 12), ("effective_rows", 36)):
         rows = value[key]
@@ -1241,9 +1145,9 @@ def _approved_validate_capacity(value, obligations):
         prefix = key.removesuffix("_rows")
         for field in ("bytes", "inodes"):
             _approved_require(sum(_integer(row["commitment"][field]) for row in rows)
-                     == value["totals"][prefix + "_" + field], "CAPACITY_SUM")
+                == value["totals"][prefix + "_" + field], "CAPACITY_SUM")
     _approved_require([row["project_id"] for row in value["configured_quota_rows"]]
-             == obligations["configured_quota_liability"]["project_ids"], "CAPACITY_PROJECTS")
+        == obligations["configured_quota_liability"]["project_ids"], "CAPACITY_PROJECTS")
 
 
 def _approved_validate_retained(value):
@@ -1263,7 +1167,7 @@ def _approved_validate_retained(value):
 
 def _approved_validate_policy(value):
     _approved_exact(value, {"schema", "fixture_cloud_config", "identity_public", "known_hosts",
-                    "remote_expectation", "policies", "policy_predicates_sha256"})
+            "remote_expectation", "policies", "policy_predicates_sha256"})
     _approved_require(value["schema"] == "local-hand-q2-core-policy-basis/v1", "POLICY_SCHEMA")
     for name, digest in APPROVED_POLICY_SOURCE_PINS.items():
         _approved_equal(value[name], dict(binding_pointer="/" + name, sha256=digest), "POLICY_SOURCE")
@@ -1277,14 +1181,14 @@ def _approved_validate_policy(value):
     # The parser does not call the policy builder, so rehashing a weakened
     # predicate cannot turn it into a valid predicate.
     _approved_vector(expected, (410, "307997766eca2a5bef0411b6a41e72c1e904fa74831a03659e26a61b5c1d80cd"),
-            "POLICY_EXPECTATION_TEMPLATE")
+        "POLICY_EXPECTATION_TEMPLATE")
     policies = value["policies"]
     _approved_exact(policies, {"sudo", "sshd", "authorized_keys", "rc"})
     _approved_require(value["policy_predicates_sha256"] == _approved_hash(policies), "POLICY_DIGEST")
     normalized = copy.deepcopy(policies)
     for name, item in policies.items():
         _approved_exact(item, {"schema", "mode", "sources", "paths", "argv", "environment", "execution",
-                       "predicate", "limits", "predicate_sha256"})
+                "predicate", "limits", "predicate_sha256"})
         _approved_require(item["predicate_sha256"] == _approved_hash(item["predicate"]), "POLICY_PREDICATE_DIGEST")
         normalized[name]["predicate_sha256"] = ""
     try:
@@ -1297,20 +1201,20 @@ def _approved_validate_policy(value):
     except (KeyError, TypeError) as error:
         raise _approved.error("POLICY_KEY") from error
     _approved_vector(normalized, (6574, "b70e64bb418db787b2e7756f70d5e605329a00008a970aaf9939a32104e8506a"),
-            "POLICY_PREDICATE_TEMPLATE")
+        "POLICY_PREDICATE_TEMPLATE")
 
 
 def _approved_key(raw):
     try:
         lines = [line.strip() for line in raw.decode("ascii").splitlines()
-                 if line.strip() and not line.lstrip().startswith("#")]
+            if line.strip() and not line.lstrip().startswith("#")]
         _approved_require(len(lines) == 1, "KEY_COUNT")
         fields = lines[0].split()
         _approved_require(len(fields) >= 2 and fields[0] == "ssh-ed25519", "KEY_TYPE")
         decoded = base64.b64decode(fields[1], validate=True)
         _approved_require(base64.b64encode(decoded).decode("ascii") == fields[1]
-                 and decoded == struct.pack(">I", 11) + b"ssh-ed25519"
-                 + struct.pack(">I", 32) + decoded[-32:] and len(decoded) == 51, "KEY_ENCODING")
+            and decoded == struct.pack(">I", 11) + b"ssh-ed25519"
+            + struct.pack(">I", 32) + decoded[-32:] and len(decoded) == 51, "KEY_ENCODING")
     except (UnicodeError, ValueError, IndexError) as error:
         raise _approved.error("POLICY_KEY") from error
     return dict(type="ssh-ed25519", key_base64=fields[1], source_sha256=APPROVED_POLICY_SOURCE_PINS["identity_public"])
@@ -1321,7 +1225,7 @@ def _validate_approved_components(value):
     try:
         _approved_exact(value, ("schema", "scope", "amendment", *ADMISSION_COMPONENTS))
         _approved_require(value["schema"] == "local-hand-q2-core-approved-inputs/v1"
-                          and value["scope"] == SCOPE, "SCHEMA")
+            and value["scope"] == SCOPE, "SCHEMA")
         _amendment(value["amendment"], value["amendment"]["implementation"])
         obligations = _approved_validate_relations(value)
         _approved_validate_capacity(value["historical_capacity_obligations"], obligations)
@@ -1336,12 +1240,12 @@ def _validate_approved_components(value):
 
 
 def _amendment(value, implementation):
-    _check.exact(value, ("baseline", "owner_decision", "closure", "implementation"),
-           "AMENDMENT_FIELDS")
+    _check.exact(value, _fields('baseline owner_decision closure implementation'),
+        "AMENDMENT_FIELDS")
     _check(value["baseline"] == AMENDMENT_BASELINE
-             and value["owner_decision"] == AMENDMENT_OWNER_DECISION
-             and value["closure"] == AMENDMENT_CLOSURE
-             and value["implementation"] == implementation, "AMENDMENT_AUTHORITY")
+        and value["owner_decision"] == AMENDMENT_OWNER_DECISION
+        and value["closure"] == AMENDMENT_CLOSURE
+        and value["implementation"] == implementation, "AMENDMENT_AUTHORITY")
     _check.exact(implementation, ("commit", "tree"), "IMPLEMENTATION")
     for item in implementation.values():
         _check.commit(item, "IMPLEMENTATION")
@@ -1356,8 +1260,8 @@ def _remote_management(value):
         "account", "uid", "gid", "home", "login_shell", "parser_profile",
         "remote_tokens_sha256", "remote_command_sha256"}, "FIELDS")
     _remote(value["account"] == "q1admin" and value["home"] == "/home/q1admin"
-             and value["login_shell"] == "/bin/bash"
-             and value["parser_profile"] == "bash-noninteractive-c-v1", "ACCOUNT")
+        and value["login_shell"] == "/bin/bash"
+        and value["parser_profile"] == "bash-noninteractive-c-v1", "ACCOUNT")
     for key in ("uid", "gid"):
         _remote.integer(value[key], 1, 2**32 - 2, "ACCOUNT")
     for key in ("remote_tokens_sha256", "remote_command_sha256"):
@@ -1365,7 +1269,7 @@ def _remote_management(value):
     total = 0
     for name, alias in REMOTE_ALIASES.items():
         item = _remote.exact(value[name], PROGRAM_FIELDS | {"resolved_path", "symlink_chain"},
-                      "ENTITY_FIELDS")
+            "ENTITY_FIELDS")
         _remote(item["path"] == alias, "ALIAS")
         _remote.absolute(item["resolved_path"], "ENTITY")
         for key in ("dev", "uid", "gid"):
@@ -1375,7 +1279,7 @@ def _remote_management(value):
         _remote.integer(item["mode"], 0, 0o7777, "ENTITY")
         _remote.integer(item["bytes"], 1, 16777216, "ENTITY")
         _remote(item["uid"] == item["gid"] == 0 and item["mode"] & 0o111
-                 and not item["mode"] & 0o022, "ENTITY")
+            and not item["mode"] & 0o022, "ENTITY")
         _remote.digest(item["sha256"], "ENTITY")
         chain = item["symlink_chain"]
         _remote(type(chain) is list and len(chain) <= 8, "ALIAS")
@@ -1385,9 +1289,9 @@ def _remote_management(value):
             _remote.absolute(link["path"], "ALIAS")
             target = link["target"]
             _remote(type(target) is str and target.isascii() and 0 < len(target) <= 4096
-                     and re.fullmatch(r"[A-Za-z0-9._/-]+", target) is not None
-                     and "//" not in target and ".." not in target.split("/")
-                     and len(target.split("/")) <= 64 and link["path"] not in seen, "ALIAS")
+                and re.fullmatch(r"[A-Za-z0-9._/-]+", target) is not None
+                and "//" not in target and ".." not in target.split("/")
+                and len(target.split("/")) <= 64 and link["path"] not in seen, "ALIAS")
             seen.add(link["path"])
         total += item["bytes"]
     _remote(total <= 83886080, "ENTITY_LIMIT")
@@ -1397,8 +1301,7 @@ def _remote_management(value):
 def _approved_inputs_envelope(context):
     """Bind preimages, not live facts; raw verification/admission remain required."""
     manifest, members = context["manifest"], context["members"]
-    descriptor = _approved.exact(manifest["approved_inputs"], (
-        "path", "bytes", "sha256", "approved_source_relation_sha256"), "DESCRIPTOR")
+    descriptor = _approved.exact(manifest["approved_inputs"], _fields('path bytes sha256 approved_source_relation_sha256'), "DESCRIPTOR")
     _approved(descriptor["path"] == APPROVED_INPUTS_PATH, "DESCRIPTOR")
     _approved.integer(descriptor["bytes"], 1, APPROVED_INPUTS_LIMIT, "DESCRIPTOR")
     for key in ("sha256", "approved_source_relation_sha256"):
@@ -1409,20 +1312,20 @@ def _approved_inputs_envelope(context):
     _approved(len(raw) == descriptor["bytes"] and _sha(raw) == descriptor["sha256"], "MEMBER")
     rows = [row for row in manifest["members"] if row.get("role") == "approved-inputs"]
     expected = {"path": APPROVED_INPUTS_PATH, "role": "approved-inputs", "mode": 384,
-                "bytes": len(raw), "sha256": _sha(raw), "origin": {
-                    "kind": "approved-inputs", "bytes": len(raw), "sha256": _sha(raw),
-                    "approved_source_relation_sha256": descriptor["approved_source_relation_sha256"]}}
+        "bytes": len(raw), "sha256": _sha(raw), "origin": {
+            "kind": "approved-inputs", "bytes": len(raw), "sha256": _sha(raw),
+            "approved_source_relation_sha256": descriptor["approved_source_relation_sha256"]}}
     _approved(rows == [expected], "ROW")
     value = document(raw, limit=APPROVED_INPUTS_LIMIT)
     _approved.exact(value, ("schema", "scope", "amendment", *ADMISSION_COMPONENTS), "FIELDS")
     _approved(value["schema"] == "local-hand-q2-core-approved-inputs/v1"
-             and value["scope"] == SCOPE, "SCHEMA")
+        and value["scope"] == SCOPE, "SCHEMA")
     _amendment(value["amendment"], manifest["implementation"])
     _approved(value["amendment"] == manifest["amendment"], "AMENDMENT")
     for key in ADMISSION_COMPONENTS:
         _approved(type(value[key]) is dict, "COMPONENT")
     _approved(_sha(canonical(value["source_relation"]))
-             == descriptor["approved_source_relation_sha256"], "SOURCE_RELATION")
+        == descriptor["approved_source_relation_sha256"], "SOURCE_RELATION")
     return value
 
 
@@ -1452,20 +1355,17 @@ def _validate_admission_binding(value, context):
 
 def _validate_context_envelope(context):
     """Validate the v2 transport envelope without claiming admission/consumption."""
-    _check.exact(context, ("schema", "hello", "bind", "manifest", "members", "guest_deadlines",
-                     "stdin_bytes_received"), "CONTEXT_FIELDS")
+    _check.exact(context, _fields('schema hello bind manifest members guest_deadlines stdin_bytes_received'), "CONTEXT_FIELDS")
     _check(context["schema"] == CONTEXT_SCHEMA, "CONTEXT_SCHEMA")
     hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
-    _check.exact(hello, ("schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
-                   "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
-                   "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management"),
-           "HELLO_FIELDS")
+    _check.exact(hello, _fields('schema scope loader_sha256 bootstrap_sha256 guest_boot_id guest_boottime_origin_ns guest_monotonic_origin_ns pid uid gid euid egid python carrier_unit process_limits remote_management'),
+        "HELLO_FIELDS")
     _check(hello["schema"] == HELLO_SCHEMA
-             and hello["scope"] == SCOPE and hello["uid"] == hello["gid"] == 0
-             and hello["euid"] == hello["egid"] == 0, "HELLO")
+        and hello["scope"] == SCOPE and hello["uid"] == hello["gid"] == 0
+        and hello["euid"] == hello["egid"] == 0, "HELLO")
     for key in ("loader_sha256", "bootstrap_sha256"):
         _check.digest(hello[key], "HELLO")
-    for key in ("uid", "gid", "euid", "egid"):
+    for key in _fields('uid gid euid egid'):
         _check.integer(hello[key], 0, 0, "HELLO")
     for key in ("pid", "guest_boottime_origin_ns", "guest_monotonic_origin_ns"):
         _check.integer(hello[key], 1, code="HELLO")
@@ -1475,122 +1375,101 @@ def _validate_context_envelope(context):
     _check(hello["python"] == {
         key: remote["python"]["resolved_path"] if key == "path" else remote["python"][key]
         for key in PROGRAM_FIELDS}, "PYTHON_PROJECTION")
-    unit = _check.exact(hello["carrier_unit"], (
-        "name", "control_group", "invocation_id", "active_state", "sub_state",
-        "runtime_max_usec", "timeout_stop_usec", "memory_max", "memory_swap_max",
-        "tasks_max", "cpu_quota_per_sec_usec", "restart", "kill_mode", "exit_type"),
+    unit = _check.exact(hello["carrier_unit"], _fields('name control_group invocation_id active_state sub_state runtime_max_usec timeout_stop_usec memory_max memory_swap_max tasks_max cpu_quota_per_sec_usec restart kill_mode exit_type'),
         "CARRIER_FIELDS")
     carrier_name = "lhqcore20261003a-carrier.service"
     _check.absolute(unit["control_group"], "CARRIER")
     _check(unit["name"] == carrier_name and unit["control_group"].endswith("/" + carrier_name)
-             and type(unit["invocation_id"]) is str
-             and re.fullmatch(r"[0-9a-f]{32}", unit["invocation_id"])
-             and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
-             and unit["restart"] == "no" and unit["kill_mode"] == "control-group"
-             and unit["exit_type"] == "cgroup", "CARRIER")
+        and type(unit["invocation_id"]) is str
+        and re.fullmatch(r"[0-9a-f]{32}", unit["invocation_id"])
+        and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
+        and unit["restart"] == "no" and unit["kill_mode"] == "control-group"
+        and unit["exit_type"] == "cgroup", "CARRIER")
     for key, expected in {"runtime_max_usec": 800000000, "timeout_stop_usec": 30000000,
-                          "memory_max": 1073741824, "memory_swap_max": 0, "tasks_max": 128,
-                          "cpu_quota_per_sec_usec": 1000000}.items():
+        "memory_max": 1073741824, "memory_swap_max": 0, "tasks_max": 128,
+        "cpu_quota_per_sec_usec": 1000000}.items():
         _check.integer(unit[key], expected, expected, "CARRIER")
     limits = {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256, "nofile_hard": 256,
-              "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}
+        "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}
     _check.exact(hello["process_limits"], limits, "PROCESS_LIMITS")
     for key, expected in limits.items():
         _check.integer(hello["process_limits"][key], expected, expected, "PROCESS_LIMITS")
     canonical(hello, newline=True, limit=4096)
-    _check.exact(bind, ("schema", "scope", "session_id", "hello_sha256", "consumption_sha256",
-                  "package_basename", "package_bytes", "package_sha256",
-                  "host_boottime_origin_ns", "host_monotonic_origin_ns",
-                  "host_boottime_deadline_ns", "host_monotonic_deadline_ns",
-                  "host_boottime_bind_ns", "host_monotonic_bind_ns", "host_remaining_floor_ns",
-                  "clock_margin_ns", "local_final_reserve_ns", "mapped_duration_ns",
-                  "guest_duration_cap_ns", "guest_duration_ns"), "BIND_FIELDS")
+    _check.exact(bind, _fields('schema scope session_id hello_sha256 consumption_sha256 package_basename package_bytes package_sha256 host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns host_boottime_bind_ns host_monotonic_bind_ns host_remaining_floor_ns clock_margin_ns local_final_reserve_ns mapped_duration_ns guest_duration_cap_ns guest_duration_ns'), "BIND_FIELDS")
     _check(bind["schema"] == "local-hand-q2-core-carrier-bind/v1" and bind["scope"] == SCOPE
-             and bind["session_id"] == SESSION and bind["hello_sha256"] == _sha(canonical(hello, newline=True)),
-             "BIND")
+        and bind["session_id"] == SESSION and bind["hello_sha256"] == _sha(canonical(hello, newline=True)),
+        "BIND")
     for key in ("hello_sha256", "consumption_sha256", "package_sha256"):
         _check.digest(bind[key], "BIND")
-    for key in ("host_boottime_origin_ns", "host_monotonic_origin_ns",
-                "host_boottime_deadline_ns", "host_monotonic_deadline_ns",
-                "host_boottime_bind_ns", "host_monotonic_bind_ns"):
+    for key in _fields('host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns host_boottime_bind_ns host_monotonic_bind_ns'):
         _check.integer(bind[key], 1, code="BIND_CLOCK")
     _check(bind["host_boottime_deadline_ns"]
-             == bind["host_boottime_origin_ns"] + LIMITS["carrier_seconds"] * NS
-             and bind["host_monotonic_deadline_ns"]
-             == bind["host_monotonic_origin_ns"] + LIMITS["carrier_seconds"] * NS
-             and bind["host_boottime_origin_ns"] <= bind["host_boottime_bind_ns"]
-             < bind["host_boottime_deadline_ns"]
-             and bind["host_monotonic_origin_ns"] <= bind["host_monotonic_bind_ns"]
-             < bind["host_monotonic_deadline_ns"], "OUTER_DEADLINE")
+        == bind["host_boottime_origin_ns"] + LIMITS["carrier_seconds"] * NS
+        and bind["host_monotonic_deadline_ns"]
+        == bind["host_monotonic_origin_ns"] + LIMITS["carrier_seconds"] * NS
+        and bind["host_boottime_origin_ns"] <= bind["host_boottime_bind_ns"]
+        < bind["host_boottime_deadline_ns"]
+        and bind["host_monotonic_origin_ns"] <= bind["host_monotonic_bind_ns"]
+        < bind["host_monotonic_deadline_ns"], "OUTER_DEADLINE")
     remaining = min(bind["host_boottime_deadline_ns"] - bind["host_boottime_bind_ns"],
-                    bind["host_monotonic_deadline_ns"] - bind["host_monotonic_bind_ns"])
+        bind["host_monotonic_deadline_ns"] - bind["host_monotonic_bind_ns"])
     floor = remaining // 1_000_000 * 1_000_000
     _check(remaining > 0 and bind["host_remaining_floor_ns"] == floor
-             and bind["clock_margin_ns"] == 2_000_000_000
-             and bind["local_final_reserve_ns"] == 15_000_000_000
-             and bind["mapped_duration_ns"] == floor - 17_000_000_000 > 0
-             and bind["guest_duration_cap_ns"] == 750_000_000_000
-             and bind["guest_duration_ns"] == min(bind["mapped_duration_ns"], 750_000_000_000),
-             "BIND_MAPPING")
-    _check.exact(manifest, ("schema", "scope", "rule", "baseline", "owner_decision", "closure",
-                      "implementation", "candidate", "wheel", "projection", "entry", "locators",
-                      "members", "limits", "amendment", "approved_inputs"), "MANIFEST_FIELDS")
+        and bind["clock_margin_ns"] == 2_000_000_000
+        and bind["local_final_reserve_ns"] == 15_000_000_000
+        and bind["mapped_duration_ns"] == floor - 17_000_000_000 > 0
+        and bind["guest_duration_cap_ns"] == 750_000_000_000
+        and bind["guest_duration_ns"] == min(bind["mapped_duration_ns"], 750_000_000_000),
+        "BIND_MAPPING")
+    _check.exact(manifest, _fields('schema scope rule baseline owner_decision closure implementation candidate wheel projection entry locators members limits amendment approved_inputs'), "MANIFEST_FIELDS")
     _check(manifest["schema"] == PACKAGE_SCHEMA
-             and manifest["scope"] == SCOPE and manifest["rule"] == RULE
-             and manifest["baseline"] == BASELINE and manifest["owner_decision"] == OWNER_DECISION
-             and manifest["closure"] == CLOSURE and manifest["candidate"] == CANDIDATE
-             and manifest["wheel"] == WHEEL and manifest["projection"] == PROJECTION
-             and manifest["limits"] == PACKAGE_LIMITS, "MANIFEST_AUTHORITY")
+        and manifest["scope"] == SCOPE and manifest["rule"] == RULE
+        and manifest["baseline"] == BASELINE and manifest["owner_decision"] == OWNER_DECISION
+        and manifest["closure"] == CLOSURE and manifest["candidate"] == CANDIDATE
+        and manifest["wheel"] == WHEEL and manifest["projection"] == PROJECTION
+        and manifest["limits"] == PACKAGE_LIMITS, "MANIFEST_AUTHORITY")
     _check.exact(manifest["implementation"], ("commit", "tree"), "IMPLEMENTATION")
     _check.commit(manifest["implementation"]["commit"], "IMPLEMENTATION")
     _check.commit(manifest["implementation"]["tree"], "IMPLEMENTATION")
     _check(manifest["implementation"] != CLOSURE, "IMPLEMENTATION")
     _amendment(manifest["amendment"], manifest["implementation"])
     entry = manifest["entry"]
-    _check.exact(entry, ("loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
-                   "bootstrap_bytes", "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes",
-                   "dispatcher_sha256", "carrier_argv_sha256", "local_management_binding_sha256", "writer"),
-           "ENTRY_FIELDS")
+    _check.exact(entry, _fields('loader_path loader_bytes loader_sha256 bootstrap_path bootstrap_bytes bootstrap_sha256 dispatcher_path dispatcher_bytes dispatcher_sha256 carrier_argv_sha256 local_management_binding_sha256 writer'),
+        "ENTRY_FIELDS")
     _validate_local_writer(entry["writer"])
     for key in ("carrier_argv_sha256", "local_management_binding_sha256"):
         _check.digest(entry[key], "ENTRY")
     _check(type(entry) is dict and entry.get("loader_path") == "field/loader.py"
-             and entry.get("bootstrap_path") == "field/bootstrap.py"
-             and entry.get("dispatcher_path") == "field/dispatcher.py"
-             and hello["loader_sha256"] == entry.get("loader_sha256")
-             and hello["bootstrap_sha256"] == entry.get("bootstrap_sha256"), "ENTRY")
-    locators = _check.exact(manifest["locators"], (
-        "schema", "observation_record_sha256", "source_relation_sha256", "state_parent",
-        "quota_parent", "install_parent", "journal_parent", "evidence_parent", "ordinary_user",
-        "ordinary_group", "user_manager_unit", "query_parent_unit", "controller_parent_unit",
-        "management_parent_unit", "supervisor_parent_unit", "ordinary_parent_unit",
-        "retained_ordinary_parent_path", "carrier_unit"), "LOCATOR_FIELDS")
+        and entry.get("bootstrap_path") == "field/bootstrap.py"
+        and entry.get("dispatcher_path") == "field/dispatcher.py"
+        and hello["loader_sha256"] == entry.get("loader_sha256")
+        and hello["bootstrap_sha256"] == entry.get("bootstrap_sha256"), "ENTRY")
+    locators = _check.exact(manifest["locators"], _fields('schema observation_record_sha256 source_relation_sha256 state_parent quota_parent install_parent journal_parent evidence_parent ordinary_user ordinary_group user_manager_unit query_parent_unit controller_parent_unit management_parent_unit supervisor_parent_unit ordinary_parent_unit retained_ordinary_parent_path carrier_unit'), "LOCATOR_FIELDS")
     _check(locators["schema"] == "local-hand-q2-core-private-locators/v1"
-             and locators["carrier_unit"] == carrier_name, "LOCATOR")
+        and locators["carrier_unit"] == carrier_name, "LOCATOR")
     _check.digest(locators["observation_record_sha256"], "LOCATOR")
     relation = {"schema": "local-hand-q2-core-locator-relation/v2",
-                "local_management_binding_sha256": entry["local_management_binding_sha256"],
-                "observation_record_sha256": locators["observation_record_sha256"],
-                "locators": {key: item for key, item in locators.items()
-                             if key != "source_relation_sha256"}}
+        "local_management_binding_sha256": entry["local_management_binding_sha256"],
+        "observation_record_sha256": locators["observation_record_sha256"],
+        "locators": {key: item for key, item in locators.items()
+            if key != "source_relation_sha256"}}
     _check(locators["source_relation_sha256"] == _sha(canonical(relation)), "LOCATOR_RELATION")
     members = context["members"]
     _envelope(type(manifest["members"]) is list and manifest["members"], "MEMBERS")
     paths = []
     for row in manifest["members"]:
-        _envelope.exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"), "ROW")
+        _envelope.exact(row, _fields('path role mode bytes sha256 origin'), "ROW")
         paths.append(_envelope.path(row["path"], "ROW"))
         _envelope.integer(row["bytes"], 0, MEMBER_LIMIT, "ROW")
         _envelope.digest(row["sha256"], "ROW")
         _envelope(type(row["mode"]) is int
-                 and ((row["role"] == "approved-inputs" and row["mode"] == 384)
-                      or (row["role"] in ("candidate-worktree", "candidate-git-metadata",
-                                           "wheel", "projection", "field-code")
-                          and row["mode"] in (420, 493))), "ROW")
+            and ((row["role"] == "approved-inputs" and row["mode"] == 384)
+                or (row["role"] in _fields('candidate-worktree candidate-git-metadata wheel projection field-code')
+                    and row["mode"] in (420, 493))), "ROW")
     _envelope(len(paths) <= MEMBER_COUNT_LIMIT and len(set(paths)) == len(paths)
-             and paths == sorted(paths, key=lambda item: item.encode("ascii")), "MEMBERS")
+        and paths == sorted(paths, key=lambda item: item.encode("ascii")), "MEMBERS")
     _envelope(type(members) is dict and set(members) == {row["path"] for row in manifest["members"]},
-             "MEMBERS")
+        "MEMBERS")
     manifest_raw = canonical(manifest, newline=True)
     package_hash = hashlib.sha256()
     package_hash.update(PACKAGE_MAGIC)
@@ -1600,25 +1479,25 @@ def _validate_context_envelope(context):
     for row in manifest["members"]:
         raw = members[row["path"]]
         _envelope((type(raw) is bytes or (isinstance(raw, memoryview) and raw.readonly))
-                 and len(raw) == row["bytes"] and _sha(raw) == row["sha256"], "MEMBER")
+            and len(raw) == row["bytes"] and _sha(raw) == row["sha256"], "MEMBER")
         package_hash.update(raw)
         package_bytes += len(raw)
     _envelope(package_bytes == bind["package_bytes"]
-             and package_hash.hexdigest() == bind["package_sha256"], "BINDING")
+        and package_hash.hexdigest() == bind["package_sha256"], "BINDING")
     _check(entry.get("dispatcher_bytes") == len(members["field/dispatcher.py"])
-             and entry.get("dispatcher_sha256") == _sha(members["field/dispatcher.py"]), "ENTRY")
+        and entry.get("dispatcher_sha256") == _sha(members["field/dispatcher.py"]), "ENTRY")
     for role in ("loader", "bootstrap", "dispatcher"):
         raw = members.get("field/" + role + ".py")
         _check(raw is not None and type(entry[role + "_bytes"]) is int
-                 and entry[role + "_bytes"] == len(raw)
-                 and entry[role + "_sha256"] == _sha(raw), "ENTRY")
+            and entry[role + "_bytes"] == len(raw)
+            and entry[role + "_sha256"] == _sha(raw), "ENTRY")
     deadlines = _check.exact(context["guest_deadlines"],
-                       ("boot_id", "boottime_deadline_ns", "monotonic_deadline_ns"),
-                       "GUEST_DEADLINES")
+        ("boot_id", "boottime_deadline_ns", "monotonic_deadline_ns"),
+        "GUEST_DEADLINES")
     _check(deadlines["boot_id"] == hello["guest_boot_id"]
-             and deadlines["boottime_deadline_ns"] == hello["guest_boottime_origin_ns"] + bind["guest_duration_ns"]
-             and deadlines["monotonic_deadline_ns"] == hello["guest_monotonic_origin_ns"] + bind["guest_duration_ns"],
-             "GUEST_DEADLINES")
+        and deadlines["boottime_deadline_ns"] == hello["guest_boottime_origin_ns"] + bind["guest_duration_ns"]
+        and deadlines["monotonic_deadline_ns"] == hello["guest_monotonic_origin_ns"] + bind["guest_duration_ns"],
+        "GUEST_DEADLINES")
     _check.integer(context["stdin_bytes_received"], 1, LIMITS["carrier_input_bytes"], "STDIN")
     expected_stdin = 8 + 8 + len(canonical(bind, newline=True)) + bind["package_bytes"]
     _check(context["stdin_bytes_received"] == expected_stdin, "STDIN")
@@ -1626,9 +1505,7 @@ def _validate_context_envelope(context):
     policy = approved["policy_basis"]
     _remote(type(policy.get("remote_expectation")) is dict, "EXPECTATION")
     expected = policy["remote_expectation"]
-    _remote.exact(expected, ("account", "home_path", "login_shell", "hello_schema", "parser_profile",
-                      "aliases", "remote_tokens_sha256", "remote_command_sha256",
-                      "remote_entity_preimages_stage"), "EXPECTATION")
+    _remote.exact(expected, _fields('account home_path login_shell hello_schema parser_profile aliases remote_tokens_sha256 remote_command_sha256 remote_entity_preimages_stage'), "EXPECTATION")
     _remote(expected == {
         "account": "q1admin", "home_path": "/home/q1admin", "login_shell": "/bin/bash",
         "hello_schema": HELLO_SCHEMA, "parser_profile": "bash-noninteractive-c-v1",
@@ -1648,13 +1525,12 @@ def _validate_context(context):
 def _validate_local_writer(value):
     """Validate transported host bytes, never sample a guest substitute."""
     code = "CORE_DISPATCH_HOST_WRITER"
-    _exact(value, ("schema", "user_namespace", "pid_namespace", "process", "uid", "gid",
-                   "supplementary_gids"), code)
+    _exact(value, _fields('schema user_namespace pid_namespace process uid gid supplementary_gids'), code)
     _require(value["schema"] == "local-hand-q2-core-local-writer/v1", code)
-    for name in ("user_namespace", "pid_namespace", "process", "uid", "gid"):
+    for name in _fields('user_namespace pid_namespace process uid gid'):
         fields = ({"dev": 0, "ino": 1} if name.endswith("namespace") else
-                  {"pid": 1, "starttime_ticks": 0} if name == "process" else
-                  dict.fromkeys(("real", "effective", "saved", "filesystem"), 0))
+            {"pid": 1, "starttime_ticks": 0} if name == "process" else
+            dict.fromkeys(_fields('real effective saved filesystem'), 0))
         _exact(value[name], fields, code)
         for key, minimum in fields.items():
             _integer(value[name][key], minimum, code=code)
@@ -1677,21 +1553,19 @@ def _consumption_info(context):
     writer = _validate_local_writer(entry["writer"])
     marker = {"schema": "local-hand-q2-core-carrier-consumption/v2",
         "scope": SCOPE, "session_id": SESSION,
-        **{key: manifest[key] for key in ("baseline", "owner_decision", "closure",
-                                          "implementation", "amendment", "candidate")},
+        **{key: manifest[key] for key in _fields('baseline owner_decision closure implementation amendment candidate')},
         "package": {"basename": bind["package_basename"], "bytes": bind["package_bytes"],
-                    "sha256": bind["package_sha256"],
-                    "manifest_sha256": _sha(canonical(manifest, newline=True))},
+            "sha256": bind["package_sha256"],
+            "manifest_sha256": _sha(canonical(manifest, newline=True))},
         "approved_inputs_sha256": manifest["approved_inputs"]["sha256"],
         "local_management_binding_sha256": entry["local_management_binding_sha256"],
         "writer": writer, "carrier_argv_sha256": entry["carrier_argv_sha256"],
-        **{key: bind[key] for key in ("host_boottime_origin_ns", "host_monotonic_origin_ns",
-                                      "host_boottime_deadline_ns", "host_monotonic_deadline_ns")},
+        **{key: bind[key] for key in _fields('host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns')},
         "state": "CONSUMPTION_RECORD_COMPLETE"}
     raw = canonical(marker, newline=True, limit=16384)
     _check(_sha(raw) == bind["consumption_sha256"], "CONSUMPTION_BINDING")
     return {"basename": ".lhqcore-20261003a.carrier-consumed.json", "bytes": len(raw),
-            "sha256": _sha(raw), "state": marker["state"]}
+        "sha256": _sha(raw), "state": marker["state"]}
 
 
 def field_readiness():
@@ -1720,15 +1594,15 @@ def _projection_path(name):
         r"local_hand|local_hand_connect|local_hand_jobs|local_hand_mcp)/"
         r"[a-z_][a-z0-9_]*\.py", name)
     return (not path.is_absolute() and path.as_posix() == name
-            and all(part not in ("", ".", "..") for part in path.parts)
-            and (name in PROJECTION_HARNESS or module is not None)) \
+        and all(part not in ("", ".", "..") for part in path.parts)
+        and (name in PROJECTION_HARNESS or module is not None)) \
         and "namespace" not in name.lower() and "watchdog" not in name.lower()
 
 
 def _json_object(raw, code):
     try:
         value = json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=_pairs,
-                           parse_constant=_nonfinite)
+            parse_constant=_nonfinite)
     except DispatchError:
         raise
     except (UnicodeError, json.JSONDecodeError) as error:
@@ -1740,54 +1614,53 @@ def _json_object(raw, code):
 def _wheel_payload(raw, source_files):
     """Verify the exact wheel and its source/payload binding in memory."""
     _wheel(type(raw) is bytes and len(raw) == WHEEL["bytes"]
-             and _sha(raw) == WHEEL["sha256"], "PIN")
+        and _sha(raw) == WHEEL["sha256"], "PIN")
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             infos = archive.infolist()
             names = [item.filename for item in infos]
             _wheel(1 <= len(names) <= 1024 and len(names) == len(set(names))
-                     and sum(item.file_size for item in infos) <= 32 * 1024 * 1024, "INVENTORY")
+                and sum(item.file_size for item in infos) <= 32 * 1024 * 1024, "INVENTORY")
             for item in infos:
                 path = PurePosixPath(item.filename)
                 file_type = stat.S_IFMT(item.external_attr >> 16)
                 _wheel(not item.is_dir() and not path.is_absolute()
-                         and path.as_posix() == item.filename
-                         and all(part not in ("", ".", "..") for part in path.parts)
-                         and item.file_size <= MEMBER_LIMIT
-                         and file_type in (0, stat.S_IFREG), "ENTRY")
+                    and path.as_posix() == item.filename
+                    and all(part not in ("", ".", "..") for part in path.parts)
+                    and item.file_size <= MEMBER_LIMIT
+                    and file_type in (0, stat.S_IFREG), "ENTRY")
             content = {name: archive.read(name) for name in names}
     except (OSError, zipfile.BadZipFile, RuntimeError) as error:
         raise _wheel.error("ARCHIVE") from error
     metadata = _json_object(content.get(WHEEL_METADATA, b""), "CORE_EFFECT_WHEEL_METADATA")
-    _wheel.exact(metadata, ("schema_version", "product_version", "source_commit",
-                      "artifact_kind", "files"), "METADATA")
+    _wheel.exact(metadata, _fields('schema_version product_version source_commit artifact_kind files'), "METADATA")
     _wheel(metadata["schema_version"] == "infra-local-hand-build/v1"
-             and metadata["product_version"] == "0.2.0a1"
-             and metadata["source_commit"] == CANDIDATE["commit"]
-             and metadata["artifact_kind"] == "wheel", "METADATA")
+        and metadata["product_version"] == "0.2.0a1"
+        and metadata["source_commit"] == CANDIDATE["commit"]
+        and metadata["artifact_kind"] == "wheel", "METADATA")
     package_pattern = r"tools/(?:(?:" + "|".join(WHEEL_PACKAGES) + \
         r"))/[a-z_][a-z0-9_]*\.(?:py|sh|ps1)"
     expected = {name[6:]: digest for name, digest in source_files.items()
-                if re.fullmatch(package_pattern, name)}
+        if re.fullmatch(package_pattern, name)}
     _wheel(metadata["files"] == expected
-             and all(package + "/__init__.py" in expected for package in WHEEL_PACKAGES), "SOURCE")
+        and all(package + "/__init__.py" in expected for package in WHEEL_PACKAGES), "SOURCE")
     for name, digest in expected.items():
         _wheel(name in content and _sha(content[name]) == digest, "PAYLOAD")
     dist = "infra_local_hand-0.2.0a1.dist-info/"
     extras = set(content) - set(expected) - {WHEEL_METADATA}
     _wheel(extras and all(name.startswith(dist)
-                            and len(PurePosixPath(name).parts) == 2 for name in extras)
-             and {dist + name for name in ("METADATA", "WHEEL", "RECORD")} <= extras, "EXTRAS")
+            and len(PurePosixPath(name).parts) == 2 for name in extras)
+        and {dist + name for name in ("METADATA", "WHEEL", "RECORD")} <= extras, "EXTRAS")
     _wheel(b"Name: infra-local-hand\n" in content[dist + "METADATA"]
-             and b"Version: 0.2.0a1\n" in content[dist + "METADATA"]
-             and b"Root-Is-Purelib: true\n" in content[dist + "WHEEL"], "DISTRIBUTION")
+        and b"Version: 0.2.0a1\n" in content[dist + "METADATA"]
+        and b"Root-Is-Purelib: true\n" in content[dist + "WHEEL"], "DISTRIBUTION")
     try:
         rows = list(csv.reader(io.StringIO(content[dist + "RECORD"].decode("utf-8", "strict"))))
     except (UnicodeError, csv.Error) as error:
         raise _wheel.error("RECORD") from error
     _wheel(len(rows) == len(content) and all(len(row) == 3 for row in rows)
-             and len({row[0] for row in rows}) == len(rows)
-             and {row[0] for row in rows} == set(content), "RECORD")
+        and len({row[0] for row in rows}) == len(rows)
+        and {row[0] for row in rows} == set(content), "RECORD")
     for name, digest, size in rows:
         if name == dist + "RECORD":
             _wheel(digest == size == "", "RECORD")
@@ -1796,8 +1669,8 @@ def _wheel_payload(raw, source_files):
                 .rstrip(b"=").decode("ascii")
             _wheel(digest == "sha256=" + actual and size == str(len(content[name])), "RECORD")
     payload = _sha(json.dumps({"schema_version": "infra-local-hand-full-payload/v1",
-                               "files": expected}, sort_keys=True, separators=(",", ":"),
-                              ensure_ascii=True).encode("ascii"))
+                "files": expected}, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=True).encode("ascii"))
     _wheel(payload == WHEEL["payload_digest"], "PAYLOAD_DIGEST")
     return {"files": expected, "payload_digest": payload, "content": content}
 
@@ -1809,19 +1682,18 @@ def verify_install_inputs(context):
         _approved_inputs_envelope(context)
     rows = manifest["members"]
     _package(type(rows) is list and rows
-             and [row.get("path") for row in rows]
-             == sorted((row.get("path") for row in rows), key=lambda item: item.encode("ascii")),
-             "ORDER")
+        and [row.get("path") for row in rows]
+        == sorted((row.get("path") for row in rows), key=lambda item: item.encode("ascii")),
+        "ORDER")
     source_files = {}
     helper_digests = {}
     wheel_raw = projection_raw = None
     for row in rows:
-        _package.exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"), "ROW")
+        _package.exact(row, _fields('path role mode bytes sha256 origin'), "ROW")
         path = _package.path(row["path"], "PATH")
         _package((row["role"] == "approved-inputs" and row["mode"] == 384
-                  and path == APPROVED_INPUTS_PATH and manifest.get("schema") == PACKAGE_SCHEMA)
-                 or (row["mode"] in (420, 493) and row["role"] in (
-                     "candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code")),
+                and path == APPROVED_INPUTS_PATH and manifest.get("schema") == PACKAGE_SCHEMA)
+            or (row["mode"] in (420, 493) and row["role"] in _fields('candidate-worktree candidate-git-metadata wheel projection field-code')),
             "ROW")
         view = members.get(path)
         _package(type(view) is bytes or (isinstance(view, memoryview) and view.readonly), "MEMBER")
@@ -1833,13 +1705,13 @@ def verify_install_inputs(context):
             # Private approved facts never become installation/projection input.
             continue
         if row["role"] == "candidate-worktree":
-            _package.exact(origin, ("kind", "commit", "path", "blob"), "ORIGIN")
+            _package.exact(origin, _fields('kind commit path blob'), "ORIGIN")
             name = _package.path(origin["path"], "ORIGIN")
             _package(origin["kind"] == "candidate-blob"
-                     and origin["commit"] == CANDIDATE["commit"]
-                     and path == "candidate/" + name
-                     and origin["blob"] == _git_blob(raw)
-                     and name not in source_files, "ORIGIN")
+                and origin["commit"] == CANDIDATE["commit"]
+                and path == "candidate/" + name
+                and origin["blob"] == _git_blob(raw)
+                and name not in source_files, "ORIGIN")
             source_files[name] = row["sha256"]
             if name in {"tests/e3_host/" + item + ".py" for item in PREPARATION_HELPERS}:
                 helper_digests[name.rsplit("/", 1)[-1][:-3]] = row["sha256"]
@@ -1847,13 +1719,13 @@ def verify_install_inputs(context):
             _package.exact(origin, ("kind", "commit", "git_path"), "ORIGIN")
             name = _package.path(origin["git_path"], "ORIGIN")
             _package(origin["kind"] == "candidate-git-metadata"
-                     and origin["commit"] == CANDIDATE["commit"]
-                     and name.startswith(".git/") and path == "candidate/" + name, "ORIGIN")
+                and origin["commit"] == CANDIDATE["commit"]
+                and name.startswith(".git/") and path == "candidate/" + name, "ORIGIN")
         elif row["role"] in ("wheel", "projection"):
             _package.exact(origin, ("kind", "basename", "sha256"), "ORIGIN")
             expected = WHEEL if row["role"] == "wheel" else PROJECTION
             _package(origin == {"kind": row["role"], "basename": expected["basename"],
-                                "sha256": expected["sha256"]}, "ORIGIN")
+                    "sha256": expected["sha256"]}, "ORIGIN")
             if row["role"] == "wheel":
                 _package(wheel_raw is None, "ARTIFACT")
                 wheel_raw = raw
@@ -1861,30 +1733,30 @@ def verify_install_inputs(context):
                 _package(projection_raw is None, "ARTIFACT")
                 projection_raw = raw
         else:
-            _package.exact(origin, ("kind", "commit", "path", "blob"), "ORIGIN")
+            _package.exact(origin, _fields('kind commit path blob'), "ORIGIN")
             _package(origin["kind"] == "implementation-blob"
-                     and origin["commit"] == manifest["implementation"]["commit"]
-                     and origin["blob"] == _git_blob(raw), "ORIGIN")
+                and origin["commit"] == manifest["implementation"]["commit"]
+                and origin["blob"] == _git_blob(raw), "ORIGIN")
     _package(set(helper_digests) == set(PREPARATION_HELPERS)
-             and wheel_raw is not None and projection_raw is not None, "REQUIRED")
+        and wheel_raw is not None and projection_raw is not None, "REQUIRED")
     projection = document(projection_raw, limit=MEMBER_LIMIT, newline=True)
-    _effect.exact(projection, ("schema", "source_commit", "source_tree", "files"), "PROJECTION")
+    _effect.exact(projection, _fields('schema source_commit source_tree files'), "PROJECTION")
     _effect(projection["schema"] == "local-hand-q2-source-projection/v1"
-             and projection["source_commit"] == CANDIDATE["commit"]
-             and projection["source_tree"] == CANDIDATE["tree"]
-             and type(projection["files"]) is dict
-             and len(projection["files"]) == PROJECTION["file_count"], "PROJECTION")
+        and projection["source_commit"] == CANDIDATE["commit"]
+        and projection["source_tree"] == CANDIDATE["tree"]
+        and type(projection["files"]) is dict
+        and len(projection["files"]) == PROJECTION["file_count"], "PROJECTION")
     for name, item in projection["files"].items():
         _projection(_projection_path(name), "PATH")
         _projection.exact(item, ("mode", "sha256"), "ENTRY")
         _projection(item["mode"] in (420, 493) and source_files.get(name) == item["sha256"],
-                 "ENTRY")
+            "ENTRY")
     _projection(PROJECTION_REQUIRED <= set(projection["files"]), "REQUIRED")
     wheel = _wheel_payload(wheel_raw, source_files)
     return {"source_files": source_files, "projection": projection,
-            "wheel_files": wheel["files"], "payload_digest": wheel["payload_digest"],
-            "helper_digests": helper_digests,
-            "members_sha256": _sha(canonical(rows))}
+        "wheel_files": wheel["files"], "payload_digest": wheel["payload_digest"],
+        "helper_digests": helper_digests,
+        "members_sha256": _sha(canonical(rows))}
 
 
 def _prep_require(condition, code):
@@ -1895,12 +1767,12 @@ def _prep_guard(effects, deadline):
     outer = effects.context["guest_deadlines"]
     active = getattr(effects, "_active_case_deadlines", {})
     pairs = {active.get("preparation_deadline_ns"): active.get("preparation_monotonic_deadline_ns"),
-             active.get("owner_deadline_ns"): active.get("owner_monotonic_deadline_ns"),
-             active.get("remote_final_deadline_ns"): active.get("remote_final_monotonic_deadline_ns"),
-             outer["boottime_deadline_ns"]: outer["monotonic_deadline_ns"]}
+        active.get("owner_deadline_ns"): active.get("owner_monotonic_deadline_ns"),
+        active.get("remote_final_deadline_ns"): active.get("remote_final_monotonic_deadline_ns"),
+        outer["boottime_deadline_ns"]: outer["monotonic_deadline_ns"]}
     mono = pairs.get(deadline)
     _prep_require(type(mono) is int and deadline <= outer["boottime_deadline_ns"]
-             and mono <= outer["monotonic_deadline_ns"], 'CLOCK_BINDING')
+        and mono <= outer["monotonic_deadline_ns"], 'CLOCK_BINDING')
     # Original per-case clocks survive suspend; an outer-offset recalculation
     # could incorrectly extend the case's monotonic deadline.
     return _clock(effects, {"boot_id": outer["boot_id"],
@@ -1923,14 +1795,14 @@ def _prep_settings(case, expires_at):
     m = b["management"]
     settings = {"identity": identity, "original_budgets": b["operation"],
         "limits": {"max_queued": 1, "max_running": 1, "retained_bytes": 8388608,
-                   "ledger_emergency_bytes": 65536, "requests_per_minute": 1},
+            "ledger_emergency_bytes": 65536, "requests_per_minute": 1},
         "controllers": controllers,
         "management": {"receive_ns": NS, "stop_ns": NS, "storage_bytes": 1048576,
             "storage_inodes": 64, "accept_ns": NS, "max_connections": 4,
             "stages": {v["stage"]: {"cpu_ns": v["cpu_seconds"] * NS,
                 "memory_bytes": v["memory_bytes"], "pids": v["tasks_max"],
                 "output_bytes": v["output_bytes"], "runtime_ns": v["runtime_seconds"] * NS}
-                       for v in m["stages"]}},
+                for v in m["stages"]}},
         "capacity_management": {"storage_bytes": m["storage_bytes"],
             "storage_inodes": m["storage_inodes"], "cpu_ns": m["cpu_seconds"] * NS,
             "memory_bytes": m["memory_bytes"], "pids": m["pids"],
@@ -1947,26 +1819,26 @@ def _prep_settings(case, expires_at):
 
 def _prep_pin(value):
     return {"path": value["path"], "device": value.get("device", value.get("dev")),
-            "inode": value.get("inode", value.get("ino"))}
+        "inode": value.get("inode", value.get("ino"))}
 
 
 def _prep_make_plan(effects, case, expires_at):
     admission = effects._admission
     detail = getattr(effects, "_admission_detail", None)
     _prep_require(type(detail) is dict and {"quota_mount", "quota_inventory", "retained_before"}
-             <= set(detail), 'CURRENT_FACTS_REQUIRED')
+        <= set(detail), 'CURRENT_FACTS_REQUIRED')
     _prep_require(case["index"] == 2 or type(detail.get("system_geometry")) is dict,
-             'GEOMETRY_REQUIRED')
+        'GEOMETRY_REQUIRED')
     paths = effects.preparation_paths(case, effects.context["manifest"]["locators"])
     guest = admission["guest"]
     retained = _approved_inputs_envelope(effects.context)["retained_preparation"]
     plan = {"schema": "local-hand-q2-system-preparation-plan/v1" if case["index"] != 2
-                    else "local-hand-q2-core-preparation-plan/v1",
+        else "local-hand-q2-core-preparation-plan/v1",
         "purpose": "ISOLATED_Q2_CORE_PREPARATION", "scope": SCOPE,
         "baseline": BASELINE["commit"], "preparation_id": case["preparation_id"],
-        "host": {key: guest[key] for key in ("hostname", "dmi_vendor", "dmi_product", "boot_id")},
+        "host": {key: guest[key] for key in _fields('hostname dmi_vendor dmi_product boot_id')},
         "account": {"name": guest["ordinary_user"], "uid": guest["ordinary_uid"],
-                    "gid": guest["ordinary_gid"]},
+            "gid": guest["ordinary_gid"]},
         "directories": {role: {"path": row["path"], "owner": row["owner"],
             "mode": row["mode"], "filesystem": row["parent_role"]}
             for role, row in paths["directories"].items()},
@@ -1975,10 +1847,10 @@ def _prep_make_plan(effects, case, expires_at):
         "retained_domains": copy.deepcopy(retained["domains"]),
         "mounts": {"quota": copy.deepcopy(detail["quota_mount"])},
         "tools": {key: {"path": val["path"], "sha256": val["sha256"]}
-                  for key, val in admission["programs"].items()},
+            for key, val in admission["programs"].items()},
         "settings": _prep_settings(case, expires_at)}
     plan["host"]["initial_userns"] = {"device": guest["initial_userns"]["dev"],
-                                        "inode": guest["initial_userns"]["ino"]}
+        "inode": guest["initial_userns"]["ino"]}
     if case["index"] != 2:
         plan["retained_ordinary_parent"] = _prep_pin(admission["parents"]["retained_ordinary_cgroup"])
         plan["retained_ordinary_parent"]["path"] = plan["retained_ordinary_parent"]["path"].removeprefix("/sys/fs/cgroup")
@@ -1989,20 +1861,19 @@ def _prep_translate(case, plan, receipt, children, helpers):
     """The original candidate constructor is authoritative; only schema changes."""
     driver, assembly = helpers["q2_prepare_driver"], helpers["q2_prepare_assembly"]
     _prep_require(case in CASES and plan["scope"] == SCOPE and plan["baseline"] == BASELINE["commit"]
-             and plan["preparation_id"] == case["preparation_id"], 'SCOPE')
-    _exact(receipt, ("schema", "preparation_id", "plan_sha256", "status", "reason", "facts",
-                    "q2_accepted", "q3_accepted", "production_supported", "fixture_generated"),
-           "CORE_EFFECT_PREPARATION_RESULT")
+        and plan["preparation_id"] == case["preparation_id"], 'SCOPE')
+    _exact(receipt, _fields('schema preparation_id plan_sha256 status reason facts q2_accepted q3_accepted production_supported fixture_generated'),
+        "CORE_EFFECT_PREPARATION_RESULT")
     _prep_require(receipt["schema"] == "local-hand-q2-fixture-preparation/v1"
-             and receipt["preparation_id"] == case["preparation_id"]
-             and receipt["plan_sha256"] == _sha(driver.encoded(plan))
-             and receipt["status"] == "RESOURCES_PREPARED" and receipt["reason"] is None
-             and all(receipt[key] is False for key in
-                     ("q2_accepted", "q3_accepted", "production_supported", "fixture_generated")),
-             'RESULT')
+        and receipt["preparation_id"] == case["preparation_id"]
+        and receipt["plan_sha256"] == _sha(driver.encoded(plan))
+        and receipt["status"] == "RESOURCES_PREPARED" and receipt["reason"] is None
+        and all(receipt[key] is False for key in
+            _fields('q2_accepted q3_accepted production_supported fixture_generated')),
+        'RESULT')
     observed = receipt["facts"]
     _prep_require(observed["retained_before"] == observed["retained_after"],
-             'RETAINED_CHANGED')
+        'RETAINED_CHANGED')
     authority = {"schema": "local-hand-q2-preparation-authority/v1", "scope": SCOPE,
         "baseline": BASELINE["commit"], "plan_sha256": receipt["plan_sha256"],
         "preparation_id": case["preparation_id"], "receipt_sha256": _sha(driver.encoded(receipt))}
@@ -2010,9 +1881,9 @@ def _prep_translate(case, plan, receipt, children, helpers):
     _prep_require(bound == authority, 'AUTHORITY_CHANGED')
     facts = copy.deepcopy(original)
     schemas = {1: "local-hand-q2-system-assembly-facts/v1",
-               2: "local-hand-q4-cancel-assembly-facts/v1", 3: "local-hand-q4-h11-assembly-facts/v1"}
+        2: "local-hand-q4-cancel-assembly-facts/v1", 3: "local-hand-q4-h11-assembly-facts/v1"}
     _prep_require(original["schema"] == ("local-hand-q2-assembly-facts/v1" if case["index"] == 2
-             else "local-hand-q2-system-assembly-facts/v1"), 'SCHEMA')
+            else "local-hand-q2-system-assembly-facts/v1"), 'SCHEMA')
     facts["schema"] = schemas[case["index"]]
     assembled = assembly.assemble(facts)
     return {"facts": facts, "authority": authority, "manifest": manifest, "assembled": assembled}
@@ -2063,7 +1934,7 @@ def _prep_directory(effects, path, uid, gid, mode, deadline):
         name = PurePosixPath(path).name
         io.call(os.mkdir, name, mode, dir_fd=parent)
         fd = io.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-                     dir_fd=parent)
+            dir_fd=parent)
         io.call(os.fchown, fd, uid, gid)
         io.call(os.fchmod, fd, mode)
         io.call(os.fsync, fd)
@@ -2071,20 +1942,20 @@ def _prep_directory(effects, path, uid, gid, mode, deadline):
         info = io.call(os.fstat, fd)
         named = io.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
         _prep_require((info.st_dev, info.st_ino) == (named.st_dev, named.st_ino)
-                 and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, mode),
-                 'DIRECTORY_OWNER')
+            and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, mode),
+            'DIRECTORY_OWNER')
         return {"path": path, "device": info.st_dev, "inode": info.st_ino,
-                "uid": uid, "gid": gid, "mode": info.st_mode}
+            "uid": uid, "gid": gid, "mode": info.st_mode}
 
 
 def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
     _prep_require(type(raw) is bytes and len(raw) <= MEMBER_LIMIT,
-             'FILE_LIMIT')
+        'FILE_LIMIT')
     with _PrepIO(effects, deadline) as io:
         parent = io.directory(str(PurePosixPath(path).parent))
         name = PurePosixPath(path).name
         fd = io.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
-                     0o600, dir_fd=parent)
+            0o600, dir_fd=parent)
         io.call(os.fchown, fd, uid, gid)
         io.call(os.fchmod, fd, 0o600)
         view = memoryview(raw)
@@ -2097,14 +1968,14 @@ def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
         info = io.call(os.fstat, fd)
         reread = io.call(os.pread, fd, len(raw) + 1, 0)
         _prep_require(reread == raw and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
-                 and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, 384),
-                 'FILE')
+            and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, 384),
+            'FILE')
         identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
         named = io.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
         _prep_require((named.st_dev, named.st_ino, named.st_size, named.st_mtime_ns, named.st_ctime_ns)
-                 == identity, 'SOURCE_CHANGED')
+            == identity, 'SOURCE_CHANGED')
         result = {"path": path, "fd": fd, "identity": identity, "raw": raw,
-                  "uid": uid, "gid": gid}
+            "uid": uid, "gid": gid}
         effects.held.append(fd)
         io.fds.remove(fd)
         return result
@@ -2116,14 +1987,14 @@ def _prep_reread(effects, record, deadline):
         raw = io.call(os.pread, record["fd"], len(record["raw"]) + 1, 0)
         parent = io.directory(str(PurePosixPath(record["path"]).parent))
         named = io.call(os.stat, PurePosixPath(record["path"]).name,
-                        dir_fd=parent, follow_symlinks=False)
+            dir_fd=parent, follow_symlinks=False)
         after = io.call(os.fstat, record["fd"])
         for info in (before, named, after):
             _prep_require((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-                     == record["identity"] and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
-                     and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
-                     == (record["uid"], record["gid"], 384) and raw == record["raw"],
-                     'SOURCE_CHANGED')
+                == record["identity"] and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
+                and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+                == (record["uid"], record["gid"], 384) and raw == record["raw"],
+                'SOURCE_CHANGED')
         return raw
 
 
@@ -2132,8 +2003,8 @@ def _prep_quota(source, command, project, values=None):
     _prep_require(command in (0x800007, 0x800008), 'QUOTA_ABI')
     if command == 0x800008:
         _prep_require(project in {i for c in CASES for i in c["project_ids"]}
-                 and values == {"hard": 1024, "ihard": 128, "valid": 5},
-                 'QUOTA_MUTATION')
+            and values == {"hard": 1024, "ihard": 128, "valid": 5},
+            'QUOTA_MUTATION')
     quota = _CapQuota(source)
     if command == 0x800007:
         _prep_require(values is None, 'QUOTA_MUTATION')
@@ -2142,7 +2013,7 @@ def _prep_quota(source, command, project, values=None):
     for key, value in values.items(): setattr(block, key, value)
     quota.ct.set_errno(0)
     if quota.lib.quotactl(quota.ct.c_int((command << 8) | 2), quota.device,
-                         quota.ct.c_int(project), quota.ct.byref(block)):
+        quota.ct.c_int(project), quota.ct.byref(block)):
         raise OSError(quota.ct.get_errno(), "core project quota operation")
     return {name: getattr(block, name) for name, _ in block._fields_}
 
@@ -2155,7 +2026,7 @@ def _prep_quota_retained(rows):
         # Ordinary unassigned directories are charged to project zero before
         # assignment. Only that unconstrained domain's own usage may advance;
         # all configured limits and every nonzero historical row stay exact.
-        if row["project"] == 0 and all(row[key] == 0 for key in ("hard", "soft", "ihard", "isoft")):
+        if row["project"] == 0 and all(row[key] == 0 for key in _fields('hard soft ihard isoft')):
             row["space"] = row["inodes"] = 0
     return result
 
@@ -2165,8 +2036,8 @@ def _prep_root(effects, planned, account, mount, deadline):
     import fcntl
     project = planned["project_id"]
     _prep_require(project in {i for c in CASES for i in c["project_ids"]}
-             and planned["hard_bytes"] == 1048576 and planned["inode_hard_limit"] == 128,
-             'QUOTA_MUTATION')
+        and planned["hard_bytes"] == 1048576 and planned["inode_hard_limit"] == 128,
+        'QUOTA_MUTATION')
     with _PrepIO(effects, deadline) as io:
         try:
             old = io.call(_prep_quota, mount["source"], 0x800007, project)
@@ -2174,7 +2045,7 @@ def _prep_root(effects, planned, account, mount, deadline):
             if error.errno != errno.ESRCH: raise
             old = {}
         _prep_require(all(v == 0 for k, v in old.items() if k not in ("valid", "project")),
-                 'PROJECT_EXISTS')
+            'PROJECT_EXISTS')
         created = _prep_directory(effects, planned["path"], account["uid"], account["gid"], 448, deadline)
         fd = io.directory(planned["path"])
         values = list(struct.unpack("=IIIII8s", io.call(fcntl.ioctl, fd, 0x801c581f, bytes(28))))
@@ -2184,24 +2055,24 @@ def _prep_root(effects, planned, account, mount, deadline):
         io.call(fcntl.ioctl, fd, 0x401c5820, struct.pack("=IIIII8s", *values))
         assigned = io.call(_prep_quota, mount["source"], 0x800007, project)
         _prep_require(assigned["inodes"] == 1 and all(assigned[k] == 0 for k in
-                 ("hard", "soft", "ihard", "isoft", "btime", "itime")),
-                 'PROJECT_ASSIGNMENT')
+                _fields('hard soft ihard isoft btime itime')),
+            'PROJECT_ASSIGNMENT')
         io.call(_prep_quota, mount["source"], 0x800008, project,
-                {"hard": 1024, "ihard": 128, "valid": 5})
+            {"hard": 1024, "ihard": 128, "valid": 5})
         io.call(os.fsync, fd)
         flags, _, _, actual, _, _ = struct.unpack("=IIIII8s", io.call(fcntl.ioctl, fd, 0x801c581f, bytes(28)))
         quota = io.call(_prep_quota, mount["source"], 0x800007, project)
         for info in (io.call(os.fstat, fd), io.call(os.stat, planned["path"], follow_symlinks=False)):
             _prep_require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
-                     == tuple(created[k] for k in ("device", "inode", "uid", "gid", "mode")),
-                     'ROOT_CHANGED')
+                == tuple(created[k] for k in _fields('device inode uid gid mode')),
+                'ROOT_CHANGED')
         _prep_require(actual == project and flags & 512 and quota["valid"] & 5 == 5
-                 and quota["hard"] == 1024 and quota["ihard"] == 128
-                 and io.call(effects._capacity_quota_enforcement) & 48 == 48,
-                 'QUOTA_ENFORCEMENT')
+            and quota["hard"] == 1024 and quota["ihard"] == 128
+            and io.call(effects._capacity_quota_enforcement) & 48 == 48,
+            'QUOTA_ENFORCEMENT')
         return dict(planned, **{k: v for k, v in created.items() if k != "path"},
-                    filesystem="ext4", filesystem_uuid=mount["uuid"], xflags=flags,
-                    accounting=True, enforcement=True, identity_unchanged=True)
+            filesystem="ext4", filesystem_uuid=mount["uuid"], xflags=flags,
+            accounting=True, enforcement=True, identity_unchanged=True)
 
 
 def _prep_initialize(effects, prepared, deadline):
@@ -2253,19 +2124,19 @@ print(json.dumps(value,sort_keys=True,separators=(',',':')))
         ledger = document(effects._installation_command(argv), limit=32768)
     finally:
         effects._effect_guard = original
-    _exact(ledger, ("path", "device", "inode", "uid", "mode", "ledger_id", "generation"),
-           "CORE_EFFECT_PREPARATION_LEDGER")
+    _exact(ledger, _fields('path device inode uid mode ledger_id generation'),
+        "CORE_EFFECT_PREPARATION_LEDGER")
     _prep_require(ledger["path"] == facts["paths"]["broker_root"] + "/jobs.sqlite"
-             and ledger["uid"] == uid and ledger["mode"] == 384
-             and ledger["ledger_id"] == facts["identity"]["ledger_id"]
-             and ledger["generation"] == assembled["chain"]["broker_generation"],
-             'LEDGER')
+        and ledger["uid"] == uid and ledger["mode"] == 384
+        and ledger["ledger_id"] == facts["identity"]["ledger_id"]
+        and ledger["generation"] == assembled["chain"]["broker_generation"],
+        'LEDGER')
     with _PrepIO(effects, deadline) as io:
         info = io.call(os.stat, ledger["path"], follow_symlinks=False)
         _prep_require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
-                 == (ledger["device"], ledger["inode"], uid, gid, 384)
-                 and stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
-                 'LEDGER')
+            == (ledger["device"], ledger["inode"], uid, gid, 384)
+            and stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
+            'LEDGER')
     result = dict(schema="local-hand-q2-preparation-result/v1", status="PREPARED",
         source_commit=facts["source"]["commit"], preparation_id=prepared["case"]["preparation_id"],
         policy={"path": facts["paths"]["policy"], "sha256": _sha(policy)}, ledger=ledger,
@@ -2273,7 +2144,7 @@ print(json.dumps(value,sort_keys=True,separators=(',',':')))
         manifest_sha256=_sha(canonical(prepared["manifest"], newline=True)),
         q2_accepted=False, q3_accepted=False, production_supported=False)
     _prep_file(effects, prepared["paths"]["reservation"] + "/prepared.json",
-               canonical(result, newline=True), deadline)
+        canonical(result, newline=True), deadline)
     prepared["prepared_result"] = result
 
 
@@ -2283,15 +2154,13 @@ def _plan_from_prepared(case, prepared, deadlines):
     facts, assembled = prepared["facts"], prepared["assembled"]
     identity = facts["identity"]
     _require(all(identity.get(key) == val for key, val in _identity(case).items()),
-             "CORE_EFFECT_PLAN_IDENTITY")
+        "CORE_EFFECT_PLAN_IDENTITY")
     by_project = {root["project_id"]: root for root in prepared["receipt"]["facts"]["roots"]}
     wrappers = []
     for planned in _planned_roots(case):
         root = by_project.get(planned["project_id"])
         _require(root is not None, "CORE_EFFECT_PLAN_ROOT")
-        observed = {key: root[key] for key in ("path", "role", "device", "inode", "uid", "gid",
-            "mode", "filesystem", "filesystem_uuid", "project_id", "xflags", "hard_bytes",
-            "accounting", "enforcement", "identity_unchanged")}
+        observed = {key: root[key] for key in _fields('path role device inode uid gid mode filesystem filesystem_uuid project_id xflags hard_bytes accounting enforcement identity_unchanged')}
         actual = next(r for r in prepared["plan"]["roots"] if r["project_id"] == planned["project_id"])
         _require(observed["path"] == actual["path"], "CORE_EFFECT_PLAN_ROOT_PATH")
         # The case-plan's path is relative; the preparation preimage retains the
@@ -2299,10 +2168,10 @@ def _plan_from_prepared(case, prepared, deadlines):
         observed["path"] = planned["path"]
         observed["hard_inodes"] = root["inode_hard_limit"]
         wrappers.append({"ref": planned["ref"], "slot": planned["slot"],
-                         "planned": planned, "observed": observed})
+                "planned": planned, "observed": observed})
     ledger_path = facts["paths"]["broker_root"] + "/jobs.sqlite"
     plan = {"schema": PLAN_SCHEMA, **{k: build_intent(case)[k] for k in
-        ("session_id", "index", "case_id", "kind", "predecessor", "preparation_id", "operation_id", "budgets")},
+        _fields('session_id index case_id kind predecessor preparation_id operation_id budgets')},
         "identity": copy.deepcopy(identity), "principal": copy.deepcopy(assembled["resident"]["principal"]),
         "authority_path": facts["paths"]["authority_root"] + "/authority.json", "ledger_path": ledger_path,
         "request": copy.deepcopy(assembled["resident"]["request"]), "roots": wrappers,
@@ -2365,11 +2234,11 @@ class _CapQuota:
         import ctypes
         import platform
         _require(platform.system() == 'Linux' and platform.machine() == 'x86_64',
-                 'CORE_CAP_QUOTA_ABI')
+            'CORE_CAP_QUOTA_ABI')
         self.ct = ctypes
         class Block(ctypes.Structure):
             _fields_ = [(name, ctypes.c_uint64) for name in
-                        ('hard', 'soft', 'space', 'ihard', 'isoft', 'inodes', 'btime', 'itime')]
+                _fields('hard soft space ihard isoft inodes btime itime')]
             _fields_ += [('valid', ctypes.c_uint32), ('project', ctypes.c_uint32)]
         self.Block = Block
         _require(ctypes.sizeof(Block) == 72, 'CORE_CAP_QUOTA_ABI')
@@ -2382,7 +2251,7 @@ class _CapQuota:
         _require(command in (0x800007, 0x800009, (ord('X') << 8) | 8), 'CORE_CAP_QUOTA_READ_ONLY')
         self.ct.set_errno(0)
         if self.lib.quotactl(self.ct.c_int((command << 8) | 2), self.device,
-                             self.ct.c_int(project), self.ct.byref(buffer)):
+            self.ct.c_int(project), self.ct.byref(buffer)):
             raise OSError(self.ct.get_errno(), 'quota observation failed')
 
     def block(self, project):
@@ -2398,7 +2267,7 @@ class _CapQuota:
                 return
             raise
         _require(all(number == 0 for key, number in value.items() if key != 'valid'),
-                 'CORE_CAP_PROJECT_OCCUPIED')
+            'CORE_CAP_PROJECT_OCCUPIED')
 
     def inventory(self, guard):
         import errno
@@ -2443,6 +2312,111 @@ def _guard_call(guard, function, *args, release=None, **kwargs):
     return value
 
 
+class _InstallIO:
+    """Private I/O bindings for the exact frozen installer, not global patches.
+
+    Candidate checks and control flow stay intact. Every effect is guarded by
+    the original clocks; closing owned handles is still allowed after expiry.
+    A late kernel return cannot be interrupted and never permits a next write.
+    """
+
+    def __init__(self, guard):
+        from types import SimpleNamespace
+        self.guard = guard
+        self.call = partial(_guard_call, guard)
+        call = self.call
+
+        class InstallPath(type(Path())):
+            def stat(path, *, follow_symlinks=True):
+                return call(os.stat, path, follow_symlinks=follow_symlinks)
+
+            def chmod(path, mode, *, follow_symlinks=True):
+                return call(os.chmod, path, mode, follow_symlinks=follow_symlinks)
+
+            def mkdir(path, mode=511, parents=False, exist_ok=False):
+                _effect(not parents and not exist_ok, "INSTALL_MKDIR_OPTIONS")
+                return call(os.mkdir, path, mode)
+
+            def unlink(path, missing_ok=False):
+                _effect(not missing_ok, "INSTALL_UNLINK_OPTIONS")
+                return call(os.unlink, path)
+
+            def iterdir(path):
+                for name in call(os.listdir, path):
+                    guard()
+                    yield path / name
+
+            def resolve(path, strict=False):
+                # These are the installer's only resolve calls. Admission pins
+                # the same literal programs and already rejects aliased ancestry.
+                _effect(strict and str(path) in ("/usr/bin/systemctl", "/usr/bin/systemd-run"),
+                    "INSTALL_RESOLVE_PATH")
+                for parent in (*reversed(path.parents), path):
+                    info = parent.lstat()
+                    _effect(not stat.S_ISLNK(info.st_mode), "INSTALL_RESOLVE_ALIAS")
+                return path
+
+        self.Path = InstallPath
+        self.os = SimpleNamespace(**{name: getattr(os, name) for name in
+            _fields('O_RDONLY O_NOFOLLOW O_CLOEXEC O_NONBLOCK O_WRONLY O_CREAT O_EXCL O_DIRECTORY')})
+        for name in _fields('fstat read fchmod fsync getxattr geteuid readlink'):
+            setattr(self.os, name, partial(call, getattr(os, name)))
+        self.os.open = lambda *a, **kw: call(os.open, *a, release=os.close, **kw)
+        self.os.close = os.close
+        self.os.fdopen = self.fdopen
+        self.os.walk = self.walk
+        self.os.path = SimpleNamespace(lexists=self.lexists)
+
+    def lexists(self, path):
+        try:
+            self.call(os.lstat, path)
+        except FileNotFoundError:
+            return False
+        return True
+
+    def fdopen(self, fd, mode, *, closefd):
+        _effect(mode == "wb" and closefd is False, "INSTALL_STREAM_OPTIONS")
+        call, guard = self.call, self.guard
+        guard()
+
+        class Stream:
+            # The frozen writer owns/closes fd. Unbuffered bounded writes mean
+            # neither flush nor exception cleanup can publish a late buffer.
+            def __enter__(stream):
+                return stream
+
+            def __exit__(stream, *error):
+                return False
+
+            def write(stream, raw):
+                view = memoryview(raw)
+                offset = 0
+                while offset < len(view):
+                    count = call(os.write, fd, view[offset:offset + 65536])
+                    _effect(type(count) is int and 0 < count <= min(65536, len(view) - offset),
+                        "INSTALL_STREAM_WRITE")
+                    offset += count
+                return offset
+
+            def flush(stream):
+                guard()
+
+        return Stream()
+
+    def walk(self, root):
+        pending = [self.Path(root)]
+        while pending:
+            path = pending.pop()
+            directories, files = [], []
+            for child in path.iterdir():
+                info = child.lstat()
+                _effect(not stat.S_ISLNK(info.st_mode), "INSTALL_WALK_ALIAS")
+                (directories if stat.S_ISDIR(info.st_mode) else files).append(child.name)
+            self.guard()
+            yield str(path), directories, files
+            pending.extend(path / name for name in reversed(directories))
+
+
 class FieldEffects:
     """Inert construction; protected fd-relative effects. See field_readiness gaps."""
 
@@ -2463,9 +2437,9 @@ class FieldEffects:
         self._started_boottime_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         self._started_cpu_ns = time.process_time_ns()
         self._unit_counts = {"job_units_started": 0, "controller_units_started": 0,
-                             "quota_query_units_started": 0,
-                             "dynamic_quota_units_started": 0,
-                             "native_children_started": 0}
+            "quota_query_units_started": 0,
+            "dynamic_quota_units_started": 0,
+            "native_children_started": 0}
 
     def close(self):
         while self.held:
@@ -2478,17 +2452,17 @@ class FieldEffects:
         parent = self._held_directory("/proc/sys/kernel/random")
         try:
             fd = os.open("boot_id", os.O_RDONLY | os.O_CLOEXEC
-                         | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
+                | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
             try:
                 before = os.fstat(fd)
                 raw = os.read(fd, 65)
                 _effect(len(raw) <= 64 and os.read(fd, 1) == b"",
-                         "BOOT_ID")
+                    "BOOT_ID")
                 after = os.fstat(fd)
                 _effect(stat.S_ISREG(before.st_mode)
-                         and (before.st_dev, before.st_ino, before.st_mode)
-                         == (after.st_dev, after.st_ino, after.st_mode),
-                         "BOOT_ID")
+                    and (before.st_dev, before.st_ino, before.st_mode)
+                    == (after.st_dev, after.st_ino, after.st_mode),
+                    "BOOT_ID")
             finally:
                 os.close(fd)
         finally:
@@ -2498,19 +2472,19 @@ class FieldEffects:
         except UnicodeError as error:
             raise DispatchError("CORE_EFFECT_BOOT_ID") from error
         _effect(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-                              boot_id) is not None, "BOOT_ID")
+                boot_id) is not None, "BOOT_ID")
         return {"boot_id": boot_id,
-                "boottime_ns": time.clock_gettime_ns(time.CLOCK_BOOTTIME),
-                "monotonic_ns": time.clock_gettime_ns(time.CLOCK_MONOTONIC)}
+            "boottime_ns": time.clock_gettime_ns(time.CLOCK_BOOTTIME),
+            "monotonic_ns": time.clock_gettime_ns(time.CLOCK_MONOTONIC)}
 
     @staticmethod
     def _absolute(path, code="CORE_EFFECT_ABSOLUTE_PATH"):
         _require(type(path) is str and path.isascii() and path.startswith("/")
-                 and not path.startswith("//") and len(path) <= 4096
-                 and "\\" not in path and "\0" not in path, code)
+            and not path.startswith("//") and len(path) <= 4096
+            and "\\" not in path and "\0" not in path, code)
         parsed = PurePosixPath(path)
         _require(parsed.as_posix() == path and all(part not in ("", ".", "..")
-                                                   for part in parsed.parts[1:]), code)
+                for part in parsed.parts[1:]), code)
         return parsed
 
     @staticmethod
@@ -2534,11 +2508,11 @@ class FieldEffects:
 
     @staticmethod
     def stable_read_at(directory_fd, name, *, maximum, expected_mode=None,
-                       noatime=True, guard=None):
+        noatime=True, guard=None):
         _effect(type(directory_fd) is int and type(name) is str
-                 and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
-                 and type(maximum) is int and 0 <= maximum <= MEMBER_LIMIT,
-                 "READ_INPUT")
+            and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
+            and type(maximum) is int and 0 <= maximum <= MEMBER_LIMIT,
+            "READ_INPUT")
         flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
         if noatime:
             flags |= getattr(os, "O_NOATIME", 0)
@@ -2547,10 +2521,10 @@ class FieldEffects:
         try:
             before = call(os.fstat, fd)
             _effect(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-                     and 0 <= before.st_size <= maximum, "READ_FILE")
+                and 0 <= before.st_size <= maximum, "READ_FILE")
             if expected_mode is not None:
                 _effect(stat.S_IMODE(before.st_mode) == expected_mode,
-                         "READ_MODE")
+                    "READ_MODE")
             raw = bytearray()
             while len(raw) <= maximum:
                 part = call(os.read, fd, min(65536, maximum + 1 - len(raw)))
@@ -2559,15 +2533,15 @@ class FieldEffects:
                 raw.extend(part)
             after = call(os.fstat, fd)
             stable = lambda value: (value.st_dev, value.st_ino, value.st_mode,
-                                    value.st_uid, value.st_gid, value.st_nlink,
-                                    value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+                value.st_uid, value.st_gid, value.st_nlink,
+                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
             _effect(len(raw) <= maximum and stable(before) == stable(after)
-                     and len(raw) == after.st_size, "READ_CHANGED")
+                and len(raw) == after.st_size, "READ_CHANGED")
             result = bytes(raw)
             return result, {"dev": after.st_dev, "ino": after.st_ino,
-                            "mode": stat.S_IMODE(after.st_mode), "uid": after.st_uid,
-                            "gid": after.st_gid, "nlink": after.st_nlink,
-                            "bytes": after.st_size, "sha256": _sha(result)}
+                "mode": stat.S_IMODE(after.st_mode), "uid": after.st_uid,
+                "gid": after.st_gid, "nlink": after.st_nlink,
+                "bytes": after.st_size, "sha256": _sha(result)}
         finally:
             os.close(fd)
 
@@ -2578,22 +2552,22 @@ class FieldEffects:
         parent = FieldEffects._held_directory(str(parsed.parent), guard=guard)
         try:
             return FieldEffects.stable_read_at(parent, parsed.name, maximum=maximum,
-                                               expected_mode=expected_mode,
-                                               noatime=noatime, guard=guard)
+                expected_mode=expected_mode,
+                noatime=noatime, guard=guard)
         finally:
             os.close(parent)
 
     @staticmethod
     def create_only_at(directory_fd, name, raw, *, mode, guard=None):
         _effect(type(directory_fd) is int and type(name) is str
-                 and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
-                 and type(raw) is bytes and mode in (384, 420, 493),
-                 "CREATE_INPUT")
+            and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
+            and type(raw) is bytes and mode in (384, 420, 493),
+            "CREATE_INPUT")
         call = partial(_guard_call, guard)
         parent_before = call(os.fstat, directory_fd)
         _effect(stat.S_ISDIR(parent_before.st_mode), "CREATE_PARENT")
         flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
-                 | getattr(os, "O_NOFOLLOW", 0))
+            | getattr(os, "O_NOFOLLOW", 0))
         fd = call(os.open, name, flags, mode, dir_fd=directory_fd, release=os.close)
         created = None
         try:
@@ -2606,21 +2580,21 @@ class FieldEffects:
             call(os.fsync, fd)
             created = call(os.fstat, fd)
             _effect(stat.S_ISREG(created.st_mode) and created.st_nlink == 1
-                     and created.st_size == len(raw)
-                     and stat.S_IMODE(created.st_mode) == mode,
-                     "CREATE_FILE")
+                and created.st_size == len(raw)
+                and stat.S_IMODE(created.st_mode) == mode,
+                "CREATE_FILE")
         finally:
             os.close(fd)
         reread, identity = FieldEffects.stable_read_at(
             directory_fd, name, maximum=len(raw), expected_mode=mode, guard=guard)
         _effect(reread == raw and created is not None
-                 and (identity["dev"], identity["ino"]) == (created.st_dev, created.st_ino),
-                 "CREATE_REREAD")
+            and (identity["dev"], identity["ino"]) == (created.st_dev, created.st_ino),
+            "CREATE_REREAD")
         call(os.fsync, directory_fd)
         parent_after = call(os.fstat, directory_fd)
         _effect((parent_before.st_dev, parent_before.st_ino)
-                 == (parent_after.st_dev, parent_after.st_ino),
-                 "CREATE_PARENT_CHANGED")
+            == (parent_after.st_dev, parent_after.st_ino),
+            "CREATE_PARENT_CHANGED")
         return identity
 
     @staticmethod
@@ -2640,13 +2614,13 @@ class FieldEffects:
     def preparation_paths(case, locators):
         """Map A's relative intents to fixed absolute candidate preparation paths."""
         _prep_require(case in CASES and type(locators) is dict,
-                 'PATH_INPUT')
+            'PATH_INPUT')
         parents = {role: locators.get(role + "_parent")
-                   for role in ("state", "quota", "journal", "evidence")}
+            for role in _fields('state quota journal evidence')}
         for value in parents.values():
             FieldEffects._absolute(value, "CORE_EFFECT_PREPARATION_PARENT")
         _prep_require(len(set(parents.values())) == len(parents),
-                 'PARENT_ALIAS')
+            'PARENT_ALIAS')
         directories = {}
         for row in _planned_directories(case):
             relative = PurePosixPath(row["relative_path"])
@@ -2658,10 +2632,10 @@ class FieldEffects:
                 "profile_" + planned["role"]
             basename = PurePosixPath(planned["path"]).name
             roots.append(dict(planned, path=(PurePosixPath(directories[role]["path"])
-                                              / basename).as_posix()))
+                        / basename).as_posix()))
         _prep_require(len({row["path"] for row in directories.values()}) == len(DIRECTORY_ROLES)
-                 and len({row["path"] for row in roots}) == 7,
-                 'PATH_ALIAS')
+            and len({row["path"] for row in roots}) == 7,
+            'PATH_ALIAS')
         return {"directories": directories, "roots": roots}
 
     def _persistence_path(self, case_id, logical):
@@ -2673,16 +2647,16 @@ class FieldEffects:
             return str(PurePosixPath(locators["state_parent"]) / SESSION / "carrier" / suffix)
         prefix = "cases/" + case_id + "/"
         _effect(case_id in {case["case_id"] for case in CASES}
-                 and logical.startswith(prefix), "PERSIST_CASE")
+            and logical.startswith(prefix), "PERSIST_CASE")
         suffix = logical[len(prefix):]
         if suffix == "intent.json":
             return str(PurePosixPath(locators["state_parent"]) / SESSION / "carrier"
-                       / "intents" / (case_id + ".json"))
+                / "intents" / (case_id + ".json"))
         _effect(suffix.startswith("reservation/")
-                 and "/" not in suffix[len("reservation/"):],
-                 "PERSIST_LOGICAL")
+            and "/" not in suffix[len("reservation/"):],
+            "PERSIST_LOGICAL")
         return str(PurePosixPath(locators["state_parent"]) / SESSION / case_id
-                   / "reservation" / suffix[len("reservation/"):])
+            / "reservation" / suffix[len("reservation/"):])
 
 
 
@@ -2701,14 +2675,14 @@ class FieldEffects:
 
     def install(self, expected):
         _exact(expected, ("manifest", "members", "admission"),
-               "CORE_EFFECT_INSTALLATION_INPUT")
+            "CORE_EFFECT_INSTALLATION_INPUT")
         verified = self.verify_install_inputs()
         _effect(self._admission is not None and expected["admission"] == self._admission,
-                 "INSTALLATION_ADMISSION_REQUIRED")
+            "INSTALLATION_ADMISSION_REQUIRED")
         _effect(expected["manifest"] == self.context["manifest"]
-                 and expected["members"] == self.context["members"]
-                 and self._installation is None and self._candidate_root is None,
-                 "INSTALLATION_BINDING")
+            and expected["members"] == self.context["members"]
+            and self._installation is None and self._candidate_root is None,
+            "INSTALLATION_BINDING")
         _effect(os.geteuid() == os.getegid() == 0, "INSTALLATION_OWNER")
         self._effect_guard()
         self._verify_install_programs()
@@ -2720,10 +2694,10 @@ class FieldEffects:
             parent_pin = self._admission["parents"]["install"]
             info = call(os.fstat, parent)
             _effect((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode),
-                      info.st_uid, info.st_gid) ==
-                     (parent_pin["dev"], parent_pin["ino"], parent_pin["mode"],
-                      parent_pin["uid"], parent_pin["gid"]),
-                     "INSTALLATION_PARENT_CHANGED")
+                    info.st_uid, info.st_gid) ==
+                (parent_pin["dev"], parent_pin["ino"], parent_pin["mode"],
+                    parent_pin["uid"], parent_pin["gid"]),
+                "INSTALLATION_PARENT_CHANGED")
             # Both names must be absent before the first mutation. O_EXCL
             # remains authoritative if another writer races this observation.
             for name in (STAGING_BASENAME, INSTALL_BASENAME):
@@ -2772,26 +2746,26 @@ class FieldEffects:
         self._install_build_receipt = receipt
         self._verify_install_programs()
         _effect(type(receipt) is dict and receipt.get("status") == "INSTALLED"
-                 and receipt.get("ordinary_verified") is True
-                 and receipt.get("fixture_provisioned") is False
-                 and receipt["source"]["commit"] == CANDIDATE["commit"]
-                 and receipt["source"]["tree"] == CANDIDATE["tree"]
-                 and receipt["source"]["manifest_sha256"] == PROJECTION["sha256"]
-                 and receipt["installed"]["payload_digest"] == verified["payload_digest"],
-                 "INSTALLATION_RECEIPT")
+            and receipt.get("ordinary_verified") is True
+            and receipt.get("fixture_provisioned") is False
+            and receipt["source"]["commit"] == CANDIDATE["commit"]
+            and receipt["source"]["tree"] == CANDIDATE["tree"]
+            and receipt["source"]["manifest_sha256"] == PROJECTION["sha256"]
+            and receipt["installed"]["payload_digest"] == verified["payload_digest"],
+            "INSTALLATION_RECEIPT")
         projection_raw, _ = self.stable_read(
             destination + "/source/.local-hand-source-projection.json", maximum=262144,
             guard=self._effect_guard)
         _effect(_sha(projection_raw) == PROJECTION["sha256"],
-                 "INSTALLATION_PROJECTION")
+            "INSTALLATION_PROJECTION")
         # Only the dispatcher D blob is installed alongside the frozen
         # candidate. Private approved inputs stay exclusively in bootstrap RAM.
         installed_fd = self._held_directory(destination, guard=self._effect_guard)
         try:
             self._effect_guard()
             self.create_only_at(installed_fd, "core-dispatcher.py",
-                                bytes(self.context["members"]["field/dispatcher.py"]), mode=420,
-                                guard=self._effect_guard)
+                bytes(self.context["members"]["field/dispatcher.py"]), mode=420,
+                guard=self._effect_guard)
             self._effect_guard()
             info = call(os.fstat, installed_fd)
         finally:
@@ -2800,15 +2774,15 @@ class FieldEffects:
         self._effect_guard()
         self._installation_receipt = receipt
         result = {"destination": destination, "staging": staging,
-                  "receipt_path": str(PurePosixPath(locators["state_parent"]) / SESSION
-                                      / "carrier" / "installation.json"),
-                  "dev": info.st_dev, "ino": info.st_ino,
-                  "mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
-                  "members_sha256": verified["members_sha256"],
-                  "native_sha256": receipt["native_build"]["program"]["sha256"],
-                  "projection_sha256": PROJECTION["sha256"], "wheel_sha256": WHEEL["sha256"],
-                  "allocated_bytes": observed["bytes"], "allocated_inodes": observed["inodes"],
-                  "status": "INSTALLED"}
+            "receipt_path": str(PurePosixPath(locators["state_parent"]) / SESSION
+                / "carrier" / "installation.json"),
+            "dev": info.st_dev, "ino": info.st_ino,
+            "mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
+            "members_sha256": verified["members_sha256"],
+            "native_sha256": receipt["native_build"]["program"]["sha256"],
+            "projection_sha256": PROJECTION["sha256"], "wheel_sha256": WHEEL["sha256"],
+            "allocated_bytes": observed["bytes"], "allocated_inodes": observed["inodes"],
+            "status": "INSTALLED"}
         self._installation = _validate_installation(result, manifest)
         return self._installation
 
@@ -2825,16 +2799,16 @@ class FieldEffects:
 
     def _prepare_carrier_storage(self):
         _effect(not self._persistence_ready and self._admission is not None,
-                 "CARRIER_STORAGE_STATE")
+            "CARRIER_STORAGE_STATE")
         parent = self._held_directory(self.context["manifest"]["locators"]["state_parent"],
-                                      guard=self._effect_guard)
+            guard=self._effect_guard)
         opened = [parent]
         try:
             expected = self._admission["parents"]["state"]
             info = _guard_call(self._effect_guard, os.fstat, parent)
             _effect((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
-                     == (expected["dev"], expected["ino"], expected["mode"],
-                         expected["uid"], expected["gid"]), "CARRIER_PARENT_CHANGED")
+                == (expected["dev"], expected["ino"], expected["mode"],
+                    expected["uid"], expected["gid"]), "CARRIER_PARENT_CHANGED")
             for name, mode in ((SESSION, 0o755), ("carrier", 0o700), ("intents", 0o700)):
                 self._effect_guard()
                 parent = self._mkdir_at(parent, name, mode, guard=self._effect_guard)
@@ -2847,41 +2821,41 @@ class FieldEffects:
 
     def _verify_install_programs(self):
         _effect(self._admission is not None, "INSTALLATION_ADMISSION_REQUIRED")
-        for name in ("python", "git", "cc", "setpriv", "systemctl", "systemd_run"):
+        for name in _fields('python git cc setpriv systemctl systemd_run'):
             expected = self._admission["programs"][name]
             self._effect_guard()
             raw, identity = self.stable_read(expected["path"], maximum=MEMBER_LIMIT,
-                                             expected_mode=expected["mode"], guard=self._effect_guard)
+                expected_mode=expected["mode"], guard=self._effect_guard)
             _effect(dict(path=expected["path"], **identity) == expected
-                     and identity["uid"] == 0 and not identity["mode"] & 0o6022
-                     and identity["mode"] & 0o111 and raw.startswith(b"\x7fELF"),
-                     "INSTALL_PROGRAM_CHANGED")
+                and identity["uid"] == 0 and not identity["mode"] & 0o6022
+                and identity["mode"] & 0o111 and raw.startswith(b"\x7fELF"),
+                "INSTALL_PROGRAM_CHANGED")
         _effect(self._admission["programs"]["git"]["path"] == "/usr/bin/git"
-                 and self._admission["programs"]["setpriv"]["path"] == "/usr/bin/setpriv",
-                 "INSTALL_PROGRAM_ALIAS")
+            and self._admission["programs"]["setpriv"]["path"] == "/usr/bin/setpriv",
+            "INSTALL_PROGRAM_ALIAS")
         if hasattr(self, "_install_build_receipt"):
             receipt = self._install_build_receipt
             for item in (receipt["installed"]["programs"]["python"], receipt["native_build"]["abi_program"]):
                 expected = self._install_program_pins[item["path"]]
                 _, identity = self.stable_read(item["path"], maximum=MEMBER_LIMIT, guard=self._effect_guard)
                 _effect(dict(path=item["path"], **identity) == expected
-                         and item == {key: expected[key] for key in ("path", "sha256")},
-                         "INSTALL_PROGRAM_CHANGED")
+                    and item == {key: expected[key] for key in ("path", "sha256")},
+                    "INSTALL_PROGRAM_CHANGED")
 
     @staticmethod
     def _mkdir_at(parent, name, mode, *, guard=None):
         _effect(type(name) is str and re.fullmatch(r"[A-Za-z0-9._-]+", name)
-                 and name not in (".", "..") and mode in (0o700, 0o755),
-                 "MKDIR_INPUT")
+            and name not in (".", "..") and mode in (0o700, 0o755),
+            "MKDIR_INPUT")
         call = partial(_guard_call, guard)
         call(os.mkdir, name, mode, dir_fd=parent)
         fd = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
-                     dir_fd=parent, release=os.close)
+            dir_fd=parent, release=os.close)
         try:
             call(os.fchmod, fd, mode)
             info = call(os.fstat, fd)
             _effect(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == mode,
-                     "MKDIR_OWNER")
+                "MKDIR_OWNER")
             call(os.fsync, fd)
             call(os.fsync, parent)
             return fd
@@ -2912,14 +2886,14 @@ class FieldEffects:
                 fd = directories["" if parent_name == "." else parent_name]
                 raw = bytes(self.context["members"][row["path"]])
                 _effect(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
-                         "INSTALL_MEMBER_CHANGED")
+                    "INSTALL_MEMBER_CHANGED")
                 self._effect_guard()
                 self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard)
                 self._effect_guard()
                 reread, identity = self.stable_read_at(fd, relative.name,
                     maximum=row["bytes"], expected_mode=row["mode"], guard=self._effect_guard)
                 _effect(identity["uid"] == identity["gid"] == 0 and reread == raw,
-                         "INSTALL_MEMBER_CHANGED")
+                    "INSTALL_MEMBER_CHANGED")
                 self._observe_install_storage()
                 self._effect_guard()
         finally:
@@ -2950,9 +2924,9 @@ class FieldEffects:
 
         def load(name):
             _effect(type(name) is str and re.fullmatch(r"[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*", name)
-                     and (name in helpers or name.split(".")[0] in roots
-                          or "tests/e3_host/" + name + ".py" in PROJECTION_HARNESS),
-                     "HELPER_NAME")
+                and (name in helpers or name.split(".")[0] in roots
+                    or "tests/e3_host/" + name + ".py" in PROJECTION_HARNESS),
+                "HELPER_NAME")
             if name in cache:
                 return cache[name]
             package = name in namespaces
@@ -2967,7 +2941,7 @@ class FieldEffects:
             else:
                 receipt = self._installation_receipt
                 _effect(receipt is not None and self._installation is not None,
-                         "HELPER_INSTALLATION_REQUIRED")
+                    "HELPER_INSTALLATION_REQUIRED")
                 package = relative + "/__init__.py" in sources["projection"]["files"]
                 relative = (relative + "/__init__.py" if package else relative + ".py") \
                     if name.split(".")[0] in roots else "tests/e3_host/" + name + ".py"
@@ -2976,7 +2950,7 @@ class FieldEffects:
                 digest = entry["sha256"]
                 if name.split(".")[0] in WHEEL_PACKAGES:
                     _effect(sources["wheel_files"].get(relative[6:]) == digest,
-                             "HELPER_WHEEL")
+                        "HELPER_WHEEL")
                     path = receipt["installed"]["package_root"] + "/" + relative[6:]
                 else:
                     path = receipt["source"]["root"] + "/" + relative
@@ -2984,10 +2958,10 @@ class FieldEffects:
             if digest is not None:
                 self._effect_guard()
                 raw, identity = self.stable_read(path, maximum=MEMBER_LIMIT, expected_mode=420,
-                                                  guard=self._effect_guard)
+                    guard=self._effect_guard)
                 self._effect_guard()
                 _effect(identity["uid"] == identity["gid"] == 0 and _sha(raw) == digest,
-                         "HELPER_CHANGED")
+                    "HELPER_CHANGED")
             else:
                 _effect(name in namespaces, "HELPER_SOURCE_MISSING")
             parent, _, child = name.rpartition(".")
@@ -3009,6 +2983,9 @@ class FieldEffects:
                 if name == "q2_prepare_driver":
                     module.helper = lambda helper: load(helper) if helper in PREPARATION_HELPERS else \
                         _effect(False, "HELPER_NAME")
+                if name == "q2_prepare_build":
+                    bindings = _InstallIO(self._effect_guard)
+                    module.os, module.Path = bindings.os, bindings.Path
             except BaseException:
                 cache.pop(name, None)
                 raise
@@ -3055,7 +3032,7 @@ class FieldEffects:
                     try:
                         info = call(os.fstat, fd)
                         _effect(info.st_uid == 0 and not info.st_mode & 0o022,
-                                 "INSTALL_STORAGE_OWNER")
+                            "INSTALL_STORAGE_OWNER")
                         key = (info.st_dev, info.st_ino)
                         _effect(key not in seen, "INSTALL_STORAGE_ALIAS")
                         seen.add(key)
@@ -3070,10 +3047,10 @@ class FieldEffects:
                                     # after the venv child returns. Count its
                                     # inode without traversing it meanwhile.
                                     _effect(self._venv_alias_pending
-                                             and directory == self._install_roots[1] + "/runtime"
-                                             and entry.name == "lib64"
-                                             and call(os.readlink, entry.name, dir_fd=fd) == "lib",
-                                             "INSTALL_STORAGE_SYMLINK")
+                                        and directory == self._install_roots[1] + "/runtime"
+                                        and entry.name == "lib64"
+                                        and call(os.readlink, entry.name, dir_fd=fd) == "lib",
+                                        "INSTALL_STORAGE_SYMLINK")
                                     total_bytes += item.st_blocks * 512
                                     total_inodes += 1
                                     continue
@@ -3083,23 +3060,23 @@ class FieldEffects:
                                         directory + "/" + entry.name))
                                 else:
                                     _effect(stat.S_ISREG(item.st_mode) and item.st_nlink == 1
-                                             and item.st_uid == 0 and not item.st_mode & 0o022,
-                                             "INSTALL_STORAGE_FILE")
+                                        and item.st_uid == 0 and not item.st_mode & 0o022,
+                                        "INSTALL_STORAGE_FILE")
                                     key = (item.st_dev, item.st_ino)
                                     _effect(key not in seen, "INSTALL_STORAGE_ALIAS")
                                     seen.add(key)
                                     total_bytes += item.st_blocks * 512
                                     total_inodes += 1
                                 _effect(total_bytes <= LIMITS["shared_bytes"]
-                                         and total_inodes + len(pending) <= LIMITS["shared_inodes"],
-                                         "INSTALL_STORAGE_LIMIT")
+                                    and total_inodes + len(pending) <= LIMITS["shared_inodes"],
+                                    "INSTALL_STORAGE_LIMIT")
                     finally:
                         os.close(fd)
             finally:
                 for fd, _ in pending:
                     os.close(fd)
         _effect(total_bytes <= LIMITS["shared_bytes"]
-                 and total_inodes <= LIMITS["shared_inodes"], "INSTALL_STORAGE_LIMIT")
+            and total_inodes <= LIMITS["shared_inodes"], "INSTALL_STORAGE_LIMIT")
         self._shared_observed_bytes = max(self._shared_observed_bytes, total_bytes)
         self._shared_observed_inodes = max(self._shared_observed_inodes, total_inodes)
         return {"bytes": total_bytes, "inodes": total_inodes}
@@ -3111,17 +3088,17 @@ class FieldEffects:
         pins = {item["path"]: item for item in programs.values()}
         paths, actual, descriptors, environment = [argv[0]], list(argv), [], {}
         destination = str(PurePosixPath(self.context["manifest"]["locators"]["install_parent"])
-                          / INSTALL_BASENAME)
+            / INSTALL_BASENAME)
         runtime = destination + "/runtime/bin/python3"
         dynamic = getattr(self, "_install_program_pins", {})
         self._install_program_pins = dynamic
         if argv[0] == programs["setpriv"]["path"]:
             guest = self._admission["guest"]
             flags = {"--reuid=" + str(guest["ordinary_uid"]),
-                     "--regid=" + str(guest["ordinary_gid"]), "--clear-groups",
-                     "--no-new-privs", "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all"}
+                "--regid=" + str(guest["ordinary_gid"]), "--clear-groups",
+                "--no-new-privs", "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all"}
             _effect(len(argv) > 8 and set(argv[1:8]) == flags and argv[8] == runtime,
-                     "INSTALL_PROGRAM_CHAIN")
+                "INSTALL_PROGRAM_CHAIN")
             paths.append(runtime)
             environment["__PYVENV_LAUNCHER__"] = runtime
         try:
@@ -3132,27 +3109,27 @@ class FieldEffects:
                 observed = dict(path=path, **identity)
                 if expected is None and path in (runtime, destination + "/native/abi"):
                     _effect(getattr(self, "_install_build_active", False)
-                             or (path == runtime and self._installation_receipt is not None),
-                             "INSTALL_PROGRAM_STAGE")
+                        or (path == runtime and self._installation_receipt is not None),
+                        "INSTALL_PROGRAM_STAGE")
                     _effect(path != runtime or identity["sha256"] == programs["python"]["sha256"],
-                             "INSTALL_PROGRAM_CHANGED")
+                        "INSTALL_PROGRAM_CHANGED")
                     if self._installation_receipt is not None:
                         receipt = self._installation_receipt
                         _effect({"path": path, "sha256": identity["sha256"]}
-                                 == receipt["installed"]["programs"]["python"]
-                                 and {"device": identity["dev"], "inode": identity["ino"]}
-                                 == receipt["python_identity"], "INSTALL_PROGRAM_CHANGED")
+                            == receipt["installed"]["programs"]["python"]
+                            and {"device": identity["dev"], "inode": identity["ino"]}
+                            == receipt["python_identity"], "INSTALL_PROGRAM_CHANGED")
                     expected = dynamic.setdefault(path, observed)
                 _effect(observed == expected,
-                         "INSTALL_PROGRAM_CHANGED")
+                    "INSTALL_PROGRAM_CHANGED")
                 _effect(identity["uid"] == identity["gid"] == 0 and identity["nlink"] == 1
-                         and not identity["mode"] & 0o6022 and identity["mode"] & 0o111
-                         and raw.startswith(b"\x7fELF"), "INSTALL_PROGRAM_CHANGED")
+                    and not identity["mode"] & 0o6022 and identity["mode"] & 0o111
+                    and raw.startswith(b"\x7fELF"), "INSTALL_PROGRAM_CHANGED")
                 parsed = PurePosixPath(path)
                 parent = self._held_directory(str(parsed.parent), guard=self._effect_guard)
                 try:
                     fd = os.open(parsed.name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
-                                 dir_fd=parent)
+                        dir_fd=parent)
                     descriptors.append(fd)
                     self._effect_guard()
                     before = os.fstat(fd)
@@ -3161,23 +3138,23 @@ class FieldEffects:
                     except OSError as error:
                         import errno
                         _effect(error.errno in (errno.ENODATA, errno.ENOTSUP),
-                                 "INSTALL_PROGRAM_CAPABILITY")
+                            "INSTALL_PROGRAM_CAPABILITY")
                     else:
                         raise DispatchError("CORE_EFFECT_INSTALL_PROGRAM_CAPABILITY")
                     _effect((before.st_dev, before.st_ino, stat.S_IMODE(before.st_mode),
-                              before.st_uid, before.st_gid, before.st_nlink, before.st_size)
-                             == tuple(identity[key] for key in ("dev", "ino", "mode", "uid", "gid", "nlink", "bytes"))
-                             and os.pread(fd, MEMBER_LIMIT + 1, 0) == raw,
-                             "INSTALL_PROGRAM_CHANGED")
+                            before.st_uid, before.st_gid, before.st_nlink, before.st_size)
+                        == tuple(identity[key] for key in _fields('dev ino mode uid gid nlink bytes'))
+                        and os.pread(fd, MEMBER_LIMIT + 1, 0) == raw,
+                        "INSTALL_PROGRAM_CHANGED")
                     self._effect_guard()
                     _effect(before == os.fstat(fd) == os.stat(parsed.name, dir_fd=parent, follow_symlinks=False),
-                             "INSTALL_PROGRAM_CHANGED")
+                        "INSTALL_PROGRAM_CHANGED")
                 finally:
                     os.close(parent)
             if len(descriptors) == 2:
                 actual[8] = "/proc/self/fd/" + str(descriptors[1])
             return actual, {"executable": "/proc/self/fd/" + str(descriptors[0]),
-                            "pass_fds": tuple(descriptors)}, environment, descriptors
+                "pass_fds": tuple(descriptors)}, environment, descriptors
         except BaseException:
             for fd in descriptors:
                 os.close(fd)
@@ -3192,8 +3169,8 @@ class FieldEffects:
         the still-missing all-unit CPU/memory/pid/storage accounting.
         """
         _effect(type(argv) in (list, tuple) and 1 <= len(argv) <= 128
-                 and all(type(arg) is str and "\0" not in arg and len(arg) <= 65536 for arg in argv)
-                 and argv[0].startswith("/"), "INSTALL_COMMAND")
+            and all(type(arg) is str and "\0" not in arg and len(arg) <= 65536 for arg in argv)
+            and argv[0].startswith("/"), "INSTALL_COMMAND")
         self._effect_guard()
         self._observe_install_storage()
         self._effect_guard()
@@ -3236,9 +3213,9 @@ class FieldEffects:
                     # Linux ru_maxrss is KiB. Round CPU upward, never to an
                     # optimistic zero for a positive sub-nanosecond value.
                     waited = {"pid": pid, "wait_status": status,
-                              "user_cpu_ns": math.ceil(usage.ru_utime * NS),
-                              "system_cpu_ns": math.ceil(usage.ru_stime * NS),
-                              "max_rss_bytes": usage.ru_maxrss * 1024}
+                        "user_cpu_ns": math.ceil(usage.ru_utime * NS),
+                        "system_cpu_ns": math.ceil(usage.ru_stime * NS),
+                        "max_rss_bytes": usage.ru_maxrss * 1024}
             call(os.wait4, proc.pid, os.WNOHANG, stopping=stopping, returned=retain)
 
         def read_pipe(name, stopping=False):
@@ -3252,7 +3229,7 @@ class FieldEffects:
                     output[name].extend(block[:room])
             try:
                 block = call(os.read, stream.fileno(), 4096 if stopping else min(4096, room + 1),
-                             stopping=stopping, returned=retain)
+                    stopping=stopping, returned=retain)
             except BlockingIOError:
                 return
             if not stopping:
@@ -3264,10 +3241,10 @@ class FieldEffects:
             call(subprocess.Popen, actual, **binding, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, cwd=self._candidate_root, close_fds=True,
                 start_new_session=True, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C",
-                                            "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1",
-                                            "TMPDIR": self._install_temp or self._candidate_root,
-                                            "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
-                                            "GIT_CONFIG_GLOBAL": "/dev/null", **environment}, returned=set_process)
+                    "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1",
+                    "TMPDIR": self._install_temp or self._candidate_root,
+                    "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_CONFIG_GLOBAL": "/dev/null", **environment}, returned=set_process)
             call(selectors.DefaultSelector, returned=set_selector)
             for name in output:
                 stream = getattr(proc, name)
@@ -3341,12 +3318,12 @@ class FieldEffects:
         target = self._persistence_path(case_id, path)
         self.create_only(target, raw, mode=mode)
         role = ("session" if path == "carrier/session.json" else
-                "admission" if path == "carrier/admission.json" else
-                "installation" if path == "carrier/installation.json" else
-                "intent" if path.endswith("/intent.json") else
-                "phase-receipt" if "/phase-" in path and path.endswith("-receipt.json") else
-                "recovery-proof" if path.endswith("/h11-recovery-proof.json") else
-                "verdict" if path.endswith("/case-verdict.json") else None)
+            "admission" if path == "carrier/admission.json" else
+            "installation" if path == "carrier/installation.json" else
+            "intent" if path.endswith("/intent.json") else
+            "phase-receipt" if "/phase-" in path and path.endswith("-receipt.json") else
+            "recovery-proof" if path.endswith("/h11-recovery-proof.json") else
+            "verdict" if path.endswith("/case-verdict.json") else None)
         _effect(role is not None, "PERSIST_ROLE")
         return {"path": path, "role": role, "mode": mode, "raw": raw}
 
@@ -3359,17 +3336,17 @@ class FieldEffects:
         _prep_require(case in CASES and intent == build_intent(case), 'INPUT')
         _integer(preparation_deadline_ns, 1, code="CORE_EFFECT_PREPARATION_DEADLINE")
         _prep_require(self._installation_receipt is not None and self._persistence_ready
-                 and self._admission is not None and os.geteuid() == os.getegid() == 0,
-                 'INSTALLATION_REQUIRED')
+            and self._admission is not None and os.geteuid() == os.getegid() == 0,
+            'INSTALLATION_REQUIRED')
         _prep_require(all(callable(getattr(self, "_capacity_" + name, None)) for name in
-                 ("retained_snapshot", "quota_inventory", "quota_enforcement")),
-                 'CURRENT_FACTS_REQUIRED')
+                ("retained_snapshot", "quota_inventory", "quota_enforcement")),
+            'CURRENT_FACTS_REQUIRED')
         deadline = preparation_deadline_ns
         with _PrepIO(self, deadline) as io:
             intent_path = self._persistence_path(case["case_id"], "cases/" + case["case_id"] + "/intent.json")
             actual, pin = io.call(self.stable_read, intent_path, maximum=65536, expected_mode=384)
             _prep_require(actual == canonical(intent, newline=True) and pin["uid"] == pin["gid"] == 0,
-                     'INTENT_REQUIRED')
+                'INTENT_REQUIRED')
             helpers = io.call(self.preparation_helpers)
             driver = helpers["q2_prepare_driver"]
             # Fixed before the first write; never refresh expiry after preparation.
@@ -3379,14 +3356,14 @@ class FieldEffects:
             before = io.call(self._capacity_retained_snapshot)
             inventory = io.call(self._capacity_quota_inventory)
             _prep_require(before == self._admission_detail["retained_before"]
-                     and not set(case["project_ids"]) & {r["project"] for r in inventory},
-                     'RETAINED_CHANGED')
-            for role in ("state", "quota", "journal", "evidence"):
+                and not set(case["project_ids"]) & {r["project"] for r in inventory},
+                'RETAINED_CHANGED')
+            for role in _fields('state quota journal evidence'):
                 pin = parents[role]
                 info = io.call(os.fstat, io.directory(pin["path"]))
                 _prep_require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
-                         == tuple(pin[k] for k in ("dev", "ino", "uid", "gid", "mode")),
-                         'PARENT_CHANGED')
+                    == tuple(pin[k] for k in _fields('dev ino uid gid mode')),
+                    'PARENT_CHANGED')
             def directory(path, uid=0, gid=0, mode=493):
                 return _prep_directory(self, path, uid, gid, mode, deadline)
             def save(path, value):
@@ -3396,21 +3373,19 @@ class FieldEffects:
             directories["reservation"] = directory(reservation, mode=448)
             # Durable preimage precedes every other case resource.
             objects = {"preparation-plan": save(reservation + "/preparation-plan.json", plan)}
-            for role in ("state", "quota", "journal", "evidence"):
+            for role in _fields('state quota journal evidence'):
                 session = parents[role]["path"] + "/" + SESSION
                 if role != "state" and case["index"] == 1: directory(session)
                 info = io.call(os.fstat, io.directory(session))
                 _prep_require(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == 493,
-                         'SESSION_PROTECTION')
+                    'SESSION_PROTECTION')
                 if role != "state": directory(session + "/" + case["case_id"])
             account = plan["account"]
             for role, row in plan["directories"].items():
                 if role == "reservation": continue
                 uid, gid = (account["uid"], account["gid"]) if row["owner"] == "ordinary" else (0, 0)
                 directories[role] = directory(row["path"], uid, gid, row["mode"])
-            for name in ("preflight", "business", "evidence", "management_evidence", "launcher_output",
-                         "supervisor_output", "owner_output", "launcher_declarations",
-                         "supervisor_declarations", "owner_declarations"):
+            for name in _fields('preflight business evidence management_evidence launcher_output supervisor_output owner_output launcher_declarations supervisor_declarations owner_declarations'):
                 parent = directories["declarations" if name.endswith("declarations") else "capture"]["path"]
                 children[name] = _prep_pin(directory(parent + "/" + name,
                     mode=493 if name == "launcher_declarations" else 448))
@@ -3418,9 +3393,9 @@ class FieldEffects:
             after = io.call(self._capacity_retained_snapshot)
             remaining = [r for r in io.call(self._capacity_quota_inventory) if r["project"] not in case["project_ids"]]
             _prep_require(before == after and _prep_quota_retained(inventory) == _prep_quota_retained(remaining),
-                     'RETAINED_CHANGED')
+                'RETAINED_CHANGED')
             pins = {}
-            for role in ("controller", "management", "query", "supervisor", "ordinary"):
+            for role in _fields('controller management query supervisor ordinary'):
                 key = "retained_ordinary_cgroup" if role == "ordinary" and case["index"] == 2 else role + "_cgroup"
                 pins[role] = _prep_pin(parents[key])
                 pins[role]["path"] = pins[role]["path"].removeprefix("/sys/fs/cgroup")
@@ -3442,13 +3417,13 @@ class FieldEffects:
 
     def plan_case(self, case, prepared, deadlines):
         _effect(case in CASES and prepared.get("case") == case,
-                 "PLAN_PREPARATION_REQUIRED")
+            "PLAN_PREPARATION_REQUIRED")
         now = _prep_guard(self, deadlines["owner_deadline_ns"])
         realtime = time.time_ns()
         expires = prepared["facts"]["identity"]["expires_at"]
         _effect(realtime // NS < expires
-                 and expires * NS <= realtime + deadlines["owner_deadline_ns"] - now["boottime_ns"],
-                 "PLAN_REQUEST_EXPIRED")
+            and expires * NS <= realtime + deadlines["owner_deadline_ns"] - now["boottime_ns"],
+            "PLAN_REQUEST_EXPIRED")
         plan = _plan_from_prepared(case, prepared, deadlines)
         owner = dict(prepared["plan"]["settings"]["owner"])
         owner.pop("runtime_ns")
@@ -3470,19 +3445,19 @@ class FieldEffects:
         prepared["handoff_path"] = prepared["paths"]["reservation"] + "/handoff.json"
         prepared["handoff_sha256"] = _sha(raw)
         prepared["source_objects"]["handoff"] = _prep_file(self, prepared["handoff_path"], raw,
-                                                           deadlines["owner_deadline_ns"])
+            deadlines["owner_deadline_ns"])
         sources = []
         for role in ("preparation-plan", "preparation-result", "authority"):
             record = prepared["source_objects"][role]
             raw = _prep_reread(self, record, deadlines["owner_deadline_ns"])
             suffix = "authority/authority.json" if role == "authority" else "reservation/" + role + ".json"
             sources.append({"path": "cases/" + case["case_id"] + "/" + suffix,
-                            "role": role, "mode": 384, "raw": raw})
+                    "role": role, "mode": 384, "raw": raw})
         raw = canonical(plan, newline=True)
         prepared["source_objects"]["case-plan"] = _prep_file(self,
             prepared["paths"]["reservation"] + "/case-plan.json", raw, deadlines["owner_deadline_ns"])
         sources.append({"path": "cases/" + case["case_id"] + "/reservation/case-plan.json",
-                        "role": "plan", "mode": 384, "raw": raw})
+                "role": "plan", "mode": 384, "raw": raw})
         prepared["sources"] = list(sources)
         return {"plan": plan, "sources": sources}
 
@@ -3495,7 +3470,7 @@ class FieldEffects:
         fd, held = prepared["_exec_ledger_fd"], prepared["_exec_ledger_identity"]
         path, uid = plan["ledger_path"], prepared["facts"]["ordinary"]["uid"]
         _effect(held["path"] == path == policy.broker_root + "/jobs.sqlite",
-                 "EMPTY_LEDGER_PATH")
+            "EMPTY_LEDGER_PATH")
         parent = self._held_directory(policy.broker_root)
         def snapshot():
             self._exec_guard(plan)
@@ -3544,9 +3519,9 @@ class FieldEffects:
             "stage": "fixture", "before_submit": True}
         raw = canonical(gate, newline=True)
         _prep_file(self, prepared["paths"]["reservation"] + "/empty-ledger-gate.json", raw,
-                   plan["deadlines"]["owner_deadline_ns"])
+            plan["deadlines"]["owner_deadline_ns"])
         return {"path": "cases/" + case["case_id"] + "/reservation/empty-ledger-gate.json",
-                "role": "empty-ledger-gate", "mode": 384, "raw": raw}
+            "role": "empty-ledger-gate", "mode": 384, "raw": raw}
 
     def _exec_ledger_export(self, case, prepared, plan):
         """Read the closed original ledger; preserve its SQLite TEXT verbatim.
@@ -3568,10 +3543,10 @@ class FieldEffects:
             info = os.fstat(fd)
             named = os.stat(name, dir_fd=parent, follow_symlinks=False)
             _effect(stat.S_ISREG(info.st_mode) and stat.S_ISREG(named.st_mode)
-                     and info.st_nlink == named.st_nlink == 1
-                     and (info.st_dev, info.st_ino) == (held["dev"], held["ino"])
-                     == (named.st_dev, named.st_ino)
-                     and 0 < info.st_size <= 33554432, "LEDGER_EXPORT_IDENTITY")
+                and info.st_nlink == named.st_nlink == 1
+                and (info.st_dev, info.st_ino) == (held["dev"], held["ino"])
+                == (named.st_dev, named.st_ino)
+                and 0 < info.st_size <= 33554432, "LEDGER_EXPORT_IDENTITY")
             for suffix in ("-wal", "-shm", "-journal"):
                 try:
                     os.stat(name + suffix, dir_fd=parent, follow_symlinks=False)
@@ -3607,7 +3582,7 @@ class FieldEffects:
             _effect(type(raw) is str, "LEDGER_EXPORT_TEXT")
             try:
                 value = json.loads(raw, object_pairs_hook=pairs,
-                                   parse_constant=number, parse_float=number)
+                    parse_constant=number, parse_float=number)
                 _effect(type(value) is dict, "LEDGER_EXPORT_TEXT")
                 raw.encode("utf-8", "strict")
             except (ValueError, TypeError, RecursionError, UnicodeError) as error:
@@ -3625,21 +3600,21 @@ class FieldEffects:
             connection.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 100)
             connection.execute("PRAGMA query_only=ON")
             _effect(connection.execute("PRAGMA quick_check").fetchall()[0][0] == "ok",
-                     "LEDGER_EXPORT_DATABASE")
+                "LEDGER_EXPORT_DATABASE")
             metadata = dict(connection.execute("SELECT key,value FROM metadata"))
             identity_fields = plan["identity"]
             _effect(metadata == {"schema": "1", "authority_id": identity_fields["authority_id"],
-                                   "ledger_id": identity_fields["ledger_id"]},
-                     "LEDGER_EXPORT_METADATA")
+                    "ledger_id": identity_fields["ledger_id"]},
+                "LEDGER_EXPORT_METADATA")
             rows = connection.execute("SELECT namespace,id,parent,principal,digest,reserved_bytes,"
                 "request_json,plan_json,record_json FROM operations LIMIT 2").fetchall()
             _effect(len(rows) == 1, "LEDGER_EXPORT_OPERATION")
             operation = dict(rows[0])
             _effect(operation["namespace"] == "job" and operation["id"] == case["operation_id"]
-                     and operation["principal"] == identity_fields["principal_id"]
-                     and operation["digest"] == plan["request"]["request_digest"]
-                     and type(operation["reserved_bytes"]) is int and operation["reserved_bytes"] > 0,
-                     "LEDGER_EXPORT_OPERATION")
+                and operation["principal"] == identity_fields["principal_id"]
+                and operation["digest"] == plan["request"]["request_digest"]
+                and type(operation["reserved_bytes"]) is int and operation["reserved_bytes"] > 0,
+                "LEDGER_EXPORT_OPERATION")
             for key in ("request_json", "plan_json", "record_json"):
                 text_object(operation[key])
             events = []
@@ -3649,17 +3624,17 @@ class FieldEffects:
                 self._exec_guard(plan)
                 event = dict(row)
                 _effect(type(event["seq"]) is int and event["seq"] > 0
-                         and (not events or event["seq"] > events[-1]["seq"])
-                         and event["namespace"] == "job" and event["id"] == case["operation_id"]
-                         and type(event["kind"]) is str and event["kind"]
-                         and re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?", event["observed_at"])
-                         is not None, "LEDGER_EXPORT_EVENT")
+                    and (not events or event["seq"] > events[-1]["seq"])
+                    and event["namespace"] == "job" and event["id"] == case["operation_id"]
+                    and type(event["kind"]) is str and event["kind"]
+                    and re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?", event["observed_at"])
+                    is not None, "LEDGER_EXPORT_EVENT")
                 text_object(event["data_json"])
                 events.append(event)
                 _effect(len(events) <= 4096, "LEDGER_EXPORT_SIZE")
             connection.close(); connection = None
             _effect(identity() == before and digest() == (size, sha)
-                     and identity() == before, "LEDGER_EXPORT_CHANGED")
+                and identity() == before, "LEDGER_EXPORT_CHANGED")
             exported = self.now()["boottime_ns"]
             value = {"schema": "local-hand-q2-core-ledger-export/v1", "session_id": SESSION,
                 "index": case["index"], "case_id": case["case_id"],
@@ -3710,7 +3685,7 @@ class FieldEffects:
         self._exec_guard(plan)
         if role == "result":
             _effect(case["index"] == 1 and suffix == "business/result-03c94c57c840717302854a3f.json",
-                     "CASE_RESULT_SOURCE")
+                "CASE_RESULT_SOURCE")
             physical = prepared["facts"]["slots"][0]["roots"]["evidence"]["path"] + "/" + relative
         elif role.startswith("business-evidence-"):
             _effect(case["index"] == 1, "CASE_RESULT_SOURCE")
@@ -3724,14 +3699,14 @@ class FieldEffects:
         _effect(identity["nlink"] == 1 and identity["uid"] == owner["uid"]
             and identity["gid"] == owner["gid"], "CASE_SOURCE_OWNER")
         source = {"path": "cases/" + case["case_id"] + "/" + suffix,
-                  "role": role, "mode": mode, "raw": raw}
+            "role": role, "mode": mode, "raw": raw}
         prepared.setdefault("_exec_physical", {})[source["path"]] = physical
         return source
 
     def _exec_controls(self, case, prepared, plan, sources, child):
         prefix = "cases/" + case["case_id"] + "/"
         for folder, status in (("supervisor_output", "CONTROLLER_CLOSED"),
-                               ("owner_output", "SUPERVISOR_CLOSED")):
+            ("owner_output", "SUPERVISOR_CLOSED")):
             stop = _parse_source(sources, prefix + folder + "/stop.json")
             seal = _parse_source(sources, prefix + folder + "/seal.json")
             _effect(stop.get("attempted") is True and stop.get("acknowledged") is True
@@ -3760,7 +3735,7 @@ class FieldEffects:
         _effect(child.get("status") == "SUPERVISOR_CLOSED" and child.get("sealed") is True
             and not child.get("cleanup_errors"), "CASE_OWNER_UNCLOSED")
         return {"requested": True, "acknowledged": True, "tree_exited": True,
-                "writers_stopped": True, "deadline_ns": plan["deadlines"]["owner_deadline_ns"]}
+            "writers_stopped": True, "deadline_ns": plan["deadlines"]["owner_deadline_ns"]}
 
     def _exec_case(self, case, prepared, plan):
         _effect(case in CASES and prepared.get("case") == case
@@ -3772,7 +3747,7 @@ class FieldEffects:
         for record in prepared["source_objects"].values():
             _prep_reread(self, record, plan["deadlines"]["owner_deadline_ns"])
         _effect(handoff["owner_envelope"]["deadline_ns"] == plan["deadlines"]["owner_deadline_ns"],
-                 "CASE_OWNER_DEADLINE")
+            "CASE_OWNER_DEADLINE")
         raw, _ = self.stable_read(prepared["handoff_path"], maximum=2097152, expected_mode=384)
         _effect(document(raw, limit=2097152, newline=True) == handoff, "CASE_HANDOFF_CHANGED")
         verified = self.verify_install_inputs()
@@ -3782,10 +3757,10 @@ class FieldEffects:
             "CASE_CANDIDATE")
         runtime_root = prepared["facts"]["source"]["root"]
         _effect(runtime_root == self._installation_receipt["source"]["root"],
-                 "CASE_RUNTIME_ROOT")
+            "CASE_RUNTIME_ROOT")
         for name, digest in source_pin["files"].items():
             content, _ = self.stable_read(runtime_root + "/" + name,
-                                          maximum=MEMBER_LIMIT, expected_mode=420)
+                maximum=MEMBER_LIMIT, expected_mode=420)
             _effect(_sha(content) == digest, "CASE_SOURCE_CHANGED")
         python = prepared["facts"]["installation"]["programs"]["python"]
         executable, _ = self.stable_read(python["path"], maximum=MEMBER_LIMIT)
@@ -3794,7 +3769,7 @@ class FieldEffects:
         fd = -1
         try:
             fd = os.open("jobs.sqlite", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOATIME,
-                         dir_fd=parent)
+                dir_fd=parent)
             info = os.fstat(fd)
             _effect(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
                 and stat.S_IMODE(info.st_mode) == 384, "CASE_LEDGER")
@@ -3817,7 +3792,7 @@ class FieldEffects:
             rows = _h01_special("00000000-0000-4000-8000-000000000000") if case["index"] == 1 else (
                 Q4_SPECIAL if case["index"] == 2 else H11_SPECIAL)
             for suffix, role, mode in rows:
-                if role in ("phase-receipt", "recovery-proof", "ledger", "result") or role.startswith("business-evidence-"):
+                if role in _fields('phase-receipt recovery-proof ledger result') or role.startswith("business-evidence-"):
                     continue
                 sources.append(self._exec_source(case, prepared, plan, suffix, role, mode))
             sources.append(self._exec_source(case, prepared, plan, "owner_declarations/fixture-check.json", "fixture-check"))
@@ -3829,7 +3804,7 @@ class FieldEffects:
                 and set(cap.get("eof", [])) == {"stdout", "stderr"}
                 and launch.get("resident_capture") == cap and not launch.get("cleanup_errors")
                 and next(s["raw"] for s in sources if s["path"] == prefix +
-                         "launcher_output/resident.stderr") == b"", "CASE_QUIESCENCE")
+                    "launcher_output/resident.stderr") == b"", "CASE_QUIESCENCE")
             if case["index"] != 3:
                 sources.append(self._exec_ledger_export(case, prepared, plan))
             return self._exec_observations(case, prepared, plan, sources, stop, verified)
@@ -3855,15 +3830,12 @@ class FieldEffects:
         proof = seal_id = None; summary = {}
         if case["index"] == 3:
             proof = self._exec_h11_proof(case, prepared, plan, sources, verified, launch, resident)
-            obs.update({k: proof[k] for k in ("recovery_plan", "recovery_summary", "launcher_result",
-                "gateway_snapshot", "origin_capture", "ledger_identity", "result_identity")})
-            obs.update({k: proof["assertions"][k] for k in ("future_start_blocked", "tree_exited",
-                "writers_stopped", "collectors_stopped", "effects_checked", "outcome", "leases_retained",
-                "result_reread", "start_replayed", "business_evidence_sealed")})
+            obs.update({k: proof[k] for k in _fields('recovery_plan recovery_summary launcher_result gateway_snapshot origin_capture ledger_identity result_identity')})
+            obs.update({k: proof["assertions"][k] for k in _fields('future_start_blocked tree_exited writers_stopped collectors_stopped effects_checked outcome leases_retained result_reread start_replayed business_evidence_sealed')})
             proof_raw = canonical(proof, newline=True)
             obs.update(original_request_accepted=True, control_closure_sealed=True,
                 recovery_proof={"path": prefix + "reservation/h11-recovery-proof.json",
-                                "bytes": len(proof_raw), "sha256": _sha(proof_raw)})
+                    "bytes": len(proof_raw), "sha256": _sha(proof_raw)})
             # The exact pinned origin submits once after compose's empty gate;
             # candidate recovery asserts the unchanged original ACCEPTED row.
             accepted = self._exec_h11_accepted(case, prepared, plan)
@@ -3901,9 +3873,9 @@ class FieldEffects:
                 for artifact in seal["artifacts"]:
                     filename = "evidence.zip" if artifact["role"] == "zip" else "manifest.json"
                     content = next(s["raw"] for s in sources if s["path"] == prefix +
-                                   "business-evidence/" + seal_id + "/" + filename)
+                        "business-evidence/" + seal_id + "/" + filename)
                     _effect(len(content) == artifact["size"] and _sha(content) == artifact["sha256"],
-                             "H01_BUSINESS_EVIDENCE")
+                        "H01_BUSINESS_EVIDENCE")
                 units = []
                 for phase in case["phases"]:
                     value = get("launcher_output/phase-" + phase + ".json")
@@ -3912,11 +3884,10 @@ class FieldEffects:
                         "job-" + case["operation_id"] + "-" + phase, "H01_PHASE")
                     for stage in ("bootstrap", "helper", "result_reader"):
                         closed = fence["stages"]["reader" if stage == "result_reader" else stage]; identity = closed["identity"]
-                        _effect(all(closed.get(k) is True for k in ("delivery_settled", "future_start_blocked", "job_empty",
-                            "unit_terminal", "tree_empty", "collectors_stopped", "stdout_eof", "stderr_eof")),
+                        _effect(all(closed.get(k) is True for k in _fields('delivery_settled future_start_blocked job_empty unit_terminal tree_empty collectors_stopped stdout_eof stderr_eof')),
                             "H01_EXIT")
                         units.append({"phase": phase, "stage": stage, "unit": identity["unit"],
-                                      "invocation_id": identity["invocation_id"]})
+                                "invocation_id": identity["invocation_id"]})
                 units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
                 _validate_units(units, case)
                 gateway = get("launcher_output/gateway.json")
@@ -3955,13 +3926,13 @@ class FieldEffects:
                 units.sort(key=lambda row: (row["phase"], row["stage"], row["unit"]))
                 _validate_units(units, case)
                 obs.update({k: True for k in Q4_OBSERVATIONS if k not in
-                    ("empty_ledger_gate", "resident_empty_gate", "unit_identities", "chain_closed", "ordinary_phase_closed", "full_h07")})
+                    _fields('empty_ledger_gate resident_empty_gate unit_identities chain_closed ordinary_phase_closed full_h07')})
                 obs.update(unit_identities=units, chain_closed=False, ordinary_phase_closed=False, full_h07=False)
         obs["resident_empty_gate"] = {"passed": True, "candidate_commit": CANDIDATE["commit"],
             "resident_source_sha256": verified["source_files"]["tests/e3_host/q2_resident.py"],
             "accepted_operation_id": case["operation_id"], "accepted_event_seq": accepted}
         return {"sources": sources, "observations": obs, "stop": stop, "proof": proof,
-                "seal_id": seal_id, "summary": summary}
+            "seal_id": seal_id, "summary": summary}
 
     def _exec_h11_proof(self, case, prepared, plan, sources, verified, launch, resident):
         prefix = "cases/" + case["case_id"] + "/"
@@ -4002,7 +3973,7 @@ class FieldEffects:
                 and rows[0].get("recovery_observed") is True, "H11_UNIT")
         for stream in ("stdout", "stderr"):
             _effect(item("launcher_output/origin-resident." + stream)["raw"] == b"",
-                     "H11_ORIGIN_OUTPUT")
+                "H11_ORIGIN_OUTPUT")
         refs = {key: _plain_reference(item(suffix)) for key, suffix in (
             ("recovery_plan", "launcher_declarations/recovery-resident.json"),
             ("recovery_summary", "launcher_output/recovery.json"),
@@ -4015,16 +3986,13 @@ class FieldEffects:
         for role, name in (("h11", "q4_h11_recovery"), ("resident", "q2_resident"), ("launcher", "q2_launcher")):
             relative = "tests/e3_host/" + name + ".py"
             candidate.update({role + "_source_path": relative,
-                              role + "_source_sha256": verified["source_files"][relative]})
-        assertions = {key: report[key] for key in ("future_start_blocked", "tree_exited", "writers_stopped",
-            "collectors_stopped", "effects_checked", "outcome", "leases_retained", "result_reread", "start_replayed")}
+                    role + "_source_sha256": verified["source_files"][relative]})
+        assertions = {key: report[key] for key in _fields('future_start_blocked tree_exited writers_stopped collectors_stopped effects_checked outcome leases_retained result_reread start_replayed')}
         # These are explicitly the pinned recovery helper's assertions, not
         # invented raw before-snapshots. validate_h11_result has checked them.
-        assertions.update({key: True for key in ("same_operation", "same_request_digest",
-            "original_handle_admitted", "same_original_stage_units", "same_grant_and_deadlines",
-            "delivery_intents_unchanged", "recovery_launch_forbidden", "gateway_parts_unchanged")})
+        assertions.update({key: True for key in _fields('same_operation same_request_digest original_handle_admitted same_original_stage_units same_grant_and_deadlines delivery_intents_unchanged recovery_launch_forbidden gateway_parts_unchanged')})
         assertions.update(recovery_barrier_count=1, quota_exit_pending_count=1,
-                          deadline_extended=False, business_evidence_sealed=False)
+            deadline_extended=False, business_evidence_sealed=False)
         basename = "result-f7b176ecb6b8081fac3a7a47.json"
         return {"schema": PROOF_SCHEMA, "session_id": SESSION, "index": case["index"],
             "case_id": case["case_id"], "candidate": candidate, **refs,
@@ -4058,13 +4026,13 @@ class FieldEffects:
             before = identity()
             # Closed WAL-format files must not create reader sidecars.
             db = sqlite3.connect("file:/proc/self/fd/" + str(fd) + "?mode=ro&immutable=1",
-                                 uri=True, timeout=0)
+                uri=True, timeout=0)
             db.execute("PRAGMA query_only=ON")
             db.set_progress_handler(lambda: (self._exec_guard(plan), 0)[1], 500)
             rows = db.execute("SELECT seq FROM events WHERE namespace='job' AND id=? AND kind='ACCEPTED'",
-                              (case["operation_id"],)).fetchmany(2)
+                (case["operation_id"],)).fetchmany(2)
             _effect(len(rows) == 1 and type(rows[0][0]) is int and rows[0][0] > 0,
-                     "H11_ACCEPTED_EVENT")
+                "H11_ACCEPTED_EVENT")
             db.close(); db = None
             _effect(identity() == before, "H11_LEDGER_CHANGED")
         finally:
@@ -4086,8 +4054,7 @@ class FieldEffects:
         return self._exec_case(case, prepared, plan)
 
     def phase_facts(self, case, phase, plan, sources):
-        names = ("admin.local_hand_quota_observer.q2_config", "local_hand_jobs.budget",
-                 "admin.local_hand_quota_observer.controller_guard")
+        names = _fields('admin.local_hand_quota_observer.q2_config local_hand_jobs.budget admin.local_hand_quota_observer.controller_guard')
         modules = self._candidate_modules(names)
         return _phase_extract(case, phase, plan, sources, *(modules[name] for name in names))
 
@@ -4112,22 +4079,20 @@ def _phase_extract(case, phase, plan, sources, config_api, budget_api, controlle
     for path, role in phase_source_specs(case, phase):
         item = by_path.get(path)
         _phase_raw(item is not None and item["role"] == role
-                 and item["mode"] == (420 if role == "recovery-plan" else 384), "SOURCE")
+            and item["mode"] == (420 if role == "recovery-plan" else 384), "SOURCE")
         rows[role] = item
     values = {role: document(item["raw"], limit=MEMBER_LIMIT,
-                           newline=role == "preparation-result")
-              for role, item in rows.items()}
+            newline=role == "preparation-result")
+        for role, item in rows.items()}
     try:
         prepared = values["preparation-result"]
-        _phase_raw.exact(prepared, ("schema", "preparation_id", "plan_sha256", "status", "reason",
-                         "facts", "q2_accepted", "q3_accepted", "production_supported",
-                         "fixture_generated"), "PREPARATION")
+        _phase_raw.exact(prepared, _fields('schema preparation_id plan_sha256 status reason facts q2_accepted q3_accepted production_supported fixture_generated'), "PREPARATION")
         _phase_raw(prepared["schema"] == "local-hand-q2-fixture-preparation/v1"
-                 and prepared["status"] == "RESOURCES_PREPARED" and prepared["reason"] is None
-                 and prepared["preparation_id"] == plan["preparation_id"]
-                 and all(prepared[key] is False for key in
-                         ("q2_accepted", "q3_accepted", "production_supported", "fixture_generated")),
-                 "PREPARATION")
+            and prepared["status"] == "RESOURCES_PREPARED" and prepared["reason"] is None
+            and prepared["preparation_id"] == plan["preparation_id"]
+            and all(prepared[key] is False for key in
+                _fields('q2_accepted q3_accepted production_supported fixture_generated')),
+            "PREPARATION")
         observed = prepared["facts"]
         raw = rows["observer-config"]["raw"]
         path = observed["directories"]["capture"]["path"] + "/" + phase + "/observer.json"
@@ -4136,49 +4101,48 @@ def _phase_extract(case, phase, plan, sources, config_api, budget_api, controlle
         data, request = grant.as_dict(), grant.request.as_dict()
         execution = "job-" + case["operation_id"] + "-" + phase
         _phase_raw(config.data()["source_commit"] == CANDIDATE["commit"]
-                 and request["execution_id"] == execution and request["phase"] == phase
-                 and request["boot_id"] == observed["host"]["boot_id"]
-                 and request["generation"] == plan["identity"]["slot_generation"]
-                 and all(request[key] == plan["identity"][key]
-                         for key in ("authority_digest", "manifest_digest", "epoch")),
-                 "GRANT_BINDING")
+            and request["execution_id"] == execution and request["phase"] == phase
+            and request["boot_id"] == observed["host"]["boot_id"]
+            and request["generation"] == plan["identity"]["slot_generation"]
+            and all(request[key] == plan["identity"][key]
+                for key in ("authority_digest", "manifest_digest", "epoch")),
+            "GRANT_BINDING")
         budget = data["budget"]
         budget_api.validate_grant(budget, execution_id=execution, phase=phase,
             namespace="job", operation_id=case["operation_id"], record_id=case["operation_id"],
             original_budgets=plan["budgets"]["operation"])
         original_roots = {row["project_id"]: row for row in observed["roots"]}
         _phase_raw(len(original_roots) == 7 and set(original_roots) == set(case["project_ids"]),
-                 "ROOTS")
+            "ROOTS")
         projects = case["project_ids"][3:] if phase == "evidence" else case["project_ids"][:3]
         _phase_raw(len(data["roots"]) == len(projects)
-                 and {row["project_id"] for row in data["roots"]} == set(projects), "ROOTS")
+            and {row["project_id"] for row in data["roots"]} == set(projects), "ROOTS")
         for root in data["roots"]:
             original = original_roots.get(root["project_id"])
             _phase_raw(original is not None and all(original[key] == value for key, value in root.items()),
-                     "ROOTS")
+                "ROOTS")
         reservation = values["launcher-reservation"]
-        _phase_raw.exact(reservation, ("schema", "fixture_digest", "session", "controller", "started_ns"),
-               "RESERVATION")
+        _phase_raw.exact(reservation, _fields('schema fixture_digest session controller started_ns'),
+            "RESERVATION")
         _phase_raw(reservation["schema"] == ("local-hand-q2-system-launcher-reservation/v1"
-                 if case["index"] == 1 else "local-hand-q2-launcher-reservation/v1"
-                 if case["index"] == 2 else "local-hand-q4-h11-launcher-reservation/v1")
-                 and reservation["session"] == plan["identity"]["session"], "RESERVATION")
+                if case["index"] == 1 else "local-hand-q2-launcher-reservation/v1"
+                if case["index"] == 2 else "local-hand-q4-h11-launcher-reservation/v1")
+            and reservation["session"] == plan["identity"]["session"], "RESERVATION")
         _digest(reservation["fixture_digest"])
         envelope = reservation["controller"]
-        _phase_raw.exact(envelope, ("controller", "issued_ns", "deadline_ns", "output_bytes",
-                          "storage_bytes", "storage_inodes"), "CONTROLLER")
+        _phase_raw.exact(envelope, _fields('controller issued_ns deadline_ns output_bytes storage_bytes storage_inodes'), "CONTROLLER")
         _integer(envelope["issued_ns"], 1)
         _integer(reservation["started_ns"], 1)
         controller_api.decode_controller(envelope["controller"])
         target = plan["controllers"]["target"]
         _phase_raw(all(envelope["controller"][key] == value for key, value in target.items())
-                 and envelope["issued_ns"] <= reservation["started_ns"] < envelope["deadline_ns"]
-                 and envelope["deadline_ns"] <= plan["deadlines"]["owner_deadline_ns"]
-                 and envelope["deadline_ns"] - envelope["issued_ns"]
-                     <= envelope["controller"]["runtime_max_usec"] * 1000
-                 and envelope["output_bytes"] == 32768
-                 and all(envelope[key] == plan["controllers"]["target_" + key]
-                         for key in ("storage_bytes", "storage_inodes")), "CONTROLLER")
+            and envelope["issued_ns"] <= reservation["started_ns"] < envelope["deadline_ns"]
+            and envelope["deadline_ns"] <= plan["deadlines"]["owner_deadline_ns"]
+            and envelope["deadline_ns"] - envelope["issued_ns"]
+            <= envelope["controller"]["runtime_max_usec"] * 1000
+            and envelope["output_bytes"] == 32768
+            and all(envelope[key] == plan["controllers"]["target_" + key]
+                for key in ("storage_bytes", "storage_inodes")), "CONTROLLER")
         digest = grant.request.digest
         facts = dict(quota_request_id=request["request_id"], quota_request_sha256=digest,
             query_unit=grant.request.query_unit, listener_unit="lhqoc-" + digest + ".service",
@@ -4188,7 +4152,7 @@ def _phase_extract(case, phase, plan, sources, config_api, budget_api, controlle
             stage_deadline_ns=budget_api.phase_deadline_ns(budget) - budget["limits"]["terminate_grace_seconds"] * NS,
             controller_deadline_ns=envelope["deadline_ns"])
         _phase_raw(request["deadline_ns"] <= facts["stage_deadline_ns"]
-                 and facts["budget_deadline_ns"] <= facts["controller_deadline_ns"], "DEADLINE")
+            and facts["budget_deadline_ns"] <= facts["controller_deadline_ns"], "DEADLINE")
         _phase_raw_binding(case, phase, plan, values, grant.digest, facts)
         _phase_receipt(case, phase, facts, sources)
         return facts
@@ -4201,38 +4165,38 @@ def _phase_extract(case, phase, plan, sources, config_api, budget_api, controlle
 def _phase_raw_binding(case, phase, plan, values, grant_digest, facts):
     launcher = values["launcher-result"]
     _phase_raw(launcher["q3_accepted"] is False and launcher["production_supported"] is False,
-             "LAUNCHER")
+        "LAUNCHER")
     if case["index"] != 3:
         result = values["phase-result"]
         _phase_raw(result["grant_digest"] == grant_digest and result["q3_accepted"] is False
-                 and result["production_supported"] is False, "RESULT")
+            and result["production_supported"] is False, "RESULT")
         if case["index"] == 1:
             _phase_raw(result["status"] == "PHASE_CLOSED" and launcher["status"] == "CHAIN_CLOSED"
-                     and launcher["grant_digests"][phase] == grant_digest
-                     and result["fence"]["request_digest"] == facts["quota_request_sha256"],
-                     "RESULT")
+                and launcher["grant_digests"][phase] == grant_digest
+                and result["fence"]["request_digest"] == facts["quota_request_sha256"],
+                "RESULT")
         else:
             report = result["case"]
             _phase_raw(result["status"] == launcher["status"] == "CANCEL_CASE_RECORDED"
-                     and launcher["grant_digest"] == grant_digest and launcher["case"] == report
-                     and report["operation_id"] == case["operation_id"]
-                     and report["request_digest"] == plan["request"]["request_digest"]
-                     and report["phase_deadline_ns"] == facts["stage_deadline_ns"],
-                     "CANCEL_BINDING")
+                and launcher["grant_digest"] == grant_digest and launcher["case"] == report
+                and report["operation_id"] == case["operation_id"]
+                and report["request_digest"] == plan["request"]["request_digest"]
+                and report["phase_deadline_ns"] == facts["stage_deadline_ns"],
+                "CANCEL_BINDING")
     else:
         original = values["recovery-plan"]["recovery"]
         summary = values["recovery-summary"]
         _phase_raw(launcher["status"] == "RECOVERY_RECORDED" and launcher["recovery"] == summary,
-                 "RECOVERY")
+            "RECOVERY")
         for item, budget_name in ((original, "budget_deadline_ns"), (summary, "original_deadline_ns")):
             _phase_raw(item["operation_id"] == case["operation_id"] and item["phase"] == phase
-                     and item[budget_name] == facts["budget_deadline_ns"]
-                     and all(item[key] == facts[key] for key in ("phase_deadline_ns", "controller_deadline_ns")),
-                     "RECOVERY_DEADLINE")
+                and item[budget_name] == facts["budget_deadline_ns"]
+                and all(item[key] == facts[key] for key in ("phase_deadline_ns", "controller_deadline_ns")),
+                "RECOVERY_DEADLINE")
         expected = next(row for row in plan["phases"] if row["phase"] == phase)
         _phase_raw(original["units"] == summary["units"] ==
-                 {key: expected[key + "_unit"] for key in ("bootstrap", "helper", "result_reader")},
-                 "RECOVERY_UNITS")
+            {key: expected[key + "_unit"] for key in ("bootstrap", "helper", "result_reader")},
+            "RECOVERY_UNITS")
 
 
 def _clock(effects, deadlines):
@@ -4242,8 +4206,8 @@ def _clock(effects, deadlines):
     _integer(now["boottime_ns"], 1, code="CORE_DISPATCH_CLOCK")
     _integer(now["monotonic_ns"], 1, code="CORE_DISPATCH_CLOCK")
     _require(now["boottime_ns"] < deadlines["boottime_deadline_ns"]
-             and now["monotonic_ns"] < deadlines["monotonic_deadline_ns"],
-             "CORE_DISPATCH_DEADLINE")
+        and now["monotonic_ns"] < deadlines["monotonic_deadline_ns"],
+        "CORE_DISPATCH_DEADLINE")
     return now
 
 
@@ -4252,7 +4216,7 @@ def _persist(effects, case_id, path, role, value, *, mode=384, raw=False):
     returned = effects.persist(case_id, path, content, mode)
     _source(returned, case_id=None if case_id == "carrier" else case_id)
     _require(returned == {"path": path, "role": role, "mode": mode, "raw": content},
-             "CORE_DISPATCH_PERSIST_RESULT")
+        "CORE_DISPATCH_PERSIST_RESULT")
     return returned
 
 
@@ -4272,13 +4236,13 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
     _require(type(prepared) is dict, "CORE_DISPATCH_PREPARED")
     now = _clock(effects, effects.context["guest_deadlines"])
     _require(now["boottime_ns"] < deadlines["preparation_deadline_ns"]
-             and now["monotonic_ns"] < deadlines["preparation_monotonic_deadline_ns"],
-             "CORE_DISPATCH_PREPARATION_DEADLINE")
+        and now["monotonic_ns"] < deadlines["preparation_monotonic_deadline_ns"],
+        "CORE_DISPATCH_PREPARATION_DEADLINE")
     owner_deadline = min(now["boottime_ns"] + OWNER_NS, deadlines["remote_final_deadline_ns"])
     owner_mono_deadline = min(now["monotonic_ns"] + OWNER_NS,
-                              deadlines["remote_final_monotonic_deadline_ns"])
+        deadlines["remote_final_monotonic_deadline_ns"])
     effects._active_case_deadlines.update(owner_deadline_ns=owner_deadline,
-                                          owner_monotonic_deadline_ns=owner_mono_deadline)
+        owner_monotonic_deadline_ns=owner_mono_deadline)
     plan_deadlines = {
         "case_origin_ns": deadlines["case_origin_ns"],
         "preparation_deadline_ns": deadlines["preparation_deadline_ns"],
@@ -4288,7 +4252,7 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
     }
     planned = effects.plan_case(case, prepared, plan_deadlines)
     _require(type(planned) is dict and set(planned) == {"plan", "sources"},
-             "CORE_DISPATCH_PLANNED")
+        "CORE_DISPATCH_PLANNED")
     plan = validate_plan(case, intent, planned["plan"], plan_deadlines)
     sources = [intent_source, *planned["sources"]]
     for source in sources:
@@ -4296,33 +4260,33 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
     plan_path = "cases/" + case["case_id"] + "/reservation/case-plan.json"
     plan_source = next((item for item in sources if item["path"] == plan_path), None)
     _require(plan_source == {"path": plan_path, "role": "plan", "mode": 384,
-                             "raw": canonical(plan, newline=True)},
-             "CORE_DISPATCH_PLAN_SOURCE")
+            "raw": canonical(plan, newline=True)},
+        "CORE_DISPATCH_PLAN_SOURCE")
     if case["index"] == 1:
         outcome = effects.run_h01(case, prepared, plan)
     elif case["index"] == 2:
         outcome = effects.run_q4(case, prepared, plan)
     else:
         outcome = effects.recover_h11(case, prepared, plan)
-    _exact(outcome, ("sources", "observations", "stop", "proof", "seal_id", "summary"),
-           "CORE_DISPATCH_OUTCOME_FIELDS")
+    _exact(outcome, _fields('sources observations stop proof seal_id summary'),
+        "CORE_DISPATCH_OUTCOME_FIELDS")
     sources.extend(outcome["sources"])
     for source in sources:
         _source(source, case_id=case["case_id"])
     phase_facts = {phase: effects.phase_facts(case, phase, plan, sources)
-                   for phase in case["phases"]}
+        for phase in case["phases"]}
     receipts = _validate_phase_receipts(case, sources, phase_facts, owner_deadline)
     prefix = "cases/" + case["case_id"] + "/"
     for phase, receipt in receipts:
         sources.append(_persist(effects, case["case_id"],
-                                prefix + "reservation/phase-" + phase + "-receipt.json",
-                                "phase-receipt", receipt, mode=384))
+                prefix + "reservation/phase-" + phase + "-receipt.json",
+                "phase-receipt", receipt, mode=384))
     proof = outcome["proof"]
     if case["index"] == 3:
         _validate_h11_proof(proof, case, sources, owner_deadline)
         sources.append(_persist(effects, case["case_id"],
-                                prefix + "reservation/h11-recovery-proof.json",
-                                "recovery-proof", proof, mode=384))
+                prefix + "reservation/h11-recovery-proof.json",
+                "recovery-proof", proof, mode=384))
     else:
         _require(proof is None, "CORE_DISPATCH_UNEXPECTED_PROOF")
     # Add a temporary verdict source only after all other exact members exist.
@@ -4330,13 +4294,13 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
     expected_without_verdict = {row for row in expected_without_verdict if row[1] != "verdict"}
     actual_without_verdict = {(item["path"], item["role"], item["mode"]) for item in sources}
     _require(actual_without_verdict == expected_without_verdict,
-             "CORE_DISPATCH_PREVERDICT_SET")
+        "CORE_DISPATCH_PREVERDICT_SET")
     placeholder = {"path": prefix + "reservation/case-verdict.json", "role": "verdict",
-                   "mode": 384, "raw": b""}
+        "mode": 384, "raw": b""}
     verdict = _validate_verdict(case, outcome["observations"], outcome["stop"],
-                                sources + [placeholder], proof, owner_deadline)
+        sources + [placeholder], proof, owner_deadline)
     verdict_source = _persist(effects, case["case_id"], placeholder["path"],
-                              "verdict", verdict, mode=384)
+        "verdict", verdict, mode=384)
     sources.append(verdict_source)
     _validate_source_set(case, sources, seal_id=outcome["seal_id"])
     _require(type(outcome["summary"]) is dict, "CORE_DISPATCH_SUMMARY")
@@ -4344,23 +4308,23 @@ def _case_outcome(effects, case, intent, intent_source, deadlines):
         summary = _h01_summary(case, sources, outcome["summary"], outcome["seal_id"])
     else:
         _require(outcome["summary"] == {} and outcome["seal_id"] is None,
-                 "CORE_DISPATCH_NON_H01_SUMMARY")
+            "CORE_DISPATCH_NON_H01_SUMMARY")
         summary = {"seal_id": None}
     return sources, verdict, summary, owner_mono_deadline
 
 
 def _h01_summary(case, sources, observed, seal_id):
     _check.exact(observed, ("business_invocation_id", "business_wait_status"),
-           "H01_SUMMARY_INPUT")
+        "H01_SUMMARY_INPUT")
     _check(re.fullmatch(r"[0-9a-f]{32}", observed["business_invocation_id"] or "") is not None,
-             "H01_SUMMARY_INPUT")
+        "H01_SUMMARY_INPUT")
     _check.integer(observed["business_wait_status"], 0, 255,
-             "H01_SUMMARY_INPUT")
+        "H01_SUMMARY_INPUT")
     prefix = "cases/" + case["case_id"] + "/"
     result = next(item for item in sources
-                  if item["path"] == prefix + "business/result-03c94c57c840717302854a3f.json")
+        if item["path"] == prefix + "business/result-03c94c57c840717302854a3f.json")
     evidence = next(item for item in sources
-                    if item["path"] == prefix + "business-evidence/" + seal_id + "/seal.json")
+        if item["path"] == prefix + "business-evidence/" + seal_id + "/seal.json")
     references = [_reference(item, sealed=None) for item in sources]
     references.sort(key=lambda row: (row["role"].encode("ascii"), row["path"].encode("ascii")))
     result_ref = _reference(result, sealed=None)
@@ -4388,13 +4352,13 @@ def _case_deadlines(now, outer):
     remote_boot = outer["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS
     remote_mono = outer["monotonic_deadline_ns"] - REMOTE_FINAL_RESERVE_NS
     _check(remote_boot - now["boottime_ns"] >= CASE_GATE_NS
-             and remote_mono - now["monotonic_ns"] >= CASE_GATE_NS, "CASE_GATE")
+        and remote_mono - now["monotonic_ns"] >= CASE_GATE_NS, "CASE_GATE")
     return {
         "case_origin_ns": now["boottime_ns"],
         "preparation_deadline_ns": min(now["boottime_ns"] + PREPARATION_NS,
-                                       remote_boot - OWNER_NS),
+            remote_boot - OWNER_NS),
         "preparation_monotonic_deadline_ns": min(now["monotonic_ns"] + PREPARATION_NS,
-                                                 remote_mono - OWNER_NS),
+            remote_mono - OWNER_NS),
         "remote_final_deadline_ns": remote_boot,
         "remote_final_monotonic_deadline_ns": remote_mono,
         "carrier_deadline_ns": outer["boottime_deadline_ns"],
@@ -4402,21 +4366,17 @@ def _case_deadlines(now, outer):
 
 
 def _usage(value, context, frame_bytes):
-    fields = ("guest_elapsed_ns", "carrier_cpu_ns", "carrier_memory_peak_bytes",
-              "carrier_pids_peak", "stdin_bytes_received", "output_frame_bytes",
-              "guest_allocated_bytes", "guest_allocated_inodes", "job_units_started",
-              "controller_units_started", "quota_query_units_started",
-              "dynamic_quota_units_started", "native_children_started")
+    fields = _fields('guest_elapsed_ns carrier_cpu_ns carrier_memory_peak_bytes carrier_pids_peak stdin_bytes_received output_frame_bytes guest_allocated_bytes guest_allocated_inodes job_units_started controller_units_started quota_query_units_started dynamic_quota_units_started native_children_started')
     _check.exact(value, fields, "USAGE_FIELDS")
     for key in fields:
         _check.integer(value[key], 0, code="USAGE")
     _check(value["stdin_bytes_received"] == context["stdin_bytes_received"]
-             and value["output_frame_bytes"] in (0, frame_bytes), "USAGE_BINDING")
+        and value["output_frame_bytes"] in (0, frame_bytes), "USAGE_BINDING")
     ceilings = {"carrier_cpu_ns": 800 * NS, "carrier_memory_peak_bytes": 1073741824,
-                "carrier_pids_peak": 128, "guest_allocated_bytes": 188743680,
-                "guest_allocated_inodes": 13440, "job_units_started": 15,
-                "controller_units_started": 6, "quota_query_units_started": 5,
-                "dynamic_quota_units_started": 15, "native_children_started": 16}
+        "carrier_pids_peak": 128, "guest_allocated_bytes": 188743680,
+        "guest_allocated_inodes": 13440, "job_units_started": 15,
+        "controller_units_started": 6, "quota_query_units_started": 5,
+        "dynamic_quota_units_started": 15, "native_children_started": 16}
     _check(all(value[key] <= limit for key, limit in ceilings.items()), "USAGE_LIMIT")
     return value
 
@@ -4429,34 +4389,26 @@ def _session(context, admission, installation):
         "closure": CLOSURE, "implementation": manifest["implementation"],
         "amendment": manifest["amendment"],
         "package": {"basename": bind["package_basename"], "bytes": bind["package_bytes"],
-                    "sha256": bind["package_sha256"],
-                    "manifest_sha256": _sha(canonical(manifest, newline=True))},
+            "sha256": bind["package_sha256"],
+            "manifest_sha256": _sha(canonical(manifest, newline=True))},
         "entry": manifest["entry"], "locators": manifest["locators"],
         "consumption": _consumption_info(context),
         "session_id": SESSION,
-        "outer": {**{key: bind[key] for key in (
-            "host_boottime_origin_ns", "host_monotonic_origin_ns",
-            "host_boottime_deadline_ns", "host_monotonic_deadline_ns", "clock_margin_ns",
-            "host_boottime_bind_ns", "host_monotonic_bind_ns", "hello_sha256",
-            "mapped_duration_ns", "host_remaining_floor_ns", "guest_duration_cap_ns",
-            "guest_duration_ns")},
-                  **{key: hello[key] for key in (
-                      "guest_boot_id", "guest_boottime_origin_ns", "guest_monotonic_origin_ns")},
-                  "guest_boottime_deadline_ns": context["guest_deadlines"]["boottime_deadline_ns"],
-                  "guest_monotonic_deadline_ns": context["guest_deadlines"]["monotonic_deadline_ns"],
-                  "remote_final_reserve_ns": REMOTE_FINAL_RESERVE_NS,
-                  "local_final_reserve_ns": bind["local_final_reserve_ns"]},
+        "outer": {**{key: bind[key] for key in _fields('host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns clock_margin_ns host_boottime_bind_ns host_monotonic_bind_ns hello_sha256 mapped_duration_ns host_remaining_floor_ns guest_duration_cap_ns guest_duration_ns')},
+            **{key: hello[key] for key in _fields('guest_boot_id guest_boottime_origin_ns guest_monotonic_origin_ns')},
+            "guest_boottime_deadline_ns": context["guest_deadlines"]["boottime_deadline_ns"],
+            "guest_monotonic_deadline_ns": context["guest_deadlines"]["monotonic_deadline_ns"],
+            "remote_final_reserve_ns": REMOTE_FINAL_RESERVE_NS,
+            "local_final_reserve_ns": bind["local_final_reserve_ns"]},
         "admission": admission, "installation": installation,
         "output": {"stdout_basename": ".lhqcore-20261003a.stdout",
-                   "stderr_basename": ".lhqcore-20261003a.stderr",
-                   "remote_result_basename": ".lhqcore-20261003a.remote-result.json",
-                   "capture_manifest_basename": ".lhqcore-20261003a.capture-manifest.json",
-                   "local_receipt_basename": ".lhqcore-20261003a.acceptance-receipt.json",
-                   "output_package_bytes": FRAME_LIMIT, "stderr_bytes": STDERR_LIMIT},
+            "stderr_basename": ".lhqcore-20261003a.stderr",
+            "remote_result_basename": ".lhqcore-20261003a.remote-result.json",
+            "capture_manifest_basename": ".lhqcore-20261003a.capture-manifest.json",
+            "local_receipt_basename": ".lhqcore-20261003a.acceptance-receipt.json",
+            "output_package_bytes": FRAME_LIMIT, "stderr_bytes": STDERR_LIMIT},
         "limits": LIMITS, "cases": [{key: case[key] for key in
-                                      ("index", "case_id", "kind", "predecessor",
-                                       "preparation_id", "operation_id", "controller_prefix",
-                                       "project_ids", "phases")} for case in CASES],
+                _fields('index case_id kind predecessor preparation_id operation_id controller_prefix project_ids phases')} for case in CASES],
         "state": "REMOTE_FINALIZED",
     }
 
@@ -4467,34 +4419,29 @@ def _absolute_text(value, code):
 
 
 def _program_identity(value, code):
-    _exact(value, ("path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"),
-           code)
+    _exact(value, _fields('path dev ino mode uid gid nlink bytes sha256'),
+        code)
     _absolute_text(value["path"], code)
-    for key in ("dev", "uid", "gid", "bytes"):
+    for key in _fields('dev uid gid bytes'):
         _integer(value[key], 0, code=code)
     _integer(value["ino"], 1, code=code)
     _require(value["mode"] in (365, 493) and value["nlink"] == 1,
-             code)
+        code)
     _digest(value["sha256"], code)
     return value
 
 
 def _validate_admission(value, context):
-    _admit.exact(value, ("guest", "programs", "policies", "parents", "filesystems", "capacity", "absence", "binding"),
-           "FIELDS")
+    _admit.exact(value, _fields('guest programs policies parents filesystems capacity absence binding'),
+        "FIELDS")
     _validate_admission_binding(value["binding"], context)
-    guest = _admit.exact(value["guest"], (
-        "hostname", "dmi_vendor", "dmi_product", "initial_userns", "boot_id", "pid1_exe",
-        "pid1_version", "cgroup_version", "ordinary_user", "ordinary_uid", "ordinary_gid",
-        "ordinary_groups", "user_manager_unit", "user_manager_invocation_id",
-        "user_manager_cgroup",
-    ), "GUEST_FIELDS")
+    guest = _admit.exact(value["guest"], _fields('hostname dmi_vendor dmi_product initial_userns boot_id pid1_exe pid1_version cgroup_version ordinary_user ordinary_uid ordinary_gid ordinary_groups user_manager_unit user_manager_invocation_id user_manager_cgroup'), "GUEST_FIELDS")
     _admit(type(guest["hostname"]) is str and 1 <= len(guest["hostname"]) <= 253
-             and (guest["dmi_vendor"] in ("QEMU", "KVM") or guest["dmi_product"] == "KVM")
-             and guest["cgroup_version"] == 2
-             and type(guest["ordinary_user"]) is str
-             and type(guest["ordinary_groups"]) is list
-             and all(type(item) is int and item >= 0 for item in guest["ordinary_groups"]), "GUEST")
+        and (guest["dmi_vendor"] in ("QEMU", "KVM") or guest["dmi_product"] == "KVM")
+        and guest["cgroup_version"] == 2
+        and type(guest["ordinary_user"]) is str
+        and type(guest["ordinary_groups"]) is list
+        and all(type(item) is int and item >= 0 for item in guest["ordinary_groups"]), "GUEST")
     _admit.exact(guest["initial_userns"], ("dev", "ino"), "NAMESPACE")
     _admit.integer(guest["initial_userns"]["dev"], 0, code="NAMESPACE")
     _admit.integer(guest["initial_userns"]["ino"], 1, code="NAMESPACE")
@@ -4502,105 +4449,97 @@ def _validate_admission(value, context):
     _admit.integer(guest["ordinary_gid"], 1, 2**32 - 2, "ACCOUNT")
     _admit.absolute(guest["pid1_exe"], "PID1")
     _admit(type(guest["pid1_version"]) is str and guest["pid1_version"].startswith("systemd ")
-             and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-                              guest["boot_id"] or "") is not None
-             and re.fullmatch(r"[0-9a-f]{32}", guest["user_manager_invocation_id"] or "")
-             is not None, "GUEST")
+        and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+            guest["boot_id"] or "") is not None
+        and re.fullmatch(r"[0-9a-f]{32}", guest["user_manager_invocation_id"] or "")
+        is not None, "GUEST")
     _admit.absolute(guest["user_manager_cgroup"], "GUEST")
     programs = _admit.exact(value["programs"],
-                      ("python", "git", "cc", "setpriv", "systemctl", "systemd_run"),
-                      "PROGRAM_FIELDS")
+        _fields('python git cc setpriv systemctl systemd_run'),
+        "PROGRAM_FIELDS")
     for item in programs.values():
         _admit.program(item, "PROGRAM")
     _admit(programs["setpriv"]["path"] == "/usr/bin/setpriv"
-             and programs["systemctl"]["path"] == "/usr/bin/systemctl"
-             and programs["systemd_run"]["path"] == "/usr/bin/systemd-run", "PROGRAM")
-    policies = _admit.exact(value["policies"], ("sudo", "sshd", "authorized_keys", "rc"),
-                      "POLICY_FIELDS")
+        and programs["systemctl"]["path"] == "/usr/bin/systemctl"
+        and programs["systemd_run"]["path"] == "/usr/bin/systemd-run", "PROGRAM")
+    policies = _admit.exact(value["policies"], _fields('sudo sshd authorized_keys rc'),
+        "POLICY_FIELDS")
     basis = _approved_inputs_envelope(context)["policy_basis"]
     for name, item in policies.items():
-        relation = _exact(item.get("relation"), ("stage", "pre_entry_containment", "policy_basis_sha256",
-            "predicate_sha256", "snapshot_sha256", "facts_sha256", "matched"), "CORE_ADMIT_POLICY_RELATION")
+        relation = _exact(item.get("relation"), _fields('stage pre_entry_containment policy_basis_sha256 predicate_sha256 snapshot_sha256 facts_sha256 matched'), "CORE_ADMIT_POLICY_RELATION")
         _require(relation["stage"] == "POST_ENTRY_PRE_H01_INTENT"
-                 and relation["pre_entry_containment"] is False and relation["matched"] is True
-                 and relation["policy_basis_sha256"] == _sha(canonical(basis))
-                 and relation["predicate_sha256"] == basis["policies"][name]["predicate_sha256"]
-                 and relation["snapshot_sha256"] == item["sha256"], "CORE_ADMIT_POLICY_RELATION")
+            and relation["pre_entry_containment"] is False and relation["matched"] is True
+            and relation["policy_basis_sha256"] == _sha(canonical(basis))
+            and relation["predicate_sha256"] == basis["policies"][name]["predicate_sha256"]
+            and relation["snapshot_sha256"] == item["sha256"], "CORE_ADMIT_POLICY_RELATION")
         for key in ("predicate_sha256", "snapshot_sha256", "facts_sha256"):
             _digest(relation[key], "CORE_ADMIT_POLICY_RELATION")
-        _admit.exact(item, ("paths", "bytes", "sha256", "relation"), "POLICY")
+        _admit.exact(item, _fields('paths bytes sha256 relation'), "POLICY")
         _admit(type(item["paths"]) is list and item["paths"]
-                 and all(type(path) is str and path.startswith("/") for path in item["paths"])
-                 and type(item["bytes"]) is int and item["bytes"] >= 0
-                 and type(item["relation"]) is dict, "POLICY")
+            and all(type(path) is str and path.startswith("/") for path in item["paths"])
+            and type(item["bytes"]) is int and item["bytes"] >= 0
+            and type(item["relation"]) is dict, "POLICY")
         _admit.digest(item["sha256"], "POLICY")
-    directory_roles = ("state", "quota", "install", "journal", "evidence")
-    cgroup_roles = ("controller_cgroup", "management_cgroup", "supervisor_cgroup",
-                    "query_cgroup", "ordinary_cgroup", "retained_ordinary_cgroup")
+    directory_roles = _fields('state quota install journal evidence')
+    cgroup_roles = _fields('controller_cgroup management_cgroup supervisor_cgroup query_cgroup ordinary_cgroup retained_ordinary_cgroup')
     parents = _admit.exact(value["parents"], directory_roles + cgroup_roles, "PARENT_FIELDS")
     for role in directory_roles:
-        item = _admit.exact(parents[role], ("path", "dev", "ino", "mode", "uid", "gid", "nlink",
-                                             "mount_id", "fs_uuid"), "DIRECTORY")
+        item = _admit.exact(parents[role], _fields('path dev ino mode uid gid nlink mount_id fs_uuid'), "DIRECTORY")
         _admit.absolute(item["path"], "DIRECTORY")
-        for key in ("dev", "uid", "gid", "mount_id"):
+        for key in _fields('dev uid gid mount_id'):
             _admit.integer(item[key], 0, code="DIRECTORY")
         _admit.integer(item["ino"], 1, code="DIRECTORY")
         _admit(item["mode"] in (448, 493) and item["nlink"] >= 2
-                 and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-                                  item["fs_uuid"] or "") is not None, "DIRECTORY")
+            and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                item["fs_uuid"] or "") is not None, "DIRECTORY")
     for role in cgroup_roles:
-        item = _admit.exact(parents[role], ("path", "dev", "ino", "unit", "invocation_id", "controllers"),
-                      "CGROUP")
+        item = _admit.exact(parents[role], _fields('path dev ino unit invocation_id controllers'),
+            "CGROUP")
         _admit.absolute(item["path"], "CGROUP")
         _admit.integer(item["dev"], 0, code="CGROUP")
         _admit.integer(item["ino"], 1, code="CGROUP")
         _admit(type(item["unit"]) is str and item["unit"].endswith((".slice", ".service"))
-                 and re.fullmatch(r"[0-9a-f]{32}", item["invocation_id"] or "") is not None
-                 and type(item["controllers"]) is list
-                 and all(controller in ("cpu", "memory", "pids")
-                         for controller in item["controllers"]), "CGROUP")
+            and re.fullmatch(r"[0-9a-f]{32}", item["invocation_id"] or "") is not None
+            and type(item["controllers"]) is list
+            and all(controller in ("cpu", "memory", "pids")
+                for controller in item["controllers"]), "CGROUP")
     filesystems = _admit.exact(value["filesystems"], directory_roles, "FILESYSTEM_FIELDS")
     for role, item in filesystems.items():
-        _admit.exact(item, ("mount_id", "dev", "fs_uuid", "fstype", "mount_options",
-                      "bytes_available", "inodes_available"), "FILESYSTEM")
-        for key in ("mount_id", "dev", "bytes_available", "inodes_available"):
+        _admit.exact(item, _fields('mount_id dev fs_uuid fstype mount_options bytes_available inodes_available'), "FILESYSTEM")
+        for key in _fields('mount_id dev bytes_available inodes_available'):
             _admit.integer(item[key], 0, code="FILESYSTEM")
         _admit(item["mount_id"] == parents[role]["mount_id"]
-                 and item["dev"] == parents[role]["dev"]
-                 and item["fs_uuid"] == parents[role]["fs_uuid"]
-                 and item["fstype"] == "ext4"
-                 and type(item["mount_options"]) is list
-                 and all(type(option) is str for option in item["mount_options"]), "FILESYSTEM")
+            and item["dev"] == parents[role]["dev"]
+            and item["fs_uuid"] == parents[role]["fs_uuid"]
+            and item["fstype"] == "ext4"
+            and type(item["mount_options"]) is list
+            and all(type(option) is str for option in item["mount_options"]), "FILESYSTEM")
     capacity = value["capacity"]
     _admit(type(capacity) is list and capacity, "CAPACITY")
     ordering = []
     seen_roles = set()
     for row in capacity:
-        _admit.exact(row, ("dev", "fs_uuid", "roles", "historical_bytes", "historical_inodes",
-                     "new_required_bytes", "new_required_inodes", "bytes_available",
-                     "inodes_available", "admitted"), "CAPACITY")
-        for key in ("dev", "historical_bytes", "historical_inodes", "new_required_bytes",
-                    "new_required_inodes", "bytes_available", "inodes_available"):
+        _admit.exact(row, _fields('dev fs_uuid roles historical_bytes historical_inodes new_required_bytes new_required_inodes bytes_available inodes_available admitted'), "CAPACITY")
+        for key in _fields('dev historical_bytes historical_inodes new_required_bytes new_required_inodes bytes_available inodes_available'):
             _admit.integer(row[key], 0, code="CAPACITY")
         _admit(type(row["roles"]) is list and row["roles"]
-                 and row["roles"] == sorted(row["roles"])
-                 and not (seen_roles & set(row["roles"]))
-                 and set(row["roles"]) <= set(directory_roles)
-                 and row["admitted"] is True
-                 and row["bytes_available"] >= row["historical_bytes"] + row["new_required_bytes"]
-                 and row["inodes_available"] >= row["historical_inodes"] + row["new_required_inodes"],
-                 "CAPACITY")
+            and row["roles"] == sorted(row["roles"])
+            and not (seen_roles & set(row["roles"]))
+            and set(row["roles"]) <= set(directory_roles)
+            and row["admitted"] is True
+            and row["bytes_available"] >= row["historical_bytes"] + row["new_required_bytes"]
+            and row["inodes_available"] >= row["historical_inodes"] + row["new_required_inodes"],
+            "CAPACITY")
         seen_roles.update(row["roles"]); ordering.append((row["dev"], row["fs_uuid"]))
     _admit(seen_roles == set(directory_roles) and ordering == sorted(ordering), "CAPACITY")
     absence = value["absence"]
     _admit(type(absence) is list and absence, "ABSENCE")
     ordering = []
     for row in absence:
-        _admit.exact(row, ("kind", "name", "parent_dev", "parent_ino", "project_id", "unit",
-                     "absent", "collision"), "ABSENCE")
+        _admit.exact(row, _fields('kind name parent_dev parent_ino project_id unit absent collision'), "ABSENCE")
         _admit(row["kind"] in ("path", "project", "unit")
-                 and type(row["name"]) is str and row["name"]
-                 and row["absent"] is True and row["collision"] is False, "ABSENCE")
+            and type(row["name"]) is str and row["name"]
+            and row["absent"] is True and row["collision"] is False, "ABSENCE")
         for key in ("parent_dev", "parent_ino", "project_id"):
             _admit(row[key] is None or type(row[key]) is int and row[key] >= 0, "ABSENCE")
         _admit(row["unit"] is None or type(row["unit"]) is str, "ABSENCE")
@@ -4610,28 +4549,26 @@ def _validate_admission(value, context):
 
 
 def _validate_installation(value, manifest):
-    _check.exact(value, ("destination", "staging", "receipt_path", "dev", "ino", "mode", "uid", "gid",
-                   "members_sha256", "native_sha256", "projection_sha256", "wheel_sha256",
-                   "allocated_bytes", "allocated_inodes", "status"), "INSTALLATION_FIELDS")
+    _check.exact(value, _fields('destination staging receipt_path dev ino mode uid gid members_sha256 native_sha256 projection_sha256 wheel_sha256 allocated_bytes allocated_inodes status'), "INSTALLATION_FIELDS")
     expected_members = _sha(canonical(manifest["members"]))
     locators = manifest["locators"]
     expected_destination = str(PurePosixPath(locators["install_parent"]) / INSTALL_BASENAME)
     expected_staging = str(PurePosixPath(locators["install_parent"]) / STAGING_BASENAME)
     expected_receipt = str(PurePosixPath(locators["state_parent"]) / SESSION / "carrier"
-                           / "installation.json")
+        / "installation.json")
     _check(value["members_sha256"] == expected_members
-             and value["projection_sha256"] == PROJECTION["sha256"]
-             and value["wheel_sha256"] == WHEEL["sha256"] and value["status"] == "INSTALLED"
-             and value["destination"] == expected_destination
-             and value["staging"] == expected_staging
-             and value["receipt_path"] == expected_receipt
-             and value["mode"] == 493 and value["uid"] == value["gid"] == 0
-             and type(value["dev"]) is int and value["dev"] >= 0
-             and type(value["ino"]) is int and value["ino"] > 0
-             and type(value["allocated_bytes"]) is int and value["allocated_bytes"] > 0
-             and type(value["allocated_inodes"]) is int and value["allocated_inodes"] > 0
-             and value["allocated_bytes"] <= LIMITS["shared_bytes"]
-             and value["allocated_inodes"] <= LIMITS["shared_inodes"], "INSTALLATION")
+        and value["projection_sha256"] == PROJECTION["sha256"]
+        and value["wheel_sha256"] == WHEEL["sha256"] and value["status"] == "INSTALLED"
+        and value["destination"] == expected_destination
+        and value["staging"] == expected_staging
+        and value["receipt_path"] == expected_receipt
+        and value["mode"] == 493 and value["uid"] == value["gid"] == 0
+        and type(value["dev"]) is int and value["dev"] >= 0
+        and type(value["ino"]) is int and value["ino"] > 0
+        and type(value["allocated_bytes"]) is int and value["allocated_bytes"] > 0
+        and type(value["allocated_inodes"]) is int and value["allocated_inodes"] > 0
+        and value["allocated_bytes"] <= LIMITS["shared_bytes"]
+        and value["allocated_inodes"] <= LIMITS["shared_inodes"], "INSTALLATION")
     _check.digest(value["native_sha256"], "INSTALLATION")
     return value
 
@@ -4639,23 +4576,21 @@ def _validate_installation(value, manifest):
 def dispatch(context, effects):
     """Run the exact H01 -> Q4 -> H11 chain and return one complete frame."""
     _validate_context(context)
-    _require(isinstance(effects, FieldEffects) or all(hasattr(effects, name) for name in (
-        "now", "admit", "install", "persist", "prepare_case", "plan_case", "run_h01",
-        "run_q4", "recover_h11", "phase_facts", "usage")), "CORE_DISPATCH_EFFECTS")
+    _require(isinstance(effects, FieldEffects) or all(hasattr(effects, name) for name in _fields('now admit install persist prepare_case plan_case run_h01 run_q4 recover_h11 phase_facts usage')), "CORE_DISPATCH_EFFECTS")
     # The first clock/deadline gate precedes every persistent field effect.
     _clock(effects, context["guest_deadlines"])
     admission = _validate_admission(effects.admit({"hello": context["hello"],
-                                                   "manifest": context["manifest"],
-                                                   "guest_deadlines": context["guest_deadlines"]}), context)
+                "manifest": context["manifest"],
+                "guest_deadlines": context["guest_deadlines"]}), context)
     installation = _validate_installation(effects.install({"manifest": context["manifest"],
-                                                           "members": context["members"],
-                                                           "admission": admission}),
-                                            context["manifest"])
+                "members": context["members"],
+                "admission": admission}),
+        context["manifest"])
     all_sources = []
     admission_source = _persist(effects, "carrier", "carrier/admission.json",
-                                "admission", admission)
+        "admission", admission)
     installation_source = _persist(effects, "carrier", "carrier/installation.json",
-                                   "installation", installation)
+        "installation", installation)
     all_sources.extend((admission_source, installation_source))
     cases_index = []
     h01_execution = h01_package = None
@@ -4665,17 +4600,17 @@ def dispatch(context, effects):
         intent = build_intent(case)
         prefix = "cases/" + case["case_id"] + "/"
         intent_source = _persist(effects, case["case_id"], prefix + "intent.json",
-                                 "intent", intent)
+            "intent", intent)
         sources, verdict, summary, _owner_mono = _case_outcome(
             effects, case, intent, intent_source, deadlines)
         _validate_source_set(case, sources, seal_id=summary.get("seal_id"))
         verdict_source = next(item for item in sources if item["role"] == "verdict")
         cases_index.append({"index": case["index"], "case_id": case["case_id"], "status": "PASS",
-                            "semantic_pass": True, "verdict_path": verdict_source["path"],
-                            "verdict_sha256": _sha(verdict_source["raw"])})
+                "semantic_pass": True, "verdict_path": verdict_source["path"],
+                "verdict_sha256": _sha(verdict_source["raw"])})
         if case["index"] == 1:
             _exact(summary, ("seal_id", "h01_business_execution", "h01_result_package"),
-                   "CORE_DISPATCH_H01_SUMMARY_FIELDS")
+                "CORE_DISPATCH_H01_SUMMARY_FIELDS")
             h01_execution = summary["h01_business_execution"]
             h01_package = summary["h01_result_package"]
         else:
@@ -4685,11 +4620,11 @@ def dispatch(context, effects):
     session_source = _persist(effects, "carrier", "carrier/session.json", "session", session)
     all_sources.append(session_source)
     carrier_specs = {(item["path"], item["role"], item["mode"]) for item in all_sources
-                     if item["path"].startswith("carrier/")}
+        if item["path"].startswith("carrier/")}
     _require(carrier_specs == {("carrier/session.json", "session", 384),
-                               ("carrier/admission.json", "admission", 384),
-                               ("carrier/installation.json", "installation", 384)},
-             "CORE_DISPATCH_CARRIER_SET")
+            ("carrier/admission.json", "admission", 384),
+            ("carrier/installation.json", "installation", 384)},
+        "CORE_DISPATCH_CARRIER_SET")
     members = []
     raw_by_path = {}
     for source in all_sources:
@@ -4699,14 +4634,14 @@ def dispatch(context, effects):
         members.append(_member(source, case_id)); raw_by_path[source["path"]] = source["raw"]
     members.sort(key=lambda row: row["path"].encode("ascii"))
     _require(len(members) == 3 + 32 + 21 + 26 and len(members) <= MEMBER_COUNT_LIMIT,
-             "CORE_DISPATCH_MEMBER_COUNT")
+        "CORE_DISPATCH_MEMBER_COUNT")
     remote = {"schema": REMOTE_SCHEMA, "session_id": SESSION,
-              "consumption_sha256": context["bind"]["consumption_sha256"],
-              "state": "REMOTE_FINALIZED", "cases": cases_index,
-              "h01_business_execution": h01_execution, "h01_result_package": h01_package,
-              "usage": None, "missing": []}
+        "consumption_sha256": context["bind"]["consumption_sha256"],
+        "state": "REMOTE_FINALIZED", "cases": cases_index,
+        "h01_business_execution": h01_execution, "h01_result_package": h01_package,
+        "usage": None, "missing": []}
     manifest = {"schema": OUTPUT_SCHEMA, "session_id": SESSION, "remote_result": remote,
-                "cases": cases_index, "members": members, "limits": OUTPUT_LIMITS}
+        "cases": cases_index, "members": members, "limits": OUTPUT_LIMITS}
     # Frame length participates in usage.  Iterate to the unique fixed point.
     usage = effects.usage()
     for _ in range(4):
@@ -4724,7 +4659,7 @@ def dispatch(context, effects):
     frame = OUTPUT_MAGIC + struct.pack(">Q", len(raw_manifest)) + raw_manifest + b"".join(
         raw_by_path[item["path"]] for item in members)
     _require(len(frame) == usage["output_frame_bytes"] and len(frame) <= FRAME_LIMIT,
-             "CORE_DISPATCH_FRAME_LIMIT")
+        "CORE_DISPATCH_FRAME_LIMIT")
     return frame
 
 
