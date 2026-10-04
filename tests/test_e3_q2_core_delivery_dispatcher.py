@@ -116,7 +116,7 @@ class FakeEffects:
                                "facts_sha256": "f" * 64, "matched": True}}
                     for index, name in enumerate(("sudo", "sshd", "authorized_keys", "rc"))}
         directory_roles = ("state", "quota", "install", "journal", "evidence")
-        parents = {role: {"path": "/" + role, "dev": index + 20, "ino": index + 30,
+        parents = {role: {"path": "/" + role, "dev": 20, "ino": index + 30,
                           "mode": 0o755, "uid": 0, "gid": 0, "nlink": 2,
                           "mount_id": index + 40, "fs_uuid": uuid}
                    for index, role in enumerate(directory_roles)}
@@ -139,9 +139,13 @@ class FakeEffects:
                      "new_required_inodes": d.LIMITS["total_guest_admission_inodes"],
                      "bytes_available": 2**30, "inodes_available": 100000,
                      "admitted": True}]
-        absence = [{"kind": "path", "name": "/install/future", "parent_dev": 22,
-                    "parent_ino": 32, "project_id": None, "unit": None,
-                    "absent": True, "collision": False}]
+        absence = [dict(kind='path', name=path, parent_dev=None, parent_ino=None,
+            project_id=None, unit=None, absent=True, collision=False)
+            for path in d._admission_absent_paths(self.context['manifest']['locators'])]
+        absence += [dict(kind='project', name=str(project), parent_dev=20, parent_ino=31,
+            project_id=project, unit=None, absent=True, collision=False)
+            for project in [*range(12051, 12058), *(p for c in d.CASES for p in c['project_ids'])]]
+        absence.sort(key=lambda row: (row['kind'], row['name']))
         guest = {"hostname": "synthetic-qemu", "dmi_vendor": "QEMU",
                  "dmi_product": "KVM", "initial_userns": {"dev": 4, "ino": 1},
                  "boot_id": boot, "pid1_exe": "/usr/lib/systemd/systemd",
@@ -421,7 +425,7 @@ def test_envelope_accepts_readonly_member_views_and_rejects_mutable_or_wrong_a_b
         d._validate_context_envelope(mutable)
 
 
-def test_unreleased_admission_stops_before_host_collection(monkeypatch):
+def test_unbound_inputs_stop_admission_before_host_collection(monkeypatch):
     value = context()
 
     class OnlyClock(d.FieldEffects):
@@ -433,7 +437,7 @@ def test_unreleased_admission_stops_before_host_collection(monkeypatch):
     monkeypatch.setattr(d.os, "open", lambda *args, **kwargs: pytest.fail("host file read"))
     monkeypatch.setattr(d.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("helper spawned"))
     assert d.field_readiness()["releasable"] is False
-    with pytest.raises(d.DispatchError, match="CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE"):
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
         OnlyClock(value).admit({"hello": value["hello"], "manifest": value["manifest"],
                                 "guest_deadlines": value["guest_deadlines"]})
 
@@ -445,15 +449,10 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
         "scope": d.SCOPE,
         "releasable": False,
         "protocol_blockers": [],
-        "unbound_approved_inputs": [
-            "admission.policy_expected_entities",
-            "admission.historical_capacity_obligations",
-            "preparation.retained_paths_and_domains",
-        ],
+        "unbound_approved_inputs": [],
         "unimplemented_effects": [
-            "admission.current_guest_collector",
-            "installation.shared_pool_peak_accounting",
-            "evidence.usage_and_peak_accounting",
+            "installation.application_and_allocation_accounting",
+            "evidence.resource_accounting_v2_and_usage",
         ],
     }
 

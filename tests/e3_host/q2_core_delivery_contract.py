@@ -95,6 +95,27 @@ WRITER_TRANSPORT_CLOSURE = {
     "commit": "8e891e11fb6e563353013ac94c201f30a1df66c9",
     "tree": "2c2ae6e075176ca359d411c127267ea1a959ddce",
 }
+COMPLETION_ADJUSTMENT_BASELINE = {
+    "commit": "851a1afe4e55196212aa6913e81e0722deed1032",
+    "tree": "5b6c8d3a55d8d0678f2b4543f13df32016630fdd",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-completion-adjustment/REQUIREMENTS.md":
+            "08bba40c9d9c49b2b8af3a15310597514ea61641512b5ca43c70de35f06d46d1",
+        "docs/a2-execution/q2-core-completion-adjustment/ARCHITECTURE.md":
+            "adc7e6be062c6b85deacc774d148bce515aa51c965b3dd31152cee4a73f1455f",
+        "docs/a2-execution/q2-core-completion-adjustment/IMPLEMENTATION_PLAN.md":
+            "a70d51557f034f5f0ec7e626eb6226064a4e604fd6f217267282fe524495f60c",
+    },
+}
+COMPLETION_ADJUSTMENT_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-COMPLETION-ADJUSTMENT-CLOSURE-20261004-01",
+    "record_path": "docs/governance/Q2_CORE_COMPLETION_ADJUSTMENT_OWNER_DECISION.md",
+    "record_sha256": "0f6ec728c28ca658b4c77ab035cc42bbb57e1dbe72a1a8606e579ce08b2a1757",
+}
+COMPLETION_ADJUSTMENT_CLOSURE = {
+    "commit": "c32799c03a32d81deec02f7492c1b71eb47b2b6d",
+    "tree": "1ccf7b10f65e43f5099c17c7c7fb7e9f5e5da77b",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",

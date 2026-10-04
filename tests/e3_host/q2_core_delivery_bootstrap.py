@@ -78,7 +78,7 @@ BIND_SCHEMA = "local-hand-q2-core-carrier-bind/v1"
 CONTEXT_SCHEMA = "local-hand-q2-core-bootstrap-context/v1"
 FIELD_PATHS = {"loader": "field/loader.py", "bootstrap": "field/bootstrap.py",
     "dispatcher": "field/dispatcher.py"}
-FIELD_LIMITS = {"loader": 8192, "bootstrap": 49152, "dispatcher": 262144}
+FIELD_LIMITS = {"loader": 8192, "bootstrap": 49152, "dispatcher": 524288}
 HELLO_FIELDS = {"schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
     "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
     "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management"}

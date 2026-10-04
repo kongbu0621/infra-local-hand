@@ -994,12 +994,14 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                     implementation_commit + "^{tree}")
     c.require(identity.decode("ascii").split() == [implementation_commit, implementation_tree],
               "CORE_FREEZE_IMPLEMENTATION")
-    # Final D must descend from both independent closures, not just the old C.
+    # Final D must descend from all three independent amendment closures.
     # Authority stays offline; no replacement wire amendment or extra member.
     for baseline, decision, closure in (
             (c.AMENDMENT_BASELINE, c.AMENDMENT_OWNER_DECISION, c.AMENDMENT_CLOSURE),
             (c.WRITER_TRANSPORT_BASELINE, c.WRITER_TRANSPORT_OWNER_DECISION,
-             c.WRITER_TRANSPORT_CLOSURE)):
+             c.WRITER_TRANSPORT_CLOSURE),
+            (c.COMPLETION_ADJUSTMENT_BASELINE, c.COMPLETION_ADJUSTMENT_OWNER_DECISION,
+             c.COMPLETION_ADJUSTMENT_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")

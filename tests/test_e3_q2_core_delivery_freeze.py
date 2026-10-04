@@ -246,7 +246,7 @@ def package_fixture(tmp_path, monkeypatch):
 
     implementation = tmp_path / "implementation"
     implementation.mkdir(); _git(implementation, "init", "-q")
-    for name in ("AMENDMENT", "WRITER_TRANSPORT"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -498,7 +498,7 @@ def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT"])
 @pytest.mark.parametrize("record", ["BASELINE", "OWNER_DECISION", "CLOSURE"])
 def test_lineage_rejects_wrong_authority_bytes_or_tree(tmp_path, monkeypatch, scope, record):
     arguments = package_fixture(tmp_path, monkeypatch)
@@ -520,7 +520,7 @@ def test_old_amendment_descendant_without_new_closure_is_not_releasable_d(tmp_pa
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT"])
 def test_final_d_cannot_rewrite_approved_document_even_after_valid_c(tmp_path, monkeypatch, scope):
     arguments = package_fixture(tmp_path, monkeypatch)
     path = next(iter(getattr(f.c, scope + "_BASELINE")["documents_sha256"]))

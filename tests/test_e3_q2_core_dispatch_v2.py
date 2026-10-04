@@ -303,7 +303,7 @@ def test_standalone_component_parser_has_no_host_import_or_pin_drift():
     assert d.APPROVED_VECTOR_PINS == a.horizon.VECTOR_PINS
     assert d.APPROVED_RETAINED_PINS == a.RETAINED_PINS
     assert d.APPROVED_POLICY_SOURCE_PINS == a.policy.SOURCE_PINS
-    assert PATH.stat().st_size <= 262144
+    assert PATH.stat().st_size <= 524288
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
         d._validate_approved_components(d._approved_inputs_envelope(context_v2()))
 
