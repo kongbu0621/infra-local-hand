@@ -1120,6 +1120,16 @@ it stops executable binding after late I/O and does not implement this proposal.
 Current admission, usage and complete release review remain incomplete. There is no new field package,
 marker, carrier or case execution from this followup; no observed old guest state is inferred.
 
+The subsequent [admission implementation checkpoint](docs/a2-execution/Q2_CORE_COMPLETION_ADMISSION_REVIEW_20261004.md)
+records D `53533accbf834d489c773d2a037c008059c90c4f`, a direct child of independent C
+`c32799c03a32d81deec02f7492c1b71eb47b2b6d`. Current-guest admission and conservative
+per-device reservations are connected, and a bound carrier-counter component is implemented.
+This is partial C1–C3 work, not complete C2 resource accounting, package release or guest acceptance.
+The dispatcher is 331928/524288 bytes. Exact A documents and fixed runtime candidate/wheel remain unchanged.
+The release allowlist remains empty; complete 32-pool observations, remote-result/v2, aggregate usage,
+independent review and original private package checks still precede the single conditional F1.
+This checkpoint made no guest connection, marker/request, real core task or result collection.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

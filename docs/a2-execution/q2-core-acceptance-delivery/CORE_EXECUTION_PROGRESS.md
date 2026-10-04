@@ -1,6 +1,23 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
-## 当前核心复核与下一步
+## 当前完成调整：已独立关闭，准入源码已接入
+
+Owner 已明确批准完成调整 A `851a1afe4e55196212aa6913e81e0722deed1032`。
+独立 bookkeeping-only C 为 `c32799c03a32d81deec02f7492c1b71eb47b2b6d`；
+首个实现 D `53533accbf834d489c773d2a037c008059c90c4f` 直接继承 C，tree
+`4207e1e5317f7b7f69818f3aba476dc85dc9cc44`。
+
+本轮接入 current-guest admission、固定 32 池逐设备保守预留、身份/输入交叉绑定，以及
+carrier 实际 cgroup 计数读取组件；同步第三条 A/B/C→D 校验和批准的 524288-byte dispatcher cap。
+实际 dispatcher 为 331928 B。原 runtime candidate/wheel、预算、时限、单次 F1 和生产 E3 不变。
+
+**这不是 C1–C3 全部完成。**完整 32 池受控 I/O/分配观察、remote-result/v2 和聚合 usage
+尚未接齐，`usage()` 仍拒绝不完整结果，release allowlist 仍为空。未连接 guest、未消费 marker/request，
+没有真实 H01/Q4/H11 或结果收回。详细版本、验证及可执行后续接线见
+[本轮实施记录](../Q2_CORE_COMPLETION_ADMISSION_REVIEW_20261004.md)。已有批准有效，
+后续只继续这些核心缺口，不需要再次批准同一 A，不转去支线。
+
+## 保留的批准前复核与提案
 
 已发布修复 D `631677039af3b17392f3269e39a4b1f409fc4f08`，tree
 `8408d12541a9bb421373e43a3ea801f6dd59ccfa`，父提交为本地 Codex 的
