@@ -63,13 +63,10 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Exact source/installed and private-source double-build review at 0293c466.
-# See Q2_CORE_CLOUD_INIT_GRANT_BINDING_REVIEW_20261005.md. This permits only
-# the unchanged conditional single F1; current binding, absence and all other
-# gates still precede consumption. It is not production E3 authorization.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({
-    "06f5e5b659967a5a8375d981fe6e58401bba65b29054df50be363501f98ce79f",
-})
+# The original single F1 was consumed at 605a2a38 and stopped before BIND.
+# See Q2_CORE_CLOUD_INIT_GRANT_BINDING_REVIEW_20261005.md. Repairs do not grant
+# a second request, another marker or a refreshed window. Keep delivery closed.
+RELEASABLE_DISPATCHER_SHA256 = frozenset()
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
@@ -617,8 +614,9 @@ def build_bind(hello, consumption_sha256, package_basename, package_raw, origins
         "loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
         "bootstrap_bytes", "bootstrap_sha256", "dispatcher_path",
         "dispatcher_bytes", "dispatcher_sha256", "carrier_argv_sha256",
-        "local_management_binding_sha256",
+        "local_management_binding_sha256", "writer",
     }, "CORE_BIND_PACKAGE_ENTRY")
+    contract.validate_local_writer(package_entry["writer"])
     contract.validate_hello(
         hello,
         loader_sha256=package_entry["loader_sha256"],

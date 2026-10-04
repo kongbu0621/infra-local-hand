@@ -1,4 +1,18 @@
-# Core execution progress and local Codex handoff — 2026-10-04
+# Core execution progress and local Codex handoff — 2026-10-05
+
+## 最新：原单次 F1 已消费并停止，禁止重试
+
+新来源修订已按准确 A → Owner B → 独立 C `6013436` → D `0293c46` 实施。
+发行 D `605a2a3` 经完整源码/安装与真实私有包双 build/parse，CI 3/3 success 后，
+在原窗口创建唯一 marker、发出唯一 carrier 并收到真实有效 HELLO。
+host 的 BIND 构造器遗漏 v3 entry 的 `writer` 字段，故在发送 BIND/package 前停止，输入 0 B。
+H01/Q4/H11 未进入提交阶段，没有业务结果包；原回执两项业务 truth 与远端退出闭合保持 UNKNOWN。
+原五个 capture 文件及 marker 保留，未重连、重试、安装或清理。
+
+已在原核心开发范围修复该接线，旧源新增回归 2 failed、修复后定向 82 passed。
+release allowlist 重新置空：修复/测试不能授权第二 request；再次验收必须有新的准确批次 A/B/C，
+不能复用本批次或刷新 deadline。生产 E3 保持，支线暂停。
+详见 [完整实测、失败及修复记录](../Q2_CORE_SINGLE_F1_RESULT_20261005.md)。以下均为历史检查点。
 
 ## 最新本地包复核发现固定来源前提冲突
 

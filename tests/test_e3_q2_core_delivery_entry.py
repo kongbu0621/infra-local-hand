@@ -201,12 +201,15 @@ def test_arg_environment_checks_current_arg_max(monkeypatch):
         e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
 
 
-def test_release_gate_accepts_only_exact_reviewed_dispatcher():
+def test_release_gate_accepts_only_exact_reviewed_dispatcher(monkeypatch):
     raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
+        e.field_release_gate(manifest, {"field/dispatcher.py": raw})
+    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset({digest}))
     assert e.dispatcher_contract.field_readiness()["releasable"] is True
     assert e.field_release_gate(manifest, {"field/dispatcher.py": raw}) == {
         "dispatcher_sha256": digest, "releasable": True}
@@ -220,6 +223,8 @@ def test_reviewed_digest_cannot_override_incomplete_readiness(monkeypatch):
     raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": hashlib.sha256(raw).hexdigest()}}
+    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256",
+                        frozenset({manifest["entry"]["dispatcher_sha256"]}))
     readiness = e.dispatcher_contract.field_readiness()
     readiness["protocol_blockers"] = ["unresolved"]
     monkeypatch.setattr(e.dispatcher_contract, "field_readiness", lambda: readiness)
@@ -230,7 +235,7 @@ def test_reviewed_digest_cannot_override_incomplete_readiness(monkeypatch):
 def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
         monkeypatch, tmp_path):
     loader, bootstrap = b"loader\n", b"bootstrap\n"
-    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes() + b"\n# unreviewed\n"
+    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     entry = {"loader_path": "field/loader.py",
              "bootstrap_path": "field/bootstrap.py",
              "dispatcher_path": "field/dispatcher.py",
@@ -310,8 +315,7 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
         assert list(tmp_path.iterdir()) == []
-        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
-            hashlib.sha256(Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()).hexdigest()})
+        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
     finally:
         os.close(directory_fd)
 
@@ -396,7 +400,9 @@ def test_host_window_and_bind_mapping_are_not_refreshed():
         "dispatcher_sha256": "3" * 64,
         "carrier_argv_sha256": "4" * 64,
         "local_management_binding_sha256": "5" * 64,
+        "writer": writer(),
     }
+    assert set(entry) == e._helper("q2_core_delivery_package").ENTRY_FIELDS
     bind = e.build_bind(hello(), "a" * 64, "only.lhfp", package, origins,
                         package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30_000,
                         mono_bind_ns=40_000)
@@ -408,6 +414,32 @@ def test_host_window_and_bind_mapping_are_not_refreshed():
                    host_monotonic_deadline_ns=bind["host_monotonic_deadline_ns"] + 1_000_000)
     with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
         c.validate_bind(changed)
+
+
+@pytest.mark.parametrize("change,code", [
+    ("missing", "CORE_BIND_PACKAGE_ENTRY"),
+    ("extra", "CORE_BIND_PACKAGE_ENTRY"),
+    ("invalid", "CORE_LOCAL_WRITER_CREDENTIALS"),
+])
+def test_bind_rejects_missing_extra_or_invalid_v3_writer(change, code):
+    entry = {"loader_path": "field/loader.py", "loader_bytes": 1,
+        "loader_sha256": "1" * 64, "bootstrap_path": "field/bootstrap.py",
+        "bootstrap_bytes": 1, "bootstrap_sha256": "2" * 64,
+        "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
+        "dispatcher_sha256": "3" * 64, "carrier_argv_sha256": "4" * 64,
+        "local_management_binding_sha256": "5" * 64, "writer": writer()}
+    assert set(entry) == e._helper("q2_core_delivery_package").ENTRY_FIELDS
+    if change == "missing":
+        del entry["writer"]
+    elif change == "extra":
+        entry["unapproved"] = True
+    else:
+        entry["writer"]["uid"]["effective"] += 1
+    origins = e.freeze_host_window(lambda _clock: 10)
+    with pytest.raises(c.ContractError, match=code):
+        e.build_bind(hello(), "a" * 64, "only.lhfp", b"package", origins,
+            package_entry=entry, remote_expectation=remote_expectation(),
+            boot_bind_ns=20, mono_bind_ns=20)
 
 
 def test_frame_rejects_duplicate_and_trailing_json():
@@ -474,6 +506,7 @@ def test_marker_and_bind_reject_refreshed_or_non_exact_host_window():
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
         "dispatcher_sha256": "3" * 64, "carrier_argv_sha256": "4" * 64,
         "local_management_binding_sha256": "5" * 64,
+        "writer": writer(),
     }
     with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
         e.build_bind(hello(), "a" * 64, "only.lhfp", b"p", origins,
@@ -646,6 +679,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         "dispatcher_sha256": "3" * 64,
         "carrier_argv_sha256": e.argv_digest(argv),
         "local_management_binding_sha256": "5" * 64,
+        "writer": writer(),
     }
     origins = e.freeze_host_window()
     marker = {"object_created": True, "record_complete": True, "sha256": "a" * 64}
@@ -688,7 +722,9 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
         "dispatcher_sha256": "3" * 64,
         "carrier_argv_sha256": e.argv_digest(argv),
         "local_management_binding_sha256": "5" * 64,
+        "writer": writer(),
     }
+    assert set(entry) == e._helper("q2_core_delivery_package").ENTRY_FIELDS
     environment = {"HOME": "/h", "USER": "u", "LOGNAME": "u",
                    "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
                    "SYSTEMD_COLORS": "0"}

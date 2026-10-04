@@ -1155,6 +1155,17 @@ remain. Existing unaffected closures remain valid; original conditional single F
 production E3 restriction and paused side work remain. Complete original/new release predicates still precede
 any field action. This C issues no package or field action; historical nonissuance is not current marker-absence evidence.
 
+The subsequent [single F1 result](docs/a2-execution/Q2_CORE_SINGLE_F1_RESULT_20261005.md)
+supersedes earlier unconsumed-status checkpoints. Exact delivery D
+`605a2a38d1db5ef85c961b4d357cafa157bdd7d5` consumed the original marker and issued
+one carrier; a valid real HELLO was received, then the host rejected its v3 package
+entry before BIND because the writer field was omitted from the old constructor keyset.
+Zero input bytes were sent. The retained receipt is STOP_AND_RETAIN with both business
+truths UNKNOWN; remote exit closure is not proven. The original batch is consumed:
+no second request, reconnect, renamed marker, refreshed deadline or cleanup is authorized.
+The existing CLOSED development scope permits the compatibility repair, not another run.
+Release remains hard-closed after this failure; source/CI PASS cannot reset consumption.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

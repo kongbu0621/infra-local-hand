@@ -3,6 +3,10 @@
 2026-10-05 +08:00。只继续核心 G1–G3；namespace/watchdog 暂停，production
 `E3_SUPERVISION_UNVERIFIED` 保持。本记录的包审查不等于真实任务执行。
 
+**后续：原单次 F1 已消费，STOP_AND_RETAIN。**准确发行 D `605a2a3` 收到真实有效
+HELLO，但在 BIND 前遇到 host 字段接线错误，业务包发送为零。详见
+[实际单次结果与修复](Q2_CORE_SINGLE_F1_RESULT_20261005.md)。本文件的 NOT_ISSUED 是发行前历史检查点。
+
 ## 批准、源码与来源关系
 
 直接读取原 R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，源 SHA-256 仍为
