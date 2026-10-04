@@ -79,7 +79,7 @@ def artifact(monkeypatch):
     monkeypatch.setattr(a, "RETAINED_PINS", {**{k: _pin(v) for k, v in retained.items()}, "object": _pin(retained)})
 
     key = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + b"x" * 32
-    policy_raw = dict(fixture_cloud_config=a.policy.GRANT.encode() + b"\n",
+    policy_raw = dict(fixture_cloud_config=b'#cloud-config\nusers:\n  - name: q1admin\n    sudo: ["ALL=(ALL) NOPASSWD:ALL"]\n',
                       identity_public=b"ssh-ed25519 " + base64.b64encode(key) + b" synthetic\n", known_hosts=b"synthetic\n")
     monkeypatch.setattr(a.policy, "SOURCE_PINS", {k: hashlib.sha256(v).hexdigest() for k, v in policy_raw.items()})
     tokens = ["/synthetic/frozen", "token with space"]

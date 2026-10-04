@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import re
 import shlex
 import struct
 
@@ -34,6 +35,69 @@ def _require(condition, code):
 
 def _hash(value):
     return hashlib.sha256(c.canonical(value)).hexdigest()
+
+
+def cloud_source_lines(raw):
+    """Bounded lexical input only, shared by two independent mapping checks.
+
+    Not YAML support: the whole fixed source pin is checked by each caller.
+    Unknown constructs are rejected, never interpreted or executed.
+    """
+    _require(type(raw) is bytes and 0 < len(raw) <= 1048576
+             and all(byte == 10 or 32 <= byte <= 126 for byte in raw)
+             and raw.startswith(b'#cloud-config\n') and raw.endswith(b'\n'), 'SOURCE_GRANT')
+    lines = [line for line in raw.decode('ascii').splitlines()
+             if line.strip() and not line.lstrip().startswith('#')]
+    _require(0 < len(lines) <= 4096 and all(len(line) <= 16384 for line in lines), 'SOURCE_GRANT')
+    top = set()
+    for line in lines:
+        _require(not re.search(r'(?:^|[ :\[,])(?:[&*!|>{}]|<<:)', line), 'SOURCE_GRANT')
+        if not line.startswith(' '):
+            match = re.fullmatch(r'([a-z_]+):(?: (.+))?', line)
+            _require(match is not None and match[1] not in top, 'SOURCE_GRANT')
+            top.add(match[1])
+    return lines
+
+
+def cloud_init_grant(raw):
+    """Project the one fixed users mapping, not a sudoers substring count."""
+    lines = cloud_source_lines(raw)
+    _require(sum(line == 'users:' for line in lines) == 1, 'SOURCE_GRANT')
+    for key in ('users', 'name', 'sudo'):
+        _require(sum(bool(re.match(r' *(?:- )?' + key + r':', line)) for line in lines) == 1,
+                 'SOURCE_GRANT')
+    active, seen, field = False, set(), None
+    for line in lines:
+        if line == 'users:':
+            active = True
+            continue
+        if not active:
+            continue
+        if not line.startswith(' '):
+            break
+        if not seen:
+            _require(line == '  - name: q1admin', 'SOURCE_GRANT')
+            seen.add('name')
+            field = 'name'
+            continue
+        if line.startswith('      - ssh-ed25519 '):
+            _require(field == 'ssh_authorized_keys'
+                     and re.fullmatch(r'      - ssh-ed25519 [A-Za-z0-9+/=]+(?: [A-Za-z0-9_.@+-]+)?', line),
+                     'SOURCE_GRANT')
+            continue
+        match = re.fullmatch(r'    ([a-z_]+):(?: (.+))?', line)
+        _require(match is not None and match[1] not in seen and match[1] != 'name', 'SOURCE_GRANT')
+        field, value = match[1], match[2]
+        seen.add(field)
+        if field == 'sudo':
+            _require(value == '["ALL=(ALL) NOPASSWD:ALL"]', 'SOURCE_GRANT')
+        elif field == 'ssh_authorized_keys':
+            _require(value is None, 'SOURCE_GRANT')
+        else:
+            _require(value is not None and re.fullmatch(r'[A-Za-z0-9_./,@+= -]+|\[[A-Za-z0-9_, -]+\]', value),
+                     'SOURCE_GRANT')
+    _require({'name', 'sudo'} <= seen, 'SOURCE_GRANT')
+    return GRANT, 1
 
 
 def _key(raw):
@@ -111,7 +175,7 @@ def build_policy_basis(*, source_raw, tokens):
     for name, pin in SOURCE_PINS.items():
         _require(type(source_raw[name]) is bytes and hashlib.sha256(source_raw[name]).hexdigest() == pin,
                  "SOURCE_PIN")
-    _require(source_raw["fixture_cloud_config"].count(GRANT.encode("ascii")) == 1, "SOURCE_GRANT")
+    _require(cloud_init_grant(source_raw["fixture_cloud_config"]) == (GRANT, 1), "SOURCE_GRANT")
     approved_key = _key(source_raw["identity_public"])
     policies = {
         "sudo": _item(mode="same-carrier-current-self-observation",

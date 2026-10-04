@@ -246,7 +246,7 @@ def package_fixture(tmp_path, monkeypatch):
 
     implementation = tmp_path / "implementation"
     implementation.mkdir(); _git(implementation, "init", "-q")
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -383,7 +383,7 @@ def test_management_anchor_verifies_dependencies_before_held_ssh_keygen_exec(
         "ssh.sh": (b"wrapper\n", 0o700, "wrapper"),
         "start.sh": (b"start\n", 0o700, "fixture_start"),
         "user-data": (
-            b"#cloud-config\nq1admin ALL=(ALL) NOPASSWD:ALL\n",
+            b'#cloud-config\nusers:\n  - name: q1admin\n    sudo: ["ALL=(ALL) NOPASSWD:ALL"]\n',
             0o600,
             "fixture_cloud_config",
         ),
@@ -498,7 +498,7 @@ def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT"])
 @pytest.mark.parametrize("record", ["BASELINE", "OWNER_DECISION", "CLOSURE"])
 def test_lineage_rejects_wrong_authority_bytes_or_tree(tmp_path, monkeypatch, scope, record):
     arguments = package_fixture(tmp_path, monkeypatch)
@@ -520,7 +520,7 @@ def test_old_amendment_descendant_without_new_closure_is_not_releasable_d(tmp_pa
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT"])
 def test_final_d_cannot_rewrite_approved_document_even_after_valid_c(tmp_path, monkeypatch, scope):
     arguments = package_fixture(tmp_path, monkeypatch)
     path = next(iter(getattr(f.c, scope + "_BASELINE")["documents_sha256"]))
@@ -566,7 +566,7 @@ def frozen_v2_fixture(tmp_path, monkeypatch):
     expectation = f.entry_api.static_remote_expectation(tokens)
     policy = sys.modules["_core_entry_policy_helpers.q2_core_policy_basis"]
     key = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + b"1" * 32
-    policy_raw = {"fixture_cloud_config": b"#cloud-config\nq1admin ALL=(ALL) NOPASSWD:ALL\n",
+    policy_raw = {"fixture_cloud_config": b'#cloud-config\nusers:\n  - name: q1admin\n    sudo: ["ALL=(ALL) NOPASSWD:ALL"]\n',
                   "identity_public": b"ssh-ed25519 " + base64.b64encode(key) + b"\n",
                   "known_hosts": b"fixture-host fixed-key\n"}
     monkeypatch.setattr(policy, "SOURCE_PINS", {name: f.c.sha256(raw)

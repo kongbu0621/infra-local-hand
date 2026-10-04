@@ -116,6 +116,27 @@ COMPLETION_ADJUSTMENT_CLOSURE = {
     "commit": "c32799c03a32d81deec02f7492c1b71eb47b2b6d",
     "tree": "1ccf7b10f65e43f5099c17c7c7fb7e9f5e5da77b",
 }
+CLOUD_INIT_GRANT_BASELINE = {
+    "commit": "018bdd7f09998290f536ab5a3726ccb4123dffa3",
+    "tree": "a444a2398766ee4cba7e4f674a326c3a18995098",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-cloud-init-grant-binding/REQUIREMENTS.md":
+            "2330303e9bf7dd7e19c59cac6c1e864fb8c04ad08203575b15255941837fb80a",
+        "docs/a2-execution/q2-core-cloud-init-grant-binding/ARCHITECTURE.md":
+            "1960ca98f717866a76c57c55c04a3df09718267d86c046abcc5209115f1c645f",
+        "docs/a2-execution/q2-core-cloud-init-grant-binding/IMPLEMENTATION_PLAN.md":
+            "5af1d1348a7f955c6516334f68c7926fa0154a1fe7c055fdf352f136e2f70285",
+    },
+}
+CLOUD_INIT_GRANT_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-CLOUD-INIT-GRANT-BINDING-CLOSURE-20261005-01",
+    "record_path": "docs/governance/Q2_CORE_CLOUD_INIT_GRANT_BINDING_OWNER_DECISION.md",
+    "record_sha256": "f113a7ccfa78c6b98ec27515f75e8494cc982dbd931aba7fe93a3714950417a1",
+}
+CLOUD_INIT_GRANT_CLOSURE = {
+    "commit": "6013436554b51576e321ec08b0de2643efd5c3bc",
+    "tree": "32321531cae9f60aec274600340cf027958a2e1f",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",

@@ -12,6 +12,7 @@ import copy
 from dataclasses import dataclass
 import hashlib
 import io
+import re
 from pathlib import PurePosixPath
 import shlex
 import stat
@@ -563,6 +564,44 @@ def component_digests(value):
         approved_source_relation_sha256=_hash(value["source_relation"]))
 
 
+def _verify_cloud_grant(raw, parameters):
+    """Independent block/field check; never calls the policy mapping builder."""
+    _require(type(raw) is bytes and c.sha256(raw) == policy.SOURCE_PINS['fixture_cloud_config'],
+             'SOURCE_POLICY_PIN')
+    lines = policy.cloud_source_lines(raw)
+    indices = {key: [i for i, line in enumerate(lines)
+                    if re.match(r' *(?:- )?' + key + r':', line)]
+               for key in ('users', 'name', 'sudo')}
+    _require(all(len(rows) == 1 for rows in indices.values()), 'SOURCE_POLICY_GRANT')
+    start = indices['users'][0]
+    end = next((i for i in range(start + 1, len(lines)) if not lines[i].startswith(' ')), len(lines))
+    _require(lines[start] == 'users:' and start + 1 == indices['name'][0]
+             and lines[start + 1] == '  - name: q1admin'
+             and start + 1 < indices['sudo'][0] < end, 'SOURCE_POLICY_GRANT')
+    fields, current = {}, None
+    for line in lines[start + 2:end]:
+        if line.startswith('      - ssh-ed25519 '):
+            _require(current == 'ssh_authorized_keys'
+                     and re.fullmatch(r'      - ssh-ed25519 [A-Za-z0-9+/=]+(?: [A-Za-z0-9_.@+-]+)?', line),
+                     'SOURCE_POLICY_GRANT')
+            continue
+        match = re.fullmatch(r'    ([a-z_]+):(?: (.+))?', line)
+        _require(match is not None and match[1] not in fields and match[1] != 'name', 'SOURCE_POLICY_GRANT')
+        current = match[1]
+        fields[current] = match[2]
+    _require(fields.get('sudo') == '["ALL=(ALL) NOPASSWD:ALL"]', 'SOURCE_POLICY_GRANT')
+    for key, value in fields.items():
+        if key == 'sudo':
+            continue
+        _require((key == 'ssh_authorized_keys' and value is None) or
+                 (key != 'ssh_authorized_keys' and value is not None
+                  and re.fullmatch(r'[A-Za-z0-9_./,@+= -]+|\[[A-Za-z0-9_, -]+\]', value)),
+                 'SOURCE_POLICY_GRANT')
+    _require(parameters['account'] == 'q1admin' and parameters['cloud_config_literal'] == policy.GRANT
+             and type(parameters['cloud_config_literal_count']) is int
+             and parameters['cloud_config_literal_count'] == 1, 'SOURCE_POLICY_GRANT')
+
+
 def _verify_sources(value, sources):
     """Second path: compare each parsed component to raw inputs, never _derive.
 
@@ -631,8 +670,8 @@ def _verify_sources(value, sources):
     for name, pin in policy.SOURCE_PINS.items():
         raw = sources.policy_sources[name]
         _require(type(raw) is bytes and c.sha256(raw) == pin, "SOURCE_POLICY_PIN")
-    _require(sources.policy_sources["fixture_cloud_config"].count(policy.GRANT.encode("ascii")) == 1,
-             "SOURCE_POLICY_GRANT")
+    _verify_cloud_grant(sources.policy_sources['fixture_cloud_config'],
+        value['policy_basis']['policies']['sudo']['predicate']['parameters'])
     expected = value["policy_basis"]["remote_expectation"]
     _require(type(sources.remote_tokens) is list and sources.remote_tokens
              and all(type(token) is str and token and "\0" not in token for token in sources.remote_tokens),

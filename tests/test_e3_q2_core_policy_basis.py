@@ -9,7 +9,7 @@ from e3_host import q2_core_policy_basis as p
 
 def fixture(monkeypatch):
     key = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + b"x" * 32
-    raw = dict(fixture_cloud_config=p.GRANT.encode() + b"\n",
+    raw = dict(fixture_cloud_config=b'#cloud-config\nusers:\n  - name: q1admin\n    sudo: ["ALL=(ALL) NOPASSWD:ALL"]\n',
                identity_public=b"ssh-ed25519 " + base64.b64encode(key) + b" unit-fixture\n",
                known_hosts=b"synthetic fixture host key\n")
     monkeypatch.setattr(p, "SOURCE_PINS", {name: hashlib.sha256(data).hexdigest() for name, data in raw.items()})
