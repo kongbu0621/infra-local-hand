@@ -1024,22 +1024,28 @@ its exact source/validation limits and retained-input verification. Installer ch
 is implemented as a component only; complete guest usage, admission and H01/Q4/H11 effects remain incomplete.
 No marker, carrier or real core task was issued. Do not promote those source tests into field acceptance.
 
-### Core host writer transport proposal
+### Core host writer transport
 
-Scope `LH-Q2-CORE-WRITER-TRANSPORT-v1` is **OPEN** for T1–T3 at documentation A
+Scope `LH-Q2-CORE-WRITER-TRANSPORT-v1` is **CLOSED** for T1–T3 at documentation A
 `60756caedf6a2d978627272e44784d11009ac309`. Its [baseline registration](docs/governance/Q2_CORE_WRITER_TRANSPORT_BASELINE.md)
 pins the [requirements](docs/a2-execution/q2-core-writer-transport/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-writer-transport/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-core-writer-transport/IMPLEMENTATION_PLAN.md).
 R, direct source/integrity, Owner-only authority and change rules remain unchanged.
-No Owner B or independent C exists for this proposal; do not implement its source/test/schema changes yet.
+Owner B is retained verbatim in [Q2_CORE_WRITER_TRANSPORT_OWNER_DECISION.md](docs/governance/Q2_CORE_WRITER_TRANSPORT_OWNER_DECISION.md),
+event `LH-Q2-CORE-WRITER-TRANSPORT-CLOSURE-20261004-01`, with the immediately preceding exact request.
+This independent bookkeeping-only commit is C; it adds no implementation and preserves the three A document
+bytes and their historical OPEN labels. New T1–T3 implementation D must descend from this C.
 
 The prior A requires host writer in marker v2 but does not transport its preimage to the guest.
-The proposal only adds entry.writer in a strict package v3, binding the original held writer and exact marker;
+The approved amendment only adds entry.writer in a strict package v3, binding the original held writer and exact marker;
 it does not replace the host with guest identity or weaken the marker digest check. Original A/B/C and
 unaffected CLOSED D1–D4 work remain valid. This is not another fixture project or an extra field authorization:
 all original budgets, deadlines, single marker/request and conditional H01→Q4→H11 rules remain.
-No additional F1, replay, reconnect, retry, cleanup, system change or production activation is proposed.
+No additional F1, replay, reconnect, retry, cleanup, system change or production activation is authorized.
+Original budgets and deadlines remain unchanged. This closure does not complete other D1–D4 gaps or authorize
+release before every original gate and this amendment's source-lineage/package verification pass.
+At C, marker/request/H01/Q4/H11 remain unissued; production E3 and paused side scopes remain unchanged.
 
 ### Continuing constraints
 
