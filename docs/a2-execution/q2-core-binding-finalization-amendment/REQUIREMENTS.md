@@ -1,6 +1,6 @@
 # Local Hand 核心输入绑定与终结证明修订：需求
 
-- Authority：Owner；状态：**PROPOSED / Gate OPEN / AWAITING OWNER**。
+- Authority：Owner；状态：**PROPOSED / Gate OPEN / REVISION REQUIRED**。
 - Scope：`LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1`。
 - Rule R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`；来源、完整性、Owner-only
   决定权限、无例外和变更规则沿用根 [AGENTS.md](../../../AGENTS.md)。
@@ -8,18 +8,24 @@
   当前没有本 scope 的 Owner B、bookkeeping-only CLOSED C、implementation D、field package
   或现场执行权。
 
+本轮复核已修正 sudo predicate 和失败 receipt 的矛盾，但第 6.1 节的 host capture 路线仍缺
+实际可用的权限、loaded-module measurement、reviewed allocation model 和 source proof。
+当前文本不是可直接提请整体批准的就绪方案；须先依据既有 management host 材料收敛该路线，
+保持原 64 MiB/16-inode 上限，不以逻辑字节数或终态 `st_blocks` 替代全过程物理分配边界。
+
 ## 1. 触发事实和有限边界
 
 本修订只处理已 CLOSED 的 `LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1`（原 A
 `74366b3fe41e675b1aa2d677228714a5606c275c`、Owner B event
 `LH-Q2-CORE-ACCEPTANCE-DELIVERY-CLOSURE-20261003-01`、独立 C
 `a8dd077392ebb656770c8f94ca3b051e93fc296d`）在部分 D
-`520f77f578b90d31870517e33e29bee42918f3c0` 后暴露的四个阻断：
+`520f77f578b90d31870517e33e29bee42918f3c0` 后的下列合同问题与设计选择：
 
 1. 原 package 要在 marker/request 前绑定六组 current remote 实体的完整预像，但原 A 又只允许在
    已消费的唯一 carrier 内读取 current guest；两者不能同时满足。
-2. 原 immutable receipt 在自己的 bytes 固定后，无法再把自己的 file fsync、parent fsync、同 inode
-   回读均已完成这一事实写回自身；把进程内结果冒充可重启证明会形成自证循环。
+2. 原 A 已允许由调用端观察 receipt 的 file/parent fsync 和同 inode 回读完成，不要求 receipt
+   自证未来步骤，也未要求重启验证器返回 COMPLETE。本修订选择增加有限 attestation 与明确的
+   restart 降级；这是新增设计选择，不能仅以“receipt 自证循环”声称原 H01 必然无法推进。
 3. 先前草稿只采用 2026-09-27 的七行 reservation，遗漏随后五个 normal 历史输入、两次 code update
    和已消费的 `20261001e`；三组 approved input 也尚无确定 schema/preimage。
 4. 原 local capture只汇总child `st_blocks`，未绑定实际host writer、local capture filesystem、parent
@@ -467,8 +473,12 @@ local-management-binding的`remote_expectation`必须逐字段等于本`policy_b
   no-follow closure，最多 66 files/3 directories/8 depth，单文件≤262144 B、总计≤1048576 B、
   每目录≤256 entries；argv 恰为
   `[/usr/bin/sudo,-n,-ll,-U,q1admin]`；固定 parser
-  只接受至少一个 host `ALL`、runas user/group `ALL`、tag `NOPASSWD`、command `ALL` 的完整 entry，
-  并与 cloud-config 中唯一 `q1admin ALL=(ALL) NOPASSWD:ALL` 关系一致。未知 locale/grammar/额外
+  只接受至少一个 runas users `[ALL]`、无显式 RunAsGroups、tag `NOPASSWD`、command `ALL` 的完整
+  current-host entry；C-locale `Options: !authenticate` 归一化为 `NOPASSWD`。缺省 RunAsGroups
+  归一化为 `[]`，表示未显式配置组列表，不表示任意组或目标用户无组。host `ALL` 必须由已绑定
+  cloud-config 中唯一 `q1admin ALL=(ALL) NOPASSWD:ALL` 及 current held sudoers closure 中对应
+  grant 证明；`-ll` 输出只证明该 grant 当前对本 host 生效，不能独立恢复原 Host_List。
+  不得将 `(ALL)` 改为 `(ALL:ALL)` 或修改 guest 配置来满足 predicate。未知 locale/grammar/额外
   include/plugin relation 不猜测；固定 carrier 实际已以 `sudo -n` 到达 euid=0 仍须独立交叉验证。
 - `sshd`：sources 恰为 `[/known_hosts,/remote_expectation]`，mode `source-plus-effective`；paths 固定
   `/etc/ssh/sshd_config` 与其仅允许的
@@ -553,7 +563,8 @@ forbidden_environment,shell_parser_profile,on_unknown`。四项 profile 依次�
 
 - sudo parameters 值固定为：`account=q1admin`，`cloud_config_literal="q1admin ALL=(ALL) NOPASSWD:ALL"`，
   count=1，`required_grant` exact key/value 为
-  `{"commands":["ALL"],"host":"ALL","runas_groups":["ALL"],"runas_users":["ALL"],"tags":["NOPASSWD"]}`；
+  `{"commands":["ALL"],"host":"ALL","runas_groups":[],"runas_users":["ALL"],"tags":["NOPASSWD"]}`；
+  host 来自 source/config closure，组列表来自 helper 的 absent-RunAsGroups 归一化，两者不得混淆；
 - sshd `required_effective` exact key/value 为
   `{"authorizedkeyscommand":"none","authorizedkeysfile":[".ssh/authorized_keys",".ssh/authorized_keys2"],"forcecommand":"none","permituserenvironment":"no","pubkeyauthentication":"yes"}`；
 - authorized_keys 的 account/home/files 固定 `q1admin`、`/home/q1admin`、
@@ -783,9 +794,12 @@ capture。private approved-input raw 不进入 output。
 local receipt 升级为 `local-hand-q2-core-local-acceptance-receipt/v2`，exact top-level 仍为原 **十二项**：
 `schema,scope,session_id,consumption,transport,remote_result,wait,capture,real_task_execution,
 result_evidence_collection,state,missing`。满足原完整成功条件时，持久 state 只能是
-`COMPLETE_PENDING_ATTESTATION`，不能写 `COMPLETE`。仅当唯一STOP receipt的完整持久化序列仍能在原
-deadline前完成时，失败receipt才可写`STOP_AND_RETAIN`，且绝不为它创建attestation；若deadline/持久
-调用失败使STOP receipt无法及时完整写成，则receipt保持absent，整体仍失败且不得补写。pending receipt
+`COMPLETE_PENDING_ATTESTATION`，不能写 `COMPLETE`。唯一失败 receipt 可尝试写 `STOP_AND_RETAIN`，
+但每一步仍受原 deadline 与原 reserve 的前后检查，绝不为它创建 attestation。receipt 尚未创建且
+检查已不允许下一调用时，保持 absent；`O_EXCL` 成功后任一步失败、晚返或无法确认，保留已形成的
+partial/full receipt，不补写、不覆盖、不删除、不重试。不能预知阻塞调用何时返回，也不能保证
+中途失败后文件不存在。partial/invalid receipt 不生成 derived acceptance；完整且 strict-valid 的
+STOP receipt 只可判 STOP。pending receipt
 已存在后的失败只由非持久LIVE derived result报告，不覆盖pending。receipt 和新增
 `.lhqcore-20261003a.finalization-attestation.json` 都使用以下
 唯一持久化序列：

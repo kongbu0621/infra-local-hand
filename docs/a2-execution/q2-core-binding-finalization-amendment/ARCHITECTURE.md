@@ -1,6 +1,6 @@
 # Local Hand 核心输入绑定与终结证明修订：架构
 
-- Authority：Owner；状态：**PROPOSED / Gate OPEN / AWAITING OWNER**。
+- Authority：Owner；状态：**PROPOSED / Gate OPEN / REVISION REQUIRED**。
 - Scope/R 与[需求](REQUIREMENTS.md)一致；只有独立 Owner B 和 bookkeeping-only CLOSED C 后才实施。
 - 本文只 supersede 原 core A 的明确冲突字段；未列出的 schema、预算、对象、顺序、停止规则与 exclusion
   继续生效。
@@ -109,7 +109,8 @@ source reader 只接收 held descriptors，先校验 archive/member bytes与摘�
 relation。它不扫描相邻目录、不读 current guest、不从工作解包或 caller 参数补值。两项
 `CURRENT_OWNER_SUPPLIED_RAW`必须使用从verified previous-candidate parent机械派生并逐字段等于source
 manifest的exact path/source_class/proof_id；caller不能只给id或basename。snapshot 24 rows 的前七行必须
-与20260927 producer结果等同，故只保留一次；`20261001e` 的12 rows由固定 accounting blob生成。
+与20260927 producer结果等同，故只保留一次；固定 accounting blob 只验证七键 projection，
+`20261001e` 的12 enriched rows由本修订的 deterministic transform 从 exact old-batch inputs生成。
 0048的`historical_physical_charges`必须重算4327-byte source vector和4549-byte normalized placement vector；
 24-row snapshot用`pool_roles`，12-row delta才使用fixed `device_selector`。最终36 rows总计765202432 B/40177
 inodes，但只作为completeness checksum，不能替代live按pool账单；46 configured-quota liabilities另为
@@ -245,8 +246,10 @@ receipt与attestation都采用完全相同的唯一顺序：create-only/write-al
 O_NOFOLLOW|O_NOATIME同 inode reopen（无fallback）、完整 reread、stable fstat、close，最后 parent fsync。对象必须 regular、
 0600、nlink=1，uid/gid逐字段等于marker前冻结的local writer filesystem identity，held-parent
 name-to-inode不漂移；parent fsync返回后先取得该phase allocation sample，再取post-return双钟。
-guest root身份绝不外推到host。existing/partial attestation永久阻止第二次写。STOP receipt也只有在同一
-原deadline内能够完成整个durable+reread+parent-sample序列时才允许创建；否则receipt absent，不补写。
+guest root身份绝不外推到host。existing/partial attestation永久阻止第二次写。STOP receipt 的每一步
+仍受同一原 deadline/reserve 的前后检查：未创建且下一调用已不允许时不创建；`O_EXCL` 成功后
+任一步失败、晚返或无法确认，保留 partial/full receipt，不补写、覆盖、删除、重试或创建 attestation。
+partial/invalid receipt 不生成 derived；完整且 strict-valid 的 STOP receipt 只可判 STOP。
 
 每个持久化/终结syscall前后都按BOOTTIME-first/MONOTONIC-second检查原marker deadline。过期检查后
 不再发起后续调用；已发起调用若晚返，检测它的post-return clock read可以在900秒后发生但只能失败。

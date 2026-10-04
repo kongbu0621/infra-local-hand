@@ -1,11 +1,16 @@
 # Local Hand 核心输入绑定与终结证明修订：实施方案
 
-- Authority：Owner；状态：**PROPOSED / Gate OPEN / AWAITING OWNER**。
+- Authority：Owner；状态：**PROPOSED / Gate OPEN / REVISION REQUIRED**。
 - Scope/R 与[需求](REQUIREMENTS.md)一致；[架构](ARCHITECTURE.md)规定唯一实现边界。
 - 本 proposal 只含文档。Owner B 与独立 CLOSED C 前，不新增/修改 source、test、package、allowlist、
   marker、guest connection 或现场对象。
 
 ## 1. R → A → B → C → D 与阶段
+
+当前先完成文档路线收敛：依据已有 management host 材料确认 capture 方案的真实依赖与权限。
+第 6.1 节尚未具备的 loaded-ext4 measurement、source proof 和完整 allocation model 不能被
+批准文字替代，也不能默认把实现阶段扩成内核分配路径证明项目。未解决前不请求整体批准或执行
+下表 A0 之后的步骤；若选用替代存储机制，须明确其对数据、元数据和瞬时分配的覆盖，保持原上限。
 
 | 阶段 | 工作 | 结束条件 |
 | --- | --- | --- |
@@ -186,8 +191,10 @@ O_EXCL open -> write-all -> file fsync -> fstat -> close
 -> parent fsync -> parent-allocation phase sample -> post-return dual-clock sample
 ```
 
-成功receipt只能写pending；失败receipt只有在可以于原deadline内完成整个create/fsync/reread/parent-sample
-序列时才写STOP且绝不创建attestation，否则保持absent且不补写。pending的post-parent-sample及时双钟进入
+成功receipt只能写pending；失败receipt可按原deadline/reserve的逐步前后检查尝试写STOP，绝不创建
+attestation。未创建且检查已禁止下一调用时保持absent；O_EXCL成功后失败、晚返或无法确认则保留
+partial/full对象，不补写、覆盖、删除或重试。partial/invalid receipt无derived，strict-valid STOP只判STOP。
+pending的post-parent-sample及时双钟进入
 attestation。attestation每一步也必须在900秒内返回，且完整local finalizer仍受原15秒reserve；
 最终post-parent-fsync/parent-allocation/resource sample及时且live resource总账闭合，才生成非持久
 `verification_mode=LIVE/local_state=COMPLETE` result。LIVE mode只能由创建marker且连续持有原fd/namespace/
@@ -248,8 +255,9 @@ child peak固定59023358 B/7，conservative peak固定66363390 B/14，余745474 
 10. BOOTTIME/MONOTONIC单独过期、恰等deadline、origin缺失/交换/刷新、每个finalizer syscall晚返；
     receipt不直接COMPLETE；
 11. STOP/PENDING receipt×ABSENT/INVALID/VALID attestation完整状态表、truth object复制/nullability、receipt
-    identity/hash漂移、STOP无法及时持久时保持absent、strict chain外不生成derived、final parent fsync/sample
-    晚返；live timely+resource正例才COMPLETE，restart同一pair仅ATTESTED/UNPROVEN；
+    identity/hash漂移；STOP create前被截止则absent，create后失败或晚返保留partial/full且无attestation，
+    partial/invalid或strict chain外不生成derived；final parent fsync/sample晚返；
+    live timely+resource正例才COMPLETE，restart同一pair仅ATTESTED/UNPROVEN；
 12. 52 MiB effective/60 MiB outer边界、fixed 4KiB profile/source/proof、七次parent endpoint、七对象全过程
     peak各分量、actual child allocated边界、single-writer/stable-kernel premise与可见漂移，以及restart不得从
     endpoint恢复历史closure；
