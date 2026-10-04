@@ -63,11 +63,13 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Empty by construction in this partial D.  A dispatcher digest may be added
-# only by a later committed implementation after its own inert readiness
-# record is fully releasable.  Binding the gate to the exact package member
-# prevents a caller from turning a format-valid package into field authority.
-RELEASABLE_DISPATCHER_SHA256 = frozenset()
+# Exact source/installed and private-source double-build review at 0293c466.
+# See Q2_CORE_CLOUD_INIT_GRANT_BINDING_REVIEW_20261005.md. This permits only
+# the unchanged conditional single F1; current binding, absence and all other
+# gates still precede consumption. It is not production E3 authorization.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({
+    "06f5e5b659967a5a8375d981fe6e58401bba65b29054df50be363501f98ce79f",
+})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
@@ -297,7 +299,7 @@ def field_release_gate(manifest, members):
 
     Package syntax and a management preimage are necessary but not sufficient
     to consume the one-shot marker.  This independent digest allowlist stays
-    empty until the independent private release review has verified an exact D.
+    closed to every digest not verified by the private release review.
     Source readiness alone cannot issue a carrier even if a caller supplies
     otherwise well-formed bytes.
     """

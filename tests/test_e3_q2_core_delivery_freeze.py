@@ -555,7 +555,7 @@ def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypat
     with pytest.raises(f.c.ContractError, match="CORE_FIELD_IMPLEMENTATION_NOT_RELEASABLE"):
         f.prepare_delivery_package(static_freeze=static, approved_inputs_raw=b"{}\n",
             approved_sources=sources, retained_paths={}, anchor_root="/absent", cwd="/absent")
-    assert f.entry_api.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    assert f.c.sha256(dispatcher) not in f.entry_api.RELEASABLE_DISPATCHER_SHA256
 
 
 def frozen_v2_fixture(tmp_path, monkeypatch):

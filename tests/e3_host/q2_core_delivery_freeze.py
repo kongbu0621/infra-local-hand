@@ -1318,7 +1318,7 @@ def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_pat
     """Freeze one releasable package in the same window as subsequent delivery.
 
     The static dispatcher gate is checked before any current anchor, process,
-    absence or filesystem observation. This partial D cannot pass that gate.
+    absence or filesystem observation. Unreviewed field bytes cannot pass it.
     A successful result transfers the held directory fd to the caller; any
     failure closes it and creates no marker or persistent output.
     """

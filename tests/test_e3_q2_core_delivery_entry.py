@@ -201,13 +201,28 @@ def test_arg_environment_checks_current_arg_max(monkeypatch):
         e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
 
 
-def test_current_dispatcher_release_gate_is_hard_closed_before_field_action():
+def test_release_gate_accepts_only_exact_reviewed_dispatcher():
     raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
     assert e.dispatcher_contract.field_readiness()["releasable"] is True
+    assert e.field_release_gate(manifest, {"field/dispatcher.py": raw}) == {
+        "dispatcher_sha256": digest, "releasable": True}
+    changed = raw + b"\n# not reviewed\n"
+    manifest["entry"]["dispatcher_sha256"] = hashlib.sha256(changed).hexdigest()
+    with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
+        e.field_release_gate(manifest, {"field/dispatcher.py": changed})
+
+
+def test_reviewed_digest_cannot_override_incomplete_readiness(monkeypatch):
+    raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+    manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
+                           "dispatcher_sha256": hashlib.sha256(raw).hexdigest()}}
+    readiness = e.dispatcher_contract.field_readiness()
+    readiness["protocol_blockers"] = ["unresolved"]
+    monkeypatch.setattr(e.dispatcher_contract, "field_readiness", lambda: readiness)
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})
 
@@ -215,7 +230,7 @@ def test_current_dispatcher_release_gate_is_hard_closed_before_field_action():
 def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
         monkeypatch, tmp_path):
     loader, bootstrap = b"loader\n", b"bootstrap\n"
-    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes() + b"\n# unreviewed\n"
     entry = {"loader_path": "field/loader.py",
              "bootstrap_path": "field/bootstrap.py",
              "dispatcher_path": "field/dispatcher.py",
@@ -295,7 +310,8 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
         assert list(tmp_path.iterdir()) == []
-        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
+            hashlib.sha256(Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()).hexdigest()})
     finally:
         os.close(directory_fd)
 
