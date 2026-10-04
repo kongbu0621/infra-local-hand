@@ -242,15 +242,25 @@ def test_bootstrap_blob_and_loader_binding_fit_approved_limits():
     assert hashlib.sha256(loader).hexdigest() == b.LOADER_SHA256
 
 
-def _root_owned_stat_for_temporary_programs(monkeypatch):
-    """Simulate only guest ownership; all paths, descriptors and content are real."""
-    original_stat, original_fstat = os.stat, os.fstat
+def _temporary_program_root(tmp_path, monkeypatch):
+    """Model a guest root with user-owned real FDs and unchanged open flags.
+
+    The ordinary CI user cannot O_NOATIME-open the machine's actual root.
+    Redirect only the synthetic '/' to this test directory, not production
+    reads; simulate guest ownership while retaining real inode/content checks.
+    """
+    original_stat, original_fstat, original_open = os.stat, os.fstat, os.open
     def root_record(info):
         values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
         values.update(st_uid=0, st_gid=0)
         return SimpleNamespace(**values)
-    monkeypatch.setattr(b.os, "stat", lambda *args, **kwargs: root_record(original_stat(*args, **kwargs)))
+    def rooted_stat(path, *args, **kwargs):
+        return root_record(original_stat(tmp_path if path == "/" else path, *args, **kwargs))
+    def rooted_open(path, flags, *args, **kwargs):
+        return original_open(tmp_path if path == "/" else path, flags, *args, **kwargs)
+    monkeypatch.setattr(b.os, "stat", rooted_stat)
     monkeypatch.setattr(b.os, "fstat", lambda *args, **kwargs: root_record(original_fstat(*args, **kwargs)))
+    monkeypatch.setattr(b.os, "open", rooted_open)
 
 
 def test_held_program_resolves_relative_and_absolute_aliases_without_follow_open(tmp_path, monkeypatch):
@@ -260,18 +270,18 @@ def test_held_program_resolves_relative_and_absolute_aliases_without_follow_open
     alias = tmp_path / "alias"
     alias.symlink_to("program")
     outer = tmp_path / "outer"
-    outer.symlink_to(str(alias))
-    _root_owned_stat_for_temporary_programs(monkeypatch)
+    outer.symlink_to("/alias")
+    _temporary_program_root(tmp_path, monkeypatch)
     original_open = os.open; opens = []
     def checked_open(path, flags, *args, **kwargs):
         opens.append((path, flags))
         assert flags & os.O_NOFOLLOW and flags & os.O_NOATIME
         return original_open(path, flags, *args, **kwargs)
     monkeypatch.setattr(b.os, "open", checked_open)
-    value = b._program(str(outer))
-    assert value["path"] == str(outer) and value["resolved_path"] == str(program)
-    assert value["symlink_chain"] == [{"path": str(outer), "target": str(alias)},
-                                       {"path": str(alias), "target": "program"}]
+    value = b._program("/outer")
+    assert value["path"] == "/outer" and value["resolved_path"] == "/program"
+    assert value["symlink_chain"] == [{"path": "/outer", "target": "/alias"},
+                                       {"path": "/alias", "target": "program"}]
     assert value["sha256"] == b.sha(b"fixed-program-content")
     assert opens
 
@@ -287,16 +297,16 @@ def test_held_program_refuses_unsafe_aliases(tmp_path, monkeypatch, case):
         alias.symlink_to("link0")
         for index in range(8):
             (tmp_path / f"link{index}").symlink_to(f"link{index + 1}" if index < 7 else "program")
-    _root_owned_stat_for_temporary_programs(monkeypatch)
+    _temporary_program_root(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_(ALIAS|MAGIC_LINK)"):
-        b._program(str(alias))
+        b._program("/alias")
 
 
 def test_held_program_detects_alias_retarget_after_read(tmp_path, monkeypatch):
     first = tmp_path / "first"; first.write_bytes(b"first"); first.chmod(0o755)
     second = tmp_path / "second"; second.write_bytes(b"second"); second.chmod(0o755)
     alias = tmp_path / "alias"; alias.symlink_to("first")
-    _root_owned_stat_for_temporary_programs(monkeypatch)
+    _temporary_program_root(tmp_path, monkeypatch)
     read = os.read; changed = False
     def changed_read(fd, maximum):
         nonlocal changed
@@ -306,19 +316,19 @@ def test_held_program_detects_alias_retarget_after_read(tmp_path, monkeypatch):
         return raw
     monkeypatch.setattr(b.os, "read", changed_read)
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_ALIAS_DRIFT"):
-        b._program(str(alias))
+        b._program("/alias")
 
 
 def test_held_program_does_not_fallback_when_noatime_open_denied(tmp_path, monkeypatch):
     path = tmp_path / "program"; path.write_bytes(b"program"); path.chmod(0o755)
-    _root_owned_stat_for_temporary_programs(monkeypatch)
+    _temporary_program_root(tmp_path, monkeypatch)
     original = os.open; attempts = []
     def denied(name, flags, *args, **kwargs):
         if name == "program":
             attempts.append(flags); raise PermissionError("NOATIME denied")
         return original(name, flags, *args, **kwargs)
     monkeypatch.setattr(b.os, "open", denied)
-    with pytest.raises(PermissionError): b._program(str(path))
+    with pytest.raises(PermissionError): b._program("/program")
     assert len(attempts) == 1 and attempts[0] & os.O_NOATIME
 
 
@@ -389,11 +399,11 @@ def test_account_collector_uses_one_current_record_and_refuses_wrong_home(monkey
 
 def test_held_program_refuses_fifo_before_open(tmp_path, monkeypatch):
     path = tmp_path / "program"; os.mkfifo(path)
-    _root_owned_stat_for_temporary_programs(monkeypatch)
+    _temporary_program_root(tmp_path, monkeypatch)
     original = os.open
     def checked(name, flags, *args, **kwargs):
         assert name != "program", "must reject FIFO before a potentially blocking open"
         return original(name, flags, *args, **kwargs)
     monkeypatch.setattr(b.os, "open", checked)
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_PROGRAM"):
-        b._program(str(path))
+        b._program("/program")

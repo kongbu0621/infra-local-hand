@@ -20,6 +20,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -2854,7 +2855,13 @@ class FieldEffects:
         return {"bytes": total_bytes, "inodes": total_inodes}
 
     def _installation_command(self, argv):
-        """Candidate installer callback: one child, bounded paired pipes, no retry."""
+        """One real child, wait4 accounting and paired EOF; never retry.
+
+        Normal work cannot borrow the remote-final reserve. After a failure,
+        only kill/reap/drain is permitted inside the unchanged outer window.
+        Child rusage is retained as a measured component, not a substitute for
+        the still-missing all-unit CPU/memory/pid/storage accounting.
+        """
         _require(type(argv) in (list, tuple) and 1 <= len(argv) <= 128
                  and all(type(arg) is str and "\0" not in arg and len(arg) <= 65536 for arg in argv)
                  and argv[0].startswith("/"), "CORE_EFFECT_INSTALL_COMMAND")
@@ -2863,33 +2870,85 @@ class FieldEffects:
         self._effect_guard()
         output = {"stdout": bytearray(), "stderr": bytearray()}
         eof = set()
-        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd=self._candidate_root, close_fds=True,
-            start_new_session=True, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C",
-                                        "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1",
-                                        "TMPDIR": self._install_temp or self._candidate_root,
-                                        "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
-                                        "GIT_CONFIG_GLOBAL": "/dev/null"})
-        selector = None
-        failure = None
+        proc = selector = None
+        failure = cleanup_failure = waited = None
+        attempted = False
+        killed = False
+
+        def call(function, *args, stopping=False, returned=None, **kwargs):
+            guard = (lambda: _clock(self, self.context["guest_deadlines"])) if stopping else self._effect_guard
+            guard()
+            value = function(*args, **kwargs)
+            # Preserve completed effects even when a syscall returns late.
+            if returned is not None:
+                returned(value)
+            guard()
+            return value
+
+        def set_process(value):
+            nonlocal proc
+            proc = value
+
+        def set_selector(value):
+            nonlocal selector
+            selector = value
+
+        def reap(stopping=False):
+            nonlocal waited
+            if waited is not None:
+                return
+            def retain(value):
+                nonlocal waited
+                pid, status, usage = value
+                if pid:
+                    _require(pid == proc.pid, "CORE_EFFECT_INSTALL_COMMAND_WAIT_IDENTITY")
+                    proc.returncode = os.waitstatus_to_exitcode(status)
+                    # Linux ru_maxrss is KiB. Round CPU upward, never to an
+                    # optimistic zero for a positive sub-nanosecond value.
+                    waited = {"pid": pid, "wait_status": status,
+                              "user_cpu_ns": math.ceil(usage.ru_utime * NS),
+                              "system_cpu_ns": math.ceil(usage.ru_stime * NS),
+                              "max_rss_bytes": usage.ru_maxrss * 1024}
+            call(os.wait4, proc.pid, os.WNOHANG, stopping=stopping, returned=retain)
+
+        def read_pipe(name, stopping=False):
+            stream = getattr(proc, name)
+            room = 32768 - sum(map(len, output.values()))
+            def retain(block):
+                if not block:
+                    eof.add(name)
+                else:
+                    # A remaining+1 sentinel is observed but never retained.
+                    output[name].extend(block[:room])
+            try:
+                block = call(os.read, stream.fileno(), 4096 if stopping else min(4096, room + 1),
+                             stopping=stopping, returned=retain)
+            except BlockingIOError:
+                return
+            if not stopping:
+                _require(len(block) <= room, "CORE_EFFECT_INSTALL_COMMAND_OUTPUT_LIMIT")
+
         try:
-            selector = selectors.DefaultSelector()
+            attempted = True
+            call(subprocess.Popen, argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, cwd=self._candidate_root, close_fds=True,
+                start_new_session=True, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                                            "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1",
+                                            "TMPDIR": self._install_temp or self._candidate_root,
+                                            "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
+                                            "GIT_CONFIG_GLOBAL": "/dev/null"}, returned=set_process)
+            call(selectors.DefaultSelector, returned=set_selector)
             for name in output:
                 stream = getattr(proc, name)
-                os.set_blocking(stream.fileno(), False)
-                selector.register(stream, selectors.EVENT_READ, name)
-            while len(eof) != 2 or proc.poll() is None:
-                self._effect_guard()
-                for key, _ in selector.select(0.02):
-                    room = 32768 - sum(map(len, output.values()))
-                    block = os.read(key.fd, min(4096, room + 1))
-                    if not block:
-                        eof.add(key.data)
-                        selector.unregister(key.fileobj)
-                    else:
-                        _require(len(block) <= room, "CORE_EFFECT_INSTALL_COMMAND_OUTPUT_LIMIT")
-                        output[key.data].extend(block)
-            _require(proc.wait() == 0 and len(eof) == 2, "CORE_EFFECT_INSTALL_COMMAND_FAILED")
+                call(os.set_blocking, stream.fileno(), False)
+                call(selector.register, stream, selectors.EVENT_READ, name)
+            while len(eof) != 2 or waited is None:
+                for key, _ in call(selector.select, 0.02):
+                    read_pipe(key.data)
+                    if key.data in eof:
+                        call(selector.unregister, key.fileobj)
+                reap()
+            _require(proc.returncode == 0, "CORE_EFFECT_INSTALL_COMMAND_FAILED")
             self._effect_guard()
             self._venv_alias_pending = list(argv[1:7]) == ["-I", "-B", "-m", "venv", "--copies", "--without-pip"]
             try:
@@ -2899,27 +2958,50 @@ class FieldEffects:
             self._effect_guard()
             return bytes(output["stdout"])
         except BaseException as error:
-            failure = str(error)[:128]
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                proc.wait(timeout=1)
-            except subprocess.TimeoutExpired as error:
-                failure = "CORE_EFFECT_INSTALL_COMMAND_REAP_INCOMPLETE"
-                raise DispatchError(failure) from error
+            failure = str(error)[:128] if isinstance(error, DispatchError) else type(error).__name__
+            if proc is not None:
+                try:
+                    # The leader may already be reaped while a descendant
+                    # still owns a pipe. Signal its original process group.
+                    def kill():
+                        nonlocal killed
+                        killed = True
+                        try:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    if waited is None or len(eof) != 2:
+                        call(kill, stopping=True)
+                    for name in output:
+                        call(os.set_blocking, getattr(proc, name).fileno(), False, stopping=True)
+                    # Do not depend on selector construction succeeding. A
+                    # bounded empty poll allows kill/reap even under EMFILE.
+                    while waited is None or len(eof) != 2:
+                        reap(stopping=True)
+                        for name in output:
+                            if name not in eof:
+                                read_pipe(name, stopping=True)
+                        if waited is None or len(eof) != 2:
+                            call(time.sleep, 0.005, stopping=True)
+                except BaseException as cleanup_error:
+                    cleanup_failure = (str(cleanup_error)[:128]
+                        if isinstance(cleanup_error, DispatchError) else type(cleanup_error).__name__)
             raise
         finally:
-            self._install_commands.append({"argv": list(argv), "returncode": proc.returncode,
-                "eof": sorted(eof), "failure": failure,
-                "stdout": bytes(output["stdout"]), "stderr": bytes(output["stderr"])})
+            if attempted:
+                self._install_commands.append({"argv": list(argv),
+                    "returncode": proc.returncode if proc is not None else None,
+                    "eof": sorted(eof), "failure": failure, "cleanup_failure": cleanup_failure,
+                    "kill_sent": killed, "wait4": waited,
+                    "stdout": bytes(output["stdout"]), "stderr": bytes(output["stderr"])})
+            # Local descriptor release is not evidence of EOF or child exit.
             try:
                 if selector is not None:
                     selector.close()
             finally:
-                for name in output:
-                    getattr(proc, name).close()
+                if proc is not None:
+                    for name in output:
+                        getattr(proc, name).close()
 
     def persist(self, case_id, path, raw, mode):
         _require(self._persistence_ready, "CORE_EFFECT_PERSISTENCE_NOT_READY")

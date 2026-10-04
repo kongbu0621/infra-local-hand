@@ -271,7 +271,7 @@ def test_builder_runs_second_source_path_automatically_and_does_not_mutate_input
 def historical_loader_fixture(monkeypatch):
     """Synthetic trusted historical Git closure, different from today's files."""
     verifier = b'''import importlib.util
-from pathlib import Path
+from pathlib import PurePosixPath as Path
 def helper():
     spec = importlib.util.spec_from_file_location("_old_approved_contract", Path(__file__).with_name("q2_reconciliation_contract.py"))
     module = importlib.util.module_from_spec(spec)

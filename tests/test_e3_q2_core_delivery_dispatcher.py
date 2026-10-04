@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import errno
 import hashlib
+import io
 import importlib.util
 from pathlib import Path
 import struct
@@ -600,22 +601,32 @@ def test_real_installation_bridge_requires_bound_admission_before_mutation(tmp_p
     assert list(root.iterdir()) == [] and calls == []
 
 
-def test_install_command_observes_real_exit_and_both_eof(tmp_path):
+def _command_effects(tmp_path):
     effects = d.FieldEffects({})
     effects._candidate_root = str(tmp_path)
-    effects._effect_guard = lambda: None
+    now = effects.now()
+    effects.context["guest_deadlines"] = dict(boot_id=now["boot_id"],
+        boottime_deadline_ns=now["boottime_ns"] + 60 * d.NS,
+        monotonic_deadline_ns=now["monotonic_ns"] + 60 * d.NS)
+    return effects
+
+
+def test_install_command_observes_real_exit_and_both_eof(tmp_path):
+    effects = _command_effects(tmp_path)
     result = effects._installation_command([
         sys.executable, "-I", "-B", "-c", "import sys; print('ok'); print('detail',file=sys.stderr)"])
     assert result == b"ok\n"
     record = effects._install_commands[-1]
     assert record["returncode"] == 0 and record["eof"] == ["stderr", "stdout"]
     assert record["stderr"] == b"detail\n" and record["failure"] is None
+    assert record["wait4"]["wait_status"] == 0
+    assert record["wait4"]["user_cpu_ns"] + record["wait4"]["system_cpu_ns"] > 0
+    assert record["wait4"]["max_rss_bytes"] > 0
+    assert record["cleanup_failure"] is None and not record["kill_sent"]
 
 
 def test_install_command_output_limit_does_not_retain_sentinel(tmp_path):
-    effects = d.FieldEffects({})
-    effects._candidate_root = str(tmp_path)
-    effects._effect_guard = lambda: None
+    effects = _command_effects(tmp_path)
     with pytest.raises(d.DispatchError, match="INSTALL_COMMAND_OUTPUT_LIMIT"):
         effects._installation_command([
             sys.executable, "-I", "-B", "-c", "import os; os.write(1,b'x'*32769)"])
@@ -623,11 +634,12 @@ def test_install_command_output_limit_does_not_retain_sentinel(tmp_path):
     assert sum(len(record[name]) for name in ("stdout", "stderr")) <= 32768
     assert record["returncode"] is not None
     assert len(effects._install_commands) == 1
+    assert record["wait4"] is not None and record["eof"] == ["stderr", "stdout"]
+    assert record["kill_sent"] and record["cleanup_failure"] is None
 
 
 def test_install_command_requires_exit_even_after_both_eof(tmp_path):
-    effects = d.FieldEffects({})
-    effects._candidate_root = str(tmp_path)
+    effects = _command_effects(tmp_path)
     observations = []
 
     def guard():
@@ -718,9 +730,7 @@ def test_running_install_child_is_reaped_at_reserve_boundary_and_files_retained(
 
 @pytest.mark.parametrize("error_number", [errno.EMFILE, errno.ENFILE])
 def test_install_selector_creation_failure_kills_reaps_and_closes_child_pipes(tmp_path, monkeypatch, error_number):
-    effects = d.FieldEffects({})
-    effects._candidate_root = str(tmp_path)
-    effects._effect_guard = lambda: None
+    effects = _command_effects(tmp_path)
     children = []
     original = d.subprocess.Popen
 
@@ -743,6 +753,113 @@ def test_install_selector_creation_failure_kills_reaps_and_closes_child_pipes(tm
     assert child.stdout.closed and child.stderr.closed
     assert len(effects._install_commands) == 1
     assert effects._install_commands[0]["returncode"] == child.returncode
+
+
+def test_install_nonzero_exit_keeps_real_wait_resources_and_both_streams(tmp_path):
+    effects = _command_effects(tmp_path)
+    with pytest.raises(d.DispatchError, match="INSTALL_COMMAND_FAILED"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c",
+            "import sys; print('before-failure'); print('reason',file=sys.stderr); sys.exit(7)"])
+    record = effects._install_commands[0]
+    assert record["returncode"] == 7
+    assert os.waitstatus_to_exitcode(record["wait4"]["wait_status"]) == 7
+    assert record["stdout"] == b"before-failure\n" and record["stderr"] == b"reason\n"
+    assert record["eof"] == ["stderr", "stdout"]
+    assert record["cleanup_failure"] is None
+    assert not record["kill_sent"]  # do not signal an already reaped, EOF-closed group
+
+
+def test_install_leader_exit_does_not_skip_descendant_pipe_stop(tmp_path, monkeypatch):
+    effects = _command_effects(tmp_path)
+    original_wait4 = os.wait4
+    leader_exited = False
+
+    def observed_wait4(*args):
+        nonlocal leader_exited
+        result = original_wait4(*args)
+        leader_exited |= result[0] != 0
+        return result
+
+    def guard():
+        if leader_exited:
+            raise d.DispatchError("CORE_DISPATCH_DEADLINE")
+
+    monkeypatch.setattr(d.os, "wait4", observed_wait4)
+    effects._effect_guard = guard
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c",
+            "import os,time; child=os.fork(); os._exit(0) if child else time.sleep(30)"])
+    record = effects._install_commands[0]
+    assert record["returncode"] == 0 and record["wait4"] is not None
+    # The leader's successful wait is not paired-EOF proof. Cleanup must also
+    # stop the inherited-pipe holder in that same original process group.
+    assert record["kill_sent"] and record["eof"] == ["stderr", "stdout"]
+    assert record["failure"] == "CORE_DISPATCH_DEADLINE"
+    assert record["cleanup_failure"] is None
+
+
+def test_install_late_read_retains_observed_bytes_without_success(tmp_path, monkeypatch):
+    effects = _command_effects(tmp_path)
+    original_read = os.read
+    late = False
+
+    def read(fd, size):
+        nonlocal late
+        block = original_read(fd, size)
+        if block == b"late-read\n":
+            late = True
+        return block
+
+    def guard():
+        if late:
+            raise d.DispatchError("CORE_DISPATCH_DEADLINE")
+
+    monkeypatch.setattr(d.os, "read", read)
+    effects._effect_guard = guard
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c", "print('late-read')"])
+    record = effects._install_commands[0]
+    assert record["stdout"] == b"late-read\n" and record["wait4"] is not None
+    assert record["eof"] == ["stderr", "stdout"] and record["cleanup_failure"] is None
+
+
+def test_install_popen_failure_records_unknown_wait_without_second_attempt(tmp_path, monkeypatch):
+    effects = _command_effects(tmp_path)
+    attempts = []
+
+    def fail(*args, **kwargs):
+        attempts.append(args)
+        raise OSError(errno.EAGAIN, "synthetic child creation failure")
+
+    monkeypatch.setattr(d.subprocess, "Popen", fail)
+    with pytest.raises(OSError):
+        effects._installation_command([sys.executable, "-I", "-B", "-c", "pass"])
+    assert len(attempts) == 1
+    record = effects._install_commands[0]
+    assert record["wait4"] is record["returncode"] is None
+    assert record["eof"] == [] and not record["kill_sent"]
+
+
+def test_install_expired_outer_window_does_not_gain_cleanup_tail(tmp_path, monkeypatch):
+    effects = _command_effects(tmp_path)
+    _, now = _guarded_installation_clock(effects)
+    pipe = lambda: io.BytesIO()
+    fake = types.SimpleNamespace(pid=1234567, returncode=None, stdout=pipe(), stderr=pipe())
+
+    def late_popen(*args, **kwargs):
+        now["boottime_ns"] += d.REMOTE_FINAL_RESERVE_NS + 1
+        return fake
+
+    monkeypatch.setattr(d.subprocess, "Popen", late_popen)
+    monkeypatch.setattr(d.os, "killpg", lambda *_: pytest.fail("late kill"))
+    monkeypatch.setattr(d.os, "wait4", lambda *_: pytest.fail("late wait"))
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c", "pass"])
+    record = effects._install_commands[0]
+    assert record["wait4"] is record["returncode"] is None
+    assert record["eof"] == [] and not record["kill_sent"]
+    assert record["cleanup_failure"] == "CORE_DISPATCH_DEADLINE"
+    assert fake.stdout.closed and fake.stderr.closed
 
 
 def test_installation_program_identity_drift_precedes_staging(tmp_path, monkeypatch):
