@@ -60,6 +60,14 @@ control schemas and partial v2 framing. Quota/manager doubles establish code
 conditions only. Full source and independent installed verification remain CI
 checks on the published commit, not evidence of guest acceptance.
 
+The first published implementation is `2f126dcabbe536f16da20ec3ab9e23ddba6ed8b6`,
+tree `52fd8c67ce3e16eaeab545c162665d259556ae8d`. Its CI run `37211389457` exposed a
+Windows collection error in the new guest-validator tests: importing the
+Linux-only dispatcher attempted to import `resource`. The follow-up marks that
+test module Linux-only before importing it, consistent with existing guest tests.
+The independent portable resource-contract tests still run on Windows. Runtime
+code and field-source digest are unchanged by this test-scope correction.
+
 Field source sizes are loader **2160**, bootstrap **49102**, dispatcher **408118**
 bytes. Dispatcher SHA-256:
 `575f058fde96852685468bed65234614ea3ddcde7532eedab7ab63dc497b5c35`.

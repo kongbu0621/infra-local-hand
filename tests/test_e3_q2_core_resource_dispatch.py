@@ -1,9 +1,13 @@
 """Guest-side semantic validation independent of host acceptance decisions."""
 import copy
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
+
+if not sys.platform.startswith('linux'):
+    pytest.skip('Field dispatcher requires Linux resource limits', allow_module_level=True)
 
 from test_e3_q2_core_resource_result import fixture, incomplete_fixture, seal, digest, missing
 
