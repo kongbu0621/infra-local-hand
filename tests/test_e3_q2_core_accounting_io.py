@@ -109,9 +109,16 @@ def test_quota_root_creation_records_inode_without_early_quota_observation(tmp_p
     path = str(tmp_path / 'quota')
     parent = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        fd = d.FieldEffects._mkdir_at(parent, 'quota', 0o700, guard=guard,
-            accounting=accounting, path=path)
-        os.close(fd)
+        if os.geteuid() == os.getegid() == 0:
+            fd = d.FieldEffects._mkdir_at(parent, 'quota', 0o700, guard=guard,
+                accounting=accounting, path=path)
+            os.close(fd)
+        else:
+            # Ordinary CI must retain the production root-owner rejection.
+            # The completed create is still charged before that check fails.
+            with pytest.raises(d.DispatchError, match='CORE_EFFECT_MKDIR_OWNER'):
+                d.FieldEffects._mkdir_at(parent, 'quota', 0o700, guard=guard,
+                    accounting=accounting, path=path)
     finally:
         os.close(parent)
     assert Path(path).is_dir() and sum(row[2] for row in accounting.records) == 1

@@ -5,8 +5,9 @@
 在已批准 A `851a1afe4e55196212aa6913e81e0722deed1032` 的同一范围内，
 已接齐 32 池实际观察、受控 I/O 记账、真实启动与 carrier 计数，以及 v2 结果生成/独立校验。
 修复落盘超时、准入身份交叉绑定，以及冻结产出中的 Q4/H11 兼容问题。
-整合核心回归 **968 passed / 1 skipped / 2 deselected**；两个云 PID 映射测试保留原断言并交普通 CI。
-dispatcher **408118 / 524288 B**。源码缺口清单已清空，host release allowlist 仍为空。
+整合核心回归 **985 passed / 1 skipped / 2 deselected**；两个云 PID 映射测试保留原断言并交普通 CI。
+完整扫描减少重复父目录打开；每次全量观察、fresh boot 读取和原双时钟校验保留。
+dispatcher **412466 / 524288 B**。源码缺口清单已清空，host release allowlist 仍为空。
 
 下一步由本地 Codex 使用已有私有材料完成准确包的两次独立 build/parse 与原 C3 复核，
 全部通过后继续原条件单次 H01→Q4→H11。无需再次批准同一 A；不新增现场轮次或分支功能。

@@ -36,7 +36,10 @@ def bound(tmp_path):
         'guest': {'ordinary_uid': 65534, 'ordinary_gid': 65534}}
     e._admission['programs']['setpriv'] = pin('/usr/bin/setpriv')
     e._admission['programs']['git'] = pin('/usr/bin/git')
-    return e
+    try:
+        yield e
+    finally:
+        e.close()
 
 
 def close_binding(result):
@@ -125,12 +128,17 @@ def test_completed_install_binds_executed_abi_and_runtime_receipt(bound, tmp_pat
 
 def test_binding_error_closes_open_descriptor(bound, monkeypatch):
     opened = []
+    program = bound._admission['programs']['python']
+    original_pread = os.pread
     def fail(fd, amount, offset):
+        info = os.fstat(fd)
+        if (info.st_dev, info.st_ino) != (program['dev'], program['ino']):
+            return original_pread(fd, amount, offset)
         opened.append(fd)
         raise OSError('test read failure')
     monkeypatch.setattr(d.os, 'pread', fail)
     with pytest.raises(OSError, match='test read failure'):
-        bound._installation_binding([bound._admission['programs']['python']['path']])
+        bound._installation_binding([program['path']])
     assert len(opened) == 1
     with pytest.raises(OSError):
         os.fstat(opened[0])

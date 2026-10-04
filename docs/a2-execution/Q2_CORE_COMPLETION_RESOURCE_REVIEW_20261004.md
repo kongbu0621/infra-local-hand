@@ -48,7 +48,7 @@ identities are rejected.
 
 ## Verification and limits
 
-Integrated core tests: **968 passed, 1 skipped, 2 deselected**. The two exclusions
+Initial integrated core tests: **968 passed, 1 skipped, 2 deselected**. The two exclusions
 are the existing cloud PID-versus-proc identity tests, whose assertions remain
 unchanged and run in ordinary CI. Earlier integration failures were retained and
 fixed: synthetic admission/extraction fixtures and the old source-readiness
@@ -68,9 +68,43 @@ test module Linux-only before importing it, consistent with existing guest tests
 The independent portable resource-contract tests still run on Windows. Runtime
 code and field-source digest are unchanged by this test-scope correction.
 
-Field source sizes are loader **2160**, bootstrap **49102**, dispatcher **408118**
+The Windows collection follow-up is `fd404b8cbc47e55af892f29f4f780974f645b85a`.
+Its CI run `37211608455` passed Windows (1747 passed / 1269 skipped; independent
+installed verifier 10 checks / 10 commands). Linux reported 4884 passed / 88
+skipped and one test fixture failure: an ordinary runner correctly received
+`CORE_EFFECT_MKDIR_OWNER`. The follow-up preserves that production root-owner
+check and verifies both outcomes: root success or ordinary-user rejection, with
+the actual completed create charged in either case. No permission check is relaxed.
+
+A concrete full-scan cost was also found before private release. The second pass
+now groups objects by parent within one observation, retaining each object's
+name/O_PATH/fstat/name checks and full no-follow parent walks before and after
+each group. No allocation sum or object identity is reused across observations.
+The boot clock retains six bounded, pinned descriptors while still reading fresh
+boot bytes and EOF, validating file/parent/ancestor identities and reading both
+clocks on every call. All controlled I/O boundaries still trigger full scans.
+
+In the same isolated 500-file/10-directory fixture, with real boot reads and clock
+guards, three final scans took 0.261011 / 0.259899 / 0.238914 seconds, versus
+0.616289 / 0.574619 / 0.548356 before. Mean time fell about 56%; open calls fell
+from 158688 to 1205. This is a local overhead measurement, not a guest runtime
+qualification or proof that the real chain fits its original 750-second cap and
+705-second normal window. Neither deadline is changed. The frozen installer's
+435 internal verification commands are not 435 dispatcher child callbacks.
+
+After these narrow follow-ups, integrated core tests are **985 passed, 1 skipped,
+2 deselected in 26.84s**, with the same two unchanged cloud PID exclusions.
+
+Seventeen new regressions cover complete second-pass sibling checks, renamed or
+aliased parents, late descriptor release, no-atime metadata-only coverage, fresh
+boot reads/EOF, name replacement, malformed identity and bounded FD cleanup.
+An existing executable-read failure injection is now scoped to that executable's
+device/inode, so it does not accidentally fail the unrelated boot clock read;
+its FD closure assertion is unchanged. The fixture closes its owned clock FDs.
+
+Field source sizes are loader **2160**, bootstrap **49102**, dispatcher **412466**
 bytes. Dispatcher SHA-256:
-`575f058fde96852685468bed65234614ea3ddcde7532eedab7ab63dc497b5c35`.
+`06f5e5b659967a5a8375d981fe6e58401bba65b29054df50be363501f98ce79f`.
 All are within the approved three-file caps. Original runtime candidate, wheel,
 projection, budgets, package/session/marker protocol, 82 output members and six
 host files remain unchanged. `full_guest_filesystem_peak_proven=false`: application

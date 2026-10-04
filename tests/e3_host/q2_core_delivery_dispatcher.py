@@ -3590,22 +3590,58 @@ class _PoolAccounting:
         self._same(before, self._call(os.fstat, fd))
 
     def _recheck_objects(self, records):
-        # Recheck earlier objects after the entire pool scan, including files
-        # changed in place while a later sibling was being visited. Descriptors
-        # are bounded by path depth, not by the number of files in the pool.
+        # Recheck every recorded object after the complete first pass. Reuse a
+        # parent descriptor only within this pass; no allocation or identity is
+        # cached across observations. The full named parent walk is checked on
+        # both sides of each group, so a renamed held directory is not enough.
+        by_path = dict(records)
+        _require(len(by_path) == len(records), 'CORE_POOL_SCAN_ALIAS')
+        groups = {}
         for path, before in records:
             parsed = PurePosixPath(path)
-            parent = self.effects._held_directory(str(parsed.parent),
+            groups.setdefault(str(parsed.parent), []).append((parsed.name, before))
+        for parent_path, children in groups.items():
+            parent = self.effects._held_directory(parent_path,
                 guard=self._guard, validate=self.effects._capacity_protection)
             try:
-                self._same(before, self._call(os.stat, parsed.name, dir_fd=parent, follow_symlinks=False))
-                fd = self._call(os.open, parsed.name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC,
-                    dir_fd=parent, release=os.close)
+                parent_before = self._call(os.fstat, parent)
+                if parent_path in by_path:
+                    self._same(by_path[parent_path], parent_before)
+                else:
+                    admitted = [row for row in self.effects._admission['parents'].values()
+                        if row['path'] == parent_path]
+                    if admitted:
+                        actual = (parent_before.st_dev, parent_before.st_ino, parent_before.st_uid,
+                            parent_before.st_gid, stat.S_IMODE(parent_before.st_mode))
+                        _require(all(actual == tuple(expected[key] for key in
+                            ('dev', 'ino', 'uid', 'gid', 'mode')) for expected in admitted),
+                            'CORE_POOL_PARENT_DRIFT')
+                    else:
+                        # A case root's parent belongs to carrier, and a capture
+                        # root's parent belongs to state. They are fixed owned
+                        # roots, not new uncharged external ancestors.
+                        _require(parent_path in self.created and any(root == parent_path
+                            for root, *_ in self.roots), 'CORE_POOL_PARENT_BINDING')
+                        expected = self.pins.get(parent_path)
+                        _require(expected is None or expected ==
+                            (parent_before.st_dev, parent_before.st_ino), 'CORE_POOL_PARENT_DRIFT')
+                for name, before in children:
+                    self._same(before, self._call(os.stat, name, dir_fd=parent, follow_symlinks=False))
+                    fd = self._call(os.open, name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=parent, release=os.close)
+                    try:
+                        self._same(before, self._call(os.fstat, fd))
+                        self._same(before, self._call(os.stat, name, dir_fd=parent, follow_symlinks=False))
+                    finally:
+                        os.close(fd)
+                self._same(parent_before, self._call(os.fstat, parent))
+                named = self.effects._held_directory(parent_path,
+                    guard=self._guard, validate=self.effects._capacity_protection)
                 try:
-                    self._same(before, self._call(os.fstat, fd))
-                    self._same(before, self._call(os.stat, parsed.name, dir_fd=parent, follow_symlinks=False))
+                    self._same(parent_before, self._call(os.fstat, named))
+                    self._same(parent_before, self._call(os.fstat, parent))
                 finally:
-                    os.close(fd)
+                    os.close(named)
             finally:
                 os.close(parent)
 
@@ -3810,6 +3846,7 @@ class FieldEffects:
         self._started_cpu_ns = time.process_time_ns()
 
     def close(self):
+        self.__dict__.pop('_clock_fds', None)
         while self.held:
             os.close(self.held.pop())
 
@@ -3817,33 +3854,68 @@ class FieldEffects:
         return field_readiness()
 
     def now(self):
-        parent = self._held_directory("/proc/sys/kernel/random")
+        path = '/proc/sys/kernel/random'
+        cached = getattr(self, '_clock_fds', None)
+        opened = []
+        def pin(info):
+            return (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+                    info.st_gid)
+        def ancestors_match(ancestors):
+            for descriptor, name, expected in ancestors:
+                current = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                _effect(stat.S_ISDIR(current.st_mode) and pin(current) == expected,
+                    'BOOT_ID_PARENT')
         try:
-            fd = os.open("boot_id", os.O_RDONLY | os.O_CLOEXEC
-                | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
+            if cached is None:
+                flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+                parent = os.open('/', flags)
+                opened.append(parent)
+                ancestors = [(None, '/', pin(os.fstat(parent)))]
+                for component in PurePosixPath(path).parts[1:]:
+                    child = os.open(component, flags, dir_fd=parent)
+                    opened.append(child)
+                    ancestors.append((parent, component, pin(os.fstat(child))))
+                    parent = child
+                ancestors = tuple(ancestors)
+                parent_pin = ancestors[-1][2]
+                fd = os.open('boot_id', os.O_RDONLY | os.O_CLOEXEC
+                    | getattr(os, 'O_NOFOLLOW', 0), dir_fd=parent)
+                opened.append(fd)
+                file_pin = pin(os.fstat(fd))
+            else:
+                parent, fd, parent_pin, file_pin, ancestors = cached
+            ancestors_match(ancestors)
+            _effect(pin(os.fstat(parent)) == parent_pin
+                and stat.S_ISDIR(parent_pin[2]), 'BOOT_ID_PARENT')
+            before = os.fstat(fd)
+            _effect(stat.S_ISREG(before.st_mode) and pin(before) == file_pin
+                == pin(os.stat('boot_id', dir_fd=parent, follow_symlinks=False)), 'BOOT_ID')
+            # The descriptors are reused, never the boot bytes or clock values.
+            raw = os.pread(fd, 65, 0)
+            _effect(len(raw) <= 64 and os.pread(fd, 1, len(raw)) == b'', 'BOOT_ID')
+            after = os.fstat(fd)
+            _effect(_admit_stat(before) == _admit_stat(after)
+                and pin(after) == file_pin
+                == pin(os.stat('boot_id', dir_fd=parent, follow_symlinks=False))
+                and pin(os.fstat(parent)) == parent_pin
+                == pin(os.stat(path, follow_symlinks=False)), 'BOOT_ID')
             try:
-                before = os.fstat(fd)
-                raw = os.read(fd, 65)
-                _effect(len(raw) <= 64 and os.read(fd, 1) == b"",
-                    "BOOT_ID")
-                after = os.fstat(fd)
-                _effect(stat.S_ISREG(before.st_mode)
-                    and (before.st_dev, before.st_ino, before.st_mode)
-                    == (after.st_dev, after.st_ino, after.st_mode),
-                    "BOOT_ID")
-            finally:
-                os.close(fd)
+                boot_id = raw.decode('ascii', 'strict').strip()
+            except UnicodeError as error:
+                raise _effect.error('BOOT_ID') from error
+            _effect(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',
+                    boot_id) is not None, 'BOOT_ID')
+            result = {'boot_id': boot_id,
+                'boottime_ns': time.clock_gettime_ns(time.CLOCK_BOOTTIME),
+                'monotonic_ns': time.clock_gettime_ns(time.CLOCK_MONOTONIC)}
+            if cached is None:
+                self.held.extend(opened)
+                self._clock_fds = (parent, fd, parent_pin, file_pin, ancestors)
+                opened.clear()
+            return result
         finally:
-            os.close(parent)
-        try:
-            boot_id = raw.decode("ascii", "strict").strip()
-        except UnicodeError as error:
-            raise _effect.error('BOOT_ID') from error
-        _effect(re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-                boot_id) is not None, "BOOT_ID")
-        return {"boot_id": boot_id,
-            "boottime_ns": time.clock_gettime_ns(time.CLOCK_BOOTTIME),
-            "monotonic_ns": time.clock_gettime_ns(time.CLOCK_MONOTONIC)}
+            for descriptor in reversed(opened):
+                os.close(descriptor)
 
     @staticmethod
     def _absolute(path, code="CORE_EFFECT_ABSOLUTE_PATH"):
