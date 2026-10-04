@@ -1054,6 +1054,15 @@ host return cross-binding and dual-C offline lineage are implemented. This resol
 real D2 effects, full release verification and independent review remain required. Package remains null/NOT_ISSUED,
 the release allowlist remains empty, and no field marker/request/case was issued. A's exact document bytes remain unchanged.
 
+The subsequent [core preparation followup](docs/a2-execution/q2-core-acceptance-delivery/CORE_EXECUTION_PROGRESS.md)
+records D `0c786ac2389291f488c60ccc32e7eb468d5e30d0`, following the core execution/evidence checkpoint
+`ca4199e2ede7821af1ebe30d1f77f719743414c0`. The fixed existing-account preparation adapter and guarded
+create-only effects are implemented and source-tested, not field-accepted. Current guest admission and
+preparation capacity collectors, complete shared-pool/usage accounting, installation internal deadlines and
+executable binding remain blocked. The dispatcher stays within 262144 bytes; do not restore the oversized
+development checkpoint or add an unapproved field module. Runtime candidate/wheel, original F1 and all
+budgets/deadlines remain unchanged. No field marker/request/task or production activation was performed.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

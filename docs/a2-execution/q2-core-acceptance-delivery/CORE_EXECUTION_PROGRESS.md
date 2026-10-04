@@ -1,6 +1,83 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
-## Current deliverable
+## Current preparation adapter followup
+
+The current implementation D is `0c786ac2389291f488c60ccc32e7eb468d5e30d0`, tree
+`5579ae72c83cd928e3e21e13944ad65924a6b82f`, directly following `ca4199e2` below.
+This is continued D2 work under the existing core amendment, not a new Gate,
+completed D1–D4, or field acceptance. The original R was read directly again.
+The exact Git-blob verifier passed both independent C ancestry chains and the
+unchanged A document/B decision digests. The approved runtime candidate, wheel,
+projection, budgets, deadlines and conditional single F1 remain unchanged.
+
+The selected dispatcher now contains the existing-account preparation adapter:
+
+- Verify installation, current-capacity dependencies, persisted intent, retained
+  objects, unused project IDs and parent identities before creating case resources.
+- Create only the case/reservation ancestry, persist the preparation preimage,
+  then create the fixed directories and seven quota roots. Limit mutation accepts
+  only the original 21 IDs and their original 1 MiB/128-inode limits.
+- Recheck retained inputs and quota inventory, invoke the original candidate
+  constructors, save policy/authority, and initialize one empty ledger through
+  the bounded ordinary child. Existing or partial objects are retained, not
+  overwritten, cleared or retried. H11 recovery still uses its own origin ledger;
+  this preparation entry is not called again during recovery.
+- Guard individual directory/file/quota effect calls against the original paired
+  clocks. Late-opened descriptors are retained for closure; a late return stops
+  subsequent writes. This does not prove the still-incomplete installer/collector
+  internals or that blocking kernel calls always return on time.
+
+The dispatcher is **261960 / 262144 bytes**, SHA-256
+`ca0efe77e6651a95afaa7a4853caf5f085b50e584fa96dbfc6050b257d02b4c9`.
+The unchanged loader is 2160/8192 bytes and bootstrap is 49102/49152 bytes.
+Common preparation error prefixes and concise comments keep the code within the
+existing limit. No existing predicate was dropped, no extra field module was
+introduced, and no byte ceiling was raised.
+Only 184 dispatcher bytes remain. Remaining integration needs a reviewable
+refactor within the same boundary, not restoration of the oversized checkpoint.
+
+Validation of this D's source/test bytes: preparation **70 passed**; core
+**567 passed / 9 skipped**; full source **4478 passed / 100 skipped, 434.30 s**.
+The full report is retained locally at
+`lh-core-preparation-source.GgTh1C/results.xml`, SHA-256
+`9ba029170912963c5006896fac7c1142f983d8b2d63c22032b18c33278fb82aa`.
+The new tests exercise actual temporary-file effects and one actual SQLite child
+under the existing ordinary test account. Quota/service observations and
+orchestration OS facts are explicit test doubles; they are not a guest measurement.
+Initial failures retained in the execution transcript concerned an unnecessary
+O_NOATIME requirement on directory traversal, then fixture file protection and
+synthetic inode aliasing. Regular preparation-file O_NOATIME and the production
+ownership/alias checks remain; no privilege fallback was introduced.
+
+An isolated clone of the exact D built and installed a test wheel, then the
+existing installed verifier returned **PASS, 94 checks / 292 commands**. The
+local report `lh-core-preparation-installed.IouVnM/acceptance/report.json` has
+SHA-256 `56a9d8bc94bc2e0cb3f54554d01f957daabed8f2c86b03b342a9c3852f8cc684`;
+the test wheel SHA-256 is
+`dd51d4c7ce98c30fcb527a88504cc9700290a84a474785d920a0a5c1fd37e7e6`.
+This disposable installation does not replace the frozen field wheel or prove
+an E3 business chain. At record time, the exact D's [CI run](https://github.com/kongbu0621/infra-local-hand/actions/runs/37191629497)
+had passed classification; Linux and Windows semantic jobs were still running.
+Skipped, pending and modeled checks are not field PASS or independent review.
+
+### Direct remaining blockers
+
+`admit()` still refuses: current guest, policy entities and historical obligations
+must be independently collected and charged per live pool. Preparation refuses
+before clock/file effects if its three current-capacity collectors are missing;
+these are now named `preparation.current_capacity_collectors` in readiness.
+Shared installation peak/usage accounting, installer internal deadlines and
+executable binding also remain unproved. Neither the new adapter nor tests
+remove these release predicates. Independent review and the complete original D4
+checks still precede final private package construction and field admission.
+
+The release allowlist is empty, the field package is null/NOT_ISSUED, and this
+followup issued no marker, carrier request, H01, Q4 or H11. No real field task was
+executed and no business result/evidence was collected. Existing physical guest
+state was not newly observed; absence of a marker cannot be inferred from this
+record. namespace/watchdog remain paused and production E3 remains restricted.
+
+## Retained ca4199e2 checkpoint
 
 This commit advances the approved core only. It does not declare Q2 accepted,
 production support, or permission to ignore any existing field check. The runtime
@@ -29,7 +106,7 @@ Independent review also reproduced SQLite creating WAL/SHM sidecars during an H1
 held-fd view and rechecks both sidecars and file identity afterward. A real WAL
 fixture and a pathname replacement regression cover that repair.
 
-## Explicit remaining boundary
+### Boundary at ca4199e2
 
 Current-guest `admit()` and actual `prepare_case()` remain fail-closed in main.
 Their full development implementation is retained in commit
@@ -49,7 +126,7 @@ installation deadline/executable-binding blockers remain. Q4 must retain real
 original stage InvocationIDs; do not invent a result-reader identity when running
 cancellation precedes its startup.
 
-## Validation and next work
+### Validation and handoff at ca4199e2
 
 The first selected-main core run produced **532 passed, 1 failed**. The unchanged
 writer process-identity test fails because this cloud execution surface exposes
