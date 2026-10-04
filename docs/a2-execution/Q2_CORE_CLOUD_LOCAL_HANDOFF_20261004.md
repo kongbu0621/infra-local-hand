@@ -2,6 +2,10 @@
 
 2026-10-04 +08:00。本页是执行交接，不替代准确 A/B/C；只推进正常执行、取消、同任务恢复和结果收回。
 
+后续 Owner 已准确批准本页 A；独立 C `7598886`、部分 D1 输入组件与 D3 六文件终结现已落地。
+[最新实施/验证记录](Q2_CORE_AMENDMENT_INPUT_CAPTURE_REVIEW_20261004.md)列出准确源码与未完成项；
+不再等待相同 A 的批准，也不把这些输入检查当作 F1。
+
 ## 已收回的本地工作
 
 本地已在 `c83dad17040e9f8cec148303083c47311f8b7fb9` 完成既有材料复核，
@@ -16,7 +20,8 @@
 ## 当前准确方案
 
 最小修订 A 为 `0bdb49cae5586be60a7ba31d4a8e8367854d1e8c`，准确摘要与待决定事项见
-[OPEN 登记](../governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)。当前待准确 Owner B；
+[历史 OPEN 登记](../governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)。后续准确 Owner B 已保留于
+[独立决定记录](../governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_OWNER_DECISION.md)；
 它代替未批准的 4009e1b，不改变原核心 CLOSED A/B/C 的历史字节，也不追认部分 D 为可发行。
 
 该 A 保留 approved-input/JIT/身份/安全检查，恢复六文件和原 live receipt v1；撤销第七文件、

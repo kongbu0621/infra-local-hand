@@ -1006,6 +1006,18 @@ Package is still null/NOT_ISSUED; this core batch has no marker/request/H01/Q4/H
 No old batch replay, reconnect, automatic retry, cleanup, host sudo/configuration change or UNKNOWN promotion is allowed.
 namespace/watchdog and other side work remain paused; production `E3_SUPERVISION_UNVERIFIED`, E4–E6 and NAS remain excluded.
 
+The subsequent [input/capture review](docs/a2-execution/Q2_CORE_AMENDMENT_INPUT_CAPTURE_REVIEW_20261004.md)
+records first D `a7e2a6ffb97b7515ec3f8ceab00ff5e0789f65c9`, directly descending from independent C
+`7598886e15ed6911fe0e09e2f8d66203455f9057`, and follow-up source baseline
+`1caf26facbccfc9e8783d94504e599914bde7365`, followed by capture/finalizer D
+`5e129f76a4a716053a769a3fbfd15bd19da737b4`. Fixed horizon transforms, exact legacy-input reconstruction
+and static policy-basis components are implemented and narrowly verified against retained inputs.
+Six-file persistence, allocation observations and original dual-clock checks are integrated in the local finalizer.
+This is partial D1/D3, not complete approved-input/package/JIT/live admission integration or D2–D4 completion.
+All eight real effect groups, v2 local binding integration and complete release verification remain required.
+F1 is still NOT_ISSUED; no new management observation, marker, carrier or real task was performed.
+The already CLOSED D1–D4 authority remains available; do not seek the same approval again or resume side work.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
