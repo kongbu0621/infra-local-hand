@@ -1,6 +1,92 @@
 # Core execution progress and local Codex handoff — 2026-10-04
 
-## Current frozen installer deadline followup
+## Current preparation capacity collector followup
+
+Implementation D is `3f1c4745d8ee888f0c0057794532aa78cfcddbbe`, tree
+`476b9f7b87978945059ffb8c86b8e38cd6e4487b`, directly following main
+`34c579bbb0c5edd465341abde861b9d592b8ff77`. This continues the already CLOSED
+core D1–D4 development scope. The direct pinned R was read again. Exact Git-blob
+verification passed both independent C ancestry chains and unchanged A/B pins.
+The preceding D `247d3ab7de8c323db883a5ed877ab06311ab1cc3`
+has completed [CI 37196149601](https://github.com/kongbu0621/infra-local-hand/actions/runs/37196149601)
+successfully in all three jobs. No runtime candidate, approved field wheel,
+budget, deadline, new approval or field authorization is substituted.
+
+### Preparation collectors now have concrete implementations
+
+The three existing preparation dependencies now collect retained-root snapshots,
+project-quota inventory and quota-enforcement flags. Retained-root selection still
+comes from the exact approved 16-root envelope, not caller-selected paths.
+Held directory descriptors, approved device/inode pins, protected ancestors,
+bounded no-atime enumeration and regular-file reads retain the original checks.
+Each observed file and directory is checked again by name or held identity;
+metadata drift, aliases, hardlinked files, special files and incomplete reads fail.
+Depth-first traversal bounds outstanding descriptors. A regular-file-to-FIFO
+replacement cannot block the open waiting for a writer. No O_NOATIME fallback,
+atime repair, cleanup or quota mutation was introduced.
+
+Quota observations require the admitted quota mount before I/O, bind its block
+device identity, retain the bounded read-only quota cursor, and reject late EOF,
+late errors, reordered rows and an incomplete inventory. This does not establish
+that the real guest currently has the required mount or enforcement state.
+
+All three collectors accept the original preparation guard, which is passed by
+`prepare_case` and the quota-root preparation helper. Late returns and exceptions
+are checked before any subsequent effect; late-opened handles are closed. The
+guard helper's own positional parameters no longer collide with a nested
+collector's `guard` keyword. The initial two preparation regressions exposed
+that collision; it was fixed, not ignored or treated as a successful preparation.
+These guards reject late returns; they cannot interrupt a blocked kernel call
+and do not replace the original outer supervision or refresh its deadline.
+
+### Verification boundary and remaining work
+
+The new 35 regressions use actual fd-relative temporary-file operations for
+retained snapshots. Quota calls and device stat records are explicit doubles;
+no real block device was created, opened or changed. Core regression passes
+650 tests, with 24 OS/root-dependent skips. These results are not field PASS.
+
+The full source suite passed **4561 tests / 115 skipped, 430.46 s**. Its retained
+local report `lh-core-capacity-source.ZsKKeO/results.xml` has SHA-256
+`1dfbc9970a59721399a48b21f7daeae972975f4ba9139b8e90673c7dd8937193`.
+
+An independent clone of exact D built and installed a test wheel. The existing
+installed verifier returned **PASS, 94 checks / 292 commands**. Its retained
+local report `lh-core-capacity-installed.4ThFVL/acceptance/report.json` has SHA-256
+`449778693fa921444b3292b1f62f7847d8c7f91e90792c11084390a37f8e0f37`.
+The test wheel binds source commit D and has SHA-256
+`3ffe3bb99173bada5c0476584e9c3e03b107394a06e1879e027a7acf3c68412e`;
+it does not replace the approved field wheel. D was pushed to main. Its
+[CI 37197973710](https://github.com/kongbu0621/infra-local-hand/actions/runs/37197973710)
+was in progress when this record was prepared, not yet claimed successful.
+
+The dispatcher remains within the unchanged limit at **262044 / 262144 bytes**,
+SHA-256 `8330044bead3ba2db0e801e102e57e8a4fb6ccafd8c0298166e41626ea352add`.
+Existing prefixed validation calls and whitespace were factored without removing
+their predicates or changing their diagnostic codes; the mechanical conversion
+was checked by reverse AST expansion. Shared stat comparison removes duplicate
+field ordering. The new collectors intentionally add behavior; this is not a
+claim that the whole revised module is behaviorally identical. Loader and
+bootstrap remain unchanged at 2160 and 49102 bytes. No fourth field module,
+compressed executable or larger source cap is used.
+
+Only `preparation.current_capacity_collectors` is removed from the implementation
+gap list. Current-guest admission is still fail-closed, its approved-input binding
+work remains, and the complete shared installation-pool peak and aggregate
+CPU/memory/pids/storage/stream usage accounting are unresolved. Preparation also
+requires the original admitted retained snapshot; implementing a collector does
+not supply an admitted baseline or bypass the existing current-facts check.
+
+After those gaps, complete release review and independent private package
+build/parse are still required before the conditional single H01→Q4→H11 run.
+The release allowlist remains empty, the package is NOT_ISSUED, and this invocation
+created no field marker, sent no carrier/SSH request, ran no guest task and
+recovered no new guest result/evidence. Existing guest state was not re-observed.
+Do not replay historical batches or open a separate guest probe to fill current
+facts. Namespace/watchdog remain paused and production
+`E3_SUPERVISION_UNVERIFIED` remains enforced.
+
+## Earlier frozen installer deadline followup
 
 Implementation D is `247d3ab7de8c323db883a5ed877ab06311ab1cc3`, tree
 `f5798cf1c97eb0174f0339eb4e73b503eaa4b285`, directly following

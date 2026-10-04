@@ -1072,6 +1072,19 @@ complete shared-pool peak accounting and aggregate usage evidence remain blocked
 stays empty; runtime candidate/wheel, budgets, deadlines and conditional single F1 are unchanged.
 No field connection, marker, request or core task was issued by this followup.
 
+The subsequent [preparation capacity collector followup](docs/a2-execution/q2-core-acceptance-delivery/CORE_EXECUTION_PROGRESS.md)
+records D `3f1c4745d8ee888f0c0057794532aa78cfcddbbe`. The three preparation collectors
+now perform bounded retained-root snapshots, read-only project-quota inventory and enforcement
+observations under the original preparation clocks. Late EOF/errors and identity drift fail closed;
+no-atime reads have no fallback. Local retained-file tests use real temporary files, while native
+quota observations are explicit doubles, not guest evidence. Full source testing passes.
+The exact-D isolated build/install verifier also passes 94 checks / 292 commands;
+that test wheel does not replace the approved field wheel.
+Current guest admission and its input bindings, shared installation-pool peak accounting and aggregate
+usage evidence remain incomplete. The dispatcher is 262044/262144 bytes; no extra field module,
+candidate/wheel change, budget increase or refreshed deadline is authorized. The release allowlist
+remains empty; this followup issued no marker, carrier or guest task and collected no guest result.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
