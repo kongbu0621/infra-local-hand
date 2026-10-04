@@ -19,7 +19,9 @@ import shlex
 import stat
 import struct
 import subprocess
+import sys
 import time
+import types
 
 
 def _helper(name):
@@ -109,9 +111,9 @@ PUBLIC_KEY_SHA256 = "e67e15549d3e8586af936108f666612841d31612705236dd8ce265a3da1
 KNOWN_HOSTS_SHA256 = "d1025c074e532f29534fcab1d10ec1bc2f38d2137173c74d0bc921bbab420bbd"
 
 MANAGEMENT_FIELDS = {
-    "schema", "wrapper", "fixture_start", "fixture_cloud_config", "profile",
+    "schema", "anchor", "writer", "wrapper", "fixture_start", "fixture_cloud_config", "profile",
     "environment", "dependencies", "identity", "identity_public", "known_hosts",
-    "cwd", "remote", "transport",
+    "cwd", "remote_expectation", "transport",
 }
 FILE_IDENTITY_FIELDS = {
     "path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256",
@@ -312,13 +314,14 @@ def field_release_gate(manifest, members):
     readiness = dispatcher_contract.field_readiness()
     contract.exact(readiness, {
         "schema", "scope", "releasable", "unbound_approved_inputs",
-        "unimplemented_effects",
+        "unimplemented_effects", "protocol_blockers",
     }, "CORE_DELIVERY_RELEASE_GATE")
     require(readiness["schema"] == "local-hand-q2-core-field-readiness/v1"
             and readiness["scope"] == contract.SCOPE
             and readiness["releasable"] is True
             and readiness["unbound_approved_inputs"] == []
             and readiness["unimplemented_effects"] == []
+            and readiness["protocol_blockers"] == []
             and entry["dispatcher_sha256"] in RELEASABLE_DISPATCHER_SHA256,
             "CORE_DELIVERY_RELEASE_GATE")
     return {"dispatcher_sha256": entry["dispatcher_sha256"],
@@ -346,12 +349,55 @@ def _validate_file_identity(value, *, expected_path=None, expected_sha256=None,
     return value
 
 
-def management_binding_digest(value, *, tokens, argv, wrapper_raw):
-    """Validate the full disclosed management preimage and return its digest."""
+def static_remote_expectation(tokens):
+    """Use the same source-bound expectation constructor as approved inputs."""
+    name = "_core_entry_policy_helpers"
+    if name not in sys.modules:
+        package = types.ModuleType(name)
+        package.__path__ = [str(Path(__file__).parent)]
+        sys.modules[name] = package
+    policy = importlib.import_module(name + ".q2_core_policy_basis")
+    return policy.remote_expectation(tokens)
+
+
+def static_policy_basis(*, source_raw, tokens):
+    static_remote_expectation(tokens)
+    policy = importlib.import_module("_core_entry_policy_helpers.q2_core_policy_basis")
+    return policy.build_policy_basis(source_raw=source_raw, tokens=tokens)
+
+
+def local_management_binding_digest(value, *, tokens, argv, wrapper_raw):
+    """Bind local held identities and static expectations; never guest preimages."""
     contract.exact(value, MANAGEMENT_FIELDS, "CORE_MANAGEMENT_FIELDS")
     require(value["schema"] == contract.MANAGEMENT_BINDING_SCHEMA
             and value["profile"] == "env-bash-literal-ssh-v1",
             "CORE_MANAGEMENT_AUTHORITY")
+    anchor, writer = value["anchor"], value["writer"]
+    contract.exact(anchor, {"path", "dev", "ino", "mode", "uid", "gid", "nlink"},
+                   "CORE_MANAGEMENT_ANCHOR_FIELDS")
+    contract.absolute_path(anchor["path"], "CORE_MANAGEMENT_ANCHOR_PATH")
+    for key in ("dev", "ino", "mode", "uid", "gid", "nlink"):
+        contract.integer(anchor[key], 0, code="CORE_MANAGEMENT_ANCHOR_IDENTITY")
+    require(anchor["mode"] == 0o700 and anchor["ino"] > 0 and anchor["nlink"] > 0,
+            "CORE_MANAGEMENT_ANCHOR_IDENTITY")
+    contract.exact(writer, {"schema", "user_namespace", "pid_namespace", "process",
+                            "uid", "gid", "supplementary_gids"}, "CORE_MANAGEMENT_WRITER_FIELDS")
+    require(writer["schema"] == "local-hand-q2-core-local-writer/v1", "CORE_MANAGEMENT_WRITER")
+    for name in ("user_namespace", "pid_namespace"):
+        contract.exact(writer[name], {"dev", "ino"}, "CORE_MANAGEMENT_WRITER_NAMESPACE")
+        contract.integer(writer[name]["dev"], 0, code="CORE_MANAGEMENT_WRITER_NAMESPACE")
+        contract.integer(writer[name]["ino"], 1, code="CORE_MANAGEMENT_WRITER_NAMESPACE")
+    contract.exact(writer["process"], {"pid", "starttime_ticks"}, "CORE_MANAGEMENT_WRITER_PROCESS")
+    contract.integer(writer["process"]["pid"], 1, code="CORE_MANAGEMENT_WRITER_PROCESS")
+    contract.integer(writer["process"]["starttime_ticks"], 0, code="CORE_MANAGEMENT_WRITER_PROCESS")
+    for key in ("uid", "gid"):
+        contract.exact(writer[key], {"real", "effective", "saved", "filesystem"},
+                       "CORE_MANAGEMENT_WRITER_IDS")
+        require(all(type(v) is int and v == anchor[key] for v in writer[key].values()),
+                "CORE_MANAGEMENT_WRITER_IDS")
+    groups = writer["supplementary_gids"]
+    require(type(groups) is list and all(type(v) is int and 0 <= v < 2**63 for v in groups)
+            and groups == sorted(set(groups)), "CORE_MANAGEMENT_WRITER_GROUPS")
     _validate_file_identity(value["wrapper"], expected_sha256=WRAPPER_SHA256)
     _validate_file_identity(value["fixture_start"], expected_sha256=START_SHA256)
     _validate_file_identity(value["fixture_cloud_config"], expected_sha256=CLOUD_CONFIG_SHA256)
@@ -388,27 +434,7 @@ def management_binding_digest(value, *, tokens, argv, wrapper_raw):
     for key in ("dev", "ino", "mode", "uid", "gid"):
         contract.integer(cwd[key], 0, code="CORE_MANAGEMENT_CWD_IDENTITY")
 
-    remote = value["remote"]
-    contract.exact(remote, {
-        "account", "uid", "gid", "login_shell", "parser_profile", "shell", "sudo",
-        "env", "systemd_run", "python", "remote_tokens_sha256", "remote_command_sha256",
-    }, "CORE_MANAGEMENT_REMOTE_FIELDS")
-    require(remote["account"] == "q1admin" and remote["parser_profile"] == "noninteractive-c-v1",
-            "CORE_MANAGEMENT_REMOTE")
-    contract.integer(remote["uid"], 1, code="CORE_MANAGEMENT_REMOTE")
-    contract.integer(remote["gid"], 1, code="CORE_MANAGEMENT_REMOTE")
-    contract.absolute_path(remote["login_shell"], "CORE_MANAGEMENT_REMOTE")
-    expected_remote_paths = {
-        "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
-        "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3",
-    }
-    for key in ("shell", "sudo", "env", "systemd_run", "python"):
-        _validate_file_identity(remote[key], expected_path=expected_remote_paths.get(key))
-    require(remote["shell"]["path"] == remote["login_shell"], "CORE_MANAGEMENT_REMOTE")
-    token_sha = hashlib.sha256(contract.canonical(tokens)).hexdigest()
-    command_sha = hashlib.sha256(shlex.join(tokens).encode("utf-8")).hexdigest()
-    require(remote["remote_tokens_sha256"] == token_sha
-            and remote["remote_command_sha256"] == command_sha,
+    require(value["remote_expectation"] == static_remote_expectation(tokens),
             "CORE_MANAGEMENT_REMOTE_COMMAND")
 
     transport = value["transport"]
@@ -428,11 +454,11 @@ def management_binding_digest(value, *, tokens, argv, wrapper_raw):
     return hashlib.sha256(contract.canonical(value, newline=True)).hexdigest()
 
 
-def _stable_fd_bytes(fd, *, expected, read_content=True):
+def _stable_fd_bytes(fd, *, expected, call, read_content=True):
     """Requalify one already-open local object without following another name."""
     require(type(fd) is int and fd >= 0 and type(expected) is dict,
             "CORE_MANAGEMENT_HELD_FD")
-    before = os.fstat(fd)
+    before = call(os.fstat, fd)
     actual = {
         "dev": before.st_dev, "ino": before.st_ino,
         "mode": stat.S_IMODE(before.st_mode), "uid": before.st_uid,
@@ -447,14 +473,14 @@ def _stable_fd_bytes(fd, *, expected, read_content=True):
         chunks = bytearray()
         offset = 0
         while offset < before.st_size:
-            chunk = os.pread(fd, min(65_536, before.st_size - offset), offset)
+            chunk = call(os.pread, fd, min(65_536, before.st_size - offset), offset)
             require(chunk, "CORE_MANAGEMENT_HELD_SHORT_READ")
             chunks.extend(chunk); offset += len(chunk)
         raw = bytes(chunks)
         require(len(raw) == before.st_size
                 and hashlib.sha256(raw).hexdigest() == expected["sha256"],
                 "CORE_MANAGEMENT_HELD_DIGEST")
-    after = os.fstat(fd)
+    after = call(os.fstat, fd)
     require((before.st_dev, before.st_ino, before.st_mode, before.st_uid, before.st_gid,
              before.st_nlink, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
             == (after.st_dev, after.st_ino, after.st_mode, after.st_uid, after.st_gid,
@@ -463,14 +489,17 @@ def _stable_fd_bytes(fd, *, expected, read_content=True):
     return raw
 
 
-def _open_held_regular(path=None, *, directory_fd=None, basename=None):
-    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+def _open_held_regular(path=None, *, directory_fd=None, basename=None, call, noatime=True):
+    require(hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_NOATIME"), "CORE_MANAGEMENT_READ_FLAGS")
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    if noatime:
+        flags |= os.O_NOATIME
     if directory_fd is None:
-        return os.open(path, flags)
-    return os.open(basename, flags, dir_fd=directory_fd)
+        return call(os.open, path, flags)
+    return call(os.open, basename, flags, dir_fd=directory_fd)
 
 
-def requalify_management_anchor(directory_fd, binding, *, tokens, argv, environment=None):
+def requalify_management_anchor(directory_fd, binding, *, tokens, argv, deadline, environment=None):
     """Hold and requalify every local management object used by the one request.
 
     Remote program identities are intentionally not read here: current guest
@@ -480,7 +509,8 @@ def requalify_management_anchor(directory_fd, binding, *, tokens, argv, environm
     interval without leaking descriptors into the carrier.
     """
     require(type(directory_fd) is int and directory_fd >= 0, "CORE_MANAGEMENT_ANCHOR")
-    anchor = os.fstat(directory_fd)
+    call = deadline.call
+    anchor = call(os.fstat, directory_fd)
     require(stat.S_ISDIR(anchor.st_mode), "CORE_MANAGEMENT_ANCHOR")
     anchor_paths = [binding[key]["path"] for key in (
         "wrapper", "fixture_start", "fixture_cloud_config", "identity",
@@ -489,10 +519,16 @@ def requalify_management_anchor(directory_fd, binding, *, tokens, argv, environm
     anchor_parent = str(Path(anchor_paths[0]).parent)
     require(all(str(Path(path).parent) == anchor_parent for path in anchor_paths),
             "CORE_MANAGEMENT_ANCHOR_PATH")
-    current_anchor = os.stat(anchor_parent, follow_symlinks=False)
+    current_anchor = call(os.stat, anchor_parent, follow_symlinks=False)
     require(stat.S_ISDIR(current_anchor.st_mode)
             and (current_anchor.st_dev, current_anchor.st_ino)
             == (anchor.st_dev, anchor.st_ino), "CORE_MANAGEMENT_ANCHOR_CHANGED")
+    expected_anchor = binding["anchor"]
+    require(anchor_parent == expected_anchor["path"] and
+            (anchor.st_dev, anchor.st_ino, stat.S_IMODE(anchor.st_mode), anchor.st_uid,
+             anchor.st_gid, anchor.st_nlink) == tuple(expected_anchor[key] for key in
+                ("dev", "ino", "mode", "uid", "gid", "nlink")), "CORE_MANAGEMENT_ANCHOR_CHANGED")
+    require(capture_contract.observe_writer(call) == binding["writer"], "CORE_MANAGEMENT_WRITER_CHANGED")
 
     held = []
     raw = {}
@@ -501,29 +537,30 @@ def requalify_management_anchor(directory_fd, binding, *, tokens, argv, environm
                      "identity_public", "known_hosts"):
             record = binding[role]
             basename = Path(record["path"]).name
-            fd = _open_held_regular(directory_fd=directory_fd, basename=basename)
+            fd = _open_held_regular(directory_fd=directory_fd, basename=basename, call=call)
             held.append(fd)
-            raw[role] = _stable_fd_bytes(fd, expected=record)
+            raw[role] = _stable_fd_bytes(fd, expected=record, call=call)
         private = binding["identity"]
         private_fd = _open_held_regular(
-            directory_fd=directory_fd, basename=Path(private["path"]).name)
+            directory_fd=directory_fd, basename=Path(private["path"]).name, call=call)
         held.append(private_fd)
-        _stable_fd_bytes(private_fd, expected=private, read_content=False)
+        _stable_fd_bytes(private_fd, expected=private, call=call, read_content=False)
         require(private["derived_public_key_sha256"] == PUBLIC_KEY_SHA256
                 and hashlib.sha256(raw["identity_public"]).hexdigest()
                 == private["derived_public_key_sha256"],
                 "CORE_MANAGEMENT_PRIVATE_PUBLIC_BINDING")
 
         for record in binding["dependencies"]:
-            fd = _open_held_regular(record["path"])
+            # Preserve the admitted dependency read profile. This is not a
+            # retry/fallback from an EPERM on a private/capture object.
+            fd = _open_held_regular(record["path"], call=call, noatime=False)
             held.append(fd)
-            _stable_fd_bytes(fd, expected=record)
+            _stable_fd_bytes(fd, expected=record, call=call)
 
-        cwd_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
-        cwd_flags |= getattr(os, "O_NOFOLLOW", 0)
-        cwd_fd = os.open(binding["cwd"]["path"], cwd_flags)
+        cwd_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME
+        cwd_fd = call(os.open, binding["cwd"]["path"], cwd_flags)
         held.append(cwd_fd)
-        cwd = os.fstat(cwd_fd)
+        cwd = call(os.fstat, cwd_fd)
         expected_cwd = binding["cwd"]
         require(stat.S_ISDIR(cwd.st_mode)
                 and (cwd.st_dev, cwd.st_ino, stat.S_IMODE(cwd.st_mode), cwd.st_uid, cwd.st_gid)
@@ -533,16 +570,17 @@ def requalify_management_anchor(directory_fd, binding, *, tokens, argv, environm
         selected_environment = controlled_environment() if environment is None else environment
         require(selected_environment == binding["environment"],
                 "CORE_MANAGEMENT_ENVIRONMENT_CHANGED")
-        digest = management_binding_digest(binding, tokens=tokens, argv=argv,
+        digest = local_management_binding_digest(binding, tokens=tokens, argv=argv,
                                            wrapper_raw=raw["wrapper"])
+        require(capture_contract.observe_writer(call) == binding["writer"], "CORE_MANAGEMENT_WRITER_CHANGED")
         return {"fds": held, "wrapper_raw": raw["wrapper"],
                 "environment": dict(selected_environment), "binding_sha256": digest,
-                "anchor_dev": anchor.st_dev, "anchor_ino": anchor.st_ino}
+                "anchor_dev": anchor.st_dev, "anchor_ino": anchor.st_ino, "deadline": deadline}
     except BaseException:
         for fd in held:
             try:
-                os.close(fd)
-            except OSError:
+                call(os.close, fd)
+            except (OSError, capture_contract.CaptureError):
                 pass
         raise
 
@@ -551,8 +589,8 @@ def close_held_management(value):
     fds = value.get("fds", []) if type(value) is dict else []
     for fd in fds:
         try:
-            os.close(fd)
-        except OSError:
+            value["deadline"].call(os.close, fd)
+        except (OSError, capture_contract.CaptureError):
             pass
     if type(value) is dict:
         value["fds"] = []
@@ -572,17 +610,18 @@ def freeze_host_window(clock_gettime_ns=time.clock_gettime_ns):
 
 
 def build_bind(hello, consumption_sha256, package_basename, package_raw, origins,
-               *, package_entry, boot_bind_ns, mono_bind_ns):
+               *, package_entry, remote_expectation, boot_bind_ns, mono_bind_ns):
     contract.exact(package_entry, {
         "loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
         "bootstrap_bytes", "bootstrap_sha256", "dispatcher_path",
         "dispatcher_bytes", "dispatcher_sha256", "carrier_argv_sha256",
-        "management_entry_binding_sha256",
+        "local_management_binding_sha256",
     }, "CORE_BIND_PACKAGE_ENTRY")
     contract.validate_hello(
         hello,
         loader_sha256=package_entry["loader_sha256"],
         bootstrap_sha256=package_entry["bootstrap_sha256"],
+        remote_expectation=remote_expectation,
     )
     contract.digest(consumption_sha256, "CORE_BIND_CONSUMPTION")
     require(type(package_raw) is bytes and 0 < len(package_raw) <= contract.PACKAGE_LIMITS["package_bytes"],
@@ -641,9 +680,11 @@ def parse_frame(raw, magic, *, json_limit, total_limit, trailing=False):
     return value, raw[end:]
 
 
-def consumption_record(*, implementation, package, management_entry_binding_sha256,
-                       carrier_argv_sha256, origins):
-    for item in (management_entry_binding_sha256, carrier_argv_sha256):
+def consumption_record(*, implementation, amendment, package, approved_inputs_sha256,
+                       local_management_binding_sha256, writer, carrier_argv_sha256, origins):
+    contract.validate_amendment(amendment, implementation=implementation)
+    contract.validate_local_writer(writer)
+    for item in (local_management_binding_sha256, carrier_argv_sha256, approved_inputs_sha256):
         contract.digest(item, "CORE_MARKER_DIGEST")
     require(set(origins) == {
         "host_boottime_origin_ns", "host_monotonic_origin_ns",
@@ -661,16 +702,20 @@ def consumption_record(*, implementation, package, management_entry_binding_sha2
         "owner_decision": contract.OWNER_DECISION,
         "closure": contract.CLOSURE,
         "implementation": implementation,
+        "amendment": amendment,
         "candidate": contract.CANDIDATE,
         "package": package,
-        "management_entry_binding_sha256": management_entry_binding_sha256,
+        "approved_inputs_sha256": approved_inputs_sha256,
+        "local_management_binding_sha256": local_management_binding_sha256,
+        "writer": writer,
         "carrier_argv_sha256": carrier_argv_sha256,
         **origins,
         "state": "CONSUMPTION_RECORD_COMPLETE",
     }
     contract.exact(value, (
         "schema", "scope", "session_id", "baseline", "owner_decision", "closure",
-        "implementation", "candidate", "package", "management_entry_binding_sha256",
+        "implementation", "amendment", "candidate", "package", "approved_inputs_sha256",
+        "local_management_binding_sha256", "writer",
         "carrier_argv_sha256", "host_boottime_origin_ns", "host_monotonic_origin_ns",
         "host_boottime_deadline_ns", "host_monotonic_deadline_ns", "state",
     ), "CORE_MARKER_FIELDS")
@@ -681,6 +726,7 @@ def create_consumption_marker(directory_fd, value, *, capture):
     """Irreversibly consume the one delivery with a final-name O_EXCL write."""
     raw = contract.canonical(value, newline=True, limit=MARKER_LIMIT)
     require(capture.directory_fd == directory_fd, "CORE_CAPTURE_HELD_PARENT")
+    require(value.get("writer") == capture.writer, "CORE_MARKER_CAPTURE_WRITER")
     require(all(value.get(key) == expected for key, expected in capture.deadline.origins.items()),
             "CORE_MARKER_CAPTURE_WINDOW")
     if "marker" in capture.attempted:
@@ -917,7 +963,9 @@ def _deep_validate_pass_case(fixed, case_index, members, values, remote):
     verdict = _document_member(values, verdict_path)
     contract.validate_record(verdict, "local-hand-q2-core-case-verdict/v1")
     plan = _document_member(values, plan_path)
-    dispatcher_contract.validate_plan(fixed, plan, plan["deadlines"])
+    intent = _document_member(values, prefix + "intent.json")
+    require(intent == dispatcher_contract.build_intent(fixed), "CORE_OUTPUT_INTENT_BINDING")
+    dispatcher_contract.validate_plan(fixed, intent, plan, plan["deadlines"])
     proof = None
     if fixed["index"] == 3:
         proof = _document_member(values, prefix + "reservation/h11-recovery-proof.json")
@@ -975,8 +1023,56 @@ def _h01_truth_binding(remote, values):
     return True
 
 
+def _validate_carrier_bindings(values, expected):
+    """Recompute the guest's v2 input links from this live host's frozen bytes."""
+    require(type(expected) is dict, "CORE_OUTPUT_FROZEN_CONTEXT_REQUIRED")
+    frozen = expected["manifest"]
+    session = _document_member(values, "carrier/session.json")
+    admission = _document_member(values, "carrier/admission.json")
+    installation = _document_member(values, "carrier/installation.json")
+    contract.validate_record(session, "local-hand-q2-core-dispatch-session/v2")
+    for key in ("scope", "rule", "baseline", "owner_decision", "closure", "implementation",
+                "amendment", "entry", "locators"):
+        require(contract.canonical(session[key]) == contract.canonical(frozen[key]),
+                "CORE_OUTPUT_SESSION_BINDING")
+    require(session["session_id"] == contract.SESSION_ID
+            and session["admission"] == admission
+            and session["installation"] == installation, "CORE_OUTPUT_CARRIER_SIBLING_BINDING")
+    contract.validate_admission_binding(admission["binding"],
+        approved_inputs_raw=expected["approved_inputs_raw"],
+        local_management_binding=expected["binding"], hello=expected["hello"],
+        amendment=frozen["amendment"])
+    dispatcher_contract._validate_admission(admission, {
+        "manifest": frozen,
+        "members": {dispatcher_contract.APPROVED_INPUTS_PATH: expected["approved_inputs_raw"]},
+        "hello": expected["hello"],
+    })
+    dispatcher_contract._validate_installation(installation, frozen)
+    marker, bind = expected["marker"], expected["bind"]
+    require(session["consumption"] == {"basename": marker["basename"], "bytes": marker["bytes"],
+                "sha256": marker["sha256"], "state": "CONSUMPTION_RECORD_COMPLETE"},
+            "CORE_OUTPUT_CONSUMPTION_BINDING")
+    require(session["package"] == {"basename": bind["package_basename"],
+                "bytes": bind["package_bytes"], "sha256": bind["package_sha256"],
+                "manifest_sha256": hashlib.sha256(contract.canonical(frozen, newline=True)).hexdigest()},
+            "CORE_OUTPUT_PACKAGE_BINDING")
+    hello = expected["hello"]
+    bind_keys = ("host_boottime_origin_ns", "host_monotonic_origin_ns", "host_boottime_deadline_ns",
+        "host_monotonic_deadline_ns", "clock_margin_ns", "host_boottime_bind_ns", "host_monotonic_bind_ns",
+        "hello_sha256", "mapped_duration_ns", "host_remaining_floor_ns", "guest_duration_cap_ns",
+        "guest_duration_ns", "local_final_reserve_ns")
+    outer = {key: bind[key] for key in bind_keys}
+    outer.update(guest_boot_id=hello["guest_boot_id"],
+        guest_boottime_origin_ns=hello["guest_boottime_origin_ns"],
+        guest_monotonic_origin_ns=hello["guest_monotonic_origin_ns"],
+        guest_boottime_deadline_ns=hello["guest_boottime_origin_ns"] + bind["guest_duration_ns"],
+        guest_monotonic_deadline_ns=hello["guest_monotonic_origin_ns"] + bind["guest_duration_ns"],
+        remote_final_reserve_ns=dispatcher_contract.REMOTE_FINAL_RESERVE_NS)
+    require(session["outer"] == outer, "CORE_OUTPUT_OUTER_BINDING")
+
+
 def validate_output_semantics(manifest, values, *, consumption_sha256,
-                              stdin_bytes_received, frame_bytes):
+                              stdin_bytes_received, frame_bytes, expected_context=None):
     """Independently validate the final output graph and returned truth."""
     contract.validate_record(manifest, "local-hand-q2-core-output-package/v1")
     require(manifest["session_id"] == contract.SESSION_ID
@@ -1029,6 +1125,8 @@ def validate_output_semantics(manifest, values, *, consumption_sha256,
             and usage["native_children_started"] <= 16,
             "CORE_REMOTE_USAGE_LIMIT")
     execution, package = _validate_h01_summaries(remote, members)
+    if any(row["case_id"] == "carrier" for row in members) or statuses[0] == "PASS":
+        _validate_carrier_bindings(values, expected_context)
 
     for fixed, case_index in zip(dispatcher_contract.CASES, remote["cases"], strict=True):
         if case_index["status"] == "PASS":
@@ -1043,7 +1141,7 @@ def validate_output_semantics(manifest, values, *, consumption_sha256,
             ("carrier/installation.json", "installation", 384),
         }, "CORE_OUTPUT_CARRIER_SET")
         for path, schema in (
-            ("carrier/session.json", "local-hand-q2-core-dispatch-session/v1"),
+            ("carrier/session.json", "local-hand-q2-core-dispatch-session/v2"),
         ):
             contract.validate_record(_document_member(values, path), schema)
         raw_truth_bound = _h01_truth_binding(remote, values)
@@ -1058,7 +1156,7 @@ def validate_output_semantics(manifest, values, *, consumption_sha256,
             "members_sha256": hashlib.sha256(contract.canonical(members)).hexdigest()}
 
 
-def _hello_prefix(raw, package_entry):
+def _hello_prefix(raw, package_entry, remote_expectation):
     require(type(raw) is bytearray, "CORE_HELLO_BUFFER")
     if len(raw) < len(contract.HELLO_MAGIC) + 8:
         return None
@@ -1072,7 +1170,8 @@ def _hello_prefix(raw, package_entry):
     value = contract.document(bytes(raw[len(contract.HELLO_MAGIC) + 8:end]),
                               limit=HELLO_JSON_LIMIT, newline=True)
     contract.validate_hello(value, loader_sha256=package_entry["loader_sha256"],
-                            bootstrap_sha256=package_entry["bootstrap_sha256"])
+                            bootstrap_sha256=package_entry["bootstrap_sha256"],
+                            remote_expectation=remote_expectation)
     return value, end
 
 
@@ -1094,7 +1193,7 @@ def _stop_process(process, call, *, kill=False):
 
 
 def execute_carrier_once(*, argv, environment, cwd, origins, marker,
-                         package_basename, package_raw, package_entry,
+                         package_basename, package_raw, package_entry, remote_expectation,
                          popen_factory=subprocess.Popen,
                          selector_factory=selectors.DefaultSelector,
                          clock_gettime_ns=time.clock_gettime_ns):
@@ -1250,7 +1349,7 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
 
                 if role == "stdout" and hello_end is None:
                     try:
-                        parsed = _hello_prefix(stdout, package_entry)
+                        parsed = _hello_prefix(stdout, package_entry, remote_expectation)
                     except (contract.ContractError, ValueError) as error:
                         result["errors"].append(_missing(
                             "CORE_HELLO_INVALID", "transport", {"reason": str(error)[:96]}))
@@ -1269,7 +1368,7 @@ def execute_carrier_once(*, argv, environment, cwd, origins, marker,
                         bind = build_bind(
                             hello, consumption_sha256, package_basename, package_raw, origins,
                             package_entry=package_entry, boot_bind_ns=boot_bind,
-                            mono_bind_ns=mono_bind)
+                            mono_bind_ns=mono_bind, remote_expectation=remote_expectation)
                         bind_frame = frame(contract.BIND_MAGIC, bind,
                                            json_limit=BIND_JSON_LIMIT)
                         require(len(bind_frame) <= BIND_FRAME_LIMIT, "CORE_BIND_FRAME_LIMIT")
@@ -1435,7 +1534,7 @@ def _truth_summaries(semantic, manifest, *, frame_sha256,
     return tuple(results)
 
 
-def finalize_carrier(directory_fd, *, marker, exchange, capture):
+def finalize_carrier(directory_fd, *, marker, exchange, capture, expected_context=None):
     """Create the bounded local capture graph and the sole terminal receipt."""
     require(marker.get("record_complete") is True, "CORE_FINAL_MARKER")
     require(capture.directory_fd == directory_fd and not capture.failed
@@ -1472,7 +1571,7 @@ def finalize_carrier(directory_fd, *, marker, exchange, capture):
             semantic = validate_output_semantics(
                 manifest, values, consumption_sha256=marker["sha256"],
                 stdin_bytes_received=exchange["transport"]["stdin_bytes_written"],
-                frame_bytes=len(output_tail))
+                frame_bytes=len(output_tail), expected_context=expected_context)
             errors.extend(semantic["remote"]["missing"])
             manifest_sha256 = hashlib.sha256(
                 contract.canonical(manifest, newline=True)).hexdigest()
@@ -1587,6 +1686,7 @@ def finalize_carrier(directory_fd, *, marker, exchange, capture):
 
 def deliver_once(directory_fd, *, binding, package_basename, package_raw,
                  loader_raw, bootstrap_raw, wrapper_raw,
+                 origins=None,
                  popen_factory=subprocess.Popen,
                  selector_factory=selectors.DefaultSelector,
                  clock_gettime_ns=time.clock_gettime_ns):
@@ -1598,8 +1698,6 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             and members[entry["bootstrap_path"]] == bootstrap_raw,
             "CORE_DELIVERY_ENTRY_BYTES")
     field_release_gate(manifest, members)
-    # A partial v1 binding cannot supply an amendment writer/anchor. This stays
-    # fail-closed until D1's v2 package/local-binding integration is complete.
     contract.relative_path(package_basename, "CORE_DELIVERY_PACKAGE_BASENAME")
     require(package_basename.endswith(".lhfp"), "CORE_DELIVERY_PACKAGE_BASENAME")
     tokens = remote_tokens(loader_raw, bootstrap_raw)
@@ -1607,17 +1705,24 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
     environment = controlled_environment()
     encoded_argv_environment_size(argv, environment)
     require("anchor" in binding and "writer" in binding, "CORE_LOCAL_WRITER_BINDING_UNBOUND")
-    origins = freeze_host_window(clock_gettime_ns)
+    # The window starts before current local inspection/package freeze. Never
+    # refresh it on entry; caller must pass that same original window.
+    require(origins is not None, "CORE_DELIVERY_ORIGIN_REQUIRED")
+    deadline = capture_contract.Deadline(origins, clock_gettime_ns)
+    deadline.check()
+    approved = contract.document(members[contract.APPROVED_INPUTS_PATH], limit=1_048_576, newline=True)
+    require(approved["policy_basis"]["remote_expectation"] == binding["remote_expectation"],
+            "CORE_DELIVERY_POLICY_LOCAL_BINDING")
     qualification = requalify_management_anchor(
-        directory_fd, binding, tokens=tokens, argv=argv, environment=environment)
+        directory_fd, binding, tokens=tokens, argv=argv, environment=environment, deadline=deadline)
     try:
         require(qualification["wrapper_raw"] == wrapper_raw
                 and qualification["binding_sha256"]
-                == entry["management_entry_binding_sha256"]
+                == entry["local_management_binding_sha256"]
                 and argv_digest(argv) == entry["carrier_argv_sha256"],
                 "CORE_DELIVERY_STATIC_BINDING")
-        marker_absent(directory_fd)
-        output_names_absent(directory_fd)
+        deadline.call(marker_absent, directory_fd)
+        deadline.call(output_names_absent, directory_fd)
         capture = capture_contract.LiveCapture(
             directory_fd, anchor=binding["anchor"], writer=binding["writer"], origins=origins,
             clock_gettime_ns=clock_gettime_ns)
@@ -1628,8 +1733,10 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             "manifest_sha256": hashlib.sha256(raw_manifest).hexdigest(),
         }
         marker_record = consumption_record(
-            implementation=manifest["implementation"], package=package_record,
-            management_entry_binding_sha256=entry["management_entry_binding_sha256"],
+            implementation=manifest["implementation"], amendment=manifest["amendment"],
+            package=package_record, approved_inputs_sha256=manifest["approved_inputs"]["sha256"],
+            local_management_binding_sha256=entry["local_management_binding_sha256"],
+            writer=binding["writer"],
             carrier_argv_sha256=entry["carrier_argv_sha256"], origins=origins)
         marker = create_consumption_marker(directory_fd, marker_record, capture=capture)
         # qualification.fds and directory_fd are still held here.  Popen is the
@@ -1639,10 +1746,15 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             argv=argv, environment=environment, cwd=binding["cwd"]["path"],
             origins=origins, marker=marker, package_basename=package_basename,
             package_raw=package_raw, package_entry=entry,
+            remote_expectation=binding["remote_expectation"],
             popen_factory=popen_factory, selector_factory=selector_factory,
             clock_gettime_ns=clock_gettime_ns)
     finally:
         close_held_management(qualification)
-    finalized = finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture)
+    expected_context = {"manifest": manifest, "approved_inputs_raw": members[contract.APPROVED_INPUTS_PATH],
+                        "binding": binding, "hello": exchange.get("hello"), "bind": exchange.get("bind"),
+                        "marker": marker}
+    finalized = finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture,
+                                 expected_context=expected_context)
     capture.close_handles()
     return {"marker": marker, "exchange": exchange, **finalized}

@@ -42,12 +42,26 @@ def live_capture(directory_fd, path, origins):
                                          origins=origins, clock_gettime_ns=clock)
 
 
+def remote_expectation():
+    return e.static_remote_expectation(["synthetic-fixed-command"])
+
+
 def hello():
+    expected = remote_expectation()
+    entities = {key: dict(identity(path), resolved_path=path, symlink_chain=[])
+                for key, path in expected["aliases"].items()}
+    entities["python"]["sha256"] = "3" * 64
+    entities["python"]["bytes"] = 3
+    remote = dict(account="q1admin", uid=1000, gid=1000, home="/home/q1admin",
+                  login_shell="/bin/bash", parser_profile="bash-noninteractive-c-v1", **entities,
+                  remote_tokens_sha256=expected["remote_tokens_sha256"],
+                  remote_command_sha256=expected["remote_command_sha256"])
     return {
-        "schema": "local-hand-q2-core-carrier-hello/v1",
+        "schema": "local-hand-q2-core-carrier-hello/v2",
         "scope": c.SCOPE,
         "loader_sha256": "1" * 64,
         "bootstrap_sha256": "2" * 64,
+        "remote_management": remote,
         "guest_boot_id": "11111111-2222-3333-4444-555555555555",
         "guest_boottime_origin_ns": 100,
         "guest_monotonic_origin_ns": 200,
@@ -320,15 +334,15 @@ def test_management_binding_discloses_broad_sudo_and_binds_command():
         "known_hosts": identity("/private/known_hosts", e.KNOWN_HOSTS_SHA256),
         "cwd": {"path": "/work", "dev": 1, "ino": 4, "mode": 0o755,
                 "uid": 1000, "gid": 1000},
-        "remote": {
-            "account": "q1admin", "uid": 1000, "gid": 1000, "login_shell": "/bin/bash",
-            "parser_profile": "noninteractive-c-v1", "shell": identity("/bin/bash"),
-            "sudo": identity("/usr/bin/sudo"), "env": identity("/usr/bin/env"),
-            "systemd_run": identity("/usr/bin/systemd-run"),
-            "python": identity("/usr/bin/python3"),
-            "remote_tokens_sha256": hashlib.sha256(c.canonical(tokens)).hexdigest(),
-            "remote_command_sha256": hashlib.sha256(e.shlex.join(tokens).encode()).hexdigest(),
-        },
+        "anchor": {"path": str(Path(wrapper_path).parent), "dev": 1, "ino": 2,
+                   "mode": 0o700, "uid": 1000, "gid": 1000, "nlink": 2},
+        "writer": {"schema": "local-hand-q2-core-local-writer/v1",
+                   "user_namespace": {"dev": 1, "ino": 2}, "pid_namespace": {"dev": 1, "ino": 3},
+                   "process": {"pid": 4, "starttime_ticks": 5},
+                   "uid": dict.fromkeys(("real", "effective", "saved", "filesystem"), 1000),
+                   "gid": dict.fromkeys(("real", "effective", "saved", "filesystem"), 1000),
+                   "supplementary_gids": [1000]},
+        "remote_expectation": e.static_remote_expectation(tokens),
         "transport": {
             "no_pty": True, "stdin_binary": True, "stdout_stderr_separate": True,
             "known_host_preexisting": True, "batch_mode": True,
@@ -337,12 +351,12 @@ def test_management_binding_discloses_broad_sudo_and_binds_command():
             "fixture_policy_broader_than_command": True,
         },
     }
-    digest = e.management_binding_digest(binding, tokens=tokens, argv=argv,
+    digest = e.local_management_binding_digest(binding, tokens=tokens, argv=argv,
                                          wrapper_raw=wrapper_raw)
     assert digest == hashlib.sha256(c.canonical(binding, newline=True)).hexdigest()
     binding["transport"]["sudo_policy_is_exact"] = True
     with pytest.raises(c.ContractError, match="CORE_MANAGEMENT_TRANSPORT"):
-        e.management_binding_digest(binding, tokens=tokens, argv=argv,
+        e.local_management_binding_digest(binding, tokens=tokens, argv=argv,
                                     wrapper_raw=wrapper_raw)
 
 
@@ -358,10 +372,10 @@ def test_host_window_and_bind_mapping_are_not_refreshed():
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
         "dispatcher_sha256": "3" * 64,
         "carrier_argv_sha256": "4" * 64,
-        "management_entry_binding_sha256": "5" * 64,
+        "local_management_binding_sha256": "5" * 64,
     }
     bind = e.build_bind(hello(), "a" * 64, "only.lhfp", package, origins,
-                        package_entry=entry, boot_bind_ns=30_000,
+                        package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30_000,
                         mono_bind_ns=40_000)
     assert bind["host_remaining_floor_ns"] == 899_999_000_000
     assert bind["mapped_duration_ns"] == 882_999_000_000
@@ -385,11 +399,15 @@ def test_frame_rejects_duplicate_and_trailing_json():
 
 
 def marker_value(origins):
+    implementation = {"commit": "4" * 40, "tree": "5" * 40}
+    writer = e.capture_contract.observe_writer(lambda fn, *args, **kwargs: fn(*args, **kwargs))
     return e.consumption_record(
+        amendment=c.make_amendment(implementation), writer=writer,
+        approved_inputs_sha256="3" * 64,
         implementation={"commit": "4" * 40, "tree": "5" * 40},
         package={"basename": "only.lhfp", "bytes": 1, "sha256": "6" * 64,
                  "manifest_sha256": "7" * 64},
-        management_entry_binding_sha256="8" * 64,
+        local_management_binding_sha256="8" * 64,
         carrier_argv_sha256="9" * 64,
         origins=origins,
     )
@@ -432,11 +450,11 @@ def test_marker_and_bind_reject_refreshed_or_non_exact_host_window():
         "bootstrap_sha256": "2" * 64,
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
         "dispatcher_sha256": "3" * 64, "carrier_argv_sha256": "4" * 64,
-        "management_entry_binding_sha256": "5" * 64,
+        "local_management_binding_sha256": "5" * 64,
     }
     with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
         e.build_bind(hello(), "a" * 64, "only.lhfp", b"p", origins,
-                     package_entry=entry, boot_bind_ns=30, mono_bind_ns=40)
+                     package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30, mono_bind_ns=40)
 
 
 def test_absence_checks_treat_any_existing_type_as_consumed(tmp_path):
@@ -604,7 +622,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
         "dispatcher_sha256": "3" * 64,
         "carrier_argv_sha256": e.argv_digest(argv),
-        "management_entry_binding_sha256": "5" * 64,
+        "local_management_binding_sha256": "5" * 64,
     }
     origins = e.freeze_host_window()
     marker = {"object_created": True, "record_complete": True, "sha256": "a" * 64}
@@ -615,7 +633,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         exchange = e.execute_carrier_once(
             argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
             origins=origins, marker=marker, package_basename="only.lhfp",
-            package_raw=b"synthetic-package", package_entry=entry,
+            package_raw=b"synthetic-package", package_entry=entry, remote_expectation=remote_expectation(),
             popen_factory=factory, selector_factory=Selector)
     assert len(calls) == 1
     assert reads[-1] == ("stderr", remaining + 1)
@@ -646,7 +664,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": 1,
         "dispatcher_sha256": "3" * 64,
         "carrier_argv_sha256": e.argv_digest(argv),
-        "management_entry_binding_sha256": "5" * 64,
+        "local_management_binding_sha256": "5" * 64,
     }
     environment = {"HOME": "/h", "USER": "u", "LOGNAME": "u",
                    "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
@@ -703,7 +721,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
         exchange = e.execute_carrier_once(
             argv=argv, environment=environment, cwd=str(tmp_path), origins=origins,
             marker=marker, package_basename="only.lhfp", package_raw=package_raw,
-            package_entry=entry, popen_factory=factory)
+            package_entry=entry, remote_expectation=remote_expectation(), popen_factory=factory)
         assert len(calls) == 1
         assert exchange["transport"] == {
             "execve_succeeded": True, "hello_valid": True, "bind_written": True,
@@ -748,6 +766,7 @@ def test_transport_deadline_never_starts_or_retries_late_request(late_return):
         origins=origins, marker=dict(object_created=True, record_complete=True, sha256="a" * 64),
         package_basename="only.lhfp", package_raw=b"fixture",
         package_entry=dict(carrier_argv_sha256=e.argv_digest(argv)),
+        remote_expectation=remote_expectation(),
         popen_factory=factory, clock_gettime_ns=clock,
         selector_factory=lambda: pytest.fail("no later I/O after a late request"))
     assert len(calls) == int(late_return)
@@ -755,3 +774,120 @@ def test_transport_deadline_never_starts_or_retries_late_request(late_return):
     assert exchange["wait"]["status"] is None
     assert exchange["wait"]["host_deadline_met"] is False
     assert exchange["errors"][0]["code"] == ("CORE_EXECVE_LATE" if late_return else "CORE_EXECVE_FAILED")
+
+
+def test_hello_command_digest_must_match_frozen_expectation():
+    observed = hello()
+    observed["remote_management"]["remote_command_sha256"] = "a" * 64
+    raw = bytearray(e.frame(c.HELLO_MAGIC, observed, json_limit=e.HELLO_JSON_LIMIT))
+    entry = {"loader_sha256": "1" * 64, "bootstrap_sha256": "2" * 64}
+    with pytest.raises(c.ContractError, match="CORE_HELLO_REMOTE_EXPECTATION"):
+        e._hello_prefix(raw, entry, remote_expectation())
+
+
+def test_marker_writer_mismatch_rejected_before_exclusive_create(tmp_path):
+    origins = {"host_boottime_origin_ns": 1, "host_monotonic_origin_ns": 2,
+               "host_boottime_deadline_ns": 1 + e.HOST_WINDOW_NS,
+               "host_monotonic_deadline_ns": 2 + e.HOST_WINDOW_NS}
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    capture = live_capture(directory_fd, tmp_path, origins)
+    try:
+        record = marker_value(origins)
+        record["writer"]["process"]["pid"] += 1
+        with pytest.raises(c.ContractError, match="CORE_MARKER_CAPTURE_WRITER"):
+            e.create_consumption_marker(directory_fd, record, capture=capture)
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        capture.close_handles()
+        os.close(directory_fd)
+
+
+@pytest.mark.parametrize("expired", [False, True])
+def test_delivery_never_refreshes_missing_or_expired_original_window(monkeypatch, expired):
+    entry = {"loader_path": "field/loader.py", "bootstrap_path": "field/bootstrap.py"}
+    members = {"field/loader.py": b"loader", "field/bootstrap.py": b"bootstrap"}
+    original_helper = e._helper
+    monkeypatch.setattr(e, "_helper", lambda name: SimpleNamespace(
+        parse_package=lambda raw: ({"entry": entry}, members))
+        if name == "q2_core_delivery_package" else original_helper(name))
+    monkeypatch.setattr(e, "field_release_gate", lambda *_: None)
+    monkeypatch.setattr(e, "remote_tokens", lambda *_: ["fixed"])
+    monkeypatch.setattr(e, "wrapper_argv", lambda *_: ["/usr/bin/true"])
+    monkeypatch.setattr(e, "encoded_argv_environment_size", lambda *_: None)
+    environment = e.controlled_environment({
+        "HOME": "/synthetic", "USER": "test", "LOGNAME": "test",
+    })
+    monkeypatch.setattr(e, "controlled_environment", lambda: environment)
+    def forbidden(*args, **kwargs):
+        pytest.fail("no new window, anchor read, marker or request permitted")
+    monkeypatch.setattr(e, "freeze_host_window", forbidden)
+    monkeypatch.setattr(e, "requalify_management_anchor", forbidden)
+    origins = ({"host_boottime_origin_ns": 1, "host_monotonic_origin_ns": 2,
+                "host_boottime_deadline_ns": 1 + e.HOST_WINDOW_NS,
+                "host_monotonic_deadline_ns": 2 + e.HOST_WINDOW_NS} if expired else None)
+    with pytest.raises((c.ContractError, e.capture_contract.CaptureError),
+                       match="CORE_DELIVERY_ORIGIN_REQUIRED|CORE_CAPTURE_DEADLINE"):
+        e.deliver_once(-1, binding={"wrapper": {"path": "/fixed"}, "anchor": {}, "writer": {}},
+            package_basename="only.lhfp", package_raw=b"fixture", loader_raw=b"loader",
+            bootstrap_raw=b"bootstrap", wrapper_raw=b"wrapper", origins=origins,
+            clock_gettime_ns=lambda _clock: 2 + e.HOST_WINDOW_NS, popen_factory=forbidden)
+
+
+def test_output_carrier_requires_frozen_preimages_not_only_member_hashes():
+    with pytest.raises(c.ContractError, match="CORE_OUTPUT_FROZEN_CONTEXT_REQUIRED"):
+        e._validate_carrier_bindings({}, None)
+
+
+def test_changed_session_amendment_is_rejected_even_with_recomputed_raw_digest():
+    # Isolate the first host-owned cross-binding; actual case verification is
+    # separate and cannot be reached by this altered carrier document.
+    session = {key: {} for key in c.SCHEMA_FIELDS["local-hand-q2-core-dispatch-session/v2"]}
+    session["schema"] = "local-hand-q2-core-dispatch-session/v2"
+    session["amendment"] = {"baseline": "different"}
+    frozen = {key: {} for key in ("scope", "rule", "baseline", "owner_decision", "closure",
+                                  "implementation", "amendment", "entry", "locators")}
+    values = {"carrier/session.json": c.canonical(session, newline=True),
+              "carrier/admission.json": b"{}\n", "carrier/installation.json": b"{}\n"}
+    with pytest.raises(c.ContractError, match="CORE_OUTPUT_SESSION_BINDING"):
+        e._validate_carrier_bindings(values, {"manifest": frozen})
+
+
+def test_carrier_return_uses_original_context_for_admission_and_installation(monkeypatch):
+    # Synthetic transport documents exercise both real validators. This is not
+    # a current guest observation, approved source closure or field execution.
+    spec = importlib.util.spec_from_file_location("_host_return_fixture",
+        Path(__file__).with_name("test_e3_q2_core_delivery_dispatcher.py"))
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    context = fixture.context()
+    frozen = context["manifest"]
+    approved_raw = context["members"][fixture.d.APPROVED_INPUTS_PATH]
+    approved = c.document(approved_raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True)
+    binding = {key: {} for key in c.SCHEMA_FIELDS[c.MANAGEMENT_BINDING_SCHEMA]}
+    binding.update(schema=c.MANAGEMENT_BINDING_SCHEMA,
+                   remote_expectation=approved["policy_basis"]["remote_expectation"])
+    frozen["entry"]["local_management_binding_sha256"] = hashlib.sha256(
+        c.canonical(binding, newline=True)).hexdigest()
+    marker = {"basename": c.MARKER_BASENAME, "bytes": 1024,
+              "sha256": context["bind"]["consumption_sha256"]}
+    monkeypatch.setattr(fixture.d, "_consumption_info", lambda _: dict(
+        marker, state="CONSUMPTION_RECORD_COMPLETE"))
+    effects = fixture.FakeEffects(context)
+    admission = effects.admit({})
+    installation = effects.install({"manifest": frozen})
+    session = fixture.d._session(context, admission, installation)
+    expected = {"manifest": frozen, "approved_inputs_raw": approved_raw,
+                "binding": binding, "hello": context["hello"], "marker": marker,
+                "bind": context["bind"]}
+    def documents():
+        return {"carrier/session.json": c.canonical(session, newline=True),
+                "carrier/admission.json": c.canonical(admission, newline=True),
+                "carrier/installation.json": c.canonical(installation, newline=True)}
+    e._validate_carrier_bindings(documents(), expected)
+    installation["members_sha256"] = "0" * 64
+    with pytest.raises(e.dispatcher_contract.DispatchError, match="INSTALLATION"):
+        e._validate_carrier_bindings(documents(), expected)
+    installation["members_sha256"] = hashlib.sha256(c.canonical(frozen["members"])).hexdigest()
+    admission["binding"]["hello_sha256"] = "0" * 64
+    with pytest.raises(c.ContractError, match="CORE_ADMISSION_BINDING"):
+        e._validate_carrier_bindings(documents(), expected)

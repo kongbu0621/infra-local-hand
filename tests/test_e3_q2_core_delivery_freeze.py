@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import json
@@ -5,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -156,9 +158,9 @@ def retained_fixture(tmp_path, monkeypatch):
 def test_locator_freeze_has_exact_pointer_relation_and_stays_not_issued(tmp_path, monkeypatch):
     paths, _capture = retained_fixture(tmp_path, monkeypatch)
     digest = "9" * 64
-    monkeypatch.setattr(f.entry_api, "management_binding_digest", lambda *a, **k: digest)
+    monkeypatch.setattr(f.entry_api, "local_management_binding_digest", lambda *a, **k: digest)
     result = f.freeze_private_locators(
-        **paths, management_binding_preimage={}, management_tokens=[], management_argv=[],
+        **paths, local_management_binding_preimage={}, management_tokens=[], management_argv=[],
         management_wrapper_raw=b"wrapper",
     )
     assert result["state"] == "PRIVATE_LOCATORS_FROZEN"
@@ -182,7 +184,7 @@ def test_locator_source_without_full_management_preimage_is_not_prepared(tmp_pat
     assert result["issuance"] == "NOT_ISSUED"
     assert result["locators"] is None and result["package"] is None
     assert result["missing"] == [
-        "management_anchor.binding_preimage", "management_anchor.tokens",
+        "management_anchor.local_binding_preimage", "management_anchor.tokens",
         "management_anchor.argv", "management_anchor.wrapper_bytes",
     ]
 
@@ -256,11 +258,13 @@ def package_fixture(tmp_path, monkeypatch):
         (source / f"q2_core_delivery_{name}.py").write_bytes(raw)
     _git(implementation, "add", "tests/e3_host")
     _git(implementation, "commit", "-q", "-m", "implementation")
+    # Final integrated D may have intermediate D commits after the independent C.
+    _git(implementation, "commit", "--allow-empty", "-q", "-m", "integrated D")
     implementation_commit = _git(implementation, "rev-parse", "HEAD")
     implementation_tree = _git(implementation, "rev-parse", "HEAD^{tree}")
 
     monkeypatch.setattr(f.c, "CANDIDATE", {"commit": candidate_commit, "tree": candidate_tree})
-    monkeypatch.setattr(f.c, "CLOSURE", {"commit": closure_commit, "tree": closure_tree})
+    monkeypatch.setattr(f.c, "AMENDMENT_CLOSURE", {"commit": closure_commit, "tree": closure_tree})
     wheel_raw = b"exact-wheel"
     wheel = tmp_path / "unit.whl"; wheel.write_bytes(wheel_raw)
     projection_value = {
@@ -408,14 +412,245 @@ def test_management_anchor_verifies_dependencies_before_held_ssh_keygen_exec(
 
     monkeypatch.setattr(f, "_read_regular", observing_read)
     monkeypatch.setattr(f.subprocess, "run", derived_key)
+    monkeypatch.setattr(f.entry_api, "wrapper_argv", lambda *_: ["fixed-test-command"])
+    monkeypatch.setattr(f.entry_api, "local_management_binding_digest", lambda *a, **k: "f" * 64)
     result = f.inspect_management_anchor(
         anchor_root=anchor,
         cwd=cwd,
+        origins=_origins(), tokens=["fixed-test-command"], clock_gettime_ns=lambda _: 1,
         environment={"HOME": "/unit", "USER": "unit", "LOGNAME": "unit"},
     )
-    assert result["state"] == "NOT_PREPARED"
-    assert result["issuance"] == "NOT_ISSUED"
-    assert result["package"] is None
-    assert [item["role"] for item in result["private_local_anchor"]["dependencies"]] == [
-        role for role, _path in f.LOCAL_DEPENDENCIES
-    ]
+    try:
+        assert result["state"] == "LOCAL_ANCHOR_FROZEN"
+        assert result["issuance"] == "NOT_ISSUED"
+        assert result["package"] is None and result["missing"] == []
+        binding = result["binding_preimage"]
+        assert "remote" not in binding and "remote_expectation" in binding
+        assert binding["anchor"]["ino"] == os.fstat(result["directory_fd"]).st_ino
+        assert set(binding["writer"]["uid"].values()) == {anchor.stat().st_uid}
+        assert set(binding["writer"]["gid"].values()) == {anchor.stat().st_gid}
+        assert result["origins"] == _origins()
+        assert result["policy_source_raw"] == {
+            "fixture_cloud_config": anchor_values["user-data"][0],
+            "identity_public": public, "known_hosts": anchor_values["known_hosts"][0]}
+        assert [item["role"] for item in binding["dependencies"]] == [
+            role for role, _path in f.LOCAL_DEPENDENCIES
+        ]
+    finally:
+        os.close(result["directory_fd"])
+
+
+def _origins():
+    return {"host_" + clock + "_" + point + "_ns": (900_000_000_000 if point == "deadline" else 0)
+            for clock in ("boottime", "monotonic") for point in ("origin", "deadline")}
+
+
+def test_expired_freeze_window_reads_no_current_anchor_or_writer(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(f.entry_api.capture_contract, "observe_writer",
+                        lambda *_: calls.append("writer"))
+    monkeypatch.setattr(f, "_read_regular", lambda *a, **k: calls.append("read"))
+    with pytest.raises(f.entry_api.capture_contract.CaptureError, match="DEADLINE"):
+        f.inspect_management_anchor(anchor_root=tmp_path / "absent", cwd=tmp_path,
+            origins=_origins(), tokens=[], clock_gettime_ns=lambda _: 900_000_000_000)
+    assert calls == []
+
+
+def test_private_regular_source_requires_noatime_without_fallback(tmp_path, monkeypatch):
+    path = tmp_path / "program"
+    path.write_bytes(b"program"); path.chmod(0o700)
+    flags_seen = []
+
+    def denied(_path, flags):
+        flags_seen.append(flags)
+        raise PermissionError("no noatime permission")
+
+    monkeypatch.setattr(f.os, "open", denied)
+    with pytest.raises(f.c.ContractError, match="TEST_DEPENDENCY"):
+        f._read_regular(path, limit=100, code="TEST_DEPENDENCY")
+    assert len(flags_seen) == 1 and flags_seen[0] & os.O_NOATIME
+
+
+def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
+    arguments = package_fixture(tmp_path, monkeypatch)
+    repository = arguments["implementation_repository"]
+    _git(repository, "checkout", "--orphan", "unrelated")
+    _git(repository, "commit", "-q", "-m", "unrelated D")
+    arguments["implementation_commit"] = _git(repository, "rev-parse", "HEAD")
+    arguments["implementation_tree"] = _git(repository, "rev-parse", "HEAD^{tree}")
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_GIT_COMMAND"):
+        f.freeze_package_members(**arguments)
+
+
+def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypatch):
+    from e3_host import q2_core_approved_inputs as a
+    dispatcher = b"not a releasable dispatcher"
+    rows, values = f.p.field_member_blobs(b"loader", b"bootstrap", dispatcher,
+                                        implementation_commit="a" * 40)
+    static = {"state": "STATIC_MEMBERS_FROZEN", "members": rows,
+              "member_bytes": values,
+              "implementation": {"commit": "a" * 40, "tree": "b" * 40}}
+    monkeypatch.setattr(f.p, "approved_input_member", lambda *a, **k: (None, None))
+    monkeypatch.setattr(f.p, "_approved_module", lambda: SimpleNamespace(
+        ApprovedInputSources=a.ApprovedInputSources, validate=lambda raw, *, sources: {}))
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"")
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("unreleased source reached current host observation")
+
+    monkeypatch.setattr(f.entry_api, "freeze_host_window", unexpected)
+    monkeypatch.setattr(f, "inspect_management_anchor", unexpected)
+    with pytest.raises(f.c.ContractError, match="CORE_FIELD_IMPLEMENTATION_NOT_RELEASABLE"):
+        f.prepare_delivery_package(static_freeze=static, approved_inputs_raw=b"{}\n",
+            approved_sources=sources, retained_paths={}, anchor_root="/absent", cwd="/absent")
+    assert f.entry_api.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+
+
+def frozen_v2_fixture(tmp_path, monkeypatch):
+    arguments = package_fixture(tmp_path / "source", monkeypatch)
+    static = f.freeze_package_members(**arguments)
+    tokens = f.entry_api.remote_tokens(static["member_bytes"]["field/loader.py"],
+                                       static["member_bytes"]["field/bootstrap.py"])
+    expectation = f.entry_api.static_remote_expectation(tokens)
+    policy = sys.modules["_core_entry_policy_helpers.q2_core_policy_basis"]
+    key = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + b"1" * 32
+    policy_raw = {"fixture_cloud_config": b"#cloud-config\nq1admin ALL=(ALL) NOPASSWD:ALL\n",
+                  "identity_public": b"ssh-ed25519 " + base64.b64encode(key) + b"\n",
+                  "known_hosts": b"fixture-host fixed-key\n"}
+    monkeypatch.setattr(policy, "SOURCE_PINS", {name: f.c.sha256(raw)
+                                              for name, raw in policy_raw.items()})
+    for name in ("CANDIDATE", "WHEEL", "PROJECTION", "AMENDMENT_CLOSURE"):
+        monkeypatch.setattr(f.bootstrap_api, name, getattr(f.c, name))
+    monkeypatch.setattr(f.bootstrap_api, "LOADER_SHA256", f.c.sha256(
+        static["member_bytes"]["field/loader.py"]))
+    digest = "9" * 64
+    monkeypatch.setattr(f.entry_api, "local_management_binding_digest", lambda *a, **k: digest)
+    # Envelope tests use a marked aggregate fixture. Production package parsing
+    # still invokes the full fixed-source validator; these tests do not create
+    # or claim historical private-source evidence.
+    monkeypatch.setattr(f.p, "_approved_module", lambda: SimpleNamespace(validate=lambda raw:
+        f.c.validate_approved_inputs(f.c.document(raw, limit=1_048_576, newline=True))))
+    paths, _ = retained_fixture(tmp_path / "history", monkeypatch)
+    locators = f.freeze_private_locators(**paths,
+        local_management_binding_preimage={}, management_tokens=[], management_argv=[],
+        management_wrapper_raw=b"fixture")["locators"]
+    binding = {"remote_expectation": expectation,
+               **{role: {"sha256": f.c.sha256(raw), "bytes": len(raw)}
+                  for role, raw in policy_raw.items()}}
+    basis = f.entry_api.static_policy_basis(source_raw=policy_raw, tokens=tokens)
+    approved = {"schema": f.c.APPROVED_INPUTS_SCHEMA, "scope": f.c.SCOPE,
+        "amendment": f.c.make_amendment(static["implementation"]),
+        **{key: {"fixture": key} for key in f.c.APPROVED_COMPONENTS}}
+    approved["policy_basis"] = basis
+    local = {"state": "LOCAL_ANCHOR_FROZEN", "binding_preimage": binding,
+             "tokens": tokens, "argv": ["unit-local-wrapper"], "wrapper_bytes": b"fixture",
+             "origins": _origins(), "directory_fd": -1, "policy_source_raw": policy_raw}
+    return dict(static_freeze=static, local_anchor=local, locators=locators,
+                approved_inputs_raw=f.c.canonical(approved, newline=True))
+
+
+def test_v2_freeze_builds_exact_private_member_and_preserves_original_window(tmp_path, monkeypatch):
+    arguments = frozen_v2_fixture(tmp_path, monkeypatch)
+    result = f.build_frozen_package(**arguments)
+    manifest, members = f.p.parse_package(result["package_raw"])
+    assert manifest["schema"] == "local-hand-q2-core-field-package/v2"
+    assert members["private/approved-inputs.json"] == arguments["approved_inputs_raw"]
+    row = next(row for row in manifest["members"] if row["role"] == "approved-inputs")
+    assert row["mode"] == 0o600 and row["origin"]["kind"] == "approved-inputs"
+    assert manifest["implementation"] == manifest["amendment"]["implementation"]
+    assert manifest["entry"]["local_management_binding_sha256"] == "9" * 64
+    assert "management_entry_binding_sha256" not in manifest["entry"]
+    assert result["origins"] == _origins() and result["issuance"] == "NOT_ISSUED"
+    assert "policy_source_raw" not in result and "policy_source_raw" not in manifest
+
+
+@pytest.mark.parametrize("mutation", ["remote_expectation", "source", "field_blob"])
+def test_v2_freeze_rejects_equal_envelope_with_wrong_bound_inputs(tmp_path, monkeypatch, mutation):
+    arguments = frozen_v2_fixture(tmp_path, monkeypatch)
+    if mutation == "field_blob":
+        values = arguments["static_freeze"]["member_bytes"]
+        values["field/dispatcher.py"] += b"# uncommitted replacement\n"
+    else:
+        approved = json.loads(arguments["approved_inputs_raw"])
+        if mutation == "remote_expectation":
+            approved["policy_basis"]["remote_expectation"]["home_path"] = "/changed"
+        else:
+            approved["policy_basis"]["known_hosts"]["sha256"] = "0" * 64
+        arguments["approved_inputs_raw"] = f.c.canonical(approved, newline=True)
+    with pytest.raises(f.c.ContractError):
+        f.build_frozen_package(**arguments)
+
+
+def test_v2_freeze_rejects_valid_replacement_key_even_with_recomputed_policy_hashes(tmp_path, monkeypatch):
+    arguments = frozen_v2_fixture(tmp_path, monkeypatch)
+    approved = json.loads(arguments["approved_inputs_raw"])
+    policies = approved["policy_basis"]["policies"]
+    row = policies["authorized_keys"]
+    changed_key = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + b"2" * 32
+    alternate = base64.b64encode(changed_key).decode("ascii")
+    row["predicate"]["parameters"]["approved_key"]["key_base64"] = alternate
+    row["predicate_sha256"] = f.c.sha256(f.c.canonical(row["predicate"]))
+    approved["policy_basis"]["policy_predicates_sha256"] = f.c.sha256(f.c.canonical(policies))
+    policy = sys.modules["_core_entry_policy_helpers.q2_core_policy_basis"]
+    assert policy._key(("ssh-ed25519 " + alternate + "\n").encode("ascii")) == (
+        row["predicate"]["parameters"]["approved_key"])
+    arguments["approved_inputs_raw"] = f.c.canonical(approved, newline=True)
+    # All outer bytes/manifest hashes are rebuilt by the builder; the actual
+    # held public-key bytes still contain the original key and must prevail.
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_POLICY_RAW_RELATION"):
+        f.build_frozen_package(**arguments)
+
+
+def test_v2_freeze_refuses_caller_replacement_of_held_policy_raw(tmp_path, monkeypatch):
+    arguments = frozen_v2_fixture(tmp_path, monkeypatch)
+    arguments["local_anchor"]["policy_source_raw"]["identity_public"] += b"changed"
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_POLICY_SOURCE"):
+        f.build_frozen_package(**arguments)
+
+
+def test_delivery_freeze_requires_source_aware_approved_validation(tmp_path, monkeypatch):
+    arguments = frozen_v2_fixture(tmp_path, monkeypatch)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("source-less artifact reached current host observation")
+
+    monkeypatch.setattr(f.entry_api, "freeze_host_window", unexpected)
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_APPROVED_SOURCES_REQUIRED"):
+        f.prepare_delivery_package(static_freeze=arguments["static_freeze"],
+            approved_inputs_raw=arguments["approved_inputs_raw"], retained_paths={},
+            anchor_root="/absent", cwd="/absent")
+
+
+def test_normal_import_sources_cross_package_namespace_and_keep_full_source_verification(monkeypatch):
+    # Reuse the synthetic raw-decoder fixture, not a mocked validate function.
+    # Every aggregate relation, policy/key, source pin and capacity check runs.
+    import test_e3_q2_core_approved_inputs as fixtures
+    normal = fixtures.a
+    dynamic = f.p._approved_module()
+    assert normal.ApprovedInputSources is not dynamic.ApprovedInputSources
+    artifact = fixtures.artifact.__wrapped__(monkeypatch)
+    value, sources = fixtures.source_fixture(artifact, monkeypatch)
+    for name in ("horizon", "policy", "RETAINED_PINS", "LATER_REVIEWS",
+                 "_read_locators", "_verified_legacy"):
+        monkeypatch.setattr(dynamic, name, getattr(normal, name))
+    raw = normal.c.canonical(value, newline=True)
+    with pytest.raises(dynamic.c.ContractError, match="SOURCES_TYPE"):
+        dynamic.validate(raw, sources=sources)
+    converted = f._validate_approved_sources(raw, sources)
+    assert type(converted) is dynamic.ApprovedInputSources
+    assert converted.policy_sources == sources.policy_sources
+    assert converted.policy_sources is not sources.policy_sources
+    sources.policy_sources["known_hosts"] = b"replaced after first validation"
+    with pytest.raises(dynamic.c.ContractError, match="SOURCE_POLICY_PIN"):
+        f._validate_approved_sources(raw, sources)
+
+
+def test_source_namespace_bridge_refuses_loose_or_extra_fields():
+    from dataclasses import make_dataclass
+    from e3_host import q2_core_approved_inputs as a
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"")
+    for value in (dict(vars(sources)), SimpleNamespace(**vars(sources)),
+                  make_dataclass("ApprovedInputSources", [(name, object) for name in vars(sources)]
+                      + [("trusted", bool)])(**vars(sources), trusted=True)):
+        with pytest.raises(f.c.ContractError, match="CORE_FREEZE_APPROVED_SOURCE_FIELDS"):
+            f._validate_approved_sources(b"{}\n", value)

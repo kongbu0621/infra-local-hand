@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import struct
+import types
 
 import pytest
 
@@ -11,6 +12,11 @@ IMPLEMENTATION = {"commit": "b" * 40, "tree": "c" * 40}
 
 
 def fixture(monkeypatch):
+    # This suite tests the transport envelope. Full fixed-source aggregate
+    # validation is exercised in test_e3_q2_core_approved_inputs; no private
+    # historical bytes are forged here or accepted by the production parser.
+    monkeypatch.setattr(p, "_approved_module", lambda: types.SimpleNamespace(validate=lambda raw:
+        p.c.validate_approved_inputs(p.c.document(raw, limit=1048576, newline=True))))
     wheel = b"unit-wheel"
     projection = b'{"schema":"unit-projection"}\n'
     monkeypatch.setattr(p.c, "WHEEL", {
@@ -24,6 +30,11 @@ def fixture(monkeypatch):
     dispatcher = b"class FieldEffects: pass\ndef dispatch(context,effects): return b''\n"
     fields, field_bytes = p.field_member_blobs(
         loader, bootstrap, dispatcher, implementation_commit=IMPLEMENTATION["commit"])
+    amendment = p.c.make_amendment(IMPLEMENTATION)
+    approved_raw = p.c.canonical({"schema": p.c.APPROVED_INPUTS_SCHEMA, "scope": p.c.SCOPE,
+        "amendment": amendment, **{name: {"fixture": name} for name in p.c.APPROVED_COMPONENTS}},
+        newline=True)
+    approved_row, approved_header = p.approved_input_member(approved_raw, amendment=amendment)
     # The frozen candidate contains tracked empty files; zero-byte regular
     # members are valid and still bind their Git blob and SHA-256 identities.
     worktree = b""
@@ -41,12 +52,13 @@ def fixture(monkeypatch):
         p.member("artifacts/" + p.c.PROJECTION["basename"], "projection", 0o644, projection,
                  {"kind": "projection", "basename": p.c.PROJECTION["basename"],
                   "sha256": p.c.PROJECTION["sha256"]}),
-        *fields,
+        *fields, approved_row,
     ]
     raw_by_path = {
         "candidate/README.md": worktree, "candidate/.git/HEAD": git_head,
         "artifacts/" + p.c.WHEEL["basename"]: wheel,
-        "artifacts/" + p.c.PROJECTION["basename"]: projection, **field_bytes,
+        "artifacts/" + p.c.PROJECTION["basename"]: projection,
+        p.c.APPROVED_INPUTS_PATH: approved_raw, **field_bytes,
     }
     by_path = {row["path"]: row for row in rows}
     management = "e" * 64
@@ -57,7 +69,7 @@ def fixture(monkeypatch):
         "bootstrap_sha256": hashlib.sha256(bootstrap).hexdigest(),
         "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": len(dispatcher),
         "dispatcher_sha256": hashlib.sha256(dispatcher).hexdigest(),
-        "carrier_argv_sha256": "f" * 64, "management_entry_binding_sha256": management,
+        "carrier_argv_sha256": "f" * 64, "local_management_binding_sha256": management,
     }
     locators = {
         "schema": p.c.LOCATORS_SCHEMA, "observation_record_sha256": "1" * 64,
@@ -74,9 +86,10 @@ def fixture(monkeypatch):
         "carrier_unit": p.c.CARRIER_UNIT,
     }
     locators["source_relation_sha256"] = p.c.sha256(p.c.canonical(
-        p.locator_relation(locators, management), newline=True))
+        p.locator_relation(locators, management)))
     manifest = p.make_manifest(implementation=IMPLEMENTATION, entry=entry,
-                               locators=locators, members=rows)
+                               locators=locators, members=rows,
+                               amendment=amendment, approved_inputs=approved_header)
     return manifest, raw_by_path
 
 
@@ -138,3 +151,79 @@ def test_package_rejects_entry_member_drift_and_non_ascii_path(monkeypatch):
         p.validate_manifest(changed)
     with pytest.raises(p.c.ContractError, match="CORE_PACKAGE_MEMBER_PATH"):
         p.member("field/加载.py", "field-code", 0o644, b"x", {})
+
+
+def _wire(manifest, members):
+    raw = p.c.canonical(manifest, newline=True)
+    return p.c.PACKAGE_MAGIC + struct.pack(">Q", len(raw)) + raw + b"".join(
+        members[item["path"]] for item in manifest["members"])
+
+
+def _replace_approved(manifest, members, raw):
+    """Model an attacker updating all ordinary content hashes consistently."""
+    members[p.c.APPROVED_INPUTS_PATH] = raw
+    header = manifest["approved_inputs"]
+    header.update(bytes=len(raw), sha256=p.c.sha256(raw))
+    row = next(item for item in manifest["members"] if item["role"] == "approved-inputs")
+    row.update(bytes=len(raw), sha256=p.c.sha256(raw))
+    row["origin"].update(bytes=len(raw), sha256=p.c.sha256(raw))
+
+
+def test_wire_v1_rejected_even_with_current_magic(monkeypatch):
+    manifest, members = fixture(monkeypatch)
+    manifest["schema"] = "local-hand-q2-core-field-package/v1"
+    with pytest.raises(p.c.ContractError, match="CORE_PACKAGE_AUTHORITY"):
+        p.parse_package(_wire(manifest, members))
+
+
+@pytest.mark.parametrize("mutation", ["extra", "missing", "legacy_digest", "locator_lf", "amendment_d"])
+def test_package_refuses_mixed_contracts(monkeypatch, mutation):
+    manifest, members = fixture(monkeypatch)
+    if mutation == "extra":
+        manifest["entry"]["writer"] = {}
+    elif mutation == "missing":
+        del manifest["amendment"]
+    elif mutation == "legacy_digest":
+        manifest["entry"]["management_entry_binding_sha256"] = manifest["entry"].pop(
+            "local_management_binding_sha256")
+    elif mutation == "locator_lf":
+        manifest["locators"]["source_relation_sha256"] = p.c.sha256(p.c.canonical(
+            p.locator_relation(manifest["locators"], "e" * 64), newline=True))
+    else:
+        manifest["amendment"]["implementation"]["tree"] = "d" * 40
+    with pytest.raises(p.c.ContractError):
+        p.parse_package(_wire(manifest, members))
+
+
+@pytest.mark.parametrize("mutation", ["public_mode", "role_relabel", "source_preimage", "amendment", "noncanonical"])
+def test_approved_member_cannot_be_relabelled_or_rehashed_to_bypass_binding(monkeypatch, mutation):
+    manifest, members = fixture(monkeypatch)
+    row = next(item for item in manifest["members"] if item["role"] == "approved-inputs")
+    if mutation == "public_mode":
+        row["mode"] = 0o644
+    elif mutation == "role_relabel":
+        row["role"] = "candidate-worktree"
+    elif mutation == "source_preimage":
+        value = p.c.document(members[p.c.APPROVED_INPUTS_PATH], limit=1048576, newline=True)
+        value["source_relation"]["fixture"] = "changed"
+        _replace_approved(manifest, members, p.c.canonical(value, newline=True))
+    elif mutation == "amendment":
+        value = p.c.document(members[p.c.APPROVED_INPUTS_PATH], limit=1048576, newline=True)
+        value["amendment"]["implementation"]["tree"] = "d" * 40
+        _replace_approved(manifest, members, p.c.canonical(value, newline=True))
+    else:
+        _replace_approved(manifest, members, members[p.c.APPROVED_INPUTS_PATH][:-1])
+    with pytest.raises(p.c.ContractError):
+        p.parse_package(_wire(manifest, members))
+
+
+def test_package_requires_deep_approved_validation_not_only_hashes(monkeypatch):
+    manifest, members = fixture(monkeypatch)
+    wire = p.build_package(manifest, members)
+    def reject(raw):
+        raise ValueError("FIXED_SOURCE_RELATION_MISMATCH")
+    monkeypatch.setattr(p, "_approved_module", lambda: types.SimpleNamespace(validate=reject))
+    with pytest.raises(p.c.ContractError, match="FIXED_SOURCE_RELATION_MISMATCH"):
+        p.parse_package(wire)
+    with pytest.raises(p.c.ContractError, match="FIXED_SOURCE_RELATION_MISMATCH"):
+        p.build_package(manifest, members)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
 from pathlib import PurePosixPath
 import re
 
@@ -50,6 +51,28 @@ CLOSURE = {
     "commit": "a8dd077392ebb656770c8f94ca3b051e93fc296d",
     "tree": "b0d651ea5cbc2c408bb43ce6f3cdc5becd5170c6",
 }
+AMENDMENT_SCOPE = "LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-v1"
+AMENDMENT_BASELINE = {
+    "commit": "0bdb49cae5586be60a7ba31d4a8e8367854d1e8c",
+    "tree": "ee15aa4fa26fd2e87b40f6fad72828265e5cf9bc",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md":
+            "e6b29c45c550f2ae8b3eaa91baad8d1382851dec6a69e2f807cce9233b14cdb1",
+        "docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md":
+            "7782e2fb89a28052978d3ce205278906b92752e3ba1add9cd634c0e7c0f92c96",
+        "docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md":
+            "52faaf002d9b5b9d88aef0b6f568e8ed56d2aa49eb0ea41e7eeb85d2d0b64cce",
+    },
+}
+AMENDMENT_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-CLOSURE-20261004-01",
+    "record_path": "docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_OWNER_DECISION.md",
+    "record_sha256": "800f01b3e7d4aeec77095bbc67196837427a7dbece7f1212bca266adb3d9ddbd",
+}
+AMENDMENT_CLOSURE = {
+    "commit": "7598886e15ed6911fe0e09e2f8d66203455f9057",
+    "tree": "7f2178942c126f883829a139b842cfc2c2e12159",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
@@ -86,12 +109,18 @@ PACKAGE_MAGIC = b"LHCFP1\n"
 HELLO_MAGIC = b"LHCHLO1\n"
 BIND_MAGIC = b"LHCBND1\n"
 OUTPUT_MAGIC = b"LHCOUT1\n"
-PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v1"
+PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v2"
 LOCATORS_SCHEMA = "local-hand-q2-core-private-locators/v1"
-LOCATOR_RELATION_SCHEMA = "local-hand-q2-core-locator-relation/v1"
-CONSUMPTION_SCHEMA = "local-hand-q2-core-carrier-consumption/v1"
+LOCATOR_RELATION_SCHEMA = "local-hand-q2-core-locator-relation/v2"
+CONSUMPTION_SCHEMA = "local-hand-q2-core-carrier-consumption/v2"
+HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
+SESSION_SCHEMA = "local-hand-q2-core-dispatch-session/v2"
+APPROVED_INPUTS_SCHEMA = "local-hand-q2-core-approved-inputs/v1"
+APPROVED_INPUTS_PATH = "private/approved-inputs.json"
+APPROVED_INPUTS_LIMIT = 1048576
 CARRIER_ARGV_SCHEMA = "local-hand-q2-core-carrier-argv/v1"
-MANAGEMENT_BINDING_SCHEMA = "local-hand-q2-core-management-entry-binding/v1"
+MANAGEMENT_BINDING_SCHEMA = "local-hand-q2-core-local-management-binding/v1"
+LOCAL_WRITER_SCHEMA = "local-hand-q2-core-local-writer/v1"
 TRUTH_EVIDENCE_SCHEMA = "local-hand-q2-core-local-truth-evidence/v1"
 PREPARATION_INPUT_SCHEMA = "local-hand-q2-core-preparation-input/v1"
 
@@ -186,10 +215,10 @@ CASES = (
 )
 
 SCHEMA_FIELDS = {
-    "local-hand-q2-core-carrier-hello/v1": (
+    HELLO_SCHEMA: (
         "schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
         "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
-        "euid", "egid", "python", "carrier_unit", "process_limits",
+        "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management",
     ),
     "local-hand-q2-core-carrier-bind/v1": (
         "schema", "scope", "session_id", "hello_sha256", "consumption_sha256",
@@ -199,9 +228,9 @@ SCHEMA_FIELDS = {
         "clock_margin_ns", "local_final_reserve_ns", "mapped_duration_ns",
         "guest_duration_cap_ns", "guest_duration_ns",
     ),
-    "local-hand-q2-core-dispatch-session/v1": (
+    SESSION_SCHEMA: (
         "schema", "scope", "rule", "baseline", "owner_decision", "closure",
-        "implementation", "package", "entry", "locators", "consumption", "session_id",
+        "implementation", "amendment", "package", "entry", "locators", "consumption", "session_id",
         "outer", "admission", "installation", "output", "limits", "cases", "state",
     ),
     "local-hand-q2-core-case-intent/v1": (
@@ -257,6 +286,21 @@ SCHEMA_FIELDS = {
         "schema", "scope", "session_id", "consumption", "transport", "remote_result",
         "wait", "capture", "real_task_execution", "result_evidence_collection", "state",
         "missing",
+    ),
+    CONSUMPTION_SCHEMA: (
+        "schema", "scope", "session_id", "baseline", "owner_decision", "closure",
+        "implementation", "amendment", "candidate", "package", "approved_inputs_sha256",
+        "local_management_binding_sha256", "writer", "carrier_argv_sha256",
+        "host_boottime_origin_ns", "host_monotonic_origin_ns", "host_boottime_deadline_ns",
+        "host_monotonic_deadline_ns", "state",
+    ),
+    MANAGEMENT_BINDING_SCHEMA: (
+        "schema", "anchor", "writer", "wrapper", "fixture_start", "fixture_cloud_config",
+        "profile", "environment", "dependencies", "identity", "identity_public", "known_hosts",
+        "cwd", "remote_expectation", "transport",
+    ),
+    LOCAL_WRITER_SCHEMA: (
+        "schema", "user_namespace", "pid_namespace", "process", "uid", "gid", "supplementary_gids",
     ),
 }
 
@@ -381,6 +425,102 @@ def validate_record(value, schema=None):
     return value
 
 
+def validate_amendment(value, *, implementation=None):
+    """Check the frozen A/B/C chain; Git ancestry of D is checked at freeze."""
+    exact(value, {"baseline", "owner_decision", "closure", "implementation"}, "CORE_AMENDMENT_FIELDS")
+    require(value["baseline"] == AMENDMENT_BASELINE
+            and value["owner_decision"] == AMENDMENT_OWNER_DECISION
+            and value["closure"] == AMENDMENT_CLOSURE, "CORE_AMENDMENT_AUTHORITY")
+    current = exact(value["implementation"], {"commit", "tree"}, "CORE_AMENDMENT_IMPLEMENTATION")
+    for field in ("commit", "tree"):
+        commit(current[field], "CORE_AMENDMENT_IMPLEMENTATION")
+        require(current[field] != "0" * 40, "CORE_AMENDMENT_IMPLEMENTATION")
+    require(current["commit"] not in {
+        BASELINE["commit"], CLOSURE["commit"], AMENDMENT_BASELINE["commit"],
+        AMENDMENT_CLOSURE["commit"], "520f77f578b90d31870517e33e29bee42918f3c0",
+    }, "CORE_AMENDMENT_IMPLEMENTATION")
+    require(implementation is None or current == implementation, "CORE_AMENDMENT_IMPLEMENTATION")
+    return value
+
+
+def validate_local_writer(value):
+    """Validate a bound host identity; do not observe or infer current identity."""
+    validate_record(value, LOCAL_WRITER_SCHEMA)
+    for field in ("user_namespace", "pid_namespace"):
+        namespace = exact(value[field], {"dev", "ino"}, "CORE_LOCAL_WRITER_NAMESPACE")
+        integer(namespace["dev"], code="CORE_LOCAL_WRITER_NAMESPACE")
+        integer(namespace["ino"], 1, code="CORE_LOCAL_WRITER_NAMESPACE")
+    process = exact(value["process"], {"pid", "starttime_ticks"}, "CORE_LOCAL_WRITER_PROCESS")
+    integer(process["pid"], 1, code="CORE_LOCAL_WRITER_PROCESS")
+    integer(process["starttime_ticks"], code="CORE_LOCAL_WRITER_PROCESS")
+    for field in ("uid", "gid"):
+        identities = exact(value[field], {"real", "effective", "saved", "filesystem"},
+                           "CORE_LOCAL_WRITER_CREDENTIALS")
+        for item in identities.values():
+            integer(item, code="CORE_LOCAL_WRITER_CREDENTIALS")
+        require(len(set(identities.values())) == 1, "CORE_LOCAL_WRITER_CREDENTIALS")
+    groups = value["supplementary_gids"]
+    require(type(groups) is list, "CORE_LOCAL_WRITER_GROUPS")
+    for item in groups:
+        integer(item, code="CORE_LOCAL_WRITER_GROUPS")
+    require(groups == sorted(set(groups)), "CORE_LOCAL_WRITER_GROUPS")
+    return value
+
+
+def make_amendment(implementation):
+    return validate_amendment({"baseline": copy.deepcopy(AMENDMENT_BASELINE),
+        "owner_decision": copy.deepcopy(AMENDMENT_OWNER_DECISION),
+        "closure": copy.deepcopy(AMENDMENT_CLOSURE),
+        "implementation": copy.deepcopy(implementation)})
+
+
+APPROVED_COMPONENTS = (
+    "source_relation", "policy_basis", "historical_capacity_obligations",
+    "retained_preparation", "reconciliation",
+)
+ADMISSION_BINDING_FIELDS = (
+    "approved_inputs_sha256", "approved_source_relation_sha256", "policy_basis_sha256",
+    "historical_capacity_obligations_sha256", "retained_preparation_sha256", "reconciliation_sha256",
+    "local_management_binding_sha256", "hello_sha256", "remote_management_sha256",
+)
+
+
+def validate_approved_inputs(value, *, amendment=None):
+    """Validate only the wire envelope, not private source or live admission."""
+    exact(value, {"schema", "scope", "amendment", *APPROVED_COMPONENTS}, "CORE_APPROVED_INPUTS_FIELDS")
+    require(value["schema"] == APPROVED_INPUTS_SCHEMA and value["scope"] == SCOPE,
+            "CORE_APPROVED_INPUTS_SCHEMA")
+    validate_amendment(value["amendment"])
+    require(amendment is None or value["amendment"] == amendment, "CORE_APPROVED_INPUTS_AMENDMENT")
+    require(all(type(value[key]) is dict and value[key] for key in APPROVED_COMPONENTS),
+            "CORE_APPROVED_INPUTS_COMPONENT")
+    canonical(value, newline=True, limit=APPROVED_INPUTS_LIMIT)
+    return value
+
+
+def admission_binding(approved_inputs_raw, local_management_binding, hello, *, amendment=None):
+    """Compute nine distinct preimages, without claiming source/live admission."""
+    approved = validate_approved_inputs(document(approved_inputs_raw,
+        limit=APPROVED_INPUTS_LIMIT, newline=True), amendment=amendment)
+    validate_record(local_management_binding, MANAGEMENT_BINDING_SCHEMA)
+    validate_hello(hello, remote_expectation=local_management_binding["remote_expectation"])
+    result = {"approved_inputs_sha256": sha256(approved_inputs_raw)}
+    for component, field in zip(APPROVED_COMPONENTS, ADMISSION_BINDING_FIELDS[1:6], strict=True):
+        result[field] = sha256(canonical(approved[component]))
+    result.update(local_management_binding_sha256=sha256(canonical(local_management_binding, newline=True)),
+        hello_sha256=sha256(canonical(hello, newline=True)),
+        remote_management_sha256=sha256(canonical(hello["remote_management"])))
+    return result
+
+
+def validate_admission_binding(value, *, approved_inputs_raw, local_management_binding, hello,
+                               amendment=None):
+    exact(value, ADMISSION_BINDING_FIELDS, "CORE_ADMISSION_BINDING_FIELDS")
+    require(value == admission_binding(approved_inputs_raw, local_management_binding, hello,
+                                       amendment=amendment), "CORE_ADMISSION_BINDING")
+    return value
+
+
 def validate_bind(value):
     validate_record(value, "local-hand-q2-core-carrier-bind/v1")
     require(value["scope"] == SCOPE and value["session_id"] == SESSION_ID, "CORE_BIND_AUTHORITY")
@@ -420,8 +560,65 @@ def validate_bind(value):
     return value
 
 
-def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None):
-    validate_record(value, "local-hand-q2-core-carrier-hello/v1")
+def validate_remote_management(value, *, expectation=None):
+    fields = {"account", "uid", "gid", "home", "login_shell", "parser_profile", "shell",
+              "sudo", "env", "systemd_run", "python", "remote_tokens_sha256", "remote_command_sha256"}
+    exact(value, fields, "CORE_HELLO_REMOTE_FIELDS")
+    require(value["account"] == "q1admin" and value["home"] == "/home/q1admin"
+            and value["login_shell"] == "/bin/bash"
+            and value["parser_profile"] == "bash-noninteractive-c-v1", "CORE_HELLO_REMOTE_ACCOUNT")
+    integer(value["uid"], 1, code="CORE_HELLO_REMOTE_ACCOUNT")
+    integer(value["gid"], 1, code="CORE_HELLO_REMOTE_ACCOUNT")
+    aliases = {"shell": value["login_shell"], "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
+               "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
+    entity_fields = {"path", "resolved_path", "symlink_chain", "dev", "ino", "mode", "uid", "gid",
+                     "nlink", "bytes", "sha256"}
+    for role, alias in aliases.items():
+        entity = exact(value[role], entity_fields, "CORE_HELLO_REMOTE_ENTITY_FIELDS")
+        require(entity["path"] == alias, "CORE_HELLO_REMOTE_ALIAS")
+        absolute_path(entity["resolved_path"], "CORE_HELLO_REMOTE_PATH")
+        require(len(PurePosixPath(entity["resolved_path"]).parts) - 1 <= 64, "CORE_HELLO_REMOTE_PATH")
+        integer(entity["dev"], code="CORE_HELLO_REMOTE_ENTITY")
+        integer(entity["ino"], 1, code="CORE_HELLO_REMOTE_ENTITY")
+        integer(entity["mode"], 0, 0o7777, "CORE_HELLO_REMOTE_ENTITY")
+        integer(entity["uid"], 0, 0, "CORE_HELLO_REMOTE_ENTITY")
+        integer(entity["gid"], 0, 0, "CORE_HELLO_REMOTE_ENTITY")
+        integer(entity["nlink"], 1, 1, "CORE_HELLO_REMOTE_ENTITY")
+        integer(entity["bytes"], 1, 16777216, "CORE_HELLO_REMOTE_ENTITY")
+        require(entity["mode"] & 0o111 and not entity["mode"] & 0o022, "CORE_HELLO_REMOTE_ENTITY")
+        digest(entity["sha256"], "CORE_HELLO_REMOTE_ENTITY")
+        chain = entity["symlink_chain"]
+        require(type(chain) is list and len(chain) <= 8, "CORE_HELLO_REMOTE_SYMLINK")
+        seen = set()
+        for link in chain:
+            exact(link, {"path", "target"}, "CORE_HELLO_REMOTE_SYMLINK")
+            absolute_path(link["path"], "CORE_HELLO_REMOTE_SYMLINK")
+            target = link["target"]
+            require(type(target) is str and target and "\0" not in target
+                    and len(target.encode("utf-8")) <= 4096 and ".." not in PurePosixPath(target).parts
+                    and len(PurePosixPath(target).parts) <= 65
+                    and link["path"] not in seen, "CORE_HELLO_REMOTE_SYMLINK")
+            seen.add(link["path"])
+    for field in ("remote_tokens_sha256", "remote_command_sha256"):
+        digest(value[field], "CORE_HELLO_REMOTE_COMMAND")
+    if expectation is not None:
+        exact(expectation, {"account", "home_path", "login_shell", "hello_schema", "parser_profile",
+              "aliases", "remote_tokens_sha256", "remote_command_sha256", "remote_entity_preimages_stage"},
+              "CORE_HELLO_EXPECTATION_FIELDS")
+        require(expectation["account"] == value["account"]
+                and expectation["home_path"] == value["home"]
+                and expectation["login_shell"] == value["login_shell"]
+                and expectation["hello_schema"] == HELLO_SCHEMA
+                and expectation["parser_profile"] == value["parser_profile"]
+                and expectation["aliases"] == aliases
+                and expectation["remote_entity_preimages_stage"] == "HELLO_JIT"
+                and all(expectation[k] == value[k] for k in
+                        ("remote_tokens_sha256", "remote_command_sha256")), "CORE_HELLO_REMOTE_EXPECTATION")
+    return value
+
+
+def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None, remote_expectation=None):
+    validate_record(value, HELLO_SCHEMA)
     require(value["scope"] == SCOPE, "CORE_HELLO_AUTHORITY")
     for key, expected in (("loader_sha256", loader_sha256),
                           ("bootstrap_sha256", bootstrap_sha256)):
@@ -431,7 +628,7 @@ def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None):
             and re.fullmatch(r"[0-9a-f-]{36}", value["guest_boot_id"])
             and all(type(value[key]) is int and value[key] > 0 for key in
                     ("guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid"))
-            and all(value[key] == 0 for key in ("uid", "gid", "euid", "egid")),
+            and all(type(value[key]) is int and value[key] == 0 for key in ("uid", "gid", "euid", "egid")),
             "CORE_HELLO_IDENTITY")
     python = exact(value["python"],
         {"path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"},
@@ -443,6 +640,10 @@ def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None):
             and python["dev"] >= 0 and python["ino"] > 0 and python["mode"] & 0o111
             and python["uid"] == python["gid"] == 0 and python["nlink"] == 1
             and python["bytes"] > 0, "CORE_HELLO_PYTHON")
+    remote = validate_remote_management(value["remote_management"], expectation=remote_expectation)
+    projected = {key: remote["python"][key] for key in python if key != "path"}
+    projected["path"] = remote["python"]["resolved_path"]
+    require(python == projected, "CORE_HELLO_PYTHON_BINDING")
     unit = exact(value["carrier_unit"],
         {"name", "control_group", "invocation_id", "active_state", "sub_state",
          "runtime_max_usec", "timeout_stop_usec", "memory_max", "memory_swap_max",

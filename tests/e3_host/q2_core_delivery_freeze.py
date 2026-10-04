@@ -1,12 +1,14 @@
 """Read-only inputs for the one approved core field-package freeze.
 
-This module has no delivery entry point.  It neither creates a package nor a
-marker and it never contacts the fixture.  The two public helpers only return
-private in-memory freeze inputs after proving their complete source closure.
+This module has no carrier entry point. It builds packages only in memory,
+never creates a marker and never contacts the fixture. Static source closure
+precedes the current local binding, which uses the original host window.
 """
 from __future__ import annotations
 
 import ast
+import copy
+from dataclasses import fields, is_dataclass
 import hashlib
 import importlib.util
 import io
@@ -18,6 +20,7 @@ import re
 import stat
 import subprocess
 import tarfile
+import time
 
 
 def _helper(name):
@@ -31,6 +34,7 @@ def _helper(name):
 
 p = _helper("q2_core_delivery_package")
 entry_api = _helper("q2_core_delivery_entry")
+bootstrap_api = _helper("q2_core_delivery_bootstrap")
 c = p.c
 
 FREEZE_SCHEMA = "local-hand-q2-core-static-freeze/v1"
@@ -149,20 +153,24 @@ def _same_stat(left, right):
     )
 
 
-def _read_fd(fd, limit, code):
+def _direct_call(function, *args, **kwargs):
+    return function(*args, **kwargs)
+
+
+def _read_fd(fd, limit, code, call=_direct_call):
     raw = bytearray()
     while True:
-        chunk = os.read(fd, min(65536, limit + 1 - len(raw)))
+        chunk = call(os.read, fd, min(65536, limit + 1 - len(raw)))
         if not chunk:
             return bytes(raw)
         raw.extend(chunk)
         c.require(len(raw) <= limit, code)
 
 
-def _read_regular(path, *, limit, code, noatime=True):
+def _read_regular(path, *, limit, code, noatime=True, call=_direct_call):
     """Read one stable single-link regular file without following an alias."""
     path = os.path.abspath(os.fspath(path))
-    before_path = os.lstat(path)
+    before_path = call(os.lstat, path)
     c.require(stat.S_ISREG(before_path.st_mode) and before_path.st_nlink == 1
               and 0 <= before_path.st_size <= limit, code)
     flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
@@ -170,21 +178,21 @@ def _read_regular(path, *, limit, code, noatime=True):
         c.require(hasattr(os, "O_NOATIME"), code)
         flags |= os.O_NOATIME
     try:
-        fd = os.open(path, flags)
+        fd = call(os.open, path, flags)
     except OSError as error:
         raise c.ContractError(code) from error
     try:
-        before = os.fstat(fd)
+        before = call(os.fstat, fd)
         c.require(_same_stat(before_path, before), code)
-        raw = _read_fd(fd, limit, code)
-        after = os.fstat(fd)
+        raw = _read_fd(fd, limit, code, call)
+        after = call(os.fstat, fd)
         c.require(_same_stat(before, after) and len(raw) == before.st_size, code)
         return raw, before
     finally:
         os.close(fd)
 
 
-def _open_bound_executable(expected, *, limit, code):
+def _open_bound_executable(expected, *, limit, code, call=_direct_call):
     """Open, hash and hold the exact executable described by ``expected``.
 
     Callers execute the returned descriptor through ``/proc/self/fd``.  This
@@ -197,23 +205,26 @@ def _open_bound_executable(expected, *, limit, code):
     }, code)
     path = expected["path"]
     c.require(type(path) is str and path.startswith("/"), code)
-    path_stat = os.lstat(path)
+    path_stat = call(os.lstat, path)
     c.require(stat.S_ISREG(path_stat.st_mode) and path_stat.st_nlink == 1
               and stat.S_IMODE(path_stat.st_mode) & 0o111
               and 0 < path_stat.st_size <= limit, code)
-    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    # This fixed executable role keeps the original read profile. The owned
+    # private source and capture roles separately require O_NOATIME; their
+    # failures never cause an alternate open here.
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
     try:
-        fd = os.open(path, flags)
+        fd = call(os.open, path, flags)
     except OSError as error:
         raise c.ContractError(code) from error
     try:
-        before = os.fstat(fd)
+        before = call(os.fstat, fd)
         c.require(_same_stat(path_stat, before), code)
-        raw = _read_fd(fd, limit, code)
-        after = os.fstat(fd)
+        raw = _read_fd(fd, limit, code, call)
+        after = call(os.fstat, fd)
         actual = {"role": expected["role"], **_file_identity(path, after, raw)}
         c.require(_same_stat(before, after) and actual == expected
-                  and _same_stat(os.lstat(path), after), code)
+                  and _same_stat(call(os.lstat, path), after), code)
         return fd, after
     except BaseException:
         os.close(fd)
@@ -290,62 +301,73 @@ def _file_identity(path, info, raw):
     }
 
 
-def inspect_management_anchor(*, anchor_root, cwd, environment=None):
-    """Validate only the local held-fd half of A's management anchor.
+def inspect_management_anchor(*, anchor_root, cwd, origins, tokens, environment=None,
+                              clock_gettime_ns=time.clock_gettime_ns):
+    """Freeze the complete local binding inside the caller's original window.
 
-    Remote account and executable identities are intentionally not inferred
-    from the host.  Therefore this helper always returns ``NOT_PREPARED`` and
-    a partial, private preimage suitable for completing after separately
-    authorized remote admission facts exist.
+    There are no current guest reads here.  The returned held ``directory_fd``
+    belongs to the caller and must be reused for marker/capture, then closed.
+    Static source and release checks must precede this current-host operation.
     """
+    deadline = entry_api.capture_contract.Deadline(origins, clock_gettime_ns)
+    deadline.check()
+    call = deadline.call
+    writer = entry_api.capture_contract.observe_writer(call)
     # Bind every local dependency before invoking any one of them.  The
     # ssh-keygen object is then opened, re-hashed and held across exec below.
     dependencies = []
     for role, path in LOCAL_DEPENDENCIES:
         raw, info = _read_regular(path, limit=4 * 1024 * 1024,
-                                  code="CORE_FREEZE_ANCHOR_DEPENDENCY", noatime=False)
+                                  code="CORE_FREEZE_ANCHOR_DEPENDENCY", noatime=False, call=call)
         dependencies.append({"role": role, **_file_identity(path, info, raw)})
     dependency_by_role = {item["role"]: item for item in dependencies}
 
     root = os.path.abspath(os.fspath(anchor_root))
-    root_path_stat = os.lstat(root)
+    root_path_stat = call(os.lstat, root)
     c.require(stat.S_ISDIR(root_path_stat.st_mode) and not stat.S_ISLNK(root_path_stat.st_mode)
               and stat.S_IMODE(root_path_stat.st_mode) == 0o700
-              and root_path_stat.st_uid == os.geteuid(), "CORE_FREEZE_ANCHOR_ROOT")
+              and all(value == root_path_stat.st_uid for value in writer["uid"].values())
+              and all(value == root_path_stat.st_gid for value in writer["gid"].values()),
+              "CORE_FREEZE_ANCHOR_ROOT")
     flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        root_fd = os.open(root, flags)
+        root_fd = call(os.open, root, flags)
     except OSError as error:
         raise c.ContractError("CORE_FREEZE_ANCHOR_ROOT") from error
     local = {}
+    policy_source_raw = {}
     wrapper_raw = None
     cloud_config_raw = None
     try:
-        held_root = os.fstat(root_fd)
+        held_root = call(os.fstat, root_fd)
         c.require(_same_stat(root_path_stat, held_root), "CORE_FREEZE_ANCHOR_ROOT")
         for basename, (mode, digest, role) in ANCHOR_FILES.items():
             child_flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
             c.require(hasattr(os, "O_NOATIME"), "CORE_FREEZE_ANCHOR_FILE")
             child_flags |= os.O_NOATIME
             try:
-                fd = os.open(basename, child_flags, dir_fd=root_fd)
+                fd = call(os.open, basename, child_flags, dir_fd=root_fd)
             except OSError as error:
                 raise c.ContractError("CORE_FREEZE_ANCHOR_FILE") from error
             try:
-                before = os.fstat(fd)
+                before = call(os.fstat, fd)
                 c.require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                           and stat.S_IMODE(before.st_mode) == mode
                           and before.st_uid == held_root.st_uid
                           and before.st_gid == held_root.st_gid
                           and before.st_size <= 2 * 1024 * 1024,
                           "CORE_FREEZE_ANCHOR_FILE")
-                raw = _read_fd(fd, 2 * 1024 * 1024, "CORE_FREEZE_ANCHOR_FILE")
-                after = os.fstat(fd)
-                c.require(_same_stat(before, after) and c.sha256(raw) == digest,
+                raw = _read_fd(fd, 2 * 1024 * 1024, "CORE_FREEZE_ANCHOR_FILE", call)
+                after = call(os.fstat, fd)
+                named = call(os.stat, basename, dir_fd=root_fd, follow_symlinks=False)
+                c.require(_same_stat(before, after) and _same_stat(after, named)
+                          and c.sha256(raw) == digest,
                           "CORE_FREEZE_ANCHOR_PIN")
                 identity = _file_identity(os.path.join(root, basename), after, raw)
                 local[role] = identity
+                if role in ("fixture_cloud_config", "identity_public", "known_hosts"):
+                    policy_source_raw[role] = raw
                 if role == "wrapper":
                     wrapper_raw = raw
                 elif role == "fixture_cloud_config":
@@ -356,11 +378,11 @@ def inspect_management_anchor(*, anchor_root, cwd, environment=None):
         private_flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
         private_flags |= os.O_NOATIME
         try:
-            private_fd = os.open("id_ed25519", private_flags, dir_fd=root_fd)
+            private_fd = call(os.open, "id_ed25519", private_flags, dir_fd=root_fd)
         except OSError as error:
             raise c.ContractError("CORE_FREEZE_ANCHOR_IDENTITY") from error
         try:
-            before = os.fstat(private_fd)
+            before = call(os.fstat, private_fd)
             c.require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                       and stat.S_IMODE(before.st_mode) == 0o600
                       and before.st_uid == held_root.st_uid
@@ -369,12 +391,12 @@ def inspect_management_anchor(*, anchor_root, cwd, environment=None):
                       "CORE_FREEZE_ANCHOR_IDENTITY")
             executable_fd, executable_stat = _open_bound_executable(
                 dependency_by_role["ssh-keygen"], limit=4 * 1024 * 1024,
-                code="CORE_FREEZE_ANCHOR_DEPENDENCY",
+                code="CORE_FREEZE_ANCHOR_DEPENDENCY", call=call,
             )
             command = ["/usr/bin/ssh-keygen", "-y", "-f", f"/proc/self/fd/{private_fd}"]
             try:
                 try:
-                    derived = subprocess.run(
+                    derived = call(subprocess.run,
                         command, executable=f"/proc/self/fd/{executable_fd}",
                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -383,14 +405,15 @@ def inspect_management_anchor(*, anchor_root, cwd, environment=None):
                     )
                 except (OSError, subprocess.TimeoutExpired) as error:
                     raise c.ContractError("CORE_FREEZE_ANCHOR_IDENTITY") from error
-                c.require(_same_stat(executable_stat, os.fstat(executable_fd))
-                          and _same_stat(os.lstat("/usr/bin/ssh-keygen"), executable_stat),
+                c.require(_same_stat(executable_stat, call(os.fstat, executable_fd))
+                          and _same_stat(call(os.lstat, "/usr/bin/ssh-keygen"), executable_stat),
                           "CORE_FREEZE_ANCHOR_DEPENDENCY")
             finally:
                 os.close(executable_fd)
-            after = os.fstat(private_fd)
+            after = call(os.fstat, private_fd)
+            named = call(os.stat, "id_ed25519", dir_fd=root_fd, follow_symlinks=False)
             c.require(derived.returncode == 0 and len(derived.stderr) <= 4096
-                      and _same_stat(before, after)
+                      and _same_stat(before, after) and _same_stat(after, named)
                       and c.sha256(derived.stdout) == entry_api.PUBLIC_KEY_SHA256,
                       "CORE_FREEZE_ANCHOR_IDENTITY")
             local["identity"] = {
@@ -406,23 +429,39 @@ def inspect_management_anchor(*, anchor_root, cwd, environment=None):
             }
         finally:
             os.close(private_fd)
-        c.require(_same_stat(held_root, os.fstat(root_fd)), "CORE_FREEZE_ANCHOR_CHANGED")
-    finally:
+        c.require(_same_stat(held_root, call(os.fstat, root_fd))
+                  and _same_stat(held_root, call(os.lstat, root)),
+                  "CORE_FREEZE_ANCHOR_CHANGED")
+    except BaseException:
         os.close(root_fd)
+        raise
 
+    try:
+        return _finish_local_binding(root_fd, held_root, root, cwd, local, dependencies,
+            wrapper_raw, cloud_config_raw, policy_source_raw, writer, tokens, environment, deadline)
+    except BaseException:
+        os.close(root_fd)
+        raise
+
+
+def _finish_local_binding(root_fd, held_root, root, cwd, local, dependencies,
+                          wrapper_raw, cloud_config_raw, policy_source_raw,
+                          writer, tokens, environment, deadline):
+    call = deadline.call
     cwd_path = os.path.abspath(os.fspath(cwd))
-    cwd_path_stat = os.lstat(cwd_path)
+    cwd_path_stat = call(os.lstat, cwd_path)
     c.require(stat.S_ISDIR(cwd_path_stat.st_mode) and not stat.S_ISLNK(cwd_path_stat.st_mode),
               "CORE_FREEZE_ANCHOR_CWD")
     cwd_flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0)
     cwd_flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        cwd_fd = os.open(cwd_path, cwd_flags)
+        cwd_fd = call(os.open, cwd_path, cwd_flags)
     except OSError as error:
         raise c.ContractError("CORE_FREEZE_ANCHOR_CWD") from error
     try:
-        cwd_stat = os.fstat(cwd_fd)
-        c.require(_same_stat(cwd_path_stat, cwd_stat), "CORE_FREEZE_ANCHOR_CWD")
+        cwd_stat = call(os.fstat, cwd_fd)
+        c.require(_same_stat(cwd_path_stat, cwd_stat)
+                  and _same_stat(call(os.lstat, cwd_path), cwd_stat), "CORE_FREEZE_ANCHOR_CWD")
     finally:
         os.close(cwd_fd)
     local_environment = entry_api.controlled_environment(environment)
@@ -441,8 +480,13 @@ def inspect_management_anchor(*, anchor_root, cwd, environment=None):
         "sudo_policy_is_exact": False,
         "fixture_policy_broader_than_command": True,
     }
-    partial = {
+    anchor = {"path": root, "dev": held_root.st_dev, "ino": held_root.st_ino,
+              "mode": stat.S_IMODE(held_root.st_mode), "uid": held_root.st_uid,
+              "gid": held_root.st_gid, "nlink": held_root.st_nlink}
+    binding = {
         "schema": c.MANAGEMENT_BINDING_SCHEMA,
+        "anchor": anchor,
+        "writer": writer,
         "wrapper": local["wrapper"],
         "fixture_start": local["fixture_start"],
         "fixture_cloud_config": local["fixture_cloud_config"],
@@ -457,25 +501,33 @@ def inspect_management_anchor(*, anchor_root, cwd, environment=None):
             "mode": stat.S_IMODE(cwd_stat.st_mode), "uid": cwd_stat.st_uid,
             "gid": cwd_stat.st_gid,
         },
-        "remote": None,
+        "remote_expectation": entry_api.static_remote_expectation(tokens),
         "transport": transport,
     }
+    c.require(_same_stat(held_root, call(os.fstat, root_fd))
+              and _same_stat(held_root, call(os.lstat, root)), "CORE_FREEZE_ANCHOR_CHANGED")
+    c.require(entry_api.capture_contract.observe_writer(call) == writer,
+              "CORE_FREEZE_WRITER_CHANGED")
+    argv = entry_api.wrapper_argv(binding["wrapper"]["path"], wrapper_raw, tokens)
+    digest = entry_api.local_management_binding_digest(
+        binding, tokens=tokens, argv=argv, wrapper_raw=wrapper_raw)
+    deadline.check()
     return {
         "schema": FREEZE_SCHEMA,
-        "state": "NOT_PREPARED",
+        "state": "LOCAL_ANCHOR_FROZEN",
         "issuance": "NOT_ISSUED",
-        "missing": [
-            "management_anchor.remote.account_identity",
-            "management_anchor.remote.shell_identity",
-            "management_anchor.remote.sudo_identity",
-            "management_anchor.remote.env_identity",
-            "management_anchor.remote.systemd_run_identity",
-            "management_anchor.remote.python_identity",
-        ],
+        "missing": [],
         "package": None,
-        "binding_preimage": None,
-        "private_local_anchor": partial,
+        "binding_preimage": binding,
+        "local_management_binding_sha256": digest,
+        "private_local_anchor": binding,
         "wrapper_bytes": wrapper_raw,
+        # Private in-memory input only: never a package member or public log.
+        "policy_source_raw": policy_source_raw,
+        "directory_fd": root_fd,
+        "origins": dict(deadline.origins),
+        "tokens": list(tokens),
+        "argv": argv,
     }
 
 
@@ -732,7 +784,7 @@ def _not_prepared(*, missing, source_map=None):
 
 def freeze_private_locators(*, retained_root, capture_path, archive_path,
                             manifest_path, inventory_path,
-                            management_binding_preimage=None,
+                            local_management_binding_preimage=None,
                             management_tokens=None, management_argv=None,
                             management_wrapper_raw=None):
     """Freeze A locators from the one retained source, or return NOT_PREPARED.
@@ -748,7 +800,7 @@ def freeze_private_locators(*, retained_root, capture_path, archive_path,
     )
     values, source_map = _locator_source(raw_by_name)
     supplied = {
-        "management_anchor.binding_preimage": management_binding_preimage,
+        "management_anchor.local_binding_preimage": local_management_binding_preimage,
         "management_anchor.tokens": management_tokens,
         "management_anchor.argv": management_argv,
         "management_anchor.wrapper_bytes": management_wrapper_raw,
@@ -756,8 +808,8 @@ def freeze_private_locators(*, retained_root, capture_path, archive_path,
     missing = [name for name, value in supplied.items() if value is None]
     if missing:
         return _not_prepared(missing=missing, source_map=source_map)
-    management_digest = entry_api.management_binding_digest(
-        management_binding_preimage, tokens=management_tokens, argv=management_argv,
+    management_digest = entry_api.local_management_binding_digest(
+        local_management_binding_preimage, tokens=management_tokens, argv=management_argv,
         wrapper_raw=management_wrapper_raw,
     )
     c.digest(management_digest, "CORE_FREEZE_MANAGEMENT_BINDING")
@@ -769,10 +821,10 @@ def freeze_private_locators(*, retained_root, capture_path, archive_path,
         "carrier_unit": c.CARRIER_UNIT,
     }
     relation = p.locator_relation(locators, management_digest)
-    locators["source_relation_sha256"] = c.sha256(c.canonical(relation, newline=True))
+    locators["source_relation_sha256"] = c.sha256(c.canonical(relation))
     p.validate_locators(locators, management_digest)
     source_map = dict(source_map)
-    source_map["management_entry_binding_sha256"] = management_digest
+    source_map["local_management_binding_sha256"] = management_digest
     source_map["source_relation_sha256"] = locators["source_relation_sha256"]
     return {
         "schema": FREEZE_SCHEMA,
@@ -781,7 +833,7 @@ def freeze_private_locators(*, retained_root, capture_path, archive_path,
         "missing": [],
         "package": None,
         "locators": locators,
-        "management_entry_binding_sha256": management_digest,
+        "local_management_binding_sha256": management_digest,
         "private_source_map": source_map,
     }
 
@@ -942,10 +994,16 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                     implementation_commit + "^{tree}")
     c.require(identity.decode("ascii").split() == [implementation_commit, implementation_tree],
               "CORE_FREEZE_IMPLEMENTATION")
-    parents = _git(repository, git_path, "rev-list", "--parents", "-n", "1",
-                   implementation_commit).decode("ascii").split()
-    c.require(parents == [implementation_commit, c.CLOSURE["commit"]],
+    # C precedes all amendment D commits, including the final integrated D.
+    # Only the *first* D is C's direct child; requiring that of a later freeze
+    # would wrongly select the old, incomplete dispatcher again.
+    closure = c.AMENDMENT_CLOSURE
+    c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
+    closure_identity = _git(repository, git_path, "rev-parse", closure["commit"] + "^{tree}")
+    c.require(closure_identity.decode("ascii").strip() == closure["tree"],
               "CORE_FREEZE_IMPLEMENTATION_PARENT")
+    _git(repository, git_path, "merge-base", "--is-ancestor", closure["commit"],
+         implementation_commit)
     source_paths = list(FIELD_SOURCE_PATHS.values())
     tree = _git(repository, git_path, "ls-tree", "-z", implementation_commit, "--",
                 *source_paths)
@@ -1130,3 +1188,173 @@ def freeze_package_members(*, candidate_checkout, wheel_path, projection_path,
         "derived_directory_count": len(derived_directories),
         "logical_member_bytes": sum(len(raw) for raw in member_bytes.values()),
     }
+
+
+def _validate_static_freeze(static_freeze):
+    c.require(type(static_freeze) is dict and static_freeze.get("state") == "STATIC_MEMBERS_FROZEN",
+              "CORE_FREEZE_STATE")
+    rows, values = static_freeze["members"], static_freeze["member_bytes"]
+    c.require(type(rows) is list and type(values) is dict
+              and len(rows) == len(values) <= c.PACKAGE_LIMITS["members"]
+              and {row["path"] for row in rows} == set(values), "CORE_FREEZE_MEMBER_SET")
+    c.make_amendment(static_freeze["implementation"])
+    fields = {}
+    for item in rows:
+        p.validate_member(item)
+        raw = values[item["path"]]
+        c.require(type(raw) is bytes and item["bytes"] == len(raw)
+                  and item["sha256"] == c.sha256(raw), "CORE_FREEZE_MEMBER_BYTES")
+        if item["role"] in ("candidate-worktree", "field-code"):
+            c.require(item["origin"]["blob"] == p._git_blob(raw), "CORE_FREEZE_MEMBER_BLOB")
+        if item["role"] == "field-code":
+            c.require(item["path"] in FIELD_SOURCE_PATHS
+                      and item["origin"]["path"] == FIELD_SOURCE_PATHS[item["path"]]
+                      and item["origin"]["commit"] == static_freeze["implementation"]["commit"],
+                      "CORE_FREEZE_FIELD_SOURCE")
+            fields[item["path"]] = raw
+        c.require(item["role"] != "approved-inputs", "CORE_FREEZE_APPROVED_DUPLICATE")
+    c.require(set(fields) == set(FIELD_SOURCE_PATHS), "CORE_FREEZE_FIELD_SET")
+    return values
+
+
+def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inputs_raw):
+    """Bind approved inputs and exact committed field bytes into a v2 package.
+
+    This is an in-memory construction, not a release or an independent review
+    of the private source set. The caller obtains ``approved_inputs_raw`` from
+    the approved source builders and keeps its private source evidence.
+    """
+    _validate_static_freeze(static_freeze)
+    c.require(local_anchor["state"] == "LOCAL_ANCHOR_FROZEN", "CORE_FREEZE_STATE")
+    implementation = static_freeze["implementation"]
+    amendment = c.make_amendment(implementation)
+    approved_row, approved_header = p.approved_input_member(
+        approved_inputs_raw, amendment=amendment)
+    approved = c.document(approved_inputs_raw, limit=1_048_576, newline=True)
+    binding = local_anchor["binding_preimage"]
+    tokens, argv = local_anchor["tokens"], local_anchor["argv"]
+    local_digest = entry_api.local_management_binding_digest(
+        binding, tokens=tokens, argv=argv, wrapper_raw=local_anchor["wrapper_bytes"])
+    c.require(binding["remote_expectation"] == approved["policy_basis"]["remote_expectation"],
+              "CORE_FREEZE_REMOTE_EXPECTATION")
+    policy_raw = c.exact(local_anchor.get("policy_source_raw"),
+                        {"fixture_cloud_config", "identity_public", "known_hosts"},
+                        "CORE_FREEZE_POLICY_RAW_SET")
+    for role in ("fixture_cloud_config", "identity_public", "known_hosts"):
+        source = approved["policy_basis"][role]
+        raw = policy_raw[role]
+        c.require(source["binding_pointer"] == "/" + role
+                  and type(raw) is bytes and len(raw) == binding[role]["bytes"]
+                  and c.sha256(raw) == source["sha256"] == binding[role]["sha256"],
+                  "CORE_FREEZE_POLICY_SOURCE")
+    # A source-less envelope verifier cannot derive the authorized key from a
+    # digest. Reconstruct all predicates from the bytes actually held above;
+    # a different valid key plus recomputed predicate hashes must still fail.
+    rebuilt_policy = entry_api.static_policy_basis(source_raw=policy_raw, tokens=tokens)
+    c.require(c.canonical(approved["policy_basis"]) == c.canonical(rebuilt_policy),
+              "CORE_FREEZE_POLICY_RAW_RELATION")
+    p.validate_locators(locators, local_digest)
+    rows = list(static_freeze["members"])
+    values = dict(static_freeze["member_bytes"])
+    c.require(approved_row["path"] not in values
+              and not any(row["path"] == approved_row["path"] for row in rows),
+              "CORE_FREEZE_APPROVED_DUPLICATE")
+    rows.append(approved_row)
+    values[approved_row["path"]] = approved_inputs_raw
+    frozen_entry = {"carrier_argv_sha256": entry_api.argv_digest(argv),
+                    "local_management_binding_sha256": local_digest}
+    for role in ("loader", "bootstrap", "dispatcher"):
+        path = f"field/{role}.py"
+        raw = values[path]
+        frozen_entry.update({role + "_path": path, role + "_bytes": len(raw),
+                             role + "_sha256": c.sha256(raw)})
+    c.require(tokens == entry_api.remote_tokens(values["field/loader.py"],
+                                                values["field/bootstrap.py"]),
+              "CORE_FREEZE_REMOTE_TOKENS")
+    manifest = p.make_manifest(implementation=implementation, amendment=amendment,
+        approved_inputs=approved_header, entry=frozen_entry, locators=locators, members=rows)
+    raw = p.build_package(manifest, values)
+    # An independent framing construction checks ordering and exact byte
+    # lengths; it does not stand in for D4's independent source/release review.
+    serialized = json.dumps(manifest, sort_keys=True, separators=(",", ":"),
+                            ensure_ascii=True, allow_nan=False).encode("ascii") + b"\n"
+    second = b"LHCFP1\n" + len(serialized).to_bytes(8, "big") + serialized
+    second += b"".join(values[row["path"]] for row in sorted(rows, key=lambda row: row["path"]))
+    c.require(raw == second, "CORE_FREEZE_PACKAGE_DOUBLE_BUILD")
+    first_manifest, first_values = p.parse_package(raw)
+    second_manifest, second_views = bootstrap_api.parse_package(
+        second, bootstrap_sha256=frozen_entry["bootstrap_sha256"])
+    second_values = {path: bytes(raw) for path, raw in second_views.items()}
+    c.require(first_manifest == second_manifest == manifest and first_values == second_values == values,
+              "CORE_FREEZE_PACKAGE_ROUNDTRIP")
+    return {"schema": FREEZE_SCHEMA, "state": "PACKAGE_FROZEN", "issuance": "NOT_ISSUED",
+            "missing": [], "package": {"bytes": len(raw), "sha256": c.sha256(raw)},
+            "package_raw": raw, "manifest": manifest, "member_bytes": values,
+            "binding_preimage": binding, "wrapper_bytes": local_anchor["wrapper_bytes"],
+            "origins": dict(local_anchor["origins"]), "directory_fd": local_anchor["directory_fd"]}
+
+
+def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_paths,
+                             anchor_root, cwd, approved_sources=None, environment=None,
+                             clock_gettime_ns=time.clock_gettime_ns):
+    """Freeze one releasable package in the same window as subsequent delivery.
+
+    The static dispatcher gate is checked before any current anchor, process,
+    absence or filesystem observation. This partial D cannot pass that gate.
+    A successful result transfers the held directory fd to the caller; any
+    failure closes it and creates no marker or persistent output.
+    """
+    values = _validate_static_freeze(static_freeze)
+    # This second source-aware validation is mandatory for the delivery-facing
+    # API. A format-valid standalone artifact does not prove its private inputs.
+    approved_sources = _validate_approved_sources(approved_inputs_raw, approved_sources)
+    p.approved_input_member(approved_inputs_raw,
+                           amendment=c.make_amendment(static_freeze["implementation"]))
+    c.require(c.sha256(values["field/dispatcher.py"])
+              in entry_api.RELEASABLE_DISPATCHER_SHA256, "CORE_FIELD_IMPLEMENTATION_NOT_RELEASABLE")
+    tokens = entry_api.remote_tokens(values["field/loader.py"], values["field/bootstrap.py"])
+    c.require(approved_sources.remote_tokens == tokens, "CORE_FREEZE_APPROVED_SOURCE_TOKENS")
+    origins = entry_api.freeze_host_window(clock_gettime_ns)
+    local = inspect_management_anchor(anchor_root=anchor_root, cwd=cwd, origins=origins,
+        tokens=tokens, environment=environment, clock_gettime_ns=clock_gettime_ns)
+    try:
+        deadline = entry_api.capture_contract.Deadline(origins, clock_gettime_ns)
+        c.require(local["policy_source_raw"] == approved_sources.policy_sources,
+                  "CORE_FREEZE_APPROVED_LOCAL_SOURCE")
+        deadline.call(entry_api.encoded_argv_environment_size,
+                      local["argv"], local["binding_preimage"]["environment"])
+        frozen_locators = deadline.call(freeze_private_locators, **retained_paths,
+            local_management_binding_preimage=local["binding_preimage"],
+            management_tokens=tokens, management_argv=local["argv"],
+            management_wrapper_raw=local["wrapper_bytes"])
+        frozen = deadline.call(build_frozen_package, static_freeze=static_freeze,
+            local_anchor=local, locators=frozen_locators["locators"],
+            approved_inputs_raw=approved_inputs_raw)
+        deadline.call(entry_api.field_release_gate, frozen["manifest"], frozen["member_bytes"])
+        c.require(entry_api.capture_contract.observe_writer(deadline.call)
+                  == local["binding_preimage"]["writer"], "CORE_FREEZE_WRITER_CHANGED")
+        deadline.check()
+        return frozen
+    except BaseException:
+        os.close(local["directory_fd"])
+        raise
+
+
+def _validate_approved_sources(raw, sources):
+    """Bridge ordinary/package imports without relaxing raw-source validation.
+
+    Dataclass identity depends on its import namespace. Transfer only the exact
+    documented data fields into the verifier's own class, then run that full
+    verifier. A same-named class, loose dictionary or extra field is insufficient.
+    """
+    c.require(sources is not None, "CORE_FREEZE_APPROVED_SOURCES_REQUIRED")
+    names = {"amendment", "locator_carriers", "horizon_archives", "legacy_frame",
+             "historical_tools", "policy_sources", "remote_tokens", "later_reviews", "producer_raw"}
+    c.require(not isinstance(sources, type) and is_dataclass(sources)
+              and {field.name for field in fields(sources)} == names,
+              "CORE_FREEZE_APPROVED_SOURCE_FIELDS")
+    module = p._approved_module()
+    values = {name: copy.deepcopy(getattr(sources, name)) for name in names}
+    converted = module.ApprovedInputSources(**values)
+    module.validate(raw, sources=converted)
+    return converted

@@ -1,9 +1,14 @@
+import base64
+import copy
 import hashlib
 import io
+import os
 from pathlib import Path
 import struct
+import shlex
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,13 +24,21 @@ IMPLEMENTATION = {"commit": "b" * 40, "tree": "c" * 40}
 
 
 def hello(bootstrap_sha):
+    remote = {"account": "q1admin", "uid": 1000, "gid": 1000, "home": "/home/q1admin",
+              "login_shell": "/bin/bash", "parser_profile": "bash-noninteractive-c-v1",
+              "remote_tokens_sha256": "6" * 64, "remote_command_sha256": "7" * 64}
+    for index, (name, alias) in enumerate(b.REMOTE_ALIASES.items()):
+        remote[name] = {"path": alias, "resolved_path": alias, "symlink_chain": [],
+                        "dev": 1, "ino": index + 2, "mode": 0o755, "uid": 0, "gid": 0,
+                        "nlink": 1, "bytes": 100, "sha256": "4" * 64}
     return {
         "schema": b.HELLO_SCHEMA, "scope": b.SCOPE, "loader_sha256": b.LOADER_SHA256,
         "bootstrap_sha256": bootstrap_sha, "guest_boot_id": "11111111-2222-3333-4444-555555555555",
         "guest_boottime_origin_ns": time.clock_gettime_ns(time.CLOCK_BOOTTIME),
         "guest_monotonic_origin_ns": time.clock_gettime_ns(time.CLOCK_MONOTONIC),
         "pid": 1234, "uid": 0, "gid": 0, "euid": 0, "egid": 0,
-        "python": {"path": "/usr/bin/python3", "dev": 1, "ino": 2, "mode": 0o755,
+        "remote_management": remote,
+        "python": {"path": "/usr/bin/python3", "dev": 1, "ino": 6, "mode": 0o755,
                    "uid": 0, "gid": 0, "nlink": 1, "bytes": 100,
                    "sha256": "4" * 64},
         "carrier_unit": {"name": b.CARRIER_UNIT,
@@ -41,6 +54,16 @@ def hello(bootstrap_sha):
 
 
 def package_fixture(monkeypatch):
+    # This fixture exercises independent framing/envelope validation. Historical
+    # source reconstruction is covered by the approved-input module tests.
+    monkeypatch.setattr(p, "_approved_module", lambda: SimpleNamespace(
+        validate=lambda raw: p.c.validate_approved_inputs(p.c.document(
+            raw, limit=1048576, newline=True))))
+    amendment = p.c.make_amendment(IMPLEMENTATION)
+    approved_raw = p.c.canonical({"schema": p.c.APPROVED_INPUTS_SCHEMA, "scope": p.c.SCOPE,
+        "amendment": amendment, **{key: {"test_fixture": True} for key in p.c.APPROVED_COMPONENTS}},
+        newline=True)
+    approved_row, approved_header = p.approved_input_member(approved_raw, amendment=amendment)
     loader = Path("tests/e3_host/q2_core_delivery_loader.py").read_bytes()
     bootstrap = Path("tests/e3_host/q2_core_delivery_bootstrap.py").read_bytes()
     bootstrap_sha = hashlib.sha256(bootstrap).hexdigest()
@@ -55,6 +78,7 @@ def package_fixture(monkeypatch):
     monkeypatch.setattr(p.c, "PROJECTION", projection_record); monkeypatch.setattr(b, "PROJECTION", projection_record)
     rows, field_bytes = p.field_member_blobs(
         loader, bootstrap, dispatcher, implementation_commit=IMPLEMENTATION["commit"])
+    rows.append(approved_row)
     candidate, git_head = b"candidate\n", b"4b6e4a7c403362358192086b88679e1326dcb2e1\n"
     rows.extend([
         p.member("candidate/README.md", "candidate-worktree", 0o644, candidate,
@@ -70,7 +94,7 @@ def package_fixture(monkeypatch):
                  {"kind": "projection", "basename": projection_record["basename"],
                   "sha256": projection_record["sha256"]}),
     ])
-    members = {**field_bytes, "candidate/README.md": candidate,
+    members = {**field_bytes, "private/approved-inputs.json": approved_raw, "candidate/README.md": candidate,
                "candidate/.git/HEAD": git_head,
                "artifacts/" + wheel_record["basename"]: wheel,
                "artifacts/" + projection_record["basename"]: projection}
@@ -83,7 +107,7 @@ def package_fixture(monkeypatch):
              "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": len(dispatcher),
              "dispatcher_sha256": hashlib.sha256(dispatcher).hexdigest(),
              "carrier_argv_sha256": "f" * 64,
-             "management_entry_binding_sha256": management}
+             "local_management_binding_sha256": management}
     locators = {"schema": p.c.LOCATORS_SCHEMA, "observation_record_sha256": "1" * 64,
         "source_relation_sha256": "0" * 64, "state_parent": "/fixture/state",
         "quota_parent": "/fixture/quota", "install_parent": "/fixture/install",
@@ -97,8 +121,9 @@ def package_fixture(monkeypatch):
         "retained_ordinary_parent_path": "/system.slice/lhq-retained.slice",
         "carrier_unit": p.c.CARRIER_UNIT}
     locators["source_relation_sha256"] = p.c.sha256(p.c.canonical(
-        p.locator_relation(locators, management), newline=True))
+        p.locator_relation(locators, management)))
     manifest = p.make_manifest(implementation=IMPLEMENTATION, entry=entry,
+                               amendment=amendment, approved_inputs=approved_header,
                                locators=locators, members=rows)
     package = p.build_package(manifest, members)
     return bootstrap_sha, package
@@ -184,7 +209,7 @@ def test_bootstrap_refuses_mutated_member_before_dispatch(monkeypatch):
     bootstrap_sha, package = package_fixture(monkeypatch); h = hello(bootstrap_sha)
     changed = bytearray(package); changed[-1] ^= 1
     called = []
-    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_MEMBER_BYTES"):
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_(MEMBER_BYTES|APPROVED_INPUTS)"):
         b.serve(stdin=input_stream(h, bytes(changed)), stdout=io.BytesIO(),
                 bootstrap_sha256=bootstrap_sha, hello_factory=lambda _: h,
                 dispatch=lambda context: called.append(context))
@@ -215,3 +240,160 @@ def test_bootstrap_blob_and_loader_binding_fit_approved_limits():
     assert 0 < len(bootstrap) <= 49152
     assert 0 < len(loader) <= 8192
     assert hashlib.sha256(loader).hexdigest() == b.LOADER_SHA256
+
+
+def _root_owned_stat_for_temporary_programs(monkeypatch):
+    """Simulate only guest ownership; all paths, descriptors and content are real."""
+    original_stat, original_fstat = os.stat, os.fstat
+    def root_record(info):
+        values = {name: getattr(info, name) for name in dir(info) if name.startswith("st_")}
+        values.update(st_uid=0, st_gid=0)
+        return SimpleNamespace(**values)
+    monkeypatch.setattr(b.os, "stat", lambda *args, **kwargs: root_record(original_stat(*args, **kwargs)))
+    monkeypatch.setattr(b.os, "fstat", lambda *args, **kwargs: root_record(original_fstat(*args, **kwargs)))
+
+
+def test_held_program_resolves_relative_and_absolute_aliases_without_follow_open(tmp_path, monkeypatch):
+    program = tmp_path / "program"
+    program.write_bytes(b"fixed-program-content")
+    program.chmod(0o755)
+    alias = tmp_path / "alias"
+    alias.symlink_to("program")
+    outer = tmp_path / "outer"
+    outer.symlink_to(str(alias))
+    _root_owned_stat_for_temporary_programs(monkeypatch)
+    original_open = os.open; opens = []
+    def checked_open(path, flags, *args, **kwargs):
+        opens.append((path, flags))
+        assert flags & os.O_NOFOLLOW and flags & os.O_NOATIME
+        return original_open(path, flags, *args, **kwargs)
+    monkeypatch.setattr(b.os, "open", checked_open)
+    value = b._program(str(outer))
+    assert value["path"] == str(outer) and value["resolved_path"] == str(program)
+    assert value["symlink_chain"] == [{"path": str(outer), "target": str(alias)},
+                                       {"path": str(alias), "target": "program"}]
+    assert value["sha256"] == b.sha(b"fixed-program-content")
+    assert opens
+
+
+@pytest.mark.parametrize("case", ["parent", "loop", "nine_hops", "magic"])
+def test_held_program_refuses_unsafe_aliases(tmp_path, monkeypatch, case):
+    program = tmp_path / "program"; program.write_bytes(b"program"); program.chmod(0o755)
+    alias = tmp_path / "alias"
+    if case == "parent": alias.symlink_to("../program")
+    elif case == "loop": alias.symlink_to("alias")
+    elif case == "magic": alias.symlink_to("/proc/self/exe")
+    else:
+        alias.symlink_to("link0")
+        for index in range(8):
+            (tmp_path / f"link{index}").symlink_to(f"link{index + 1}" if index < 7 else "program")
+    _root_owned_stat_for_temporary_programs(monkeypatch)
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_(ALIAS|MAGIC_LINK)"):
+        b._program(str(alias))
+
+
+def test_held_program_detects_alias_retarget_after_read(tmp_path, monkeypatch):
+    first = tmp_path / "first"; first.write_bytes(b"first"); first.chmod(0o755)
+    second = tmp_path / "second"; second.write_bytes(b"second"); second.chmod(0o755)
+    alias = tmp_path / "alias"; alias.symlink_to("first")
+    _root_owned_stat_for_temporary_programs(monkeypatch)
+    read = os.read; changed = False
+    def changed_read(fd, maximum):
+        nonlocal changed
+        raw = read(fd, maximum)
+        if raw and not changed:
+            alias.unlink(); alias.symlink_to("second"); changed = True
+        return raw
+    monkeypatch.setattr(b.os, "read", changed_read)
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_ALIAS_DRIFT"):
+        b._program(str(alias))
+
+
+def test_held_program_does_not_fallback_when_noatime_open_denied(tmp_path, monkeypatch):
+    path = tmp_path / "program"; path.write_bytes(b"program"); path.chmod(0o755)
+    _root_owned_stat_for_temporary_programs(monkeypatch)
+    original = os.open; attempts = []
+    def denied(name, flags, *args, **kwargs):
+        if name == "program":
+            attempts.append(flags); raise PermissionError("NOATIME denied")
+        return original(name, flags, *args, **kwargs)
+    monkeypatch.setattr(b.os, "open", denied)
+    with pytest.raises(PermissionError): b._program(str(path))
+    assert len(attempts) == 1 and attempts[0] & os.O_NOATIME
+
+
+def test_jit_command_digests_reconstruct_the_same_fixed_vector(monkeypatch):
+    from e3_host import q2_core_delivery_entry as entry
+    loader = Path("tests/e3_host/q2_core_delivery_loader.py").read_bytes()
+    bootstrap = Path("tests/e3_host/q2_core_delivery_bootstrap.py").read_bytes()
+    digest = b.sha(bootstrap); encoded = base64.b64encode(bootstrap).decode("ascii")
+    original = ["/usr/bin/python3", "-I", "-B", "-c", loader.decode("utf-8"), encoded, digest]
+    monkeypatch.setattr(b.sys, "orig_argv", original)
+    monkeypatch.setattr(b.sys, "argv", ["-c", encoded, digest])
+    tokens = entry.remote_tokens(loader, bootstrap)
+    assert b._remote_command_digests(digest) == (
+        b.sha(b.encoded(tokens, newline=False)), b.sha(shlex.join(tokens).encode("utf-8")))
+    original[4] += "\n"
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_INVOKED_LOADER"):
+        b._remote_command_digests(digest)
+
+
+def test_hello_v2_alias_projection_limit_and_old_schema_rejection():
+    value = hello("1" * 64)
+    value["remote_management"]["python"].update(resolved_path="/usr/bin/python3.12",
+        symlink_chain=[{"path": "/usr/bin/python3", "target": "python3.12"}])
+    value["python"]["path"] = "/usr/bin/python3.12"
+    assert b.validate_hello(value, "1" * 64) == value
+    assert len(b.encoded(value)) <= 4096
+    invalid = copy.deepcopy(value); invalid["python"]["path"] = "/usr/bin/python3"
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_PYTHON_PROJECTION"):
+        b.validate_hello(invalid, "1" * 64)
+    invalid = copy.deepcopy(value); invalid["schema"] = "local-hand-q2-core-carrier-hello/v1"
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_HELLO_AUTHORITY"):
+        b.validate_hello(invalid, "1" * 64)
+    invalid = copy.deepcopy(value)
+    invalid["remote_management"]["shell"]["resolved_path"] = "/" + "x" * 4000
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_HELLO_LIMIT"):
+        b.validate_hello(invalid, "1" * 64)
+
+
+@pytest.mark.parametrize("mutation", ["schema", "amendment", "mode", "source_relation", "legacy_entry"])
+def test_standalone_package_rejects_mixed_or_unbound_v2(monkeypatch, mutation):
+    bootstrap_sha, raw = package_fixture(monkeypatch)
+    manifest, members = b.parse_package(raw, bootstrap_sha)
+    if mutation == "schema": manifest["schema"] = "local-hand-q2-core-field-package/v1"
+    elif mutation == "amendment": manifest["amendment"]["closure"]["commit"] = "f" * 40
+    elif mutation == "mode":
+        next(row for row in manifest["members"] if row["role"] == "approved-inputs")["mode"] = 0o644
+    elif mutation == "source_relation": manifest["approved_inputs"]["approved_source_relation_sha256"] = "0" * 64
+    else:
+        manifest["entry"]["management_entry_binding_sha256"] = manifest["entry"].pop("local_management_binding_sha256")
+    encoded = b.encoded(manifest)
+    changed = b.PACKAGE_MAGIC + struct.pack(">Q", len(encoded)) + encoded
+    changed += b"".join(members[row["path"]] for row in manifest["members"])
+    with pytest.raises(ValueError): b.parse_package(changed, bootstrap_sha)
+
+
+def test_account_collector_uses_one_current_record_and_refuses_wrong_home(monkeypatch):
+    calls = []
+    def lookup(name):
+        calls.append(name)
+        return SimpleNamespace(pw_name=name, pw_uid=1000, pw_gid=1000,
+                               pw_dir="/changed", pw_shell="/bin/bash")
+    monkeypatch.setattr(b.pwd, "getpwnam", lookup)
+    monkeypatch.setattr(b, "_program", lambda *_: pytest.fail("program collection after wrong account"))
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_ACCOUNT"):
+        b.collect_remote_management("1" * 64)
+    assert calls == ["q1admin"]
+
+
+def test_held_program_refuses_fifo_before_open(tmp_path, monkeypatch):
+    path = tmp_path / "program"; os.mkfifo(path)
+    _root_owned_stat_for_temporary_programs(monkeypatch)
+    original = os.open
+    def checked(name, flags, *args, **kwargs):
+        assert name != "program", "must reject FIFO before a potentially blocking open"
+        return original(name, flags, *args, **kwargs)
+    monkeypatch.setattr(b.os, "open", checked)
+    with pytest.raises(ValueError, match="CORE_BOOTSTRAP_PROGRAM"):
+        b._program(str(path))

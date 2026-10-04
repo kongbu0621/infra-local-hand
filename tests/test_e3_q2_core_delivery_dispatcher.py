@@ -7,11 +7,14 @@ and never manufactures H01/Q4/H11 evidence.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import importlib.util
 from pathlib import Path
 import struct
 import sys
+import os
+import types
 
 import pytest
 
@@ -38,89 +41,28 @@ def _field_member(path, raw):
 
 
 def context(*, guest_duration_ns=750 * d.NS):
-    dispatcher = PATH.read_bytes()
-    blobs = {"field/loader.py": b"loader", "field/bootstrap.py": b"bootstrap",
-             "field/dispatcher.py": dispatcher}
-    rows = [_field_member(path, raw) for path, raw in blobs.items()]
-    rows.sort(key=lambda row: row["path"].encode("ascii"))
-    entry = {
-        "loader_path": "field/loader.py", "loader_bytes": len(blobs["field/loader.py"]),
-        "loader_sha256": _sha(blobs["field/loader.py"]),
-        "bootstrap_path": "field/bootstrap.py", "bootstrap_bytes": len(blobs["field/bootstrap.py"]),
-        "bootstrap_sha256": _sha(blobs["field/bootstrap.py"]),
-        "dispatcher_path": "field/dispatcher.py", "dispatcher_bytes": len(dispatcher),
-        "dispatcher_sha256": _sha(dispatcher), "carrier_argv_sha256": "a" * 64,
-        "management_entry_binding_sha256": "b" * 64,
-    }
-    manifest = {
-        "schema": "local-hand-q2-core-field-package/v1", "scope": d.SCOPE,
-        "rule": copy.deepcopy(d.RULE), "baseline": copy.deepcopy(d.BASELINE),
-        "owner_decision": copy.deepcopy(d.OWNER_DECISION), "closure": copy.deepcopy(d.CLOSURE),
-        "implementation": {"commit": "9" * 40, "tree": "7" * 40},
-        "candidate": copy.deepcopy(d.CANDIDATE), "wheel": copy.deepcopy(d.WHEEL),
-        "projection": copy.deepcopy(d.PROJECTION), "entry": entry,
-        "locators": {"schema": "local-hand-q2-core-private-locators/v1",
-                     "state_parent": "/state", "quota_parent": "/quota",
-                     "install_parent": "/install", "journal_parent": "/journal",
-                     "evidence_parent": "/evidence"},
-        "members": rows, "limits": copy.deepcopy(d.PACKAGE_LIMITS),
-    }
-    manifest_raw = d.canonical(manifest, newline=True)
-    package = b"LHCFP1\n" + struct.pack(">Q", len(manifest_raw)) + manifest_raw + b"".join(
-        blobs[row["path"]] for row in rows)
-    guest_origin = 1_000_000_000_000
-    hello = {
-        "schema": "local-hand-q2-core-carrier-hello/v1", "scope": d.SCOPE,
-        "loader_sha256": entry["loader_sha256"], "bootstrap_sha256": entry["bootstrap_sha256"],
-        "guest_boot_id": "11111111-2222-3333-4444-555555555555",
-        "guest_boottime_origin_ns": guest_origin, "guest_monotonic_origin_ns": guest_origin + d.NS,
-        "pid": 123, "uid": 0, "gid": 0, "euid": 0, "egid": 0,
-        "python": {}, "carrier_unit": {}, "process_limits": {},
-    }
-    host_origin = 2_000_000_000_000
-    # mapped = remaining - 17s.  Values below are exact millisecond multiples.
-    remaining = guest_duration_ns + 17 * d.NS
-    host_boot_deadline = host_origin + d.LIMITS["carrier_seconds"] * d.NS
-    host_mono_origin = host_origin + d.NS
-    host_mono_deadline = host_mono_origin + d.LIMITS["carrier_seconds"] * d.NS
-    bind = {
-        "schema": "local-hand-q2-core-carrier-bind/v1", "scope": d.SCOPE,
-        "session_id": d.SESSION, "hello_sha256": _sha(d.canonical(hello, newline=True)),
-        "consumption_sha256": "0" * 64, "package_basename": "only.lhfp",
-        "package_bytes": len(package), "package_sha256": _sha(package),
-        "host_boottime_origin_ns": host_origin, "host_monotonic_origin_ns": host_mono_origin,
-        "host_boottime_deadline_ns": host_boot_deadline,
-        "host_monotonic_deadline_ns": host_mono_deadline,
-        "host_boottime_bind_ns": host_boot_deadline - remaining,
-        "host_monotonic_bind_ns": host_mono_deadline - remaining,
-        "host_remaining_floor_ns": remaining, "clock_margin_ns": 2 * d.NS,
-        "local_final_reserve_ns": 15 * d.NS, "mapped_duration_ns": guest_duration_ns,
-        "guest_duration_cap_ns": 750 * d.NS, "guest_duration_ns": guest_duration_ns,
-    }
-    marker = {
-        "schema": d.CONSUMPTION_SCHEMA, "scope": d.SCOPE, "session_id": d.SESSION,
-        "baseline": d.BASELINE, "owner_decision": d.OWNER_DECISION, "closure": d.CLOSURE,
-        "implementation": manifest["implementation"], "candidate": d.CANDIDATE,
-        "package": {"basename": bind["package_basename"], "bytes": len(package),
-                    "sha256": _sha(package), "manifest_sha256": _sha(manifest_raw)},
-        "management_entry_binding_sha256": entry["management_entry_binding_sha256"],
-        "carrier_argv_sha256": entry["carrier_argv_sha256"],
-        "host_boottime_origin_ns": bind["host_boottime_origin_ns"],
-        "host_monotonic_origin_ns": bind["host_monotonic_origin_ns"],
-        "host_boottime_deadline_ns": bind["host_boottime_deadline_ns"],
-        "host_monotonic_deadline_ns": bind["host_monotonic_deadline_ns"],
-        "state": "CONSUMPTION_RECORD_COMPLETE",
-    }
-    bind["consumption_sha256"] = _sha(d.canonical(marker, newline=True))
-    bind_raw = d.canonical(bind, newline=True)
-    return {
-        "schema": d.CONTEXT_SCHEMA, "hello": hello, "bind": bind, "manifest": manifest,
-        "members": {path: memoryview(raw) for path, raw in blobs.items()},
-        "guest_deadlines": {"boot_id": hello["guest_boot_id"],
-                            "boottime_deadline_ns": hello["guest_boottime_origin_ns"] + guest_duration_ns,
-                            "monotonic_deadline_ns": hello["guest_monotonic_origin_ns"] + guest_duration_ns},
-        "stdin_bytes_received": 16 + len(bind_raw) + len(package),
-    }
+    # Shared synthetic transport fixture. This does not establish private
+    # approved sources or the unresolved host writer preimage.
+    spec = importlib.util.spec_from_file_location(
+        "_core_dispatch_v2_fixture", Path(__file__).with_name("test_e3_q2_core_dispatch_v2.py"))
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    return fixture.context_v2(guest_duration_ns=guest_duration_ns)
+
+
+@pytest.fixture
+def isolated_case_protocol(monkeypatch):
+    """Isolate case ordering from the separately tested host writer blocker.
+
+    Only this fixture supplies a synthetic consumption reference and isolates
+    synthetic private components from their separately tested strict parser.
+    It must not be mistaken for a releasable context or live acceptance result.
+    """
+    monkeypatch.setattr(d, "_consumption_info", lambda value: {
+        "basename": ".lhqcore-20261003a.carrier-consumed.json", "bytes": 1024,
+        "sha256": value["bind"]["consumption_sha256"], "state": "CONSUMPTION_RECORD_COMPLETE"})
+    monkeypatch.setattr(d, "_validate_approved_components", lambda *_args, **_kwargs: None,
+                        raising=False)
 
 
 def _source(path, role, raw=None, mode=384):
@@ -203,7 +145,8 @@ class FakeEffects:
                  "user_manager_cgroup": "/user.slice/user-1100.slice/user@1100.service"}
         return {"guest": guest, "programs": programs, "policies": policies,
                 "parents": parents, "filesystems": filesystems,
-                "capacity": capacity, "absence": absence}
+                "capacity": capacity, "absence": absence,
+                "binding": d._admission_binding(self.context)}
 
     def install(self, expected):
         self.log.append(("install", None))
@@ -456,9 +399,9 @@ def test_exact_member_and_phase_raw_source_closures_include_launcher_reservation
                 (path.split("/", 2)[-1], role) for path, role in d.phase_source_specs(case, phase)}
 
 
-def test_context_accepts_readonly_member_views_and_rejects_mutable_or_wrong_a_before_effects():
+def test_envelope_accepts_readonly_member_views_and_rejects_mutable_or_wrong_a_before_effects():
     value = context()
-    assert d._validate_context(value) is value
+    assert d._validate_context_envelope(value) is value
     changed = context()
     changed["manifest"]["baseline"]["commit"] = "0" * 40
     effects = FakeEffects(changed)
@@ -468,7 +411,7 @@ def test_context_accepts_readonly_member_views_and_rejects_mutable_or_wrong_a_be
     mutable = context()
     mutable["members"]["field/loader.py"] = memoryview(bytearray(b"loader"))
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_PACKAGE_MEMBER"):
-        d._validate_context(mutable)
+        d._validate_context_envelope(mutable)
 
 
 def test_default_high_level_effects_are_explicitly_non_releasable():
@@ -480,8 +423,9 @@ def test_default_high_level_effects_are_explicitly_non_releasable():
                     "boottime_ns": value["hello"]["guest_boottime_origin_ns"] + d.NS,
                     "monotonic_ns": value["hello"]["guest_monotonic_origin_ns"] + d.NS}
 
-    with pytest.raises(d.DispatchError, match="CORE_EFFECT_ADMISSION_POLICY_PREIMAGE_UNBOUND"):
-        d.dispatch(value, OnlyClock(value))
+    with pytest.raises(d.DispatchError, match="CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE"):
+        OnlyClock(value).admit({"hello": value["hello"], "manifest": value["manifest"],
+                                "guest_deadlines": value["guest_deadlines"]})
 
 
 def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
@@ -490,6 +434,7 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
         "schema": "local-hand-q2-core-field-readiness/v1",
         "scope": d.SCOPE,
         "releasable": False,
+        "protocol_blockers": ["consumption.host_writer_preimage_unbound"],
         "unbound_approved_inputs": [
             "admission.policy_expected_entities",
             "admission.historical_capacity_obligations",
@@ -497,7 +442,9 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
         ],
         "unimplemented_effects": [
             "admission.current_guest_collector",
-            "installation.protected_staging_and_native_build",
+            "installation.shared_pool_peak_accounting",
+            "installation.deadline_guarding",
+            "installation.program_execution_binding",
             "preparation.existing_account_completion",
             "execution.h01_normal",
             "execution.q4_running_cancel_subset",
@@ -510,7 +457,7 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
 
 def test_outer_deadline_is_exactly_origin_plus_900_seconds():
     value = context()
-    assert d._validate_context(value) is value
+    assert d._validate_context_envelope(value) is value
     for key in ("host_boottime_deadline_ns", "host_monotonic_deadline_ns"):
         changed = context()
         changed["bind"][key] += d.NS
@@ -547,7 +494,300 @@ def test_create_only_uses_held_parent_and_refuses_collision(tmp_path):
         os.close(parent)
 
 
-def test_deadline_gate_refuses_h01_intent_after_admission_install_without_refresh():
+def _installation_fixture(tmp_path, monkeypatch):
+    if os.geteuid() != 0 or os.getegid() != 0:
+        pytest.skip("protected installation fixtures require container root")
+    root = tmp_path / "install"
+    root.mkdir(mode=0o755)
+    state = tmp_path / "state"
+    state.mkdir(mode=0o755)
+    projection = b"{\"fixture\":true}\n"
+    monkeypatch.setitem(d.PROJECTION, "sha256", _sha(projection))
+    blobs = {"candidate/tests/e3_host/q2_prepare_build.py": b"# verified fixture\n",
+             "wheel/candidate.whl": b"wheel", "field/dispatcher.py": b"# dispatcher\n",
+             "private/approved-inputs.json": b"private-source-must-not-be-written"}
+    roles = {"candidate/tests/e3_host/q2_prepare_build.py": "candidate-worktree",
+             "wheel/candidate.whl": "wheel", "field/dispatcher.py": "field-code",
+             "private/approved-inputs.json": "approved-inputs"}
+    rows = [{"path": path, "role": roles[path], "mode": 384 if path.startswith("private/") else 420,
+             "bytes": len(raw), "sha256": _sha(raw)} for path, raw in sorted(blobs.items())]
+    value = {"manifest": {"members": rows, "locators": {
+        "install_parent": str(root), "state_parent": str(tmp_path / "state")}},
+        "members": blobs}
+    effects = d.FieldEffects(value)
+    effects._effect_guard = lambda: None
+    effects._verify_install_programs = lambda: None
+    info = root.stat()
+    effects._admission = {"parents": {"install": {"dev": info.st_dev, "ino": info.st_ino,
+        "mode": 493, "uid": 0, "gid": 0}}, "programs": {
+        "python": {"path": "/usr/bin/python3"}, "cc": {"path": "/usr/bin/cc"}},
+        "guest": {"ordinary_uid": 1100, "ordinary_gid": 1100}}
+    state_info = state.stat()
+    effects._admission["parents"]["state"] = {"dev": state_info.st_dev, "ino": state_info.st_ino,
+        "mode": 493, "uid": 0, "gid": 0}
+    verified = {"members_sha256": _sha(d.canonical(rows)), "payload_digest": "d" * 64}
+    effects.verify_install_inputs = lambda: verified
+    calls = []
+
+    def install_candidate(**kwargs):
+        calls.append(kwargs)
+        destination = Path(kwargs["destination"])
+        destination.mkdir(mode=0o755)
+        (destination / "source").mkdir(mode=0o755)
+        (destination / "source/.local-hand-source-projection.json").write_bytes(projection)
+        return {"status": "INSTALLED", "ordinary_verified": True, "fixture_provisioned": False,
+            "source": {"commit": d.CANDIDATE["commit"], "tree": d.CANDIDATE["tree"],
+                       "manifest_sha256": _sha(projection)},
+            "installed": {"payload_digest": "d" * 64},
+            "native_build": {"program": {"sha256": "e" * 64}}}
+
+    effects._candidate_helper = lambda name, checked: types.SimpleNamespace(
+        install_candidate=install_candidate)
+    expected = {"manifest": value["manifest"], "members": blobs, "admission": effects._admission}
+    return effects, expected, calls, root
+
+
+def test_real_installation_bridge_preserves_private_input_and_create_only(tmp_path, monkeypatch):
+    """Exercise real staging/files, with only the candidate external work stubbed."""
+    effects, expected, calls, root = _installation_fixture(tmp_path, monkeypatch)
+    installed = effects.install(expected)
+    assert installed["status"] == "INSTALLED"
+    assert installed["allocated_bytes"] > 0 and installed["allocated_inodes"] > 0
+    assert len(calls) == 1 and calls[0]["command"] == effects._installation_command
+    assert calls[0]["source_commit"] == d.CANDIDATE["commit"]
+    assert calls[0]["ordinary_uid"] == calls[0]["ordinary_gid"] == 1100
+    stage = root / d.STAGING_BASENAME
+    assert stage.stat().st_mode & 0o777 == 0o700
+    assert not (stage / "private").exists()
+    assert (root / d.INSTALL_BASENAME / "core-dispatcher.py").read_bytes() == b"# dispatcher\n"
+    assert effects._persistence_ready
+    carrier = tmp_path / "state" / d.SESSION / "carrier"
+    assert (carrier / "intents").is_dir()
+    source = effects.persist("carrier", "carrier/installation.json", b"{}\n", 384)
+    assert (carrier / "installation.json").read_bytes() == source["raw"]
+    assert not effects.readiness()["releasable"]  # installation is not full readiness
+    with pytest.raises(d.DispatchError, match="INSTALLATION_BINDING"):
+        effects.install(expected)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("name", [d.STAGING_BASENAME, d.INSTALL_BASENAME])
+def test_real_installation_bridge_rejects_collision_before_staging(tmp_path, monkeypatch, name):
+    effects, expected, calls, root = _installation_fixture(tmp_path, monkeypatch)
+    existing = root / name
+    existing.mkdir()
+    with pytest.raises(d.DispatchError, match="INSTALLATION_EXISTS"):
+        effects.install(expected)
+    assert list(root.iterdir()) == [existing]
+    assert calls == []
+
+
+def test_real_installation_bridge_rejects_changed_member_and_retains_partial(tmp_path, monkeypatch):
+    effects, expected, calls, root = _installation_fixture(tmp_path, monkeypatch)
+    expected["members"]["field/dispatcher.py"] = b"different"
+    with pytest.raises(d.DispatchError, match="INSTALL_MEMBER_CHANGED"):
+        effects.install(expected)
+    assert (root / d.STAGING_BASENAME).is_dir()
+    assert not (root / d.INSTALL_BASENAME).exists()
+    assert calls == []
+
+
+def test_real_installation_bridge_requires_bound_admission_before_mutation(tmp_path, monkeypatch):
+    effects, expected, calls, root = _installation_fixture(tmp_path, monkeypatch)
+    effects._admission = None
+    with pytest.raises(d.DispatchError, match="INSTALLATION_ADMISSION_REQUIRED"):
+        effects.install(expected)
+    assert list(root.iterdir()) == [] and calls == []
+
+
+def test_install_command_observes_real_exit_and_both_eof(tmp_path):
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    effects._effect_guard = lambda: None
+    result = effects._installation_command([
+        sys.executable, "-I", "-B", "-c", "import sys; print('ok'); print('detail',file=sys.stderr)"])
+    assert result == b"ok\n"
+    record = effects._install_commands[-1]
+    assert record["returncode"] == 0 and record["eof"] == ["stderr", "stdout"]
+    assert record["stderr"] == b"detail\n" and record["failure"] is None
+
+
+def test_install_command_output_limit_does_not_retain_sentinel(tmp_path):
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    effects._effect_guard = lambda: None
+    with pytest.raises(d.DispatchError, match="INSTALL_COMMAND_OUTPUT_LIMIT"):
+        effects._installation_command([
+            sys.executable, "-I", "-B", "-c", "import os; os.write(1,b'x'*32769)"])
+    record = effects._install_commands[-1]
+    assert sum(len(record[name]) for name in ("stdout", "stderr")) <= 32768
+    assert record["returncode"] is not None
+    assert len(effects._install_commands) == 1
+
+
+def test_install_command_requires_exit_even_after_both_eof(tmp_path):
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    observations = []
+
+    def guard():
+        observations.append(True)
+        if len(observations) >= 8:
+            raise d.DispatchError("CORE_DISPATCH_DEADLINE")
+
+    effects._effect_guard = guard
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c",
+            "import os,time; os.close(1); os.close(2); time.sleep(30)"])
+    record = effects._install_commands[-1]
+    assert record["eof"] == ["stderr", "stdout"]
+    assert record["returncode"] is not None and record["returncode"] != 0
+    assert record["failure"] == "CORE_DISPATCH_DEADLINE"
+
+
+def _guarded_installation_clock(effects):
+    outer = {"boot_id": "11111111-2222-3333-4444-555555555555",
+             "boottime_deadline_ns": 1000 * d.NS, "monotonic_deadline_ns": 2000 * d.NS}
+    effects.context["guest_deadlines"] = outer
+    observed = {"boot_id": outer["boot_id"],
+                "boottime_ns": outer["boottime_deadline_ns"] - d.REMOTE_FINAL_RESERVE_NS - 1,
+                "monotonic_ns": outer["monotonic_deadline_ns"] - d.REMOTE_FINAL_RESERVE_NS - 1}
+    effects.now = lambda: dict(observed)
+    effects._effect_guard = types.MethodType(d.FieldEffects._effect_guard, effects)
+    return outer, observed
+
+
+@pytest.mark.parametrize("clock", ["boottime_ns", "monotonic_ns"])
+def test_install_guard_preserves_remote_final_reserve_on_each_clock(clock):
+    effects = d.FieldEffects({})
+    outer, observed = _guarded_installation_clock(effects)
+    original_outer = copy.deepcopy(outer)
+    assert effects._effect_guard() == observed
+    observed[clock] += 1  # equality with outer minus 45 seconds is already too late
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._effect_guard()
+    assert effects.context["guest_deadlines"] == original_outer
+    assert d._clock(effects, outer) == observed  # original remote final window remains available
+
+
+def test_install_reserve_gate_precedes_any_staging_or_carrier_mutation(tmp_path, monkeypatch):
+    effects, expected, calls, root = _installation_fixture(tmp_path, monkeypatch)
+    _, observed = _guarded_installation_clock(effects)
+    observed["monotonic_ns"] += 1
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects.install(expected)
+    assert list(root.iterdir()) == []
+    assert list((tmp_path / "state").iterdir()) == []
+    assert calls == []
+
+
+def test_install_command_reserve_gate_precedes_process_creation(tmp_path, monkeypatch):
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    _, observed = _guarded_installation_clock(effects)
+    observed["boottime_ns"] += 1
+    monkeypatch.setattr(d.subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("late child"))
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c", "pass"])
+    assert effects._install_commands == []
+
+
+def test_running_install_child_is_reaped_at_reserve_boundary_and_files_retained(tmp_path, monkeypatch):
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    _, observed = _guarded_installation_clock(effects)
+    retained = tmp_path / "partial-install.log"
+    retained.write_bytes(b"retained-before-stop")
+    children = []
+    original = d.subprocess.Popen
+
+    def crossing_reserve(*args, **kwargs):
+        process = original(*args, **kwargs)
+        children.append(process)
+        observed["boottime_ns"] += 1
+        return process
+
+    monkeypatch.setattr(d.subprocess, "Popen", crossing_reserve)
+    with pytest.raises(d.DispatchError, match="CORE_DISPATCH_DEADLINE"):
+        effects._installation_command([sys.executable, "-I", "-B", "-c", "import time; time.sleep(30)"])
+    assert len(children) == 1 and children[0].returncode is not None
+    assert children[0].stdout.closed and children[0].stderr.closed
+    assert retained.read_bytes() == b"retained-before-stop"
+    assert effects._install_commands[0]["failure"] == "CORE_DISPATCH_DEADLINE"
+
+
+@pytest.mark.parametrize("error_number", [errno.EMFILE, errno.ENFILE])
+def test_install_selector_creation_failure_kills_reaps_and_closes_child_pipes(tmp_path, monkeypatch, error_number):
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    effects._effect_guard = lambda: None
+    children = []
+    original = d.subprocess.Popen
+
+    def tracked_process(*args, **kwargs):
+        process = original(*args, **kwargs)
+        children.append(process)
+        return process
+
+    def failed_selector():
+        raise OSError(error_number, "synthetic selector allocation failure")
+
+    monkeypatch.setattr(d.subprocess, "Popen", tracked_process)
+    monkeypatch.setattr(d.selectors, "DefaultSelector", failed_selector)
+    with pytest.raises(OSError) as caught:
+        effects._installation_command([sys.executable, "-I", "-B", "-c", "import time; time.sleep(30)"])
+    assert caught.value.errno == error_number
+    assert len(children) == 1
+    child = children[0]
+    assert child.returncode is not None and child.returncode != 0
+    assert child.stdout.closed and child.stderr.closed
+    assert len(effects._install_commands) == 1
+    assert effects._install_commands[0]["returncode"] == child.returncode
+
+
+def test_installation_program_identity_drift_precedes_staging(tmp_path, monkeypatch):
+    effects, expected, calls, root = _installation_fixture(tmp_path, monkeypatch)
+    program = tmp_path / "fixture-program"
+    program.write_bytes(b"\x7fELForiginal")
+    program.chmod(0o755)
+    _, pin = d.FieldEffects.stable_read(str(program), maximum=1024, expected_mode=0o755)
+    effects._admission["programs"]["python"] = dict(path=str(program), **pin)
+    program.write_bytes(b"\x7fELFtampered")
+    effects._verify_install_programs = types.MethodType(d.FieldEffects._verify_install_programs, effects)
+    with pytest.raises(d.DispatchError, match="INSTALL_PROGRAM_CHANGED"):
+        effects.install(expected)
+    assert list(root.iterdir()) == [] and calls == []
+
+
+def test_real_usage_refuses_to_report_unmeasured_children_and_storage():
+    with pytest.raises(d.DispatchError, match="USAGE_ACCOUNTING_INCOMPLETE"):
+        d.FieldEffects({}).usage()
+
+
+def test_candidate_helper_executes_held_verified_bytes_without_second_open(tmp_path):
+    if os.geteuid() != 0:
+        pytest.skip("protected helper fixture requires container root")
+    effects = d.FieldEffects({})
+    effects._candidate_root = str(tmp_path)
+    relative = "tests/e3_host/q2_prepare_build.py"
+    source = tmp_path / relative
+    source.parent.mkdir(parents=True)
+    raw = b"VALUE = 'verified'\n"
+    source.write_bytes(raw)
+    source.chmod(0o644)
+    original = effects.stable_read
+
+    def observed_then_replaced(path, **kwargs):
+        observed = original(path, **kwargs)
+        source.write_bytes(b"raise RuntimeError('a second pathname open executed replaced bytes')\n")
+        return observed
+
+    effects.stable_read = observed_then_replaced
+    module = effects._candidate_helper("q2_prepare_build", {"source_files": {relative: _sha(raw)}})
+    assert module.VALUE == "verified"
+
+
+def test_deadline_gate_refuses_h01_intent_after_admission_install_without_refresh(isolated_case_protocol):
     value = context(guest_duration_ns=314 * d.NS)
     effects = FakeEffects(value)
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_CASE_GATE"):
@@ -574,7 +814,7 @@ def test_plan_rejects_deadline_and_budget_replacement():
         d.validate_plan(case, intent, changed, deadlines)
 
 
-def test_full_injected_transcript_is_strictly_h01_then_q4_then_h11_and_frames_79_case_members():
+def test_isolated_case_transcript_is_strictly_h01_then_q4_then_h11_and_frames_79_case_members(isolated_case_protocol):
     value = context()
     effects = FakeEffects(value)
     frame = d.dispatch(value, effects)
@@ -604,7 +844,7 @@ def test_full_injected_transcript_is_strictly_h01_then_q4_then_h11_and_frames_79
         assert previous_verdict < following_intent
 
 
-def test_h11_forbidden_business_result_and_deadline_extension_are_rejected():
+def test_h11_forbidden_business_result_and_deadline_extension_are_rejected(isolated_case_protocol):
     value = context()
     effects = FakeEffects(value)
     original = effects.recover_h11

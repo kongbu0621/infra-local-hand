@@ -1,4 +1,5 @@
 import json
+import copy
 
 import pytest
 
@@ -58,8 +59,8 @@ def test_canonical_json_rejects_duplicate_float_noncanonical_and_newline_mismatc
         c.canonical({"a": 1.5})
 
 
-def test_all_fourteen_protocol_records_have_closed_top_level_keys():
-    assert len(c.SCHEMA_FIELDS) == 14
+def test_all_protocol_records_have_closed_top_level_keys():
+    assert len(c.SCHEMA_FIELDS) == 17
     for schema, fields in c.SCHEMA_FIELDS.items():
         value = {field: None for field in fields}
         value["schema"] = schema
@@ -91,8 +92,16 @@ def test_bind_clock_mapping_is_mechanical_and_nonrefreshable():
         c.validate_bind(changed)
 
 
-def test_hello_requires_real_carrier_limits_and_root_identity():
-    value = {"schema": "local-hand-q2-core-carrier-hello/v1", "scope": c.SCOPE,
+def hello_record():
+    aliases = {"shell": "/bin/bash", "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
+               "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
+    remote = {"account": "q1admin", "uid": 1000, "gid": 1000, "home": "/home/q1admin",
+        "login_shell": "/bin/bash", "parser_profile": "bash-noninteractive-c-v1",
+        "remote_tokens_sha256": "a" * 64, "remote_command_sha256": "b" * 64}
+    remote.update({role: {"path": alias, "resolved_path": alias, "symlink_chain": [],
+        "dev": 1, "ino": 2, "mode": 0o755, "uid": 0, "gid": 0, "nlink": 1,
+        "bytes": 3, "sha256": "3" * 64} for role, alias in aliases.items()})
+    return {"schema": c.HELLO_SCHEMA, "scope": c.SCOPE,
         "loader_sha256": "1" * 64, "bootstrap_sha256": "2" * 64,
         "guest_boot_id": "11111111-2222-3333-4444-555555555555",
         "guest_boottime_origin_ns": 1, "guest_monotonic_origin_ns": 2, "pid": 3,
@@ -107,11 +116,128 @@ def test_hello_requires_real_carrier_limits_and_root_identity():
             "restart": "no", "kill_mode": "control-group", "exit_type": "cgroup"},
         "process_limits": {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
             "nofile_hard": 256, "fsize_soft": 67_108_864, "fsize_hard": 67_108_864,
-            "umask": 0o077}}
+            "umask": 0o077}, "remote_management": remote}
+
+
+def test_hello_requires_real_carrier_limits_and_root_identity():
+    value = hello_record()
     assert c.validate_hello(value, loader_sha256="1" * 64, bootstrap_sha256="2" * 64) is value
     value["carrier_unit"]["memory_max"] += 1
     with pytest.raises(c.ContractError, match="CORE_HELLO_CARRIER"):
         c.validate_hello(value)
+
+
+@pytest.mark.parametrize("mutation", ["v1", "remote_missing", "python_alias", "extra_entity",
+    "home", "bool_uid", "oversized_entity", "duplicate_link", "token_mismatch"])
+def test_hello_v2_rejects_mixed_or_drifted_identity(mutation):
+    value = hello_record()
+    remote = value["remote_management"]
+    expectation = {"account": "q1admin", "home_path": "/home/q1admin", "login_shell": "/bin/bash",
+        "hello_schema": c.HELLO_SCHEMA, "parser_profile": "bash-noninteractive-c-v1",
+        "aliases": {key: remote[key]["path"] for key in ("shell", "sudo", "env", "systemd_run", "python")},
+        "remote_tokens_sha256": remote["remote_tokens_sha256"],
+        "remote_command_sha256": remote["remote_command_sha256"], "remote_entity_preimages_stage": "HELLO_JIT"}
+    if mutation == "v1":
+        value["schema"] = "local-hand-q2-core-carrier-hello/v1"
+    elif mutation == "remote_missing":
+        del value["remote_management"]
+    elif mutation == "python_alias":
+        remote["python"]["resolved_path"] = "/usr/bin/python3.12"
+    elif mutation == "extra_entity":
+        remote["sudo"]["current"] = True
+    elif mutation == "home":
+        remote["home"] = "/root"
+    elif mutation == "bool_uid":
+        remote["uid"] = True
+    elif mutation == "oversized_entity":
+        remote["sudo"]["bytes"] = 16777217
+    elif mutation == "duplicate_link":
+        remote["python"]["symlink_chain"] = [{"path": "/usr/bin/python3", "target": "python3.12"}] * 2
+    else:
+        remote["remote_tokens_sha256"] = "c" * 64
+    with pytest.raises(c.ContractError):
+        c.validate_hello(value, remote_expectation=expectation)
+
+
+def test_python_alias_and_resolved_identity_are_distinct_but_bound():
+    value = hello_record()
+    value["remote_management"]["python"].update(resolved_path="/usr/bin/python3.12",
+        symlink_chain=[{"path": "/usr/bin/python3", "target": "python3.12"}])
+    value["python"]["path"] = "/usr/bin/python3.12"
+    assert c.validate_hello(value) is value
+
+
+@pytest.mark.parametrize("mutation", ["extra", "old_a", "old_c", "old_d", "zero_d", "mismatch"])
+def test_amendment_requires_exact_approved_chain(mutation):
+    implementation = {"commit": "b" * 40, "tree": "c" * 40}
+    value = c.make_amendment(implementation)
+    if mutation == "extra":
+        value["scope"] = c.AMENDMENT_SCOPE
+    elif mutation == "old_a":
+        value["baseline"] = c.BASELINE
+    elif mutation == "old_c":
+        value["closure"] = c.CLOSURE
+    elif mutation == "old_d":
+        value["implementation"]["commit"] = "520f77f578b90d31870517e33e29bee42918f3c0"
+    elif mutation == "zero_d":
+        value["implementation"]["commit"] = "0" * 40
+    else:
+        value["implementation"]["tree"] = "d" * 40
+    with pytest.raises(c.ContractError):
+        c.validate_amendment(value, implementation=implementation)
+
+
+def test_admission_digests_bind_nine_distinct_preimages():
+    from e3_host.q2_core_policy_basis import remote_expectation
+    hello = hello_record()
+    expectation = remote_expectation(["/fixture/executable", "fixed"])
+    hello["remote_management"].update({key: expectation[key] for key in
+        ("remote_tokens_sha256", "remote_command_sha256")})
+    local = {key: {} for key in c.SCHEMA_FIELDS[c.MANAGEMENT_BINDING_SCHEMA]}
+    local.update(schema=c.MANAGEMENT_BINDING_SCHEMA, remote_expectation=expectation)
+    approved = {"schema": c.APPROVED_INPUTS_SCHEMA, "scope": c.SCOPE,
+        "amendment": c.make_amendment({"commit": "b" * 40, "tree": "c" * 40}),
+        **{key: {"fixture_component": key} for key in c.APPROVED_COMPONENTS}}
+    raw = c.canonical(approved, newline=True)
+    bound = c.admission_binding(raw, local, hello)
+    assert len(bound) == len(set(bound.values())) == 9
+    assert bound["approved_inputs_sha256"] == c.sha256(raw)
+    assert bound["approved_source_relation_sha256"] == c.sha256(c.canonical(approved["source_relation"]))
+    assert bound["local_management_binding_sha256"] == c.sha256(c.canonical(local, newline=True))
+    assert bound["hello_sha256"] == c.sha256(c.canonical(hello, newline=True))
+    assert bound["remote_management_sha256"] == c.sha256(c.canonical(hello["remote_management"]))
+    assert c.validate_admission_binding(bound, approved_inputs_raw=raw,
+        local_management_binding=local, hello=hello) is bound
+    wrong = copy.deepcopy(bound)
+    wrong["approved_source_relation_sha256"] = c.sha256(c.canonical(approved["source_relation"], newline=True))
+    with pytest.raises(c.ContractError, match="CORE_ADMISSION_BINDING"):
+        c.validate_admission_binding(wrong, approved_inputs_raw=raw, local_management_binding=local, hello=hello)
+
+
+@pytest.mark.parametrize("mutation", [None, "extra", "ns_zero", "pid_bool", "uid_drift", "groups_order", "groups_duplicate"])
+def test_bound_writer_identity_requires_complete_stable_credentials(mutation):
+    writer = {"schema": c.LOCAL_WRITER_SCHEMA, "user_namespace": {"dev": 1, "ino": 2},
+        "pid_namespace": {"dev": 1, "ino": 3}, "process": {"pid": 123, "starttime_ticks": 456},
+        "uid": dict.fromkeys(("real", "effective", "saved", "filesystem"), 1000),
+        "gid": dict.fromkeys(("real", "effective", "saved", "filesystem"), 1000),
+        "supplementary_gids": [27, 1000]}
+    if mutation is None:
+        assert c.validate_local_writer(writer) is writer
+        return
+    if mutation == "extra":
+        writer["root"] = True
+    elif mutation == "ns_zero":
+        writer["pid_namespace"]["ino"] = 0
+    elif mutation == "pid_bool":
+        writer["process"]["pid"] = True
+    elif mutation == "uid_drift":
+        writer["uid"]["filesystem"] = 0
+    elif mutation == "groups_order":
+        writer["supplementary_gids"] = [1000, 27]
+    else:
+        writer["supplementary_gids"] = [27, 27]
+    with pytest.raises(c.ContractError):
+        c.validate_local_writer(writer)
 
 
 def test_state_paths_allow_only_a_prefix_or_a_terminal_stop():

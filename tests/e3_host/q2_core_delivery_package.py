@@ -9,9 +9,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import importlib
 from pathlib import Path
 import re
 import struct
+import sys
+import types
 
 
 def _helper():
@@ -24,14 +27,39 @@ def _helper():
 
 c = _helper()
 
+
+def _approved_module():
+    # A private, fixed sibling package supports the validators' relative
+    # imports without adding the checkout or candidate to sys.path.
+    name = "_q2_core_package_validators"
+    directory = str(Path(__file__).parent.resolve())
+    if name not in sys.modules:
+        package = types.ModuleType(name)
+        package.__path__ = [directory]
+        sys.modules[name] = package
+    c.require(sys.modules[name].__path__ == [directory], "CORE_PACKAGE_VALIDATOR_ORIGIN")
+    return importlib.import_module(name + ".q2_core_approved_inputs")
+
+
+def _validate_approved_raw(raw, *, amendment=None):
+    value = c.validate_approved_inputs(c.document(raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True),
+                                       amendment=amendment)
+    try:
+        validated = _approved_module().validate(raw)
+    except ValueError as error:
+        raise c.ContractError(str(error)) from error
+    c.require(validated == value, "CORE_PACKAGE_APPROVED_INPUTS_VALIDATOR")
+    return value
+
 MANIFEST_FIELDS = {
     "schema", "scope", "rule", "baseline", "owner_decision", "closure", "implementation",
     "candidate", "wheel", "projection", "entry", "locators", "members", "limits",
+    "amendment", "approved_inputs",
 }
 ENTRY_FIELDS = {
     "loader_path", "loader_bytes", "loader_sha256", "bootstrap_path", "bootstrap_bytes",
     "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes", "dispatcher_sha256",
-    "carrier_argv_sha256", "management_entry_binding_sha256",
+    "carrier_argv_sha256", "local_management_binding_sha256",
 }
 LOCATOR_FIELDS = {
     "schema", "observation_record_sha256", "source_relation_sha256", "state_parent",
@@ -42,7 +70,7 @@ LOCATOR_FIELDS = {
 }
 MEMBER_FIELDS = {"path", "role", "mode", "bytes", "sha256", "origin"}
 ROLES = {
-    "candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code",
+    "candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code", "approved-inputs",
 }
 FIELD_PATHS = ("field/loader.py", "field/bootstrap.py", "field/dispatcher.py")
 FIELD_LIMITS = {
@@ -59,12 +87,21 @@ def _git_blob(raw):
 
 def member(path, role, mode, raw, origin):
     c.relative_path(path, "CORE_PACKAGE_MEMBER_PATH")
-    c.require(role in ROLES and mode in (0o644, 0o755) and type(raw) is bytes
+    c.require(role in ROLES and mode in ((0o600,) if role == "approved-inputs" else (0o644, 0o755))
+              and type(raw) is bytes
               and len(raw) <= c.PACKAGE_LIMITS["member_bytes"], "CORE_PACKAGE_MEMBER")
     return {
         "path": path, "role": role, "mode": mode, "bytes": len(raw),
         "sha256": c.sha256(raw), "origin": copy.deepcopy(origin),
     }
+
+
+def approved_input_member(raw, *, amendment=None):
+    value = _validate_approved_raw(raw, amendment=amendment)
+    header = {"path": c.APPROVED_INPUTS_PATH, "bytes": len(raw), "sha256": c.sha256(raw),
+              "approved_source_relation_sha256": c.sha256(c.canonical(value["source_relation"]))}
+    origin = {"kind": "approved-inputs", **{key: item for key, item in header.items() if key != "path"}}
+    return member(c.APPROVED_INPUTS_PATH, "approved-inputs", 0o600, raw, origin), header
 
 
 def field_member_blobs(loader, bootstrap, dispatcher, *, implementation_commit,
@@ -92,21 +129,21 @@ def field_member_blobs(loader, bootstrap, dispatcher, *, implementation_commit,
     return rows, blobs
 
 
-def locator_relation(locators, management_entry_binding_sha256):
-    c.digest(management_entry_binding_sha256, "CORE_PACKAGE_MANAGEMENT_BINDING")
+def locator_relation(locators, local_management_binding_sha256):
+    c.digest(local_management_binding_sha256, "CORE_PACKAGE_MANAGEMENT_BINDING")
     c.require(type(locators) is dict and set(locators) == LOCATOR_FIELDS,
               "CORE_PACKAGE_LOCATOR_FIELDS")
     relation_locators = {key: copy.deepcopy(value) for key, value in locators.items()
                          if key != "source_relation_sha256"}
     return {
         "schema": c.LOCATOR_RELATION_SCHEMA,
-        "management_entry_binding_sha256": management_entry_binding_sha256,
+        "local_management_binding_sha256": local_management_binding_sha256,
         "observation_record_sha256": locators["observation_record_sha256"],
         "locators": relation_locators,
     }
 
 
-def validate_locators(value, management_entry_binding_sha256):
+def validate_locators(value, local_management_binding_sha256):
     c.exact(value, LOCATOR_FIELDS, "CORE_PACKAGE_LOCATOR_FIELDS")
     c.require(value["schema"] == c.LOCATORS_SCHEMA and value["carrier_unit"] == c.CARRIER_UNIT,
               "CORE_PACKAGE_LOCATOR_AUTHORITY")
@@ -127,8 +164,8 @@ def validate_locators(value, management_entry_binding_sha256):
         c.require(type(value[key]) is str and value[key].isascii() and 1 <= len(value[key]) <= 255
                   and re.fullmatch(r"[A-Za-z0-9_.@:-]+", value[key]),
                   "CORE_PACKAGE_LOCATOR_UNIT")
-    relation = locator_relation(value, management_entry_binding_sha256)
-    expected = c.sha256(c.canonical(relation, newline=True))
+    relation = locator_relation(value, local_management_binding_sha256)
+    expected = c.sha256(c.canonical(relation))
     c.require(value["source_relation_sha256"] == expected, "CORE_PACKAGE_LOCATOR_RELATION")
     return value
 
@@ -152,6 +189,12 @@ def _validate_origin(item):
                   and origin["commit"] == c.CANDIDATE["commit"], "CORE_PACKAGE_ORIGIN")
         c.relative_path(origin["git_path"], "CORE_PACKAGE_ORIGIN")
         c.require(origin["git_path"].startswith(".git/"), "CORE_PACKAGE_ORIGIN")
+    elif role == "approved-inputs":
+        c.exact(origin, {"kind", "bytes", "sha256", "approved_source_relation_sha256"},
+                "CORE_PACKAGE_ORIGIN")
+        c.require(origin["kind"] == role and origin["bytes"] == item["bytes"]
+                  and origin["sha256"] == item["sha256"], "CORE_PACKAGE_ORIGIN")
+        c.digest(origin["approved_source_relation_sha256"], "CORE_PACKAGE_ORIGIN")
     else:
         c.exact(origin, {"kind", "basename", "sha256"}, "CORE_PACKAGE_ORIGIN")
         expected = c.WHEEL if role == "wheel" else c.PROJECTION
@@ -163,7 +206,9 @@ def _validate_origin(item):
 def validate_member(item):
     c.exact(item, MEMBER_FIELDS, "CORE_PACKAGE_MEMBER_FIELDS")
     path = c.relative_path(item["path"], "CORE_PACKAGE_MEMBER_PATH")
-    c.require(item["role"] in ROLES and item["mode"] in (0o644, 0o755), "CORE_PACKAGE_MEMBER")
+    c.require(item["role"] in ROLES and type(item["mode"]) is int
+              and item["mode"] in ((0o600,) if item["role"] == "approved-inputs" else (0o644, 0o755)),
+              "CORE_PACKAGE_MEMBER")
     c.integer(item["bytes"], 0, c.PACKAGE_LIMITS["member_bytes"], "CORE_PACKAGE_MEMBER")
     c.digest(item["sha256"], "CORE_PACKAGE_MEMBER")
     _validate_origin(item)
@@ -182,6 +227,9 @@ def validate_member(item):
         c.require(path == "artifacts/" + c.PROJECTION["basename"]
                   and item["bytes"] == c.PROJECTION["bytes"]
                   and item["sha256"] == c.PROJECTION["sha256"], "CORE_PACKAGE_PROJECTION")
+    elif role == "approved-inputs":
+        c.require(path == c.APPROVED_INPUTS_PATH and 0 < item["bytes"] <= c.APPROVED_INPUTS_LIMIT,
+                  "CORE_PACKAGE_APPROVED_INPUTS")
     else:
         c.require(path in FIELD_PATHS and item["bytes"] <= FIELD_LIMITS[path],
                   "CORE_PACKAGE_FIELD")
@@ -201,6 +249,13 @@ def validate_manifest(value):
     for key in ("commit", "tree"):
         c.commit(value["implementation"][key], "CORE_PACKAGE_IMPLEMENTATION")
     c.require(value["implementation"] != c.CLOSURE, "CORE_PACKAGE_IMPLEMENTATION")
+    c.validate_amendment(value["amendment"], implementation=value["implementation"])
+    approved = c.exact(value["approved_inputs"],
+        {"path", "bytes", "sha256", "approved_source_relation_sha256"}, "CORE_PACKAGE_APPROVED_FIELDS")
+    c.require(approved["path"] == c.APPROVED_INPUTS_PATH, "CORE_PACKAGE_APPROVED_INPUTS")
+    c.integer(approved["bytes"], 1, c.APPROVED_INPUTS_LIMIT, "CORE_PACKAGE_APPROVED_INPUTS")
+    for key in ("sha256", "approved_source_relation_sha256"):
+        c.digest(approved[key], "CORE_PACKAGE_APPROVED_INPUTS")
     entry = c.exact(value["entry"], ENTRY_FIELDS, "CORE_PACKAGE_ENTRY_FIELDS")
     expected_paths = {"loader": "field/loader.py", "bootstrap": "field/bootstrap.py",
                       "dispatcher": "field/dispatcher.py"}
@@ -208,9 +263,9 @@ def validate_manifest(value):
         c.require(entry[name + "_path"] == path, "CORE_PACKAGE_ENTRY_PATH")
         c.integer(entry[name + "_bytes"], 1, FIELD_LIMITS[path], "CORE_PACKAGE_ENTRY_LIMIT")
         c.digest(entry[name + "_sha256"], "CORE_PACKAGE_ENTRY_DIGEST")
-    for key in ("carrier_argv_sha256", "management_entry_binding_sha256"):
+    for key in ("carrier_argv_sha256", "local_management_binding_sha256"):
         c.digest(entry[key], "CORE_PACKAGE_ENTRY_DIGEST")
-    validate_locators(value["locators"], entry["management_entry_binding_sha256"])
+    validate_locators(value["locators"], entry["local_management_binding_sha256"])
     members = value["members"]
     c.require(type(members) is list and 1 <= len(members) <= c.PACKAGE_LIMITS["members"],
               "CORE_PACKAGE_MEMBER_COUNT")
@@ -221,9 +276,13 @@ def validate_manifest(value):
               and len(paths) == len(set(paths)), "CORE_PACKAGE_MEMBER_ORDER")
     by_role = {role: [item for item in members if item["role"] == role] for role in ROLES}
     c.require(by_role["candidate-worktree"] and by_role["candidate-git-metadata"]
-              and len(by_role["wheel"]) == len(by_role["projection"]) == 1
+              and len(by_role["wheel"]) == len(by_role["projection"]) == len(by_role["approved-inputs"]) == 1
               and {item["path"] for item in by_role["field-code"]} == set(FIELD_PATHS)
               and len(by_role["field-code"]) == 3, "CORE_PACKAGE_INVENTORY")
+    approved_row = by_role["approved-inputs"][0]
+    c.require(all(approved_row[key] == approved[key] for key in ("path", "bytes", "sha256"))
+              and approved_row["origin"] == {"kind": "approved-inputs", **{
+                  key: item for key, item in approved.items() if key != "path"}}, "CORE_PACKAGE_APPROVED_BINDING")
     for name, path in expected_paths.items():
         row = next(item for item in by_role["field-code"] if item["path"] == path)
         c.require((row["bytes"], row["sha256"], row["origin"]["commit"])
@@ -232,11 +291,12 @@ def validate_manifest(value):
     return value
 
 
-def make_manifest(*, implementation, entry, locators, members):
+def make_manifest(*, implementation, amendment, approved_inputs, entry, locators, members):
     value = {
         "schema": c.PACKAGE_SCHEMA, "scope": c.SCOPE, "rule": copy.deepcopy(c.RULE),
         "baseline": copy.deepcopy(c.BASELINE), "owner_decision": copy.deepcopy(c.OWNER_DECISION),
         "closure": copy.deepcopy(c.CLOSURE), "implementation": copy.deepcopy(implementation),
+        "amendment": copy.deepcopy(amendment), "approved_inputs": copy.deepcopy(approved_inputs),
         "candidate": copy.deepcopy(c.CANDIDATE), "wheel": copy.deepcopy(c.WHEEL),
         "projection": copy.deepcopy(c.PROJECTION), "entry": copy.deepcopy(entry),
         "locators": copy.deepcopy(locators),
@@ -244,6 +304,14 @@ def make_manifest(*, implementation, entry, locators, members):
         "limits": copy.deepcopy(c.PACKAGE_LIMITS),
     }
     return validate_manifest(value)
+
+
+def _validate_approved_member(manifest, raw):
+    value = _validate_approved_raw(raw, amendment=manifest["amendment"])
+    expected = manifest["approved_inputs"]
+    c.require(len(raw) == expected["bytes"] and c.sha256(raw) == expected["sha256"]
+              and c.sha256(c.canonical(value["source_relation"]))
+                  == expected["approved_source_relation_sha256"], "CORE_PACKAGE_APPROVED_BINDING")
 
 
 def build_package(manifest, member_bytes):
@@ -258,6 +326,8 @@ def build_package(manifest, member_bytes):
                   and c.sha256(raw) == item["sha256"], "CORE_PACKAGE_MEMBER_BYTES")
         if item["role"] in ("candidate-worktree", "field-code"):
             c.require(item["origin"]["blob"] == _git_blob(raw), "CORE_PACKAGE_MEMBER_BLOB")
+        if item["role"] == "approved-inputs":
+            _validate_approved_member(manifest, raw)
         body.extend(raw)
         c.require(len(body) <= c.PACKAGE_LIMITS["package_bytes"], "CORE_PACKAGE_LIMIT")
     result = c.PACKAGE_MAGIC + struct.pack(">Q", len(raw_manifest)) + raw_manifest + bytes(body)
@@ -284,6 +354,8 @@ def parse_package(raw):
         c.require(c.sha256(content) == item["sha256"], "CORE_PACKAGE_MEMBER_DIGEST")
         if item["role"] in ("candidate-worktree", "field-code"):
             c.require(item["origin"]["blob"] == _git_blob(content), "CORE_PACKAGE_MEMBER_BLOB")
+        if item["role"] == "approved-inputs":
+            _validate_approved_member(manifest, content)
         members[item["path"]] = content
     c.require(offset == len(raw), "CORE_PACKAGE_TRAILING_BYTES")
     return manifest, members

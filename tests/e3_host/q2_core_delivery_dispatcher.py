@@ -6,26 +6,29 @@ import another D helper.  ``dispatch`` owns all ordering and validation.  The
 dispatcher so the contract can be tested without substituting modeled case
 results for field evidence.
 
-The default effect implementation contains only clock and protected
-create-only/held-file primitives.  High-level admission, installation and case
-execution remain fail-closed until their real implementations are supplied in
-this same blob; this is intentional -- constructing a successful result is
-never a fallback.
+The default effects include protected file and bounded installation primitives.
+Current-guest admission, complete shared-pool accounting and case execution
+remain fail-closed at their named integration gaps. A successful result is
+never a fallback for missing field evidence.
 """
 from __future__ import annotations
 
 import base64
 import csv
+import copy
 import hashlib
 import importlib.util
 import io
 import json
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
 import resource
+import selectors
+import signal
 import stat
 import struct
+import subprocess
 import time
 import zipfile
 
@@ -66,6 +69,8 @@ def _shape(value, depth=0, count=None):
     else:
         _require(value is None or type(value) in (str, int, bool),
                  "CORE_DISPATCH_JSON_VALUE")
+        if type(value) is int:
+            _require(-(2**63) <= value < 2**63, "CORE_DISPATCH_JSON_INTEGER")
     return value
 
 
@@ -170,6 +175,27 @@ CLOSURE = {
     "commit": "a8dd077392ebb656770c8f94ca3b051e93fc296d",
     "tree": "b0d651ea5cbc2c408bb43ce6f3cdc5becd5170c6",
 }
+AMENDMENT_BASELINE = {
+    "commit": "0bdb49cae5586be60a7ba31d4a8e8367854d1e8c",
+    "tree": "ee15aa4fa26fd2e87b40f6fad72828265e5cf9bc",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md":
+            "e6b29c45c550f2ae8b3eaa91baad8d1382851dec6a69e2f807cce9233b14cdb1",
+        "docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md":
+            "7782e2fb89a28052978d3ce205278906b92752e3ba1add9cd634c0e7c0f92c96",
+        "docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md":
+            "52faaf002d9b5b9d88aef0b6f568e8ed56d2aa49eb0ea41e7eeb85d2d0b64cce",
+    },
+}
+AMENDMENT_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-CLOSURE-20261004-01",
+    "record_path": "docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_OWNER_DECISION.md",
+    "record_sha256": "800f01b3e7d4aeec77095bbc67196837427a7dbece7f1212bca266adb3d9ddbd",
+}
+AMENDMENT_CLOSURE = {
+    "commit": "7598886e15ed6911fe0e09e2f8d66203455f9057",
+    "tree": "7f2178942c126f883829a139b842cfc2c2e12159",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
@@ -217,12 +243,10 @@ PROJECTION_REQUIRED = PROJECTION_HARNESS | frozenset({
     "tools/local_hand_mcp/__init__.py",
 })
 
-# These are not facts that a field implementation may discover and silently
-# adopt.  The approved package schema carries only a digest of their private
-# source relation.  It does not carry the expected current policy entities or
-# the retained obligation rows needed to prove the admission totals and build
-# the candidate preparation plan.  Keep this distinction separate from code
-# that simply has not been implemented yet.
+# The v2 package now carries these private approved components. They remain
+# unbound to field admission until current-guest cross-checks are implemented.
+# The self-contained component parser below validates static relations; that
+# must not promote historical inputs into current observed facts.
 UNBOUND_APPROVED_INPUTS = (
     "admission.policy_expected_entities",
     "admission.historical_capacity_obligations",
@@ -230,7 +254,9 @@ UNBOUND_APPROVED_INPUTS = (
 )
 UNIMPLEMENTED_FIELD_EFFECTS = (
     "admission.current_guest_collector",
-    "installation.protected_staging_and_native_build",
+    "installation.shared_pool_peak_accounting",
+    "installation.deadline_guarding",
+    "installation.program_execution_binding",
     "preparation.existing_account_completion",
     "execution.h01_normal",
     "execution.q4_running_cancel_subset",
@@ -249,7 +275,19 @@ PLAN_SCHEMA = "local-hand-q2-core-case-plan/v1"
 RECEIPT_SCHEMA = "local-hand-q2-core-phase-receipt/v1"
 VERDICT_SCHEMA = "local-hand-q2-core-case-verdict/v1"
 PROOF_SCHEMA = "local-hand-q2-core-h11-recovery-proof/v1"
-CONSUMPTION_SCHEMA = "local-hand-q2-core-carrier-consumption/v1"
+CONSUMPTION_SCHEMA = "local-hand-q2-core-carrier-consumption/v2"
+PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v2"
+HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
+SESSION_SCHEMA = "local-hand-q2-core-dispatch-session/v2"
+APPROVED_INPUTS_PATH = "private/approved-inputs.json"
+APPROVED_INPUTS_LIMIT = 1048576
+REMOTE_ALIASES = {"shell": "/bin/bash", "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
+                  "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
+PROGRAM_FIELDS = {"path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"}
+ADMISSION_COMPONENTS = (
+    "source_relation", "policy_basis", "historical_capacity_obligations",
+    "retained_preparation", "reconciliation",
+)
 
 NS = 1_000_000_000
 REMOTE_FINAL_RESERVE_NS = 45 * NS
@@ -985,20 +1023,888 @@ def _validate_h11_proof(proof, case, sources, owner_deadline):
     return proof
 
 
-def _validate_context(context):
+# Self-contained source-less approved-input parser for amendment A §3.
+# Fixed public source descriptors are ordinary Python literals. No module from
+# the host, package candidate or retained evidence is imported or executed.
+# Private raw verification remains the host builder's duty before issuance.
+APPROVED_FIXED = {'horizon': {'archives': [{'basename': 'local-hand-normal-5ca9753-run-20260930b-evidence.zip',
+                           'batch': '20260930b',
+                           'bytes': 289401,
+                           'sha256': 'eeef31dc11bb277caec267cd11590654cb2e6d036485f941607dce0dc9af0ac1'},
+                          {'basename': 'local-hand-normal-5ca9753-run-20261001a-evidence.zip',
+                           'batch': '20261001a',
+                           'bytes': 297168,
+                           'sha256': 'd9e26cdbdd393a83cd83e396e560cbd1ea6b01f84dab10e58d0e1974c00f181d'},
+                          {'basename': 'local-hand-normal-5ca9753-run-20261001b-evidence.zip',
+                           'batch': '20261001b',
+                           'bytes': 308465,
+                           'sha256': 'ae969b050c6d20761af05b0b87c0be0e8c45d059fcd851db0c24f0b605736f43'},
+                          {'basename': 'local-hand-normal-b37935d-run-20261001c-evidence.zip',
+                           'batch': '20261001c',
+                           'bytes': 349790,
+                           'sha256': '2013877a266b87509579ea6b05e539cfb562fbbb2e11275c8a80100cb1ad0264'},
+                          {'basename': 'local-hand-normal-7780364-run-20261001d-evidence.zip',
+                           'batch': '20261001d',
+                           'bytes': 356297,
+                           'sha256': '6707359a14565747a673db4862d435d56e4967fc50aded26e3ac1ec93e90dd5c'},
+                          {'basename': 'local-hand-system-manager-1a900e4-run-20261002-evidence.zip',
+                           'batch': '20261001e',
+                           'bytes': 129584,
+                           'sha256': 'f352d1d8bc70d3d4c419c21de493efca2c51a3453dc90d04fba3ec654e7e33b6'}],
+             'predecessor': {'baseline': 'ae50aea2639c32021794ecb70730f4b9e781c8d6',
+                             'candidate': '1a900e4a38e9567655f21cbf3c3f17941de1a8d5',
+                             'closure': '23702d6e55396d7941389817ab875a4610d3e142',
+                             'corrected_package': {'basename': 'local-hand-system-manager-1a900e4-20261001e-corrected.zip',
+                                                   'bytes': 3887651,
+                                                   'sha256': '5805dcd2a45f150f0e5b7062a17b46137d53e889e1ea160601d7c75fb529e886'},
+                             'event': 'LH-Q2-SYSTEM-MANAGER-REPAIR-CLOSURE-20261001-01',
+                             'evidence_package': {'basename': 'local-hand-system-manager-1a900e4-run-20261002-evidence.zip',
+                                                  'bytes': 129584,
+                                                  'sha256': 'f352d1d8bc70d3d4c419c21de493efca2c51a3453dc90d04fba3ec654e7e33b6'},
+                             'implementation': '6470592cc29efb45b8f38172b8e69a48fcfeab2a'},
+             'snapshot': {'bytes': 21086,
+                          'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0047-historical-issued-obligations.json',
+                          'rows': 24,
+                          'rows_bytes': 11433,
+                          'rows_sha256': '82bdb7a94c85a7450a45d9ee7dff2baa4e5fef7b8a7a7d8f7787a0cb7bea358e',
+                          'sha256': '9e0bfb17a58c8fec064601ef675e391a8ef358269b775daca60f7ea47150cb8e',
+                          'total_bytes': 626790400,
+                          'total_inodes': 32113},
+             'source_members': [{'batch': '20260930b',
+                                 'bytes': 13383,
+                                 'path': 'root/q2-normal-setup-20260930b/resume-plan.json',
+                                 'role': 'plan',
+                                 'sha256': '6836678f2c2a5bc320bb18f40344cd83e162e53801f08140e78d87c75f3e1363'},
+                                {'batch': '20260930b',
+                                 'bytes': 59349,
+                                 'path': 'root/q2-normal-setup-20260930b/observed.json',
+                                 'role': 'observed',
+                                 'sha256': '1458436d63130589b42cea02d438c92c5d151f041e49d76be074fe1d5daa159e'},
+                                {'batch': '20261001a',
+                                 'bytes': 15072,
+                                 'path': 'root/q2-normal-setup-20261001a/resume-plan.json',
+                                 'role': 'plan',
+                                 'sha256': '50f1c8c157d0515f4dd27337c474d2345e010f63271e3866b1d32d96bca0c8f5'},
+                                {'batch': '20261001a',
+                                 'bytes': 62307,
+                                 'path': 'root/q2-normal-setup-20261001a/observed.json',
+                                 'role': 'observed',
+                                 'sha256': 'afaf940b1a0671c152d951e0a8ba2ee670333aef8561e76337b558ca1b8dab18'},
+                                {'batch': '20261001b',
+                                 'bytes': 16838,
+                                 'path': 'root/q2-normal-setup-20261001b/resume-plan.json',
+                                 'role': 'plan',
+                                 'sha256': '998dc901303967660c5bcc19768d03002a00eb594f260cdbbf598fc3acefdd89'},
+                                {'batch': '20261001b',
+                                 'bytes': 65268,
+                                 'path': 'root/q2-normal-setup-20261001b/observed.json',
+                                 'role': 'observed',
+                                 'sha256': 'c2dd6ab190a8e96fd98ea93a0b1f5fb88120f6d482137500e8491db07383df6c'},
+                                {'batch': '20261001c',
+                                 'bytes': 18595,
+                                 'path': 'root/q2-normal-setup-20261001c/resume-plan.json',
+                                 'role': 'plan',
+                                 'sha256': '7144977af9f3ff874f4e41317420a01b40fa601c9c420e288c9c1fab2f55b9a5'},
+                                {'batch': '20261001c',
+                                 'bytes': 68505,
+                                 'path': 'root/q2-normal-setup-20261001c/observed.json',
+                                 'role': 'observed',
+                                 'sha256': '7f62ccabf4063d292b443c034bfb3c4fbd4d0fdb14b633e6003986ae6a0ae14b'},
+                                {'batch': '20261001c',
+                                 'bytes': 519,
+                                 'path': 'opt/local-hand-resume-5ca9753-20261001c/prepare-log/0006-code-update-intent.json',
+                                 'role': 'code-intent',
+                                 'sha256': '2ae23f8d219b265fdb98c8e54d678ca540499b9e1390897b9f8a26ae08b11fd1'},
+                                {'batch': '20261001c',
+                                 'bytes': 45338,
+                                 'path': 'opt/local-hand-code-20261001c/installation.json',
+                                 'role': 'installation',
+                                 'sha256': '56cd30fe64c26923a0bf4aab10f4dab6f8c7793883fa83f056c50d23246a4893'},
+                                {'batch': '20261001d',
+                                 'bytes': 20429,
+                                 'path': 'root/q2-normal-setup-20261001d/resume-plan.json',
+                                 'role': 'plan',
+                                 'sha256': '35aa2fb4fc0f5fc5ea00f1e895fbee330d1fe2825f46cb7f3ca0ddfbda0f85e8'},
+                                {'batch': '20261001d',
+                                 'bytes': 72163,
+                                 'path': 'root/q2-normal-setup-20261001d/observed.json',
+                                 'role': 'observed',
+                                 'sha256': 'b15625827d845ab7d54e8fef42c63a8bc85ce18d5c3ee3289a178d536cd80e88'},
+                                {'batch': '20261001d',
+                                 'bytes': 519,
+                                 'path': 'opt/local-hand-resume-5ca9753-20261001d/prepare-log/0006-code-update-intent.json',
+                                 'role': 'code-intent',
+                                 'sha256': '30e68dd477eaafac70c1142dc567a70c028eaaf05b1696008745e4e731b3bfbd'},
+                                {'batch': '20261001d',
+                                 'bytes': 45338,
+                                 'path': 'opt/local-hand-code-20261001d/installation.json',
+                                 'role': 'installation',
+                                 'sha256': 'df92885a74f4df2b14e06aa4420c2fb876fe987e3d35a722574a37718549f853'},
+                                {'batch': '20261001e',
+                                 'bytes': 47699,
+                                 'path': 'guest/opt/local-hand-code-20261001e/installation.json',
+                                 'role': 'installation',
+                                 'sha256': '1bc8d61538d0c48f604e3bf2fb7002b481bb62e7f0c3c7ffc433c0818ef5b1f5'},
+                                {'batch': '20261001e',
+                                 'bytes': 1402,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/client-log/intent.json',
+                                 'role': 'client-intent',
+                                 'sha256': 'ab57768eb5efe19015c4dcc4e2d4f79db7901684b932c91f65444d2cbd2e1377'},
+                                {'batch': '20261001e',
+                                 'bytes': 305,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/client-log/result.json',
+                                 'role': 'client-result',
+                                 'sha256': 'ef898352c22ffc601f2617327918a0f0baa45d45def99e487bde45e41e1878cd'},
+                                {'batch': '20261001e',
+                                 'bytes': 331,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/consumed.json',
+                                 'role': 'consumed',
+                                 'sha256': 'ba29f6c3dcfab18708f1d67de58a5bb8bff1918b4d01c3fd49b67ee1c70156ee'},
+                                {'batch': '20261001e',
+                                 'bytes': 523,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/staged.json',
+                                 'role': 'staged',
+                                 'sha256': '63fd8aa4b3f8cc406b47b94109d547d4ecdc85d147034e45b068e65e222a08ae'},
+                                {'batch': '20261001e',
+                                 'bytes': 895,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0006-code-update-intent.json',
+                                 'role': 'code-intent',
+                                 'sha256': 'c4e45fc7fa217722fe57f7576d85c72181ad93a9cdf422e0a3919b77a1493a48'},
+                                {'batch': '20261001e',
+                                 'bytes': 326,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0019-code-update-complete.json',
+                                 'role': 'code-complete',
+                                 'sha256': '896066511a5a5656073aa858a6e4c0c23e2b1550faef38597ee7e0603854c97e'},
+                                {'batch': '20261001e',
+                                 'bytes': 30813,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0023-plan.json',
+                                 'role': 'plan',
+                                 'sha256': '85633b837718282ba6590b7a6679d51aa60addfb0f5be39ea929af83de4a45c1'},
+                                {'batch': '20261001e',
+                                 'bytes': 619,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0046-original-budget-bounds.json',
+                                 'role': 'original-budget',
+                                 'sha256': '6e19304516853a0b3c4d89deb4a4011e9a3ea72d287904ef7dfd5b484ff97621'},
+                                {'batch': '20261001e',
+                                 'bytes': 21086,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0047-historical-issued-obligations.json',
+                                 'role': 'historical-snapshot',
+                                 'sha256': '9e0bfb17a58c8fec064601ef675e391a8ef358269b775daca60f7ea47150cb8e'},
+                                {'batch': '20261001e',
+                                 'bytes': 94533,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0048-resource-preflight.json',
+                                 'role': 'preflight',
+                                 'sha256': 'eabe18b207e68967e65b9dc9d114466aad7284063cff6e90814938a0ae9fb086'},
+                                {'batch': '20261001e',
+                                 'bytes': 943,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0053-failure.json',
+                                 'role': 'failure',
+                                 'sha256': '79ccccf1745bcad29089c381e692ca777c7fc2165cd31cc1f54ed825db545b85'}]},
+ 'later': [{'batch': '20261002a',
+            'evidence': {'path': 'docs/a2-execution/Q2_OLD_PRODUCER_ADMISSION_RETRY_IMPLEMENTATION_REVIEW.md',
+                         'sha256': 'de276883d2a0b1a68009ef994bf24211ac0adb4fe5a5053da70c349e241c7d9d'},
+            'scope': 'LH-Q2-OLD-PRODUCER-ADMISSION-RETRY-v1',
+            'state': 'NOT_ISSUED'},
+           {'batch': 'namespace_delivery',
+            'evidence': {'path': 'docs/a2-execution/Q2_NAMESPACE_FIXTURE_DELIVERY_IMPLEMENTATION_REVIEW.md',
+                         'sha256': 'bd5d530652380777bca60905b11ef56caa760c794fee611748ae7c4f1aee5026'},
+            'scope': 'LH-Q2-NAMESPACE-FIXTURE-DELIVERY-v1',
+            'state': 'NOT_ISSUED'},
+           {'batch': 'core_20261003a',
+            'evidence': {'path': 'docs/a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md',
+                         'sha256': 'e64f1be1287ac8bed5f582b01e179b66dd79ead0eb91e8ccf1c71d3ea0095da0'},
+            'scope': 'LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1',
+            'state': 'NOT_ISSUED'}],
+ 'legacy': {'archive': {'basename': 'q2-history-readonly-return-20260927T151622+0800.tar.gz',
+                        'bytes': 38014204,
+                        'sha256': '869a859fcbe7a952d11e22db6f6534c9b9a3025cec27471fe3e2a054a6a96018'},
+            'chain': {'baseline': 'c65ff4e25ea6373aabf8db25d304ee7614b96eb5',
+                      'closure': '1491765c64c60a63d6bddf10a049308e404885ca',
+                      'implementation': '8fd84521cdd25b455ff148e0c0fed6b5d8e39fe1',
+                      'tree': '5fb64e578d06e2954c1eedbc1b15e00069dc32a4'},
+            'inventory': {'blob_bytes': 5686734,
+                          'forward_entries': 610,
+                          'old_pins': 15,
+                          'reconciliation_rows': 7,
+                          'reservation_inputs': 10,
+                          'trees': 12,
+                          'typed_sources': 47,
+                          'unique_blobs': 48},
+            'manifest': {'bytes': 34010,
+                         'sha256': 'f705d3c77885887c7b6f799f4721dfefd0e9c588dbd11085cc8456fe623c6d40'},
+            'producer_blobs': {'reconciliation_billing': '46f753e39f0185698f105dbf5b2a48941c2cfa42',
+                               'reconciliation_sources': 'b5f904ee7053836be5f57d5e72574fa86f73d97a',
+                               'startup_retry': '8057e5c34c228b456a7ebbb1a1c06c631e499328'}},
+ 'locator': {'carriers': [{'bytes': 1835,
+                           'role': 'collection_capture',
+                           'sha256': '56c29ed9ffe2cf79235baca6b000afaec9ae84b51b2356c664e44d6b34a4fb18'},
+                          {'bytes': 20164157,
+                           'role': 'guest_raw',
+                           'sha256': '078b4a5bc198caa42760c31d2a4f8d0be1dd3564090ea316c799bfe6d9e653f7'},
+                          {'bytes': 3419814,
+                           'role': 'guest_manifest',
+                           'sha256': '82c8c13e250ac0be0957b766e84827514dd50cc5cc53d461c126d6dd0523f735'},
+                          {'bytes': 922584,
+                           'role': 'guest_inventory',
+                           'sha256': '0b1f337f219d3b8d06f2d2a22fc30d2d034afef40decfa7db26051c0ea009a62'}],
+             'historical_only': True,
+             'mappings': [{'pointer': '/directories/state/path',
+                           'role': 'state_parent',
+                           'source_role': 'original_plan',
+                           'transform': 'dirname'},
+                          {'pointer': '/mounts/quota/path',
+                           'role': 'quota_parent',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/candidate/destination',
+                           'role': 'install_parent',
+                           'source_role': 'original_plan',
+                           'transform': 'dirname'},
+                          {'pointer': '/mounts/journal/path',
+                           'role': 'journal_parent',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/mounts/evidence/path',
+                           'role': 'evidence_parent',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/account/name',
+                           'role': 'ordinary_user',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/account/name',
+                           'role': 'ordinary_group',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/facts/parents/manager/unit',
+                           'role': 'user_manager_unit',
+                           'source_role': 'retry_preparation',
+                           'transform': 'identity'},
+                          {'pointer': '/parents/query/unit',
+                           'role': 'query_parent_unit',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/parents/controller/unit',
+                           'role': 'controller_parent_unit',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/parents/management/unit',
+                           'role': 'management_parent_unit',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/parents/supervisor/unit',
+                           'role': 'supervisor_parent_unit',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/parents/ordinary/unit',
+                           'role': 'ordinary_parent_unit',
+                           'source_role': 'original_plan',
+                           'transform': 'identity'},
+                          {'pointer': '/facts/parents/ordinary/path',
+                           'role': 'retained_ordinary_parent_path',
+                           'source_role': 'retry_preparation',
+                           'transform': 'identity'},
+                          {'pointer': '/retained',
+                           'role': 'retained_paths',
+                           'source_role': 'original_plan',
+                           'transform': 'source_order_identity_array'},
+                          {'pointer': '/retained_domains',
+                           'role': 'retained_domains',
+                           'source_role': 'original_plan',
+                           'transform': 'source_order_identity_array'}],
+             'members': [{'bytes': 9814,
+                          'carrier_role': 'guest_raw',
+                          'path': 'root/q2-transfer-20260926a/plan.json',
+                          'role': 'original_plan',
+                          'sha256': 'efff343c7967dcc43c54420accafb2e91a5b4fb563419b00a86d41a58817fa7c'},
+                         {'bytes': 61119,
+                          'carrier_role': 'guest_raw',
+                          'path': 'root/q2-retry-setup-20260927a/retry-preparation.json',
+                          'role': 'retry_preparation',
+                          'sha256': '586f0fd79ceb869a8e1ed238d925b6cdbf2cceaddf233687df81ea320bded4fb'}],
+             'schema': 'local-hand-q2-core-locator-source-relation/v1',
+             'zero_mismatch': True},
+ 'placement': {'delta_profile': 'FIXED_SINGLE_SELECTOR_POOL_FULL_COMMITMENT',
+               'normalized_rows_bytes': 4549,
+               'normalized_rows_sha256': 'b6153d8c45e5b009bcc1f878406565e08bcf7c7d07c17f18361b562bf1096703',
+               'schema': 'local-hand-q2-core-obligation-placement/v1',
+               'snapshot_profile': 'PINNED_ROLE_POOLS_FULL_COMMITMENT_PER_DISTINCT_LIVE_POOL',
+               'source_member': {'batch': '20261001e',
+                                 'bytes': 94533,
+                                 'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0048-resource-preflight.json',
+                                 'pointer': '/capacity_observed/historical_physical_charges',
+                                 'role': 'preflight',
+                                 'sha256': 'eabe18b207e68967e65b9dc9d114466aad7284063cff6e90814938a0ae9fb086'},
+               'source_rows': 24,
+               'source_rows_bytes': 4327,
+               'source_rows_sha256': 'edcb0bb95508c15e5b3fb60d679c46c93961e95d8e802a338fc1f4397c18ee0d',
+               'split_allowed': False,
+               'zero_mismatch': True},
+ 'producer': {'adoption_baseline': '68424df2ddbf812b9479ffa7a64dcaa59a2a9f76',
+              'adoption_closure': '179652cb9487163d83c004d358e4d4b49409694c',
+              'adoption_implementation': '4b71824a4660723d064969cbf0c39cd4325dd62a',
+              'blob': '659df7ee2bab92413fa41d348c17219e4d9de0c7',
+              'categories': [{'category': 'code_pool', 'commitment': {'bytes': 67108864, 'inodes': 4096}},
+                             {'category': 'management', 'commitment': {'bytes': 33554432, 'inodes': 1024}},
+                             {'category': 'state', 'commitment': {'bytes': 8388608, 'inodes': 1536}},
+                             {'category': 'journal', 'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'capture', 'commitment': {'bytes': 20971520, 'inodes': 384}},
+                             {'category': 'quota.work-a', 'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'quota.evidence-a',
+                              'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'quota.temporary-a',
+                              'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'quota.work-b', 'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'quota.evidence-b',
+                              'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'quota.temporary-b',
+                              'commitment': {'bytes': 1048576, 'inodes': 128}},
+                             {'category': 'quota.retained_store',
+                              'commitment': {'bytes': 1048576, 'inodes': 128}}],
+              'commit': '661e96772c64433d1cd0eebf122e165781d8c11c',
+              'device_selectors': {'capture': 'evidence_parent',
+                                   'code_pool': 'install_parent',
+                                   'journal': 'journal_parent',
+                                   'management': 'state_parent',
+                                   'quota.evidence-a': 'quota_parent',
+                                   'quota.evidence-b': 'quota_parent',
+                                   'quota.retained_store': 'quota_parent',
+                                   'quota.temporary-a': 'quota_parent',
+                                   'quota.temporary-b': 'quota_parent',
+                                   'quota.work-a': 'quota_parent',
+                                   'quota.work-b': 'quota_parent',
+                                   'state': 'state_parent'},
+              'file_sha256': 'f2f4b57b4a34bbfabe483b20865275246cdf35d3497a1c24b375deb7a508ae1b',
+              'path': 'tests/e3_host/q2_old_producer_admission_retry_accounting.py',
+              'tree': '2e977e9887f9e6e1a97b86082d1664772c0f7e3b'},
+ 'quota': {'project_ids': [10001,
+                           10002,
+                           10003,
+                           10004,
+                           11001,
+                           11002,
+                           11003,
+                           11004,
+                           11005,
+                           11006,
+                           11007,
+                           12001,
+                           12002,
+                           12003,
+                           12004,
+                           12005,
+                           12006,
+                           12007,
+                           12011,
+                           12012,
+                           12013,
+                           12014,
+                           12015,
+                           12016,
+                           12017,
+                           12021,
+                           12022,
+                           12023,
+                           12024,
+                           12025,
+                           12026,
+                           12027,
+                           12031,
+                           12032,
+                           12033,
+                           12034,
+                           12035,
+                           12036,
+                           12037,
+                           12041,
+                           12042,
+                           12043,
+                           12044,
+                           12045,
+                           12046,
+                           12047],
+           'relation': 'UNMATCHED_CONFIGURED_HARD_LIMITS_ADDED_ONCE',
+           'rows_sha256': '95b59d878d643bfbce2eef6ce88145bf1086058694dee127b3de49d13319bde0',
+           'schema': 'local-hand-q2-core-configured-quota-liability/v1',
+           'source_member': {'batch': '20261001e',
+                             'bytes': 94533,
+                             'path': 'guest/opt/local-hand-resume-5ca9753-20261001e/prepare-log/0048-resource-preflight.json',
+                             'pointer': '/capacity_observed/quota_inventory',
+                             'role': 'preflight',
+                             'sha256': 'eabe18b207e68967e65b9dc9d114466aad7284063cff6e90814938a0ae9fb086'},
+           'total_bytes': 249561088,
+           'total_inodes': 17792,
+           'zero_mismatch': True}}
+
+APPROVED_ADOPTED_RAW = (('second-bootstrap-intent', 556, '58992ee2ff0d66fec5e10c7e138e8de4529089ca35d76f71200db1a05ac160b6'),
+ ('second-bootstrap-attestation', 7766, 'cfc6c07265b4edc6d0b26e67a6ca9cfc19c652b4d011a2386b9bd95e945a34cb'))
+
+APPROVED_RETAINED_PINS = {'domains': (267, '45c231e6f4dd1360888b9e4e3f790ce175440b8af89231801feeede2b21a2c4c'),
+ 'object': (1484, '24772cefec5e2c51364a1f4d1dadf692a2a666999077772138201004f811a808'),
+ 'paths': (1196, '1ea38f024d0ed06ec5d801ac9fc1b99f4938366d3cc979d8f5ba3b9eddd013c6')}
+
+APPROVED_RECONCILIATION = {'applied': [],
+ 'record_basenames': ['evidence-adoption.json',
+                      'reconciliation-intent.json',
+                      'live-attestation.json',
+                      'reconciliation-record.json',
+                      'reconciliation-seal.json'],
+ 'released_bytes': 0,
+ 'released_inodes': 0,
+ 'state': 'NO_ELIGIBLE_RETAINED_SEALED_RECORD_SOURCE'}
+
+APPROVED_VECTOR_PINS = {'delta': (6678, 'b8af1d3264b77b9142a48288482c26d2eafa894523f85baa0fc71d595da90352'),
+ 'effective': (18110, '7c2786f240144e7a2de90bc9a70561089a7334559bd8e962371132cf1db806e9'),
+ 'placement_normalized': (4549, 'b6153d8c45e5b009bcc1f878406565e08bcf7c7d07c17f18361b562bf1096703'),
+ 'placement_source': (4327, 'edcb0bb95508c15e5b3fb60d679c46c93961e95d8e802a338fc1f4397c18ee0d'),
+ 'quota': (2997, '95b59d878d643bfbce2eef6ce88145bf1086058694dee127b3de49d13319bde0'),
+ 'row_relation': (462, '89dea12770f6c6ab19b901adcf4c4d42e6b8b42300c1ca470b1ec7ac03ec47e6'),
+ 'snapshot': (11433, '82bdb7a94c85a7450a45d9ee7dff2baa4e5fef7b8a7a7d8f7787a0cb7bea358e')}
+
+APPROVED_PREFIX_SHA256 = '09f107f265986afd0dcc0535de84d2df37ac47ddeff78d20569c2bb8a5513e88'
+
+APPROVED_TAIL_SHA256 = '60885e762f1dfe007f43b6ae1e056dabdce9b1e142688741d333f806f6952a68'
+
+APPROVED_TOTALS = {'configured_quota_bytes': 249561088,
+ 'configured_quota_inodes': 17792,
+ 'delta_bytes': 138412032,
+ 'delta_inodes': 8064,
+ 'effective_bytes': 765202432,
+ 'effective_inodes': 40177,
+ 'snapshot_bytes': 626790400,
+ 'snapshot_inodes': 32113}
+
+APPROVED_POLICY_SOURCE_PINS = {'fixture_cloud_config': '5b81deabefb7bc70aa6ee13b72053d65556fac1e400b5a37919ca1f90e4b6523',
+ 'identity_public': 'e67e15549d3e8586af936108f666612841d31612705236dd8ce265a3da18b25c',
+ 'known_hosts': 'd1025c074e532f29534fcab1d10ec1bc2f38d2137173c74d0bc921bbab420bbd'}
+
+def _approved_require(ok, code):
+    _require(ok, "CORE_DISPATCH_APPROVED_" + code)
+
+
+def _approved_exact(value, fields):
+    return _exact(value, fields, "CORE_DISPATCH_APPROVED_FIELDS")
+
+
+def _approved_absolute(value):
+    return _absolute_text(value, "CORE_DISPATCH_APPROVED_PATH")
+
+
+def _approved_hash(value):
+    return _sha(canonical(value))
+
+
+def _approved_equal(value, expected, code):
+    _approved_require(canonical(value) == canonical(expected), code)
+
+
+def _approved_vector(value, pin, code):
+    raw = canonical(value)
+    _approved_require((len(raw), _sha(raw)) == pin, code)
+
+
+def _approved_union(relation):
+    obligations = relation["obligations"]
+    return dict(schema="local-hand-q2-core-source-union/v1", locator=relation["locator"],
+        **{key: obligations[key] for key in ("legacy_20260927", "horizon_20261001e", "producer",
+                                            "configured_quota_liability", "placement")},
+        later_nonissuance=relation["later_nonissuance"])
+
+
+def _approved_adoption(value):
+    _approved_exact(value, {"current_owner_supplied_raw", "forward_baseline_entries", "disclosed_atime_changes",
+                    "run_permission_adopted", "released_bytes", "released_inodes"})
+    _approved_require(value["run_permission_adopted"] is False and type(value["released_bytes"]) is int
+             and type(value["released_inodes"]) is int and value["released_bytes"] == value["released_inodes"] == 0,
+             "LEGACY_PERMISSION")
+    rows = value["current_owner_supplied_raw"]
+    _approved_require(type(rows) is list and len(rows) == 2, "LEGACY_ADOPTION_COUNT")
+    for row, (identifier, size, digest) in zip(rows, APPROVED_ADOPTED_RAW, strict=True):
+        _approved_absolute(row.get("path"))
+        _approved_equal(row, dict(id=identifier, path=row["path"], bytes=size, sha256=digest,
+                         source_class="CURRENT_OWNER_SUPPLIED_RAW", proof_id="owner-adoption"), "LEGACY_ADOPTION")
+    _approved_require(rows[0]["path"].endswith(".intent.json")
+             and rows[1]["path"] == rows[0]["path"][:-len(".intent.json")] + "/bootstrap-attestation.json",
+             "LEGACY_ADOPTION_PATH_RELATION")
+    forward = value["forward_baseline_entries"]
+    _approved_require(type(forward) is list and len(forward) == 610, "LEGACY_FORWARD_COUNT")
+    seen, by_path = set(), {}
+    for row in forward:
+        _approved_require(type(row) is dict and set(row) in ({"source_metadata", "sha256"},
+                     {"source_metadata", "sha256", "link_target"}), "LEGACY_FORWARD_FIELDS")
+        meta = row["source_metadata"]
+        fields = {"device", "inode", "st_mode", "uid", "gid", "nlink", "size", "blocks",
+                  "atime_ns", "mtime_ns", "ctime_ns", "path", "type"}
+        _approved_exact(meta, fields)
+        _approved_absolute(meta["path"])
+        for key in fields - {"path", "type"}:
+            _integer(meta[key], 1 if key in ("device", "inode", "nlink") else 0)
+        identity = meta["device"], meta["inode"]
+        _approved_require(identity not in seen and meta["path"] not in by_path, "LEGACY_FORWARD_ALIAS")
+        seen.add(identity); by_path[meta["path"]] = row
+        _approved_require(meta["type"] in ("regular", "directory", "symlink"), "LEGACY_FORWARD_TYPE")
+        _approved_require(stat.S_IFMT(meta["st_mode"]) == {
+            "regular": stat.S_IFREG, "directory": stat.S_IFDIR, "symlink": stat.S_IFLNK}[meta["type"]],
+            "LEGACY_FORWARD_MODE")
+        if meta["type"] == "regular":
+            _digest(row["sha256"])
+            _approved_require(meta["nlink"] == 1 and "link_target" not in row, "LEGACY_FORWARD_REGULAR")
+        elif meta["type"] == "directory":
+            _approved_require(row["sha256"] is None and "link_target" not in row, "LEGACY_FORWARD_DIRECTORY")
+        else:
+            _approved_require(row["sha256"] is None and type(row.get("link_target")) is str, "LEGACY_FORWARD_SYMLINK")
+    _approved_require(list(by_path) == sorted(by_path), "LEGACY_FORWARD_ORDER")
+    parent = rows[0]["path"][:-len(".intent.json")]
+    _approved_require(parent in by_path and by_path[parent]["source_metadata"]["type"] == "directory"
+             and all(path == rows[0]["path"] or path == parent or path.startswith(parent + "/")
+                     for path in by_path), "LEGACY_FORWARD_ROOT")
+    for row in rows:
+        _approved_require(row["path"] in by_path and by_path[row["path"]]["sha256"] == row["sha256"]
+                 and by_path[row["path"]]["source_metadata"]["size"] == row["bytes"], "LEGACY_FORWARD_ADOPTED")
+    changed = value["disclosed_atime_changes"]
+    _approved_require(type(changed) is dict and len(changed) == 5, "LEGACY_ATIME_COUNT")
+    for path, row in changed.items():
+        _approved_absolute(path)
+        _approved_exact(row, {"source_class", "sha256", "source_metadata", "historical_atime_preservation_proven"})
+        _approved_require(row["source_class"] == "POST_READ_METADATA_BASELINE"
+                 and row["historical_atime_preservation_proven"] is False, "LEGACY_ATIME_CLASS")
+        _digest(row["sha256"])
+        _approved_exact(row["source_metadata"], fields - {"path", "type"})
+        for field, number in row["source_metadata"].items():
+            _integer(number, 1 if field in ("device", "inode", "nlink") else 0)
+        if path in by_path:
+            _approved_equal(row["source_metadata"], {key: item for key, item in by_path[path]["source_metadata"].items()
+                                          if key not in ("path", "type")}, "LEGACY_ATIME_METADATA")
+            _approved_require(row["sha256"] == by_path[path]["sha256"], "LEGACY_ATIME_DIGEST")
+
+
+def _approved_validate_relations(value):
+    relation = value["source_relation"]
+    _approved_exact(relation, {"schema", "locator", "obligations", "later_nonissuance", "zero_mismatch"})
+    _approved_require(relation["schema"] == "local-hand-q2-core-approved-source-relation/v1"
+             and relation["zero_mismatch"] is True, "SOURCE_RELATION")
+    _approved_equal(relation["locator"], APPROVED_FIXED['locator'], "LOCATOR_RELATION")
+    _approved_equal(relation["later_nonissuance"], APPROVED_FIXED['later'], "LATER_RELATION")
+    obligations = relation["obligations"]
+    fields = {"schema", "legacy_20260927", "horizon_20261001e", "producer", "configured_quota_liability",
+              "placement", "row_relation", "source_horizon", "snapshot_rows_sha256", "delta_rows_sha256",
+              "effective_rows_sha256", "source_union_sha256", "run_permission_adopted", "zero_mismatch"}
+    _approved_exact(obligations, fields)
+    _approved_require(obligations["schema"] == "local-hand-q2-core-approved-obligation-sources/v1"
+             and obligations["source_horizon"] == "20261001e" and obligations["zero_mismatch"] is True
+             and obligations["run_permission_adopted"] is False, "OBLIGATION_RELATION")
+    old = obligations["legacy_20260927"]
+    _approved_exact(old, {*APPROVED_FIXED['legacy'], "adoption"})
+    _approved_equal({key: item for key, item in old.items() if key != "adoption"}, APPROVED_FIXED['legacy'], "LEGACY_FIXED")
+    _approved_adoption(old["adoption"])
+    for key, expected in (("horizon_20261001e", APPROVED_FIXED['horizon']), ("producer", APPROVED_FIXED['producer']),
+                          ("configured_quota_liability", APPROVED_FIXED['quota']), ("placement", APPROVED_FIXED['placement'])):
+        _approved_equal(obligations[key], expected, "RELATION_" + key.upper())
+    _approved_vector(obligations["row_relation"], APPROVED_VECTOR_PINS["row_relation"], "ROW_RELATION")
+    for field, name in (("snapshot_rows_sha256", "snapshot"), ("delta_rows_sha256", "delta"),
+                        ("effective_rows_sha256", "effective")):
+        _approved_require(obligations[field] == APPROVED_VECTOR_PINS[name][1], "ROW_DIGEST")
+    _approved_require(obligations["source_union_sha256"] == _approved_hash(_approved_union(relation)), "SOURCE_UNION")
+    return obligations
+
+
+def _approved_validate_capacity(value, obligations):
+    _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
+                    "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
+                    "released_or_refunded"})
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v1"
+             and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
+             "CAPACITY_SCHEMA")
+    for key in ("source_union_sha256", "row_relation", "placement"):
+        _approved_equal(value[key], obligations[key], "CAPACITY_RELATION")
+    for key, name in (("snapshot_rows", "snapshot"), ("delta_rows", "delta"),
+                      ("effective_rows", "effective"), ("configured_quota_rows", "quota")):
+        _approved_vector(value[key], APPROVED_VECTOR_PINS[name], "CAPACITY_" + name.upper())
+    _approved_equal(value["effective_rows"], value["snapshot_rows"] + value["delta_rows"], "CAPACITY_CONSTRUCTION")
+    _approved_require(_approved_hash(value["snapshot_rows"][:7]) == APPROVED_PREFIX_SHA256
+             and _approved_hash(value["snapshot_rows"][7:]) == APPROVED_TAIL_SHA256, "CAPACITY_PREFIX")
+    _approved_equal(value["totals"], APPROVED_TOTALS, "CAPACITY_TOTALS")
+    for key, count in (("snapshot_rows", 24), ("delta_rows", 12), ("effective_rows", 36)):
+        rows = value[key]
+        _approved_require(type(rows) is list and len(rows) == count, "CAPACITY_COUNT")
+        prefix = key.removesuffix("_rows")
+        for field in ("bytes", "inodes"):
+            _approved_require(sum(_integer(row["commitment"][field]) for row in rows)
+                     == value["totals"][prefix + "_" + field], "CAPACITY_SUM")
+    _approved_require([row["project_id"] for row in value["configured_quota_rows"]]
+             == obligations["configured_quota_liability"]["project_ids"], "CAPACITY_PROJECTS")
+
+
+def _approved_validate_retained(value):
+    _approved_exact(value, {"paths", "domains"})
+    for key in ("paths", "domains"):
+        _approved_vector(value[key], APPROVED_RETAINED_PINS[key], "RETAINED_" + key.upper())
+    _approved_vector(value, APPROVED_RETAINED_PINS["object"], "RETAINED_OBJECT")
+    _approved_require(len(value["paths"]) == 16 and len(value["domains"]) == 4, "RETAINED_COUNT")
+    for row in value["paths"]:
+        _approved_exact(row, {"path", "device", "inode"})
+        _approved_absolute(row["path"]); _integer(row["device"], 1); _integer(row["inode"], 1)
+    for row in value["domains"]:
+        _approved_exact(row, {"project_id", "hard_bytes", "inode_hard_limit"})
+        for number in row.values():
+            _integer(number, 1)
+
+
+def _approved_validate_policy(value):
+    _approved_exact(value, {"schema", "fixture_cloud_config", "identity_public", "known_hosts",
+                    "remote_expectation", "policies", "policy_predicates_sha256"})
+    _approved_require(value["schema"] == "local-hand-q2-core-policy-basis/v1", "POLICY_SCHEMA")
+    for name, digest in APPROVED_POLICY_SOURCE_PINS.items():
+        _approved_equal(value[name], dict(binding_pointer="/" + name, sha256=digest), "POLICY_SOURCE")
+    expected = copy.deepcopy(value["remote_expectation"])
+    _approved_require(type(expected) is dict, "POLICY_EXPECTATION")
+    for key in ("remote_tokens_sha256", "remote_command_sha256"):
+        _digest(expected.get(key))
+        expected[key] = ""
+    # These template pins cover every fixed key and scalar in A §3.2. Only the
+    # two D-dependent command digests and source-derived key are normalized.
+    # The parser does not call the policy builder, so rehashing a weakened
+    # predicate cannot turn it into a valid predicate.
+    _approved_vector(expected, (410, "307997766eca2a5bef0411b6a41e72c1e904fa74831a03659e26a61b5c1d80cd"),
+            "POLICY_EXPECTATION_TEMPLATE")
+    policies = value["policies"]
+    _approved_exact(policies, {"sudo", "sshd", "authorized_keys", "rc"})
+    _approved_require(value["policy_predicates_sha256"] == _approved_hash(policies), "POLICY_DIGEST")
+    normalized = copy.deepcopy(policies)
+    for name, item in policies.items():
+        _approved_exact(item, {"schema", "mode", "sources", "paths", "argv", "environment", "execution",
+                       "predicate", "limits", "predicate_sha256"})
+        _approved_require(item["predicate_sha256"] == _approved_hash(item["predicate"]), "POLICY_PREDICATE_DIGEST")
+        normalized[name]["predicate_sha256"] = ""
+    try:
+        key = policies["authorized_keys"]["predicate"]["parameters"]["approved_key"]
+        _approved_exact(key, {"type", "key_base64", "source_sha256"})
+        _approved_require(type(key["key_base64"]) is str and key["key_base64"].isascii(), "POLICY_KEY")
+        _approved_equal(key, _approved_key(("ssh-ed25519 " + key["key_base64"] + "\n").encode("ascii")), "POLICY_KEY")
+        target = normalized["authorized_keys"]["predicate"]["parameters"]["approved_key"]
+        target["key_base64"] = target["source_sha256"] = ""
+    except (KeyError, TypeError) as error:
+        raise DispatchError("CORE_DISPATCH_APPROVED_POLICY_KEY") from error
+    _approved_vector(normalized, (6574, "b70e64bb418db787b2e7756f70d5e605329a00008a970aaf9939a32104e8506a"),
+            "POLICY_PREDICATE_TEMPLATE")
+
+
+def _approved_key(raw):
+    try:
+        lines = [line.strip() for line in raw.decode("ascii").splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+        _approved_require(len(lines) == 1, "KEY_COUNT")
+        fields = lines[0].split()
+        _approved_require(len(fields) >= 2 and fields[0] == "ssh-ed25519", "KEY_TYPE")
+        decoded = base64.b64decode(fields[1], validate=True)
+        _approved_require(base64.b64encode(decoded).decode("ascii") == fields[1]
+                 and decoded == struct.pack(">I", 11) + b"ssh-ed25519"
+                 + struct.pack(">I", 32) + decoded[-32:] and len(decoded) == 51,
+                 "KEY_ENCODING")
+    except (UnicodeError, ValueError, IndexError) as error:
+        raise DispatchError("CORE_DISPATCH_APPROVED_POLICY_KEY") from error
+    return dict(type="ssh-ed25519", key_base64=fields[1], source_sha256=APPROVED_POLICY_SOURCE_PINS["identity_public"])
+
+
+def _validate_approved_components(value):
+    """Validate all fixed component relations; this is not a live admission."""
+    try:
+        _approved_exact(value, ("schema", "scope", "amendment", *ADMISSION_COMPONENTS))
+        _approved_require(value["schema"] == "local-hand-q2-core-approved-inputs/v1"
+                          and value["scope"] == SCOPE, "SCHEMA")
+        _amendment(value["amendment"], value["amendment"]["implementation"])
+        obligations = _approved_validate_relations(value)
+        _approved_validate_capacity(value["historical_capacity_obligations"], obligations)
+        _approved_validate_retained(value["retained_preparation"])
+        _approved_equal(value["reconciliation"], APPROVED_RECONCILIATION, "RECONCILIATION")
+        _approved_validate_policy(value["policy_basis"])
+        return value
+    except DispatchError:
+        raise
+    except (KeyError, TypeError, AttributeError, IndexError, OverflowError, ValueError) as error:
+        raise DispatchError("CORE_DISPATCH_APPROVED_INVALID_SHAPE") from error
+
+
+def _amendment(value, implementation):
+    _exact(value, ("baseline", "owner_decision", "closure", "implementation"),
+           "CORE_DISPATCH_AMENDMENT_FIELDS")
+    _require(value["baseline"] == AMENDMENT_BASELINE
+             and value["owner_decision"] == AMENDMENT_OWNER_DECISION
+             and value["closure"] == AMENDMENT_CLOSURE
+             and value["implementation"] == implementation,
+             "CORE_DISPATCH_AMENDMENT_AUTHORITY")
+    _exact(implementation, ("commit", "tree"), "CORE_DISPATCH_IMPLEMENTATION")
+    for item in implementation.values():
+        _commit(item, "CORE_DISPATCH_IMPLEMENTATION")
+    _require(implementation["commit"] not in (
+        CLOSURE["commit"], AMENDMENT_BASELINE["commit"], AMENDMENT_CLOSURE["commit"],
+        "520f77f578b90d31870517e33e29bee42918f3c0"), "CORE_DISPATCH_IMPLEMENTATION")
+    return value
+
+
+def _remote_management(value):
+    _exact(value, set(REMOTE_ALIASES) | {
+        "account", "uid", "gid", "home", "login_shell", "parser_profile",
+        "remote_tokens_sha256", "remote_command_sha256"}, "CORE_DISPATCH_REMOTE_FIELDS")
+    _require(value["account"] == "q1admin" and value["home"] == "/home/q1admin"
+             and value["login_shell"] == "/bin/bash"
+             and value["parser_profile"] == "bash-noninteractive-c-v1",
+             "CORE_DISPATCH_REMOTE_ACCOUNT")
+    for key in ("uid", "gid"):
+        _integer(value[key], 1, 2**32 - 2, "CORE_DISPATCH_REMOTE_ACCOUNT")
+    for key in ("remote_tokens_sha256", "remote_command_sha256"):
+        _digest(value[key], "CORE_DISPATCH_REMOTE_COMMAND")
+    total = 0
+    for name, alias in REMOTE_ALIASES.items():
+        item = _exact(value[name], PROGRAM_FIELDS | {"resolved_path", "symlink_chain"},
+                      "CORE_DISPATCH_REMOTE_ENTITY_FIELDS")
+        _require(item["path"] == alias, "CORE_DISPATCH_REMOTE_ALIAS")
+        _absolute_text(item["resolved_path"], "CORE_DISPATCH_REMOTE_ENTITY")
+        for key in ("dev", "uid", "gid"):
+            _integer(item[key], 0, code="CORE_DISPATCH_REMOTE_ENTITY")
+        _integer(item["ino"], 1, code="CORE_DISPATCH_REMOTE_ENTITY")
+        _integer(item["nlink"], 1, 1, "CORE_DISPATCH_REMOTE_ENTITY")
+        _integer(item["mode"], 0, 0o7777, "CORE_DISPATCH_REMOTE_ENTITY")
+        _integer(item["bytes"], 1, 16777216, "CORE_DISPATCH_REMOTE_ENTITY")
+        _require(item["uid"] == item["gid"] == 0 and item["mode"] & 0o111
+                 and not item["mode"] & 0o022, "CORE_DISPATCH_REMOTE_ENTITY")
+        _digest(item["sha256"], "CORE_DISPATCH_REMOTE_ENTITY")
+        chain = item["symlink_chain"]
+        _require(type(chain) is list and len(chain) <= 8, "CORE_DISPATCH_REMOTE_ALIAS")
+        seen = set()
+        for link in chain:
+            _exact(link, ("path", "target"), "CORE_DISPATCH_REMOTE_ALIAS")
+            _absolute_text(link["path"], "CORE_DISPATCH_REMOTE_ALIAS")
+            target = link["target"]
+            _require(type(target) is str and target.isascii() and 0 < len(target) <= 4096
+                     and re.fullmatch(r"[A-Za-z0-9._/-]+", target) is not None
+                     and "//" not in target and ".." not in target.split("/")
+                     and len(target.split("/")) <= 64 and link["path"] not in seen,
+                     "CORE_DISPATCH_REMOTE_ALIAS")
+            seen.add(link["path"])
+        total += item["bytes"]
+    _require(total <= 83886080, "CORE_DISPATCH_REMOTE_ENTITY_LIMIT")
+    return value
+
+
+def _approved_inputs_envelope(context):
+    """Bind the private envelope and component preimages, never live facts.
+
+    This envelope check is followed by _validate_approved_components in the
+    dispatch path. Neither check substitutes for the current-guest collector
+    or the host's pre-issuance verification of original retained raw bytes.
+    """
+    manifest, members = context["manifest"], context["members"]
+    descriptor = _exact(manifest["approved_inputs"], (
+        "path", "bytes", "sha256", "approved_source_relation_sha256"),
+        "CORE_DISPATCH_APPROVED_DESCRIPTOR")
+    _require(descriptor["path"] == APPROVED_INPUTS_PATH,
+             "CORE_DISPATCH_APPROVED_DESCRIPTOR")
+    _integer(descriptor["bytes"], 1, APPROVED_INPUTS_LIMIT,
+             "CORE_DISPATCH_APPROVED_DESCRIPTOR")
+    for key in ("sha256", "approved_source_relation_sha256"):
+        _digest(descriptor[key], "CORE_DISPATCH_APPROVED_DESCRIPTOR")
+    view = members.get(APPROVED_INPUTS_PATH)
+    _require(type(view) is bytes or (isinstance(view, memoryview) and view.readonly),
+             "CORE_DISPATCH_APPROVED_MEMBER")
+    raw = bytes(view)
+    _require(len(raw) == descriptor["bytes"] and _sha(raw) == descriptor["sha256"],
+             "CORE_DISPATCH_APPROVED_MEMBER")
+    rows = [row for row in manifest["members"] if row.get("role") == "approved-inputs"]
+    expected = {"path": APPROVED_INPUTS_PATH, "role": "approved-inputs", "mode": 384,
+                "bytes": len(raw), "sha256": _sha(raw), "origin": {
+                    "kind": "approved-inputs", "bytes": len(raw), "sha256": _sha(raw),
+                    "approved_source_relation_sha256": descriptor["approved_source_relation_sha256"]}}
+    _require(rows == [expected], "CORE_DISPATCH_APPROVED_ROW")
+    value = document(raw, limit=APPROVED_INPUTS_LIMIT)
+    _exact(value, ("schema", "scope", "amendment", *ADMISSION_COMPONENTS),
+           "CORE_DISPATCH_APPROVED_FIELDS")
+    _require(value["schema"] == "local-hand-q2-core-approved-inputs/v1"
+             and value["scope"] == SCOPE, "CORE_DISPATCH_APPROVED_SCHEMA")
+    _amendment(value["amendment"], manifest["implementation"])
+    _require(value["amendment"] == manifest["amendment"],
+             "CORE_DISPATCH_APPROVED_AMENDMENT")
+    for key in ADMISSION_COMPONENTS:
+        _require(type(value[key]) is dict, "CORE_DISPATCH_APPROVED_COMPONENT")
+    _require(_sha(canonical(value["source_relation"]))
+             == descriptor["approved_source_relation_sha256"],
+             "CORE_DISPATCH_APPROVED_SOURCE_RELATION")
+    return value
+
+
+def _admission_binding(context):
+    """Return the nine exact, distinct digests specified by amendment A §4."""
+    approved = _approved_inputs_envelope(context)
+    binding = {"approved_inputs_sha256": context["manifest"]["approved_inputs"]["sha256"]}
+    for key in ADMISSION_COMPONENTS:
+        name = "approved_source_relation" if key == "source_relation" else key
+        binding[name + "_sha256"] = _sha(canonical(approved[key]))
+    binding.update({
+        "local_management_binding_sha256": context["manifest"]["entry"]["local_management_binding_sha256"],
+        "hello_sha256": _sha(canonical(context["hello"], newline=True)),
+        "remote_management_sha256": _sha(canonical(context["hello"]["remote_management"])),
+    })
+    for digest in binding.values():
+        _digest(digest, "CORE_DISPATCH_ADMISSION_BINDING")
+    return binding
+
+
+def _validate_admission_binding(value, context):
+    expected = _admission_binding(context)
+    _exact(value, expected, "CORE_DISPATCH_ADMISSION_BINDING_FIELDS")
+    _require(value == expected, "CORE_DISPATCH_ADMISSION_BINDING")
+    return value
+
+
+def _validate_context_envelope(context):
+    """Validate the v2 transport envelope without claiming admission/consumption."""
     _exact(context, ("schema", "hello", "bind", "manifest", "members", "guest_deadlines",
                      "stdin_bytes_received"), "CORE_DISPATCH_CONTEXT_FIELDS")
     _require(context["schema"] == CONTEXT_SCHEMA, "CORE_DISPATCH_CONTEXT_SCHEMA")
     hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
     _exact(hello, ("schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
                    "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
-                   "euid", "egid", "python", "carrier_unit", "process_limits"),
+                   "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management"),
            "CORE_DISPATCH_HELLO_FIELDS")
-    _require(hello["schema"] == "local-hand-q2-core-carrier-hello/v1"
+    _require(hello["schema"] == HELLO_SCHEMA
              and hello["scope"] == SCOPE and hello["uid"] == hello["gid"] == 0
              and hello["euid"] == hello["egid"] == 0, "CORE_DISPATCH_HELLO")
     for key in ("loader_sha256", "bootstrap_sha256"):
         _digest(hello[key], "CORE_DISPATCH_HELLO")
+    for key in ("uid", "gid", "euid", "egid"):
+        _integer(hello[key], 0, 0, "CORE_DISPATCH_HELLO")
+    for key in ("pid", "guest_boottime_origin_ns", "guest_monotonic_origin_ns"):
+        _integer(hello[key], 1, code="CORE_DISPATCH_HELLO")
+    _require(type(hello["guest_boot_id"]) is str and re.fullmatch(
+        r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", hello["guest_boot_id"]),
+        "CORE_DISPATCH_HELLO")
+    remote = _remote_management(hello["remote_management"])
+    _require(hello["python"] == {
+        key: remote["python"]["resolved_path"] if key == "path" else remote["python"][key]
+        for key in PROGRAM_FIELDS}, "CORE_DISPATCH_PYTHON_PROJECTION")
+    unit = _exact(hello["carrier_unit"], (
+        "name", "control_group", "invocation_id", "active_state", "sub_state",
+        "runtime_max_usec", "timeout_stop_usec", "memory_max", "memory_swap_max",
+        "tasks_max", "cpu_quota_per_sec_usec", "restart", "kill_mode", "exit_type"),
+        "CORE_DISPATCH_CARRIER_FIELDS")
+    carrier_name = "lhqcore20261003a-carrier.service"
+    _absolute_text(unit["control_group"], "CORE_DISPATCH_CARRIER")
+    _require(unit["name"] == carrier_name and unit["control_group"].endswith("/" + carrier_name)
+             and type(unit["invocation_id"]) is str
+             and re.fullmatch(r"[0-9a-f]{32}", unit["invocation_id"])
+             and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
+             and unit["restart"] == "no" and unit["kill_mode"] == "control-group"
+             and unit["exit_type"] == "cgroup", "CORE_DISPATCH_CARRIER")
+    for key, expected in {"runtime_max_usec": 800000000, "timeout_stop_usec": 30000000,
+                          "memory_max": 1073741824, "memory_swap_max": 0, "tasks_max": 128,
+                          "cpu_quota_per_sec_usec": 1000000}.items():
+        _integer(unit[key], expected, expected, "CORE_DISPATCH_CARRIER")
+    limits = {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256, "nofile_hard": 256,
+              "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}
+    _exact(hello["process_limits"], limits, "CORE_DISPATCH_PROCESS_LIMITS")
+    for key, expected in limits.items():
+        _integer(hello["process_limits"][key], expected, expected, "CORE_DISPATCH_PROCESS_LIMITS")
+    canonical(hello, newline=True, limit=4096)
     _exact(bind, ("schema", "scope", "session_id", "hello_sha256", "consumption_sha256",
                   "package_basename", "package_bytes", "package_sha256",
                   "host_boottime_origin_ns", "host_monotonic_origin_ns",
@@ -1036,8 +1942,8 @@ def _validate_context(context):
              "CORE_DISPATCH_BIND_MAPPING")
     _exact(manifest, ("schema", "scope", "rule", "baseline", "owner_decision", "closure",
                       "implementation", "candidate", "wheel", "projection", "entry", "locators",
-                      "members", "limits"), "CORE_DISPATCH_MANIFEST_FIELDS")
-    _require(manifest["schema"] == "local-hand-q2-core-field-package/v1"
+                      "members", "limits", "amendment", "approved_inputs"), "CORE_DISPATCH_MANIFEST_FIELDS")
+    _require(manifest["schema"] == PACKAGE_SCHEMA
              and manifest["scope"] == SCOPE and manifest["rule"] == RULE
              and manifest["baseline"] == BASELINE and manifest["owner_decision"] == OWNER_DECISION
              and manifest["closure"] == CLOSURE and manifest["candidate"] == CANDIDATE
@@ -1047,14 +1953,54 @@ def _validate_context(context):
     _commit(manifest["implementation"]["commit"], "CORE_DISPATCH_IMPLEMENTATION")
     _commit(manifest["implementation"]["tree"], "CORE_DISPATCH_IMPLEMENTATION")
     _require(manifest["implementation"] != CLOSURE, "CORE_DISPATCH_IMPLEMENTATION")
+    _amendment(manifest["amendment"], manifest["implementation"])
     entry = manifest["entry"]
+    _exact(entry, ("loader_path", "loader_bytes", "loader_sha256", "bootstrap_path",
+                   "bootstrap_bytes", "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes",
+                   "dispatcher_sha256", "carrier_argv_sha256", "local_management_binding_sha256"),
+           "CORE_DISPATCH_ENTRY_FIELDS")
+    for key in ("carrier_argv_sha256", "local_management_binding_sha256"):
+        _digest(entry[key], "CORE_DISPATCH_ENTRY")
     _require(type(entry) is dict and entry.get("loader_path") == "field/loader.py"
              and entry.get("bootstrap_path") == "field/bootstrap.py"
              and entry.get("dispatcher_path") == "field/dispatcher.py"
              and hello["loader_sha256"] == entry.get("loader_sha256")
              and hello["bootstrap_sha256"] == entry.get("bootstrap_sha256"),
              "CORE_DISPATCH_ENTRY")
+    locators = _exact(manifest["locators"], (
+        "schema", "observation_record_sha256", "source_relation_sha256", "state_parent",
+        "quota_parent", "install_parent", "journal_parent", "evidence_parent", "ordinary_user",
+        "ordinary_group", "user_manager_unit", "query_parent_unit", "controller_parent_unit",
+        "management_parent_unit", "supervisor_parent_unit", "ordinary_parent_unit",
+        "retained_ordinary_parent_path", "carrier_unit"), "CORE_DISPATCH_LOCATOR_FIELDS")
+    _require(locators["schema"] == "local-hand-q2-core-private-locators/v1"
+             and locators["carrier_unit"] == carrier_name, "CORE_DISPATCH_LOCATOR")
+    _digest(locators["observation_record_sha256"], "CORE_DISPATCH_LOCATOR")
+    relation = {"schema": "local-hand-q2-core-locator-relation/v2",
+                "local_management_binding_sha256": entry["local_management_binding_sha256"],
+                "observation_record_sha256": locators["observation_record_sha256"],
+                "locators": {key: item for key, item in locators.items()
+                             if key != "source_relation_sha256"}}
+    _require(locators["source_relation_sha256"] == _sha(canonical(relation)),
+             "CORE_DISPATCH_LOCATOR_RELATION")
     members = context["members"]
+    _require(type(manifest["members"]) is list and manifest["members"],
+             "CORE_DISPATCH_PACKAGE_MEMBERS")
+    paths = []
+    for row in manifest["members"]:
+        _exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"),
+               "CORE_DISPATCH_PACKAGE_ROW")
+        paths.append(_path(row["path"], "CORE_DISPATCH_PACKAGE_ROW"))
+        _integer(row["bytes"], 0, MEMBER_LIMIT, "CORE_DISPATCH_PACKAGE_ROW")
+        _digest(row["sha256"], "CORE_DISPATCH_PACKAGE_ROW")
+        _require(type(row["mode"]) is int
+                 and ((row["role"] == "approved-inputs" and row["mode"] == 384)
+                      or (row["role"] in ("candidate-worktree", "candidate-git-metadata",
+                                           "wheel", "projection", "field-code")
+                          and row["mode"] in (420, 493))), "CORE_DISPATCH_PACKAGE_ROW")
+    _require(len(paths) <= MEMBER_COUNT_LIMIT and len(set(paths)) == len(paths)
+             and paths == sorted(paths, key=lambda item: item.encode("ascii")),
+             "CORE_DISPATCH_PACKAGE_MEMBERS")
     _require(type(members) is dict and set(members) == {row["path"] for row in manifest["members"]},
              "CORE_DISPATCH_PACKAGE_MEMBERS")
     manifest_raw = canonical(manifest, newline=True)
@@ -1076,6 +2022,11 @@ def _validate_context(context):
     _require(entry.get("dispatcher_bytes") == len(members["field/dispatcher.py"])
              and entry.get("dispatcher_sha256") == _sha(members["field/dispatcher.py"]),
              "CORE_DISPATCH_ENTRY")
+    for role in ("loader", "bootstrap", "dispatcher"):
+        raw = members.get("field/" + role + ".py")
+        _require(raw is not None and type(entry[role + "_bytes"]) is int
+                 and entry[role + "_bytes"] == len(raw)
+                 and entry[role + "_sha256"] == _sha(raw), "CORE_DISPATCH_ENTRY")
     deadlines = _exact(context["guest_deadlines"],
                        ("boot_id", "boottime_deadline_ns", "monotonic_deadline_ns"),
                        "CORE_DISPATCH_GUEST_DEADLINES")
@@ -1087,41 +2038,50 @@ def _validate_context(context):
              "CORE_DISPATCH_STDIN")
     expected_stdin = 8 + 8 + len(canonical(bind, newline=True)) + bind["package_bytes"]
     _require(context["stdin_bytes_received"] == expected_stdin, "CORE_DISPATCH_STDIN")
+    approved = _approved_inputs_envelope(context)
+    policy = approved["policy_basis"]
+    _require(type(policy.get("remote_expectation")) is dict,
+             "CORE_DISPATCH_REMOTE_EXPECTATION")
+    expected = policy["remote_expectation"]
+    _exact(expected, ("account", "home_path", "login_shell", "hello_schema", "parser_profile",
+                      "aliases", "remote_tokens_sha256", "remote_command_sha256",
+                      "remote_entity_preimages_stage"), "CORE_DISPATCH_REMOTE_EXPECTATION")
+    _require(expected == {
+        "account": "q1admin", "home_path": "/home/q1admin", "login_shell": "/bin/bash",
+        "hello_schema": HELLO_SCHEMA, "parser_profile": "bash-noninteractive-c-v1",
+        "aliases": REMOTE_ALIASES, "remote_tokens_sha256": remote["remote_tokens_sha256"],
+        "remote_command_sha256": remote["remote_command_sha256"],
+        "remote_entity_preimages_stage": "HELLO_JIT"}, "CORE_DISPATCH_REMOTE_EXPECTATION")
+    return context
+
+
+def _validate_context(context):
+    _validate_context_envelope(context)
+    _validate_approved_components(_approved_inputs_envelope(context))
     _consumption_info(context)
     return context
 
 
 def _consumption_info(context):
-    manifest, bind = context["manifest"], context["bind"]
-    package = {"basename": bind["package_basename"], "bytes": bind["package_bytes"],
-               "sha256": bind["package_sha256"],
-               "manifest_sha256": _sha(canonical(manifest, newline=True))}
-    marker = {
-        "schema": CONSUMPTION_SCHEMA, "scope": SCOPE, "session_id": SESSION,
-        "baseline": BASELINE, "owner_decision": OWNER_DECISION, "closure": CLOSURE,
-        "implementation": manifest["implementation"], "candidate": CANDIDATE,
-        "package": package,
-        "management_entry_binding_sha256": manifest["entry"]["management_entry_binding_sha256"],
-        "carrier_argv_sha256": manifest["entry"]["carrier_argv_sha256"],
-        "host_boottime_origin_ns": bind["host_boottime_origin_ns"],
-        "host_monotonic_origin_ns": bind["host_monotonic_origin_ns"],
-        "host_boottime_deadline_ns": bind["host_boottime_deadline_ns"],
-        "host_monotonic_deadline_ns": bind["host_monotonic_deadline_ns"],
-        "state": "CONSUMPTION_RECORD_COMPLETE",
-    }
-    raw = canonical(marker, newline=True, limit=16384)
-    _require(_sha(raw) == bind["consumption_sha256"], "CORE_DISPATCH_CONSUMPTION_BINDING")
-    return {"basename": ".lhqcore-20261003a.carrier-consumed.json",
-            "bytes": len(raw), "sha256": _sha(raw),
-            "state": "CONSUMPTION_RECORD_COMPLETE"}
+    """Do not invent the host-only writer needed to recreate a v2 marker.
+
+    Approved A gives entry only local_management_binding_sha256, while the
+    v2 marker includes the full writer. Neither BIND nor approved-inputs
+    carries that writer. A digest cannot recover its preimage or raw length.
+    Keep the original marker digest/length check fail-closed until an exact
+    approved wire binding supplies those facts; never reuse the guest writer.
+    """
+    _require(context["manifest"]["schema"] == PACKAGE_SCHEMA,
+             "CORE_DISPATCH_MANIFEST_AUTHORITY")
+    raise DispatchError("CORE_DISPATCH_HOST_WRITER_UNBOUND")
 
 
 def field_readiness():
     """Return the non-field readiness boundary without performing an effect.
 
-    ``unbound_approved_inputs`` means the exact approved schema does not make
-    the required expected facts available to the remote dispatcher.  Those
-    facts must not be guessed or adopted from the current machine.
+    ``unbound_approved_inputs`` names statically validated v2 components not
+    yet connected to current-guest admission. Those current facts must not be
+    guessed or silently adopted from the machine.
     ``unimplemented_effects`` is ordinary D work that can be completed after
     the inputs are bound.  Keeping the two lists separate prevents a code
     implementation from laundering an input/governance gap into live PASS.
@@ -1131,6 +2091,7 @@ def field_readiness():
         "scope": SCOPE,
         "releasable": False,
         "unbound_approved_inputs": list(UNBOUND_APPROVED_INPUTS),
+        "protocol_blockers": ["consumption.host_writer_preimage_unbound"],
         "unimplemented_effects": list(UNIMPLEMENTED_FIELD_EFFECTS),
     }
 
@@ -1247,6 +2208,8 @@ def verify_install_inputs(context):
     useful even while P4's expected admission inputs remain unbound.
     """
     manifest, members = context["manifest"], context["members"]
+    if manifest.get("schema") == PACKAGE_SCHEMA:
+        _approved_inputs_envelope(context)
     rows = manifest["members"]
     _require(type(rows) is list and rows
              and [row.get("path") for row in rows]
@@ -1259,8 +2222,10 @@ def verify_install_inputs(context):
         _exact(row, ("path", "role", "mode", "bytes", "sha256", "origin"),
                "CORE_EFFECT_PACKAGE_ROW")
         path = _path(row["path"], "CORE_EFFECT_PACKAGE_PATH")
-        _require(row["mode"] in (420, 493) and row["role"] in (
-            "candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code"),
+        _require((row["role"] == "approved-inputs" and row["mode"] == 384
+                  and path == APPROVED_INPUTS_PATH and manifest.get("schema") == PACKAGE_SCHEMA)
+                 or (row["mode"] in (420, 493) and row["role"] in (
+                     "candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code")),
             "CORE_EFFECT_PACKAGE_ROW")
         view = members.get(path)
         _require(type(view) is bytes or (isinstance(view, memoryview) and view.readonly),
@@ -1269,6 +2234,10 @@ def verify_install_inputs(context):
         _require(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
                  "CORE_EFFECT_PACKAGE_MEMBER")
         origin = row["origin"]
+        if row["role"] == "approved-inputs":
+            # The envelope check above validates its exact descriptor/origin.
+            # Private approved facts never become installation/projection input.
+            continue
         if row["role"] == "candidate-worktree":
             _exact(origin, ("kind", "commit", "path", "blob"),
                    "CORE_EFFECT_PACKAGE_ORIGIN")
@@ -1351,6 +2320,13 @@ class FieldEffects:
         self._installation = None
         self._candidate_root = None
         self._persistence_ready = False
+        self._installation_receipt = None
+        self._install_roots = []
+        self._install_temp = None
+        self._install_commands = []
+        self._shared_observed_bytes = 0
+        self._shared_observed_inodes = 0
+        self._venv_alias_pending = False
         self._started_boottime_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         self._started_cpu_ns = time.process_time_ns()
         self._unit_counts = {"job_units_started": 0, "controller_units_started": 0,
@@ -1476,7 +2452,7 @@ class FieldEffects:
     def create_only_at(directory_fd, name, raw, *, mode):
         _require(type(directory_fd) is int and type(name) is str
                  and re.fullmatch(r"[A-Za-z0-9._-]+", name) is not None
-                 and type(raw) is bytes and mode in (384, 420),
+                 and type(raw) is bytes and mode in (384, 420, 493),
                  "CORE_EFFECT_CREATE_INPUT")
         parent_before = os.fstat(directory_fd)
         _require(stat.S_ISDIR(parent_before.st_mode), "CORE_EFFECT_CREATE_PARENT")
@@ -1580,20 +2556,370 @@ class FieldEffects:
     def admit(self, expected):
         _exact(expected, ("hello", "manifest", "guest_deadlines"),
                "CORE_EFFECT_ADMISSION_INPUT")
-        # The current policy objects can be read only after consumption, but A
-        # provides no expected entity preimage against which to compare them.
-        # Likewise its admission record has only aggregate historical amounts,
-        # while the candidate adapter requires exact retained rows.  Adopting
-        # either set from the current guest would violate the approved boundary.
-        raise DispatchError("CORE_EFFECT_ADMISSION_POLICY_PREIMAGE_UNBOUND")
+        # The amendment supplies the approved relation; it does not turn the
+        # package bytes into current policy, filesystem or account observations.
+        # Until the actual bounded collector is integrated, no mutation follows.
+        raise DispatchError("CORE_EFFECT_ADMISSION_COLLECTOR_INCOMPLETE")
 
     def install(self, expected):
         _exact(expected, ("manifest", "members", "admission"),
                "CORE_EFFECT_INSTALLATION_INPUT")
-        self.verify_install_inputs()
+        verified = self.verify_install_inputs()
         _require(self._admission is not None and expected["admission"] == self._admission,
                  "CORE_EFFECT_INSTALLATION_ADMISSION_REQUIRED")
-        raise DispatchError("CORE_EFFECT_INSTALLATION_SEQUENCE_UNIMPLEMENTED")
+        _require(expected["manifest"] == self.context["manifest"]
+                 and expected["members"] == self.context["members"]
+                 and self._installation is None and self._candidate_root is None,
+                 "CORE_EFFECT_INSTALLATION_BINDING")
+        _require(os.geteuid() == os.getegid() == 0, "CORE_EFFECT_INSTALLATION_OWNER")
+        self._effect_guard()
+        self._verify_install_programs()
+        manifest = self.context["manifest"]
+        locators = manifest["locators"]
+        parent = self._held_directory(locators["install_parent"])
+        try:
+            parent_pin = self._admission["parents"]["install"]
+            info = os.fstat(parent)
+            _require((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode),
+                      info.st_uid, info.st_gid) ==
+                     (parent_pin["dev"], parent_pin["ino"], parent_pin["mode"],
+                      parent_pin["uid"], parent_pin["gid"]),
+                     "CORE_EFFECT_INSTALLATION_PARENT_CHANGED")
+            # Both names must be absent before the first mutation. O_EXCL
+            # remains authoritative if another writer races this observation.
+            for name in (STAGING_BASENAME, INSTALL_BASENAME):
+                try:
+                    os.stat(name, dir_fd=parent, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise DispatchError("CORE_EFFECT_INSTALLATION_EXISTS")
+            self._prepare_carrier_storage()
+            self._effect_guard()
+            staging_fd = self._mkdir_at(parent, STAGING_BASENAME, 0o700)
+        finally:
+            os.close(parent)
+        staging = str(PurePosixPath(locators["install_parent"]) / STAGING_BASENAME)
+        destination = str(PurePosixPath(locators["install_parent"]) / INSTALL_BASENAME)
+        self._install_roots = [staging, destination]
+        try:
+            self._effect_guard()
+            temporary_fd = self._mkdir_at(staging_fd, ".build-tmp", 0o700)
+            os.close(temporary_fd)
+            self._effect_guard()
+            self._install_temp = staging + "/.build-tmp"
+            self._extract_install_members(staging_fd)
+        finally:
+            os.close(staging_fd)
+        self._candidate_root = staging + "/candidate"
+        self._observe_install_storage()
+        build = self._candidate_helper("q2_prepare_build", verified)
+        wheel_row = next(row for row in manifest["members"] if row["role"] == "wheel")
+        programs = self._admission["programs"]
+        guest = self._admission["guest"]
+        self._effect_guard()
+        receipt = build.install_candidate(
+            source=self._candidate_root, source_commit=CANDIDATE["commit"],
+            source_tree=CANDIDATE["tree"], wheel=staging + "/" + wheel_row["path"],
+            wheel_sha256=WHEEL["sha256"], destination=destination,
+            python=programs["python"]["path"], compiler=programs["cc"]["path"],
+            ordinary_uid=guest["ordinary_uid"], ordinary_gid=guest["ordinary_gid"],
+            command=self._installation_command)
+        self._effect_guard()
+        self._verify_install_programs()
+        _require(type(receipt) is dict and receipt.get("status") == "INSTALLED"
+                 and receipt.get("ordinary_verified") is True
+                 and receipt.get("fixture_provisioned") is False
+                 and receipt["source"]["commit"] == CANDIDATE["commit"]
+                 and receipt["source"]["tree"] == CANDIDATE["tree"]
+                 and receipt["source"]["manifest_sha256"] == PROJECTION["sha256"]
+                 and receipt["installed"]["payload_digest"] == verified["payload_digest"],
+                 "CORE_EFFECT_INSTALLATION_RECEIPT")
+        projection_raw, _ = self.stable_read(
+            destination + "/source/.local-hand-source-projection.json", maximum=262144)
+        _require(_sha(projection_raw) == PROJECTION["sha256"],
+                 "CORE_EFFECT_INSTALLATION_PROJECTION")
+        # Only the dispatcher D blob is installed alongside the frozen
+        # candidate. Private approved inputs stay exclusively in bootstrap RAM.
+        installed_fd = self._held_directory(destination)
+        try:
+            self._effect_guard()
+            self.create_only_at(installed_fd, "core-dispatcher.py",
+                                bytes(self.context["members"]["field/dispatcher.py"]), mode=420)
+            self._effect_guard()
+            info = os.fstat(installed_fd)
+        finally:
+            os.close(installed_fd)
+        observed = self._observe_install_storage()
+        self._effect_guard()
+        self._installation_receipt = receipt
+        result = {"destination": destination, "staging": staging,
+                  "receipt_path": str(PurePosixPath(locators["state_parent"]) / SESSION
+                                      / "carrier" / "installation.json"),
+                  "dev": info.st_dev, "ino": info.st_ino,
+                  "mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
+                  "members_sha256": verified["members_sha256"],
+                  "native_sha256": receipt["native_build"]["program"]["sha256"],
+                  "projection_sha256": PROJECTION["sha256"], "wheel_sha256": WHEEL["sha256"],
+                  "allocated_bytes": observed["bytes"], "allocated_inodes": observed["inodes"],
+                  "status": "INSTALLED"}
+        self._installation = _validate_installation(result, manifest)
+        return self._installation
+
+    def _effect_guard(self):
+        # A reserves the final 45 seconds for bounded stop/final output only.
+        # Installation, extraction and new child work cannot borrow it. Keep
+        # the original outer deadlines unchanged for the remote finalizer.
+        outer = self.context["guest_deadlines"]
+        return _clock(self, {
+            "boot_id": outer["boot_id"],
+            "boottime_deadline_ns": outer["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS,
+            "monotonic_deadline_ns": outer["monotonic_deadline_ns"] - REMOTE_FINAL_RESERVE_NS,
+        })
+
+    def _prepare_carrier_storage(self):
+        _require(not self._persistence_ready and self._admission is not None,
+                 "CORE_EFFECT_CARRIER_STORAGE_STATE")
+        parent = self._held_directory(self.context["manifest"]["locators"]["state_parent"])
+        opened = [parent]
+        try:
+            expected = self._admission["parents"]["state"]
+            info = os.fstat(parent)
+            _require((info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid)
+                     == (expected["dev"], expected["ino"], expected["mode"],
+                         expected["uid"], expected["gid"]), "CORE_EFFECT_CARRIER_PARENT_CHANGED")
+            for name in (SESSION, "carrier", "intents"):
+                self._effect_guard()
+                parent = self._mkdir_at(parent, name, 0o700)
+                opened.append(parent)
+                self._effect_guard()
+            self._persistence_ready = True
+        finally:
+            for fd in reversed(opened):
+                os.close(fd)
+
+    def _verify_install_programs(self):
+        _require(self._admission is not None, "CORE_EFFECT_INSTALLATION_ADMISSION_REQUIRED")
+        for name in ("python", "git", "cc", "setpriv", "systemctl", "systemd_run"):
+            expected = self._admission["programs"][name]
+            self._effect_guard()
+            raw, identity = self.stable_read(expected["path"], maximum=MEMBER_LIMIT,
+                                             expected_mode=expected["mode"])
+            _require(dict(path=expected["path"], **identity) == expected
+                     and identity["uid"] == 0 and not identity["mode"] & 0o6022
+                     and identity["mode"] & 0o111 and raw.startswith(b"\x7fELF"),
+                     "CORE_EFFECT_INSTALL_PROGRAM_CHANGED")
+        _require(self._admission["programs"]["git"]["path"] == "/usr/bin/git"
+                 and self._admission["programs"]["setpriv"]["path"] == "/usr/bin/setpriv",
+                 "CORE_EFFECT_INSTALL_PROGRAM_ALIAS")
+
+    @staticmethod
+    def _mkdir_at(parent, name, mode):
+        _require(type(name) is str and re.fullmatch(r"[A-Za-z0-9._-]+", name)
+                 and name not in (".", "..") and mode in (0o700, 0o755),
+                 "CORE_EFFECT_MKDIR_INPUT")
+        os.mkdir(name, mode, dir_fd=parent)
+        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                     dir_fd=parent)
+        try:
+            os.fchmod(fd, mode)
+            info = os.fstat(fd)
+            _require(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == mode,
+                     "CORE_EFFECT_MKDIR_OWNER")
+            os.fsync(fd)
+            os.fsync(parent)
+            return fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def _extract_install_members(self, staging_fd):
+        directories = {"": staging_fd}
+        try:
+            for row in self.context["manifest"]["members"]:
+                self._effect_guard()
+                # This private source relation must never reach installation,
+                # ordinary projection, sys.path or public output.
+                if row["role"] == "approved-inputs":
+                    continue
+                relative = PurePosixPath(_path(row["path"], "CORE_EFFECT_INSTALL_MEMBER_PATH"))
+                for index in range(1, len(relative.parts)):
+                    name = PurePosixPath(*relative.parts[:index]).as_posix()
+                    if name not in directories:
+                        previous = PurePosixPath(*relative.parts[:index - 1]).as_posix()
+                        self._effect_guard()
+                        directories[name] = self._mkdir_at(
+                            directories["" if previous == "." else previous],
+                            relative.parts[index - 1], 0o700)
+                        self._effect_guard()
+                parent_name = relative.parent.as_posix()
+                fd = directories["" if parent_name == "." else parent_name]
+                raw = bytes(self.context["members"][row["path"]])
+                _require(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
+                         "CORE_EFFECT_INSTALL_MEMBER_CHANGED")
+                self._effect_guard()
+                self.create_only_at(fd, relative.name, raw, mode=row["mode"])
+                self._effect_guard()
+                reread, identity = self.stable_read_at(fd, relative.name,
+                    maximum=row["bytes"], expected_mode=row["mode"])
+                _require(identity["uid"] == identity["gid"] == 0 and reread == raw,
+                         "CORE_EFFECT_INSTALL_MEMBER_CHANGED")
+                self._observe_install_storage()
+                self._effect_guard()
+        finally:
+            for path, fd in directories.items():
+                if path:
+                    os.close(fd)
+
+    def _candidate_helper(self, name, verified):
+        _require(name in (*PREPARATION_HELPERS, "q2_prepare_build")
+                 and self._candidate_root is not None, "CORE_EFFECT_HELPER_NAME")
+        relative = "tests/e3_host/" + name + ".py"
+        raw, identity = self.stable_read(self._candidate_root + "/" + relative,
+                                        maximum=MEMBER_LIMIT, expected_mode=420)
+        _require(identity["uid"] == identity["gid"] == 0
+                 and _sha(raw) == verified["source_files"].get(relative),
+                 "CORE_EFFECT_HELPER_CHANGED")
+        # Execute the already held and verified bytes; a second pathname open
+        # by importlib would reopen a substitution window.
+        import types
+        module = types.ModuleType("_core_field_" + name)
+        module.__file__ = self._candidate_root + "/" + relative
+        exec(compile(raw, module.__file__, "exec"), module.__dict__)
+        return module
+
+    def _observe_install_storage(self):
+        """Charge actual simultaneous owned files; this is not a peak proof."""
+        total_bytes = total_inodes = 0
+        seen = set()
+        for root in self._install_roots:
+            try:
+                root_fd = self._held_directory(root)
+            except FileNotFoundError:
+                continue
+            pending = [(root_fd, root)]
+            try:
+                while pending:
+                    fd, directory = pending.pop()
+                    try:
+                        info = os.fstat(fd)
+                        _require(info.st_uid == 0 and not info.st_mode & 0o022,
+                                 "CORE_EFFECT_INSTALL_STORAGE_OWNER")
+                        key = (info.st_dev, info.st_ino)
+                        _require(key not in seen, "CORE_EFFECT_INSTALL_STORAGE_ALIAS")
+                        seen.add(key)
+                        total_bytes += info.st_blocks * 512
+                        total_inodes += 1
+                        with os.scandir(fd) as entries:
+                            for entry in entries:
+                                item = entry.stat(follow_symlinks=False)
+                                if stat.S_ISLNK(item.st_mode):
+                                    # The frozen installer removes only this
+                                    # venv-generated convenience alias directly
+                                    # after the venv child returns. Count its
+                                    # inode without traversing it meanwhile.
+                                    _require(self._venv_alias_pending
+                                             and directory == self._install_roots[1] + "/runtime"
+                                             and entry.name == "lib64"
+                                             and os.readlink(entry.name, dir_fd=fd) == "lib",
+                                             "CORE_EFFECT_INSTALL_STORAGE_SYMLINK")
+                                    total_bytes += item.st_blocks * 512
+                                    total_inodes += 1
+                                    continue
+                                if stat.S_ISDIR(item.st_mode):
+                                    pending.append((os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY
+                                        | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd),
+                                        directory + "/" + entry.name))
+                                else:
+                                    _require(stat.S_ISREG(item.st_mode) and item.st_nlink == 1
+                                             and item.st_uid == 0 and not item.st_mode & 0o022,
+                                             "CORE_EFFECT_INSTALL_STORAGE_FILE")
+                                    key = (item.st_dev, item.st_ino)
+                                    _require(key not in seen, "CORE_EFFECT_INSTALL_STORAGE_ALIAS")
+                                    seen.add(key)
+                                    total_bytes += item.st_blocks * 512
+                                    total_inodes += 1
+                                _require(total_bytes <= LIMITS["shared_bytes"]
+                                         and total_inodes + len(pending) <= LIMITS["shared_inodes"],
+                                         "CORE_EFFECT_INSTALL_STORAGE_LIMIT")
+                    finally:
+                        os.close(fd)
+            finally:
+                for fd, _ in pending:
+                    os.close(fd)
+        _require(total_bytes <= LIMITS["shared_bytes"]
+                 and total_inodes <= LIMITS["shared_inodes"], "CORE_EFFECT_INSTALL_STORAGE_LIMIT")
+        self._shared_observed_bytes = max(self._shared_observed_bytes, total_bytes)
+        self._shared_observed_inodes = max(self._shared_observed_inodes, total_inodes)
+        return {"bytes": total_bytes, "inodes": total_inodes}
+
+    def _installation_command(self, argv):
+        """Candidate installer callback: one child, bounded paired pipes, no retry."""
+        _require(type(argv) in (list, tuple) and 1 <= len(argv) <= 128
+                 and all(type(arg) is str and "\0" not in arg and len(arg) <= 65536 for arg in argv)
+                 and argv[0].startswith("/"), "CORE_EFFECT_INSTALL_COMMAND")
+        self._effect_guard()
+        self._observe_install_storage()
+        self._effect_guard()
+        output = {"stdout": bytearray(), "stderr": bytearray()}
+        eof = set()
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, cwd=self._candidate_root, close_fds=True,
+            start_new_session=True, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                                        "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1",
+                                        "TMPDIR": self._install_temp or self._candidate_root,
+                                        "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
+                                        "GIT_CONFIG_GLOBAL": "/dev/null"})
+        selector = None
+        failure = None
+        try:
+            selector = selectors.DefaultSelector()
+            for name in output:
+                stream = getattr(proc, name)
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, name)
+            while len(eof) != 2 or proc.poll() is None:
+                self._effect_guard()
+                for key, _ in selector.select(0.02):
+                    room = 32768 - sum(map(len, output.values()))
+                    block = os.read(key.fd, min(4096, room + 1))
+                    if not block:
+                        eof.add(key.data)
+                        selector.unregister(key.fileobj)
+                    else:
+                        _require(len(block) <= room, "CORE_EFFECT_INSTALL_COMMAND_OUTPUT_LIMIT")
+                        output[key.data].extend(block)
+            _require(proc.wait() == 0 and len(eof) == 2, "CORE_EFFECT_INSTALL_COMMAND_FAILED")
+            self._effect_guard()
+            self._venv_alias_pending = list(argv[1:7]) == ["-I", "-B", "-m", "venv", "--copies", "--without-pip"]
+            try:
+                self._observe_install_storage()
+            finally:
+                self._venv_alias_pending = False
+            self._effect_guard()
+            return bytes(output["stdout"])
+        except BaseException as error:
+            failure = str(error)[:128]
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired as error:
+                failure = "CORE_EFFECT_INSTALL_COMMAND_REAP_INCOMPLETE"
+                raise DispatchError(failure) from error
+            raise
+        finally:
+            self._install_commands.append({"argv": list(argv), "returncode": proc.returncode,
+                "eof": sorted(eof), "failure": failure,
+                "stdout": bytes(output["stdout"]), "stderr": bytes(output["stderr"])})
+            try:
+                if selector is not None:
+                    selector.close()
+            finally:
+                for name in output:
+                    getattr(proc, name).close()
 
     def persist(self, case_id, path, raw, mode):
         _require(self._persistence_ready, "CORE_EFFECT_PERSISTENCE_NOT_READY")
@@ -1612,26 +2938,15 @@ class FieldEffects:
     def preparation_helpers(self):
         _require(self._candidate_root is not None, "CORE_EFFECT_HELPER_INSTALLATION_REQUIRED")
         verified = self.verify_install_inputs()
-        modules = {}
-        for name in PREPARATION_HELPERS:
-            path = self._candidate_root + "/tests/e3_host/" + name + ".py"
-            raw, _identity = self.stable_read(path, maximum=MEMBER_LIMIT, expected_mode=420)
-            _require(_sha(raw) == verified["helper_digests"][name],
-                     "CORE_EFFECT_HELPER_CHANGED")
-            spec = importlib.util.spec_from_file_location("_core_field_" + name, path)
-            _require(spec is not None and spec.loader is not None, "CORE_EFFECT_HELPER_LOADER")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            modules[name] = module
-        return modules
+        return {name: self._candidate_helper(name, verified) for name in PREPARATION_HELPERS}
 
     def prepare_case(self, case, intent, preparation_deadline_ns):
         _require(case in CASES and intent == build_intent(case),
                  "CORE_EFFECT_PREPARATION_INPUT")
         _integer(preparation_deadline_ns, 1, code="CORE_EFFECT_PREPARATION_DEADLINE")
-        # Even the pure candidate constructor needs exact retained path/domain
-        # rows.  They are not present in A's remote package/admission schema.
-        raise DispatchError("CORE_EFFECT_PREPARATION_RETAINED_OBLIGATIONS_UNBOUND")
+        # Approved inputs now carry retained rows, but creating the new case
+        # requires the existing-account adapter, never the old account creator.
+        raise DispatchError("CORE_EFFECT_PREPARATION_EXISTING_ACCOUNT_ADAPTER_INCOMPLETE")
 
     def plan_case(self, _case, _prepared, _deadlines):
         raise DispatchError("CORE_EFFECT_PLAN_IMPLEMENTATION_HOOK_UNFILLED")
@@ -1650,17 +2965,12 @@ class FieldEffects:
         raise DispatchError("CORE_EFFECT_PHASE_FACTS_IMPLEMENTATION_HOOK_UNFILLED")
 
     def usage(self):
-        elapsed = max(0, time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-                      - self._started_boottime_ns)
-        cpu = max(0, time.process_time_ns() - self._started_cpu_ns)
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        # Linux reports KiB.  The field package is Linux-only.
-        memory = int(peak) * 1024
-        return {"guest_elapsed_ns": elapsed, "carrier_cpu_ns": cpu,
-                "carrier_memory_peak_bytes": memory, "carrier_pids_peak": 1,
-                "stdin_bytes_received": self.context["stdin_bytes_received"],
-                "output_frame_bytes": 0, "guest_allocated_bytes": 0,
-                "guest_allocated_inodes": 0, **self._unit_counts}
+        # process_time/ru_maxrss cover only this process and cannot account for
+        # its installer/compiler children or the separately managed job units.
+        # Sampled installation allocation is also not the guest-wide peak.
+        # Until those observations are integrated, emitting pids=1 or storage=0
+        # would turn missing evidence into fabricated successful accounting.
+        raise DispatchError("CORE_EFFECT_USAGE_ACCOUNTING_INCOMPLETE")
 
 
 def _clock(effects, deadlines):
@@ -1853,9 +3163,10 @@ def _usage(value, context, frame_bytes):
 def _session(context, admission, installation):
     manifest, bind, hello = context["manifest"], context["bind"], context["hello"]
     return {
-        "schema": "local-hand-q2-core-dispatch-session/v1", "scope": SCOPE,
+        "schema": SESSION_SCHEMA, "scope": SCOPE,
         "rule": RULE, "baseline": BASELINE, "owner_decision": OWNER_DECISION,
         "closure": CLOSURE, "implementation": manifest["implementation"],
+        "amendment": manifest["amendment"],
         "package": {"basename": bind["package_basename"], "bytes": bind["package_bytes"],
                     "sha256": bind["package_sha256"],
                     "manifest_sha256": _sha(canonical(manifest, newline=True))},
@@ -1914,9 +3225,10 @@ def _program_identity(value, code):
     return value
 
 
-def _validate_admission(value):
-    _exact(value, ("guest", "programs", "policies", "parents", "filesystems", "capacity", "absence"),
+def _validate_admission(value, context):
+    _exact(value, ("guest", "programs", "policies", "parents", "filesystems", "capacity", "absence", "binding"),
            "CORE_DISPATCH_ADMISSION_FIELDS")
+    _validate_admission_binding(value["binding"], context)
     guest = _exact(value["guest"], (
         "hostname", "dmi_vendor", "dmi_product", "initial_userns", "boot_id", "pid1_exe",
         "pid1_version", "cgroup_version", "ordinary_user", "ordinary_uid", "ordinary_gid",
@@ -2088,7 +3400,7 @@ def dispatch(context, effects):
     _clock(effects, context["guest_deadlines"])
     admission = _validate_admission(effects.admit({"hello": context["hello"],
                                                    "manifest": context["manifest"],
-                                                   "guest_deadlines": context["guest_deadlines"]}))
+                                                   "guest_deadlines": context["guest_deadlines"]}), context)
     installation = _validate_installation(effects.install({"manifest": context["manifest"],
                                                            "members": context["members"],
                                                            "admission": admission}),

@@ -1,18 +1,19 @@
-"""Self-contained RAM bootstrap for one approved core-delivery carrier.
-
-Before the complete field package and stdin EOF are verified this module only
-reads fixed kernel/process facts and stdin, and writes the bounded HELLO frame.
-It does not create a path, import package code, or invoke the dispatcher.
+"""Standalone RAM bootstrap: bounded JIT HELLO, then complete v2 package/EOF
+validation before importing any delivered code or creating persistent objects.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
 from pathlib import PurePosixPath
+import pwd
 import re
 import resource
 import select
+import shlex
 import stat
 import struct
 import subprocess
@@ -37,6 +38,27 @@ OWNER = {"event": "LH-Q2-CORE-ACCEPTANCE-DELIVERY-CLOSURE-20261003-01",
          "record_sha256": "e6a810ac5a76c903c687b6487ac2a4b08e02022fcf90927f7a34993dedb695cb"}
 CLOSURE = {"commit": "a8dd077392ebb656770c8f94ca3b051e93fc296d",
            "tree": "b0d651ea5cbc2c408bb43ce6f3cdc5becd5170c6"}
+AMENDMENT_BASELINE = {
+    "commit": "0bdb49cae5586be60a7ba31d4a8e8367854d1e8c",
+    "tree": "ee15aa4fa26fd2e87b40f6fad72828265e5cf9bc",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-binding-finalization-amendment/REQUIREMENTS.md":
+            "e6b29c45c550f2ae8b3eaa91baad8d1382851dec6a69e2f807cce9233b14cdb1",
+        "docs/a2-execution/q2-core-binding-finalization-amendment/ARCHITECTURE.md":
+            "7782e2fb89a28052978d3ce205278906b92752e3ba1add9cd634c0e7c0f92c96",
+        "docs/a2-execution/q2-core-binding-finalization-amendment/IMPLEMENTATION_PLAN.md":
+            "52faaf002d9b5b9d88aef0b6f568e8ed56d2aa49eb0ea41e7eeb85d2d0b64cce",
+    },
+}
+AMENDMENT_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-BINDING-FINALIZATION-AMENDMENT-CLOSURE-20261004-01",
+    "record_path": "docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_OWNER_DECISION.md",
+    "record_sha256": "800f01b3e7d4aeec77095bbc67196837427a7dbece7f1212bca266adb3d9ddbd",
+}
+AMENDMENT_CLOSURE = {
+    "commit": "7598886e15ed6911fe0e09e2f8d66203455f9057",
+    "tree": "7f2178942c126f883829a139b842cfc2c2e12159",
+}
 CANDIDATE = {"commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
              "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4"}
 WHEEL = {"basename": "infra_local_hand-0.2.0a1-py3-none-any.whl", "bytes": 288375,
@@ -50,8 +72,8 @@ PACKAGE_LIMITS = {"package_bytes": 33550320, "manifest_bytes": 1048576, "members
                   "shared_entries": 4096, "carrier_audit_bytes": 8388608,
                   "carrier_audit_inodes": 512, "carrier_output_bytes": 62914560}
 PACKAGE_MAGIC, HELLO_MAGIC, BIND_MAGIC, OUTPUT_MAGIC = b"LHCFP1\n", b"LHCHLO1\n", b"LHCBND1\n", b"LHCOUT1\n"
-PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v1"
-HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v1"
+PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v2"
+HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
 BIND_SCHEMA = "local-hand-q2-core-carrier-bind/v1"
 CONTEXT_SCHEMA = "local-hand-q2-core-bootstrap-context/v1"
 FIELD_PATHS = {"loader": "field/loader.py", "bootstrap": "field/bootstrap.py",
@@ -59,7 +81,7 @@ FIELD_PATHS = {"loader": "field/loader.py", "bootstrap": "field/bootstrap.py",
 FIELD_LIMITS = {"loader": 8192, "bootstrap": 49152, "dispatcher": 262144}
 HELLO_FIELDS = {"schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
                 "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
-                "euid", "egid", "python", "carrier_unit", "process_limits"}
+                "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management"}
 BIND_FIELDS = {"schema", "scope", "session_id", "hello_sha256", "consumption_sha256",
                "package_basename", "package_bytes", "package_sha256", "host_boottime_origin_ns",
                "host_monotonic_origin_ns", "host_boottime_deadline_ns", "host_monotonic_deadline_ns",
@@ -68,17 +90,23 @@ BIND_FIELDS = {"schema", "scope", "session_id", "hello_sha256", "consumption_sha
                "guest_duration_cap_ns", "guest_duration_ns"}
 MANIFEST_FIELDS = {"schema", "scope", "rule", "baseline", "owner_decision", "closure",
                    "implementation", "candidate", "wheel", "projection", "entry", "locators",
-                   "members", "limits"}
+                   "members", "limits", "amendment", "approved_inputs"}
 ENTRY_FIELDS = {"loader_path", "loader_bytes", "loader_sha256", "bootstrap_path", "bootstrap_bytes",
                 "bootstrap_sha256", "dispatcher_path", "dispatcher_bytes", "dispatcher_sha256",
-                "carrier_argv_sha256", "management_entry_binding_sha256"}
+                "carrier_argv_sha256", "local_management_binding_sha256"}
 LOCATOR_FIELDS = {"schema", "observation_record_sha256", "source_relation_sha256", "state_parent",
                   "quota_parent", "install_parent", "journal_parent", "evidence_parent", "ordinary_user",
                   "ordinary_group", "user_manager_unit", "query_parent_unit", "controller_parent_unit",
                   "management_parent_unit", "supervisor_parent_unit", "ordinary_parent_unit",
                   "retained_ordinary_parent_path", "carrier_unit"}
 MEMBER_FIELDS = {"path", "role", "mode", "bytes", "sha256", "origin"}
-ROLES = {"candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code"}
+ROLES = {"candidate-worktree", "candidate-git-metadata", "wheel", "projection", "field-code", "approved-inputs"}
+REMOTE_ALIASES = {"shell": "/bin/bash", "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
+                  "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
+PROGRAM_FIELDS = {"path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"}
+ENTITY_FIELDS = PROGRAM_FIELDS | {"resolved_path", "symlink_chain"}
+REMOTE_FIELDS = {"account", "uid", "gid", "home", "login_shell", "parser_profile",
+                 "remote_tokens_sha256", "remote_command_sha256"} | set(REMOTE_ALIASES)
 
 
 def require(condition, code):
@@ -114,6 +142,8 @@ def _shape(value, depth=0, count=None):
         for item in value: _shape(item, depth + 1, count)
     else:
         require(value is None or type(value) in (str, int, bool), "CORE_BOOTSTRAP_JSON_VALUE")
+        if type(value) is int:
+            require(-(2**63) <= value < 2**63, "CORE_BOOTSTRAP_INTEGER")
 
 
 def encoded(value, newline=True):
@@ -260,28 +290,191 @@ def _write_all(stream, raw, deadlines):
         offset += count
 
 
-def _program(path, maximum=16 * 1024 * 1024):
-    path = os.path.realpath(path)
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+def _identity(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _components(path):
+    require(type(path) is str and 0 < len(path.encode("utf-8")) <= 4096
+            and "\0" not in path and ".." not in path.split("/")
+            and all(item not in ("", ".") for item in path.strip("/").split("/")),
+            "CORE_BOOTSTRAP_ALIAS")
+    return path.strip("/").split("/")
+
+
+def _resolve_program(path, root_fd):
+    """Resolve from one held root; keep every traversed parent until verification."""
+    require(path.startswith("/") and not path.startswith("//"), "CORE_BOOTSTRAP_ALIAS")
+    pending, resolved, chain, checks, held = _components(path), [], [], [], []
+    parent = root_fd; seen = set(); components = 0
     try:
+        while pending:
+            name = pending.pop(0); components += 1
+            require(components <= 64, "CORE_BOOTSTRAP_ALIAS_LIMIT")
+            current = "/" + "/".join(resolved + [name])
+            require(len(current.encode("utf-8")) <= 4096, "CORE_BOOTSTRAP_ALIAS_LIMIT")
+            require(current != "/proc" and current != "/dev/fd",
+                    "CORE_BOOTSTRAP_MAGIC_LINK")
+            info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if stat.S_ISLNK(info.st_mode):
+                identity = _identity(info)
+                target = os.readlink(name, dir_fd=parent)
+                require(_identity(os.stat(name, dir_fd=parent, follow_symlinks=False))
+                        == identity, "CORE_BOOTSTRAP_ALIAS_DRIFT")
+                require(len(chain) < 8 and current not in seen
+                        and not target.startswith("//"), "CORE_BOOTSTRAP_ALIAS_LIMIT")
+                seen.add(current); parts = _components(target)
+                chain.append({"path": current, "target": target})
+                checks.append((parent, name, identity, target))
+                if target.startswith("/"):
+                    # Absolute targets stay rooted in the original held namespace root.
+                    parent, resolved = root_fd, []
+                pending = parts + pending
+                continue
+            checks.append((parent, name, _identity(info), None))
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC
+            if pending:
+                require(stat.S_ISDIR(info.st_mode), "CORE_BOOTSTRAP_ALIAS_DIRECTORY")
+                flags |= os.O_DIRECTORY
+            else:
+                require(stat.S_ISREG(info.st_mode), "CORE_BOOTSTRAP_PROGRAM")
+            fd = os.open(name, flags, dir_fd=parent); held.append(fd)
+            require(_identity(os.fstat(fd)) == _identity(info), "CORE_BOOTSTRAP_ALIAS_DRIFT")
+            resolved.append(name); parent = fd
+        require(held and stat.S_ISREG(os.fstat(held[-1]).st_mode), "CORE_BOOTSTRAP_PROGRAM")
+        return held[-1], "/" + "/".join(resolved), chain, checks, held
+    except BaseException:
+        for fd in reversed(held): os.close(fd)
+        raise
+
+
+def _check_resolution(checks):
+    for parent, name, expected, target in checks:
+        require(_identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) == expected,
+                "CORE_BOOTSTRAP_ALIAS_DRIFT")
+        if target is not None:
+            require(os.readlink(name, dir_fd=parent) == target, "CORE_BOOTSTRAP_ALIAS_DRIFT")
+
+
+def _program(path, maximum=16 * 1024 * 1024):
+    root = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                   | os.O_NOATIME | os.O_CLOEXEC)
+    held = []; second = []
+    try:
+        root_identity = _identity(os.fstat(root))
+        fd, resolved, chain, checks, held = _resolve_program(path, root)
         info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and 0 < info.st_size <= maximum,
-                "CORE_BOOTSTRAP_PROGRAM")
+        require(info.st_uid == info.st_gid == 0 and info.st_nlink == 1
+                and info.st_mode & 0o111 and not info.st_mode & 0o022
+                and 0 < info.st_size <= maximum, "CORE_BOOTSTRAP_PROGRAM")
+        _check_resolution(checks)
         raw = bytearray()
-        while len(raw) <= maximum:
-            block = os.read(fd, min(65536, maximum + 1 - len(raw)))
+        while len(raw) < info.st_size:
+            block = os.read(fd, min(65536, info.st_size - len(raw)))
             if not block: break
             raw.extend(block)
-        after = os.fstat(fd); current = os.stat(path, follow_symlinks=False)
-        identity = lambda value: (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-                                  value.st_gid, value.st_nlink, value.st_size)
-        require(len(raw) == info.st_size <= maximum and identity(after) == identity(info)
-                and identity(current) == identity(info), "CORE_BOOTSTRAP_PROGRAM")
+        require(len(raw) == info.st_size and _identity(os.fstat(fd)) == _identity(info),
+                "CORE_BOOTSTRAP_PROGRAM_DRIFT")
+        _check_resolution(checks)
+        other, other_path, other_chain, other_checks, second = _resolve_program(path, root)
+        require(other_path == resolved and other_chain == chain
+                and _identity(os.fstat(other)) == _identity(info), "CORE_BOOTSTRAP_ALIAS_DRIFT")
+        _check_resolution(other_checks)
+        require(_identity(os.fstat(root)) == root_identity
+                and _identity(os.stat("/", follow_symlinks=False)) == root_identity,
+                "CORE_BOOTSTRAP_ROOT_DRIFT")
+        return {"path": path, "resolved_path": resolved, "symlink_chain": chain,
+                "dev": info.st_dev, "ino": info.st_ino, "mode": stat.S_IMODE(info.st_mode),
+                "uid": info.st_uid, "gid": info.st_gid, "nlink": info.st_nlink,
+                "bytes": info.st_size, "sha256": sha(bytes(raw))}
     finally:
-        os.close(fd)
-    return {"path": path, "dev": info.st_dev, "ino": info.st_ino,
-            "mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
-            "nlink": info.st_nlink, "bytes": info.st_size, "sha256": sha(bytes(raw))}
+        for fd in reversed(second + held): os.close(fd)
+        os.close(root)
+
+
+def _remote_command_digests(bootstrap_sha256):
+    """Reconstruct the fixed vector from verified Python invocation inputs."""
+    original = getattr(sys, "orig_argv", None)
+    require(type(original) is list and len(original) == 7
+            and original[:4] == ["/usr/bin/python3", "-I", "-B", "-c"]
+            and sys.argv == ["-c", original[5], original[6]]
+            and original[6] == bootstrap_sha256, "CORE_BOOTSTRAP_INVOKED_ARGV")
+    require(all(type(item) is str and item and "\0" not in item for item in original),
+            "CORE_BOOTSTRAP_INVOKED_ARGV")
+    loader = original[4].encode("utf-8")
+    require(0 < len(loader) <= 8192 and sha(loader) == LOADER_SHA256
+            and original[5].isascii() and 0 < len(original[5]) <= 65536,
+            "CORE_BOOTSTRAP_INVOKED_LOADER")
+    try:
+        raw = base64.b64decode(original[5], validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise ValueError("CORE_BOOTSTRAP_INVOKED_BASE64") from error
+    require(0 < len(raw) <= 49152 and base64.b64encode(raw).decode("ascii") == original[5]
+            and sha(raw) == bootstrap_sha256, "CORE_BOOTSTRAP_INVOKED_BASE64")
+    tokens = [
+        "exec", "/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i",
+        "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "SYSTEMD_COLORS=0",
+        "/usr/bin/systemd-run", "--system", "--no-ask-password", "--quiet", "--wait", "--pipe",
+        "--collect", "--service-type=exec", "--unit=lhqcore20261003a-carrier.service",
+        "--property=Restart=no", "--property=RuntimeMaxSec=800s", "--property=TimeoutStopSec=30s",
+        "--property=KillMode=control-group", "--property=ExitType=cgroup", "--property=CPUQuota=100%",
+        "--property=LimitCPU=800", "--property=MemoryMax=1073741824", "--property=MemorySwapMax=0",
+        "--property=TasksMax=128", "--property=LimitNOFILE=256", "--property=LimitFSIZE=67108864",
+        "--property=UMask=0077", "--", *original]
+    command = shlex.join(tokens).encode("utf-8")
+    require(len(command) <= 98304, "CORE_BOOTSTRAP_COMMAND_LIMIT")
+    return sha(encoded(tokens, newline=False)), sha(command)
+
+
+def collect_remote_management(bootstrap_sha256):
+    account = pwd.getpwnam("q1admin")
+    require(account.pw_name == "q1admin" and account.pw_dir == "/home/q1admin"
+            and account.pw_shell == "/bin/bash" and account.pw_uid > 0 and account.pw_gid > 0,
+            "CORE_BOOTSTRAP_ACCOUNT")
+    token_sha, command_sha = _remote_command_digests(bootstrap_sha256)
+    entities = {name: _program(path) for name, path in REMOTE_ALIASES.items()}
+    require(sum(item["bytes"] for item in entities.values()) <= 83886080,
+            "CORE_BOOTSTRAP_PROGRAM_LIMIT")
+    return {"account": account.pw_name, "uid": account.pw_uid, "gid": account.pw_gid,
+            "home": account.pw_dir, "login_shell": account.pw_shell,
+            "parser_profile": "bash-noninteractive-c-v1", **entities,
+            "remote_tokens_sha256": token_sha, "remote_command_sha256": command_sha}
+
+
+def validate_remote_management(value):
+    exact(value, REMOTE_FIELDS, "CORE_BOOTSTRAP_REMOTE_FIELDS")
+    require(value["account"] == "q1admin" and value["home"] == "/home/q1admin"
+            and value["login_shell"] == "/bin/bash"
+            and value["parser_profile"] == "bash-noninteractive-c-v1"
+            and all(type(value[key]) is int and value[key] > 0 for key in ("uid", "gid")),
+            "CORE_BOOTSTRAP_ACCOUNT")
+    for key in ("remote_tokens_sha256", "remote_command_sha256"):
+        digest(value[key], "CORE_BOOTSTRAP_REMOTE_DIGEST")
+    total = 0
+    for name, alias in REMOTE_ALIASES.items():
+        entity = exact(value[name], ENTITY_FIELDS, "CORE_BOOTSTRAP_ENTITY_FIELDS")
+        require(entity["path"] == alias, "CORE_BOOTSTRAP_ENTITY_ALIAS")
+        absolute(entity["resolved_path"])
+        require(all(type(entity[key]) is int and entity[key] >= 0
+                    for key in ("dev", "ino", "mode", "uid", "gid", "nlink", "bytes"))
+                and entity["uid"] == entity["gid"] == 0 and entity["nlink"] == 1
+                and 0 < entity["bytes"] <= 16777216 and 0 < entity["ino"]
+                and 0 <= entity["mode"] <= 0o7777 and entity["mode"] & 0o111
+                and not entity["mode"] & 0o022, "CORE_BOOTSTRAP_ENTITY")
+        digest(entity["sha256"], "CORE_BOOTSTRAP_ENTITY")
+        require(type(entity["symlink_chain"]) is list and len(entity["symlink_chain"]) <= 8,
+                "CORE_BOOTSTRAP_ALIAS_LIMIT")
+        seen = set()
+        for link in entity["symlink_chain"]:
+            exact(link, {"path", "target"}, "CORE_BOOTSTRAP_ALIAS_FIELDS")
+            absolute(link["path"]); _components(link["target"])
+            require(link["path"] not in seen and not link["target"].startswith("//"),
+                    "CORE_BOOTSTRAP_ALIAS_LIMIT")
+            seen.add(link["path"])
+        total += entity["bytes"]
+    require(total <= 83886080, "CORE_BOOTSTRAP_PROGRAM_LIMIT")
+    return value
 
 
 def _properties():
@@ -359,11 +552,15 @@ def make_hello(bootstrap_sha256):
     old_umask = os.umask(0o077); os.umask(old_umask)
     cpu = resource.getrlimit(resource.RLIMIT_CPU); nofile = resource.getrlimit(resource.RLIMIT_NOFILE)
     fsize = resource.getrlimit(resource.RLIMIT_FSIZE)
+    remote = collect_remote_management(bootstrap_sha256)
     value = {"schema": HELLO_SCHEMA, "scope": SCOPE, "loader_sha256": LOADER_SHA256,
              "bootstrap_sha256": bootstrap_sha256, "guest_boot_id": boot_id,
              "guest_boottime_origin_ns": boot_origin, "guest_monotonic_origin_ns": mono_origin,
              "pid": os.getpid(), "uid": os.getuid(), "gid": os.getgid(), "euid": os.geteuid(),
-             "egid": os.getegid(), "python": _program("/usr/bin/python3"), "carrier_unit": _properties(),
+             "egid": os.getegid(), "remote_management": remote,
+             "python": {key: (remote["python"]["resolved_path"] if key == "path"
+                              else remote["python"][key]) for key in PROGRAM_FIELDS},
+             "carrier_unit": _properties(),
              "process_limits": {"cpu_soft": cpu[0], "cpu_hard": cpu[1],
                                 "nofile_soft": nofile[0], "nofile_hard": nofile[1],
                                 "fsize_soft": fsize[0], "fsize_hard": fsize[1], "umask": old_umask}}
@@ -380,10 +577,14 @@ def validate_hello(value, bootstrap_sha256):
     require(re.fullmatch(r"[0-9a-f-]{36}", value["guest_boot_id"] or "")
             and all(type(value[key]) is int and value[key] > 0 for key in
                     ("guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid"))
-            and all(value[key] == 0 for key in ("uid", "gid", "euid", "egid")),
+            and all(type(value[key]) is int and value[key] == 0 for key in ("uid", "gid", "euid", "egid")),
             "CORE_BOOTSTRAP_HELLO_IDENTITY")
     exact(value["python"], {"path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"},
           "CORE_BOOTSTRAP_PYTHON")
+    remote = validate_remote_management(value["remote_management"])
+    require(value["python"] == {key: (remote["python"]["resolved_path"] if key == "path"
+                                      else remote["python"][key]) for key in PROGRAM_FIELDS},
+            "CORE_BOOTSTRAP_PYTHON_PROJECTION")
     digest(value["python"]["sha256"], "CORE_BOOTSTRAP_PYTHON")
     validate_carrier(value["carrier_unit"])
     exact(value["process_limits"], {"cpu_soft", "cpu_hard", "nofile_soft", "nofile_hard",
@@ -443,6 +644,31 @@ def _validate_manifest(value, members, bootstrap_sha256):
     exact(value["implementation"], {"commit", "tree"}, "CORE_BOOTSTRAP_IMPLEMENTATION")
     commit(value["implementation"]["commit"], "CORE_BOOTSTRAP_IMPLEMENTATION")
     commit(value["implementation"]["tree"], "CORE_BOOTSTRAP_IMPLEMENTATION")
+    amendment = exact(value["amendment"], {"baseline", "owner_decision", "closure", "implementation"},
+                      "CORE_BOOTSTRAP_AMENDMENT")
+    require(amendment == {"baseline": AMENDMENT_BASELINE, "owner_decision": AMENDMENT_OWNER_DECISION,
+                         "closure": AMENDMENT_CLOSURE, "implementation": value["implementation"]}
+            and value["implementation"]["tree"] != "0" * 40
+            and value["implementation"]["commit"] not in {"0" * 40, BASELINE["commit"], CLOSURE["commit"],
+                AMENDMENT_BASELINE["commit"], AMENDMENT_CLOSURE["commit"],
+                "520f77f578b90d31870517e33e29bee42918f3c0"}, "CORE_BOOTSTRAP_AMENDMENT")
+    approved = exact(value["approved_inputs"], {"path", "bytes", "sha256", "approved_source_relation_sha256"},
+                     "CORE_BOOTSTRAP_APPROVED_INPUTS")
+    require(approved["path"] == "private/approved-inputs.json" and type(approved["bytes"]) is int
+            and 0 < approved["bytes"] <= 1048576 and approved["path"] in members,
+            "CORE_BOOTSTRAP_APPROVED_INPUTS")
+    approved_raw = bytes(members[approved["path"]])
+    require(len(approved_raw) == approved["bytes"] and sha(approved_raw) == approved["sha256"],
+            "CORE_BOOTSTRAP_APPROVED_INPUTS")
+    artifact = document(approved_raw, 1048576)
+    components = {"source_relation", "policy_basis", "historical_capacity_obligations",
+                  "retained_preparation", "reconciliation"}
+    exact(artifact, {"schema", "scope", "amendment"} | components, "CORE_BOOTSTRAP_APPROVED_FIELDS")
+    require(artifact["schema"] == "local-hand-q2-core-approved-inputs/v1" and artifact["scope"] == SCOPE
+            and artifact["amendment"] == amendment
+            and all(type(artifact[key]) is dict and artifact[key] for key in components)
+            and sha(encoded(artifact["source_relation"], newline=False))
+                == approved["approved_source_relation_sha256"], "CORE_BOOTSTRAP_APPROVED_INPUTS")
     entry = exact(value["entry"], ENTRY_FIELDS, "CORE_BOOTSTRAP_ENTRY_FIELDS")
     for name, path in FIELD_PATHS.items():
         require(entry[name + "_path"] == path and type(entry[name + "_bytes"]) is int
@@ -451,7 +677,7 @@ def _validate_manifest(value, members, bootstrap_sha256):
     require(entry["loader_sha256"] == LOADER_SHA256
             and entry["bootstrap_sha256"] == bootstrap_sha256, "CORE_BOOTSTRAP_ENTRY_BINDING")
     digest(entry["carrier_argv_sha256"], "CORE_BOOTSTRAP_ENTRY")
-    digest(entry["management_entry_binding_sha256"], "CORE_BOOTSTRAP_ENTRY")
+    digest(entry["local_management_binding_sha256"], "CORE_BOOTSTRAP_ENTRY")
     locators = exact(value["locators"], LOCATOR_FIELDS, "CORE_BOOTSTRAP_LOCATOR_FIELDS")
     require(locators["schema"] == "local-hand-q2-core-private-locators/v1"
             and locators["carrier_unit"] == CARRIER_UNIT, "CORE_BOOTSTRAP_LOCATORS")
@@ -473,11 +699,11 @@ def _validate_manifest(value, members, bootstrap_sha256):
         require(type(locators[key]) is str and locators[key].isascii()
                 and re.fullmatch(r"[A-Za-z0-9_.@:-]{1,255}", locators[key]),
                 "CORE_BOOTSTRAP_LOCATOR_UNIT")
-    relation = {"schema": "local-hand-q2-core-locator-relation/v1",
-                "management_entry_binding_sha256": entry["management_entry_binding_sha256"],
+    relation = {"schema": "local-hand-q2-core-locator-relation/v2",
+                "local_management_binding_sha256": entry["local_management_binding_sha256"],
                 "observation_record_sha256": locators["observation_record_sha256"],
                 "locators": {key: item for key, item in locators.items() if key != "source_relation_sha256"}}
-    require(sha(encoded(relation)) == locators["source_relation_sha256"], "CORE_BOOTSTRAP_LOCATOR_RELATION")
+    require(sha(encoded(relation, newline=False)) == locators["source_relation_sha256"], "CORE_BOOTSTRAP_LOCATOR_RELATION")
     rows = value["members"]
     require(type(rows) is list and 1 <= len(rows) <= PACKAGE_LIMITS["members"]
             and len(rows) == len(members), "CORE_BOOTSTRAP_MEMBER_COUNT")
@@ -485,7 +711,7 @@ def _validate_manifest(value, members, bootstrap_sha256):
     roles = {role: [] for role in ROLES}
     for row in rows:
         exact(row, MEMBER_FIELDS, "CORE_BOOTSTRAP_MEMBER_FIELDS"); relative(row["path"])
-        require(row["role"] in ROLES and row["mode"] in (0o644, 0o755)
+        require(row["role"] in ROLES and row["mode"] in ((0o600,) if row["role"] == "approved-inputs" else (0o644, 0o755))
                 and type(row["bytes"]) is int and 0 <= row["bytes"] <= PACKAGE_LIMITS["member_bytes"],
                 "CORE_BOOTSTRAP_MEMBER")
         digest(row["sha256"], "CORE_BOOTSTRAP_MEMBER")
@@ -509,6 +735,12 @@ def _validate_manifest(value, members, bootstrap_sha256):
                 require(origin["kind"] == "implementation-blob"
                         and origin["commit"] == value["implementation"]["commit"]
                         and row["path"] in FIELD_PATHS.values(), "CORE_BOOTSTRAP_ORIGIN")
+        elif row["role"] == "approved-inputs":
+            require(row["path"] == approved["path"] and row["bytes"] == approved["bytes"]
+                    and row["sha256"] == approved["sha256"]
+                    and origin == {"kind": "approved-inputs", **{key: approved[key] for key in
+                        ("bytes", "sha256", "approved_source_relation_sha256")}},
+                    "CORE_BOOTSTRAP_APPROVED_ORIGIN")
         elif row["role"] == "candidate-git-metadata":
             exact(origin, {"kind", "commit", "git_path"}, "CORE_BOOTSTRAP_ORIGIN")
             relative(origin["git_path"])
@@ -528,7 +760,7 @@ def _validate_manifest(value, members, bootstrap_sha256):
         paths.append(row["path"]); roles[row["role"]].append(row)
     require(paths == sorted(paths, key=lambda item: item.encode("ascii")) and len(paths) == len(set(paths))
             and roles["candidate-worktree"] and roles["candidate-git-metadata"]
-            and len(roles["wheel"]) == len(roles["projection"]) == 1
+            and len(roles["wheel"]) == len(roles["projection"]) == len(roles["approved-inputs"]) == 1
             and {row["path"] for row in roles["field-code"]} == set(FIELD_PATHS.values()),
             "CORE_BOOTSTRAP_INVENTORY")
     for name, path in FIELD_PATHS.items():
@@ -546,10 +778,10 @@ def parse_package(raw, bootstrap_sha256):
     length = struct.unpack(">Q", view[offset:offset + 8])[0]; offset += 8
     require(0 < length <= PACKAGE_LIMITS["manifest_bytes"] and offset + length <= len(raw),
             "CORE_BOOTSTRAP_MANIFEST_LIMIT")
-    # Keep one immutable package allocation. Member views below reference it;
-    # they do not duplicate up to another 32 MiB before dispatcher admission.
+    # Member views retain one package allocation until dispatcher admission.
     manifest = document(bytes(view[offset:offset + length]), PACKAGE_LIMITS["manifest_bytes"]); offset += length
-    require(type(manifest) is dict and type(manifest.get("members")) is list,
+    require(type(manifest) is dict and type(manifest.get("members")) is list
+            and 1 <= len(manifest["members"]) <= PACKAGE_LIMITS["members"],
             "CORE_BOOTSTRAP_MANIFEST")
     members = {}
     for row in manifest["members"]:
