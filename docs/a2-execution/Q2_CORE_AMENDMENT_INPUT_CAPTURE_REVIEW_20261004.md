@@ -132,6 +132,14 @@ quota 重复/重排/溢出、原 manifest 不可近似复原、sudo group 语义
 已将该 Linux-only 模块的 skip 移到 import 前，与既有 entry/bootstrap 测试保持一致。
 这不增加 Windows E3 支持、不改变 Linux 实现或减少 Linux 验收；原失败保留，修复结果另按准确提交记录。
 
+上述两项测试修复分别为 `6edea1418516fa75bbed8168796b9656b512312d` 与
+`25dabbb4763520e26c75b769c3acc6d9a6f69c34`，均已普通推送 main，未改写 C/D 历史。
+在 `25dabbb` 上重新执行全部本轮核心定向范围：**130 passed**；fixture-check + capture + entry
+三组：**79 passed**。这两个范围有重叠，不相加冒充独立测试总数。
+[准确提交 CI 37177671053](https://github.com/kongbu0621/infra-local-hand/actions/runs/37177671053)
+在本记录写入时为 **in_progress**；不能提前宣称 source/installed 全绿或 D4 完成。
+完整源码实现仍为 `5e129f7` 的字节，上述后续实现树只增文档与测试修复；实际 field package 仍未冻结。
+
 | 阶段 | 本轮准确状态 / 下一直接工作 |
 | --- | --- |
 | D1 | **部分实现**。上述固定输入组件及历史原件复算已完成；还须组装完整 approved-input artifact、独立 parser、local binding、package/HELLO v2 与 current admission。 |
