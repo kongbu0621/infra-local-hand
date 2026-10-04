@@ -6,10 +6,8 @@ import another D helper.  ``dispatch`` owns all ordering and validation.  The
 dispatcher so the contract can be tested without substituting modeled case
 results for field evidence.
 
-The default effects include protected files, bounded installation, original
-case execution and evidence readers. Current-guest admission, actual preparation
-and complete shared-pool accounting remain fail-closed at their named integration
-gaps. Component tests never substitute for original field evidence.
+Current-guest admission, preparation capacity collectors and complete shared-pool
+accounting remain fail-closed. Component tests are not original field evidence.
 """
 from __future__ import annotations
 
@@ -258,7 +256,7 @@ UNIMPLEMENTED_FIELD_EFFECTS = (
     "installation.shared_pool_peak_accounting",
     "installation.deadline_guarding",
     "installation.program_execution_binding",
-    "preparation.existing_account_completion",
+    "preparation.current_capacity_collectors",
     "evidence.usage_and_peak_accounting",
 )
 
@@ -1379,12 +1377,7 @@ def _remote_management(value):
 
 
 def _approved_inputs_envelope(context):
-    """Bind the private envelope and component preimages, never live facts.
-
-    This envelope check is followed by _validate_approved_components in the
-    dispatch path. Neither check substitutes for the current-guest collector
-    or the host's pre-issuance verification of original retained raw bytes.
-    """
+    """Bind preimages, not live facts; raw verification/admission remain required."""
     manifest, members = context["manifest"], context["members"]
     descriptor = _exact(manifest["approved_inputs"], (
         "path", "bytes", "sha256", "approved_source_relation_sha256"),
@@ -1705,15 +1698,7 @@ def _consumption_info(context):
 
 
 def field_readiness():
-    """Return the non-field readiness boundary without performing an effect.
-
-    ``unbound_approved_inputs`` names statically validated v2 components not
-    yet connected to current-guest admission. Those current facts must not be
-    guessed or silently adopted from the machine.
-    ``unimplemented_effects`` is ordinary D work that can be completed after
-    the inputs are bound.  Keeping the two lists separate prevents a code
-    implementation from laundering an input/governance gap into live PASS.
-    """
+    """Inert readiness report: distinguish missing input bindings from D code gaps."""
     return {
         "schema": "local-hand-q2-core-field-readiness/v1",
         "scope": SCOPE,
@@ -1829,12 +1814,7 @@ def _wheel_payload(raw, source_files):
 
 
 def verify_install_inputs(context):
-    """Verify package members needed by the protected installer, in RAM.
-
-    This creates no path, invokes no program and does not turn the package into
-    a live-ready package.  It is the deterministic first half of P5 and is
-    useful even while P4's expected admission inputs remain unbound.
-    """
+    """RAM-only P5 input verification; no effects or live-readiness claim."""
     manifest, members = context["manifest"], context["members"]
     if manifest.get("schema") == PACKAGE_SCHEMA:
         _approved_inputs_envelope(context)
@@ -1931,6 +1911,10 @@ def verify_install_inputs(context):
             "members_sha256": _sha(canonical(rows))}
 
 
+def _prep_require(condition, code):
+    _require(condition, "CORE_EFFECT_PREPARATION_" + code)
+
+
 def _prep_guard(effects, deadline):
     outer = effects.context["guest_deadlines"]
     active = getattr(effects, "_active_case_deadlines", {})
@@ -1939,8 +1923,8 @@ def _prep_guard(effects, deadline):
              active.get("remote_final_deadline_ns"): active.get("remote_final_monotonic_deadline_ns"),
              outer["boottime_deadline_ns"]: outer["monotonic_deadline_ns"]}
     mono = pairs.get(deadline)
-    _require(type(mono) is int and deadline <= outer["boottime_deadline_ns"]
-             and mono <= outer["monotonic_deadline_ns"], "CORE_EFFECT_PREPARATION_CLOCK_BINDING")
+    _prep_require(type(mono) is int and deadline <= outer["boottime_deadline_ns"]
+             and mono <= outer["monotonic_deadline_ns"], 'CLOCK_BINDING')
     # Original per-case clocks survive suspend; an outer-offset recalculation
     # could incorrectly extend the case's monotonic deadline.
     return _clock(effects, {"boot_id": outer["boot_id"],
@@ -1993,10 +1977,10 @@ def _prep_pin(value):
 def _prep_make_plan(effects, case, expires_at):
     admission = effects._admission
     detail = getattr(effects, "_admission_detail", None)
-    _require(type(detail) is dict and {"quota_mount", "quota_inventory", "retained_before"}
-             <= set(detail), "CORE_EFFECT_PREPARATION_CURRENT_FACTS_REQUIRED")
-    _require(case["index"] == 2 or type(detail.get("system_geometry")) is dict,
-             "CORE_EFFECT_PREPARATION_GEOMETRY_REQUIRED")
+    _prep_require(type(detail) is dict and {"quota_mount", "quota_inventory", "retained_before"}
+             <= set(detail), 'CURRENT_FACTS_REQUIRED')
+    _prep_require(case["index"] == 2 or type(detail.get("system_geometry")) is dict,
+             'GEOMETRY_REQUIRED')
     paths = effects.preparation_paths(case, effects.context["manifest"]["locators"])
     guest = admission["guest"]
     retained = _approved_inputs_envelope(effects.context)["retained_preparation"]
@@ -2028,31 +2012,31 @@ def _prep_make_plan(effects, case, expires_at):
 def _prep_translate(case, plan, receipt, children, helpers):
     """The original candidate constructor is authoritative; only schema changes."""
     driver, assembly = helpers["q2_prepare_driver"], helpers["q2_prepare_assembly"]
-    _require(case in CASES and plan["scope"] == SCOPE and plan["baseline"] == BASELINE["commit"]
-             and plan["preparation_id"] == case["preparation_id"], "CORE_EFFECT_PREPARATION_SCOPE")
+    _prep_require(case in CASES and plan["scope"] == SCOPE and plan["baseline"] == BASELINE["commit"]
+             and plan["preparation_id"] == case["preparation_id"], 'SCOPE')
     _exact(receipt, ("schema", "preparation_id", "plan_sha256", "status", "reason", "facts",
                     "q2_accepted", "q3_accepted", "production_supported", "fixture_generated"),
            "CORE_EFFECT_PREPARATION_RESULT")
-    _require(receipt["schema"] == "local-hand-q2-fixture-preparation/v1"
+    _prep_require(receipt["schema"] == "local-hand-q2-fixture-preparation/v1"
              and receipt["preparation_id"] == case["preparation_id"]
              and receipt["plan_sha256"] == _sha(driver.encoded(plan))
              and receipt["status"] == "RESOURCES_PREPARED" and receipt["reason"] is None
              and all(receipt[key] is False for key in
                      ("q2_accepted", "q3_accepted", "production_supported", "fixture_generated")),
-             "CORE_EFFECT_PREPARATION_RESULT")
+             'RESULT')
     observed = receipt["facts"]
-    _require(observed["retained_before"] == observed["retained_after"],
-             "CORE_EFFECT_PREPARATION_RETAINED_CHANGED")
+    _prep_require(observed["retained_before"] == observed["retained_after"],
+             'RETAINED_CHANGED')
     authority = {"schema": "local-hand-q2-preparation-authority/v1", "scope": SCOPE,
         "baseline": BASELINE["commit"], "plan_sha256": receipt["plan_sha256"],
         "preparation_id": case["preparation_id"], "receipt_sha256": _sha(driver.encoded(receipt))}
     original, bound, manifest = driver.facts_from_observed(plan, observed, children, authority)
-    _require(bound == authority, "CORE_EFFECT_PREPARATION_AUTHORITY_CHANGED")
+    _prep_require(bound == authority, 'AUTHORITY_CHANGED')
     facts = copy.deepcopy(original)
     schemas = {1: "local-hand-q2-system-assembly-facts/v1",
                2: "local-hand-q4-cancel-assembly-facts/v1", 3: "local-hand-q4-h11-assembly-facts/v1"}
-    _require(original["schema"] == ("local-hand-q2-assembly-facts/v1" if case["index"] == 2
-             else "local-hand-q2-system-assembly-facts/v1"), "CORE_EFFECT_PREPARATION_SCHEMA")
+    _prep_require(original["schema"] == ("local-hand-q2-assembly-facts/v1" if case["index"] == 2
+             else "local-hand-q2-system-assembly-facts/v1"), 'SCHEMA')
     facts["schema"] = schemas[case["index"]]
     assembled = assembly.assemble(facts)
     return {"facts": facts, "authority": authority, "manifest": manifest, "assembled": assembled}
@@ -2060,82 +2044,123 @@ def _prep_translate(case, plan, receipt, children, helpers):
 
 
 
-def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
-    _require(type(raw) is bytes and len(raw) <= MEMBER_LIMIT,
-             "CORE_EFFECT_PREPARATION_FILE_LIMIT")
-    _prep_guard(effects, deadline)
-    parent = effects._held_directory(str(PurePosixPath(path).parent))
-    fd = None
-    try:
+class _PrepIO:
+    """Guard each syscall; retain late-opened fds for release, never retry I/O."""
+    def __init__(self, effects, deadline):
+        self.effects, self.deadline, self.fds = effects, deadline, []
+
+    def call(self, function, *args, **kwargs):
+        _prep_guard(self.effects, self.deadline)
+        value = function(*args, **kwargs)
+        _prep_guard(self.effects, self.deadline)
+        return value
+
+    def open(self, *args, **kwargs):
+        _prep_guard(self.effects, self.deadline)
+        fd = os.open(*args, **kwargs)
+        self.fds.append(fd)
+        _prep_guard(self.effects, self.deadline)
+        return fd
+
+    def directory(self, path):
+        FieldEffects._absolute(path, "CORE_EFFECT_PREPARATION_PATH")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        fd = self.open("/", flags)
+        for part in PurePosixPath(path).parts[1:]:
+            child = self.open(part, flags, dir_fd=fd)
+            self.fds.remove(fd)
+            os.close(fd)
+            fd = child
+        return fd
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        for fd in reversed(self.fds):
+            os.close(fd)
+
+
+def _prep_directory(effects, path, uid, gid, mode, deadline):
+    with _PrepIO(effects, deadline) as io:
+        parent = io.directory(str(PurePosixPath(path).parent))
         name = PurePosixPath(path).name
-        _prep_guard(effects, deadline)
-        fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
+        io.call(os.mkdir, name, mode, dir_fd=parent)
+        fd = io.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=parent)
+        io.call(os.fchown, fd, uid, gid)
+        io.call(os.fchmod, fd, mode)
+        io.call(os.fsync, fd)
+        io.call(os.fsync, parent)
+        info = io.call(os.fstat, fd)
+        named = io.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
+        _prep_require((info.st_dev, info.st_ino) == (named.st_dev, named.st_ino)
+                 and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, mode),
+                 'DIRECTORY_OWNER')
+        return {"path": path, "device": info.st_dev, "inode": info.st_ino,
+                "uid": uid, "gid": gid, "mode": info.st_mode}
+
+
+def _prep_file(effects, path, raw, deadline, *, uid=0, gid=0):
+    _prep_require(type(raw) is bytes and len(raw) <= MEMBER_LIMIT,
+             'FILE_LIMIT')
+    with _PrepIO(effects, deadline) as io:
+        parent = io.directory(str(PurePosixPath(path).parent))
+        name = PurePosixPath(path).name
+        fd = io.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
                      0o600, dir_fd=parent)
-        _prep_guard(effects, deadline)
-        os.fchown(fd, uid, gid)
-        _prep_guard(effects, deadline)
-        os.fchmod(fd, 0o600)
+        io.call(os.fchown, fd, uid, gid)
+        io.call(os.fchmod, fd, 0o600)
         view = memoryview(raw)
         while view:
-            _prep_guard(effects, deadline)
-            count = os.write(fd, view)
-            _require(count > 0, "CORE_EFFECT_PREPARATION_SHORT_WRITE")
+            count = io.call(os.write, fd, view)
+            _prep_require(count > 0, 'SHORT_WRITE')
             view = view[count:]
-        _prep_guard(effects, deadline)
-        os.fsync(fd)
-        _prep_guard(effects, deadline)
-        os.fsync(parent)
-        _prep_guard(effects, deadline)
-        info = os.fstat(fd)
-        _prep_guard(effects, deadline)
-        reread = os.pread(fd, len(raw) + 1, 0)
-        _prep_guard(effects, deadline)
-        _require(reread == raw and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
+        io.call(os.fsync, fd)
+        io.call(os.fsync, parent)
+        info = io.call(os.fstat, fd)
+        reread = io.call(os.pread, fd, len(raw) + 1, 0)
+        _prep_require(reread == raw and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
                  and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (uid, gid, 384),
-                 "CORE_EFFECT_PREPARATION_FILE")
+                 'FILE')
         identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-        named = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        _require((named.st_dev, named.st_ino, named.st_size, named.st_mtime_ns, named.st_ctime_ns)
-                 == identity, "CORE_EFFECT_PREPARATION_SOURCE_CHANGED")
-        effects.held.append(fd)
+        named = io.call(os.stat, name, dir_fd=parent, follow_symlinks=False)
+        _prep_require((named.st_dev, named.st_ino, named.st_size, named.st_mtime_ns, named.st_ctime_ns)
+                 == identity, 'SOURCE_CHANGED')
         result = {"path": path, "fd": fd, "identity": identity, "raw": raw,
                   "uid": uid, "gid": gid}
-        fd = None
-    finally:
-        if fd is not None: os.close(fd)
-        os.close(parent)
-    _prep_guard(effects, deadline)
-    return result
+        effects.held.append(fd)
+        io.fds.remove(fd)
+        return result
 
 
 def _prep_reread(effects, record, deadline):
-    _prep_guard(effects, deadline)
-    info = os.fstat(record["fd"])
-    _require((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-             == record["identity"] and info.st_nlink == 1,
-             "CORE_EFFECT_PREPARATION_SOURCE_CHANGED")
-    raw = os.pread(record["fd"], len(record["raw"]) + 1, 0)
-    _prep_guard(effects, deadline)
-    named = os.stat(record["path"], follow_symlinks=False)
-    _prep_guard(effects, deadline)
-    after = os.fstat(record["fd"])
-    _require((named.st_dev, named.st_ino) == record["identity"][:2]
-             and (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
-             == record["identity"] and raw == record["raw"], "CORE_EFFECT_PREPARATION_SOURCE_CHANGED")
-    _prep_guard(effects, deadline)
-    return raw
+    with _PrepIO(effects, deadline) as io:
+        before = io.call(os.fstat, record["fd"])
+        raw = io.call(os.pread, record["fd"], len(record["raw"]) + 1, 0)
+        parent = io.directory(str(PurePosixPath(record["path"]).parent))
+        named = io.call(os.stat, PurePosixPath(record["path"]).name,
+                        dir_fd=parent, follow_symlinks=False)
+        after = io.call(os.fstat, record["fd"])
+        for info in (before, named, after):
+            _prep_require((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+                     == record["identity"] and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
+                     and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+                     == (record["uid"], record["gid"], 384) and raw == record["raw"],
+                     'SOURCE_CHANGED')
+        return raw
 
 
 def _prep_quota(source, command, project, values=None):
     """Share the verified read ABI; this mutator accepts only fixed new limits."""
-    _require(command in (0x800007, 0x800008), "CORE_EFFECT_PREPARATION_QUOTA_ABI")
+    _prep_require(command in (0x800007, 0x800008), 'QUOTA_ABI')
     if command == 0x800008:
-        _require(project in {i for c in CASES for i in c["project_ids"]}
+        _prep_require(project in {i for c in CASES for i in c["project_ids"]}
                  and values == {"hard": 1024, "ihard": 128, "valid": 5},
-                 "CORE_EFFECT_PREPARATION_QUOTA_MUTATION")
+                 'QUOTA_MUTATION')
     quota = _CapQuota(source)
     if command == 0x800007:
-        _require(values is None, "CORE_EFFECT_PREPARATION_QUOTA_MUTATION")
+        _prep_require(values is None, 'QUOTA_MUTATION')
         return quota.block(project)
     block = quota.Block()
     for key, value in values.items(): setattr(block, key, value)
@@ -2157,6 +2182,123 @@ def _prep_quota_retained(rows):
         if row["project"] == 0 and all(row[key] == 0 for key in ("hard", "soft", "ihard", "isoft")):
             row["space"] = row["inodes"] = 0
     return result
+
+
+def _prep_root(effects, planned, account, mount, deadline):
+    import errno
+    import fcntl
+    project = planned["project_id"]
+    _prep_require(project in {i for c in CASES for i in c["project_ids"]}
+             and planned["hard_bytes"] == 1048576 and planned["inode_hard_limit"] == 128,
+             'QUOTA_MUTATION')
+    with _PrepIO(effects, deadline) as io:
+        try:
+            old = io.call(_prep_quota, mount["source"], 0x800007, project)
+        except OSError as error:
+            if error.errno != errno.ESRCH: raise
+            old = {}
+        _prep_require(all(v == 0 for k, v in old.items() if k not in ("valid", "project")),
+                 'PROJECT_EXISTS')
+        created = _prep_directory(effects, planned["path"], account["uid"], account["gid"], 448, deadline)
+        fd = io.directory(planned["path"])
+        values = list(struct.unpack("=IIIII8s", io.call(fcntl.ioctl, fd, 0x801c581f, bytes(28))))
+        _prep_require(values[3] == 0, 'INHERITED_PROJECT')
+        values[0] |= 512
+        values[3] = project
+        io.call(fcntl.ioctl, fd, 0x401c5820, struct.pack("=IIIII8s", *values))
+        assigned = io.call(_prep_quota, mount["source"], 0x800007, project)
+        _prep_require(assigned["inodes"] == 1 and all(assigned[k] == 0 for k in
+                 ("hard", "soft", "ihard", "isoft", "btime", "itime")),
+                 'PROJECT_ASSIGNMENT')
+        io.call(_prep_quota, mount["source"], 0x800008, project,
+                {"hard": 1024, "ihard": 128, "valid": 5})
+        io.call(os.fsync, fd)
+        flags, _, _, actual, _, _ = struct.unpack("=IIIII8s", io.call(fcntl.ioctl, fd, 0x801c581f, bytes(28)))
+        quota = io.call(_prep_quota, mount["source"], 0x800007, project)
+        for info in (io.call(os.fstat, fd), io.call(os.stat, planned["path"], follow_symlinks=False)):
+            _prep_require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+                     == tuple(created[k] for k in ("device", "inode", "uid", "gid", "mode")),
+                     'ROOT_CHANGED')
+        _prep_require(actual == project and flags & 512 and quota["valid"] & 5 == 5
+                 and quota["hard"] == 1024 and quota["ihard"] == 128
+                 and io.call(effects._capacity_quota_enforcement) & 48 == 48,
+                 'QUOTA_ENFORCEMENT')
+        return dict(planned, **{k: v for k, v in created.items() if k != "path"},
+                    filesystem="ext4", filesystem_uuid=mount["uuid"], xflags=flags,
+                    accounting=True, enforcement=True, identity_unchanged=True)
+
+
+def _prep_initialize(effects, prepared, deadline):
+    facts, assembled = prepared["facts"], prepared["assembled"]
+    uid, gid = facts["ordinary"]["uid"], facts["ordinary"]["gid"]
+    policy = canonical(assembled["policy"], newline=True)
+    sources = prepared["source_objects"]
+    sources["policy"] = _prep_file(effects, facts["paths"]["policy"], policy, deadline, uid=uid, gid=gid)
+    authority = {"authority_id": facts["identity"]["authority_id"],
+        "ledger_id": facts["identity"]["ledger_id"], "state_root": facts["paths"]["broker_root"]}
+    sources["authority"] = _prep_file(effects, facts["paths"]["authority_root"] + "/authority.json",
+        canonical(authority, newline=True), deadline, uid=uid, gid=gid)
+    name = "tests/e3_host/q2_prepare_assembly.py"
+    # Execute the fixed projected constructor as the ordinary identity, not
+    # its CLI (which would require the deliberately unprojected contract).
+    program = """import hashlib,importlib.util,json,os,stat,sys
+source,expected,policy,digest,ledger,tools,installed=sys.argv[1:]
+def read(path,limit,owner,digest):
+ fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+ try:
+  before=os.fstat(fd); raw=os.read(fd,limit+1); after=os.fstat(fd)
+  assert all(getattr(before,k)==getattr(after,k) for k in ('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns'))
+  assert stat.S_ISREG(after.st_mode) and after.st_nlink==1
+  assert after.st_uid==owner and not after.st_mode&18
+  assert path!=policy or (stat.S_IMODE(after.st_mode)==384 and after.st_gid==os.getgid())
+  assert len(raw)<=limit and hashlib.sha256(raw).hexdigest()==digest
+  return raw
+ finally: os.close(fd)
+raw=read(source,262144,0,expected)
+payload=read(policy,65536,os.getuid(),digest)
+sys.path[:0]=[installed,tools]
+module=importlib.util.module_from_spec(importlib.util.spec_from_file_location('_core_ledger',source))
+exec(compile(raw,source,'exec'),module.__dict__)
+value=module.initialize_ledger(json.loads(payload),ledger)
+print(json.dumps(value,sort_keys=True,separators=(',',':')))
+"""
+    argv = [facts["setpriv"]["path"], "--reuid=" + str(uid), "--regid=" + str(gid),
+        "--clear-groups", "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all",
+        "--no-new-privs", facts["installation"]["programs"]["python"]["path"], "-I", "-B", "-c",
+        program, facts["source"]["root"] + "/" + name, facts["source"]["files"][name],
+        facts["paths"]["policy"], _sha(policy), facts["identity"]["ledger_id"],
+        facts["source"]["root"] + "/tools", facts["installation"]["package_root"]]
+    original = effects._effect_guard
+    def guard():
+        _prep_guard(effects, deadline)
+        return original()
+    effects._effect_guard = guard
+    try:
+        ledger = document(effects._installation_command(argv), limit=32768)
+    finally:
+        effects._effect_guard = original
+    _exact(ledger, ("path", "device", "inode", "uid", "mode", "ledger_id", "generation"),
+           "CORE_EFFECT_PREPARATION_LEDGER")
+    _prep_require(ledger["path"] == facts["paths"]["broker_root"] + "/jobs.sqlite"
+             and ledger["uid"] == uid and ledger["mode"] == 384
+             and ledger["ledger_id"] == facts["identity"]["ledger_id"]
+             and ledger["generation"] == assembled["chain"]["broker_generation"],
+             'LEDGER')
+    with _PrepIO(effects, deadline) as io:
+        info = io.call(os.stat, ledger["path"], follow_symlinks=False)
+        _prep_require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+                 == (ledger["device"], ledger["inode"], uid, gid, 384)
+                 and stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
+                 'LEDGER')
+    result = dict(schema="local-hand-q2-preparation-result/v1", status="PREPARED",
+        source_commit=facts["source"]["commit"], preparation_id=prepared["case"]["preparation_id"],
+        policy={"path": facts["paths"]["policy"], "sha256": _sha(policy)}, ledger=ledger,
+        authority_sha256=_sha(canonical(prepared["authority"], newline=True)),
+        manifest_sha256=_sha(canonical(prepared["manifest"], newline=True)),
+        q2_accepted=False, q3_accepted=False, production_supported=False)
+    _prep_file(effects, prepared["paths"]["reservation"] + "/prepared.json",
+               canonical(result, newline=True), deadline)
+    prepared["prepared_result"] = result
 
 
 
@@ -2310,14 +2452,7 @@ class _CapQuota:
 
 
 class FieldEffects:
-    """Field-side effect surface with real, fail-closed storage primitives.
-
-    Construction is inert.  The path primitives below walk from a held root
-    descriptor, use ``openat``/``O_NOFOLLOW``, preserve the created inode
-    through reread, and fsync both file and parent.  High-level methods remain
-    non-releasable for the accurately enumerated reasons returned by
-    :func:`field_readiness`; no caller-supplied boolean can bypass them.
-    """
+    """Inert construction; protected fd-relative effects. See field_readiness gaps."""
 
     def __init__(self, context):
         self.context = context
@@ -2508,20 +2643,15 @@ class FieldEffects:
 
     @staticmethod
     def preparation_paths(case, locators):
-        """Resolve intent-relative objects to the five fixed held parents.
-
-        The intent remains relative as required by A.  This conversion is the
-        mandatory boundary before calling candidate preparation validators,
-        which require absolute paths.
-        """
-        _require(case in CASES and type(locators) is dict,
-                 "CORE_EFFECT_PREPARATION_PATH_INPUT")
+        """Map A's relative intents to fixed absolute candidate preparation paths."""
+        _prep_require(case in CASES and type(locators) is dict,
+                 'PATH_INPUT')
         parents = {role: locators.get(role + "_parent")
                    for role in ("state", "quota", "journal", "evidence")}
         for value in parents.values():
             FieldEffects._absolute(value, "CORE_EFFECT_PREPARATION_PARENT")
-        _require(len(set(parents.values())) == len(parents),
-                 "CORE_EFFECT_PREPARATION_PARENT_ALIAS")
+        _prep_require(len(set(parents.values())) == len(parents),
+                 'PARENT_ALIAS')
         directories = {}
         for row in _planned_directories(case):
             relative = PurePosixPath(row["relative_path"])
@@ -2534,9 +2664,9 @@ class FieldEffects:
             basename = PurePosixPath(planned["path"]).name
             roots.append(dict(planned, path=(PurePosixPath(directories[role]["path"])
                                               / basename).as_posix()))
-        _require(len({row["path"] for row in directories.values()}) == len(DIRECTORY_ROLES)
+        _prep_require(len({row["path"] for row in directories.values()}) == len(DIRECTORY_ROLES)
                  and len({row["path"] for row in roots}) == 7,
-                 "CORE_EFFECT_PREPARATION_PATH_ALIAS")
+                 'PATH_ALIAS')
         return {"directories": directories, "roots": roots}
 
     def _persistence_path(self, case_id, logical):
@@ -3128,9 +3258,89 @@ class FieldEffects:
         return {name: self._candidate_helper(name, verified) for name in PREPARATION_HELPERS}
 
     def prepare_case(self, case, intent, preparation_deadline_ns):
-        _require(case in CASES and intent == build_intent(case), "CORE_EFFECT_PREPARATION_INPUT")
+        _prep_require(case in CASES and intent == build_intent(case), 'INPUT')
         _integer(preparation_deadline_ns, 1, code="CORE_EFFECT_PREPARATION_DEADLINE")
-        raise DispatchError("CORE_EFFECT_PREPARATION_EXISTING_ACCOUNT_ADAPTER_INCOMPLETE")
+        _prep_require(self._installation_receipt is not None and self._persistence_ready
+                 and self._admission is not None and os.geteuid() == os.getegid() == 0,
+                 'INSTALLATION_REQUIRED')
+        _prep_require(all(callable(getattr(self, "_capacity_" + name, None)) for name in
+                 ("retained_snapshot", "quota_inventory", "quota_enforcement")),
+                 'CURRENT_FACTS_REQUIRED')
+        deadline = preparation_deadline_ns
+        with _PrepIO(self, deadline) as io:
+            intent_path = self._persistence_path(case["case_id"], "cases/" + case["case_id"] + "/intent.json")
+            actual, pin = io.call(self.stable_read, intent_path, maximum=65536, expected_mode=384)
+            _prep_require(actual == canonical(intent, newline=True) and pin["uid"] == pin["gid"] == 0,
+                     'INTENT_REQUIRED')
+            helpers = io.call(self.preparation_helpers)
+            driver = helpers["q2_prepare_driver"]
+            # Fixed before the first write; never refresh expiry after preparation.
+            plan = _prep_make_plan(self, case, (time.time_ns() + OWNER_NS) // NS)
+            driver.validate_plan(plan)
+            parents, directories, children = self._admission["parents"], {}, {}
+            before = io.call(self._capacity_retained_snapshot)
+            inventory = io.call(self._capacity_quota_inventory)
+            _prep_require(before == self._admission_detail["retained_before"]
+                     and not set(case["project_ids"]) & {r["project"] for r in inventory},
+                     'RETAINED_CHANGED')
+            for role in ("state", "quota", "journal", "evidence"):
+                pin = parents[role]
+                info = io.call(os.fstat, io.directory(pin["path"]))
+                _prep_require((info.st_dev, info.st_ino, info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode))
+                         == tuple(pin[k] for k in ("dev", "ino", "uid", "gid", "mode")),
+                         'PARENT_CHANGED')
+            def directory(path, uid=0, gid=0, mode=493):
+                return _prep_directory(self, path, uid, gid, mode, deadline)
+            def save(path, value):
+                return _prep_file(self, path, canonical(value, newline=True), deadline)
+            reservation = plan["directories"]["reservation"]["path"]
+            directory(parents["state"]["path"] + "/" + SESSION + "/" + case["case_id"])
+            directories["reservation"] = directory(reservation, mode=448)
+            # Durable preimage precedes every other case resource.
+            objects = {"preparation-plan": save(reservation + "/preparation-plan.json", plan)}
+            for role in ("state", "quota", "journal", "evidence"):
+                session = parents[role]["path"] + "/" + SESSION
+                if role != "state" and case["index"] == 1: directory(session)
+                info = io.call(os.fstat, io.directory(session))
+                _prep_require(info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == 493,
+                         'SESSION_PROTECTION')
+                if role != "state": directory(session + "/" + case["case_id"])
+            account = plan["account"]
+            for role, row in plan["directories"].items():
+                if role == "reservation": continue
+                uid, gid = (account["uid"], account["gid"]) if row["owner"] == "ordinary" else (0, 0)
+                directories[role] = directory(row["path"], uid, gid, row["mode"])
+            for name in ("preflight", "business", "evidence", "management_evidence", "launcher_output",
+                         "supervisor_output", "owner_output", "launcher_declarations",
+                         "supervisor_declarations", "owner_declarations"):
+                parent = directories["declarations" if name.endswith("declarations") else "capture"]["path"]
+                children[name] = _prep_pin(directory(parent + "/" + name,
+                    mode=493 if name == "launcher_declarations" else 448))
+            roots = [_prep_root(self, row, account, plan["mounts"]["quota"], deadline) for row in plan["roots"]]
+            after = io.call(self._capacity_retained_snapshot)
+            remaining = [r for r in io.call(self._capacity_quota_inventory) if r["project"] not in case["project_ids"]]
+            _prep_require(before == after and _prep_quota_retained(inventory) == _prep_quota_retained(remaining),
+                     'RETAINED_CHANGED')
+            pins = {}
+            for role in ("controller", "management", "query", "supervisor", "ordinary"):
+                key = "retained_ordinary_cgroup" if role == "ordinary" and case["index"] == 2 else role + "_cgroup"
+                pins[role] = _prep_pin(parents[key])
+                pins[role]["path"] = pins[role]["path"].removeprefix("/sys/fs/cgroup")
+            observed = dict(host=plan["host"], ordinary=account, directories=directories, parents=pins,
+                mounts=plan["mounts"], roots=roots, installation=self._installation_receipt,
+                capacity_observed={"quota_inventory": inventory}, retained_before=before, retained_after=after)
+            if case["index"] != 2: observed["system_geometry"] = self._admission_detail["system_geometry"]
+            result = dict(schema="local-hand-q2-fixture-preparation/v1", preparation_id=case["preparation_id"],
+                plan_sha256=_sha(objects["preparation-plan"]["raw"]), status="RESOURCES_PREPARED", reason=None,
+                facts=observed, q2_accepted=False, q3_accepted=False, production_supported=False, fixture_generated=False)
+            objects["preparation-result"] = save(reservation + "/preparation-result.json", result)
+            prepared = dict(case=case, intent=intent, plan=plan, receipt=result, children=children,
+                source_objects=objects, **_prep_translate(case, plan, result, children, helpers))
+            prepared["paths"] = {k: v["path"] for k, v in {**directories, **children}.items()}
+            prepared["paths"]["retained_store"] = next(r["path"] for r in roots if r["slot"] == "store")
+            for name in ("authority", "manifest"): save(reservation + "/" + name + ".json", prepared[name])
+            io.call(_prep_initialize, self, prepared, deadline)
+            return prepared
 
     def plan_case(self, case, prepared, deadlines):
         _require(case in CASES and prepared.get("case") == case,

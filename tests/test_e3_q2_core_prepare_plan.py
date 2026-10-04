@@ -19,7 +19,7 @@ def test_unreleased_actual_preparation_stops_before_mutation(case, monkeypatch):
     effects = d.FieldEffects({})
     monkeypatch.setattr(d.os, "open", lambda *a, **kw: pytest.fail("file effect before release"))
     monkeypatch.setattr(d.os, "mkdir", lambda *a, **kw: pytest.fail("directory effect before release"))
-    with pytest.raises(d.DispatchError, match="EXISTING_ACCOUNT_ADAPTER_INCOMPLETE"):
+    with pytest.raises(d.DispatchError, match="INSTALLATION_REQUIRED"):
         effects.prepare_case(case, d.build_intent(case), 100)
 
 

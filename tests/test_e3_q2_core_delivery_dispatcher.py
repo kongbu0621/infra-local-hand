@@ -455,7 +455,7 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
             "installation.shared_pool_peak_accounting",
             "installation.deadline_guarding",
             "installation.program_execution_binding",
-            "preparation.existing_account_completion",
+            "preparation.current_capacity_collectors",
             "evidence.usage_and_peak_accounting",
         ],
     }
