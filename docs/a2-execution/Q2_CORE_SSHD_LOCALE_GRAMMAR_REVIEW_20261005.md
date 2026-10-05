@@ -54,3 +54,37 @@ python -B -m pytest -q tests/test_e3_q2_core_admission.py tests/test_e3_q2_core_
 
 业务任务没有执行，业务结果/证据没有新增回收；H01/Q4/H11 和有效 sshd 策略均未实测。
 三旧历史 UNKNOWN、全部承诺与原件、已消费诊断均保持；支线暂停，生产 `E3_SUPERVISION_UNVERIFIED` 保持。
+
+## G3 冻结后的最终结果
+
+准确 D 为 **`d0c8749e47647264c14c406cd85c8c68006689a0`**，直接父提交为上述独立 C。
+解析前核对 HEAD、干净 tracked 工作树、D 源码字节与 dispatcher SHA-256，以及 A 三文档未变化。
+既有 capture reader/runner 也保持原字节；没有采用另一个文法实现或历史双解析器流程。
+
+[准确 D 的 CI run 37305140260](https://github.com/kongbu0621/infra-local-hand/actions/runs/37305140260)
+已完成，API 确认 head SHA 为 D，**3/3 jobs SUCCESS**：变更分类、Linux、Windows。
+两平台源码测试及独立 wheel 安装验证通过；平台不适用步骤仍为 skip，不记为执行通过。
+这些 CI 安装在隔离 runner 中完成，不是现场安装、原 runtime candidate 的替换或业务验收。
+
+CI 通过后，G3 仅稳定读取原固定 capture 的 `.stdout`，保留 O_NOATIME/no-follow，
+核对读取前后元数据（含本地 atime）、7028 B 长度和固定 SHA-256
+`7c22202275cc851bac0707c7a630a4b302d7d347de087b2705af2289ab4a5dcc`。
+复用原 schema/hash validator 核对完整有序三文件及各自长度/摘要，不筛选、裁剪或改写任何配置。
+输入细节和原件摘要沿用[准确 A](q2-core-sshd-locale-grammar/REQUIREMENTS.md)；原文没有复制入仓库。
+
+只将准确 D 的 `_admit_sshd_source`、原文本检查及必要纯计算依赖装入独立本地解析进程。
+调用次数 **1**，完整输入 **3 文件 / 3569 B**，耗时 **139.679 ms / 5s**，解析进程退出 **0**：
+
+```json
+{"state":"ACCEPTED","code":"SOURCE_GRAMMAR_ACCEPTED"}
+```
+
+因此，**这份已保存完整快照的源码文法兼容性已修复，离线 G1–G3 完成**。
+没有第二次私有解析、更新旧 receipt、创建 marker、连接 SSH、采集、现场 helper、重装或清理。
+输入检查和纯解析不执行业务；业务任务执行及业务结果/证据新增回收均为 **0**。
+
+这不证明 guest 当前配置、有效 sshd 策略、登录前后环境安全、历史 05b 触发行或核心链通过。
+实际 H01 正常链 → Q4 取消 → H11 原账本/原单元恢复仍未执行；下一次现场流程须另有准确独立批准，
+并保留全部身份/容量/策略/停止检查。旧批次不重放，历史 UNKNOWN 不升级，全部承诺不退款。
+本次没有发放新 package/release digest，原 candidate/wheel/harness、预算及时限未变；
+支线暂停，生产 `E3_SUPERVISION_UNVERIFIED` 保持。

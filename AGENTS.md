@@ -1407,6 +1407,18 @@ UNKNOWN states retained; this scope authorizes no new marker, SSH/carrier, colle
 configuration change, cleanup or H01/Q4/H11. R, Owner-only authority, no exceptions, side-work pause
 and production E3 restriction remain unchanged.
 
+The subsequent [locale implementation and offline review](docs/a2-execution/Q2_CORE_SSHD_LOCALE_GRAMMAR_REVIEW_20261005.md)
+records D `d0c8749e47647264c14c406cd85c8c68006689a0`, directly descending from independent C
+`86c5779f306d24756a8be383846e55afc0708b8b`. Targeted tests returned 359 passed / 2 skipped;
+exact D CI completed with 3/3 successful jobs. After identity and input-digest checks, the single
+authorized new-version parse of the complete saved three-file snapshot returned
+`SOURCE_GRAMMAR_ACCEPTED` in 139.679 ms, within 5s. Offline G1–G3 are complete; do not replay that
+private parse or the consumed capture. This proves only saved-snapshot source grammar compatibility,
+not current effective policy, environmental safety, historical business execution or H01/Q4/H11.
+No new marker, SSH request, field helper, package release or business task was issued. Future field
+acceptance still requires a separate accurate Owner decision; historical UNKNOWN, full commitments,
+paused side work and production `E3_SUPERVISION_UNVERIFIED` remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
