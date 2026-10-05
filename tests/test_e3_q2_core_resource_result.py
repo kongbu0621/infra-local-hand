@@ -51,16 +51,16 @@ def fixture():
                for index, role in enumerate(("state", "quota", "journal", "evidence", "install"))}
     # Independent literal classification from A, not the consumer's constructor.
     definitions = [("shared_install", None, 67108864, 4096,
-                    [("install", "local-hand-core-acceptance-20261005a"),
-                     ("install", ".local-hand-core-acceptance-20261005a.staging")], None),
+                    [("install", "local-hand-core-acceptance-20261005b"),
+                     ("install", ".local-hand-core-acceptance-20261005b.staging")], None),
                    ("carrier_audit", None, 8388608, 512,
-                    [(role, "lhqcore-20261005a") for role in ("state", "quota", "journal", "evidence")], None)]
+                    [(role, "lhqcore-20261005b") for role in ("state", "quota", "journal", "evidence")], None)]
     ids = ("c01-h01-normal", "c02-q4-cancel", "c03-h11-recovery")
     refs = ("work-a", "evidence-a", "temporary-a", "work-b", "evidence-b", "temporary-b", "retained_store")
     directories = ("profile-work", "profile-evidence", "profile-temporary", "profile-work",
                    "profile-evidence", "profile-temporary", "store-parent")
     for case_index, case in enumerate(ids):
-        prefix = "lhqcore-20261005a/" + case
+        prefix = "lhqcore-20261005b/" + case
         definitions.extend([
             (case + "/state", case, 8388608, 1536,
              [(role, prefix) for role in ("state", "quota", "journal", "evidence")], None),
@@ -68,7 +68,7 @@ def fixture():
             (case + "/capture", case, 20971520, 384,
              [("evidence", prefix + "/capture"), ("evidence", prefix + "/declarations")], None)])
         definitions.extend((case + "/quota/" + ref, case, 1048576, 128,
-                            [("quota", prefix + "/" + directory + "/" + ref)], 12201 + case_index * 7 + index)
+                            [("quota", prefix + "/" + directory + "/" + ref)], 12301 + case_index * 7 + index)
                            for index, (ref, directory) in enumerate(zip(refs, directories)))
     plans = {case: {"case_id": case, "roots": []} for case in ids}
     pools = []; inode = 100; absence = []

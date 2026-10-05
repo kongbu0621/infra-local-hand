@@ -1,4 +1,5 @@
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -246,7 +247,21 @@ def package_fixture(tmp_path, monkeypatch):
 
     implementation = tmp_path / "implementation"
     implementation.mkdir(); _git(implementation, "init", "-q")
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY"):
+    source = implementation / "tests" / "e3_host"
+    source.mkdir(parents=True)
+    prior_profiles = []
+    for index in (0, 1):
+        pins = {}
+        for role in ('loader', 'bootstrap', 'dispatcher'):
+            raw = ('# historical fixture %d %s\n' % (index, role)).encode()
+            (source / ('q2_core_delivery_' + role + '.py')).write_bytes(raw)
+            pins[role] = f.c.sha256(raw)
+        _git(implementation, 'add', 'tests/e3_host')
+        _git(implementation, 'commit', '-q', '-m', 'historical fixture')
+        prior_profiles.append(dict(commit=_git(implementation, 'rev-parse', 'HEAD'),
+            tree=_git(implementation, 'rev-parse', 'HEAD^{tree}'), sources=pins))
+    monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', tuple(prior_profiles))
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -266,7 +281,7 @@ def package_fixture(tmp_path, monkeypatch):
             "commit": _git(implementation, "rev-parse", "HEAD"),
             "tree": _git(implementation, "rev-parse", "HEAD^{tree}")})
     source = implementation / "tests" / "e3_host"
-    source.mkdir(parents=True)
+    source.mkdir(parents=True, exist_ok=True)
     loader = b"def main():\n    return None\n"
     bootstrap = ("LOADER_SHA256 = %r\n" % hashlib.sha256(loader).hexdigest()).encode()
     dispatcher = b"def dispatch(context, effects):\n    return b''\n"
@@ -322,6 +337,18 @@ def test_static_member_freeze_reads_committed_blobs_and_does_not_build_package(
     assert empty["bytes"] == 0 and result["member_bytes"]["candidate/empty.log"] == b""
     for row in result["members"]:
         assert hashlib.sha256(result["member_bytes"][row["path"]]).hexdigest() == row["sha256"]
+
+
+@pytest.mark.parametrize('index', [0, 1])
+@pytest.mark.parametrize('change', ['tree', 'source'])
+def test_static_freeze_rejects_changed_prior_source_premise(tmp_path, monkeypatch, index, change):
+    arguments = package_fixture(tmp_path, monkeypatch)
+    priors = copy.deepcopy(f.PRIOR_SOURCE_PROFILES)
+    if change == 'tree': priors[index]['tree'] = 'f' * 40
+    else: priors[index]['sources']['bootstrap'] = 'f' * 64
+    monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', priors)
+    with pytest.raises(f.c.ContractError, match='CORE_FREEZE_PRIOR_'):
+        f.freeze_package_members(**arguments)
 
 
 def test_static_member_freeze_rejects_untracked_checkout_and_uncommitted_d(
@@ -498,7 +525,7 @@ def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO"])
 @pytest.mark.parametrize("record", ["BASELINE", "OWNER_DECISION", "CLOSURE"])
 def test_lineage_rejects_wrong_authority_bytes_or_tree(tmp_path, monkeypatch, scope, record):
     arguments = package_fixture(tmp_path, monkeypatch)
@@ -520,7 +547,7 @@ def test_old_amendment_descendant_without_new_closure_is_not_releasable_d(tmp_pa
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO"])
 def test_final_d_cannot_rewrite_approved_document_even_after_valid_c(tmp_path, monkeypatch, scope):
     arguments = package_fixture(tmp_path, monkeypatch)
     path = next(iter(getattr(f.c, scope + "_BASELINE")["documents_sha256"]))

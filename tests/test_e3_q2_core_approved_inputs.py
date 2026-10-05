@@ -222,7 +222,8 @@ def source_fixture(artifact, monkeypatch):
     producer = Path(a.__file__).with_name("q2_old_producer_admission_retry_accounting.py").read_bytes()
     sources = a.ApprovedInputSources(value["amendment"], {}, {}, b"synthetic boundary", {}, policy_raw,
                                     tokens, later, producer,
-        {row['basename']: base64.b64decode(row['raw_base64']) for row in value['reconciliation']['prior_core_attempt']['files']})
+        {row['basename']: base64.b64decode(row['raw_base64'])
+         for prior in value['reconciliation']['prior_core_attempts'] for row in prior['files']})
     return value, sources
 
 

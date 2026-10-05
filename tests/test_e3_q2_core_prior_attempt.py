@@ -215,12 +215,14 @@ def test_new_scope_unknown_or_identity_drift_cannot_pass(guest, change):
     with pytest.raises(d.DispatchError): d._validate_prior_quiescence(value, context)
 
 
-def observer_fixture(guest, monkeypatch, *, present=False):
+def observer_fixture(guest, monkeypatch, *, present=False, index=0):
     """Synthetic kernel/manager boundary. No real manager or guest is contacted."""
     d, prior, context = guest; e = d.FieldEffects(context)
+    prior = d._approved_inputs_envelope(context)['reconciliation']['prior_core_attempts'][index]
+    old_unit = p.profile(index)['unit']
     state = dict(tick=0, late=False, boot=context['hello']['guest_boot_id'], calls=0,
         present=present, populated=False, drift=False, open_fds={}, closed=[], bad_show=None)
-    group_path = '/sys/fs/cgroup/system.slice/' + p.UNIT
+    group_path = '/sys/fs/cgroup/system.slice/' + old_unit
     paths = ['/', '/sys', '/sys/fs', '/sys/fs/cgroup', '/sys/fs/cgroup/system.slice', group_path]
     def info(path):
         inode = paths.index(path) + 1 + (100 if state['drift'] and path.endswith('system.slice') else 0)
@@ -249,13 +251,14 @@ def observer_fixture(guest, monkeypatch, *, present=False):
         else: real_close(fd)
     monkeypatch.setattr(d.os, 'close', close)
     e._effect_guard = guard; e._capacity_call = guarded
-    def show(arguments, program):
+    def show(arguments, program, *, prior_observation):
         state['calls'] += 1
-        assert arguments == ['show', '--all', p.UNIT, '--property=' + ','.join(d.PRIOR_SHOW_FIELDS)]
+        assert prior_observation == (index, state['calls'])
+        assert arguments == ['show', '--all', old_unit, '--property=' + ','.join(d.PRIOR_SHOW_FIELDS)]
         if state['bad_show'] == 'timeout': raise d.DispatchError('TEST_TIMEOUT')
         if state['bad_show'] == 'late': state['late'] = True
         unit = quiescence(prior, context)['observations'][0]['unit']
-        if state['present']: unit.update(LoadState='loaded', InvocationID='4' * 32, ExitType='cgroup')
+        if state['present']: unit.update(LoadState='loaded', InvocationID=str(4 + index) * 32, ExitType='cgroup')
         raw = ''.join(key + '=' + unit[key] + '\n' for key in d.PRIOR_SHOW_FIELDS).encode()
         if state['bad_show'] == 'truncated': raw = raw[:-15]
         if state['bad_show'] == 'duplicate': raw += b'Id=duplicate\n'
@@ -264,7 +267,7 @@ def observer_fixture(guest, monkeypatch, *, present=False):
     e._capacity_systemctl = show
     e._capacity_kernel = lambda name, *_args, **_kwargs: (b'' if name == 'cgroup.procs'
         else b'populated ' + (b'1' if state['populated'] else b'0') + b'\nfrozen 0\n')
-    return d._PriorScopeObserver(e, {'systemctl': {}}), state
+    return d._PriorScopeObserver(e, {'systemctl': {}}, index), state
 
 
 @pytest.mark.parametrize('present', [False, True])

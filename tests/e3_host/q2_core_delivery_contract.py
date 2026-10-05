@@ -181,6 +181,28 @@ HOST_CAPACITY_BOUNDARY_CLOSURE = {
     "commit": "434c6a07f7a84f26d7bd01de138125debc467dd4",
     "tree": "6dde47b33564d50d7d7c44b2be27529ef7bc02fb",
 }
+POST_SUDO_SCOPE = "LH-Q2-CORE-POST-SUDO-ACCEPTANCE-v1"
+POST_SUDO_BASELINE = {
+    "commit": "f9ba6fbc2fa983c46322a00f3385af172fed7cb4",
+    "tree": "45b9d9dff11e87a8c83453bdab5d93c0b1ab5734",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-post-sudo-acceptance/REQUIREMENTS.md":
+            "40430bf96501bcf738bb3137a509ce8600844398d442ed5906764646151c34ab",
+        "docs/a2-execution/q2-core-post-sudo-acceptance/ARCHITECTURE.md":
+            "1470cba64730bdfdfc6db806fe8ad1e0cf5f2e12c2af3f3bfdfd2c9fe40f8ae4",
+        "docs/a2-execution/q2-core-post-sudo-acceptance/IMPLEMENTATION_PLAN.md":
+            "63138edbba669c7d2ea111f7ad8041aa2e30b039c7d730ecea15d45a3f37bb1d",
+    },
+}
+POST_SUDO_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-POST-SUDO-ACCEPTANCE-CLOSURE-20261005-01",
+    "record_path": "docs/governance/Q2_CORE_POST_SUDO_ACCEPTANCE_OWNER_DECISION.md",
+    "record_sha256": "b3fe02c7179bdc668d9fa16988e2f01c4dd8f5a99e25095c444e69202373c400",
+}
+POST_SUDO_CLOSURE = {
+    "commit": "0c63e733b166f8f9539fd821db621b331a3ede61",
+    "tree": "569083f1fe775c918983a88a963aebf810aa1d27",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
@@ -199,18 +221,18 @@ PROJECTION = {
     "file_count": 89,
 }
 
-SESSION_ID = "lhqcore-20261005a"
-INSTALL_BASENAME = "local-hand-core-acceptance-20261005a"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261005a.staging"
-INSTALL_UUID = "6fd82898-ae68-4a5c-bce5-65f06e86580c"
-CARRIER_UNIT = "lhqcore20261005a-carrier.service"
-MARKER_BASENAME = ".lhqcore-20261005a.carrier-consumed.json"
+SESSION_ID = "lhqcore-20261005b"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261005b"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261005b.staging"
+INSTALL_UUID = "4648df9b-a917-408d-9dba-763db663dd9c"
+CARRIER_UNIT = "lhqcore20261005b-carrier.service"
+MARKER_BASENAME = ".lhqcore-20261005b.carrier-consumed.json"
 OUTPUT_BASENAMES = {
-    "stdout_basename": ".lhqcore-20261005a.stdout",
-    "stderr_basename": ".lhqcore-20261005a.stderr",
-    "remote_result_basename": ".lhqcore-20261005a.remote-result.json",
-    "capture_manifest_basename": ".lhqcore-20261005a.capture-manifest.json",
-    "local_receipt_basename": ".lhqcore-20261005a.acceptance-receipt.json",
+    "stdout_basename": ".lhqcore-20261005b.stdout",
+    "stderr_basename": ".lhqcore-20261005b.stderr",
+    "remote_result_basename": ".lhqcore-20261005b.remote-result.json",
+    "capture_manifest_basename": ".lhqcore-20261005b.capture-manifest.json",
+    "local_receipt_basename": ".lhqcore-20261005b.acceptance-receipt.json",
 }
 
 PACKAGE_MAGIC = b"LHCFP1\n"
@@ -304,22 +326,22 @@ ROOT_REFS = (
 CASES = (
     {
         "index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL", "predecessor": None,
-        "preparation_id": "lhqc05a01h01normal", "operation_id": "97d5ce56-e176-47c8-88eb-ff81242bfcfd",
-        "controller_prefix": "lhqcore20261005a-c01", "project_ids": list(range(12201, 12208)),
+        "preparation_id": "lhqc05b01h01normal", "operation_id": "eb627e0e-88f7-48f9-929a-61ee0976bba7",
+        "controller_prefix": "lhqcore20261005b-c01", "project_ids": list(range(12301, 12308)),
         "phases": ["preflight", "business", "evidence"],
     },
     {
         "index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-        "predecessor": "c01-h01-normal", "preparation_id": "lhqc05a02q4cancel",
-        "operation_id": "bb46ffb2-187e-48a7-8c2d-f548dd576fa6",
-        "controller_prefix": "lhqcore20261005a-c02", "project_ids": list(range(12208, 12215)),
+        "predecessor": "c01-h01-normal", "preparation_id": "lhqc05b02q4cancel",
+        "operation_id": "31aedc12-6ac1-4d63-82db-2d0cef0d5905",
+        "controller_prefix": "lhqcore20261005b-c02", "project_ids": list(range(12308, 12315)),
         "phases": ["preflight"],
     },
     {
         "index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05a03h11recovery",
-        "operation_id": "7fa6d9d2-812f-45a4-8027-4cfb183aa862",
-        "controller_prefix": "lhqcore20261005a-c03", "project_ids": list(range(12215, 12222)),
+        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05b03h11recovery",
+        "operation_id": "26019ce4-bacf-4352-90aa-1db003366649",
+        "controller_prefix": "lhqcore20261005b-c03", "project_ids": list(range(12315, 12322)),
         "phases": ["preflight"],
     },
 )
@@ -1008,6 +1030,14 @@ def validate_remote_management(value, *, expectation=None):
 
 
 def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None, remote_expectation=None):
+    return _validate_hello_identity(value, carrier_unit=CARRIER_UNIT,
+        loader_sha256=loader_sha256, bootstrap_sha256=bootstrap_sha256,
+        remote_expectation=remote_expectation)
+
+
+def _validate_hello_identity(value, *, carrier_unit, loader_sha256=None,
+                             bootstrap_sha256=None, remote_expectation=None):
+    """Frozen HELLO grammar; historical callers bind their original unit and sources."""
     validate_record(value, HELLO_SCHEMA)
     require(value["scope"] == SCOPE, "CORE_HELLO_AUTHORITY")
     for key, expected in (("loader_sha256", loader_sha256),
@@ -1039,7 +1069,7 @@ def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None, remote_e
          "runtime_max_usec", "timeout_stop_usec", "memory_max", "memory_swap_max",
          "tasks_max", "cpu_quota_per_sec_usec", "restart", "kill_mode", "exit_type"},
         "CORE_HELLO_CARRIER")
-    require(unit["name"] == CARRIER_UNIT and unit["control_group"].endswith("/" + CARRIER_UNIT)
+    require(unit["name"] == carrier_unit and unit["control_group"].endswith("/" + carrier_unit)
             and re.fullmatch(r"[0-9a-f]{32}", unit["invocation_id"] or "")
             and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
             and unit["runtime_max_usec"] == 800_000_000

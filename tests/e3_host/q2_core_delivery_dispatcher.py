@@ -199,7 +199,7 @@ _cap = _Checks('CORE_CAP_')
 
 
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
-SESSION = "lhqcore-20261005a"
+SESSION = "lhqcore-20261005b"
 RULE = {
     "commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
     "source_sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5",
@@ -286,8 +286,8 @@ PROJECTION = {
     "file_count": 89,
 }
 
-INSTALL_BASENAME = "local-hand-core-acceptance-20261005a"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261005a.staging"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261005b"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261005b.staging"
 PREPARATION_HELPERS = _fields('q2_prepare_contract q2_prepare_driver q2_prepare_assembly')
 WHEEL_PACKAGES = _fields('local_hand local_hand_connect local_hand_jobs local_hand_mcp')
 WHEEL_METADATA = "local_hand/_build_metadata.json"
@@ -420,19 +420,19 @@ def _phase_units(operation_id, phases):
 
 CASES = (
     {"index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL",
-     "predecessor": None, "preparation_id": "lhqc05a01h01normal",
-     "operation_id": "97d5ce56-e176-47c8-88eb-ff81242bfcfd",
-     "controller_prefix": "lhqcore20261005a-c01", "project_ids": list(range(12201, 12208)),
+     "predecessor": None, "preparation_id": "lhqc05b01h01normal",
+     "operation_id": "eb627e0e-88f7-48f9-929a-61ee0976bba7",
+     "controller_prefix": "lhqcore20261005b-c01", "project_ids": list(range(12301, 12308)),
      "phases": ["preflight", "business", "evidence"]},
     {"index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-     "predecessor": "c01-h01-normal", "preparation_id": "lhqc05a02q4cancel",
-     "operation_id": "bb46ffb2-187e-48a7-8c2d-f548dd576fa6",
-     "controller_prefix": "lhqcore20261005a-c02", "project_ids": list(range(12208, 12215)),
+     "predecessor": "c01-h01-normal", "preparation_id": "lhqc05b02q4cancel",
+     "operation_id": "31aedc12-6ac1-4d63-82db-2d0cef0d5905",
+     "controller_prefix": "lhqcore20261005b-c02", "project_ids": list(range(12308, 12315)),
      "phases": ["preflight"]},
     {"index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-     "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05a03h11recovery",
-     "operation_id": "7fa6d9d2-812f-45a4-8027-4cfb183aa862",
-     "controller_prefix": "lhqcore20261005a-c03", "project_ids": list(range(12215, 12222)),
+     "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05b03h11recovery",
+     "operation_id": "26019ce4-bacf-4352-90aa-1db003366649",
+     "controller_prefix": "lhqcore20261005b-c03", "project_ids": list(range(12315, 12322)),
      "phases": ["preflight"]},
 )
 
@@ -485,7 +485,7 @@ def _identity(case, *, full=False):
         "id": hashlib.sha256(seed + b":identity").hexdigest()[:32],
         "authority_id": prefix + "-authority",
         "node_id": SESSION + "-guest",
-        "install_uuid": "6fd82898-ae68-4a5c-bce5-65f06e86580c",
+        "install_uuid": "4648df9b-a917-408d-9dba-763db663dd9c",
         "deployment_epoch": 1, "generation": 1,
         "operation_id": case["operation_id"],
         "profile_ref": prefix + "-profile",
@@ -1149,8 +1149,8 @@ def _approved_validate_relations(value):
 def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
-            "released_or_refunded", "prior_commitment"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v2"
+            "released_or_refunded", "prior_commitments"})
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v3"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     for key in ("source_union_sha256", "row_relation", "placement"):
@@ -1257,32 +1257,60 @@ PRIOR_PINS = {
     'capture-manifest.json': (1637, '5ab260b4062404991151dd917fd636d4f1cd4ba5dd0ffa45a1578f5cf6bb3db3'),
     'acceptance-receipt.json': (1252, 'dd1d4f5c607572fa9eb1527ddb94e2eb839f5ae5e59509042b6d03313cf74700'),
 }
+SECOND_PRIOR_PINS = {
+    'carrier-consumed.json': (3577, '126a3fc0c40085c360e6392d06ec286e42f05edc93823fd01f36c0869103d2a6'),
+    'stdout': (2852, '3cf4a279a36daeb3348d52544c92bdfeba3f295e0650f2bf49bd204d3e0bd3b9'),
+    'stderr': (23, 'ef5aad9b8e8b977441ad9ab1e58cd1dc8ad994798f5802d2f6768c241afb8ece'),
+    'capture-manifest.json': (None, '081019f289a561839ddf13da0c5bf55150879e998a6b52241864f3813b132d1b'),
+    'acceptance-receipt.json': (None, '541198e61811e4b6f2df3d17eb4ade8f91ef567ae4c00e89e7023f5709040f35'),
+}
+SECOND_PRIOR_TOTAL_BYTES = 9072
+PRIOR_ROLE_LIMITS = dict(zip(('carrier-consumed.json', 'stdout', 'stderr',
+    'capture-manifest.json', 'acceptance-receipt.json'), (16384, 4112, 4194304, 262144, 65536)))
 
 
-def _prior_attempt(prior):
+def _prior_profile(index):
+    _require(type(index) is int and index in (0, 1), 'CORE_PRIOR_PROFILE')
+    if index == 0:
+        return dict(session=PRIOR_SESSION, unit=PRIOR_UNIT, implementation=PRIOR_IMPLEMENTATION,
+            pins=PRIOR_PINS, total=PRIOR_TOTAL_BYTES, package_sha=PRIOR_PACKAGE_SHA,
+            manifest_sha=PRIOR_MANIFEST_SHA, package_bytes=18111397, sent=False, status=255,
+            bootstrap_sha='039fe87cc91a64c0327dc404e0ccf9728c32a1cc07e3e6fb11ed74c979f904f3')
+    return dict(session='lhqcore-20261005a', unit='lhqcore20261005a-carrier.service',
+        implementation=dict(commit='59d7c32bbe10d580603b8e5e62dd49ad6a538e56',
+            tree='15bfe2192ced5aad0acf5c74a58b6e865afe34d1'), pins=SECOND_PRIOR_PINS,
+        total=SECOND_PRIOR_TOTAL_BYTES, package_bytes=18149835, sent=True, status=3,
+        package_sha='da72c862bbcbe4ae43df681f91576d38586eec1eeb550b46e378d3398e07008b',
+        manifest_sha='09e7b8ef0df3b3103f0ba87113dfcf2d3470b861ad14f84c83c144a0f6b3c6fb',
+        bootstrap_sha='c9f6e89f874d83856552e65810b04a5d88e7ab0687395dfa5dfd80d7affdee83')
+
+
+def _prior_attempt(prior, index=0):
     """Standalone guest consumer; no imported host builder or private paths."""
     check = _Checks('CORE_PRIOR_')
+    fixed = _prior_profile(index)
     check.exact(prior, _fields('schema scope session_id implementation package_sha256 manifest_sha256 files'), 'FIELDS')
-    check(prior['schema'] == 'local-hand-q2-core-prior-attempt/v1' and prior['scope'] == SCOPE
-        and prior['session_id'] == PRIOR_SESSION and prior['implementation'] == PRIOR_IMPLEMENTATION
-        and prior['package_sha256'] == PRIOR_PACKAGE_SHA and prior['manifest_sha256'] == PRIOR_MANIFEST_SHA, 'IDENTITY')
-    prefix = '.' + PRIOR_SESSION + '.'
+    check(prior['schema'] == 'local-hand-q2-core-prior-attempt/v2' and prior['scope'] == SCOPE
+        and prior['session_id'] == fixed['session'] and prior['implementation'] == fixed['implementation']
+        and prior['package_sha256'] == fixed['package_sha'] and prior['manifest_sha256'] == fixed['manifest_sha'], 'IDENTITY')
+    prefix = '.' + fixed['session'] + '.'
     rows = prior['files']; raw = {}
     check(type(rows) is list and len(rows) == 5 and [row.get('basename') for row in rows]
-        == sorted(prefix + suffix for suffix in PRIOR_PINS), 'FILES')
+        == sorted(prefix + suffix for suffix in fixed['pins']), 'FILES')
     for row in rows:
         check.exact(row, _fields('basename bytes sha256 raw_base64'), 'FILE_FIELDS')
-        suffix = row['basename'][len(prefix):]; size, digest = PRIOR_PINS[suffix]
-        check(type(row['bytes']) is int and row['bytes'] == size and row['sha256'] == digest
+        suffix = row['basename'][len(prefix):]; size, digest = fixed['pins'][suffix]
+        check(type(row['bytes']) is int and (size is None or row['bytes'] == size)
+            and 0 <= row['bytes'] <= PRIOR_ROLE_LIMITS[suffix] and row['sha256'] == digest
             and type(row['raw_base64']) is str and len(row['raw_base64']) <= 22000, 'PIN')
         try:
             data = base64.b64decode(row['raw_base64'], validate=True)
         except (ValueError, UnicodeError) as error:
             raise check.error('BASE64') from error
-        check(len(data) == size and _sha(data) == digest
+        check(len(data) == row['bytes'] and _sha(data) == digest
             and base64.b64encode(data).decode('ascii') == row['raw_base64'], 'RAW')
         raw[suffix] = data
-    check(sum(map(len, raw.values())) == PRIOR_TOTAL_BYTES, 'TOTAL')
+    check(sum(map(len, raw.values())) == fixed['total'], 'TOTAL')
     marker = document(raw['carrier-consumed.json'], limit=16384)
     cap = document(raw['capture-manifest.json'], limit=262144)
     receipt = document(raw['acceptance-receipt.json'], limit=65536)
@@ -1292,20 +1320,24 @@ def _prior_attempt(prior):
     check(marker['schema'] == 'local-hand-q2-core-carrier-consumption/v2'
         and cap['schema'] == 'local-hand-q2-core-capture-manifest/v1'
         and receipt['schema'] == 'local-hand-q2-core-local-acceptance-receipt/v1'
-        and all(item['session_id'] == PRIOR_SESSION for item in (marker, cap, receipt))
+        and all(item['session_id'] == fixed['session'] for item in (marker, cap, receipt))
         and marker['scope'] == receipt['scope'] == SCOPE, 'SCHEMAS')
-    check(marker['implementation'] == PRIOR_IMPLEMENTATION and marker['baseline'] == BASELINE
+    check(marker['implementation'] == fixed['implementation'] and marker['baseline'] == BASELINE
         and marker['owner_decision'] == OWNER_DECISION and marker['closure'] == CLOSURE
         and marker['candidate'] == CANDIDATE and marker['state'] == 'CONSUMPTION_RECORD_COMPLETE', 'AUTHORITY')
-    _amendment(marker['amendment'], PRIOR_IMPLEMENTATION)
+    _amendment(marker['amendment'], fixed['implementation'])
     _validate_local_writer(marker['writer'])
     check.exact(marker['package'], _fields('basename bytes sha256 manifest_sha256'), 'PACKAGE')
-    check(marker['package']['sha256'] == PRIOR_PACKAGE_SHA and marker['package']['manifest_sha256'] == PRIOR_MANIFEST_SHA
-        and marker['package']['basename'] == PRIOR_SESSION + '.lhfp'
-        and marker['package']['bytes'] == 18111397
+    check(marker['package']['sha256'] == fixed['package_sha'] and marker['package']['manifest_sha256'] == fixed['manifest_sha']
+        and marker['package']['basename'] == fixed['session'] + '.lhfp'
+        and marker['package']['bytes'] == fixed['package_bytes']
         and re.fullmatch(r'[A-Za-z0-9._-]+\.lhfp', marker['package']['basename']) is not None, 'PACKAGE')
     for name in ('approved_inputs_sha256', 'local_management_binding_sha256', 'carrier_argv_sha256'):
         check.digest(marker[name], 'DIGEST')
+    if index == 1:
+        check(marker['approved_inputs_sha256'] ==
+            '5bcbf535f6c8d0d2c974756af6815ba95a03da7fadc31c97a0622cdeeaf4846e'
+            and raw['stderr'] == b'CORE_ADMIT_SUDO_OUTPUT\n', 'SECOND_FAILURE')
     for clock in ('boottime', 'monotonic'):
         origin = check.integer(marker['host_' + clock + '_origin_ns'], 1, code='CLOCK')
         check(marker['host_' + clock + '_deadline_ns'] == origin + 900000000000, 'CLOCK')
@@ -1313,17 +1345,19 @@ def _prior_attempt(prior):
     check(out.startswith(b'LHCHLO1\n') and len(out) >= 16
         and struct.unpack('>Q', out[8:16])[0] == len(out) - 16, 'HELLO_FRAME')
     hello = document(out[16:], limit=4096)
-    _validate_hello_identity(hello, PRIOR_UNIT)
+    _validate_hello_identity(hello, fixed['unit'])
     check(hello['loader_sha256'] == '6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61'
-        and hello['bootstrap_sha256'] == '039fe87cc91a64c0327dc404e0ccf9728c32a1cc07e3e6fb11ed74c979f904f3', 'HELLO_SOURCE')
+        and hello['bootstrap_sha256'] == fixed['bootstrap_sha'], 'HELLO_SOURCE')
     marker_sha = _sha(raw['carrier-consumed.json'])
     check(receipt['consumption'] == dict(object_created=True, record_complete=True,
         basename=prefix + 'carrier-consumed.json', bytes=len(raw['carrier-consumed.json']), sha256=marker_sha)
         and cap['consumption_sha256'] == marker_sha, 'MARKER_LINK')
-    check(receipt['transport'] == dict(execve_succeeded=True, hello_valid=True, bind_written=False,
-        package_written=False, stdin_bytes_written=0, stdin_eof=False), 'TRANSPORT')
-    check(receipt['wait'] == dict(status=255, stdout_eof=False, stderr_eof=False, host_deadline_met=False)
-        and cap['wait'] == dict(status=255, host_deadline_met=False), 'WAIT')
+    check(receipt['transport'] == dict(execve_succeeded=True, hello_valid=True, bind_written=fixed['sent'],
+        package_written=fixed['sent'], stdin_bytes_written=18150763 if fixed['sent'] else 0,
+        stdin_eof=fixed['sent']), 'TRANSPORT')
+    check(receipt['wait'] == dict(status=fixed['status'], stdout_eof=fixed['sent'],
+        stderr_eof=fixed['sent'], host_deadline_met=fixed['sent'])
+        and cap['wait'] == dict(status=fixed['status'], host_deadline_met=fixed['sent']), 'WAIT')
     check(receipt['state'] == 'STOP_AND_RETAIN' and receipt['real_task_execution'] == receipt['result_evidence_collection']
         == dict(status='UNKNOWN', evidence_sha256=None), 'TRUTH')
     check(receipt['remote_result'] == dict(present=False, sha256=None, frame_sha256=None)
@@ -1331,7 +1365,7 @@ def _prior_attempt(prior):
             members_sha256=None, valid=False), 'OUTPUT')
     for stream in ('stdout', 'stderr'):
         check(cap[stream] == dict(basename=prefix + stream, bytes=len(raw[stream]),
-            sha256=_sha(raw[stream]), eof=False), 'STREAM')
+            sha256=_sha(raw[stream]), eof=fixed['sent']), 'STREAM')
     check(type(cap['files']) is list and len(cap['files']) == 3 and [r['basename'] for r in cap['files']]
         == sorted(prefix + name for name in ('carrier-consumed.json', 'stdout', 'stderr')), 'CAPTURE_FILES')
     identities = set()
@@ -1350,16 +1384,23 @@ def _prior_attempt(prior):
         and cap['fsync_complete'] is cap['reread_equal'] is True, 'CAPTURE_TOTAL')
     check(receipt['capture'] == dict(bytes=cap['allocated_bytes'], inodes=3,
         manifest_sha256=_sha(raw['capture-manifest.json']), fsync_complete=True, reread_equal=True), 'CAPTURE_LINK')
-    check(receipt['missing'] == cap['missing'] and len(cap['missing']) == 2
-        and {item['code'] for item in cap['missing']} == {'CORE_OUTPUT_MISSING', 'CORE_TRANSPORT_FAILED'}, 'MISSING')
+    missing = {'CORE_OUTPUT_MISSING'} if fixed['sent'] else {'CORE_OUTPUT_MISSING', 'CORE_TRANSPORT_FAILED'}
+    check(receipt['missing'] == cap['missing'] and len(cap['missing']) == len(missing)
+        and {item['code'] for item in cap['missing']} == missing, 'MISSING')
     for item in cap['missing']:
         check.exact(item, _fields('code role detail_sha256'), 'MISSING_FIELDS')
         check.digest(item['detail_sha256'], 'MISSING')
     return hello
 
 
-def _prior_commitment(prior):
-    return dict(scope=SCOPE, session_id=PRIOR_SESSION, source_attempt_sha256=_sha(canonical(prior)),
+def _prior_attempts(values):
+    _require(type(values) is list and len(values) == 2, 'CORE_PRIOR_PAIR')
+    return [_prior_attempt(value, index) for index, value in enumerate(values)]
+
+
+def _prior_commitment(prior, index=0):
+    _prior_attempt(prior, index)
+    return dict(scope=SCOPE, session_id=_prior_profile(index)['session'], source_attempt_sha256=_sha(canonical(prior)),
         logical_bytes=289406976, logical_inodes=16512, cpu_seconds=2090,
         host_capture_bytes=67108864, host_capture_inodes=16, released_or_refunded=False)
 
@@ -1371,7 +1412,7 @@ def _prior_scope_branch(unit, group, hello):
     check = _Checks('CORE_PRIOR_SCOPE_')
     check.exact(unit, PRIOR_SHOW_FIELDS, 'UNIT_FIELDS')
     check(all(type(value) is str and value.isascii() and '\n' not in value and '\0' not in value
-        for value in unit.values()) and unit['Id'] == PRIOR_UNIT and unit['MainPID'] == '0', 'UNIT')
+        for value in unit.values()) and unit['Id'] == hello['carrier_unit']['name'] and unit['MainPID'] == '0', 'UNIT')
     old = hello['carrier_unit']; path = '/sys/fs/cgroup' + old['control_group']
     check.exact(group, _fields('path state parent identity populated procs_bytes'), 'CGROUP_FIELDS')
     check(group['path'] == path and group['state'] in ('ABSENT', 'EMPTY'), 'CGROUP')
@@ -1402,10 +1443,12 @@ def _prior_scope_branch(unit, group, hello):
     return 'COLLECTED_ABSENT'
 
 
-def _validate_prior_quiescence(value, context):
+def _validate_prior_quiescence(value, context, index=0):
     check = _Checks('CORE_PRIOR_SCOPE_')
-    prior = _approved_inputs_envelope(context)['reconciliation']['prior_core_attempt']
-    old = _prior_attempt(prior)
+    priors = _approved_inputs_envelope(context)['reconciliation']['prior_core_attempts']
+    _prior_attempts(priors)
+    prior = priors[index]
+    old = _prior_attempt(prior, index)
     check.exact(value, _fields('schema prior_attempt_sha256 boot_id branch observations current_scope_quiescent historical_remote_exit historical_usage released_bytes released_inodes'), 'RECORD_FIELDS')
     check(value['schema'] == 'local-hand-q2-core-prior-quiescence/v1'
         and value['prior_attempt_sha256'] == _sha(canonical(prior))
@@ -1432,14 +1475,48 @@ def _validate_prior_quiescence(value, context):
     return value
 
 
+def _validate_prior_quiescences(values, context):
+    _prior_concurrency_bound(context)
+    _require(type(values) is list and len(values) == 2, 'CORE_PRIOR_SCOPE_PAIR')
+    result = [_validate_prior_quiescence(value, context, index) for index, value in enumerate(values)]
+    for clock in ('boottime_ns', 'monotonic_ns'):
+        _require(result[0]['observations'][0][clock] <= result[1]['observations'][0][clock]
+            <= result[0]['observations'][1][clock] <= result[1]['observations'][1][clock],
+            'CORE_PRIOR_SCOPE_ORDER')
+    return result
+
+
+def _prior_concurrency_bound(context):
+    """Derived from three fixed HELLO limits, not a host capacity promise.
+
+    The pre-business premise is reviewed against fixed historical Git bytes by
+    the offline freezer. Helpers inherit the new carrier; no new unit is made.
+    Returned admissions retain the two prior records and the current HELLO
+    binding, so the independent consumer derives the same three-carrier bound.
+    LIMITS remains the new batch's post-quiescence 2624 MiB / 1160 pid bound.
+    """
+    hellos = _prior_attempts(_approved_inputs_envelope(context)['reconciliation']['prior_core_attempts'])
+    _validate_hello_identity(context['hello'], 'lhqcore20261005b-carrier.service')
+    units = [value['carrier_unit'] for value in [*hellos, context['hello']]]
+    memory = sum(value['memory_max'] for value in units)
+    pids = sum(value['tasks_max'] for value in units)
+    _require(len({value['name'] for value in units}) == 3
+        and memory == 3221225472 and pids == 384, 'CORE_PRIOR_CONCURRENCY')
+    return dict(memory_bytes=memory, pids=pids)
+
+
 class _PriorScopeObserver:
     """Two finite observations in this carrier, no polls, stop or PID adoption."""
 
-    def __init__(self, effects, programs):
+    def __init__(self, effects, programs, index=0):
+        _prior_profile(index)
         self.effects = effects; self.programs = programs; self.nodes = []; self.group_fd = None
         self.observations = []
-        self.prior = _approved_inputs_envelope(effects.context)['reconciliation']['prior_core_attempt']
-        self.old = _prior_attempt(self.prior)
+        self.index = index
+        priors = _approved_inputs_envelope(effects.context)['reconciliation']['prior_core_attempts']
+        _prior_attempts(priors)
+        self.prior = priors[index]
+        self.old = _prior_attempt(self.prior, index)
         _require(self.old['guest_boot_id'] == effects.context['hello']['guest_boot_id'], 'CORE_PRIOR_SCOPE_BOOT')
         self.path = '/sys/fs/cgroup' + self.old['carrier_unit']['control_group']
         self.parent_path = str(PurePosixPath(self.path).parent)
@@ -1481,8 +1558,9 @@ class _PriorScopeObserver:
         self.failed = True
         e = self.effects; call = e._capacity_call
         e._effect_guard(); parent, parent_pin = self._parents()
-        raw = e._capacity_systemctl(['show', '--all', PRIOR_UNIT,
-            '--property=' + ','.join(PRIOR_SHOW_FIELDS)], self.programs['systemctl'])
+        raw = e._capacity_systemctl(['show', '--all', self.old['carrier_unit']['name'],
+            '--property=' + ','.join(PRIOR_SHOW_FIELDS)], self.programs['systemctl'],
+            prior_observation=(self.index, ordinal))
         try:
             lines = raw.decode('ascii').splitlines()
             pairs = [line.split('=', 1) for line in lines]
@@ -1541,10 +1619,27 @@ class _PriorScopeObserver:
 
     def finish(self):
         _require(not getattr(self, 'failed', True) and len(self.observations) == 2, 'CORE_PRIOR_SCOPE_INCOMPLETE')
+        self.recheck()
         return _validate_prior_quiescence(dict(schema='local-hand-q2-core-prior-quiescence/v1',
             prior_attempt_sha256=_sha(canonical(self.prior)), boot_id=self.old['guest_boot_id'], branch=self.branch,
             observations=self.observations, current_scope_quiescent=True, historical_remote_exit='UNKNOWN',
-            historical_usage='UNKNOWN', released_bytes=0, released_inodes=0), self.effects.context)
+            historical_usage='UNKNOWN', released_bytes=0, released_inodes=0), self.effects.context, self.index)
+
+    def recheck(self):
+        """Final held-name check only; never a fifth SHOW or a new observation."""
+        _require(not getattr(self, 'failed', True) and len(self.observations) == 2, 'CORE_PRIOR_SCOPE_INCOMPLETE')
+        call = self.effects._capacity_call
+        parent, _ = self._parents()
+        if self.group_fd is None:
+            try:
+                call(os.stat, self.name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                return
+            raise DispatchError('CORE_PRIOR_SCOPE_CGROUP_DRIFT')
+        expected = self.observations[-1]['cgroup']['identity']
+        _require(expected == self.identity(self.path, call(os.fstat, self.group_fd))
+            == self.identity(self.path, call(os.stat, self.name, dir_fd=parent, follow_symlinks=False)),
+            'CORE_PRIOR_SCOPE_CGROUP_DRIFT')
 
     def close(self):
         if self.group_fd is not None:
@@ -1564,14 +1659,14 @@ def _validate_approved_components(value):
         _approved_validate_capacity(value["historical_capacity_obligations"], obligations)
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
-        _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempt"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v2", "RECONCILIATION_SCHEMA")
+        _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts"))
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v3", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
-        prior = reconciliation["prior_core_attempt"]
-        _prior_attempt(prior)
-        _approved_equal(value["historical_capacity_obligations"]["prior_commitment"],
-                        _prior_commitment(prior), "PRIOR_COMMITMENT")
+        prior = reconciliation["prior_core_attempts"]
+        _prior_attempts(prior)
+        _approved_equal(value["historical_capacity_obligations"]["prior_commitments"],
+                        [_prior_commitment(item, index) for index, item in enumerate(prior)], "PRIOR_COMMITMENT")
         _approved_validate_policy(value["policy_basis"])
         return value
     except DispatchError:
@@ -1695,7 +1790,7 @@ def _validate_admission_binding(value, context):
 
 
 def _validate_hello_identity(hello, carrier_name):
-    """Pure frozen HELLO shape/limits; callers provide one of two fixed names."""
+    """Pure frozen HELLO shape/limits; callers provide one of three fixed names."""
     _check.exact(hello, _fields('schema scope loader_sha256 bootstrap_sha256 guest_boot_id guest_boottime_origin_ns guest_monotonic_origin_ns pid uid gid euid egid python carrier_unit process_limits remote_management'),
         "HELLO_FIELDS")
     _check(hello["schema"] == HELLO_SCHEMA
@@ -1740,7 +1835,7 @@ def _validate_context_envelope(context):
     _check.exact(context, _fields('schema hello bind manifest members guest_deadlines stdin_bytes_received'), "CONTEXT_FIELDS")
     _check(context["schema"] == CONTEXT_SCHEMA, "CONTEXT_SCHEMA")
     hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
-    carrier_name = "lhqcore20261005a-carrier.service"
+    carrier_name = "lhqcore20261005b-carrier.service"
     _validate_hello_identity(hello, carrier_name)
     remote = hello['remote_management']
     _check.exact(bind, _fields('schema scope session_id hello_sha256 consumption_sha256 package_basename package_bytes package_sha256 host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns host_boottime_bind_ns host_monotonic_bind_ns host_remaining_floor_ns clock_margin_ns local_final_reserve_ns mapped_duration_ns guest_duration_cap_ns guest_duration_ns'), "BIND_FIELDS")
@@ -1913,7 +2008,7 @@ def _consumption_info(context):
         "state": "CONSUMPTION_RECORD_COMPLETE"}
     raw = canonical(marker, newline=True, limit=16384)
     _check(_sha(raw) == bind["consumption_sha256"], "CONSUMPTION_BINDING")
-    return {"basename": ".lhqcore-20261005a.carrier-consumed.json", "bytes": len(raw),
+    return {"basename": ".lhqcore-20261005b.carrier-consumed.json", "bytes": len(raw),
         "sha256": _sha(raw), "state": marker["state"]}
 
 
@@ -3188,13 +3283,32 @@ def _admit_exec_binding(effects, path, expected):
         raise
 
 
-def _admit_run_helper(effects, policy, program_check):
+def _admit_run_helper(effects, policy, program_check, *, prior_observation=None):
     """One approved semantic child: bounded streams, CPU limit, real wait4/EOF."""
     argv, env, limits = policy["argv"], policy["environment"], policy["limits"]
     seen = getattr(effects, "_admit_helpers_attempted", None)
     if seen is None:
         effects._admit_helpers_attempted = seen = set()
-    _require(tuple(argv) not in seen, "CORE_ADMIT_HELPER_REPLAY")
+    attempt_key = tuple(argv)
+    if prior_observation is not None:
+        slots = ((0, 1), (1, 1), (0, 2), (1, 2))
+        consumed = getattr(effects, '_prior_show_slots', [])
+        _require(type(prior_observation) is tuple
+            and all(type(value) is int for value in prior_observation)
+            and not getattr(effects, '_prior_show_stopped', False)
+            and len(consumed) < 4 and prior_observation == slots[len(consumed)],
+            'CORE_PRIOR_SCOPE_SHOW_SLOT')
+        index, ordinal = prior_observation
+        _require(argv == ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
+            'show', '--all', _prior_profile(index)['unit'], '--property=' + ','.join(PRIOR_SHOW_FIELDS)]
+            and limits == dict(command_seconds=5, command_cpu_seconds=2,
+                stdout_bytes=32768, stderr_bytes=32768, combined_output_bytes=32768),
+            'CORE_PRIOR_SCOPE_SHOW_POLICY')
+        effects._prior_show_slots = [*consumed, prior_observation]
+        effects._prior_show_stopped = True
+        attempt_key += ('prior-observation', ordinal)
+    _require(attempt_key not in seen, "CORE_ADMIT_HELPER_REPLAY")
+    seen.add(attempt_key)
     effects._effect_guard()
     expected_program = program_check()
     started = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
@@ -3248,7 +3362,6 @@ def _admit_run_helper(effects, policy, program_check):
                     _require(len(raw) <= room, "CORE_ADMIT_HELPER_OUTPUT_LIMIT")
         if not stopping:
             guard()
-    seen.add(tuple(argv))
     try:
         guard()
         executable_reader, executable_fd = _admit_exec_binding(effects, argv[0], expected_program)
@@ -3300,6 +3413,8 @@ def _admit_run_helper(effects, policy, program_check):
         if executable_reader is not None:
             executable_reader.close()
     stdout, stderr = bytes(output["stdout"]), bytes(output["stderr"])
+    if prior_observation is not None:
+        effects._prior_show_stopped = False
     return stdout, stderr, dict(argv_sha256=_sha(canonical(argv)), environment_sha256=_sha(canonical(env)),
         started_boottime_ns=started, finished_boottime_ns=finished, exit_status=proc.returncode,
         stdout_bytes=len(stdout), stdout_sha256=_sha(stdout), stderr_bytes=len(stderr), stderr_sha256=_sha(stderr),
@@ -3664,18 +3779,20 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
             # at an old name cannot move its full commitment to a guessed pool.
             parent = locators[root['parent_role'] + '_parent'] + '/'
             suffix = root['path'].removeprefix(parent)
-            if pool['pool_id'] == 'shared_install':
-                _cap(suffix in (INSTALL_BASENAME, STAGING_BASENAME), 'PRIOR_PLACEMENT')
-                suffix = suffix.replace('20261005a', '20261003a')
-            else:
-                _cap(suffix == SESSION or suffix.startswith(SESSION + '/'), 'PRIOR_PLACEMENT')
-                suffix = PRIOR_SESSION + suffix[len(SESSION):]
-            _cap(path_pool(parent + suffix) == byrole[root['parent_role']], 'PRIOR_PLACEMENT')
+            for index in (0, 1):
+                old_session = _prior_profile(index)['session']
+                if pool['pool_id'] == 'shared_install':
+                    _cap(suffix in (INSTALL_BASENAME, STAGING_BASENAME), 'PRIOR_PLACEMENT')
+                    old_suffix = suffix.replace(SESSION.removeprefix('lhqcore-'),
+                                                old_session.removeprefix('lhqcore-'))
+                else:
+                    _cap(suffix == SESSION or suffix.startswith(SESSION + '/'), 'PRIOR_PLACEMENT')
+                    old_suffix = old_session + suffix[len(SESSION):]
+                _cap(path_pool(parent + old_suffix) == byrole[root['parent_role']], 'PRIOR_PLACEMENT')
     for key, values in _cap_new_reservations(filesystems, locators).items():
-        # The old pre-BIND failure is not a zero-use observation or a refund.
-        # Both namespaces map to the same five fixed parents, but each keeps
-        # its full independent 32-pool and management-headroom commitment.
-        charge(key, values, 'historical')
+        # Each consumed batch retains its own full 32 pools and headroom.
+        for _ in (0, 1):
+            charge(key, values, 'historical')
         charge(key, values, 'new_required')
     for row in pools.values():
         row['roles'].sort()
@@ -3688,8 +3805,10 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
 def _cap_historical_expected(approved, filesystems, locators):
     """Return-side arithmetic from pinned rows, independent of guest totals."""
     obligations = approved['historical_capacity_obligations']
-    _approved_equal(obligations['prior_commitment'],
-        _prior_commitment(approved['reconciliation']['prior_core_attempt']), 'PRIOR_COMMITMENT')
+    priors = approved['reconciliation']['prior_core_attempts']
+    _prior_attempts(priors)
+    _approved_equal(obligations['prior_commitments'],
+        [_prior_commitment(value, index) for index, value in enumerate(priors)], 'PRIOR_COMMITMENT')
     byrole = {role: (fs['dev'], fs['fs_uuid']) for role, fs in filesystems.items()}
     byrole['system'] = byrole['state']
     totals = {key: dict(bytes=0, inodes=0) for key in set(byrole.values())}
@@ -3706,7 +3825,8 @@ def _cap_historical_expected(approved, filesystems, locators):
     # Old and new pool *identities* are distinct; their fixed role placement and
     # ceilings are identical. This is a conservative reservation, not old usage.
     for key, values in _cap_new_reservations(filesystems, locators).items():
-        add(key, values['bytes'], values['inodes'])
+        for _ in (0, 1):
+            add(key, values['bytes'], values['inodes'])
     return totals
 
 
@@ -4631,7 +4751,10 @@ class FieldEffects:
             os.close(fd)
             raise
 
-    def _capacity_systemctl(self, arguments, program):
+    def _capacity_systemctl(self, arguments, program, *, prior_observation=None):
+        old_show = any(arguments[:3] == ['show', '--all', _prior_profile(index)['unit']]
+                       for index in (0, 1))
+        _require(old_show == (prior_observation is not None), 'CORE_PRIOR_SCOPE_SHOW_POLICY')
         def verify():
             reader = _admit_reader(self._effect_guard, '/', 0)
             try:
@@ -4644,7 +4767,15 @@ class FieldEffects:
             environment={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'SYSTEMD_COLORS': '0'},
             limits=dict(command_seconds=5, command_cpu_seconds=2, stdout_bytes=32768,
                         stderr_bytes=32768, combined_output_bytes=32768))
-        raw, stderr, receipt = _admit_run_helper(self, policy, verify)
+        if prior_observation is None:
+            raw, stderr, receipt = _admit_run_helper(self, policy, verify)
+        else:
+            membership = ('0::' + self.context['hello']['carrier_unit']['control_group'] + '\n').encode('ascii')
+            _require(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
+                'CORE_PRIOR_SCOPE_HELPER_CGROUP')
+            raw, stderr, receipt = _admit_run_helper(self, policy, verify, prior_observation=prior_observation)
+            _require(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
+                'CORE_PRIOR_SCOPE_HELPER_CGROUP')
         _require(not stderr and receipt['exit_status'] == 0, 'CORE_CAP_SYSTEMCTL_FAILED')
         return raw
 
@@ -4818,25 +4949,33 @@ class FieldEffects:
         self._effect_guard()
         approved = _approved_inputs_envelope(self.context)
         _validate_approved_components(approved)
+        _prior_concurrency_bound(self.context)
         current = _admit_collect_policies(self, approved["policy_basis"], self.context["hello"]["remote_management"])
         self._admission_components = current
         programs = _admit_programs(self)
         guest = _admit_guest(self, programs)
-        prior_observer = _PriorScopeObserver(self, programs)
+        prior_observers = [_PriorScopeObserver(self, programs, index) for index in (0, 1)]
         try:
-            prior_observer.observe()
+            for observer in prior_observers:
+                observer.observe()
             capacity = self._capacity_admission(programs, guest["ordinary_uid"])
             managers = self._capacity_managers(programs, guest["ordinary_uid"])
-            prior_observer.observe()
-            prior_quiescence = prior_observer.finish()
+            for observer in prior_observers:
+                observer.observe()
+            prior_quiescence = [observer.finish() for observer in prior_observers]
+            # Both held scopes survive until every B and final name check.
+            for observer in prior_observers:
+                observer.recheck()
+            _validate_prior_quiescences(prior_quiescence, self.context)
         finally:
-            prior_observer.close()
+            for observer in prior_observers:
+                observer.close()
         guest.update(managers["manager"])
         capacity["parents"].update(managers["parents"])
         capacity["absence"] = sorted(capacity["absence"] + managers["absence"],
                                      key=lambda row: (row["kind"], row["name"]))
         admission = dict(guest=guest, programs=programs, policies=current["policies"],
-                         binding=_admission_binding(self.context), prior_core_attempt=prior_quiescence, **capacity)
+                         binding=_admission_binding(self.context), prior_core_attempts=prior_quiescence, **capacity)
         self._effect_guard()
         self._admission = _validate_admission(admission, self.context)
         try:
@@ -7334,11 +7473,11 @@ def _session(context, admission, installation):
             "remote_final_reserve_ns": REMOTE_FINAL_RESERVE_NS,
             "local_final_reserve_ns": bind["local_final_reserve_ns"]},
         "admission": admission, "installation": installation,
-        "output": {"stdout_basename": ".lhqcore-20261005a.stdout",
-            "stderr_basename": ".lhqcore-20261005a.stderr",
-            "remote_result_basename": ".lhqcore-20261005a.remote-result.json",
-            "capture_manifest_basename": ".lhqcore-20261005a.capture-manifest.json",
-            "local_receipt_basename": ".lhqcore-20261005a.acceptance-receipt.json",
+        "output": {"stdout_basename": ".lhqcore-20261005b.stdout",
+            "stderr_basename": ".lhqcore-20261005b.stderr",
+            "remote_result_basename": ".lhqcore-20261005b.remote-result.json",
+            "capture_manifest_basename": ".lhqcore-20261005b.capture-manifest.json",
+            "local_receipt_basename": ".lhqcore-20261005b.acceptance-receipt.json",
             "output_package_bytes": FRAME_LIMIT, "stderr_bytes": STDERR_LIMIT},
         "limits": LIMITS, "cases": [{key: case[key] for key in
                 _fields('index case_id kind predecessor preparation_id operation_id controller_prefix project_ids phases')} for case in CASES],
@@ -7365,10 +7504,10 @@ def _program_identity(value, code):
 
 
 def _validate_admission(value, context):
-    _admit.exact(value, _fields('guest programs policies parents filesystems capacity absence binding prior_core_attempt'),
+    _admit.exact(value, _fields('guest programs policies parents filesystems capacity absence binding prior_core_attempts'),
         "FIELDS")
     _validate_admission_binding(value["binding"], context)
-    _validate_prior_quiescence(value['prior_core_attempt'], context)
+    _validate_prior_quiescences(value['prior_core_attempts'], context)
     locators = context['manifest']['locators']
     guest = _admit.exact(value["guest"], _fields('hostname dmi_vendor dmi_product initial_userns boot_id pid1_exe pid1_version cgroup_version ordinary_user ordinary_uid ordinary_gid ordinary_groups user_manager_unit user_manager_invocation_id user_manager_cgroup'), "GUEST_FIELDS")
     _admit(type(guest["hostname"]) is str and 1 <= len(guest["hostname"]) <= 253

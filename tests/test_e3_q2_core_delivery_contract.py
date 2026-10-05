@@ -14,7 +14,7 @@ def bind_record():
     return {
         "schema": "local-hand-q2-core-carrier-bind/v1", "scope": c.SCOPE,
         "session_id": c.SESSION_ID, "hello_sha256": "1" * 64,
-        "consumption_sha256": "2" * 64, "package_basename": "lhqcore-20261005a.lhfp",
+        "consumption_sha256": "2" * 64, "package_basename": "lhqcore-20261005b.lhfp",
         "package_bytes": 1024, "package_sha256": "3" * 64,
         "host_boottime_origin_ns": origin, "host_monotonic_origin_ns": origin,
         "host_boottime_deadline_ns": deadline, "host_monotonic_deadline_ns": deadline,
@@ -39,7 +39,7 @@ def test_frozen_authority_and_budget_values_are_exact():
     assert [item["kind"] for item in c.CASES] == [
         "H01_NORMAL", "Q4_HELPER_RUNNING_CANCEL_SUBSET", "H11_SAME_LEDGER_RECOVERY"]
     assert [item["project_ids"] for item in c.CASES] == [
-        list(range(12201, 12208)), list(range(12208, 12215)), list(range(12215, 12222))]
+        list(range(12301, 12308)), list(range(12308, 12315)), list(range(12315, 12322))]
 
 
 def test_canonical_json_rejects_duplicate_float_noncanonical_and_newline_mismatch():

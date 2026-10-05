@@ -174,7 +174,7 @@ def test_quota_retention_ignores_only_unconfigured_project_zero_own_usage():
     changed[1]["space"] += 4096
     assert d._prep_quota_retained(rows) != d._prep_quota_retained(changed)
 @pytest.mark.parametrize("project,values", [(1001, {"hard": 1024, "ihard": 128, "valid": 5}),
-                                          (12201, {"hard": 2048, "ihard": 128, "valid": 5})])
+                                          (12301, {"hard": 2048, "ihard": 128, "valid": 5})])
 def test_quota_mutator_rejects_other_ids_or_limits_before_kernel(project, values):
     with pytest.raises(d.DispatchError, match="QUOTA_MUTATION"):
         d._prep_quota("/not-a-device", 0x800008, project, values)

@@ -63,10 +63,9 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Both fixed core attempts are now consumed. The 20261005a request at 59d7c32
-# stopped at CORE_ADMIT_SUDO_OUTPUT; see the host-capacity boundary review.
-# Retain both markers and all evidence. Source verification does not authorize
-# another request, reconnect, renamed attempt or production E3 activation.
+# Both old attempts remain consumed. The separately approved 05b request is
+# NOT_ISSUED: keep release empty until its exact S2 checks all pass.
+# Retain old markers/evidence; no retry, reconnect or production E3 activation.
 RELEASABLE_DISPATCHER_SHA256 = frozenset()
 
 OUTPUT_LIMITS = {
@@ -229,7 +228,7 @@ def remote_tokens(loader_raw, bootstrap_raw):
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C",
         "SYSTEMD_COLORS=0", "/usr/bin/systemd-run", "--system",
         "--no-ask-password", "--quiet", "--wait", "--pipe", "--collect",
-        "--service-type=exec", "--unit=lhqcore20261005a-carrier.service",
+        "--service-type=exec", "--unit=lhqcore20261005b-carrier.service",
         "--property=Restart=no", "--property=RuntimeMaxSec=800s",
         "--property=TimeoutStopSec=30s", "--property=KillMode=control-group",
         "--property=ExitType=cgroup", "--property=CPUQuota=100%",
@@ -1588,7 +1587,7 @@ def _validate_live_capacity(value, expected_context, capture):
             and contract.canonical(binding['writer']) == contract.canonical(capture.writer),
             'CORE_FINAL_CAPACITY_BINDING')
     return prior_api.validate_capacity_condition(value, binding=binding,
-        prior=approved['reconciliation']['prior_core_attempt'],
+        prior=approved['reconciliation']['prior_core_attempts'],
         implementation=manifest['implementation'], origins=capture.deadline.origins)
 
 
@@ -1753,10 +1752,10 @@ def read_prior_originals(directory_fd, anchor, approved, deadline):
     """Rebind embedded prior bytes to this window's same held private anchor."""
     package_format = _helper("q2_core_delivery_package")
     prior_api = package_format._approved_module().prior_attempt
-    files = prior_api.read_files(directory_fd, anchor, deadline.call)
-    prior = prior_api.build(files)
+    files = prior_api.read_all_files(directory_fd, anchor, deadline.call)
+    prior = prior_api.build_all(files)
     require(contract.canonical(prior) == contract.canonical(
-        approved['reconciliation']['prior_core_attempt']), "CORE_DELIVERY_PRIOR_SOURCE_BINDING")
+        approved['reconciliation']['prior_core_attempts']), "CORE_DELIVERY_PRIOR_SOURCE_BINDING")
     deadline.check()
     return files
 
@@ -1766,7 +1765,7 @@ def verify_prior_originals(directory_fd, binding, approved, deadline, *, impleme
     read_prior_originals(directory_fd, binding['anchor'], approved, deadline)
     prior_api = _helper("q2_core_delivery_package")._approved_module().prior_attempt
     return prior_api.observe_capture_condition(directory_fd, binding=binding,
-        prior=approved['reconciliation']['prior_core_attempt'], implementation=implementation,
+        prior=approved['reconciliation']['prior_core_attempts'], implementation=implementation,
         deadline=deadline, writer_observer=capture_contract.observe_writer)
 
 

@@ -127,6 +127,20 @@ FIELD_SOURCE_PATHS = {
     "field/dispatcher.py": "tests/e3_host/q2_core_delivery_dispatcher.py",
 }
 
+# These exact historical bytes were reviewed for the pre-business stop
+# premise. Checking their pins is not a claim of historical remote exit.
+PRIOR_SOURCE_PROFILES = (
+    {"commit": "605a2a38d1db5ef85c961b4d357cafa157bdd7d5",
+     "tree": "ced38519fe6e3b86973de5ccf0dff60fc62322e4",
+     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
+                 "bootstrap": "039fe87cc91a64c0327dc404e0ccf9728c32a1cc07e3e6fb11ed74c979f904f3"}},
+    {"commit": "59d7c32bbe10d580603b8e5e62dd49ad6a538e56",
+     "tree": "15bfe2192ced5aad0acf5c74a58b6e865afe34d1",
+     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
+                 "bootstrap": "c9f6e89f874d83856552e65810b04a5d88e7ab0687395dfa5dfd80d7affdee83",
+                 "dispatcher": "30d8e9fe9a9bbf39dc5261d0eb0d47c7349fe7e8229132f394a31aa934216eb4"}},
+)
+
 ANCHOR_FILES = {
     "ssh.sh": (0o700, entry_api.WRAPPER_SHA256, "wrapper"),
     "start.sh": (0o700, entry_api.START_SHA256, "fixture_start"),
@@ -994,6 +1008,13 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                     implementation_commit + "^{tree}")
     c.require(identity.decode("ascii").split() == [implementation_commit, implementation_tree],
               "CORE_FREEZE_IMPLEMENTATION")
+    for prior in PRIOR_SOURCE_PROFILES:
+        identity = _git(repository, git_path, "rev-parse", prior['commit'] + "^{tree}")
+        c.require(identity.decode('ascii').strip() == prior['tree'], 'CORE_FREEZE_PRIOR_TREE')
+        _git(repository, git_path, 'merge-base', '--is-ancestor', prior['commit'], implementation_commit)
+        for role, digest in prior['sources'].items():
+            raw = _git(repository, git_path, 'show', prior['commit'] + ':' + FIELD_SOURCE_PATHS['field/' + role + '.py'])
+            c.require(c.sha256(raw) == digest, 'CORE_FREEZE_PRIOR_SOURCE')
     # Final D must descend from every independent amendment/new-batch closure.
     # Authority stays offline; no replacement wire amendment or extra member.
     for baseline, decision, closure in (
@@ -1007,7 +1028,8 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.NEXT_ACCEPTANCE_BASELINE, c.NEXT_ACCEPTANCE_OWNER_DECISION,
              c.NEXT_ACCEPTANCE_CLOSURE),
             (c.HOST_CAPACITY_BOUNDARY_BASELINE, c.HOST_CAPACITY_BOUNDARY_OWNER_DECISION,
-             c.HOST_CAPACITY_BOUNDARY_CLOSURE)):
+             c.HOST_CAPACITY_BOUNDARY_CLOSURE),
+            (c.POST_SUDO_BASELINE, c.POST_SUDO_OWNER_DECISION, c.POST_SUDO_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")

@@ -12,7 +12,7 @@ import pytest
 if not sys.platform.startswith('linux'):
     pytest.skip('Linux held-anchor and original dual-clock checks', allow_module_level=True)
 
-from core_prior_fixture import fixture
+from core_prior_fixture import pair_fixture as fixture
 from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_capture as cap
 from test_e3_q2_core_capture import Clock
@@ -42,12 +42,12 @@ def validate(value, args):
 
 
 @pytest.mark.parametrize('frsize,blocks,inodes,accepted', [
-    (1, 134217728, 32, True), (1, 134217727, 32, False), (4096, 32768, 31, False),
-    (4096, 32768, 32, True), (4096, 2**30, 2**30, True), (0, 134217728, 32, False),
-    (-1, 134217728, 32, False), (1, -1, 32, False), (1, 134217728, -1, False),
-    (None, 134217728, 32, False), (True, 134217728, 32, False),
-    (1, '134217728', 32, False), (1, 134217728, 32.0, False)])
-def test_exact_fixed_two_rows_and_invalid_observation(inputs, monkeypatch, frsize, blocks, inodes, accepted):
+    (1, 201326592, 48, True), (1, 201326591, 48, False), (4096, 49152, 47, False),
+    (4096, 49152, 48, True), (4096, 2**30, 2**30, True), (0, 201326592, 48, False),
+    (-1, 201326592, 48, False), (1, -1, 48, False), (1, 201326592, -1, False),
+    (None, 201326592, 48, False), (True, 201326592, 48, False),
+    (1, '201326592', 48, False), (1, 201326592, 48.0, False)])
+def test_exact_fixed_three_rows_and_invalid_observation(inputs, monkeypatch, frsize, blocks, inodes, accepted):
     fd, args, clock, _ = inputs
     samples = []
     def observe(held):
@@ -61,8 +61,9 @@ def test_exact_fixed_two_rows_and_invalid_observation(inputs, monkeypatch, frsiz
     else:
         value = p.observe_capture_condition(fd, **args)
         assert validate(value, args) is value
-        assert value['capacity']['required_bytes'] == 134217728
+        assert value['capacity']['required_bytes'] == 201326592
         assert value['known_commitments'] == [dict(session_id=p.SESSION, bytes=67108864, inodes=16),
+            dict(session_id=p.SECOND_SESSION, bytes=67108864, inodes=16),
             dict(session_id=p.c.SESSION_ID, bytes=67108864, inodes=16)]
         assert value['earlier_host_obligations'] == dict(coverage='UNKNOWN', bytes=None,
                                                       inodes=None, shared_pool='UNKNOWN')
@@ -86,7 +87,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
         elif change == 'backward': clock.now[time.CLOCK_MONOTONIC] -= 1
         elif change == 'io': raise OSError(errno.EIO, 'synthetic IO failure')
         if change == 'missing': return SimpleNamespace()
-        return SimpleNamespace(f_frsize=4096, f_bavail=32768, f_favail=32)
+        return SimpleNamespace(f_frsize=4096, f_bavail=49152, f_favail=48)
     def identity(held):
         value = fstat(held)
         if held == fd and drifted and change in ('mode', 'uid', 'gid', 'nlink', 'ino', 'dev'):
@@ -121,7 +122,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
     'implementation', 'binding', 'prior', 'window', 'observation', 'dev', 'arithmetic'])
 def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypatch, change):
     fd, args, _, _ = inputs
-    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=32768, f_favail=32))
+    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=49152, f_favail=48))
     value = p.observe_capture_condition(fd, **args)
     if change == 'null': value['earlier_host_obligations']['bytes'] = 0
     elif change == 'false': value['complete_host_admission_proven'] = True
@@ -131,7 +132,7 @@ def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypat
     elif change == 'extra': value['extra'] = 'caller claims PASS'
     elif change == 'implementation': value['implementation']['commit'] = 'c'*40
     elif change == 'binding': value['local_management_binding_sha256'] = 'c'*64
-    elif change == 'prior': value['prior_attempt_sha256'] = 'c'*64
+    elif change == 'prior': value['prior_attempts_sha256'] = 'c'*64
     elif change == 'window': value['origins']['host_boottime_origin_ns'] += 1
     elif change == 'observation': value['observation']['after']['boottime_ns'] += cap.WINDOW_NS
     elif change == 'dev': value['dev'] += 1
@@ -158,7 +159,7 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     manifest['locators']['source_relation_sha256'] = p.c.sha256(p.c.canonical(
         package.locator_relation(manifest['locators'], digest)))
     approved = package.c.document(members[package.c.APPROVED_INPUTS_PATH], limit=1048576, newline=True)
-    approved['reconciliation'] = dict(prior_core_attempt=args['prior'])
+    approved['reconciliation'] = dict(prior_core_attempts=args['prior'])
     approved['policy_basis'] = dict(remote_expectation={})
     raw = package.c.canonical(approved, newline=True)
     row, header = package.approved_input_member(raw, amendment=manifest['amendment'])
@@ -182,8 +183,8 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     def observe(_):
         observations.append(1)
         if failure == 'late': clock.expire()
-        return SimpleNamespace(f_frsize=1, f_bavail=134217727 if failure == 'capacity' else 134217728,
-                               f_favail=32)
+        return SimpleNamespace(f_frsize=1, f_bavail=201326591 if failure == 'capacity' else 201326592,
+                               f_favail=48)
     monkeypatch.setattr(os, 'fstatvfs', observe)
     if failure == 'writer':
         changed = copy.deepcopy(binding['writer']); changed['process']['starttime_ticks'] += 1
