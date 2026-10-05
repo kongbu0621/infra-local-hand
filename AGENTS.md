@@ -1301,10 +1301,22 @@ records S1 dual-prior/new-identity implementation and local verification after i
 `0c63e733b166f8f9539fd821db621b331a3ede61`. Implementation D
 `c6afff10656624cccbf554688e730f6bde6d82b7` passed full source (5183/127), independent
 installed verification (94/292), exact CI 37277874571 (3/3), and real private double-build.
-The 05b request is still NOT_ISSUED. The separate digest registration leaves field code unchanged;
-its final D must also pass all S2 gates before the original one-shot live caller.
-Ten original files were read and independently validated without a guest connection. This is not
-current guest quiescence, full host admission or H01/Q4/H11 execution evidence.
+The separate digest registration left field code unchanged. Final issued D
+`8704a24b6c3c79ce4a36028ae2182dec2a35843e`, tree `89a5f221883c11838a10a452be2dcb756abb5a17`,
+passed its own full source (5184 passed / 126 skipped), independent installed verifier (94/292),
+exact CI 37279434388 (3/3 success) and real private double-build before issuance.
+The final same-window caller then consumed the single 05b marker and request: valid HELLO,
+BIND/package sent, wait status 3, both stream EOFs and host deadline met, with
+`CORE_ADMIT_SSHD_GRAMMAR`. The original finalizer returned STOP_AND_RETAIN, no output package,
+no remote-result and no H01/Q4/H11 verdict. Five private capture files (9073 B total) remain retained;
+original business-execution and result-collection truth stays UNKNOWN. The fixed 192 MiB / 48 inode
+current host capacity condition passed without complete historical admission or exclusive reservation.
+Exact issued source ordering places rejection at sshd source grammar, after sudo checks and before
+sshd helper, old-scope quiescence, guest capacity, installation and H01; this is not proof of remote
+supervisor closure or guest usage. The failing sshd source line was not returned; do not guess it.
+All three core requests are now consumed. Release is closed again, no refund/retry/reconnect/cleanup
+occurred, and this scope ends with retained failure. Another field request requires separate exact
+approval, never a replay or a renamed continuation. Production E3 and all paused side work remain.
 
 ### Continuing constraints
 

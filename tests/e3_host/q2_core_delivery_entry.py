@@ -63,13 +63,11 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Both old attempts remain consumed; only the separately approved 05b request
-# may use this reviewed digest. S2 of c6afff1 passed full source, installed, CI
-# and private double-build. The final release D must itself pass those gates
-# before a fresh live caller. See the post-sudo review; never retry/reconnect.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({
-    "319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96",
-})
+# All three core attempts, including the fixed 05b request, are consumed.
+# 05b stopped at CORE_ADMIT_SSHD_GRAMMAR before a result package returned.
+# Close release after retaining that failure; no retry, reconnect or cleanup.
+# The issued D and its verified digest remain in the post-sudo review.
+RELEASABLE_DISPATCHER_SHA256 = frozenset()
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
