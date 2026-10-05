@@ -3156,13 +3156,14 @@ def _admit_sudo_output(raw, grant, source_paths=()):
 
 
 def _admit_sshd_source(raws):
-    """Keep the fixed grammar; diagnose only already-held bytes, never paths/raw.
+    """Fixed grammar with the approved single main-file locale exception.
 
     F is the one-based collector input order and L the existing splitlines()
     parser line. F0/L0 identifies a closure-wide check; L0 a whole-file check.
     Closure digests bind ordered path/file digests, not a new source or read.
     """
     includes = 0
+    locale_declarations = 0
     file_index, path, raw = 0, None, None
 
     def check(condition, code, stage, line=0):
@@ -3187,8 +3188,13 @@ def _admit_sshd_source(raws):
             text = _admit_text(raw)
         except DispatchError:
             check(False, "CORE_ADMIT_POLICY_ENCODING", "SSHD_SOURCE_TEXT")
-        for number, line in enumerate(text.splitlines(), 1):
-            line = line.strip()
+        offset = 0
+        for number, source_line in enumerate(text.splitlines(keepends=True), 1):
+            # Preserve parser line numbering, but never let splitlines/strip
+            # turn a control-delimited fragment into the new LF-only exception.
+            lf_start = offset == 0 or text[offset - 1] == "\n"
+            offset += len(source_line)
+            line = source_line.strip()
             if not line or line.startswith("#"):
                 continue
             check(not any(char in line for char in ('"', "'", "\\", "`", "$")),
@@ -3205,8 +3211,13 @@ def _admit_sshd_source(raws):
             else:
                 check(re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', words[0]) is not None,
                       "CORE_ADMIT_SSHD_GRAMMAR", "KEYWORD", number)
-                check(not any(char in line for char in "*?[]"),
+                locale_line = (path == "/etc/ssh/sshd_config" and locale_declarations == 0
+                    and name == "acceptenv" and words[1:] == ["LANG", "LC_*"] and lf_start
+                    and re.fullmatch(r'[ \t]*[A-Za-z]+[ \t]+LANG[ \t]+LC_\*[ \t]*\n?', source_line) is not None)
+                check(not any(char in line for char in "*?[]") or locale_line,
                       "CORE_ADMIT_SSHD_GRAMMAR", "GLOB", number)
+                if locale_line:
+                    locale_declarations += 1
     file_index = 0
     check(includes == 1, "CORE_ADMIT_SSHD_INCLUDE", "COUNT")
 

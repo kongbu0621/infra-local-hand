@@ -253,7 +253,7 @@ SSHD_INCLUDE = b"Include /etc/ssh/sshd_config.d/*.conf\n"
     (b"Include /private/DO_NOT_ECHO_THIS_PATH", "INCLUDE_TARGET"),
     (b"Include /etc/ssh/sshd_config.d/*.conf other", "INCLUDE_TARGET"),
     (b"Bad-Keyword value", "GRAMMAR_KEYWORD"),
-    (b"AcceptEnv LANG LC_*", "GRAMMAR_GLOB"),
+    (b"AcceptEnv LANG LC_* EXTRA", "GRAMMAR_GLOB"),
     (b"AcceptEnv LANG LC_?", "GRAMMAR_GLOB"),
     (b"AcceptEnv LANG LC_[ABC]", "GRAMMAR_GLOB"),
     (b"Banner /private/DO_NOT_ECHO_THIS_PATH]", "GRAMMAR_GLOB"),
@@ -324,6 +324,164 @@ def test_sshd_source_missing_duplicate_include_uses_closure_diagnostic(raws, inc
 ])
 def test_sshd_source_diagnostic_preserves_existing_success(raw):
     assert d._admit_sshd_source({SSHD_MAIN: raw, "/etc/ssh/sshd_config.d/50-local.conf": b"# no change\n"}) is None
+
+
+@pytest.mark.parametrize("line", [
+    b"AcceptEnv LANG LC_*\n", b"AcceptEnv LANG LC_*",
+    b"  AcceptEnv\tLANG  LC_* \t\n", b"\tacceptenv LANG LC_*\t",
+    b"\tAcCePtEnV\tLANG\tLC_*\n",
+])
+@pytest.mark.parametrize("before_include", [False, True])
+def test_sshd_locale_exact_main_line_is_accepted(line, before_include):
+    raw = line + b"\n" + SSHD_INCLUDE if before_include else SSHD_INCLUDE + line
+    raws = {SSHD_MAIN: raw, "/etc/ssh/sshd_config.d/50-local.conf": b"PubkeyAuthentication yes\n"}
+    # Repeated independent parser calls do not share the one-declaration state.
+    assert d._admit_sshd_source(raws) is None
+    assert d._admit_sshd_source(raws) is None
+
+
+@pytest.mark.parametrize("line", [
+    b"AcceptEnv LC_*", b"AcceptEnv LC_* LANG", b"AcceptEnv LANG LANG LC_*",
+    b"AcceptEnv LANG LC_* LC_*", b"AcceptEnv LANG LC_* EXTRA",
+    b"AcceptEnv lang LC_*", b"AcceptEnv LANG lc_*", b"AcceptEnv LANG LC_**",
+    b"AcceptEnv LANG LC_?", b"AcceptEnv LANG LC_[ABC]", b"AcceptEnv LANG *",
+    b"AcceptEnv LANG LC_ALL*", b"AcceptEnv LANG !LC_*", b"AcceptEnv LANG LC_*,LANG",
+    b"AcceptEnv LANG LC_* # comment", b"AcceptEnv LANG LC_*#comment",
+    b"AcceptEnv=LANG LC_*", b"SetEnv LANG LC_*", b"Banner LANG LC_*",
+])
+def test_sshd_locale_does_not_accept_nearby_patterns(line):
+    raw = SSHD_INCLUDE + line + b"\n"
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source({SSHD_MAIN: raw})
+    assert "_F1_L2_" in str(captured.value)
+    assert str(captured.value).endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+
+
+@pytest.mark.parametrize("control", [bytes([value]) for value in range(32) if value not in (9, 10)] + [b"\x7f"])
+@pytest.mark.parametrize("position", ["prefix", "between", "suffix"])
+def test_sshd_locale_rejects_control_bytes_before_strip(control, position):
+    line = {"prefix": control + b"AcceptEnv LANG LC_*\n",
+            "between": b"AcceptEnv LANG" + control + b"LC_*\n",
+            "suffix": b"AcceptEnv LANG LC_*" + control + b"\n"}[position]
+    raw = SSHD_INCLUDE + line
+    with pytest.raises(d.DispatchError):
+        d._admit_sshd_source({SSHD_MAIN: raw})
+
+
+@pytest.mark.parametrize("separator", [b"\v", b"\f", b"\x1c", b"\x1d", b"\x1e"])
+@pytest.mark.parametrize("prefix", [b"PubkeyAuthentication yes", b"# comment"])
+def test_sshd_locale_cannot_follow_a_non_lf_parser_boundary(separator, prefix):
+    raw = SSHD_INCLUDE + prefix + separator + b"AcceptEnv LANG LC_*\n"
+    with pytest.raises(d.DispatchError, match="GRAMMAR_GLOB_F1_L3_"):
+        d._admit_sshd_source({SSHD_MAIN: raw})
+    # The same historical splitlines behavior still applies to non-glob input.
+    assert d._admit_sshd_source({SSHD_MAIN: raw.replace(b"LC_*", b"LC_ALL")}) is None
+
+
+@pytest.mark.parametrize("line", [
+    b'AcceptEnv "LANG" LC_*\n', b"AcceptEnv 'LANG' LC_*\n",
+    b"AcceptEnv LANG LC_*\\\n", b"AcceptEnv LANG $LC_*\n", b"AcceptEnv LANG `LC_*`\n",
+    b"AcceptEnv LANG\nLC_*\n", b"AcceptEnv LANG LC_*\xff\n",
+])
+def test_sshd_locale_keeps_quote_expansion_encoding_and_continuation_rejections(line):
+    with pytest.raises(d.DispatchError):
+        d._admit_sshd_source({SSHD_MAIN: SSHD_INCLUDE + line})
+
+
+@pytest.mark.parametrize("main_locale", [b"", b"AcceptEnv LANG LC_*\n"])
+def test_sshd_locale_never_applies_in_a_drop_in(main_locale):
+    path = "/etc/ssh/sshd_config.d/50-private.conf"
+    raw = b"AcceptEnv LANG LC_*\n"
+    with pytest.raises(d.DispatchError, match="GRAMMAR_GLOB_F2_L1_") as captured:
+        d._admit_sshd_source({SSHD_MAIN: SSHD_INCLUDE + main_locale, path: raw})
+    code = str(captured.value)
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+    assert "private" not in code.lower() and "AcceptEnv" not in code
+
+
+def test_sshd_locale_second_main_declaration_is_rejected():
+    raw = SSHD_INCLUDE + b"AcceptEnv LANG LC_*\n\tacceptenv\tLANG LC_*\n"
+    with pytest.raises(d.DispatchError, match="GRAMMAR_GLOB_F1_L3_"):
+        d._admit_sshd_source({SSHD_MAIN: raw})
+
+
+@pytest.mark.parametrize("following,reason", [
+    (b"Match User example\n", "MATCH_DIRECTIVE"),
+    (b"Include /outside/*.conf\n", "INCLUDE_TARGET"),
+    (b"Banner *\n", "GRAMMAR_GLOB"),
+    (b'Banner "value"\n', "GRAMMAR_QUOTE_OR_EXPANSION"),
+])
+def test_sshd_locale_does_not_skip_later_main_checks(following, reason):
+    raw = SSHD_INCLUDE + b"AcceptEnv LANG LC_*\n" + following
+    with pytest.raises(d.DispatchError, match=reason + "_F1_L3_"):
+        d._admit_sshd_source({SSHD_MAIN: raw})
+
+
+@pytest.mark.parametrize("file_index", [2, 3])
+def test_sshd_locale_does_not_skip_later_files_or_leak_diagnostics(monkeypatch, file_index):
+    from e3_host import q2_core_delivery_bootstrap as bootstrap
+    raws = {SSHD_MAIN: SSHD_INCLUDE + b"AcceptEnv LANG LC_*\n"}
+    if file_index == 3:
+        raws["/etc/ssh/sshd_config.d/50-local.conf"] = b"PubkeyAuthentication yes\n"
+    raw = b"# retained\nBanner /private/DO_NOT_ECHO*\n"
+    raws["/etc/ssh/sshd_config.d/90-private.conf"] = raw
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source(raws)
+    code = str(captured.value)
+    assert code.startswith(f"CORE_ADMIT_SSHD_GRAMMAR_GLOB_F{file_index}_L2_FILES{file_index}_")
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+    assert re.fullmatch(r"CORE_[A-Z0-9_]+", code) and len(code) <= 384 and "DO_NOT_ECHO" not in code
+
+    def fail_in_serve(**_kwargs):
+        raise captured.value
+    monkeypatch.setattr(bootstrap, "serve", fail_in_serve)
+    stdout, stderr = io.BytesIO(), io.BytesIO()
+    assert bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256="a" * 64) == 3
+    assert stdout.getvalue() == b"" and stderr.getvalue() == code.encode() + b"\n"
+
+
+@pytest.mark.parametrize("includes", [b"", SSHD_INCLUDE * 2])
+def test_sshd_locale_does_not_replace_closure_include_count(includes):
+    with pytest.raises(d.DispatchError, match="INCLUDE_COUNT_F0_L0_"):
+        d._admit_sshd_source({SSHD_MAIN: includes + b"AcceptEnv LANG LC_*\n"})
+
+
+def test_sshd_locale_is_pure_and_keeps_the_field_release_closed(monkeypatch):
+    from e3_host import q2_core_delivery_entry as entry
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("sshd source parser attempted an external effect")
+
+    monkeypatch.setattr(d.os, "open", forbidden)
+    monkeypatch.setattr(d.subprocess, "Popen", forbidden)
+    assert d._admit_sshd_source({SSHD_MAIN: SSHD_INCLUDE + b"AcceptEnv LANG LC_*\n"}) is None
+    assert entry.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+
+
+def test_sshd_locale_accepts_a_complete_maximum_size_main_file_and_65_files():
+    line = b"AcceptEnv LANG LC_*\n"
+    raw = SSHD_INCLUDE + b"#" + b"a" * (262144 - len(SSHD_INCLUDE) - len(line) - 2) + b"\n" + line
+    raws = {SSHD_MAIN: raw}
+    for index in range(64):
+        raws[f"/etc/ssh/sshd_config.d/{index:02}.conf"] = b"#" + b"a" * 8190 + b"\n"
+    assert len(raw) == 262144 and len(raws) == 65 and sum(map(len, raws.values())) <= 1048576
+    assert d._admit_sshd_source(raws) is None
+
+
+@pytest.mark.parametrize("key", ["authorizedkeyscommand", "authorizedkeysfile", "forcecommand",
+                                 "permituserenvironment", "pubkeyauthentication"])
+@pytest.mark.parametrize("fault", ["missing", "duplicate", "wrong"])
+def test_sshd_locale_does_not_replace_any_effective_predicate(key, fault):
+    assert d._admit_sshd_source({SSHD_MAIN: SSHD_INCLUDE + b"AcceptEnv LANG LC_*\n"}) is None
+    required = dict(authorizedkeyscommand="none", authorizedkeysfile=[".ssh/authorized_keys", ".ssh/authorized_keys2"],
+                    forcecommand="none", permituserenvironment="no", pubkeyauthentication="yes")
+    rows = {name: (name + " " + (" ".join(value) if type(value) is list else value)).encode()
+            for name, value in required.items()}
+    selected = rows.pop(key)
+    if fault != "missing":
+        rows[key] = selected + b"\n" + selected if fault == "duplicate" else key.encode() + b" unexpected"
+    with pytest.raises(d.DispatchError, match="PREDICATE"):
+        d._admit_sshd_output(b"\n".join(rows.values()), required)
 
 
 def test_sshd_source_diagnostic_uses_existing_parser_line_numbering():
