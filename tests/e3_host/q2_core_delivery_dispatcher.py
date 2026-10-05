@@ -2982,44 +2982,81 @@ def _admit_sudo_source(raws, literal):
     return count
 
 
-def _admit_sudo_output(raw, grant):
-    text = _admit_text(raw)
-    lines = text.splitlines()
-    _require(lines and re.fullmatch(r'Matching Defaults entries for q1admin on [A-Za-z0-9_.-]+:',
-                                    lines[0]) is not None, "CORE_ADMIT_SUDO_OUTPUT")
-    sections = text.split("\nSudoers entry:\n")
-    _require(len(sections) >= 2, "CORE_ADMIT_SUDO_OUTPUT")
-    header = sections.pop(0).splitlines()
-    _require(all(not line or line.startswith("    ") or re.fullmatch(
-        r"User q1admin may run the following commands on [A-Za-z0-9_.-]+:", line) for line in header[1:]),
-             "CORE_ADMIT_SUDO_OUTPUT")
+def _admit_sudo_output(raw, grant, source_paths=()):
+    """Parse C-locale long listings without changing the required grant.
+
+    sudo 1.9.15 adds a source path to entry headers; pipe output uses a literal
+    TAB before commands. Paths are labels for already held source files, never
+    new read targets or substitutes for the source/grant checks.
+    """
+    raw_lines = raw.split(b"\n")
+    summary = (f"_BYTES{len(raw)}_LINES{len(raw_lines) - (not raw or raw.endswith(b'\n'))}"
+        f"_ENTRIES{sum(line.startswith(b'Sudoers entry:') for line in raw_lines)}"
+        f"_SOURCE{sum(line.startswith(b'Sudoers entry: ') for line in raw_lines)}"
+        f"_TAB{sum(line == b'\tALL' for line in raw_lines)}"
+        f"_SPACES{sum(line == b'        ALL' for line in raw_lines)}"
+        f"_SHA256_{_sha(raw).upper()}")
+
+    def check(condition, stage, line=0, entry=0, *, category="OUTPUT"):
+        if not condition:
+            # Only fixed stages, counts and a digest cross bootstrap's existing
+            # CORE_[A-Z0-9_]+ stderr filter. Never echo policy text or paths.
+            raise DispatchError(f"CORE_ADMIT_SUDO_{category}_{stage}_L{line}_E{entry}" + summary)
+
+    check(all(byte in (9, 10) or 32 <= byte <= 126 for byte in raw), "ENCODING")
+    lines = raw.decode("ascii").split("\n")
+    user_header = r"User q1admin may run the following commands on [A-Za-z0-9_.-]+:"
+    index = 0
+    if lines and re.fullmatch(r"Matching Defaults entries for q1admin on [A-Za-z0-9_.-]+:", lines[0]):
+        index = 1
+        while index < len(lines) and (not lines[index] or lines[index].startswith("    ")):
+            index += 1
+    check(index < len(lines) and re.fullmatch(user_header, lines[index]) is not None,
+          "USER_HEADER", index + 1)
+    index += 1
+    sources = set(source_paths) - {"/etc/sudo.conf"}
+    sections = []
+    for number, line in enumerate(lines[index:], index + 1):
+        if not line:
+            continue
+        if line.startswith("Sudoers entry:"):
+            source = line[len("Sudoers entry:"):]
+            check(not source or (source.startswith(" /") and source[1:] in sources),
+                  "ENTRY_SOURCE", number, len(sections) + 1)
+            sections.append((number, []))
+        else:
+            check(bool(sections), "ENTRY_HEADER", number)
+            sections[-1][1].append((number, line))
+    check(bool(sections), "ENTRY_COUNT", index + 1)
     grants = []
-    for section in sections:
+    for entry, (start, section) in enumerate(sections, 1):
         fields, commands = {}, []
         command_mode = False
-        for line in section.splitlines():
-            if not line:
-                continue
+        for number, line in section:
             if command_mode:
-                _require(line.startswith("        ") and line.strip() == "ALL", "CORE_ADMIT_SUDO_OUTPUT")
+                check(line in ("\tALL", "        ALL"), "COMMAND", number, entry)
                 commands.append("ALL")
                 continue
             match = re.fullmatch(r'    (RunAsUsers|RunAsGroups|Options|Commands):(.*)', line)
-            _require(match is not None and match[1] not in fields, "CORE_ADMIT_SUDO_OUTPUT")
+            check(match is not None, "FIELD", number, entry)
+            check(match[1] not in fields, "DUPLICATE_FIELD", number, entry)
             key, value = match[1], match[2].strip()
             fields[key] = value
             if key == "Commands":
-                _require(value == "", "CORE_ADMIT_SUDO_OUTPUT")
+                check(value == "", "COMMAND_HEADER", number, entry)
                 command_mode = True
-        _require(set(fields) >= {"RunAsUsers", "Commands"}
+        check(set(fields) >= {"RunAsUsers", "Commands"}
                  and set(fields) <= {"RunAsUsers", "RunAsGroups", "Options", "Commands"},
-                 "CORE_ADMIT_SUDO_OUTPUT")
-        _require(fields["RunAsUsers"] == "ALL" and fields.get("RunAsGroups", "") in ("", "ALL")
-                 and fields.get("Options", "authenticate") in ("!authenticate", "authenticate"), "CORE_ADMIT_SUDO_OUTPUT")
+              "REQUIRED_FIELDS", start, entry)
+        check(commands == ["ALL"], "COMMAND_COUNT", start, entry)
+        check(fields["RunAsUsers"] == "ALL", "RUNAS_USERS", start, entry)
+        check(fields.get("RunAsGroups", "") in ("", "ALL"), "RUNAS_GROUPS", start, entry)
+        check(fields.get("Options", "authenticate") in ("!authenticate", "authenticate"),
+              "OPTIONS", start, entry)
         grants.append(dict(host="ALL", runas_users=["ALL"],
             runas_groups=["ALL"] if fields.get("RunAsGroups") else [],
             tags=["NOPASSWD"] if fields.get("Options") == "!authenticate" else ["PASSWD"], commands=commands))
-    _require(grant in grants, "CORE_ADMIT_SUDO_GRANT")
+    check(grant in grants, "MATCH", category="GRANT")
     return grants
 
 
@@ -3421,7 +3458,7 @@ def _admit_collect_policies(effects, basis, remote):
                 _require(not stderr, "CORE_ADMIT_HELPER_STDERR")
                 if name == "sudo":
                     facts = dict(helper=helper, cloud_config_literal_count=count,
-                                 parsed_grants=_admit_sudo_output(stdout, params["required_grant"]), matched=True)
+                                 parsed_grants=_admit_sudo_output(stdout, params["required_grant"], raw), matched=True)
                 else:
                     facts = dict(helper=helper, effective=_admit_sshd_output(stdout, params["required_effective"]), matched=True)
             elif name == "authorized_keys":

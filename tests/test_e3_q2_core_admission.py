@@ -5,9 +5,12 @@ These do not contact the guest or stand in for live admission/capacity evidence.
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
+import io
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -57,6 +60,143 @@ def test_sudo_requires_exact_nopasswd_without_explicit_groups():
     assert grants[0]["runas_groups"] == ["ALL"]
     with pytest.raises(d.DispatchError, match="SUDO_GRANT"):
         d._admit_sudo_output(SUDO.replace(b"    Options: !authenticate", b"    RunAsGroups: ALL\n    Options: !authenticate"), GRANT)
+
+
+@pytest.mark.parametrize("command_indent", [b"        ", b"\t"])
+def test_sudo_long_listing_accepts_native_command_indentation(command_indent):
+    raw = SUDO.replace(b"        ALL", command_indent + b"ALL")
+    assert d._admit_sudo_output(raw, GRANT)[1] == GRANT
+
+
+def test_sudo_long_listing_does_not_require_matching_defaults():
+    raw = SUDO.split(b"User q1admin", 1)[1]
+    assert d._admit_sudo_output(b"User q1admin" + raw, GRANT)[1] == GRANT
+
+
+SUDO_SOURCE_PATHS = ("/etc/sudoers", "/etc/sudoers.d/90-cloud-init-users")
+
+
+def sourced_sudo_listing(first=b"/etc/sudoers", second=b"/etc/sudoers.d/90-cloud-init-users"):
+    header, ordinary, passwordless = SUDO.split(b"Sudoers entry:")
+    def title(source):
+        return b"Sudoers entry:" + (b" " + source if source is not None else b"")
+    return header + title(first) + ordinary + title(second) + passwordless
+
+
+@pytest.mark.parametrize("sources", [
+    (None, None),
+    (b"/etc/sudoers", b"/etc/sudoers.d/90-cloud-init-users"),
+    (None, b"/etc/sudoers.d/90-cloud-init-users"),
+    (b"/etc/sudoers", None),
+])
+@pytest.mark.parametrize("command_indent", [b"        ", b"\t"])
+def test_sudo_old_and_sourced_entry_headers_preserve_same_grants(sources, command_indent):
+    raw = sourced_sudo_listing(*sources).replace(b"        ALL", command_indent + b"ALL")
+    grants = d._admit_sudo_output(raw, GRANT, source_paths=SUDO_SOURCE_PATHS)
+    assert grants == [
+        dict(commands=["ALL"], host="ALL", runas_groups=["ALL"],
+             runas_users=["ALL"], tags=["PASSWD"]),
+        GRANT,
+    ]
+
+
+@pytest.mark.parametrize("source,held", [
+    (b"/etc/sudoers.d/90-cloud-init-users", ()),
+    (b"/etc/sudoers.d/unread", SUDO_SOURCE_PATHS),
+    (b"/etc/sudoers", ("/etc/sudoers.d/90-cloud-init-users",)),
+    (b"/etc/sudo.conf", SUDO_SOURCE_PATHS + ("/etc/sudo.conf",)),
+    (b"/tmp/sudoers", SUDO_SOURCE_PATHS),
+    (b"sudoers", SUDO_SOURCE_PATHS),
+    (b"/etc/sudoers.d/../sudoers", SUDO_SOURCE_PATHS),
+    (b"/etc//sudoers", SUDO_SOURCE_PATHS),
+    (b"/etc/sudoers:12", SUDO_SOURCE_PATHS),
+    (b"/etc/sudoers # comment", SUDO_SOURCE_PATHS),
+    (b"/etc/sudoers ", SUDO_SOURCE_PATHS),
+])
+def test_sudo_sourced_title_must_name_an_already_read_sudoers_file(source, held):
+    # A valid grant in the other entry cannot hide an unbound source title.
+    raw = sourced_sudo_listing(source, None)
+    with pytest.raises(d.DispatchError, match="SUDO"):
+        d._admit_sudo_output(raw, GRANT, source_paths=held)
+
+
+@pytest.mark.parametrize("change", [
+    (b"    RunAsUsers: ALL", b"    RunAsUsers: ALL\n    RunAsUsers: ALL"),
+    (b"    Options: !authenticate", b"    Options: !authenticate\n    Options: !authenticate"),
+    (b"    Commands:\n", b"    Unknown: ignored\n    Commands:\n"),
+    (b"    RunAsUsers: ALL", b"    RunAsUsers: root"),
+    (b"    RunAsGroups: ALL", b"    RunAsGroups: root"),
+    (b"    Options: !authenticate", b"    Options: !authenticate, noexec"),
+    (b"    Options: !authenticate", b"    Options: authenticate"),
+    (b"    Commands:\n", b"    Commands: ALL\n"),
+    (b"        ALL", b"\t/bin/true"),
+    (b"        ALL", b"        ALL\n        /bin/true"),
+    (b"        ALL", b"        ALL\n        ALL"),
+    (b"        ALL", b""),
+    (b"        ALL", b"    ALL"),
+    (b"        ALL", b"ALL"),
+])
+def test_sudo_native_format_support_does_not_expand_permissions_or_fields(change):
+    raw = sourced_sudo_listing().replace(*change)
+    with pytest.raises(d.DispatchError, match="SUDO"):
+        d._admit_sudo_output(raw, GRANT, source_paths=SUDO_SOURCE_PATHS)
+
+
+@pytest.mark.parametrize("change", [
+    (b"User q1admin may run", b"User other may run"),
+    (b"User q1admin may run the following commands on local-hand-q1:", b""),
+    (b"Sudoers entry: /etc/sudoers\n", b"Sudoers entry: /etc/sudoers\x00\n"),
+    (b"Sudoers entry: /etc/sudoers\n", b"Sudoers entry: /etc/sudoers\r\n"),
+    (b"Sudoers entry: /etc/sudoers\n", b"Sudoers entry: /etc/sudoers\v\n"),
+    (b"Sudoers entry: /etc/sudoers\n", b"Sudoers entry: /etc/sudoers\nSudoers entry:\n"),
+    (b"Sudoers entry: /etc/sudoers\n", b" Sudoers entry: /etc/sudoers\n"),
+])
+def test_sudo_native_format_rejects_ambiguous_boundaries_and_identity(change):
+    with pytest.raises(d.DispatchError, match="SUDO|TEXT"):
+        d._admit_sudo_output(sourced_sudo_listing().replace(*change), GRANT,
+                             source_paths=SUDO_SOURCE_PATHS)
+
+
+@pytest.mark.parametrize("raw", [
+    SUDO.replace(b"    Options: !authenticate", b"    PrivateValue: DO_NOT_ECHO_THIS_VALUE"),
+    sourced_sudo_listing(b"/private/DO_NOT_ECHO_THIS_PATH", None),
+    SUDO.replace(b"        ALL", b"\t/bin/DO_NOT_ECHO_THIS_COMMAND"),
+    SUDO.replace(b"    Options: !authenticate", b"    Options: authenticate"),
+], ids=["unknown-field", "unread-source", "non-all-command", "grant-mismatch"])
+def test_sudo_failure_diagnostics_survive_real_bootstrap_without_raw_output(monkeypatch, raw):
+    from e3_host import q2_core_delivery_bootstrap as bootstrap
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sudo_output(raw, GRANT, source_paths=SUDO_SOURCE_PATHS)
+    error = captured.value
+    code = str(error)
+    assert re.fullmatch(r"CORE_ADMIT_SUDO_(?:OUTPUT_[A-Z_]+|GRANT_MATCH)_L[0-9]+_E[0-9]+"
+                        r"_BYTES[0-9]+_LINES[0-9]+_ENTRIES[0-9]+_SOURCE[0-9]+"
+                        r"_TAB[0-9]+_SPACES[0-9]+_SHA256_[A-F0-9]{64}", code)
+    assert len(code.encode("ascii")) <= 384
+    assert f"_BYTES{len(raw)}_" in code
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+    assert "DO_NOT_ECHO" not in code and "/" not in code
+
+    def fail_in_serve(**kwargs):
+        raise error
+
+    monkeypatch.setattr(bootstrap, "serve", fail_in_serve)
+    stdout, stderr = io.BytesIO(), io.BytesIO()
+    status = bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256="a" * 64)
+    assert status == 3
+    assert stdout.getvalue() == b""
+    assert stderr.getvalue() == code.encode("ascii") + b"\n"
+
+
+def test_sudo_failure_diagnostic_stays_bounded_at_helper_output_limit():
+    # The approved sudo helper allows at most 65536 combined output bytes.
+    raw = b"\n" * 65536
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sudo_output(raw, GRANT, source_paths=SUDO_SOURCE_PATHS)
+    code = str(captured.value)
+    assert len(code.encode("ascii")) <= 384
+    assert "_BYTES65536_" in code
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
 
 
 @pytest.mark.parametrize("change", [
