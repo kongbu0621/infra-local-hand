@@ -1479,6 +1479,29 @@ the issued 05c adder retained all acceptance/rejection results. The historical s
 is retained. This repair neither resolves the guest shortfall nor recovers 05c's missing values. No new
 marker/request, field collection, cleanup, refund or batch is authorized; production E3 and paused side work remain.
 
+### Single core capacity observation proposal
+
+Scope `LH-Q2-CORE-CAPACITY-OBSERVATION-v1` is **OPEN / NOT APPROVED / NOT ISSUED**, O1–O3 only.
+Exact documentation A is `1ba20d196facc82cf74aea88e7df3d4fe31e0584`, tree
+`2da72e01961f7ac1bf32edd521090dafe34b780a`. The [baseline and pending decision](docs/governance/Q2_CORE_CAPACITY_OBSERVATION_BASELINE.md)
+pin the [requirements](docs/a2-execution/q2-core-capacity-observation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-capacity-observation/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-capacity-observation/IMPLEMENTATION_PLAN.md).
+This is one proposed fixed `lhqcap-20261006a` read-only observation of five original-plan parent devices
+and available bytes/inodes, followed by a conditional comparison with the frozen 05c commitments.
+It is not a fifth core attempt or complete admission. Original-plan bytes and issued mappings bind
+the intended paths without reconstructing the full consumed package. Current historical placement,
+quota enforcement and old-process closure remain UNVERIFIED.
+
+The proposal retains all four consumed core requests and the consumed sshd diagnostic, full commitments,
+UNKNOWNs, existing installation and empty release allowlist. New capture is 4 MiB/8 inodes; the proposed
+current host floor is additive 264 MiB/80. It preserves diagnostic trust and remote-closure limits,
+one marker/request, original clocks and no retry/reconnect/cleanup/refund. No H01/Q4/H11, runtime/configuration
+change, next batch or production E3 is authorized; side work remains paused.
+This registration is documentation only, not Owner B or CLOSED C. Exact B and independent bookkeeping-only
+C must precede new source/tests D and conditional field issuance. Unaffected CLOSED development remains.
+R/source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D order are unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
