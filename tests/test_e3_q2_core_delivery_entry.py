@@ -206,7 +206,8 @@ def test_release_gate_accepts_only_exact_reviewed_dispatcher(monkeypatch):
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
+    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset())
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})
     monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset({digest}))
@@ -235,7 +236,7 @@ def test_reviewed_digest_cannot_override_incomplete_readiness(monkeypatch):
 def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
         monkeypatch, tmp_path):
     loader, bootstrap = b"loader\n", b"bootstrap\n"
-    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes() + b"\n# unreviewed\n"
     entry = {"loader_path": "field/loader.py",
              "bootstrap_path": "field/bootstrap.py",
              "dispatcher_path": "field/dispatcher.py",
@@ -315,7 +316,8 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
         assert list(tmp_path.iterdir()) == []
-        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
+            hashlib.sha256(Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()).hexdigest()})
     finally:
         os.close(directory_fd)
 
