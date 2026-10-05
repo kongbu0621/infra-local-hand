@@ -107,6 +107,7 @@ class ApprovedInputSources:
     later_reviews: dict
     producer_raw: bytes
     prior_core_files: dict
+    prior_diagnostic_files: dict
 
 
 def _require(ok, code):
@@ -362,7 +363,8 @@ def _derive(sources):
     relation["obligations"]["source_union_sha256"] = _hash(_union(relation))
     retained = dict(paths=locators["retained_paths"], domains=locators["retained_domains"])
     prior = prior_attempt.build_all(sources.prior_core_files)
-    historical = dict(schema="local-hand-q2-core-historical-capacity-obligations/v3", source_horizon="20261001e",
+    diagnostic = prior_attempt.build_diagnostic(sources.prior_diagnostic_files)
+    historical = dict(schema="local-hand-q2-core-historical-capacity-obligations/v4", source_horizon="20261001e",
         source_union_sha256=relation["obligations"]["source_union_sha256"],
         **{key: vectors[key] for key in ("snapshot_rows", "delta_rows", "effective_rows", "row_relation",
                                        "configured_quota_rows", "totals")},
@@ -373,7 +375,8 @@ def _derive(sources):
         policy_basis=policy.build_policy_basis(source_raw=sources.policy_sources, tokens=sources.remote_tokens),
         historical_capacity_obligations=historical, retained_preparation=retained,
         reconciliation=dict(copy.deepcopy(RECONCILIATION),
-            schema="local-hand-q2-core-reconciliation/v3", prior_core_attempts=prior))
+            schema="local-hand-q2-core-reconciliation/v4", prior_core_attempts=prior,
+            prior_diagnostic_capture=diagnostic))
 
 
 def build(*, sources):
@@ -484,7 +487,7 @@ def _validate_capacity(value, obligations):
     c.exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
                     "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
                     "released_or_refunded", "prior_commitments"})
-    _require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v3"
+    _require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v4"
              and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
              "CAPACITY_SCHEMA")
     for key in ("source_union_sha256", "row_relation", "placement"):
@@ -704,17 +707,20 @@ def validate(raw, *, sources=None):
         _validate_capacity(value["historical_capacity_obligations"], obligations)
         _validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
-        c.exact(reconciliation, {*RECONCILIATION, "schema", "prior_core_attempts"})
-        _require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v3", "RECONCILIATION_SCHEMA")
+        c.exact(reconciliation, {*RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture"})
+        _require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v4", "RECONCILIATION_SCHEMA")
         _equal({key: reconciliation[key] for key in RECONCILIATION}, RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
         prior_attempt.validate_all(prior)
+        prior_attempt.validate_diagnostic(reconciliation['prior_diagnostic_capture'])
         _equal(value["historical_capacity_obligations"]["prior_commitments"],
                [prior_attempt.commitment(item, index=index) for index, item in enumerate(prior)],
                "PRIOR_COMMITMENT")
         _validate_policy(value["policy_basis"])
         if sources is not None:
             _equal(prior, prior_attempt.build_all(sources.prior_core_files), "PRIOR_SOURCE")
+            _equal(reconciliation['prior_diagnostic_capture'],
+                   prior_attempt.build_diagnostic(sources.prior_diagnostic_files), 'DIAGNOSTIC_SOURCE')
             _verify_sources(value, sources)
         return value
     except c.ContractError:

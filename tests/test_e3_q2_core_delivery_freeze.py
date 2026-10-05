@@ -250,10 +250,11 @@ def package_fixture(tmp_path, monkeypatch):
     source = implementation / "tests" / "e3_host"
     source.mkdir(parents=True)
     prior_profiles = []
-    for index in (0, 1):
+    for index in (0, 1, 2):
         pins = {}
         for role in ('loader', 'bootstrap', 'dispatcher'):
             raw = ('# historical fixture %d %s\n' % (index, role)).encode()
+            if role == 'loader': raw = b"def main():\n    return None\n"
             (source / ('q2_core_delivery_' + role + '.py')).write_bytes(raw)
             pins[role] = f.c.sha256(raw)
         _git(implementation, 'add', 'tests/e3_host')
@@ -261,7 +262,7 @@ def package_fixture(tmp_path, monkeypatch):
         prior_profiles.append(dict(commit=_git(implementation, 'rev-parse', 'HEAD'),
             tree=_git(implementation, 'rev-parse', 'HEAD^{tree}'), sources=pins))
     monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', tuple(prior_profiles))
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -285,11 +286,13 @@ def package_fixture(tmp_path, monkeypatch):
     loader = b"def main():\n    return None\n"
     bootstrap = ("LOADER_SHA256 = %r\n" % hashlib.sha256(loader).hexdigest()).encode()
     dispatcher = b"def dispatch(context, effects):\n    return b''\n"
+    dispatcher += b"def _admit_sshd_source():\n    pass\ndef _admit_text():\n    pass\ndef _require():\n    pass\n"
     for name, raw in (("loader", loader), ("bootstrap", bootstrap),
                       ("dispatcher", dispatcher)):
         (source / f"q2_core_delivery_{name}.py").write_bytes(raw)
     _git(implementation, "add", "tests/e3_host")
     _git(implementation, "commit", "-q", "-m", "implementation")
+    monkeypatch.setattr(f.c, 'LOCALE_REPAIR', _git(implementation, 'rev-parse', 'HEAD'))
     # Final integrated D may have intermediate D commits after the independent C.
     _git(implementation, "commit", "--allow-empty", "-q", "-m", "integrated D")
     implementation_commit = _git(implementation, "rev-parse", "HEAD")
@@ -572,7 +575,7 @@ def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypat
     monkeypatch.setattr(f.p, "approved_input_member", lambda *a, **k: (None, None))
     monkeypatch.setattr(f.p, "_approved_module", lambda: SimpleNamespace(
         ApprovedInputSources=a.ApprovedInputSources, validate=lambda raw, *, sources: {}))
-    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {})
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {}, {})
 
     def unexpected(*args, **kwargs):
         raise AssertionError("unreleased source reached current host observation")
@@ -730,7 +733,7 @@ def test_normal_import_sources_cross_package_namespace_and_keep_full_source_veri
 def test_source_namespace_bridge_refuses_loose_or_extra_fields():
     from dataclasses import make_dataclass
     from e3_host import q2_core_approved_inputs as a
-    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {})
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {}, {})
     for value in (dict(vars(sources)), SimpleNamespace(**vars(sources)),
                   make_dataclass("ApprovedInputSources", [(name, object) for name in vars(sources)]
                       + [("trusted", bool)])(**vars(sources), trusted=True)):

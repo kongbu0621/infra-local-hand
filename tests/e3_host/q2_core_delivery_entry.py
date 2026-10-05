@@ -63,8 +63,8 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# All three core attempts, including the fixed 05b request, are consumed.
-# 05b stopped at CORE_ADMIT_SSHD_GRAMMAR before a result package returned.
+# Three historical core attempts are consumed; 05c is separately authorized.
+# Keep release closed until the exact new implementation passes every L2 gate.
 # Close release after retaining that failure; no retry, reconnect or cleanup.
 # The issued D and its verified digest remain in the post-sudo review.
 RELEASABLE_DISPATCHER_SHA256 = frozenset()
@@ -229,7 +229,7 @@ def remote_tokens(loader_raw, bootstrap_raw):
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C",
         "SYSTEMD_COLORS=0", "/usr/bin/systemd-run", "--system",
         "--no-ask-password", "--quiet", "--wait", "--pipe", "--collect",
-        "--service-type=exec", "--unit=lhqcore20261005b-carrier.service",
+        "--service-type=exec", "--unit=lhqcore20261005c-carrier.service",
         "--property=Restart=no", "--property=RuntimeMaxSec=800s",
         "--property=TimeoutStopSec=30s", "--property=KillMode=control-group",
         "--property=ExitType=cgroup", "--property=CPUQuota=100%",
@@ -1589,6 +1589,7 @@ def _validate_live_capacity(value, expected_context, capture):
             'CORE_FINAL_CAPACITY_BINDING')
     return prior_api.validate_capacity_condition(value, binding=binding,
         prior=approved['reconciliation']['prior_core_attempts'],
+        diagnostic=approved['reconciliation']['prior_diagnostic_capture'],
         implementation=manifest['implementation'], origins=capture.deadline.origins)
 
 
@@ -1753,12 +1754,16 @@ def read_prior_originals(directory_fd, anchor, approved, deadline):
     """Rebind embedded prior bytes to this window's same held private anchor."""
     package_format = _helper("q2_core_delivery_package")
     prior_api = package_format._approved_module().prior_attempt
-    files = prior_api.read_all_files(directory_fd, anchor, deadline.call)
+    seen = set()
+    files = prior_api.read_all_files(directory_fd, anchor, deadline.call, _seen=seen)
+    diagnostic_files = prior_api.read_diagnostic_files(directory_fd, anchor, deadline.call, _seen=seen)
     prior = prior_api.build_all(files)
     require(contract.canonical(prior) == contract.canonical(
         approved['reconciliation']['prior_core_attempts']), "CORE_DELIVERY_PRIOR_SOURCE_BINDING")
+    require(contract.canonical(prior_api.build_diagnostic(diagnostic_files)) == contract.canonical(
+        approved['reconciliation']['prior_diagnostic_capture']), 'CORE_DELIVERY_DIAGNOSTIC_SOURCE_BINDING')
     deadline.check()
-    return files
+    return files, diagnostic_files
 
 
 def verify_prior_originals(directory_fd, binding, approved, deadline, *, implementation):
@@ -1767,6 +1772,7 @@ def verify_prior_originals(directory_fd, binding, approved, deadline, *, impleme
     prior_api = _helper("q2_core_delivery_package")._approved_module().prior_attempt
     return prior_api.observe_capture_condition(directory_fd, binding=binding,
         prior=approved['reconciliation']['prior_core_attempts'], implementation=implementation,
+        diagnostic=approved['reconciliation']['prior_diagnostic_capture'],
         deadline=deadline, writer_observer=capture_contract.observe_writer)
 
 

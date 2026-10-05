@@ -36,14 +36,16 @@ def raw_files(index=0):
         amendment=c.make_amendment(fixed['implementation']), candidate=copy.deepcopy(c.CANDIDATE),
         package=dict(basename=fixed['session'] + '.lhfp', bytes=fixed['package_bytes'],
             sha256=fixed['package_sha'], manifest_sha256=fixed['manifest_sha']),
-        approved_inputs_sha256=('5bcbf535f6c8d0d2c974756af6815ba95a03da7fadc31c97a0622cdeeaf4846e'
-            if index else 'c' * 64), local_management_binding_sha256='d' * 64, writer=writer(),
+        approved_inputs_sha256=('c' * 64,
+            '5bcbf535f6c8d0d2c974756af6815ba95a03da7fadc31c97a0622cdeeaf4846e',
+            '5d227ecbef0eb0b72a3c5ddee998c1505b88ddf70d3c3c506e262144c25198da')[index],
+        local_management_binding_sha256='d' * 64, writer=writer(),
         carrier_argv_sha256='e' * 64, host_boottime_origin_ns=1, host_monotonic_origin_ns=1,
         host_boottime_deadline_ns=900000000001, host_monotonic_deadline_ns=900000000001,
         state='CONSUMPTION_RECORD_COMPLETE')
     marker_raw = c.canonical(marker, newline=True)
     parts = {'carrier-consumed.json': marker_raw, 'stdout': out,
-             'stderr': b'CORE_ADMIT_SUDO_OUTPUT\n' if fixed['sent'] else b''}
+             'stderr': (b'', b'CORE_ADMIT_SUDO_OUTPUT\n', b'CORE_ADMIT_SSHD_GRAMMAR\n')[index]}
     rows = [dict(basename=name(role), bytes=len(raw), sha256=c.sha256(raw),
         allocated_bytes=4096 if raw else 0, dev=1, ino=i + 1 + 10 * index, mode=0o600, nlink=1)
         for i, (role, raw) in enumerate(sorted(parts.items()))]
@@ -63,7 +65,7 @@ def raw_files(index=0):
         consumption=dict(object_created=True, record_complete=True, basename=name('carrier-consumed.json'),
                          bytes=len(marker_raw), sha256=c.sha256(marker_raw)),
         transport=dict(execve_succeeded=True, hello_valid=True, bind_written=fixed['sent'], package_written=fixed['sent'],
-                       stdin_bytes_written=18150763 if fixed['sent'] else 0, stdin_eof=fixed['sent']),
+                       stdin_bytes_written=(0, 18150763, 18174538)[index], stdin_eof=fixed['sent']),
         remote_result=dict(present=False, sha256=None, frame_sha256=None),
         wait=dict(status=fixed['status'], stdout_eof=fixed['sent'], stderr_eof=fixed['sent'], host_deadline_met=fixed['sent']),
         capture=dict(bytes=allocated, inodes=3, manifest_sha256=c.sha256(parts['capture-manifest.json']),
@@ -78,30 +80,31 @@ def patch_pins(monkeypatch, files, *dispatchers, index=0):
     fixed = p.profile(index)
     pins = {name[len(fixed['session']) + 2:]: (len(raw), c.sha256(raw)) for name, raw in files.items()}
     total = sum(map(len, files.values()))
-    monkeypatch.setattr(p, 'SECOND_PINS' if index else 'PINS', pins)
-    monkeypatch.setattr(p, 'SECOND_TOTAL_BYTES' if index else 'TOTAL_BYTES', total)
+    monkeypatch.setattr(p, ('PINS', 'SECOND_PINS', 'THIRD_PINS')[index], pins)
+    monkeypatch.setattr(p, ('TOTAL_BYTES', 'SECOND_TOTAL_BYTES', 'THIRD_TOTAL_BYTES')[index], total)
     for dispatcher in dispatchers:
-        monkeypatch.setattr(dispatcher, 'SECOND_PRIOR_PINS' if index else 'PRIOR_PINS', copy.deepcopy(pins))
-        monkeypatch.setattr(dispatcher, 'SECOND_PRIOR_TOTAL_BYTES' if index else 'PRIOR_TOTAL_BYTES', total)
+        monkeypatch.setattr(dispatcher, ('PRIOR_PINS', 'SECOND_PRIOR_PINS', 'THIRD_PRIOR_PINS')[index], copy.deepcopy(pins))
+        monkeypatch.setattr(dispatcher, ('PRIOR_TOTAL_BYTES', 'SECOND_PRIOR_TOTAL_BYTES', 'THIRD_PRIOR_TOTAL_BYTES')[index], total)
 
 
 def fixture(monkeypatch, *dispatchers):
     files = raw_files()
     patch_pins(monkeypatch, files, *dispatchers)
     patch_pins(monkeypatch, raw_files(1), *dispatchers, index=1)
+    patch_pins(monkeypatch, raw_files(2), *dispatchers, index=2)
     return p.build(files), files
 
 
-def pair_fixture(monkeypatch, *dispatchers):
+def triple_fixture(monkeypatch, *dispatchers):
     _, first = fixture(monkeypatch, *dispatchers)
-    files = {**first, **raw_files(1)}
+    files = {**first, **raw_files(1), **raw_files(2)}
     return p.build_all(files), files
 
 
 def envelope():
     """Untrusted synthetic envelope, with no parser or production pins patched."""
     priors, commitments = [], []
-    for index in (0, 1):
+    for index in (0, 1, 2):
         fixed = p.profile(index)
         files = raw_files(index)
         prior = dict(schema=p.SCHEMA, scope=c.SCOPE, session_id=fixed['session'],
@@ -118,16 +121,17 @@ def envelope():
 
 
 def embed(value, monkeypatch, *dispatchers):
-    prior, files = pair_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v3', prior_core_attempts=prior)
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v3',
+    prior, files = triple_fixture(monkeypatch, *dispatchers)
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v4', prior_core_attempts=prior,
+                                  prior_diagnostic_capture=p.diagnostic_retention())
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v4',
         prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
 
 def quiescence(prior, context):
     # Fixture construction does not replace the consumer's strict validation.
-    index = [p.SESSION, p.SECOND_SESSION].index(prior['session_id'])
+    index = [p.profile(i)['session'] for i in (0, 1, 2)].index(prior['session_id'])
     row = next(r for r in prior['files'] if r['basename'] == p.basename('stdout', index))
     hello = c.document(base64.b64decode(row['raw_base64'])[16:], limit=65536, newline=True)
     path = '/sys/fs/cgroup' + hello['carrier_unit']['control_group']
@@ -139,5 +143,30 @@ def quiescence(prior, context):
         boot_id=hello['guest_boot_id'], branch='COLLECTED_ABSENT', current_scope_quiescent=True,
         historical_remote_exit='UNKNOWN', historical_usage='UNKNOWN', released_bytes=0, released_inodes=0,
         observations=[dict(ordinal=i, unit=copy.deepcopy(unit), cgroup=copy.deepcopy(group),
-            boottime_ns=context['hello']['guest_boottime_origin_ns'] + 2*i + index,
-            monotonic_ns=context['hello']['guest_monotonic_origin_ns'] + 2*i + index) for i in (1, 2)])
+            boottime_ns=context['hello']['guest_boottime_origin_ns'] + 3*i + index,
+            monotonic_ns=context['hello']['guest_monotonic_origin_ns'] + 3*i + index) for i in (1, 2)])
+
+
+def diagnostic_files(monkeypatch):
+    """Synthetic opaque stdout: no configuration parser or diagnostic replay."""
+    marker = dict(schema='lhq-sshd-source-capture-receipt-v1', session=p.DIAGNOSTIC_SESSION,
+        R=c.RULE['commit'], A='f2eb31deb3c52d69ccd2079fb7d88608d1a25a62',
+        C='b346cbd44dd4f376d4386f72d7029b1311788229',
+        D='bf8d391c3fdb24a5d4fc188b0ec9f2b36d9e5891',
+        reader_sha256='68c594cedbea15768789690b4afd0797bfff1057760a522f931e16a4a7ca3108',
+        argv_environment_sha256='1192ec89516a1297bf6c85dd7911cc01db61032bde335db2f631f86845845eca',
+        clock_origins_ns=[1, 2])
+    parts = {'consumed.json': c.canonical(marker, newline=True),
+             'stdout': b'synthetic opaque diagnostic bytes, not a snapshot', 'stderr': b''}
+    receipt = dict(marker, state='COMPLETE', reason='SNAPSHOT_VERIFIED', requests_attempted=1,
+        marker_creation_attempted=True, marker_created=True, exit=0, stdout_eof=True,
+        stderr_eof=True, snapshot_complete=True, remote_supervision_proven=False,
+        remote_exit='READER_REPORTED_COMPLETE', complete_host_admission_proven=False,
+        exclusive_reservation_proven=False, old_commitments_refunded=False,
+        files={role: dict(bytes=len(parts[suffix]), sha256=c.sha256(parts[suffix]))
+            for role, suffix in (('marker', 'consumed.json'), ('stdout', 'stdout'), ('stderr', 'stderr'))},
+        observed_allocated_peak_before_receipt_bytes=8192, host_deadline_met=True)
+    parts['receipt.json'] = c.canonical(receipt, newline=True)
+    monkeypatch.setattr(p, 'DIAGNOSTIC_PINS', {suffix: (len(raw), c.sha256(raw))
+                                            for suffix, raw in parts.items()})
+    return {'.' + p.DIAGNOSTIC_SESSION + '.' + suffix: raw for suffix, raw in parts.items()}

@@ -632,10 +632,10 @@ def test_real_helper_wait4_two_eof_fixed_invocation_and_no_retry(monkeypatch):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize('failure_slot', [None, 0, 1, 2, 3])
-def test_prior_show_slots_allow_four_real_waits_but_never_a_retry(monkeypatch, failure_slot):
+@pytest.mark.parametrize('failure_slot', [None, 0, 1, 2, 3, 4, 5])
+def test_prior_show_slots_allow_six_real_waits_but_never_a_retry(monkeypatch, failure_slot):
     effects, policy, calls = helper_fixture(monkeypatch, 'import os; os.write(1,b"show")', output=32768)
-    slots = ((0, 1), (1, 1), (0, 2), (1, 2))
+    slots = ((0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2))
     for number, slot in enumerate(slots):
         policy['argv'] = ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
             'show', '--all', d._prior_profile(slot[0])['unit'], '--property=' + ','.join(d.PRIOR_SHOW_FIELDS)]
@@ -652,13 +652,13 @@ def test_prior_show_slots_allow_four_real_waits_but_never_a_retry(monkeypatch, f
             break
         stdout, stderr, receipt = d._admit_run_helper(effects, policy, check, prior_observation=slot)
         assert stdout == b'show' and stderr == b'' and receipt['stdout_eof'] and receipt['stderr_eof']
-    assert len(calls) == (4 if failure_slot is None else failure_slot)
+    assert len(calls) == (6 if failure_slot is None else failure_slot)
     assert len(effects._admit_helper_usage) == len(calls)
     assert all(row['wait4'] is not None and row['failure'] is None for row in effects._admit_helper_usage)
     if failure_slot is None:
         with pytest.raises(d.DispatchError, match='SHOW_SLOT'):
             d._admit_run_helper(effects, policy, lambda: None, prior_observation=(1, 2))
-        assert len(calls) == 4
+        assert len(calls) == 6
 
 
 @pytest.mark.parametrize("script,seconds,output,reason", [
@@ -724,8 +724,9 @@ def test_reader_closes_late_open_and_does_not_continue(tmp_path, monkeypatch):
     with pytest.raises(OSError): os.fstat(opened[0])
 
 
-@pytest.mark.parametrize('stage', [None, 'policies', 'programs', 'guest', 'prior_0a', 'prior_1a',
-    'capacity', 'managers', 'prior_0b', 'prior_1b', 'finish_0', 'finish_1', 'recheck_0', 'recheck_1'])
+@pytest.mark.parametrize('stage', [None, 'policies', 'programs', 'guest', 'prior_0a', 'prior_1a', 'prior_2a',
+    'capacity', 'managers', 'prior_0b', 'prior_1b', 'prior_2b', 'finish_0', 'finish_1', 'finish_2',
+    'recheck_0', 'recheck_1', 'recheck_2'])
 def test_real_admit_orders_components_and_never_retries(monkeypatch, stage):
     import test_e3_q2_core_delivery_dispatcher as fixture
     context = fixture.context(); expected = fixture.FakeEffects(context).admit({})
@@ -764,8 +765,9 @@ def test_real_admit_orders_components_and_never_retries(monkeypatch, stage):
     # Component-ordering fixture has synthetic parents; the actual metadata
     # observer is covered by temporary-filesystem integration tests.
     monkeypatch.setattr(d._PoolAccounting, 'observe', result('accounting', None))
-    order = ['policies', 'programs', 'guest', 'prior_0a', 'prior_1a', 'capacity', 'managers',
-             'prior_0b', 'prior_1b', 'finish_0', 'finish_1', 'recheck_0', 'recheck_1']
+    order = ['policies', 'programs', 'guest', 'prior_0a', 'prior_1a', 'prior_2a', 'capacity', 'managers',
+             'prior_0b', 'prior_1b', 'prior_2b', 'finish_0', 'finish_1', 'finish_2',
+             'recheck_0', 'recheck_1', 'recheck_2']
     if stage is None:
         assert effect.admit(argument) == expected
         assert trace == order + ['accounting']

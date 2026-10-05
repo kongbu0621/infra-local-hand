@@ -1,4 +1,4 @@
-"""Synthetic dual-history regressions; these are never field acceptance."""
+"""Synthetic triple-history regressions; these are never field acceptance."""
 import base64
 import copy
 import os
@@ -10,7 +10,7 @@ import pytest
 if not sys.platform.startswith('linux'):
     pytest.skip('Linux fixed field dispatcher and held-source checks', allow_module_level=True)
 
-from core_prior_fixture import pair_fixture, patch_pins, quiescence, raw_files
+from core_prior_fixture import triple_fixture, patch_pins, quiescence, raw_files
 from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_delivery_contract as c
 from e3_host import q2_core_delivery_dispatcher as d
@@ -18,26 +18,26 @@ from test_e3_q2_core_dispatch_v2 import context_v2
 from test_e3_q2_core_prior_attempt import observer_fixture, call
 
 
-def test_fixed_pair_has_distinct_original_truth_and_nonrefundable_cost(monkeypatch):
-    priors, files = pair_fixture(monkeypatch, d)
-    assert len(files) == 10 and p.validate_all(priors) == d._prior_attempts(priors)
+def test_fixed_triple_has_distinct_original_truth_and_nonrefundable_cost(monkeypatch):
+    priors, files = triple_fixture(monkeypatch, d)
+    assert len(files) == 15 and p.validate_all(priors) == d._prior_attempts(priors)
     for index, prior in enumerate(priors):
         hello = p.validate(prior, index=index)
         assert hello['carrier_unit']['name'] == p.profile(index)['unit']
         raw = c.document(files[p.basename('acceptance-receipt.json', index)], limit=65536, newline=True)
         assert raw['transport']['bind_written'] is bool(index)
-        assert raw['wait']['status'] == (255, 3)[index]
+        assert raw['wait']['status'] == (255, 3, 3)[index]
         assert raw['real_task_execution']['status'] == 'UNKNOWN'
     charges = [p.commitment(prior, index=index) for index, prior in enumerate(priors)]
-    assert sum(row['logical_bytes'] for row in charges) + c.LIMITS['total_guest_admission_bytes'] == 868220928
-    assert sum(row['logical_inodes'] for row in charges) + c.LIMITS['total_guest_admission_inodes'] == 49536
-    assert sum(row['cpu_seconds'] for row in charges) + c.LIMITS['total_cpu_seconds'] == 6270
+    assert sum(row['logical_bytes'] for row in charges) + c.LIMITS['total_guest_admission_bytes'] == 1157627904
+    assert sum(row['logical_inodes'] for row in charges) + c.LIMITS['total_guest_admission_inodes'] == 66048
+    assert sum(row['cpu_seconds'] for row in charges) + c.LIMITS['total_cpu_seconds'] == 8360
     assert all(row['released_or_refunded'] is False for row in charges)
 
 
 @pytest.mark.parametrize('change', ['single', 'reverse', 'duplicate', 'third', 'old_schema', 'foreign_d', 'cross_files'])
-def test_both_consumers_reject_mixed_or_incomplete_pair(monkeypatch, change):
-    priors, _ = pair_fixture(monkeypatch, d)
+def test_both_consumers_reject_mixed_or_incomplete_triple(monkeypatch, change):
+    priors, _ = triple_fixture(monkeypatch, d)
     if change == 'single': priors.pop()
     elif change == 'reverse': priors.reverse()
     elif change == 'duplicate': priors[1] = copy.deepcopy(priors[0])
@@ -52,7 +52,7 @@ def test_both_consumers_reject_mixed_or_incomplete_pair(monkeypatch, change):
 @pytest.mark.parametrize('change', ['zero_bind', 'zero_bytes', 'old_wait', 'success', 'missing_eof',
     'marker', 'capture', 'duplicate', 'extra_hello', 'wrong_hello_unit', 'wrong_source', 'sudo_text'])
 def test_second_structural_consumer_does_not_borrow_first_truth(monkeypatch, change):
-    priors, _ = pair_fixture(monkeypatch, d)
+    priors, _ = triple_fixture(monkeypatch, d)
     files = raw_files(1); key = p.basename('acceptance-receipt.json', 1)
     receipt = c.document(files[key], limit=65536, newline=True)
     if change == 'zero_bind': receipt['transport']['bind_written'] = False
@@ -77,10 +77,10 @@ def test_second_structural_consumer_does_not_borrow_first_truth(monkeypatch, cha
     with pytest.raises(d.DispatchError): d._prior_attempts(priors)
 
 
-@pytest.mark.parametrize('index', [0, 1])
+@pytest.mark.parametrize('index', [0, 1, 2])
 @pytest.mark.parametrize('change', [None, 'missing', 'hardlink', 'mode', 'result'])
-def test_ten_original_reader_checks_each_profile(tmp_path, monkeypatch, index, change):
-    _, files = pair_fixture(monkeypatch, d)
+def test_fifteen_original_reader_checks_each_profile(tmp_path, monkeypatch, index, change):
+    _, files = triple_fixture(monkeypatch, d)
     tmp_path.chmod(0o700)
     for name, raw in files.items():
         target = tmp_path / name; target.write_bytes(raw); target.chmod(0o600)
@@ -105,10 +105,10 @@ def test_ten_original_reader_checks_each_profile(tmp_path, monkeypatch, index, c
 
 @pytest.mark.parametrize('change', [None, 'second_loaded', 'missing', 'duplicate', 'reverse',
     'cross_digest', 'second_active', 'second_boot', 'second_invocation', 'order', 'refund'])
-def test_dual_quiescence_exact_order_and_three_carrier_bound(monkeypatch, change):
-    priors, _ = pair_fixture(monkeypatch, d); context = context_v2()
+def test_triple_quiescence_exact_order_and_four_carrier_bound(monkeypatch, change):
+    priors, _ = triple_fixture(monkeypatch, d); context = context_v2()
     values = [quiescence(prior, context) for prior in priors]
-    assert d._prior_concurrency_bound(context) == dict(memory_bytes=3221225472, pids=384)
+    assert d._prior_concurrency_bound(context) == dict(memory_bytes=4294967296, pids=512)
     assert d.LIMITS['peak_memory_bytes'] == 2624 * 1048576 and d.LIMITS['peak_pids'] == 1160
     if change == 'second_loaded':
         values[1]['branch'] = 'LOADED_TERMINAL'
@@ -128,10 +128,10 @@ def test_dual_quiescence_exact_order_and_three_carrier_bound(monkeypatch, change
         with pytest.raises(d.DispatchError): d._validate_prior_quiescences(values, context)
 
 
-@pytest.mark.parametrize('index', [0, 1])
+@pytest.mark.parametrize('index', [0, 1, 2])
 @pytest.mark.parametrize('present', [False, True])
-def test_each_final_held_name_drift_is_rejected_without_fifth_show(monkeypatch, index, present):
-    priors, _ = pair_fixture(monkeypatch, d)
+def test_each_final_held_name_drift_is_rejected_without_an_extra_show(monkeypatch, index, present):
+    priors, _ = triple_fixture(monkeypatch, d)
     observer, state = observer_fixture((d, priors[0], context_v2()), monkeypatch, index=index, present=present)
     try:
         observer.observe(); observer.observe(); observer.finish()
@@ -144,11 +144,11 @@ def test_each_final_held_name_drift_is_rejected_without_fifth_show(monkeypatch, 
 
 
 def test_fixed_new_uuid_projects_and_artifacts_are_disjoint():
-    old_sessions = {p.SESSION, p.SECOND_SESSION}
-    assert c.SESSION_ID == d.SESSION == 'lhqcore-20261005b' and c.SESSION_ID not in old_sessions
-    assert c.CARRIER_UNIT == 'lhqcore20261005b-carrier.service'
+    old_sessions = {p.profile(index)['session'] for index in (0, 1, 2)}
+    assert c.SESSION_ID == d.SESSION == 'lhqcore-20261005c' and c.SESSION_ID not in old_sessions
+    assert c.CARRIER_UNIT == 'lhqcore20261005c-carrier.service'
     for case in d.CASES:
-        seed = 'urn:local-hand:LH-Q2-CORE-POST-SUDO-ACCEPTANCE-v1:' + case['kind']
+        seed = 'urn:local-hand:LH-Q2-CORE-POST-LOCALE-ACCEPTANCE-v1:' + case['kind']
         assert case['operation_id'] == str(uuid.UUID(bytes=bytes.fromhex(c.sha256(seed.encode()))[:16], version=4))
-    assert [project for case in d.CASES for project in case['project_ids']] == list(range(12301, 12322))
+    assert [project for case in d.CASES for project in case['project_ids']] == list(range(12401, 12422))
     assert len(d._admission_absent_units()) == 21

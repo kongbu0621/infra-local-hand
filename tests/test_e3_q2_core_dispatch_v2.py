@@ -101,7 +101,7 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                 "controller_parent_unit": "controller.slice", "management_parent_unit": "management.slice",
                 "supervisor_parent_unit": "supervisor.slice", "ordinary_parent_unit": "ordinary.slice",
                 "retained_ordinary_parent_path": "/sys/fs/cgroup/retained.slice",
-                "carrier_unit": "lhqcore20261005b-carrier.service"}
+                "carrier_unit": "lhqcore20261005c-carrier.service"}
     relation = {"schema": "local-hand-q2-core-locator-relation/v2",
                 "local_management_binding_sha256": entry["local_management_binding_sha256"],
                 "observation_record_sha256": locators["observation_record_sha256"],
@@ -131,7 +131,7 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                  "nofile_hard": 256, "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}}
     remaining = guest_duration_ns + 17 * d.NS
     bind = {"schema": "local-hand-q2-core-carrier-bind/v1", "scope": d.SCOPE, "session_id": d.SESSION,
-            "hello_sha256": "0" * 64, "consumption_sha256": "1" * 64, "package_basename": "lhqcore-20261005b.lhfp",
+            "hello_sha256": "0" * 64, "consumption_sha256": "1" * 64, "package_basename": "lhqcore-20261005c.lhfp",
             "package_bytes": 1, "package_sha256": "0" * 64,
             "host_boottime_origin_ns": host_origin, "host_monotonic_origin_ns": host_origin + d.NS,
             "host_boottime_deadline_ns": host_origin + 900 * d.NS,

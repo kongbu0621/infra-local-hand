@@ -203,6 +203,50 @@ POST_SUDO_CLOSURE = {
     "commit": "0c63e733b166f8f9539fd821db621b331a3ede61",
     "tree": "569083f1fe775c918983a88a963aebf810aa1d27",
 }
+LOCALE_GRAMMAR_BASELINE = {
+    "commit": "25e8d6cb015b619d8a55b6157a9454501b1c5f2e",
+    "tree": "3fe2510fd8ba012fe7a733300e1c3d8afdfca9bd",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-sshd-locale-grammar/REQUIREMENTS.md":
+            "228983fc431418a74a4813f5e27a7f99c0993c1ba0199f15d721f2868c7ebc7d",
+        "docs/a2-execution/q2-core-sshd-locale-grammar/ARCHITECTURE.md":
+            "0c003aae0578064e72486c44c517fcd55b97701a1d7de1b826f22802703a2eab",
+        "docs/a2-execution/q2-core-sshd-locale-grammar/IMPLEMENTATION_PLAN.md":
+            "fc23b1ed7a6be70f438bdd3c07fbd7534c615626a7a0abfd862ab9239cfeb4d6",
+    },
+}
+LOCALE_GRAMMAR_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-SSHD-LOCALE-GRAMMAR-CLOSURE-20261005-01",
+    "record_path": "docs/governance/Q2_CORE_SSHD_LOCALE_GRAMMAR_OWNER_DECISION.md",
+    "record_sha256": "da2ab72e85fa2264505364470a4a59f164ecc00899f7f608e32387a11c755cb5",
+}
+LOCALE_GRAMMAR_CLOSURE = {
+    "commit": "86c5779f306d24756a8be383846e55afc0708b8b",
+    "tree": "168e989cdd4b9c243531a037fbeeaf11cfa82042",
+}
+POST_LOCALE_SCOPE = "LH-Q2-CORE-POST-LOCALE-ACCEPTANCE-v1"
+POST_LOCALE_BASELINE = {
+    "commit": "a243362d473891469b012a0ab8c3bd221794aa50",
+    "tree": "179045d0c3bcf9bf6c154c191068c96c379fe13e",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-post-locale-acceptance/REQUIREMENTS.md":
+            "35292af3218df0666b8c37251d802b0b3d68616ad07c4b36899d9c02d1169389",
+        "docs/a2-execution/q2-core-post-locale-acceptance/ARCHITECTURE.md":
+            "ae4aa9731e797ee79982e03f62489ec5a02d439b12de488279ba5c960ef16bcc",
+        "docs/a2-execution/q2-core-post-locale-acceptance/IMPLEMENTATION_PLAN.md":
+            "868d173d855e80be3d81218cf882febb5e00576e1d0505d539bade8fef99e870",
+    },
+}
+POST_LOCALE_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-POST-LOCALE-ACCEPTANCE-CLOSURE-20261005-01",
+    "record_path": "docs/governance/Q2_CORE_POST_LOCALE_ACCEPTANCE_OWNER_DECISION.md",
+    "record_sha256": "87ea9b65f33794a422d0387bde700dfe1b1730b5a819485381473031f5bb036b",
+}
+POST_LOCALE_CLOSURE = {
+    "commit": "fe635c4885b8f31dd13901bef47e619480b2eda3",
+    "tree": "e72aa24f0ec039730bcb75f2ccafc1eb0145b948",
+}
+LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
@@ -221,18 +265,18 @@ PROJECTION = {
     "file_count": 89,
 }
 
-SESSION_ID = "lhqcore-20261005b"
-INSTALL_BASENAME = "local-hand-core-acceptance-20261005b"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261005b.staging"
-INSTALL_UUID = "4648df9b-a917-408d-9dba-763db663dd9c"
-CARRIER_UNIT = "lhqcore20261005b-carrier.service"
-MARKER_BASENAME = ".lhqcore-20261005b.carrier-consumed.json"
+SESSION_ID = "lhqcore-20261005c"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261005c"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261005c.staging"
+INSTALL_UUID = "080152e8-883e-4906-a572-506d9534181c"
+CARRIER_UNIT = "lhqcore20261005c-carrier.service"
+MARKER_BASENAME = ".lhqcore-20261005c.carrier-consumed.json"
 OUTPUT_BASENAMES = {
-    "stdout_basename": ".lhqcore-20261005b.stdout",
-    "stderr_basename": ".lhqcore-20261005b.stderr",
-    "remote_result_basename": ".lhqcore-20261005b.remote-result.json",
-    "capture_manifest_basename": ".lhqcore-20261005b.capture-manifest.json",
-    "local_receipt_basename": ".lhqcore-20261005b.acceptance-receipt.json",
+    "stdout_basename": ".lhqcore-20261005c.stdout",
+    "stderr_basename": ".lhqcore-20261005c.stderr",
+    "remote_result_basename": ".lhqcore-20261005c.remote-result.json",
+    "capture_manifest_basename": ".lhqcore-20261005c.capture-manifest.json",
+    "local_receipt_basename": ".lhqcore-20261005c.acceptance-receipt.json",
 }
 
 PACKAGE_MAGIC = b"LHCFP1\n"
@@ -326,22 +370,22 @@ ROOT_REFS = (
 CASES = (
     {
         "index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL", "predecessor": None,
-        "preparation_id": "lhqc05b01h01normal", "operation_id": "eb627e0e-88f7-48f9-929a-61ee0976bba7",
-        "controller_prefix": "lhqcore20261005b-c01", "project_ids": list(range(12301, 12308)),
+        "preparation_id": "lhqc05c01h01normal", "operation_id": "184ac06d-4ad0-405f-8d81-04e2e4474012",
+        "controller_prefix": "lhqcore20261005c-c01", "project_ids": list(range(12401, 12408)),
         "phases": ["preflight", "business", "evidence"],
     },
     {
         "index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-        "predecessor": "c01-h01-normal", "preparation_id": "lhqc05b02q4cancel",
-        "operation_id": "31aedc12-6ac1-4d63-82db-2d0cef0d5905",
-        "controller_prefix": "lhqcore20261005b-c02", "project_ids": list(range(12308, 12315)),
+        "predecessor": "c01-h01-normal", "preparation_id": "lhqc05c02q4cancel",
+        "operation_id": "041a80a8-ebb0-4611-8958-33076dae3ebc",
+        "controller_prefix": "lhqcore20261005c-c02", "project_ids": list(range(12408, 12415)),
         "phases": ["preflight"],
     },
     {
         "index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05b03h11recovery",
-        "operation_id": "26019ce4-bacf-4352-90aa-1db003366649",
-        "controller_prefix": "lhqcore20261005b-c03", "project_ids": list(range(12315, 12322)),
+        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05c03h11recovery",
+        "operation_id": "78f91c42-83df-4266-a691-16b51eb5313f",
+        "controller_prefix": "lhqcore20261005c-c03", "project_ids": list(range(12415, 12422)),
         "phases": ["preflight"],
     },
 )

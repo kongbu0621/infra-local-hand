@@ -66,7 +66,7 @@ def isolated_case_protocol(monkeypatch):
     It must not be mistaken for a releasable context or live acceptance result.
     """
     monkeypatch.setattr(d, "_consumption_info", lambda value: {
-        "basename": ".lhqcore-20261005b.carrier-consumed.json", "bytes": 1024,
+        "basename": ".lhqcore-20261005c.carrier-consumed.json", "bytes": 1024,
         "sha256": value["bind"]["consumption_sha256"], "state": "CONSUMPTION_RECORD_COMPLETE"})
     monkeypatch.setattr(d, "_validate_approved_components", lambda *_args, **_kwargs: None,
                         raising=False)
@@ -140,14 +140,14 @@ class FakeEffects:
         filesystems = {role: {"mount_id": parents[role]["mount_id"],
                               "dev": parents[role]["dev"], "fs_uuid": uuid,
                               "fstype": "ext4", "mount_options": ["rw", "prjquota"],
-                              "bytes_available": 2**30, "inodes_available": 100000}
+                              "bytes_available": 2**31, "inodes_available": 100000}
                        for role in directory_roles}
         capacity = [{"dev": 20, "fs_uuid": uuid, "roles": sorted(directory_roles),
-                     "historical_bytes": 2 * d.LIMITS["total_guest_admission_bytes"],
-                     "historical_inodes": 2 * d.LIMITS["total_guest_admission_inodes"],
+                     "historical_bytes": 3 * d.LIMITS["total_guest_admission_bytes"],
+                     "historical_inodes": 3 * d.LIMITS["total_guest_admission_inodes"],
                      "new_required_bytes": d.LIMITS["total_guest_admission_bytes"],
                      "new_required_inodes": d.LIMITS["total_guest_admission_inodes"],
-                     "bytes_available": 2**30, "inodes_available": 100000,
+                     "bytes_available": 2**31, "inodes_available": 100000,
                      "admitted": True}]
         absence = [dict(kind='path', name=path, parent_dev=None, parent_ino=None,
             project_id=None, unit=None, absent=True, collision=False)

@@ -138,7 +138,7 @@ def input_stream(hello_value, package, *, trailing=b""):
     floor = (deadline - bind_at) // 1_000_000 * 1_000_000
     value = {"schema": b.BIND_SCHEMA, "scope": b.SCOPE, "session_id": b.SESSION_ID,
         "hello_sha256": b.sha(hello_raw), "consumption_sha256": "2" * 64,
-        "package_basename": "lhqcore-20261005b.lhfp", "package_bytes": len(package),
+        "package_basename": "lhqcore-20261005c.lhfp", "package_bytes": len(package),
         "package_sha256": b.sha(package), "host_boottime_origin_ns": origin,
         "host_monotonic_origin_ns": origin, "host_boottime_deadline_ns": deadline,
         "host_monotonic_deadline_ns": deadline, "host_boottime_bind_ns": bind_at,

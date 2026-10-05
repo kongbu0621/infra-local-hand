@@ -185,6 +185,9 @@ def test_production_pins_reject_arbitrary_input_before_any_legacy_interpreter(mo
 def source_fixture(artifact, monkeypatch):
     """Replace separately-tested raw decoders, never the aggregate verifier."""
     value, policy_raw, tokens = artifact
+    from core_prior_fixture import diagnostic_files
+    diagnostic = diagnostic_files(monkeypatch)
+    value['reconciliation']['prior_diagnostic_capture'] = a.prior_attempt.build_diagnostic(diagnostic)
     capacity = value["historical_capacity_obligations"]
     old = value["source_relation"]["obligations"]["legacy_20260927"]["adoption"]
     original = dict(retained=value["retained_preparation"]["paths"],
@@ -223,7 +226,7 @@ def source_fixture(artifact, monkeypatch):
     sources = a.ApprovedInputSources(value["amendment"], {}, {}, b"synthetic boundary", {}, policy_raw,
                                     tokens, later, producer,
         {row['basename']: base64.b64decode(row['raw_base64'])
-         for prior in value['reconciliation']['prior_core_attempts'] for row in prior['files']})
+         for prior in value['reconciliation']['prior_core_attempts'] for row in prior['files']}, diagnostic)
     return value, sources
 
 

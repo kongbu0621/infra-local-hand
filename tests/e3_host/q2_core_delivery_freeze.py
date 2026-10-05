@@ -139,6 +139,11 @@ PRIOR_SOURCE_PROFILES = (
      "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
                  "bootstrap": "c9f6e89f874d83856552e65810b04a5d88e7ab0687395dfa5dfd80d7affdee83",
                  "dispatcher": "30d8e9fe9a9bbf39dc5261d0eb0d47c7349fe7e8229132f394a31aa934216eb4"}},
+    {"commit": "8704a24b6c3c79ce4a36028ae2182dec2a35843e",
+     "tree": "89a5f221883c11838a10a452be2dcb756abb5a17",
+     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
+                 "bootstrap": "4a58b342ea4fabb95903e9362cc9b0007c6aafda5a5ece3203692c5033982ce3",
+                 "dispatcher": "319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96"}},
 )
 
 ANCHOR_FILES = {
@@ -1029,7 +1034,9 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
              c.NEXT_ACCEPTANCE_CLOSURE),
             (c.HOST_CAPACITY_BOUNDARY_BASELINE, c.HOST_CAPACITY_BOUNDARY_OWNER_DECISION,
              c.HOST_CAPACITY_BOUNDARY_CLOSURE),
-            (c.POST_SUDO_BASELINE, c.POST_SUDO_OWNER_DECISION, c.POST_SUDO_CLOSURE)):
+            (c.POST_SUDO_BASELINE, c.POST_SUDO_OWNER_DECISION, c.POST_SUDO_CLOSURE),
+            (c.LOCALE_GRAMMAR_BASELINE, c.LOCALE_GRAMMAR_OWNER_DECISION, c.LOCALE_GRAMMAR_CLOSURE),
+            (c.POST_LOCALE_BASELINE, c.POST_LOCALE_OWNER_DECISION, c.POST_LOCALE_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")
@@ -1067,6 +1074,16 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
     loader = objects[FIELD_SOURCE_PATHS["field/loader.py"]]
     bootstrap = objects[FIELD_SOURCE_PATHS["field/bootstrap.py"]]
     dispatcher = objects[FIELD_SOURCE_PATHS["field/dispatcher.py"]]
+    original_dispatcher = _git(repository, git_path, 'show', c.LOCALE_REPAIR + ':'
+        + FIELD_SOURCE_PATHS['field/dispatcher.py'], limit=c.PACKAGE_LIMITS['member_bytes'])
+    _git(repository, git_path, 'merge-base', '--is-ancestor', c.LOCALE_REPAIR, implementation_commit)
+    _validate_locale_source_preserved(original_dispatcher, dispatcher)
+    original_bootstrap = _git(repository, git_path, 'show', c.LOCALE_REPAIR + ':'
+        + FIELD_SOURCE_PATHS['field/bootstrap.py'], limit=c.PACKAGE_LIMITS['member_bytes'])
+    c.require(bootstrap == original_bootstrap.replace(b'20261005b', b'20261005c'),
+              'CORE_FREEZE_BOOTSTRAP_DELTA')
+    c.require(c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'],
+              'CORE_FREEZE_LOADER_UNCHANGED')
     try:
         parsed = ast.parse(bootstrap.decode("utf-8", "strict"), filename="field/bootstrap.py")
     except (UnicodeError, SyntaxError) as error:
@@ -1085,6 +1102,19 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                 bindings.append(value.value)
     c.require(bindings == [c.sha256(loader)], "CORE_FREEZE_LOADER_BINDING")
     return loader, bootstrap, dispatcher
+
+
+def _validate_locale_source_preserved(original, current):
+    """Compare source bytes, never replay the consumed private snapshot parse."""
+    names = {'_admit_sshd_source', '_admit_text', '_require'}
+    def functions(raw):
+        tree = ast.parse(raw.decode('utf-8', 'strict'))
+        lines = raw.splitlines(keepends=True)
+        nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+        c.require(len(nodes) == len(names), 'CORE_FREEZE_LOCALE_SOURCE')
+        return {node.name: b''.join(lines[min([node.lineno] +
+            [item.lineno for item in node.decorator_list]) - 1:node.end_lineno]) for node in nodes}
+    c.require(functions(original) == functions(current), 'CORE_FREEZE_LOCALE_SOURCE')
 
 
 def _artifact(path, expected, role):
@@ -1366,9 +1396,10 @@ def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_pat
         c.require(local["policy_source_raw"] == approved_sources.policy_sources,
                   "CORE_FREEZE_APPROVED_LOCAL_SOURCE")
         approved = c.document(approved_inputs_raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True)
-        prior_files = entry_api.read_prior_originals(local['directory_fd'],
+        prior_files, diagnostic_files = entry_api.read_prior_originals(local['directory_fd'],
             local['binding_preimage']['anchor'], approved, deadline)
         c.require(prior_files == approved_sources.prior_core_files, 'CORE_FREEZE_PRIOR_LOCAL_SOURCE')
+        c.require(diagnostic_files == approved_sources.prior_diagnostic_files, 'CORE_FREEZE_DIAGNOSTIC_LOCAL_SOURCE')
         deadline.call(entry_api.encoded_argv_environment_size,
                       local["argv"], local["binding_preimage"]["environment"])
         frozen_locators = deadline.call(freeze_private_locators, **retained_paths,
@@ -1398,7 +1429,7 @@ def _validate_approved_sources(raw, sources):
     c.require(sources is not None, "CORE_FREEZE_APPROVED_SOURCES_REQUIRED")
     names = {"amendment", "locator_carriers", "horizon_archives", "legacy_frame",
              "historical_tools", "policy_sources", "remote_tokens", "later_reviews", "producer_raw",
-             "prior_core_files"}
+             "prior_core_files", "prior_diagnostic_files"}
     c.require(not isinstance(sources, type) and is_dataclass(sources)
               and {field.name for field in fields(sources)} == names,
               "CORE_FREEZE_APPROVED_SOURCE_FIELDS")
