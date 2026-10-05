@@ -4,8 +4,10 @@ import ctypes
 import errno
 import hashlib
 import importlib.util
+import io
 import os
 from pathlib import Path
+import re
 import stat
 import struct
 import sys
@@ -133,6 +135,97 @@ def test_capacity_includes_full_history_not_only_live_usage(monkeypatch):
     fs['quota']['bytes_available'] = 21 * 1048576
     with pytest.raises(d.DispatchError, match='INSUFFICIENT'):
         d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
+
+
+@pytest.mark.parametrize('alias', [False, True])
+@pytest.mark.parametrize('short', [('bytes',), ('inodes',), ('bytes', 'inodes')])
+def test_capacity_rejection_reports_exact_first_pool_without_changing_threshold(monkeypatch, alias, short):
+    approved, fs, mapper, inventory = fixture(monkeypatch, alias=alias)
+    baseline = d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
+    for pool in baseline:
+        for role in pool['roles']:
+            for field in ('bytes', 'inodes'):
+                fs[role][field + '_available'] = pool['historical_' + field] + pool['new_required_' + field]
+    # Equality passes, including aliased roles charged once per physical pool.
+    boundary = d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
+    for pool in boundary:
+        limited = copy.deepcopy(fs)
+        for field in short:
+            for role in pool['roles']:
+                limited[role][field + '_available'] -= 1
+        before = copy.deepcopy((approved, limited, inventory))
+        with pytest.raises(d.DispatchError) as captured:
+            d._cap_charge(approved, limited, mapper, inventory, LOCATORS)
+        code = str(captured.value)
+        assert re.fullmatch(r'CORE_CAP_INSUFFICIENT_[A-Z0-9_]+', code)
+        assert len(code.encode('ascii')) <= 1024
+        assert '_ROLES_' + '_'.join(r.upper() for r in pool['roles']) + '_POOLSHA256_' in code
+        identity = d._sha(d.canonical(dict(dev=pool['dev'], fs_uuid=pool['fs_uuid']))).upper()
+        assert '_POOLSHA256_' + identity + '_' in code
+        assert pool['fs_uuid'] not in code and '/state' not in code
+        for field in ('bytes', 'inodes'):
+            old, new = pool['historical_' + field], pool['new_required_' + field]
+            deficit = int(field in short)
+            for label, amount in (('AVAILABLE', old + new - deficit), ('HISTORICAL', old),
+                                   ('NEW', new), ('REQUIRED', old + new), ('DEFICIT', deficit)):
+                assert re.search('_' + field.upper() + '_' + label + '_' + str(amount) + r'(?:_|$)', code)
+        assert (approved, limited, inventory) == before
+
+
+def test_capacity_reports_first_failure_only_and_keeps_existing_bootstrap_channel(monkeypatch):
+    from e3_host import q2_core_delivery_bootstrap as bootstrap
+    approved, fs, mapper, inventory = fixture(monkeypatch)
+    for row in fs.values():
+        row['bytes_available'] = row['inodes_available'] = 0
+    with pytest.raises(d.DispatchError) as captured:
+        d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
+    code = str(captured.value)
+    assert '_ROLES_INSTALL_STATE_' in code
+    assert '_ROLES_QUOTA_' not in code
+    def reject(**_kwargs):
+        raise captured.value
+    monkeypatch.setattr(bootstrap, 'serve', reject)
+    stdout, stderr = io.BytesIO(), io.BytesIO()
+    assert bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256='a' * 64) == 3
+    assert stdout.getvalue() == b''
+    assert stderr.getvalue() == (code + '\n').encode('ascii')
+
+
+def test_capacity_diagnostic_uses_pool_minimum_not_one_alias_sample(monkeypatch):
+    approved, fs, mapper, inventory = fixture(monkeypatch, alias=True)
+    fs['quota']['bytes_available'] = 0
+    with pytest.raises(d.DispatchError) as captured:
+        d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
+    assert '_BYTES_AVAILABLE_0_' in str(captured.value)
+    assert '_ROLES_EVIDENCE_INSTALL_JOURNAL_QUOTA_STATE_' in str(captured.value)
+
+
+def diagnostic_row():
+    return dict(roles=list(d._CAP_ROLES), dev=2**63-1, fs_uuid='PRIVATE_UUID_NOT_TO_ECHO',
+        historical_bytes=2**64-1, historical_inodes=2**64-1,
+        new_required_bytes=2**64-1, new_required_inodes=2**64-1,
+        bytes_available=-(2**63), inodes_available=0)
+
+
+def test_capacity_diagnostic_is_bounded_and_handles_negative_availability():
+    code = d._cap_insufficient_code(diagnostic_row())
+    assert re.fullmatch(r'CORE_CAP_INSUFFICIENT_[A-Z0-9_]+', code)
+    assert len(code) <= 1024 and 'PRIVATE_UUID' not in code
+    assert '_BYTES_AVAILABLE_NEG9223372036854775808_' in code
+    assert '_BYTES_DEFICIT_46116860184273879038_' in code
+
+
+@pytest.mark.parametrize('key,value', [
+    ('roles', ['state', 'PRIVATE_PATH']), ('roles', ['state', 'state']), ('roles', []),
+    ('roles', ['state\n']), ('roles', ['state', []]), ('roles', 'state'),
+    ('dev', True), ('dev', -1), ('dev', 2**63), ('fs_uuid', 'é'), ('fs_uuid', ''),
+    ('fs_uuid', 'x'*65), ('bytes_available', True), ('bytes_available', 2**64),
+    ('bytes_available', -(2**63)-1), ('inodes_available', 'PRIVATE_VALUE'),
+    ('historical_bytes', -1), ('new_required_inodes', 2**64), ('new_required_bytes', None),
+])
+def test_capacity_invalid_diagnostic_retains_fail_closed_base_code(key, value):
+    row = diagnostic_row(); row[key] = value
+    assert d._cap_insufficient_code(row) == 'CORE_CAP_INSUFFICIENT'
 
 
 def test_32_pool_mapping_and_cross_device_wrapper_reservations(monkeypatch):

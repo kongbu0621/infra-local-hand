@@ -3819,6 +3819,41 @@ def _admission_absent_units():
     return units
 
 
+def _cap_insufficient_code(row):
+    """Bounded rejection detail from the already-computed first failing pool.
+
+    Keep bootstrap's existing CORE_[A-Z0-9_]+ stderr channel and failure status.
+    No new observation, path/UUID disclosure, accounting change or release.
+    NEG prefixes a negative availability; invalid detail retains the base code.
+    """
+    base = 'CORE_CAP_INSUFFICIENT'
+    roles = row.get('roles')
+    fields = ('bytes', 'inodes')
+    names = [prefix + field for field in fields
+             for prefix in ('historical_', 'new_required_')]
+    available = [field + '_available' for field in fields]
+    if (type(roles) is not list or not roles or len(roles) > len(_CAP_ROLES)
+        or any(type(role) is not str or role not in _CAP_ROLES for role in roles)
+        or len(set(roles)) != len(roles)
+        or any(type(row.get(name)) is not int or not 0 <= row[name] < 2**64 for name in names)
+        or any(type(row.get(name)) is not int or not -(2**63) <= row[name] < 2**64
+               for name in available)
+        or type(row.get('dev')) is not int or not 0 <= row['dev'] < 2**63
+        or type(row.get('fs_uuid')) is not str or not 0 < len(row['fs_uuid']) <= 64
+        or not row['fs_uuid'].isascii()):
+        return base
+    # Only a digest of the existing physical identity leaves this function.
+    identity = _sha(canonical(dict(dev=row['dev'], fs_uuid=row['fs_uuid']))).upper()
+    parts = [base, 'ROLES', *[role.upper() for role in sorted(roles)], 'POOLSHA256', identity]
+    for field in fields:
+        old, new, free = row['historical_' + field], row['new_required_' + field], row[field + '_available']
+        for label, value in (('AVAILABLE', free), ('HISTORICAL', old), ('NEW', new),
+                             ('REQUIRED', old + new), ('DEFICIT', max(0, old + new - free))):
+            parts.extend((field.upper(), label, str(value) if value >= 0 else 'NEG' + str(-value)))
+    code = '_'.join(parts)
+    return code if len(code) <= 1024 else base
+
+
 def _cap_charge(approved, filesystems, path_pool, inventory, locators):
     obligations = approved['historical_capacity_obligations']
     normalized = [dict(id=row['id'], category=row['category'], pool_roles=list(roles),
@@ -3884,7 +3919,8 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
         row['roles'].sort()
         row['admitted'] = all(row[field + '_available'] >= row['historical_' + field] +
             row['new_required_' + field] for field in ('bytes', 'inodes'))
-        _require(row['admitted'], 'CORE_CAP_INSUFFICIENT')
+        if not row['admitted']:
+            raise DispatchError(_cap_insufficient_code(row))
     return [pools[key] for key in sorted(pools)]
 
 

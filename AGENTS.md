@@ -1469,6 +1469,16 @@ reconnect, supplemental capture, cleanup, refund or next batch. Further field wo
 exact authority. The current host capacity check is not proof of guest capacity; the failing device
 and shortfall were not returned. Preserve all old and new commitments, paused side work and production E3.
 
+The subsequent [offline capacity accounting and diagnostic repair](docs/a2-execution/Q2_CORE_CAPACITY_DIAGNOSTIC_REVIEW_20261005.md)
+revalidates the pinned capacity components and all 15 role-device grouping possibilities without observing
+current guest capacity. The existing CLOSED development repair preserves the original admission predicate,
+full commitments, first-failure stop and empty release allowlist. It adds bounded role/identity-digest,
+available, historical, new, required and deficit details to the existing stderr rejection, without raw
+paths/UUIDs, new I/O or schema changes. Scoped checks passed 788/2 skipped; 141 offline comparisons with
+the issued 05c adder retained all acceptance/rejection results. The historical sandbox home-fixture failure
+is retained. This repair neither resolves the guest shortfall nor recovers 05c's missing values. No new
+marker/request, field collection, cleanup, refund or batch is authorized; production E3 and paused side work remain.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
