@@ -1359,6 +1359,24 @@ Paused side work remains paused.
 Unchanged R/source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D
 order apply. The earlier CLOSED development and exact source-diagnostic repair remain unaffected.
 
+The [single-capture implementation and field review](docs/a2-execution/Q2_CORE_SSHD_SOURCE_CAPTURE_REVIEW_20261005.md)
+records independent C `b346cbd44dd4f376d4386f72d7029b1311788229` and its direct implementation child,
+actual issued D `bf8d391c3fdb24a5d4fc188b0ec9f2b36d9e5891`. Scoped sandbox checks passed 225/3 skipped;
+the new offline tests in the real host view passed 84/0 skipped. Exact D CI 37297107615 completed
+successfully (3/3) and local-only preflight passed before the one conditional capture.
+The fixed diagnostic opportunity is now **CONSUMED / COMPLETE**: one marker, one SSH request,
+exit 0, both EOFs and original host deadline met; three current configuration files totaling 3569 B
+were recovered and verified privately. Four original capture files (8782 logical B / 16384 currently
+allocated B) and their digests are indexed in the review; the full 4 MiB / 8-inode commitment remains.
+Remote completion is reader-reported, not independent supervision proof. The one offline parser pair
+reproduced current rejection, with the diagnostic baseline locating `GLOB` at file 1 / line 121.
+This does not identify the historical 05b trigger or establish effective SSH policy or core acceptance.
+No configuration or grammar was changed; no H01/Q4/H11, business result collection, retry, reconnect,
+supplemental capture or cleanup occurred. Do not reuse this consumed diagnostic or any old core batch.
+Three old UNKNOWN states and full commitments remain; future grammar/contract changes and field
+acceptance retain their own scope/approval rules. Raw configuration remains private, side work stays
+paused, and production `E3_SUPERVISION_UNVERIFIED` remains unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
