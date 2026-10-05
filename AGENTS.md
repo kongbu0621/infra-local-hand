@@ -1377,10 +1377,10 @@ Three old UNKNOWN states and full commitments remain; future grammar/contract ch
 acceptance retain their own scope/approval rules. Raw configuration remains private, side work stays
 paused, and production `E3_SUPERVISION_UNVERIFIED` remains unchanged.
 
-### Fixed sshd locale grammar proposal
+### Fixed sshd locale grammar amendment
 
-Scope `LH-Q2-CORE-SSHD-LOCALE-GRAMMAR-v1` is **OPEN / NOT APPROVED** for offline G1–G3.
-Proposed exact A is `25e8d6cb015b619d8a55b6157a9454501b1c5f2e`, tree
+Scope `LH-Q2-CORE-SSHD-LOCALE-GRAMMAR-v1` is **CLOSED for offline G1–G3 only**.
+Approved exact A is `25e8d6cb015b619d8a55b6157a9454501b1c5f2e`, tree
 `3fe2510fd8ba012fe7a733300e1c3d8afdfca9bd`. The [baseline and requested decision](docs/governance/Q2_CORE_SSHD_LOCALE_GRAMMAR_BASELINE.md)
 pin its [requirements](docs/a2-execution/q2-core-sshd-locale-grammar/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-sshd-locale-grammar/ARCHITECTURE.md), and
@@ -1392,14 +1392,18 @@ saved-input evidence, not proof of the historical 05b trigger or complete modifi
 The original approved grammar rejects that case; changing it requires this narrow amendment,
 not an inference from legal OpenSSH syntax or the completed diagnostic capture.
 
-The proposal only allows the main file's single exact ordered locale pair under the specified
+The approved amendment only allows the main file's single exact ordered locale pair under the specified
 whitespace and token rules, with all other grammar and effective-policy checks retained.
-G1–G3 would implement the exception, run targeted synthetic tests, freeze D and perform one bounded
-new-version local parse of the saved complete snapshot. No Owner B or independent CLOSED C exists.
-No new source/test implementation, executable prototype, release entry or field action is authorized
-before exact B/C. Unaffected CLOSED scopes and their historical bytes remain unchanged.
+Owner B is retained verbatim in [the locale grammar decision](docs/governance/Q2_CORE_SSHD_LOCALE_GRAMMAR_OWNER_DECISION.md),
+event `LH-Q2-CORE-SSHD-LOCALE-GRAMMAR-CLOSURE-20261005-01`. This independent bookkeeping-only C
+contains only the exact decision and closure registration, no source, test, prototype, configuration,
+release digest or field action. The three A documents and historical OPEN registration remain unchanged.
+New D must descend from C; do not squash closure with implementation. G1–G3 implement the exception,
+run targeted synthetic tests, freeze D and perform one new-version local parse of the saved complete
+three-file snapshot, at most 5s. At C that new-version private parse is NOT_RUN; failure does not permit
+automatic replay or altered input. Unaffected CLOSED scopes and their historical bytes remain unchanged.
 The three old core requests and diagnostic request remain consumed, with full commitments and
-UNKNOWN states retained; this scope proposes no new marker, SSH/carrier, collection, batch,
+UNKNOWN states retained; this scope authorizes no new marker, SSH/carrier, collection, batch,
 configuration change, cleanup or H01/Q4/H11. R, Owner-only authority, no exceptions, side-work pause
 and production E3 restriction remain unchanged.
 
