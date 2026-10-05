@@ -706,7 +706,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         assert stdout_bytes + stderr_bytes + remaining == e.STREAM_CAPTURE_LIMIT
 
 
-def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
+def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch):
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     origins = e.freeze_host_window()
     capture = live_capture(directory_fd, tmp_path, origins)
@@ -793,10 +793,27 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
             "host_deadline_met": True,
         }
         _, resource_context = incomplete_fixture()
+        from core_prior_fixture import fixture as prior_fixture
+        from e3_host import q2_core_prior_attempt as prior_module
+        prior, _ = prior_fixture(monkeypatch)
+        prior_api = e._helper('q2_core_delivery_package')._approved_module().prior_attempt
+        monkeypatch.setattr(prior_api, 'PINS', prior_module.PINS)
+        monkeypatch.setattr(prior_api, 'TOTAL_BYTES', prior_module.TOTAL_BYTES)
+        binding = dict(anchor=capture.anchor, writer=capture.writer)
+        condition = prior_api.observe_capture_condition(directory_fd, binding=binding, prior=prior,
+            implementation=resource_context['implementation'], deadline=capture.deadline,
+            writer_observer=e.capture_contract.observe_writer)
         expected_context = {"manifest": {key: resource_context[key] for key in ("implementation", "locators")},
-                            "hello": hello(), "bind": {"guest_duration_ns": 750_000_000_000}}
+                            "hello": hello(), "bind": {"guest_duration_ns": 750_000_000_000},
+                            "binding": binding, "approved_inputs_raw": c.canonical(
+                                dict(reconciliation=dict(prior_core_attempt=prior)), newline=True)}
+        expected_context['manifest']['entry'] = dict(
+            local_management_binding_sha256=condition['local_management_binding_sha256'])
         final = e.finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture,
-                                   expected_context=expected_context)
+                                   expected_context=expected_context, host_capacity_condition=condition)
+        assert final['host_capacity_condition'] is condition
+        assert condition['earlier_host_obligations']['bytes'] is None
+        assert condition['complete_host_admission_proven'] is False
         assert final["receipt"]["state"] == "STOP_AND_RETAIN"
         assert final["receipt"]["real_task_execution"]["status"] == "NO"
         assert final["receipt"]["result_evidence_collection"]["status"] == "NO"

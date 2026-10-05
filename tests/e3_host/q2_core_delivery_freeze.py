@@ -1005,7 +1005,9 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.CLOUD_INIT_GRANT_BASELINE, c.CLOUD_INIT_GRANT_OWNER_DECISION,
              c.CLOUD_INIT_GRANT_CLOSURE),
             (c.NEXT_ACCEPTANCE_BASELINE, c.NEXT_ACCEPTANCE_OWNER_DECISION,
-             c.NEXT_ACCEPTANCE_CLOSURE)):
+             c.NEXT_ACCEPTANCE_CLOSURE),
+            (c.HOST_CAPACITY_BOUNDARY_BASELINE, c.HOST_CAPACITY_BOUNDARY_OWNER_DECISION,
+             c.HOST_CAPACITY_BOUNDARY_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")
@@ -1342,7 +1344,7 @@ def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_pat
         c.require(local["policy_source_raw"] == approved_sources.policy_sources,
                   "CORE_FREEZE_APPROVED_LOCAL_SOURCE")
         approved = c.document(approved_inputs_raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True)
-        prior_files = entry_api.verify_prior_originals(local['directory_fd'],
+        prior_files = entry_api.read_prior_originals(local['directory_fd'],
             local['binding_preimage']['anchor'], approved, deadline)
         c.require(prior_files == approved_sources.prior_core_files, 'CORE_FREEZE_PRIOR_LOCAL_SOURCE')
         deadline.call(entry_api.encoded_argv_environment_size,

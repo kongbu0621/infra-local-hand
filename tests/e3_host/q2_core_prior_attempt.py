@@ -1,7 +1,7 @@
 """Fixed consumed F1 preimages for the separately approved next acceptance.
 
-Pure byte validation only. Historical UNKNOWN is retained; this module neither
-observes quiescence nor grants another request. No generic prior-attempt input.
+Historical UNKNOWN is retained. The fixed current host capacity condition is
+not a complete bill or a reservation. No quiescence or generic prior inputs.
 """
 from __future__ import annotations
 
@@ -236,26 +236,104 @@ def commitment(prior):
                 host_capture_bytes=67108864, host_capture_inodes=16, released_or_refunded=False)
 
 
-def observe_capture_floor(directory_fd, anchor, prior, call):
-    """Observe the two core commitments, not a complete historical host bill.
-
-    Existing allocation remains charged by the filesystem. Requiring both full
-    commitments as additional availability is conservative; no tiny retained
-    file can refund the old reservation. Earlier host obligations still need
-    their source-bound accounting before this floor can become admission.
-    """
+def _capacity_rows(prior):
     old = commitment(prior)
-    before = call(os.fstat, directory_fd)
-    require((before.st_dev, before.st_ino) == (anchor['dev'], anchor['ino']), 'HOST_DEVICE')
+    return [dict(session_id=SESSION, bytes=old['host_capture_bytes'],
+                 inodes=old['host_capture_inodes']),
+            dict(session_id=c.SESSION_ID, bytes=c.LIMITS['host_capture_bytes'],
+                 inodes=c.LIMITS['host_capture_inodes'])]
+
+
+def _capacity_record(binding, prior, implementation, origins, observation, capacity):
+    return dict(schema='local-hand-q2-core-host-capacity-condition/v1',
+        scope=c.HOST_CAPACITY_BOUNDARY_SCOPE, session_id=c.SESSION_ID,
+        implementation=copy.deepcopy(implementation),
+        local_management_binding_sha256=c.sha256(c.canonical(binding, newline=True)),
+        prior_attempt_sha256=c.sha256(c.canonical(prior)), origins=dict(origins),
+        observation=observation, dev=binding['anchor']['dev'],
+        known_commitments=_capacity_rows(prior), capacity=capacity,
+        earlier_host_obligations=dict(coverage='UNKNOWN', bytes=None, inodes=None, shared_pool='UNKNOWN'),
+        complete_host_admission_proven=False, exclusive_reservation_proven=False,
+        released_bytes=0, released_inodes=0)
+
+
+def validate_capacity_condition(value, *, binding, prior, implementation, origins):
+    """Validate the original live record, never resample or infer a new success."""
+    c.exact(implementation, {'commit', 'tree'}, 'CORE_HOST_CAPACITY_IMPLEMENTATION')
+    for identity in implementation.values(): c.commit(identity)
+    c.exact(value, {'schema', 'scope', 'session_id', 'implementation',
+        'local_management_binding_sha256', 'prior_attempt_sha256', 'origins', 'observation',
+        'dev', 'known_commitments', 'capacity', 'earlier_host_obligations',
+        'complete_host_admission_proven', 'exclusive_reservation_proven',
+        'released_bytes', 'released_inodes'}, 'CORE_HOST_CAPACITY_FIELDS')
+    c.exact(origins, {'host_' + clock + '_' + point + '_ns'
+        for clock in ('boottime', 'monotonic') for point in ('origin', 'deadline')})
+    c.exact(value['observation'], {'before', 'after'}, 'CORE_HOST_CAPACITY_CLOCK')
+    for point in value['observation'].values():
+        c.exact(point, {'boottime_ns', 'monotonic_ns'}, 'CORE_HOST_CAPACITY_CLOCK')
+        for number in point.values(): c.integer(number, code='CORE_HOST_CAPACITY_CLOCK')
+    for clock in ('boottime', 'monotonic'):
+        origin = c.integer(origins['host_' + clock + '_origin_ns'])
+        end = c.integer(origins['host_' + clock + '_deadline_ns'])
+        require(end == origin + 900_000_000_000
+                and origin <= value['observation']['before'][clock + '_ns']
+                <= value['observation']['after'][clock + '_ns'] < end, 'HOST_CAPACITY_CLOCK')
+    capacity = value['capacity']
+    c.exact(capacity, {'frsize', 'blocks_available', 'bytes_available', 'inodes_available',
+                      'required_bytes', 'required_inodes'}, 'CORE_HOST_CAPACITY_FIELDS')
+    require(all(type(number) is int and number >= 0 for number in capacity.values())
+            and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
+    rows = _capacity_rows(prior)
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 134217728
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 32
+            and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
+            'HOST_CAPACITY_ARITHMETIC')
+    require(capacity['bytes_available'] >= capacity['required_bytes']
+            and capacity['inodes_available'] >= capacity['required_inodes'], 'HOST_CAPACITY_FLOOR')
+    expected = _capacity_record(binding, prior, implementation, origins, value['observation'], capacity)
+    # Canonical equality also rejects bool-as-int, null-as-zero and extra keys.
+    require(c.canonical(value) == c.canonical(expected), 'HOST_CAPACITY_BINDING')
+    return value
+
+
+def observe_capture_condition(directory_fd, *, binding, prior, implementation, deadline, writer_observer):
+    """One fstatvfs in the original caller, bracketed by full anchor/writer checks."""
+    anchor = binding['anchor']
+    c.exact(anchor, {'path', 'dev', 'ino', 'mode', 'uid', 'gid', 'nlink'})
+    require(anchor['mode'] == 0o700, 'HOST_CAPACITY_ANCHOR')
+    c.validate_local_writer(binding['writer'])
+    require(all(value == anchor[key] for key in ('uid', 'gid')
+                for value in binding['writer'][key].values()), 'HOST_CAPACITY_WRITER')
+    call = deadline.call
+    def context():
+        def identity(info):
+            return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_nlink
+        first = call(os.fstat, directory_fd)
+        named = call(os.stat, anchor['path'], follow_symlinks=False)
+        last = call(os.fstat, directory_fd)
+        expected = (anchor['dev'], anchor['ino'], stat.S_IFDIR | 0o700,
+                    anchor['uid'], anchor['gid'], anchor['nlink'])
+        require(identity(first) == identity(named) == identity(last) == expected, 'HOST_CAPACITY_ANCHOR')
+        require(c.canonical(writer_observer(call)) == c.canonical(binding['writer']),
+                'HOST_CAPACITY_WRITER')
+        deadline.check()
+    # Validate the fixed prior relation before starting any resource observation.
+    rows = _capacity_rows(prior)
+    context()
+    before = deadline.check()
     usage = call(os.fstatvfs, directory_fd)
-    after = call(os.fstat, directory_fd)
-    require((after.st_dev, after.st_ino) == (before.st_dev, before.st_ino), 'HOST_DEVICE')
-    require(all(type(v) is int and v >= 0 for v in (usage.f_bavail, usage.f_favail))
-            and type(usage.f_frsize) is int and usage.f_frsize > 0, 'HOST_CAPACITY_UNKNOWN')
-    needed_bytes = old['host_capture_bytes'] + c.LIMITS['host_capture_bytes']
-    needed_inodes = old['host_capture_inodes'] + c.LIMITS['host_capture_inodes']
-    available = usage.f_bavail * usage.f_frsize
-    require(available >= needed_bytes and usage.f_favail >= needed_inodes, 'HOST_CAPACITY_FLOOR')
-    return dict(dev=before.st_dev, bytes_available=available, inodes_available=usage.f_favail,
-        core_reserved_bytes=needed_bytes, core_reserved_inodes=needed_inodes,
-        earlier_host_obligations='NOT_BOUND', complete_host_admission_proven=False)
+    after = deadline.check()
+    context()
+    frsize, blocks, inodes = (getattr(usage, key, None) for key in ('f_frsize', 'f_bavail', 'f_favail'))
+    require(all(type(v) is int and v >= 0 for v in (frsize, blocks, inodes))
+            and frsize > 0, 'HOST_CAPACITY_UNKNOWN')
+    value = _capacity_record(binding, prior, implementation, deadline.origins,
+        dict(before=dict(zip(('boottime_ns', 'monotonic_ns'), before)),
+             after=dict(zip(('boottime_ns', 'monotonic_ns'), after))),
+        dict(frsize=frsize, blocks_available=blocks, bytes_available=blocks * frsize,
+             inodes_available=inodes, required_bytes=sum(row['bytes'] for row in rows),
+             required_inodes=sum(row['inodes'] for row in rows)))
+    validate_capacity_condition(value, binding=binding, prior=prior,
+                                implementation=implementation, origins=deadline.origins)
+    deadline.check()
+    return value

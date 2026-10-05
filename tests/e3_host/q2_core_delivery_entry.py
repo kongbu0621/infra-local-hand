@@ -1577,7 +1577,22 @@ def _truth_summaries(semantic, manifest, *, frame_sha256,
     return tuple(results)
 
 
-def finalize_carrier(directory_fd, *, marker, exchange, capture, expected_context=None):
+def _validate_live_capacity(value, expected_context, capture):
+    prior_api = _helper("q2_core_delivery_package")._approved_module().prior_attempt
+    approved = contract.document(expected_context['approved_inputs_raw'], limit=1_048_576, newline=True)
+    manifest, binding = expected_context['manifest'], expected_context['binding']
+    require(value['local_management_binding_sha256']
+            == manifest['entry']['local_management_binding_sha256']
+            and contract.canonical(binding['anchor']) == contract.canonical(capture.anchor)
+            and contract.canonical(binding['writer']) == contract.canonical(capture.writer),
+            'CORE_FINAL_CAPACITY_BINDING')
+    return prior_api.validate_capacity_condition(value, binding=binding,
+        prior=approved['reconciliation']['prior_core_attempt'],
+        implementation=manifest['implementation'], origins=capture.deadline.origins)
+
+
+def finalize_carrier(directory_fd, *, marker, exchange, capture, expected_context,
+                     host_capacity_condition):
     """Create the bounded local capture graph and the sole terminal receipt."""
     require(marker.get("record_complete") is True, "CORE_FINAL_MARKER")
     require(capture.directory_fd == directory_fd and not capture.failed
@@ -1586,6 +1601,8 @@ def finalize_carrier(directory_fd, *, marker, exchange, capture, expected_contex
             "CORE_FINAL_LIVE_CAPTURE")
     require(type(exchange) is dict and type(exchange.get("stdout")) is bytes
             and type(exchange.get("stderr")) is bytes, "CORE_FINAL_EXCHANGE")
+    _validate_live_capacity(host_capacity_condition, expected_context, capture)
+    capacity_raw = contract.canonical(host_capacity_condition)
     capture.deadline.call(output_names_absent, directory_fd)
     stdout_raw = exchange["stdout"]; stderr_raw = exchange["stderr"]
     require(len(stderr_raw) <= STDERR_LIMIT
@@ -1720,14 +1737,18 @@ def finalize_carrier(directory_fd, *, marker, exchange, capture, expected_contex
         directory_fd, contract.OUTPUT_BASENAMES["local_receipt_basename"],
         receipt_raw, limit=65_536, capture=capture)
     accounting = capture.finish()
+    _validate_live_capacity(host_capacity_condition, expected_context, capture)
+    require(contract.canonical(host_capacity_condition) == capacity_raw, 'CORE_FINAL_CAPACITY_CHANGED')
+    capture.deadline.check()
     return {"receipt": receipt, "receipt_item": receipt_item,
             "capture_manifest": capture_document, "capture_item": capture_item,
             "semantic": semantic, "files": files,
             "total_allocated_bytes": capture.allocated,
-            "total_inodes": len(capture.objects), "capture_accounting": accounting}
+            "total_inodes": len(capture.objects), "capture_accounting": accounting,
+            "host_capacity_condition": host_capacity_condition}
 
 
-def verify_prior_originals(directory_fd, anchor, approved, deadline):
+def read_prior_originals(directory_fd, anchor, approved, deadline):
     """Rebind embedded prior bytes to this window's same held private anchor."""
     package_format = _helper("q2_core_delivery_package")
     prior_api = package_format._approved_module().prior_attempt
@@ -1735,11 +1756,17 @@ def verify_prior_originals(directory_fd, anchor, approved, deadline):
     prior = prior_api.build(files)
     require(contract.canonical(prior) == contract.canonical(
         approved['reconciliation']['prior_core_attempt']), "CORE_DELIVERY_PRIOR_SOURCE_BINDING")
-    # A lower-bound refusal only. Complete earlier-host obligation accounting
-    # remains a release prerequisite; this observation cannot authorize release.
-    prior_api.observe_capture_floor(directory_fd, anchor, prior, deadline.call)
     deadline.check()
     return files
+
+
+def verify_prior_originals(directory_fd, binding, approved, deadline, *, implementation):
+    """Same pre-marker source binding followed by the sole capacity observation."""
+    read_prior_originals(directory_fd, binding['anchor'], approved, deadline)
+    prior_api = _helper("q2_core_delivery_package")._approved_module().prior_attempt
+    return prior_api.observe_capture_condition(directory_fd, binding=binding,
+        prior=approved['reconciliation']['prior_core_attempt'], implementation=implementation,
+        deadline=deadline, writer_observer=capture_contract.observe_writer)
 
 
 def deliver_once(directory_fd, *, binding, package_basename, package_raw,
@@ -1782,7 +1809,9 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
                 == entry["local_management_binding_sha256"]
                 and argv_digest(argv) == entry["carrier_argv_sha256"],
                 "CORE_DELIVERY_STATIC_BINDING")
-        verify_prior_originals(directory_fd, binding['anchor'], approved, deadline)
+        capacity = verify_prior_originals(directory_fd, binding, approved, deadline,
+                                         implementation=manifest['implementation'])
+        capacity_raw = contract.canonical(capacity)
         deadline.call(marker_absent, directory_fd)
         deadline.call(output_names_absent, directory_fd)
         capture = capture_contract.LiveCapture(
@@ -1817,6 +1846,10 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
                         "binding": binding, "hello": exchange.get("hello"), "bind": exchange.get("bind"),
                         "marker": marker}
     finalized = finalize_carrier(directory_fd, marker=marker, exchange=exchange, capture=capture,
-                                 expected_context=expected_context)
+                                 expected_context=expected_context, host_capacity_condition=capacity)
+    _validate_live_capacity(finalized['host_capacity_condition'], expected_context, capture)
+    require(contract.canonical(finalized['host_capacity_condition']) == capacity_raw,
+            'CORE_DELIVERY_CAPACITY_CHANGED')
     capture.close_handles()
+    capture.deadline.check()
     return {"marker": marker, "exchange": exchange, **finalized}

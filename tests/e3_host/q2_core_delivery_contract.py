@@ -159,6 +159,28 @@ NEXT_ACCEPTANCE_CLOSURE = {
     "commit": "7ac69c0bd4401812b782b75005d8b63936d90a77",
     "tree": "cb3b2b16c295a32db11854cac4eafc354c9881a0",
 }
+HOST_CAPACITY_BOUNDARY_SCOPE = "LH-Q2-CORE-HOST-CAPACITY-BOUNDARY-v1"
+HOST_CAPACITY_BOUNDARY_BASELINE = {
+    "commit": "f491b15514ed0e05f7e1924785a3f7d162dae90f",
+    "tree": "318a7ddb656c9256ab4348379dcb12848ef82351",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-host-capacity-boundary/REQUIREMENTS.md":
+            "88e0b216a238eab35dd8e04f82ac194f49a9e587739d0d1cae29182b599c9924",
+        "docs/a2-execution/q2-core-host-capacity-boundary/ARCHITECTURE.md":
+            "fbe274526b6058c683103256ecb6b57dee8fd360321972f3bef0acd601687353",
+        "docs/a2-execution/q2-core-host-capacity-boundary/IMPLEMENTATION_PLAN.md":
+            "5851022f390b2b21a06a9d8fef60dae2aaa4c24fe242ce2bb81f769de36b8704",
+    },
+}
+HOST_CAPACITY_BOUNDARY_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-HOST-CAPACITY-BOUNDARY-CLOSURE-20261005-01",
+    "record_path": "docs/governance/Q2_CORE_HOST_CAPACITY_BOUNDARY_OWNER_DECISION.md",
+    "record_sha256": "43f65857e7a2d0ae9c26b535a09c3e02c5cc091e3207790a08e7a8f61900cc3e",
+}
+HOST_CAPACITY_BOUNDARY_CLOSURE = {
+    "commit": "434c6a07f7a84f26d7bd01de138125debc467dd4",
+    "tree": "6dde47b33564d50d7d7c44b2be27529ef7bc02fb",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",

@@ -1,4 +1,5 @@
 import copy
+import errno
 import os
 import stat
 import sys
@@ -191,6 +192,21 @@ def test_zero_write_retains_partial_marker_no_retry(capture, monkeypatch):
     with pytest.raises(cap.CaptureError):
         obj.create("marker", b"retry")
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize('error_number', [errno.ENOSPC, errno.EDQUOT, errno.EIO])
+def test_capacity_competition_keeps_partial_file_and_no_retry(capture, monkeypatch, error_number):
+    obj, _, path, _ = capture
+    calls = []
+    def failed_write(*_):
+        calls.append(1)
+        raise OSError(error_number, 'synthetic storage failure')
+    monkeypatch.setattr(os, 'write', failed_write)
+    with pytest.raises(OSError): obj.create('marker', b'initial')
+    assert obj.failed and not obj.objects['marker']['complete']
+    assert (path / cap.BASENAMES['marker']).exists()
+    with pytest.raises(cap.CaptureError): obj.create('marker', b'retry')
+    assert calls == [1]
 
 
 def test_late_write_charged_then_no_fsync(capture, monkeypatch):

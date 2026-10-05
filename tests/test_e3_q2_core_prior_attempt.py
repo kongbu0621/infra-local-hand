@@ -103,28 +103,6 @@ def call(function, *args, returned=None, **kwargs):
     return value
 
 
-@pytest.mark.skipif(not hasattr(os, 'fstatvfs'), reason='Descriptor filesystem capacity observation')
-@pytest.mark.parametrize('available_bytes,available_inodes,accept_floor', [
-    (128 * 1048576, 32, True), (128 * 1048576 - 1, 32, False),
-    (128 * 1048576, 31, False), (2**40, 2**30, True)])
-def test_host_floor_never_refunds_old_or_claims_complete_bill(monkeypatch,
-        available_bytes, available_inodes, accept_floor):
-    prior, _ = fixture(monkeypatch)
-    def observed(function, *_args):
-        if function is os.fstat: return SimpleNamespace(st_dev=1, st_ino=2)
-        assert function is os.fstatvfs
-        return SimpleNamespace(f_frsize=1, f_bavail=available_bytes, f_favail=available_inodes)
-    if accept_floor:
-        result = p.observe_capture_floor(10, dict(dev=1, ino=2), prior, observed)
-        assert result['core_reserved_bytes'] == 128 * 1048576
-        assert result['core_reserved_inodes'] == 32
-        assert result['earlier_host_obligations'] == 'NOT_BOUND'
-        assert result['complete_host_admission_proven'] is False
-    else:
-        with pytest.raises(c.ContractError, match='HOST_CAPACITY_FLOOR'):
-            p.observe_capture_floor(10, dict(dev=1, ino=2), prior, observed)
-
-
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='Linux no-atime held descriptors')
 @pytest.mark.parametrize('change', [None, 'link', 'mode', 'result', 'parent', 'late_open'])
 def test_exact_held_original_reader(tmp_path, monkeypatch, change):
