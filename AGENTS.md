@@ -1329,6 +1329,31 @@ issued. Scoped tests are 395 passed / 10 skipped; full local source/installed ve
 repeated. The exact field trigger remains unproven; release stays empty and all consumption,
 UNKNOWN, no-retry/reconnect/cleanup and production E3 boundaries remain.
 
+### Proposed single read-only sshd source capture
+
+Scope `LH-Q2-CORE-SSHD-SOURCE-CAPTURE-v1` is **OPEN / NOT APPROVED** for P1–P3.
+Exact three-document A is `f2eb31deb3c52d69ccd2079fb7d88608d1a25a62`, tree
+`dec4cf6e6cd32010d203e8bde2dfde4d53a02104`; the
+[baseline and requested decision](docs/governance/Q2_CORE_SSHD_SOURCE_CAPTURE_BASELINE.md)
+pin its [requirements](docs/a2-execution/q2-core-sshd-source-capture/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-sshd-source-capture/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-sshd-source-capture/IMPLEMENTATION_PLAN.md).
+The Owner screenshot requests preparation, not a new field authorization. No B or independent C
+has been received for this scope. Before closure, do not write its collector, tests, scaffold or
+configuration, create its marker or make a new connection. This registration contains documentation only.
+
+The proposal permits only one fixed `lhqsshd-20261005a` diagnostic request after exact B/C and
+verified D, reading the fixed sshd source closure into private local capture. It is not a fourth core
+acceptance. It discloses diagnostic-only endpoint/runtime trust, login/audit/atime effects, nonexclusive
+capacity and possible UNKNOWN remote exit rather than claiming full core supervision. Limits include
+65 files / 1 MiB input, a 60s local window, initialized-reader 20s alarm / 5 CPU-s / 128 MiB address-space,
+2 MiB stdout / 64 KiB stderr, and additive 4 MiB / 8-inode capture with a 196 MiB / 56 current host check.
+All three consumed core requests, old UNKNOWN states and full commitments remain retained.
+Raw configuration stays private; no retry, reconnect, cleanup, SSH configuration change, business
+execution or production E3 enablement follows from the proposal. Paused side work remains paused.
+Unchanged R/source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D
+order apply. The earlier CLOSED development and exact source-diagnostic repair remain unaffected.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
