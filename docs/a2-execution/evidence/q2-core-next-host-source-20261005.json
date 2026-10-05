@@ -1,0 +1,42 @@
+{
+  "schema": "local-hand-core-saved-host-source-search/v1",
+  "date": "2026-10-05",
+  "repository_baseline": "f591147548ad95796c1832e0607e6366fe998c9a",
+  "implementation_unchanged": "27928b35e4406f7cfbbd360bccf0e0a8c4d7ea03",
+  "carrier_chain": "FIXED_COLLECTION_SHA_TO_HOST_MANIFEST_AND_ARCHIVE_TO_EACH_MEMBER",
+  "collection_sha256": "56c29ed9ffe2cf79235baca6b000afaec9ae84b51b2356c664e44d6b34a4fb18",
+  "host_manifest_sha256": "7672ac050609fc7e05481443c9239df0d36f25b4ec9860c2bb833024b962647a",
+  "host_archive_sha256": "3f402855949f75f603e7b4e9f8ca104904072ae66688e91cfb957dc27a1ec4b3",
+  "archive_entries": 49,
+  "archive_regular_files": 44,
+  "archive_regular_bytes": 23569898,
+  "original_file_comparison": {
+    "MATCH": 44,
+    "MISMATCH": 0,
+    "MISSING": 0,
+    "READ_REJECTED": 0
+  },
+  "six_guest_horizon_archives_verified": 6,
+  "existing_entry_regression_passed": 126,
+  "existing_entry_regression_seconds": 4.22,
+  "source_check_file_reads": 53,
+  "all_read_file_metadata_and_atime_stable": true,
+  "diagnostic_output_canonical_sha256": "6eb913702ee2bb09602771a68f0ca94aa39958fe58e89cd959fe09c52b3107f0",
+  "full_earlier_host_obligations_proven": false,
+  "host_completeness_not_inferred_from_guest_horizon": true,
+  "remaining_source_relations": [
+    "COMPLETE_EARLIER_HOST_OBLIGATION_COVERAGE",
+    "PER_OBLIGATION_UNRELEASED_BYTES_INODES_AND_SHARED_POOL_BINDING",
+    "CURRENT_HELD_PARENT_DEVICE_MAPPING_AFTER_SOURCE_BINDING"
+  ],
+  "new_marker_created": false,
+  "remote_request_issued": false,
+  "real_task_executed": false,
+  "new_task_result_collected": false,
+  "release_allowlist_empty": true,
+  "production_or_test_source_changed": false,
+  "approved_documents_changed": false,
+  "guest_or_system_configuration_changed": false,
+  "old_batch_replayed": false,
+  "cleanup_performed": false
+}

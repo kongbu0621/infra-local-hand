@@ -87,15 +87,60 @@ A 的[架构第 6 节](q2-core-next-acceptance/ARCHITECTURE.md)要求 128 MiB/32
 [异时计费来源记录](evidence/q2-cost-source-review-20260929/retained-input-check.json)亦未建立该完整历史账。
 这不重新要求已经取消的共享文件系统全过程物理硬峰值、host quota 或内核来源资格化。
 
-最低缺项是**已经保存的更早 host 义务来源集合及其覆盖关系**：原记录/摘要、关联的固定对象、
-未释放 byte/inode 承诺、已发出/未发出/UNKNOWN 的依据。只需要私有文件位置，不要求重新上传既有 K4/R3 或旧五文件。
-不能从当前小文件、旧进程不活跃或磁盘空闲推定退款或零义务；未知来源不设默认零。
+2026-10-05 后续本机自主检索已更正“只需要私有文件位置”的判断：**历史 host 归档的 44 份原件均已找到，
+全部与固定归档逐字节相同，缺件、读取拒绝和漂移均为 0**。不是要求 Owner 再找这些文件。
+最低缺项是这些已存在材料到**完整、更早 host 未释放义务**的覆盖关系及 byte/inode 账，详见下节。
+不能从当前小文件、旧进程不活跃、传输输出上限或磁盘空闲推定退款或零义务。
 
-收到或定位这些原件后，在本批准范围内补齐 host-only 来源验证和逐设备全额计费，回归并冻结更新后的准确 D。
+上述关系有可验证来源后，在本批准范围内补齐 host-only 来源验证和逐设备全额计费，回归并冻结更新后的准确 D。
 然后核对完整源码/installed/CI；在新的同一原 900s 执行 caller 内重新绑定 held writer/anchor、核对真实来源、双构包与所有输出 absence。
 只有这些门全过才登记准确 release digest，创建一次新 marker、发一次固定 carrier；
 在它的准入内完成旧 scope A/B 观察，通过后才 H01→Q4→H11。此处不是要求重复批准 A，也不是允许追加现场 probe。
 若来源需要新的信任前提或改变 A 的保证，先按 R 处理准确变更，不能在实现中自行补一个成功条件。
+
+## 本机自主检索与准确缺项
+
+本节为 2026-10-05 对 `f591147548ad95796c1832e0607e6366fe998c9a` 的只读续查；
+不改变 D `27928b35e4406f7cfbbd360bccf0e0a8c4d7ea03`、A、预算或执行权。
+结果索引见[保存来源核验](evidence/q2-core-next-host-source-20261005.json)。
+检查以固定 collection SHA → host manifest/archive → 每项原 bytes 为链；没有执行旧载荷。
+53 次文件内容读取均使用现有 bounded no-follow/no-atime reader，并核对前后文件身份、大小、分配与时间字段；均未变。
+
+| 已查材料 | 已证明 | 不能据此补造的事实 |
+| --- | --- | --- |
+| 固定 20260927 host manifest/archive | 49 entries、44 regular files、23569898 B；44 项本地原件均匹配 | 归档成员集合不是全部 host 义务集合的治理声明 |
+| 原准备、恢复、CPUQuota retry 的脚本、intent、capture、report | 已恢复固定原执行关系；外层输出限额 2 MiB；原失败保留 | 输出字节上限不等于全部持久文件、父目录、inode、审计义务的承诺 |
+| 六份后续 guest evidence ZIP | 全部通过现有 `build_horizon` 固定 pins/来源校验 | guest 的 24 snapshot/12 delta 不能充当 host 行 |
+| normal 现场 launcher/settings 及一份 host launch meta | launcher 的 client-log、预算和目录是 guest 对象；host meta 只记起止、退出及双流长度 | 不能把 guest 的 20 MiB/384 capture 或 32 MiB/1024 管理池直接写成 host 承诺 |
+| 保存的 R3、P/M/T、host attestation/comparison | 原来源及控制对象关系可定位；没有重读磁盘镜像或私钥 | R3 明示 full host inventory/历史成本采用/完整共同账单均为 false |
+
+已检索本机下载目录中的 Q2/Local Hand 文件及解包结果、固定 fixture 管理目录的文件名、
+相关本地临时运行/回传目录、此前 `/tmp` 回传复核目录、项目 evidence 目录和公开仓库来源索引。
+另按名称在工作/下载/临时目录深度 5 内检索原 `q2-history-evidence-20260927.bundle`、
+host-obligation 和 cost-source manifest/report；未定位独立私有 bundle 或完整 host 义务表。
+这是所查范围内的结论，不声称其它私人存储不存在；未遍历 `.codex`、无关凭据或受限系统服务目录。
+旧 K4 raw 本次未定位，仍只引用既有收件索引；不把索引写成重新散列原件的结果，也不因此要求重采 K4。
+
+准确剩余关系为：
+
+1. **覆盖集合。** 哪些已发出或 UNKNOWN 的历史 host capture/管理审计记录属于本次应保留集合，
+   由什么既有记录证明没有漏项。binding amendment 的 source-horizon 前提明确是 **Q2 guest**；不能自行扩大到 host。
+2. **每项保留金额与池归属。** 每项未释放的 byte/inode 承诺、原预算来源及覆盖对象，尤其原
+   capture/journal 共享预算如何覆盖 host 记录、哪些与 guest 已计项目同池。
+   把每次 2 MiB 当一份独立持久配额，或把原 64 MiB/4096 类上限复制成每批 host grant，均没有现成来源支持。
+3. **当前设备映射。** 完整集合确定后，在原同一 live caller 内从受保护 parent/held fd 映射设备，
+   保守计费再加旧新 core 128 MiB/32。当前只剩多少空闲空间不证明第 1、2 项。
+
+旧 cost-source 记录的 `unknown_commitment_count=2` 是两项原文 null claim，
+**不是两份已经识别但丢失的文件**。本轮不能将这两个 null 填成零，也不重新要求已取消的全文件系统物理硬峰值证明。
+后续最小输入是一份能回到上述原件与原批准预算的 host 覆盖/保留额映射；原件本身无需重复提供。
+若只能由 Owner 新确认覆盖完整性或另定保守保留口径，这是需要准确方案的新增前提，不能用本报告代作批准。
+当前尚无依据填写该新口径的数值，故未伪造新的可批准 A 或发起笼统的“是否继续”。
+
+本次仅修正检索与阻塞证据；没有核心运行代码变更、现场包发行或新的实机测试。
+已有 prior-attempt 与 delivery-entry 两组回归 **126 passed**（4.22 s），只验证既有入口行为；
+JSON 格式、diff whitespace 和 A 三文档原摘要检查通过，没有重跑或冒用上一节的完整源码/installed 验证。
+以下原批次/新批次的执行状态不变；原批准有效，新的一次机会仍未消费。
 
 ## 本轮现场结果
 

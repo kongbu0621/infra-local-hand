@@ -1214,6 +1214,15 @@ Complete earlier-host obligation accounting is not yet bound; the two-core host 
 Release remains empty and the new `lhqcore-20261005a` marker/request remains NOT_ISSUED.
 Do not reuse the completed read-only package-check caller's writer/window or replay the old consumed batch.
 
+The subsequent local saved-source search in the same review found and byte-verified all 44
+historical host originals against the fixed collection/archive chain (zero missing or changed),
+and revalidated all six guest horizon archives. The remaining gap is not their file locations:
+it is complete earlier-host obligation coverage, unreleased byte/inode amounts and shared-pool
+relations, followed by current held-parent device mapping. The approved guest-only source-horizon
+premise must not be silently extended to host. Two null cost-source claims are not two lost files.
+See [the sanitized source-check index](docs/a2-execution/evidence/q2-core-next-host-source-20261005.json).
+No code, approval, release or field-consumption status changed in this documentation followup.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
