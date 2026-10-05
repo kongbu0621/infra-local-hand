@@ -1207,6 +1207,13 @@ R, direct source/integrity, mandate, Owner authority, no exceptions and A→B→
 Paused side work and production `E3_SUPERVISION_UNVERIFIED` remain. Governance closure does not establish
 field readiness or authorize production activation. Material changes retain R's reopen rule.
 
+The next-core N1 implementation at `27928b35e4406f7cfbbd360bccf0e0a8c4d7ea03`
+descends directly from its independent C. Its [implementation and package review](docs/a2-execution/Q2_CORE_NEXT_ACCEPTANCE_IMPLEMENTATION_REVIEW.md)
+records fixed prior-source binding, quiescence checks and conservative guest reservations.
+Complete earlier-host obligation accounting is not yet bound; the two-core host floor is not admission.
+Release remains empty and the new `lhqcore-20261005a` marker/request remains NOT_ISSUED.
+Do not reuse the completed read-only package-check caller's writer/window or replay the old consumed batch.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
