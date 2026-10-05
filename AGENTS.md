@@ -1266,6 +1266,28 @@ remain retained, with no refunds. Both core opportunities are now consumed; rele
 Do not retry, reconnect, clean up, rename a batch or promote UNKNOWN. This result is not an approval
 for another attempt or production E3. Any future field request requires its own exact approval chain.
 
+### Proposed post-sudo single core acceptance
+
+The existing-scope sudo listing repair `432f3f4c5a36735d38869261968fc44583f14023`
+has completed CI 37270712716 with all three jobs successful, including Linux 5157 source
+tests and the independent installed verifier (94 checks / 292 commands). This does not reset
+either consumed attempt or establish real H01/Q4/H11 acceptance.
+
+New scope `LH-Q2-CORE-POST-SUDO-ACCEPTANCE-v1`, S1–S3, is **OPEN / NOT APPROVED** at
+exact three-document A `f9ba6fbc2fa983c46322a00f3385af172fed7cb4`, tree `45b9d9dff11e87a8c83453bdab5d93c0b1ab5734`.
+The [baseline and requested decision](docs/governance/Q2_CORE_POST_SUDO_ACCEPTANCE_BASELINE.md)
+pin its [requirements](docs/a2-execution/q2-core-post-sudo-acceptance/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-post-sudo-acceptance/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-post-sudo-acceptance/IMPLEMENTATION_PLAN.md).
+It proposes only one fixed `lhqcore-20261005b` request with both consumed priors retained,
+current quiescence of both scopes, full non-refunded commitments, a fixed 192 MiB / 48 inode
+host availability condition with earlier-host UNKNOWN disclosed, and explicit three-carrier
+pre-admission bounds. It does not inherit the consumed 05a request or host-boundary authority.
+No Owner B or CLOSED C has been received for this new scope. Before both exist, do not implement
+new-batch code/fixtures, add a release digest, connect, rename/retry a batch or issue a marker/request.
+Unaffected CLOSED development remains valid. R/source integrity, Owner mandate/authority,
+no exceptions and independent A→B→C→D order remain unchanged. Side work and production E3 stay paused.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

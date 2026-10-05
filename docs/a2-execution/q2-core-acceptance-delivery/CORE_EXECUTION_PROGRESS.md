@@ -1,5 +1,15 @@
 # Core execution progress and local Codex handoff — 2026-10-05
 
+## 当前：sudo修复已全绿，固定单次核心验收待准确批准
+
+准确修复 `432f3f4` 的CI现已3/3 success：Linux 5157 passed / 88 skipped、installed 94 checks / 292 commands；Windows 1808 passed / 1327 skipped、installed 10/10。
+Owner最新截图报告本地321通过/10跳过、两次私料内存构包一致，未发现场包；不能把这次离线验证当成业务PASS。
+下一步已收敛为固定05b的一次H01→Q4→H11，不继续支线。准确提案A为 `f9ba6fbc2fa983c46322a00f3385af172fed7cb4`，
+范围S1–S3，详见[基线、三文档与可直接回复的决定文字](../../governance/Q2_CORE_POST_SUDO_ACCEPTANCE_BASELINE.md)。
+两旧批十原件/UNKNOWN/完整承诺保持；新批只在同一carrier核对两旧scope后继续。
+该新范围仍OPEN，尚无Owner B和独立C，不能写新批次实现或发请求。已有sudo修复不需再次批准；批准后云端接齐必要实现，本地Codex验证私料并执行唯一新请求。
+以下保留历史检查点，其中“CI仍运行”只描述当时状态。
+
 ## 当前：包已传入，修复 sudo 输出解析阻塞
 
 `d846c72` 记录新一轮唯一请求已完成 HELLO、BIND 和包传输，随后在
