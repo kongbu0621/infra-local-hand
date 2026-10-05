@@ -48,3 +48,38 @@ skip 保持为环境限制，不计入实机 PASS。随后补充了 decorator �
 必须先完成全部 L2，再单独登记已审 dispatcher 摘要，并对最终发行 D 重验全部门。
 正式 caller 使用新的原窗口，重验十九原件、双构包、容量及六名 absence 后才可消费一次 05c。
 此前三旧核心 UNKNOWN、诊断未独立监督及全额承诺保持；没有新执行或清理授权。
+
+## 准确实现 D 的 L2 检查点
+
+实现 D `29e2c6cfb3897a07edae8c0464d5b794fed3473c`，tree
+`c3234727bb6fd508b401278c900f9c786d17eaa4`，直接以独立 C 为父。
+三 field blob 尺寸为 2160 / 49031 / 452409 B，均在原 cap 内；
+dispatcher SHA-256 `714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b`。
+
+- 准确 D 核心定向：1587 passed / 35 skipped / 25.90s；JUnit SHA-256
+  `f85b6f360c70efb72621f991034d5585c2ee51de0a78fc8272221fc2d67f0796`。
+- 独立 clone 完整 source：5582 passed / 126 skipped / 464.90s；JUnit SHA-256
+  `f9df4ef5e1eaa77d6a449f4ee07e62a619d2b8dc86d5e19327331b9cf8214e08`。
+  skip 包含 root fixture、可选 MCP extra 和真实环境限制，不当成实机通过。
+- 新 venv 独立 installed：PASS，94 checks / 292 commands；report SHA-256
+  `2f4359ebc1a73db5c0297006a653122fb64a0c12b18a1c76736f8d63c9f5418d`。
+  测试 wheel SHA-256 `e53263454e72b2d8ebd0018dde04c97f108594325da30b4011f9603c41eaf978`，
+  不替换现场冻结 wheel。首次构建与源码测试共享 clone 时，被 provenance 的缓存稳定性检查拒绝；
+  失败保留，改用另一个相同 D 的干净 clone 构建，不放宽检查。
+- 实际私料 source-aware 复核、两个独立内存构包及解析通过：860 members，18193634 B，
+  package SHA-256 `bd202cac3ff80479cdec14653b874f888fbcffbddf2a12041a6713c0936c5e71`，
+  manifest SHA-256 `929d03df69e77512df36a3435911b9492f12ad0d5d89de4dd1cba4a3806363d3`。
+  approved-input 353470 B，SHA-256 `0eb21437111ec421e55a857e52931d67a596763c91f408a8662670823c141e95`。
+  十五核心原件 27463 B、四诊断原件 8782 B 均通过固定 hash 与关联检查；没有配置原文入包。
+  没有执行旧 capture、重放私有配置解析、采样新 host 容量、创建 marker 或发出请求。
+  只读 caller 已结束，writer/window 和包不可复用为正式现场窗口。
+
+本地原始测试报告保留于私有临时验证目录 `lhqcore-post-locale-verify.KFoctjWH`。
+此处记录的本地结果尚须结合准确 D 的完整 CI；不得据此单独开始现场执行。
+
+准确实现 D 的 [CI 37325603575](https://github.com/kongbu0621/infra-local-hand/actions/runs/37325603575)
+现已 completed：classify-change、Linux、Windows 三 job 均 success。
+以上全部通过后，单独登记且只登记 dispatcher digest
+`714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b`；
+该发行登记不修改 loader/bootstrap/dispatcher，不纳入任何已消费批次摘要。
+最终发行 D 的完整 source、installed、CI、真实私料双构包仍须再次通过，尚未开始 L3。

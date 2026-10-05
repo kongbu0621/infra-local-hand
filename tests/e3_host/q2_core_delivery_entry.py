@@ -63,11 +63,13 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Three historical core attempts are consumed; 05c is separately authorized.
-# Keep release closed until the exact new implementation passes every L2 gate.
-# Close release after retaining that failure; no retry, reconnect or cleanup.
-# The issued D and its verified digest remain in the post-sudo review.
-RELEASABLE_DISPATCHER_SHA256 = frozenset()
+# Only the independently reviewed 05c dispatcher is registered here.
+# Exact source/installed/CI and real private double-build passed for 29e2c6c.
+# The final release D must pass those gates again before its single request.
+# This registration neither re-admits an old batch nor changes production E3.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({
+    '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b',
+})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

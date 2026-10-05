@@ -446,8 +446,9 @@ def test_sshd_locale_does_not_replace_closure_include_count(includes):
         d._admit_sshd_source({SSHD_MAIN: includes + b"AcceptEnv LANG LC_*\n"})
 
 
-def test_sshd_locale_is_pure_and_keeps_the_field_release_closed(monkeypatch):
+def test_sshd_locale_is_pure_and_does_not_change_field_release(monkeypatch):
     from e3_host import q2_core_delivery_entry as entry
+    before = entry.RELEASABLE_DISPATCHER_SHA256
 
     def forbidden(*_args, **_kwargs):
         pytest.fail("sshd source parser attempted an external effect")
@@ -455,7 +456,7 @@ def test_sshd_locale_is_pure_and_keeps_the_field_release_closed(monkeypatch):
     monkeypatch.setattr(d.os, "open", forbidden)
     monkeypatch.setattr(d.subprocess, "Popen", forbidden)
     assert d._admit_sshd_source({SSHD_MAIN: SSHD_INCLUDE + b"AcceptEnv LANG LC_*\n"}) is None
-    assert entry.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    assert entry.RELEASABLE_DISPATCHER_SHA256 is before
 
 
 def test_sshd_locale_accepts_a_complete_maximum_size_main_file_and_65_files():

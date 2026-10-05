@@ -1449,6 +1449,14 @@ capture, cleanup, refund or automatic next batch. Existing code still binds two 
 05b identity; it cannot be used as the new implementation. R/source integrity, Owner authority, no exceptions,
 independent R→A→B→C→D, paused side work and production E3 remain unchanged.
 
+The [post-locale implementation review](docs/a2-execution/Q2_CORE_POST_LOCALE_ACCEPTANCE_REVIEW_20261005.md)
+records L1 D `29e2c6cfb3897a07edae8c0464d5b794fed3473c`, directly descending from independent C
+`fe635c4885b8f31dd13901bef47e619480b2eda3`. Its triple-prior/diagnostic binding, 05c identities,
+six SHOW slots and five-row capacity condition are implemented. Exact source, installed, CI and
+private double-build passed before the separate digest-only release registration. Final release D
+still requires all L2 checks again before conditional L3. No 05c marker/request has been issued at
+this checkpoint; old UNKNOWNs, full commitments, no retries and production E3 remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
