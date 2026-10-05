@@ -201,12 +201,14 @@ def test_arg_environment_checks_current_arg_max(monkeypatch):
         e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
 
 
-def test_consumed_release_is_closed_and_fixture_gate_requires_exact_digest(monkeypatch):
+def test_post_sudo_release_requires_exact_reviewed_digest(monkeypatch):
     raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+    assert digest == '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96'
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
+    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset())
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})
     monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset({digest}))
@@ -239,6 +241,8 @@ def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
     dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     if changed:
         dispatcher += b"\n# unreviewed\n"
+    else:
+        monkeypatch.setattr(e, 'RELEASABLE_DISPATCHER_SHA256', frozenset())
     entry = {"loader_path": "field/loader.py",
              "bootstrap_path": "field/bootstrap.py",
              "dispatcher_path": "field/dispatcher.py",
@@ -318,7 +322,8 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
         assert list(tmp_path.iterdir()) == []
-        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
+        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
+            '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96'})
     finally:
         os.close(directory_fd)
 

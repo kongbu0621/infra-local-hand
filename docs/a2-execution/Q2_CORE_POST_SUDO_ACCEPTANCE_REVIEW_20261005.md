@@ -1,8 +1,9 @@
 # sudo 修复后单次核心验收实现与验证
 
 2026-10-05 +08:00。范围 `LH-Q2-CORE-POST-SUDO-ACCEPTANCE-v1`，仅 S1–S3。
-当前检查点：S1 已接线并完成定向验证；S2 准确发行验证待完成；S3 未发请求。
-05b marker/request 均 NOT_ISSUED，发行摘要集合为空。不得复用旧批、重试、重连或清理。
+当前检查点：S1 已交付，实现 D 的 S2 已通过；最终发行 D 仍须完成自身重验；S3 未发请求。
+05b marker/request 均 NOT_ISSUED。独立摘要登记只接受已审 field bytes，不替代最终 S2 或当前准入。
+不得复用旧批、重试、重连或清理。早期“空 allowlist”是前一检查点，以下登记在实现 D 验证之后。
 
 ## 授权与固定身份
 
@@ -65,3 +66,32 @@ S3 正式 caller 必须取得新的原 900 秒窗口，重新核验来源、身�
 及六名 absence，全部通过才能执行获准的唯一 05b 请求。
 H01 PASS 后才 Q4，Q4 PASS 后才 H11；任何失败保留现场结束本次范围。
 当前真实任务未执行、新结果和证据未收回；生产 E3 与全部暂停支线保持。
+
+## 准确实现 D 的 S2 与单独发行登记
+
+实现 D `c6afff10656624cccbf554688e730f6bde6d82b7`，tree
+`acd184ea5b0374591a505e7f950d8d8cebde224b`，直接以独立 C 为父。
+独立 clone 完整源码 `5183 passed / 127 skipped / 456.46s`；JUnit
+`lhqcore-post-sudo-verify.Q5qOW3ii/source-tests.xml` SHA-256
+`a4964281dd616fb51128778bcc52703ba477b3c876bc27c6a00355337fa2804d`。
+skip 包括需 root 的 fixture、未配置 MCP extra 和真实环境限制，均不当 PASS。
+
+同 clone 新 venv 独立 installed verifier：PASS，94 checks / 292 commands。
+`installed-acceptance/report.json` SHA-256
+`a2147f4fd5a4ef47ed76111ef42a68fdc90f65362e5b4d26e9e0e13dacf0ba94`；测试 wheel SHA-256
+`863527788a14b2dad004efda817a6ea66558e9d614fbd6b3aa187b9129639a26`。
+测试 wheel 不替换现场原 wheel。[准确实现 D CI](https://github.com/kongbu0621/infra-local-hand/actions/runs/37277874571)
+三个 job 均 success，已核对 Linux、Windows、classify-change。
+
+真实私料 source-aware 复核与同 caller 两次独立构包/解析一致：860 members，18173580 B，
+package SHA-256 `ca9fa728577329edad728da7f0c77d28c45e2e2599f0b4d99d0b343e02269313`；
+manifest SHA-256 `2f688511ef80bb3a9e587aecab77ad5f3b99601fb3978c94e4754937fced4bca`。
+approved-input 338750 B，SHA-256 `985c32eaf3418d39e0ac491cd01e2f5b767e62c4ca3136412e6a1cc5d9791077`。
+十旧原件和 source/horizon/locator/policy 来源均通过；未采样现场前容量、未建 marker、未发请求。
+该只读 caller 已结束，包/writer/window 不能复用为正式验收。
+
+在以上全部通过后，仅登记 dispatcher SHA-256
+`319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96`。
+此独立发行登记不改 loader/bootstrap/dispatcher；field 尺寸分别 2160/49031/447075 B，均在原 cap 内。
+未知摘要、未完成 readiness、来源/身份/窗口不一致继续拒绝。
+最终发行 D 必须再次完成 source、installed、准确 CI 和实际私料双构包；未完成前不得执行 S3。

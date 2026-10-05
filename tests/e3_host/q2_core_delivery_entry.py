@@ -63,10 +63,13 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Both old attempts remain consumed. The separately approved 05b request is
-# NOT_ISSUED: keep release empty until its exact S2 checks all pass.
-# Retain old markers/evidence; no retry, reconnect or production E3 activation.
-RELEASABLE_DISPATCHER_SHA256 = frozenset()
+# Both old attempts remain consumed; only the separately approved 05b request
+# may use this reviewed digest. S2 of c6afff1 passed full source, installed, CI
+# and private double-build. The final release D must itself pass those gates
+# before a fresh live caller. See the post-sudo review; never retry/reconnect.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({
+    "319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96",
+})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

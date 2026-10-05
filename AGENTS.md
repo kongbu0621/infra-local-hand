@@ -1298,8 +1298,11 @@ no exceptions and independent A→B→C→D order remain unchanged. Side work an
 
 The [post-sudo implementation review](docs/a2-execution/Q2_CORE_POST_SUDO_ACCEPTANCE_REVIEW_20261005.md)
 records S1 dual-prior/new-identity implementation and local verification after independent C
-`0c63e733b166f8f9539fd821db621b331a3ede61`. The 05b request is still NOT_ISSUED;
-the release allowlist remains empty pending exact S2 source/installed/CI/private-package validation.
+`0c63e733b166f8f9539fd821db621b331a3ede61`. Implementation D
+`c6afff10656624cccbf554688e730f6bde6d82b7` passed full source (5183/127), independent
+installed verification (94/292), exact CI 37277874571 (3/3), and real private double-build.
+The 05b request is still NOT_ISSUED. The separate digest registration leaves field code unchanged;
+its final D must also pass all S2 gates before the original one-shot live caller.
 Ten original files were read and independently validated without a guest connection. This is not
 current guest quiescence, full host admission or H01/Q4/H11 execution evidence.
 
