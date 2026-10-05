@@ -1377,6 +1377,32 @@ Three old UNKNOWN states and full commitments remain; future grammar/contract ch
 acceptance retain their own scope/approval rules. Raw configuration remains private, side work stays
 paused, and production `E3_SUPERVISION_UNVERIFIED` remains unchanged.
 
+### Fixed sshd locale grammar proposal
+
+Scope `LH-Q2-CORE-SSHD-LOCALE-GRAMMAR-v1` is **OPEN / NOT APPROVED** for offline G1–G3.
+Proposed exact A is `25e8d6cb015b619d8a55b6157a9454501b1c5f2e`, tree
+`3fe2510fd8ba012fe7a733300e1c3d8afdfca9bd`. The [baseline and requested decision](docs/governance/Q2_CORE_SSHD_LOCALE_GRAMMAR_BASELINE.md)
+pin its [requirements](docs/a2-execution/q2-core-sshd-locale-grammar/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-sshd-locale-grammar/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-sshd-locale-grammar/IMPLEMENTATION_PLAN.md).
+Local read-only classification of the saved, digest-verified three-file snapshot confirmed that
+file 1 / line 121 is an AcceptEnv locale declaration whose parameter contains the rejected asterisk.
+Except for the already allowed Include, no other active wildcard line was found. This is current
+saved-input evidence, not proof of the historical 05b trigger or complete modified-parser acceptance.
+The original approved grammar rejects that case; changing it requires this narrow amendment,
+not an inference from legal OpenSSH syntax or the completed diagnostic capture.
+
+The proposal only allows the main file's single exact ordered locale pair under the specified
+whitespace and token rules, with all other grammar and effective-policy checks retained.
+G1–G3 would implement the exception, run targeted synthetic tests, freeze D and perform one bounded
+new-version local parse of the saved complete snapshot. No Owner B or independent CLOSED C exists.
+No new source/test implementation, executable prototype, release entry or field action is authorized
+before exact B/C. Unaffected CLOSED scopes and their historical bytes remain unchanged.
+The three old core requests and diagnostic request remain consumed, with full commitments and
+UNKNOWN states retained; this scope proposes no new marker, SSH/carrier, collection, batch,
+configuration change, cleanup or H01/Q4/H11. R, Owner-only authority, no exceptions, side-work pause
+and production E3 restriction remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
