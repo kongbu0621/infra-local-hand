@@ -1171,7 +1171,7 @@ verifier (94 checks / 292 commands). Exact reports and retained failures are in 
 same single-F1 record. This repaired D was not field-issued; no further marker or request
 is authorized by these verification results.
 
-### Core next single acceptance proposal
+### Core next single acceptance
 
 The existing-scope compatibility repair `40f0f989cc1d76f35a17bb1551ea6a1c68da0441` rejects
 package names incompatible with the unchanged guest contract before creating a marker or issuing a request.
@@ -1180,18 +1180,32 @@ including 4963 Linux source tests and an independent installed verifier with 94 
 [repair review](docs/a2-execution/Q2_CORE_BIND_PREFLIGHT_REVIEW_20261005.md).
 This repair does not reset the original consumed F1 or issue another package/request.
 
-Scope `LH-Q2-CORE-NEXT-ACCEPTANCE-v1` is **OPEN / NOT APPROVED**, N1–N3 only.
-Exact proposed A is `0b0f445a36232f6bcd32c395b642f9a6b259d2db`, tree `c2ee02917768f4f8b6ef905b7fec0159dffd224f`;
+Scope `LH-Q2-CORE-NEXT-ACCEPTANCE-v1` is **CLOSED for N1–N3 only**.
+Exact approved A is `0b0f445a36232f6bcd32c395b642f9a6b259d2db`, tree `c2ee02917768f4f8b6ef905b7fec0159dffd224f`;
 its three authoritative document hashes are in
 [the baseline registration](docs/governance/Q2_CORE_NEXT_ACCEPTANCE_BASELINE.md).
-The proposal requests one new fixed batch and its necessary implementation, retaining the old five raw
-files and all old obligations. It explicitly asks Owner to accept the old historical UNKNOWN remaining
-unknown while requiring current old-scope quiescence inside the one new carrier before installation or cases.
-Old/new identity isolation, conservative per-device admission and no refund are specified in A.
-No new B or CLOSED C has been received at this registration. Existing approvals remain valid only for their
-unchanged scopes. This documentation commit neither implements the proposal nor grants another run.
+The authoritative [requirements](docs/a2-execution/q2-core-next-acceptance/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-next-acceptance/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-next-acceptance/IMPLEMENTATION_PLAN.md) remain byte-identical to A,
+including their historical OPEN labels. Owner B is retained verbatim in
+[the Owner decision](docs/governance/Q2_CORE_NEXT_ACCEPTANCE_OWNER_DECISION.md), event
+`LH-Q2-CORE-NEXT-ACCEPTANCE-CLOSURE-20261005-01`.
+This independent bookkeeping-only commit is CLOSED C; it contains no implementation, tests,
+runtime configuration, package or field action. New D must descend from C; do not squash C with D.
+
+Owner accepts only the fixed old batch's historical exit/usage remaining UNKNOWN, conditional on
+current old-scope quiescence within the single new carrier before installation/cases and full retention
+of all old commitments. This is not historical PASS, a refund or a reset of the original consumed F1.
+N1–N3 authorizes necessary implementation, exact verification/package freeze and at most one new
+fixed `lhqcore-20261005a` marker/request, only after all original and new release/admission gates pass.
+Old five raw files and earlier evidence/objects remain unchanged. Old/new identity isolation,
+conservative per-device admission and no refund are specified in A. Failure, disconnection or UNKNOWN
+stops the new batch: no retry, reconnect, renamed attempt, cleanup or third batch is authorized.
+Existing approvals remain valid only for their unchanged scopes. At C, this new batch is NOT_ISSUED;
+current old-scope state and new-object absence have not been observed.
 R, direct source/integrity, mandate, Owner authority, no exceptions and A→B→independent C→D remain unchanged.
-Paused side work and production E3 restrictions remain. Current guest state is not inferred from this proposal.
+Paused side work and production `E3_SUPERVISION_UNVERIFIED` remain. Governance closure does not establish
+field readiness or authorize production activation. Material changes retain R's reopen rule.
 
 ### Continuing constraints
 
