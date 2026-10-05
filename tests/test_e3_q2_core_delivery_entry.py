@@ -206,7 +206,7 @@ def test_consumed_post_sudo_release_is_closed_and_still_requires_exact_digest(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert digest == '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96'
+    # Later offline diagnostics do not re-admit the consumed 05b dispatcher.
     assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})

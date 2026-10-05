@@ -238,6 +238,116 @@ def test_sshd_source_effective_both_required():
         d._admit_sshd_source({"/etc/ssh/sshd_config": b"Include /tmp/*.conf\n"})
 
 
+SSHD_MAIN = "/etc/ssh/sshd_config"
+SSHD_INCLUDE = b"Include /etc/ssh/sshd_config.d/*.conf\n"
+
+
+@pytest.mark.parametrize("line,reason", [
+    (b'Banner "DO_NOT_ECHO_THIS_VALUE"', "GRAMMAR_QUOTE_OR_EXPANSION"),
+    (b"Banner 'DO_NOT_ECHO_THIS_VALUE'", "GRAMMAR_QUOTE_OR_EXPANSION"),
+    (b"Banner /private/DO_NOT_ECHO_THIS_PATH\\suffix", "GRAMMAR_QUOTE_OR_EXPANSION"),
+    (b"Banner `DO_NOT_ECHO_THIS_VALUE`", "GRAMMAR_QUOTE_OR_EXPANSION"),
+    (b"Banner $DO_NOT_ECHO_THIS_VALUE", "GRAMMAR_QUOTE_OR_EXPANSION"),
+    (b"PubkeyAuthentication", "GRAMMAR_ARGUMENT_COUNT"),
+    (b"Match User DO_NOT_ECHO_THIS_VALUE", "MATCH_DIRECTIVE"),
+    (b"Include /private/DO_NOT_ECHO_THIS_PATH", "INCLUDE_TARGET"),
+    (b"Include /etc/ssh/sshd_config.d/*.conf other", "INCLUDE_TARGET"),
+    (b"Bad-Keyword value", "GRAMMAR_KEYWORD"),
+    (b"AcceptEnv LANG LC_*", "GRAMMAR_GLOB"),
+    (b"AcceptEnv LANG LC_?", "GRAMMAR_GLOB"),
+    (b"AcceptEnv LANG LC_[ABC]", "GRAMMAR_GLOB"),
+    (b"Banner /private/DO_NOT_ECHO_THIS_PATH]", "GRAMMAR_GLOB"),
+])
+def test_sshd_source_rejection_has_exact_stage_line_and_safe_digest(monkeypatch, line, reason):
+    from e3_host import q2_core_delivery_bootstrap as bootstrap
+    raw = SSHD_INCLUDE + b"# comment\n\n" + line + b"\n"
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source({SSHD_MAIN: raw})
+    code = str(captured.value)
+    assert code.startswith(f"CORE_ADMIT_SSHD_{reason}_F1_L4_FILES1_BYTES{len(raw)}_LINES4_INCLUDES1_")
+    assert "_PATHSHA256_" + hashlib.sha256(SSHD_MAIN.encode()).hexdigest().upper() in code
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+    assert re.fullmatch(r"CORE_[A-Z0-9_]+", code) and len(code) <= 384
+    assert "DO_NOT_ECHO" not in code and "/" not in code
+
+    def fail_in_serve(**_kwargs):
+        raise captured.value
+    monkeypatch.setattr(bootstrap, "serve", fail_in_serve)
+    stdout, stderr = io.BytesIO(), io.BytesIO()
+    assert bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256="a" * 64) == 3
+    assert stdout.getvalue() == b"" and stderr.getvalue() == code.encode("ascii") + b"\n"
+
+
+@pytest.mark.parametrize("raw", [b"# invalid\xff\n", b"Banner foo\x00\n", b"Banner foo\r\n"])
+def test_sshd_source_text_failure_keeps_original_encoding_rejection(raw):
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source({SSHD_MAIN: raw})
+    code = str(captured.value)
+    assert code.startswith("CORE_ADMIT_POLICY_ENCODING_SSHD_SOURCE_TEXT_F1_L0_FILES1_")
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+    assert re.fullmatch(r"CORE_[A-Z0-9_]+", code) and len(code) <= 384
+
+
+@pytest.mark.parametrize("leaf", ["50-private.conf", "50-\udcff-private.conf"])
+def test_sshd_source_diagnostic_binds_second_file_without_disclosing_path(leaf):
+    path = "/etc/ssh/sshd_config.d/" + leaf
+    raw = b"# comment\nInclude /etc/ssh/sshd_config.d/*.conf\n"
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source({SSHD_MAIN: SSHD_INCLUDE, path: raw})
+    code = str(captured.value)
+    assert code.startswith("CORE_ADMIT_SSHD_INCLUDE_LOCATION_F2_L2_FILES2_")
+    assert "_PATHSHA256_" + hashlib.sha256(path.encode("utf-8", "surrogatepass")).hexdigest().upper() in code
+    assert code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+    assert re.fullmatch(r"CORE_[A-Z0-9_]+", code) and "private" not in code.lower()
+
+
+@pytest.mark.parametrize("raws,includes", [
+    ({}, 0), ({SSHD_MAIN: b""}, 0), ({SSHD_MAIN: b"PubkeyAuthentication yes\n"}, 0),
+    ({SSHD_MAIN: SSHD_INCLUDE * 2}, 2),
+])
+def test_sshd_source_missing_duplicate_include_uses_closure_diagnostic(raws, includes):
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source(raws)
+    code = str(captured.value)
+    expected = d.canonical([dict(path_sha256=hashlib.sha256(path.encode()).hexdigest(),
+        bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()) for path, raw in raws.items()])
+    assert code.startswith(f"CORE_ADMIT_SSHD_INCLUDE_COUNT_F0_L0_FILES{len(raws)}_")
+    assert f"_INCLUDES{includes}_PATHSHA256_" + "0" * 64 in code
+    assert code.endswith("_SHA256_" + hashlib.sha256(expected).hexdigest().upper())
+
+
+@pytest.mark.parametrize("raw", [
+    SSHD_INCLUDE,
+    SSHD_INCLUDE + b"PubkeyAuthentication yes\nAcceptEnv LANG\n",
+    SSHD_INCLUDE + b"# ignored quotes, glob and expansions: \"*?$\n\n",
+    b"\tinclude\t/etc/ssh/sshd_config.d/*.conf\nPUBKEYAUTHENTICATION yes\n",
+])
+def test_sshd_source_diagnostic_preserves_existing_success(raw):
+    assert d._admit_sshd_source({SSHD_MAIN: raw, "/etc/ssh/sshd_config.d/50-local.conf": b"# no change\n"}) is None
+
+
+def test_sshd_source_diagnostic_uses_existing_parser_line_numbering():
+    raw = SSHD_INCLUDE + b"PubkeyAuthentication yes\vAcceptEnv LC_*\n"
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source({SSHD_MAIN: raw})
+    assert "_F1_L3_FILES1_" in str(captured.value) and "_LINES3_" in str(captured.value)
+
+
+def test_sshd_source_diagnostic_is_bounded_at_existing_closure_limits():
+    raws = {SSHD_MAIN: SSHD_INCLUDE}
+    for index in range(63):
+        raws[f"/etc/ssh/sshd_config.d/{index:02}.conf"] = b"#" + b"a" * 8190 + b"\n"
+    path = "/etc/ssh/sshd_config.d/63.conf"
+    raw = b"\n" * (262144 - len(b"AcceptEnv LC_*\n")) + b"AcceptEnv LC_*\n"
+    raws[path] = raw
+    assert len(raws) == 65 and sum(map(len, raws.values())) < 1048576
+    with pytest.raises(d.DispatchError) as captured:
+        d._admit_sshd_source(raws)
+    code = str(captured.value)
+    assert "_F65_" in code and "_BYTES262144_" in code
+    assert len(code) <= 384 and code.endswith("_SHA256_" + hashlib.sha256(raw).hexdigest().upper())
+
+
 def test_single_key_exact_bytes_and_no_options():
     key = base64.b64encode(b"\0\0\0\x0bssh-ed25519\0\0\0 " + b"x" * 32).decode()
     approved = dict(type="ssh-ed25519", key_base64=key)

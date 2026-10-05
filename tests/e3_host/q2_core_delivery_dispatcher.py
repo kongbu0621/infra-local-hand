@@ -3156,26 +3156,59 @@ def _admit_sudo_output(raw, grant, source_paths=()):
 
 
 def _admit_sshd_source(raws):
+    """Keep the fixed grammar; diagnose only already-held bytes, never paths/raw.
+
+    F is the one-based collector input order and L the existing splitlines()
+    parser line. F0/L0 identifies a closure-wide check; L0 a whole-file check.
+    Closure digests bind ordered path/file digests, not a new source or read.
+    """
     includes = 0
-    for path, raw in raws.items():
-        for line in _admit_text(raw).splitlines():
+    file_index, path, raw = 0, None, None
+
+    def check(condition, code, stage, line=0):
+        if condition:
+            return
+        if file_index:
+            size, lines, digest = len(raw), len(raw.decode("ascii", "replace").splitlines()), _sha(raw)
+            path_digest = _sha(path.encode("utf-8", "surrogatepass"))
+        else:
+            size = sum(map(len, raws.values()))
+            lines = sum(len(value.decode("ascii", "replace").splitlines()) for value in raws.values())
+            path_digest = "0" * 64
+            digest = _sha(canonical([
+                dict(path_sha256=_sha(name.encode("utf-8", "surrogatepass")), bytes=len(value), sha256=_sha(value))
+                for name, value in raws.items()]))
+        raise DispatchError(f"{code}_{stage}_F{file_index}_L{line}_FILES{len(raws)}"
+            f"_BYTES{size}_LINES{lines}_INCLUDES{includes}"
+            f"_PATHSHA256_{path_digest.upper()}_SHA256_{digest.upper()}")
+
+    for file_index, (path, raw) in enumerate(raws.items(), 1):
+        try:
+            text = _admit_text(raw)
+        except DispatchError:
+            check(False, "CORE_ADMIT_POLICY_ENCODING", "SSHD_SOURCE_TEXT")
+        for number, line in enumerate(text.splitlines(), 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            _require(not any(char in line for char in ('"', "'", "\\", "`", "$")),
-                     "CORE_ADMIT_SSHD_GRAMMAR")
+            check(not any(char in line for char in ('"', "'", "\\", "`", "$")),
+                  "CORE_ADMIT_SSHD_GRAMMAR", "QUOTE_OR_EXPANSION", number)
             words = line.split()
-            _require(len(words) >= 2, "CORE_ADMIT_SSHD_GRAMMAR")
+            check(len(words) >= 2, "CORE_ADMIT_SSHD_GRAMMAR", "ARGUMENT_COUNT", number)
             name = words[0].lower()
-            _require(name != "match", "CORE_ADMIT_SSHD_MATCH")
+            check(name != "match", "CORE_ADMIT_SSHD_MATCH", "DIRECTIVE", number)
             if name == "include":
-                _require(path == "/etc/ssh/sshd_config" and words[1:] == ["/etc/ssh/sshd_config.d/*.conf"],
-                         "CORE_ADMIT_SSHD_INCLUDE")
+                check(path == "/etc/ssh/sshd_config", "CORE_ADMIT_SSHD_INCLUDE", "LOCATION", number)
+                check(words[1:] == ["/etc/ssh/sshd_config.d/*.conf"],
+                      "CORE_ADMIT_SSHD_INCLUDE", "TARGET", number)
                 includes += 1
             else:
-                _require(re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', words[0]) is not None
-                         and not any(char in line for char in "*?[]"), "CORE_ADMIT_SSHD_GRAMMAR")
-    _require(includes == 1, "CORE_ADMIT_SSHD_INCLUDE")
+                check(re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', words[0]) is not None,
+                      "CORE_ADMIT_SSHD_GRAMMAR", "KEYWORD", number)
+                check(not any(char in line for char in "*?[]"),
+                      "CORE_ADMIT_SSHD_GRAMMAR", "GLOB", number)
+    file_index = 0
+    check(includes == 1, "CORE_ADMIT_SSHD_INCLUDE", "COUNT")
 
 
 def _admit_sshd_output(raw, required):

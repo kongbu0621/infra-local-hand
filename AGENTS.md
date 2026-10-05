@@ -1318,6 +1318,17 @@ All three core requests are now consumed. Release is closed again, no refund/ret
 occurred, and this scope ends with retained failure. Another field request requires separate exact
 approval, never a replay or a renamed continuation. Production E3 and all paused side work remain.
 
+The subsequent [sshd source diagnostic review](docs/a2-execution/Q2_CORE_SSHD_DIAGNOSTIC_REVIEW_20261005.md)
+records an offline repair within unchanged CLOSED core development. Bounded searches of the
+retained local material, two historical tar indexes and six pinned guest ZIPs found no sshd
+configuration original. A synthetic AcceptEnv glob reproduces rejection but is not evidence of
+the actual 05b line. Accepted grammar and effective-policy predicates remain unchanged; only
+fixed rejection stages, file/line indexes, counts and digests are added to the existing stderr
+channel. No raw configuration/path is disclosed, and no field request, marker or new batch is
+issued. Scoped tests are 395 passed / 10 skipped; full local source/installed verification was not
+repeated. The exact field trigger remains unproven; release stays empty and all consumption,
+UNKNOWN, no-retry/reconnect/cleanup and production E3 boundaries remain.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
