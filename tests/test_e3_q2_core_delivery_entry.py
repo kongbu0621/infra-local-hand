@@ -201,13 +201,12 @@ def test_arg_environment_checks_current_arg_max(monkeypatch):
         e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
 
 
-def test_release_gate_accepts_only_exact_reviewed_dispatcher(monkeypatch):
+def test_consumed_release_is_closed_and_fixture_gate_requires_exact_digest(monkeypatch):
     raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
-    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset())
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})
     monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset({digest}))
@@ -233,10 +232,13 @@ def test_reviewed_digest_cannot_override_incomplete_readiness(monkeypatch):
         e.field_release_gate(manifest, {"field/dispatcher.py": raw})
 
 
+@pytest.mark.parametrize("changed", [False, True])
 def test_deliver_once_checks_release_gate_before_anchor_marker_or_request(
-        monkeypatch, tmp_path):
+        monkeypatch, tmp_path, changed):
     loader, bootstrap = b"loader\n", b"bootstrap\n"
-    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes() + b"\n# unreviewed\n"
+    dispatcher = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+    if changed:
+        dispatcher += b"\n# unreviewed\n"
     entry = {"loader_path": "field/loader.py",
              "bootstrap_path": "field/bootstrap.py",
              "dispatcher_path": "field/dispatcher.py",
@@ -316,8 +318,7 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
         assert list(tmp_path.iterdir()) == []
-        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
-            hashlib.sha256(Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()).hexdigest()})
+        assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset()
     finally:
         os.close(directory_fd)
 

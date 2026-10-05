@@ -1250,6 +1250,22 @@ Do not open the allowlist without the approved implementation and explicit host-
 R/source integrity, Owner authority, mandate, no exceptions and A→B→independent C→D remain unchanged.
 Paused side work remains paused; true H01/Q4/H11 acceptance is still unobserved.
 
+The subsequent [B1–B3 implementation and field result](docs/a2-execution/Q2_CORE_HOST_CAPACITY_BOUNDARY_REVIEW_20261005.md)
+supersedes earlier unconsumed checkpoints for `lhqcore-20261005a`. Independent C is
+`434c6a07f7a84f26d7bd01de138125debc467dd4`; implementation starts at its direct child
+`61e232e1a4b57c9b7fbd523cbd7d4f8f747d756e`. Exact issued D is
+`59d7c32bbe10d580603b8e5e62dd49ad6a538e56`, verified before issuance by full source tests,
+independent installation, 3/3 CI and actual private double-build. The one marker and one request
+were consumed: valid HELLO, BIND and package sent, then `CORE_ADMIT_SUDO_OUTPUT`, carrier wait 3,
+both stream EOFs and host deadline met. The fixed 128 MiB / 32 inode capacity condition passed,
+without historical-completeness or exclusive-reservation claims. No output package or case verdict
+returned; the original receipt's business execution and evidence collection remain UNKNOWN.
+Static ordering places this rejection before old-scope quiescence, installation and H01; it does not
+prove remote supervisor closure or guest usage. Five capture files and both batches' obligations
+remain retained, with no refunds. Both core opportunities are now consumed; release is closed again.
+Do not retry, reconnect, clean up, rename a batch or promote UNKNOWN. This result is not an approval
+for another attempt or production E3. Any future field request requires its own exact approval chain.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.

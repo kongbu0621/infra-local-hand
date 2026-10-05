@@ -63,14 +63,11 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Exact host-capacity implementation/source/installed/CI and private double-build
-# review at 61e232e1. See Q2_CORE_HOST_CAPACITY_BOUNDARY_REVIEW_20261005.md.
-# Only the separately approved, still-unconsumed lhqcore-20261005a is eligible;
-# same-window sources, identities, capacity and six absences remain mandatory.
-# This neither replays 20261003a nor enables production E3.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({
-    "30d8e9fe9a9bbf39dc5261d0eb0d47c7349fe7e8229132f394a31aa934216eb4",
-})
+# Both fixed core attempts are now consumed. The 20261005a request at 59d7c32
+# stopped at CORE_ADMIT_SUDO_OUTPUT; see the host-capacity boundary review.
+# Retain both markers and all evidence. Source verification does not authorize
+# another request, reconnect, renamed attempt or production E3 activation.
+RELEASABLE_DISPATCHER_SHA256 = frozenset()
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
