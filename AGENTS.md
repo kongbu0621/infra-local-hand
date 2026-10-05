@@ -1223,6 +1223,28 @@ premise must not be silently extended to host. Two null cost-source claims are n
 See [the sanitized source-check index](docs/a2-execution/evidence/q2-core-next-host-source-20261005.json).
 No code, approval, release or field-consumption status changed in this documentation followup.
 
+### Core host capacity boundary proposal
+
+Scope `LH-Q2-CORE-HOST-CAPACITY-BOUNDARY-v1` is **OPEN / NOT APPROVED**, B1–B3 only.
+Exact proposed A is `f491b15514ed0e05f7e1924785a3f7d162dae90f`, tree `318a7ddb656c9256ab4348379dcb12848ef82351`;
+its three document digests and the precise requested decision are in
+[the boundary baseline](docs/governance/Q2_CORE_HOST_CAPACITY_BOUNDARY_BASELINE.md).
+The 44 saved originals do not establish complete earlier-host obligations. This proposal explicitly
+requests a narrower capacity guarantee for the already authorized, unconsumed `lhqcore-20261005a`:
+current availability must satisfy both fixed core commitments (128 MiB / 32 inodes), while earlier-host
+coverage/amounts/shared pools remain UNKNOWN and do not alone block this one capture. There is no refund,
+history-completeness claim or exclusive space reservation. Space contention may cause task or evidence failure.
+Original guest accounting, credentials/identity, observed/application limits, prior quiescence and all stop
+conditions remain. No new request count, batch, namespace, quota mechanism or production activation is proposed.
+
+This changes the approved host capacity guarantee and therefore needs its own exact Owner B and independent
+C before implementation. Existing next-acceptance N1–N3 remains CLOSED under its unchanged conditions;
+its prior B does not approve this narrower guarantee. At this registration no B/C exists for the boundary proposal.
+The proposal and this registration change documentation only: no source, tests, release digest or field action.
+Do not open the allowlist without the approved implementation and explicit host-condition return binding.
+R/source integrity, Owner authority, mandate, no exceptions and A→B→independent C→D remain unchanged.
+Paused side work remains paused; true H01/Q4/H11 acceptance is still unobserved.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
