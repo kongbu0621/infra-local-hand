@@ -1419,6 +1419,30 @@ No new marker, SSH request, field helper, package release or business task was i
 acceptance still requires a separate accurate Owner decision; historical UNKNOWN, full commitments,
 paused side work and production `E3_SUPERVISION_UNVERIFIED` remain unchanged.
 
+### Post-locale single core acceptance proposal
+
+Scope `LH-Q2-CORE-POST-LOCALE-ACCEPTANCE-v1` is **OPEN / NOT APPROVED**, proposed L1–L3 only.
+Exact three-document A is `a243362d473891469b012a0ab8c3bd221794aa50`, tree
+`179045d0c3bcf9bf6c154c191068c96c379fe13e`; the [baseline and requested decision](docs/governance/Q2_CORE_POST_LOCALE_ACCEPTANCE_BASELINE.md)
+pin its [requirements](docs/a2-execution/q2-core-post-locale-acceptance/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-post-locale-acceptance/ARCHITECTURE.md) and
+[implementation plan](docs/a2-execution/q2-core-post-locale-acceptance/IMPLEMENTATION_PLAN.md).
+The screenshot asks for preparation, not a fourth core request or new closure. There is no Owner B or C for this scope.
+The completed locale repair and its single saved-snapshot parse remain complete; do not repeat them.
+
+The proposal pins repair baseline `d0c8749e47647264c14c406cd85c8c68006689a0`, retains its grammar
+and original runtime/wheel/harness, and requests one fixed `lhqcore-20261005c` only after independent
+C, necessary triple-prior/diagnostic bindings, exact D validation and all original live gates.
+All three consumed core UNKNOWNs and commitments remain. The consumed diagnostic's 4 MiB/8-inode
+commitment and unproven independent remote/ancestor closure are explicit retained boundaries,
+not core admission evidence. Proposed host availability is 260 MiB/72 inodes, not an exclusive reservation;
+the four-core-carrier pre-quiescence bound is 4096 MiB/512 pids, excluding diagnostic/management ancestors
+and unrelated host load. Six fixed SHOWs stay inside the new original per-batch budget and clocks.
+No changed source, fixture, release digest, marker, SSH/carrier, cleanup or business task follows from
+this OPEN registration. Existing code still binds two priors and the consumed 05b identity; it cannot
+be used as the proposed new implementation. R/source integrity, Owner authority, no exceptions,
+independent R→A→B→C→D, paused side work and production E3 remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
