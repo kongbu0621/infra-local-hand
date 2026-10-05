@@ -63,13 +63,11 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# Only the independently reviewed 05c dispatcher is registered here.
-# Exact source/installed/CI and real private double-build passed for 29e2c6c.
-# The final release D must pass those gates again before its single request.
-# This registration neither re-admits an old batch nor changes production E3.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({
-    '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b',
-})
+# The single 05c request is consumed. Issued D 657b1bc stopped at guest
+# CORE_CAP_INSUFFICIENT before installation or H01/Q4/H11.
+# Retain all captures and commitments; no retry, reconnect, collection or cleanup.
+# The exact issued field bytes and passing pre-issuance checks remain in review.
+RELEASABLE_DISPATCHER_SHA256 = frozenset()
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

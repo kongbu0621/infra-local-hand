@@ -1457,6 +1457,18 @@ private double-build passed before the separate digest-only release registration
 still requires all L2 checks again before conditional L3. No 05c marker/request has been issued at
 this checkpoint; old UNKNOWNs, full commitments, no retries and production E3 remain unchanged.
 
+The same review now records final release D `657b1bcd749cb4281b0193b2bc9430b0662faf98` and its
+completed exact source, installed, private double-build and 3/3 CI checks. Only after all passed,
+the single 05c marker/request was consumed. Valid HELLO/BIND and complete package transport returned
+wait 3 and `CORE_CAP_INSUFFICIENT`; the live finalizer retained five capture files and
+`STOP_AND_RETAIN` / `CORE_OUTPUT_MISSING`. No H01/Q4/H11 verdict or remote result exists; task and
+business-result truth remain UNKNOWN. Issued-source order places this rejection at guest capacity
+admission before installation/cases, without proving full old A/B quiescence or remote supervision.
+The release allowlist is closed again. This scope has ended with retained failure: no retry,
+reconnect, supplemental capture, cleanup, refund or next batch. Further field work needs separate
+exact authority. The current host capacity check is not proof of guest capacity; the failing device
+and shortfall were not returned. Preserve all old and new commitments, paused side work and production E3.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
