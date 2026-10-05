@@ -22,6 +22,15 @@ PATH = Path(__file__).parent / "e3_host" / "q2_core_delivery_dispatcher.py"
 spec = importlib.util.spec_from_file_location("_core_admit_test", PATH)
 d = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(d)
+
+
+@pytest.fixture(autouse=True)
+def synthetic_prior_pins(monkeypatch):
+    from core_prior_fixture import fixture as prior_fixture
+    import test_e3_q2_core_delivery_dispatcher as shared
+    prior_fixture(monkeypatch, d, shared.d)
+
+
 GRANT = dict(commands=["ALL"], host="ALL", runas_groups=[], runas_users=["ALL"], tags=["NOPASSWD"])
 SUDO = b'''Matching Defaults entries for q1admin on local-hand-q1:
     env_reset, mail_badpass
@@ -278,7 +287,7 @@ def test_reader_closes_late_open_and_does_not_continue(tmp_path, monkeypatch):
     with pytest.raises(OSError): os.fstat(opened[0])
 
 
-@pytest.mark.parametrize('stage', [None, 'policies', 'programs', 'guest', 'capacity', 'managers'])
+@pytest.mark.parametrize('stage', [None, 'policies', 'programs', 'guest', 'prior_a', 'capacity', 'managers', 'prior_b'])
 def test_real_admit_orders_components_and_never_retries(monkeypatch, stage):
     import test_e3_q2_core_delivery_dispatcher as fixture
     context = fixture.context(); expected = fixture.FakeEffects(context).admit({})
@@ -303,11 +312,19 @@ def test_real_admit_orders_components_and_never_retries(monkeypatch, stage):
     effect._capacity_managers = result('managers', dict(
         parents={k: v for k, v in expected['parents'].items() if k not in directory}, absence=[],
         manager={k: expected['guest'][k] for k in manager_keys}))
+    class Observer:
+        def __init__(self, *_): self.count = 0
+        def observe(self):
+            self.count += 1
+            return result('prior_a' if self.count == 1 else 'prior_b', None)()
+        def finish(self): return expected['prior_core_attempt']
+        def close(self): pass
+    monkeypatch.setattr(d, '_PriorScopeObserver', Observer)
     argument = {key: context[key] for key in ('manifest', 'hello', 'guest_deadlines')}
     # Component-ordering fixture has synthetic parents; the actual metadata
     # observer is covered by temporary-filesystem integration tests.
     monkeypatch.setattr(d._PoolAccounting, 'observe', result('accounting', None))
-    order = ['policies', 'programs', 'guest', 'capacity', 'managers']
+    order = ['policies', 'programs', 'guest', 'prior_a', 'capacity', 'managers', 'prior_b']
     if stage is None:
         assert effect.admit(argument) == expected
         assert trace == order + ['accounting']

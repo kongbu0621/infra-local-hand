@@ -14,10 +14,11 @@ import test_e3_q2_core_delivery_entry as entry_fixture
 
 INVALID_BASENAMES = ("sub/frozen.lhfp", "./frozen.lhfp", "../frozen.lhfp",
                      "/frozen.lhfp", "frozen\\name.lhfp", ".lhfp",
-                     "frozen name.lhfp", "frozen.lhfp\n", "名字.lhfp")
+                     "frozen name.lhfp", "frozen.lhfp\n", "名字.lhfp",
+                     "frozen.lhfp", ".frozen-1_2.lhfp", "lhqcore-20261003a.lhfp")
 
 
-def prepared(monkeypatch, basename="frozen.lhfp"):
+def prepared(monkeypatch, basename="lhqcore-20261005a.lhfp"):
     """Use a real packaged entry; private source bodies remain synthetic."""
     fixture = bootstrap_fixture
     bootstrap_sha, raw = fixture.package_fixture(monkeypatch)
@@ -51,7 +52,7 @@ def host_bind(value, basename):
         boot_bind_ns=1_001_000_000_000, mono_bind_ns=1_001_000_000_000)
 
 
-@pytest.mark.parametrize("basename", ("frozen.lhfp", ".frozen-1_2.lhfp"))
+@pytest.mark.parametrize("basename", ("lhqcore-20261005a.lhfp",))
 def test_packaged_entry_crosses_host_and_guest_bind_and_marker(monkeypatch, basename):
     value = prepared(monkeypatch, basename)
     bind = host_bind(value, basename)
@@ -65,7 +66,7 @@ def test_packaged_entry_crosses_host_and_guest_bind_and_marker(monkeypatch, base
 @pytest.mark.parametrize("basename", INVALID_BASENAMES)
 def test_host_bind_rejects_names_rejected_by_guest(monkeypatch, basename):
     value = prepared(monkeypatch)
-    valid = host_bind(value, "frozen.lhfp")
+    valid = host_bind(value, "lhqcore-20261005a.lhfp")
     invalid = dict(valid, package_basename=basename)
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_BIND_PACKAGE"):
         bootstrap_fixture.b.validate_bind(invalid, bootstrap_fixture.b.encoded(value["hello"]))

@@ -30,6 +30,12 @@ d = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(d)
 
 
+@pytest.fixture(autouse=True)
+def synthetic_prior_pins(monkeypatch):
+    from core_prior_fixture import fixture
+    fixture(monkeypatch, d)
+
+
 def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
@@ -60,7 +66,7 @@ def isolated_case_protocol(monkeypatch):
     It must not be mistaken for a releasable context or live acceptance result.
     """
     monkeypatch.setattr(d, "_consumption_info", lambda value: {
-        "basename": ".lhqcore-20261003a.carrier-consumed.json", "bytes": 1024,
+        "basename": ".lhqcore-20261005a.carrier-consumed.json", "bytes": 1024,
         "sha256": value["bind"]["consumption_sha256"], "state": "CONSUMPTION_RECORD_COMPLETE"})
     monkeypatch.setattr(d, "_validate_approved_components", lambda *_args, **_kwargs: None,
                         raising=False)
@@ -137,7 +143,8 @@ class FakeEffects:
                               "bytes_available": 2**30, "inodes_available": 100000}
                        for role in directory_roles}
         capacity = [{"dev": 20, "fs_uuid": uuid, "roles": sorted(directory_roles),
-                     "historical_bytes": 0, "historical_inodes": 0,
+                     "historical_bytes": d.LIMITS["total_guest_admission_bytes"],
+                     "historical_inodes": d.LIMITS["total_guest_admission_inodes"],
                      "new_required_bytes": d.LIMITS["total_guest_admission_bytes"],
                      "new_required_inodes": d.LIMITS["total_guest_admission_inodes"],
                      "bytes_available": 2**30, "inodes_available": 100000,
@@ -160,10 +167,13 @@ class FakeEffects:
                  "ordinary_groups": [1100], "user_manager_unit": "user@1100.service",
                  "user_manager_invocation_id": "a" * 32,
                  "user_manager_cgroup": "/user.slice/user-1100.slice/user@1100.service"}
+        from core_prior_fixture import quiescence
+        prior = d._approved_inputs_envelope(self.context)['reconciliation']['prior_core_attempt']
         self._admission = {"guest": guest, "programs": programs, "policies": policies,
                 "parents": parents, "filesystems": filesystems,
                 "capacity": capacity, "absence": absence,
-                "binding": d._admission_binding(self.context)}
+                "binding": d._admission_binding(self.context),
+                "prior_core_attempt": quiescence(prior, self.context)}
         return self._admission
 
     def install(self, expected):

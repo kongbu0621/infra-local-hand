@@ -994,7 +994,7 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                     implementation_commit + "^{tree}")
     c.require(identity.decode("ascii").split() == [implementation_commit, implementation_tree],
               "CORE_FREEZE_IMPLEMENTATION")
-    # Final D must descend from all four independent amendment closures.
+    # Final D must descend from every independent amendment/new-batch closure.
     # Authority stays offline; no replacement wire amendment or extra member.
     for baseline, decision, closure in (
             (c.AMENDMENT_BASELINE, c.AMENDMENT_OWNER_DECISION, c.AMENDMENT_CLOSURE),
@@ -1003,7 +1003,9 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.COMPLETION_ADJUSTMENT_BASELINE, c.COMPLETION_ADJUSTMENT_OWNER_DECISION,
              c.COMPLETION_ADJUSTMENT_CLOSURE),
             (c.CLOUD_INIT_GRANT_BASELINE, c.CLOUD_INIT_GRANT_OWNER_DECISION,
-             c.CLOUD_INIT_GRANT_CLOSURE)):
+             c.CLOUD_INIT_GRANT_CLOSURE),
+            (c.NEXT_ACCEPTANCE_BASELINE, c.NEXT_ACCEPTANCE_OWNER_DECISION,
+             c.NEXT_ACCEPTANCE_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")
@@ -1339,6 +1341,10 @@ def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_pat
         deadline = entry_api.capture_contract.Deadline(origins, clock_gettime_ns)
         c.require(local["policy_source_raw"] == approved_sources.policy_sources,
                   "CORE_FREEZE_APPROVED_LOCAL_SOURCE")
+        approved = c.document(approved_inputs_raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True)
+        prior_files = entry_api.verify_prior_originals(local['directory_fd'],
+            local['binding_preimage']['anchor'], approved, deadline)
+        c.require(prior_files == approved_sources.prior_core_files, 'CORE_FREEZE_PRIOR_LOCAL_SOURCE')
         deadline.call(entry_api.encoded_argv_environment_size,
                       local["argv"], local["binding_preimage"]["environment"])
         frozen_locators = deadline.call(freeze_private_locators, **retained_paths,
@@ -1367,7 +1373,8 @@ def _validate_approved_sources(raw, sources):
     """
     c.require(sources is not None, "CORE_FREEZE_APPROVED_SOURCES_REQUIRED")
     names = {"amendment", "locator_carriers", "horizon_archives", "legacy_frame",
-             "historical_tools", "policy_sources", "remote_tokens", "later_reviews", "producer_raw"}
+             "historical_tools", "policy_sources", "remote_tokens", "later_reviews", "producer_raw",
+             "prior_core_files"}
     c.require(not isinstance(sources, type) and is_dataclass(sources)
               and {field.name for field in fields(sources)} == names,
               "CORE_FREEZE_APPROVED_SOURCE_FIELDS")

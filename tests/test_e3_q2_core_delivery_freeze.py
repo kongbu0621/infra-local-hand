@@ -246,7 +246,7 @@ def package_fixture(tmp_path, monkeypatch):
 
     implementation = tmp_path / "implementation"
     implementation.mkdir(); _git(implementation, "init", "-q")
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -545,7 +545,7 @@ def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypat
     monkeypatch.setattr(f.p, "approved_input_member", lambda *a, **k: (None, None))
     monkeypatch.setattr(f.p, "_approved_module", lambda: SimpleNamespace(
         ApprovedInputSources=a.ApprovedInputSources, validate=lambda raw, *, sources: {}))
-    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"")
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {})
 
     def unexpected(*args, **kwargs):
         raise AssertionError("unreleased source reached current host observation")
@@ -685,7 +685,7 @@ def test_normal_import_sources_cross_package_namespace_and_keep_full_source_veri
     assert normal.ApprovedInputSources is not dynamic.ApprovedInputSources
     artifact = fixtures.artifact.__wrapped__(monkeypatch)
     value, sources = fixtures.source_fixture(artifact, monkeypatch)
-    for name in ("horizon", "policy", "RETAINED_PINS", "LATER_REVIEWS",
+    for name in ("horizon", "policy", "prior_attempt", "RETAINED_PINS", "LATER_REVIEWS",
                  "_read_locators", "_verified_legacy"):
         monkeypatch.setattr(dynamic, name, getattr(normal, name))
     raw = normal.c.canonical(value, newline=True)
@@ -703,7 +703,7 @@ def test_normal_import_sources_cross_package_namespace_and_keep_full_source_veri
 def test_source_namespace_bridge_refuses_loose_or_extra_fields():
     from dataclasses import make_dataclass
     from e3_host import q2_core_approved_inputs as a
-    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"")
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {})
     for value in (dict(vars(sources)), SimpleNamespace(**vars(sources)),
                   make_dataclass("ApprovedInputSources", [(name, object) for name in vars(sources)]
                       + [("trusted", bool)])(**vars(sources), trusted=True)):

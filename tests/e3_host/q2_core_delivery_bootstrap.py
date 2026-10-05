@@ -21,8 +21,8 @@ import sys
 import time
 
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
-SESSION_ID = "lhqcore-20261003a"
-CARRIER_UNIT = "lhqcore20261003a-carrier.service"
+SESSION_ID = "lhqcore-20261005a"
+CARRIER_UNIT = "lhqcore20261005a-carrier.service"
 LOADER_SHA256 = "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61"
 RULE = {"commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
     "source_sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5"}
@@ -436,7 +436,7 @@ def _remote_command_digests(bootstrap_sha256):
         "exec", "/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i",
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "SYSTEMD_COLORS=0",
         "/usr/bin/systemd-run", "--system", "--no-ask-password", "--quiet", "--wait", "--pipe",
-        "--collect", "--service-type=exec", "--unit=lhqcore20261003a-carrier.service",
+        "--collect", "--service-type=exec", "--unit=lhqcore20261005a-carrier.service",
         "--property=Restart=no", "--property=RuntimeMaxSec=800s", "--property=TimeoutStopSec=30s",
         "--property=KillMode=control-group", "--property=ExitType=cgroup", "--property=CPUQuota=100%",
         "--property=LimitCPU=800", "--property=MemoryMax=1073741824", "--property=MemorySwapMax=0",
@@ -626,8 +626,7 @@ def validate_bind(value, hello_raw):
             "CORE_BOOTSTRAP_BIND_AUTHORITY")
     for key in ("hello_sha256", "consumption_sha256", "package_sha256"):
         digest(value[key], "CORE_BOOTSTRAP_BIND_DIGEST")
-    require(type(value["package_basename"]) is str
-            and re.fullmatch(r"[A-Za-z0-9._-]+\.lhfp", value["package_basename"])
+    require(value["package_basename"] == SESSION_ID + '.lhfp'
             and type(value["package_bytes"]) is int
             and 0 < value["package_bytes"] <= PACKAGE_LIMITS["package_bytes"],
             "CORE_BOOTSTRAP_BIND_PACKAGE")

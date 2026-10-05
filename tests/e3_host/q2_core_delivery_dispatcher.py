@@ -199,7 +199,7 @@ _cap = _Checks('CORE_CAP_')
 
 
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
-SESSION = "lhqcore-20261003a"
+SESSION = "lhqcore-20261005a"
 RULE = {
     "commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
     "source_sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5",
@@ -286,8 +286,8 @@ PROJECTION = {
     "file_count": 89,
 }
 
-INSTALL_BASENAME = "local-hand-core-acceptance-20261003a"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261003a.staging"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261005a"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261005a.staging"
 PREPARATION_HELPERS = _fields('q2_prepare_contract q2_prepare_driver q2_prepare_assembly')
 WHEEL_PACKAGES = _fields('local_hand local_hand_connect local_hand_jobs local_hand_mcp')
 WHEEL_METADATA = "local_hand/_build_metadata.json"
@@ -420,19 +420,19 @@ def _phase_units(operation_id, phases):
 
 CASES = (
     {"index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL",
-     "predecessor": None, "preparation_id": "lhqc01h01normal",
-     "operation_id": "b6638120-ed28-4ed1-b603-a153fab1c93d",
-     "controller_prefix": "lhqcore20261003a-c01", "project_ids": list(range(12101, 12108)),
+     "predecessor": None, "preparation_id": "lhqc05a01h01normal",
+     "operation_id": "97d5ce56-e176-47c8-88eb-ff81242bfcfd",
+     "controller_prefix": "lhqcore20261005a-c01", "project_ids": list(range(12201, 12208)),
      "phases": ["preflight", "business", "evidence"]},
     {"index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-     "predecessor": "c01-h01-normal", "preparation_id": "lhqc02q4cancel",
-     "operation_id": "ade1b42f-f03d-48dc-b690-e588b44289f6",
-     "controller_prefix": "lhqcore20261003a-c02", "project_ids": list(range(12108, 12115)),
+     "predecessor": "c01-h01-normal", "preparation_id": "lhqc05a02q4cancel",
+     "operation_id": "bb46ffb2-187e-48a7-8c2d-f548dd576fa6",
+     "controller_prefix": "lhqcore20261005a-c02", "project_ids": list(range(12208, 12215)),
      "phases": ["preflight"]},
     {"index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-     "predecessor": "c02-q4-cancel", "preparation_id": "lhqc03h11recovery",
-     "operation_id": "4b035797-229a-4cdc-8eca-8195869b7ac9",
-     "controller_prefix": "lhqcore20261003a-c03", "project_ids": list(range(12115, 12122)),
+     "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05a03h11recovery",
+     "operation_id": "7fa6d9d2-812f-45a4-8027-4cfb183aa862",
+     "controller_prefix": "lhqcore20261005a-c03", "project_ids": list(range(12215, 12222)),
      "phases": ["preflight"]},
 )
 
@@ -485,7 +485,7 @@ def _identity(case, *, full=False):
         "id": hashlib.sha256(seed + b":identity").hexdigest()[:32],
         "authority_id": prefix + "-authority",
         "node_id": SESSION + "-guest",
-        "install_uuid": "2ba06c6f-d3e5-4e36-a41f-d5991cdd7232",
+        "install_uuid": "6fd82898-ae68-4a5c-bce5-65f06e86580c",
         "deployment_epoch": 1, "generation": 1,
         "operation_id": case["operation_id"],
         "profile_ref": prefix + "-profile",
@@ -1149,8 +1149,8 @@ def _approved_validate_relations(value):
 def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
-            "released_or_refunded"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v1"
+            "released_or_refunded", "prior_commitment"})
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v2"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     for key in ("source_union_sha256", "row_relation", "placement"):
@@ -1243,6 +1243,316 @@ def _approved_key(raw):
     return dict(type="ssh-ed25519", key_base64=fields[1], source_sha256=APPROVED_POLICY_SOURCE_PINS["identity_public"])
 
 
+PRIOR_SESSION = 'lhqcore-20261003a'
+PRIOR_UNIT = 'lhqcore20261003a-carrier.service'
+PRIOR_IMPLEMENTATION = dict(commit='605a2a38d1db5ef85c961b4d357cafa157bdd7d5',
+    tree='ced38519fe6e3b86973de5ccf0dff60fc62322e4')
+PRIOR_PACKAGE_SHA = 'a8ca34f3fba3fd370485b522f3c009fa41de70fab1441224b56232885b77380e'
+PRIOR_MANIFEST_SHA = '9c05d55ed52dc1e0c04ad340549de6e584a4296b392d84abd07428f179a1989f'
+PRIOR_TOTAL_BYTES = 9318
+PRIOR_PINS = {
+    'carrier-consumed.json': (3577, '5d85f8d5c51329bf46eba91d0106a41d449389e16b018bbb30ddbc667e69d502'),
+    'stdout': (2852, 'bd042a224271b03eadaddb99868e3f0c4cef4f71365482f112577005d8be5e1d'),
+    'stderr': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'),
+    'capture-manifest.json': (1637, '5ab260b4062404991151dd917fd636d4f1cd4ba5dd0ffa45a1578f5cf6bb3db3'),
+    'acceptance-receipt.json': (1252, 'dd1d4f5c607572fa9eb1527ddb94e2eb839f5ae5e59509042b6d03313cf74700'),
+}
+
+
+def _prior_attempt(prior):
+    """Standalone guest consumer; no imported host builder or private paths."""
+    check = _Checks('CORE_PRIOR_')
+    check.exact(prior, _fields('schema scope session_id implementation package_sha256 manifest_sha256 files'), 'FIELDS')
+    check(prior['schema'] == 'local-hand-q2-core-prior-attempt/v1' and prior['scope'] == SCOPE
+        and prior['session_id'] == PRIOR_SESSION and prior['implementation'] == PRIOR_IMPLEMENTATION
+        and prior['package_sha256'] == PRIOR_PACKAGE_SHA and prior['manifest_sha256'] == PRIOR_MANIFEST_SHA, 'IDENTITY')
+    prefix = '.' + PRIOR_SESSION + '.'
+    rows = prior['files']; raw = {}
+    check(type(rows) is list and len(rows) == 5 and [row.get('basename') for row in rows]
+        == sorted(prefix + suffix for suffix in PRIOR_PINS), 'FILES')
+    for row in rows:
+        check.exact(row, _fields('basename bytes sha256 raw_base64'), 'FILE_FIELDS')
+        suffix = row['basename'][len(prefix):]; size, digest = PRIOR_PINS[suffix]
+        check(type(row['bytes']) is int and row['bytes'] == size and row['sha256'] == digest
+            and type(row['raw_base64']) is str and len(row['raw_base64']) <= 22000, 'PIN')
+        try:
+            data = base64.b64decode(row['raw_base64'], validate=True)
+        except (ValueError, UnicodeError) as error:
+            raise check.error('BASE64') from error
+        check(len(data) == size and _sha(data) == digest
+            and base64.b64encode(data).decode('ascii') == row['raw_base64'], 'RAW')
+        raw[suffix] = data
+    check(sum(map(len, raw.values())) == PRIOR_TOTAL_BYTES, 'TOTAL')
+    marker = document(raw['carrier-consumed.json'], limit=16384)
+    cap = document(raw['capture-manifest.json'], limit=262144)
+    receipt = document(raw['acceptance-receipt.json'], limit=65536)
+    check.exact(marker, _fields('schema scope session_id baseline owner_decision closure implementation amendment candidate package approved_inputs_sha256 local_management_binding_sha256 writer carrier_argv_sha256 host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns state'), 'MARKER_FIELDS')
+    check.exact(cap, _fields('schema session_id consumption_sha256 stdout stderr output_package wait files logical_bytes allocated_bytes inodes fsync_complete reread_equal missing'), 'CAPTURE_FIELDS')
+    check.exact(receipt, _fields('schema scope session_id consumption transport remote_result wait capture real_task_execution result_evidence_collection state missing'), 'RECEIPT_FIELDS')
+    check(marker['schema'] == 'local-hand-q2-core-carrier-consumption/v2'
+        and cap['schema'] == 'local-hand-q2-core-capture-manifest/v1'
+        and receipt['schema'] == 'local-hand-q2-core-local-acceptance-receipt/v1'
+        and all(item['session_id'] == PRIOR_SESSION for item in (marker, cap, receipt))
+        and marker['scope'] == receipt['scope'] == SCOPE, 'SCHEMAS')
+    check(marker['implementation'] == PRIOR_IMPLEMENTATION and marker['baseline'] == BASELINE
+        and marker['owner_decision'] == OWNER_DECISION and marker['closure'] == CLOSURE
+        and marker['candidate'] == CANDIDATE and marker['state'] == 'CONSUMPTION_RECORD_COMPLETE', 'AUTHORITY')
+    _amendment(marker['amendment'], PRIOR_IMPLEMENTATION)
+    _validate_local_writer(marker['writer'])
+    check.exact(marker['package'], _fields('basename bytes sha256 manifest_sha256'), 'PACKAGE')
+    check(marker['package']['sha256'] == PRIOR_PACKAGE_SHA and marker['package']['manifest_sha256'] == PRIOR_MANIFEST_SHA
+        and marker['package']['basename'] == PRIOR_SESSION + '.lhfp'
+        and marker['package']['bytes'] == 18111397
+        and re.fullmatch(r'[A-Za-z0-9._-]+\.lhfp', marker['package']['basename']) is not None, 'PACKAGE')
+    for name in ('approved_inputs_sha256', 'local_management_binding_sha256', 'carrier_argv_sha256'):
+        check.digest(marker[name], 'DIGEST')
+    for clock in ('boottime', 'monotonic'):
+        origin = check.integer(marker['host_' + clock + '_origin_ns'], 1, code='CLOCK')
+        check(marker['host_' + clock + '_deadline_ns'] == origin + 900000000000, 'CLOCK')
+    out = raw['stdout']
+    check(out.startswith(b'LHCHLO1\n') and len(out) >= 16
+        and struct.unpack('>Q', out[8:16])[0] == len(out) - 16, 'HELLO_FRAME')
+    hello = document(out[16:], limit=4096)
+    _validate_hello_identity(hello, PRIOR_UNIT)
+    check(hello['loader_sha256'] == '6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61'
+        and hello['bootstrap_sha256'] == '039fe87cc91a64c0327dc404e0ccf9728c32a1cc07e3e6fb11ed74c979f904f3', 'HELLO_SOURCE')
+    marker_sha = _sha(raw['carrier-consumed.json'])
+    check(receipt['consumption'] == dict(object_created=True, record_complete=True,
+        basename=prefix + 'carrier-consumed.json', bytes=len(raw['carrier-consumed.json']), sha256=marker_sha)
+        and cap['consumption_sha256'] == marker_sha, 'MARKER_LINK')
+    check(receipt['transport'] == dict(execve_succeeded=True, hello_valid=True, bind_written=False,
+        package_written=False, stdin_bytes_written=0, stdin_eof=False), 'TRANSPORT')
+    check(receipt['wait'] == dict(status=255, stdout_eof=False, stderr_eof=False, host_deadline_met=False)
+        and cap['wait'] == dict(status=255, host_deadline_met=False), 'WAIT')
+    check(receipt['state'] == 'STOP_AND_RETAIN' and receipt['real_task_execution'] == receipt['result_evidence_collection']
+        == dict(status='UNKNOWN', evidence_sha256=None), 'TRUTH')
+    check(receipt['remote_result'] == dict(present=False, sha256=None, frame_sha256=None)
+        and cap['output_package'] == dict(present=False, frame_bytes=0, manifest_sha256=None,
+            members_sha256=None, valid=False), 'OUTPUT')
+    for stream in ('stdout', 'stderr'):
+        check(cap[stream] == dict(basename=prefix + stream, bytes=len(raw[stream]),
+            sha256=_sha(raw[stream]), eof=False), 'STREAM')
+    check(type(cap['files']) is list and len(cap['files']) == 3 and [r['basename'] for r in cap['files']]
+        == sorted(prefix + name for name in ('carrier-consumed.json', 'stdout', 'stderr')), 'CAPTURE_FILES')
+    identities = set()
+    for item in cap['files']:
+        check.exact(item, _fields('basename bytes allocated_bytes sha256 dev ino mode nlink'), 'CAPTURE_FILE')
+        data = raw[item['basename'][len(prefix):]]
+        check(item['bytes'] == len(data) and item['sha256'] == _sha(data)
+            and item['mode'] == 384 and item['nlink'] == 1, 'CAPTURE_PIN')
+        for key in ('dev', 'allocated_bytes'):
+            check.integer(item[key], 0, code='CAPTURE_FILE')
+        check.integer(item['ino'], 1, code='CAPTURE_FILE')
+        identities.add((item['dev'], item['ino']))
+    check(len(identities) == 3 and cap['inodes'] == 3
+        and cap['logical_bytes'] == sum(item['bytes'] for item in cap['files'])
+        and cap['allocated_bytes'] == sum(item['allocated_bytes'] for item in cap['files'])
+        and cap['fsync_complete'] is cap['reread_equal'] is True, 'CAPTURE_TOTAL')
+    check(receipt['capture'] == dict(bytes=cap['allocated_bytes'], inodes=3,
+        manifest_sha256=_sha(raw['capture-manifest.json']), fsync_complete=True, reread_equal=True), 'CAPTURE_LINK')
+    check(receipt['missing'] == cap['missing'] and len(cap['missing']) == 2
+        and {item['code'] for item in cap['missing']} == {'CORE_OUTPUT_MISSING', 'CORE_TRANSPORT_FAILED'}, 'MISSING')
+    for item in cap['missing']:
+        check.exact(item, _fields('code role detail_sha256'), 'MISSING_FIELDS')
+        check.digest(item['detail_sha256'], 'MISSING')
+    return hello
+
+
+def _prior_commitment(prior):
+    return dict(scope=SCOPE, session_id=PRIOR_SESSION, source_attempt_sha256=_sha(canonical(prior)),
+        logical_bytes=289406976, logical_inodes=16512, cpu_seconds=2090,
+        host_capture_bytes=67108864, host_capture_inodes=16, released_or_refunded=False)
+
+
+PRIOR_SHOW_FIELDS = _fields('Id LoadState ActiveState SubState MainPID InvocationID ControlGroup Restart KillMode ExitType')
+
+
+def _prior_scope_branch(unit, group, hello):
+    check = _Checks('CORE_PRIOR_SCOPE_')
+    check.exact(unit, PRIOR_SHOW_FIELDS, 'UNIT_FIELDS')
+    check(all(type(value) is str and value.isascii() and '\n' not in value and '\0' not in value
+        for value in unit.values()) and unit['Id'] == PRIOR_UNIT and unit['MainPID'] == '0', 'UNIT')
+    old = hello['carrier_unit']; path = '/sys/fs/cgroup' + old['control_group']
+    check.exact(group, _fields('path state parent identity populated procs_bytes'), 'CGROUP_FIELDS')
+    check(group['path'] == path and group['state'] in ('ABSENT', 'EMPTY'), 'CGROUP')
+    for name in ('parent', 'identity'):
+        identity = group[name]
+        if name == 'identity' and group['state'] == 'ABSENT':
+            check(identity is None, 'ABSENT_IDENTITY'); continue
+        check.exact(identity, _fields('path dev ino mode uid gid'), 'IDENTITY_FIELDS')
+        check(identity['path'] == (str(PurePosixPath(path).parent) if name == 'parent' else path), 'PATH')
+        for key in ('dev', 'ino', 'mode', 'uid', 'gid'):
+            check.integer(identity[key], 1 if key == 'ino' else 0, code='IDENTITY')
+        check(identity['uid'] == identity['gid'] == 0 and identity['mode'] <= 0o7777
+              and not identity['mode'] & 0o022, 'PROTECTION')
+    if group['state'] == 'ABSENT':
+        check(group['populated'] is None and group['procs_bytes'] is None, 'ABSENT')
+    else:
+        check(type(group['populated']) is type(group['procs_bytes']) is int
+            and group['populated'] == group['procs_bytes'] == 0, 'EMPTY')
+    if unit['LoadState'] == 'loaded':
+        check(unit['InvocationID'] == old['invocation_id']
+            and (unit['ActiveState'], unit['SubState']) in (('inactive', 'dead'), ('failed', 'failed'))
+            and unit['ControlGroup'] in ('', old['control_group']) and unit['Restart'] == 'no'
+            and unit['KillMode'] == 'control-group' and unit['ExitType'] == 'cgroup', 'LOADED')
+        return 'LOADED_TERMINAL'
+    check(unit['LoadState'] == 'not-found' and unit['ActiveState'] == 'inactive'
+        and unit['SubState'] == 'dead' and unit['InvocationID'] == unit['ControlGroup'] == ''
+        and group['state'] == 'ABSENT', 'COLLECTED')
+    return 'COLLECTED_ABSENT'
+
+
+def _validate_prior_quiescence(value, context):
+    check = _Checks('CORE_PRIOR_SCOPE_')
+    prior = _approved_inputs_envelope(context)['reconciliation']['prior_core_attempt']
+    old = _prior_attempt(prior)
+    check.exact(value, _fields('schema prior_attempt_sha256 boot_id branch observations current_scope_quiescent historical_remote_exit historical_usage released_bytes released_inodes'), 'RECORD_FIELDS')
+    check(value['schema'] == 'local-hand-q2-core-prior-quiescence/v1'
+        and value['prior_attempt_sha256'] == _sha(canonical(prior))
+        and value['boot_id'] == old['guest_boot_id'] == context['hello']['guest_boot_id']
+        and value['current_scope_quiescent'] is True
+        and value['historical_remote_exit'] == value['historical_usage'] == 'UNKNOWN'
+        and type(value['released_bytes']) is type(value['released_inodes']) is int
+        and value['released_bytes'] == value['released_inodes'] == 0, 'RECORD')
+    observations = value['observations']
+    check(type(observations) is list and len(observations) == 2, 'COUNT')
+    previous = None
+    for ordinal, observation in enumerate(observations, 1):
+        check.exact(observation, _fields('ordinal boottime_ns monotonic_ns unit cgroup'), 'OBSERVATION_FIELDS')
+        check(type(observation['ordinal']) is int and observation['ordinal'] == ordinal, 'ORDINAL')
+        for clock in ('boottime', 'monotonic'):
+            now = check.integer(observation[clock + '_ns'], 1, code='CLOCK')
+            check(context['hello']['guest_' + clock + '_origin_ns'] <= now
+                < context['guest_deadlines'][clock + '_deadline_ns'] - REMOTE_FINAL_RESERVE_NS
+                and (previous is None or previous[clock + '_ns'] <= now), 'CLOCK')
+        check(_prior_scope_branch(observation['unit'], observation['cgroup'], old) == value['branch'], 'BRANCH')
+        if previous is not None:
+            check(previous['unit'] == observation['unit'] and previous['cgroup'] == observation['cgroup'], 'DRIFT')
+        previous = observation
+    return value
+
+
+class _PriorScopeObserver:
+    """Two finite observations in this carrier, no polls, stop or PID adoption."""
+
+    def __init__(self, effects, programs):
+        self.effects = effects; self.programs = programs; self.nodes = []; self.group_fd = None
+        self.observations = []
+        self.prior = _approved_inputs_envelope(effects.context)['reconciliation']['prior_core_attempt']
+        self.old = _prior_attempt(self.prior)
+        _require(self.old['guest_boot_id'] == effects.context['hello']['guest_boot_id'], 'CORE_PRIOR_SCOPE_BOOT')
+        self.path = '/sys/fs/cgroup' + self.old['carrier_unit']['control_group']
+        self.parent_path = str(PurePosixPath(self.path).parent)
+        self.name = PurePosixPath(self.path).name
+
+    @staticmethod
+    def identity(path, info):
+        _require(stat.S_ISDIR(info.st_mode) and info.st_uid == info.st_gid == 0
+            and not info.st_mode & 0o022, 'CORE_PRIOR_SCOPE_PARENT_PROTECTION')
+        return dict(path=path, dev=info.st_dev, ino=info.st_ino, mode=stat.S_IMODE(info.st_mode),
+                    uid=info.st_uid, gid=info.st_gid)
+
+    def _parents(self):
+        call = self.effects._capacity_call
+        if not self.nodes:
+            parts = PurePosixPath(self.parent_path).parts
+            parent = None; path = ''
+            for index, name in enumerate(parts):
+                path = '/' if index == 0 else path.rstrip('/') + '/' + name
+                fd = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                          dir_fd=parent, release=os.close)
+                self.nodes.append((fd, parent, name, path, None))
+                identity = self.identity(path, call(os.fstat, fd))
+                self.nodes[-1] = (fd, parent, name, path, identity)
+                parent = fd
+            _require(call(_kernel_fs_type, self.nodes[-1][0]) == 0x63677270, 'CORE_PRIOR_SCOPE_FILESYSTEM')
+        for fd, parent, name, path, identity in self.nodes:
+            _require(self.identity(path, call(os.fstat, fd)) == identity
+                == self.identity(path, call(os.stat, name, dir_fd=parent, follow_symlinks=False)),
+                'CORE_PRIOR_SCOPE_PARENT_DRIFT')
+        return self.nodes[-1][0], self.nodes[-1][4]
+
+    def observe(self):
+        _require(len(self.observations) < 2, 'CORE_PRIOR_SCOPE_NO_RETRY')
+        # Consume the observation slot before any effect. A failed A cannot be
+        # retried or advanced to B by this same observer.
+        ordinal = len(self.observations) + 1
+        _require(not getattr(self, 'failed', False), 'CORE_PRIOR_SCOPE_STOPPED')
+        self.failed = True
+        e = self.effects; call = e._capacity_call
+        e._effect_guard(); parent, parent_pin = self._parents()
+        raw = e._capacity_systemctl(['show', '--all', PRIOR_UNIT,
+            '--property=' + ','.join(PRIOR_SHOW_FIELDS)], self.programs['systemctl'])
+        try:
+            lines = raw.decode('ascii').splitlines()
+            pairs = [line.split('=', 1) for line in lines]
+            _require(len(pairs) == len(PRIOR_SHOW_FIELDS) and all(len(row) == 2 for row in pairs)
+                and len({row[0] for row in pairs}) == len(pairs), 'CORE_PRIOR_SCOPE_SHOW')
+            unit = dict(pairs)
+        except UnicodeError as error:
+            raise DispatchError('CORE_PRIOR_SCOPE_SHOW') from error
+        try:
+            fd = call(os.open, self.name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                      dir_fd=parent, release=os.close)
+        except FileNotFoundError:
+            _require(self.group_fd is None, 'CORE_PRIOR_SCOPE_CGROUP_DRIFT')
+            group = dict(path=self.path, state='ABSENT', parent=parent_pin,
+                         identity=None, populated=None, procs_bytes=None)
+        else:
+            try:
+                pin = self.identity(self.path, call(os.fstat, fd))
+                _require(call(_kernel_fs_type, fd) == 0x63677270, 'CORE_PRIOR_SCOPE_FILESYSTEM')
+                if self.group_fd is not None:
+                    _require(pin == self.identity(self.path, call(os.fstat, self.group_fd)), 'CORE_PRIOR_SCOPE_CGROUP_DRIFT')
+                events = e._capacity_kernel('cgroup.events', 1024, dir_fd=fd)
+                procs = e._capacity_kernel('cgroup.procs', 4096, dir_fd=fd)
+                event_rows = [line.split() for line in events.decode('ascii').splitlines()]
+                _require(all(len(row) == 2 for row in event_rows)
+                    and len({row[0] for row in event_rows}) == len(event_rows), 'CORE_PRIOR_SCOPE_EVENTS')
+                parsed = dict(event_rows)
+                _require(set(parsed) == {'populated', 'frozen'} and parsed['populated'] == '0'
+                    and parsed['frozen'] in ('0', '1') and procs == b'', 'CORE_PRIOR_SCOPE_POPULATED')
+                _require(pin == self.identity(self.path, call(os.fstat, fd))
+                    == self.identity(self.path, call(os.stat, self.name, dir_fd=parent, follow_symlinks=False)),
+                    'CORE_PRIOR_SCOPE_CGROUP_DRIFT')
+                group = dict(path=self.path, state='EMPTY', parent=parent_pin, identity=pin, populated=0, procs_bytes=0)
+                if self.group_fd is None:
+                    self.group_fd = fd; fd = None
+            finally:
+                if fd is not None: os.close(fd)
+        self._parents()
+        if group['state'] == 'ABSENT':
+            try:
+                call(os.stat, self.name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise DispatchError('CORE_PRIOR_SCOPE_CGROUP_DRIFT')
+        now = e._effect_guard()
+        _require(now['boot_id'] == self.old['guest_boot_id'], 'CORE_PRIOR_SCOPE_BOOT')
+        branch = _prior_scope_branch(unit, group, self.old)
+        observation = dict(ordinal=ordinal, boottime_ns=now['boottime_ns'], monotonic_ns=now['monotonic_ns'], unit=unit, cgroup=group)
+        if self.observations:
+            previous = self.observations[0]
+            _require(previous['unit'] == unit and previous['cgroup'] == group
+                and all(previous[name] <= observation[name] for name in ('boottime_ns', 'monotonic_ns')), 'CORE_PRIOR_SCOPE_DRIFT')
+        self.observations.append(observation); self.branch = branch; self.failed = False
+        return observation
+
+    def finish(self):
+        _require(not getattr(self, 'failed', True) and len(self.observations) == 2, 'CORE_PRIOR_SCOPE_INCOMPLETE')
+        return _validate_prior_quiescence(dict(schema='local-hand-q2-core-prior-quiescence/v1',
+            prior_attempt_sha256=_sha(canonical(self.prior)), boot_id=self.old['guest_boot_id'], branch=self.branch,
+            observations=self.observations, current_scope_quiescent=True, historical_remote_exit='UNKNOWN',
+            historical_usage='UNKNOWN', released_bytes=0, released_inodes=0), self.effects.context)
+
+    def close(self):
+        if self.group_fd is not None:
+            os.close(self.group_fd); self.group_fd = None
+        while self.nodes:
+            os.close(self.nodes.pop()[0])
+
+
 def _validate_approved_components(value):
     """Validate all fixed component relations; this is not a live admission."""
     try:
@@ -1253,7 +1563,15 @@ def _validate_approved_components(value):
         obligations = _approved_validate_relations(value)
         _approved_validate_capacity(value["historical_capacity_obligations"], obligations)
         _approved_validate_retained(value["retained_preparation"])
-        _approved_equal(value["reconciliation"], APPROVED_RECONCILIATION, "RECONCILIATION")
+        reconciliation = value["reconciliation"]
+        _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempt"))
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v2", "RECONCILIATION_SCHEMA")
+        _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
+                        APPROVED_RECONCILIATION, "RECONCILIATION")
+        prior = reconciliation["prior_core_attempt"]
+        _prior_attempt(prior)
+        _approved_equal(value["historical_capacity_obligations"]["prior_commitment"],
+                        _prior_commitment(prior), "PRIOR_COMMITMENT")
         _approved_validate_policy(value["policy_basis"])
         return value
     except DispatchError:
@@ -1376,11 +1694,8 @@ def _validate_admission_binding(value, context):
     return value
 
 
-def _validate_context_envelope(context):
-    """Validate the v2 transport envelope without claiming admission/consumption."""
-    _check.exact(context, _fields('schema hello bind manifest members guest_deadlines stdin_bytes_received'), "CONTEXT_FIELDS")
-    _check(context["schema"] == CONTEXT_SCHEMA, "CONTEXT_SCHEMA")
-    hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
+def _validate_hello_identity(hello, carrier_name):
+    """Pure frozen HELLO shape/limits; callers provide one of two fixed names."""
     _check.exact(hello, _fields('schema scope loader_sha256 bootstrap_sha256 guest_boot_id guest_boottime_origin_ns guest_monotonic_origin_ns pid uid gid euid egid python carrier_unit process_limits remote_management'),
         "HELLO_FIELDS")
     _check(hello["schema"] == HELLO_SCHEMA
@@ -1400,7 +1715,6 @@ def _validate_context_envelope(context):
         for key in PROGRAM_FIELDS}, "PYTHON_PROJECTION")
     unit = _check.exact(hello["carrier_unit"], _fields('name control_group invocation_id active_state sub_state runtime_max_usec timeout_stop_usec memory_max memory_swap_max tasks_max cpu_quota_per_sec_usec restart kill_mode exit_type'),
         "CARRIER_FIELDS")
-    carrier_name = "lhqcore20261003a-carrier.service"
     _check.absolute(unit["control_group"], "CARRIER")
     _check(unit["name"] == carrier_name and unit["control_group"].endswith("/" + carrier_name)
         and type(unit["invocation_id"]) is str
@@ -1418,9 +1732,21 @@ def _validate_context_envelope(context):
     for key, expected in limits.items():
         _check.integer(hello["process_limits"][key], expected, expected, "PROCESS_LIMITS")
     canonical(hello, newline=True, limit=4096)
+    return hello
+
+
+def _validate_context_envelope(context):
+    """Validate the v2 transport envelope without claiming admission/consumption."""
+    _check.exact(context, _fields('schema hello bind manifest members guest_deadlines stdin_bytes_received'), "CONTEXT_FIELDS")
+    _check(context["schema"] == CONTEXT_SCHEMA, "CONTEXT_SCHEMA")
+    hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
+    carrier_name = "lhqcore20261005a-carrier.service"
+    _validate_hello_identity(hello, carrier_name)
+    remote = hello['remote_management']
     _check.exact(bind, _fields('schema scope session_id hello_sha256 consumption_sha256 package_basename package_bytes package_sha256 host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns host_boottime_bind_ns host_monotonic_bind_ns host_remaining_floor_ns clock_margin_ns local_final_reserve_ns mapped_duration_ns guest_duration_cap_ns guest_duration_ns'), "BIND_FIELDS")
     _check(bind["schema"] == "local-hand-q2-core-carrier-bind/v1" and bind["scope"] == SCOPE
-        and bind["session_id"] == SESSION and bind["hello_sha256"] == _sha(canonical(hello, newline=True)),
+        and bind["session_id"] == SESSION and bind['package_basename'] == SESSION + '.lhfp'
+        and bind["hello_sha256"] == _sha(canonical(hello, newline=True)),
         "BIND")
     for key in ("hello_sha256", "consumption_sha256", "package_sha256"):
         _check.digest(bind[key], "BIND")
@@ -1587,7 +1913,7 @@ def _consumption_info(context):
         "state": "CONSUMPTION_RECORD_COMPLETE"}
     raw = canonical(marker, newline=True, limit=16384)
     _check(_sha(raw) == bind["consumption_sha256"], "CONSUMPTION_BINDING")
-    return {"basename": ".lhqcore-20261003a.carrier-consumed.json", "bytes": len(raw),
+    return {"basename": ".lhqcore-20261005a.carrier-consumed.json", "bytes": len(raw),
         "sha256": _sha(raw), "state": marker["state"]}
 
 
@@ -3296,7 +3622,23 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
     for pool in _resource_pools(locators):
         for root in pool['roots']:
             _cap(path_pool(root['path']) == byrole[root['parent_role']], 'NEW_PLACEMENT')
+            # Check the fixed old namespace against the same current parents,
+            # without claiming an old filesystem observation. A mount inserted
+            # at an old name cannot move its full commitment to a guessed pool.
+            parent = locators[root['parent_role'] + '_parent'] + '/'
+            suffix = root['path'].removeprefix(parent)
+            if pool['pool_id'] == 'shared_install':
+                _cap(suffix in (INSTALL_BASENAME, STAGING_BASENAME), 'PRIOR_PLACEMENT')
+                suffix = suffix.replace('20261005a', '20261003a')
+            else:
+                _cap(suffix == SESSION or suffix.startswith(SESSION + '/'), 'PRIOR_PLACEMENT')
+                suffix = PRIOR_SESSION + suffix[len(SESSION):]
+            _cap(path_pool(parent + suffix) == byrole[root['parent_role']], 'PRIOR_PLACEMENT')
     for key, values in _cap_new_reservations(filesystems, locators).items():
+        # The old pre-BIND failure is not a zero-use observation or a refund.
+        # Both namespaces map to the same five fixed parents, but each keeps
+        # its full independent 32-pool and management-headroom commitment.
+        charge(key, values, 'historical')
         charge(key, values, 'new_required')
     for row in pools.values():
         row['roles'].sort()
@@ -3304,6 +3646,31 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
             row['new_required_' + field] for field in ('bytes', 'inodes'))
         _require(row['admitted'], 'CORE_CAP_INSUFFICIENT')
     return [pools[key] for key in sorted(pools)]
+
+
+def _cap_historical_expected(approved, filesystems, locators):
+    """Return-side arithmetic from pinned rows, independent of guest totals."""
+    obligations = approved['historical_capacity_obligations']
+    _approved_equal(obligations['prior_commitment'],
+        _prior_commitment(approved['reconciliation']['prior_core_attempt']), 'PRIOR_COMMITMENT')
+    byrole = {role: (fs['dev'], fs['fs_uuid']) for role, fs in filesystems.items()}
+    byrole['system'] = byrole['state']
+    totals = {key: dict(bytes=0, inodes=0) for key in set(byrole.values())}
+    def add(key, byte_count, inode_count):
+        totals[key]['bytes'] += byte_count; totals[key]['inodes'] += inode_count
+    for row, roles in zip(obligations['snapshot_rows'], _CAP_SNAPSHOT_ROLES, strict=True):
+        for key in {byrole[role] for role in roles}:
+            add(key, row['commitment']['bytes'], row['commitment']['inodes'])
+    for row in obligations['delta_rows']:
+        add(byrole[row['device_selector'].removesuffix('_parent')],
+            row['commitment']['bytes'], row['commitment']['inodes'])
+    for row in obligations['configured_quota_rows']:
+        add(byrole['quota'], row['hard_bytes'], row['inode_hard_limit'])
+    # Old and new pool *identities* are distinct; their fixed role placement and
+    # ceilings are identical. This is a conservative reservation, not old usage.
+    for key, values in _cap_new_reservations(filesystems, locators).items():
+        add(key, values['bytes'], values['inodes'])
+    return totals
 
 
 class _PoolAccounting:
@@ -4137,7 +4504,8 @@ class FieldEffects:
             dir_fd, path = parent, parsed.name
         else:
             _cap(path in {'cgroup.controllers', 'cpu.max', 'cpu.stat', 'memory.max',
-                'memory.swap.max', 'memory.peak', 'pids.max', 'pids.peak'}, 'KERNEL_PATH')
+                'memory.swap.max', 'memory.peak', 'pids.max', 'pids.peak',
+                'cgroup.events', 'cgroup.procs'}, 'KERNEL_PATH')
         try:
             _cap(call(_kernel_fs_type, dir_fd) == expected, 'KERNEL_FILESYSTEM')
             fd = call(os.open, path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
@@ -4417,14 +4785,21 @@ class FieldEffects:
         self._admission_components = current
         programs = _admit_programs(self)
         guest = _admit_guest(self, programs)
-        capacity = self._capacity_admission(programs, guest["ordinary_uid"])
-        managers = self._capacity_managers(programs, guest["ordinary_uid"])
+        prior_observer = _PriorScopeObserver(self, programs)
+        try:
+            prior_observer.observe()
+            capacity = self._capacity_admission(programs, guest["ordinary_uid"])
+            managers = self._capacity_managers(programs, guest["ordinary_uid"])
+            prior_observer.observe()
+            prior_quiescence = prior_observer.finish()
+        finally:
+            prior_observer.close()
         guest.update(managers["manager"])
         capacity["parents"].update(managers["parents"])
         capacity["absence"] = sorted(capacity["absence"] + managers["absence"],
                                      key=lambda row: (row["kind"], row["name"]))
         admission = dict(guest=guest, programs=programs, policies=current["policies"],
-                         binding=_admission_binding(self.context), **capacity)
+                         binding=_admission_binding(self.context), prior_core_attempt=prior_quiescence, **capacity)
         self._effect_guard()
         self._admission = _validate_admission(admission, self.context)
         try:
@@ -6922,11 +7297,11 @@ def _session(context, admission, installation):
             "remote_final_reserve_ns": REMOTE_FINAL_RESERVE_NS,
             "local_final_reserve_ns": bind["local_final_reserve_ns"]},
         "admission": admission, "installation": installation,
-        "output": {"stdout_basename": ".lhqcore-20261003a.stdout",
-            "stderr_basename": ".lhqcore-20261003a.stderr",
-            "remote_result_basename": ".lhqcore-20261003a.remote-result.json",
-            "capture_manifest_basename": ".lhqcore-20261003a.capture-manifest.json",
-            "local_receipt_basename": ".lhqcore-20261003a.acceptance-receipt.json",
+        "output": {"stdout_basename": ".lhqcore-20261005a.stdout",
+            "stderr_basename": ".lhqcore-20261005a.stderr",
+            "remote_result_basename": ".lhqcore-20261005a.remote-result.json",
+            "capture_manifest_basename": ".lhqcore-20261005a.capture-manifest.json",
+            "local_receipt_basename": ".lhqcore-20261005a.acceptance-receipt.json",
             "output_package_bytes": FRAME_LIMIT, "stderr_bytes": STDERR_LIMIT},
         "limits": LIMITS, "cases": [{key: case[key] for key in
                 _fields('index case_id kind predecessor preparation_id operation_id controller_prefix project_ids phases')} for case in CASES],
@@ -6953,9 +7328,10 @@ def _program_identity(value, code):
 
 
 def _validate_admission(value, context):
-    _admit.exact(value, _fields('guest programs policies parents filesystems capacity absence binding'),
+    _admit.exact(value, _fields('guest programs policies parents filesystems capacity absence binding prior_core_attempt'),
         "FIELDS")
     _validate_admission_binding(value["binding"], context)
+    _validate_prior_quiescence(value['prior_core_attempt'], context)
     locators = context['manifest']['locators']
     guest = _admit.exact(value["guest"], _fields('hostname dmi_vendor dmi_product initial_userns boot_id pid1_exe pid1_version cgroup_version ordinary_user ordinary_uid ordinary_gid ordinary_groups user_manager_unit user_manager_invocation_id user_manager_cgroup'), "GUEST_FIELDS")
     _admit(type(guest["hostname"]) is str and 1 <= len(guest["hostname"]) <= 253
@@ -7053,6 +7429,7 @@ def _validate_admission(value, context):
     capacity = value["capacity"]
     _admit(type(capacity) is list and capacity, "CAPACITY")
     reserves = _cap_new_reservations(filesystems, locators)
+    historical = _cap_historical_expected(_approved_inputs_envelope(context), filesystems, locators)
     _admit((filesystems['state']['dev'], filesystems['state']['fs_uuid']) ==
         (filesystems['install']['dev'], filesystems['install']['fs_uuid']), 'CAPACITY_DEVICE')
     ordering = []
@@ -7075,6 +7452,7 @@ def _validate_admission(value, context):
             for role in row['roles']), 'CAPACITY_DEVICE')
         for field in ('bytes', 'inodes'):
             _admit(row['new_required_' + field] == reserves[key][field]
+                and row['historical_' + field] == historical[key][field]
                 and row[field + '_available'] == min(filesystems[role][field + '_available']
                     for role in row['roles']), 'CAPACITY_RESERVATION')
     _admit(seen_roles == set(directory_roles) and ordering == sorted(reserves), "CAPACITY")

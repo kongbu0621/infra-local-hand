@@ -8,6 +8,12 @@ import test_e3_q2_core_delivery_dispatcher as fixture
 d = fixture.d
 
 
+@pytest.fixture(autouse=True)
+def synthetic_prior_pins(monkeypatch):
+    from core_prior_fixture import fixture as prior_fixture
+    prior_fixture(monkeypatch, d)
+
+
 def admission():
     context = fixture.context()
     value = fixture.FakeEffects(context).admit({})

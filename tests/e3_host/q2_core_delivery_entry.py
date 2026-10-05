@@ -228,7 +228,7 @@ def remote_tokens(loader_raw, bootstrap_raw):
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C",
         "SYSTEMD_COLORS=0", "/usr/bin/systemd-run", "--system",
         "--no-ask-password", "--quiet", "--wait", "--pipe", "--collect",
-        "--service-type=exec", "--unit=lhqcore20261003a-carrier.service",
+        "--service-type=exec", "--unit=lhqcore20261005a-carrier.service",
         "--property=Restart=no", "--property=RuntimeMaxSec=800s",
         "--property=TimeoutStopSec=30s", "--property=KillMode=control-group",
         "--property=ExitType=cgroup", "--property=CPUQuota=100%",
@@ -1042,11 +1042,6 @@ def _validate_carrier_bindings(values, expected):
         approved_inputs_raw=expected["approved_inputs_raw"],
         local_management_binding=expected["binding"], hello=expected["hello"],
         amendment=frozen["amendment"])
-    dispatcher_contract._validate_admission(admission, {
-        "manifest": frozen,
-        "members": {dispatcher_contract.APPROVED_INPUTS_PATH: expected["approved_inputs_raw"]},
-        "hello": expected["hello"],
-    })
     dispatcher_contract._validate_installation(installation, frozen)
     marker, bind = expected["marker"], expected["bind"]
     writer = contract.validate_local_writer(expected["binding"]["writer"])
@@ -1087,6 +1082,13 @@ def _validate_carrier_bindings(values, expected):
         guest_monotonic_deadline_ns=hello["guest_monotonic_origin_ns"] + bind["guest_duration_ns"],
         remote_final_reserve_ns=dispatcher_contract.REMOTE_FINAL_RESERVE_NS)
     require(session["outer"] == outer, "CORE_OUTPUT_OUTER_BINDING")
+    dispatcher_contract._validate_admission(admission, {
+        "manifest": frozen,
+        "members": {dispatcher_contract.APPROVED_INPUTS_PATH: expected["approved_inputs_raw"]},
+        "hello": hello,
+        "guest_deadlines": {clock + "_deadline_ns": outer["guest_" + clock + "_deadline_ns"]
+                            for clock in ("boottime", "monotonic")},
+    })
 
 
 def validate_output_semantics(manifest, values, *, consumption_sha256,
@@ -1725,6 +1727,21 @@ def finalize_carrier(directory_fd, *, marker, exchange, capture, expected_contex
             "total_inodes": len(capture.objects), "capture_accounting": accounting}
 
 
+def verify_prior_originals(directory_fd, anchor, approved, deadline):
+    """Rebind embedded prior bytes to this window's same held private anchor."""
+    package_format = _helper("q2_core_delivery_package")
+    prior_api = package_format._approved_module().prior_attempt
+    files = prior_api.read_files(directory_fd, anchor, deadline.call)
+    prior = prior_api.build(files)
+    require(contract.canonical(prior) == contract.canonical(
+        approved['reconciliation']['prior_core_attempt']), "CORE_DELIVERY_PRIOR_SOURCE_BINDING")
+    # A lower-bound refusal only. Complete earlier-host obligation accounting
+    # remains a release prerequisite; this observation cannot authorize release.
+    prior_api.observe_capture_floor(directory_fd, anchor, prior, deadline.call)
+    deadline.check()
+    return files
+
+
 def deliver_once(directory_fd, *, binding, package_basename, package_raw,
                  loader_raw, bootstrap_raw, wrapper_raw,
                  origins=None,
@@ -1740,6 +1757,7 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
             "CORE_DELIVERY_ENTRY_BYTES")
     field_release_gate(manifest, members)
     contract.validate_package_basename(package_basename, "CORE_DELIVERY_PACKAGE_BASENAME")
+    require(package_basename == contract.SESSION_ID + '.lhfp', 'CORE_DELIVERY_PACKAGE_BASENAME')
     tokens = remote_tokens(loader_raw, bootstrap_raw)
     argv = wrapper_argv(binding["wrapper"]["path"], wrapper_raw, tokens)
     environment = controlled_environment()
@@ -1764,6 +1782,7 @@ def deliver_once(directory_fd, *, binding, package_basename, package_raw,
                 == entry["local_management_binding_sha256"]
                 and argv_digest(argv) == entry["carrier_argv_sha256"],
                 "CORE_DELIVERY_STATIC_BINDING")
+        verify_prior_originals(directory_fd, binding['anchor'], approved, deadline)
         deadline.call(marker_absent, directory_fd)
         deadline.call(output_names_absent, directory_fd)
         capture = capture_contract.LiveCapture(

@@ -99,6 +99,8 @@ def artifact(monkeypatch):
             configured_quota_rows=quota, totals=copy.deepcopy(a.horizon.TOTALS), released_or_refunded=False),
         retained_preparation=retained, reconciliation=copy.deepcopy(a.RECONCILIATION))
     _rehash(value)
+    from core_prior_fixture import embed
+    embed(value, monkeypatch)
     return value, policy_raw, tokens
 
 
@@ -219,7 +221,8 @@ def source_fixture(artifact, monkeypatch):
     _rehash(value)
     producer = Path(a.__file__).with_name("q2_old_producer_admission_retry_accounting.py").read_bytes()
     sources = a.ApprovedInputSources(value["amendment"], {}, {}, b"synthetic boundary", {}, policy_raw,
-                                    tokens, later, producer)
+                                    tokens, later, producer,
+        {row['basename']: base64.b64decode(row['raw_base64']) for row in value['reconciliation']['prior_core_attempt']['files']})
     return value, sources
 
 

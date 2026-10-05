@@ -310,7 +310,7 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
             e.deliver_once(
                 directory_fd,
                 binding={"wrapper": {"path": "/synthetic/ssh.sh"}},
-                package_basename="only.lhfp", package_raw=b"synthetic-package",
+                package_basename="lhqcore-20261005a.lhfp", package_raw=b"synthetic-package",
                 loader_raw=loader, bootstrap_raw=bootstrap, wrapper_raw=wrapper_raw,
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
@@ -403,7 +403,7 @@ def test_host_window_and_bind_mapping_are_not_refreshed():
         "writer": writer(),
     }
     assert set(entry) == e._helper("q2_core_delivery_package").ENTRY_FIELDS
-    bind = e.build_bind(hello(), "a" * 64, "only.lhfp", package, origins,
+    bind = e.build_bind(hello(), "a" * 64, "lhqcore-20261005a.lhfp", package, origins,
                         package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30_000,
                         mono_bind_ns=40_000)
     assert bind["host_remaining_floor_ns"] == 899_999_000_000
@@ -437,7 +437,7 @@ def test_bind_rejects_missing_extra_or_invalid_v3_writer(change, code):
         entry["writer"]["uid"]["effective"] += 1
     origins = e.freeze_host_window(lambda _clock: 10)
     with pytest.raises(c.ContractError, match=code):
-        e.build_bind(hello(), "a" * 64, "only.lhfp", b"package", origins,
+        e.build_bind(hello(), "a" * 64, "lhqcore-20261005a.lhfp", b"package", origins,
             package_entry=entry, remote_expectation=remote_expectation(),
             boot_bind_ns=20, mono_bind_ns=20)
 
@@ -460,7 +460,7 @@ def marker_value(origins):
         amendment=c.make_amendment(implementation), writer=writer,
         approved_inputs_sha256="3" * 64,
         implementation={"commit": "4" * 40, "tree": "5" * 40},
-        package={"basename": "only.lhfp", "bytes": 1, "sha256": "6" * 64,
+        package={"basename": "lhqcore-20261005a.lhfp", "bytes": 1, "sha256": "6" * 64,
                  "manifest_sha256": "7" * 64},
         local_management_binding_sha256="8" * 64,
         carrier_argv_sha256="9" * 64,
@@ -509,7 +509,7 @@ def test_marker_and_bind_reject_refreshed_or_non_exact_host_window():
         "writer": writer(),
     }
     with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
-        e.build_bind(hello(), "a" * 64, "only.lhfp", b"p", origins,
+        e.build_bind(hello(), "a" * 64, "lhqcore-20261005a.lhfp", b"p", origins,
                      package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30, mono_bind_ns=40)
 
 
@@ -689,7 +689,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         io_patch.setattr(e.os, "set_blocking", set_blocking)
         exchange = e.execute_carrier_once(
             argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
-            origins=origins, marker=marker, package_basename="only.lhfp",
+            origins=origins, marker=marker, package_basename="lhqcore-20261005a.lhfp",
             package_raw=b"synthetic-package", package_entry=entry, remote_expectation=remote_expectation(),
             popen_factory=factory, selector_factory=Selector)
     assert len(calls) == 1
@@ -779,7 +779,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path):
     try:
         exchange = e.execute_carrier_once(
             argv=argv, environment=environment, cwd=str(tmp_path), origins=origins,
-            marker=marker, package_basename="only.lhfp", package_raw=package_raw,
+            marker=marker, package_basename="lhqcore-20261005a.lhfp", package_raw=package_raw,
             package_entry=entry, remote_expectation=remote_expectation(), popen_factory=factory)
         assert len(calls) == 1
         assert exchange["transport"] == {
@@ -827,7 +827,7 @@ def test_transport_deadline_never_starts_or_retries_late_request(late_return):
     argv = ["/usr/bin/env", "synthetic-carrier"]
     exchange = e.execute_carrier_once(argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
         origins=origins, marker=dict(object_created=True, record_complete=True, sha256="a" * 64),
-        package_basename="only.lhfp", package_raw=b"fixture",
+        package_basename="lhqcore-20261005a.lhfp", package_raw=b"fixture",
         package_entry=dict(carrier_argv_sha256=e.argv_digest(argv)),
         remote_expectation=remote_expectation(),
         popen_factory=factory, clock_gettime_ns=clock,
@@ -894,7 +894,7 @@ def test_delivery_never_refreshes_window_or_substitutes_writer(monkeypatch, expi
     with pytest.raises((c.ContractError, e.capture_contract.CaptureError),
                        match="CORE_DELIVERY_ORIGIN_REQUIRED|CORE_CAPTURE_DEADLINE|CORE_DELIVERY_WRITER_BINDING"):
         e.deliver_once(-1, binding={"wrapper": {"path": "/fixed"}, "anchor": {}, "writer": writer()},
-            package_basename="only.lhfp", package_raw=b"fixture", loader_raw=b"loader",
+            package_basename="lhqcore-20261005a.lhfp", package_raw=b"fixture", loader_raw=b"loader",
             bootstrap_raw=b"bootstrap", wrapper_raw=b"wrapper", origins=origins,
             clock_gettime_ns=lambda _clock: 2 + e.HOST_WINDOW_NS, popen_factory=forbidden)
 
@@ -927,6 +927,8 @@ def test_carrier_return_uses_original_context_for_admission_and_installation(mon
         Path(__file__).with_name("test_e3_q2_core_delivery_dispatcher.py"))
     fixture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture)
+    from core_prior_fixture import fixture as prior_fixture
+    prior_fixture(monkeypatch, fixture.d, e.dispatcher_contract)
     context = fixture.context()
     frozen = context["manifest"]
     approved_raw = context["members"][fixture.d.APPROVED_INPUTS_PATH]

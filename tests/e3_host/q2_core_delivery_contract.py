@@ -137,6 +137,28 @@ CLOUD_INIT_GRANT_CLOSURE = {
     "commit": "6013436554b51576e321ec08b0de2643efd5c3bc",
     "tree": "32321531cae9f60aec274600340cf027958a2e1f",
 }
+NEXT_ACCEPTANCE_SCOPE = "LH-Q2-CORE-NEXT-ACCEPTANCE-v1"
+NEXT_ACCEPTANCE_BASELINE = {
+    "commit": "0b0f445a36232f6bcd32c395b642f9a6b259d2db",
+    "tree": "c2ee02917768f4f8b6ef905b7fec0159dffd224f",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-next-acceptance/REQUIREMENTS.md":
+            "a07ab93db9c73f777cc4d39a26c25c59f633c915cd7f53f0549580e6f059fa1e",
+        "docs/a2-execution/q2-core-next-acceptance/ARCHITECTURE.md":
+            "43967dac7e640b4d6d46f802cb56001b1cf53d2aea724fc28d1bd98383518685",
+        "docs/a2-execution/q2-core-next-acceptance/IMPLEMENTATION_PLAN.md":
+            "58b0935ab8c6fe42fc76c2d023f2b26a207796d18429df17c98b03a7dd410bfd",
+    },
+}
+NEXT_ACCEPTANCE_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-NEXT-ACCEPTANCE-CLOSURE-20261005-01",
+    "record_path": "docs/governance/Q2_CORE_NEXT_ACCEPTANCE_OWNER_DECISION.md",
+    "record_sha256": "1d346dd8aec855aae5723b7bdb880584c37eee1e829b35cf4c2121a90822eac6",
+}
+NEXT_ACCEPTANCE_CLOSURE = {
+    "commit": "7ac69c0bd4401812b782b75005d8b63936d90a77",
+    "tree": "cb3b2b16c295a32db11854cac4eafc354c9881a0",
+}
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
     "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
@@ -155,18 +177,18 @@ PROJECTION = {
     "file_count": 89,
 }
 
-SESSION_ID = "lhqcore-20261003a"
-INSTALL_BASENAME = "local-hand-core-acceptance-20261003a"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261003a.staging"
-INSTALL_UUID = "2ba06c6f-d3e5-4e36-a41f-d5991cdd7232"
-CARRIER_UNIT = "lhqcore20261003a-carrier.service"
-MARKER_BASENAME = ".lhqcore-20261003a.carrier-consumed.json"
+SESSION_ID = "lhqcore-20261005a"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261005a"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261005a.staging"
+INSTALL_UUID = "6fd82898-ae68-4a5c-bce5-65f06e86580c"
+CARRIER_UNIT = "lhqcore20261005a-carrier.service"
+MARKER_BASENAME = ".lhqcore-20261005a.carrier-consumed.json"
 OUTPUT_BASENAMES = {
-    "stdout_basename": ".lhqcore-20261003a.stdout",
-    "stderr_basename": ".lhqcore-20261003a.stderr",
-    "remote_result_basename": ".lhqcore-20261003a.remote-result.json",
-    "capture_manifest_basename": ".lhqcore-20261003a.capture-manifest.json",
-    "local_receipt_basename": ".lhqcore-20261003a.acceptance-receipt.json",
+    "stdout_basename": ".lhqcore-20261005a.stdout",
+    "stderr_basename": ".lhqcore-20261005a.stderr",
+    "remote_result_basename": ".lhqcore-20261005a.remote-result.json",
+    "capture_manifest_basename": ".lhqcore-20261005a.capture-manifest.json",
+    "local_receipt_basename": ".lhqcore-20261005a.acceptance-receipt.json",
 }
 
 PACKAGE_MAGIC = b"LHCFP1\n"
@@ -260,22 +282,22 @@ ROOT_REFS = (
 CASES = (
     {
         "index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL", "predecessor": None,
-        "preparation_id": "lhqc01h01normal", "operation_id": "b6638120-ed28-4ed1-b603-a153fab1c93d",
-        "controller_prefix": "lhqcore20261003a-c01", "project_ids": list(range(12101, 12108)),
+        "preparation_id": "lhqc05a01h01normal", "operation_id": "97d5ce56-e176-47c8-88eb-ff81242bfcfd",
+        "controller_prefix": "lhqcore20261005a-c01", "project_ids": list(range(12201, 12208)),
         "phases": ["preflight", "business", "evidence"],
     },
     {
         "index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-        "predecessor": "c01-h01-normal", "preparation_id": "lhqc02q4cancel",
-        "operation_id": "ade1b42f-f03d-48dc-b690-e588b44289f6",
-        "controller_prefix": "lhqcore20261003a-c02", "project_ids": list(range(12108, 12115)),
+        "predecessor": "c01-h01-normal", "preparation_id": "lhqc05a02q4cancel",
+        "operation_id": "bb46ffb2-187e-48a7-8c2d-f548dd576fa6",
+        "controller_prefix": "lhqcore20261005a-c02", "project_ids": list(range(12208, 12215)),
         "phases": ["preflight"],
     },
     {
         "index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc03h11recovery",
-        "operation_id": "4b035797-229a-4cdc-8eca-8195869b7ac9",
-        "controller_prefix": "lhqcore20261003a-c03", "project_ids": list(range(12115, 12122)),
+        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05a03h11recovery",
+        "operation_id": "7fa6d9d2-812f-45a4-8027-4cfb183aa862",
+        "controller_prefix": "lhqcore20261005a-c03", "project_ids": list(range(12215, 12222)),
         "phases": ["preflight"],
     },
 )
@@ -873,6 +895,7 @@ def validate_bind(value):
     for key in ("hello_sha256", "consumption_sha256", "package_sha256"):
         digest(value[key], "CORE_BIND_DIGEST")
     validate_package_basename(value["package_basename"])
+    require(value["package_basename"] == SESSION_ID + '.lhfp', 'CORE_BIND_PACKAGE')
     integer(value["package_bytes"], 1, PACKAGE_LIMITS["package_bytes"], "CORE_BIND_PACKAGE")
     for key in SCHEMA_FIELDS[value["schema"]][8:]:
         integer(value[key], 1 if key in ("mapped_duration_ns", "guest_duration_ns") else 0,

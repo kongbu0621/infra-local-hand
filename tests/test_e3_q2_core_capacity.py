@@ -83,7 +83,7 @@ def test_distinct_pool_full_commitment_and_no_refund(monkeypatch):
     result = d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
     assert sum(row['new_required_bytes'] for row in result) == 390070272
     assert sum(row['new_required_inodes'] for row in result) == 31872
-    assert sum(row['historical_bytes'] for row in result) == 2400 + 7 * 200 + 5 * 100 + 200 + 1024
+    assert sum(row['historical_bytes'] for row in result) == 2400 + 7 * 200 + 5 * 100 + 200 + 1024 + 390070272
     assert result[0]['roles'] == ['install', 'state']
 
 
@@ -91,7 +91,7 @@ def test_alias_pools_charge_each_row_once(monkeypatch):
     approved, fs, mapper, inventory = fixture(monkeypatch, alias=True)
     result = d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
     assert len(result) == 1
-    assert result[0]['historical_bytes'] == 2400 + 200 + 1024
+    assert result[0]['historical_bytes'] == 2400 + 200 + 1024 + 289406976
     assert result[0]['new_required_bytes'] == 289406976
 
 
@@ -100,6 +100,18 @@ def test_current_pool_cannot_replace_historical_placement(monkeypatch):
     approved['historical_capacity_obligations']['snapshot_rows'][2]['covered_paths'] = ['/system']
     with pytest.raises(d.DispatchError, match='HISTORICAL_PLACEMENT'):
         d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
+
+
+def test_old_core_names_require_current_device_mapping_too(monkeypatch):
+    approved, fs, mapper, inventory = fixture(monkeypatch)
+    seen = []
+    def changed(path):
+        seen.append(path)
+        if '20261003a' in path: return (999, 'foreign')
+        return mapper(path)
+    with pytest.raises(d.DispatchError, match='PRIOR_PLACEMENT'):
+        d._cap_charge(approved, fs, changed, inventory, LOCATORS)
+    assert any('20261003a' in path for path in seen)
 
 
 def test_delta_covered_paths_cannot_split(monkeypatch):
