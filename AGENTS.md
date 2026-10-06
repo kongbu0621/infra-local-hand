@@ -1521,6 +1521,30 @@ collection, cleanup, refund or business attempt is authorized. H01/Q4/H11 were n
 Any capacity change or future business acceptance needs separate exact authority. Side work and
 production `E3_SUPERVISION_UNVERIFIED` remain unchanged.
 
+### Proposed journal capacity growth
+
+Scope `LH-Q2-CORE-JOURNAL-GROWTH-v1` is **OPEN / NOT APPROVED**, proposed J1–J3 only.
+Exact documentation A is `59948ec4fedb807a31cdbff77acc134e84414160`; the
+[baseline and pending decision](docs/governance/Q2_CORE_JOURNAL_GROWTH_BASELINE.md) pin its
+[requirements](docs/a2-execution/q2-core-journal-growth/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-journal-growth/ARCHITECTURE.md) and
+[implementation plan](docs/a2-execution/q2-core-journal-growth/IMPLEMENTATION_PLAN.md).
+Saved capacity evidence and local fixed configuration/header inspection identify a 256 MiB qcow2
+journal disk with whole-device ext4. The fixed launcher has no QMP and disables its monitor;
+current process/quiescence and full image integrity are not yet proven.
+The proposal is one controlled guest power cycle with a verified offline backup, journal growth to
+512 MiB, and at least 400 MiB ordinary available capacity. It proposes one marker and two fixed
+maintenance SSH phases, not a retry of any consumed request.
+It explicitly discloses guest interruption, volatile-state/boot changes, a new pidfile/serial-null
+launch difference, non-exclusive capacity, full retained UNKNOWN obligations and non-atomic recovery.
+Mutators are not forcibly killed to manufacture a hard deadline guarantee; incomplete exit is retained.
+No Owner B or CLOSED C exists for this scope. Do not implement tools, issue SSH, stop/start the guest,
+copy/resize the image, or change its filesystem before exact closure and J2 verification.
+The old boot equality check remains: a future core batch needs separate exact authority for the new
+maintenance generation and management bindings. This scope does not authorize H01/Q4/H11 or production.
+R, source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D remain unchanged.
+All old consumptions and paused side work remain; this declaration is not a closure record.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
