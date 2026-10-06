@@ -1549,6 +1549,27 @@ maintenance generation and management bindings. This scope does not authorize H0
 R, source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D remain unchanged.
 All old consumptions and paused side work remain. Do not squash C with implementation.
 
+### Journal host read amendment
+
+The original journal maintenance closure remains historical and valid for unaffected work.
+Its first local J3 preflight at `50ec8f2dcb4bbee97934b22cb5f24d372ce19613` stopped at host boot
+`O_NOATIME` open with EPERM before input/VM/writer admission, marker or SSH. See the
+[local preflight record](docs/a2-execution/Q2_CORE_JOURNAL_GROWTH_LOCAL_PREFLIGHT_20261006.md).
+Do not discard its partial window binding or automatically start a fresh window merely because
+no marker was created. No maintenance shutdown, backup, growth or restart was issued.
+
+Scope `LH-Q2-CORE-JOURNAL-HOST-READ-v1` is **OPEN / NOT APPROVED for R1–R3**.
+Exact proposed A is `2b4448c7b89d1910840f7aee2ae2b781f970e179`; its
+[registration and exact decision request](docs/governance/Q2_CORE_JOURNAL_HOST_READ_BASELINE.md) bind the
+[requirements](docs/a2-execution/q2-core-journal-host-read/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-journal-host-read/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-journal-host-read/IMPLEMENTATION_PLAN.md).
+It proposes qualified fixed host kernel reads, a bounded read-only root writer observer through
+existing noninteractive administration, and one explicitly substituted preflight window.
+These changes require exact Owner B and independent bookkeeping-only C before implementation.
+This OPEN record is neither B nor C and authorizes no root observer, replacement window or field retry.
+Original maintenance limits, all historical UNKNOWN commitments, paused side work and production E3 remain.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
