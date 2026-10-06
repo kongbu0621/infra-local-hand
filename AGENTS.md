@@ -1701,7 +1701,7 @@ is authorized. Retain the exact candidate/handoff as evidence; do not execute th
 affected field window requires its own exact A, Owner B and independent C. Unaffected CLOSED
 development and all historical UNKNOWNs remain unchanged; source/CI PASS does not refund a window.
 
-### Journal proc diagnostics and pending replacement
+### Journal proc diagnostics and approved replacement
 
 The [proc diagnostic repair](docs/a2-execution/Q2_CORE_JOURNAL_PROC_LIMIT_DIAGNOSTICS_REVIEW_20261006.md)
 at `03cfb183d05c55258bb2da01e8c3cf77ea06fe63` separates all 17 original limit stages, including
@@ -1711,14 +1711,32 @@ Local targeted verification passed 598 tests with 3 skips; exact CI `37475992159
 successfully on all three jobs in attempt 1, including independent installed verification.
 This offline repair neither identifies the historical exceeded cap nor refunds a consumed window.
 
-Scope `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-v2` remains **OPEN / NOT APPROVED** at exact A
+Scope `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-v2` is **CLOSED for DR1–DR2 only** at exact A
 `4341487c9be9ef64cf6fccbd973ed438a66e7483`. The
-[pending baseline](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_BASELINE.md) pins its three
-documents and requests only one further original-specification window after exact verification and
-independent Owner B/C. No B or C exists for v2. The original caps, checks, budgets, cumulative
-maintenance limits, historical UNKNOWNs and paused side work remain. Do not invoke a new field
-writer/preflight, SSH or maintenance, replay an old handoff, or relax a cap under this proposal.
-Existing unaffected CLOSED development continues; H01/Q4/H11 remain outside this scope.
+[baseline registration](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_BASELINE.md) pins the
+[requirements](docs/a2-execution/q2-core-journal-diagnostic-resume-v2/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-journal-diagnostic-resume-v2/ARCHITECTURE.md), and
+[plan](docs/a2-execution/q2-core-journal-diagnostic-resume-v2/IMPLEMENTATION_PLAN.md).
+Their exact bytes and historical OPEN labels remain unchanged. Original R, its readable direct
+source/integrity, Owner authority/mandate, no exceptions and material-change rule remain unchanged.
+
+Exact Owner B is retained in
+[the v2 Owner decision](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_OWNER_DECISION.md),
+event `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-V2-CLOSURE-20261006-01`, with the exact reply and its
+preceding request. This independent bookkeeping-only C contains no implementation, configuration,
+release digest or field action. New D must descend from C and must not be squashed with it.
+
+DR1 must bind exact v2 A/C while retaining every prior approval, verify the affected implementation,
+publish it, pass its own relevant CI and freeze the exact execution candidate before DR2. Only then
+may the Owner use the existing real local foreground terminal for one further replacement preflight
+under `lhqjgrow-20261006a`. All previous windows remain consumed; replaying an old handoff is forbidden.
+Original authentication, all PID/TID/FD/maps/read caps and coverage, 15s/900s/780s, resource budgets,
+eight writer checkpoints and cumulative maintenance limits remain unchanged. No additional privilege,
+helper, probe, retry, reconnect, supplemental capture, forced shutdown, cleanup or rollback is allowed.
+Only all original gates passing may continue the unconsumed original journal maintenance in the same
+window. The historical exceeded cap/count remains UNKNOWN; diagnostic or CI success does not prove
+that the field limit is resolved. H01/Q4/H11, new-boot core adoption and all side work remain outside
+this closure. Existing unaffected CLOSED development continues; production E3 remains unverified.
 
 ### Continuing constraints
 
