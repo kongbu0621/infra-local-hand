@@ -30,6 +30,11 @@ TERM_A="2b236865dc0a89e475c4021cac44d7193f252f67"
 TERM_C="12f7acac3b09fc5bd9344473ec930646c87e0f59"
 DR_A="ef46ac169fd9084875cb5c5148a9c4985ace680c"
 DR_C="65026c8c7722bc487c317d392b50b017a7350dee"
+DRV2_A="4341487c9be9ef64cf6fccbd973ed438a66e7483"
+DRV2_C="807d61b75841a416064f4c1ec1d7c2e0187e0d49"
+DRV2_PINS=("a4a7891c01d32abf7a3283a39a0bf701cd47d023bab14808bf25f84ef98eca5b",
+ "a17ef97537748d03b0d48bc9e6945785fbda6d707875ad925df773fa9c511bbb",
+ "13f2ae38d9637c3e3d96cd59216037da7569132fa73bb4187e30a49763967c67")
 DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
  "72cee2ad2ce82fa47bd8a40dc8e3e74da5de1ea9e8674d22c3c82df8cd04b543",
  "74eb2b9c8c45b159131af785ce14976b104923411b307b8f3d4f7269124d6692")
@@ -45,17 +50,17 @@ STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
  "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
  "post.stderr","receipt.json","vm.pid","journal.backup.qcow2")
-NAMES={suffix: "." + SESSION + "." + suffix for suffix in SUFFIXES}
+NAMES={suffix:"." + SESSION + "." + suffix for suffix in SUFFIXES}
 DOC_PINS={
- "REQUIREMENTS.md": "93ac5383bb1823086dc0546fb4eebcf1f70ffd7e7a824247b3f6c9e210417f4d",
- "ARCHITECTURE.md": "5b703c51afab91676851af1bcaf4464469ea2183f7bd5dbc79d120a1efcc6f28",
- "IMPLEMENTATION_PLAN.md": "aa3c04b8fce9a914dd7009644ac0a3a853a8d4f38de8f85b73a0d644dd723e60",
+ "REQUIREMENTS.md":"93ac5383bb1823086dc0546fb4eebcf1f70ffd7e7a824247b3f6c9e210417f4d",
+ "ARCHITECTURE.md":"5b703c51afab91676851af1bcaf4464469ea2183f7bd5dbc79d120a1efcc6f28",
+ "IMPLEMENTATION_PLAN.md":"aa3c04b8fce9a914dd7009644ac0a3a853a8d4f38de8f85b73a0d644dd723e60",
  }
 CAPACITY_PINS={
- "consumed.json": (939,"537f3f93f47034ae253c735052cbae443eea3aa3f775849698830e4b26cec9ff"),
- "stdout": (3609,"00cc8b744b8d63bf7d83a4044921fc1a80b7a21b289cf62b4e6f33cd9548b8db"),
- "stderr": (0,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
- "receipt.json": (1807,"575e74006d530fd562a67d66d5ce066a8e941d914da1f84bec2eb839b7ee4270"),
+ "consumed.json":(939,"537f3f93f47034ae253c735052cbae443eea3aa3f775849698830e4b26cec9ff"),
+ "stdout":(3609,"00cc8b744b8d63bf7d83a4044921fc1a80b7a21b289cf62b4e6f33cd9548b8db"),
+ "stderr":(0,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+ "receipt.json":(1807,"575e74006d530fd562a67d66d5ce066a8e941d914da1f84bec2eb839b7ee4270"),
  }
 class Window(local.Deadline):
  def remaining(self,limit=900):
@@ -69,7 +74,7 @@ class Sequence:
   self.started=set()
  def step(self,target,effect):
   require(self.state in STATES and target in STATES and
- STATES.index(target) == STATES.index(self.state) + 1,
+ STATES.index(target)==STATES.index(self.state) + 1,
  "GROWTH_SEQUENCE")
   require(target not in self.started,"GROWTH_NO_RETRY")
   self.started.add(target)
@@ -99,7 +104,7 @@ class Store:
  def capacity(self):
   self.check()
   value=os.fstatvfs(self.fd)
-  require(value.f_bavail * value.f_frsize >= HOST_BYTES and value.f_favail >= HOST_INODES,
+  require(value.f_bavail * value.f_frsize>=HOST_BYTES and value.f_favail>=HOST_INODES,
  "GROWTH_HOST_CAPACITY")
  def create(self,suffix):
   require(suffix in NAMES and suffix not in self.opened,"GROWTH_OUTPUT_NAME")
@@ -107,25 +112,25 @@ class Store:
   fd=os.open(NAMES[suffix],os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
  | os.O_CLOEXEC | os.O_NOATIME,0o600,dir_fd=self.fd)
   self.opened[suffix]=fd
-  require(stat.S_IMODE(os.fstat(fd).st_mode) == 0o600,"GROWTH_OUTPUT_MODE")
+  require(stat.S_IMODE(os.fstat(fd).st_mode)==0o600,"GROWTH_OUTPUT_MODE")
   os.fsync(self.fd)
   return fd
  def budget(self):
   logical=allocated=count=0
   for suffix,fd in self.opened.items():
    info=os.fstat(fd)
-   require(stable_identity(info) == stable_identity(os.stat(NAMES[suffix],dir_fd=self.fd,
+   require(stable_identity(info)==stable_identity(os.stat(NAMES[suffix],dir_fd=self.fd,
  follow_symlinks=False)),"GROWTH_OUTPUT_DRIFT")
-   cap=BACKUP_CAP if suffix == "journal.backup.qcow2" else CAPTURE_CAP
+   cap=BACKUP_CAP if suffix=="journal.backup.qcow2" else CAPTURE_CAP
    validate_file(info,cap,self.owner)
-   if suffix != "journal.backup.qcow2":
+   if suffix!="journal.backup.qcow2":
     count += 1
     logical += info.st_size
     allocated += info.st_blocks * 512
-  require(max(logical,allocated) <= CAPTURE_CAP and count <= 32,"GROWTH_CAPTURE_BUDGET")
+  require(max(logical,allocated)<=CAPTURE_CAP and count<=32,"GROWTH_CAPTURE_BUDGET")
   return dict(logical_bytes=logical,allocated_bytes=allocated,inodes=count)
  def put(self,suffix,raw):
-  require(type(raw) is bytes and len(raw) <= (MIB if suffix.endswith(("stdout","stderr"))
+  require(type(raw) is bytes and len(raw)<=(MIB if suffix.endswith(("stdout","stderr"))
  else 65536),"GROWTH_OUTPUT_LIMIT")
   fd=self.create(suffix)
   write_all(fd,raw,self.check)
@@ -134,11 +139,11 @@ class Store:
   return fd
  def event(self,value):
   raw=canonical(value)
-  require(len(raw) <= 65536,"GROWTH_EVENT_LIMIT")
+  require(len(raw)<=65536,"GROWTH_EVENT_LIMIT")
   fd=self.opened.get("events.jsonl")
   if fd is None:
    fd=self.create("events.jsonl")
-  require(os.fstat(fd).st_size + len(raw) <= MIB,"GROWTH_EVENTS_LIMIT")
+  require(os.fstat(fd).st_size + len(raw)<=MIB,"GROWTH_EVENTS_LIMIT")
   write_all(fd,raw,self.check)
   os.fsync(fd)
   self.budget()
@@ -162,34 +167,34 @@ def full_backup(store,source_fd):
   count += len(raw)
   store.budget()
  os.fsync(target)
- require(stable_identity(os.fstat(source_fd)) == stable_identity(before),"GROWTH_BACKUP_DRIFT")
+ require(stable_identity(os.fstat(source_fd))==stable_identity(before),"GROWTH_BACKUP_DRIFT")
  copied_digest=hash_fd(target,BACKUP_CAP,store.check)
- require(copied_digest == source_digest and os.fstat(target).st_ino != before.st_ino,
+ require(copied_digest==source_digest and os.fstat(target).st_ino!=before.st_ino,
  "GROWTH_BACKUP_MISMATCH")
  store.budget()
  store.capacity()
  return copied_digest
 def qemu_argv(start,anchor,serial):
- require(digest(start) == local.PINS["start.sh"][1],"GROWTH_START_PIN")
- require(re.fullmatch(r"/[A-Za-z0-9_./-]+",anchor) and os.path.normpath(anchor) == anchor,
+ require(digest(start)==local.PINS["start.sh"][1],"GROWTH_START_PIN")
+ require(re.fullmatch(r"/[A-Za-z0-9_./-]+",anchor) and os.path.normpath(anchor)==anchor,
  "GROWTH_ANCHOR")
  text=start.decode("utf-8","strict")
  require("q1_vm=" + anchor + "\n" in text,"GROWTH_START_ANCHOR")
  pieces=text.split("\nqemu-system-x86_64 \\\n")
- require(len(pieces) == 2,"GROWTH_START_FORMAT")
+ require(len(pieces)==2,"GROWTH_START_FORMAT")
  command=pieces[1].split("\n\n",1)[0].replace("\\\n"," ")
  args=shlex.split(command)
  require(all(arg.isascii() for arg in args),"GROWTH_START_ENCODING")
  args=[arg.replace("$q1_vm",anchor).replace("$q1_log",serial) for arg in args]
  require(not any("$" in arg or "`" in arg for arg in args),"GROWTH_START_EXPANSION")
- require(args.count("-pidfile") == args.count("-serial") == 1 and
- args[args.index("-pidfile") + 1] == anchor + "/vm.pid" and
- args[args.index("-serial") + 1] == "file:" + serial,"GROWTH_START_OUTPUT")
+ require(args.count("-pidfile")==args.count("-serial")==1 and
+ args[args.index("-pidfile") + 1]==anchor + "/vm.pid" and
+ args[args.index("-serial") + 1]=="file:" + serial,"GROWTH_START_OUTPUT")
  original=["qemu-system-x86_64",*args]
  new=original.copy()
  new[new.index("-pidfile") + 1]=anchor + "/" + NAMES["vm.pid"]
  new[new.index("-serial") + 1]="null"
- require(sum(a != b for a,b in zip(original,new)) == 2,"GROWTH_START_DELTA")
+ require(sum(a!=b for a,b in zip(original,new))==2,"GROWTH_START_DELTA")
  return original,new
 def image_commands(path,backup):
  return dict(info=["info","--output=json","-f","qcow2",path],
@@ -198,12 +203,12 @@ def image_commands(path,backup):
  compare=["compare","-f","qcow2","-F","qcow2",backup,path])
 def validate_image_info(raw,expected_size):
  value=prior.r.parse(raw,65536)
- require(expected_size in (OLD_SIZE,NEW_SIZE) and value.get("format") == "qcow2"
- and value.get("virtual-size") == expected_size and not value.get("encrypted",False)
+ require(expected_size in (OLD_SIZE,NEW_SIZE) and value.get("format")=="qcow2"
+ and value.get("virtual-size")==expected_size and not value.get("encrypted",False)
  and not value.get("snapshots") and not value.get("backing-filename")
  and not value.get("full-backing-filename"),"GROWTH_IMAGE_INFO")
  data=value.get("format-specific",{}).get("data",{})
- require(data.get("compat") == "1.1" and data.get("corrupt") is False
+ require(data.get("compat")=="1.1" and data.get("corrupt") is False
  and not data.get("bitmaps") and not data.get("encrypt"),"GROWTH_IMAGE_FEATURES")
  return value
 def vm_limits():
@@ -214,25 +219,25 @@ def vm_limits():
 class Command:
  def __init__(self,argv,check,*,executable=None,pass_fds=(),limit=MIB,limits=True,
  stderr_limit=None,terminal=False):
-  require(0 < limit <= MIB,"GROWTH_STREAM_CAP")
+  require(0 < limit<=MIB,"GROWTH_STREAM_CAP")
   require(type(terminal) is bool and (limits or not terminal),"GROWTH_TERMINAL_COMMAND")
   check()
   self.check=check
   self.caps=dict(stdout=limit,stderr=limit if stderr_limit is None else stderr_limit)
-  require(all(type(n) is int and 0 < n <= limit for n in self.caps.values()),"GROWTH_STREAM_CAP")
+  require(all(type(n) is int and 0 < n<=limit for n in self.caps.values()),"GROWTH_STREAM_CAP")
   self.process=subprocess.Popen(argv,executable=executable,pass_fds=pass_fds,
  stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
- env={"PATH": "/usr/sbin:/usr/bin:/bin","LANG": "C","LC_ALL": "C"},
+ env={"PATH":"/usr/sbin:/usr/bin:/bin","LANG":"C","LC_ALL":"C"},
  preexec_fn=control_limits if limits else vm_limits,start_new_session=not terminal)
   self.is_vm=not limits
   COMMANDS.append(self)
   self.identity=dict(pid=self.process.pid,argv_sha256=digest(canonical(argv)),starttime=None)
   try:
-   self.identity["starttime"]=proc_start(proc_bytes(self.process.pid,"stat",16384,lambda: None))
+   self.identity["starttime"]=proc_start(proc_bytes(self.process.pid,"stat",16384,lambda:None))
   except (OSError,RuntimeError,ValueError):
    pass
-  self.output={"stdout": bytearray(),"stderr": bytearray()}
-  self.eof={"stdout": False,"stderr": False}
+  self.output={"stdout":bytearray(),"stderr":bytearray()}
+  self.eof={"stdout":False,"stderr":False}
   self.selector=selectors.DefaultSelector()
   for name in self.output:
    stream=getattr(self.process,name)
@@ -250,11 +255,11 @@ class Command:
       self.selector.unregister(key.fileobj)
      else:
       self.output[name].extend(raw)
-      require(len(self.output[name]) <= self.caps[name],"GROWTH_STREAM_LIMIT")
+      require(len(self.output[name])<=self.caps[name],"GROWTH_STREAM_LIMIT")
      self.check()
    self.check()
    return dict(returncode=self.process.returncode,eof=self.eof.copy(),
- **{name: bytes(value) for name,value in self.output.items()})
+ **{name:bytes(value) for name,value in self.output.items()})
   finally:
    self.selector.close()
    for name in self.output:
@@ -266,7 +271,7 @@ def run_tool(argv,check,**kwargs):
  except BaseException as error:
   error.growth_command=command
   raise
- if result["returncode"] != 0 or not all(result["eof"].values()):
+ if result["returncode"]!=0 or not all(result["eof"].values()):
   error=prior.r.ObservationError("GROWTH_TOOL_FAILED")
   error.growth_command,error.growth_result=command,result
   raise error
@@ -275,14 +280,14 @@ class Tool:
  def __init__(self,path,check,*,version=True):
   self.path,self.check=path,check
   self.fd,self.info=local.bound_executable(path)
-  require(os.fstat(self.fd).st_nlink == 1,"GROWTH_TOOL_LINK")
+  require(os.fstat(self.fd).st_nlink==1,"GROWTH_TOOL_LINK")
   self.version=b"not invoked; held executable identity only"
   if not version:
    return
   try:
    result=self.run(["--version"])
    self.version=result["stdout"] + result["stderr"]
-   require(0 < len(self.version) <= 16384,"GROWTH_TOOL_VERSION")
+   require(0 < len(self.version)<=16384,"GROWTH_TOOL_VERSION")
   except BaseException:
    self.close()
    raise
@@ -291,14 +296,14 @@ class Tool:
   parent=local.open_directory(str(Path(self.path).parent),0)
   try:
    current=os.stat(Path(self.path).name,dir_fd=parent,follow_symlinks=False)
-   require(local.metadata(current) == self.info == local.metadata(os.fstat(self.fd))
- and current.st_nlink == 1,"GROWTH_TOOL_DRIFT")
+   require(local.metadata(current)==self.info==local.metadata(os.fstat(self.fd))
+ and current.st_nlink==1,"GROWTH_TOOL_DRIFT")
   finally:
    os.close(parent)
  def run(self,args,*,vm=False):
   self.recheck()
   name="qemu-system-x86_64" if vm else self.path
-  require(not vm or self.path == "/usr/bin/qemu-system-x86_64","GROWTH_VM_TOOL")
+  require(not vm or self.path=="/usr/bin/qemu-system-x86_64","GROWTH_VM_TOOL")
   result=run_tool([name,*args],self.check,executable=f"/proc/self/fd/{self.fd}",
  pass_fds=(self.fd,),limits=not vm)
   self.recheck()
@@ -316,13 +321,13 @@ class WriterObserver(WriterProtocol):
   from e3_host import q2_journal_growth_guest as guest
   self.host=sys.modules[__name__]
   self.guest,self.window,self.commit=guest,window,commit
-  self.images,self.terminal={key: list(value) for key,value in image_keys.items()},terminal
+  self.images,self.terminal={key:list(value) for key,value in image_keys.items()},terminal
   self.payload=guest.writer_payload(sources["q2_journal_growth.py"],
  sources["q2_journal_growth_guest.py"],sources["q2_host_kernel_facts.py"],commit)
   self.tools,self.reports,self.failed,self.io_bytes={},[],False,0
   self.prior_cpu_us,self.prior_rss=0,0
   self.nonce=os.urandom(32).hex()
-  self.record=lambda row: None
+  self.record=lambda row:None
   try:
    parent=local.open_directory("/usr/bin",0)
    try:
@@ -331,7 +336,7 @@ class WriterObserver(WriterProtocol):
     python="/usr/bin/python3"
     if stat.S_ISLNK(info.st_mode):
      target=os.readlink("python3",dir_fd=parent)
-     require(info.st_uid == info.st_gid == 0 and info.st_nlink == 1
+     require(info.st_uid==info.st_gid==0 and info.st_nlink==1
  and re.fullmatch(r"python3\.[0-9]+",target),"GROWTH_PYTHON_LINK")
      self.python_link=(local.metadata(info),target)
      python="/usr/bin/" + target
@@ -341,16 +346,16 @@ class WriterObserver(WriterProtocol):
     self.tools[name]=Tool(path,window.check,version=False)
    if retained is not None:
     value=prior.r.parse(retained,131072)
-    require(set(value) == {"report","cpu_us","rss_bytes","io_bytes","terminal"}
- and value["terminal"] == terminal,"GROWTH_WRITER_PREFLIGHT")
+    require(set(value)=={"report","cpu_us","rss_bytes","io_bytes","terminal"}
+ and value["terminal"]==terminal,"GROWTH_WRITER_PREFLIGHT")
     request=guest.writer_request(canonical(value["report"]["request"]))
     self.nonce=request["nonce"]
     self.validate(value["report"],request,1)
     for key in ("cpu_us","rss_bytes","io_bytes"):
-     require(type(value[key]) is int and value[key] >= 0,"GROWTH_WRITER_USAGE")
-    require(value["cpu_us"] >= value["report"]["usage"]["cpu_us"]
- and value["rss_bytes"] >= value["report"]["usage"]["peak_rss_bytes"]
- and value["io_bytes"] >= len(canonical(value["report"])),"GROWTH_WRITER_USAGE")
+     require(type(value[key]) is int and value[key]>=0,"GROWTH_WRITER_USAGE")
+    require(value["cpu_us"]>=value["report"]["usage"]["cpu_us"]
+ and value["rss_bytes"]>=value["report"]["usage"]["peak_rss_bytes"]
+ and value["io_bytes"]>=len(canonical(value["report"])),"GROWTH_WRITER_USAGE")
     self.prior_cpu_us,self.prior_rss,self.io_bytes=value["cpu_us"],value["rss_bytes"],value["io_bytes"]
     self.reports.append(value["report"])
    self.host.terminal_binding(terminal)
@@ -363,52 +368,52 @@ class WriterObserver(WriterProtocol):
   usage=management_usage()
   helper_cpu=sum(row.get("usage",{}).get("cpu_us",0) for row in self.reports)
   helper_rss=max([row.get("usage",{}).get("peak_rss_bytes",0) for row in self.reports] or [0])
-  require(usage["cpu_seconds"] * 1000000 + self.prior_cpu_us + helper_cpu <= 120000000
- and max(self.prior_rss,usage["rss_upper_observation_bytes"] + helper_rss) <= 512 * MIB
- and self.io_bytes <= CAPTURE_CAP,"GROWTH_WRITER_BUDGET")
+  require(usage["cpu_seconds"] * 1000000 + self.prior_cpu_us + helper_cpu<=120000000
+ and max(self.prior_rss,usage["rss_upper_observation_bytes"] + helper_rss)<=512 * MIB
+ and self.io_bytes<=CAPTURE_CAP,"GROWTH_WRITER_BUDGET")
  def recheck(self):
   self.check()
-  for tool in self.tools.values(): tool.recheck()
+  for tool in self.tools.values():tool.recheck()
   if self.python_link is not None:
    parent=local.open_directory("/usr/bin",0)
    try:
     require((local.metadata(os.stat("python3",dir_fd=parent,follow_symlinks=False)),
- os.readlink("python3",dir_fd=parent)) == self.python_link,"GROWTH_PYTHON_LINK_DRIFT")
+ os.readlink("python3",dir_fd=parent))==self.python_link,"GROWTH_PYTHON_LINK_DRIFT")
    finally:
     os.close(parent)
  def binding(self):
   self.recheck()
-  return dict(A=READ_A,C=READ_C,resume=dict(A=DR_A,C=DR_C),auth=dict(A=TERM_A,C=TERM_C,mode="terminal",
+  return dict(A=READ_A,C=READ_C,resume=dict(A=DR_A,C=DR_C),resume_v2=dict(A=DRV2_A,C=DRV2_C),auth=dict(A=TERM_A,C=TERM_C,mode="terminal",
  terminal=self.terminal),payload=dict(bytes=len(self.payload),sha256=digest(self.payload)),
  loader_sha256=digest(self.guest.WRITER_LOADER.encode()),python_link=self.python_link,
- tools={name: tool.binding() for name,tool in self.tools.items()},
+ tools={name:tool.binding() for name,tool in self.tools.items()},
  argv_policy="sudo -- env -i PATH=/usr/sbin:/usr/bin:/bin LANG=C LC_ALL=C /usr/bin/python3 -I -B -c loader payload sha request",
  input_schema="lhq-journal-writer/v1",calls=8,seconds=15,input_stdout=65536,stderr=4096,
  first_report_sha256=digest(canonical(self.reports[0])))
  def close(self):
-  for tool in self.tools.values(): tool.close()
+  for tool in self.tools.values():tool.close()
 GROWTH_FRAME_PIN=(5496087,"c9f4bb2744d48f9e7174157a95761d081be038cf4dd4f67ae42620a1a9e6d315")
 GROWTH_CARRIER_PIN=(5426689,"5eef22e497e9e0a867470c6c490336dc80fadd0e506e3419847e6c37b687918b")
 GROWTH_CORE_SESSIONS=("lhqcore-20261003a","lhqcore-20261005a","lhqcore-20261005b","lhqcore-20261005c")
 def _growth_carrier_anchor(raw):
  import ast
- require((len(raw),digest(raw)) == GROWTH_CARRIER_PIN,"GROWTH_CARRIER_PIN")
+ require((len(raw),digest(raw))==GROWTH_CARRIER_PIN,"GROWTH_CARRIER_PIN")
  tree=ast.parse(raw)
  assignments,accepted=[],set()
  for node in tree.body:
   targets=node.targets if isinstance(node,ast.Assign) else [node.target] if isinstance(node,ast.AnnAssign) else []
   for target in targets:
-   if isinstance(target,ast.Name) and target.id == "WRAPPER":
+   if isinstance(target,ast.Name) and target.id=="WRAPPER":
     require(isinstance(node.value,ast.Constant) and type(node.value.value) is str,
  "GROWTH_WRAPPER_LITERAL")
     assignments.append(node.value.value)
     accepted.add(id(target))
- require(len(assignments) == 1 and all(id(node) in accepted for node in ast.walk(tree)
- if isinstance(node,ast.Name) and node.id == "WRAPPER" and isinstance(node.ctx,(ast.Store,ast.Del))),
+ require(len(assignments)==1 and all(id(node) in accepted for node in ast.walk(tree)
+ if isinstance(node,ast.Name) and node.id=="WRAPPER" and isinstance(node.ctx,(ast.Store,ast.Del))),
  "GROWTH_WRAPPER_LITERAL")
  path=assignments[0]
  prior.r.path_value(path)
- require(Path(path).name == "ssh.sh","GROWTH_WRAPPER_PATH")
+ require(Path(path).name=="ssh.sh","GROWTH_WRAPPER_PATH")
  anchor=str(Path(path).parent)
  prior.r.path_value(anchor)
  return anchor
@@ -416,24 +421,24 @@ def _growth_frame_anchor(raw):
  import io
  import zipfile
  from e3_host import q2_local_source_delivery as source
- require((len(raw),digest(raw)) == GROWTH_FRAME_PIN,"GROWTH_FRAME_PIN")
+ require((len(raw),digest(raw))==GROWTH_FRAME_PIN,"GROWTH_FRAME_PIN")
  lines=raw.splitlines(keepends=True)
- require(len(lines) >= 3 and lines[0].startswith(source.HEADER) and lines[-1] == source.END,
+ require(len(lines)>=3 and lines[0].startswith(source.HEADER) and lines[-1]==source.END,
  "GROWTH_FRAME_FORMAT")
  encoded=bytearray()
  for line in lines[1:-1]:
-  require(line.startswith(b"#") and line.endswith(b"\n") and 1 < len(line) <= source.LINE_LIMIT,
+  require(line.startswith(b"#") and line.endswith(b"\n") and 1 < len(line)<=source.LINE_LIMIT,
  "GROWTH_FRAME_LINE")
   encoded.extend(line[1:-1])
  package=base64.b64decode(encoded,validate=True)
- require(len(package) <= source.PACKAGE_LIMIT and source.frame_bytes(package) == raw,
+ require(len(package)<=source.PACKAGE_LIMIT and source.frame_bytes(package)==raw,
  "GROWTH_FRAME_CANONICAL")
  with zipfile.ZipFile(io.BytesIO(package)) as archive:
   entries=archive.infolist()
-  require(0 < len(entries) <= 128 and len({row.filename for row in entries}) == len(entries)
- and sum(row.file_size for row in entries) <= source.EXPANDED_LIMIT,"GROWTH_FRAME_MEMBERS")
+  require(0 < len(entries)<=128 and len({row.filename for row in entries})==len(entries)
+ and sum(row.file_size for row in entries)<=source.EXPANDED_LIMIT,"GROWTH_FRAME_MEMBERS")
   row=archive.getinfo("sources/P")
-  require(not row.is_dir() and not row.flag_bits & 1 and row.file_size == GROWTH_CARRIER_PIN[0],
+  require(not row.is_dir() and not row.flag_bits & 1 and row.file_size==GROWTH_CARRIER_PIN[0],
  "GROWTH_CARRIER_MEMBER")
   with archive.open(row) as stream:
    carrier=stream.read(GROWTH_CARRIER_PIN[0] + 1)
@@ -442,25 +447,25 @@ def _growth_plan_members(raw):
  import io
  import tarfile
  from e3_host import q2_core_approved_inputs as approved
- require((len(raw),digest(raw)) == prior.PLAN_ARCHIVE,"GROWTH_PLAN_ARCHIVE_PIN")
- pins={path: (role,size,sha) for role,path,size,sha in approved.LOCATOR_MEMBERS}
+ require((len(raw),digest(raw))==prior.PLAN_ARCHIVE,"GROWTH_PLAN_ARCHIVE_PIN")
+ pins={path:(role,size,sha) for role,path,size,sha in approved.LOCATOR_MEMBERS}
  selected,seen,total={},set(),0
  with tarfile.open(fileobj=io.BytesIO(raw),mode="r|gz") as archive:
   for member in archive:
    require(member.name not in seen and len(seen) < 20000,"GROWTH_PLAN_MEMBERS")
    seen.add(member.name)
    total += member.size
-   require(0 <= member.size and total <= 536870912,"GROWTH_PLAN_EXPANSION")
+   require(0<=member.size and total<=536870912,"GROWTH_PLAN_EXPANSION")
    if member.name not in pins:
     continue
    role,size,sha=pins[member.name]
-   require(member.isfile() and not member.islnk() and not member.issym() and member.size == size,
+   require(member.isfile() and not member.islnk() and not member.issym() and member.size==size,
  "GROWTH_PLAN_MEMBER")
    with archive.extractfile(member) as stream:
     content=stream.read(size + 1)
-   require((len(content),digest(content)) == (size,sha),"GROWTH_PLAN_MEMBER_PIN")
+   require((len(content),digest(content))==(size,sha),"GROWTH_PLAN_MEMBER_PIN")
    selected[role]=prior.r.parse(content,size)
- require(set(selected) == {row[0] for row in approved.LOCATOR_MEMBERS},"GROWTH_PLAN_MEMBER_SET")
+ require(set(selected)=={row[0] for row in approved.LOCATOR_MEMBERS},"GROWTH_PLAN_MEMBER_SET")
  return selected
 def _growth_inventory(original,retry,documents,horizon,paths):
  protected,essential,groups,domain_rows,units,boots=set(),set(),set(),{},{},set()
@@ -476,11 +481,11 @@ def _growth_inventory(original,retry,documents,horizon,paths):
   require(type(value) is str and re.fullmatch(r"[A-Za-z0-9@_.:-]{1,180}\.service",value),
  "GROWTH_INPUT_UNIT")
   if not re.fullmatch(r"user@[0-9]+\.service",value):
-   units[value]={"name": value,"control_group": None}
+   units[value]={"name":value,"control_group":None}
  def scan_units(value,depth=0,counter=None):
   counter=[0] if counter is None else counter
   counter[0] += 1
-  require(depth <= 32 and counter[0] <= 65536,"GROWTH_INPUT_COMPLEXITY")
+  require(depth<=32 and counter[0]<=65536,"GROWTH_INPUT_COMPLEXITY")
   if type(value) is dict:
    for key,child in value.items():
     if key in ("unit","Id") and type(child) is str and child.endswith(".service"):
@@ -493,7 +498,7 @@ def _growth_inventory(original,retry,documents,horizon,paths):
   if type(value) is not dict:
    return
   for role,row in value.items():
-   if role == "manager" or type(row) is not dict or "path" not in row or "unit" not in row:
+   if role=="manager" or type(row) is not dict or "path" not in row or "unit" not in row:
     continue
    name,control=row["unit"],path(row["path"])
    require(type(name) is str and re.fullmatch(r"[A-Za-z0-9_.-]{1,180}\.slice",name),
@@ -501,7 +506,7 @@ def _growth_inventory(original,retry,documents,horizon,paths):
    groups.add(control)
    manager="user" if control.startswith("/user.slice/") else "system"
    domain_rows[manager,name,control]=dict(name=name,manager=manager,control_group=control)
- plans=[original,*[document for (batch,role),document in documents.items() if role == "plan"]]
+ plans=[original,*[document for (batch,role),document in documents.items() if role=="plan"]]
  for plan in plans:
   require(type(plan) is dict and type(plan.get("host")) is dict,"GROWTH_INPUT_PLAN")
   boot=plan["host"].get("boot_id")
@@ -520,26 +525,26 @@ def _growth_inventory(original,retry,documents,horizon,paths):
   if "receipt_path" in candidate:
    protect(candidate["receipt_path"],True)
   for role,row in plan.get("parents",{}).items():
-   if role == "ordinary":
+   if role=="ordinary":
     name=row["unit"]
     controller=plan["parents"].get("controller",{}).get("unit","")
     if controller.endswith(".slice") and name.startswith(controller.removesuffix(".slice") + "-"):
-     observed_parents({role: dict(unit=name,path="/" + controller + "/" + name)})
+     observed_parents({role:dict(unit=name,path="/" + controller + "/" + name)})
     continue
    name=row["unit"]
-   observed_parents({role: dict(unit=name,path="/" + name)})
+   observed_parents({role:dict(unit=name,path="/" + name)})
   retained_parent=plan.get("retained_ordinary_parent")
   if type(retained_parent) is dict and "path" in retained_parent:
-   observed_parents({"ordinary": dict(unit=Path(retained_parent["path"]).name,
+   observed_parents({"ordinary":dict(unit=Path(retained_parent["path"]).name,
  path=retained_parent["path"])})
   scan_units(plan)
- require(len(boots) == 1,"GROWTH_INPUT_BOOT_DRIFT")
+ require(len(boots)==1,"GROWTH_INPUT_BOOT_DRIFT")
  observed_parents(retry.get("facts",{}).get("parents"))
  scan_units(retry)
  for value in documents.values():
   observed_parents(value.get("parents"))
   scan_units(value)
- require(len(horizon["effective_rows"]) == 36,"GROWTH_INPUT_HORIZON")
+ require(len(horizon["effective_rows"])==36,"GROWTH_INPUT_HORIZON")
  for row in horizon["effective_rows"]:
   for value in row["covered_paths"]:
    protect(value)
@@ -552,14 +557,14 @@ def _growth_inventory(original,retry,documents,horizon,paths):
   date=session.removeprefix("lhqcore-")
   for name in ("local-hand-core-acceptance-" + date,".local-hand-core-acceptance-" + date + ".staging"):
    protect(paths["install"] + "/" + name)
- require(groups and any(row["manager"] == "user" for row in domain_rows.values()),
+ require(groups and any(row["manager"]=="user" for row in domain_rows.values()),
  "GROWTH_INPUT_ORDINARY_DOMAIN")
- require(0 < len(protected) <= 1024 and 0 < len(essential) <= 512 and 0 < len(units) <= 128
- and len(groups) <= 32 and len(domain_rows) <= 32,"GROWTH_INPUT_INVENTORY_LIMIT")
+ require(0 < len(protected)<=1024 and 0 < len(essential)<=512 and 0 < len(units)<=128
+ and len(groups)<=32 and len(domain_rows)<=32,"GROWTH_INPUT_INVENTORY_LIMIT")
  inventory=dict(expected_units=[units[name] for name in sorted(units)],domain_cgroups=sorted(groups),
  domain_units=[domain_rows[key] for key in sorted(domain_rows)],
  protected_roots=sorted(protected),essential_paths=sorted(essential))
- require(len(canonical(inventory)) <= 131072,"GROWTH_INPUT_INVENTORY_BYTES")
+ require(len(canonical(inventory))<=131072,"GROWTH_INPUT_INVENTORY_BYTES")
  return inventory,boots.pop()
 def freeze_growth_inputs(inputs,frame_path,plan_archive,archives_dir):
  raw=inputs.read(frame_path,*GROWTH_FRAME_PIN,"management_frame")
@@ -568,7 +573,7 @@ def freeze_growth_inputs(inputs,frame_path,plan_archive,archives_dir):
  selected=_growth_plan_members(archive)
  description=prior.plan_from_archive(archive)
  paths=prior.r.description(description)["paths"]
- archives={batch: inputs.read(Path(archives_dir) / name,size,sha,batch)
+ archives={batch:inputs.read(Path(archives_dir) / name,size,sha,batch)
  for batch,name,size,sha in prior.obligations.ARCHIVES}
  documents=prior.obligations.read_horizon(archives)
  horizon=prior.obligations.build_horizon(archives)
@@ -582,11 +587,11 @@ def freeze_growth_inputs(inputs,frame_path,plan_archive,archives_dir):
  return dict(anchor_path=anchor_path,paths=paths,description=description,horizon=horizon,boot_id=boot,
  inventory=inventory,source_binding=binding,source_binding_sha256=digest(canonical(binding)))
 def _proc_limit(kind,observed,cap,pid=0,tid=0):
- if observed <= cap:
+ if observed<=cap:
   return
  def number(value):
   if type(value) is int:
-   return str(value) if 0 <= value <= 9999999999 else "0"
+   return str(value) if 0<=value<=9999999999 else "0"
   return str(int(value)) if type(value) is str and re.fullmatch(r"[0-9]{1,10}",value) else "0"
  require(False,f"GROWTH_PROC_LIMIT_{kind}_N{observed}_MAX{cap}_P{number(pid)}_T{number(tid)}")
 def _bounded_names(path,cap,check,*,numeric=False,kind="PID_ENTRIES",pid=0,tid=0):
@@ -598,14 +603,14 @@ def _bounded_names(path,cap,check,*,numeric=False,kind="PID_ENTRIES",pid=0,tid=0
     continue
    values.append(entry.name)
    _proc_limit(kind,len(values),cap,pid,tid)
- require(len(values) == len(set(values)),"GROWTH_PROC_DRIFT")
+ require(len(values)==len(set(values)),"GROWTH_PROC_DRIFT")
  return sorted(values)
 def _proc_read(path,cap,check,kind="PID_STAT_BYTES",pid=0,tid=0):
  check()
  fd=os.open(path,os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
  try:
   raw=bytearray()
-  while len(raw) <= cap:
+  while len(raw)<=cap:
    check()
    part=os.read(fd,min(65536,cap + 1 - len(raw)))
    if not part:
@@ -627,19 +632,19 @@ def _fd_snapshot(path,check,pid=0,tid=0,kind="FD_ENTRIES"):
  return values
 def collect_image_writers(image_keys,check,*,proc_root="/proc",mount_reader=None):
  require(type(image_keys) is dict and image_keys,"GROWTH_IMAGE_KEYS")
- require(len(image_keys) == len(set(image_keys.values())),"GROWTH_IMAGE_ALIAS")
- reverse={key: role for role,key in image_keys.items()}
+ require(len(image_keys)==len(set(image_keys.values())),"GROWTH_IMAGE_ALIAS")
+ reverse={key:role for role,key in image_keys.items()}
  rows,totals=[],[0,0,0]
  try:
-  if proc_root == "/proc":
+  if proc_root=="/proc":
    mounts=(mount_reader() if mount_reader is not None else
  _proc_read("/proc/self/mountinfo",MIB,check,"MOUNTINFO_BYTES")).splitlines()
    matches=[line.split() for line in mounts if len(line.split()) > 6
- and line.split()[4] == b"/proc"]
-   require(len(matches) == 1 and matches[0][3] == b"/" and b"proc" in matches[0],
+ and line.split()[4]==b"/proc"]
+   require(len(matches)==1 and matches[0][3]==b"/" and b"proc" in matches[0],
  "GROWTH_WRITERS_VISIBILITY")
    options=b",".join(matches[0]).split(b",")
-   require(not any(value.startswith(b"hidepid=") and value != b"hidepid=0"
+   require(not any(value.startswith(b"hidepid=") and value!=b"hidepid=0"
  for value in options),"GROWTH_WRITERS_VISIBILITY")
   pids=_bounded_names(proc_root,32768,check,numeric=True)
   for pid in pids:
@@ -663,37 +668,37 @@ def collect_image_writers(image_keys,check,*,proc_root="/proc",mount_reader=None
      if role is not None:
       raw=_proc_read(task + "/fdinfo/" + number,4096,check,"FDINFO_BYTES",pid,tid)
       found=re.findall(rb"^flags:\s+([0-7]+)$",raw,re.M)
-      require(len(found) == 1,"GROWTH_WRITERS_UNKNOWN")
+      require(len(found)==1,"GROWTH_WRITERS_UNKNOWN")
       flags=int(found[0],8)
       if flags & os.O_ACCMODE in (os.O_WRONLY,os.O_RDWR):
        writable.add(role)
       again=os.stat(path)
-      require(identity(again) == identity(info),"GROWTH_PROC_DRIFT")
-      require(_proc_read(task + "/fdinfo/" + number,4096,check,"FDINFO_BYTES_RECHECK",pid,tid) == raw,
+      require(identity(again)==identity(info),"GROWTH_PROC_DRIFT")
+      require(_proc_read(task + "/fdinfo/" + number,4096,check,"FDINFO_BYTES_RECHECK",pid,tid)==raw,
  "GROWTH_PROC_DRIFT")
-    require({n: identity(s) for n,s in names.items()} ==
- {n: identity(s) for n,s in _fd_snapshot(task + "/fd",check,pid,tid,kind="FD_ENTRIES_RECHECK").items()},
+    require({n:identity(s) for n,s in names.items()}==
+ {n:identity(s) for n,s in _fd_snapshot(task + "/fd",check,pid,tid,kind="FD_ENTRIES_RECHECK").items()},
  "GROWTH_PROC_DRIFT")
     maps=_proc_read(task + "/maps",MIB,check,"MAPS_BYTES",pid,tid)
     totals[2] += len(maps)
     _proc_limit("MAPS_TOTAL_BYTES",totals[2],64 * MIB,pid,tid)
     for line in maps.splitlines():
      fields=line.split(None,5)
-     require(len(fields) >= 5 and re.fullmatch(rb"[r-][w-][x-][ps]",fields[1])
+     require(len(fields)>=5 and re.fullmatch(rb"[r-][w-][x-][ps]",fields[1])
  and re.fullmatch(rb"[0-9a-fA-F]+:[0-9a-fA-F]+",fields[3])
  and fields[4].isdigit(),"GROWTH_PROC_MAPS")
      major,minor=(int(value,16) for value in fields[3].split(b":"))
      role=reverse.get((os.makedev(major,minor),int(fields[4])))
-     if role is not None and fields[1][1:2] == b"w":
+     if role is not None and fields[1][1:2]==b"w":
       writable.add(role)
-    require(proc_start(_proc_read(task + "/stat",16384,check,"TASK_STAT_BYTES_RECHECK",pid,tid)) == task_start,
+    require(proc_start(_proc_read(task + "/stat",16384,check,"TASK_STAT_BYTES_RECHECK",pid,tid))==task_start,
  "GROWTH_PROC_DRIFT")
-   require(tids == _bounded_names(directory + "/task",32768,check,numeric=True,kind="TASK_ENTRIES_RECHECK",pid=pid)
- and proc_start(_proc_read(directory + "/stat",16384,check,"PID_STAT_BYTES_RECHECK",pid)) == start,
+   require(tids==_bounded_names(directory + "/task",32768,check,numeric=True,kind="TASK_ENTRIES_RECHECK",pid=pid)
+ and proc_start(_proc_read(directory + "/stat",16384,check,"PID_STAT_BYTES_RECHECK",pid))==start,
  "GROWTH_PROC_DRIFT")
    rows.append(dict(pid=int(pid),starttime=start,complete=True,
  writable_images=sorted(writable)))
-  require(pids == _bounded_names(proc_root,32768,check,numeric=True,kind="PID_ENTRIES_RECHECK"),"GROWTH_PROC_DRIFT")
+  require(pids==_bounded_names(proc_root,32768,check,numeric=True,kind="PID_ENTRIES_RECHECK"),"GROWTH_PROC_DRIFT")
   return rows
  except (OSError,ValueError) as error:
   failure=prior.r.ObservationError("GROWTH_WRITERS_UNKNOWN")
@@ -707,31 +712,31 @@ class ImageSet:
   self.fds,self.paths,self.initial={},{},{}
   self.owner=os.geteuid()
   try:
-   drives=[argv[index + 1] for index,word in enumerate(argv[:-1]) if word == "-drive"]
-   require(len(drives) == 5,"GROWTH_DRIVE_COUNT")
+   drives=[argv[index + 1] for index,word in enumerate(argv[:-1]) if word=="-drive"]
+   require(len(drives)==5,"GROWTH_DRIVE_COUNT")
    for drive in drives:
     fields=drive.split(",")
     require(all("=" in field for field in fields),"GROWTH_DRIVE_FORMAT")
     pairs=[field.split("=",1) for field in fields]
     options=dict(pairs)
-    require(len(pairs) == len(options),"GROWTH_DRIVE_FORMAT")
+    require(len(pairs)==len(options),"GROWTH_DRIVE_FORMAT")
     path=options.get("file","")
     require(re.fullmatch(r"/[A-Za-z0-9_./-]+",path)
- and os.path.normpath(path) == path and str(Path(path).parent) == anchor,
+ and os.path.normpath(path)==path and str(Path(path).parent)==anchor,
  "GROWTH_IMAGE_PATH")
     name=Path(path).name
-    if options.get("format") == "qcow2":
-     require(name.endswith(".qcow2") and options.get("readonly","off") == "off",
+    if options.get("format")=="qcow2":
+     require(name.endswith(".qcow2") and options.get("readonly","off")=="off",
  "GROWTH_IMAGE_FORMAT")
      role=name[:-6] if name in ("quota.qcow2","journal.qcow2","evidence.qcow2") else "system"
-     cap=IMAGE_CAP if role == "journal" else 32 * 1024**3
-     if role == "journal":
+     cap=IMAGE_CAP if role=="journal" else 32 * 1024**3
+     if role=="journal":
       self.journal_drive_id=options.get("id","")
       require(re.fullmatch(r"[A-Za-z0-9_-]{1,64}",self.journal_drive_id),
  "GROWTH_JOURNAL_DRIVE_ID")
     else:
-     require(options.get("format") == "raw" and
- (options.get("readonly") == "on" or options.get("media") == "cdrom"),
+     require(options.get("format")=="raw" and
+ (options.get("readonly")=="on" or options.get("media")=="cdrom"),
  "GROWTH_SEED_FORMAT")
      role,cap="seed",16 * MIB
     require(role not in self.fds,"GROWTH_DRIVE_ROLE")
@@ -742,24 +747,24 @@ class ImageSet:
     validate_file(info,cap,self.owner)
     require(info.st_size > 0,"GROWTH_EMPTY_IMAGE")
     self.initial[role]=info
-   require(set(self.fds) == {"system","quota","journal","evidence","seed"},
+   require(set(self.fds)=={"system","quota","journal","evidence","seed"},
  "GROWTH_DRIVE_ROLE")
    devices=[]
    for index,word in enumerate(argv[:-1]):
-    if word != "-device":
+    if word!="-device":
      continue
     parts=argv[index + 1].split(",")
     pairs=[part.split("=",1) for part in parts[1:]]
-    require(all(len(pair) == 2 for pair in pairs),"GROWTH_DEVICE_FORMAT")
+    require(all(len(pair)==2 for pair in pairs),"GROWTH_DEVICE_FORMAT")
     options=dict(pairs)
-    require(len(options) == len(pairs),"GROWTH_DEVICE_FORMAT")
-    if options.get("drive") == self.journal_drive_id:
-     require(parts[0] == "virtio-blk-pci","GROWTH_JOURNAL_DEVICE")
+    require(len(options)==len(pairs),"GROWTH_DEVICE_FORMAT")
+    if options.get("drive")==self.journal_drive_id:
+     require(parts[0]=="virtio-blk-pci","GROWTH_JOURNAL_DEVICE")
      devices.append(options.get("serial",""))
-   require(len(devices) == 1 and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}",devices[0]),
+   require(len(devices)==1 and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}",devices[0]),
  "GROWTH_JOURNAL_SERIAL")
    self.journal_serial=devices[0]
-   require(len(set(self.image_keys().values())) == 5,"GROWTH_IMAGE_ALIAS")
+   require(len(set(self.image_keys().values()))==5,"GROWTH_IMAGE_ALIAS")
    self.recheck()
   except BaseException:
    self.close()
@@ -771,32 +776,32 @@ class ImageSet:
  def journal_path(self):
   return self.paths["journal"]
  def image_keys(self):
-  return {role: (os.fstat(fd).st_dev,os.fstat(fd).st_ino) for role,fd in self.fds.items()}
+  return {role:(os.fstat(fd).st_dev,os.fstat(fd).st_ino) for role,fd in self.fds.items()}
  def recheck(self,*,stable=False,journal_changed=False):
   self.check()
   parent=local.open_directory(self.anchor,self.owner)
   try:
-   require(identity(os.fstat(parent)) == self.parent_identity == identity(os.fstat(self.anchor_fd)),
+   require(identity(os.fstat(parent))==self.parent_identity==identity(os.fstat(self.anchor_fd)),
  "GROWTH_IMAGE_PARENT_DRIFT")
    for role,fd in self.fds.items():
     info=os.fstat(fd)
     named=os.stat(Path(self.paths[role]).name,dir_fd=parent,follow_symlinks=False)
-    require(identity(info) == identity(named) == identity(self.initial[role]),"GROWTH_IMAGE_DRIFT")
-    validate_file(info,IMAGE_CAP if role == "journal" else
- (16 * MIB if role == "seed" else 32 * 1024**3),self.owner)
-    require(stable_identity(info) == stable_identity(named),"GROWTH_IMAGE_DRIFT")
-    if role == "seed" or (stable and not (journal_changed and role == "journal")):
-     require(stable_identity(info) == stable_identity(self.initial[role]),"GROWTH_IMAGE_WRITE")
+    require(identity(info)==identity(named)==identity(self.initial[role]),"GROWTH_IMAGE_DRIFT")
+    validate_file(info,IMAGE_CAP if role=="journal" else
+ (16 * MIB if role=="seed" else 32 * 1024**3),self.owner)
+    require(stable_identity(info)==stable_identity(named),"GROWTH_IMAGE_DRIFT")
+    if role=="seed" or (stable and not (journal_changed and role=="journal")):
+     require(stable_identity(info)==stable_identity(self.initial[role]),"GROWTH_IMAGE_WRITE")
   finally:
    os.close(parent)
  def checkpoint(self):
   self.recheck()
-  self.initial={role: os.fstat(fd) for role,fd in self.fds.items()}
+  self.initial={role:os.fstat(fd) for role,fd in self.fds.items()}
  def capacity(self):
   self.recheck()
   for fd in self.fds.values():
    value=os.fstatvfs(fd)
-   require(value.f_bavail * value.f_frsize >= HOST_BYTES and value.f_favail >= HOST_INODES,
+   require(value.f_bavail * value.f_frsize>=HOST_BYTES and value.f_favail>=HOST_INODES,
  "GROWTH_HOST_CAPACITY")
  def verify_writers(self,expected_pid,*,proc_root="/proc"):
   self.recheck()
@@ -813,13 +818,13 @@ class ImageSet:
   value=validate_image_info(output["stdout"],expected_size)
   checked=tool.run(commands["check"])
   result=prior.r.parse(checked["stdout"],65536)
-  require(result.get("check-errors",0) == 0 and result.get("corruptions",0) == 0
- and result.get("leaks",0) == 0,"GROWTH_IMAGE_CHECK")
+  require(result.get("check-errors",0)==0 and result.get("corruptions",0)==0
+ and result.get("leaks",0)==0,"GROWTH_IMAGE_CHECK")
   self.recheck(stable=True)
   return dict(info=value,check=result)
  def grow(self,tool,backup_path):
   self.recheck(stable=True)
-  require(backup_path == self.anchor + "/" + NAMES["journal.backup.qcow2"],"GROWTH_BACKUP_PATH")
+  require(backup_path==self.anchor + "/" + NAMES["journal.backup.qcow2"],"GROWTH_BACKUP_PATH")
   commands=image_commands(self.journal_path,backup_path)
   tool.run(commands["resize"])
   self.recheck(stable=True,journal_changed=True)
@@ -840,10 +845,10 @@ def pidfile(anchor_fd,suffix,check):
  try:
   info=os.fstat(fd)
   validate_file(info,4096,os.geteuid())
-  require(info.st_size <= 64,"GROWTH_PIDFILE")
+  require(info.st_size<=64,"GROWTH_PIDFILE")
   raw=os.read(fd,65)
   require(re.fullmatch(rb"[1-9][0-9]{0,9}\n?",raw) and int(raw) > 1,"GROWTH_PIDFILE")
-  require(stable_identity(os.fstat(fd)) == stable_identity(info) ==
+  require(stable_identity(os.fstat(fd))==stable_identity(info)==
  stable_identity(os.stat(suffix,dir_fd=anchor_fd,follow_symlinks=False)),"GROWTH_PIDFILE_DRIFT")
   check()
   return int(raw)
@@ -854,14 +859,14 @@ def freeze_vm(start,anchor,anchor_fd,qemu_tool,check):
  raw=proc_bytes(pid,"cmdline",65536,check)
  require(raw.endswith(b"\0"),"GROWTH_PROCESS_ARGV")
  current=[word.decode("ascii","strict") for word in raw[:-1].split(b"\0")]
- require(current.count("-serial") == 1,"GROWTH_PROCESS_SERIAL")
+ require(current.count("-serial")==1,"GROWTH_PROCESS_SERIAL")
  index=current.index("-serial") + 1
  require(index < len(current) and current[index].startswith("file:"),"GROWTH_PROCESS_SERIAL")
  serial=current[index][5:]
- require(re.fullmatch(r"/[A-Za-z0-9_./-]{1,4095}",serial) and os.path.normpath(serial) == serial,
+ require(re.fullmatch(r"/[A-Za-z0-9_./-]{1,4095}",serial) and os.path.normpath(serial)==serial,
  "GROWTH_PROCESS_SERIAL")
  original,restart=qemu_argv(start,anchor,serial)
- require(current == original,"GROWTH_PROCESS_ARGV")
+ require(current==original,"GROWTH_PROCESS_ARGV")
  process=ProcessIdentity(pid,original,qemu_tool.fd,check)
  images=None
  try:
@@ -891,14 +896,14 @@ sys.exit(m.entry(v))
 """
 def source_bundle(sources,descriptor):
  import zlib
- value={"input": canonical(descriptor)}
- value.update({key: sources[name] for key,name in
+ value={"input":canonical(descriptor)}
+ value.update({key:sources[name] for key,name in
  (("reader","q2_core_capacity_reader.py"),("guest","q2_journal_growth_guest.py"))})
- require(all(type(raw) is bytes and 0 < len(raw) <= 65536 for raw in value.values()),"GROWTH_BUNDLE_INPUT")
- raw=canonical({key: base64.b64encode(data).decode("ascii") for key,data in value.items()})
- require(len(raw) <= 393216,"GROWTH_BUNDLE_BOUND")
+ require(all(type(raw) is bytes and 0 < len(raw)<=65536 for raw in value.values()),"GROWTH_BUNDLE_INPUT")
+ raw=canonical({key:base64.b64encode(data).decode("ascii") for key,data in value.items()})
+ require(len(raw)<=393216,"GROWTH_BUNDLE_BOUND")
  compressed=zlib.compress(raw,9)
- require(len(compressed) <= 49152,"GROWTH_BUNDLE_BOUND")
+ require(len(compressed)<=49152,"GROWTH_BUNDLE_BOUND")
  return base64.b64encode(compressed).decode("ascii"),digest(compressed)
 def remote_argv(anchor_path,sources,descriptor):
  encoded,sha=source_bundle(sources,descriptor)
@@ -906,7 +911,7 @@ def remote_argv(anchor_path,sources,descriptor):
  "PATH=/usr/bin:/bin","LANG=C","LC_ALL=C","/usr/bin/python3","-I","-B","-c",
  GUEST_LOADER,encoded,sha]
  argv=local.make_argv(anchor_path,b"# unused")[:-1] + [shlex.join(command)]
- require(sum(len(word.encode()) + 1 for word in argv) <= 65536,"GROWTH_ARGV_LIMIT")
+ require(sum(len(word.encode()) + 1 for word in argv)<=65536,"GROWTH_ARGV_LIMIT")
  return argv
 class MaintenanceTransport:
  def __init__(self,anchor,store,argv,phase,nonce,source_binding_sha256,original_boot_id,
@@ -916,18 +921,18 @@ class MaintenanceTransport:
   self.nonce,self.source_sha,self.old_boot=nonce,source_binding_sha256,original_boot_id
   self.validate,self.report,self.sent,self.offset=validate,None,False,0
   self.is_vm=False
-  self.output={name: bytearray() for name in ("stdout","stderr")}
-  self.eof={name: False for name in self.output}
-  self.fds={name: store.create(phase + "." + name) for name in self.output}
+  self.output={name:bytearray() for name in ("stdout","stderr")}
+  self.eof={name:False for name in self.output}
+  self.fds={name:store.create(phase + "." + name) for name in self.output}
   self.selector,self.process=selectors.DefaultSelector(),None
   try:
    check()
-   env={key: os.environ[key] for key in ("HOME","USER","LOGNAME") if key in os.environ}
+   env={key:os.environ[key] for key in ("HOME","USER","LOGNAME") if key in os.environ}
    env.update(PATH="/usr/bin:/bin",LANG="C",LC_ALL="C")
    require(sum(len(x.encode()) + 1 for x in argv) +
- sum(len((k + "=" + v).encode()) + 1 for k,v in env.items()) <= 65536,"GROWTH_ARGV_LIMIT")
+ sum(len((k + "=" + v).encode()) + 1 for k,v in env.items())<=65536,"GROWTH_ARGV_LIMIT")
    self.process=popen(argv,executable=f"/proc/self/fd/{anchor.ssh}",pass_fds=(anchor.ssh,),
- stdin=subprocess.PIPE if phase == "pre" else subprocess.DEVNULL,
+ stdin=subprocess.PIPE if phase=="pre" else subprocess.DEVNULL,
  stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,
  preexec_fn=control_limits,start_new_session=True)
    COMMANDS.append(self)
@@ -953,12 +958,12 @@ class MaintenanceTransport:
     part=raw[:room]
     write_all(self.fds[name],part,self.check)
     self.output[name].extend(part)
-    require(len(raw) <= room,"GROWTH_STREAM_LIMIT")
+    require(len(raw)<=room,"GROWTH_STREAM_LIMIT")
     self.store.budget()
  def seal(self):
   for name,fd in self.fds.items():
    os.fsync(fd)
-   require(hash_fd(fd,MIB,self.check) == dict(bytes=len(self.output[name]),
+   require(hash_fd(fd,MIB,self.check)==dict(bytes=len(self.output[name]),
  sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
    os.lseek(fd,0,os.SEEK_END)
   self.store.budget()
@@ -970,15 +975,15 @@ class MaintenanceTransport:
     self.pump()
    raw=bytes(self.output["stdout"]).split(b"\n",1)[0] + b"\n"
    value=prior.r.parse(raw,MIB)
-   require(canonical(value) == raw and value.get("schema") == "lhq-journal-growth-guest/v1"
- and value.get("session") == SESSION and value.get("phase") == self.phase
- and value.get("nonce") == self.nonce and value.get("source_binding_sha256") == self.source_sha
- and value.get("status") == ("GUEST_QUIET" if self.phase == "pre" else "FILESYSTEM_GROWN"),
+   require(canonical(value)==raw and value.get("schema")=="lhq-journal-growth-guest/v1"
+ and value.get("session")==SESSION and value.get("phase")==self.phase
+ and value.get("nonce")==self.nonce and value.get("source_binding_sha256")==self.source_sha
+ and value.get("status")==("GUEST_QUIET" if self.phase=="pre" else "FILESYSTEM_GROWN"),
  "GROWTH_REPORT_BINDING")
    boot=value.get("boot_id")
    require(type(boot) is str and re.fullmatch(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}",boot)
- and ((boot == self.old_boot) if self.phase == "pre" else
- (boot != self.old_boot and value.get("original_boot_id") == self.old_boot)),"GROWTH_REPORT_BOOT")
+ and ((boot==self.old_boot) if self.phase=="pre" else
+ (boot!=self.old_boot and value.get("original_boot_id")==self.old_boot)),"GROWTH_REPORT_BOOT")
    if self.validate is not None:
     self.validate(value)
    self.seal()
@@ -988,8 +993,8 @@ class MaintenanceTransport:
    error.growth_transport=self
    raise
  def continue_poweroff(self,pre_digest):
-  require(self.phase == "pre" and self.report is not None and not self.sent
- and pre_digest == digest(canonical(self.report)),"GROWTH_CONTINUE_BINDING")
+  require(self.phase=="pre" and self.report is not None and not self.sent
+ and pre_digest==digest(canonical(self.report)),"GROWTH_CONTINUE_BINDING")
   self.sent=True  # A partial write also permanently spends the one token.
   try:
    self.seal()
@@ -998,28 +1003,28 @@ class MaintenanceTransport:
    token=continue_token(self.nonce,pre_digest)
    fd=self.process.stdin.fileno()
    os.set_blocking(fd,False)
-   require(os.write(fd,token) == len(token),"GROWTH_TOKEN_SHORT_WRITE")
+   require(os.write(fd,token)==len(token),"GROWTH_TOKEN_SHORT_WRITE")
    self.process.stdin.close()
   except BaseException as error:
    error.growth_transport=self
    raise
  def finish(self):
   try:
-   require(self.report is not None and (self.phase == "post" or self.sent),"GROWTH_FINISH_ORDER")
+   require(self.report is not None and (self.phase=="post" or self.sent),"GROWTH_FINISH_ORDER")
    while self.selector.get_map() or self.process.poll() is None:
     self.pump()
    self.seal()
    tail=bytes(self.output["stdout"])[self.offset:]
    ack=None
-   if self.phase == "pre":
+   if self.phase=="pre":
     ack=prior.r.parse(tail,MIB)
-    require(tail == canonical(ack) and ack == dict(schema="lhq-journal-growth-guest/v1",
+    require(tail==canonical(ack) and ack==dict(schema="lhq-journal-growth-guest/v1",
  session=SESSION,status="POWER_OFF_REQUESTED",nonce=self.nonce,
  pre_report_sha256=digest(canonical(self.report))),"GROWTH_POWER_OFF_ACK")
    else:
-    require(not tail and self.process.returncode == 0,"GROWTH_POST_RETURN")
+    require(not tail and self.process.returncode==0,"GROWTH_POST_RETURN")
    return dict(returncode=self.process.returncode,eof=dict(self.eof),ack=ack,
- files={name: dict(bytes=len(raw),sha256=digest(bytes(raw))) for name,raw in self.output.items()})
+ files={name:dict(bytes=len(raw),sha256=digest(bytes(raw))) for name,raw in self.output.items()})
   except BaseException as error:
    error.growth_transport=self
    raise
@@ -1046,24 +1051,30 @@ def growth_sources(expected):
  def git(*args):
   value=subprocess.run(["git","-c","maintenance.auto=false","-c","gc.auto=0",*args],
  cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
-  require(value.returncode == 0,"GROWTH_SOURCE")
+  require(value.returncode==0,"GROWTH_SOURCE")
   return value.stdout
- require(git("rev-parse","HEAD").decode().strip() == expected and expected != C,"GROWTH_D_HEAD")
+ require(git("rev-parse","HEAD").decode().strip()==expected and expected!=C,"GROWTH_D_HEAD")
  git("diff","--quiet","HEAD")
  git("merge-base","--is-ancestor",C,expected)
  git("merge-base","--is-ancestor",TERM_C,expected)
- require(expected != TERM_C,"GROWTH_TERM_D")
+ require(expected!=TERM_C,"GROWTH_TERM_D")
  git("merge-base","--is-ancestor",DR_A,DR_C)
  git("merge-base","--is-ancestor",DR_C,expected)
- require(expected != DR_C,"GROWTH_RESUME_D")
+ require(expected!=DR_C,"GROWTH_RESUME_D")
+ git("merge-base","--is-ancestor",DRV2_A,DRV2_C)
+ git("merge-base","--is-ancestor",DRV2_C,expected)
+ require(expected!=DRV2_C,"GROWTH_RESUME_V2_D")
+ for name,sha in zip(DOC_PINS,DRV2_PINS):
+  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-diagnostic-resume-v2/" + name))==sha,
+ "GROWTH_RESUME_V2_A_CHANGED")
  for name,sha in zip(DOC_PINS,DR_PINS):
-  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-diagnostic-resume/" + name)) == sha,
+  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-diagnostic-resume/" + name))==sha,
  "GROWTH_RESUME_A_CHANGED")
  for name,sha in DOC_PINS.items():
-  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-growth/" + name)) == sha,
+  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-growth/" + name))==sha,
  "GROWTH_A_CHANGED")
  for name,sha in zip(DOC_PINS,READ_PINS):
-  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-host-read/" + name)) == sha,
+  require(digest(git("show",expected + ":docs/a2-execution/q2-core-journal-host-read/" + name))==sha,
  "GROWTH_READ_A_CHANGED")
  names=("q2_journal_growth.py","q2_journal_growth_guest.py","q2_core_capacity_capture.py",
  "q2_core_capacity_reader.py","q2_sshd_source_capture.py","q2_sshd_source_reader.py",
@@ -1073,15 +1084,15 @@ def growth_sources(expected):
  for name in names:
   fd=os.open(Path(__file__).with_name(name),os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
   try:
-   raw,_=local.stable_read(fd,524288,lambda: None)
+   raw,_=local.stable_read(fd,524288,lambda:None)
   finally:
    os.close(fd)
-  require(raw == git("show",expected + ":tests/e3_host/" + name),"GROWTH_SOURCE_DRIFT")
+  require(raw==git("show",expected + ":tests/e3_host/" + name),"GROWTH_SOURCE_DRIFT")
   if name not in names[:2]:
-   require(raw == git("show","8e91fa2631aa18a8469efa5a14e4145eaf781e28:tests/e3_host/" + name),
+   require(raw==git("show","8e91fa2631aa18a8469efa5a14e4145eaf781e28:tests/e3_host/" + name),
  "GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw
- require(all(len(sources[name]) <= 65536 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
+ require(all(len(sources[name])<=65536 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
  return sources
 class GrowthAnchor(prior.Anchor):
  def capacity(self):
@@ -1093,24 +1104,24 @@ class GrowthAnchor(prior.Anchor):
    fd=os.open(name,os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,dir_fd=self.fd)
    self.held.append((name,fd,local.metadata(os.fstat(fd))))
    validate_file(os.fstat(fd),65536,self.info["uid"])
-   require(os.fstat(fd).st_gid == self.info["gid"] and os.fstat(fd).st_dev == self.info["dev"]
- and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held}) == len(self.held),
+   require(os.fstat(fd).st_gid==self.info["gid"] and os.fstat(fd).st_dev==self.info["dev"]
+ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(self.held),
  "GROWTH_CAPACITY_IDENTITY")
    raw,_=local.stable_read(fd,65536,self.deadline.check)
-   require((len(raw),digest(raw)) == (size,sha),"GROWTH_CAPACITY_PIN")
-   if suffix == "stdout":
+   require((len(raw),digest(raw))==(size,sha),"GROWTH_CAPACITY_PIN")
+   if suffix=="stdout":
     frozen["saved_rows"]=prior.validate_result(raw,digest(sources["q2_core_capacity_reader.py"]),
  frozen["description"])["rows"]
-  units={row["name"]: row for row in frozen["inventory"]["expected_units"]}
+  units={row["name"]:row for row in frozen["inventory"]["expected_units"]}
   for session in GROWTH_CORE_SESSIONS:
    name="." + session + ".stdout"
-   fd=next(fd for held,fd,_ in self.held if held == name)
+   fd=next(fd for held,fd,_ in self.held if held==name)
    raw=os.pread(fd,65536,0)
-   require(raw.startswith(b"LHCHLO1\n") and int.from_bytes(raw[8:16],"big") == len(raw) - 16,
+   require(raw.startswith(b"LHCHLO1\n") and int.from_bytes(raw[8:16],"big")==len(raw) - 16,
  "GROWTH_HELLO_FRAME")
    hello=prior.r.parse(raw[16:],65536)
    carrier=hello["carrier_unit"]
-   require(hello["guest_boot_id"] == frozen["boot_id"] and carrier["name"] in units,
+   require(hello["guest_boot_id"]==frozen["boot_id"] and carrier["name"] in units,
  "GROWTH_HELLO_BINDING")
    units[carrier["name"]]["control_group"]=carrier["control_group"]
   frozen["source_binding"]["inventory_sha256"]=digest(canonical(frozen["inventory"]))
@@ -1120,18 +1131,18 @@ def management_usage():
  own,children=(resource.getrusage(kind) for kind in (resource.RUSAGE_SELF,resource.RUSAGE_CHILDREN))
  cpu=own.ru_utime + own.ru_stime + children.ru_utime + children.ru_stime
  live=[item for item in COMMANDS if not item.is_vm and item.process.poll() is None]
- require(len(live) <= 8,"GROWTH_CHILD_BUDGET")
+ require(len(live)<=8,"GROWTH_CHILD_BUDGET")
  rss=own.ru_maxrss * 1024
  complete=True
  for item in live:
   try:
-   value=proc_bytes(item.process.pid,"status",16384,lambda: None)
+   value=proc_bytes(item.process.pid,"status",16384,lambda:None)
    found=re.search(rb"^VmRSS:\s+([0-9]+) kB$",value,re.M)
    require(found is not None,"GROWTH_USAGE_UNKNOWN")
    rss += int(found[1]) * 1024
   except (OSError,ValueError,RuntimeError):
    complete=False
- require(cpu <= 120 and rss <= 512 * MIB,"GROWTH_MANAGEMENT_BUDGET")
+ require(cpu<=120 and rss<=512 * MIB,"GROWTH_MANAGEMENT_BUDGET")
  return dict(cpu_seconds=cpu,rss_upper_observation_bytes=rss,complete=complete,
  live_children=len(live),vm_excluded=True,guest_aggregate="UNKNOWN")
 class Maintenance:
@@ -1148,7 +1159,7 @@ class Maintenance:
    self.nonce=writer.nonce
    writer.record=self.event
    vm["images"].writer_observer=writer
-   for report in writer.reports: self.event(dict(writer_retained_report=report))
+   for report in writer.reports:self.event(dict(writer_retained_report=report))
   self.result=dict(schema="lhq-journal-growth-receipt/v1",session=SESSION,R=R,A=A,C=C,D=commit,
  state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
  production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1159,7 +1170,7 @@ class Maintenance:
   if self.writer is not None:
    self.writer.check()
    used=self.store.budget()
-   require(self.writer.io_bytes + max(used["allocated_bytes"],used["logical_bytes"]) <= CAPTURE_CAP,
+   require(self.writer.io_bytes + max(used["allocated_bytes"],used["logical_bytes"])<=CAPTURE_CAP,
  "GROWTH_WRITER_CAPTURE_BUDGET")
  def boundary(self):
   self.check()
@@ -1184,8 +1195,8 @@ class Maintenance:
  window_binding=self.window.binding,
  inventory_sha256=digest(canonical(self.frozen["inventory"])),
  retained_sha256=digest(canonical(self.anchor.retained)),
- sources={name: dict(bytes=len(raw),sha256=digest(raw)) for name,raw in self.sources.items()},
- tools={name: tool.binding() for name,tool in self.tools.items()},
+ sources={name:dict(bytes=len(raw),sha256=digest(raw)) for name,raw in self.sources.items()},
+ tools={name:tool.binding() for name,tool in self.tools.items()},
  vm=self.vm["binding"],image_identities=self.vm["images"].image_keys(),
  original_argv=self.vm["original_argv"],restart_argv=self.vm["restart_argv"],
  image_commands=image_commands(self.vm["images"].journal_path,
@@ -1202,21 +1213,21 @@ class Maintenance:
   self.pre_description,self.pre_argv=desc,argv
   result=run_tool(argv[:1] + ["-G"] + argv[1:],self.check,
  executable=f"/proc/self/fd/{self.anchor.ssh}",pass_fds=(self.anchor.ssh,),limit=65536)
-  require(len(result["stderr"]) <= 4096,"GROWTH_SSH_OPTIONS")
+  require(len(result["stderr"])<=4096,"GROWTH_SSH_OPTIONS")
   return self.manifest()
  def transport(self,phase,pre=None):
   self.window.change()
   self.bindings()
-  require(len(self.transports) == (0 if phase == "pre" else 1),"GROWTH_SSH_COUNT")
-  desc=self.pre_description if phase == "pre" else growth_descriptor(self.frozen,self.nonce,phase,self.window,pre)
-  argv=self.pre_argv if phase == "pre" else remote_argv(self.anchor.path,self.sources,desc)
+  require(len(self.transports)==(0 if phase=="pre" else 1),"GROWTH_SSH_COUNT")
+  desc=self.pre_description if phase=="pre" else growth_descriptor(self.frozen,self.nonce,phase,self.window,pre)
+  argv=self.pre_argv if phase=="pre" else remote_argv(self.anchor.path,self.sources,desc)
   self.event(dict(phase=phase,argv_sha256=digest(canonical(argv)),description_sha256=digest(canonical(desc))))
   self.result["ssh_requests"] += 1
   from e3_host import q2_journal_growth_guest as guest
-  validate=guest.validate_pre_report if phase == "pre" else guest.validate_post_report
+  validate=guest.validate_pre_report if phase=="pre" else guest.validate_post_report
   transport=MaintenanceTransport(self.anchor,self.store,argv,phase,self.nonce,
  self.frozen["source_binding_sha256"],self.frozen["boot_id"],self.check,
- validate=lambda report: validate(report,desc))
+ validate=lambda report:validate(report,desc))
   self.transports.append(transport)
   return transport
  def run(self,manifest):
@@ -1224,7 +1235,7 @@ class Maintenance:
   try:
    def consume():
     self.window.change(); self.bindings(); self.store.absent(); self.store.capacity()
-    require(self.writer is None or len(self.writer.reports) == 2 and not self.writer.failed,
+    require(self.writer is None or len(self.writer.reports)==2 and not self.writer.failed,
  "GROWTH_WRITER_PREMARKER")
     self.store.put("consumed.json",canonical(dict(manifest_sha256=digest(canonical(manifest)),
  manifest=manifest,nonce=self.nonce,clocks=self.window.origins,session=SESSION,D=self.commit,
@@ -1237,7 +1248,7 @@ class Maintenance:
     self.pending.clear()
     return dict(manifest_sha256=digest(canonical(manifest)))
    self.seq.step("CONSUMED",consume)
-   pre=self.seq.step("GUEST_QUIET",lambda: self.transport("pre").receive_report())
+   pre=self.seq.step("GUEST_QUIET",lambda:self.transport("pre").receive_report())
    def poweroff():
     self.window.change(); self.bindings(); old.recheck()
     remote_argv(self.anchor.path,self.sources,
@@ -1287,11 +1298,11 @@ class Maintenance:
    def verify():
     from e3_host import q2_journal_growth_guest as guest
     self.bindings(); self.new_vm.recheck()
-    require(post["pre_report_sha256"] == digest(canonical(pre)),"GROWTH_POST_BINDING")
+    require(post["pre_report_sha256"]==digest(canonical(pre)),"GROWTH_POST_BINDING")
     guest.verify_preservation(pre["tree"],post["tree"])
     guest.validate_completion(pre["rows"],post["rows"])
     comparison=prior.compare(dict(rows=post["rows"]),self.frozen["horizon"])
-    require(all(row[field]["deficit"] == 0 for row in comparison["pools"]
+    require(all(row[field]["deficit"]==0 for row in comparison["pools"]
  for field in ("bytes","inodes")),"GROWTH_OTHER_CAPACITY")
     self.result.update(new_boot_id=post["boot_id"],remote_exit="HELPER_REPORTED_COMPLETE")
     return dict(comparison=comparison,tree=post["tree"],rows=post["rows"])
@@ -1304,7 +1315,7 @@ class Maintenance:
    failed=getattr(error,"growth_result",None)
    if failed is not None:
     self.result["failed_tool"]=dict(returncode=failed["returncode"],eof=failed["eof"],
- streams={name: dict(bytes=len(failed[name]),sha256=digest(failed[name]))
+ streams={name:dict(bytes=len(failed[name]),sha256=digest(failed[name]))
  for name in ("stdout","stderr")})
   self.result.update(last_step=self.seq.state,started=sorted(self.seq.started),
  clock_origins_ns=self.window.origins)
@@ -1314,7 +1325,7 @@ class Maintenance:
   self.result["processes"]=[dict(identity=getattr(item,"identity",dict(pid=item.process.pid)),
  exit=item.process.poll(),vm=item.is_vm) for item in COMMANDS]
   self.result["transports"]=[dict(pid=item.process.pid,exit=item.process.poll(),
- files={name: dict(bytes=len(raw),sha256=digest(bytes(raw))) for name,raw in item.output.items()})
+ files={name:dict(bytes=len(raw),sha256=digest(bytes(raw))) for name,raw in item.output.items()})
  for item in self.transports]
   self.result["marker_created"]="consumed.json" in self.store.opened
   try:
@@ -1339,15 +1350,15 @@ def main():
  window=None
  writer=None
  global VM_LIMITS
- VM_LIMITS={key: resource.getrlimit(key) for key in (resource.RLIMIT_AS,resource.RLIMIT_NOFILE)}
+ VM_LIMITS={key:resource.getrlimit(key) for key in (resource.RLIMIT_AS,resource.RLIMIT_NOFILE)}
  try:
-  require(os.geteuid() != 0,"GROWTH_ORDINARY_COORDINATOR")
+  require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
   sources=growth_sources(args.expected_commit)
-  require(all(resource.getrlimit(key) == (resource.RLIM_INFINITY,resource.RLIM_INFINITY)
+  require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
  for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")
   require(not args.execute or args.window_binding and args.writer_preflight,"GROWTH_ORIGINAL_WINDOW_REQUIRED")
   require(args.execute or not (args.window_binding or args.writer_preflight),"GROWTH_PRECHECK_REPLAY")
-  require(args.writer_auth == "terminal","GROWTH_AUTH_MODE")
+  require(args.writer_auth=="terminal","GROWTH_AUTH_MODE")
   terminal=terminal_binding()
   window=Window()
   bind_window(window,args.window_binding.encode("ascii") if args.window_binding else None)
@@ -1368,7 +1379,7 @@ def main():
   manifest=maintenance.preflight()
   sha=digest(canonical(manifest))
   if args.execute:
-   require(args.expected_manifest == sha,"GROWTH_MANIFEST_NOT_FROZEN")
+   require(args.expected_manifest==sha,"GROWTH_MANIFEST_NOT_FROZEN")
    result=maintenance.run(manifest)
   else:
    result=dict(state="LOCAL_PREFLIGHT_PASSED",D=args.expected_commit,manifest_sha256=sha,
@@ -1388,15 +1399,15 @@ def main():
   return 3
  finally:
   if maintenance is not None:
-   for transport in maintenance.transports: transport.close()
+   for transport in maintenance.transports:transport.close()
    maintenance.store.close()
-   if maintenance.new_vm is not None: maintenance.new_vm.close()
+   if maintenance.new_vm is not None:maintenance.new_vm.close()
   if vm is not None:
    vm["process"].close(); vm["images"].close()
-  for tool in tools.values(): tool.close()
-  if writer is not None: writer.close()
-  if anchor is not None: anchor.close()
+  for tool in tools.values():tool.close()
+  if writer is not None:writer.close()
+  if anchor is not None:anchor.close()
   inputs.close()
-  for key,limits in VM_LIMITS.items(): resource.setrlimit(key,limits)
-if __name__ == "__main__":
+  for key,limits in VM_LIMITS.items():resource.setrlimit(key,limits)
+if __name__=="__main__":
  sys.exit(main())
