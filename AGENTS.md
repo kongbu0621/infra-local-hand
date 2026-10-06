@@ -1592,6 +1592,40 @@ host carrier, sudo policy/configuration change, observer invocation change or fu
 material change requiring a new exact review and Owner closure. Do not probe sudo, retry the
 observer, change host configuration or start maintenance under this closure.
 
+### Journal terminal authentication amendment
+
+Scope `LH-Q2-CORE-JOURNAL-TERMINAL-AUTH-v1` is **CLOSED for T1–T3 only** at exact A
+`2b236865dc0a89e475c4021cac44d7193f252f67`. Its
+[baseline registration](docs/governance/Q2_CORE_JOURNAL_TERMINAL_AUTH_BASELINE.md) pins the
+[requirements](docs/a2-execution/q2-core-journal-terminal-auth/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-journal-terminal-auth/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-journal-terminal-auth/IMPLEMENTATION_PLAN.md).
+Their historical OPEN labels and exact bytes remain unchanged. R, direct source/integrity,
+Owner-only authority, mandate, no exceptions and the material-change rule remain unchanged.
+
+Exact Owner B is retained in
+[the Owner decision](docs/governance/Q2_CORE_JOURNAL_TERMINAL_AUTH_OWNER_DECISION.md), event
+`LH-Q2-CORE-JOURNAL-TERMINAL-AUTH-CLOSURE-20261006-01`. This independent bookkeeping-only C
+records CLOSED before implementation D and contains no source, tests, executable prototype,
+dependency, configuration, release digest or field action. A and the retained failed-window record
+were joined without rewriting either history; D must descend from C and must not be squashed with it.
+
+The amendment allows only the Owner in an existing real local foreground terminal to authenticate
+the fixed read-only writer sudo call, without `-n`, and one new replacement preflight window.
+It does not grant or install host privilege: sudoers, accounts, capabilities, services and helpers
+must not change. Passwords must remain solely between the Owner and sudo's controlling terminal;
+Codex, program inputs, environment, files, logs, pipes and askpass must not receive them. No `-S`,
+`-A`, sudo-v, separate sudo probe, authentication warming or noninteractive-to-interactive fallback
+is allowed. Missing TTY, permission, timely authentication or any original check remains BLOCKED.
+
+T1 implementation and T2 exact verification/CI must complete before T3. T3 is at most one new
+900s/780s dual-clock window under the original session and inputs. Every writer checkpoint remains
+one call within 15s and the original maximum of eight; authentication time is included. Original
+budgets and cumulative maxima remain one marker, two maintenance SSH requests, one normal shutdown,
+backup, image growth, VM start and ext4 growth. Failure stops without retry, reconnect, supplemental
+capture, forced shutdown, rollback or cleanup. H01/Q4/H11, namespace/watchdog and production
+`E3_SUPERVISION_UNVERIFIED` remain outside this closure.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
