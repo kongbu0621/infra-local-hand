@@ -1636,7 +1636,8 @@ report was present, so the exact lower-layer reason and root-payload execution r
 not be inferred from the password prompt or possible source failure set. Follow-up source repair
 `ac08b519f741b301f37959808749cb9755359123` preserves a valid future child's exact bounded failure
 reason and rejects absent/malformed failure reports; it passed 401 targeted host tests, but neither
-changes this result nor refunds or authorizes another field action. No sudo/writer probe, retry,
+changes this result nor refunds or authorizes another field action. Exact `ac08b51` CI run
+`37445246001` completed successfully on Linux and Windows. No sudo/writer probe, retry,
 reconnect, supplemental capture, cleanup, marker, SSH or maintenance is permitted under this closure.
 A new exact A, Owner decision and independent C are required before any further affected host window.
 

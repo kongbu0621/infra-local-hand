@@ -58,7 +58,8 @@ checkpoint 仍不能重试。该修复没有调用 sudo、没有读取现场、�
 无法判定的下层原因。
 
 修复后的真实宿主十文件窄测为 **401 passed，0 skipped，2.63s**；`git diff --check` 通过。
-冻结对象为：
+GitHub Actions `37445246001` 对准确 `ac08b519f741b301f37959808749cb9755359123`
+完成且结论为 `success`，Linux 与 Windows job 均通过。冻结对象为：
 
 | 对象 | 字节 | SHA-256 |
 | --- | ---: | --- |
