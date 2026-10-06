@@ -23,6 +23,8 @@ ORDER = ["marker", "pre_ssh", "pre_report", "poweroff", "pre_finish", "backup",
 
 @pytest.fixture
 def rig(monkeypatch, tmp_path):
+    # The effects and identity in this fixture model the ordinary coordinator.
+    monkeypatch.setattr(h.os, "geteuid", lambda: 1000)
     actions, events, files, failure, clock, errors = [], [], {}, [None], [0.0], []
     safe_reason = h.prior.safe_reason
     def reason(error):
@@ -209,6 +211,21 @@ def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
     assert result["reason"] == "GROWTH_BUNDLE_INPUT"
     assert rig.actions == ORDER[:3]
     assert result["ssh_requests"] == 1
+
+
+def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypatch, capsys):
+    monkeypatch.setattr(h.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
+        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--writer-auth", "terminal"])
+    def unexpected(*args):
+        pytest.fail("root must be rejected before source or field admission")
+    monkeypatch.setattr(h, "growth_sources", unexpected)
+    monkeypatch.setattr(h, "freeze_growth_inputs", unexpected)
+    assert h.main() == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == "GROWTH_ORDINARY_COORDINATOR"
+    assert result["marker_created"] is False and result["ssh_requests"] == 0
+    assert rig.actions == []
 
 
 def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys):

@@ -240,13 +240,13 @@ class Command:
     for key, _ in self.selector.select(0.05):
      name = key.data
      raw = os.read(key.fileobj.fileno(), min(65536, self.caps[name] + 1 - len(self.output[name])))
-     self.check()
      if not raw:
       self.eof[name] = True
       self.selector.unregister(key.fileobj)
-      continue
-     self.output[name].extend(raw)
-     require(len(self.output[name]) <= self.caps[name], "GROWTH_STREAM_LIMIT")
+     else:
+      self.output[name].extend(raw)
+      require(len(self.output[name]) <= self.caps[name], "GROWTH_STREAM_LIMIT")
+     self.check()
    self.check()
    return dict(returncode=self.process.returncode, eof=self.eof.copy(),
  **{name: bytes(value) for name, value in self.output.items()})
