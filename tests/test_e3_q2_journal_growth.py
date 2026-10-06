@@ -78,6 +78,20 @@ def test_preflight_and_execute_share_original_clock_and_host_boot(monkeypatch):
         g.bind_window(h.Window(clock=lambda _: now[0]), h.canonical(saved))
 
 
+def test_boot_permission_error_is_precise_without_weaker_retry(monkeypatch):
+    calls = []
+    def denied(path, flags):
+        calls.append((path, flags))
+        raise PermissionError(1, "private text must not be disclosed", path)
+    monkeypatch.setattr(g.os, "open", denied)
+    with pytest.raises(g.r.ObservationError, match="^GROWTH_KERNEL_OPEN$") as caught:
+        g.boot_id(lambda: None)
+    assert caught.value.diagnostic == dict(operation="open_kernel", target="boot", errno=1)
+    assert len(calls) == 1
+    assert calls[0][0] == "/proc/sys/kernel/random/boot_id"
+    assert calls[0][1] & os.O_NOATIME and calls[0][1] & os.O_NOFOLLOW
+
+
 @pytest.mark.parametrize("kind", ["future", "reboot", "malformed"])
 def test_invalid_window_binding_never_starts_a_new_window(monkeypatch, kind):
     current = "11111111-2222-3333-4444-555555555555"

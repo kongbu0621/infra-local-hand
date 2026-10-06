@@ -260,3 +260,24 @@ def test_execute_without_original_window_stops_before_field_reads(rig, monkeypat
     result = json.loads(capsys.readouterr().out)
     assert result["reason"] == "GROWTH_ORIGINAL_WINDOW_REQUIRED"
     assert result["marker_created"] is False and result["ssh_requests"] == 0
+
+
+def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypatch, capsys):
+    monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
+        "--archives-dir", "archives", "--expected-commit", "d" * 40])
+    monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
+    def denied(check):
+        error = guest.r.ObservationError("GROWTH_KERNEL_OPEN")
+        error.diagnostic = dict(operation="open_kernel", target="boot", errno=1)
+        raise error
+    def unexpected(*args):
+        pytest.fail("boot failure must stop before field inputs")
+    monkeypatch.setattr(guest, "boot_id", denied)
+    monkeypatch.setattr(h, "freeze_growth_inputs", unexpected)
+    assert h.main() == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == "GROWTH_KERNEL_OPEN"
+    assert result["diagnostic"] == dict(operation="open_kernel", target="boot", errno=1)
+    assert set(result["window_binding"]) == {"origins"}
+    assert len(result["window_binding"]["origins"]) == 2
+    assert result["marker_created"] is False and result["ssh_requests"] == 0

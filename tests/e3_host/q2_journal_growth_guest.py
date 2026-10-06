@@ -270,7 +270,13 @@ def read_fd(fd, cap, check):
 def read_kernel(path, cap, check, *, expected_fs):
     # Callers construct only fixed proc/sys paths and decimal PID/fd components.
     check()
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC | os.O_NONBLOCK)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC | os.O_NONBLOCK)
+    except OSError as error:
+        failure = r.ObservationError("GROWTH_KERNEL_OPEN")
+        failure.diagnostic = dict(operation="open_kernel", target="boot" if
+            path == "/proc/sys/kernel/random/boot_id" else "kernel_view", errno=error.errno)
+        raise failure from error
     try:
         info = os.fstat(fd)
         require(stat.S_ISREG(info.st_mode) and r.filesystem_type(fd) == expected_fs, "GROWTH_KERNEL_SOURCE")
