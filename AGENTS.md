@@ -1558,16 +1558,19 @@ Its first local J3 preflight at `50ec8f2dcb4bbee97934b22cb5f24d372ce19613` stopp
 Do not discard its partial window binding or automatically start a fresh window merely because
 no marker was created. No maintenance shutdown, backup, growth or restart was issued.
 
-Scope `LH-Q2-CORE-JOURNAL-HOST-READ-v1` is **OPEN / NOT APPROVED for R1–R3**.
-Exact proposed A is `2b4448c7b89d1910840f7aee2ae2b781f970e179`; its
+Scope `LH-Q2-CORE-JOURNAL-HOST-READ-v1` is **CLOSED for R1–R3 only**.
+Exact approved A is `2b4448c7b89d1910840f7aee2ae2b781f970e179`; its
 [registration and exact decision request](docs/governance/Q2_CORE_JOURNAL_HOST_READ_BASELINE.md) bind the
 [requirements](docs/a2-execution/q2-core-journal-host-read/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-journal-host-read/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-core-journal-host-read/IMPLEMENTATION_PLAN.md).
-It proposes qualified fixed host kernel reads, a bounded read-only root writer observer through
+It authorizes qualified fixed host kernel reads, a bounded read-only root writer observer through
 existing noninteractive administration, and one explicitly substituted preflight window.
-These changes require exact Owner B and independent bookkeeping-only C before implementation.
-This OPEN record is neither B nor C and authorizes no root observer, replacement window or field retry.
+Exact Owner B is retained in [the Owner decision](docs/governance/Q2_CORE_JOURNAL_HOST_READ_OWNER_DECISION.md),
+event `LH-Q2-CORE-JOURNAL-HOST-READ-CLOSURE-20261006-01`. This separate bookkeeping-only
+commit is C, contains no implementation and leaves all three A document bytes unchanged.
+Implementation must descend from C. The one replacement window is conditional on complete R1/R2,
+not authority to replay any consumed batch or refresh another failed window. At C it has not started.
 Original maintenance limits, all historical UNKNOWN commitments, paused side work and production E3 remain.
 
 ### Continuing constraints
