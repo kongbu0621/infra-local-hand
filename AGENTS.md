@@ -1678,6 +1678,20 @@ Only a fully passing preflight may continue the already authorized journal maint
 window. H01/Q4/H11, new-boot core adoption, namespace/watchdog, production E3 and side work remain
 outside this closure. Do not change prior approval records.
 
+The [DR1 candidate review](docs/a2-execution/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_REVIEW_20261006.md)
+records implementation D `deab8acdabf0d35294f55fa87f2bc86d542fdf2e`, the direct child of independent
+C `65026c8c7722bc487c317d392b50b017a7350dee`. It adds exact resume A/C ancestry/document checks
+and manifest binding while retaining original approvals and all execution contracts. Native scoped
+verification passed 438 tests with no skips; the sandbox failure and static symlink refusal remain
+recorded separately. Eight original static inputs match the earlier aggregate binding. These checks
+created no window and invoked no field writer, sudo or SSH. An isolated source worktree retains exact
+D for the Owner's real-terminal handoff; later evidence commits do not change its candidate identity.
+Exact D CI `37458930058` completed successfully on all three jobs, including independent installed
+verification; DR1 is complete. This is not original-host admission or maintenance acceptance.
+DR2 remains NOT_STARTED until an actual original-terminal invocation proves otherwise. Current VM,
+writer, tool and budget admission must still pass inside the sole authorized window. Do not infer
+maintenance success, prior-writer root cause or permission to repeat any failure from DR1 results.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
