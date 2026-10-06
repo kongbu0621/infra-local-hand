@@ -1573,6 +1573,16 @@ Implementation must descend from C. The one replacement window is conditional on
 not authority to replay any consumed batch or refresh another failed window. At C it has not started.
 Original maintenance limits, all historical UNKNOWN commitments, paused side work and production E3 remain.
 
+The [host-read implementation and R2 record](docs/a2-execution/Q2_CORE_JOURNAL_HOST_READ_IMPLEMENTATION_20261006.md)
+records independent C `b5414d0cfd505b220ba4b68a454202f245c77f6c` and implementation D
+`8ce15f5786877e36c5983282b19a75d1439f6c47`, with 395 targeted tests passing on the ordinary host.
+R2 is not complete: the saved management frame is group-writable (0664) and is rejected by
+`INPUT_PROTECTION` before its current digest is verified; the other seven saved inputs have
+qualified permission metadata only. Do not silently chmod, substitute, or weaken checks.
+New-candidate CI/publication is also pending. No replacement maintenance window, sudo observer,
+marker, SSH, shutdown, backup, resize or restart has occurred in this work. Static R2 checks do not
+consume or refresh a J3 window. Resolve the exact preparation/publication blockers before R3.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
