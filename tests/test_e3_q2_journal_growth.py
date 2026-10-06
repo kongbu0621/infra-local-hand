@@ -197,21 +197,34 @@ def test_unknown_or_extra_image_writer_rejected(kind):
 
 def test_real_pidfd_identity_and_exit():
     import subprocess
-    argv = [sys.executable, "-I", "-B", "-c", "import time; time.sleep(.15)"]
-    child = subprocess.Popen(argv)
+    argv = [sys.executable, "-I", "-B", "-c",
+            "import sys; print('ready', flush=True); sys.stdin.buffer.read()"]
+    child = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     exe = os.open(sys.executable, os.O_PATH | os.O_CLOEXEC)
     observer = None
     try:
+        assert child.stdout.readline() == b"ready\n"
+        expected = b"\0".join(os.fsencode(word) for word in argv) + b"\0"
+        try:
+            observed = h.proc_bytes(child.pid, "cmdline", 65536, lambda: None)
+        except (FileNotFoundError, PermissionError):
+            assert child.poll() is None
+            pytest.skip("native child is live but /proc PID mapping is unavailable")
+        if observed != expected:
+            pytest.skip("native PID/proc identity unavailable: ready child has different proc argv")
         observer = h.ProcessIdentity(child.pid, argv, exe, lambda: None)
         assert observer.start > 0
         with pytest.raises(h.prior.r.ObservationError, match="ARGV"):
             h.ProcessIdentity(child.pid, [*argv, "different"], exe, lambda: None)
+        child.stdin.close()
         child.wait(timeout=3)
         assert observer.exited()
         with pytest.raises(h.prior.r.ObservationError, match="EXITED"):
             observer.recheck()
     finally:
+        child.stdin.close()
         child.wait(timeout=3)
+        child.stdout.close()
         if observer is not None: observer.close()
         os.close(exe)
 
