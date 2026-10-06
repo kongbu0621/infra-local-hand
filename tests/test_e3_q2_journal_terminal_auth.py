@@ -1,7 +1,6 @@
 """T2 terminal-auth tests. No sudo, original VM, marker or maintenance action."""
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -9,7 +8,6 @@ import select
 import stat
 import subprocess
 import sys
-import termios
 import time
 from types import SimpleNamespace
 
@@ -17,6 +15,9 @@ import pytest
 
 if not sys.platform.startswith("linux"):
     pytest.skip("Linux-only terminal contract", allow_module_level=True)
+
+import fcntl
+import termios
 
 from e3_host import q2_journal_growth as h
 from e3_host import q2_journal_growth_guest as g
