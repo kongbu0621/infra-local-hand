@@ -195,6 +195,8 @@ def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sou
     second.observe(KEYS, lambda: None)
     assert len(observer.calls) == 2 and len(second.reports) == 2
     assert second.binding() == static
+    assert static["resume"] == dict(A=h.DR_A, C=h.DR_C)
+    assert (static["A"], static["C"]) == (h.READ_A, h.READ_C)
     assert static["auth"] == dict(A=h.TERM_A, C=h.TERM_C, mode="terminal",
                                    terminal=observer.value.terminal)
     assert [json.loads(base64.b64decode(argv[-1]))["checkpoint"] for argv, _ in observer.calls] == [1, 2]
