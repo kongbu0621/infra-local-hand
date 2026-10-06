@@ -585,6 +585,13 @@ def test_true_concurrent_marker_exclusion(anchor):
             return True
         except FileExistsError:
             return False
+        except r.ObservationError as error:
+            # A competing create may change the parent timestamp between the
+            # two observations. Existing production containment correctly
+            # refuses this race before dispatch; do not weaken that check.
+            if str(error) != "CAPTURE_PARENT":
+                raise
+            return False
         finally:
             cap.close()
     with ThreadPoolExecutor(max_workers=2) as workers:
