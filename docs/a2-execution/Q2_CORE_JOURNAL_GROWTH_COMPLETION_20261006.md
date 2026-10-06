@@ -1,6 +1,6 @@
 # Journal 维护流程接线与本地交接
 
-2026-10-06。**J1 主流程已接线；本次窄验证 304 PASS / 2 SKIP；完整 J2 仍待现场工具/输入冻结与原生验证，J3 NOT ISSUED。**
+2026-10-06。**J1 主流程已接线；本次窄验证 309 PASS / 2 SKIP；完整 J2 仍待现场工具/输入冻结与原生验证，J3 NOT ISSUED。**
 没有扩容成功或 H01/Q4/H11 通过的声明。两项 SKIP 不能折算为 PASS。
 
 继续既有 `LH-Q2-CORE-JOURNAL-GROWTH-v1` J1–J3：R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，
@@ -24,7 +24,9 @@ A `59948ec4fedb807a31cdbff77acc134e84414160`，Owner B 事件
   启动仅改变已批准的 pidfile/serial，执行文件仍由受保护 FD 绑定。
 - 异常结果保留已有 PID/启动标记、流摘要、已开始步骤与 UNKNOWN；不向 mutator 发终止信号。
   拒绝会强制杀死 mutator 的继承 CPU/文件大小限制，未关闭这些限制继续运行。
-- 两个实现文件分别为 64983 B / 63292 B，低于各 65536 B 上限；只读通用原语共享于原两个模块，
+- 预检与执行绑定同一双时钟起点和管理主机 boot ID，第二次调用不能刷新 900s 窗口；
+  缺失、过期、未来起点或主机重启都在现场输入/marker 前拒绝。
+- 两个实现文件分别为 64744 B / 64589 B，低于各 65536 B 上限；只读通用原语共享于原两个模块，
   未引入第三模块或依赖。host 使用两空格缩进；格式变换经 AST 等价检查。
 
 ## 验证与实际限制
@@ -42,7 +44,7 @@ python3 -B -m pytest -q -rs \
   tests/test_e3_q2_core_capacity_observation.py
 ```
 
-结果 **304 passed, 2 skipped**。SKIP 原因：云端执行进程 PID 与可见 `/proc/PID` 映射不一致；
+结果 **309 passed, 2 skipped**。SKIP 原因：云端执行进程 PID 与可见 `/proc/PID` 映射不一致；
 云端缺少原生 qcow2/ext4 合成 fixture 工具。没有修改实现来容忍这些条件。
 已覆盖实际 coordinator 的完整顺序、每个效果失败后停止、清单不匹配零写入、
 后描述超限先于关机、超时封存仍保留已知进程、独立管道与 nonce 协议等。
@@ -79,7 +81,10 @@ python3 -B tests/e3_host/q2_journal_growth.py \
   --plan-archive "$PLAN_ARCHIVE" --archives-dir "$ARCHIVES_DIR"
 ```
 
-这一步不创建 marker、不发 SSH、不改镜像。输出是私有执行清单及 `manifest_sha256`，不得公开其中机器信息。
+这一步不创建 marker、不发 SSH、不改镜像。输出是私有执行清单、`manifest_sha256` 和 `window_binding`，不得公开其中机器信息。
+首次现场预检仅运行一次；执行必须原样继承其 JSON `window_binding`，不能重跑预检获取新起点。
+预检失败也保留已知窗口；重核对只能显式传入同一绑定，过期则停止。
+marker 前没有新的持久文件，程序不能证明调用者没有丢弃原预检结果另开首次预检；不得把这一管理信任描述为硬防重启保证。
 工具身份/版本、完整原/新 argv、所有输入与镜像身份必须与已审阅清单一致。
 如果可见性、原件、预算、工具或身份核对失败，交回首个具体诊断；不能消费维护机会试探。
 
@@ -89,7 +94,7 @@ python3 -B tests/e3_host/q2_journal_growth.py \
 python3 -B tests/e3_host/q2_journal_growth.py \
   --expected-commit "$D" --frame "$FRAME" \
   --plan-archive "$PLAN_ARCHIVE" --archives-dir "$ARCHIVES_DIR" \
-  --expected-manifest "$MANIFEST_SHA256" --execute
+  --expected-manifest "$MANIFEST_SHA256" --window-binding "$WINDOW_BINDING_JSON" --execute
 ```
 
 摘要参数是准确清单绑定，不是用户自报“已通过 J2”的授权替代。

@@ -135,6 +135,7 @@ def rig(monkeypatch, tmp_path):
     def advance(seconds):
         clock[0] += seconds
     window = SimpleNamespace(check=nothing, change=nothing, remaining=lambda limit=900: limit,
+                             binding={"boot_id": BOOT, "origins": [0, 0]},
                              origins={"monotonic": 0, "boottime": 0})
     anchor = SimpleNamespace(fd=parent, path=str(tmp_path), ssh=44, recheck=nothing,
                              absent=nothing, close=nothing, growth_inputs=nothing,
@@ -212,10 +213,11 @@ def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
 def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", "0" * 64,
-        "--execute"])
+        "--window-binding", h.canonical(rig.window.binding).decode(), "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
     monkeypatch.setattr(h, "Window", lambda: rig.window)
+    monkeypatch.setattr(h, "bind_window", rig.nothing)
     monkeypatch.setattr(h, "freeze_growth_inputs", lambda *_args: rig.frozen)
     monkeypatch.setattr(h, "GrowthAnchor", lambda *_args: rig.anchor)
     monkeypatch.setattr(h, "Tool", lambda *_args: rig.tools["image"])
@@ -245,3 +247,16 @@ def test_expired_seal_retains_cached_live_processes(rig, monkeypatch):
     assert value["processes"] == [{"identity": command.identity, "exit": None, "vm": False}]
     assert value["marker_created"] is True and "image_resize" not in rig.actions
     assert value["transports"][0]["pid"] == 333
+
+
+def test_execute_without_original_window_stops_before_field_reads(rig, monkeypatch, capsys):
+    monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
+        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--execute"])
+    monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
+    def unexpected(*args):
+        pytest.fail("field inputs must not be read without original window")
+    monkeypatch.setattr(h, "freeze_growth_inputs", unexpected)
+    assert h.main() == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == "GROWTH_ORIGINAL_WINDOW_REQUIRED"
+    assert result["marker_created"] is False and result["ssh_requests"] == 0

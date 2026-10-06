@@ -104,6 +104,32 @@ def proc_bytes(pid, name, cap, check):
         os.close(fd)
 
 
+def growth_descriptor(frozen, nonce, phase, window, pre=None):
+  value = dict(schema="lhq-journal-growth-input/v1", session=SESSION, phase=phase, nonce=nonce,
+    source_binding_sha256=frozen["source_binding_sha256"], paths=frozen["paths"],
+    saved_rows=frozen["saved_rows"], original_boot_id=frozen["boot_id"],
+    journal_serial=frozen["journal_serial"], **frozen["inventory"],
+    window_seconds=int(window.remaining()), change_seconds=int(window.remaining(780)))
+  if pre is not None:
+    value.update(pre_report=pre, pre_report_sha256=digest(canonical(pre)))
+  descriptor(canonical(value))
+  return value
+
+
+def bind_window(window, raw=None):
+    value = r.parse(raw, 256) if raw is not None else None
+    if value is not None:
+        require(type(value) is dict and set(value) == {"boot_id", "origins"}
+                and type(value["origins"]) is list and len(value["origins"]) == 2, "GROWTH_WINDOW_BINDING")
+        uuid_value(value["boot_id"])
+        for origin in value["origins"]: r.integer(origin)
+        window.origins = window.previous = tuple(value["origins"])
+    window.check()
+    window.binding = dict(boot_id=boot_id(window.check), origins=list(window.origins))
+    require(value is None or value == window.binding, "GROWTH_HOST_BOOT_CHANGED")
+    return window.binding
+
+
 def sha_value(value):
     require(type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value), "GROWTH_SHA")
     return value

@@ -23,7 +23,7 @@ if __package__ in (None, ""):
   sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from e3_host import q2_core_capacity_capture as prior
 from e3_host.q2_journal_growth_guest import (identity, stable_identity, validate_file,
-  write_all, hash_fd, proc_start, proc_bytes)
+  write_all, hash_fd, proc_start, proc_bytes, growth_descriptor, bind_window)
 
 local = prior.local
 require, canonical, digest = prior.require, prior.canonical, prior.digest
@@ -1117,17 +1117,6 @@ class GrowthAnchor(prior.Anchor):
     frozen["source_binding_sha256"] = digest(canonical(frozen["source_binding"]))
     self.recheck()
 
-def growth_descriptor(frozen, nonce, phase, window, pre=None):
-  value = dict(schema="lhq-journal-growth-input/v1", session=SESSION, phase=phase, nonce=nonce,
-    source_binding_sha256=frozen["source_binding_sha256"], paths=frozen["paths"],
-    saved_rows=frozen["saved_rows"], original_boot_id=frozen["boot_id"],
-    journal_serial=frozen["journal_serial"], **frozen["inventory"],
-    window_seconds=int(window.remaining()), change_seconds=int(window.remaining(780)))
-  if pre is not None:
-    value.update(pre_report=pre, pre_report_sha256=digest(canonical(pre)))
-  from e3_host import q2_journal_growth_guest as guest
-  guest.descriptor(canonical(value))
-  return value
 
 def management_usage():
   own, children = (resource.getrusage(kind) for kind in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))
@@ -1188,6 +1177,7 @@ class Maintenance:
   def manifest(self):
     self.bindings()
     return dict(R=R, A=A, C=C, D=self.commit, inputs=self.frozen["source_binding"],
+      window_binding=self.window.binding,
       inventory_sha256=digest(canonical(self.frozen["inventory"])),
       retained_sha256=digest(canonical(self.anchor.retained)),
       sources={name: dict(bytes=len(raw), sha256=digest(raw)) for name, raw in self.sources.items()},
@@ -1331,7 +1321,7 @@ class Maintenance:
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
-  for name in ("frame", "plan-archive", "archives-dir", "expected-commit", "expected-manifest"):
+  for name in ("frame", "plan-archive", "archives-dir", "expected-commit", "expected-manifest", "window-binding"):
     parser.add_argument("--" + name)
   parser.add_argument("--execute", action="store_true")
   args = parser.parse_args()
@@ -1339,13 +1329,16 @@ def main():
     print(canonical(field_readiness()).decode("ascii"), end="")
     return 3
   inputs, anchor, vm, maintenance, tools = prior.Inputs(), None, None, None, {}
+  window = None
   global VM_LIMITS
   VM_LIMITS = {key: resource.getrlimit(key) for key in (resource.RLIMIT_AS, resource.RLIMIT_NOFILE)}
   try:
     sources = growth_sources(args.expected_commit)
     require(all(resource.getrlimit(key) == (resource.RLIM_INFINITY, resource.RLIM_INFINITY)
         for key in (resource.RLIMIT_CPU, resource.RLIMIT_FSIZE)), "GROWTH_INHERITED_MUTATOR_LIMIT")
+    require(not args.execute or args.window_binding, "GROWTH_ORIGINAL_WINDOW_REQUIRED")
     window = Window()
+    bind_window(window, args.window_binding.encode("ascii") if args.window_binding else None)
     resource.setrlimit(resource.RLIMIT_AS, (256 * MIB, VM_LIMITS[resource.RLIMIT_AS][1]))
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, VM_LIMITS[resource.RLIMIT_NOFILE][1]))
     frozen = freeze_growth_inputs(inputs, args.frame, args.plan_archive, args.archives_dir)
@@ -1364,6 +1357,7 @@ def main():
       result = maintenance.run(manifest)
     else:
       result = dict(state="LOCAL_PREFLIGHT_PASSED", D=args.expected_commit, manifest_sha256=sha,
+              window_binding=window.binding,
              manifest=manifest, ssh_requests=0, marker_created=False, business_cases=0)
     print(canonical(result).decode("ascii"), end="")
     return 0 if result["state"] in ("LOCAL_PREFLIGHT_PASSED", "VERIFIED") else 3
@@ -1372,6 +1366,7 @@ def main():
     print(canonical(dict(state="UNKNOWN" if marked else "BLOCKED", reason=prior.safe_reason(error),
       error_type=type(error).__name__, errno=getattr(error, "errno", None), marker_created=marked,
       diagnostic=getattr(error, "diagnostic", {}),
+      window_binding=getattr(window, "binding", dict(origins=window.origins) if window else None),
       ssh_requests=maintenance.result["ssh_requests"] if maintenance else 0)).decode(), end="")
     return 3
   finally:

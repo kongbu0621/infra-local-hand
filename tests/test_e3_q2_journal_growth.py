@@ -64,6 +64,32 @@ def test_window_dual_clocks_and_mutation_cutoff():
         w.check()
 
 
+def test_preflight_and_execute_share_original_clock_and_host_boot(monkeypatch):
+    now = [20 * 10**9]
+    monkeypatch.setattr(g, "boot_id", lambda check: "11111111-2222-3333-4444-555555555555")
+    first = h.Window(clock=lambda _: now[0])
+    saved = g.bind_window(first)
+    now[0] += 100 * 10**9
+    second = h.Window(clock=lambda _: now[0])
+    assert g.bind_window(second, h.canonical(saved)) == saved
+    assert second.remaining() == 800 and second.origins == first.origins
+    now[0] += 800 * 10**9
+    with pytest.raises(h.local.CaptureError, match="DEADLINE"):
+        g.bind_window(h.Window(clock=lambda _: now[0]), h.canonical(saved))
+
+
+@pytest.mark.parametrize("kind", ["future", "reboot", "malformed"])
+def test_invalid_window_binding_never_starts_a_new_window(monkeypatch, kind):
+    current = "11111111-2222-3333-4444-555555555555"
+    monkeypatch.setattr(g, "boot_id", lambda check: current)
+    value = {"boot_id": current, "origins": [100, 100]}
+    if kind == "future": value["origins"] = [101, 101]
+    elif kind == "reboot": value["boot_id"] = "22222222-3333-4444-5555-666666666666"
+    else: value["origins"] = [True, 100]
+    with pytest.raises((h.local.CaptureError, g.r.ObservationError)):
+        g.bind_window(h.Window(clock=lambda _: 100), h.canonical(value))
+
+
 @pytest.mark.parametrize("suffix", h.SUFFIXES)
 def test_existing_any_output_blocks(store, suffix):
     store.create(suffix)
