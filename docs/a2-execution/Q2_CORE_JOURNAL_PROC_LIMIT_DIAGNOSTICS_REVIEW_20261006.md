@@ -60,3 +60,12 @@ CLI safe_reason 全链路。仅合成数据，不对原宿主或 VM 进行读取
 
 两源码仍各不超过 65536 B；生成 payload 为 24528 B，仍低于 32768 B。
 本结果解决未来诊断缺失；不表示实际超限原因已解决或扩容已完成。任何新现场窗口仍需准确授权。
+
+## 准确发布结果
+
+修复已非强制发布到 main：`03cfb183d05c55258bb2da01e8c3cf77ea06fe63`，tree
+`539b4ab98d0494bf7058b2054ae9a84f3b759c09`，与本地已验证树完全相同。
+[CI 37475992159](https://github.com/kongbu0621/infra-local-hand/actions/runs/37475992159)
+对该准确 head 的 attempt 1 已 completed/success；classify-change、Ubuntu 与 Windows 三个 job
+均成功，包括源码测试与独立安装 wheel。没有重跑，也没有使用新现场窗口来完成验证。
+后续文档提交未追加源码变更；新窗口提案仍待 Owner 决定，旧失败和 UNKNOWN 保持。

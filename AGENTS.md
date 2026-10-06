@@ -1701,6 +1701,25 @@ is authorized. Retain the exact candidate/handoff as evidence; do not execute th
 affected field window requires its own exact A, Owner B and independent C. Unaffected CLOSED
 development and all historical UNKNOWNs remain unchanged; source/CI PASS does not refund a window.
 
+### Journal proc diagnostics and pending replacement
+
+The [proc diagnostic repair](docs/a2-execution/Q2_CORE_JOURNAL_PROC_LIMIT_DIAGNOSTICS_REVIEW_20261006.md)
+at `03cfb183d05c55258bb2da01e8c3cf77ea06fe63` separates all 17 original limit stages, including
+initial/recheck paths, and retains observed count, original cap and applicable bounded PID/TID in
+the existing reason field. It keeps the five-field failure schema and all reads, coverage and caps.
+Local targeted verification passed 598 tests with 3 skips; exact CI `37475992159` completed
+successfully on all three jobs in attempt 1, including independent installed verification.
+This offline repair neither identifies the historical exceeded cap nor refunds a consumed window.
+
+Scope `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-v2` remains **OPEN / NOT APPROVED** at exact A
+`4341487c9be9ef64cf6fccbd973ed438a66e7483`. The
+[pending baseline](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_BASELINE.md) pins its three
+documents and requests only one further original-specification window after exact verification and
+independent Owner B/C. No B or C exists for v2. The original caps, checks, budgets, cumulative
+maintenance limits, historical UNKNOWNs and paused side work remain. Do not invoke a new field
+writer/preflight, SSH or maintenance, replay an old handoff, or relax a cap under this proposal.
+Existing unaffected CLOSED development continues; H01/Q4/H11 remain outside this scope.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
