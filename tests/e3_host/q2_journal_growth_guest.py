@@ -1,11 +1,9 @@
-"""Fixed maintenance helpers; poweroff requires the durably captured pre-report token."""
-from __future__ import annotations
+"""Journal helpers."""
 import hashlib
 import fcntl
 import os
 import stat
 import base64
-import errno
 import json
 import re
 import resource
@@ -28,6 +26,19 @@ ENVIRONMENT = {"HOME": "/root", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
  "LANG": "C", "LC_ALL": "C", "SYSTEMD_COLORS": "0",
  "SYSTEMD_PAGER": "cat"}
 UNIT_PATTERN = re.compile(r"[A-Za-z0-9_.:@\\x-]{1,240}\.(?:service|scope|slice|socket|timer|path|target)")
+def terminal_binding(expected=None):
+ try:
+  s=os.fstat(0); value=dict(mode="terminal",sid=os.getsid(0),dev=s.st_dev,ino=s.st_ino,
+  rdev=s.st_rdev,uid=s.st_uid,gid=s.st_gid,perm=stat.S_IMODE(s.st_mode))
+  foreground=os.isatty(0) and stat.S_ISCHR(s.st_mode) and os.tcgetpgrp(0)==os.getpgrp()
+ except (OSError,AttributeError) as error:
+  raise r.ObservationError("GROWTH_TERMINAL_REQUIRED") from error
+ require(foreground,"GROWTH_TERMINAL_FOREGROUND")
+ require(expected is None or value==expected,"GROWTH_TERMINAL_DRIFT")
+ return value
+def control_limits():
+ for key,value in ((resource.RLIMIT_AS,268435456),(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CORE,0)):
+  resource.setrlimit(key,(value,value))
 def identity(info):
  return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_nlink)
 def stable_identity(info):
@@ -382,7 +393,6 @@ class GuestCommand:
  stderr=bytes(self.output["stderr"]), both_eof=all(self.eof.values()), pid=self.process.pid)
   finally:
    selector.close()
-      # Pipe closure does not prove exit.
    self.close()
  def close(self):
   if not self.closed:
@@ -582,7 +592,6 @@ class GuestInventory:
    value = dict(entries)
    require(set(value) <= set(self.SHOW) and {"Id", "LoadState", "ActiveState", "SubState"} <= set(value)
  and value["Id"] in names and value["Id"] not in result, "GROWTH_SYSTEMCTL_FIELDS")
-      # Services still require PID properties.
    if value["Id"].endswith(".service") and value["LoadState"] == "loaded":
     require({"MainPID", "ControlPID", "Restart"} <= set(value), "GROWTH_SERVICE_FIELDS")
    result[value["Id"]] = {key: value.get(key, "") for key in self.SHOW}
@@ -655,11 +664,9 @@ class GuestInventory:
        require(not cmdline, "GROWTH_PROCESS_LINK_UNKNOWN")
        continue
       require(not under(target.removesuffix(" (deleted)"), self.roots), "GROWTH_BUSINESS_PROCESS")
-        # Hold enumeration fds throughout self-observation.
     fd_directory = os.open(prefix + "/fd", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
     try:
      require(r.filesystem_type(fd_directory) == 0x9FA0, "GROWTH_PROCESS_FD_DIRECTORY")
-          # Inspect before scandir EOF closes its duplicate fd.
      with os.scandir(fd_directory) as entries:
       for entry in entries:
        number = entry.name
@@ -716,7 +723,6 @@ class GuestInventory:
     require(name in expected, "GROWTH_UNDECLARED_BUSINESS_UNIT")
     related.append(self.quiet_service(next(row for row in self.description["expected_units"]
  if row["name"] == name)))
-      # Indirect startup is UNKNOWN.
    enabled = value["UnitFileState"] in ("enabled", "enabled-runtime", "linked", "linked-runtime", "generated")
    if enabled and name not in expected and name not in domain_names:
     actions = " ".join(value[key] for key in self.SHOW if key.startswith("Exec"))
@@ -773,7 +779,6 @@ class GuestInventory:
   return dict(units=units, domain_cgroups=groups, startup=startup,
  processes=processes, persistent=persistent, historical_exit="UNKNOWN")
 def metadata(value):
-  # Retain atime exactly.
  return {name: getattr(value, "st_" + name) for name in
  ("dev", "ino", "mode", "uid", "gid", "nlink", "size", "mtime_ns", "ctime_ns", "atime_ns")}
 def preservation(value):
@@ -864,7 +869,6 @@ def tree_digest(root_fd, check, *, max_bytes=MAX_BYTES, max_entries=MAX_ENTRIES,
     os.close(fd)
   rows.sort(key=lambda row: row["path"])
   require(len(rows) <= max_entries and content_bytes <= max_bytes, "GROWTH_TREE_LIMIT")
-    # Reopen to detect post-hash drift.
   for row in rows:
    check()
    fd = os.dup(root_fd)
@@ -1017,7 +1021,6 @@ def receive_token(expected, check, *, fd=0):
   raw.extend(part)
   require(len(raw) <= len(expected), "GROWTH_CONTINUE_LIMIT")
   if len(raw) == len(expected):
-      # EOF excludes a second token.
    continue
  require(bytes(raw) == expected, "GROWTH_CONTINUE_TOKEN")
  check()
@@ -1081,7 +1084,6 @@ class GuestMaintenance:
   report_sha = digest(canonical(report))
   receive(continue_token(self.description["nonce"], report_sha), self.window.check)
   self.stage = "PRE_FINAL_QUIESCENCE"
-    # Recheck quietness after the token.
   inventory.collect()
   self.observation.reopen()
   self.device.recheck()
@@ -1099,7 +1101,6 @@ class GuestMaintenance:
   self.stage = "POST_PRE_REPORT_BINDING"
   before = validate_pre_report(self.description["pre_report"], self.description)
   require(digest(canonical(before)) == self.description["pre_report_sha256"], "GROWTH_PRE_REPORT_DIGEST")
-    # Inherited commitment, not a third scan; bind the verified offline backup.
   current_boot = boot_id(self.window.check)
   require(current_boot != before["boot_id"], "GROWTH_NEW_BOOT_REQUIRED")
   rows = self.sample()
@@ -1180,7 +1181,6 @@ def entry(raw):
   for key, maximum in ((resource.RLIMIT_AS, 256 * 1048576), (resource.RLIMIT_NOFILE, 128),
  (resource.RLIMIT_CORE, 0)):
    resource.setrlimit(key, (maximum, maximum))
-    # No mutator-killing timer or resource limit.
   maintenance = GuestMaintenance(description)
   if description["phase"] == "pre":
    maintenance.pre()
@@ -1283,15 +1283,17 @@ class WriterProtocol:
  "GROWTH_WRITER_DEADLINE")
    previous[:] = now
   self.recheck()
-  argv = ["/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C",
+  self.host.terminal_binding(self.terminal)
+  argv = ["/usr/bin/sudo", "--", "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C",
  "/usr/bin/python3", "-I", "-B", "-c", self.guest.WRITER_LOADER,
  base64.b64encode(self.payload).decode(), digest(self.payload), base64.b64encode(raw).decode()]
   require(len(canonical(argv)) <= 65536, "GROWTH_WRITER_INPUT")
   self.io_bytes += len(canonical(argv))
   self.record(dict(writer_checkpoint=checkpoint, state="STARTED", request=request, argv_sha256=digest(canonical(argv))))
-  command = self.host.Command(argv, bounded, limit=65536, stderr_limit=4096)
+  command = self.host.Command(argv, bounded, limit=65536, stderr_limit=4096, terminal=True)
   try:
    result = command.collect()
+   self.host.terminal_binding(self.terminal)
    self.io_bytes += len(result["stdout"]) + len(result["stderr"])
    require(result["returncode"] == 0 and all(result["eof"].values()), "GROWTH_WRITER_FAILED")
    report = r.parse(result["stdout"], 65536)
@@ -1311,7 +1313,7 @@ class WriterProtocol:
   self.check()
   require(len(self.reports) == 1 and not self.failed, "GROWTH_WRITER_PREFLIGHT")
   usage = self.host.management_usage()
-  return dict(report=self.reports[0], io_bytes=self.io_bytes,
+  return dict(report=self.reports[0], io_bytes=self.io_bytes, terminal=self.terminal,
  cpu_us=int(usage["cpu_seconds"] * 1000000) + self.reports[0]["usage"]["cpu_us"],
  rss_bytes=usage["rss_upper_observation_bytes"] + self.reports[0]["usage"]["peak_rss_bytes"])
 

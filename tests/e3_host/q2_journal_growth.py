@@ -1,8 +1,4 @@
-"""Fixed two-phase journal maintenance. J2 evidence is required before J3."""
-from __future__ import annotations
 import argparse
-import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -13,7 +9,6 @@ import stat
 import subprocess
 import sys
 import time
-import select
 import base64
 COMMANDS = []
 VM_LIMITS = None
@@ -22,7 +17,8 @@ if __package__ in (None, ""):
 from e3_host import q2_core_capacity_capture as prior
 from e3_host.q2_journal_growth_guest import WriterProtocol, ProcessIdentity, verify_writers
 from e3_host.q2_journal_growth_guest import (identity, stable_identity, validate_file,
- write_all, hash_fd, proc_start, proc_bytes, growth_descriptor, bind_window)
+ write_all, hash_fd, proc_start, proc_bytes, growth_descriptor, bind_window, terminal_binding,
+ control_limits)
 local = prior.local
 require, canonical, digest = prior.require, prior.canonical, prior.digest
 R = "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
@@ -30,6 +26,8 @@ A = "59948ec4fedb807a31cdbff77acc134e84414160"
 C = "6493b1ae035dfa852952165046417c78f0f5383c"
 READ_A = "2b4448c7b89d1910840f7aee2ae2b781f970e179"
 READ_C = "b5414d0cfd505b220ba4b68a454202f245c77f6c"
+TERM_A="2b236865dc0a89e475c4021cac44d7193f252f67"
+TERM_C="12f7acac3b09fc5bd9344473ec930646c87e0f59"
 READ_PINS = ("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
  "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
  "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
@@ -203,26 +201,24 @@ def validate_image_info(raw, expected_size):
  require(data.get("compat") == "1.1" and data.get("corrupt") is False
  and not data.get("bitmaps") and not data.get("encrypt"), "GROWTH_IMAGE_FEATURES")
  return value
-def control_limits():
- resource.setrlimit(resource.RLIMIT_AS, (256 * MIB, 256 * MIB))
- resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
- resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 def vm_limits():
  os.umask(0o077)
  if VM_LIMITS is not None:
   for key, limits in VM_LIMITS.items():
    resource.setrlimit(key, limits)
 class Command:
- def __init__(self, argv, check, *, executable=None, pass_fds=(), limit=MIB, limits=True, stderr_limit=None):
+ def __init__(self, argv, check, *, executable=None, pass_fds=(), limit=MIB, limits=True,
+ stderr_limit=None, terminal=False):
   require(0 < limit <= MIB, "GROWTH_STREAM_CAP")
+  require(type(terminal) is bool and (limits or not terminal), "GROWTH_TERMINAL_COMMAND")
   check()
-  self.check, self.limit = check, limit
+  self.check = check
   self.caps = dict(stdout=limit, stderr=limit if stderr_limit is None else stderr_limit)
   require(all(type(n) is int and 0 < n <= limit for n in self.caps.values()), "GROWTH_STREAM_CAP")
   self.process = subprocess.Popen(argv, executable=executable, pass_fds=pass_fds,
  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
  env={"PATH": "/usr/sbin:/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
- preexec_fn=control_limits if limits else vm_limits, start_new_session=True)
+ preexec_fn=control_limits if limits else vm_limits, start_new_session=not terminal)
   self.is_vm = not limits
   COMMANDS.append(self)
   self.identity = dict(pid=self.process.pid, argv_sha256=digest(canonical(argv)), starttime=None)
@@ -311,12 +307,11 @@ class Tool:
    os.close(self.fd)
    self.fd = None
 class WriterObserver(WriterProtocol):
- """Exactly eight serial, single-consumption read-only observation slots."""
- def __init__(self, sources, commit, window, image_keys, retained=None):
+ def __init__(self, sources, commit, window, image_keys, terminal, retained=None):
   from e3_host import q2_journal_growth_guest as guest
   self.host = sys.modules[__name__]
   self.guest, self.window, self.commit = guest, window, commit
-  self.images = {key: list(value) for key, value in image_keys.items()}
+  self.images, self.terminal = {key: list(value) for key, value in image_keys.items()}, terminal
   self.payload = guest.writer_payload(sources["q2_journal_growth.py"],
  sources["q2_journal_growth_guest.py"], sources["q2_host_kernel_facts.py"], commit)
   self.tools, self.reports, self.failed, self.io_bytes = {}, [], False, 0
@@ -341,7 +336,8 @@ class WriterObserver(WriterProtocol):
     self.tools[name] = Tool(path, window.check, version=False)
    if retained is not None:
     value = prior.r.parse(retained, 131072)
-    require(set(value) == {"report", "cpu_us", "rss_bytes", "io_bytes"}, "GROWTH_WRITER_PREFLIGHT")
+    require(set(value) == {"report", "cpu_us", "rss_bytes", "io_bytes", "terminal"}
+ and value["terminal"] == terminal, "GROWTH_WRITER_PREFLIGHT")
     request = guest.writer_request(canonical(value["report"]["request"]))
     self.nonce = request["nonce"]
     self.validate(value["report"], request, 1)
@@ -352,6 +348,7 @@ class WriterObserver(WriterProtocol):
  and value["io_bytes"] >= len(canonical(value["report"])), "GROWTH_WRITER_USAGE")
     self.prior_cpu_us, self.prior_rss, self.io_bytes = value["cpu_us"], value["rss_bytes"], value["io_bytes"]
     self.reports.append(value["report"])
+   self.host.terminal_binding(terminal)
    self.check()
   except BaseException:
    self.close()
@@ -376,10 +373,11 @@ class WriterObserver(WriterProtocol):
     os.close(parent)
  def binding(self):
   self.recheck()
-  return dict(A=READ_A, C=READ_C, payload=dict(bytes=len(self.payload), sha256=digest(self.payload)),
+  return dict(A=READ_A, C=READ_C, auth=dict(A=TERM_A, C=TERM_C, mode="terminal",
+ terminal=self.terminal), payload=dict(bytes=len(self.payload), sha256=digest(self.payload)),
  loader_sha256=digest(self.guest.WRITER_LOADER.encode()), python_link=self.python_link,
  tools={name: tool.binding() for name, tool in self.tools.items()},
- argv_policy="sudo -n -- env -i PATH=/usr/sbin:/usr/bin:/bin LANG=C LC_ALL=C /usr/bin/python3 -I -B -c loader payload sha request",
+ argv_policy="sudo -- env -i PATH=/usr/sbin:/usr/bin:/bin LANG=C LC_ALL=C /usr/bin/python3 -I -B -c loader payload sha request",
  input_schema="lhq-journal-writer/v1", calls=8, seconds=15, input_stdout=65536, stderr=4096,
  first_report_sha256=digest(canonical(self.reports[0])))
  def close(self):
@@ -1027,7 +1025,7 @@ def continue_token(nonce, pre_digest):
 def field_readiness():
  return dict(state="BLOCKED", code="GROWTH_J2_NOT_FROZEN", marker_created=False,
  ssh_requests=0, business_cases=0,
- missing=["fixed private inputs, exact D and reviewed J2 manifest"])
+ missing=["T2 freeze"])
 def growth_sources(expected):
  require(type(expected) is str and re.fullmatch(r"[0-9a-f]{40}", expected), "GROWTH_D")
  repo = Path(__file__).resolve().parents[2]
@@ -1039,8 +1037,8 @@ def growth_sources(expected):
  require(git("rev-parse", "HEAD").decode().strip() == expected and expected != C, "GROWTH_D_HEAD")
  git("diff", "--quiet", "HEAD")
  git("merge-base", "--is-ancestor", C, expected)
- git("merge-base", "--is-ancestor", READ_C, expected)
- require(expected != READ_C, "GROWTH_READ_D")
+ git("merge-base", "--is-ancestor", TERM_C, expected)
+ require(expected != TERM_C, "GROWTH_TERM_D")
  for name, sha in DOC_PINS.items():
   require(digest(git("show", expected + ":docs/a2-execution/q2-core-journal-growth/" + name)) == sha,
  "GROWTH_A_CHANGED")
@@ -1308,10 +1306,11 @@ class Maintenance:
    self.result.update(state="UNKNOWN", seal="INCOMPLETE")
   return self.result
 def main():
- parser = argparse.ArgumentParser(description=__doc__)
+ parser = argparse.ArgumentParser()
  for name in ("frame", "plan-archive", "archives-dir", "expected-commit", "expected-manifest", "window-binding", "writer-preflight"):
   parser.add_argument("--" + name)
  parser.add_argument("--execute", action="store_true")
+ parser.add_argument("--writer-auth", choices=("terminal",))
  args = parser.parse_args()
  if not all((args.frame, args.plan_archive, args.archives_dir, args.expected_commit)):
   print(canonical(field_readiness()).decode("ascii"), end="")
@@ -1328,6 +1327,8 @@ def main():
  for key in (resource.RLIMIT_CPU, resource.RLIMIT_FSIZE)), "GROWTH_INHERITED_MUTATOR_LIMIT")
   require(not args.execute or args.window_binding and args.writer_preflight, "GROWTH_ORIGINAL_WINDOW_REQUIRED")
   require(args.execute or not (args.window_binding or args.writer_preflight), "GROWTH_PRECHECK_REPLAY")
+  require(args.writer_auth == "terminal", "GROWTH_AUTH_MODE")
+  terminal = terminal_binding()
   window = Window()
   bind_window(window, args.window_binding.encode("ascii") if args.window_binding else None)
   resource.setrlimit(resource.RLIMIT_AS, (256 * MIB, VM_LIMITS[resource.RLIMIT_AS][1]))
@@ -1341,7 +1342,7 @@ def main():
    tools[name] = Tool(path, window.check)
   vm = freeze_vm(anchor.raw["start.sh"], anchor.path, anchor.fd, tools["qemu"], window.check)
   frozen["journal_serial"] = vm["images"].journal_serial
-  writer = WriterObserver(sources, args.expected_commit, window, vm["images"].image_keys(),
+  writer = WriterObserver(sources, args.expected_commit, window, vm["images"].image_keys(), terminal,
  args.writer_preflight.encode("ascii") if args.writer_preflight else None)
   maintenance = Maintenance(anchor, inputs, frozen, sources, vm, tools, window, args.expected_commit, writer)
   manifest = maintenance.preflight()

@@ -148,6 +148,7 @@ def rig(monkeypatch, tmp_path):
           "binding": {}, "original_argv": ["qemu", "old-arguments"]}
     tools = {"image": Tool(), "qemu": Tool()}
     monkeypatch.setattr(h, "Store", Store)
+    monkeypatch.setattr(h, "terminal_binding", lambda expected=None: {"mode": "terminal"})
     monkeypatch.setattr(h, "COMMANDS", [])
     monkeypatch.setattr(h, "management_usage", lambda: {"complete": True})
     monkeypatch.setattr(h, "run_tool", lambda *_args, **_kwargs: {"stderr": b""})
@@ -213,7 +214,8 @@ def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
 def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", "0" * 64,
-        "--window-binding", h.canonical(rig.window.binding).decode(), "--writer-preflight", "{}", "--execute"])
+        "--window-binding", h.canonical(rig.window.binding).decode(), "--writer-preflight", "{}",
+        "--writer-auth", "terminal", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
     monkeypatch.setattr(h, "Window", lambda: rig.window)
@@ -254,7 +256,8 @@ def test_expired_seal_retains_cached_live_processes(rig, monkeypatch):
 
 def test_execute_without_original_window_stops_before_field_reads(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
-        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--execute"])
+        "--archives-dir", "archives", "--expected-commit", "d" * 40,
+        "--writer-auth", "terminal", "--execute"])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
     def unexpected(*args):
         pytest.fail("field inputs must not be read without original window")
@@ -265,9 +268,27 @@ def test_execute_without_original_window_stops_before_field_reads(rig, monkeypat
     assert result["marker_created"] is False and result["ssh_requests"] == 0
 
 
+def test_terminal_mode_is_explicit_and_checked_before_window(rig, monkeypatch, capsys):
+    base = ["growth", "--frame", "frame", "--plan-archive", "plan",
+            "--archives-dir", "archives", "--expected-commit", "d" * 40]
+    monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
+    monkeypatch.setattr(h.sys, "argv", base)
+    assert h.main() == 3
+    assert json.loads(capsys.readouterr().out)["reason"] == "GROWTH_AUTH_MODE"
+    monkeypatch.setattr(h.sys, "argv", base + ["--writer-auth", "terminal"])
+    monkeypatch.setattr(h, "terminal_binding", lambda: (_ for _ in ()).throw(
+        h.prior.r.ObservationError("GROWTH_TERMINAL_REQUIRED")))
+    monkeypatch.setattr(h, "Window", lambda: pytest.fail("window must not start before TTY qualification"))
+    assert h.main() == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == "GROWTH_TERMINAL_REQUIRED"
+    assert result["window_binding"] is None and result["marker_created"] is False
+
+
 def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
-        "--archives-dir", "archives", "--expected-commit", "d" * 40])
+        "--archives-dir", "archives", "--expected-commit", "d" * 40,
+        "--writer-auth", "terminal"])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
     def denied(check, report):
         error = guest.r.ObservationError("GROWTH_KERNEL_OPEN")

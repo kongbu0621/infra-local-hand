@@ -53,6 +53,8 @@ def observer(monkeypatch):
     value.host, value.guest = h, g
     value.window = SimpleNamespace(check=lambda: None, binding=dict(boot_id=BOOT, origins=[NOW - 1] * 2))
     value.commit, value.nonce = "d" * 40, "a" * 64
+    value.terminal = {"mode": "terminal", "sid": 7, "dev": 8, "ino": 9,
+                      "rdev": 10, "uid": 1000, "gid": 1000, "perm": 0o600}
     value.images = {n: list(v) for n, v in KEYS.items()}
     value.payload = b"fixed-test-only-payload"
     value.reports, value.failed, value.io_bytes = [], False, 0
@@ -63,6 +65,7 @@ def observer(monkeypatch):
     monkeypatch.setattr(g.time, "clock_gettime_ns", lambda _: clock[0])
     monkeypatch.setattr(h, "management_usage", lambda: dict(cpu_seconds=0,
         rss_upper_observation_bytes=0, complete=True, live_children=0))
+    monkeypatch.setattr(h, "terminal_binding", lambda expected=None: value.terminal)
 
     class Command:
         def __init__(self, argv, guard, **options):
@@ -163,9 +166,10 @@ def test_exact_eight_calls_fixed_argv_and_no_ninth(observer):
         value.observe(KEYS, lambda: None)
     assert len(observer.calls) == 8
     for argv, options in observer.calls:
-        assert argv[:5] == ["/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i"]
-        assert argv[8:12] == ["/usr/bin/python3", "-I", "-B", "-c"]
-        assert options == dict(limit=65536, stderr_limit=4096)
+        assert argv[:4] == ["/usr/bin/sudo", "--", "/usr/bin/env", "-i"]
+        assert argv[7:11] == ["/usr/bin/python3", "-I", "-B", "-c"]
+        assert not ({"-n", "-S", "-A", "-v"} & set(argv))
+        assert options == dict(limit=65536, stderr_limit=4096, terminal=True)
 
 
 def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sources, tmp_path, monkeypatch):
@@ -179,21 +183,30 @@ def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sou
         def binding(self): return dict(path=self.path, identity="synthetic")
         def close(self): pass
     monkeypatch.setattr(h, "Tool", Tool)
-    first = h.WriterObserver(sources, "d" * 40, observer.value.window, KEYS)
+    first = h.WriterObserver(sources, "d" * 40, observer.value.window, KEYS,
+                             observer.value.terminal)
     assert observer.calls == []
     first.observe(KEYS, lambda: None)
     static = first.binding()
     handoff = first.handoff()
-    second = h.WriterObserver(sources, "d" * 40, first.window, KEYS, h.canonical(handoff))
+    second = h.WriterObserver(sources, "d" * 40, first.window, KEYS,
+                              observer.value.terminal, h.canonical(handoff))
     assert len(observer.calls) == 1 and len(second.reports) == 1
     second.observe(KEYS, lambda: None)
     assert len(observer.calls) == 2 and len(second.reports) == 2
     assert second.binding() == static
+    assert static["auth"] == dict(A=h.TERM_A, C=h.TERM_C, mode="terminal",
+                                   terminal=observer.value.terminal)
     assert [json.loads(base64.b64decode(argv[-1]))["checkpoint"] for argv, _ in observer.calls] == [1, 2]
     for field in ("cpu_us", "rss_bytes", "io_bytes"):
         bad = copy.deepcopy(handoff); bad[field] = 0
         with pytest.raises(g.r.ObservationError, match="USAGE"):
-            h.WriterObserver(sources, "d" * 40, first.window, KEYS, h.canonical(bad))
+            h.WriterObserver(sources, "d" * 40, first.window, KEYS,
+                             observer.value.terminal, h.canonical(bad))
+    changed_terminal = observer.value.terminal | {"ino": 10}
+    with pytest.raises(g.r.ObservationError, match="PREFLIGHT"):
+        h.WriterObserver(sources, "d" * 40, first.window, KEYS,
+                         changed_terminal, h.canonical(handoff))
     assert len(observer.calls) == 2
 
 
@@ -212,6 +225,21 @@ def test_failed_checkpoint_cannot_retry(observer, monkeypatch, failure):
     with pytest.raises(g.r.ObservationError, match="NO_RETRY"):
         observer.value.observe(KEYS, lambda: None)
     assert len(observer.calls) == 1
+
+
+def test_terminal_loss_after_return_is_terminal_and_cannot_retry(observer, monkeypatch):
+    calls = []
+    def terminal(expected=None):
+        calls.append(expected)
+        if len(calls) == 2:
+            raise g.r.ObservationError("GROWTH_TERMINAL_FOREGROUND")
+        return observer.value.terminal
+    monkeypatch.setattr(h, "terminal_binding", terminal)
+    with pytest.raises(g.r.ObservationError, match="TERMINAL_FOREGROUND"):
+        observer.value.observe(KEYS, lambda: None)
+    with pytest.raises(g.r.ObservationError, match="NO_RETRY"):
+        observer.value.observe(KEYS, lambda: None)
+    assert len(observer.calls) == 1 and calls == [observer.value.terminal] * 2
 
 
 @pytest.mark.parametrize("change", ["nonce", "checkpoint", "D", "boot_id", "origins", "images", "started"])
