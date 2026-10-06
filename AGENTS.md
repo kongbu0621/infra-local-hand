@@ -1682,12 +1682,12 @@ The [DR1 candidate review](docs/a2-execution/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_R
 records implementation D `deab8acdabf0d35294f55fa87f2bc86d542fdf2e`, the direct child of independent
 C `65026c8c7722bc487c317d392b50b017a7350dee`. It adds exact resume A/C ancestry/document checks
 and manifest binding while retaining original approvals and all execution contracts. Native scoped
-verification passed 438 tests with no skips; the sandbox failure and static symlink refusal remain
-recorded separately. Eight original static inputs match the earlier aggregate binding. These checks
-created no window and invoked no field writer, sudo or SSH. An isolated source worktree retains exact
-D for the Owner's real-terminal handoff; later evidence commits do not change its candidate identity.
-Exact D CI `37458930058` completed successfully on all three jobs, including independent installed
-verification; DR1 is complete. This is not original-host admission or maintenance acceptance.
+verification passed 325 tests with no skips; the static symlink refusal remains recorded separately.
+Exact D CI run `37458930058` completed successfully on classify-change, Linux and Windows, including
+independent installed verification, without a rerun. Eight original static inputs match the earlier
+aggregate binding. These checks created no window and invoked no field writer, sudo or SSH. An isolated
+source worktree retains exact D for the Owner's real-terminal handoff; later evidence commits do not
+change its candidate identity. DR1 is complete; this is not original-host admission or maintenance acceptance.
 DR2 remains NOT_STARTED until an actual original-terminal invocation proves otherwise. Current VM,
 writer, tool and budget admission must still pass inside the sole authorized window. Do not infer
 maintenance success, prior-writer root cause or permission to repeat any failure from DR1 results.

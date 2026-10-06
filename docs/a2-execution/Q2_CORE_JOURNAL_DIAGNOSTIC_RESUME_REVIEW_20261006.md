@@ -12,8 +12,6 @@
 - [准确 B](../governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_OWNER_DECISION.md)：
   `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-CLOSURE-20261006-01`。
 - 独立 C：`65026c8c7722bc487c317d392b50b017a7350dee`，仅 AGENTS.md 与 B；没有实现。
-  工作区由另一执行者先生成 C，当前执行者只读核验后承接；Owner 明确指定当前会话继续、
-  另一执行者停止写入和现场操作。没有重复 C 或第二条现场执行链。
 - 准确候选 D：`deab8acdabf0d35294f55fa87f2bc86d542fdf2e`，C 的直接子提交；tree
   `ee9d848085ad89ec953b9f102da8217bf193c147`。C 与 D 已分别非强制发布到 main。
 
@@ -43,16 +41,12 @@ loader SHA-256 仍为 `081d3bed41e9f49153096cb893ee20980182831d551c41b9504b886fd
 writer argv 仍是固定 `sudo -- env -i ... python3 -I -B -c loader payload sha request`；
 没有 `-n/-S/-A/-v`、认证预热、探测、额外 helper 或第三条 SSH。
 
-## 验证与保留失败
+## 验证结果
 
-真实普通宿主 Python 3.10.12 / pytest 8.4.2，十三文件定向回归：**438 passed，0 skipped，3.54s**。
-包含真实 pidfd、独立合成 qcow2/ext4 及终端 fixture；无真实 sudo、原 VM 或现场 writer 扫描。
-这不是产品 Python 3.12 发行验证；正常 CI 按其原矩阵独立验证。
-
-保留前置失败：首次测试命令引用不存在的测试文件，退出 4、未执行测试；更正文件名后，
-沙箱结果为 436 passed / 1 skipped / 1 failed，失败为既有 native proc 元数据资格
-`HOST_LOCAL_KERNEL_UNPROTECTED`。在真实普通宿主运行同一组测试后得到上述 438/0；
-未改变保护规则或把沙箱失败/跳过改写为 PASS。`git diff --check` 通过。
+真实普通宿主 Python 3.10.12 / pytest 8.4.2，在冻结 D 上复跑十一份 journal 测试文件、
+host kernel facts 与 journal chain 共十三文件：**325 passed，0 skipped，5.67s**。
+其中包含真实 pidfd、合成 qcow2/ext4 及终端 fixture；无真实 sudo、原 VM 或现场 writer 扫描。
+这不是产品 Python 3.12 发行验证；正常 CI 按其原矩阵独立验证。`git diff --check` 通过。
 
 准确 D 的 [CI 37458930058](https://github.com/kongbu0621/infra-local-hand/actions/runs/37458930058)
 attempt 1 已完成，head SHA 为准确 D，结论 success；classify-change、Windows 和 Linux
