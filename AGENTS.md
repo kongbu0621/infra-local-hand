@@ -1688,9 +1688,18 @@ independent installed verification, without a rerun. Eight original static input
 aggregate binding. These checks created no window and invoked no field writer, sudo or SSH. An isolated
 source worktree retains exact D for the Owner's real-terminal handoff; later evidence commits do not
 change its candidate identity. DR1 is complete; this is not original-host admission or maintenance acceptance.
-DR2 remains NOT_STARTED until an actual original-terminal invocation proves otherwise. Current VM,
-writer, tool and budget admission must still pass inside the sole authorized window. Do not infer
-maintenance success, prior-writer root cause or permission to repeat any failure from DR1 results.
+The [DR2 field return](docs/a2-execution/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_FIELD_20261006.md)
+supersedes the preceding NOT_STARTED checkpoint. Owner's real-terminal screenshot returns exact D,
+preflight BLOCKED, checkpoint 1, parent/child exit 3 and a retained `GROWTH_PROC_LIMIT` child failure.
+Marker is false, SSH is zero and no successful writer report exists. The one replacement window is
+now CONSUMED / FAILED; journal maintenance and H01/Q4/H11 did not begin on this path. This is a
+screenshot-supported return, not independent validation of the full raw output or host state.
+Several PID/TID/FD/read-size/maps checks share that reason, so the exact triggered branch/count
+remains UNKNOWN. Do not infer a particular exceeded cap or relax coverage/budgets from this result.
+No further preflight, sudo/writer probe, supplemental collection, SSH, maintenance, retry or cleanup
+is authorized. Retain the exact candidate/handoff as evidence; do not execute them again. A further
+affected field window requires its own exact A, Owner B and independent C. Unaffected CLOSED
+development and all historical UNKNOWNs remain unchanged; source/CI PASS does not refund a window.
 
 ### Continuing constraints
 

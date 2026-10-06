@@ -3,6 +3,9 @@
 2026-10-06（Asia/Shanghai）。**DR1 完成；DR2 尚未开始。** 本记录登记源码、静态输入与发布验证。
 旧窗口保持消耗，历史 writer 根因及 root payload 是否执行仍 UNKNOWN。
 
+后续状态：Owner 返回的 [DR2 现场截图结果](Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_FIELD_20261006.md)
+已将本记录冻结时的 NOT_STARTED 更新为 CONSUMED / FAILED；本文件的原零计数仍仅描述 DR1 交接时点。
+
 ## 准确链
 
 - R：`10d2a5c827964989f41ca6e8eeac3d44de6d0f04`。本执行者直接完整读取固定规则，
