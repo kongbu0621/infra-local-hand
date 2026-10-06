@@ -1,4 +1,4 @@
-"""Original proc limits with synthetic entries/reads; no live procfs or sudo."""
+"""Approved proc limits with synthetic entries/reads; no live procfs or sudo."""
 from __future__ import annotations
 
 import json
@@ -26,7 +26,7 @@ LIMITS = [
     ("FD_TOTAL", 262144, 27, 29), ("PID_STAT_BYTES", 16384, 27, 0),
     ("TASK_STAT_BYTES", 16384, 27, 29),
     ("FDINFO_BYTES", 4096, 27, 29), ("MAPS_BYTES", 1048576, 27, 29),
-    ("MAPS_TOTAL_BYTES", 67108864, 27, 29), ("MOUNTINFO_BYTES", 1048576, 0, 0),
+    ("MAPS_TOTAL_BYTES", 536870912, 27, 29), ("MOUNTINFO_BYTES", 1048576, 0, 0),
     ("PID_ENTRIES_RECHECK", 32768, 0, 0), ("TASK_ENTRIES_RECHECK", 32768, 27, 0),
     ("FD_ENTRIES_RECHECK", 65536, 27, 29), ("PID_STAT_BYTES_RECHECK", 16384, 27, 0),
     ("TASK_STAT_BYTES_RECHECK", 16384, 27, 29), ("FDINFO_BYTES_RECHECK", 4096, 27, 29),
@@ -63,7 +63,7 @@ class Entries:
 
 
 @pytest.mark.parametrize("kind,cap,pid,tid", LIMITS)
-def test_original_limit_allows_exact_cap_and_reports_first_excess(scanner, kind, cap, pid, tid):
+def test_approved_limit_allows_exact_cap_and_reports_first_excess(scanner, kind, cap, pid, tid):
     check = scanner.ns["_proc_limit"]
     check(kind, cap, cap, pid, tid)
     with pytest.raises(scanner.error) as caught:
@@ -145,7 +145,7 @@ def test_per_file_read_caps_preserve_first_excess_byte_and_close(scanner, monkey
     assert total_read == [cap + extra] and closed == [99]
 
 
-def synthetic_scan(scanner, monkeypatch, pids, tasks, *, fds=None, maps=None):
+def synthetic_scan(scanner, monkeypatch, pids, tasks, *, fds=None, maps=None, check=None):
     """Supply logical proc records in memory; every production scan loop still runs."""
     root = PRIVATE_PATH
     def names(path, cap, check, **kwargs):
@@ -166,7 +166,7 @@ def synthetic_scan(scanner, monkeypatch, pids, tasks, *, fds=None, maps=None):
     monkeypatch.setitem(scanner.ns, "_proc_read", read)
     monkeypatch.setitem(scanner.ns, "_fd_snapshot", lambda *args, **kwargs: {} if fds is None else fds)
     monkeypatch.setattr(scanner.os, "stat", lambda path: INFO)
-    return lambda: scanner.ns["collect_image_writers"]({"journal": (42, 2)}, lambda: None,
+    return lambda: scanner.ns["collect_image_writers"]({"journal": (42, 2)}, check or (lambda: None),
                                                        proc_root=root)
 
 
@@ -197,25 +197,117 @@ def test_fd_total_counts_repeated_per_task_snapshots(scanner, monkeypatch, extra
         assert len(scan()) == 1
 
 
-@pytest.mark.parametrize("extra", [0, 1])
-def test_maps_total_counts_same_bytes_for_each_task_without_dedup(scanner, monkeypatch, extra):
-    # One valid 1-MiB maps value is shared by tasks; no 64-MiB fixture is allocated.
+def maps_block(size):
     line = b"1000-2000 r--p 0 00:00 0 /synthetic/PRIVATE_MAP_CONTENT"
-    block = line + b" " * (1048576 - len(line) - 1) + b"\n"
+    assert len(line) < size <= 1048576
+    return line + b" " * (size - len(line) - 1) + b"\n"
+
+
+@pytest.mark.parametrize("extra_bytes", [0, 1, 1048576])
+def test_maps_total_counts_every_task_at_new_exact_boundary(scanner, monkeypatch, extra_bytes):
+    # Reuse one 1-MiB value; never allocate a 512-MiB fixture. The extra task after
+    # a rejecting read proves that rejection does not continue collecting data.
+    block = maps_block(1048576)
     reads = []
     def maps(path):
         reads.append(path)
-        return block
-    tids = [str(n) for n in range(1, 65 + extra)]
+        if len(reads) <= 512:
+            return block
+        assert len(reads) == 513 and extra_bytes
+        return b"\n" if extra_bytes == 1 else block
+    tids = [str(n) for n in range(1, 513 + (2 if extra_bytes else 0))]
     scan = synthetic_scan(scanner, monkeypatch, ["27"], {"27": tids}, maps=maps)
-    if extra:
+    if extra_bytes:
         with pytest.raises(scanner.error) as caught:
             scan()
-        assert str(caught.value) == reason("MAPS_TOTAL_BYTES", 65 * 1048576, 64 * 1048576, 27, 65)
+        assert str(caught.value) == reason("MAPS_TOTAL_BYTES", 536870912 + extra_bytes,
+                                           536870912, 27, 513)
         assert "PRIVATE_MAP_CONTENT" not in str(caught.value)
     else:
         assert len(scan()) == 1
-    assert len(reads) == 64 + extra
+    assert len(reads) == 512 + bool(extra_bytes)
+
+
+@pytest.mark.parametrize("late,expected", [
+    ("complete", None), ("mapped_writer", None), ("fd_writer", None),
+    ("malformed_maps", "GROWTH_PROC_MAPS"), ("unreadable_maps", "GROWTH_WRITERS_UNKNOWN"),
+    ("task_identity", "GROWTH_PROC_DRIFT"), ("pid_identity", "GROWTH_PROC_DRIFT"),
+    ("task_set", "GROWTH_PROC_DRIFT"), ("pid_set", "GROWTH_PROC_DRIFT"),
+    ("fd_drift", "GROWTH_PROC_DRIFT"), ("deadline", "GROWTH_WRITER_DEADLINE"),
+])
+def test_old_field_rejection_value_does_not_skip_later_checks(scanner, monkeypatch, late, expected):
+    block, remainder = maps_block(1048576), maps_block(6778)
+    reads, calls = [], []
+    last_task = PRIVATE_PATH + "/27/task/66/"
+
+    def maps(path):
+        reads.append(path)
+        if len(reads) <= 64:
+            return block
+        if len(reads) == 65:
+            return remainder
+        assert len(reads) == 66
+        if late == "malformed_maps":
+            return b"invalid maps\n"
+        if late == "unreadable_maps":
+            raise PermissionError(13, "synthetic only", PRIVATE_PATH)
+        if late == "mapped_writer":
+            return b"1000-2000 rw-s 0 00:2a 2 /synthetic/PRIVATE_MAP_CONTENT\n"
+        return b""
+
+    def guard():
+        if late == "deadline" and len(reads) == 65:
+            raise scanner.error("GROWTH_WRITER_DEADLINE")
+
+    scan = synthetic_scan(scanner, monkeypatch, ["27"],
+        {"27": [str(n) for n in range(1, 67)]}, maps=maps, check=guard)
+    original_read, original_names = scanner.ns["_proc_read"], scanner.ns["_bounded_names"]
+    fd_info = SimpleNamespace(**(vars(INFO) | {"st_ino": 2}))
+
+    def read(path, cap, check, kind="PID_STAT_BYTES", *context):
+        calls.append(kind)
+        if late == "task_identity" and path == last_task + "stat" and kind == "TASK_STAT_BYTES_RECHECK":
+            return STAT[:-2] + b"18"
+        if late == "pid_identity" and kind == "PID_STAT_BYTES_RECHECK":
+            return STAT[:-2] + b"18"
+        if late == "fd_writer" and path.startswith(last_task + "fdinfo/"):
+            return b"flags:\t02\n"
+        return original_read(path, cap, check, kind, *context)
+
+    def names(path, cap, check, **options):
+        kind = options.get("kind", "PID_ENTRIES")
+        calls.append(kind)
+        if late == "task_set" and kind == "TASK_ENTRIES_RECHECK":
+            return ["changed"]
+        if late == "pid_set" and kind == "PID_ENTRIES_RECHECK":
+            return []
+        return original_names(path, cap, check, **options)
+
+    def fds(path, check, pid=0, tid=0, kind="FD_ENTRIES"):
+        if path != last_task + "fd":
+            return {}
+        if late in ("fd_writer", "deadline"):
+            return {"8": fd_info}
+        if late == "fd_drift" and kind == "FD_ENTRIES_RECHECK":
+            return {"8": fd_info}
+        return {}
+
+    monkeypatch.setitem(scanner.ns, "_proc_read", read)
+    monkeypatch.setitem(scanner.ns, "_bounded_names", names)
+    monkeypatch.setitem(scanner.ns, "_fd_snapshot", fds)
+    monkeypatch.setattr(scanner.os, "stat", lambda path: fd_info)
+    if expected:
+        with pytest.raises(scanner.error, match="^" + expected + "$"):
+            scan()
+    else:
+        rows = scan()
+        assert rows == [dict(pid=27, starttime=17, complete=True,
+                            writable_images=["journal"] if late.endswith("writer") else [])]
+        assert "TASK_ENTRIES_RECHECK" in calls and "PID_STAT_BYTES_RECHECK" in calls
+        assert calls[-1] == "PID_ENTRIES_RECHECK"
+    # All cases reached the exact former field failure before the later outcome.
+    assert len(reads) >= 65 and 64 * len(block) + len(remainder) == 67115642
+    assert len(reads) == (65 if late in ("fd_drift", "deadline") else 66)
 
 
 @pytest.mark.parametrize("kind,cap,pid,tid", [item for item in LIMITS if item[0] in {
