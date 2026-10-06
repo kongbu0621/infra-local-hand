@@ -77,7 +77,7 @@ def test_generated_scanner_retains_source_rejection_codes(payload, proc_fixture,
             if failure == "drift":
                 snapshots = iter(({}, {"8": SimpleNamespace(
                     st_dev=42, st_ino=7, st_mode=0, st_uid=0, st_gid=0, st_nlink=1)}))
-                isolated.setitem(namespace, "_fd_snapshot", lambda *args: next(snapshots))
+                isolated.setitem(namespace, "_fd_snapshot", lambda *args, **kwargs: next(snapshots))
 
             def guard():
                 if failure == "deadline":
@@ -120,10 +120,10 @@ def test_generated_entry_retains_wrapped_permission_errno(payload, proc_fixture)
     original_scan = payload["collect_image_writers"]
     original_read = payload["_proc_read"]
 
-    def denied(path, cap, check):
+    def denied(path, cap, check, *context, **options):
         if path.endswith("/maps"):
             raise PermissionError(13, PRIVATE_MESSAGE, PRIVATE_PATH)
-        return original_read(path, cap, check)
+        return original_read(path, cap, check, *context, **options)
 
     payload["_proc_read"] = denied
     payload["read_fact"] = lambda kind, check, report: (BOOT + "\n").encode()

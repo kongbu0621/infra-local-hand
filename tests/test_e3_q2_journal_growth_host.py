@@ -64,10 +64,10 @@ def test_unknown_inventory_never_becomes_empty(tmp_path, monkeypatch, failure):
     task = process_fixture(root, image)
     if failure == "permission":
         original = h._proc_read
-        def unreadable(path, cap, check):
+        def unreadable(path, cap, check, *context, **options):
             if path.endswith("/maps"):
                 raise PermissionError("fixture")
-            return original(path, cap, check)
+            return original(path, cap, check, *context, **options)
         monkeypatch.setattr(h, "_proc_read", unreadable)
     elif failure == "vanished":
         (task / "fdinfo/8").unlink()

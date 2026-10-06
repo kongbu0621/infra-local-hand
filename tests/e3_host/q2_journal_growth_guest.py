@@ -167,7 +167,7 @@ MIB=1048576
 """
  payload=kernel.decode("utf-8") + "\n" + prefix
  payload += functions(guest, ("identity", "proc_start", "writer_request"))
- payload += functions(host, ("_bounded_names", "_proc_read", "_fd_snapshot", "collect_image_writers"))
+ payload += functions(host, ("_proc_limit", "_bounded_names", "_proc_read", "_fd_snapshot", "collect_image_writers"))
  payload += "\nEXECUTION_D=" + repr(commit) + "\n" + WRITER_ENTRY
  raw=payload.encode("utf-8")
  require(len(raw) <= 32768, "GROWTH_WRITER_SOURCE_LIMIT")
