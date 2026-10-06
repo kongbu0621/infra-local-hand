@@ -1763,6 +1763,25 @@ supplemental collection, SSH, retry, reconnect, cleanup or recovery. Any cap/cov
 or another affected field window requires a new exact review, Owner B and independent C. This
 return does not authorize deduplication, task omission, threshold adjustment or a fresh window.
 
+### Journal maps budget correction proposal
+
+Scope `LH-Q2-CORE-JOURNAL-MAPS-BUDGET-v1` is **OPEN / NOT APPROVED**, for proposed MB1–MB2 only.
+The [baseline registration](docs/governance/Q2_CORE_JOURNAL_MAPS_BUDGET_BASELINE.md) pins exact A
+`d18b490a7cdb63ee43044a29a89746ef78fccff3` and links its requirements, architecture and plan.
+There is no Owner B or independent CLOSED C for this scope. R, readable direct source/integrity,
+Owner mandate/authority, no exceptions and material-change review remain unchanged.
+
+The proposed minimal change is a fixed per-scan cumulative maps text cap of 512 MiB instead of
+64 MiB, preserving every task read, single-file 1 MiB, other caps, checks and original deadlines.
+This explicitly increases the cumulative read budget; it is not measured host need or a guarantee
+of successful admission. The proposal also requests one further replacement preflight only after
+accurate closure, implementation, verification, publication, exact-candidate CI and freezing.
+Only all gates passing would permit the unconsumed original journal maintenance in that same window.
+All prior windows remain consumed. No source change, runtime configuration, host probe, retry,
+supplemental capture, cleanup or field action is authorized by this proposal. No H01/Q4/H11,
+new-boot core adoption or side work is included. Existing unaffected CLOSED development continues.
+Do not implement the changed cap or replay an old handoff before exact Owner B and independent C.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
