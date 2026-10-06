@@ -1763,24 +1763,37 @@ supplemental collection, SSH, retry, reconnect, cleanup or recovery. Any cap/cov
 or another affected field window requires a new exact review, Owner B and independent C. This
 return does not authorize deduplication, task omission, threshold adjustment or a fresh window.
 
-### Journal maps budget correction proposal
+### Journal maps budget correction
 
-Scope `LH-Q2-CORE-JOURNAL-MAPS-BUDGET-v1` is **OPEN / NOT APPROVED**, for proposed MB1–MB2 only.
+Scope `LH-Q2-CORE-JOURNAL-MAPS-BUDGET-v1` is **CLOSED for MB1–MB2 only**.
 The [baseline registration](docs/governance/Q2_CORE_JOURNAL_MAPS_BUDGET_BASELINE.md) pins exact A
-`d18b490a7cdb63ee43044a29a89746ef78fccff3` and links its requirements, architecture and plan.
-There is no Owner B or independent CLOSED C for this scope. R, readable direct source/integrity,
+`d18b490a7cdb63ee43044a29a89746ef78fccff3` and links its
+[requirements](docs/a2-execution/q2-core-journal-maps-budget/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-journal-maps-budget/ARCHITECTURE.md), and
+[plan](docs/a2-execution/q2-core-journal-maps-budget/IMPLEMENTATION_PLAN.md).
+Their exact bytes and historical OPEN labels remain unchanged. R, readable direct source/integrity,
 Owner mandate/authority, no exceptions and material-change review remain unchanged.
 
-The proposed minimal change is a fixed per-scan cumulative maps text cap of 512 MiB instead of
+Exact Owner B is retained in
+[the maps-budget Owner decision](docs/governance/Q2_CORE_JOURNAL_MAPS_BUDGET_OWNER_DECISION.md),
+event `LH-Q2-CORE-JOURNAL-MAPS-BUDGET-CLOSURE-20261007-01`, with the exact reply and preceding request.
+This independent bookkeeping-only C contains no implementation, configuration, release digest or
+field action. New D must descend from C; do not squash C with implementation.
+
+The approved minimal change is a fixed per-scan cumulative maps text cap of 512 MiB instead of
 64 MiB, preserving every task read, single-file 1 MiB, other caps, checks and original deadlines.
 This explicitly increases the cumulative read budget; it is not measured host need or a guarantee
-of successful admission. The proposal also requests one further replacement preflight only after
-accurate closure, implementation, verification, publication, exact-candidate CI and freezing.
-Only all gates passing would permit the unconsumed original journal maintenance in that same window.
-All prior windows remain consumed. No source change, runtime configuration, host probe, retry,
-supplemental capture, cleanup or field action is authorized by this proposal. No H01/Q4/H11,
-new-boot core adoption or side work is included. Existing unaffected CLOSED development continues.
-Do not implement the changed cap or replay an old handoff before exact Owner B and independent C.
+of successful admission. MB1 must add accurate A/C/document/ancestry and manifest binding while
+retaining all prior pins, complete the scoped verification, publish D, pass its own relevant CI and
+freeze the exact candidate. Only then may MB2 use one further replacement preflight under the same
+`lhqjgrow-20261006a`, original objects/inputs and Owner's existing real local foreground terminal.
+All gates passing permit only the unconsumed original journal maintenance in that same window.
+All prior windows remain consumed. Original authentication, other checks/caps, 15s/900s/780s,
+AS/RSS/FD and storage/capture budgets, eight checkpoints and cumulative maintenance counts remain.
+No deduplication, task omission, automatic adjustment, added privilege/helper/probe, retry,
+reconnect, supplemental capture, forced shutdown, cleanup or rollback is allowed. No H01/Q4/H11,
+new-boot core adoption or side work is included. Existing unaffected CLOSED development continues;
+production E3 remains unverified. Do not replay an old handoff or start MB2 before all MB1 gates pass.
 
 ### Continuing constraints
 
