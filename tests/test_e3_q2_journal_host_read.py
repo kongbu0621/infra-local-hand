@@ -227,6 +227,21 @@ def test_failed_checkpoint_cannot_retry(observer, monkeypatch, failure):
     assert len(observer.calls) == 1
 
 
+def test_fixed_root_failure_reason_is_retained_and_cannot_retry(observer, monkeypatch):
+    def collect(command):
+        raw = h.canonical(dict(schema="lhq-journal-writer-result/v1",
+            request=command.request, complete=False,
+            reason="GROWTH_WRITER_DEADLINE", errno=None))
+        command.output["stdout"].extend(raw)
+        return dict(returncode=3, eof=dict(stdout=True, stderr=True), stdout=raw, stderr=b"")
+    monkeypatch.setattr(observer.Command, "collect", collect)
+    with pytest.raises(g.r.ObservationError, match="^GROWTH_WRITER_DEADLINE$"):
+        observer.value.observe(KEYS, lambda: None)
+    with pytest.raises(g.r.ObservationError, match="NO_RETRY"):
+        observer.value.observe(KEYS, lambda: None)
+    assert len(observer.calls) == 1 and observer.value.reports == []
+
+
 def test_terminal_loss_after_return_is_terminal_and_cannot_retry(observer, monkeypatch):
     calls = []
     def terminal(expected=None):

@@ -153,7 +153,6 @@ def writer_request(raw):
  for pair in images.values()) and len(set(map(tuple, images.values()))) == 5, "GROWTH_WRITER_IMAGES")
  return value
 def writer_payload(host, guest, kernel, commit):
- """Freeze only the existing scanner and fixed entry; never import a user file as root."""
  import ast
  def functions(raw, names):
   source = raw.decode("utf-8")
@@ -530,11 +529,6 @@ def process_start(raw):
  require(len(fields) >= 20 and fields[19].isdigit(), "GROWTH_PROCESS_STAT")
  return int(fields[19])
 class GuestInventory:
- """Current finite inventory, never an attestation supplied by a caller.
-
-    Missing processes during a scan stop maintenance. Any dynamic or indirect
-    startup source we cannot classify is an explicit UNKNOWN, not absence.
-    """
  SHOW = ("Id", "LoadState", "ActiveState", "SubState", "MainPID", "ControlPID", "ControlGroup",
  "Restart", "UnitFileState", "Triggers", "TriggeredBy", "WantedBy", "RequiredBy",
  "UpheldBy", "OnSuccess", "OnFailure", "Job", "Transient", "FragmentPath", "DropInPaths",
@@ -800,12 +794,6 @@ def file_hash(fd, remaining, check):
  require(count == before["size"] and before == metadata(os.fstat(fd)), "GROWTH_TREE_FILE_DRIFT")
  return h.hexdigest(), count
 def tree_digest(root_fd, check, *, max_bytes=MAX_BYTES, max_entries=MAX_ENTRIES, mount_id=None):
- """Stable bounded fd traversal; reject symlinks and special files.
-
-    The caller has bound root to the exact ext4 UUID/mount. mount_id is a
-    required production check against bind mounts, including same-device ones.
-    Synthetic tests may supply an identity callback without mounting fixtures.
-    """
  require(callable(mount_id), "GROWTH_TREE_MOUNT_CHECK")
  require(fcntl.fcntl(root_fd, fcntl.F_GETFL) & os.O_NOATIME, "GROWTH_TREE_NOATIME")
  root_info = os.fstat(root_fd)
@@ -1295,7 +1283,15 @@ class WriterProtocol:
    result = command.collect()
    self.host.terminal_binding(self.terminal)
    self.io_bytes += len(result["stdout"]) + len(result["stderr"])
-   require(result["returncode"] == 0 and all(result["eof"].values()), "GROWTH_WRITER_FAILED")
+   if result["returncode"] != 0:
+    failure = r.parse(result["stdout"], 65536)
+    require(type(failure) is dict and set(failure) == {"schema", "request", "complete", "reason", "errno"}
+ and failure["schema"] == "lhq-journal-writer-result/v1" and failure["complete"] is False
+ and failure["request"] in (None, request) and type(failure["reason"]) is str
+ and re.fullmatch("[A-Z0-9_]{1,160}", failure["reason"])
+ and (failure["errno"] is None or type(failure["errno"]) is int), "GROWTH_WRITER_FAILURE_REPORT")
+    raise r.ObservationError(failure["reason"])
+   require(all(result["eof"].values()), "GROWTH_WRITER_FAILED")
    report = r.parse(result["stdout"], 65536)
    self.validate(report, request, checkpoint)
    self.reports.append(report)
