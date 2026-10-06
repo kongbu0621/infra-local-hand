@@ -39,3 +39,12 @@ Python 3.12.14，十二文件定向回归：**428 passed，3 skipped**。新增 
 
 没有调用 sudo/writer 现场入口、SSH 或维护动作。扩容仍未执行，H01/Q4/H11 均未执行。
 原有安全检查、15s/900s/780s、累计维护次数、历史 UNKNOWN 和暂停支线的约束全部保留。
+
+## 准确发布结果
+
+修复已非强制发布到 `main`，准确提交 `aba18e33f79295f3df1964606e389297d1a8a26a`，
+tree `628ec75bd3b34615d4896607942d9cbdd2bb85d4` 与本地已验证树一致。
+[CI 37450280680](https://github.com/kongbu0621/infra-local-hand/actions/runs/37450280680)
+attempt 1 已完成，结论 `success`，classify-change、Windows、Linux 三个 job 均成功；
+源码及独立安装 wheel 验证通过，没有重跑。后续准确 A 为文档提交，没有追加源码改动。
+本结果不证明历史现场原因已解决，也不批准另一现场窗口。
