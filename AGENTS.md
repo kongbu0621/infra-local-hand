@@ -1626,6 +1626,19 @@ backup, image growth, VM start and ext4 growth. Failure stops without retry, rec
 capture, forced shutdown, rollback or cleanup. H01/Q4/H11, namespace/watchdog and production
 `E3_SUPERVISION_UNVERIFIED` remain outside this closure.
 
+The [terminal-auth field record](docs/a2-execution/Q2_CORE_JOURNAL_TERMINAL_AUTH_FIELD_20261006.md)
+now records the one authorized replacement preflight. Exact candidate
+`202c70a15c0e52940d8544c3ae3c41e0b57ebaec` reached writer checkpoint 1 and returned exit 3 with
+`GROWTH_WRITER_FAILED`; marker creation was false and SSH/transport, maintenance mutators and
+H01/Q4/H11 all remained zero. The window is consumed and closed. The candidate's parent observer
+discarded the bounded child's specific nonzero reason, so that reason is irrecoverably UNKNOWN and
+must not be inferred from the password prompt or possible source failure set. Follow-up source repair
+`ac08b519f741b301f37959808749cb9755359123` preserves a valid future child's exact bounded failure
+reason and passed 401 targeted host tests, but it neither changes this result nor refunds or authorizes
+another field action. No sudo/writer probe, retry, reconnect, supplemental capture, cleanup, marker,
+SSH or maintenance is permitted under this closure. A new exact A, Owner decision and independent C
+are required before any further affected host window.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
