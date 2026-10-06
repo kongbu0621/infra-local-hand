@@ -1506,6 +1506,21 @@ from C and must not be squashed with it. At C, the new marker/request is NOT_ISS
 and O2 exact verification must precede conditional O3. Unaffected CLOSED development remains.
 R/source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D order are unchanged.
 
+The [capacity observation review](docs/a2-execution/Q2_CORE_CAPACITY_OBSERVATION_REVIEW_20261006.md)
+records independent C `cd4dc50df1d62591548c54afa3e5405608aba20b` and implementation D
+`dafa4360c1b62c59677236ab93da5af203fac240`. Exact local targeted verification passed 290 tests;
+CI 37398006101 passed all three jobs before the single conditional O3. The one
+`lhqcap-20261006a` marker and SSH request are now CONSUMED. Wait 0, both EOFs, validated five-role
+output and four sealed local files establish CURRENT_CAPACITY_OBSERVATION, not core admission.
+One local conditional comparison found journal available 229134336 B against the frozen 05c
+threshold 299892736 B: a current 70758400 B shortfall. All sampled inode thresholds and other
+sampled byte thresholds were sufficient for that conditional comparison. This does not reconstruct
+05c's historical free values or verify historical placement/current quota/independent remote exit.
+All UNKNOWNs and full commitments remain. O1–O3 are complete; no further marker, SSH, supplemental
+collection, cleanup, refund or business attempt is authorized. H01/Q4/H11 were not executed.
+Any capacity change or future business acceptance needs separate exact authority. Side work and
+production `E3_SUPERVISION_UNVERIFIED` remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
