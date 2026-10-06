@@ -1479,27 +1479,31 @@ the issued 05c adder retained all acceptance/rejection results. The historical s
 is retained. This repair neither resolves the guest shortfall nor recovers 05c's missing values. No new
 marker/request, field collection, cleanup, refund or batch is authorized; production E3 and paused side work remain.
 
-### Single core capacity observation proposal
+### Single core capacity observation
 
-Scope `LH-Q2-CORE-CAPACITY-OBSERVATION-v1` is **OPEN / NOT APPROVED / NOT ISSUED**, O1–O3 only.
+Scope `LH-Q2-CORE-CAPACITY-OBSERVATION-v1` is **CLOSED for O1–O3 only**.
 Exact documentation A is `1ba20d196facc82cf74aea88e7df3d4fe31e0584`, tree
 `2da72e01961f7ac1bf32edd521090dafe34b780a`. The [baseline and pending decision](docs/governance/Q2_CORE_CAPACITY_OBSERVATION_BASELINE.md)
 pin the [requirements](docs/a2-execution/q2-core-capacity-observation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-capacity-observation/ARCHITECTURE.md) and
 [plan](docs/a2-execution/q2-core-capacity-observation/IMPLEMENTATION_PLAN.md).
-This is one proposed fixed `lhqcap-20261006a` read-only observation of five original-plan parent devices
+This authorizes one fixed `lhqcap-20261006a` read-only observation of five original-plan parent devices
 and available bytes/inodes, followed by a conditional comparison with the frozen 05c commitments.
 It is not a fifth core attempt or complete admission. Original-plan bytes and issued mappings bind
 the intended paths without reconstructing the full consumed package. Current historical placement,
 quota enforcement and old-process closure remain UNVERIFIED.
 
-The proposal retains all four consumed core requests and the consumed sshd diagnostic, full commitments,
-UNKNOWNs, existing installation and empty release allowlist. New capture is 4 MiB/8 inodes; the proposed
+The approval retains all four consumed core requests and the consumed sshd diagnostic, full commitments,
+UNKNOWNs, existing installation and empty release allowlist. New capture is 4 MiB/8 inodes; the approved
 current host floor is additive 264 MiB/80. It preserves diagnostic trust and remote-closure limits,
 one marker/request, original clocks and no retry/reconnect/cleanup/refund. No H01/Q4/H11, runtime/configuration
 change, next batch or production E3 is authorized; side work remains paused.
-This registration is documentation only, not Owner B or CLOSED C. Exact B and independent bookkeeping-only
-C must precede new source/tests D and conditional field issuance. Unaffected CLOSED development remains.
+Exact Owner B is retained in [the Owner decision](docs/governance/Q2_CORE_CAPACITY_OBSERVATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-CAPACITY-OBSERVATION-CLOSURE-20261006-01`. This independent bookkeeping-only C
+records CLOSED before new implementation D, without changing A's three documents or historical OPEN
+baseline. C contains no source, tests, configuration, release digest or field action; D must descend
+from C and must not be squashed with it. At C, the new marker/request is NOT_ISSUED. O1 implementation
+and O2 exact verification must precede conditional O3. Unaffected CLOSED development remains.
 R/source integrity, Owner mandate/authority, no exceptions and independent R→A→B→C→D order are unchanged.
 
 ### Continuing constraints
