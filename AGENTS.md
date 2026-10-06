@@ -1745,10 +1745,23 @@ skips. Exact D CI `37482894717` completed successfully on all three jobs in atte
 independent installed verification. Eight original static inputs retain their earlier binding;
 the sandbox parent-owner refusal is separately retained and was resolved only by ordinary-host
 static verification with the original checks, without changing permissions or reads.
-DR1 is complete; the exact source worktree and private handoff are frozen. DR2 is NOT STARTED and
-its one authorized replacement window remains unused. Only the Owner's existing real foreground
-terminal may start it; all preflight and same-window maintenance conditions above still apply.
+DR1 is complete; the exact source worktree and private handoff were frozen. At that DR1 handoff,
+DR2 was NOT STARTED and its one authorized replacement window remained unused. The field return
+below supersedes that historical handoff status.
 Publication, static verification and this record do not prove field admission or journal growth.
+
+The [v2 DR2 field return](docs/a2-execution/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_FIELD_20261006.md)
+now records screenshot-supported preflight BLOCKED at checkpoint 1, parent/child exit 3 and
+`GROWTH_PROC_LIMIT_MAPS_TOTAL_BYTES`: observed cumulative text 67115642 bytes against the unchanged
+67108864-byte cap. Marker is false, SSH is zero and no successful writer report exists. The one
+v2 replacement window is CONSUMED / FAILED; journal maintenance and H01/Q4/H11 did not begin on
+this path. The 6778-byte excess is the first rejection difference, not the complete scan requirement.
+Counts accumulate per task; no unique-mapping total, RSS, application attribution or full host
+attestation follows. Original streams were not independently validated; earlier UNKNOWNs remain.
+Do not execute the frozen handoff again or invoke any further preflight, sudo/writer probe,
+supplemental collection, SSH, retry, reconnect, cleanup or recovery. Any cap/coverage/budget change
+or another affected field window requires a new exact review, Owner B and independent C. This
+return does not authorize deduplication, task omission, threshold adjustment or a fresh window.
 
 ### Continuing constraints
 

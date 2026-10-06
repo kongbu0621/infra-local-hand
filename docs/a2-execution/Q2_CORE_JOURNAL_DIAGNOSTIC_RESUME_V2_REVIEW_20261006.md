@@ -1,7 +1,11 @@
 # Journal 诊断替代窗口 v2：DR1 候选验证
 
-2026-10-06（Asia/Shanghai）。**DR1 完成；DR2 未开始，唯一替代窗口尚未使用。**
+2026-10-06（Asia/Shanghai）。本记录冻结时点：**DR1 完成；DR2 未开始，唯一替代窗口尚未使用。**
 旧窗口仍已消耗，旧 `GROWTH_PROC_LIMIT` 的具体分支和计数仍 UNKNOWN；本次诊断不证明现场问题已解除。
+
+后续 [v2 DR2 现场返回](Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_FIELD_20261006.md)已将本次窗口状态
+更新为 CONSUMED / FAILED：首次 writer 检查点报告累计 maps 文本超过原 64 MiB 上限。
+以下未开始/零动作描述只属于 DR1 冻结时点，不能据此再次执行交接。
 
 ## 准确链与发布
 
