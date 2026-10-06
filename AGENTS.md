@@ -1795,6 +1795,18 @@ reconnect, supplemental capture, forced shutdown, cleanup or rollback is allowed
 new-boot core adoption or side work is included. Existing unaffected CLOSED development continues;
 production E3 remains unverified. Do not replay an old handoff or start MB2 before all MB1 gates pass.
 
+The [MB1 candidate review](docs/a2-execution/Q2_CORE_JOURNAL_MAPS_BUDGET_REVIEW_20261007.md) records
+independent C `3d928a323d1aad12c20a66594bb295d4df14fab0` and its direct implementation child D
+`68b63da88d70cfb8151f66a75c7f523baaf012d2`. AST comparison proves the sole scanner change is the
+64-to-512-MiB cumulative maps cap; other implementation changes only add accurate approval binding.
+Native scoped verification passed 524 tests without skips, including source/generated-payload
+boundary tests and later writer/fault checks after the old rejection value. Exact D CI `37500889014`
+completed successfully on all three jobs in attempt 1, including independent installed verification.
+Eight original static inputs retain their earlier binding. Exact source and private terminal handoff
+are frozen; MB1 is complete. MB2 is NOT STARTED and its one authorized replacement window is unused.
+Only the Owner's existing real local foreground terminal may start it, with all original admission
+and same-window conditions. This record does not prove field admission, journal growth or core acceptance.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
