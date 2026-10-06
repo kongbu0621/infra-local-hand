@@ -1645,24 +1645,38 @@ changes this result nor refunds or authorizes another field action. Exact `ac08b
 reconnect, supplemental capture, cleanup, marker, SSH or maintenance is permitted under this closure.
 A new exact A, Owner decision and independent C are required before any further affected host window.
 
-### Journal diagnostic resume proposal
+### Journal diagnostic resume amendment
 
-Scope `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-v1` is **OPEN / NOT APPROVED** for DR1–DR2.
-The [pending baseline](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_BASELINE.md) links the
+Scope `LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-v1` is **CLOSED for DR1–DR2 only** at exact A
+`ef46ac169fd9084875cb5c5148a9c4985ace680c`. The
+[baseline registration](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_BASELINE.md) links the
 [requirements](docs/a2-execution/q2-core-journal-diagnostic-resume/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-journal-diagnostic-resume/ARCHITECTURE.md), and
 [plan](docs/a2-execution/q2-core-journal-diagnostic-resume/IMPLEMENTATION_PLAN.md).
-It proposes only one further replacement preflight window after the diagnostic repair is verified,
-published and bound to an exact execution candidate. All prior windows remain consumed; the prior
-writer cause and root-payload execution remain UNKNOWN. Exact A is
-`ef46ac169fd9084875cb5c5148a9c4985ace680c`; its three document bytes remain unchanged.
+Their historical OPEN labels and exact bytes remain unchanged. R, direct source/integrity,
+Owner-only authority, mandate, no exceptions and the material-change rule remain unchanged.
+
+Exact Owner B is retained in
+[the Owner decision](docs/governance/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_OWNER_DECISION.md), event
+`LH-Q2-CORE-JOURNAL-DIAGNOSTIC-RESUME-CLOSURE-20261006-01`. This independent bookkeeping-only C
+records CLOSED before new implementation and contains no source, tests, executable prototype,
+dependency, configuration, release digest or field action. D must descend from C and must not be
+squashed with it.
+
+The closure permits only one further replacement preflight window after the diagnostic repair is
+verified, published and bound to an exact execution candidate descending from C. All prior windows
+remain consumed; the prior writer cause and root-payload execution remain UNKNOWN.
 The [diagnostic repair review](docs/a2-execution/Q2_CORE_JOURNAL_WRITER_DIAGNOSTICS_REVIEW_20261006.md)
 records source repair `aba18e33f79295f3df1964606e389297d1a8a26a`, 428 local tests passed and 3 skipped,
 and exact CI `37450280680` completed successfully on all three jobs. This is not field admission.
-No Owner B or independent CLOSED C exists for this proposal. Ordinary continuation instructions,
-source fixes and CI do not authorize another affected host window. Existing unaffected development
-continues; all earlier authentication, checks, budgets, cumulative maintenance limits, paused side
-work and the exclusion of H01/Q4/H11 remain unchanged. Do not change prior approval records.
+DR1 must now bind exact A/B/C, the existing repair, original inputs, payload and argv, run affected
+verification and freeze the final candidate. Only after every DR1 gate passes may the Owner use the
+existing real local foreground terminal for the one DR2 preflight. The original authentication,
+checks, 15s/900s/780s, budgets and cumulative maintenance limits remain unchanged. No privilege,
+helper, probe, retry, reconnect, supplemental capture, cleanup or automatic rollback is added.
+Only a fully passing preflight may continue the already authorized journal maintenance in the same
+window. H01/Q4/H11, new-boot core adoption, namespace/watchdog, production E3 and side work remain
+outside this closure. Do not change prior approval records.
 
 ### Continuing constraints
 
