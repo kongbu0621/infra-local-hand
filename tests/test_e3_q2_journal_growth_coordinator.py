@@ -213,7 +213,7 @@ def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
 def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", "0" * 64,
-        "--window-binding", h.canonical(rig.window.binding).decode(), "--execute"])
+        "--window-binding", h.canonical(rig.window.binding).decode(), "--writer-preflight", "{}", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
     monkeypatch.setattr(h, "Window", lambda: rig.window)
@@ -222,6 +222,9 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     monkeypatch.setattr(h, "GrowthAnchor", lambda *_args: rig.anchor)
     monkeypatch.setattr(h, "Tool", lambda *_args: rig.tools["image"])
     monkeypatch.setattr(h, "freeze_vm", lambda *_args: rig.vm)
+    monkeypatch.setattr(h.Store, "absent", rig.nothing)
+    monkeypatch.setattr(rig.vm["images"], "image_keys", lambda: {})
+    monkeypatch.setattr(h, "WriterObserver", lambda *_args: SimpleNamespace(close=rig.nothing, reports=[]))
     monkeypatch.setattr(rig.work, "preflight", lambda: rig.manifest)
     monkeypatch.setattr(h, "Maintenance", lambda *_args: rig.work)
     monkeypatch.setattr(h, "resource", SimpleNamespace(RLIMIT_AS=1, RLIMIT_NOFILE=2,
@@ -266,13 +269,13 @@ def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypat
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
-    def denied(check):
+    def denied(check, report):
         error = guest.r.ObservationError("GROWTH_KERNEL_OPEN")
         error.diagnostic = dict(operation="open_kernel", target="boot", errno=1)
         raise error
     def unexpected(*args):
         pytest.fail("boot failure must stop before field inputs")
-    monkeypatch.setattr(guest, "boot_id", denied)
+    monkeypatch.setattr(guest, "host_boot_id", denied)
     monkeypatch.setattr(h, "freeze_growth_inputs", unexpected)
     assert h.main() == 3
     result = json.loads(capsys.readouterr().out)

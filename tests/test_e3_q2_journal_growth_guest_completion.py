@@ -138,7 +138,8 @@ def test_incomplete_token_never_poweroffs():
         os.close(read)
 
 
-def test_window_uses_both_clocks_and_no_deadline_reset():
+def test_window_uses_both_clocks_and_no_deadline_reset(monkeypatch):
+    monkeypatch.setattr(g.resource, "getrusage", lambda _: SimpleNamespace(ru_utime=0, ru_stime=0, ru_maxrss=1024))
     now = {time.CLOCK_MONOTONIC: 0, time.CLOCK_BOOTTIME: 0}
     window = g.GuestWindow(900, 780, clock=now.__getitem__)
     now[time.CLOCK_BOOTTIME] = 780 * 10**9
@@ -181,6 +182,8 @@ class Window:
 @pytest.fixture
 def effects(monkeypatch):
     trace = []
+    # This is an entirely synthetic guest; pytest's lifetime RSS is not its usage.
+    monkeypatch.setattr(g, "resource_observation", lambda: pre_report()["resource_observation"])
     class Inventory:
         systemctl = dict(path="/usr/bin/systemctl")
         def __init__(self, *_): pass
@@ -363,6 +366,13 @@ def test_resource_report_cannot_claim_complete_or_hide_negative_usage():
     for changed in (dict(value, complete=True), dict(value, self_cpu_microseconds=-1),
                     dict(value, self_cpu_microseconds=120000001)):
         with pytest.raises(g.r.ObservationError): g.validate_resources(changed)
+
+
+@pytest.mark.parametrize("cpu,rss", [(121, 1024), (0, 512 * 1024 + 1)])
+def test_guest_budget_rejects_observed_overage(monkeypatch, cpu, rss):
+    monkeypatch.setattr(g.resource, "getrusage", lambda _: SimpleNamespace(ru_utime=cpu, ru_stime=0, ru_maxrss=rss))
+    with pytest.raises(g.r.ObservationError, match="OBSERVATION_BUDGET"):
+        g.GuestWindow(900, 780, clock=lambda _: 0).check()
 
 
 def test_unclassified_enabled_scheduler_names_exact_blocking_unit():
