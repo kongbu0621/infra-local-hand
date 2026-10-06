@@ -1738,6 +1738,18 @@ window. The historical exceeded cap/count remains UNKNOWN; diagnostic or CI succ
 that the field limit is resolved. H01/Q4/H11, new-boot core adoption and all side work remain outside
 this closure. Existing unaffected CLOSED development continues; production E3 remains unverified.
 
+The [v2 DR1 candidate review](docs/a2-execution/Q2_CORE_JOURNAL_DIAGNOSTIC_RESUME_V2_REVIEW_20261006.md)
+records independent C `807d61b75841a416064f4c1ec1d7c2e0187e0d49` and its direct implementation child
+D `4236ac62e61c0cdf62b49f3620c325454e8fba99`. Native scoped verification passed 494 tests without
+skips. Exact D CI `37482894717` completed successfully on all three jobs in attempt 1, including
+independent installed verification. Eight original static inputs retain their earlier binding;
+the sandbox parent-owner refusal is separately retained and was resolved only by ordinary-host
+static verification with the original checks, without changing permissions or reads.
+DR1 is complete; the exact source worktree and private handoff are frozen. DR2 is NOT STARTED and
+its one authorized replacement window remains unused. Only the Owner's existing real foreground
+terminal may start it; all preflight and same-window maintenance conditions above still apply.
+Publication, static verification and this record do not prove field admission or journal growth.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
