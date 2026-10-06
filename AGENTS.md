@@ -1576,12 +1576,21 @@ Original maintenance limits, all historical UNKNOWN commitments, paused side wor
 The [host-read implementation and R2 record](docs/a2-execution/Q2_CORE_JOURNAL_HOST_READ_IMPLEMENTATION_20261006.md)
 records independent C `b5414d0cfd505b220ba4b68a454202f245c77f6c` and implementation D
 `8ce15f5786877e36c5983282b19a75d1439f6c47`, with 395 targeted tests passing on the ordinary host.
-R2 is not complete: the saved management frame is group-writable (0664) and is rejected by
-`INPUT_PROTECTION` before its current digest is verified; the other seven saved inputs have
-qualified permission metadata only. Do not silently chmod, substitute, or weaken checks.
-New-candidate CI/publication is also pending. No replacement maintenance window, sudo observer,
-marker, SSH, shutdown, backup, resize or restart has occurred in this work. Static R2 checks do not
-consume or refresh a J3 window. Resolve the exact preparation/publication blockers before R3.
+Its original saved-frame and publication blockers were subsequently resolved without changing
+source: the one frame was explicitly tightened from 0664 to 0600 with the same device, inode, size
+and expected digest; all eight static inputs then froze successfully. Exact published candidate
+`c62319400c58e8ce067f0df150f8eb9ad0046719` has successful CI and a repeated 395-test host result.
+
+The [follow-up field record](docs/a2-execution/Q2_CORE_JOURNAL_HOST_READ_FIELD_20261006.md) supersedes
+the earlier readiness statement, not its retained failures. The single authorized replacement
+preflight window was started once and stopped at its first root-writer checkpoint:
+`sudo -n` reported that a password is required, so no root payload/report existed. Marker, SSH,
+shutdown, backup, resize, restart and H01/Q4/H11 all remain zero. That replacement window may not
+be reopened under the current A. The actual host has no proven NOPASSWD admission for the approved
+fixed observer argv; guest cloud-init grants do not establish host authority. Any new privileged
+host carrier, sudo policy/configuration change, observer invocation change or further window is a
+material change requiring a new exact review and Owner closure. Do not probe sudo, retry the
+observer, change host configuration or start maintenance under this closure.
 
 ### Continuing constraints
 
