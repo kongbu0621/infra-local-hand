@@ -1633,7 +1633,11 @@ now records the one authorized replacement preflight. Exact candidate
 H01/Q4/H11 all remained zero. The window is consumed and closed. The candidate's parent observer
 collapsed every nonzero sudo/writer child exit without retaining whether a valid bounded child failure
 report was present, so the exact lower-layer reason and root-payload execution remain UNKNOWN and must
-not be inferred from the password prompt or possible source failure set. Follow-up source repair
+not be inferred from the password prompt or possible source failure set. A later local-only parse of
+the already retained diagnostic added stdout 648 bytes with SHA-256
+`a56d810d1be3a13e21fe33892f43f407b0530da561836609780a258008944e74` and empty stderr; it did not
+make another call. Because no stdout body was retained, these stream facts do not establish its schema,
+request, reason or root-payload execution. Follow-up source repair
 `ac08b519f741b301f37959808749cb9755359123` preserves a valid future child's exact bounded failure
 reason and rejects absent/malformed failure reports; it passed 401 targeted host tests, but neither
 changes this result nor refunds or authorizes another field action. Exact `ac08b51` CI run

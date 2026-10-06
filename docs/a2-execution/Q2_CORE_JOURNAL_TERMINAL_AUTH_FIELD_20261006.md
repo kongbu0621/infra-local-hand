@@ -32,6 +32,13 @@ Owner 在现有本机真实前台终端运行固定入口；shell 先核对 `HEA
 LH_Q2_T3_SUMMARY={"child_checkpoint":1,"child_exit":3,"errno":null,"error_type":"ObservationError","exit_code":3,"marker_created":false,"phase":"preflight","reason":"GROWTH_WRITER_FAILED","ssh_requests":0,"state":"BLOCKED","transport_count":0,"writer_report_count":0}
 ```
 
+Owner 随后只从同一 shell 已保留的 `PREFLIGHT_JSON` 打印 `diagnostic`；这没有再次调用程序、sudo、
+writer 或现场对象。去除瞬时 child PID 后的安全诊断为：checkpoint `1`、exit `3`，stderr `0` B，
+SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`；stdout `648` B，
+SHA-256 `a56d810d1be3a13e21fe33892f43f407b0530da561836609780a258008944e74`。仓库不保留瞬时
+PID 或 stdout 原文。该诊断证明非空 stdout 已到达父进程，但仅有长度和摘要，不能据此验证其 schema、
+request 或具体 reason。
+
 因此可证明：
 
 - 唯一替代窗口已实际开始，并在第一个只读 writer checkpoint 返回 exit 3；入口以
@@ -47,9 +54,10 @@ LH_Q2_T3_SUMMARY={"child_checkpoint":1,"child_exit":3,"errno":null,"error_type":
 
 执行后复核发现，实际候选中的 `WriterProtocol.observe()` 对所有非零 sudo/writer child exit 都直接
 改写为 `GROWTH_WRITER_FAILED`，没有区分“root writer 返回了有效有界失败 JSON”和“sudo 或子进程在
-该报告之前失败”。因此现有安全摘要只保留 child exit、checkpoint 和外层计数，**本次首个具体
-下层原因不可由已留结果恢复，保持 UNKNOWN**。不得根据源代码可能的失败集合、sudo 提示或后续
-离线检查猜测原因，也不得声称 root payload 已经执行。
+该报告之前失败”。因此现有安全摘要和补充诊断只保留 child exit、checkpoint、外层计数及 stream
+长度/摘要，没有可解析的 stdout 原文；**本次首个具体下层原因不可由已留结果恢复，保持 UNKNOWN**。
+不得根据源代码可能的失败集合、sudo 提示、648 B 长度/摘要或后续离线检查猜测原因，也不得声称
+root payload 已经执行。
 
 提交 `ac08b519f741b301f37959808749cb9755359123` 将未来非零 writer 返回限制为准确固定 schema，
 严格校验 request、`complete=false`、有界大写 reason 和 errno 后保留具体 reason；缺失或畸形返回拒绝为
