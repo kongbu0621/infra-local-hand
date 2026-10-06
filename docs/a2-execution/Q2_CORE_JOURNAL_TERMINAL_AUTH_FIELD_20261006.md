@@ -45,16 +45,17 @@ LH_Q2_T3_SUMMARY={"child_checkpoint":1,"child_exit":3,"errno":null,"error_type":
 
 ## 丢失的精确失败原因与修复
 
-执行后复核发现，实际候选中的 `WriterProtocol.observe()` 对所有非零 child exit 都直接改写为
-`GROWTH_WRITER_FAILED`，没有解析 root writer 已设计为返回的有界失败 JSON。因此现有安全摘要只保留
-child exit、checkpoint 和外层计数，**本次首个具体 writer 原因不可由已留结果恢复，保持 UNKNOWN**。
-不得根据源代码可能的失败集合、sudo 提示或后续离线检查猜测原因。
+执行后复核发现，实际候选中的 `WriterProtocol.observe()` 对所有非零 sudo/writer child exit 都直接
+改写为 `GROWTH_WRITER_FAILED`，没有区分“root writer 返回了有效有界失败 JSON”和“sudo 或子进程在
+该报告之前失败”。因此现有安全摘要只保留 child exit、checkpoint 和外层计数，**本次首个具体
+下层原因不可由已留结果恢复，保持 UNKNOWN**。不得根据源代码可能的失败集合、sudo 提示或后续
+离线检查猜测原因，也不得声称 root payload 已经执行。
 
 提交 `ac08b519f741b301f37959808749cb9755359123` 将未来非零 writer 返回限制为准确固定 schema，
-严格校验 request、`complete=false`、有界大写 reason 和 errno 后保留具体 reason；畸形返回统一拒绝为
+严格校验 request、`complete=false`、有界大写 reason 和 errno 后保留具体 reason；缺失或畸形返回拒绝为
 `GROWTH_WRITER_FAILURE_REPORT`。新增回归验证具体 `GROWTH_WRITER_DEADLINE` 不再被覆盖，且同一
 checkpoint 仍不能重试。该修复没有调用 sudo、没有读取现场、没有创建 marker，也没有恢复本次
-已经丢失的内部原因。
+无法判定的下层原因。
 
 修复后的真实宿主十文件窄测为 **401 passed，0 skipped，2.63s**；`git diff --check` 通过。
 冻结对象为：

@@ -1631,13 +1631,14 @@ now records the one authorized replacement preflight. Exact candidate
 `202c70a15c0e52940d8544c3ae3c41e0b57ebaec` reached writer checkpoint 1 and returned exit 3 with
 `GROWTH_WRITER_FAILED`; marker creation was false and SSH/transport, maintenance mutators and
 H01/Q4/H11 all remained zero. The window is consumed and closed. The candidate's parent observer
-discarded the bounded child's specific nonzero reason, so that reason is irrecoverably UNKNOWN and
-must not be inferred from the password prompt or possible source failure set. Follow-up source repair
+collapsed every nonzero sudo/writer child exit without retaining whether a valid bounded child failure
+report was present, so the exact lower-layer reason and root-payload execution remain UNKNOWN and must
+not be inferred from the password prompt or possible source failure set. Follow-up source repair
 `ac08b519f741b301f37959808749cb9755359123` preserves a valid future child's exact bounded failure
-reason and passed 401 targeted host tests, but it neither changes this result nor refunds or authorizes
-another field action. No sudo/writer probe, retry, reconnect, supplemental capture, cleanup, marker,
-SSH or maintenance is permitted under this closure. A new exact A, Owner decision and independent C
-are required before any further affected host window.
+reason and rejects absent/malformed failure reports; it passed 401 targeted host tests, but neither
+changes this result nor refunds or authorizes another field action. No sudo/writer probe, retry,
+reconnect, supplemental capture, cleanup, marker, SSH or maintenance is permitted under this closure.
+A new exact A, Owner decision and independent C are required before any further affected host window.
 
 ### Continuing constraints
 
