@@ -58,11 +58,11 @@ def validate(value, args):
 
 
 @pytest.mark.parametrize('frsize,blocks,inodes,accepted', [
-    (1, 4143972352, 1126, True), (1, 4143972351, 1126, False), (4096, 1011712, 1125, False),
-    (4096, 1011712, 1126, True), (4096, 2**30, 2**30, True), (0, 4143972352, 1126, False),
-    (-1, 4143972352, 1126, False), (1, -1, 1126, False), (1, 4143972352, -1, False),
-    (None, 4143972352, 1126, False), (True, 4143972352, 1126, False),
-    (1, '4143972352', 1126, False), (1, 4143972352, 1126.0, False)])
+    (1, 5502926848, 1496, True), (1, 5502926847, 1496, False), (4096, 1343488, 1495, False),
+    (4096, 1343488, 1496, True), (4096, 2**30, 2**30, True), (0, 5502926848, 1496, False),
+    (-1, 5502926848, 1496, False), (1, -1, 1496, False), (1, 5502926848, -1, False),
+    (None, 5502926848, 1496, False), (True, 5502926848, 1496, False),
+    (1, '5502926848', 1496, False), (1, 5502926848, 1496.0, False)])
 def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsize, blocks, inodes, accepted):
     fd, args, clock, _ = inputs
     samples = []
@@ -77,7 +77,7 @@ def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsi
     else:
         value = p.observe_capture_condition(fd, **args)
         assert validate(value, args) is value
-        assert value['capacity']['required_bytes'] == 4143972352
+        assert value['capacity']['required_bytes'] == 5502926848
         assert value['known_commitments']==p._capacity_rows(args['prior'],args['diagnostic'])
         assert value['earlier_host_obligations'] == dict(coverage='UNKNOWN', bytes=None,
                                                       inodes=None, shared_pool='UNKNOWN')
@@ -101,7 +101,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
         elif change == 'backward': clock.now[time.CLOCK_MONOTONIC] -= 1
         elif change == 'io': raise OSError(errno.EIO, 'synthetic IO failure')
         if change == 'missing': return SimpleNamespace()
-        return SimpleNamespace(f_frsize=4096, f_bavail=1011712, f_favail=1126)
+        return SimpleNamespace(f_frsize=4096, f_bavail=1343488, f_favail=1496)
     def identity(held):
         value = fstat(held)
         if held == fd and drifted and change in ('mode', 'uid', 'gid', 'nlink', 'ino', 'dev'):
@@ -137,7 +137,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
     'omit_diagnostic', 'old_threshold'])
 def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypatch, change):
     fd, args, _, _ = inputs
-    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=1011712, f_favail=1126))
+    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=1343488, f_favail=1496))
     value = p.observe_capture_condition(fd, **args)
     if change == 'null': value['earlier_host_obligations']['bytes'] = 0
     elif change == 'false': value['complete_host_admission_proven'] = True
@@ -203,8 +203,8 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     def observe(_):
         observations.append(1)
         if failure == 'late': clock.expire()
-        return SimpleNamespace(f_frsize=1, f_bavail=4143972351 if failure == 'capacity' else 4143972352,
-                               f_favail=1126)
+        return SimpleNamespace(f_frsize=1, f_bavail=5502926847 if failure == 'capacity' else 5502926848,
+                               f_favail=1496)
     monkeypatch.setattr(os, 'fstatvfs', observe)
     if failure == 'writer':
         changed = copy.deepcopy(binding['writer']); changed['process']['starttime_ticks'] += 1

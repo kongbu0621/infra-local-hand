@@ -184,7 +184,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v4'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v5'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]

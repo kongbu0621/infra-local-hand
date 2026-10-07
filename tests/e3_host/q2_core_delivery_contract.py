@@ -301,6 +301,25 @@ SYSTEMCTL_OWNER_DECISION = {'event': 'LH-Q2-CORE-SYSTEMCTL-CONTINUATION-CLOSURE-
  'record_sha256': '29e63c791de507cda1e48f2e89a992783a9fe6866850d006ce6a36abcb39c8ac'}
 SYSTEMCTL_CLOSURE = {'commit': '7b342ced547639f93797e849b34ed3da4915c8d3',
  'tree': 'ec1ed26d198c9226816ff00de6896eb3d7e102de'}
+TEMPLATE_SCOPE = "LH-Q2-CORE-TEMPLATE-CONTINUATION-v1"
+TEMPLATE_BASELINE = {
+    "commit": "80c7c8eaeda0853317c679b31b0ed1f1ac13e49b",
+    "tree": "68983c68d936d0e03ef90dd22c656e7cb41079cc",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-template-continuation/REQUIREMENTS.md": "e960f2639f22d82bf8acebb917ee7e180382c2ae64cb1d74b2b21f7419cfcb9d",
+        "docs/a2-execution/q2-core-template-continuation/ARCHITECTURE.md": "8e93e92c527884e6845478544a0d3507fc34e1917fc94593320752e5f800743f",
+        "docs/a2-execution/q2-core-template-continuation/IMPLEMENTATION_PLAN.md": "73f2889af1c50ef787479a2f257db2089171812201f31aa4fc55de7a229fa509",
+    },
+}
+TEMPLATE_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-TEMPLATE-CONTINUATION-CLOSURE-20261008-01",
+    "record_path": "docs/governance/Q2_CORE_TEMPLATE_CONTINUATION_OWNER_DECISION.md",
+    "record_sha256": "05ce90722d4504951440dd1776a4b9ba194168553698eb179f8d33db3b3b6e2e",
+}
+TEMPLATE_CLOSURE = {
+    "commit": "bb9b3c6e9b397121220c22515e4ef637d12c7297",
+    "tree": "d1e7261208ae8093971b6b127c1095c2e45b1b80",
+}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

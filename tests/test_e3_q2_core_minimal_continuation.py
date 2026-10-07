@@ -51,10 +51,10 @@ def originals(monkeypatch):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v4',R=h.R,A=h.SYSTEMCTL_A,C=h.SYSTEMCTL_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v5',R=h.R,A=h.TEMPLATE_A,C=h.TEMPLATE_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
-        historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C),
+        historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C),
         inputs=frozen['source_binding'],window_binding=dict(boot_id=pre['boot_id'],origins=[1,2]),
         inventory_sha256=h.digest(h.canonical(frozen['inventory'])),retained_sha256='e'*64,
         sources={key:dict(bytes=len(raw),sha256=h.digest(raw)) for key,raw in sources.items()},
@@ -85,7 +85,7 @@ def originals(monkeypatch):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v4',R=h.R,A=h.SYSTEMCTL_A,C=h.SYSTEMCTL_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v5',R=h.R,A=h.TEMPLATE_A,C=h.TEMPLATE_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],
