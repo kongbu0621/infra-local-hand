@@ -93,3 +93,13 @@ def test_complete_new_preflight_fits_original_limit_and_rejects_old_schema():
     value['schema'] = 'lhq-journal-growth-preflight/v2'
     with pytest.raises(h.prior.r.ObservationError, match='GROWTH_PREFLIGHT_SCHEMA'):
         h.parse_preflight(h.canonical(value))
+
+
+@pytest.mark.parametrize('field', ['R', 'A', 'C'])
+def test_preflight_rejects_rehashed_wrong_top_level_authority(field):
+    value = h.make_preflight('d' * 40, 'e' * 64,
+        dict(boot_id='11111111-2222-3333-4444-555555555555', origins=[1, 2]),
+        'f' * 64, dict(cpu_nanoseconds=1, rss_peak_bytes=1))
+    value[field] = '0' * 40
+    with pytest.raises(h.prior.r.ObservationError, match='GROWTH_PREFLIGHT_AUTHORITY'):
+        h.parse_preflight(h.canonical(value))

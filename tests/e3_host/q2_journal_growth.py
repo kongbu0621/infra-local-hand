@@ -1055,14 +1055,15 @@ resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024)
   self.last=dict(cpu_nanoseconds=cpu,rss_peak_bytes=rss)
   return dict(self.last)
 def make_preflight(commit,manifest,window,nonce,usage):
- value=dict(schema="lhq-journal-growth-preflight/v3",D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v3",R=R,A=SYSTEMCTL_A,C=SYSTEMCTL_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume=history.maintenance_resume())
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
- require(type(value) is dict and set(value)=={"schema","D","manifest_sha256","window_binding",
+ require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
 "nonce","usage","window_seconds","change_seconds","resume"} and value["schema"]=="lhq-journal-growth-preflight/v3",
 "GROWTH_PREFLIGHT_SCHEMA")
+ require(value["R"]==R and value["A"]==SYSTEMCTL_A and value["C"]==SYSTEMCTL_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
