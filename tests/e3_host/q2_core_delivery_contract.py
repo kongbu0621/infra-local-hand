@@ -246,6 +246,28 @@ POST_LOCALE_CLOSURE = {
     "commit": "fe635c4885b8f31dd13901bef47e619480b2eda3",
     "tree": "e72aa24f0ec039730bcb75f2ccafc1eb0145b948",
 }
+MINIMAL_SCOPE = "LH-Q2-CORE-MINIMAL-CONTINUATION-v1"
+MINIMAL_BASELINE = {
+    "commit": "5d6cefa602e9146f02887ebfaa4b0cad4e376ff2",
+    "tree": "72262d27c2caef48db0965989508b1f193f3b527",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.md":
+            "f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
+        "docs/a2-execution/q2-core-minimal-continuation/ARCHITECTURE.md":
+            "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
+        "docs/a2-execution/q2-core-minimal-continuation/IMPLEMENTATION_PLAN.md":
+            "093e0daac0f85cc78a48fcf58386d3133cfc796e9faba416b622dd0e072b8c58",
+    },
+}
+MINIMAL_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-MINIMAL-CONTINUATION-CLOSURE-20261007-01",
+    "record_path": "docs/governance/Q2_CORE_MINIMAL_CONTINUATION_OWNER_DECISION.md",
+    "record_sha256": "3c82fd76fc6e8395a91ef9d93b62cd72ae14207100e66fbf73358ac2bf987bdd",
+}
+MINIMAL_CLOSURE = {
+    "commit": "8a4c24cefe4abbab193577b2dff48fc49626cae4",
+    "tree": "afbdd25b2a25d961dcd79587579c1796b3263e24",
+}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
@@ -265,18 +287,18 @@ PROJECTION = {
     "file_count": 89,
 }
 
-SESSION_ID = "lhqcore-20261005c"
-INSTALL_BASENAME = "local-hand-core-acceptance-20261005c"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261005c.staging"
-INSTALL_UUID = "080152e8-883e-4906-a572-506d9534181c"
-CARRIER_UNIT = "lhqcore20261005c-carrier.service"
-MARKER_BASENAME = ".lhqcore-20261005c.carrier-consumed.json"
+SESSION_ID = "lhqcore-20261007a"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261007a"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261007a.staging"
+INSTALL_UUID = "452e2905-1442-4b89-988c-50eefcbd3a09"
+CARRIER_UNIT = "lhqcore20261007a-carrier.service"
+MARKER_BASENAME = ".lhqcore-20261007a.carrier-consumed.json"
 OUTPUT_BASENAMES = {
-    "stdout_basename": ".lhqcore-20261005c.stdout",
-    "stderr_basename": ".lhqcore-20261005c.stderr",
-    "remote_result_basename": ".lhqcore-20261005c.remote-result.json",
-    "capture_manifest_basename": ".lhqcore-20261005c.capture-manifest.json",
-    "local_receipt_basename": ".lhqcore-20261005c.acceptance-receipt.json",
+    "stdout_basename": ".lhqcore-20261007a.stdout",
+    "stderr_basename": ".lhqcore-20261007a.stderr",
+    "remote_result_basename": ".lhqcore-20261007a.remote-result.json",
+    "capture_manifest_basename": ".lhqcore-20261007a.capture-manifest.json",
+    "local_receipt_basename": ".lhqcore-20261007a.acceptance-receipt.json",
 }
 
 PACKAGE_MAGIC = b"LHCFP1\n"
@@ -370,22 +392,22 @@ ROOT_REFS = (
 CASES = (
     {
         "index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL", "predecessor": None,
-        "preparation_id": "lhqc05c01h01normal", "operation_id": "184ac06d-4ad0-405f-8d81-04e2e4474012",
-        "controller_prefix": "lhqcore20261005c-c01", "project_ids": list(range(12401, 12408)),
+        "preparation_id": "lhqc07a01h01normal", "operation_id": "9d68ffce-3e53-4933-8643-dc65e48d9ba2",
+        "controller_prefix": "lhqcore20261007a-c01", "project_ids": list(range(12501, 12508)),
         "phases": ["preflight", "business", "evidence"],
     },
     {
         "index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-        "predecessor": "c01-h01-normal", "preparation_id": "lhqc05c02q4cancel",
-        "operation_id": "041a80a8-ebb0-4611-8958-33076dae3ebc",
-        "controller_prefix": "lhqcore20261005c-c02", "project_ids": list(range(12408, 12415)),
+        "predecessor": "c01-h01-normal", "preparation_id": "lhqc07a02q4cancel",
+        "operation_id": "a214d2c1-f3d4-4c72-b01a-e0446626dedf",
+        "controller_prefix": "lhqcore20261007a-c02", "project_ids": list(range(12508, 12515)),
         "phases": ["preflight"],
     },
     {
         "index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05c03h11recovery",
-        "operation_id": "78f91c42-83df-4266-a691-16b51eb5313f",
-        "controller_prefix": "lhqcore20261005c-c03", "project_ids": list(range(12415, 12422)),
+        "predecessor": "c02-q4-cancel", "preparation_id": "lhqc07a03h11recovery",
+        "operation_id": "bd223507-1240-456f-82e0-0ae12e0a50ea",
+        "controller_prefix": "lhqcore20261007a-c03", "project_ids": list(range(12515, 12522)),
         "phases": ["preflight"],
     },
 )

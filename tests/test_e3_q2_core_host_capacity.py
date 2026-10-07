@@ -12,14 +12,16 @@ import pytest
 if not sys.platform.startswith('linux'):
     pytest.skip('Linux held-anchor and original dual-clock checks', allow_module_level=True)
 
-from core_prior_fixture import triple_fixture as fixture, diagnostic_files
+from core_prior_fixture import triple_fixture as fixture, diagnostic_files, journal_transition
+from test_e3_q2_core_minimal_continuation import originals
+from e3_host import q2_journal_growth as maintenance
 from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_capture as cap
 from test_e3_q2_core_capture import Clock
 
 
 @pytest.fixture
-def inputs(tmp_path, monkeypatch):
+def inputs(tmp_path, monkeypatch,originals):
     prior, files = fixture(monkeypatch)
     files.update(diagnostic_files(monkeypatch))
     tmp_path.chmod(0o700)
@@ -33,21 +35,33 @@ def inputs(tmp_path, monkeypatch):
     binding = dict(anchor=anchor, writer=writer)
     args = dict(binding=binding, prior=prior, diagnostic=p.diagnostic_retention(), implementation=dict(commit='a'*40, tree='b'*40),
                 deadline=deadline, writer_observer=cap.observe_writer)
+    journal_files,original_args=originals
+    transition=p.build_journal_transition(journal_files,**original_args)
+    transition['implementation']=args['implementation']
+    transition['image_identities']={role:[info.st_dev,row[1]] for role,row in transition['image_identities'].items()}
+    args.update(journal=transition,journal_files=journal_files)
+    files.update(journal_files);files.update(original_args['frozen']['capacity_files'])
+    class Images:
+        def __init__(self,*args):self.fds={role:fd for role in transition['image_identities']}
+        def image_keys(self):return transition['image_identities']
+        def recheck(self):pass
+        def close(self):pass
+    monkeypatch.setattr(maintenance,'ImageSet',Images)
     yield fd, args, clock, files
     os.close(fd)
 
 
 def validate(value, args):
-    return p.validate_capacity_condition(value, binding=args['binding'], prior=args['prior'], diagnostic=args['diagnostic'],
+    return p.validate_capacity_condition(value, binding=args['binding'], prior=args['prior'], diagnostic=args['diagnostic'],journal=args['journal'],
         implementation=args['implementation'], origins=args['deadline'].origins)
 
 
 @pytest.mark.parametrize('frsize,blocks,inodes,accepted', [
-    (1, 272629760, 72, True), (1, 272629759, 72, False), (4096, 66560, 71, False),
-    (4096, 66560, 72, True), (4096, 2**30, 2**30, True), (0, 272629760, 72, False),
-    (-1, 272629760, 72, False), (1, -1, 72, False), (1, 272629760, -1, False),
-    (None, 272629760, 72, False), (True, 272629760, 72, False),
-    (1, '272629760', 72, False), (1, 272629760, 72.0, False)])
+    (1, 1426063360, 386, True), (1, 1426063359, 386, False), (4096, 348160, 385, False),
+    (4096, 348160, 386, True), (4096, 2**30, 2**30, True), (0, 1426063360, 386, False),
+    (-1, 1426063360, 386, False), (1, -1, 386, False), (1, 1426063360, -1, False),
+    (None, 1426063360, 386, False), (True, 1426063360, 386, False),
+    (1, '1426063360', 386, False), (1, 1426063360, 386.0, False)])
 def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsize, blocks, inodes, accepted):
     fd, args, clock, _ = inputs
     samples = []
@@ -62,12 +76,8 @@ def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsi
     else:
         value = p.observe_capture_condition(fd, **args)
         assert validate(value, args) is value
-        assert value['capacity']['required_bytes'] == 272629760
-        assert value['known_commitments'] == [dict(session_id=p.SESSION, bytes=67108864, inodes=16),
-            dict(session_id=p.SECOND_SESSION, bytes=67108864, inodes=16),
-            dict(session_id=p.profile(2)['session'], bytes=67108864, inodes=16),
-            dict(session_id=p.DIAGNOSTIC_SESSION, bytes=4194304, inodes=8),
-            dict(session_id=p.c.SESSION_ID, bytes=67108864, inodes=16)]
+        assert value['capacity']['required_bytes'] == 1426063360
+        assert value['known_commitments']==p._capacity_rows(args['prior'],args['diagnostic'])
         assert value['earlier_host_obligations'] == dict(coverage='UNKNOWN', bytes=None,
                                                       inodes=None, shared_pool='UNKNOWN')
         assert value['exclusive_reservation_proven'] is value['complete_host_admission_proven'] is False
@@ -90,7 +100,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
         elif change == 'backward': clock.now[time.CLOCK_MONOTONIC] -= 1
         elif change == 'io': raise OSError(errno.EIO, 'synthetic IO failure')
         if change == 'missing': return SimpleNamespace()
-        return SimpleNamespace(f_frsize=4096, f_bavail=66560, f_favail=72)
+        return SimpleNamespace(f_frsize=4096, f_bavail=348160, f_favail=386)
     def identity(held):
         value = fstat(held)
         if held == fd and drifted and change in ('mode', 'uid', 'gid', 'nlink', 'ino', 'dev'):
@@ -126,7 +136,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
     'omit_diagnostic', 'old_threshold'])
 def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypatch, change):
     fd, args, _, _ = inputs
-    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=66560, f_favail=72))
+    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=348160, f_favail=386))
     value = p.observe_capture_condition(fd, **args)
     if change == 'null': value['earlier_host_obligations']['bytes'] = 0
     elif change == 'false': value['complete_host_admission_proven'] = True
@@ -138,7 +148,7 @@ def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypat
     elif change == 'binding': value['local_management_binding_sha256'] = 'c'*64
     elif change == 'prior': value['prior_attempts_sha256'] = 'c'*64
     elif change == 'diagnostic': value['diagnostic_retention_sha256'] = 'c'*64
-    elif change == 'omit_diagnostic': value['known_commitments'].pop(3)
+    elif change == 'omit_diagnostic': value['known_commitments'].pop(0)
     elif change == 'old_threshold': value['capacity'].update(required_bytes=201326592, required_inodes=48)
     elif change == 'window': value['origins']['host_boottime_origin_ns'] += 1
     elif change == 'observation': value['observation']['after']['boottime_ns'] += cap.WINDOW_NS
@@ -154,6 +164,8 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     from test_e3_q2_core_delivery_package import fixture as package_fixture, p as package
     fd, args, clock, files = inputs
     manifest, members = package_fixture(monkeypatch)
+    args['implementation']=manifest['implementation']
+    args['journal']['implementation']=manifest['implementation']
     monkeypatch.setattr(package, '_approved_module', lambda: SimpleNamespace(prior_attempt=p,
         validate=lambda raw: package.c.validate_approved_inputs(package.c.document(raw, limit=1072576, newline=True))))
     old_helper = e._helper
@@ -166,7 +178,7 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     manifest['locators']['source_relation_sha256'] = p.c.sha256(p.c.canonical(
         package.locator_relation(manifest['locators'], digest)))
     approved = package.c.document(members[package.c.APPROVED_INPUTS_PATH], limit=1072576, newline=True)
-    approved['reconciliation'] = dict(prior_core_attempts=args['prior'], prior_diagnostic_capture=args['diagnostic'])
+    approved['reconciliation'] = dict(prior_core_attempts=args['prior'], prior_diagnostic_capture=args['diagnostic'],journal_transition=args['journal'])
     approved['policy_basis'] = dict(remote_expectation={})
     raw = package.c.canonical(approved, newline=True)
     row, header = package.approved_input_member(raw, amendment=manifest['amendment'])
@@ -190,8 +202,8 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     def observe(_):
         observations.append(1)
         if failure == 'late': clock.expire()
-        return SimpleNamespace(f_frsize=1, f_bavail=272629759 if failure == 'capacity' else 272629760,
-                               f_favail=72)
+        return SimpleNamespace(f_frsize=1, f_bavail=1426063359 if failure == 'capacity' else 1426063360,
+                               f_favail=386)
     monkeypatch.setattr(os, 'fstatvfs', observe)
     if failure == 'writer':
         changed = copy.deepcopy(binding['writer']); changed['process']['starttime_ticks'] += 1

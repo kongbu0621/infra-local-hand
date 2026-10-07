@@ -74,7 +74,7 @@ def rig(monkeypatch, tmp_path):
         def image_keys(self):
             return {"journal": [1, 2]}
         def verify_writers(self, pid):
-            assert (pid == old.pid and not old.dead) or (pid != old.pid and old.dead)
+            pytest.fail("removed host writer scan must never be called")
         def offline_info(self, _tool, size):
             assert old.dead and size == h.OLD_SIZE
             return {"virtual-size": size}
@@ -138,7 +138,7 @@ def rig(monkeypatch, tmp_path):
         clock[0] += seconds
     window = SimpleNamespace(check=nothing, change=nothing, remaining=lambda limit=900: limit,
                              binding={"boot_id": BOOT, "origins": [0, 0]},
-                             origins={"monotonic": 0, "boottime": 0})
+                             origins={"monotonic": 0, "boottime": 0},kernel_report={})
     anchor = SimpleNamespace(fd=parent, path=str(tmp_path), ssh=44, recheck=nothing,
                              absent=nothing, close=nothing, growth_inputs=nothing,
                              raw={"start.sh": b"fixed"}, retained={})
@@ -150,9 +150,8 @@ def rig(monkeypatch, tmp_path):
           "binding": {}, "original_argv": ["qemu", "old-arguments"]}
     tools = {"image": Tool(), "qemu": Tool()}
     monkeypatch.setattr(h, "Store", Store)
-    monkeypatch.setattr(h, "terminal_binding", lambda expected=None: {"mode": "terminal"})
     monkeypatch.setattr(h, "COMMANDS", [])
-    monkeypatch.setattr(h, "management_usage", lambda: {"complete": True})
+    monkeypatch.setattr(h, "management_usage", lambda: {"complete": True,"cpu_seconds":0.01,"rss_upper_observation_bytes":100})
     monkeypatch.setattr(h, "run_tool", lambda *_args, **_kwargs: {"stderr": b""})
     monkeypatch.setattr(h, "growth_descriptor", descriptor)
     monkeypatch.setattr(h.local, "make_argv", lambda *_args: ["/synthetic/ssh", "fixed-host", "unused"])
@@ -183,6 +182,9 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert rig.actions == ORDER
     assert result["ssh_requests"] == 2 and result["business_cases"] == 0
     assert result["production_supported"] is False
+    assert result['host_writer_observation']=='NOT_PERFORMED'
+    assert result['continuous_exclusion_proven'] is False
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v2'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -216,7 +218,7 @@ def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
 def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.os, "geteuid", lambda: 0)
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
-        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--writer-auth", "terminal"])
+        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--trusted-single-admin"])
     def unexpected(*args):
         pytest.fail("root must be rejected before source or field admission")
     monkeypatch.setattr(h, "growth_sources", unexpected)
@@ -228,20 +230,19 @@ def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypa
     assert rig.actions == []
 
 
-@pytest.mark.parametrize("stale", ["digest", "missing_scope", "A", "C", "repair"])
+@pytest.mark.parametrize("stale", ["digest", "missing_scope", "A", "C", "D"])
 def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys, stale):
-    current = dict(A=h.DRIFT_A, C=h.DRIFT_C, repair=h.DRIFT_REPAIR)
-    rig.manifest["writer"] = dict(drift_resume=current)
-    old = json.loads(h.canonical(rig.manifest))
-    if stale == "missing_scope":
-        old["writer"].pop("drift_resume")
-    elif stale != "digest":
-        old["writer"]["drift_resume"][stale] = "0" * 40
+    old=json.loads(h.canonical(rig.manifest))
+    if stale=='missing_scope': old.pop('A')
+    elif stale!='digest': old[stale]='0'*40
+    rig.window.binding['origins']=[1,2]
+    handoff=h.make_preflight('d'*40,h.digest(h.canonical(rig.manifest)),rig.window.binding,
+        rig.work.nonce,dict(cpu_nanoseconds=1,rss_peak_bytes=1))
     expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
-        "--window-binding", h.canonical(rig.window.binding).decode(), "--writer-preflight", "{}",
-        "--writer-auth", "terminal", "--execute"])
+        "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(),
+        "--trusted-single-admin", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
     monkeypatch.setattr(h, "Window", lambda: rig.window)
@@ -252,7 +253,6 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     monkeypatch.setattr(h, "freeze_vm", lambda *_args: rig.vm)
     monkeypatch.setattr(h.Store, "absent", rig.nothing)
     monkeypatch.setattr(rig.vm["images"], "image_keys", lambda: {})
-    monkeypatch.setattr(h, "WriterObserver", lambda *_args: SimpleNamespace(close=rig.nothing, reports=[]))
     monkeypatch.setattr(rig.work, "preflight", lambda: rig.manifest)
     monkeypatch.setattr(h, "Maintenance", lambda *_args: rig.work)
     monkeypatch.setattr(h, "resource", SimpleNamespace(RLIMIT_AS=1, RLIMIT_NOFILE=2,
@@ -283,7 +283,7 @@ def test_expired_seal_retains_cached_live_processes(rig, monkeypatch):
 def test_execute_without_original_window_stops_before_field_reads(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40,
-        "--writer-auth", "terminal", "--execute"])
+        "--trusted-single-admin", "--execute"])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
     def unexpected(*args):
         pytest.fail("field inputs must not be read without original window")
@@ -294,27 +294,20 @@ def test_execute_without_original_window_stops_before_field_reads(rig, monkeypat
     assert result["marker_created"] is False and result["ssh_requests"] == 0
 
 
-def test_terminal_mode_is_explicit_and_checked_before_window(rig, monkeypatch, capsys):
-    base = ["growth", "--frame", "frame", "--plan-archive", "plan",
-            "--archives-dir", "archives", "--expected-commit", "d" * 40]
-    monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
-    monkeypatch.setattr(h.sys, "argv", base)
-    assert h.main() == 3
-    assert json.loads(capsys.readouterr().out)["reason"] == "GROWTH_AUTH_MODE"
-    monkeypatch.setattr(h.sys, "argv", base + ["--writer-auth", "terminal"])
-    monkeypatch.setattr(h, "terminal_binding", lambda: (_ for _ in ()).throw(
-        h.prior.r.ObservationError("GROWTH_TERMINAL_REQUIRED")))
-    monkeypatch.setattr(h, "Window", lambda: pytest.fail("window must not start before TTY qualification"))
-    assert h.main() == 3
-    result = json.loads(capsys.readouterr().out)
-    assert result["reason"] == "GROWTH_TERMINAL_REQUIRED"
-    assert result["window_binding"] is None and result["marker_created"] is False
+def test_management_premise_is_required_before_window(rig,monkeypatch,capsys):
+    monkeypatch.setattr(h.sys,"argv",["growth","--frame","frame","--plan-archive","plan",
+        "--archives-dir","archives","--expected-commit","d"*40])
+    monkeypatch.setattr(h,"growth_sources",lambda _:rig.sources)
+    monkeypatch.setattr(h,"Window",lambda:pytest.fail("unconfirmed premise must not start a window"))
+    assert h.main()==3
+    result=json.loads(capsys.readouterr().out)
+    assert result['reason']=='GROWTH_ACCESS_PREMISE' and not result['marker_created']
 
 
 def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40,
-        "--writer-auth", "terminal"])
+        "--trusted-single-admin"])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
     def denied(check, report):
         error = guest.r.ObservationError("GROWTH_KERNEL_OPEN")
@@ -331,3 +324,41 @@ def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypat
     assert set(result["window_binding"]) == {"origins"}
     assert len(result["window_binding"]["origins"]) == 2
     assert result["marker_created"] is False and result["ssh_requests"] == 0
+
+
+def test_ordinary_preflight_carries_original_cpu_and_peak_rss(monkeypatch):
+    previous=dict(cpu_nanoseconds=25_000_000_000,rss_peak_bytes=80*h.MIB)
+    value=[dict(cpu_seconds=2,rss_upper_observation_bytes=40*h.MIB)]
+    monkeypatch.setattr(h,'management_usage',lambda:value[0])
+    monkeypatch.setattr(h.resource,'getrusage',lambda kind:SimpleNamespace(ru_maxrss=100*h.MIB//1024))
+    usage=h.Usage(previous)
+    first=usage.sample()
+    assert first==dict(cpu_nanoseconds=27_000_000_001,rss_peak_bytes=100*h.MIB)
+    # Repeated sampling of this process adds its cumulative time once, rather
+    # than summing snapshots; peak RSS never resets at process handoff.
+    value[0]['cpu_seconds']=3
+    assert usage.sample()==dict(cpu_nanoseconds=28_000_000_001,rss_peak_bytes=100*h.MIB)
+    value[0]['cpu_seconds']=96
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_MANAGEMENT_BUDGET'):
+        usage.sample()
+    assert previous==dict(cpu_nanoseconds=25_000_000_000,rss_peak_bytes=80*h.MIB)
+
+
+@pytest.mark.parametrize('change',['old_schema','writer_fields','missing','cpu_zero','cpu_bool',
+    'cpu_limit','rss_zero','rss_limit','fresh_deadline','short_change','boot','origins'])
+def test_ordinary_handoff_rejects_old_or_unbounded_inputs(change):
+    value=h.make_preflight('d'*40,'a'*64,dict(boot_id=BOOT,origins=[1,2]),'b'*64,
+        dict(cpu_nanoseconds=1,rss_peak_bytes=1))
+    if change=='old_schema':value['schema']='lhq-journal-writer-preflight/v1'
+    elif change=='writer_fields':value['writer']={}
+    elif change=='missing':value.pop('usage')
+    elif change=='cpu_zero':value['usage']['cpu_nanoseconds']=0
+    elif change=='cpu_bool':value['usage']['cpu_nanoseconds']=True
+    elif change=='cpu_limit':value['usage']['cpu_nanoseconds']=120_000_000_001
+    elif change=='rss_zero':value['usage']['rss_peak_bytes']=0
+    elif change=='rss_limit':value['usage']['rss_peak_bytes']=512*h.MIB+1
+    elif change=='fresh_deadline':value['window_seconds']=901
+    elif change=='short_change':value['change_seconds']=900
+    elif change=='boot':value['window_binding']['boot_id']='invalid'
+    else:value['window_binding']['origins']=[True,2]
+    with pytest.raises(h.prior.r.ObservationError):h.parse_preflight(h.canonical(value))

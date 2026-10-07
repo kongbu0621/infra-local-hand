@@ -199,7 +199,7 @@ _cap = _Checks('CORE_CAP_')
 
 
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
-SESSION = "lhqcore-20261005c"
+SESSION = "lhqcore-20261007a"
 RULE = {
     "commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
     "source_sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5",
@@ -286,8 +286,8 @@ PROJECTION = {
     "file_count": 89,
 }
 
-INSTALL_BASENAME = "local-hand-core-acceptance-20261005c"
-STAGING_BASENAME = ".local-hand-core-acceptance-20261005c.staging"
+INSTALL_BASENAME = "local-hand-core-acceptance-20261007a"
+STAGING_BASENAME = ".local-hand-core-acceptance-20261007a.staging"
 PREPARATION_HELPERS = _fields('q2_prepare_contract q2_prepare_driver q2_prepare_assembly')
 WHEEL_PACKAGES = _fields('local_hand local_hand_connect local_hand_jobs local_hand_mcp')
 WHEEL_METADATA = "local_hand/_build_metadata.json"
@@ -420,19 +420,19 @@ def _phase_units(operation_id, phases):
 
 CASES = (
     {"index": 1, "case_id": "c01-h01-normal", "kind": "H01_NORMAL",
-     "predecessor": None, "preparation_id": "lhqc05c01h01normal",
-     "operation_id": "184ac06d-4ad0-405f-8d81-04e2e4474012",
-     "controller_prefix": "lhqcore20261005c-c01", "project_ids": list(range(12401, 12408)),
+     "predecessor": None, "preparation_id": "lhqc07a01h01normal",
+     "operation_id": "9d68ffce-3e53-4933-8643-dc65e48d9ba2",
+     "controller_prefix": "lhqcore20261007a-c01", "project_ids": list(range(12501, 12508)),
      "phases": ["preflight", "business", "evidence"]},
     {"index": 2, "case_id": "c02-q4-cancel", "kind": "Q4_HELPER_RUNNING_CANCEL_SUBSET",
-     "predecessor": "c01-h01-normal", "preparation_id": "lhqc05c02q4cancel",
-     "operation_id": "041a80a8-ebb0-4611-8958-33076dae3ebc",
-     "controller_prefix": "lhqcore20261005c-c02", "project_ids": list(range(12408, 12415)),
+     "predecessor": "c01-h01-normal", "preparation_id": "lhqc07a02q4cancel",
+     "operation_id": "a214d2c1-f3d4-4c72-b01a-e0446626dedf",
+     "controller_prefix": "lhqcore20261007a-c02", "project_ids": list(range(12508, 12515)),
      "phases": ["preflight"]},
     {"index": 3, "case_id": "c03-h11-recovery", "kind": "H11_SAME_LEDGER_RECOVERY",
-     "predecessor": "c02-q4-cancel", "preparation_id": "lhqc05c03h11recovery",
-     "operation_id": "78f91c42-83df-4266-a691-16b51eb5313f",
-     "controller_prefix": "lhqcore20261005c-c03", "project_ids": list(range(12415, 12422)),
+     "predecessor": "c02-q4-cancel", "preparation_id": "lhqc07a03h11recovery",
+     "operation_id": "bd223507-1240-456f-82e0-0ae12e0a50ea",
+     "controller_prefix": "lhqcore20261007a-c03", "project_ids": list(range(12515, 12522)),
      "phases": ["preflight"]},
 )
 
@@ -485,7 +485,7 @@ def _identity(case, *, full=False):
         "id": hashlib.sha256(seed + b":identity").hexdigest()[:32],
         "authority_id": prefix + "-authority",
         "node_id": SESSION + "-guest",
-        "install_uuid": "080152e8-883e-4906-a572-506d9534181c",
+        "install_uuid": "452e2905-1442-4b89-988c-50eefcbd3a09",
         "deployment_epoch": 1, "generation": 1,
         "operation_id": case["operation_id"],
         "profile_ref": prefix + "-profile",
@@ -1150,7 +1150,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v4"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v5"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     for key in ("source_union_sha256", "row_relation", "placement"):
@@ -1277,13 +1277,25 @@ PRIOR_ROLE_LIMITS = dict(zip(('carrier-consumed.json', 'stdout', 'stderr',
     'capture-manifest.json', 'acceptance-receipt.json'), (16384, 4112, 4194304, 262144, 65536)))
 
 
+FOURTH_PRIOR_TOTAL_BYTES = 9071
+FOURTH_PRIOR_PINS = {'carrier-consumed.json': (3577, 'ac0314d584ce7dfdbe5892f779cfbc01a702459fb31ab539b2752f70c07f7deb'), 'stdout': (2852, 'ff0f1b11037028b766c6bf8d4b6623f84241541f9e9240bf1f90efe3c9d6f7e9'), 'stderr': (22, 'e1c59576e732df777e6542b880a21994430f06f72ca54d9a0319507d1126aa75'), 'capture-manifest.json': (1503, '44398704da222ff3d5200b53dfbc732c1ad23fa4b35bd4d75e4671c5b8d5b406'), 'acceptance-receipt.json': (1117, '184439515c226a8b108b270522800174a7adb476191a606a66b7d451c25e601c')}
+
+
 def _prior_profile(index):
-    _require(type(index) is int and index in (0, 1, 2), 'CORE_PRIOR_PROFILE')
+    _require(type(index) is int and index in (0, 1, 2, 3), 'CORE_PRIOR_PROFILE')
     if index == 0:
         return dict(session=PRIOR_SESSION, unit=PRIOR_UNIT, implementation=PRIOR_IMPLEMENTATION,
             pins=PRIOR_PINS, total=PRIOR_TOTAL_BYTES, package_sha=PRIOR_PACKAGE_SHA,
             manifest_sha=PRIOR_MANIFEST_SHA, package_bytes=18111397, sent=False, status=255,
             bootstrap_sha='039fe87cc91a64c0327dc404e0ccf9728c32a1cc07e3e6fb11ed74c979f904f3')
+    if index == 3:
+        return dict(session='lhqcore-20261005c', unit='lhqcore20261005c-carrier.service',
+            implementation=dict(commit='657b1bcd749cb4281b0193b2bc9430b0662faf98',
+                tree='4bb00b2e9ccbec3c43160159811e51eec76702cd'), pins=FOURTH_PRIOR_PINS,
+            total=FOURTH_PRIOR_TOTAL_BYTES, package_bytes=18193664, sent=True, status=3,
+            package_sha='0acdfcaad942191b85f9bf24832c08d2c344fee3fe392a41d376a84ec2271184',
+            manifest_sha='28cc514a5c622720744dc7633520c2ee326b7a5681276bfbaebb975f882264db',
+            bootstrap_sha='7e2d08800951528c81f9078eb772cc4937dc76a3fd1ed7a1ccadde2a12a23cf5')
     if index == 2:
         return dict(session='lhqcore-20261005b', unit='lhqcore20261005b-carrier.service',
             implementation=dict(commit='8704a24b6c3c79ce4a36028ae2182dec2a35843e',
@@ -1354,6 +1366,10 @@ def _prior_attempt(prior, index=0):
         check(marker['approved_inputs_sha256'] ==
             '5bcbf535f6c8d0d2c974756af6815ba95a03da7fadc31c97a0622cdeeaf4846e'
             and raw['stderr'] == b'CORE_ADMIT_SUDO_OUTPUT\n', 'SECOND_FAILURE')
+    if index == 3:
+        check(marker['approved_inputs_sha256'] ==
+            '169c6e8cef5a3d6ee94d7cf433996016710b5e5613a7158e57875baad09ee793'
+            and raw['stderr'] == b'CORE_CAP_INSUFFICIENT\n', 'FOURTH_FAILURE')
     if index == 2:
         check(marker['approved_inputs_sha256'] ==
             '5d227ecbef0eb0b72a3c5ddee998c1505b88ddf70d3c3c506e262144c25198da'
@@ -1373,7 +1389,7 @@ def _prior_attempt(prior, index=0):
         basename=prefix + 'carrier-consumed.json', bytes=len(raw['carrier-consumed.json']), sha256=marker_sha)
         and cap['consumption_sha256'] == marker_sha, 'MARKER_LINK')
     check(receipt['transport'] == dict(execve_succeeded=True, hello_valid=True, bind_written=fixed['sent'],
-        package_written=fixed['sent'], stdin_bytes_written=(0, 18150763, 18174538)[index],
+        package_written=fixed['sent'], stdin_bytes_written=(0, 18150763, 18174538, 18194592)[index],
         stdin_eof=fixed['sent']), 'TRANSPORT')
     check(receipt['wait'] == dict(status=fixed['status'], stdout_eof=fixed['sent'],
         stderr_eof=fixed['sent'], host_deadline_met=fixed['sent'])
@@ -1414,7 +1430,7 @@ def _prior_attempt(prior, index=0):
 
 
 def _prior_attempts(values):
-    _require(type(values) is list and len(values) == 3, 'CORE_PRIOR_TRIPLE')
+    _require(type(values) is list and len(values) == 4, 'CORE_PRIOR_FOUR')
     return [_prior_attempt(value, index) for index, value in enumerate(values)]
 
 
@@ -1451,12 +1467,6 @@ def _prior_scope_branch(unit, group, hello):
     else:
         check(type(group['populated']) is type(group['procs_bytes']) is int
             and group['populated'] == group['procs_bytes'] == 0, 'EMPTY')
-    if unit['LoadState'] == 'loaded':
-        check(unit['InvocationID'] == old['invocation_id']
-            and (unit['ActiveState'], unit['SubState']) in (('inactive', 'dead'), ('failed', 'failed'))
-            and unit['ControlGroup'] in ('', old['control_group']) and unit['Restart'] == 'no'
-            and unit['KillMode'] == 'control-group' and unit['ExitType'] == 'cgroup', 'LOADED')
-        return 'LOADED_TERMINAL'
     check(unit['LoadState'] == 'not-found' and unit['ActiveState'] == 'inactive'
         and unit['SubState'] == 'dead' and unit['InvocationID'] == unit['ControlGroup'] == ''
         and group['state'] == 'ABSENT', 'COLLECTED')
@@ -1470,9 +1480,9 @@ def _validate_prior_quiescence(value, context, index=0):
     prior = priors[index]
     old = _prior_attempt(prior, index)
     check.exact(value, _fields('schema prior_attempt_sha256 boot_id branch observations current_scope_quiescent historical_remote_exit historical_usage released_bytes released_inodes'), 'RECORD_FIELDS')
-    check(value['schema'] == 'local-hand-q2-core-prior-quiescence/v1'
+    check(value['schema'] == 'local-hand-q2-core-prior-quiescence/v2'
         and value['prior_attempt_sha256'] == _sha(canonical(prior))
-        and value['boot_id'] == old['guest_boot_id'] == context['hello']['guest_boot_id']
+        and value['boot_id'] == context['hello']['guest_boot_id']
         and value['current_scope_quiescent'] is True
         and value['historical_remote_exit'] == value['historical_usage'] == 'UNKNOWN'
         and type(value['released_bytes']) is type(value['released_inodes']) is int
@@ -1496,8 +1506,9 @@ def _validate_prior_quiescence(value, context, index=0):
 
 
 def _validate_prior_quiescences(values, context):
+    _journal_transition_context(context)
     _prior_concurrency_bound(context)
-    _require(type(values) is list and len(values) == 3, 'CORE_PRIOR_SCOPE_TRIPLE')
+    _require(type(values) is list and len(values) == 4, 'CORE_PRIOR_SCOPE_FOUR')
     result = [_validate_prior_quiescence(value, context, index) for index, value in enumerate(values)]
     for clock in ('boottime_ns', 'monotonic_ns'):
         ordered = [row['observations'][ordinal][clock] for ordinal in (0, 1) for row in result]
@@ -1515,12 +1526,12 @@ def _prior_concurrency_bound(context):
     LIMITS remains the new batch's post-quiescence 2624 MiB / 1160 pid bound.
     """
     hellos = _prior_attempts(_approved_inputs_envelope(context)['reconciliation']['prior_core_attempts'])
-    _validate_hello_identity(context['hello'], 'lhqcore20261005c-carrier.service')
+    _validate_hello_identity(context['hello'], 'lhqcore20261007a-carrier.service')
     units = [value['carrier_unit'] for value in [*hellos, context['hello']]]
     memory = sum(value['memory_max'] for value in units)
     pids = sum(value['tasks_max'] for value in units)
-    _require(len({value['name'] for value in units}) == 4
-        and memory == 4294967296 and pids == 512, 'CORE_PRIOR_CONCURRENCY')
+    _require(len({value['name'] for value in units}) == 5
+        and memory == 5368709120 and pids == 640, 'CORE_PRIOR_CONCURRENCY')
     return dict(memory_bytes=memory, pids=pids)
 
 
@@ -1536,7 +1547,7 @@ class _PriorScopeObserver:
         _prior_attempts(priors)
         self.prior = priors[index]
         self.old = _prior_attempt(self.prior, index)
-        _require(self.old['guest_boot_id'] == effects.context['hello']['guest_boot_id'], 'CORE_PRIOR_SCOPE_BOOT')
+        _journal_transition_context(effects.context)
         self.path = '/sys/fs/cgroup' + self.old['carrier_unit']['control_group']
         self.parent_path = str(PurePosixPath(self.path).parent)
         self.name = PurePosixPath(self.path).name
@@ -1626,7 +1637,7 @@ class _PriorScopeObserver:
             else:
                 raise DispatchError('CORE_PRIOR_SCOPE_CGROUP_DRIFT')
         now = e._effect_guard()
-        _require(now['boot_id'] == self.old['guest_boot_id'], 'CORE_PRIOR_SCOPE_BOOT')
+        _require(now['boot_id'] == e.context['hello']['guest_boot_id'], 'CORE_PRIOR_SCOPE_BOOT')
         branch = _prior_scope_branch(unit, group, self.old)
         observation = dict(ordinal=ordinal, boottime_ns=now['boottime_ns'], monotonic_ns=now['monotonic_ns'], unit=unit, cgroup=group)
         if self.observations:
@@ -1639,8 +1650,8 @@ class _PriorScopeObserver:
     def finish(self):
         _require(not getattr(self, 'failed', True) and len(self.observations) == 2, 'CORE_PRIOR_SCOPE_INCOMPLETE')
         self.recheck()
-        return _validate_prior_quiescence(dict(schema='local-hand-q2-core-prior-quiescence/v1',
-            prior_attempt_sha256=_sha(canonical(self.prior)), boot_id=self.old['guest_boot_id'], branch=self.branch,
+        return _validate_prior_quiescence(dict(schema='local-hand-q2-core-prior-quiescence/v2',
+            prior_attempt_sha256=_sha(canonical(self.prior)), boot_id=self.effects.context['hello']['guest_boot_id'], branch=self.branch,
             observations=self.observations, current_scope_quiescent=True, historical_remote_exit='UNKNOWN',
             historical_usage='UNKNOWN', released_bytes=0, released_inodes=0), self.effects.context, self.index)
 
@@ -1689,6 +1700,101 @@ def _validate_diagnostic_retention(value):
     return value
 
 
+# Fixed K2 originals; no capture or maintenance command is executed here.
+JOURNAL_SESSION = 'lhqjgrow-20261006a'
+JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
+    'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
+    'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
+JOURNAL_SOURCE_NAMES = ('q2_journal_growth.py', 'q2_journal_growth_guest.py',
+    'q2_core_capacity_capture.py', 'q2_core_capacity_reader.py', 'q2_sshd_source_capture.py',
+    'q2_sshd_source_reader.py', 'q2_core_obligation_inputs.py', 'q2_core_prior_attempt.py',
+    'q2_core_delivery_contract.py', 'q2_local_source_delivery.py', 'q2_core_approved_inputs.py',
+    'q2_host_kernel_facts.py')
+
+
+def _validate_journal_transition(value, *, priors, implementation, current_boot=None):
+    """Consume the host projection; no host-original verification is claimed."""
+    check = _Checks("CORE_JOURNAL_")
+    check.exact(value, {'schema','authority','implementation','session','nonce','access_mode',
+        'host_writer_observation','continuous_exclusion_proven','input_sha256','manifest_sha256',
+        'source_files','originals','old_boot_id','new_boot_id','old_vm','new_vm','image_identities',
+        'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
+        'filesystem','content','reports','completed_steps','transport_exits','image_checks',
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded'},
+        'CORE_JOURNAL_FIELDS')
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v1'
+        and value['session']=='lhqjgrow-20261006a', 'JOURNAL_SCHEMA')
+    check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
+        A='5d6cefa602e9146f02887ebfaa4b0cad4e376ff2',C='8a4c24cefe4abbab193577b2dff48fc49626cae4')
+        and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
+    check.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
+    for item in implementation.values():
+        check(type(item) is str and re.fullmatch(r"[0-9a-f]{40}",item), "IMPLEMENTATION")
+    check(value['access_mode']=='TRUSTED_SINGLE_ADMIN' and value['host_writer_observation']=='NOT_PERFORMED'
+        and value['continuous_exclusion_proven'] is value['old_commitments_refunded'] is False
+        and value['historical_exit']=='UNKNOWN', 'JOURNAL_ACCESS')
+    for key in ('nonce','input_sha256','manifest_sha256','original_argv_sha256','restart_argv_sha256'):
+        check.digest(value[key])
+    for key in ('old_boot_id','new_boot_id'):
+        check(type(value[key]) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',value[key]),
+            'JOURNAL_BOOT')
+    check(value['old_boot_id']!=value['new_boot_id']
+        and all(hello['guest_boot_id']==value['old_boot_id'] for hello in _prior_attempts(priors))
+        and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
+    rows=value['originals']
+    check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
+        == sorted('.lhqjgrow-20261006a.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+    for row in rows:
+        check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261006a.'):]])
+        check.digest(row['sha256'])
+    check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
+    for name,row in value['source_files'].items():
+        check.exact(row,{'bytes','sha256'},'CORE_JOURNAL_SOURCE')
+        check.integer(row['bytes'],1,98304 if name.startswith('q2_journal_growth') else 524288);check.digest(row['sha256'])
+    for key in ('old_vm','new_vm'):
+        row=value[key];check.exact(row,{'pid','starttime','argv_sha256'},'CORE_JOURNAL_VM')
+        check.integer(row['pid'],2);check.integer(row['starttime'],1);check.digest(row['argv_sha256'])
+    check(value['old_vm']!=value['new_vm'] and value['old_pidfd_exited'] is True,'JOURNAL_VM_EXIT')
+    images=value['image_identities'];check.exact(images,{'system','quota','journal','evidence','seed'},'CORE_JOURNAL_IMAGES')
+    for row in images.values():
+        check(type(row) in (list,tuple) and len(row)==2,'JOURNAL_IMAGE_IDENTITY')
+        check.integer(row[0]);check.integer(row[1],1)
+    check(len({tuple(row) for row in images.values()})==5,'JOURNAL_IMAGE_ALIAS')
+    check.exact(value['backup'],{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
+    check.integer(value['backup']['bytes'],1,335544320);check.digest(value['backup']['sha256'])
+    check(canonical(value['virtual_bytes'])==canonical(dict(before=268435456,after=536870912)),
+        'JOURNAL_SIZE')
+    fs=value['filesystem'];check.exact(fs,{'uuid','before_bytes','after_bytes','available'},'CORE_JOURNAL_FILESYSTEM')
+    check(type(fs['uuid']) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',fs['uuid']),
+        'JOURNAL_UUID')
+    check(type(fs['before_bytes']) is type(fs['after_bytes']) is int
+        and fs['before_bytes']==268435456 and fs['after_bytes']==536870912,'JOURNAL_FILESYSTEM_SIZE')
+    check.exact(fs['available'],{'bytes','inodes'},'CORE_JOURNAL_CAPACITY')
+    check.integer(fs['available']['bytes'],419430400);check.integer(fs['available']['inodes'],32768)
+    content=value['content'];check.exact(content,{'entries','content_bytes','sha256'},'CORE_JOURNAL_CONTENT')
+    check.integer(content['entries'],1,32768);check.integer(content['content_bytes'],0,268435456);check.digest(content['sha256'])
+    check.exact(value['reports'],{'pre','post'},'CORE_JOURNAL_REPORTS')
+    for row in value['reports'].values():
+        check.exact(row,{'bytes','sha256'},'CORE_JOURNAL_REPORT');check.integer(row['bytes'],1,1048576);check.digest(row['sha256'])
+    check(value['completed_steps']==['CONSUMED','GUEST_QUIET','POWERED_OFF','BACKED_UP','IMAGE_GROWN',
+        'BOOTED','FILESYSTEM_GROWN','VERIFIED'] and value['all_streams_eof'] is True,'JOURNAL_COMPLETION')
+    check(type(value['transport_exits']) is list and len(value['transport_exits'])==2
+        and all(type(v) is int for v in value['transport_exits'])
+        and value['transport_exits'][0] in (0,255) and value['transport_exits'][1]==0,'JOURNAL_TRANSPORT')
+    check(canonical(value['image_checks'])==b'[0,0]' and type(value['logical_compare_exit']) is int
+        and value['logical_compare_exit']==0 and type(value['resize_exit']) is int and value['resize_exit']==0,
+        'JOURNAL_CHECKS')
+    return value
+
+
+def _journal_transition_context(context):
+    approved = _approved_inputs_envelope(context)
+    return _validate_journal_transition(approved['reconciliation']['journal_transition'],
+        priors=approved['reconciliation']['prior_core_attempts'],
+        implementation=context['manifest']['implementation'], current_boot=context['hello']['guest_boot_id'])
+
+
 def _validate_approved_components(value):
     """Validate all fixed component relations; this is not a live admission."""
     try:
@@ -1700,12 +1806,14 @@ def _validate_approved_components(value):
         _approved_validate_capacity(value["historical_capacity_obligations"], obligations)
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
-        _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v4", "RECONCILIATION_SCHEMA")
+        _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v5", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
         _prior_attempts(prior)
+        _validate_journal_transition(reconciliation['journal_transition'],priors=prior,
+            implementation=value['amendment']['implementation'])
         _validate_diagnostic_retention(reconciliation['prior_diagnostic_capture'])
         _approved_equal(value["historical_capacity_obligations"]["prior_commitments"],
                         [_prior_commitment(item, index) for index, item in enumerate(prior)], "PRIOR_COMMITMENT")
@@ -1877,7 +1985,7 @@ def _validate_context_envelope(context):
     _check.exact(context, _fields('schema hello bind manifest members guest_deadlines stdin_bytes_received'), "CONTEXT_FIELDS")
     _check(context["schema"] == CONTEXT_SCHEMA, "CONTEXT_SCHEMA")
     hello, bind, manifest = context["hello"], context["bind"], context["manifest"]
-    carrier_name = "lhqcore20261005c-carrier.service"
+    carrier_name = "lhqcore20261007a-carrier.service"
     _validate_hello_identity(hello, carrier_name)
     remote = hello['remote_management']
     _check.exact(bind, _fields('schema scope session_id hello_sha256 consumption_sha256 package_basename package_bytes package_sha256 host_boottime_origin_ns host_monotonic_origin_ns host_boottime_deadline_ns host_monotonic_deadline_ns host_boottime_bind_ns host_monotonic_bind_ns host_remaining_floor_ns clock_margin_ns local_final_reserve_ns mapped_duration_ns guest_duration_cap_ns guest_duration_ns'), "BIND_FIELDS")
@@ -2004,6 +2112,7 @@ def _validate_context_envelope(context):
 def _validate_context(context):
     _validate_context_envelope(context)
     _validate_approved_components(_approved_inputs_envelope(context))
+    _journal_transition_context(context)
     _consumption_info(context)
     return context
 
@@ -2050,7 +2159,7 @@ def _consumption_info(context):
         "state": "CONSUMPTION_RECORD_COMPLETE"}
     raw = canonical(marker, newline=True, limit=16384)
     _check(_sha(raw) == bind["consumption_sha256"], "CONSUMPTION_BINDING")
-    return {"basename": ".lhqcore-20261005c.carrier-consumed.json", "bytes": len(raw),
+    return {"basename": ".lhqcore-20261007a.carrier-consumed.json", "bytes": len(raw),
         "sha256": _sha(raw), "state": marker["state"]}
 
 
@@ -3377,12 +3486,12 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None)
         effects._admit_helpers_attempted = seen = set()
     attempt_key = tuple(argv)
     if prior_observation is not None:
-        slots = ((0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2))
+        slots = ((0, 1), (1, 1), (2, 1), (3, 1), (0, 2), (1, 2), (2, 2), (3, 2))
         consumed = getattr(effects, '_prior_show_slots', [])
         _require(type(prior_observation) is tuple
             and all(type(value) is int for value in prior_observation)
             and not getattr(effects, '_prior_show_stopped', False)
-            and len(consumed) < 6 and prior_observation == slots[len(consumed)],
+            and len(consumed) < 8 and prior_observation == slots[len(consumed)],
             'CORE_PRIOR_SCOPE_SHOW_SLOT')
         index, ordinal = prior_observation
         _require(argv == ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
@@ -3900,7 +4009,7 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
             # at an old name cannot move its full commitment to a guessed pool.
             parent = locators[root['parent_role'] + '_parent'] + '/'
             suffix = root['path'].removeprefix(parent)
-            for index in (0, 1, 2):
+            for index in (0, 1, 2, 3):
                 old_session = _prior_profile(index)['session']
                 if pool['pool_id'] == 'shared_install':
                     _cap(suffix in (INSTALL_BASENAME, STAGING_BASENAME), 'PRIOR_PLACEMENT')
@@ -3912,7 +4021,7 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
                 _cap(path_pool(parent + old_suffix) == byrole[root['parent_role']], 'PRIOR_PLACEMENT')
     for key, values in _cap_new_reservations(filesystems, locators).items():
         # Each consumed batch retains its own full 32 pools and headroom.
-        for _ in (0, 1, 2):
+        for _ in (0, 1, 2, 3):
             charge(key, values, 'historical')
         charge(key, values, 'new_required')
     for row in pools.values():
@@ -3947,7 +4056,7 @@ def _cap_historical_expected(approved, filesystems, locators):
     # Old and new pool *identities* are distinct; their fixed role placement and
     # ceilings are identical. This is a conservative reservation, not old usage.
     for key, values in _cap_new_reservations(filesystems, locators).items():
-        for _ in (0, 1, 2):
+        for _ in (0, 1, 2, 3):
             add(key, values['bytes'], values['inodes'])
     return totals
 
@@ -4875,7 +4984,7 @@ class FieldEffects:
 
     def _capacity_systemctl(self, arguments, program, *, prior_observation=None):
         old_show = any(arguments[:3] == ['show', '--all', _prior_profile(index)['unit']]
-                       for index in (0, 1, 2))
+                       for index in (0, 1, 2, 3))
         _require(old_show == (prior_observation is not None), 'CORE_PRIOR_SCOPE_SHOW_POLICY')
         def verify():
             reader = _admit_reader(self._effect_guard, '/', 0)
@@ -5076,7 +5185,7 @@ class FieldEffects:
         self._admission_components = current
         programs = _admit_programs(self)
         guest = _admit_guest(self, programs)
-        prior_observers = [_PriorScopeObserver(self, programs, index) for index in (0, 1, 2)]
+        prior_observers = [_PriorScopeObserver(self, programs, index) for index in (0, 1, 2, 3)]
         try:
             for observer in prior_observers:
                 observer.observe()
@@ -7595,11 +7704,11 @@ def _session(context, admission, installation):
             "remote_final_reserve_ns": REMOTE_FINAL_RESERVE_NS,
             "local_final_reserve_ns": bind["local_final_reserve_ns"]},
         "admission": admission, "installation": installation,
-        "output": {"stdout_basename": ".lhqcore-20261005c.stdout",
-            "stderr_basename": ".lhqcore-20261005c.stderr",
-            "remote_result_basename": ".lhqcore-20261005c.remote-result.json",
-            "capture_manifest_basename": ".lhqcore-20261005c.capture-manifest.json",
-            "local_receipt_basename": ".lhqcore-20261005c.acceptance-receipt.json",
+        "output": {"stdout_basename": ".lhqcore-20261007a.stdout",
+            "stderr_basename": ".lhqcore-20261007a.stderr",
+            "remote_result_basename": ".lhqcore-20261007a.remote-result.json",
+            "capture_manifest_basename": ".lhqcore-20261007a.capture-manifest.json",
+            "local_receipt_basename": ".lhqcore-20261007a.acceptance-receipt.json",
             "output_package_bytes": FRAME_LIMIT, "stderr_bytes": STDERR_LIMIT},
         "limits": LIMITS, "cases": [{key: case[key] for key in
                 _fields('index case_id kind predecessor preparation_id operation_id controller_prefix project_ids phases')} for case in CASES],

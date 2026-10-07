@@ -20,18 +20,18 @@ from test_e3_q2_core_prior_attempt import observer_fixture, call
 
 def test_fixed_triple_has_distinct_original_truth_and_nonrefundable_cost(monkeypatch):
     priors, files = triple_fixture(monkeypatch, d)
-    assert len(files) == 15 and p.validate_all(priors) == d._prior_attempts(priors)
+    assert len(files) == 20 and p.validate_all(priors) == d._prior_attempts(priors)
     for index, prior in enumerate(priors):
         hello = p.validate(prior, index=index)
         assert hello['carrier_unit']['name'] == p.profile(index)['unit']
         raw = c.document(files[p.basename('acceptance-receipt.json', index)], limit=65536, newline=True)
         assert raw['transport']['bind_written'] is bool(index)
-        assert raw['wait']['status'] == (255, 3, 3)[index]
+        assert raw['wait']['status'] == (255, 3, 3, 3)[index]
         assert raw['real_task_execution']['status'] == 'UNKNOWN'
     charges = [p.commitment(prior, index=index) for index, prior in enumerate(priors)]
-    assert sum(row['logical_bytes'] for row in charges) + c.LIMITS['total_guest_admission_bytes'] == 1157627904
-    assert sum(row['logical_inodes'] for row in charges) + c.LIMITS['total_guest_admission_inodes'] == 66048
-    assert sum(row['cpu_seconds'] for row in charges) + c.LIMITS['total_cpu_seconds'] == 8360
+    assert sum(row['logical_bytes'] for row in charges) + c.LIMITS['total_guest_admission_bytes'] == 1447034880
+    assert sum(row['logical_inodes'] for row in charges) + c.LIMITS['total_guest_admission_inodes'] == 82560
+    assert sum(row['cpu_seconds'] for row in charges) + c.LIMITS['total_cpu_seconds'] == 10450
     assert all(row['released_or_refunded'] is False for row in charges)
 
 
@@ -77,7 +77,7 @@ def test_second_structural_consumer_does_not_borrow_first_truth(monkeypatch, cha
     with pytest.raises(d.DispatchError): d._prior_attempts(priors)
 
 
-@pytest.mark.parametrize('index', [0, 1, 2])
+@pytest.mark.parametrize('index', [0, 1, 2, 3])
 @pytest.mark.parametrize('change', [None, 'missing', 'hardlink', 'mode', 'result'])
 def test_fifteen_original_reader_checks_each_profile(tmp_path, monkeypatch, index, change):
     _, files = triple_fixture(monkeypatch, d)
@@ -108,7 +108,7 @@ def test_fifteen_original_reader_checks_each_profile(tmp_path, monkeypatch, inde
 def test_triple_quiescence_exact_order_and_four_carrier_bound(monkeypatch, change):
     priors, _ = triple_fixture(monkeypatch, d); context = context_v2()
     values = [quiescence(prior, context) for prior in priors]
-    assert d._prior_concurrency_bound(context) == dict(memory_bytes=4294967296, pids=512)
+    assert d._prior_concurrency_bound(context) == dict(memory_bytes=5368709120, pids=640)
     assert d.LIMITS['peak_memory_bytes'] == 2624 * 1048576 and d.LIMITS['peak_pids'] == 1160
     if change == 'second_loaded':
         values[1]['branch'] = 'LOADED_TERMINAL'
@@ -123,17 +123,22 @@ def test_triple_quiescence_exact_order_and_four_carrier_bound(monkeypatch, chang
     elif change == 'second_invocation': values[1]['observations'][0]['unit']['InvocationID'] = '6'*32
     elif change == 'order': values[1]['observations'][0]['boottime_ns'] += 20
     elif change == 'refund': values[1]['released_bytes'] = 1
-    if change in (None, 'second_loaded'): assert d._validate_prior_quiescences(values, context) == values
+    if change is None: assert d._validate_prior_quiescences(values, context) == values
     else:
         with pytest.raises(d.DispatchError): d._validate_prior_quiescences(values, context)
 
 
-@pytest.mark.parametrize('index', [0, 1, 2])
+@pytest.mark.parametrize('index', [0, 1, 2, 3])
 @pytest.mark.parametrize('present', [False, True])
 def test_each_final_held_name_drift_is_rejected_without_an_extra_show(monkeypatch, index, present):
     priors, _ = triple_fixture(monkeypatch, d)
     observer, state = observer_fixture((d, priors[0], context_v2()), monkeypatch, index=index, present=present)
     try:
+        if present:
+            with pytest.raises(d.DispatchError, match='COLLECTED'):
+                observer.observe()
+            assert state['calls'] == 1
+            return
         observer.observe(); observer.observe(); observer.finish()
         assert state['calls'] == 2 and state['open_fds']
         state['drift'] = True
@@ -144,11 +149,11 @@ def test_each_final_held_name_drift_is_rejected_without_an_extra_show(monkeypatc
 
 
 def test_fixed_new_uuid_projects_and_artifacts_are_disjoint():
-    old_sessions = {p.profile(index)['session'] for index in (0, 1, 2)}
-    assert c.SESSION_ID == d.SESSION == 'lhqcore-20261005c' and c.SESSION_ID not in old_sessions
-    assert c.CARRIER_UNIT == 'lhqcore20261005c-carrier.service'
+    old_sessions = {p.profile(index)['session'] for index in (0, 1, 2, 3)}
+    assert c.SESSION_ID == d.SESSION == 'lhqcore-20261007a' and c.SESSION_ID not in old_sessions
+    assert c.CARRIER_UNIT == 'lhqcore20261007a-carrier.service'
     for case in d.CASES:
-        seed = 'urn:local-hand:LH-Q2-CORE-POST-LOCALE-ACCEPTANCE-v1:' + case['kind']
+        seed = 'urn:local-hand:LH-Q2-CORE-MINIMAL-CONTINUATION-v1:' + case['kind']
         assert case['operation_id'] == str(uuid.UUID(bytes=bytes.fromhex(c.sha256(seed.encode()))[:16], version=4))
-    assert [project for case in d.CASES for project in case['project_ids']] == list(range(12401, 12422))
+    assert [project for case in d.CASES for project in case['project_ids']] == list(range(12501, 12522))
     assert len(d._admission_absent_units()) == 21

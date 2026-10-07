@@ -38,14 +38,15 @@ def raw_files(index=0):
             sha256=fixed['package_sha'], manifest_sha256=fixed['manifest_sha']),
         approved_inputs_sha256=('c' * 64,
             '5bcbf535f6c8d0d2c974756af6815ba95a03da7fadc31c97a0622cdeeaf4846e',
-            '5d227ecbef0eb0b72a3c5ddee998c1505b88ddf70d3c3c506e262144c25198da')[index],
+            '5d227ecbef0eb0b72a3c5ddee998c1505b88ddf70d3c3c506e262144c25198da',
+            '169c6e8cef5a3d6ee94d7cf433996016710b5e5613a7158e57875baad09ee793')[index],
         local_management_binding_sha256='d' * 64, writer=writer(),
         carrier_argv_sha256='e' * 64, host_boottime_origin_ns=1, host_monotonic_origin_ns=1,
         host_boottime_deadline_ns=900000000001, host_monotonic_deadline_ns=900000000001,
         state='CONSUMPTION_RECORD_COMPLETE')
     marker_raw = c.canonical(marker, newline=True)
     parts = {'carrier-consumed.json': marker_raw, 'stdout': out,
-             'stderr': (b'', b'CORE_ADMIT_SUDO_OUTPUT\n', b'CORE_ADMIT_SSHD_GRAMMAR\n')[index]}
+             'stderr': (b'', b'CORE_ADMIT_SUDO_OUTPUT\n', b'CORE_ADMIT_SSHD_GRAMMAR\n',b'CORE_CAP_INSUFFICIENT\n')[index]}
     rows = [dict(basename=name(role), bytes=len(raw), sha256=c.sha256(raw),
         allocated_bytes=4096 if raw else 0, dev=1, ino=i + 1 + 10 * index, mode=0o600, nlink=1)
         for i, (role, raw) in enumerate(sorted(parts.items()))]
@@ -65,7 +66,7 @@ def raw_files(index=0):
         consumption=dict(object_created=True, record_complete=True, basename=name('carrier-consumed.json'),
                          bytes=len(marker_raw), sha256=c.sha256(marker_raw)),
         transport=dict(execve_succeeded=True, hello_valid=True, bind_written=fixed['sent'], package_written=fixed['sent'],
-                       stdin_bytes_written=(0, 18150763, 18174538)[index], stdin_eof=fixed['sent']),
+                       stdin_bytes_written=(0, 18150763, 18174538,18194592)[index], stdin_eof=fixed['sent']),
         remote_result=dict(present=False, sha256=None, frame_sha256=None),
         wait=dict(status=fixed['status'], stdout_eof=fixed['sent'], stderr_eof=fixed['sent'], host_deadline_met=fixed['sent']),
         capture=dict(bytes=allocated, inodes=3, manifest_sha256=c.sha256(parts['capture-manifest.json']),
@@ -80,11 +81,11 @@ def patch_pins(monkeypatch, files, *dispatchers, index=0):
     fixed = p.profile(index)
     pins = {name[len(fixed['session']) + 2:]: (len(raw), c.sha256(raw)) for name, raw in files.items()}
     total = sum(map(len, files.values()))
-    monkeypatch.setattr(p, ('PINS', 'SECOND_PINS', 'THIRD_PINS')[index], pins)
-    monkeypatch.setattr(p, ('TOTAL_BYTES', 'SECOND_TOTAL_BYTES', 'THIRD_TOTAL_BYTES')[index], total)
+    monkeypatch.setattr(p, ('PINS', 'SECOND_PINS', 'THIRD_PINS', 'FOURTH_PINS')[index], pins)
+    monkeypatch.setattr(p, ('TOTAL_BYTES', 'SECOND_TOTAL_BYTES', 'THIRD_TOTAL_BYTES', 'FOURTH_TOTAL_BYTES')[index], total)
     for dispatcher in dispatchers:
-        monkeypatch.setattr(dispatcher, ('PRIOR_PINS', 'SECOND_PRIOR_PINS', 'THIRD_PRIOR_PINS')[index], copy.deepcopy(pins))
-        monkeypatch.setattr(dispatcher, ('PRIOR_TOTAL_BYTES', 'SECOND_PRIOR_TOTAL_BYTES', 'THIRD_PRIOR_TOTAL_BYTES')[index], total)
+        monkeypatch.setattr(dispatcher, ('PRIOR_PINS', 'SECOND_PRIOR_PINS', 'THIRD_PRIOR_PINS', 'FOURTH_PRIOR_PINS')[index], copy.deepcopy(pins))
+        monkeypatch.setattr(dispatcher, ('PRIOR_TOTAL_BYTES', 'SECOND_PRIOR_TOTAL_BYTES', 'THIRD_PRIOR_TOTAL_BYTES', 'FOURTH_PRIOR_TOTAL_BYTES')[index], total)
 
 
 def fixture(monkeypatch, *dispatchers):
@@ -92,19 +93,20 @@ def fixture(monkeypatch, *dispatchers):
     patch_pins(monkeypatch, files, *dispatchers)
     patch_pins(monkeypatch, raw_files(1), *dispatchers, index=1)
     patch_pins(monkeypatch, raw_files(2), *dispatchers, index=2)
+    patch_pins(monkeypatch,raw_files(3),*dispatchers,index=3)
     return p.build(files), files
 
 
 def triple_fixture(monkeypatch, *dispatchers):
     _, first = fixture(monkeypatch, *dispatchers)
-    files = {**first, **raw_files(1), **raw_files(2)}
+    files = {**first, **raw_files(1), **raw_files(2), **raw_files(3)}
     return p.build_all(files), files
 
 
 def envelope():
     """Untrusted synthetic envelope, with no parser or production pins patched."""
     priors, commitments = [], []
-    for index in (0, 1, 2):
+    for index in (0, 1, 2, 3):
         fixed = p.profile(index)
         files = raw_files(index)
         prior = dict(schema=p.SCHEMA, scope=c.SCOPE, session_id=fixed['session'],
@@ -122,16 +124,17 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v4', prior_core_attempts=prior,
-                                  prior_diagnostic_capture=p.diagnostic_retention())
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v4',
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v5', prior_core_attempts=prior,
+                                  prior_diagnostic_capture=p.diagnostic_retention(),
+                                  journal_transition=journal_transition(value['amendment']['implementation']))
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v5',
         prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
 
 def quiescence(prior, context):
     # Fixture construction does not replace the consumer's strict validation.
-    index = [p.profile(i)['session'] for i in (0, 1, 2)].index(prior['session_id'])
+    index = [p.profile(i)['session'] for i in (0, 1, 2, 3)].index(prior['session_id'])
     row = next(r for r in prior['files'] if r['basename'] == p.basename('stdout', index))
     hello = c.document(base64.b64decode(row['raw_base64'])[16:], limit=65536, newline=True)
     path = '/sys/fs/cgroup' + hello['carrier_unit']['control_group']
@@ -139,12 +142,12 @@ def quiescence(prior, context):
                 InvocationID='', ControlGroup='', Restart='no', KillMode='control-group', ExitType='main')
     group = dict(path=path, state='ABSENT', parent=dict(path='/sys/fs/cgroup/system.slice', dev=1,
         ino=2, mode=0o755, uid=0, gid=0), identity=None, populated=None, procs_bytes=None)
-    return dict(schema='local-hand-q2-core-prior-quiescence/v1', prior_attempt_sha256=c.sha256(c.canonical(prior)),
-        boot_id=hello['guest_boot_id'], branch='COLLECTED_ABSENT', current_scope_quiescent=True,
+    return dict(schema='local-hand-q2-core-prior-quiescence/v2', prior_attempt_sha256=c.sha256(c.canonical(prior)),
+        boot_id=context['hello']['guest_boot_id'], branch='COLLECTED_ABSENT', current_scope_quiescent=True,
         historical_remote_exit='UNKNOWN', historical_usage='UNKNOWN', released_bytes=0, released_inodes=0,
         observations=[dict(ordinal=i, unit=copy.deepcopy(unit), cgroup=copy.deepcopy(group),
-            boottime_ns=context['hello']['guest_boottime_origin_ns'] + 3*i + index,
-            monotonic_ns=context['hello']['guest_monotonic_origin_ns'] + 3*i + index) for i in (1, 2)])
+            boottime_ns=context['hello']['guest_boottime_origin_ns'] + 4*i + index,
+            monotonic_ns=context['hello']['guest_monotonic_origin_ns'] + 4*i + index) for i in (1, 2)])
 
 
 def diagnostic_files(monkeypatch):
@@ -170,3 +173,29 @@ def diagnostic_files(monkeypatch):
     monkeypatch.setattr(p, 'DIAGNOSTIC_PINS', {suffix: (len(raw), c.sha256(raw))
                                             for suffix, raw in parts.items()})
     return {'.' + p.DIAGNOSTIC_SESSION + '.' + suffix: raw for suffix, raw in parts.items()}
+
+
+def journal_transition(implementation):
+    """Synthetic projection, never substitutes for the host original consumer."""
+    return dict(schema='local-hand-q2-core-journal-transition/v1',
+        authority=dict(R=c.RULE['commit'],A=c.MINIMAL_BASELINE['commit'],C=c.MINIMAL_CLOSURE['commit']),
+        implementation=copy.deepcopy(implementation),session=p.JOURNAL_SESSION,nonce='a'*64,
+        access_mode='TRUSTED_SINGLE_ADMIN',host_writer_observation='NOT_PERFORMED',
+        continuous_exclusion_proven=False,input_sha256='b'*64,manifest_sha256='c'*64,
+        source_files={name:dict(bytes=100,sha256='d'*64) for name in p.JOURNAL_SOURCE_NAMES},
+        originals=[dict(basename='.'+p.JOURNAL_SESSION+'.'+name,bytes=0,sha256=c.sha256(b''))
+            for name in sorted(p.JOURNAL_FILES)],
+        old_boot_id='11111111-2222-3333-4444-555555555555',
+        new_boot_id='22222222-2222-3333-4444-555555555555',
+        old_vm=dict(pid=123,starttime=1,argv_sha256='e'*64),
+        new_vm=dict(pid=124,starttime=2,argv_sha256='f'*64),old_pidfd_exited=True,
+        image_identities={role:[1,i+10] for i,role in enumerate(('system','quota','journal','evidence','seed'))},
+        original_argv_sha256='a'*64,restart_argv_sha256='b'*64,
+        backup=dict(bytes=1024,sha256='c'*64),virtual_bytes=dict(before=268435456,after=536870912),
+        filesystem=dict(uuid='33333333-2222-3333-4444-555555555555',before_bytes=268435456,
+            after_bytes=536870912,available=dict(bytes=419430400,inodes=32768)),
+        content=dict(entries=1,content_bytes=10,sha256='d'*64),
+        reports={phase:dict(bytes=100,sha256='e'*64) for phase in ('pre','post')},
+        completed_steps=['CONSUMED','GUEST_QUIET','POWERED_OFF','BACKED_UP','IMAGE_GROWN','BOOTED','FILESYSTEM_GROWN','VERIFIED'],
+        transport_exits=[255,0],image_checks=[0,0],logical_compare_exit=0,resize_exit=0,
+        all_streams_eof=True,historical_exit='UNKNOWN',old_commitments_refunded=False)

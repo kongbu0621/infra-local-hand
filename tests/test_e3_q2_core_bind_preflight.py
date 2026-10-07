@@ -18,14 +18,17 @@ INVALID_BASENAMES = ("sub/frozen.lhfp", "./frozen.lhfp", "../frozen.lhfp",
                      "frozen.lhfp", ".frozen-1_2.lhfp", "lhqcore-20261003a.lhfp")
 
 
-def prepared(monkeypatch, basename="lhqcore-20261005c.lhfp"):
+def prepared(monkeypatch, basename="lhqcore-20261007a.lhfp"):
     """Use a real packaged entry; private source bodies remain synthetic."""
     fixture = bootstrap_fixture
-    bootstrap_sha, raw = fixture.package_fixture(monkeypatch)
+    bootstrap_sha, raw = fixture.package_fixture(monkeypatch, journal=True)
     manifest, members = fixture.p.parse_package(raw)
     guest_manifest, guest_members = fixture.b.parse_package(raw, bootstrap_sha)
     assert guest_manifest == manifest and guest_members == members
     e, c = entry_fixture.e, entry_fixture.c
+    original_helper = e._helper
+    monkeypatch.setattr(e, '_helper', lambda name: fixture.p if name == 'q2_core_delivery_package'
+                        else original_helper(name))
     hello = entry_fixture.hello()
     hello.update(loader_sha256=manifest["entry"]["loader_sha256"],
                  bootstrap_sha256=bootstrap_sha)
@@ -52,7 +55,7 @@ def host_bind(value, basename):
         boot_bind_ns=1_001_000_000_000, mono_bind_ns=1_001_000_000_000)
 
 
-@pytest.mark.parametrize("basename", ("lhqcore-20261005c.lhfp",))
+@pytest.mark.parametrize("basename", ("lhqcore-20261007a.lhfp",))
 def test_packaged_entry_crosses_host_and_guest_bind_and_marker(monkeypatch, basename):
     value = prepared(monkeypatch, basename)
     bind = host_bind(value, basename)
@@ -66,7 +69,7 @@ def test_packaged_entry_crosses_host_and_guest_bind_and_marker(monkeypatch, base
 @pytest.mark.parametrize("basename", INVALID_BASENAMES)
 def test_host_bind_rejects_names_rejected_by_guest(monkeypatch, basename):
     value = prepared(monkeypatch)
-    valid = host_bind(value, "lhqcore-20261005c.lhfp")
+    valid = host_bind(value, "lhqcore-20261007a.lhfp")
     invalid = dict(valid, package_basename=basename)
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_BIND_PACKAGE"):
         bootstrap_fixture.b.validate_bind(invalid, bootstrap_fixture.b.encoded(value["hello"]))

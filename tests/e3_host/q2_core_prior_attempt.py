@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import re
 import os
 import stat
 import struct
@@ -53,12 +54,24 @@ ROLE_LIMITS = {"carrier-consumed.json": 16384, "stdout": 4112, "stderr": 4194304
                "capture-manifest.json": 262144, "acceptance-receipt.json": 65536}
 
 
+FOURTH_TOTAL_BYTES = 9071
+FOURTH_PINS = {'carrier-consumed.json': (3577, 'ac0314d584ce7dfdbe5892f779cfbc01a702459fb31ab539b2752f70c07f7deb'), 'stdout': (2852, 'ff0f1b11037028b766c6bf8d4b6623f84241541f9e9240bf1f90efe3c9d6f7e9'), 'stderr': (22, 'e1c59576e732df777e6542b880a21994430f06f72ca54d9a0319507d1126aa75'), 'capture-manifest.json': (1503, '44398704da222ff3d5200b53dfbc732c1ad23fa4b35bd4d75e4671c5b8d5b406'), 'acceptance-receipt.json': (1117, '184439515c226a8b108b270522800174a7adb476191a606a66b7d451c25e601c')}
+
+
 def profile(index):
-    require(type(index) is int and index in (0, 1, 2), "PROFILE")
+    require(type(index) is int and index in (0, 1, 2, 3), "PROFILE")
     if index == 0:
         return dict(session=SESSION, unit=UNIT, implementation=IMPLEMENTATION, pins=PINS,
             total=TOTAL_BYTES, package_sha=PACKAGE_SHA, manifest_sha=MANIFEST_SHA,
             package_bytes=18111397, bootstrap_sha=BOOTSTRAP_SHA, sent=False, status=255)
+    if index == 3:
+        return dict(session='lhqcore-20261005c', unit='lhqcore20261005c-carrier.service',
+            implementation=dict(commit='657b1bcd749cb4281b0193b2bc9430b0662faf98',
+                tree='4bb00b2e9ccbec3c43160159811e51eec76702cd'), pins=FOURTH_PINS,
+            total=FOURTH_TOTAL_BYTES, package_bytes=18193664, sent=True, status=3,
+            package_sha='0acdfcaad942191b85f9bf24832c08d2c344fee3fe392a41d376a84ec2271184',
+            manifest_sha='28cc514a5c622720744dc7633520c2ee326b7a5681276bfbaebb975f882264db',
+            bootstrap_sha='7e2d08800951528c81f9078eb772cc4937dc76a3fd1ed7a1ccadde2a12a23cf5')
     if index == 2:
         return dict(session="lhqcore-20261005b", unit="lhqcore20261005b-carrier.service",
             implementation=dict(commit="8704a24b6c3c79ce4a36028ae2182dec2a35843e",
@@ -122,7 +135,7 @@ def _read_pins(directory_fd, anchor, call, pins, name, limits, seen, *, absent=N
                 return identity(info) + (info.st_size, info.st_blocks, info.st_atime_ns,
                                           info.st_mtime_ns, info.st_ctime_ns)
             require(stable(before) == stable(after) == stable(named)
-                    and len(raw) == size and c.sha256(raw) == digest, "READ_PIN")
+                    and len(raw) == size and (digest is None or c.sha256(raw) == digest), "READ_PIN")
             files[name(suffix)] = raw
         finally:
             for held in opened:
@@ -151,7 +164,7 @@ def read_files(directory_fd, anchor, call, *, index=0, _seen=None):
 def read_all_files(directory_fd, anchor, call, *, _seen=None):
     seen = set() if _seen is None else _seen
     files = {}
-    for index in (0, 1, 2):
+    for index in (0, 1, 2, 3):
         files.update(read_files(directory_fd, anchor, call, index=index, _seen=seen))
     build_all(files)
     return files
@@ -216,14 +229,14 @@ def validate(value, *, index=0):
 
 
 def build_all(raw_files):
-    c.exact(raw_files, {basename(suffix, index) for index in (0, 1, 2)
+    c.exact(raw_files, {basename(suffix, index) for index in (0, 1, 2, 3)
                        for suffix in profile(index)['pins']}, 'CORE_PRIOR_ALL_FILES')
     return [build({basename(suffix, index): raw_files[basename(suffix, index)]
-                   for suffix in profile(index)['pins']}, index=index) for index in (0, 1, 2)]
+                   for suffix in profile(index)['pins']}, index=index) for index in (0, 1, 2, 3)]
 
 
 def validate_all(values):
-    require(type(values) is list and len(values) == 3, 'TRIPLE')
+    require(type(values) is list and len(values) == 4, 'FOUR')
     return [validate(value, index=index) for index, value in enumerate(values)]
 
 
@@ -252,6 +265,10 @@ def _records(raw_files, *, index):
         require(marker['approved_inputs_sha256'] ==
             '5bcbf535f6c8d0d2c974756af6815ba95a03da7fadc31c97a0622cdeeaf4846e'
             and raw_files['stderr'] == b'CORE_ADMIT_SUDO_OUTPUT\n', 'SECOND_FAILURE')
+    if index == 3:
+        require(marker['approved_inputs_sha256'] ==
+            '169c6e8cef5a3d6ee94d7cf433996016710b5e5613a7158e57875baad09ee793'
+            and raw_files['stderr'] == b'CORE_CAP_INSUFFICIENT\n', 'FOURTH_FAILURE')
     if index == 2:
         require(marker['approved_inputs_sha256'] ==
             '5d227ecbef0eb0b72a3c5ddee998c1505b88ddf70d3c3c506e262144c25198da'
@@ -279,7 +296,7 @@ def _records(raw_files, *, index):
         sha256=marker_sha), "CONSUMPTION")
     require(capture["consumption_sha256"] == marker_sha, "CAPTURE_MARKER")
     require(receipt["transport"] == dict(execve_succeeded=True, hello_valid=True, bind_written=fixed['sent'],
-        package_written=fixed['sent'], stdin_bytes_written=(0, 18150763, 18174538)[index],
+        package_written=fixed['sent'], stdin_bytes_written=(0, 18150763, 18174538, 18194592)[index],
         stdin_eof=fixed['sent']), "TRANSPORT")
     require(receipt["wait"] == dict(status=fixed['status'], stdout_eof=fixed['sent'],
         stderr_eof=fixed['sent'], host_deadline_met=fixed['sent'])
@@ -416,36 +433,33 @@ def read_diagnostic_files(directory_fd, anchor, call, *, _seen):
 def _capacity_rows(prior, diagnostic):
     validate_all(prior)
     validate_diagnostic(diagnostic)
-    rows = [commitment(value, index=index) for index, value in enumerate(prior)]
-    return [dict(session_id=row['session_id'], bytes=row['host_capture_bytes'],
-                 inodes=row['host_capture_inodes']) for row in rows] + [
-        dict(session_id=diagnostic['session_id'], bytes=diagnostic['host_capture_bytes'],
-             inodes=diagnostic['host_capture_inodes']),
-        dict(session_id=c.SESSION_ID, bytes=c.LIMITS['host_capture_bytes'],
+    return [dict(session_id='lhqjgrow-20261006a',bytes=1296*1048576,inodes=370),
+        dict(session_id=c.SESSION_ID,bytes=c.LIMITS['host_capture_bytes'],
              inodes=c.LIMITS['host_capture_inodes'])]
 
 
-def _capacity_record(binding, prior, diagnostic, implementation, origins, observation, capacity):
-    return dict(schema='local-hand-q2-core-host-capacity-condition/v3',
-        scope=c.POST_LOCALE_SCOPE, session_id=c.SESSION_ID,
+def _capacity_record(binding, prior, diagnostic, journal, implementation, origins, observation, capacity, device_capacity):
+    return dict(schema='local-hand-q2-core-host-capacity-condition/v4',
+        scope=c.MINIMAL_SCOPE, session_id=c.SESSION_ID,
         implementation=copy.deepcopy(implementation),
         local_management_binding_sha256=c.sha256(c.canonical(binding, newline=True)),
         prior_attempts_sha256=c.sha256(c.canonical(prior)), origins=dict(origins),
         diagnostic_retention_sha256=c.sha256(c.canonical(diagnostic)),
+        journal_transition_sha256=c.sha256(c.canonical(journal)),
         observation=observation, dev=binding['anchor']['dev'],
-        known_commitments=_capacity_rows(prior, diagnostic), capacity=capacity,
+        known_commitments=_capacity_rows(prior, diagnostic), capacity=capacity,device_capacity=device_capacity,
         earlier_host_obligations=dict(coverage='UNKNOWN', bytes=None, inodes=None, shared_pool='UNKNOWN'),
         complete_host_admission_proven=False, exclusive_reservation_proven=False,
         released_bytes=0, released_inodes=0)
 
 
-def validate_capacity_condition(value, *, binding, prior, diagnostic, implementation, origins):
+def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, implementation, origins):
     """Validate the original live record, never resample or infer a new success."""
     c.exact(implementation, {'commit', 'tree'}, 'CORE_HOST_CAPACITY_IMPLEMENTATION')
     for identity in implementation.values(): c.commit(identity)
     c.exact(value, {'schema', 'scope', 'session_id', 'implementation',
-        'local_management_binding_sha256', 'prior_attempts_sha256', 'diagnostic_retention_sha256', 'origins', 'observation',
-        'dev', 'known_commitments', 'capacity', 'earlier_host_obligations',
+        'local_management_binding_sha256', 'prior_attempts_sha256', 'diagnostic_retention_sha256', 'journal_transition_sha256', 'origins', 'observation',
+        'dev', 'known_commitments', 'capacity', 'device_capacity', 'earlier_host_obligations',
         'complete_host_admission_proven', 'exclusive_reservation_proven',
         'released_bytes', 'released_inodes'}, 'CORE_HOST_CAPACITY_FIELDS')
     c.exact(origins, {'host_' + clock + '_' + point + '_ns'
@@ -460,25 +474,39 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, implementa
         require(end == origin + 900_000_000_000
                 and origin <= value['observation']['before'][clock + '_ns']
                 <= value['observation']['after'][clock + '_ns'] < end, 'HOST_CAPACITY_CLOCK')
+    validate_journal_transition(journal,priors=prior,implementation=implementation)
     capacity = value['capacity']
     c.exact(capacity, {'frsize', 'blocks_available', 'bytes_available', 'inodes_available',
                       'required_bytes', 'required_inodes'}, 'CORE_HOST_CAPACITY_FIELDS')
     require(all(type(number) is int and number >= 0 for number in capacity.values())
             and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
     rows = _capacity_rows(prior, diagnostic)
-    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 272629760
-            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 72
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 1426063360
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 386
             and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
             'HOST_CAPACITY_ARITHMETIC')
     require(capacity['bytes_available'] >= capacity['required_bytes']
             and capacity['inodes_available'] >= capacity['required_inodes'], 'HOST_CAPACITY_FLOOR')
-    expected = _capacity_record(binding, prior, diagnostic, implementation, origins, value['observation'], capacity)
+    expected_devices=sorted({binding['anchor']['dev'],*(row[0] for row in journal['image_identities'].values())})
+    devices=value['device_capacity']
+    require(type(devices) is list and [row.get('dev') for row in devices]==expected_devices,'HOST_CAPACITY_DEVICES')
+    for row in devices:
+        c.exact(row,{'dev','capacity'},'CORE_HOST_CAPACITY_DEVICE_FIELDS');c.integer(row['dev'])
+        usage=c.exact(row['capacity'],set(capacity),'CORE_HOST_CAPACITY_FIELDS')
+        require(all(type(x) is int and x>=0 for x in usage.values()) and usage['frsize']>0
+            and usage['bytes_available']==usage['frsize']*usage['blocks_available']
+            and usage['required_bytes']==1426063360 and usage['required_inodes']==386
+            and usage['bytes_available']>=usage['required_bytes']
+            and usage['inodes_available']>=usage['required_inodes'],'HOST_CAPACITY_DEVICE_FLOOR')
+    require(next(row['capacity'] for row in devices if row['dev']==binding['anchor']['dev'])==capacity,
+            'HOST_CAPACITY_DEVICE_BINDING')
+    expected = _capacity_record(binding, prior, diagnostic, journal, implementation, origins, value['observation'], capacity, devices)
     # Canonical equality also rejects bool-as-int, null-as-zero and extra keys.
     require(c.canonical(value) == c.canonical(expected), 'HOST_CAPACITY_BINDING')
     return value
 
 
-def observe_capture_condition(directory_fd, *, binding, prior, diagnostic, implementation, deadline, writer_observer):
+def observe_capture_condition(directory_fd, *, binding, prior, diagnostic, journal, journal_files, implementation, deadline, writer_observer):
     """One fstatvfs in the original caller, bracketed by full anchor/writer checks."""
     anchor = binding['anchor']
     c.exact(anchor, {'path', 'dev', 'ino', 'mode', 'uid', 'gid', 'nlink'})
@@ -501,21 +529,351 @@ def observe_capture_condition(directory_fd, *, binding, prior, diagnostic, imple
         deadline.check()
     # Validate the fixed prior relation before starting any resource observation.
     rows = _capacity_rows(prior, diagnostic)
+    validate_journal_transition(journal,priors=prior,implementation=implementation)
+    from . import q2_journal_growth as maintenance
+    marker=c.document(journal_files['.'+JOURNAL_SESSION+'.consumed.json'],limit=65536,newline=True)
+    require(c.sha256(maintenance.canonical(marker['manifest']))==journal['manifest_sha256'],
+            'HOST_CAPACITY_JOURNAL_BINDING')
     context()
     before = deadline.check()
-    usage = call(os.fstatvfs, directory_fd)
-    after = deadline.check()
-    context()
-    frsize, blocks, inodes = (getattr(usage, key, None) for key in ('f_frsize', 'f_bavail', 'f_favail'))
-    require(all(type(v) is int and v >= 0 for v in (frsize, blocks, inodes))
-            and frsize > 0, 'HOST_CAPACITY_UNKNOWN')
-    value = _capacity_record(binding, prior, diagnostic, implementation, deadline.origins,
-        dict(before=dict(zip(('boottime_ns', 'monotonic_ns'), before)),
-             after=dict(zip(('boottime_ns', 'monotonic_ns'), after))),
-        dict(frsize=frsize, blocks_available=blocks, bytes_available=blocks * frsize,
-             inodes_available=inodes, required_bytes=sum(row['bytes'] for row in rows),
-             required_inodes=sum(row['inodes'] for row in rows)))
-    validate_capacity_condition(value, binding=binding, prior=prior, diagnostic=diagnostic,
+    images=maintenance.ImageSet(directory_fd,anchor['path'],marker['manifest']['restart_argv'],deadline.check)
+    try:
+        require(c.canonical(images.image_keys())==c.canonical(journal['image_identities']),'HOST_CAPACITY_IMAGE_DRIFT')
+        grouped={anchor['dev']:directory_fd}
+        for role,fd in images.fds.items():grouped.setdefault(journal['image_identities'][role][0],fd)
+        devices=[]
+        for dev,fd in sorted(grouped.items()):
+            usage=call(os.fstatvfs,fd)
+            frsize,blocks,inodes=(getattr(usage,key,None) for key in ('f_frsize','f_bavail','f_favail'))
+            require(all(type(v) is int and v>=0 for v in (frsize,blocks,inodes))
+                and frsize>0,'HOST_CAPACITY_UNKNOWN')
+            devices.append(dict(dev=dev,capacity=dict(frsize=frsize,blocks_available=blocks,
+                bytes_available=blocks*frsize,inodes_available=inodes,
+                required_bytes=sum(row['bytes'] for row in rows),required_inodes=sum(row['inodes'] for row in rows))))
+        images.recheck()
+        after=deadline.check();context()
+    finally:images.close()
+    capacity=next(row['capacity'] for row in devices if row['dev']==anchor['dev'])
+    value=_capacity_record(binding,prior,diagnostic,journal,implementation,deadline.origins,
+        dict(before=dict(zip(('boottime_ns','monotonic_ns'),before)),
+            after=dict(zip(('boottime_ns','monotonic_ns'),after))),capacity,devices)
+    validate_capacity_condition(value, binding=binding, prior=prior, diagnostic=diagnostic, journal=journal,
                                 implementation=implementation, origins=deadline.origins)
     deadline.check()
+    return value
+
+
+# Fixed K2 originals; no capture or maintenance command is executed here.
+JOURNAL_SESSION = 'lhqjgrow-20261006a'
+JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
+    'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
+    'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
+JOURNAL_SOURCE_NAMES = ('q2_journal_growth.py', 'q2_journal_growth_guest.py',
+    'q2_core_capacity_capture.py', 'q2_core_capacity_reader.py', 'q2_sshd_source_capture.py',
+    'q2_sshd_source_reader.py', 'q2_core_obligation_inputs.py', 'q2_core_prior_attempt.py',
+    'q2_core_delivery_contract.py', 'q2_local_source_delivery.py', 'q2_core_approved_inputs.py',
+    'q2_host_kernel_facts.py')
+
+
+CAPACITY_DIAGNOSTIC_PINS = {
+    'consumed.json':(939,'537f3f93f47034ae253c735052cbae443eea3aa3f775849698830e4b26cec9ff'),
+    'stdout':(3609,'00cc8b744b8d63bf7d83a4044921fc1a80b7a21b289cf62b4e6f33cd9548b8db'),
+    'stderr':(0,'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'),
+    'receipt.json':(1807,'575e74006d530fd562a67d66d5ce066a8e941d914da1f84bec2eb839b7ee4270')}
+
+
+def read_capacity_diagnostic(directory_fd,anchor,call,*,_seen):
+    return _read_pins(directory_fd,anchor,call,CAPACITY_DIAGNOSTIC_PINS,
+        lambda name:'.lhqcap-20261006a.'+name,
+        {name:size for name,(size,_) in CAPACITY_DIAGNOSTIC_PINS.items()},_seen)
+
+
+def read_journal_files(directory_fd, anchor, call, *, _seen=None):
+    return _read_pins(directory_fd, anchor, call,
+        {name: (None, None) for name in JOURNAL_FILES},
+        lambda suffix: '.' + JOURNAL_SESSION + '.' + suffix, JOURNAL_FILES,
+        set() if _seen is None else _seen)
+
+
+def build_journal_transition(files, *, implementation, sources, frozen, priors):
+    """Consume all K2 originals and fixed inputs before projecting a new boot.
+
+    The source-aware freezer separately ties `sources` to implementation Git
+    blobs. Guest checks this bounded projection, not unseen original files.
+    """
+    from . import q2_journal_growth as h
+    from . import q2_journal_growth_guest as g
+    c.exact(sources, JOURNAL_SOURCE_NAMES, 'CORE_JOURNAL_SOURCE_SET')
+    c.exact(files, {'.' + JOURNAL_SESSION + '.' + name for name in JOURNAL_FILES}, 'CORE_JOURNAL_FILES')
+    raw = {name: files['.' + JOURNAL_SESSION + '.' + name] for name in JOURNAL_FILES}
+    for name, data in raw.items():
+        require(type(data) is bytes and len(data) <= JOURNAL_FILES[name], 'JOURNAL_LIMIT')
+    parse = lambda data, limit: c.document(data, limit=limit, newline=True)
+    marker = parse(raw['consumed.json'], 65536)
+    receipt = parse(raw['receipt.json'], 65536)
+    c.exact(receipt, {'schema','R','A','C','D','session','nonce','access_mode',
+        'host_writer_observation','continuous_exclusion_proven','manifest_sha256',
+        'clock_origins_ns','state','reason','last_step','started','marker_created','ssh_requests',
+        'business_cases','remote_exit','production_supported','old_commitments_refunded',
+        'exclusive_reservation_proven','original_boot_id','new_boot_id','post_transport',
+        'transports','new_vm','image_identities','processes','serial_capture','kernel_report',
+        'budget','management_usage'}, 'CORE_JOURNAL_RECEIPT_FIELDS')
+    require(receipt['serial_capture']=='NOT_CAPTURED_NULL_BACKEND','JOURNAL_SERIAL')
+    usage=receipt['management_usage'];c.exact(usage,{'cpu_nanoseconds','rss_peak_bytes'},'CORE_JOURNAL_USAGE')
+    c.integer(usage['cpu_nanoseconds'],1,120000000000);c.integer(usage['rss_peak_bytes'],1,536870912)
+    budget=receipt['budget'];c.exact(budget,{'logical_bytes','allocated_bytes','inodes'},'CORE_JOURNAL_BUDGET')
+    c.integer(budget['logical_bytes'],1,8388608);c.integer(budget['allocated_bytes'],1,8388608)
+    c.integer(budget['inodes'],7,32)
+    c.exact(marker, {'manifest_sha256', 'manifest', 'nonce', 'clocks', 'session', 'D',
+        'access_mode', 'host_writer_observation', 'continuous_exclusion_proven',
+        'pre_command_sha256', 'post_command_derivation', 'pre_description'}, 'CORE_JOURNAL_MARKER')
+    manifest = marker['manifest']
+    c.exact(manifest, {'schema','R','A','C','D','nonce','access_mode','host_writer_observation',
+        'continuous_exclusion_proven','historical_authority','inputs','window_binding',
+        'inventory_sha256','retained_sha256','sources','tools','vm','image_identities',
+        'original_argv','restart_argv','image_commands','protocol'}, 'CORE_JOURNAL_MANIFEST')
+    c.exact(frozen['capacity_files'],{'.lhqcap-20261006a.'+name for name in CAPACITY_DIAGNOSTIC_PINS},
+        'CORE_JOURNAL_CAPACITY_ORIGINALS')
+    for name,(size,digest) in CAPACITY_DIAGNOSTIC_PINS.items():
+        data=frozen['capacity_files']['.lhqcap-20261006a.'+name]
+        require(type(data) is bytes and (len(data),c.sha256(data))==(size,digest),'JOURNAL_CAPACITY_PIN')
+    saved=h.prior.validate_result(frozen['capacity_files']['.lhqcap-20261006a.stdout'],
+        c.sha256(sources['q2_core_capacity_reader.py']),frozen['description'])['rows']
+    require(saved==frozen['saved_rows'],'JOURNAL_SAVED_ROWS')
+    expected_authority = dict(R=h.R, A=c.MINIMAL_BASELINE['commit'], C=c.MINIMAL_CLOSURE['commit'])
+    require(manifest['schema'] == 'lhq-journal-growth-manifest/v2'
+        and receipt['schema'] == 'lhq-journal-growth-receipt/v2', 'JOURNAL_SCHEMA')
+    for value in (manifest, receipt):
+        require({key:value[key] for key in expected_authority} == expected_authority, 'JOURNAL_AUTHORITY')
+    for value in (manifest, marker, receipt):
+        require(value['D'] == implementation['commit'] and value['nonce'] == marker['nonce']
+            and value['access_mode'] == 'TRUSTED_SINGLE_ADMIN'
+            and value['host_writer_observation'] == 'NOT_PERFORMED'
+            and value['continuous_exclusion_proven'] is False, 'JOURNAL_BINDING')
+    require(marker['session'] == receipt['session'] == JOURNAL_SESSION
+        and marker['manifest_sha256'] == receipt['manifest_sha256'] == c.sha256(h.canonical(manifest))
+        and marker['clocks'] == manifest['window_binding']['origins'] == receipt['clock_origins_ns'],
+        'JOURNAL_MARKER_BINDING')
+    c.digest(marker['nonce'])
+    h.make_preflight(implementation['commit'],marker['manifest_sha256'],
+        manifest['window_binding'],marker['nonce'],usage)
+    require(manifest['historical_authority']==dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A)
+        and manifest['protocol']=='two fixed phases; post bound to the durably saved pre report; no probe or retry'
+        and marker['post_command_derivation']=='same fixed sources; post descriptor bound to saved canonical pre report',
+        'JOURNAL_PROTOCOL')
+    c.digest(manifest['retained_sha256'])
+    require(manifest['inputs'] == frozen['source_binding']
+        and manifest['inventory_sha256'] == c.sha256(h.canonical(frozen['inventory']))
+        and manifest['sources'] == {name:dict(bytes=len(data),sha256=c.sha256(data))
+            for name,data in sources.items()}, 'JOURNAL_INPUT_SOURCE')
+    require(receipt['state'] == 'VERIFIED' and receipt['reason'] == 'MAINTENANCE_COMPLETE'
+        and receipt['last_step'] == 'VERIFIED' and receipt['started'] == sorted(h.STATES[1:])
+        and receipt['marker_created'] is True and type(receipt['ssh_requests']) is int
+        and receipt['ssh_requests'] == 2 and type(receipt['business_cases']) is int
+        and receipt['business_cases'] == 0 and receipt['remote_exit'] == 'HELPER_REPORTED_COMPLETE'
+        and receipt['production_supported'] is receipt['old_commitments_refunded']
+        is receipt['exclusive_reservation_proven'] is False, 'JOURNAL_RECEIPT')
+    events = [parse(line + b'\n',65536) for line in raw['events.jsonl'].splitlines()]
+    starts = [row.get('step') for row in events if row.get('state') == 'STARTED']
+    require(starts == ['CONSUMED','GUEST_QUIET','POWERED_OFF','POWER_OFF_TOKEN',
+        'BACKED_UP','IMAGE_GROWN','BOOTED','FILESYSTEM_GROWN','VERIFIED'], 'JOURNAL_ORDER')
+    returns = [row for row in events if row.get('state') == 'RETURNED']
+    require([row.get('step') for row in returns] == list(h.STATES[1:]), 'JOURNAL_RETURN_ORDER')
+    # Exactly sixteen ordered step records, two phase bindings and one poweroff token.
+    expected_steps = []
+    for step in h.STATES[1:]:
+        expected_steps.append((step,'STARTED'))
+        if step == 'POWERED_OFF': expected_steps.append(('POWER_OFF_TOKEN','STARTED'))
+        expected_steps.append((step,'RETURNED'))
+    require([(row['step'],row['state']) for row in events if 'step' in row] == expected_steps,
+        'JOURNAL_STEP_SEQUENCE')
+    phases=[row for row in events if 'phase' in row]
+    require([row.get('phase') for row in phases] == ['pre','post'] and len(events) == 19,
+        'JOURNAL_EVENT_COUNT')
+    results = {row['step']:row['result'] for row in returns}
+    for row in returns: c.exact(row, {'step','state','result'}, 'CORE_JOURNAL_EVENT')
+    require(results['CONSUMED']==dict(manifest_sha256=marker['manifest_sha256']), 'JOURNAL_CONSUMED')
+    for row in events:
+        if row.get('state')=='STARTED':
+            c.exact(row, {'step','state','pre_report_sha256'} if row['step']=='POWER_OFF_TOKEN'
+                else {'step','state'}, 'CORE_JOURNAL_STARTED')
+        elif 'phase' in row:
+            c.exact(row, {'phase','argv_sha256','description_sha256'}, 'CORE_JOURNAL_PHASE')
+    pre_lines=raw['pre.stdout'].splitlines(keepends=True)
+    require(len(pre_lines) == 2, 'JOURNAL_PRE_STREAM')
+    pre=parse(pre_lines[0],1048576); ack=parse(pre_lines[1],1048576)
+    post=parse(raw['post.stdout'],1048576)
+    desc=marker['pre_description']; g.descriptor(h.canonical(desc))
+    require(desc['source_binding_sha256'] == c.sha256(h.canonical(frozen['source_binding']))
+        and desc['saved_rows'] == frozen['saved_rows'] and desc['paths'] == frozen['paths']
+        and desc['original_boot_id'] == frozen['boot_id'] and desc['nonce'] == marker['nonce'],
+        'JOURNAL_DESCRIPTION')
+    g.validate_pre_report(pre,desc)
+    post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=c.sha256(h.canonical(pre)))
+    g.validate_post_report(post,post_desc)
+    require(results['GUEST_QUIET'] == pre and results['FILESYSTEM_GROWN'] == post
+        and receipt['original_boot_id'] == pre['boot_id'] and receipt['new_boot_id'] == post['boot_id'],
+        'JOURNAL_REPORT_BINDING')
+    require(ack == dict(schema=g.REPORT_SCHEMA,session=JOURNAL_SESSION,status='POWER_OFF_REQUESTED',
+        nonce=marker['nonce'],pre_report_sha256=c.sha256(h.canonical(pre))), 'JOURNAL_POWEROFF_ACK')
+    transports=(results['POWERED_OFF']['transport'],receipt['post_transport'])
+    require(len(receipt['transports']) == 2, 'JOURNAL_TRANSPORTS')
+    for index,(phase,transport) in enumerate(zip(('pre','post'),transports)):
+        require(type(transport['returncode']) is int
+            and transport['returncode'] in ((0,255) if phase=='pre' else (0,))
+            and transport['eof'] == dict(stdout=True,stderr=True)
+            and all(type(v) is bool for v in transport['eof'].values())
+            and receipt['transports'][index]['exit'] == transport['returncode'], 'JOURNAL_EXIT')
+        pins={stream:dict(bytes=len(raw[phase+'.'+stream]),sha256=c.sha256(raw[phase+'.'+stream]))
+            for stream in ('stdout','stderr')}
+        require(transport['files'] == receipt['transports'][index]['files'] == pins, 'JOURNAL_STREAM_PIN')
+    require(transports[0]['ack'] == ack and transports[1]['ack'] is None
+        and results['POWERED_OFF']['pidfd_exit'] is True, 'JOURNAL_TARGET_EXIT')
+    # Original start.sh is pinned by qemu_argv; only the new pidfile and null serial differ.
+    original,restart=manifest['original_argv'],manifest['restart_argv']
+    require(type(original) is list and type(restart) is list and len(original) == len(restart)
+        and all(type(word) is str for word in original+restart)
+        and original.count('-pidfile') == original.count('-serial') == 1, 'JOURNAL_ARGV')
+    pi,si=original.index('-pidfile')+1,original.index('-serial')+1
+    from pathlib import PurePosixPath
+    anchor=str(PurePosixPath(original[pi]).parent)
+    require(original[pi] == anchor+'/vm.pid' and original[si].startswith('file:')
+        and restart[pi] == anchor+'/.lhqjgrow-20261006a.vm.pid' and restart[si] == 'null'
+        and [i for i,(a,b) in enumerate(zip(original,restart)) if a!=b] == sorted((pi,si)),
+        'JOURNAL_RESTART_ARGV')
+    # Reconstruct the expected original argv from the protected fixed input start script.
+    require((original,restart) == h.qemu_argv(frozen['start_raw'],anchor,original[si][5:]),
+        'JOURNAL_ORIGINAL_START')
+    for phase,phase_desc,row in zip(('pre','post'),(desc,post_desc),phases):
+        argv=h.remote_argv(anchor,sources,phase_desc)
+        require(row==dict(phase=phase,argv_sha256=c.sha256(h.canonical(argv)),
+            description_sha256=c.sha256(h.canonical(phase_desc))), 'JOURNAL_PHASE_BINDING')
+    require(marker['pre_command_sha256']==phases[0]['argv_sha256']
+        and next(row for row in events if row.get('step')=='POWER_OFF_TOKEN')['pre_report_sha256']
+            ==c.sha256(h.canonical(pre)), 'JOURNAL_POWER_TOKEN')
+    old,new=manifest['vm'],receipt['new_vm']
+    for value,argv in ((old,original),(new,restart)):
+        c.exact(value, {'pid','starttime','argv_sha256'}, 'CORE_JOURNAL_VM')
+        c.integer(value['pid'],2);c.integer(value['starttime'],1)
+        require(value['argv_sha256'] == c.sha256(b'\0'.join(word.encode('ascii') for word in argv)+b'\0'),
+            'JOURNAL_VM_ARGV')
+    require(raw['vm.pid'].strip() == str(new['pid']).encode('ascii')
+        and results['BOOTED']['process'] == new and results['BOOTED']['returncode'] == 0
+        and results['BOOTED']['passive_wait_seconds'] == 60
+        and receipt['image_identities'] == manifest['image_identities'], 'JOURNAL_NEW_VM')
+    for stage,size in (('POWERED_OFF',268435456),('IMAGE_GROWN',536870912)):
+        image=results[stage]['image'] if stage=='POWERED_OFF' else results[stage]
+        h.validate_image_info(h.canonical(image['info']),size)
+        require(all(image['check'].get(key,0)==0 for key in ('check-errors','corruptions','leaks'))
+            and image['check_returncode']==0 and image['check_eof']==dict(stdout=True,stderr=True),
+            'JOURNAL_IMAGE_CHECK')
+    require(results['IMAGE_GROWN']['logical_compare']==dict(returncode=0,eof=dict(stdout=True,stderr=True)),
+        'JOURNAL_LOGICAL_CONTENT')
+    verified=results['VERIFIED']
+    comparison=h.prior.compare(dict(rows=post['rows']),frozen['horizon'])
+    require(verified==dict(comparison=comparison,tree=post['tree'],rows=post['rows'])
+        and all(row[field]['deficit']==0 for row in comparison['pools'] for field in ('bytes','inodes')),
+        'JOURNAL_CAPACITY')
+    for process in receipt['processes']:
+        require(type(process['vm']) is bool and type(process['exit']) is int and process['exit']==0,
+            'JOURNAL_PROCESS_EXIT')
+    backup=results['BACKED_UP'];c.exact(backup,{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
+    c.integer(backup['bytes'],1,320*1048576);c.digest(backup['sha256'])
+    journal=next(row for row in post['rows'] if row['role']=='journal')
+    value=dict(schema='local-hand-q2-core-journal-transition/v1', authority=expected_authority,
+        implementation=copy.deepcopy(implementation), session=JOURNAL_SESSION, nonce=marker['nonce'],
+        access_mode='TRUSTED_SINGLE_ADMIN',host_writer_observation='NOT_PERFORMED',
+        continuous_exclusion_proven=False, input_sha256=desc['source_binding_sha256'],
+        manifest_sha256=marker['manifest_sha256'], source_files=manifest['sources'],
+        originals=[dict(basename='.'+JOURNAL_SESSION+'.'+name,bytes=len(data),sha256=c.sha256(data))
+            for name,data in sorted(raw.items())],
+        old_boot_id=pre['boot_id'],new_boot_id=post['boot_id'],
+        old_vm=old,new_vm=new,image_identities=manifest['image_identities'],old_pidfd_exited=True,
+        original_argv_sha256=c.sha256(h.canonical(original)),restart_argv_sha256=c.sha256(h.canonical(restart)),
+        backup=backup,virtual_bytes=dict(before=268435456,after=536870912),
+        filesystem=dict(uuid=journal['filesystem']['uuid'],before_bytes=pre['journal_device']['superblock']['filesystem_bytes'],
+            after_bytes=post['journal_device']['superblock']['filesystem_bytes'],available=journal['available']),
+        content={key:post['tree'][key] for key in ('entries','content_bytes','sha256')},
+        reports={phase:dict(bytes=len(h.canonical(report)),sha256=c.sha256(h.canonical(report)))
+            for phase,report in (('pre',pre),('post',post))},
+        completed_steps=list(h.STATES[1:]),transport_exits=[item['returncode'] for item in transports],
+        image_checks=[results['POWERED_OFF']['image']['check_returncode'],results['IMAGE_GROWN']['check_returncode']],
+        logical_compare_exit=results['IMAGE_GROWN']['logical_compare']['returncode'],
+        resize_exit=post['resize_result']['returncode'], all_streams_eof=True,
+        historical_exit='UNKNOWN', old_commitments_refunded=False)
+    validate_journal_transition(value, priors=priors, implementation=implementation)
+    return value
+
+
+def validate_journal_transition(value, *, priors, implementation, current_boot=None):
+    """Check the fixed host-verified projection; this does not reread host originals."""
+    c.exact(value, {'schema','authority','implementation','session','nonce','access_mode',
+        'host_writer_observation','continuous_exclusion_proven','input_sha256','manifest_sha256',
+        'source_files','originals','old_boot_id','new_boot_id','old_vm','new_vm','image_identities',
+        'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
+        'filesystem','content','reports','completed_steps','transport_exits','image_checks',
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded'},
+        'CORE_JOURNAL_FIELDS')
+    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v1'
+        and value['session']=='lhqjgrow-20261006a', 'JOURNAL_SCHEMA')
+    require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
+        A='5d6cefa602e9146f02887ebfaa4b0cad4e376ff2',C='8a4c24cefe4abbab193577b2dff48fc49626cae4')
+        and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
+    c.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
+    for item in implementation.values(): c.commit(item)
+    require(value['access_mode']=='TRUSTED_SINGLE_ADMIN' and value['host_writer_observation']=='NOT_PERFORMED'
+        and value['continuous_exclusion_proven'] is value['old_commitments_refunded'] is False
+        and value['historical_exit']=='UNKNOWN', 'JOURNAL_ACCESS')
+    for key in ('nonce','input_sha256','manifest_sha256','original_argv_sha256','restart_argv_sha256'):
+        c.digest(value[key])
+    for key in ('old_boot_id','new_boot_id'):
+        require(type(value[key]) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',value[key]),
+            'JOURNAL_BOOT')
+    require(value['old_boot_id']!=value['new_boot_id']
+        and all(hello['guest_boot_id']==value['old_boot_id'] for hello in validate_all(priors))
+        and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
+    rows=value['originals']
+    require(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
+        == sorted('.lhqjgrow-20261006a.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+    for row in rows:
+        c.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
+        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261006a.'):]])
+        c.digest(row['sha256'])
+    c.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
+    for name,row in value['source_files'].items():
+        c.exact(row,{'bytes','sha256'},'CORE_JOURNAL_SOURCE')
+        c.integer(row['bytes'],1,98304 if name.startswith('q2_journal_growth') else 524288);c.digest(row['sha256'])
+    for key in ('old_vm','new_vm'):
+        row=value[key];c.exact(row,{'pid','starttime','argv_sha256'},'CORE_JOURNAL_VM')
+        c.integer(row['pid'],2);c.integer(row['starttime'],1);c.digest(row['argv_sha256'])
+    require(value['old_vm']!=value['new_vm'] and value['old_pidfd_exited'] is True,'JOURNAL_VM_EXIT')
+    images=value['image_identities'];c.exact(images,{'system','quota','journal','evidence','seed'},'CORE_JOURNAL_IMAGES')
+    for row in images.values():
+        require(type(row) in (list,tuple) and len(row)==2,'JOURNAL_IMAGE_IDENTITY')
+        c.integer(row[0]);c.integer(row[1],1)
+    require(len({tuple(row) for row in images.values()})==5,'JOURNAL_IMAGE_ALIAS')
+    c.exact(value['backup'],{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
+    c.integer(value['backup']['bytes'],1,335544320);c.digest(value['backup']['sha256'])
+    require(c.canonical(value['virtual_bytes'])==c.canonical(dict(before=268435456,after=536870912)),
+        'JOURNAL_SIZE')
+    fs=value['filesystem'];c.exact(fs,{'uuid','before_bytes','after_bytes','available'},'CORE_JOURNAL_FILESYSTEM')
+    require(type(fs['uuid']) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',fs['uuid']),
+        'JOURNAL_UUID')
+    require(type(fs['before_bytes']) is type(fs['after_bytes']) is int
+        and fs['before_bytes']==268435456 and fs['after_bytes']==536870912,'JOURNAL_FILESYSTEM_SIZE')
+    c.exact(fs['available'],{'bytes','inodes'},'CORE_JOURNAL_CAPACITY')
+    c.integer(fs['available']['bytes'],419430400);c.integer(fs['available']['inodes'],32768)
+    content=value['content'];c.exact(content,{'entries','content_bytes','sha256'},'CORE_JOURNAL_CONTENT')
+    c.integer(content['entries'],1,32768);c.integer(content['content_bytes'],0,268435456);c.digest(content['sha256'])
+    c.exact(value['reports'],{'pre','post'},'CORE_JOURNAL_REPORTS')
+    for row in value['reports'].values():
+        c.exact(row,{'bytes','sha256'},'CORE_JOURNAL_REPORT');c.integer(row['bytes'],1,1048576);c.digest(row['sha256'])
+    require(value['completed_steps']==['CONSUMED','GUEST_QUIET','POWERED_OFF','BACKED_UP','IMAGE_GROWN',
+        'BOOTED','FILESYSTEM_GROWN','VERIFIED'] and value['all_streams_eof'] is True,'JOURNAL_COMPLETION')
+    require(type(value['transport_exits']) is list and len(value['transport_exits'])==2
+        and all(type(v) is int for v in value['transport_exits'])
+        and value['transport_exits'][0] in (0,255) and value['transport_exits'][1]==0,'JOURNAL_TRANSPORT')
+    require(c.canonical(value['image_checks'])==b'[0,0]' and type(value['logical_compare_exit']) is int
+        and value['logical_compare_exit']==0 and type(value['resize_exit']) is int and value['resize_exit']==0,
+        'JOURNAL_CHECKS')
     return value

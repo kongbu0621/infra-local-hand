@@ -54,7 +54,7 @@ def hello(bootstrap_sha):
     }
 
 
-def package_fixture(monkeypatch):
+def package_fixture(monkeypatch, *, journal=False):
     # This fixture exercises independent framing/envelope validation. Historical
     # source reconstruction is covered by the approved-input module tests.
     monkeypatch.setattr(p, "_approved_module", lambda: SimpleNamespace(
@@ -64,6 +64,17 @@ def package_fixture(monkeypatch):
     approved_raw = p.c.canonical({"schema": p.c.APPROVED_INPUTS_SCHEMA, "scope": p.c.SCOPE,
         "amendment": amendment, **{key: {"test_fixture": True} for key in p.c.APPROVED_COMPONENTS}},
         newline=True)
+    if journal:
+        from core_prior_fixture import triple_fixture, journal_transition
+        from e3_host import q2_core_prior_attempt as prior_api
+        prior, _ = triple_fixture(monkeypatch)
+        value = p.c.document(approved_raw, limit=1048576, newline=True)
+        value['reconciliation'].update(prior_core_attempts=prior,
+            journal_transition=journal_transition(IMPLEMENTATION))
+        approved_raw = p.c.canonical(value, newline=True)
+        monkeypatch.setattr(p, '_approved_module', lambda: SimpleNamespace(
+            prior_attempt=prior_api, validate=lambda raw: p.c.validate_approved_inputs(
+                p.c.document(raw, limit=1048576, newline=True))))
     approved_row, approved_header = p.approved_input_member(approved_raw, amendment=amendment)
     loader = Path("tests/e3_host/q2_core_delivery_loader.py").read_bytes()
     bootstrap = Path("tests/e3_host/q2_core_delivery_bootstrap.py").read_bytes()
@@ -138,7 +149,7 @@ def input_stream(hello_value, package, *, trailing=b""):
     floor = (deadline - bind_at) // 1_000_000 * 1_000_000
     value = {"schema": b.BIND_SCHEMA, "scope": b.SCOPE, "session_id": b.SESSION_ID,
         "hello_sha256": b.sha(hello_raw), "consumption_sha256": "2" * 64,
-        "package_basename": "lhqcore-20261005c.lhfp", "package_bytes": len(package),
+        "package_basename": "lhqcore-20261007a.lhfp", "package_bytes": len(package),
         "package_sha256": b.sha(package), "host_boottime_origin_ns": origin,
         "host_monotonic_origin_ns": origin, "host_boottime_deadline_ns": deadline,
         "host_monotonic_deadline_ns": deadline, "host_boottime_bind_ns": bind_at,

@@ -64,9 +64,10 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                 "historical_capacity_obligations": {"synthetic": "obligations"},
                 "retained_preparation": {"synthetic": "retained"},
                 "reconciliation": {"synthetic": "reconciliation"}}
-    from core_prior_fixture import envelope
+    from core_prior_fixture import envelope, journal_transition
     prior, commitment = envelope()
     approved['reconciliation']['prior_core_attempts'] = prior
+    approved['reconciliation']['journal_transition']=journal_transition(implementation)
     approved['historical_capacity_obligations'].update(prior_commitments=commitment,
         snapshot_rows=[dict(commitment=dict(bytes=0, inodes=0)) for _ in d._CAP_SNAPSHOT_ROLES],
         delta_rows=[], configured_quota_rows=[])
@@ -101,7 +102,7 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                 "controller_parent_unit": "controller.slice", "management_parent_unit": "management.slice",
                 "supervisor_parent_unit": "supervisor.slice", "ordinary_parent_unit": "ordinary.slice",
                 "retained_ordinary_parent_path": "/sys/fs/cgroup/retained.slice",
-                "carrier_unit": "lhqcore20261005c-carrier.service"}
+                "carrier_unit": "lhqcore20261007a-carrier.service"}
     relation = {"schema": "local-hand-q2-core-locator-relation/v2",
                 "local_management_binding_sha256": entry["local_management_binding_sha256"],
                 "observation_record_sha256": locators["observation_record_sha256"],
@@ -117,7 +118,7 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
     guest_origin, host_origin = 1000 * d.NS, 2000 * d.NS
     hello = {"schema": d.HELLO_SCHEMA, "scope": d.SCOPE,
              "loader_sha256": entry["loader_sha256"], "bootstrap_sha256": entry["bootstrap_sha256"],
-             "guest_boot_id": "11111111-2222-3333-4444-555555555555",
+             "guest_boot_id": "22222222-2222-3333-4444-555555555555",
              "guest_boottime_origin_ns": guest_origin, "guest_monotonic_origin_ns": guest_origin + d.NS,
              "pid": 123, "uid": 0, "gid": 0, "euid": 0, "egid": 0, "remote_management": remote,
              "python": {key: remote["python"][key] for key in d.PROGRAM_FIELDS},
@@ -131,7 +132,7 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
                  "nofile_hard": 256, "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}}
     remaining = guest_duration_ns + 17 * d.NS
     bind = {"schema": "local-hand-q2-core-carrier-bind/v1", "scope": d.SCOPE, "session_id": d.SESSION,
-            "hello_sha256": "0" * 64, "consumption_sha256": "1" * 64, "package_basename": "lhqcore-20261005c.lhfp",
+            "hello_sha256": "0" * 64, "consumption_sha256": "1" * 64, "package_basename": "lhqcore-20261007a.lhfp",
             "package_bytes": 1, "package_sha256": "0" * 64,
             "host_boottime_origin_ns": host_origin, "host_monotonic_origin_ns": host_origin + d.NS,
             "host_boottime_deadline_ns": host_origin + 900 * d.NS,
@@ -257,6 +258,7 @@ def test_admission_binding_rejects_self_digest_missing_or_extra_fields():
 def _set_approved(value, artifact):
     artifact = copy.deepcopy(artifact)
     artifact["amendment"] = copy.deepcopy(value["manifest"]["amendment"])
+    artifact['reconciliation']['journal_transition']['implementation'] = copy.deepcopy(value['manifest']['implementation'])
     raw = d.canonical(artifact, newline=True)
     descriptor = {"path": d.APPROVED_INPUTS_PATH, "bytes": len(raw), "sha256": d._sha(raw),
                   "approved_source_relation_sha256": d._sha(d.canonical(artifact["source_relation"]))}

@@ -229,7 +229,7 @@ def remote_tokens(loader_raw, bootstrap_raw):
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C",
         "SYSTEMD_COLORS=0", "/usr/bin/systemd-run", "--system",
         "--no-ask-password", "--quiet", "--wait", "--pipe", "--collect",
-        "--service-type=exec", "--unit=lhqcore20261005c-carrier.service",
+        "--service-type=exec", "--unit=lhqcore20261007a-carrier.service",
         "--property=Restart=no", "--property=RuntimeMaxSec=800s",
         "--property=TimeoutStopSec=30s", "--property=KillMode=control-group",
         "--property=ExitType=cgroup", "--property=CPUQuota=100%",
@@ -662,7 +662,16 @@ def build_bind(hello, consumption_sha256, package_basename, package_raw, origins
         "guest_duration_cap_ns": GUEST_CAP_NS,
         "guest_duration_ns": min(mapped, GUEST_CAP_NS),
     }
-    return contract.validate_bind(value)
+    contract.validate_bind(value)
+    package_api = _helper("q2_core_delivery_package")
+    frozen_manifest, frozen_members = package_api.parse_package(package_raw)
+    approved = contract.document(frozen_members[frozen_manifest['approved_inputs']['path']],
+                                 limit=contract.APPROVED_INPUTS_LIMIT,newline=True)
+    package_api._approved_module().prior_attempt.validate_journal_transition(
+        approved['reconciliation']['journal_transition'],
+        priors=approved['reconciliation']['prior_core_attempts'],
+        implementation=frozen_manifest['implementation'],current_boot=hello['guest_boot_id'])
+    return value
 
 
 def frame(magic, value, *, json_limit):
@@ -1590,6 +1599,7 @@ def _validate_live_capacity(value, expected_context, capture):
     return prior_api.validate_capacity_condition(value, binding=binding,
         prior=approved['reconciliation']['prior_core_attempts'],
         diagnostic=approved['reconciliation']['prior_diagnostic_capture'],
+        journal=approved['reconciliation']['journal_transition'],
         implementation=manifest['implementation'], origins=capture.deadline.origins)
 
 
@@ -1763,17 +1773,23 @@ def read_prior_originals(directory_fd, anchor, approved, deadline):
     require(contract.canonical(prior_api.build_diagnostic(diagnostic_files)) == contract.canonical(
         approved['reconciliation']['prior_diagnostic_capture']), 'CORE_DELIVERY_DIAGNOSTIC_SOURCE_BINDING')
     deadline.check()
-    return files, diagnostic_files
+    journal_files = prior_api.read_journal_files(directory_fd,anchor,deadline.call,_seen=seen)
+    transition = approved['reconciliation']['journal_transition']
+    require(transition['originals'] == [dict(basename=name,bytes=len(raw),sha256=contract.sha256(raw))
+        for name,raw in sorted(journal_files.items())], 'CORE_DELIVERY_JOURNAL_SOURCE_BINDING')
+    prior_api.read_capacity_diagnostic(directory_fd,anchor,deadline.call,_seen=seen)
+    return files, diagnostic_files, journal_files
 
 
 def verify_prior_originals(directory_fd, binding, approved, deadline, *, implementation):
     """Same pre-marker source binding followed by the sole capacity observation."""
-    read_prior_originals(directory_fd, binding['anchor'], approved, deadline)
+    _,_,journal_files=read_prior_originals(directory_fd, binding['anchor'], approved, deadline)
     prior_api = _helper("q2_core_delivery_package")._approved_module().prior_attempt
     return prior_api.observe_capture_condition(directory_fd, binding=binding,
         prior=approved['reconciliation']['prior_core_attempts'], implementation=implementation,
         diagnostic=approved['reconciliation']['prior_diagnostic_capture'],
-        deadline=deadline, writer_observer=capture_contract.observe_writer)
+        journal=approved['reconciliation']['journal_transition'],
+        deadline=deadline, journal_files=journal_files, writer_observer=capture_contract.observe_writer)
 
 
 def deliver_once(directory_fd, *, binding, package_basename, package_raw,

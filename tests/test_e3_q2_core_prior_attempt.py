@@ -180,6 +180,9 @@ def test_quiescent_branches_preserve_unknown(guest, branch):
                 group = row['cgroup']
                 group.update(state='EMPTY', populated=0, procs_bytes=0,
                     identity=dict(group['parent'], path=group['path'], ino=3))
+    if branch.startswith('LOADED'):
+        with pytest.raises(d.DispatchError): d._validate_prior_quiescence(record,context)
+        return
     assert d._validate_prior_quiescence(record, context) is record
     assert record['historical_usage'] == record['historical_remote_exit'] == 'UNKNOWN'
 
@@ -274,6 +277,11 @@ def observer_fixture(guest, monkeypatch, *, present=False, index=0):
 def test_two_observations_use_same_held_parent_and_no_third_call(guest, monkeypatch, present):
     observer, state = observer_fixture(guest, monkeypatch, present=present)
     try:
+        if present:
+            with pytest.raises(guest[0].DispatchError, match='COLLECTED'):
+                observer.observe()
+            assert state['calls'] == 1
+            return
         observer.observe(); observer.observe()
         result = observer.finish()
         assert state['calls'] == 2 and result['current_scope_quiescent'] is True

@@ -223,18 +223,6 @@ def test_source_ceiling_and_approved_documents_unchanged():
         assert h.digest((root / "docs/a2-execution/q2-core-journal-growth" / name).read_bytes()) == sha
 
 
-@pytest.mark.parametrize("kind", ["missing", "extra", "unknown", "wrong_pid"])
-def test_unknown_or_extra_image_writer_rejected(kind):
-    rows = [dict(pid=20, complete=True, writable_images=["system", "quota", "journal", "evidence"])]
-    h.verify_writers(rows, 20, ["system", "quota", "journal", "evidence"])
-    if kind == "missing": rows[0]["writable_images"].pop()
-    elif kind == "extra": rows.append(dict(pid=21, complete=True, writable_images=["journal"]))
-    elif kind == "unknown": rows[0]["complete"] = False
-    elif kind == "wrong_pid": rows[0]["pid"] = 21
-    with pytest.raises(h.prior.r.ObservationError):
-        h.verify_writers(rows, 20, ["system", "quota", "journal", "evidence"])
-
-
 def test_real_pidfd_identity_and_exit():
     import subprocess
     argv = [sys.executable, "-I", "-B", "-c",

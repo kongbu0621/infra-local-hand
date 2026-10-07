@@ -49,19 +49,20 @@ def test_candidate_requires_all_closures_and_approved_source_caps(source_git):
                            (h.MB_A, h.MB_C), (h.MB_C, source_git.head),
                            (h.WORK_A, h.WORK_C), (h.WORK_C, source_git.head),
                            (h.DRIFT_REPAIR, h.DRIFT_A), (h.DRIFT_A, h.DRIFT_C),
-                           (h.DRIFT_C, source_git.head)):
+                           (h.DRIFT_C, source_git.head), (h.MINIMAL_A,h.MINIMAL_C),
+                           (h.MINIMAL_C,source_git.head)):
         assert ["merge-base", "--is-ancestor", earlier, later] in source_git.calls
     assert len(sources) == 12
     assert all(len(sources[name]) <= 98304 for name in
                ("q2_journal_growth.py", "q2_journal_growth_guest.py"))
 
 
-@pytest.mark.parametrize("version", ["v1", "v2", "maps_budget", "scan_work", "drift_resume"])
+@pytest.mark.parametrize("version", ["v1", "v2", "maps_budget", "scan_work", "drift_resume", "minimal"])
 @pytest.mark.parametrize("edge", ["approval_to_closure", "closure_to_candidate"])
 def test_unrelated_candidate_or_closure_is_refused_before_source_reads(source_git, edge, version):
     approval, closure = {"v1": (h.DR_A, h.DR_C), "v2": (h.DRV2_A, h.DRV2_C),
                          "maps_budget": (h.MB_A, h.MB_C), "scan_work": (h.WORK_A, h.WORK_C),
-                         "drift_resume": (h.DRIFT_A, h.DRIFT_C)}[version]
+                         "drift_resume": (h.DRIFT_A, h.DRIFT_C), "minimal": (h.MINIMAL_A,h.MINIMAL_C)}[version]
     source_git.rejected_edge = ((approval, closure) if edge == "approval_to_closure"
                                 else (closure, source_git.head))
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_SOURCE$"):

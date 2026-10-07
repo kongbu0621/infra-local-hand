@@ -226,7 +226,8 @@ def source_fixture(artifact, monkeypatch):
     sources = a.ApprovedInputSources(value["amendment"], {}, {}, b"synthetic boundary", {}, policy_raw,
                                     tokens, later, producer,
         {row['basename']: base64.b64decode(row['raw_base64'])
-         for prior in value['reconciliation']['prior_core_attempts'] for row in prior['files']}, diagnostic)
+         for prior in value['reconciliation']['prior_core_attempts'] for row in prior['files']}, diagnostic, {}, {}, {})
+    monkeypatch.setattr(a.prior_attempt,'build_journal_transition',lambda *args,**kw:value['reconciliation']['journal_transition'])
     return value, sources
 
 

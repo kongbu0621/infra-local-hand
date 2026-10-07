@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 from core_writer_fixture import writer, host_marker
+from test_e3_q2_core_minimal_continuation import originals
 from test_e3_q2_core_resource_result import incomplete_fixture, missing as resource_missing
 
 if not sys.platform.startswith("linux"):
@@ -29,6 +30,27 @@ def load(name):
 
 e = load("q2_core_delivery_entry")
 c = e.contract
+
+
+@pytest.fixture(autouse=True)
+def bounded_package_fixture(monkeypatch):
+    # Transport unit tests substitute framing only; new-boot binding still uses
+    # the production journal validator and four independently parsed priors.
+    from core_prior_fixture import triple_fixture, journal_transition
+    from e3_host import q2_core_prior_attempt as prior_api
+    prior, _ = triple_fixture(monkeypatch)
+    implementation = dict(commit='9'*40, tree='7'*40)
+    approved = dict(reconciliation=dict(prior_core_attempts=prior,
+        journal_transition=journal_transition(implementation)))
+    package_api = SimpleNamespace(
+        ENTRY_FIELDS=e._helper("q2_core_delivery_package").ENTRY_FIELDS,
+        parse_package=lambda raw: (dict(implementation=implementation,
+            approved_inputs=dict(path='private/approved-inputs.json')),
+            {'private/approved-inputs.json': c.canonical(approved,newline=True)}),
+        _approved_module=lambda: SimpleNamespace(prior_attempt=prior_api))
+    original_helper=e._helper
+    monkeypatch.setattr(e, '_helper', lambda name: package_api
+        if name == 'q2_core_delivery_package' else original_helper(name))
 
 
 def live_capture(directory_fd, path, origins):
@@ -64,7 +86,7 @@ def hello():
         "loader_sha256": "1" * 64,
         "bootstrap_sha256": "2" * 64,
         "remote_management": remote,
-        "guest_boot_id": "11111111-2222-3333-4444-555555555555",
+        "guest_boot_id": "22222222-2222-3333-4444-555555555555",
         "guest_boottime_origin_ns": 100,
         "guest_monotonic_origin_ns": 200,
         "pid": 1,
@@ -318,7 +340,7 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
             e.deliver_once(
                 directory_fd,
                 binding={"wrapper": {"path": "/synthetic/ssh.sh"}},
-                package_basename="lhqcore-20261005c.lhfp", package_raw=b"synthetic-package",
+                package_basename="lhqcore-20261007a.lhfp", package_raw=b"synthetic-package",
                 loader_raw=loader, bootstrap_raw=bootstrap, wrapper_raw=wrapper_raw,
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
@@ -411,7 +433,7 @@ def test_host_window_and_bind_mapping_are_not_refreshed():
         "writer": writer(),
     }
     assert set(entry) == e._helper("q2_core_delivery_package").ENTRY_FIELDS
-    bind = e.build_bind(hello(), "a" * 64, "lhqcore-20261005c.lhfp", package, origins,
+    bind = e.build_bind(hello(), "a" * 64, "lhqcore-20261007a.lhfp", package, origins,
                         package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30_000,
                         mono_bind_ns=40_000)
     assert bind["host_remaining_floor_ns"] == 899_999_000_000
@@ -445,7 +467,7 @@ def test_bind_rejects_missing_extra_or_invalid_v3_writer(change, code):
         entry["writer"]["uid"]["effective"] += 1
     origins = e.freeze_host_window(lambda _clock: 10)
     with pytest.raises(c.ContractError, match=code):
-        e.build_bind(hello(), "a" * 64, "lhqcore-20261005c.lhfp", b"package", origins,
+        e.build_bind(hello(), "a" * 64, "lhqcore-20261007a.lhfp", b"package", origins,
             package_entry=entry, remote_expectation=remote_expectation(),
             boot_bind_ns=20, mono_bind_ns=20)
 
@@ -468,7 +490,7 @@ def marker_value(origins):
         amendment=c.make_amendment(implementation), writer=writer,
         approved_inputs_sha256="3" * 64,
         implementation={"commit": "4" * 40, "tree": "5" * 40},
-        package={"basename": "lhqcore-20261005c.lhfp", "bytes": 1, "sha256": "6" * 64,
+        package={"basename": "lhqcore-20261007a.lhfp", "bytes": 1, "sha256": "6" * 64,
                  "manifest_sha256": "7" * 64},
         local_management_binding_sha256="8" * 64,
         carrier_argv_sha256="9" * 64,
@@ -517,7 +539,7 @@ def test_marker_and_bind_reject_refreshed_or_non_exact_host_window():
         "writer": writer(),
     }
     with pytest.raises(c.ContractError, match="CORE_BIND_HOST_WINDOW"):
-        e.build_bind(hello(), "a" * 64, "lhqcore-20261005c.lhfp", b"p", origins,
+        e.build_bind(hello(), "a" * 64, "lhqcore-20261007a.lhfp", b"p", origins,
                      package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30, mono_bind_ns=40)
 
 
@@ -697,7 +719,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         io_patch.setattr(e.os, "set_blocking", set_blocking)
         exchange = e.execute_carrier_once(
             argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
-            origins=origins, marker=marker, package_basename="lhqcore-20261005c.lhfp",
+            origins=origins, marker=marker, package_basename="lhqcore-20261007a.lhfp",
             package_raw=b"synthetic-package", package_entry=entry, remote_expectation=remote_expectation(),
             popen_factory=factory, selector_factory=Selector)
     assert len(calls) == 1
@@ -714,7 +736,7 @@ def test_carrier_remaining_plus_one_is_rejected_without_capturing_overflow(
         assert stdout_bytes + stderr_bytes + remaining == e.STREAM_CAPTURE_LIMIT
 
 
-def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch):
+def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch, originals):
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     origins = e.freeze_host_window()
     capture = live_capture(directory_fd, tmp_path, origins)
@@ -787,7 +809,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch):
     try:
         exchange = e.execute_carrier_once(
             argv=argv, environment=environment, cwd=str(tmp_path), origins=origins,
-            marker=marker, package_basename="lhqcore-20261005c.lhfp", package_raw=package_raw,
+            marker=marker, package_basename="lhqcore-20261007a.lhfp", package_raw=package_raw,
             package_entry=entry, remote_expectation=remote_expectation(), popen_factory=factory)
         assert len(calls) == 1
         assert exchange["transport"] == {
@@ -812,14 +834,26 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch):
         monkeypatch.setattr(prior_api, 'THIRD_PINS', prior_module.THIRD_PINS)
         monkeypatch.setattr(prior_api, 'THIRD_TOTAL_BYTES', prior_module.THIRD_TOTAL_BYTES)
         binding = dict(anchor=capture.anchor, writer=capture.writer)
+        journal_files,journal_args=originals
+        transition=prior_api.build_journal_transition(journal_files,**journal_args)
+        transition['implementation']=resource_context['implementation']
+        transition['image_identities']={role:[capture.anchor['dev'],row[1]]
+            for role,row in transition['image_identities'].items()}
+        from e3_host import q2_journal_growth as maintenance
+        class Images:
+            def __init__(self,*args):self.fds={role:directory_fd for role in transition['image_identities']}
+            def image_keys(self):return transition['image_identities']
+            def recheck(self):pass
+            def close(self):pass
+        monkeypatch.setattr(maintenance,'ImageSet',Images)
         condition = prior_api.observe_capture_condition(directory_fd, binding=binding, prior=prior,
-            diagnostic=prior_api.diagnostic_retention(),
+            diagnostic=prior_api.diagnostic_retention(),journal=transition,journal_files=journal_files,
             implementation=resource_context['implementation'], deadline=capture.deadline,
             writer_observer=e.capture_contract.observe_writer)
         expected_context = {"manifest": {key: resource_context[key] for key in ("implementation", "locators")},
                             "hello": hello(), "bind": {"guest_duration_ns": 750_000_000_000},
                             "binding": binding, "approved_inputs_raw": c.canonical(
-                                dict(reconciliation=dict(prior_core_attempts=prior,
+                                dict(reconciliation=dict(prior_core_attempts=prior,journal_transition=transition,
                                     prior_diagnostic_capture=prior_api.diagnostic_retention())), newline=True)}
         expected_context['manifest']['entry'] = dict(
             local_management_binding_sha256=condition['local_management_binding_sha256'])
@@ -858,7 +892,7 @@ def test_transport_deadline_never_starts_or_retries_late_request(late_return):
     argv = ["/usr/bin/env", "synthetic-carrier"]
     exchange = e.execute_carrier_once(argv=argv, environment={"LANG": "C"}, cwd="/synthetic",
         origins=origins, marker=dict(object_created=True, record_complete=True, sha256="a" * 64),
-        package_basename="lhqcore-20261005c.lhfp", package_raw=b"fixture",
+        package_basename="lhqcore-20261007a.lhfp", package_raw=b"fixture",
         package_entry=dict(carrier_argv_sha256=e.argv_digest(argv)),
         remote_expectation=remote_expectation(),
         popen_factory=factory, clock_gettime_ns=clock,
@@ -925,7 +959,7 @@ def test_delivery_never_refreshes_window_or_substitutes_writer(monkeypatch, expi
     with pytest.raises((c.ContractError, e.capture_contract.CaptureError),
                        match="CORE_DELIVERY_ORIGIN_REQUIRED|CORE_CAPTURE_DEADLINE|CORE_DELIVERY_WRITER_BINDING"):
         e.deliver_once(-1, binding={"wrapper": {"path": "/fixed"}, "anchor": {}, "writer": writer()},
-            package_basename="lhqcore-20261005c.lhfp", package_raw=b"fixture", loader_raw=b"loader",
+            package_basename="lhqcore-20261007a.lhfp", package_raw=b"fixture", loader_raw=b"loader",
             bootstrap_raw=b"bootstrap", wrapper_raw=b"wrapper", origins=origins,
             clock_gettime_ns=lambda _clock: 2 + e.HOST_WINDOW_NS, popen_factory=forbidden)
 

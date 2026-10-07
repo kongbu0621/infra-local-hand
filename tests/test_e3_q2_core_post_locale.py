@@ -131,13 +131,13 @@ def test_third_original_is_independently_bound(monkeypatch, change):
     with pytest.raises(d.DispatchError): d._prior_attempts(priors)
 
 
-@pytest.mark.parametrize('index', [0, 1, 2])
+@pytest.mark.parametrize('index', [0, 1, 2, 3])
 @pytest.mark.parametrize('ordinal', [1, 2])
 @pytest.mark.parametrize('failure', ['truncated', 'active', 'timeout', 'late', 'populated', 'boot', 'parent_drift'])
 def test_each_old_observer_failure_is_terminal(monkeypatch, index, ordinal, failure):
     priors, _ = triple_fixture(monkeypatch, d)
     observer, state = observer_fixture((d, priors[index], context_v2()), monkeypatch,
-                                      index=index, present=failure == 'populated')
+                                      index=index, present=False)
     try:
         if ordinal == 2: observer.observe()
         if failure == 'parent_drift':
@@ -149,7 +149,7 @@ def test_each_old_observer_failure_is_terminal(monkeypatch, index, ordinal, fail
                     return result
                 observer.effects._capacity_systemctl = changing_show
             else: state['drift'] = True
-        elif failure == 'populated': state['populated'] = True
+        elif failure == 'populated': state.update(present=True,populated=True)
         elif failure == 'boot': state['boot'] = 'changed'
         else: state['bad_show'] = failure
         with pytest.raises(d.DispatchError): observer.observe()

@@ -262,7 +262,7 @@ def package_fixture(tmp_path, monkeypatch):
         prior_profiles.append(dict(commit=_git(implementation, 'rev-parse', 'HEAD'),
             tree=_git(implementation, 'rev-parse', 'HEAD^{tree}'), sources=pins))
     monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', tuple(prior_profiles))
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE", "MINIMAL"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -290,6 +290,9 @@ def package_fixture(tmp_path, monkeypatch):
     for name, raw in (("loader", loader), ("bootstrap", bootstrap),
                       ("dispatcher", dispatcher)):
         (source / f"q2_core_delivery_{name}.py").write_bytes(raw)
+    from e3_host import q2_core_prior_attempt as prior_api
+    for name in prior_api.JOURNAL_SOURCE_NAMES:
+        (source/name).write_bytes(b'# synthetic frozen maintenance source\n')
     _git(implementation, "add", "tests/e3_host")
     _git(implementation, "commit", "-q", "-m", "implementation")
     monkeypatch.setattr(f.c, 'LOCALE_REPAIR', _git(implementation, 'rev-parse', 'HEAD'))
@@ -569,13 +572,13 @@ def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypat
     dispatcher = b"not a releasable dispatcher"
     rows, values = f.p.field_member_blobs(b"loader", b"bootstrap", dispatcher,
                                         implementation_commit="a" * 40)
-    static = {"state": "STATIC_MEMBERS_FROZEN", "members": rows,
+    static = {"state": "STATIC_MEMBERS_FROZEN", "journal_sources": {}, "members": rows,
               "member_bytes": values,
               "implementation": {"commit": "a" * 40, "tree": "b" * 40}}
     monkeypatch.setattr(f.p, "approved_input_member", lambda *a, **k: (None, None))
     monkeypatch.setattr(f.p, "_approved_module", lambda: SimpleNamespace(
         ApprovedInputSources=a.ApprovedInputSources, validate=lambda raw, *, sources: {}))
-    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {}, {})
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {}, {}, {}, {}, {})
 
     def unexpected(*args, **kwargs):
         raise AssertionError("unreleased source reached current host observation")
@@ -625,6 +628,8 @@ def frozen_v2_fixture(tmp_path, monkeypatch):
         "amendment": f.c.make_amendment(static["implementation"]),
         **{key: {"fixture": key} for key in f.c.APPROVED_COMPONENTS}}
     approved["policy_basis"] = basis
+    approved['reconciliation']['journal_transition'] = dict(source_files={
+        name:dict(bytes=len(raw),sha256=f.c.sha256(raw)) for name,raw in static['journal_sources'].items()})
     local = {"state": "LOCAL_ANCHOR_FROZEN", "binding_preimage": binding,
              "tokens": tokens, "argv": ["unit-local-wrapper"], "wrapper_bytes": b"fixture",
              "origins": _origins(), "directory_fd": -1, "policy_source_raw": policy_raw}
@@ -733,7 +738,7 @@ def test_normal_import_sources_cross_package_namespace_and_keep_full_source_veri
 def test_source_namespace_bridge_refuses_loose_or_extra_fields():
     from dataclasses import make_dataclass
     from e3_host import q2_core_approved_inputs as a
-    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {}, {})
+    sources = a.ApprovedInputSources({}, {}, {}, b"", {}, {}, [], {}, b"", {}, {}, {}, {}, {})
     for value in (dict(vars(sources)), SimpleNamespace(**vars(sources)),
                   make_dataclass("ApprovedInputSources", [(name, object) for name in vars(sources)]
                       + [("trusted", bool)])(**vars(sources), trusted=True)):

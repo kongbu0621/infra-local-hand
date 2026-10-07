@@ -62,7 +62,7 @@ def test_partial_roots_and_absence_parents_in_same_pool(observed):
     f, arguments = observed
     path = shared(f)
     create(f, path + "/temporary", b"actual allocation")
-    prefix = "/evidence/lhqcore-20261005c"
+    prefix = "/evidence/lhqcore-20261007a"
     create(f, prefix)
     prefix += "/c01-h01-normal"
     create(f, prefix)
@@ -97,7 +97,7 @@ def test_created_root_can_gain_neighbor_without_relabeling_old_maximum(observed)
     f.engine.observe("CHILD_AFTER", ["shared_install"])
     before = copy.deepcopy(f.engine.rows["shared_install"]["bytes_maximum"])
     temporary.unlink()  # Frozen child temporary lifetime modeled in the fixture.
-    create(f, "/install/local-hand-core-acceptance-20261005c")
+    create(f, "/install/local-hand-core-acceptance-20261007a")
     f.engine.observe("FINALIZATION")
     report = snapshot(f, arguments)
     validate(report, arguments)
@@ -107,7 +107,7 @@ def test_created_root_can_gain_neighbor_without_relabeling_old_maximum(observed)
 
 
 def quota_parents(f, arguments):
-    prefix = "/quota/lhqcore-20261005c"
+    prefix = "/quota/lhqcore-20261007a"
     create(f, prefix)
     prefix += "/c01-h01-normal"
     create(f, prefix)

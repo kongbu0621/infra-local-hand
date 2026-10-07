@@ -144,6 +144,11 @@ PRIOR_SOURCE_PROFILES = (
      "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
                  "bootstrap": "4a58b342ea4fabb95903e9362cc9b0007c6aafda5a5ece3203692c5033982ce3",
                  "dispatcher": "319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96"}},
+    {"commit": "657b1bcd749cb4281b0193b2bc9430b0662faf98",
+     "tree": "4bb00b2e9ccbec3c43160159811e51eec76702cd",
+     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
+                 "bootstrap": "7e2d08800951528c81f9078eb772cc4937dc76a3fd1ed7a1ccadde2a12a23cf5",
+                 "dispatcher": "714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b"}},
 )
 
 ANCHOR_FILES = {
@@ -1036,7 +1041,8 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
              c.HOST_CAPACITY_BOUNDARY_CLOSURE),
             (c.POST_SUDO_BASELINE, c.POST_SUDO_OWNER_DECISION, c.POST_SUDO_CLOSURE),
             (c.LOCALE_GRAMMAR_BASELINE, c.LOCALE_GRAMMAR_OWNER_DECISION, c.LOCALE_GRAMMAR_CLOSURE),
-            (c.POST_LOCALE_BASELINE, c.POST_LOCALE_OWNER_DECISION, c.POST_LOCALE_CLOSURE)):
+            (c.POST_LOCALE_BASELINE, c.POST_LOCALE_OWNER_DECISION, c.POST_LOCALE_CLOSURE),
+            (c.MINIMAL_BASELINE, c.MINIMAL_OWNER_DECISION, c.MINIMAL_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")
@@ -1080,7 +1086,7 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
     _validate_locale_source_preserved(original_dispatcher, dispatcher)
     original_bootstrap = _git(repository, git_path, 'show', c.LOCALE_REPAIR + ':'
         + FIELD_SOURCE_PATHS['field/bootstrap.py'], limit=c.PACKAGE_LIMITS['member_bytes'])
-    c.require(bootstrap == original_bootstrap.replace(b'20261005b', b'20261005c'),
+    c.require(bootstrap == original_bootstrap.replace(b'20261005b', b'20261007a'),
               'CORE_FREEZE_BOOTSTRAP_DELTA')
     c.require(c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'],
               'CORE_FREEZE_LOADER_UNCHANGED')
@@ -1246,9 +1252,13 @@ def freeze_package_members(*, candidate_checkout, wheel_path, projection_path,
     c.require(len(rows) + len(derived_directories) <= c.PACKAGE_LIMITS["shared_entries"]
               and sum(len(raw) for raw in member_bytes.values())
                   <= c.PACKAGE_LIMITS["package_bytes"], "CORE_FREEZE_MEMBER_LIMIT")
+    prior_api=p._approved_module().prior_attempt
+    journal_sources = {name: _git(implementation_repository,git_path,'show',implementation_commit
+        + ':tests/e3_host/' + name,limit=524288) for name in prior_api.JOURNAL_SOURCE_NAMES}
     return {
         "schema": FREEZE_SCHEMA,
         "state": "STATIC_MEMBERS_FROZEN",
+        "journal_sources": journal_sources,
         "issuance": "NOT_ISSUED",
         "missing": [],
         "package": None,
@@ -1302,6 +1312,9 @@ def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inpu
     approved_row, approved_header = p.approved_input_member(
         approved_inputs_raw, amendment=amendment)
     approved = c.document(approved_inputs_raw, limit=1_048_576, newline=True)
+    c.require(approved['reconciliation']['journal_transition']['source_files'] == {
+        name:dict(bytes=len(raw),sha256=c.sha256(raw))
+        for name,raw in static_freeze['journal_sources'].items()}, 'CORE_FREEZE_JOURNAL_SOURCE')
     binding = local_anchor["binding_preimage"]
     writer = copy.deepcopy(c.validate_local_writer(binding["writer"]))
     tokens, argv = local_anchor["tokens"], local_anchor["argv"]
@@ -1382,6 +1395,8 @@ def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_pat
     # This second source-aware validation is mandatory for the delivery-facing
     # API. A format-valid standalone artifact does not prove its private inputs.
     approved_sources = _validate_approved_sources(approved_inputs_raw, approved_sources)
+    c.require(approved_sources.journal_sources == static_freeze['journal_sources'],
+              'CORE_FREEZE_JOURNAL_SOURCE')
     p.approved_input_member(approved_inputs_raw,
                            amendment=c.make_amendment(static_freeze["implementation"]))
     c.require(c.sha256(values["field/dispatcher.py"])
@@ -1396,8 +1411,9 @@ def prepare_delivery_package(*, static_freeze, approved_inputs_raw, retained_pat
         c.require(local["policy_source_raw"] == approved_sources.policy_sources,
                   "CORE_FREEZE_APPROVED_LOCAL_SOURCE")
         approved = c.document(approved_inputs_raw, limit=c.APPROVED_INPUTS_LIMIT, newline=True)
-        prior_files, diagnostic_files = entry_api.read_prior_originals(local['directory_fd'],
+        prior_files, diagnostic_files, journal_files = entry_api.read_prior_originals(local['directory_fd'],
             local['binding_preimage']['anchor'], approved, deadline)
+        c.require(journal_files == approved_sources.journal_files,'CORE_FREEZE_JOURNAL_LOCAL_SOURCE')
         c.require(prior_files == approved_sources.prior_core_files, 'CORE_FREEZE_PRIOR_LOCAL_SOURCE')
         c.require(diagnostic_files == approved_sources.prior_diagnostic_files, 'CORE_FREEZE_DIAGNOSTIC_LOCAL_SOURCE')
         deadline.call(entry_api.encoded_argv_environment_size,
@@ -1429,7 +1445,7 @@ def _validate_approved_sources(raw, sources):
     c.require(sources is not None, "CORE_FREEZE_APPROVED_SOURCES_REQUIRED")
     names = {"amendment", "locator_carriers", "horizon_archives", "legacy_frame",
              "historical_tools", "policy_sources", "remote_tokens", "later_reviews", "producer_raw",
-             "prior_core_files", "prior_diagnostic_files"}
+             "prior_core_files", "prior_diagnostic_files", "journal_files", "journal_sources", "journal_frozen"}
     c.require(not isinstance(sources, type) and is_dataclass(sources)
               and {field.name for field in fields(sources)} == names,
               "CORE_FREEZE_APPROVED_SOURCE_FIELDS")
