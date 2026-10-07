@@ -1,5 +1,10 @@
 # K1 最小核心接续实现与验证
 
+最终状态见[准确候选冻结与现场返回](Q2_CORE_MINIMAL_CONTINUATION_FIELD_20261007.md)：
+K1 已完成，最终 D `a743af326cdff6e4485b69332e2309130d82a915` 的 CI 3/3 成功；
+K2 唯一窗口已消耗，guest journal 序列号检查失败，K3/H01/Q4/H11 未执行。
+以下分段保留各阶段当时状态，不作为再次执行的依据。
+
 范围 `LH-Q2-CORE-MINIMAL-CONTINUATION-v1`，准确 A
 `5d6cefa602e9146f02887ebfaa4b0cad4e376ff2`，独立 C
 `8a4c24cefe4abbab193577b2dff48fc49626cae4`；R、Owner B 见治理记录。
@@ -18,7 +23,7 @@ writer 交接。保留目标 QEMU pidfd/start/argv、五镜像身份、guest 静
 身份和全部累计承诺；新 boot 只接受旧 scope 与 cgroup 缺席。历史 UNKNOWN 不改写。
 原 loader、runtime/wheel/harness、sudo/sshd 解析和任务权限保持原样。
 
-## 当前验证及限制
+## 初始实现提交时的验证及限制
 
 开发树相关核心/journal 回归：2037 passed、35 skipped，29.35s。
 随后新增普通交接累计用量/错误输入测试所在协调器组：37 passed，0.09s。
