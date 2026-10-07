@@ -17,11 +17,11 @@ from test_e3_q2_journal_host_read import KEYS, observer  # Reuse isolated observ
 
 
 PRIVATE_STDERR = b"synthetic-private-diagnostic-never-publish"
-CHILD = dict(reason="GROWTH_WRITERS_UNKNOWN", errno=13)
+CHILD = dict(reason="GROWTH_WRITERS_UNKNOWN", errno=13, progress=h.scan_progress())
 
 
 def failure(command, **changes):
-    return dict(schema="lhq-journal-writer-result/v1", request=command.request,
+    return dict(schema="lhq-journal-writer-result/v2", request=command.request,
                 complete=False, **CHILD) | changes
 
 
@@ -60,7 +60,7 @@ def test_parent_preserves_valid_child_reason_and_errno(observer, monkeypatch, er
     with pytest.raises(g.r.ObservationError, match="^GROWTH_WRITERS_UNKNOWN$") as caught:
         observer.value.observe(KEYS, lambda: None)
     assert getattr(caught.value, "errno", None) == errno
-    assert caught.value.diagnostic["child_failure"] == dict(reason=CHILD["reason"], errno=errno)
+    assert caught.value.diagnostic["child_failure"] == dict(reason=CHILD["reason"], errno=errno, progress=CHILD["progress"])
     safe_diagnostic(caught.value)
     stopped_once(observer)
 

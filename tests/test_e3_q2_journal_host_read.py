@@ -34,10 +34,13 @@ def request():
 
 
 def report(value):
-    return dict(schema="lhq-journal-writer-result/v1", request=value, complete=True,
+    return dict(schema="lhq-journal-writer-result/v2", request=value, complete=True,
         rows=[dict(pid=77, starttime=23, complete=True,
                    writable_images=["system", "quota", "journal", "evidence"])],
-        usage=dict(cpu_us=100, peak_rss_bytes=1024))
+        usage=dict(cpu_us=100, peak_rss_bytes=1024),
+        progress=h.scan_progress() | dict(phase="REPORT", scan_complete=True, pids_listed=1,
+            pids_completed=1, tasks_started=1, tasks_completed=1, maps_files_read=1,
+            last_valid_elapsed_ns=[0, 0]))
 
 
 @pytest.fixture
@@ -198,6 +201,10 @@ def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sou
     assert static["resume"] == dict(A=h.DR_A, C=h.DR_C)
     assert static["resume_v2"] == dict(A=h.DRV2_A, C=h.DRV2_C)
     assert static["maps_budget"] == dict(A=h.MB_A, C=h.MB_C)
+    assert static["scan_work"] == dict(A=h.WORK_A, C=h.WORK_C,
+        result_schema="lhq-journal-writer-result/v2", fd_stat_attempts=2097152,
+        fd_stat_policy="initial+recheck+match;charge-before-call;no-refund",
+        progress_bytes=4096, maintenance_source_bytes=98304)
     assert (static["A"], static["C"]) == (h.READ_A, h.READ_C)
     assert static["auth"] == dict(A=h.TERM_A, C=h.TERM_C, mode="terminal",
                                    terminal=observer.value.terminal)
@@ -211,6 +218,14 @@ def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sou
     with pytest.raises(g.r.ObservationError, match="PREFLIGHT"):
         h.WriterObserver(sources, "d" * 40, first.window, KEYS,
                          changed_terminal, h.canonical(handoff))
+    assert len(observer.calls) == 2
+    for version in ("lhq-journal-writer-result/v1", "lhq-journal-writer-result/v2"):
+        stale = copy.deepcopy(handoff)
+        stale["report"]["schema"] = version
+        stale["report"]["progress"]["scan_complete"] = False
+        with pytest.raises(g.r.ObservationError):
+            h.WriterObserver(sources, "d" * 40, first.window, KEYS,
+                             observer.value.terminal, h.canonical(stale))
     assert len(observer.calls) == 2
 
 
@@ -233,9 +248,9 @@ def test_failed_checkpoint_cannot_retry(observer, monkeypatch, failure):
 
 def test_fixed_root_failure_reason_is_retained_and_cannot_retry(observer, monkeypatch):
     def collect(command):
-        raw = h.canonical(dict(schema="lhq-journal-writer-result/v1",
+        raw = h.canonical(dict(schema="lhq-journal-writer-result/v2",
             request=command.request, complete=False,
-            reason="GROWTH_WRITER_DEADLINE", errno=None))
+            reason="GROWTH_WRITER_DEADLINE", errno=None, progress=h.scan_progress()))
         command.output["stdout"].extend(raw)
         return dict(returncode=3, eof=dict(stdout=True, stderr=True), stdout=raw, stderr=b"")
     monkeypatch.setattr(observer.Command, "collect", collect)

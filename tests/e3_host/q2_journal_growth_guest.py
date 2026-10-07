@@ -167,7 +167,8 @@ MIB=1048576
 """
  payload=kernel.decode("utf-8") + "\n" + prefix
  payload += functions(guest, ("identity", "proc_start", "writer_request"))
- payload += functions(host, ("_proc_limit", "_bounded_names", "_proc_read", "_fd_snapshot", "collect_image_writers"))
+ payload += functions(host, ("_proc_limit", "_bounded_names", "_proc_read", "scan_progress",
+ "charge_fd_stat", "_fd_snapshot", "collect_image_writers"))
  payload += "\nEXECUTION_D=" + repr(commit) + "\n" + WRITER_ENTRY
  raw=payload.encode("utf-8")
  require(len(raw) <= 32768, "GROWTH_WRITER_SOURCE_LIMIT")
@@ -179,12 +180,17 @@ exec(compile(p,'<fixed-writer-observer>','exec'),{'__name__':'__main__'})
 """
 WRITER_ENTRY="""
 def writer_entry():
- request=None
+ request=progress=None
+ def encode(result):
+  raw=json.dumps(result,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode()+b'\\n'
+  require(len(raw)<=65536,'GROWTH_WRITER_OUTPUT')
+  return raw
  try:
   require(os.geteuid()==0, 'GROWTH_WRITER_UID')
   for kind,cap in ((resource.RLIMIT_AS,268435456),(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CORE,0)):
    resource.setrlimit(kind,(cap,cap))
   request=writer_request(base64.b64decode(sys.argv[3],validate=True))
+  progress=scan_progress()
   require(request['D']==EXECUTION_D, 'GROWTH_WRITER_D')
   previous=list(request['started'])
   def check():
@@ -192,24 +198,27 @@ def writer_entry():
    require(all(o<=s<=p<=n<min(o+900000000000,s+15000000000)
     for o,s,p,n in zip(request['origins'],request['started'],previous,now)), 'GROWTH_WRITER_DEADLINE')
    previous[:]=now
+   progress['last_valid_elapsed_ns']=[n-s for n,s in zip(now,request['started'])]
   check()
   boot=read_fact('boot',check,{})
   require(boot==(request['boot_id']+'\\n').encode('ascii'), 'GROWTH_WRITER_BOOT')
   rows=collect_image_writers({k:tuple(v) for k,v in request['images'].items()},check,
-   mount_reader=lambda:read_fact('mountinfo',check,{}))
+   mount_reader=lambda:read_fact('mountinfo',check,{}),progress=progress)
   check()
+  progress['phase']='REPORT'
+  progress['scan_complete']=True
   usage=resource.getrusage(resource.RUSAGE_SELF)
-  result=dict(schema='lhq-journal-writer-result/v1',request=request,complete=True,
+  result=dict(schema='lhq-journal-writer-result/v2',request=request,complete=True,progress=progress,
    rows=[row for row in rows if row['writable_images']],
    usage=dict(cpu_us=int((usage.ru_utime+usage.ru_stime)*1000000),peak_rss_bytes=usage.ru_maxrss*1024))
+  raw=encode(result)
  except Exception as error:
   cause=error.__cause__
   known=cause if isinstance(cause,(WriterError,KernelFactError)) else error
-  result=dict(schema='lhq-journal-writer-result/v1',request=request,complete=False,
+  result=dict(schema='lhq-journal-writer-result/v2',request=request,complete=False,progress=progress,
    reason=str(known) if isinstance(known,(WriterError,KernelFactError)) else 'GROWTH_WRITER_IO',
    errno=getattr(error,'errno',None) or getattr(cause,'errno',None))
- raw=json.dumps(result,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode()+b'\\n'
- require(len(raw)<=65536,'GROWTH_WRITER_OUTPUT')
+  raw=encode(result)
  sys.stdout.buffer.write(raw); sys.stdout.buffer.flush()
  return 0 if result['complete'] else 3
 sys.exit(writer_entry())
@@ -1232,23 +1241,60 @@ class ProcessIdentity:
  def close(self):
   os.close(self.fd)
 
+def validate_progress(value,request,*,success=False):
+ if request is None:
+  require(value is None and not success,"GROWTH_WRITER_PROGRESS")
+  return
+ caps=dict(pids_completed=32768,tasks_started=65536,tasks_completed=65536,
+ fd_initial_stat_attempts=2097152,fd_recheck_stat_attempts=2097152,
+ fd_match_stat_attempts=2097152,maps_files_read=65536,maps_bytes_read=513*1048576,
+ maps_max_file_bytes=1048576)
+ require(type(value) is dict and set(value)==set(caps)|{
+ "phase","scan_complete","pids_listed","last_valid_elapsed_ns"},"GROWTH_WRITER_PROGRESS")
+ require(len(canonical(value))<=4096,"GROWTH_WRITER_PROGRESS")
+ require(all(type(value[k]) is int and 0<=value[k]<=cap for k,cap in caps.items()),
+ "GROWTH_WRITER_PROGRESS")
+ require(type(value["phase"]) is str and value["phase"] in (
+ "PRE_SCAN","PROC_MOUNT","PID_LIST","PID_STAT","TASK_LIST","TASK_STAT","FD_INITIAL",
+ "FD_MATCH","FD_RECHECK","MAPS_READ","MAPS_PARSE","TASK_RECHECK","PID_RECHECK",
+ "FINAL_PID_RECHECK","REPORT") and type(value["scan_complete"]) is bool,"GROWTH_WRITER_PROGRESS")
+ listed=value["pids_listed"]
+ require(listed is None or type(listed) is int and 0<=listed<=32768,"GROWTH_WRITER_PROGRESS")
+ require((all(value[k]==0 for k in caps) if listed is None else value["pids_completed"]<=listed)
+ and value["tasks_completed"]<=value["tasks_started"]
+ and value["maps_files_read"]<=value["tasks_started"]
+ and sum(value[k] for k in ("fd_initial_stat_attempts","fd_recheck_stat_attempts",
+ "fd_match_stat_attempts"))<=2097152,"GROWTH_WRITER_PROGRESS")
+ files,size,maximum=(value[k] for k in ("maps_files_read","maps_bytes_read","maps_max_file_bytes"))
+ require((size==maximum==0 if files==0 else maximum<=size<=files*maximum),"GROWTH_WRITER_PROGRESS")
+ elapsed=value["last_valid_elapsed_ns"]
+ require(elapsed is None or type(elapsed) is list and len(elapsed)==2 and
+ all(type(n) is int and 0<=n<15000000000 for n in elapsed),"GROWTH_WRITER_PROGRESS")
+ if value["scan_complete"] or success:
+  require(value["scan_complete"] and value["phase"]=="REPORT" and listed is not None
+ and elapsed is not None and value["pids_completed"]==listed
+ and value["tasks_started"]==value["tasks_completed"]==files and size<=512*1048576,
+ "GROWTH_WRITER_PROGRESS")
+
 def writer_failure(raw, request):
  try:
   value=r.parse(raw,65536)
-  require(type(value) is dict and set(value)=={"schema","request","complete","reason","errno"}
- and value["schema"]=="lhq-journal-writer-result/v1" and value["complete"] is False
+  require(type(value) is dict and set(value)=={"schema","request","complete","reason","errno","progress"}
+ and value["schema"]=="lhq-journal-writer-result/v2" and value["complete"] is False
  and (value["request"] is None or canonical(value["request"])==canonical(request))
  and type(value["reason"]) is str and re.fullmatch("[A-Z0-9_]{1,160}",value["reason"])
  and (value["errno"] is None or type(value["errno"]) is int and 0<=value["errno"]<=4095),
  "GROWTH_WRITER_FAILURE_REPORT")
-  return {key:value[key] for key in ("reason","errno")}
+  validate_progress(value["progress"],value["request"])
+  return {key:value[key] for key in ("reason","errno","progress")}
  except (ValueError,RuntimeError,TypeError):
   raise r.ObservationError("GROWTH_WRITER_FAILURE_REPORT") from None
 class WriterProtocol:
  def validate(self, report, request, checkpoint):
-  require(type(report) is dict and set(report) == {"schema", "request", "complete", "rows", "usage"}
- and report["schema"] == "lhq-journal-writer-result/v1" and report["complete"] is True
- and report["request"] == request, "GROWTH_WRITER_REPORT")
+  require(type(report) is dict and set(report) == {"schema", "request", "complete", "rows", "usage", "progress"}
+ and report["schema"] == "lhq-journal-writer-result/v2" and report["complete"] is True
+ and canonical(report["request"]) == canonical(request), "GROWTH_WRITER_REPORT")
+  validate_progress(report["progress"],request,success=True)
   require(request["D"] == self.commit and request["nonce"] == self.nonce and request["images"] == self.images
  and request["checkpoint"] == checkpoint and request["boot_id"] == self.window.binding["boot_id"]
  and request["origins"] == self.window.binding["origins"], "GROWTH_WRITER_REPORT_BINDING")

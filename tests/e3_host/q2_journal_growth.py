@@ -34,6 +34,11 @@ DRV2_A="4341487c9be9ef64cf6fccbd973ed438a66e7483"
 DRV2_C="807d61b75841a416064f4c1ec1d7c2e0187e0d49"
 MB_A="d18b490a7cdb63ee43044a29a89746ef78fccff3"
 MB_C="3d928a323d1aad12c20a66594bb295d4df14fab0"
+WORK_A="42a66be98c45e817e866d3fb86a1c184c2ce55f9"
+WORK_C="1f656f7dab12ddb02c6927d3fc08c2fbe81ffebc"
+WORK_PINS=("632aeecb163ad6e496a917fd73f9230aca1144d1e91050c78c8abff2b4d5ae38",
+"52d75a0c689ae1ed5321a2b5fde5061084fd05c267cac9cf012924a97eac2e96",
+"ec8f299e7cd9d9c0fc10eaa34e0ff75b0276fc2c863b753d4f8c109d7fc025b2")
 MB_PINS=("868f86ddb157a693aa4ae29267b6d65434dac0c3656b08c94b10d86476974b12",
 "6d6d455a38666287bf886a39ccf0f0756f4ca34020bd3c00b7b3b139886fcc41",
 "92fda90f23db943cbafb241c5579ecab53da223b2120f8777908ebf5ae20679f")
@@ -388,7 +393,10 @@ os.readlink("python3",dir_fd=parent))==self.python_link,"GROWTH_PYTHON_LINK_DRIF
     os.close(parent)
  def binding(self):
   self.recheck()
-  return dict(A=READ_A,C=READ_C,resume=dict(A=DR_A,C=DR_C),resume_v2=dict(A=DRV2_A,C=DRV2_C),maps_budget=dict(A=MB_A,C=MB_C),auth=dict(A=TERM_A,C=TERM_C,mode="terminal",
+  return dict(A=READ_A,C=READ_C,resume=dict(A=DR_A,C=DR_C),resume_v2=dict(A=DRV2_A,C=DRV2_C),maps_budget=dict(A=MB_A,C=MB_C),
+scan_work=dict(A=WORK_A,C=WORK_C,result_schema="lhq-journal-writer-result/v2",
+fd_stat_attempts=2097152,fd_stat_policy="initial+recheck+match;charge-before-call;no-refund",
+progress_bytes=4096,maintenance_source_bytes=98304),auth=dict(A=TERM_A,C=TERM_C,mode="terminal",
 terminal=self.terminal),payload=dict(bytes=len(self.payload),sha256=digest(self.payload)),
 loader_sha256=digest(self.guest.WRITER_LOADER.encode()),python_link=self.python_link,
 tools={name:tool.binding() for name,tool in self.tools.items()},
@@ -626,22 +634,37 @@ def _proc_read(path,cap,check,kind="PID_STAT_BYTES",pid=0,tid=0):
   return bytes(raw)
  finally:
   os.close(fd)
-def _fd_snapshot(path,check,pid=0,tid=0,kind="FD_ENTRIES"):
+def scan_progress():
+ return dict(phase="PRE_SCAN",scan_complete=False,pids_listed=None,pids_completed=0,
+ tasks_started=0,tasks_completed=0,fd_initial_stat_attempts=0,fd_recheck_stat_attempts=0,
+ fd_match_stat_attempts=0,maps_files_read=0,maps_bytes_read=0,maps_max_file_bytes=0,
+ last_valid_elapsed_ns=None)
+def charge_fd_stat(progress,field,pid,tid):
+ count=sum(progress[key] for key in
+ ("fd_initial_stat_attempts","fd_recheck_stat_attempts","fd_match_stat_attempts"))+1
+ _proc_limit("FD_STAT_CALLS",count,2097152,pid,tid)
+ progress[field]+=1
+def _fd_snapshot(path,check,pid=0,tid=0,kind="FD_ENTRIES",*,progress=None):
+ if progress is None:progress=scan_progress()
+ field="fd_recheck_stat_attempts" if kind=="FD_ENTRIES_RECHECK" else "fd_initial_stat_attempts"
  values={}
  with os.scandir(path) as entries:
   for entry in entries:
    check()
    require(entry.name.isdigit(),"GROWTH_PROC_FD_NAME")
    _proc_limit(kind,len(values)+1,65536,pid,tid)
+   charge_fd_stat(progress,field,pid,tid)
    values[entry.name]=entry.stat(follow_symlinks=True)
  return values
-def collect_image_writers(image_keys,check,*,proc_root="/proc",mount_reader=None):
+def collect_image_writers(image_keys,check,*,proc_root="/proc",mount_reader=None,progress=None):
+ if progress is None:progress=scan_progress()
  require(type(image_keys) is dict and image_keys,"GROWTH_IMAGE_KEYS")
  require(len(image_keys)==len(set(image_keys.values())),"GROWTH_IMAGE_ALIAS")
  reverse={key:role for role,key in image_keys.items()}
- rows,totals=[],[0,0,0]
+ rows=[]
  try:
   if proc_root=="/proc":
+   progress["phase"]="PROC_MOUNT"
    mounts=(mount_reader() if mount_reader is not None else
 _proc_read("/proc/self/mountinfo",MIB,check,"MOUNTINFO_BYTES")).splitlines()
    matches=[line.split() for line in mounts if len(line.split())>6
@@ -651,22 +674,27 @@ and line.split()[4]==b"/proc"]
    options=b",".join(matches[0]).split(b",")
    require(not any(value.startswith(b"hidepid=") and value!=b"hidepid=0"
 for value in options),"GROWTH_WRITERS_VISIBILITY")
+  progress["phase"]="PID_LIST"
   pids=_bounded_names(proc_root,32768,check,numeric=True)
+  progress["pids_listed"]=len(pids)
   for pid in pids:
    directory=proc_root+"/"+pid
+   progress["phase"]="PID_STAT"
    start=proc_start(_proc_read(directory+"/stat",16384,check,"PID_STAT_BYTES",pid))
+   progress["phase"]="TASK_LIST"
    tids=_bounded_names(directory+"/task",32768,check,numeric=True,kind="TASK_ENTRIES",pid=pid)
    require(tids,"GROWTH_WRITERS_UNKNOWN")
    writable=set()
    for tid in tids:
-    totals[0]+=1
-    _proc_limit("TASK_TOTAL",totals[0],65536,pid,tid)
+    progress["phase"]="TASK_STAT"
+    _proc_limit("TASK_TOTAL",progress["tasks_started"]+1,65536,pid,tid)
+    progress["tasks_started"]+=1
     task=directory+"/task/"+tid
     task_start=proc_start(_proc_read(task+"/stat",16384,check,"TASK_STAT_BYTES",pid,tid))
-    names=_fd_snapshot(task+"/fd",check,pid,tid)
+    progress["phase"]="FD_INITIAL"
+    names=_fd_snapshot(task+"/fd",check,pid,tid,progress=progress)
+    progress["phase"]="FD_MATCH"
     for number,info in names.items():
-     totals[1]+=1
-     _proc_limit("FD_TOTAL",totals[1],262144,pid,tid)
      check()
      path=task+"/fd/"+number
      role=reverse.get((info.st_dev,info.st_ino))
@@ -677,16 +705,22 @@ for value in options),"GROWTH_WRITERS_VISIBILITY")
       flags=int(found[0],8)
       if flags & os.O_ACCMODE in (os.O_WRONLY,os.O_RDWR):
        writable.add(role)
+      charge_fd_stat(progress,"fd_match_stat_attempts",pid,tid)
       again=os.stat(path)
       require(identity(again)==identity(info),"GROWTH_PROC_DRIFT")
       require(_proc_read(task+"/fdinfo/"+number,4096,check,"FDINFO_BYTES_RECHECK",pid,tid)==raw,
 "GROWTH_PROC_DRIFT")
+    progress["phase"]="FD_RECHECK"
     require({n:identity(s) for n,s in names.items()}==
-{n:identity(s) for n,s in _fd_snapshot(task+"/fd",check,pid,tid,kind="FD_ENTRIES_RECHECK").items()},
+{n:identity(s) for n,s in _fd_snapshot(task+"/fd",check,pid,tid,kind="FD_ENTRIES_RECHECK",progress=progress).items()},
 "GROWTH_PROC_DRIFT")
+    progress["phase"]="MAPS_READ"
     maps=_proc_read(task+"/maps",MIB,check,"MAPS_BYTES",pid,tid)
-    totals[2]+=len(maps)
-    _proc_limit("MAPS_TOTAL_BYTES",totals[2],512*MIB,pid,tid)
+    progress["maps_files_read"]+=1
+    progress["maps_bytes_read"]+=len(maps)
+    progress["maps_max_file_bytes"]=max(progress["maps_max_file_bytes"],len(maps))
+    _proc_limit("MAPS_TOTAL_BYTES",progress["maps_bytes_read"],512*MIB,pid,tid)
+    progress["phase"]="MAPS_PARSE"
     for line in maps.splitlines():
      fields=line.split(None,5)
      require(len(fields)>=5 and re.fullmatch(rb"[r-][w-][x-][ps]",fields[1])
@@ -696,13 +730,18 @@ and fields[4].isdigit(),"GROWTH_PROC_MAPS")
      role=reverse.get((os.makedev(major,minor),int(fields[4])))
      if role is not None and fields[1][1:2]==b"w":
       writable.add(role)
+    progress["phase"]="TASK_RECHECK"
     require(proc_start(_proc_read(task+"/stat",16384,check,"TASK_STAT_BYTES_RECHECK",pid,tid))==task_start,
 "GROWTH_PROC_DRIFT")
+    progress["tasks_completed"]+=1
+   progress["phase"]="PID_RECHECK"
    require(tids==_bounded_names(directory+"/task",32768,check,numeric=True,kind="TASK_ENTRIES_RECHECK",pid=pid)
 and proc_start(_proc_read(directory+"/stat",16384,check,"PID_STAT_BYTES_RECHECK",pid))==start,
 "GROWTH_PROC_DRIFT")
+   progress["pids_completed"]+=1
    rows.append(dict(pid=int(pid),starttime=start,complete=True,
 writable_images=sorted(writable)))
+  progress["phase"]="FINAL_PID_RECHECK"
   require(pids==_bounded_names(proc_root,32768,check,numeric=True,kind="PID_ENTRIES_RECHECK"),"GROWTH_PROC_DRIFT")
   return rows
  except (OSError,ValueError) as error:
@@ -892,7 +931,7 @@ if len(r)>393216 or not z.eof or z.unconsumed_tail or z.unused_data: raise Value
 d=json.loads(r); p=types.ModuleType('e3_host'); p.__path__=[]; sys.modules['e3_host']=p
 for key,name in [('reader','q2_core_capacity_reader'),('guest','q2_journal_growth_guest')]:
  s=base64.b64decode(d[key],validate=True)
- if not 0<len(s)<=65536: raise ValueError('SOURCE_BOUND')
+ if not 0<len(s)<=(98304 if key=='guest' else 65536): raise ValueError('SOURCE_BOUND')
  m=types.ModuleType('e3_host.'+name); m.__package__='e3_host'; sys.modules[m.__name__]=m; setattr(p,name,m)
  exec(compile(s,'<'+name+'>','exec'),m.__dict__)
 v=base64.b64decode(d['input'],validate=True)
@@ -904,7 +943,8 @@ def source_bundle(sources,descriptor):
  value={"input":canonical(descriptor)}
  value.update({key:sources[name] for key,name in
 (("reader","q2_core_capacity_reader.py"),("guest","q2_journal_growth_guest.py"))})
- require(all(type(raw) is bytes and 0<len(raw)<=65536 for raw in value.values()),"GROWTH_BUNDLE_INPUT")
+ require(all(type(raw) is bytes and 0<len(raw)<=(98304 if key=="guest" else 65536)
+ for key,raw in value.items()),"GROWTH_BUNDLE_INPUT")
  raw=canonical({key:base64.b64encode(data).decode("ascii") for key,data in value.items()})
  require(len(raw)<=393216,"GROWTH_BUNDLE_BOUND")
  compressed=zlib.compress(raw,9)
@@ -1072,6 +1112,12 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  git("merge-base","--is-ancestor",MB_A,MB_C)
  git("merge-base","--is-ancestor",MB_C,expected)
  require(expected!=MB_C,"GROWTH_MAPS_BUDGET_D")
+ git("merge-base","--is-ancestor",WORK_A,WORK_C)
+ git("merge-base","--is-ancestor",WORK_C,expected)
+ require(expected!=WORK_C,"GROWTH_SCAN_WORK_D")
+ for name,sha in zip(DOC_PINS,WORK_PINS):
+  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-scan-work/"+name))==sha,
+"GROWTH_SCAN_WORK_A_CHANGED")
  for name,sha in zip(DOC_PINS,MB_PINS):
   require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-maps-budget/"+name))==sha,
 "GROWTH_MAPS_BUDGET_A_CHANGED")
@@ -1103,7 +1149,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
    require(raw==git("show","8e91fa2631aa18a8469efa5a14e4145eaf781e28:tests/e3_host/"+name),
 "GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw
- require(all(len(sources[name])<=65536 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
+ require(all(len(sources[name])<=98304 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
  return sources
 class GrowthAnchor(prior.Anchor):
  def capacity(self):

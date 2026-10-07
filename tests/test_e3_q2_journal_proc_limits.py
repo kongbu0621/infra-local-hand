@@ -23,7 +23,7 @@ INFO = SimpleNamespace(st_dev=42, st_ino=1, st_mode=0, st_uid=0, st_gid=0, st_nl
 LIMITS = [
     ("PID_ENTRIES", 32768, 0, 0), ("TASK_ENTRIES", 32768, 27, 0),
     ("FD_ENTRIES", 65536, 27, 29), ("TASK_TOTAL", 65536, 27, 29),
-    ("FD_TOTAL", 262144, 27, 29), ("PID_STAT_BYTES", 16384, 27, 0),
+    ("FD_STAT_CALLS", 2097152, 27, 29), ("PID_STAT_BYTES", 16384, 27, 0),
     ("TASK_STAT_BYTES", 16384, 27, 29),
     ("FDINFO_BYTES", 4096, 27, 29), ("MAPS_BYTES", 1048576, 27, 29),
     ("MAPS_TOTAL_BYTES", 536870912, 27, 29), ("MOUNTINFO_BYTES", 1048576, 0, 0),
@@ -100,15 +100,17 @@ def test_enumeration_limit_counts_only_numeric_entries(scanner, monkeypatch, kin
 @pytest.mark.parametrize("kind", ["FD_ENTRIES", "FD_ENTRIES_RECHECK"])
 def test_fd_snapshot_preserves_65536_limit_and_stops_before_extra_stat(scanner, monkeypatch, extra, kind):
     stats = []
+    progress = scanner.ns["scan_progress"]()
     monkeypatch.setattr(scanner.os, "scandir", lambda path:
         Entries((str(n) for n in range(65536 + extra)), stats))
     if extra:
         with pytest.raises(scanner.error) as caught:
-            scanner.ns["_fd_snapshot"](PRIVATE_PATH, lambda: None, 27, 29, kind=kind)
+            scanner.ns["_fd_snapshot"](PRIVATE_PATH, lambda: None, 27, 29, kind=kind, progress=progress)
         assert str(caught.value) == reason(kind, 65537, 65536, 27, 29)
     else:
-        assert len(scanner.ns["_fd_snapshot"](PRIVATE_PATH, lambda: None, 27, 29, kind=kind)) == 65536
+        assert len(scanner.ns["_fd_snapshot"](PRIVATE_PATH, lambda: None, 27, 29, kind=kind, progress=progress)) == 65536
     assert len(stats) == 65536
+    assert sum(progress[k] for k in ("fd_initial_stat_attempts", "fd_recheck_stat_attempts", "fd_match_stat_attempts")) == 65536
 
 
 def test_nonnumeric_fd_is_distinct_and_never_stat_ed(scanner, monkeypatch):
@@ -183,18 +185,6 @@ def test_task_total_uses_all_tasks_across_processes(scanner, monkeypatch, extra)
     else:
         assert len(scan()) == 2
 
-
-@pytest.mark.parametrize("extra", [0, 1])
-def test_fd_total_counts_repeated_per_task_snapshots(scanner, monkeypatch, extra):
-    fds = {str(n): INFO for n in range(65536)}
-    tids = [str(n) for n in range(1, 5 + extra)]
-    scan = synthetic_scan(scanner, monkeypatch, ["27"], {"27": tids}, fds=fds)
-    if extra:
-        with pytest.raises(scanner.error) as caught:
-            scan()
-        assert str(caught.value) == reason("FD_TOTAL", 262145, 262144, 27, 5)
-    else:
-        assert len(scan()) == 1
 
 
 def maps_block(size):
@@ -283,7 +273,7 @@ def test_old_field_rejection_value_does_not_skip_later_checks(scanner, monkeypat
             return []
         return original_names(path, cap, check, **options)
 
-    def fds(path, check, pid=0, tid=0, kind="FD_ENTRIES"):
+    def fds(path, check, pid=0, tid=0, kind="FD_ENTRIES", *, progress=None):
         if path != last_task + "fd":
             return {}
         if late in ("fd_writer", "deadline"):
@@ -341,10 +331,10 @@ def test_scanner_passes_exact_enumeration_and_recheck_context(scanner, monkeypat
         if kind == expected_kind:
             scanner.ns["_proc_limit"](kind, cap + 1, cap, pid, tid)
         return names(path, cap, check, numeric=numeric, kind=kind, pid=pid, tid=tid)
-    def fd_snapshot(path, check, pid=0, tid=0, kind="FD_ENTRIES"):
+    def fd_snapshot(path, check, pid=0, tid=0, kind="FD_ENTRIES", *, progress=None):
         if kind == expected_kind:
             scanner.ns["_proc_limit"](kind, 65537, 65536, pid, tid)
-        return snapshot(path, check, pid, tid, kind=kind)
+        return snapshot(path, check, pid, tid, kind=kind, progress=progress)
     expected_kind = kind
     monkeypatch.setitem(scanner.ns, "_bounded_names", bounded_names)
     monkeypatch.setitem(scanner.ns, "_fd_snapshot", fd_snapshot)
@@ -364,7 +354,7 @@ def test_generated_entry_failure_parser_parent_and_cli_retain_full_limit(payload
     raw = h.canonical(result)
     expected = reason(kind, cap + 1, cap, pid, tid)
     assert result["reason"] == expected
-    assert g.writer_failure(raw, result["request"]) == dict(reason=expected, errno=None)
+    assert g.writer_failure(raw, result["request"]) == dict(reason=expected, errno=None, progress=result["progress"])
     def collect(command):
         assert result["request"] == command.request
         command.output["stdout"].extend(raw)
@@ -374,8 +364,8 @@ def test_generated_entry_failure_parser_parent_and_cli_retain_full_limit(payload
     with pytest.raises(g.r.ObservationError) as caught:
         observer.value.observe(KEYS, lambda: None)
     assert str(caught.value) == h.prior.safe_reason(caught.value) == expected
-    assert caught.value.diagnostic["child_failure"] == dict(reason=expected, errno=None)
+    assert caught.value.diagnostic["child_failure"] == dict(reason=expected, errno=None, progress=result["progress"])
     assert observer.value.failed and observer.value.reports == [] and len(observer.calls) == 1
     retained = json.dumps(caught.value.diagnostic)
     assert PRIVATE_PATH not in retained and "private process title" not in retained
-    assert set(result) == {"schema", "request", "complete", "reason", "errno"}
+    assert set(result) == {"schema", "request", "complete", "reason", "errno", "progress"}

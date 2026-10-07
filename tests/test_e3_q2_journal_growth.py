@@ -218,7 +218,7 @@ def test_image_info_refuses_aliases_or_unsupported_format(change):
 def test_source_ceiling_and_approved_documents_unchanged():
     root = Path(__file__).resolve().parents[1]
     for name in ("q2_journal_growth.py", "q2_journal_growth_guest.py"):
-        assert (root / "tests/e3_host" / name).stat().st_size <= 65536
+        assert (root / "tests/e3_host" / name).stat().st_size <= 98304
     for name, sha in h.DOC_PINS.items():
         assert h.digest((root / "docs/a2-execution/q2-core-journal-growth" / name).read_bytes()) == sha
 

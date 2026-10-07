@@ -107,8 +107,8 @@ def run_entry(namespace):
     assert namespace["writer_entry"]() == 3
     raw = output.getvalue()
     result = json.loads(raw)
-    assert set(result) == {"schema", "request", "complete", "reason", "errno"}
-    assert result["schema"] == "lhq-journal-writer-result/v1"
+    assert set(result) == {"schema", "request", "complete", "reason", "errno", "progress"}
+    assert result["schema"] == "lhq-journal-writer-result/v2"
     assert result["request"] == request and result["complete"] is False
     assert 0 < len(raw) <= 65536 and raw.endswith(b"\n")
     assert PRIVATE_PATH.encode() not in raw and PRIVATE_MESSAGE.encode() not in raw
@@ -128,10 +128,13 @@ def test_generated_entry_retains_wrapped_permission_errno(payload, proc_fixture)
     payload["_proc_read"] = denied
     payload["read_fact"] = lambda kind, check, report: (BOOT + "\n").encode()
     payload["collect_image_writers"] = lambda images, check, **kwargs: original_scan(
-        images, check, proc_root=str(root))
+        images, check, proc_root=str(root), progress=kwargs["progress"])
     result = run_entry(payload)
     assert result["reason"] == "GROWTH_WRITERS_UNKNOWN"
     assert result["errno"] == 13
+    assert result["progress"]["phase"] == "MAPS_READ"
+    assert result["progress"]["maps_files_read"] == result["progress"]["maps_bytes_read"] == 0
+    assert result["progress"]["tasks_started"] == 1 and not result["progress"]["scan_complete"]
 
 
 @pytest.mark.parametrize("target,reason,error_number", [

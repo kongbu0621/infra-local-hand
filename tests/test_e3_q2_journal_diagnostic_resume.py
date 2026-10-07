@@ -41,23 +41,24 @@ def source_git(monkeypatch):
     return state
 
 
-def test_candidate_requires_all_closures_and_keeps_original_source_caps(source_git):
+def test_candidate_requires_all_closures_and_approved_source_caps(source_git):
     sources = h.growth_sources(source_git.head)
     for earlier, later in ((h.C, source_git.head), (h.TERM_C, source_git.head),
                            (h.DR_A, h.DR_C), (h.DR_C, source_git.head),
                            (h.DRV2_A, h.DRV2_C), (h.DRV2_C, source_git.head),
-                           (h.MB_A, h.MB_C), (h.MB_C, source_git.head)):
+                           (h.MB_A, h.MB_C), (h.MB_C, source_git.head),
+                           (h.WORK_A, h.WORK_C), (h.WORK_C, source_git.head)):
         assert ["merge-base", "--is-ancestor", earlier, later] in source_git.calls
     assert len(sources) == 12
-    assert all(len(sources[name]) <= 65536 for name in
+    assert all(len(sources[name]) <= 98304 for name in
                ("q2_journal_growth.py", "q2_journal_growth_guest.py"))
 
 
-@pytest.mark.parametrize("version", ["v1", "v2", "maps_budget"])
+@pytest.mark.parametrize("version", ["v1", "v2", "maps_budget", "scan_work"])
 @pytest.mark.parametrize("edge", ["approval_to_closure", "closure_to_candidate"])
 def test_unrelated_candidate_or_closure_is_refused_before_source_reads(source_git, edge, version):
     approval, closure = {"v1": (h.DR_A, h.DR_C), "v2": (h.DRV2_A, h.DRV2_C),
-                         "maps_budget": (h.MB_A, h.MB_C)}[version]
+                         "maps_budget": (h.MB_A, h.MB_C), "scan_work": (h.WORK_A, h.WORK_C)}[version]
     source_git.rejected_edge = ((approval, closure) if edge == "approval_to_closure"
                                 else (closure, source_git.head))
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_SOURCE$"):
@@ -67,7 +68,8 @@ def test_unrelated_candidate_or_closure_is_refused_before_source_reads(source_gi
 
 @pytest.mark.parametrize("closure,reason", [(h.DR_C, "GROWTH_RESUME_D"),
                                            (h.DRV2_C, "GROWTH_RESUME_V2_D"),
-                                           (h.MB_C, "GROWTH_MAPS_BUDGET_D")])
+                                           (h.MB_C, "GROWTH_MAPS_BUDGET_D"),
+                                           (h.WORK_C, "GROWTH_SCAN_WORK_D")])
 def test_bookkeeping_closure_cannot_be_execution_candidate(source_git, closure, reason):
     source_git.head = closure
     with pytest.raises(h.prior.r.ObservationError, match="^" + reason + "$"):
@@ -77,7 +79,8 @@ def test_bookkeeping_closure_cannot_be_execution_candidate(source_git, closure, 
 
 @pytest.mark.parametrize("scope,reason", [("diagnostic-resume", "GROWTH_RESUME_A_CHANGED"),
                                          ("diagnostic-resume-v2", "GROWTH_RESUME_V2_A_CHANGED"),
-                                         ("maps-budget", "GROWTH_MAPS_BUDGET_A_CHANGED")])
+                                         ("maps-budget", "GROWTH_MAPS_BUDGET_A_CHANGED"),
+                                         ("scan-work", "GROWTH_SCAN_WORK_A_CHANGED")])
 @pytest.mark.parametrize("name", ["REQUIREMENTS.md", "ARCHITECTURE.md", "IMPLEMENTATION_PLAN.md"])
 def test_changed_resume_approval_is_refused_before_implementation_reads(source_git, name, scope, reason):
     source_git.changed_doc = "docs/a2-execution/q2-core-journal-" + scope + "/" + name
