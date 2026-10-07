@@ -1884,22 +1884,29 @@ members and eight original static inputs passed offline verification; old W2 sou
 unchanged. Historical PID_RECHECK's exact failed predicate remains UNKNOWN. This is neither a new
 field authorization nor a replacement handoff: W2 remains CONSUMED / FAILED and all prior limits apply.
 
-### Journal drift diagnostic maintenance resumption proposal
+### Journal drift diagnostic maintenance resumption
 
-Scope `LH-Q2-CORE-JOURNAL-DRIFT-RESUME-v1` is **OPEN / NOT APPROVED**, DR1–DR2 only.
+Scope `LH-Q2-CORE-JOURNAL-DRIFT-RESUME-v1` is **CLOSED for DR1–DR2 only**.
 The [baseline registration](docs/governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md) pins exact A
 `4f2a6a37ad5afd027dbde0f1656a3552750cb3b2` and its three reviewed documents. R, readable direct
 source/integrity, Owner mandate/authority, no exceptions and material-change rules remain unchanged.
-There is no new Owner B or independent C. This is proposal registration, not closure or implementation.
+Owner B is retained in [the drift-resume decision](docs/governance/Q2_CORE_JOURNAL_DRIFT_RESUME_OWNER_DECISION.md),
+event `LH-Q2-CORE-JOURNAL-DRIFT-RESUME-CLOSURE-20261007-01`, with the exact preceding request and reply.
+This independent bookkeeping-only C contains only that decision and this registration; new D must
+descend from C. Do not squash C with implementation. A's three documents and historical OPEN labels
+remain byte-identical. This closure does not prove implementation, admission or maintenance success.
 The existing diagnostic repair, local static-input review and exact CI are complete and remain valid.
-Only the proposed additional one-window authority and its new binding await approval. If approved,
-record accurate B and independent C before D; preserve all old pins, evidence and consumed windows.
-The proposal retains the current scanner, checks, v2 progress, budgets, deadlines and cumulative
-maintenance counts. It proposes one replacement preflight and, only if all gates pass, the unconsumed
+DR1 authorizes only the new scope's source/manifest binding, scoped verification, publication,
+exact-candidate CI and freezing. Preserve all old pins, evidence and consumed windows. The approved
+scope retains the current scanner, checks, v2 progress, budgets, deadlines and cumulative
+maintenance counts. DR2 authorizes one replacement preflight and, only if all gates pass, the unconsumed
 original journal maintenance in that same window. No separate diagnostic trial, retry or supplemental
-collection is included. New-boot core adoption and H01/Q4/H11 remain outside this proposal.
-Do not replay the old W2 handoff, prepare a replacement executable handoff or perform a new field action
-before exact approval and the proposal's subsequent binding/verification/publication/CI/freeze gates.
+collection is included. New-boot core adoption and H01/Q4/H11 remain outside this closure.
+Use the original session, objects, inputs, ordinary coordinator and Owner's existing real foreground
+terminal. Window start consumes the one attempt; failure does not refund it. Keep original execute
+re-admission, checkpoint 2 and local SSH configuration checks in the same bound window. Do not replay
+the old W2 handoff or perform a new field action before all DR1 gates pass. No privilege/helper/probe,
+retry, stopping host applications, supplemental collection, cleanup or recovery is included.
 Clearly unaffected CLOSED development may continue; existing approval records and source remain unchanged.
 
 ### Continuing constraints
