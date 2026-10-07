@@ -47,28 +47,34 @@ All original files and consumption remain retained. Do not replay either prepare
 issue the 07a package, retry, collect more field evidence, clean up or perform recovery under
 this consumed authorization. This record changes no approved document or frozen source byte.
 
-### Proposed single continuation after the serial repair
+### Authorized single continuation after the serial repair
 
-Scope `LH-Q2-CORE-SERIAL-CONTINUATION-v1` is **OPEN / NOT APPROVED** for SC1–SC3.
+Scope `LH-Q2-CORE-SERIAL-CONTINUATION-v1` is **CLOSED for SC1–SC3 only**.
 The [requirements](docs/a2-execution/q2-core-serial-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-serial-continuation/ARCHITECTURE.md), and
 [implementation plan](docs/a2-execution/q2-core-serial-continuation/IMPLEMENTATION_PLAN.md)
-form exact proposed A `7869bbcaeb1dad3a1736131a3ff2e225ddf5e7cc`, tree
+form exact approved A `7869bbcaeb1dad3a1736131a3ff2e225ddf5e7cc`, tree
 `bc6bee8c650fbcf412e0fbf49f7d3c16c62da1c5`; the
 [baseline registration](docs/governance/Q2_CORE_SERIAL_CONTINUATION_BASELINE.md) pins their bytes.
 R, direct source/integrity, Owner-only authority, no exceptions and change control remain unchanged.
 Repair baseline `ac292911f1dc7d99606899e5695c3245d467286d` has exact CI 3/3 success;
 that fact neither authorizes another field window nor verifies this unimplemented continuation.
 
-The proposal retains failed maintenance 06a, uses one fixed new maintenance session
+The approval retains failed maintenance 06a, uses one fixed new maintenance session
 `lhqjgrow-20261007a` with independent create-only outputs, and conditionally continues the same
 unissued `lhqcore-20261007a` H01/Q4/H11 batch. Both producer and consumers must be implemented,
 verified, published and frozen before maintenance. Old full host costs remain retained;
 two maintenance generations require 2592 MiB/740 inodes, plus the original core capture gives
 2656 MiB/756 inodes. These are conservative admission floors, not extra physical objects or
 released old obligations. Single-attempt limits, field deadlines and no-retry boundaries remain.
-No new B or C is recorded. Documentation/inspection only until accurate Owner closure; do not
-change source, create a runnable handoff, execute old callers or infer approval from the screenshot.
+Exact Owner B is retained in [the decision](docs/governance/Q2_CORE_SERIAL_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-SERIAL-CONTINUATION-CLOSURE-20261007-01`. This independent bookkeeping-only C
+contains that decision and this registration; D must descend from C. A's three files, including
+historical OPEN labels, remain byte-identical. Do not squash C with implementation.
+SC1 authorizes the complete implementation/verification/publication/freeze batch; SC2 permits
+one new maintenance window and SC3 one conditional original core batch only after full success.
+No per-substep reapproval is needed. Old callers and old consumed windows remain forbidden.
+This closure does not prove readiness, consumption or success; changed scope still requires review.
 
 
 ## Publication and GX10 handoff
