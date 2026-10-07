@@ -1,5 +1,14 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
+## 当前离线修复：一致性错误已按具体检查项区分
+
+在下述已消费 W2 的基础上，直接修复原扫描器诊断：重复枚举、task 集合、PID/task starttime、
+FD 身份/fdinfo/snapshot、最终 PID 集合分别返回明确原因。原判定、短路读取、计数、预算与
+v2 协议保持，源码与实际生成 payload 同时验证。详见
+[诊断修复记录](../Q2_CORE_JOURNAL_DRIFT_DIAGNOSTICS_REVIEW_20261007.md)。
+这是已有 CLOSED 范围的离线代码修复；历史具体分支仍 UNKNOWN，W2 仍 CONSUMED / FAILED。
+没有新的现场调用、journal 维护或 H01/Q4/H11 PASS，也不授权再次执行旧交接。
+
 ## 当前：W1 已完成，W2 在 PID 复核阶段失败并消耗，业务核心尚未进入
 
 此前现场登记为 `8c58f093a3fc923fb078811622fb2691448e81fc`。

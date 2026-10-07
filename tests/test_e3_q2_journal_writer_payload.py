@@ -55,7 +55,7 @@ def proc_fixture(tmp_path):
 @pytest.mark.parametrize("failure,expected", [
     ("maps", "GROWTH_PROC_MAPS"),
     ("visibility", "GROWTH_WRITERS_VISIBILITY"),
-    ("drift", "GROWTH_PROC_DRIFT"),
+    ("drift", "GROWTH_PROC_DRIFT_FD_SNAPSHOT"),
     ("deadline", "GROWTH_WRITER_DEADLINE"),
 ])
 def test_generated_scanner_retains_source_rejection_codes(payload, proc_fixture, monkeypatch,

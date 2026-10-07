@@ -616,7 +616,7 @@ def _bounded_names(path,cap,check,*,numeric=False,kind="PID_ENTRIES",pid=0,tid=0
     continue
    values.append(entry.name)
    _proc_limit(kind,len(values),cap,pid,tid)
- require(len(values)==len(set(values)),"GROWTH_PROC_DRIFT")
+ require(len(values)==len(set(values)),f"GROWTH_PROC_DRIFT_DUPLICATE_{kind}")
  return sorted(values)
 def _proc_read(path,cap,check,kind="PID_STAT_BYTES",pid=0,tid=0):
  check()
@@ -707,13 +707,13 @@ for value in options),"GROWTH_WRITERS_VISIBILITY")
        writable.add(role)
       charge_fd_stat(progress,"fd_match_stat_attempts",pid,tid)
       again=os.stat(path)
-      require(identity(again)==identity(info),"GROWTH_PROC_DRIFT")
+      require(identity(again)==identity(info),"GROWTH_PROC_DRIFT_FD_IDENTITY")
       require(_proc_read(task+"/fdinfo/"+number,4096,check,"FDINFO_BYTES_RECHECK",pid,tid)==raw,
-"GROWTH_PROC_DRIFT")
+"GROWTH_PROC_DRIFT_FDINFO")
     progress["phase"]="FD_RECHECK"
     require({n:identity(s) for n,s in names.items()}==
 {n:identity(s) for n,s in _fd_snapshot(task+"/fd",check,pid,tid,kind="FD_ENTRIES_RECHECK",progress=progress).items()},
-"GROWTH_PROC_DRIFT")
+"GROWTH_PROC_DRIFT_FD_SNAPSHOT")
     progress["phase"]="MAPS_READ"
     maps=_proc_read(task+"/maps",MIB,check,"MAPS_BYTES",pid,tid)
     progress["maps_files_read"]+=1
@@ -732,17 +732,18 @@ and fields[4].isdigit(),"GROWTH_PROC_MAPS")
       writable.add(role)
     progress["phase"]="TASK_RECHECK"
     require(proc_start(_proc_read(task+"/stat",16384,check,"TASK_STAT_BYTES_RECHECK",pid,tid))==task_start,
-"GROWTH_PROC_DRIFT")
+"GROWTH_PROC_DRIFT_TASK_START")
     progress["tasks_completed"]+=1
    progress["phase"]="PID_RECHECK"
-   require(tids==_bounded_names(directory+"/task",32768,check,numeric=True,kind="TASK_ENTRIES_RECHECK",pid=pid)
-and proc_start(_proc_read(directory+"/stat",16384,check,"PID_STAT_BYTES_RECHECK",pid))==start,
-"GROWTH_PROC_DRIFT")
+   require(tids==_bounded_names(directory+"/task",32768,check,numeric=True,kind="TASK_ENTRIES_RECHECK",pid=pid),
+"GROWTH_PROC_DRIFT_PID_TASK_SET")
+   require(proc_start(_proc_read(directory+"/stat",16384,check,"PID_STAT_BYTES_RECHECK",pid))==start,
+"GROWTH_PROC_DRIFT_PID_START")
    progress["pids_completed"]+=1
    rows.append(dict(pid=int(pid),starttime=start,complete=True,
 writable_images=sorted(writable)))
   progress["phase"]="FINAL_PID_RECHECK"
-  require(pids==_bounded_names(proc_root,32768,check,numeric=True,kind="PID_ENTRIES_RECHECK"),"GROWTH_PROC_DRIFT")
+  require(pids==_bounded_names(proc_root,32768,check,numeric=True,kind="PID_ENTRIES_RECHECK"),"GROWTH_PROC_DRIFT_PID_SET")
   return rows
  except (OSError,ValueError) as error:
   failure=prior.r.ObservationError("GROWTH_WRITERS_UNKNOWN")

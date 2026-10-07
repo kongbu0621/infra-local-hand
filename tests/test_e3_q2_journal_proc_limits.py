@@ -13,7 +13,7 @@ if not sys.platform.startswith("linux"):
 
 from e3_host import q2_journal_growth as h
 from e3_host import q2_journal_growth_guest as g
-from test_e3_q2_journal_host_read import KEYS, observer
+from test_e3_q2_journal_host_read import KEYS, observer, request as writer_request
 from test_e3_q2_journal_writer_payload import BOOT, payload, run_entry
 
 
@@ -221,9 +221,9 @@ def test_maps_total_counts_every_task_at_new_exact_boundary(scanner, monkeypatch
 @pytest.mark.parametrize("late,expected", [
     ("complete", None), ("mapped_writer", None), ("fd_writer", None),
     ("malformed_maps", "GROWTH_PROC_MAPS"), ("unreadable_maps", "GROWTH_WRITERS_UNKNOWN"),
-    ("task_identity", "GROWTH_PROC_DRIFT"), ("pid_identity", "GROWTH_PROC_DRIFT"),
-    ("task_set", "GROWTH_PROC_DRIFT"), ("pid_set", "GROWTH_PROC_DRIFT"),
-    ("fd_drift", "GROWTH_PROC_DRIFT"), ("deadline", "GROWTH_WRITER_DEADLINE"),
+    ("task_identity", "GROWTH_PROC_DRIFT_TASK_START"), ("pid_identity", "GROWTH_PROC_DRIFT_PID_START"),
+    ("task_set", "GROWTH_PROC_DRIFT_PID_TASK_SET"), ("pid_set", "GROWTH_PROC_DRIFT_PID_SET"),
+    ("fd_drift", "GROWTH_PROC_DRIFT_FD_SNAPSHOT"), ("deadline", "GROWTH_WRITER_DEADLINE"),
 ])
 def test_old_field_rejection_value_does_not_skip_later_checks(scanner, monkeypatch, late, expected):
     block, remainder = maps_block(1048576), maps_block(6778)
@@ -300,6 +300,121 @@ def test_old_field_rejection_value_does_not_skip_later_checks(scanner, monkeypat
     assert len(reads) == (65 if late in ("fd_drift", "deadline") else 66)
 
 
+@pytest.mark.parametrize("kind", ["PID_ENTRIES", "TASK_ENTRIES", "PID_ENTRIES_RECHECK",
+                                  "TASK_ENTRIES_RECHECK"])
+def test_duplicate_enumeration_names_report_only_fixed_kind(scanner, monkeypatch, kind):
+    calls, checks = [], []
+    def entries(path):
+        calls.append(path)
+        return Entries(["29", "PRIVATE_NOT_NUMERIC", "29"], [])
+    monkeypatch.setattr(scanner.os, "scandir", entries)
+    with pytest.raises(scanner.error) as caught:
+        scanner.ns["_bounded_names"](PRIVATE_PATH, 32768, lambda: checks.append(True),
+                                     numeric=True, kind=kind, pid="27")
+    assert str(caught.value) == "GROWTH_PROC_DRIFT_DUPLICATE_" + kind
+    assert re.fullmatch(r"[A-Z0-9_]{1,160}", str(caught.value))
+    assert calls == [PRIVATE_PATH] and len(checks) == 3
+
+
+PID_RECHECK_CASES = [
+    ("duplicate", "GROWTH_PROC_DRIFT_DUPLICATE_TASK_ENTRIES_RECHECK"),
+    ("same_size_set", "GROWTH_PROC_DRIFT_PID_TASK_SET"),
+    ("larger_set", "GROWTH_PROC_DRIFT_PID_TASK_SET"),
+    ("pid_start", "GROWTH_PROC_DRIFT_PID_START"),
+]
+
+
+def pid_recheck_scan(scanner, monkeypatch, failure):
+    """Real enumeration and scan control flow; all filesystem operations are synthetic."""
+    events, task_lists = [], []
+    root, task_dir = PRIVATE_PATH, PRIVATE_PATH + "/27/task"
+    def entries(path):
+        events.append(("scandir", path))
+        if path == root:
+            names = ["27"]
+        elif path == task_dir:
+            task_lists.append(True)
+            names = (["29", "29"] if failure == "duplicate" else
+                     ["30"] if failure == "same_size_set" else
+                     ["29", "30"] if failure == "larger_set" else ["29"])
+            if len(task_lists) == 1:
+                names = ["29"]
+        else:
+            assert path == task_dir + "/29/fd"
+            names = []
+        return Entries(names, [])
+    def read(path, cap, check, kind, *context):
+        events.append((kind, path))
+        check()
+        if kind == "MAPS_BYTES":
+            assert path == task_dir + "/29/maps" and cap == 1048576
+            return b""
+        assert path.endswith("/stat") and cap == 16384
+        return STAT[:-2] + b"18" if failure == "pid_start" and kind == "PID_STAT_BYTES_RECHECK" else STAT
+    monkeypatch.setattr(scanner.os, "scandir", entries)
+    monkeypatch.setitem(scanner.ns, "_proc_read", read)
+    original_scan = scanner.ns["collect_image_writers"]
+    def scan(*, progress, check=lambda: None):
+        return original_scan({"journal": (42, 2)}, check, proc_root=root, progress=progress)
+    return scan, events
+
+
+@pytest.mark.parametrize("failure,expected", [(None, None), *PID_RECHECK_CASES])
+def test_pid_recheck_distinguishes_predicate_without_extra_reads(scanner, monkeypatch, failure, expected):
+    scan, events = pid_recheck_scan(scanner, monkeypatch, failure)
+    progress = scanner.ns["scan_progress"]()
+    if expected:
+        with pytest.raises(scanner.error) as caught:
+            scan(progress=progress)
+        assert str(caught.value) == expected
+        assert re.fullmatch(r"[A-Z0-9_]{1,160}", str(caught.value))
+        assert progress["phase"] == "PID_RECHECK" and progress["pids_completed"] == 0
+    else:
+        assert scan(progress=progress) == [dict(pid=27, starttime=17, complete=True, writable_images=[])]
+        assert progress["phase"] == "FINAL_PID_RECHECK" and progress["pids_completed"] == 1
+    root, task = PRIVATE_PATH, PRIVATE_PATH + "/27/task/29"
+    expected_events = [("scandir", root), ("PID_STAT_BYTES", root + "/27/stat"),
+        ("scandir", root + "/27/task"), ("TASK_STAT_BYTES", task + "/stat"),
+        ("scandir", task + "/fd"), ("scandir", task + "/fd"),
+        ("MAPS_BYTES", task + "/maps"), ("TASK_STAT_BYTES_RECHECK", task + "/stat"),
+        ("scandir", root + "/27/task")]
+    if failure in (None, "pid_start"):
+        expected_events.append(("PID_STAT_BYTES_RECHECK", root + "/27/stat"))
+    if failure is None:
+        expected_events.append(("scandir", root))
+    # In particular, list mismatch/duplicates do not cause a diagnostic PID-stat reread.
+    assert events == expected_events
+    assert progress["pids_listed"] == progress["tasks_started"] == progress["tasks_completed"] == 1
+    assert progress["maps_files_read"] == 1 and progress["maps_bytes_read"] == 0
+    assert not progress["scan_complete"]
+    g.validate_progress(progress, writer_request())
+
+
+@pytest.mark.parametrize("failure,expected", [("identity", "GROWTH_PROC_DRIFT_FD_IDENTITY"),
+                                              ("fdinfo", "GROWTH_PROC_DRIFT_FDINFO")])
+def test_matching_fd_drift_keeps_identity_before_fdinfo_order(scanner, monkeypatch, failure, expected):
+    synthetic_scan(scanner, monkeypatch, ["27"], {"27": ["29"]}, fds={"8": INFO})
+    progress, events = scanner.ns["scan_progress"](), []
+    original_read = scanner.ns["_proc_read"]
+    def read(path, cap, check, kind, *context):
+        events.append(kind)
+        if kind == "FDINFO_BYTES_RECHECK":
+            return b"flags:\t02\n"
+        return original_read(path, cap, check, kind, *context)
+    def stat(path):
+        events.append("matching_stat")
+        return SimpleNamespace(**(vars(INFO) | {"st_ino": 2})) if failure == "identity" else INFO
+    monkeypatch.setitem(scanner.ns, "_proc_read", read)
+    monkeypatch.setattr(scanner.os, "stat", stat)
+    with pytest.raises(scanner.error, match="^" + expected + "$"):
+        scanner.ns["collect_image_writers"]({"journal": (42, 1)}, lambda: None,
+                                           proc_root=PRIVATE_PATH, progress=progress)
+    assert events == ["PID_STAT_BYTES", "TASK_STAT_BYTES", "FDINFO_BYTES", "matching_stat"] + (
+        ["FDINFO_BYTES_RECHECK"] if failure == "fdinfo" else [])
+    assert progress["phase"] == "FD_MATCH" and progress["fd_match_stat_attempts"] == 1
+    assert progress["tasks_completed"] == progress["maps_files_read"] == 0
+
+
 @pytest.mark.parametrize("kind,cap,pid,tid", [item for item in LIMITS if item[0] in {
     "PID_STAT_BYTES", "TASK_STAT_BYTES", "FDINFO_BYTES", "MAPS_BYTES", "MOUNTINFO_BYTES",
     "PID_STAT_BYTES_RECHECK", "TASK_STAT_BYTES_RECHECK", "FDINFO_BYTES_RECHECK"}])
@@ -369,3 +484,38 @@ def test_generated_entry_failure_parser_parent_and_cli_retain_full_limit(payload
     retained = json.dumps(caught.value.diagnostic)
     assert PRIVATE_PATH not in retained and "private process title" not in retained
     assert set(result) == {"schema", "request", "complete", "reason", "errno", "progress"}
+
+
+@pytest.mark.parametrize("failure,expected", PID_RECHECK_CASES)
+def test_actual_pid_recheck_reason_survives_generated_entry_and_parent(payload, observer,
+                                                                    monkeypatch, failure, expected):
+    monkeypatch.setitem(payload, "os", SimpleNamespace(**vars(payload["os"])))
+    scan, events = pid_recheck_scan(SimpleNamespace(ns=payload, os=payload["os"]), monkeypatch, failure)
+    monkeypatch.setitem(payload, "collect_image_writers", lambda images, check, **options:
+                        scan(progress=options["progress"], check=check))
+    monkeypatch.setitem(payload, "read_fact", lambda *args: (BOOT + "\n").encode())
+    result = run_entry(payload)
+    assert result["reason"] == expected and result["errno"] is None
+    progress = result["progress"]
+    assert progress["phase"] == "PID_RECHECK" and progress["pids_completed"] == 0
+    assert progress["tasks_started"] == progress["tasks_completed"] == 1
+    assert progress["last_valid_elapsed_ns"] == [0, 0] and not progress["scan_complete"]
+    assert sum(kind == "PID_STAT_BYTES_RECHECK" for kind, _ in events) == (failure == "pid_start")
+    raw, child = h.canonical(result), dict(reason=expected, errno=None, progress=progress)
+    assert g.writer_failure(raw, result["request"]) == child
+    def collect(command):
+        assert command.request == result["request"]
+        command.output["stdout"].extend(raw)
+        command.process.poll = lambda: 3
+        return dict(returncode=3, eof=dict(stdout=True, stderr=True), stdout=raw, stderr=b"")
+    monkeypatch.setattr(observer.Command, "collect", collect)
+    with pytest.raises(g.r.ObservationError) as caught:
+        observer.value.observe(KEYS, lambda: None)
+    assert str(caught.value) == h.prior.safe_reason(caught.value) == expected
+    assert caught.value.diagnostic["child_failure"] == child
+    assert PRIVATE_PATH not in json.dumps(caught.value.diagnostic)
+    assert "private process title" not in raw.decode()
+    assert observer.value.failed and observer.value.reports == [] and len(observer.calls) == 1
+    with pytest.raises(g.r.ObservationError, match="^GROWTH_WRITER_NO_RETRY$"):
+        observer.value.observe(KEYS, lambda: None)
+    assert len(observer.calls) == 1
