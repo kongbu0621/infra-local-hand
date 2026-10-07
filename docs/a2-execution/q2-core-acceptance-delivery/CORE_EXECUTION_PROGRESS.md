@@ -1,16 +1,26 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
-## 当前下一步：离线修复已验完，单次维护接续方案已冻结待批准
+## 当前：单次漂移接续已批准，DR1 完成，DR2 尚未开始
 
-本地 `d8c0793` 已完成 711932a 的 663 项验证、八份原输入及十二源成员核对；
-准确修复 CI 37569620992 已独立核实 3/3 success。这些步骤不再重复开发或无差异重跑。
-已发布[准确接续方案 A](../../governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md)
-`4f2a6a37ad5afd027dbde0f1656a3552750cb3b2`，范围 `LH-Q2-CORE-JOURNAL-DRIFT-RESUME-v1`
-的 DR1–DR2，仍 OPEN / NOT APPROVED。只请求一次替代预检，全门通过同窗完成原 journal
-维护；不增加独立诊断试跑，不改变现行检查、预算或期限，不保证宿主一致性已解决。
-准确 Owner B 后先独立 C，再完成新增绑定、准确候选验证/CI/冻结，才交本地真实终端执行。
-旧 W2 保持 CONSUMED / FAILED；没有新现场命令、调用或维护结果。新 boot 核心接续与
-H01/Q4/H11 尚未完成，原实现缺口保持，支线继续暂停。
+[准确 A](../../governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md)
+`4f2a6a37ad5afd027dbde0f1656a3552750cb3b2` 已取得
+[Owner B](../../governance/Q2_CORE_JOURNAL_DRIFT_RESUME_OWNER_DECISION.md)，
+`LH-Q2-CORE-JOURNAL-DRIFT-RESUME-v1` / DR1–DR2 Gate 已关闭。
+独立 C `e13f8efcb8dee4e4280dd722f7836ea94a27b83b` 后直接提交实现
+D `309c6e1cacfdf05cabeeac9d27f487acad524b61`，只新增准确授权来源与 manifest 绑定。
+相关 106 项本地验证通过、0 跳过；生成 payload 在相同 D 下与诊断修复字节相同。
+准确 D 的 CI `37575372661` 首次 3/3 success，含两平台源码与独立安装验证。
+十二源成员和八份原静态输入核对通过，独立源码检出与最终私有交接已冻结。
+详见 [DR1 验证与冻结](../Q2_CORE_JOURNAL_DRIFT_RESUME_REVIEW_20261007.md)。
+
+交接时 DR2 NOT STARTED，本次唯一替代窗口未消耗。Owner 在已有真实本机前台终端
+只执行本次最终交接一次；全门通过同窗完成原 journal 维护，无需逐子步骤再批。
+原检查、预算、15s/900s/780s、原 session 和累计维护次数保持，全部旧窗口继续消耗。
+旧 W2 和待决草稿禁止执行；失败即停，不重试、补采、提额、停宿主应用、清理或恢复。
+当前没有新增现场结果或 journal 维护成功证明；新 boot 核心采用与 H01/Q4/H11 不在
+本范围，原后续接线缺口保留，支线继续暂停。
+
+以下保留本次批准前的历史检查点，其中“当前/尚未/没有新交接”仅指对应登记时刻。
 
 ## 当前离线修复：一致性错误已按具体检查项区分
 

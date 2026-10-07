@@ -1909,6 +1909,19 @@ the old W2 handoff or perform a new field action before all DR1 gates pass. No p
 retry, stopping host applications, supplemental collection, cleanup or recovery is included.
 Clearly unaffected CLOSED development may continue; existing approval records and source remain unchanged.
 
+The [DR1 verification and freeze](docs/a2-execution/Q2_CORE_JOURNAL_DRIFT_RESUME_REVIEW_20261007.md)
+records independent C `e13f8efcb8dee4e4280dd722f7836ea94a27b83b` and direct implementation child D
+`309c6e1cacfdf05cabeeac9d27f487acad524b61`. Only the new constants, source admission and writer
+manifest binding changed; generated payload at the same D is byte-identical to the verified repair.
+Scoped local checks passed 106 tests without skips. Exact D CI `37575372661` completed successfully
+in attempt 1 on all three jobs, including source and independent installed verification on both
+platforms. Twelve source members and eight original static inputs retain their verified bindings.
+The clean exact candidate and private terminal handoff are frozen; DR1 is complete. At this handoff,
+DR2 is NOT STARTED and its one authorized replacement window remains unused. All old windows remain
+consumed. Only the final frozen handoff may be used once in Owner's existing real foreground terminal;
+the old W2 handoff and pending draft must not be executed. No field admission, journal growth or core
+acceptance follows from these offline/CI results. Original stop and scope boundaries remain mandatory.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
