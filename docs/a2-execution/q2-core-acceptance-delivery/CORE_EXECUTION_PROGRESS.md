@@ -1,6 +1,6 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
-## 当前：单次漂移接续已批准，DR1 完成，DR2 尚未开始
+## 当前：DR1 已完成，DR2 因 task 成员列表变化失败并消耗
 
 [准确 A](../../governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md)
 `4f2a6a37ad5afd027dbde0f1656a3552750cb3b2` 已取得
@@ -13,11 +13,17 @@ D `309c6e1cacfdf05cabeeac9d27f487acad524b61`，只新增准确授权来源与 ma
 十二源成员和八份原静态输入核对通过，独立源码检出与最终私有交接已冻结。
 详见 [DR1 验证与冻结](../Q2_CORE_JOURNAL_DRIFT_RESUME_REVIEW_20261007.md)。
 
-交接时 DR2 NOT STARTED，本次唯一替代窗口未消耗。Owner 在已有真实本机前台终端
-只执行本次最终交接一次；全门通过同窗完成原 journal 维护，无需逐子步骤再批。
+交接时 DR2 尚未开始；最新 [DR2 返回](../Q2_CORE_JOURNAL_DRIFT_RESUME_FIELD_20261007.md)
+已记录本次唯一替代窗口 CONSUMED / FAILED。准确候选在 checkpoint 1 返回
+`GROWTH_PROC_DRIFT_PID_TASK_SET`，明确为同一数字 PID 路径的前后排序 task 成员列表不同。
+后续 PID starttime 和最终全局 PID 集合复核尚未执行；具体 PID/线程差集及原因仍未知。
+失败前缀为 PID 338/618、task 1322、FD stat 104007、maps 132547020 B，scan_complete false。
+最后成功双钟样本约 12.175s，不是最终耗时或全量可行性证明。
+marker false、SSH0、成功 writer 报告0；未进入 execute 或 journal 维护。
 原检查、预算、15s/900s/780s、原 session 和累计维护次数保持，全部旧窗口继续消耗。
-旧 W2 和待决草稿禁止执行；失败即停，不重试、补采、提额、停宿主应用、清理或恢复。
-当前没有新增现场结果或 journal 维护成功证明；新 boot 核心采用与 H01/Q4/H11 不在
+本次最终交接、旧 W2 和待决草稿均禁止执行；不重试、补采、提额、停宿主应用、清理或恢复。
+原始流未独立认证，历史 W2 的具体分支仍 UNKNOWN。没有 journal 维护成功证明；
+新 boot 核心采用与 H01/Q4/H11 不在
 本范围，原后续接线缺口保留，支线继续暂停。
 
 以下保留本次批准前的历史检查点，其中“当前/尚未/没有新交接”仅指对应登记时刻。

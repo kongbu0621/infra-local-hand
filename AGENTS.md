@@ -1916,11 +1916,26 @@ manifest binding changed; generated payload at the same D is byte-identical to t
 Scoped local checks passed 106 tests without skips. Exact D CI `37575372661` completed successfully
 in attempt 1 on all three jobs, including source and independent installed verification on both
 platforms. Twelve source members and eight original static inputs retain their verified bindings.
-The clean exact candidate and private terminal handoff are frozen; DR1 is complete. At this handoff,
-DR2 is NOT STARTED and its one authorized replacement window remains unused. All old windows remain
-consumed. Only the final frozen handoff may be used once in Owner's existing real foreground terminal;
-the old W2 handoff and pending draft must not be executed. No field admission, journal growth or core
+The clean exact candidate and private terminal handoff were frozen; DR1 is complete. At that handoff,
+DR2 was NOT STARTED and its one authorized replacement window was unused. The field return below
+supersedes that status. All old windows remain consumed. The final frozen handoff, old W2 handoff
+and pending draft must not be executed again. No field admission, journal growth or core
 acceptance follows from these offline/CI results. Original stop and scope boundaries remain mandatory.
+
+The [drift-resume DR2 field return](docs/a2-execution/Q2_CORE_JOURNAL_DRIFT_RESUME_FIELD_20261007.md)
+records screenshot-supported checkpoint 1 preflight BLOCKED with `GROWTH_PROC_DRIFT_PID_TASK_SET`.
+At PID_RECHECK, the two completed, duplicate-checked sorted task lists differ; the subsequent PID
+starttime read and final global PID-set check were not reached. The exact PID, task differences and
+cause remain unknown; do not assume normal thread churn, PID reuse or a specific application.
+Progress is incomplete: 618 initially listed PIDs, 338 completed, 1322 tasks completed, 104007 FD stat
+attempts and 132547020 maps bytes. The last valid writer-clock sample is about 12.175s, not final
+elapsed time or proof of full-scan fit. Marker false, SSH zero and successful writer reports zero;
+journal maintenance did not start on this path. The one DR2 window is CONSUMED / FAILED despite
+no marker. Original streams were not independently verified; earlier UNKNOWNs are not reclassified.
+Preserve the terminal variables, frozen candidates and handoffs without replay, supplemental reads,
+budget changes, stopping host applications, cleanup or recovery. Any further affected field window
+or material coverage/consistency change needs its own exact review, Owner B and independent C.
+New-boot core adoption, H01/Q4/H11 and side work remain outside this authorization.
 
 ### Continuing constraints
 

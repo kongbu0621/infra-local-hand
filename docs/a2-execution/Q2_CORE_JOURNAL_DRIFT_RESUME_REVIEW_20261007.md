@@ -1,8 +1,9 @@
 # Journal 漂移诊断后接续：DR1 验证与准确候选冻结
 
-2026-10-07（Asia/Shanghai）。本记录对应准确批准的 DR1–DR2。
+2026-10-07（Asia/Shanghai）。本记录描述 DR1 完成并冻结交接时的历史状态。
 候选已发布，新增绑定、本地离线核对、准确 CI 与最终交接冻结全部完成；DR1 完成。
-DR2 **NOT STARTED**，本次唯一替代窗口尚未消耗。所有旧窗口仍 CONSUMED，旧 W2 交接禁止重跑。
+交接时 DR2 尚未开始；后续 [DR2 现场返回](Q2_CORE_JOURNAL_DRIFT_RESUME_FIELD_20261007.md)
+已记录唯一替代窗口 **CONSUMED / FAILED**。本次和全部旧交接均禁止重跑。
 
 ## 准确批准与候选
 
@@ -93,8 +94,9 @@ Bash 语法、两段 JSON 处理器编译及合成数据检查通过：准确三
 新 `LH_Q2_DRIFT_*` 变量仅防同终端误粘贴，不冒充跨进程硬性防重启，不能通过换 shell、
 unset、改 ID 或删除对象重开窗口。摘要长度/哈希对应 shell 保留 JSON，不冒充原 CLI stdout。
 
-现阶段无现场 Window/observer、sudo/writer、当前 boot/proc/VM 读取、工具资格探针或 SSH。
-DR2 只能由 Owner 在已有真实本机前台终端按准确交接一次执行。新窗口开始即消费；
+上述 DR1 工作没有现场 Window/observer、sudo/writer、当前 boot/proc/VM 读取、工具资格探针或 SSH。
+当时交付的 DR2 仅允许 Owner 在已有真实本机前台终端按准确交接一次执行；该次现已消耗。
+新窗口开始即消费；
 失败不退款、不重试、不补采、不重连、不改变检查/预算、不清理、恢复或回滚。
 预检全部通过，原 execute 仍保留再次准入、checkpoint 2 和本地 SSH 配置检查，随后
 同窗完成尚未消费的原 journal 维护。只有原合格 receipt 才证明维护成功。
