@@ -1,5 +1,17 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
+## 当前下一步：离线修复已验完，单次维护接续方案已冻结待批准
+
+本地 `d8c0793` 已完成 711932a 的 663 项验证、八份原输入及十二源成员核对；
+准确修复 CI 37569620992 已独立核实 3/3 success。这些步骤不再重复开发或无差异重跑。
+已发布[准确接续方案 A](../../governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md)
+`4f2a6a37ad5afd027dbde0f1656a3552750cb3b2`，范围 `LH-Q2-CORE-JOURNAL-DRIFT-RESUME-v1`
+的 DR1–DR2，仍 OPEN / NOT APPROVED。只请求一次替代预检，全门通过同窗完成原 journal
+维护；不增加独立诊断试跑，不改变现行检查、预算或期限，不保证宿主一致性已解决。
+准确 Owner B 后先独立 C，再完成新增绑定、准确候选验证/CI/冻结，才交本地真实终端执行。
+旧 W2 保持 CONSUMED / FAILED；没有新现场命令、调用或维护结果。新 boot 核心接续与
+H01/Q4/H11 尚未完成，原实现缺口保持，支线继续暂停。
+
 ## 当前离线修复：一致性错误已按具体检查项区分
 
 在下述已消费 W2 的基础上，直接修复原扫描器诊断：重复枚举、task 集合、PID/task starttime、

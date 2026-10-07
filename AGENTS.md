@@ -1884,6 +1884,24 @@ members and eight original static inputs passed offline verification; old W2 sou
 unchanged. Historical PID_RECHECK's exact failed predicate remains UNKNOWN. This is neither a new
 field authorization nor a replacement handoff: W2 remains CONSUMED / FAILED and all prior limits apply.
 
+### Journal drift diagnostic maintenance resumption proposal
+
+Scope `LH-Q2-CORE-JOURNAL-DRIFT-RESUME-v1` is **OPEN / NOT APPROVED**, DR1–DR2 only.
+The [baseline registration](docs/governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md) pins exact A
+`4f2a6a37ad5afd027dbde0f1656a3552750cb3b2` and its three reviewed documents. R, readable direct
+source/integrity, Owner mandate/authority, no exceptions and material-change rules remain unchanged.
+There is no new Owner B or independent C. This is proposal registration, not closure or implementation.
+The existing diagnostic repair, local static-input review and exact CI are complete and remain valid.
+Only the proposed additional one-window authority and its new binding await approval. If approved,
+record accurate B and independent C before D; preserve all old pins, evidence and consumed windows.
+The proposal retains the current scanner, checks, v2 progress, budgets, deadlines and cumulative
+maintenance counts. It proposes one replacement preflight and, only if all gates pass, the unconsumed
+original journal maintenance in that same window. No separate diagnostic trial, retry or supplemental
+collection is included. New-boot core adoption and H01/Q4/H11 remain outside this proposal.
+Do not replay the old W2 handoff, prepare a replacement executable handoff or perform a new field action
+before exact approval and the proposal's subsequent binding/verification/publication/CI/freeze gates.
+Clearly unaffected CLOSED development may continue; existing approval records and source remain unchanged.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
