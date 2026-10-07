@@ -146,9 +146,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # The complete verified Linux run needed 594 seconds under the prior
-    # 600-second limit. Allow scheduling variance without dropping any gate.
-    timeout-minutes: 15
+    # Linux run 37602140697 passed its checks but reached the 15-minute job
+    # limit during finalization. Keep room for the full suite and artifact upload.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 25 || 15 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

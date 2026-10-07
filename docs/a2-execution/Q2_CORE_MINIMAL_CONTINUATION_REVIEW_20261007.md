@@ -117,3 +117,16 @@ Linux 启动检查和证据上传步骤均标为 success，但 Ubuntu job 整体
 “The job has exceeded the maximum execution time of 15m0s”。
 不能将步骤成功汇总为准确候选 CI 3/3 通过；本轮没有重跑 CI 或修改其期限。
 该记录只补充公开候选的验证状态，不改变既有窗口消耗或授予新的现场执行权限。
+
+## CI 总时限修复（2026-10-07）
+
+Owner 要求修复 `93742af` 的 2/3 红叉。直接复核该 run 的 job 和完整 Linux 日志：
+源码 **6127 passed / 89 skipped / 599.54s**，独立安装验收 **PASS / 94 checks**，
+启动检查和上传均成功；job 用时905秒，最终为 cancelled。此前 `a743af3` 的 Linux
+成功 job 已用870秒，原900秒总预算缺少余量。Windows 本次627秒成功。
+
+仅把 Linux CI job 总时限从15分钟改为25分钟，Windows 保持15分钟。
+所有测试、步骤、判定、权限和现场期限不变；不修改已消费 K2 或重放其 caller。
+该调整会触发准确新提交的完整 CI；新结果与旧 run 的超时历史分别核对。
+YAML 解析及结构比较确认只有该 timeout 值改变；既有 CI 分类测试 **8 passed / 0.60s**，
+`git diff --check` 通过。未修改或删除任何测试以获得绿灯。
