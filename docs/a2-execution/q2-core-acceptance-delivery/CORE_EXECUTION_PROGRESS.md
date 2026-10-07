@@ -1,8 +1,8 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
-## 当前：扫描修正 W1 已完成，W2 唯一窗口待终端执行，业务核心尚未进入
+## 当前：W1 已完成，W2 在 PID 复核阶段失败并消耗，业务核心尚未进入
 
-最新现场登记为 `8c58f093a3fc923fb078811622fb2691448e81fc`。
+此前现场登记为 `8c58f093a3fc923fb078811622fb2691448e81fc`。
 maps修正MB1已完成，执行候选 `68b63da88d70cfb8151f66a75c7f523baaf012d2`；
 唯一MB2窗口已消费，在checkpoint1以 `FD_TOTAL=262145>262144` 失败。
 marker false、SSH0，journal未扩容，H01/Q4/H11没有真实PASS。
@@ -17,9 +17,13 @@ marker false、SSH0，journal未扩容，H01/Q4/H11没有真实PASS。
 首次 3/3 success，包含源码及独立安装验证；原八份静态输入绑定不变，准确候选和交接已冻结。
 详见 [W1 验证记录](../Q2_CORE_JOURNAL_SCAN_WORK_REVIEW_20261007.md)。
 
-W2 未开始，本次唯一替代窗口尚未使用；无需重复批准同一 A。下一步仅由 Owner 在已有真实
-本机前台终端执行本次冻结交接一次，原 session 全门通过后同窗完成 journal 维护。
-全部旧窗口保持消耗，旧交接禁止重跑；没有现场 PASS、扩容成功或支线恢复。
+最新 [W2 现场返回](../Q2_CORE_JOURNAL_SCAN_WORK_FIELD_20261007.md)记录 checkpoint 1 的
+`GROWTH_PROC_DRIFT` / `PID_RECHECK`，scan_complete false；初始 PID 594、完成 419，
+task 完成 1549，FD stat 尝试合计 114545，maps 完整读取 137564054 B。
+该阶段可在 task 重枚举重复、前后 task 列表或 PID starttime 的检查处拒绝，具体分支未确定。
+这些仅是失败前缀，不能宣称全量预算足够或 writer 准入通过。marker false、SSH0、成功报告0，
+本次唯一 W2 窗口已消耗，journal 未扩容。原始流未独立认证，完整输出保留私有终端。
+全部旧窗口和本次交接均禁止重跑；没有补采、放宽一致性、清理、恢复或支线授权。
 
 同时已确认：扩容重启后的新boot尚无核心consumer，现dispatcher仍绑定三旧profile，
 还缺已消费05c的第四旧接入。因此下文历史“源码缺口清空”仅对应当时版本，不能用来

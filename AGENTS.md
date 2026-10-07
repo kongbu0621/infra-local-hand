@@ -1842,8 +1842,8 @@ These are the explicitly approved material changes, not a measured host-fit guar
 Only after implementation descending from this C, scoped verification, publication,
 exact-candidate CI and freezing is one further replacement preflight allowed under the
 original session. All gates passing would continue only the unconsumed original journal maintenance
-in that window. W2 has not started; its one replacement window remains unused. All old windows stay
-consumed. No preflight may start before all W1 conditions pass. No deduplication, task omission, automatic cap changes, retry,
+in that window. W2's one replacement window has now been consumed, as recorded below. All old windows
+stay consumed. W1 verification does not authorize replay. No deduplication, task omission, automatic cap changes, retry,
 supplemental collection, privilege changes, cleanup or recovery is included. New-boot core adoption
 and H01/Q4/H11 remain outside W1–W2; the plan identifies their actual unimplemented handoff boundary.
 Existing unaffected CLOSED development continues. Do not replay old frozen handoffs.
@@ -1857,11 +1857,23 @@ pre-call charging, no refund on error, later writer detection and strict v2 prog
 Exact D CI `37555791202` attempt 1 completed successfully on all three jobs, including source and
 independent installed verification on both platforms. All old/new document pins and eight original
 static inputs were verified without a field Window or probe. Source and private terminal handoff
-are frozen; W1 is complete. W2 remains NOT STARTED and its single replacement window is unused.
-Actual pre/post package sizes and every original field predicate still require admission within
-that same W2 window. No field success, journal growth, new-boot adoption or H01/Q4/H11 follows from
-the code/CI results. The Owner uses only the existing real local foreground terminal once; failures
-retain their first cause and acquired v2 progress, with no retry, supplemental capture or cleanup.
+were frozen; W1 is complete. At that handoff, W2 was NOT STARTED and its replacement window was
+unused; the field return below supersedes that status. No field success, journal growth, new-boot
+adoption or H01/Q4/H11 follows from the code/CI results.
+
+The [W2 field return](docs/a2-execution/Q2_CORE_JOURNAL_SCAN_WORK_FIELD_20261007.md) records
+screenshot-supported preflight BLOCKED at checkpoint 1, parent/child exit 3, `GROWTH_PROC_DRIFT`
+and progress phase `PID_RECHECK`. Initial PID count is 594, completed PID count 419, and started/
+completed tasks both 1549. FD stat attempts are 57255 initial, 57255 recheck and 35 match; complete
+maps bytes are 137564054 across 1549 files. These are an incomplete prefix, not full host demand.
+The screenshot cannot distinguish duplicate task re-enumeration, changed task list or changed PID
+starttime at this phase. Full scan, final PID-set recheck and writer admission remain unproved.
+Marker is false, SSH zero, successful writer reports zero; journal maintenance did not start on
+this path. W2 is CONSUMED / FAILED, despite no marker. Original streams were not independently
+verified; historical UNKNOWNs remain. Preserve the frozen handoff and terminal output as evidence;
+do not execute it again, repeat a scan, collect more data, relax consistency or change budgets.
+Any material coverage/consistency amendment or further field window requires its own exact review,
+Owner B and independent C. No retry, cleanup, recovery, new-boot adoption or H01/Q4/H11 is authorized.
 
 ### Continuing constraints
 

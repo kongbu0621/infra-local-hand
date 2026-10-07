@@ -1,7 +1,8 @@
 # Journal 扫描工作量：W1 验证与候选冻结
 
-2026-10-07（Asia/Shanghai）。**W1 完成；准确 D 的首次 CI 全部通过，最终源码与私有交接已冻结。**
-**W2 未开始，唯一替代窗口尚未使用。** 只能由 Owner 在已有真实本机前台终端启动本次交接。
+2026-10-07（Asia/Shanghai）。**本记录描述 W1 完成并冻结交接时的状态。**
+准确 D 的首次 CI 全部通过；当时 W2 未开始。后续 [W2 现场返回](Q2_CORE_JOURNAL_SCAN_WORK_FIELD_20261007.md)
+已记录唯一替代窗口 CONSUMED / FAILED，冻结交接不得再次执行。
 所有旧窗口继续消耗；固定工作预算和进度不保证现场通过，历史 UNKNOWN 不改写。
 
 ## 准确批准和候选
@@ -117,7 +118,7 @@ Bash 语法及两段 JSON 处理代码编译通过；仅对文本处理器的隔
 摘要保留合法 failure_progress 和明确区分的 last_successful_writer_progress；缺失为 null。
 摘要长度/哈希对应去除末尾换行后的 shell JSON，不冒充原始 CLI stdout。
 
-W2 未开始，未消费本次替代窗口；本执行者未执行现场 writer/sudo、marker、SSH、关机、备份、
+冻结交接时 W2 未开始，尚未消费本次替代窗口；本执行者未执行现场 writer/sudo、marker、SSH、关机、备份、
 镜像增长、VM 启动或 ext4 增长。原 session、输入/对象、普通身份、真实前台终端认证、原时钟
 起点与累计次数保持；shell STARTED 仅防误粘贴，不冒充跨进程硬性防重启。
 工具和全部现场资格仍由原准确 CLI 检查；不增加 helper、探针、预热、权限或预算池。
