@@ -201,6 +201,7 @@ def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sou
     assert static["resume"] == dict(A=h.DR_A, C=h.DR_C)
     assert static["resume_v2"] == dict(A=h.DRV2_A, C=h.DRV2_C)
     assert static["maps_budget"] == dict(A=h.MB_A, C=h.MB_C)
+    assert static["drift_resume"] == dict(A=h.DRIFT_A, C=h.DRIFT_C, repair=h.DRIFT_REPAIR)
     assert static["scan_work"] == dict(A=h.WORK_A, C=h.WORK_C,
         result_schema="lhq-journal-writer-result/v2", fd_stat_attempts=2097152,
         fd_stat_policy="initial+recheck+match;charge-before-call;no-refund",
@@ -219,6 +220,10 @@ def test_two_cli_observations_share_manifest_and_do_not_reuse_pass(observer, sou
         h.WriterObserver(sources, "d" * 40, first.window, KEYS,
                          changed_terminal, h.canonical(handoff))
     assert len(observer.calls) == 2
+    with pytest.raises(g.r.ObservationError):
+        h.WriterObserver(sources, "e" * 40, first.window, KEYS,
+                         observer.value.terminal, h.canonical(handoff))
+    assert len(observer.calls) == 2  # A previous D's valid report cannot trigger another scan.
     for version in ("lhq-journal-writer-result/v1", "lhq-journal-writer-result/v2"):
         stale = copy.deepcopy(handoff)
         stale["report"]["schema"] = version

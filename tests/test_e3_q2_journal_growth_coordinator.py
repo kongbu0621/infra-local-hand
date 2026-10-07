@@ -228,9 +228,18 @@ def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypa
     assert rig.actions == []
 
 
-def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys):
+@pytest.mark.parametrize("stale", ["digest", "missing_scope", "A", "C", "repair"])
+def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys, stale):
+    current = dict(A=h.DRIFT_A, C=h.DRIFT_C, repair=h.DRIFT_REPAIR)
+    rig.manifest["writer"] = dict(drift_resume=current)
+    old = json.loads(h.canonical(rig.manifest))
+    if stale == "missing_scope":
+        old["writer"].pop("drift_resume")
+    elif stale != "digest":
+        old["writer"]["drift_resume"][stale] = "0" * 40
+    expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
-        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", "0" * 64,
+        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
         "--window-binding", h.canonical(rig.window.binding).decode(), "--writer-preflight", "{}",
         "--writer-auth", "terminal", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)

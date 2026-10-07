@@ -36,6 +36,12 @@ MB_A="d18b490a7cdb63ee43044a29a89746ef78fccff3"
 MB_C="3d928a323d1aad12c20a66594bb295d4df14fab0"
 WORK_A="42a66be98c45e817e866d3fb86a1c184c2ce55f9"
 WORK_C="1f656f7dab12ddb02c6927d3fc08c2fbe81ffebc"
+DRIFT_A="4f2a6a37ad5afd027dbde0f1656a3552750cb3b2"
+DRIFT_C="e13f8efcb8dee4e4280dd722f7836ea94a27b83b"
+DRIFT_REPAIR="711932aae3370c7f2ed5c1a51ac82d3b0f67a6e5"
+DRIFT_PINS=("1b176e044cfb4bf4dc4d7e6d7cee01e1480e3acf67825c9eda78980bf71d577f",
+"473ace5e05c300f1e6751d97727b04e69f7f53628f3220d06bfdb1483e77551a",
+"aec1a315f47fb05b5ccdc2a0855f5de479489d13c5e80f3d2e294a3563c920be")
 WORK_PINS=("632aeecb163ad6e496a917fd73f9230aca1144d1e91050c78c8abff2b4d5ae38",
 "52d75a0c689ae1ed5321a2b5fde5061084fd05c267cac9cf012924a97eac2e96",
 "ec8f299e7cd9d9c0fc10eaa34e0ff75b0276fc2c863b753d4f8c109d7fc025b2")
@@ -394,6 +400,7 @@ os.readlink("python3",dir_fd=parent))==self.python_link,"GROWTH_PYTHON_LINK_DRIF
  def binding(self):
   self.recheck()
   return dict(A=READ_A,C=READ_C,resume=dict(A=DR_A,C=DR_C),resume_v2=dict(A=DRV2_A,C=DRV2_C),maps_budget=dict(A=MB_A,C=MB_C),
+drift_resume=dict(A=DRIFT_A,C=DRIFT_C,repair=DRIFT_REPAIR),
 scan_work=dict(A=WORK_A,C=WORK_C,result_schema="lhq-journal-writer-result/v2",
 fd_stat_attempts=2097152,fd_stat_policy="initial+recheck+match;charge-before-call;no-refund",
 progress_bytes=4096,maintenance_source_bytes=98304),auth=dict(A=TERM_A,C=TERM_C,mode="terminal",
@@ -1116,6 +1123,13 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  git("merge-base","--is-ancestor",WORK_A,WORK_C)
  git("merge-base","--is-ancestor",WORK_C,expected)
  require(expected!=WORK_C,"GROWTH_SCAN_WORK_D")
+ git("merge-base","--is-ancestor",DRIFT_REPAIR,DRIFT_A)
+ git("merge-base","--is-ancestor",DRIFT_A,DRIFT_C)
+ git("merge-base","--is-ancestor",DRIFT_C,expected)
+ require(expected!=DRIFT_C,"GROWTH_DRIFT_RESUME_D")
+ for name,sha in zip(DOC_PINS,DRIFT_PINS):
+  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-drift-resume/"+name))==sha,
+"GROWTH_DRIFT_RESUME_A_CHANGED")
  for name,sha in zip(DOC_PINS,WORK_PINS):
   require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-scan-work/"+name))==sha,
 "GROWTH_SCAN_WORK_A_CHANGED")
