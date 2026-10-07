@@ -1,6 +1,6 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
-## 当前：维护扫描被FD工作量门阻断，业务核心尚未进入
+## 当前：扫描修正 W1 已完成，W2 唯一窗口待终端执行，业务核心尚未进入
 
 最新现场登记为 `8c58f093a3fc923fb078811622fb2691448e81fc`。
 maps修正MB1已完成，执行候选 `68b63da88d70cfb8151f66a75c7f523baaf012d2`；
@@ -8,11 +8,18 @@ maps修正MB1已完成，执行候选 `68b63da88d70cfb8151f66a75c7f523baaf012d2`
 marker false、SSH0，journal未扩容，H01/Q4/H11没有真实PASS。
 详见[MB2返回](../Q2_CORE_JOURNAL_MAPS_BUDGET_FIELD_20261007.md)；其原始流未独立认证。
 
-当前[准确提案A](../../governance/Q2_CORE_JOURNAL_SCAN_WORK_BASELINE.md)为
-`42a66be98c45e817e866d3fb86a1c184c2ce55f9`，W1–W2仍OPEN，尚未收到该范围批准。
-它一次处理实际FD操作计费、有界进度结果与必要源长度界；保留完整覆盖和校验，
-验证完成后才请求原session的一次替代窗口，全门通过同窗完成原维护。
-本轮只发布提案，没有实现新预算、调用现场或恢复支线；不得重跑已消费的旧交接。
+当前[准确 A](../../governance/Q2_CORE_JOURNAL_SCAN_WORK_BASELINE.md)
+`42a66be98c45e817e866d3fb86a1c184c2ce55f9` 已获
+[Owner 批准](../../governance/Q2_CORE_JOURNAL_SCAN_WORK_OWNER_DECISION.md)，W1–W2 Gate 已关闭。
+独立 C 为 `1f656f7dab12ddb02c6927d3fc08c2fbe81ffebc`，其直接实现子提交 D 为
+`57c7f8e19e047d8caeea401593d8e4bbd4dc373d`。实际 FD stat 尝试计费、严格 v2 进度和两源长度界
+已实现；完整覆盖与原期限保持。相关本地 635 项及补充 2 项通过，准确 D CI `37555791202`
+首次 3/3 success，包含源码及独立安装验证；原八份静态输入绑定不变，准确候选和交接已冻结。
+详见 [W1 验证记录](../Q2_CORE_JOURNAL_SCAN_WORK_REVIEW_20261007.md)。
+
+W2 未开始，本次唯一替代窗口尚未使用；无需重复批准同一 A。下一步仅由 Owner 在已有真实
+本机前台终端执行本次冻结交接一次，原 session 全门通过后同窗完成 journal 维护。
+全部旧窗口保持消耗，旧交接禁止重跑；没有现场 PASS、扩容成功或支线恢复。
 
 同时已确认：扩容重启后的新boot尚无核心consumer，现dispatcher仍绑定三旧profile，
 还缺已消费05c的第四旧接入。因此下文历史“源码缺口清空”仅对应当时版本，不能用来

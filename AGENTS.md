@@ -1848,6 +1848,21 @@ supplemental collection, privilege changes, cleanup or recovery is included. New
 and H01/Q4/H11 remain outside W1–W2; the plan identifies their actual unimplemented handoff boundary.
 Existing unaffected CLOSED development continues. Do not replay old frozen handoffs.
 
+The [W1 review and freeze](docs/a2-execution/Q2_CORE_JOURNAL_SCAN_WORK_REVIEW_20261007.md) records
+independent C `1f656f7dab12ddb02c6927d3fc08c2fbe81ffebc` and its direct implementation child
+D `57c7f8e19e047d8caeea401593d8e4bbd4dc373d`. The complete related local run passed 635 tests
+without skips; two additional source/generated matching-stat error-accounting tests then passed
+with implementation bytes unchanged. Source and generated payload prove the joint FD/maps boundary,
+pre-call charging, no refund on error, later writer detection and strict v2 progress handling.
+Exact D CI `37555791202` attempt 1 completed successfully on all three jobs, including source and
+independent installed verification on both platforms. All old/new document pins and eight original
+static inputs were verified without a field Window or probe. Source and private terminal handoff
+are frozen; W1 is complete. W2 remains NOT STARTED and its single replacement window is unused.
+Actual pre/post package sizes and every original field predicate still require admission within
+that same W2 window. No field success, journal growth, new-boot adoption or H01/Q4/H11 follows from
+the code/CI results. The Owner uses only the existing real local foreground terminal once; failures
+retain their first cause and acquired v2 progress, with no retry, supplemental capture or cleanup.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
