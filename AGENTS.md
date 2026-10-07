@@ -1820,26 +1820,30 @@ collection, SSH, retry, reconnect, cleanup or recovery. No FD cap, coverage, dea
 change is authorized by this return. Any material amendment or further affected field window
 requires its own exact review, Owner B and independent C; the old windows stay consumed.
 
-### Journal scan work correction proposal
+### Journal scan work correction
 
-Scope `LH-Q2-CORE-JOURNAL-SCAN-WORK-v1` is **OPEN / NOT APPROVED**, for proposed W1–W2 only.
+Scope `LH-Q2-CORE-JOURNAL-SCAN-WORK-v1` is **CLOSED for W1–W2 only**.
 The [baseline registration](docs/governance/Q2_CORE_JOURNAL_SCAN_WORK_BASELINE.md) pins exact A
-`42a66be98c45e817e866d3fb86a1c184c2ce55f9` and links the three proposed documents.
-There is no Owner B or independent CLOSED C for this scope. R, direct source/integrity, Owner
-mandate/authority, no exceptions and material-change review remain unchanged.
+`42a66be98c45e817e866d3fb86a1c184c2ce55f9` and links the three approved documents.
+Their bytes and historical OPEN labels remain unchanged. Exact Owner B is retained in
+[the scan-work Owner decision](docs/governance/Q2_CORE_JOURNAL_SCAN_WORK_OWNER_DECISION.md),
+event `LH-Q2-CORE-JOURNAL-SCAN-WORK-CLOSURE-20261007-01`. This independent bookkeeping-only
+C contains only that decision and this registration; implementation D must descend from C.
+Do not squash C with implementation. R, direct source/integrity, Owner mandate/authority,
+no exceptions and material-change review remain unchanged.
 
-The proposal replaces the post-snapshot FD_TOTAL gate with a fixed 2097152-attempt FD stat budget
+The approved amendment replaces the post-snapshot FD_TOTAL gate with a fixed 2097152-attempt FD stat budget
 shared by initial snapshots, recheck snapshots and matching-object stat, charged before each call.
 It retains all task coverage, other proc caps, identities and deadlines, adds a strict result/v2
 progress object, and explicitly raises only the two maintenance source limits to 98304 bytes
 (guest source only within its bundle). Payload, argv, reader/input and bundle limits stay unchanged.
-These are proposed material changes, not an authorized silent fix or a measured host-fit guarantee.
+These are the explicitly approved material changes, not a measured host-fit guarantee.
 
-Only after accurate Owner B, independent C, implementation, scoped verification, publication,
-exact-candidate CI and freezing would one further replacement preflight be allowed under the
+Only after implementation descending from this C, scoped verification, publication,
+exact-candidate CI and freezing is one further replacement preflight allowed under the
 original session. All gates passing would continue only the unconsumed original journal maintenance
-in that window. All old windows stay consumed; no further host calls or changed implementation are
-authorized by this proposal. No deduplication, task omission, automatic cap changes, retry,
+in that window. W2 has not started; its one replacement window remains unused. All old windows stay
+consumed. No preflight may start before all W1 conditions pass. No deduplication, task omission, automatic cap changes, retry,
 supplemental collection, privilege changes, cleanup or recovery is included. New-boot core adoption
 and H01/Q4/H11 remain outside W1–W2; the plan identifies their actual unimplemented handoff boundary.
 Existing unaffected CLOSED development continues. Do not replay old frozen handoffs.
