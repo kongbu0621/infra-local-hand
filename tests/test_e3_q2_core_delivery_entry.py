@@ -46,7 +46,8 @@ def bounded_package_fixture(monkeypatch):
         ENTRY_FIELDS=e._helper("q2_core_delivery_package").ENTRY_FIELDS,
         parse_package=lambda raw: (dict(implementation=implementation,
             approved_inputs=dict(path='private/approved-inputs.json')),
-            {'private/approved-inputs.json': c.canonical(approved,newline=True)}),
+            {'private/approved-inputs.json': c.canonical(dict(reconciliation=dict(approved['reconciliation'],
+                journal_transition=journal_transition(implementation))),newline=True)}),
         _approved_module=lambda: SimpleNamespace(prior_attempt=prior_api))
     original_helper=e._helper
     monkeypatch.setattr(e, '_helper', lambda name: package_api
@@ -223,7 +224,7 @@ def test_arg_environment_checks_current_arg_max(monkeypatch):
         e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
 
 
-def test_minimal_release_requires_exact_digest_and_keeps_old_candidates_closed(monkeypatch):
+def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(monkeypatch):
     raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",

@@ -268,6 +268,28 @@ MINIMAL_CLOSURE = {
     "commit": "8a4c24cefe4abbab193577b2dff48fc49626cae4",
     "tree": "afbdd25b2a25d961dcd79587579c1796b3263e24",
 }
+SERIAL_SCOPE = "LH-Q2-CORE-SERIAL-CONTINUATION-v1"
+SERIAL_BASELINE = {
+    "commit": "7869bbcaeb1dad3a1736131a3ff2e225ddf5e7cc",
+    "tree": "bc6bee8c650fbcf412e0fbf49f7d3c16c62da1c5",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-serial-continuation/REQUIREMENTS.md":
+            "39c77516b6d7f54c01fe96775e7c12d56d764daff58d3c69453e97436e993c3f",
+        "docs/a2-execution/q2-core-serial-continuation/ARCHITECTURE.md":
+            "293239f014bc3f5f377ce18e555ef56b9b048116a2bd40bcf382d8f67a055e5b",
+        "docs/a2-execution/q2-core-serial-continuation/IMPLEMENTATION_PLAN.md":
+            "52e63872aca00b2027dae7d4d44d06a9bcac49dd389c455bd264960340754b89",
+    },
+}
+SERIAL_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-SERIAL-CONTINUATION-CLOSURE-20261007-01",
+    "record_path": "docs/governance/Q2_CORE_SERIAL_CONTINUATION_OWNER_DECISION.md",
+    "record_sha256": "9b5eed75b3153b980f1e3874f298aa65272b1129b77e2cc43fecb9409661c7a4",
+}
+SERIAL_CLOSURE = {
+    "commit": "91c706b52dbc70498d5d872f59874c002cef23db",
+    "tree": "0a3008294aca7bb70d6fca883b681b813dc12165",
+}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

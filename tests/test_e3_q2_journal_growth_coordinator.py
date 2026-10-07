@@ -140,11 +140,11 @@ def rig(monkeypatch, tmp_path):
                              binding={"boot_id": BOOT, "origins": [0, 0]},
                              origins={"monotonic": 0, "boottime": 0},kernel_report={})
     anchor = SimpleNamespace(fd=parent, path=str(tmp_path), ssh=44, recheck=nothing,
-                             absent=nothing, close=nothing, growth_inputs=nothing,
+                             absent=nothing, close=nothing, growth_inputs=nothing, previous_maintenance_recheck=nothing,
                              raw={"start.sh": b"fixed"}, retained={})
     inputs = SimpleNamespace(recheck=nothing, close=nothing)
     frozen = {"boot_id": BOOT, "source_binding_sha256": "a" * 64, "horizon": {},
-              "anchor_path": str(tmp_path), "source_binding": {}, "inventory": {}}
+              "anchor_path": str(tmp_path), "source_binding": {"resume":h.history.maintenance_resume()}, "inventory": {}}
     sources = {"q2_core_capacity_reader.py": b"pass", "q2_journal_growth_guest.py": b"pass"}
     vm = {"images": Images(), "process": old, "restart_argv": ["qemu", "fixed-arguments"],
           "binding": {}, "original_argv": ["qemu", "old-arguments"]}
@@ -184,7 +184,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v2'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v3'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]

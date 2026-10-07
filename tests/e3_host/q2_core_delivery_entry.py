@@ -64,10 +64,10 @@ BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
 # All four older core requests remain consumed. Only the reviewed 07a field
-# bytes below are eligible under MINIMAL A/C after verified maintenance.
-# K1 source/installed/CI evidence is retained in the 20261007 review; final
-# candidate CI, K2 originals, new-boot binding and all admission remain required.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"ea5d6c0abe2ca49af86e2d0c2088bc7ce9ae723a3803d5a9ddc715c480d2c524"})
+# bytes below are eligible under SERIAL A/C after verified maintenance.
+# SC1 source review binds these bytes; exact candidate CI, SC2 complete
+# originals, new-boot binding and every admission remain required before use.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"bfa38a11b5b277c41c3ef0091e86a9a01462bed748baf0321ce7679cd63047af"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
@@ -1774,7 +1774,10 @@ def read_prior_originals(directory_fd, anchor, approved, deadline):
         approved['reconciliation']['prior_diagnostic_capture']), 'CORE_DELIVERY_DIAGNOSTIC_SOURCE_BINDING')
     deadline.check()
     journal_files = prior_api.read_journal_files(directory_fd,anchor,deadline.call,_seen=seen)
+    previous = prior_api.read_previous_journal_files(directory_fd,anchor,deadline.call,_seen=seen)
     transition = approved['reconciliation']['journal_transition']
+    require(contract.canonical(prior_api.build_previous_maintenance(previous)) ==
+        contract.canonical(transition['previous_maintenance']), 'CORE_DELIVERY_PREVIOUS_MAINTENANCE')
     require(transition['originals'] == [dict(basename=name,bytes=len(raw),sha256=contract.sha256(raw))
         for name,raw in sorted(journal_files.items())], 'CORE_DELIVERY_JOURNAL_SOURCE_BINDING')
     prior_api.read_capacity_diagnostic(directory_fd,anchor,deadline.call,_seen=seen)
