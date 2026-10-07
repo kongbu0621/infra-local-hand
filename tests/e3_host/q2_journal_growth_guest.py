@@ -26,6 +26,11 @@ ENVIRONMENT={"HOME": "/root", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
  "LANG": "C", "LC_ALL": "C", "SYSTEMD_COLORS": "0",
  "SYSTEMD_PAGER": "cat"}
 UNIT_PATTERN=re.compile(r"[A-Za-z0-9_.:@\\x-]{1,240}\.(?:service|scope|slice|socket|timer|path|target)")
+UNIT_FILE_STATES=frozenset(("enabled", "enabled-runtime", "linked", "linked-runtime", "alias",
+ "masked", "masked-runtime", "static", "disabled", "indirect", "generated", "transient", "bad"))
+STARTUP_ENABLED_STATES=frozenset(("enabled", "enabled-runtime", "linked", "linked-runtime", "generated"))
+INDIRECT_STARTUP_PATTERN=re.compile(r"(?:/|\s)(?:ba|da)?sh(?:\s|;|$)|/python[0-9.]*(?:\s|;)|/perl(?:\s|;)|"
+ r"/(?:cron|crond|atd|run-parts|systemd-run)(?:\s|;|$)")
 def control_limits():
  for key,value in ((resource.RLIMIT_AS,268435456),(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CORE,0)):
   resource.setrlimit(key,(value,value))
@@ -439,7 +444,7 @@ def process_start(raw):
  require(len(fields) >= 20 and fields[19].isdigit(), "GROWTH_PROCESS_STAT")
  return int(fields[19])
 class GuestInventory:
- SHOW=("Id", "LoadState", "ActiveState", "SubState", "MainPID", "ControlPID", "ControlGroup",
+ SHOW=("Id", "Names", "LoadState", "ActiveState", "SubState", "MainPID", "ControlPID", "ControlGroup",
  "Restart", "UnitFileState", "Triggers", "TriggeredBy", "WantedBy", "RequiredBy",
  "UpheldBy", "OnSuccess", "OnFailure", "Job", "Transient", "FragmentPath", "DropInPaths",
  "ExecStart", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload",
@@ -500,17 +505,31 @@ class GuestInventory:
   require(0 < len(names) <= 128 and len(names) == len(set(names)) and
  all(type(name) is str and UNIT_PATTERN.fullmatch(name) for name in names), "GROWTH_UNIT_NAME")
   raw=self.ctl(["show", "--all", "--property=" + ",".join(self.SHOW), "--", *names], user_uid=user_uid)
-  result={}
-  for block in raw.decode("utf-8", "strict").strip().split("\n\n"):
+  result, identities={}, {}
+  blocks=raw.decode("utf-8", "strict").strip().split("\n\n")
+  require(0 < len(blocks) <= len(names), "GROWTH_SYSTEMCTL_UNIT_SET")
+  for block in blocks:
    entries=[line.split("=", 1) for line in block.splitlines()]
    require(all(len(item) == 2 for item in entries) and len(entries) == len({item[0] for item in entries}),
  "GROWTH_SYSTEMCTL_FORMAT")
    value=dict(entries)
    require(set(value) <= set(self.SHOW) and {"Id", "LoadState", "ActiveState", "SubState"} <= set(value)
- and value["Id"] in names and value["Id"] not in result, "GROWTH_SYSTEMCTL_FIELDS")
+ and UNIT_PATTERN.fullmatch(value["Id"]), "GROWTH_SYSTEMCTL_FIELDS")
+   aliases=value.get("Names", "").split()
+   require(len(aliases) == len(set(aliases)) and
+ all(UNIT_PATTERN.fullmatch(name) for name in aliases) and
+ (not aliases or value["Id"] in aliases), "GROWTH_SYSTEMCTL_NAMES")
+   covered=set(names) & ({value["Id"]} | set(aliases))
+   require(covered, "GROWTH_SYSTEMCTL_UNIT_SET")
    if value["Id"].endswith(".service") and value["LoadState"] == "loaded":
     require({"MainPID", "ControlPID", "Restart"} <= set(value), "GROWTH_SERVICE_FIELDS")
-   result[value["Id"]]={key: value.get(key, "") for key in self.SHOW}
+   value={key: value.get(key, "") for key in self.SHOW}
+   require(value["Id"] not in identities or identities[value["Id"]] == value,
+ "GROWTH_SYSTEMCTL_ALIAS_CONFLICT")
+   identities[value["Id"]]=value
+   for name in covered:
+    require(name not in result or result[name] == value, "GROWTH_SYSTEMCTL_ALIAS_CONFLICT")
+    result[name]=value
   require(set(result) == set(names), "GROWTH_SYSTEMCTL_UNIT_SET")
   return result
  def show(self, name):
@@ -539,6 +558,7 @@ class GuestInventory:
    os.close(fd)
  def quiet_service(self, expected):
   value=self.show(expected["name"])
+  require(value["Id"] == expected["name"], "GROWTH_UNIT_IDENTITY")
   if value["LoadState"] == "not-found":
    require(value["ActiveState"] == "inactive" and value["SubState"] == "dead"
  and value["MainPID"] in ("", "0") and value["ControlPID"] in ("", "0")
@@ -613,37 +633,74 @@ class GuestInventory:
   after=sorted(name for name in os.listdir("/proc") if name.isdecimal())
   require(names == after, "GROWTH_PROCESS_INVENTORY_DRIFT")
   return dict(processes=len(rows), fd_count=total_fds, sha256=digest(canonical(rows)))
+ def template_startup(self, name, state, *, user_uid=None):
+  # Templates have no runtime Unit object. cat resolves their fragment and drop-ins
+  # without inventing an instance or changing the manager's configuration.
+  raw=self.ctl(["cat", "--", name], user_uid=user_uid)
+  self.context=dict(manager="user_1100" if user_uid else "system", unit=name)
+  require(raw and len(raw) <= STREAM_LIMIT and b"\0" not in raw and raw.startswith(b"# /"),
+ "GROWTH_TEMPLATE_CONTENT")
+  text=raw.decode("utf-8", "strict")
+  require(not any(root.encode() in raw for root in self.roots), "GROWTH_UNDECLARED_BUSINESS_UNIT")
+  if state in STARTUP_ENABLED_STATES:
+   # Only remove full-line comments. Retain every Exec directive, including
+   # overridden values: no partial reimplementation of systemd merge semantics.
+   lines="\n".join(line for line in text.splitlines() if not line.lstrip().startswith(("#", ";")))
+   lines=lines.replace("\\\n", " ")
+   commands=[]
+   for action in re.findall(r"^\s*Exec[A-Za-z]*\s*=([^\n]*)", lines, re.M):
+    # Match the executable that show would resolve: quotes and systemd's
+    # command prefixes do not make an interpreter a different executable.
+    action=action.replace('"', "").replace("'", "").strip().lstrip("-@:+!")
+    if not action:
+     continue
+    require("\\" not in action.split(None, 1)[0], "GROWTH_TEMPLATE_EXEC_ENCODING")
+    commands.append(action if action.startswith("/") else "/" + action)
+   actions=" ".join(commands) + " "
+   indirect=INDIRECT_STARTUP_PATTERN.search(" " + actions)
+   if indirect:
+    self.context["action_kind"]=indirect.group(0).strip(" /;")
+    raise r.ObservationError("GROWTH_INDIRECT_STARTUP_UNVERIFIED")
  def startup_manager(self, *, user_uid=None):
   expected={row["name"] for row in self.description["expected_units"]}
   domain_names={row["name"] for row in self.description["domain_units"]}
-  names=set()
+  names, templates=set(), {}
   kinds="--type=service,scope,slice,socket,timer,path,target"
   for arguments in (["list-units", "--all", "--plain", "--no-legend", kinds],
  ["list-unit-files", "--no-legend", kinds]):
    for line in self.ctl(arguments, user_uid=user_uid).decode("utf-8", "strict").splitlines():
     fields=line.split()
     require(fields and UNIT_PATTERN.fullmatch(fields[0]), "GROWTH_UNIT_LIST")
+    if arguments[0] == "list-unit-files":
+     require(len(fields) in (2, 3) and fields[1] in UNIT_FILE_STATES, "GROWTH_UNIT_FILE_STATE")
+     if fields[0].rsplit(".", 1)[0].endswith("@"):
+      require(fields[0].count("@") == 1 and fields[0] not in templates
+ and fields[0] not in expected and fields[0] not in domain_names, "GROWTH_UNIT_TEMPLATE")
+      templates[fields[0]]=fields[1]
     names.add(fields[0])
     require(len(names) <= 2048, "GROWTH_UNIT_COUNT")
   related, observed=[], {}
-  ordered=sorted(names)
+  ordered=sorted(names - templates.keys())
   for offset in range(0, len(ordered), 128):
    observed.update(self.show_many(ordered[offset:offset + 128], user_uid=user_uid))
-  for name in ordered:
+  for name in sorted(names):
    self.check()
+   if name in templates:
+    self.template_startup(name, templates[name], user_uid=user_uid)
+    continue
    self.context=dict(manager="user_1100" if user_uid else "system", unit=name)
    value=observed[name]
    flat=canonical(value)
-   match=name in expected or any(root.encode() in flat for root in self.roots)
-   if match and name not in domain_names:
-    require(name in expected, "GROWTH_UNDECLARED_BUSINESS_UNIT")
+   actual=value["Id"]
+   match=actual in expected or any(root.encode() in flat for root in self.roots)
+   if match and actual not in domain_names:
+    require(actual in expected, "GROWTH_UNDECLARED_BUSINESS_UNIT")
     related.append(self.quiet_service(next(row for row in self.description["expected_units"]
- if row["name"] == name)))
-   enabled=value["UnitFileState"] in ("enabled", "enabled-runtime", "linked", "linked-runtime", "generated")
-   if enabled and name not in expected and name not in domain_names:
+ if row["name"] == actual)))
+   enabled=value["UnitFileState"] in STARTUP_ENABLED_STATES
+   if enabled and actual not in expected and actual not in domain_names:
     actions=" ".join(value[key] for key in self.SHOW if key.startswith("Exec"))
-    indirect=re.search(r"(?:/|\s)(?:ba|da)?sh(?:\s|;|$)|/python[0-9.]*(?:\s|;)|/perl(?:\s|;)|"
- r"/(?:cron|crond|atd|run-parts|systemd-run)(?:\s|;|$)", actions)
+    indirect=INDIRECT_STARTUP_PATTERN.search(actions)
     if indirect:
      self.context["action_kind"]=indirect.group(0).strip(" /;")
      raise r.ObservationError("GROWTH_INDIRECT_STARTUP_UNVERIFIED")
@@ -654,6 +711,7 @@ class GuestInventory:
    value=observed.get(item["name"])
    if value is None:
     value=self.show_many([item["name"]], user_uid=user_uid)[item["name"]]
+   require(value["Id"] == item["name"], "GROWTH_DOMAIN_UNIT_IDENTITY")
    require(value["LoadState"] in ("loaded", "not-found") and
  value["ControlGroup"] in ("", item["control_group"]), "GROWTH_DOMAIN_UNIT")
    require(item["name"].endswith(".slice") and not any(value[key] for key in self.SHOW if key.startswith("Exec")),

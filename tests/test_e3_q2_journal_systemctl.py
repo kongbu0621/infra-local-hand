@@ -101,6 +101,99 @@ def test_native_systemctl_parses_dash_unit_only_after_separator(boundary, tmp_pa
     assert old.stdout == fixed.stdout == b""
 
 
+def alias_properties(*, names="alias.service real.service", state="inactive"):
+    return (f"Id=real.service\nNames={names}\nLoadState=loaded\n"
+            f"ActiveState={state}\nSubState=dead\nMainPID=0\nControlPID=0\n"
+            "Restart=no\n").encode()
+
+
+@pytest.mark.parametrize("operands,copies", [
+    (["alias.service"], 1),
+    (["alias.service", "real.service"], 1),
+    (["alias.service", "real.service"], 2),
+])
+def test_aliases_require_same_command_names_identity(boundary, operands, copies):
+    inventory, outcome, trace = boundary
+    outcome["stdout"] = b"\n".join([alias_properties()] * copies)
+    result = inventory.show_many(operands)
+    assert set(result) == set(operands)
+    assert all(value["Id"] == "real.service" for value in result.values())
+    assert all(value["Names"] == "alias.service real.service" for value in result.values())
+    assert [item[0] for item in trace] == ["bound", "collect", "verify"]
+
+
+@pytest.mark.parametrize("names", [
+    "", "real.service", "alias.service", "alias.service real.service real.service",
+    "alias.service real.service /invalid.service",
+])
+def test_alias_without_valid_membership_proof_is_rejected(boundary, names):
+    inventory, outcome, _ = boundary
+    outcome["stdout"] = alias_properties(names=names)
+    with pytest.raises(g.r.ObservationError):
+        inventory.show_many(["alias.service"])
+
+
+def test_duplicate_alias_identity_with_changed_properties_is_rejected(boundary):
+    inventory, outcome, _ = boundary
+    outcome["stdout"] = alias_properties() + b"\n" + alias_properties(state="active")
+    with pytest.raises(g.r.ObservationError, match="GROWTH_SYSTEMCTL_ALIAS_CONFLICT"):
+        inventory.show_many(["alias.service", "real.service"])
+
+
+def test_distinct_canonical_units_cannot_claim_same_requested_alias(boundary):
+    inventory, outcome, _ = boundary
+    other = alias_properties(names="alias.service other.service").replace(
+        b"Id=real.service\n", b"Id=other.service\n")
+    outcome["stdout"] = alias_properties() + b"\n" + other
+    with pytest.raises(g.r.ObservationError, match="GROWTH_SYSTEMCTL_ALIAS_CONFLICT"):
+        inventory.show_many(["alias.service", "real.service"])
+
+
+def test_unrelated_extra_block_is_rejected_even_when_alias_covers_requested_set(boundary):
+    inventory, outcome, _ = boundary
+    outcome["stdout"] = alias_properties() + b"\n" + properties(["unrelated.service"])
+    with pytest.raises(g.r.ObservationError, match="GROWTH_SYSTEMCTL_UNIT_SET"):
+        inventory.show_many(["alias.service", "real.service"])
+
+
+def test_missing_unit_cannot_be_hidden_by_an_alias_response(boundary):
+    inventory, outcome, _ = boundary
+    outcome["stdout"] = alias_properties()
+    with pytest.raises(g.r.ObservationError, match="GROWTH_SYSTEMCTL_UNIT_SET"):
+        inventory.show_many(["alias.service", "missing.service"])
+
+
+def test_alias_cannot_replace_declared_business_unit_identity(boundary):
+    inventory, outcome, _ = boundary
+    outcome["stdout"] = alias_properties()
+    with pytest.raises(g.r.ObservationError, match="GROWTH_UNIT_IDENTITY"):
+        inventory.quiet_service(dict(name="alias.service", control_group=None))
+
+
+def test_alias_cannot_replace_declared_domain_unit_identity(boundary, monkeypatch):
+    inventory, outcome, trace = boundary
+    inventory.description.update(
+        expected_units=[],
+        domain_units=[dict(name="declared.slice", manager="system",
+                           control_group="/declared.slice")],
+    )
+    original_ctl = inventory.ctl
+
+    def ctl(arguments, **kwargs):
+        if arguments[0] in ("list-units", "list-unit-files"):
+            return b""
+        return original_ctl(arguments, **kwargs)
+
+    monkeypatch.setattr(inventory, "ctl", ctl)
+    outcome["stdout"] = (
+        b"Id=other.slice\nNames=declared.slice other.slice\nLoadState=loaded\n"
+        b"ActiveState=inactive\nSubState=dead\nControlGroup=\n"
+    )
+    with pytest.raises(g.r.ObservationError, match="GROWTH_DOMAIN_UNIT_IDENTITY"):
+        inventory.startup_manager()
+    assert [item[0] for item in trace] == ["bound", "collect", "verify"]
+
+
 def test_success_still_verifies_tool_and_replaces_stale_context(boundary):
     inventory, outcome, trace = boundary
     arguments = ["list-units", "--all", "--plain", "--no-legend"]

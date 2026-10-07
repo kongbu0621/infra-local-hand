@@ -1,6 +1,24 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
-## 当前：序列号已通过，修复 systemctl 单元名参数阻塞
+## 当前：模板查询原因已明确，完成针对性源码修复
+
+最新[现场记录](../Q2_CORE_SYSTEMCTL_CONTINUATION_FIELD_20261007.md)为 `531bf0a`：
+准确执行候选 `b2bc054` 的 SY1 完成；SY2 `lhqjgrow-20261007b` 预检通过后一次执行失败。
+已有同次诊断确认 systemctl show 退出1、双流EOF完整、stderr拒绝未实例化模板单元。
+没有关机 token、扩容或 H01/Q4/H11；远端整体退出仍 UNKNOWN。
+
+修复只处理这条核心准备路径的单元语义：模板通过 cat 检查完整fragment/drop-ins，
+实际实例与普通单元继续 show；别名通过同次返回的 Id/Names 验证，不能丢失请求单元、
+接受冲突属性或替换已声明业务/域单元身份。原返回码/EOF/stderr要求、资源上限和现场
+次数不变。详见[源码修复与验证](../Q2_CORE_SYSTEMCTL_CONTINUATION_REVIEW_20261007.md#模板与别名的源码修复)。
+
+本地 Codex 下一步同步修复候选，只接续 journal 容量修复与原 H01→Q4→H11。
+已有安装、SSH、三个维护代次的原件/marker/消费均保留。AGENTS 明确禁止重放已消费
+SY2；本次没有生成新现场 caller 或授权新窗口，不能直接重跑旧07b命令。
+
+以下“当前/最新”均为历史检查点，不是恢复扫描支线或执行旧交接的入口。
+
+## 先前：序列号已通过，修复 systemctl 单元名参数阻塞
 
 最新[现场记录](../Q2_CORE_SERIAL_CONTINUATION_FIELD_20261007.md)为 `acd62cb`：
 SC1 完成，准确执行候选 `a20bf2a` 的 CI 3/3；SC2 单次 `lhqjgrow-20261007a`
