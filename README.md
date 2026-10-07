@@ -3,17 +3,17 @@
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
 **当前阶段（2026-10-07）：核心现场链尚未跑通。** 四次核心批次均在业务开始前停止，
-已定位 journal 容量不足；全宿主扫描前置已删除，最新维护停在 guest 序列号校验。
-见[准确现场返回](docs/a2-execution/Q2_CORE_MINIMAL_CONTINUATION_FIELD_20261007.md)。
+已定位 journal 容量不足；全宿主扫描前置已删除，最新维护已通过序列号校验，
+停在 guest 的 systemctl 查询。见[准确现场返回](docs/a2-execution/Q2_CORE_SERIAL_CONTINUATION_FIELD_20261007.md)。
 
 Owner 明确要求只推进正常执行、运行中取消、同一任务恢复查询和结果收回；全宿主扫描扩展、
 namespace/watchdog、诊断平台及其它支线停止新增。
-[最小核心接续方案](docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.md)已冻结为
-A `5d6cefa602e9146f02887ebfaa4b0cad4e376ff2` 已获批准，K1 的扫描删减和核心接续实现已发布。
-准确候选 `a743af3` 的 CI 3/3 通过；唯一 K2 已进入 guest，但在
-`PRE_IDENTITY / GROWTH_JOURNAL_SERIAL` 停止，尚未关机、扩容或执行 H01/Q4/H11。
-见[序列号格式修复](docs/a2-execution/Q2_CORE_MINIMAL_CONTINUATION_REVIEW_20261007.md#journal-序列号格式修复)。
-源码中错误的末尾换行要求已修正，设备身份仍精确比较；离线测试不能代替现场通过。
+[序列号修复后的接续方案](docs/a2-execution/q2-core-serial-continuation/REQUIREMENTS.md)准确 A
+`7869bbc` 已获批准并实现；准确执行候选 `a20bf2a` 的 CI 3/3 通过。
+唯一 SC2 在 `PRE_QUIESCENCE / GROWTH_SYSTEMCTL_STDERR` 停止，尚未关机、扩容或执行
+H01/Q4/H11。已离线复现并修正 systemctl 将 `-.slice` 误当选项的参数分隔错误，
+同时补齐该失败的有界命令诊断；见[修复记录](docs/a2-execution/Q2_CORE_SERIAL_CONTINUATION_REVIEW_20261007.md#systemctl-单元名参数修复)。
+现场原错误未保存命令和 stderr，不能把确定的代码缺陷视为已证明的唯一现场原因。
 云端负责仓库实现与验证，本地 Codex 仅接真实私料和现场步骤；已有安装、SSH、历史原件和
 已消费 marker 保留，不重放旧交接。生产 E3、E4–E6 与 NAS 不在本轮范围。
 

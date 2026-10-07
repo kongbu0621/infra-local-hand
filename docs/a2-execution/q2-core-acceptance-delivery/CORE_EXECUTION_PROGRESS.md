@@ -1,5 +1,24 @@
 # Core execution progress and local Codex handoff — 2026-10-07
 
+## 当前：序列号已通过，修复 systemctl 单元名参数阻塞
+
+最新[现场记录](../Q2_CORE_SERIAL_CONTINUATION_FIELD_20261007.md)为 `acd62cb`：
+SC1 完成，准确执行候选 `a20bf2a` 的 CI 3/3；SC2 单次 `lhqjgrow-20261007a`
+已消费且失败。序列号校验通过，随后在 `PRE_QUIESCENCE / GROWTH_SYSTEMCTL_STDERR`
+停止；没有关机 token、扩容或 H01/Q4/H11 执行，远端退出仍 UNKNOWN。
+
+已离线复现 `show_many` 漏传 `--`：根单元 `-.slice` 会被 systemctl 当成选项拒绝。
+修复只正确分隔单元名，保留原退出码/双流EOF/空stderr和身份检查，并在同一次失败输出中
+保留命令序号、manager、verb、参数摘要、退出码、流长度/摘要和最多512 B stderr字节。
+详见[修复与验证](../Q2_CORE_SERIAL_CONTINUATION_REVIEW_20261007.md#systemctl-单元名参数修复)。
+旧现场缺少这层原始命令信息，当前不能证明该代码缺陷是此次现场失败的唯一原因。
+
+本地 Codex 下一步同步准确修复，复用既有输入核对生成 guest payload 的参数和诊断，
+只准备 journal 维护成功后接 H01→Q4→H11 的核心接续。SC2 及旧 K2 原件、marker 和消费
+均保留；AGENTS 明确禁止在已消费范围内重放 caller。源码修复不发出新现场请求。
+
+以下“当前/最新”均为历史检查点，不是恢复扫描支线或执行旧交接的入口。
+
 ## 当前：DR1 已完成，DR2 因 task 成员列表变化失败并消耗
 
 [准确 A](../../governance/Q2_CORE_JOURNAL_DRIFT_RESUME_BASELINE.md)

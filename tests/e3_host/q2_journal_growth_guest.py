@@ -450,7 +450,12 @@ class GuestInventory:
   self.systemctl=tool_binding("/usr/bin/systemctl", check)
   self.records=[]
   self.context={}
+  self.command_count=0
  def ctl(self, arguments, *, user_uid=None):
+  self.command_count += 1
+  self.context=dict(manager="user_1100" if user_uid is not None else "system",
+ command_index=self.command_count, verb=arguments[0], arguments_sha256=digest(canonical(arguments)),
+ unit_count=sum(UNIT_PATTERN.fullmatch(value) is not None for value in arguments))
   environment, child_setup=None, None
   bus=None
   if user_uid is not None:
@@ -478,7 +483,14 @@ class GuestInventory:
  "--no-ask-password", *arguments], self.check,
  environment=environment, preexec_fn=child_setup)
   result=command.collect()
-  require(result["returncode"] == 0 and result["both_eof"] and not result["stderr"], "GROWTH_SYSTEMCTL_STDERR")
+  if result["returncode"] != 0 or not result["both_eof"] or result["stderr"]:
+   self.context.update(returncode=result["returncode"], both_eof=result["both_eof"], pid=result["pid"],
+ stdout_bytes=len(result["stdout"]), stderr_bytes=len(result["stderr"]),
+ stdout_sha256=digest(result["stdout"]), stderr_sha256=digest(result["stderr"]),
+ stderr_prefix_hex=result["stderr"][:512].hex(), stderr_truncated=len(result["stderr"])>512,
+ failed_checks=[name for name,failed in (("returncode",result["returncode"] != 0),
+ ("both_eof",not result["both_eof"]),("stderr",bool(result["stderr"]))) if failed])
+   raise r.ObservationError("GROWTH_SYSTEMCTL_STDERR")
   if bus is not None:
    require(r.identity(os.stat("/run/user/1100/bus", follow_symlinks=False)) == bus,
  "GROWTH_USER_BUS_DRIFT")
@@ -487,7 +499,7 @@ class GuestInventory:
  def show_many(self, names, *, user_uid=None):
   require(0 < len(names) <= 128 and len(names) == len(set(names)) and
  all(type(name) is str and UNIT_PATTERN.fullmatch(name) for name in names), "GROWTH_UNIT_NAME")
-  raw=self.ctl(["show", "--all", "--property=" + ",".join(self.SHOW), *names], user_uid=user_uid)
+  raw=self.ctl(["show", "--all", "--property=" + ",".join(self.SHOW), "--", *names], user_uid=user_uid)
   result={}
   for block in raw.decode("utf-8", "strict").strip().split("\n\n"):
    entries=[line.split("=", 1) for line in block.splitlines()]
