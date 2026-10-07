@@ -58,7 +58,7 @@ form exact approved A `7869bbcaeb1dad3a1736131a3ff2e225ddf5e7cc`, tree
 [baseline registration](docs/governance/Q2_CORE_SERIAL_CONTINUATION_BASELINE.md) pins their bytes.
 R, direct source/integrity, Owner-only authority, no exceptions and change control remain unchanged.
 Repair baseline `ac292911f1dc7d99606899e5695c3245d467286d` has exact CI 3/3 success;
-that fact neither authorizes another field window nor verifies this unimplemented continuation.
+that fact does not substitute for SC1 verification of this continuation.
 
 The approval retains failed maintenance 06a, uses one fixed new maintenance session
 `lhqjgrow-20261007a` with independent create-only outputs, and conditionally continues the same
@@ -76,6 +76,21 @@ one new maintenance window and SC3 one conditional original core batch only afte
 No per-substep reapproval is needed. Old callers and old consumed windows remain forbidden.
 This closure does not prove readiness, consumption or success; changed scope still requires review.
 
+
+The [SC1 freeze and SC2 field return](docs/a2-execution/Q2_CORE_SERIAL_CONTINUATION_FIELD_20261007.md)
+records exact D `a20bf2a4575df7578341af744630ceaac131a6a7`, tree
+`74665885ddee8a50abf2ad545081820221b67084`, with completed offline/source/independent installed
+verification, publication and first-attempt exact CI 3/3. SC1 is complete.
+SC2 `lhqjgrow-20261007a` is now **CONSUMED / FAILED**: local preflight passed, same-window
+execute created the marker and issued one SSH, then stopped at `GROWTH_REPORT_MISSING`.
+Already captured guest stderr identifies `PRE_QUIESCENCE / GROWTH_SYSTEMCTL_STDERR`,
+with no guest action started. The serial check was passed; the deeper systemctl condition is
+not distinguished by the retained failure. No power-off token or growth/restart action was issued.
+Remote exit remains UNKNOWN. SC3 and H01/Q4/H11 are **NOT_RUN**, blocked by incomplete SC2;
+no real core package was built or issued. All old/new consumption and originals remain retained.
+Do not replay either caller, reissue 07a, retry, collect supplementary field evidence, clean up,
+or perform recovery under this consumed authorization. This factual record changes no A document
+or frozen implementation byte and does not make the conditional core batch independently available.
 
 ## Publication and GX10 handoff
 

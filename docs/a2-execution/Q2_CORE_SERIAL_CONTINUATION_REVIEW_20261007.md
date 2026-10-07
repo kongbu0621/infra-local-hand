@@ -1,5 +1,8 @@
 # SC1 固定新代次实现与验证
 
+最终准确冻结与单次返回见[现场记录](Q2_CORE_SERIAL_CONTINUATION_FIELD_20261007.md)：
+SC1 完成，SC2 已消耗且失败，SC3/H01/Q4/H11 未执行。以下保留各阶段当时状态。
+
 范围 `LH-Q2-CORE-SERIAL-CONTINUATION-v1`，准确 A
 `7869bbcaeb1dad3a1736131a3ff2e225ddf5e7cc`，独立 C
 `91c706b52dbc70498d5d872f59874c002cef23db`。准确 Owner B 见
