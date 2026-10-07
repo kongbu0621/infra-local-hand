@@ -1875,6 +1875,15 @@ do not execute it again, repeat a scan, collect more data, relax consistency or 
 Any material coverage/consistency amendment or further field window requires its own exact review,
 Owner B and independent C. No retry, cleanup, recovery, new-boot adoption or H01/Q4/H11 is authorized.
 
+The [drift diagnostic repair and local review](docs/a2-execution/Q2_CORE_JOURNAL_DRIFT_DIAGNOSTICS_REVIEW_20261007.md)
+records source-only repair `711932aae3370c7f2ed5c1a51ac82d3b0f67a6e5` under the existing CLOSED
+development scope. Fixed reason suffixes distinguish existing rejection predicates without changing
+checks, short-circuit reads, budgets or v2 fields. Local scoped verification passed 663 tests without
+skips; exact repair CI `37569620992` completed all three jobs successfully in attempt 1. Twelve source
+members and eight original static inputs passed offline verification; old W2 source and handoff remain
+unchanged. Historical PID_RECHECK's exact failed predicate remains UNKNOWN. This is neither a new
+field authorization nor a replacement handoff: W2 remains CONSUMED / FAILED and all prior limits apply.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
