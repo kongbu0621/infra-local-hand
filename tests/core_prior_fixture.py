@@ -124,10 +124,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v6', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v7', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v6',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v7',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -177,8 +177,8 @@ def diagnostic_files(monkeypatch):
 
 def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
-    return dict(schema='local-hand-q2-core-journal-transition/v2',
-        authority=dict(R=c.RULE['commit'],A=c.SERIAL_BASELINE['commit'],C=c.SERIAL_CLOSURE['commit']),
+    return dict(schema='local-hand-q2-core-journal-transition/v3',
+        authority=dict(R=c.RULE['commit'],A=c.SYSTEMCTL_BASELINE['commit'],C=c.SYSTEMCTL_CLOSURE['commit']),
         previous_maintenance=p.maintenance_resume(),implementation=copy.deepcopy(implementation),session=p.JOURNAL_SESSION,nonce='a'*64,
         access_mode='TRUSTED_SINGLE_ADMIN',host_writer_observation='NOT_PERFORMED',
         continuous_exclusion_proven=False,input_sha256='b'*64,manifest_sha256='c'*64,
@@ -204,21 +204,32 @@ def journal_transition(implementation):
 def previous_journal_files(monkeypatch, *dispatchers):
     """Substitute only fixed byte pins for synthetic old originals; use the real relation parser."""
     dump=lambda value:c.canonical(value,newline=True)
-    session=p.PREVIOUS_JOURNAL_SESSION
-    authority=dict(R=c.RULE['commit'],A=c.MINIMAL_BASELINE['commit'],C=c.MINIMAL_CLOSURE['commit'])
-    common=dict(D=p.PREVIOUS_JOURNAL_D,nonce='9'*64,access_mode='TRUSTED_SINGLE_ADMIN',
+    files={}
+    for index in range(2):
+        files.update(_previous_journal_generation(monkeypatch,dispatchers,index))
+    p.build_previous_maintenance(files)
+    return files
+
+
+def _previous_journal_generation(monkeypatch, dispatchers, index):
+    dump=lambda value:c.canonical(value,newline=True)
+    fixed=p.previous_journal_profiles()[index]
+    session=fixed['session']
+    authority=fixed['authority']
+    common=dict(D=fixed['D'],nonce='9'*64,access_mode='TRUSTED_SINGLE_ADMIN',
         host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False)
     inputs=dict(inventory_sha256='8'*64)
+    if index==1:inputs['resume']=p.serial_maintenance_resume()
     desc=dict(session=session,nonce=common['nonce'],original_boot_id='11111111-2222-3333-4444-555555555555',
         source_binding_sha256=c.sha256(dump(inputs)),window_seconds=898,change_seconds=778)
-    manifest=dict(common,**authority,schema='lhq-journal-growth-manifest/v2',inputs=inputs,
+    manifest=dict(common,**authority,schema='lhq-journal-growth-manifest/v'+str(fixed['version']),inputs=inputs,
         inventory_sha256='8'*64,window_binding=dict(origins=[10,20]))
     marker=dict(common,session=session,manifest=manifest,manifest_sha256=c.sha256(dump(manifest)),
         clocks=[10,20],pre_description=desc,pre_command_sha256='7'*64)
     failure=dict(schema='lhq-journal-growth-guest/v1',session=session,phase='pre',status='INCOMPLETE',
-        stage='PRE_IDENTITY',reason='GROWTH_JOURNAL_SERIAL',actions_started=[])
+        stage=fixed['stage'],reason=fixed['reason'],actions_started=[])
     streams={'pre.stdout':b'','pre.stderr':dump(failure)}
-    receipt=dict(common,**authority,schema='lhq-journal-growth-receipt/v2',session=session,
+    receipt=dict(common,**authority,schema='lhq-journal-growth-receipt/v'+str(fixed['version']),session=session,
         state='STOP_AND_RETAIN',last_step='STOP_AND_RETAIN',reason='GROWTH_REPORT_MISSING',
         started=['CONSUMED','GUEST_QUIET'],marker_created=True,ssh_requests=1,business_cases=0,
         remote_exit='UNKNOWN',old_commitments_refunded=False,manifest_sha256=marker['manifest_sha256'],
@@ -229,10 +240,13 @@ def previous_journal_files(monkeypatch, *dispatchers):
         result=dict(manifest_sha256=marker['manifest_sha256'])),dict(step='GUEST_QUIET',state='STARTED'),
         dict(phase='pre',argv_sha256=marker['pre_command_sha256'],description_sha256=c.sha256(dump(desc)),
             window_seconds=898,change_seconds=778)]
+    if index==1:
+        for row in (manifest,marker,receipt):row['resume']=p.serial_maintenance_resume()
+        marker['manifest_sha256']=receipt['manifest_sha256']=c.sha256(dump(manifest))
+        events[1]['result']['manifest_sha256']=marker['manifest_sha256']
     raw={'consumed.json':dump(marker),'events.jsonl':b''.join(dump(row) for row in events),
         **streams,'receipt.json':dump(receipt)}
-    pins={name:(len(raw[name]),c.sha256(raw[name])) for name in p.PREVIOUS_JOURNAL_PINS}
-    for module in (p,*dispatchers):monkeypatch.setattr(module,'PREVIOUS_JOURNAL_PINS',pins.copy())
+    pins={name:(len(raw[name]),c.sha256(raw[name])) for name in fixed['pins']}
+    for module in (p,*dispatchers):monkeypatch.setattr(module,'SECOND_JOURNAL_PINS' if index else 'PREVIOUS_JOURNAL_PINS',pins.copy())
     files={'.'+session+'.'+name:data for name,data in raw.items()}
-    p.build_previous_maintenance(files)
     return files

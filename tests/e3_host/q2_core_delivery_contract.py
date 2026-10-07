@@ -290,6 +290,17 @@ SERIAL_CLOSURE = {
     "commit": "91c706b52dbc70498d5d872f59874c002cef23db",
     "tree": "0a3008294aca7bb70d6fca883b681b813dc12165",
 }
+SYSTEMCTL_SCOPE = "LH-Q2-CORE-SYSTEMCTL-CONTINUATION-v1"
+SYSTEMCTL_BASELINE = {'commit': '62666eeec9f2f28833876df3d68ce6e8b8e0af54',
+ 'tree': '52ebb86280484d16e51aa40aca32f43cfceb4458',
+ 'documents_sha256': {'docs/a2-execution/q2-core-systemctl-continuation/ARCHITECTURE.md': 'ba25e87046caf0ccadbb8792fe8b8390d4df891a88bbd95e93ad48799be5fcb5',
+                      'docs/a2-execution/q2-core-systemctl-continuation/IMPLEMENTATION_PLAN.md': 'b69186abe3daf2cb9d7457750c15b2f9d4781e2cdc328bab6b1d0c949c87ef6b',
+                      'docs/a2-execution/q2-core-systemctl-continuation/REQUIREMENTS.md': '2656889d68132bf0698c03f1aff77842be7255fa8c7dd5876070029e78f0d5ee'}}
+SYSTEMCTL_OWNER_DECISION = {'event': 'LH-Q2-CORE-SYSTEMCTL-CONTINUATION-CLOSURE-20261007-01',
+ 'record_path': 'docs/governance/Q2_CORE_SYSTEMCTL_CONTINUATION_OWNER_DECISION.md',
+ 'record_sha256': '29e63c791de507cda1e48f2e89a992783a9fe6866850d006ce6a36abcb39c8ac'}
+SYSTEMCTL_CLOSURE = {'commit': '7b342ced547639f93797e849b34ed3da4915c8d3',
+ 'tree': 'ec1ed26d198c9226816ff00de6896eb3d7e102de'}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

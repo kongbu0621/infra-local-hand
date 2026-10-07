@@ -45,11 +45,12 @@ def test_real_protected_reader_retains_exact_failed_prefix_without_atime_change(
     assert p.build_previous_maintenance(raw)==d._validate_maintenance_resume(p.maintenance_resume())
 
 
+@pytest.mark.parametrize('index',[0,1])
 @pytest.mark.parametrize('name',tuple(p.PREVIOUS_JOURNAL_PINS))
 @pytest.mark.parametrize('fault',['missing','bytes','mode','symlink','hardlink'])
-def test_any_old_original_fault_refused_by_protected_reader(retained,name,fault):
+def test_any_old_original_fault_refused_by_protected_reader(retained,index,name,fault):
     root,fd,anchor,call,raw=retained
-    file=root/('.'+p.PREVIOUS_JOURNAL_SESSION+'.'+name)
+    file=root/('.'+p.previous_journal_profiles()[index]['session']+'.'+name)
     if fault=='missing':file.unlink()
     elif fault=='bytes':file.write_bytes(b'changed')
     elif fault=='mode':file.chmod(0o644)
@@ -60,17 +61,20 @@ def test_any_old_original_fault_refused_by_protected_reader(retained,name,fault)
         p.read_previous_journal_files(fd,anchor,call)
 
 
+@pytest.mark.parametrize('index',[0,1])
 @pytest.mark.parametrize('suffix',p.PREVIOUS_JOURNAL_ABSENT)
-def test_old_later_name_even_empty_blocks(retained,suffix):
+def test_old_later_name_even_empty_blocks(retained,index,suffix):
     root,fd,anchor,call,_=retained
-    (root/('.'+p.PREVIOUS_JOURNAL_SESSION+'.'+suffix)).touch()
+    (root/('.'+p.previous_journal_profiles()[index]['session']+'.'+suffix)).touch()
     with pytest.raises(p.c.ContractError,match='PREVIOUS_LATER_OBJECT'):
         p.read_previous_journal_files(fd,anchor,call)
 
 
+@pytest.mark.parametrize('index',[0,1])
 @pytest.mark.parametrize('fault',['D','authority','nonce','input','order','success','exit','actions','streams'])
-def test_old_internal_relation_checked_even_with_matching_synthetic_byte_pins(monkeypatch,fault):
-    raw=previous_journal_files(monkeypatch,d);prefix='.'+p.PREVIOUS_JOURNAL_SESSION+'.'
+def test_old_internal_relation_checked_even_with_matching_synthetic_byte_pins(monkeypatch,index,fault):
+    raw=previous_journal_files(monkeypatch,d);fixed=p.previous_journal_profiles()[index]
+    prefix='.'+fixed['session']+'.'
     name='pre.stderr' if fault=='actions' else 'events.jsonl' if fault=='order' else 'receipt.json'
     if fault=='order':
         data=b''.join(reversed(raw[prefix+name].splitlines(keepends=True)))
@@ -86,13 +90,14 @@ def test_old_internal_relation_checked_even_with_matching_synthetic_byte_pins(mo
         elif fault=='streams':value['transports'][0]['files']['stdout']['bytes']=1
         data=h.canonical(value)
     raw[prefix+name]=data
-    monkeypatch.setitem(p.PREVIOUS_JOURNAL_PINS,name,(len(data),h.digest(data)))
+    monkeypatch.setitem(fixed['pins'],name,(len(data),h.digest(data)))
     with pytest.raises(p.c.ContractError):p.build_previous_maintenance(raw)
 
 
+@pytest.mark.parametrize('index',[0,1])
 @pytest.mark.parametrize('where',['manifest','marker','receipt','input','projection'])
 @pytest.mark.parametrize('fault',['session','D','digest','order','bool','extra'])
-def test_new_binding_and_both_consumers_reject_changed_previous_summary(originals,where,fault):
+def test_new_binding_and_both_consumers_reject_changed_previous_summary(originals,index,where,fault):
     files,args=originals
     projection=p.build_journal_transition(files,**args)
     prefix='.'+h.SESSION+'.'
@@ -100,10 +105,10 @@ def test_new_binding_and_both_consumers_reject_changed_previous_summary(original
     target={'manifest':marker['manifest']['resume'],'marker':marker['resume'],'receipt':receipt['resume'],
         'input':args['frozen']['source_binding']['resume'],'projection':projection['previous_maintenance']}[where]
     if fault=='session':target['session']=p.PREVIOUS_JOURNAL_SESSION
-    elif fault=='D':target['previous_D']='0'*40
-    elif fault=='digest':target['originals'][0]['sha256']='0'*64
-    elif fault=='order':target['originals'].reverse()
-    elif fault=='bool':target['old_window_consumed']=1
+    elif fault=='D':target['previous_maintenance'][index]['D']='0'*40
+    elif fault=='digest':target['previous_maintenance'][index]['originals'][0]['sha256']='0'*64
+    elif fault=='order':target['previous_maintenance'][index]['originals'].reverse()
+    elif fault=='bool':target['previous_maintenance'][index]['window_consumed']=1
     else:target['retry']=True
     if where=='projection':
         with pytest.raises(p.c.ContractError):p.validate_journal_transition(projection,priors=args['priors'],implementation=args['implementation'])
@@ -130,17 +135,17 @@ def test_new_preflight_rejects_old_or_changed_generation(fault):
     if fault=='old_schema':value['schema']='lhq-journal-growth-preflight/v1'
     elif fault=='old_session':value['resume']['session']=p.PREVIOUS_JOURNAL_SESSION
     elif fault=='missing_resume':del value['resume']
-    elif fault=='wrong_pin':value['resume']['originals'][0]['bytes']+=1
+    elif fault=='wrong_pin':value['resume']['previous_maintenance'][0]['originals'][0]['bytes']+=1
     else:value['usage']['cpu_nanoseconds']=0
     with pytest.raises((p.c.ContractError,h.prior.r.ObservationError)):h.parse_preflight(h.canonical(value))
 
 
-def test_fixed_two_generation_capacity_and_unchanged_action_limits():
-    assert h.SESSION=='lhqjgrow-20261007a'
-    assert (h.HOST_BYTES,h.HOST_INODES)==(2592*1048576,740)
+def test_fixed_three_generation_capacity_and_unchanged_action_limits():
+    assert h.SESSION=='lhqjgrow-20261007b'
+    assert (h.HOST_BYTES,h.HOST_INODES)==(3888*1048576,1110)
     assert (h.BACKUP_CAP,h.IMAGE_CAP,h.CAPTURE_CAP)==(320*1048576,576*1048576,8*1048576)
     rows=p.maintenance_commitments()['generations']
-    assert sum(row['cpu_seconds'] for row in rows)==240
+    assert sum(row['cpu_seconds'] for row in rows)==360
     assert p.maintenance_commitments()==d._maintenance_commitments()
 
 

@@ -43,6 +43,8 @@ MINIMAL_A="5d6cefa602e9146f02887ebfaa4b0cad4e376ff2"
 MINIMAL_C="8a4c24cefe4abbab193577b2dff48fc49626cae4"
 SERIAL_A=history.c.SERIAL_BASELINE["commit"]
 SERIAL_C=history.c.SERIAL_CLOSURE["commit"]
+SYSTEMCTL_A=history.c.SYSTEMCTL_BASELINE["commit"]
+SYSTEMCTL_C=history.c.SYSTEMCTL_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -66,11 +68,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261007a"
+SESSION="lhqjgrow-20261007b"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=2592*MIB,740
+HOST_BYTES,HOST_INODES=3888*MIB,1110
 STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
@@ -901,6 +903,14 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  git("merge-base","--is-ancestor",SERIAL_A,SERIAL_C)
  git("merge-base","--is-ancestor",SERIAL_C,expected)
  require(expected!=SERIAL_C,"GROWTH_SERIAL_D")
+ git("merge-base","--is-ancestor",SYSTEMCTL_A,SYSTEMCTL_C)
+ git("merge-base","--is-ancestor",SYSTEMCTL_C,expected)
+ require(expected!=SYSTEMCTL_C,"GROWTH_SYSTEMCTL_D")
+ for path,sha in history.c.SYSTEMCTL_BASELINE["documents_sha256"].items():
+  require(digest(git("show",expected+":"+path))==sha,"GROWTH_SYSTEMCTL_A_CHANGED")
+ decision=history.c.SYSTEMCTL_OWNER_DECISION
+ require(digest(git("show",expected+":"+decision["record_path"]))==decision["record_sha256"],
+"GROWTH_SYSTEMCTL_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -982,9 +992,8 @@ frozen["description"])["rows"]
 "GROWTH_HELLO_BINDING")
    units[carrier["name"]]["control_group"]=carrier["control_group"]
   frozen["previous_maintenance_files"]={}
-  for suffix,(size,sha) in history.PREVIOUS_JOURNAL_PINS.items():
+  for name,(size,sha) in history.previous_maintenance_pins().items():
    self.deadline.check()
-   name="."+history.PREVIOUS_JOURNAL_SESSION+"."+suffix
    fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC|os.O_NONBLOCK,dir_fd=self.fd)
    info=os.fstat(fd)
    self.held.append((name,fd,local.metadata(info)))
@@ -1004,16 +1013,16 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
   # Held metadata is checked by recheck; this bounded reread binds bytes immediately
   # before consumption as well as during ordinary preflight. No directory scan.
   files={}
-  for suffix,(size,sha) in history.PREVIOUS_JOURNAL_PINS.items():
-   name="."+history.PREVIOUS_JOURNAL_SESSION+"."+suffix
+  for name,(size,sha) in history.previous_maintenance_pins().items():
    fd=next(fd for held,fd,_ in self.held if held==name)
    self.deadline.check()
    os.lseek(fd,0,os.SEEK_SET)
    raw,_=local.stable_read(fd,65536,self.deadline.check)
    require((len(raw),digest(raw))==(size,sha),"GROWTH_PREVIOUS_PIN")
    files[name]=raw
-  for suffix in history.PREVIOUS_JOURNAL_ABSENT:
-   self.absent("."+history.PREVIOUS_JOURNAL_SESSION+"."+suffix)
+  for fixed in history.previous_journal_profiles():
+   for suffix in history.PREVIOUS_JOURNAL_ABSENT:
+    self.absent("."+fixed["session"]+"."+suffix)
   history.build_previous_maintenance(files)
 def management_usage():
  own,children=(resource.getrusage(kind) for kind in (resource.RUSAGE_SELF,resource.RUSAGE_CHILDREN))
@@ -1046,13 +1055,13 @@ resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024)
   self.last=dict(cpu_nanoseconds=cpu,rss_peak_bytes=rss)
   return dict(self.last)
 def make_preflight(commit,manifest,window,nonce,usage):
- value=dict(schema="lhq-journal-growth-preflight/v2",D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v3",D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume=history.maintenance_resume())
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume"} and value["schema"]=="lhq-journal-growth-preflight/v2",
+"nonce","usage","window_seconds","change_seconds","resume"} and value["schema"]=="lhq-journal-growth-preflight/v3",
 "GROWTH_PREFLIGHT_SCHEMA")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce"):
@@ -1081,7 +1090,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v3",session=SESSION,R=R,A=SERIAL_A,C=SERIAL_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v4",session=SESSION,R=R,A=SYSTEMCTL_A,C=SYSTEMCTL_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1109,9 +1118,9 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v3",R=R,A=SERIAL_A,C=SERIAL_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v4",R=R,A=SYSTEMCTL_A,C=SYSTEMCTL_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
-historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C),inputs=self.frozen["source_binding"],
+historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C),inputs=self.frozen["source_binding"],
 window_binding=self.window.binding,
 inventory_sha256=digest(canonical(self.frozen["inventory"])),
 retained_sha256=digest(canonical(self.anchor.retained)),
