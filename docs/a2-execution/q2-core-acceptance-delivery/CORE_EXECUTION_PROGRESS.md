@@ -1,6 +1,23 @@
-# Core execution progress and local Codex handoff — 2026-10-07
+# Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：模板查询原因已明确，完成针对性源码修复
+## 当前：TC1完整冻结，唯一08a维护在Names校验停止
+
+[准确返回](../Q2_CORE_TEMPLATE_CONTINUATION_FIELD_20261008.md)：Owner已批准准确A
+`80c7c8eaeda0853317c679b31b0ed1f1ac13e49b` 的TC1–TC3，独立C为
+`bb9b3c6e9b397121220c22515e4ef637d12c7297`。执行D
+`d5b34316bc93b37442eb5db64ba265b965e68379` 已完成离线输入、源码、独立安装、发布、
+准确首次CI3/3和冻结。Linux6525 passed/89 skipped，独立安装94 checks/292 commands。
+
+TC2 `lhqjgrow-20261008a` 普通预检通过，同窗execute创建marker、发一次SSH后失败。
+本次已有guest报告为PRE_QUIESCENCE/GROWTH_SYSTEMCTL_NAMES，动作空，无关机token。
+原上下文未保存被拒绝Names值或具体单元，不追加查询补证。没有备份、扩容或重启；
+远端整体退出仍UNKNOWN，TC3及H01/Q4/H11均NOT_RUN，没有生成或发送真实核心包。
+
+四代维护的原件、完整费用、消费及UNKNOWN均保留；08a已消耗，不能重放其任一caller，
+也不能把尚未发出的条件核心批单独执行。本次没有重试、补采、清理、恢复或扩展支线。
+以下“当前/最新/下一步”仅为对应历史检查点，不是执行旧交接的入口。
+
+## 先前：模板查询原因已明确，完成针对性源码修复
 
 最新[现场记录](../Q2_CORE_SYSTEMCTL_CONTINUATION_FIELD_20261007.md)为 `531bf0a`：
 准确执行候选 `b2bc054` 的 SY1 完成；SY2 `lhqjgrow-20261007b` 预检通过后一次执行失败。

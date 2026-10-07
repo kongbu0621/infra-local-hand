@@ -173,6 +173,22 @@ Old consumed-window restrictions remain, and failures stop without retry, supple
 cleanup, recovery or side branches. Closure does not prove execution or success. R and its original
 Owner authority, mandate, no exceptions and material-change reopen rule are unchanged.
 
+The [TC1 freeze and TC2 return](docs/a2-execution/Q2_CORE_TEMPLATE_CONTINUATION_FIELD_20261008.md)
+records executed D `d5b34316bc93b37442eb5db64ba265b965e68379`, tree
+`593d90c6a26f936d76ba548d89dd09c760f0c46c`, with completed offline retained-input checks,
+independent installation, publication, first-attempt exact CI 3/3 and freeze. TC1 is complete.
+TC2 `lhqjgrow-20261008a` is now **CONSUMED / FAILED**. Preflight passed; same-window execute
+created the marker and issued one SSH, then stopped at `GROWTH_REPORT_MISSING`.
+The already captured guest report is `PRE_QUIESCENCE / GROWTH_SYSTEMCTL_NAMES`, actions empty.
+Its retained context identifies system show, but not the rejected Names value or individual unit;
+do not invent that missing detail or issue a query to obtain it under this consumed window.
+No power-off token, backup, image/filesystem growth or VM restart was issued. Remote exit remains UNKNOWN.
+TC3 and H01/Q4/H11 are **NOT_RUN**; no real core package was built or sent.
+All four maintenance generations' consumption, original evidence and full obligations remain.
+Do not replay these callers, reissue 08a, retry, collect supplementary evidence, clean up or perform
+recovery under this consumed authorization. Conditional TC3 is not independent remaining permission.
+This factual registration changes neither A's three documents nor the frozen implementation.
+
 ## Publication and GX10 handoff
 
 Owner approved public disclosure of exact original candidate `b763bd6714721d22278086db559fa3f6684aad7b` and its governance excerpt, with no license added and no SOP history or raw machine evidence. See [PUBLICATION_OWNER_DECISION.md](docs/governance/PUBLICATION_OWNER_DECISION.md). After the authorized GX10 S1 verification found and repaired defects, Owner separately directed repaired candidate `1e2f9dce87e57c34a35fe3a6a75a8c784181ba83` to be committed and pushed directly to `main`; see [Q6_MAIN_PUBLICATION_OWNER_DECISION.md](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md). These are disclosure decisions, not replacements for the S1 closure below. Equivalence/adoption of the public governance excerpt remains pending. Windows is deferred. Owner subsequently directed “全部提交推送。 你直接继续修复”; the follow-up S1 repair/publication record and exact verified candidate are in [S1_FOLLOWUP_REVIEW.md](docs/S1_FOLLOWUP_REVIEW.md). This does not expand S1 closure or authorize live cutover. The subsequent Owner-directed chain-only review is recorded in [S1_CONFLICT_CHAIN_REVIEW.md](docs/S1_CONFLICT_CHAIN_REVIEW.md); its exact candidate and scoped validation are separate from earlier full-suite results. The earlier delivery/receipt recovery repair and chain-only evidence are recorded in [S1_DELIVERY_RECOVERY_REVIEW.md](docs/S1_DELIVERY_RECOVERY_REVIEW.md). The subsequent process-lifetime and bounded-capture repair is recorded in [S1_PROCESS_LIFETIME_REVIEW.md](docs/S1_PROCESS_LIFETIME_REVIEW.md), with targeted source and installed-chain evidence. The subsequent Result size and durable recovery repair is recorded in [S1_RESULT_BUDGET_REVIEW.md](docs/S1_RESULT_BUDGET_REVIEW.md), with exact source and installed-chain evidence. The subsequent committed-mailbox snapshot and interrupted publication repair is recorded in [S1_MAILBOX_SNAPSHOT_REVIEW.md](docs/S1_MAILBOX_SNAPSHOT_REVIEW.md), with scoped source and installed-chain evidence. The subsequent verified-branch fetch and snapshot consistency repair is recorded in [S1_FETCH_SNAPSHOT_REVIEW.md](docs/S1_FETCH_SNAPSHOT_REVIEW.md), with scoped source and installed-chain evidence. The subsequent filesystem state lookup and replay barrier repair is recorded in [S1_STATE_LOOKUP_REVIEW.md](docs/S1_STATE_LOOKUP_REVIEW.md), with scoped source and installed-chain evidence. The subsequent persistence and post-reset recovery repair is recorded in [S1_STATE_PERSISTENCE_REVIEW.md](docs/S1_STATE_PERSISTENCE_REVIEW.md), including targeted verification and the retained first-attempt failure. The subsequent content-read failure and automatic Git maintenance repair is recorded in [S1_READ_FAILURE_REVIEW.md](docs/S1_READ_FAILURE_REVIEW.md), with targeted source and installed-chain evidence and the retained first-attempt pack-scan failure.
