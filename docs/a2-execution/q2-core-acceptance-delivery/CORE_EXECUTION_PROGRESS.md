@@ -1,4 +1,26 @@
-# Core execution progress and local Codex handoff — 2026-10-05
+# Core execution progress and local Codex handoff — 2026-10-07
+
+## 当前：维护扫描被FD工作量门阻断，业务核心尚未进入
+
+最新现场登记为 `8c58f093a3fc923fb078811622fb2691448e81fc`。
+maps修正MB1已完成，执行候选 `68b63da88d70cfb8151f66a75c7f523baaf012d2`；
+唯一MB2窗口已消费，在checkpoint1以 `FD_TOTAL=262145>262144` 失败。
+marker false、SSH0，journal未扩容，H01/Q4/H11没有真实PASS。
+详见[MB2返回](../Q2_CORE_JOURNAL_MAPS_BUDGET_FIELD_20261007.md)；其原始流未独立认证。
+
+当前[准确提案A](../../governance/Q2_CORE_JOURNAL_SCAN_WORK_BASELINE.md)为
+`42a66be98c45e817e866d3fb86a1c184c2ce55f9`，W1–W2仍OPEN，尚未收到该范围批准。
+它一次处理实际FD操作计费、有界进度结果与必要源长度界；保留完整覆盖和校验，
+验证完成后才请求原session的一次替代窗口，全门通过同窗完成原维护。
+本轮只发布提案，没有实现新预算、调用现场或恢复支线；不得重跑已消费的旧交接。
+
+同时已确认：扩容重启后的新boot尚无核心consumer，现dispatcher仍绑定三旧profile，
+还缺已消费05c的第四旧接入。因此下文历史“源码缺口清空”仅对应当时版本，不能用来
+宣称目前收到维护receipt即可直接运行旧核心包。下一核心修订需验证完整维护原件与
+新旧boot/VM关系、保留四旧承诺，再发行一个准确新批；设计可提前准备，执行依赖真实维护成功。
+本次W1–W2不包含该第五批授权。核心目标仍为H01正常任务→Q4取消→H11自身原ledger恢复。
+
+以下保留2026-10-05及更早历史检查点，其中“当前/最新”均只描述其登记时刻。
 
 ## 当前：sudo修复已全绿，固定单次核心验收待准确批准
 

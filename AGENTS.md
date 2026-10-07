@@ -1820,6 +1820,30 @@ collection, SSH, retry, reconnect, cleanup or recovery. No FD cap, coverage, dea
 change is authorized by this return. Any material amendment or further affected field window
 requires its own exact review, Owner B and independent C; the old windows stay consumed.
 
+### Journal scan work correction proposal
+
+Scope `LH-Q2-CORE-JOURNAL-SCAN-WORK-v1` is **OPEN / NOT APPROVED**, for proposed W1–W2 only.
+The [baseline registration](docs/governance/Q2_CORE_JOURNAL_SCAN_WORK_BASELINE.md) pins exact A
+`42a66be98c45e817e866d3fb86a1c184c2ce55f9` and links the three proposed documents.
+There is no Owner B or independent CLOSED C for this scope. R, direct source/integrity, Owner
+mandate/authority, no exceptions and material-change review remain unchanged.
+
+The proposal replaces the post-snapshot FD_TOTAL gate with a fixed 2097152-attempt FD stat budget
+shared by initial snapshots, recheck snapshots and matching-object stat, charged before each call.
+It retains all task coverage, other proc caps, identities and deadlines, adds a strict result/v2
+progress object, and explicitly raises only the two maintenance source limits to 98304 bytes
+(guest source only within its bundle). Payload, argv, reader/input and bundle limits stay unchanged.
+These are proposed material changes, not an authorized silent fix or a measured host-fit guarantee.
+
+Only after accurate Owner B, independent C, implementation, scoped verification, publication,
+exact-candidate CI and freezing would one further replacement preflight be allowed under the
+original session. All gates passing would continue only the unconsumed original journal maintenance
+in that window. All old windows stay consumed; no further host calls or changed implementation are
+authorized by this proposal. No deduplication, task omission, automatic cap changes, retry,
+supplemental collection, privilege changes, cleanup or recovery is included. New-boot core adoption
+and H01/Q4/H11 remain outside W1–W2; the plan identifies their actual unimplemented handoff boundary.
+Existing unaffected CLOSED development continues. Do not replay old frozen handoffs.
+
 ### Continuing constraints
 
 - Repository formation also follows Owner-mandated Provisional [RFS-1.0 at the same fixed source commit](https://github.com/kongbu0621/engineering-sop/blob/10d2a5c827964989f41ca6e8eeac3d44de6d0f04/docs/principles/repository-formation-standard-v1.0.md) and its Established module-boundary principle. The current formation assessment is in FORMATION_AND_MIGRATION.md; a Public shell does not close formation, publication or Authority admission.
