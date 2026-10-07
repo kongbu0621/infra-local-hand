@@ -1007,6 +1007,8 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
   for suffix,(size,sha) in history.PREVIOUS_JOURNAL_PINS.items():
    name="."+history.PREVIOUS_JOURNAL_SESSION+"."+suffix
    fd=next(fd for held,fd,_ in self.held if held==name)
+   self.deadline.check()
+   os.lseek(fd,0,os.SEEK_SET)
    raw,_=local.stable_read(fd,65536,self.deadline.check)
    require((len(raw),digest(raw))==(size,sha),"GROWTH_PREVIOUS_PIN")
    files[name]=raw

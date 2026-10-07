@@ -156,3 +156,26 @@ def test_serial_authority_exact_bytes_are_required_before_source_admission(sourc
 def test_serial_closure_lineage_is_required(source_git,edge):
     source_git.rejected_edge=edge
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.growth_sources(source_git.head)
+
+
+@pytest.mark.parametrize('changed',[False,True])
+def test_growth_anchor_rereads_same_held_fds_from_start(retained,changed):
+    root,fd,anchor,call,raw=retained
+    value=h.GrowthAnchor.__new__(h.GrowthAnchor)
+    value.fd=fd;value.deadline=SimpleNamespace(check=lambda:None);value.held=[]
+    try:
+        for name,data in raw.items():
+            held=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC,dir_fd=fd)
+            value.held.append((name,held,h.local.metadata(os.fstat(held))))
+            assert h.local.stable_read(held,65536,value.deadline.check)[0]==data
+        value.previous_maintenance_recheck()
+        if changed:
+            file=root/('.'+p.PREVIOUS_JOURNAL_SESSION+'.receipt.json')
+            file.write_bytes(b'changed')
+            with pytest.raises(h.prior.r.ObservationError,match='GROWTH_PREVIOUS_PIN'):
+                value.previous_maintenance_recheck()
+        else:
+            value.previous_maintenance_recheck()
+            assert all(os.lseek(held,0,os.SEEK_CUR)==len(raw[name]) for name,held,_ in value.held)
+    finally:
+        for _,held,_ in value.held:os.close(held)
