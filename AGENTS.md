@@ -92,34 +92,38 @@ Do not replay either caller, reissue 07a, retry, collect supplementary field evi
 or perform recovery under this consumed authorization. This factual record changes no A document
 or frozen implementation byte and does not make the conditional core batch independently available.
 
-### Proposed single continuation after the systemctl repair
+### Authorized single continuation after the systemctl repair
 
-Scope `LH-Q2-CORE-SYSTEMCTL-CONTINUATION-v1` is **PROPOSED / Gate OPEN / NOT APPROVED**
-for SY1–SY3. Its [requirements](docs/a2-execution/q2-core-systemctl-continuation/REQUIREMENTS.md),
+Scope `LH-Q2-CORE-SYSTEMCTL-CONTINUATION-v1` is **CLOSED for SY1–SY3 only**.
+Its [requirements](docs/a2-execution/q2-core-systemctl-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-systemctl-continuation/ARCHITECTURE.md), and
-[plan](docs/a2-execution/q2-core-systemctl-continuation/IMPLEMENTATION_PLAN.md) form exact A
+[plan](docs/a2-execution/q2-core-systemctl-continuation/IMPLEMENTATION_PLAN.md) form exact approved A
 `62666eeec9f2f28833876df3d68ce6e8b8e0af54`, tree `52ebb86280484d16e51aa40aca32f43cfceb4458`;
 the [baseline registration](docs/governance/Q2_CORE_SYSTEMCTL_CONTINUATION_BASELINE.md) pins their bytes.
 R, direct source/integrity, Owner-only authority, no exceptions and change control remain unchanged.
+Exact Owner B is retained in [the decision](docs/governance/Q2_CORE_SYSTEMCTL_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-SYSTEMCTL-CONTINUATION-CLOSURE-20261007-01`. This independent bookkeeping-only C
+contains only this CLOSED registration and the exact decision; D must descend from C. Do not squash
+C with implementation. A's three document bytes and historical OPEN labels remain unchanged.
 
 Input repair `c1fa156e68cf4b9e1909881f859736a933310794` has exact first-attempt CI 3/3 success
-and 18 existing local systemctl tests passed. Neither fact authorizes another consumed-window replay.
-The proposal requests one new fixed maintenance `lhqjgrow-20261007b`, preserving failed 06a and 07a,
-and conditional continuation of the same unissued `lhqcore-20261007a` H01/Q4/H11 batch.
-Both producer and consumers must be complete, verified, published and frozen before maintenance.
+and 18 existing local systemctl tests passed; this does not substitute for new SY1 verification.
+SY1 authorizes complete implementation, verification, publication, exact candidate CI and freeze
+of both maintenance producer and core consumers before SY2. SY2 permits one fixed new maintenance
+`lhqjgrow-20261007b`, preserving consumed failed 06a and 07a. SY3 permits only the same unissued
+`lhqcore-20261007a` H01/Q4/H11 batch after full maintenance verification. Old windows stay consumed.
 Three full maintenance obligations require 3888 MiB/1110 inodes; with original core capture,
-3952 MiB/1126 inodes. Old consumption and UNKNOWNs remain; single-attempt limits are unchanged.
+3952 MiB/1126 inodes. Old UNKNOWNs and all single-attempt resource and time limits remain.
 
-The proposal also explicitly requests limited disclosure of only the five old 07a originals'
-basename/bytes/SHA-256 index, reviewed in private attachment event
-`SC2-07A-ORIGINALS-INDEX-REVIEW-20261007-01`. Those exact values are not currently published.
-Raw evidence, absolute paths, boot/PID, environment, stream bodies and other machine metadata
-remain private. Do not publish that index before the exact Owner decision covers this boundary.
-No new B or C exists. Before closure only documentation, read-only review and isolated checks of
-existing code are allowed. Do not implement the new generation, prepare executable callers,
-run preflight, consume a new window or issue a core package under this proposal.
-After an exact Owner decision, preserve R → A → B → independent bookkeeping-only C → D.
-This OPEN registration changes no prior closure, failed-window consumption or frozen source byte.
+Owner explicitly approves disclosure of only the five old 07a originals' basename/bytes/SHA-256
+index, reviewed in private attachment event `SC2-07A-ORIGINALS-INDEX-REVIEW-20261007-01`.
+Verify it against retained originals and the original private index before publication. Raw evidence,
+absolute paths, boot/PID, environment, stream bodies and other machine metadata remain private.
+No per-substep reapproval is needed within the approved batch. Failures stop; no retries,
+supplemental collection, cleanup, recovery or side branches. Old callers remain forbidden.
+Closure alone proves neither readiness nor execution; implementation must precede the one new
+window, and complete maintenance verification must precede the conditional original core batch.
+Material changes retain the original R reopen rule.
 
 ## Publication and GX10 handoff
 
