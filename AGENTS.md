@@ -1,5 +1,30 @@
 # Execution guidance
 
+## Current Owner direction: core only (2026-10-07)
+
+Owner directed: “直接推进核心功能，暂停搞分支功能。不要做我不需要的功能。”
+Stop adding host-wide scanner/resampling/retry/diagnostic mechanisms, namespace/watchdog,
+or other side work. The only deliverable is normal task execution and result collection,
+running cancellation, and recovery of the same task: H01 → Q4 → H11.
+
+The combined minimal continuation proposal is **OPEN / NOT APPROVED**, scope
+`LH-Q2-CORE-MINIMAL-CONTINUATION-v1`, K1–K3, exact A
+`5d6cefa602e9146f02887ebfaa4b0cad4e376ff2`, tree `72262d27c2caef48db0965989508b1f193f3b527`.
+Its [requirements](docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-minimal-continuation/ARCHITECTURE.md), and
+[plan](docs/a2-execution/q2-core-minimal-continuation/IMPLEMENTATION_PLAN.md) cover one change:
+remove the maintenance-only global writer observer under an explicit trusted-single-admin
+access assumption, retain target/data protections, and implement the verified post-maintenance
+boot transition plus a fourth prior profile before one conditional new core batch.
+This reduces unknown-host-writer observation coverage; do not represent it as equivalent security
+or an already accepted Owner decision. R and its authority/order rules below remain unchanged.
+No replacement scanner, root helper or general framework is part of the proposal.
+K1 prepares both maintenance and core continuation; K2 permits one replacement maintenance
+window, and K3 permits one core request only after complete maintenance verification and exact
+issuance checks. Neither is authorized before accurate B and independent C. Existing source,
+all consumed windows, private evidence and old UNKNOWNs stay unchanged. This is an OPEN
+registration, not C or an implementation. Do not replay any old frozen handoff.
+
 ## Publication and GX10 handoff
 
 Owner approved public disclosure of exact original candidate `b763bd6714721d22278086db559fa3f6684aad7b` and its governance excerpt, with no license added and no SOP history or raw machine evidence. See [PUBLICATION_OWNER_DECISION.md](docs/governance/PUBLICATION_OWNER_DECISION.md). After the authorized GX10 S1 verification found and repaired defects, Owner separately directed repaired candidate `1e2f9dce87e57c34a35fe3a6a75a8c784181ba83` to be committed and pushed directly to `main`; see [Q6_MAIN_PUBLICATION_OWNER_DECISION.md](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md). These are disclosure decisions, not replacements for the S1 closure below. Equivalence/adoption of the public governance excerpt remains pending. Windows is deferred. Owner subsequently directed “全部提交推送。 你直接继续修复”; the follow-up S1 repair/publication record and exact verified candidate are in [S1_FOLLOWUP_REVIEW.md](docs/S1_FOLLOWUP_REVIEW.md). This does not expand S1 closure or authorize live cutover. The subsequent Owner-directed chain-only review is recorded in [S1_CONFLICT_CHAIN_REVIEW.md](docs/S1_CONFLICT_CHAIN_REVIEW.md); its exact candidate and scoped validation are separate from earlier full-suite results. The earlier delivery/receipt recovery repair and chain-only evidence are recorded in [S1_DELIVERY_RECOVERY_REVIEW.md](docs/S1_DELIVERY_RECOVERY_REVIEW.md). The subsequent process-lifetime and bounded-capture repair is recorded in [S1_PROCESS_LIFETIME_REVIEW.md](docs/S1_PROCESS_LIFETIME_REVIEW.md), with targeted source and installed-chain evidence. The subsequent Result size and durable recovery repair is recorded in [S1_RESULT_BUDGET_REVIEW.md](docs/S1_RESULT_BUDGET_REVIEW.md), with exact source and installed-chain evidence. The subsequent committed-mailbox snapshot and interrupted publication repair is recorded in [S1_MAILBOX_SNAPSHOT_REVIEW.md](docs/S1_MAILBOX_SNAPSHOT_REVIEW.md), with scoped source and installed-chain evidence. The subsequent verified-branch fetch and snapshot consistency repair is recorded in [S1_FETCH_SNAPSHOT_REVIEW.md](docs/S1_FETCH_SNAPSHOT_REVIEW.md), with scoped source and installed-chain evidence. The subsequent filesystem state lookup and replay barrier repair is recorded in [S1_STATE_LOOKUP_REVIEW.md](docs/S1_STATE_LOOKUP_REVIEW.md), with scoped source and installed-chain evidence. The subsequent persistence and post-reset recovery repair is recorded in [S1_STATE_PERSISTENCE_REVIEW.md](docs/S1_STATE_PERSISTENCE_REVIEW.md), including targeted verification and the retained first-attempt failure. The subsequent content-read failure and automatic Git maintenance repair is recorded in [S1_READ_FAILURE_REVIEW.md](docs/S1_READ_FAILURE_REVIEW.md), with targeted source and installed-chain evidence and the retained first-attempt pack-scan failure.

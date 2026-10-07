@@ -2,9 +2,18 @@
 
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
-**当前阶段（2026-10-04）：核心任务执行与结果收回的部分实现，尚未跑通现场闭环。** 本轮只推进正常执行、运行中取消、同一任务恢复查询和结果收回。H01/Q4/H11 的真实执行入口仍未接完，完整 field package 未生成，核心批次尚未签发。具体缺项见[核心实现复核](docs/a2-execution/Q2_CORE_ACCEPTANCE_DELIVERY_IMPLEMENTATION_REVIEW.md)。
+**当前阶段（2026-10-07）：核心现场链尚未跑通。** 四次核心批次均在业务开始前停止，
+已定位 journal 容量不足；后续维护又被全宿主进程扫描阻断，最新原因为
+`GROWTH_PROC_DRIFT_PID_TASK_SET`。见[准确现场返回](docs/a2-execution/Q2_CORE_JOURNAL_DRIFT_RESUME_FIELD_20261007.md)。
 
-云端助手负责仓库修正、代码验证和审查，本地 Codex 负责只能在真实管理机完成的输入复核与后续现场执行；下一步按[核心协作交接](docs/a2-execution/Q2_CORE_CLOUD_LOCAL_HANDOFF_20261004.md)推进。输入绑定与六文件结果收回的最小修订 A `0bdb49c` 已形成，当前 OPEN、待准确决定；host capture 明确采用应用限额和文件分配观测，不宣称共享文件系统全过程物理硬峰值。准确状态见[修订复核登记](docs/governance/Q2_CORE_BINDING_FINALIZATION_AMENDMENT_BASELINE.md)。namespace、watchdog、旧版扩建和内核证明扩展暂停；生产、E4–E6 与 NAS 不作为本轮新增工作。
+Owner 明确要求只推进正常执行、运行中取消、同一任务恢复查询和结果收回；全宿主扫描扩展、
+namespace/watchdog、诊断平台及其它支线停止新增。
+[最小核心接续方案](docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.md)已冻结为
+A `5d6cefa602e9146f02887ebfaa4b0cad4e376ff2`：删除维护的全宿主扫描依赖，在可信单管理员前提下
+保留目标和数据保护，同时接齐维护后的新 boot 核心入口，再条件完成一次维护和一次 H01→Q4→H11。
+该删减会减少未知宿主 writer 的观察覆盖，当前 **OPEN / 待 Owner 准确决定**；源码尚未删减，
+没有新现场执行。云端负责仓库实现与验证，本地 Codex 仅接真实私料和现场步骤；已有安装、
+SSH、历史原件与失败状态保留，不重放旧交接。生产 E3、E4–E6 与 NAS 不在本轮范围。
 
 以下为此前接续沿革，不作为重放历史批次或恢复支线的入口。
 
