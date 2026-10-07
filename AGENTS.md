@@ -141,28 +141,37 @@ Do not replay these callers, reissue 07b, retry, collect supplementary evidence,
 perform recovery under this consumed authorization. The conditional core batch is not an
 independent remaining execution permission. This factual registration changes neither A nor D.
 
-### Proposed single continuation after template and alias repair
+### Authorized single continuation after template and alias repair
 
-Scope `LH-Q2-CORE-TEMPLATE-CONTINUATION-v1`, TC1–TC3, is **OPEN / NOT APPROVED**.
+Scope `LH-Q2-CORE-TEMPLATE-CONTINUATION-v1`, TC1–TC3, is **CLOSED for TC1–TC3 only**.
 Its [requirements](docs/a2-execution/q2-core-template-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-template-continuation/ARCHITECTURE.md), and
-[plan](docs/a2-execution/q2-core-template-continuation/IMPLEMENTATION_PLAN.md) form proposed A
+[plan](docs/a2-execution/q2-core-template-continuation/IMPLEMENTATION_PLAN.md) form approved A
 `80c7c8eaeda0853317c679b31b0ed1f1ac13e49b`, tree `68983c68d936d0e03ef90dd22c656e7cb41079cc`.
 The [baseline record](docs/governance/Q2_CORE_TEMPLATE_CONTINUATION_BASELINE.md) pins their bytes;
 the [local synchronization review](docs/a2-execution/Q2_CORE_TEMPLATE_SYNC_REVIEW_20261008.md)
 records repair `94f289e8da83d3d79e2dc1fc09069a1c19eed871`, its first exact CI 3/3, and isolated tests.
-Existing repair evidence does not authorize another field window or verify future implementation.
+Existing repair evidence does not verify the new implementation or establish field readiness.
 
-The proposal retains consumed 06a/07a/07b and all full obligations, binds one fixed maintenance
+This closure retains consumed 06a/07a/07b and all full obligations, binds one fixed maintenance
 `lhqjgrow-20261008a`, and conditionally continues the same unissued `lhqcore-20261007a` only after
 complete maintenance verification. Four maintenance generations require 5184 MiB/1480 inodes;
 with original core capture, 5248 MiB/1496 inodes. All original single-attempt checks and limits remain.
-It also requests only old 07b five-original basename/bytes/SHA-256 index disclosure, privately
-reviewable under event `SY2-07B-ORIGINALS-INDEX-REVIEW-20261008-01`. Those values remain private.
-No new source, tests, runtime configuration, caller or field execution for TC1–TC3 is authorized yet.
-Owner must approve exact R/A/scope and the explicit disclosure boundary before independent CLOSED C;
-new implementation must descend from C. No Owner B or CLOSED C is synthesized by this record.
-All old consumed-window restrictions above remain in effect. R and its change rule are unchanged.
+Owner explicitly approved publication of A's three documents and sanitized records to
+`kongbu0621/infra-local-hand` main, and only the old 07b five-original basename/bytes/SHA-256 index
+reviewed under event `SY2-07B-ORIGINALS-INDEX-REVIEW-20261008-01`. Verify those exact pins against
+retained copies and the original private index before publication. Raw evidence, absolute paths,
+boot/PID, environment, diagnostics and stream bodies remain private.
+Exact Owner B is retained in [the decision](docs/governance/Q2_CORE_TEMPLATE_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-TEMPLATE-CONTINUATION-CLOSURE-20261008-01`. This independent C contains only
+that decision and this CLOSED declaration. A's three bytes and historical OPEN labels remain;
+new implementation D must descend from C. Do not squash closure with implementation.
+TC1 authorizes implementation, verification, publication, exact candidate CI and freeze of both
+maintenance and core consumers; TC2 permits one 08a window; TC3 is conditional on complete
+maintenance verification. No per-substep reapproval is required within this exact batch.
+Old consumed-window restrictions remain, and failures stop without retry, supplemental collection,
+cleanup, recovery or side branches. Closure does not prove execution or success. R and its original
+Owner authority, mandate, no exceptions and material-change reopen rule are unchanged.
 
 ## Publication and GX10 handoff
 
