@@ -130,3 +130,9 @@ Owner 要求修复 `93742af` 的 2/3 红叉。直接复核该 run 的 job 和完
 该调整会触发准确新提交的完整 CI；新结果与旧 run 的超时历史分别核对。
 YAML 解析及结构比较确认只有该 timeout 值改变；既有 CI 分类测试 **8 passed / 0.60s**，
 `git diff --check` 通过。未修改或删除任何测试以获得绿灯。
+
+准确提交 `ac292911f1dc7d99606899e5695c3245d467286d` 已在本地同步；
+[CI 37613224302](https://github.com/kongbu0621/infra-local-hand/actions/runs/37613224302)
+首个attempt的classify-change、Ubuntu、Windows三个job均成功。旧取消结果保持历史原样。
+现场仍停在已消费K2；[新单次接续三文档](q2-core-serial-continuation/REQUIREMENTS.md)
+仅为待决方案，不代表新窗口已授权或接线已实现。
