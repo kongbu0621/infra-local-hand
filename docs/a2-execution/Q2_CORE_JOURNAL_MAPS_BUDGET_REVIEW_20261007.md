@@ -1,6 +1,8 @@
 # Journal maps 预算修正：MB1 验证与候选冻结
 
-2026-10-07（Asia/Shanghai）。**MB1 完成；MB2 未开始，唯一替代窗口尚未使用。**
+2026-10-07（Asia/Shanghai）。**本记录描述 MB1 完成并冻结交接时的状态。**
+当时 MB2 未开始；后续 [MB2 现场返回](Q2_CORE_JOURNAL_MAPS_BUDGET_FIELD_20261007.md)
+已确认唯一替代窗口 CONSUMED / FAILED，冻结交接不得再次执行。
 全部旧窗口继续消耗，历史 UNKNOWN 不补写；固定 512 MiB 不保证现场准入或维护成功。
 
 ## 准确链
@@ -94,9 +96,10 @@ Bash 语法及两段 JSON 处理代码编译通过，未执行交接文本。它
 新的 `LH_Q2_MB2_*` 变量保留旧 `LH_Q2_DR2_*` / `LH_Q2_DRV2_*`；同终端 STARTED 标记仅防误粘贴，
 不冒充跨进程硬性防重启机制。summary 长度/摘要对应去除末尾换行的 shell JSON，不是原始 stdout。
 
-MB2 尚未开始，本执行者没有进行现场 writer/sudo、marker、SSH、关机、备份、镜像增长、
+冻结交接时 MB2 尚未开始，本执行者没有进行现场 writer/sudo、marker、SSH、关机、备份、镜像增长、
 VM 启动、ext4 增长或 H01/Q4/H11。这个零动作描述不冒充远端完整状态认证。
-现在可由 Owner 在已有真实本机前台终端开始一次替代窗口，密码仅交给 sudo。
+当时交接允许 Owner 在已有真实本机前台终端开始一次替代窗口，密码仅交给 sudo；
+该窗口随后已消耗，见上述现场返回，不再允许启动。
 沿用原 session、原 CLI 时钟起点和同窗两阶段交接，不新增 helper、探测、认证预热或预算池。
 
 除明确批准的累计 maps cap 外，原认证、完整扫描、其它 cap、15s/900s/780s、资源预算、

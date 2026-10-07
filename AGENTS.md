@@ -1803,9 +1803,22 @@ Native scoped verification passed 524 tests without skips, including source/gene
 boundary tests and later writer/fault checks after the old rejection value. Exact D CI `37500889014`
 completed successfully on all three jobs in attempt 1, including independent installed verification.
 Eight original static inputs retain their earlier binding. Exact source and private terminal handoff
-are frozen; MB1 is complete. MB2 is NOT STARTED and its one authorized replacement window is unused.
-Only the Owner's existing real local foreground terminal may start it, with all original admission
-and same-window conditions. This record does not prove field admission, journal growth or core acceptance.
+were frozen; MB1 is complete. At that handoff, MB2 was NOT STARTED and its one authorized replacement
+window was unused. The field return below supersedes that historical status. Static verification
+and publication do not prove field admission, journal growth or core acceptance.
+
+The [MB2 field return](docs/a2-execution/Q2_CORE_JOURNAL_MAPS_BUDGET_FIELD_20261007.md) records
+screenshot-supported preflight BLOCKED at checkpoint 1, parent/child exit 3 and
+`GROWTH_PROC_LIMIT_FD_TOTAL`: first rejected count 262145 against the unchanged 262144 cap.
+This counts initial FD snapshot entries iterated per task, not unique open files or all kernel I/O.
+Marker is false, SSH is zero and no successful writer report exists. The single MB2 replacement
+window is CONSUMED / FAILED; journal maintenance and H01/Q4/H11 did not begin on this path.
+Neither full scan demand nor sufficiency of the 512-MiB maps budget is established. Original streams
+were not independently validated, actual PID/TID remain private and historical UNKNOWNs remain.
+Do not replay the frozen handoff or invoke another preflight, sudo/writer probe, supplemental
+collection, SSH, retry, reconnect, cleanup or recovery. No FD cap, coverage, deadline or other budget
+change is authorized by this return. Any material amendment or further affected field window
+requires its own exact review, Owner B and independent C; the old windows stay consumed.
 
 ### Continuing constraints
 
