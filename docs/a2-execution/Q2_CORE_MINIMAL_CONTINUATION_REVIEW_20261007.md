@@ -102,3 +102,18 @@ BIND 的旧 boot/无关 boot 拒绝及原集成测试 **27 passed / 0.38s**。
 本地下一步只需同步准确修复、复用已有固定输入离线核对journal serial可完整表达（≤20 B），
 并核对新源码/交接。**不得执行旧K2 caller**：原marker已存在、K2已消费，K3仍被未完成维护阻断。
 任何新现场继续须明确处理现存marker/原件与唯一窗口边界；本修复不删除、改名或重放它们。
+
+## 本地合成验证与准确 CI 状态（2026-10-07）
+
+本地已同步准确修复 `93742af9de38a1cd89eca442a2ce7c4ff2645a0d`。
+真实构造器的合成 block/sysfs 边界测试及 guest 完成/失败报告测试合计
+**86 passed / 0.42s**，无 SKIP；没有使用现场设备作为测试夹具。
+同时复核上节链接的 Linux v6.8 和 QEMU v8.2.2 公开源码，确认序列号格式依据。
+
+[准确修复 CI 37602140697](https://github.com/kongbu0621/infra-local-hand/actions/runs/37602140697)
+最终为 **cancelled**。classify-change、Windows 成功；Ubuntu 源码、独立安装包、
+Linux 启动检查和证据上传步骤均标为 success，但 Ubuntu job 整体为 cancelled。
+公开 check-run `112728861562` 的 failure 注释为
+“The job has exceeded the maximum execution time of 15m0s”。
+不能将步骤成功汇总为准确候选 CI 3/3 通过；本轮没有重跑 CI 或修改其期限。
+该记录只补充公开候选的验证状态，不改变既有窗口消耗或授予新的现场执行权限。
