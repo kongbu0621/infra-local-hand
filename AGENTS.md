@@ -7,7 +7,7 @@ Stop adding host-wide scanner/resampling/retry/diagnostic mechanisms, namespace/
 or other side work. The only deliverable is normal task execution and result collection,
 running cancellation, and recovery of the same task: H01 → Q4 → H11.
 
-The combined minimal continuation proposal is **OPEN / NOT APPROVED**, scope
+The combined minimal continuation is **CLOSED for K1–K3 only**, scope
 `LH-Q2-CORE-MINIMAL-CONTINUATION-v1`, K1–K3, exact A
 `5d6cefa602e9146f02887ebfaa4b0cad4e376ff2`, tree `72262d27c2caef48db0965989508b1f193f3b527`.
 Its [requirements](docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.md),
@@ -16,14 +16,23 @@ Its [requirements](docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.m
 remove the maintenance-only global writer observer under an explicit trusted-single-admin
 access assumption, retain target/data protections, and implement the verified post-maintenance
 boot transition plus a fourth prior profile before one conditional new core batch.
-This reduces unknown-host-writer observation coverage; do not represent it as equivalent security
-or an already accepted Owner decision. R and its authority/order rules below remain unchanged.
+This reduces unknown-host-writer observation coverage; do not represent it as equivalent security.
+Owner explicitly accepted this change in [the retained decision](docs/governance/Q2_CORE_MINIMAL_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-MINIMAL-CONTINUATION-CLOSURE-20261007-01`, with exact preceding request and reply.
+This independent bookkeeping-only C contains only that decision and this registration. D must descend
+from C; do not squash C with implementation. A's three files and historical OPEN labels remain unchanged.
+R and its authority/order rules below remain unchanged. This closure does not prove readiness or success.
 No replacement scanner, root helper or general framework is part of the proposal.
 K1 prepares both maintenance and core continuation; K2 permits one replacement maintenance
 window, and K3 permits one core request only after complete maintenance verification and exact
-issuance checks. Neither is authorized before accurate B and independent C. Existing source,
-all consumed windows, private evidence and old UNKNOWNs stay unchanged. This is an OPEN
-registration, not C or an implementation. Do not replay any old frozen handoff.
+issuance checks. Both implementations must be complete and verified before K2; no runnable core package
+may be issued before complete K2 originals validate. Preserve existing installations, all consumed
+windows, private evidence and old UNKNOWNs. This exact approval supersedes conflicting earlier journal
+host-observer requirements and the earlier exclusion of new-boot/H01/Q4/H11 only within K1–K3 as
+specified by A; unaffected protections and old scope records remain. No per-substep reapproval is needed.
+K2/K3 each permit one attempt, with their own original clocks, no refund, retries, supplemental collection,
+cleanup or recovery. Do not replay old frozen handoffs. Stop if the single-admin premise is unconfirmed
+or contrary evidence exists; do not add a whole-host probe to establish it.
 
 ## Publication and GX10 handoff
 
