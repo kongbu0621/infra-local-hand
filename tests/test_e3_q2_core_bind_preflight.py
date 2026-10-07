@@ -97,3 +97,13 @@ def test_delivery_rejects_bad_name_before_anchor_marker_or_carrier(monkeypatch, 
             package_raw=value["package_raw"], loader_raw=value["members"]["field/loader.py"],
             bootstrap_raw=value["members"]["field/bootstrap.py"], wrapper_raw=b"unused",
             origins=value["origins"], popen_factory=forbidden)
+
+
+@pytest.mark.parametrize('boot',['11111111-2222-3333-4444-555555555555',
+                                  '99999999-2222-3333-4444-555555555555'])
+def test_bind_rejects_old_or_unrelated_boot_before_emission(monkeypatch,boot):
+    value=prepared(monkeypatch)
+    value['hello']['guest_boot_id']=boot
+    from e3_host import q2_core_delivery_contract as contract
+    with pytest.raises(contract.ContractError,match='JOURNAL_BOOT_BINDING'):
+        host_bind(value,'lhqcore-20261007a.lhfp')

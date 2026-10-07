@@ -240,9 +240,8 @@ def vm_limits():
    resource.setrlimit(key,limits)
 class Command:
  def __init__(self,argv,check,*,executable=None,pass_fds=(),limit=MIB,limits=True,
-stderr_limit=None,terminal=False):
+stderr_limit=None):
   require(0<limit<=MIB,"GROWTH_STREAM_CAP")
-  require(type(terminal) is bool and (limits or not terminal),"GROWTH_TERMINAL_COMMAND")
   check()
   self.check=check
   self.caps=dict(stdout=limit,stderr=limit if stderr_limit is None else stderr_limit)
@@ -250,7 +249,7 @@ stderr_limit=None,terminal=False):
   self.process=subprocess.Popen(argv,executable=executable,pass_fds=pass_fds,
 stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
 env={"PATH":"/usr/sbin:/usr/bin:/bin","LANG":"C","LC_ALL":"C"},
-preexec_fn=control_limits if limits else vm_limits,start_new_session=not terminal)
+preexec_fn=control_limits if limits else vm_limits,start_new_session=True)
   self.is_vm=not limits
   COMMANDS.append(self)
   self.identity=dict(pid=self.process.pid,argv_sha256=digest(canonical(argv)),starttime=None)
@@ -299,13 +298,10 @@ def run_tool(argv,check,**kwargs):
   raise error
  return result
 class Tool:
- def __init__(self,path,check,*,version=True):
+ def __init__(self,path,check):
   self.path,self.check=path,check
   self.fd,self.info=local.bound_executable(path)
   require(os.fstat(self.fd).st_nlink==1,"GROWTH_TOOL_LINK")
-  self.version=b"not invoked; held executable identity only"
-  if not version:
-   return
   try:
    result=self.run(["--version"])
    self.version=result["stdout"]+result["stderr"]
@@ -1099,7 +1095,8 @@ executable=f"/proc/self/fd/{self.anchor.ssh}",pass_fds=(self.anchor.ssh,),limit=
   require(len(self.transports)==(0 if phase=="pre" else 1),"GROWTH_SSH_COUNT")
   desc=self.pre_description if phase=="pre" else growth_descriptor(self.frozen,self.nonce,phase,self.window,pre)
   argv=self.pre_argv if phase=="pre" else remote_argv(self.anchor.path,self.sources,desc)
-  self.event(dict(phase=phase,argv_sha256=digest(canonical(argv)),description_sha256=digest(canonical(desc))))
+  self.event(dict(phase=phase,argv_sha256=digest(canonical(argv)),description_sha256=digest(canonical(desc)),
+window_seconds=desc["window_seconds"],change_seconds=desc["change_seconds"]))
   self.result["ssh_requests"]+=1
   from e3_host import q2_journal_growth_guest as guest
   validate=guest.validate_pre_report if phase=="pre" else guest.validate_post_report

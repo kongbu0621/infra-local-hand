@@ -96,7 +96,7 @@ def rig(monkeypatch, tmp_path):
             return {"returncode": 0}
     pre = {"boot_id": BOOT, "tree": {"fixed": "preserved"}, "rows": ["saved"]}
     def descriptor(_frozen, nonce, phase, _window, prior=None):
-        value = {"phase": phase, "nonce": nonce}
+        value = {"phase": phase, "nonce": nonce, "window_seconds": 600, "change_seconds": 480}
         if prior is not None:
             value["pre_report"] = prior
         return value

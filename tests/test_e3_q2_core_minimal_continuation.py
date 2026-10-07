@@ -94,12 +94,14 @@ def originals(monkeypatch):
         original_boot_id=pre['boot_id'],new_boot_id=post['boot_id'],post_transport=transports[1],
         transports=[dict(pid=i+100,exit=t['returncode'],files=t['files']) for i,t in enumerate(transports)],
         new_vm=newvm,image_identities=projection['image_identities'],processes=[dict(vm=False,exit=0)])
-    post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=h.digest(h.canonical(pre)))
+    post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=h.digest(h.canonical(pre)),
+        window_seconds=600,change_seconds=480)
     for row in events:
         if 'phase' in row:
             phase_desc=desc if row['phase']=='pre' else post_desc
             row.update(argv_sha256=h.digest(h.canonical(h.remote_argv('/fixture',sources,phase_desc))),
-                description_sha256=h.digest(h.canonical(phase_desc)))
+                description_sha256=h.digest(h.canonical(phase_desc)),window_seconds=phase_desc['window_seconds'],
+                change_seconds=phase_desc['change_seconds'])
     marker['pre_command_sha256']=next(row['argv_sha256'] for row in events if row.get('phase')=='pre')
     receipt.update(serial_capture='NOT_CAPTURED_NULL_BACKEND',kernel_report={},
         budget=dict(logical_bytes=10000,allocated_bytes=32768,inodes=7),
@@ -124,17 +126,19 @@ def test_full_original_consumer_and_independent_projection(originals):
 
 
 @pytest.mark.parametrize('change',['missing','truncated','D','nonce','order','repeat','failure','old_boot',
-    'new_boot','backup','image_check','compare','pidfd','pid','argv','eof','transport_exit','streams','content','size','capacity'])
+    'new_boot','backup','image_check','compare','pidfd','pid','argv','eof','transport_exit','streams','content','size','capacity','phase_window','phase_digest'])
 def test_original_failure_cannot_become_new_boot_permission(originals,change):
     files,args=originals;files=copy.deepcopy(files)
     prefix='.'+h.SESSION+'.'
     if change=='missing':files.pop(prefix+'pre.stderr')
     elif change=='truncated':files[prefix+'post.stdout']=files[prefix+'post.stdout'][:-1]
     elif change=='pid':files[prefix+'vm.pid']=b'125\n'
-    elif change in ('order','repeat','backup','image_check','compare','pidfd'):
+    elif change in ('order','repeat','backup','image_check','compare','pidfd','phase_window','phase_digest'):
         rows=[json.loads(row) for row in files[prefix+'events.jsonl'].splitlines()]
         if change=='order':rows.reverse()
         elif change=='repeat':rows.append(rows[-1])
+        elif change=='phase_window':next(row for row in rows if row.get('phase')=='post')['window_seconds']=901
+        elif change=='phase_digest':next(row for row in rows if row.get('phase')=='post')['description_sha256']='0'*64
         else:
             results={row['step']:row['result'] for row in rows if row.get('state')=='RETURNED'}
             if change=='backup':results['BACKED_UP']['sha256']='wrong'

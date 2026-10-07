@@ -698,7 +698,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
             c.exact(row, {'step','state','pre_report_sha256'} if row['step']=='POWER_OFF_TOKEN'
                 else {'step','state'}, 'CORE_JOURNAL_STARTED')
         elif 'phase' in row:
-            c.exact(row, {'phase','argv_sha256','description_sha256'}, 'CORE_JOURNAL_PHASE')
+            c.exact(row, {'phase','argv_sha256','description_sha256','window_seconds','change_seconds'}, 'CORE_JOURNAL_PHASE')
     pre_lines=raw['pre.stdout'].splitlines(keepends=True)
     require(len(pre_lines) == 2, 'JOURNAL_PRE_STREAM')
     pre=parse(pre_lines[0],1048576); ack=parse(pre_lines[1],1048576)
@@ -709,7 +709,13 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
         and desc['original_boot_id'] == frozen['boot_id'] and desc['nonce'] == marker['nonce'],
         'JOURNAL_DESCRIPTION')
     g.validate_pre_report(pre,desc)
-    post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=c.sha256(h.canonical(pre)))
+    for field in ('window_seconds','change_seconds'):
+        c.integer(phases[1][field],1,desc[field])
+        require(phases[0][field]==desc[field],'JOURNAL_PHASE_WINDOW')
+    post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=c.sha256(h.canonical(pre)),
+        window_seconds=phases[1]['window_seconds'],change_seconds=phases[1]['change_seconds'])
+    g.descriptor(h.canonical(post_desc))
+    require(all(desc[key]==value for key,value in frozen['inventory'].items()),'JOURNAL_INVENTORY')
     g.validate_post_report(post,post_desc)
     require(results['GUEST_QUIET'] == pre and results['FILESYSTEM_GROWN'] == post
         and receipt['original_boot_id'] == pre['boot_id'] and receipt['new_boot_id'] == post['boot_id'],
@@ -747,10 +753,13 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     for phase,phase_desc,row in zip(('pre','post'),(desc,post_desc),phases):
         argv=h.remote_argv(anchor,sources,phase_desc)
         require(row==dict(phase=phase,argv_sha256=c.sha256(h.canonical(argv)),
-            description_sha256=c.sha256(h.canonical(phase_desc))), 'JOURNAL_PHASE_BINDING')
+            description_sha256=c.sha256(h.canonical(phase_desc)),window_seconds=phase_desc['window_seconds'],
+            change_seconds=phase_desc['change_seconds']), 'JOURNAL_PHASE_BINDING')
     require(marker['pre_command_sha256']==phases[0]['argv_sha256']
         and next(row for row in events if row.get('step')=='POWER_OFF_TOKEN')['pre_report_sha256']
             ==c.sha256(h.canonical(pre)), 'JOURNAL_POWER_TOKEN')
+    require(manifest['image_commands']==h.image_commands(anchor+'/journal.qcow2',
+        anchor+'/.lhqjgrow-20261006a.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
     old,new=manifest['vm'],receipt['new_vm']
     for value,argv in ((old,original),(new,restart)):
         c.exact(value, {'pid','starttime','argv_sha256'}, 'CORE_JOURNAL_VM')

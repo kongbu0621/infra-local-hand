@@ -63,11 +63,11 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# The single 05c request is consumed. Issued D 657b1bc stopped at guest
-# CORE_CAP_INSUFFICIENT before installation or H01/Q4/H11.
-# Retain all captures and commitments; no retry, reconnect, collection or cleanup.
-# The exact issued field bytes and passing pre-issuance checks remain in review.
-RELEASABLE_DISPATCHER_SHA256 = frozenset()
+# All four older core requests remain consumed. Only the reviewed 07a field
+# bytes below are eligible under MINIMAL A/C after verified maintenance.
+# K1 source/installed/CI evidence is retained in the 20261007 review; final
+# candidate CI, K2 originals, new-boot binding and all admission remain required.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"ea5d6c0abe2ca49af86e2d0c2088bc7ce9ae723a3803d5a9ddc715c480d2c524"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
