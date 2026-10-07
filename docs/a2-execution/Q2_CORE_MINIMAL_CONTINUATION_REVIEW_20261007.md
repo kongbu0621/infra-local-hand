@@ -68,3 +68,37 @@ BIND 的旧 boot/无关 boot 拒绝及原集成测试 **27 passed / 0.38s**。
 发行登记与阶段绑定/source admission 定向检查 **237 passed / 7.09s**。
 同时移除已无调用者的 terminal 会话选项和跳过工具版本核验选项；现存普通工具路径保持
 原行为。最终源码、CI 与窗口结果按后续准确候选另记，不借 D1 CI 冒充。
+
+## Journal 序列号格式修复
+
+基于现场登记 `1706e4a`，在已 CLOSED 的 K1 内离线修复目标设备格式错误，不新增功能、
+现场读取、窗口或权限。准确已执行 D 的 CI 37595331543 已独立核对为三 job success；
+该结果不覆盖本次源码修复。
+
+确定的实现错误是 `JournalDevice` 把批准序列号加上 LF 后才与 sysfs 原字节比较。
+[Linux v6.8 virtio_blk.c 的 serial_show](https://github.com/torvalds/linux/blob/v6.8/drivers/block/virtio_blk.c)
+直接返回 ID 字节长度，不追加 LF；同版本
+[virtio_blk.h](https://github.com/torvalds/linux/blob/v6.8/include/uapi/linux/virtio_blk.h)
+限定 ID 为20字节。[QEMU v8.2.2 的 GET_ID 实现](https://github.com/qemu/qemu/blob/v8.2.2/hw/block/virtio-blk.c)
+也只复制最多20字节。三份准确 tag 源码已通过 GitHub Connector 直接读取。
+所以正确的无 LF 序列号会被原实现拒绝；现场 actual 未被记录，不能把这一确定代码缺陷
+扩张为已复原本次具体字节或证明不存在其它现场问题。
+
+本修复改为完整 ASCII 原字节相等，host/descriptor 上限从128/64统一收紧到20。
+不使用 strip、前缀匹配、截断或宽松接受 LF/NUL。失败时复用已取得的同一次128 B有界读取，
+在原stderr内白名单记录expected/actual字节数和完整hex；不增加读取，不输出其它异常中的路径。
+错误码、失败即停止、目标保护、动作次数、旧原件、旧marker和窗口消费均不变。
+
+原guest完成夹具替换了 `observe_device`，没有经过真实 `JournalDevice`，漏掉了格式错误。
+新增测试经过真实构造器，替换的仅是合成 block/sysfs I/O，覆盖1/20字节、无LF、错误值、
+截断、LF/CRLF/NUL/空白/非ASCII，以及拒绝后无后续ioctl/size/superblock且关闭FD。
+另验证host/descriptor边界和有界失败日志；不连接原guest或读取现场设备。
+
+本次 journal 全组及核心接续定向验证 **324 passed / 2 skipped / 2.84s**，含新构造器36例。
+两项SKIP分别为执行环境原生PID/proc argv身份不匹配、缺少合成qcow2/ext4工具；不算现场通过。
+`git diff --check` 通过。两个维护源为60320/54936 B，均未超过原98304 B上限。
+准确新提交的CI另核实，不能借已执行旧D的绿灯宣称本修复通过CI。
+
+本地下一步只需同步准确修复、复用已有固定输入离线核对journal serial可完整表达（≤20 B），
+并核对新源码/交接。**不得执行旧K2 caller**：原marker已存在、K2已消费，K3仍被未完成维护阻断。
+任何新现场继续须明确处理现存marker/原件与唯一窗口边界；本修复不删除、改名或重放它们。

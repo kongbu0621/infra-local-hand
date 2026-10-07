@@ -288,6 +288,34 @@ def test_post_changed_content_reports_failure_after_single_resize(effects, monke
     assert trace.count(("/usr/sbin/resize2fs", ("/dev/vdc",))) == 1
 
 
+def test_serial_failure_preserves_bounded_exact_bytes_in_existing_report(effects):
+    _, prepare = effects
+    maintenance = prepare(description())
+    maintenance.stage = "PRE_IDENTITY"
+    error = g.r.ObservationError("GROWTH_JOURNAL_SERIAL")
+    detail = dict(expected_bytes=20, actual_bytes=128,
+                  expected_hex=(b"s" * 20).hex(), actual_hex=bytes(range(128)).hex())
+    error.serial_diagnostic = detail
+    error.diagnostic = {"unrelated_private_path": "/must-not-appear"}
+    report = maintenance.failure(error)
+    assert report["diagnostic"]["serial"] == detail
+    assert report["stage"] == "PRE_IDENTITY" and report["actions_started"] == []
+    assert report["status"] == "INCOMPLETE" and report["reason"] == "GROWTH_JOURNAL_SERIAL"
+    encoded = g.canonical(report)
+    assert len(encoded) < 2048 and b"must-not-appear" not in encoded
+
+
+@pytest.mark.parametrize("change", [dict(actual_bytes=129, actual_hex="00" * 129),
+    dict(actual_hex="not-hex"), dict(private_path="/must-not-appear"), dict(expected_bytes=True)])
+def test_malformed_serial_diagnostic_does_not_mask_original_failure(effects, change):
+    _, prepare = effects
+    error = g.r.ObservationError("GROWTH_JOURNAL_SERIAL")
+    error.serial_diagnostic = dict(expected_bytes=1, actual_bytes=1, expected_hex="61", actual_hex="62")
+    error.serial_diagnostic.update(change)
+    report = prepare(description()).failure(error)
+    assert report["reason"] == "GROWTH_JOURNAL_SERIAL" and "serial" not in report["diagnostic"]
+
+
 def test_post_capacity_failure_cannot_emit_success(effects, monkeypatch):
     trace, prepare = effects
     monkeypatch.setattr(g, "boot_id", lambda _: NEW_BOOT)

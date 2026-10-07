@@ -3,17 +3,19 @@
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
 **当前阶段（2026-10-07）：核心现场链尚未跑通。** 四次核心批次均在业务开始前停止，
-已定位 journal 容量不足；后续维护又被全宿主进程扫描阻断，最新原因为
-`GROWTH_PROC_DRIFT_PID_TASK_SET`。见[准确现场返回](docs/a2-execution/Q2_CORE_JOURNAL_DRIFT_RESUME_FIELD_20261007.md)。
+已定位 journal 容量不足；全宿主扫描前置已删除，最新维护停在 guest 序列号校验。
+见[准确现场返回](docs/a2-execution/Q2_CORE_MINIMAL_CONTINUATION_FIELD_20261007.md)。
 
 Owner 明确要求只推进正常执行、运行中取消、同一任务恢复查询和结果收回；全宿主扫描扩展、
 namespace/watchdog、诊断平台及其它支线停止新增。
 [最小核心接续方案](docs/a2-execution/q2-core-minimal-continuation/REQUIREMENTS.md)已冻结为
-A `5d6cefa602e9146f02887ebfaa4b0cad4e376ff2`：删除维护的全宿主扫描依赖，在可信单管理员前提下
-保留目标和数据保护，同时接齐维护后的新 boot 核心入口，再条件完成一次维护和一次 H01→Q4→H11。
-该删减会减少未知宿主 writer 的观察覆盖，当前 **OPEN / 待 Owner 准确决定**；源码尚未删减，
-没有新现场执行。云端负责仓库实现与验证，本地 Codex 仅接真实私料和现场步骤；已有安装、
-SSH、历史原件与失败状态保留，不重放旧交接。生产 E3、E4–E6 与 NAS 不在本轮范围。
+A `5d6cefa602e9146f02887ebfaa4b0cad4e376ff2` 已获批准，K1 的扫描删减和核心接续实现已发布。
+准确候选 `a743af3` 的 CI 3/3 通过；唯一 K2 已进入 guest，但在
+`PRE_IDENTITY / GROWTH_JOURNAL_SERIAL` 停止，尚未关机、扩容或执行 H01/Q4/H11。
+见[序列号格式修复](docs/a2-execution/Q2_CORE_MINIMAL_CONTINUATION_REVIEW_20261007.md#journal-序列号格式修复)。
+源码中错误的末尾换行要求已修正，设备身份仍精确比较；离线测试不能代替现场通过。
+云端负责仓库实现与验证，本地 Codex 仅接真实私料和现场步骤；已有安装、SSH、历史原件和
+已消费 marker 保留，不重放旧交接。生产 E3、E4–E6 与 NAS 不在本轮范围。
 
 以下为此前接续沿革，不作为重放历史批次或恢复支线的入口。
 

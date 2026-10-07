@@ -143,7 +143,7 @@ def descriptor(raw):
  sha_value(value["nonce"]); sha_value(value["source_binding_sha256"])
  uuid_value(value["original_boot_id"])
  require(type(value["journal_serial"]) is str and
- re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", value["journal_serial"]), "GROWTH_SERIAL")
+ re.fullmatch(r"[A-Za-z0-9_.-]{1,20}", value["journal_serial"]), "GROWTH_SERIAL")
  require(type(value["paths"]) is dict and set(value["paths"]) == set(r.ROLES), "GROWTH_PATHS")
  for path in value["paths"].values():
   r.path_value(path)
@@ -379,7 +379,14 @@ class JournalDevice:
    else:
     raise r.ObservationError("GROWTH_JOURNAL_PARTITION")
    observed_serial=read_kernel(self.syspath + "/serial", 128, check, expected_fs=0x62656572)
-   require(observed_serial == serial.encode("ascii") + b"\n", "GROWTH_JOURNAL_SERIAL")
+   # Linux virtio_blk serial_show returns the ID bytes without a newline.
+   # Compare the complete ID; never normalize whitespace or accept a prefix.
+   expected_serial=serial.encode("ascii")
+   if observed_serial != expected_serial:
+    failure=r.ObservationError("GROWTH_JOURNAL_SERIAL")
+    failure.serial_diagnostic=dict(expected_bytes=len(expected_serial),actual_bytes=len(observed_serial),
+ expected_hex=expected_serial.hex(),actual_hex=observed_serial.hex())
+    raise failure
    size=bytearray(8)
    fcntl.ioctl(self.fd, 0x80081272, size, True)
    self.size=struct.unpack("=Q", size)[0]
@@ -1047,12 +1054,20 @@ class GuestMaintenance:
   process=self.active_command.process if self.active_command else None
   code=str(error) if isinstance(error, r.ObservationError) else "GROWTH_GUEST_IO_OR_RUNTIME"
   require(re.fullmatch(r"[A-Z0-9_]{1,128}", code), "GROWTH_ERROR_CODE")
+  diagnostic=dict(errno=getattr(error,"errno",None),context=getattr(self.inventory,"context",{}))
+  serial=getattr(error,"serial_diagnostic",None)
+  if code=="GROWTH_JOURNAL_SERIAL" and type(serial) is dict and set(serial)=={
+ "expected_bytes","actual_bytes","expected_hex","actual_hex"} and all(
+ type(serial[name+"_bytes"]) is int and 0<=serial[name+"_bytes"]<=limit and
+ type(serial[name+"_hex"]) is str and len(serial[name+"_hex"])==2*serial[name+"_bytes"] and
+ re.fullmatch(r"[0-9a-f]*",serial[name+"_hex"]) is not None
+ for name,limit in (("expected",20),("actual",128))):
+   diagnostic["serial"]=dict(serial)
   return dict(schema=REPORT_SCHEMA, session=SESSION, phase=self.description["phase"], status="INCOMPLETE",
  stage=self.stage, reason=code, actions_started=sorted(self.started),
  process_pid=process.pid if process else None,
  process_returncode=process.poll() if process else None,
- diagnostic=dict(errno=getattr(error, "errno", None),
- context=getattr(self.inventory, "context", {})),
+ diagnostic=diagnostic,
  resource_observation=resource_observation(),
  process_exit="UNKNOWN" if process and process.poll() is None else "OBSERVED_OR_NOT_STARTED")
  def close(self):

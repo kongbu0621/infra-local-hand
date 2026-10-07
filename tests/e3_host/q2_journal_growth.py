@@ -584,7 +584,7 @@ dir_fd=anchor_fd)
     if options.get("drive")==self.journal_drive_id:
      require(parts[0]=="virtio-blk-pci","GROWTH_JOURNAL_DEVICE")
      devices.append(options.get("serial",""))
-   require(len(devices)==1 and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}",devices[0]),
+   require(len(devices)==1 and re.fullmatch(r"[A-Za-z0-9_.-]{1,20}",devices[0]),
 "GROWTH_JOURNAL_SERIAL")
    self.journal_serial=devices[0]
    require(len(set(self.image_keys().values()))==5,"GROWTH_IMAGE_ALIAS")
