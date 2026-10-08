@@ -189,6 +189,33 @@ Do not replay these callers, reissue 08a, retry, collect supplementary evidence,
 recovery under this consumed authorization. Conditional TC3 is not independent remaining permission.
 This factual registration changes neither A's three documents nor the frozen implementation.
 
+### Proposed bounded continuation after Names repair
+
+Scope `LH-Q2-CORE-NAMES-CONTINUATION-v1`, NC1–NC3, is **OPEN / NOT APPROVED**.
+Its [requirements](docs/a2-execution/q2-core-names-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-names-continuation/ARCHITECTURE.md), and
+[plan](docs/a2-execution/q2-core-names-continuation/IMPLEMENTATION_PLAN.md) form proposed exact A
+`68cae882e3b831aaa191e7a877278ccf6ba10e2b`, tree `af1df36d31326ae041fd60f7c77499673aeb0cf9`.
+The [baseline record](docs/governance/Q2_CORE_NAMES_CONTINUATION_BASELINE.md) pins their bytes;
+the [local review](docs/a2-execution/Q2_CORE_NAMES_SYNC_REVIEW_20261008.md) records input repair
+`13ba2757aef0f3e48d334c371c367db7dc61a7ec`, exact first-attempt CI 3/3 and retained-copy checks.
+R, direct source/integrity, mandate, Owner-only authority, no exceptions and change control remain.
+
+Appending the actual fourth retained history to the existing short preflight gives 4974 B,
+exceeding its unchanged 4096 B ceiling. The proposal replaces only that duplicate resume payload
+with a fixed SHA-256 reference to the fully validated history, retains complete manifest/originals
+and all checks, binds one new `lhqjgrow-20261008b`, and conditionally continues the original unissued
+`lhqcore-20261007a`. Five full maintenance obligations require 6480 MiB/1850 inodes; with original
+core capture, 6544 MiB/1866. No implementation, caller or new window has been issued.
+
+The new exact scope, publication of these documents/sanitized records to public main, and disclosure
+of only the old 08a five-original basename/bytes/SHA-256 index remain pending Owner decision.
+Private attachment event `TC2-08A-ORIGINALS-INDEX-REVIEW-20261008-01` is verified against retained
+copies and the original private index; raw evidence and machine metadata remain private. This local
+OPEN registration is not B or C. Do not implement the changed contract, raise limits, omit history,
+create new callers or replay any old window before accurate Owner B and independent CLOSED C.
+All consumed TC2 restrictions remain; unrelated CLOSED repair authority is not a new field attempt.
+
 ## Publication and GX10 handoff
 
 Owner approved public disclosure of exact original candidate `b763bd6714721d22278086db559fa3f6684aad7b` and its governance excerpt, with no license added and no SOP history or raw machine evidence. See [PUBLICATION_OWNER_DECISION.md](docs/governance/PUBLICATION_OWNER_DECISION.md). After the authorized GX10 S1 verification found and repaired defects, Owner separately directed repaired candidate `1e2f9dce87e57c34a35fe3a6a75a8c784181ba83` to be committed and pushed directly to `main`; see [Q6_MAIN_PUBLICATION_OWNER_DECISION.md](docs/governance/Q6_MAIN_PUBLICATION_OWNER_DECISION.md). These are disclosure decisions, not replacements for the S1 closure below. Equivalence/adoption of the public governance excerpt remains pending. Windows is deferred. Owner subsequently directed “全部提交推送。 你直接继续修复”; the follow-up S1 repair/publication record and exact verified candidate are in [S1_FOLLOWUP_REVIEW.md](docs/S1_FOLLOWUP_REVIEW.md). This does not expand S1 closure or authorize live cutover. The subsequent Owner-directed chain-only review is recorded in [S1_CONFLICT_CHAIN_REVIEW.md](docs/S1_CONFLICT_CHAIN_REVIEW.md); its exact candidate and scoped validation are separate from earlier full-suite results. The earlier delivery/receipt recovery repair and chain-only evidence are recorded in [S1_DELIVERY_RECOVERY_REVIEW.md](docs/S1_DELIVERY_RECOVERY_REVIEW.md). The subsequent process-lifetime and bounded-capture repair is recorded in [S1_PROCESS_LIFETIME_REVIEW.md](docs/S1_PROCESS_LIFETIME_REVIEW.md), with targeted source and installed-chain evidence. The subsequent Result size and durable recovery repair is recorded in [S1_RESULT_BUDGET_REVIEW.md](docs/S1_RESULT_BUDGET_REVIEW.md), with exact source and installed-chain evidence. The subsequent committed-mailbox snapshot and interrupted publication repair is recorded in [S1_MAILBOX_SNAPSHOT_REVIEW.md](docs/S1_MAILBOX_SNAPSHOT_REVIEW.md), with scoped source and installed-chain evidence. The subsequent verified-branch fetch and snapshot consistency repair is recorded in [S1_FETCH_SNAPSHOT_REVIEW.md](docs/S1_FETCH_SNAPSHOT_REVIEW.md), with scoped source and installed-chain evidence. The subsequent filesystem state lookup and replay barrier repair is recorded in [S1_STATE_LOOKUP_REVIEW.md](docs/S1_STATE_LOOKUP_REVIEW.md), with scoped source and installed-chain evidence. The subsequent persistence and post-reset recovery repair is recorded in [S1_STATE_PERSISTENCE_REVIEW.md](docs/S1_STATE_PERSISTENCE_REVIEW.md), including targeted verification and the retained first-attempt failure. The subsequent content-read failure and automatic Git maintenance repair is recorded in [S1_READ_FAILURE_REVIEW.md](docs/S1_READ_FAILURE_REVIEW.md), with targeted source and installed-chain evidence and the retained first-attempt pack-scan failure.
