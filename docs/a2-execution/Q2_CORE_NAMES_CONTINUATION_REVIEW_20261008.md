@@ -51,3 +51,40 @@ dispatcher语法而报错；项目及正式源码测试使用要求的Python3.12
 
 上述为实现提交时的状态。随后准确D验证、发布及冻结完成，唯一NC2窗口已消费且失败，
 NC3/H01/Q4/H11未执行；详见[准确冻结与单次现场返回](Q2_CORE_NAMES_CONTINUATION_FIELD_20261008.md)。
+
+## systemctl 多命令属性解析修复
+
+08b只保留 `GROWTH_SYSTEMCTL_FORMAT`，没有具体响应行或失败子条件。本次离线审查
+确认一个独立、可复现的解析缺陷，不能据此补造08b现场原因或宣称维护已成功。
+
+官方 systemd v255 [systemctl-show.c](https://github.com/systemd/systemd/blob/v255/src/systemctl/systemctl-show.c)
+的 Exec 数组分支逐条反序列化并调用 `bus_print_property_valuef`；
+[bus-print-properties.c](https://github.com/systemd/systemd/blob/v255/src/shared/bus-print-properties.c)
+每次输出独立的 `name=value` 行。因此合法多条 ExecStartPre、ExecStartPost、ExecStop、
+ExecStopPost、ExecReload，以及 oneshot 多条 ExecStart 会重复同一个键。旧代码全局
+要求键唯一，必然以 FORMAT 拒绝。这与 Names 显示解码是不同的现有解析缺陷。
+
+修复仅允许上述六个既有 Exec 属性多行，按原顺序以 LF 聚合全部值，继续用原字符串
+接口进入身份/别名一致性、属性摘要、受保护根、间接启动及 domain 动作检查。
+不采用覆盖前项或只保留末项；相同命令出现多次也保留次数。所有标量和未知键仍禁止
+重复；未知字段集合、Id、Names、覆盖、返回码、EOF、stderr 和各资源限额检查保持。
+
+同次 FORMAT 失败保留 `missing_equals` 或 `duplicate_scalar`、响应块序号、行号、
+已知属性名（未知为null）、首次出现行号、失败行字节数与SHA-256；仅已有且语法有效
+的 Id 进入 unit。诊断不含属性值、未知键正文或命令参数，不追加查询/连接/重试。
+其余未验证显示形式仍严格拒绝，避免以宽松解析掩盖不完整响应。
+
+最终相关组 **1034 passed / 5 skipped**；新增多命令属性测试 **100 passed、无跳过**。
+包含本机v255原生 `bus_print_property_value` 纯格式输出、六属性的完整保序/重复次数、
+首中末条目的受保护路径/间接启动/domain拒绝、alias中间条目冲突、属性哈希覆盖全部
+成员及次序，以及第二响应块具体格式错误和有界无参数诊断。原生测试未连接管理器或总线。
+五项跳过分别为既有PID/proc身份一项、缺少qcow2/ext4工具一项和不允许私有Unix socket
+的三项模板测试。首次相关组为933 passed / 5 skipped / 1 failed：旧测试以object.__new__
+构造对象而缺少真实ctl会初始化的context；只补齐该测试上下文，未为测试放宽生产检查。
+
+独立审查以1 MiB合成响应、248 B单元名和超长坏行检查诊断：context652 B、完整failure
+1170 B，无命令内容。host源65610 B、guest源61275 B，均低于原98304 B上限。
+本段是源码与隔离验证证据；候选发布后的准确CI、独立安装和现场结果须分别核对。
+
+现场08b以及之前所有消费、原件和UNKNOWN保持；已批准A三文档、固定授权与冻结
+caller保持。本次只修复阻挡核心链的现有解析实现，不建立新窗口或新增分支功能。

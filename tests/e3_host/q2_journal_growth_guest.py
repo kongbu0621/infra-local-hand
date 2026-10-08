@@ -445,6 +445,7 @@ def process_start(raw):
  require(len(fields) >= 20 and fields[19].isdigit(), "GROWTH_PROCESS_STAT")
  return int(fields[19])
 class GuestInventory:
+ EXEC_PROPERTIES=frozenset(("ExecStart", "ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"))
  SHOW=("Id", "Names", "LoadState", "ActiveState", "SubState", "MainPID", "ControlPID", "ControlGroup",
  "Restart", "UnitFileState", "Triggers", "TriggeredBy", "WantedBy", "RequiredBy",
  "UpheldBy", "OnSuccess", "OnFailure", "Job", "Transient", "FragmentPath", "DropInPaths",
@@ -510,10 +511,25 @@ class GuestInventory:
   blocks=raw.decode("utf-8", "strict").strip().split("\n\n")
   require(0 < len(blocks) <= len(names), "GROWTH_SYSTEMCTL_UNIT_SET")
   for response_index, block in enumerate(blocks, 1):
-   entries=[line.split("=", 1) for line in block.splitlines()]
-   require(all(len(item) == 2 for item in entries) and len(entries) == len({item[0] for item in entries}),
- "GROWTH_SYSTEMCTL_FORMAT")
-   value=dict(entries)
+   entries, first_lines={}, {}
+   for line_index, line in enumerate(block.splitlines(), 1):
+    key, separator, item=line.partition("=")
+    failed_check=("missing_equals" if not separator else
+ "duplicate_scalar" if key in entries and key not in self.EXEC_PROPERTIES else None)
+    if failed_check is not None:
+     line_raw=line.encode("utf-8")
+     self.context.update(response_index=response_index,
+ format_diagnostic=dict(failed_check=failed_check, line_index=line_index,
+ property=key if separator and key in self.SHOW else None,
+ first_line_index=first_lines.get(key), line_bytes=len(line_raw), line_sha256=digest(line_raw)))
+     if "Id" in entries and UNIT_PATTERN.fullmatch(entries["Id"][0]):
+      self.context["unit"]=entries["Id"][0]
+     raise r.ObservationError("GROWTH_SYSTEMCTL_FORMAT")
+    first_lines.setdefault(key, line_index)
+    entries.setdefault(key, []).append(item)
+   # systemctl emits each Exec array member as a separate property line.
+   # Retain every member and its order; scalar properties must remain unique.
+   value={key: "\n".join(items) for key, items in entries.items()}
    require(set(value) <= set(self.SHOW) and {"Id", "LoadState", "ActiveState", "SubState"} <= set(value)
  and UNIT_PATTERN.fullmatch(value["Id"]), "GROWTH_SYSTEMCTL_FIELDS")
    names_text=value.get("Names", "")

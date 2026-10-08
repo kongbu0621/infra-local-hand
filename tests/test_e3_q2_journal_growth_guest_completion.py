@@ -335,6 +335,7 @@ def test_pre_device_binding_rejected(key, value):
 
 def test_property_batch_rejects_duplicate_missing_extra_units(monkeypatch):
     inventory = object.__new__(g.GuestInventory)
+    inventory.context = {}
     base = b"Id=x.service\nLoadState=not-found\nActiveState=inactive\nSubState=dead\n"
     for raw in (base + b"Id=x.service\n", base.replace(b"x.service", b"other.service"), b"Id=x.service\n"):
         inventory.ctl = lambda *a, raw=raw, **k: raw

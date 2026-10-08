@@ -1,6 +1,18 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：NC1完成，唯一08b在systemctl响应格式校验停止
+## 当前：修正 systemctl 多命令属性解析，08b失败状态保持
+
+离线检查确认 v255 的 systemctl 对每条 Exec 命令分别输出同名属性；原解析器把合法
+多条命令当成重复标量拒绝。现仅六个既有 Exec 属性可多行，按原顺序保留全部值；
+Id、Names、状态等标量及未知键仍不允许重复，身份、别名、覆盖和下游检查保持。
+FORMAT 失败直接记录同一已捕获响应的具体子条件、响应块/行号、已知属性名及行长度/摘要，
+不输出命令参数或整段响应，不增加现场查询。见[修复与验证](../Q2_CORE_NAMES_CONTINUATION_REVIEW_20261008.md#systemctl-多命令属性解析修复)。
+
+这是已确认的代码兼容性修复，不能证明缺少原响应的08b只有这一原因。H01/Q4/H11
+仍未运行；本地 Codex 可先同步修复候选核对既有私料，原冻结caller和消费不变。
+本次不产生新窗口、caller或核心包。以下保留最近一次现场返回及历史。
+
+## 最近现场：NC1完成，唯一08b在systemctl响应格式校验停止
 
 [准确返回](../Q2_CORE_NAMES_CONTINUATION_FIELD_20261008.md)：Owner批准A
 `68cae882e3b831aaa191e7a877278ccf6ba10e2b` 的NC1–NC3；准确B及独立C
