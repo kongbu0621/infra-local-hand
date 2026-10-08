@@ -57,6 +57,17 @@ manifest_digest 及准确历史来源；后续 C10 核对结果见下节，runti
 cgroup 及维护准入仍未证明；源码、冻结输入和旧消费均未改，H01/Q4/H11 仍 NOT_RUN。
 不再重复取 C10、查询现场或重放维护；详见[本地结果](../Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md)。
 
+### 当前待决：一个来源接线及核心接续批次
+
+[准确 A `e66b1b5524f22d60c810dffac59ca418c5ad4236`](../../governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)
+已形成，scope `LH-Q2-CORE-Q1-BINDING-CONTINUATION-v1` / QI1–QI3，PROPOSED/OPEN。
+只采用已明确定位的 C10/原当前捕获，补一个准确服务及父域；两侧完整实现验证后一次
+新 08e 维护，成功后接原 07a 核心批。guest 检查及 v2 协议不变，不加扫描器、现场
+查询或新的诊断机制。私有 pins 在批准内核对旧索引并固定，不能换对象或自证来源。
+三文档已完成接口和授权边界审查；没有源码、测试、配置或现场动作，未声称已修复。
+按现有 AGENTS/R，需 Owner 对准确 A、来源采用、QI1–QI3 及限定披露作一次决定，
+随后独立 C，再完整 D；本方案不把已经消费的 GS2 当成可重试窗口。
+
 以下提案与“下一步”均为历史记录，不构成新执行入口或待重复审批事项。
 
 

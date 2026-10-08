@@ -33,6 +33,12 @@ Linux 7133 项通过、89 项跳过，独立安装 94 项检查通过；早期 W
 准确来源和差额已留存；原冻结输入未改，当前 cgroup、完整 Manifest 校验和维护准入
 仍未完成。该[离线交接](docs/a2-execution/CORE_UNIT_CURRENT_TASK_20261008.txt)无需重做。
 
+已将唯一下一步合为[准确方案 A `e66b1b5`](docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)：
+采用已核对来源，补齐准确服务及父域，维护/核心两侧一次接齐；新 08e 维护成功后直接
+接原 07a 的 H01→Q4→H11。当前为 PROPOSED/OPEN，尚未批准、实现或执行；保留所有
+原校验，不增加扫描/诊断支线，不再次搜证。按仓库既有 R，需要 Owner 对该准确批次
+及来源采用作一次决定；方案内不逐子步骤重复审批。
+
 六旧维护窗口与本次消费、原件、完整费用和 UNKNOWN 保留。[获准旧 08c 五件最小索引](docs/a2-execution/Q2_CORE_EXEC_ORIGINALS_INDEX_20261008.md)
 已公开；新 08d 原文及索引保持私有。所有旧交接均不重放，不自动申请下一窗口。
 Owner 要求只推进任务执行、运行中取消、同一任务恢复查询和结果收回；全宿主扫描扩展、

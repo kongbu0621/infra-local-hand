@@ -1,5 +1,24 @@
 # Execution guidance
 
+## Current next step: exact Q1 declaration and core continuation (2026-10-08)
+
+The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
+identifies one missing Q1 service and its parent slice. Do not repeat either evidence task.
+The [single combined proposal](docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)
+is **PROPOSED / OPEN**, exact A `e66b1b5524f22d60c810dffac59ca418c5ad4236`, tree
+`21d63b7e40a5e3017b1a35fe159e90fd50bdf712`, scope
+`LH-Q2-CORE-Q1-BINDING-CONTINUATION-v1`, QI1–QI3. Its
+[requirements](docs/a2-execution/q2-core-q1-binding-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-q1-binding-continuation/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-q1-binding-continuation/IMPLEMENTATION_PLAN.md) cover only
+fixed-source adoption, the exact service/domain/cgroup increment, complete producer/consumer
+wiring, one new 08e maintenance and conditional original 07a H01/Q4/H11. No current check is relaxed.
+There is no Owner B, CLOSED C, implementation or new execution for this proposal. R and its
+adoption rules remain unchanged. All seven prior windows remain consumed; GS3 is not independently
+available. Current core cases are still NOT_RUN. This is one reviewable batch, not a new scanner,
+diagnostic framework or permission request for each implementation substep. Existing source pins,
+private evidence and original installation/SSH are retained. Scope closure must precede new code.
+
 ## Current Owner direction: core only (2026-10-07)
 
 Owner directed: “直接推进核心功能，暂停搞分支功能。不要做我不需要的功能。”
