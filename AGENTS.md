@@ -29,8 +29,17 @@ Failure stops without retry, supplementary collection, cleanup, recovery, rollba
 
 The [QI1 implementation review](docs/a2-execution/Q2_CORE_Q1_BINDING_IMPLEMENTATION_REVIEW_20261008.md)
 records the direct descendant implementation, exact retained-source adoption and scoped offline checks.
-Exact candidate CI, independent installed verification and both caller freezes must still complete
-before QI2. This review does not consume the window or establish field success.
+The subsequent [exact freeze and field return](docs/a2-execution/Q2_CORE_Q1_BINDING_FIELD_20261008.md)
+records D `fa30146b0a49744b25df0f23969bf96b17eaacad`, its first CI 3/3 success,
+independent installed verification and both frozen callers. QI1 is complete. The one authorized
+08e window was issued once and is CONSUMED_FAILED: local preflight passed, then the first SSH
+returned PRE_QUIESCENCE / GROWTH_UNDECLARED_BUSINESS_UNIT for a different service. The approved
+Q1 declaration is present in the actual 19/7/7 inventory. No poweroff token was sent and guest
+actions_started is empty; remote completion remains UNKNOWN. All five original returns and their
+index remain private. QI2 is STOP_AND_RETAIN; QI3 and H01/Q4/H11 are NOT_RUN. Do not replay either
+caller, append another service under this exact approval, collect supplementary field evidence,
+clean up or start a new window. The original freeze, eight consumed windows and all prior evidence
+remain retained. No core package was issued.
 
 ## Current Owner direction: core only (2026-10-07)
 
