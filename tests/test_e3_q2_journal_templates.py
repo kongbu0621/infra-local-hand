@@ -72,7 +72,14 @@ def test_every_template_state_still_reads_and_checks_dropin_contents(state):
     with pytest.raises(g.r.ObservationError, match="UNDECLARED_BUSINESS_UNIT"):
         value.startup_manager()
     assert trace[-1][0] == ["cat", "--", TEMPLATE]
-    assert value.context == dict(manager="system", unit=TEMPLATE)
+    root = b"/fixture/protected"
+    offset = raw.index(root)
+    assert value.context == dict(manager="system", unit=TEMPLATE,
+        business_reference_diagnostic=dict(source="systemctl_cat", root_index=1,
+            root_bytes=len(root), root_sha256=g.digest(root), content_bytes=len(raw),
+            content_sha256=g.digest(raw), byte_offset=offset, property=None,
+            property_bytes=None, property_sha256=None, property_byte_offset=None,
+            line_index=raw[:offset].count(b"\n") + 1))
 
 
 @pytest.mark.parametrize("state", sorted(g.STARTUP_ENABLED_STATES))

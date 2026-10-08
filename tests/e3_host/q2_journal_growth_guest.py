@@ -688,6 +688,29 @@ class GuestInventory:
   after=sorted(name for name in os.listdir("/proc") if name.isdecimal())
   require(names == after, "GROWTH_PROCESS_INVENTORY_DRIFT")
   return dict(processes=len(rows), fd_count=total_fds, sha256=digest(canonical(rows)))
+ def _business_reference_diagnostic(self, raw, properties=None):
+  # Describe the existing byte-containment decision without retaining values.
+  # Only the first root and first matching property are recorded; no new query.
+  for root_index, root in enumerate(self.roots, 1):
+   root_raw=root.encode()
+   offset=raw.find(root_raw)
+   if offset < 0:
+    continue
+   result=dict(source="systemctl_cat" if properties is None else "systemctl_show",
+ root_index=root_index, root_bytes=len(root_raw), root_sha256=digest(root_raw),
+ content_bytes=len(raw), content_sha256=digest(raw), byte_offset=offset,
+ property=None, property_bytes=None, property_sha256=None, property_byte_offset=None,
+ line_index=raw.count(b"\n", 0, offset) + 1 if properties is None else None)
+   if properties is not None:
+    for key in self.SHOW:
+     field=canonical({key: properties[key]})
+     field_offset=field.find(root_raw)
+     if field_offset >= 0:
+      result.update(property=key, property_bytes=len(field), property_sha256=digest(field),
+ property_byte_offset=field_offset)
+      break
+   return result
+  return None
  def template_startup(self, name, state, *, user_uid=None):
   # Templates have no runtime Unit object. cat resolves their fragment and drop-ins
   # without inventing an instance or changing the manager's configuration.
@@ -696,7 +719,9 @@ class GuestInventory:
   require(raw and len(raw) <= STREAM_LIMIT and b"\0" not in raw and raw.startswith(b"# /"),
  "GROWTH_TEMPLATE_CONTENT")
   text=raw.decode("utf-8", "strict")
-  require(not any(root.encode() in raw for root in self.roots), "GROWTH_UNDECLARED_BUSINESS_UNIT")
+  if any(root.encode() in raw for root in self.roots):
+   self.context["business_reference_diagnostic"]=self._business_reference_diagnostic(raw)
+   raise r.ObservationError("GROWTH_UNDECLARED_BUSINESS_UNIT")
  def startup_manager(self, *, user_uid=None):
   expected={row["name"] for row in self.description["expected_units"]}
   domain_names={row["name"] for row in self.description["domain_units"]}
@@ -730,7 +755,10 @@ class GuestInventory:
    actual=value["Id"]
    match=actual in expected or any(root.encode() in flat for root in self.roots)
    if match and actual not in domain_names:
-    require(actual in expected, "GROWTH_UNDECLARED_BUSINESS_UNIT")
+    if actual not in expected:
+     self.context.update(actual_unit=actual,
+ business_reference_diagnostic=self._business_reference_diagnostic(flat, value))
+     raise r.ObservationError("GROWTH_UNDECLARED_BUSINESS_UNIT")
     related.append(self.quiet_service(next(row for row in self.description["expected_units"]
  if row["name"] == actual)))
   domains=[]
