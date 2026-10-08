@@ -71,11 +71,11 @@ def test_four_history_digest_handoff_fits_with_maximum_usage_and_large_clocks():
     assert len(h.canonical(value))<=4096
     assert value['resume_sha256']==h.digest(h.canonical(d._maintenance_resume()))
     assert [row['session'] for row in p.maintenance_resume()['previous_maintenance']]==[
-        'lhqjgrow-20261006a','lhqjgrow-20261007a','lhqjgrow-20261007b','lhqjgrow-20261008a','lhqjgrow-20261008b']
-    assert (value['R'],value['A'],value['C'])==(h.R,h.EXEC_A,h.EXEC_C)
+        'lhqjgrow-20261006a','lhqjgrow-20261007a','lhqjgrow-20261007b','lhqjgrow-20261008a','lhqjgrow-20261008b','lhqjgrow-20261008c']
+    assert (value['R'],value['A'],value['C'])==(h.R,h.GS_A,h.GS_C)
 
 
-@pytest.mark.parametrize('old_schema', ['v1','v2','v3','v4','v5'])
+@pytest.mark.parametrize('old_schema', ['v1','v2','v3','v4','v5','v6'])
 def test_no_old_handoff_schema_can_open_new_window(old_schema):
     value=preflight();value['schema']='lhq-journal-growth-preflight/'+old_schema
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_PREFLIGHT_SCHEMA'):

@@ -279,7 +279,7 @@ def test_guest_failure_preserves_same_systemctl_context_with_bounded_stderr(boun
     inventory, outcome, trace = boundary
     outcome.update(returncode=1, stdout=b"ExecStart=/private/command-secret\n",
                    stderr=b"synthetic-failure:" + b"z" * 700)
-    maintenance = g.GuestMaintenance(dict(phase="pre"), window=SimpleNamespace())
+    maintenance = g.GuestMaintenance(dict(phase="pre", guest_startup_assurance=g.guest_startup_assurance()), window=SimpleNamespace())
     maintenance.stage = "PRE_QUIESCENCE"
     maintenance.inventory = inventory
 

@@ -64,10 +64,10 @@ BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
 # All four older core requests remain consumed. Only the reviewed 07a field
-# bytes below are eligible under EXEC A/C after verified 08c maintenance.
-# EX1 source review binds these bytes; exact candidate CI, EX2 complete
+# bytes below are eligible under GS A/C after verified 08d maintenance.
+# GS1 source review binds these bytes; exact candidate CI, GS2 complete
 # originals, new-boot binding and every admission remain required before use.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"192ac9ebfd024e970498b2e4a5e7b72a2d62625403510f21812e03f5ff266747"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"a8306815b71fef841d94d3ed8117a76644c9b262c631673d4c17242dbb2543cc"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

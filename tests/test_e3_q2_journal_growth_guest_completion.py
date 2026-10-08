@@ -42,7 +42,7 @@ def rows():
 
 def description():
     samples = rows()
-    return dict(schema=g.SCHEMA, session=g.SESSION, phase="pre", nonce="a" * 64,
+    return dict(schema=g.SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", nonce="a" * 64,
         source_binding_sha256="b" * 64, paths={row["role"]: row["path"] for row in samples},
         saved_rows=samples, original_boot_id=UUID, journal_serial="lh-journal",
         expected_units=[dict(name="old.service", control_group="/old.service")],
@@ -67,9 +67,9 @@ def tool():
 
 def pre_report():
     desc = description()
-    return dict(schema=g.REPORT_SCHEMA, session=g.SESSION, phase="pre", status="GUEST_QUIET",
+    return dict(schema=g.REPORT_SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", status="GUEST_QUIET",
         nonce=desc["nonce"], source_binding_sha256=desc["source_binding_sha256"], boot_id=UUID,
-        rows=rows(), tree=tree(), journal_device=device(), resize2fs=tool(), quiescence=dict(historical_exit="UNKNOWN"),
+        rows=rows(), tree=tree(), journal_device=device(), resize2fs=tool(), quiescence=quiet(),
         resource_observation=dict(self_cpu_microseconds=1000, exited_children_cpu_microseconds=100,
             self_peak_rss_bytes=100000, exited_child_peak_rss_bytes=100000, coverage="THROUGH_REPORT_ONLY", complete=False))
 
@@ -114,7 +114,7 @@ def test_parser_rejects_duplicate_json_and_noninteger_window():
 @pytest.mark.parametrize("suffix", [b"", b"extra", b"\n"])
 def test_exact_continuation_and_eof(suffix):
     expected = g.continue_token("a" * 64, "b" * 64)
-    assert expected.startswith(b"POWER_OFF lhqjgrow-20261008c ")
+    assert expected.startswith(b"POWER_OFF lhqjgrow-20261008d ")
     read, write = os.pipe()
     try:
         os.write(write, expected + suffix); os.close(write); write = None
@@ -189,7 +189,7 @@ def effects(monkeypatch):
         def __init__(self, *_): pass
         def collect(self):
             trace.append("quiet")
-            return dict(historical_exit="UNKNOWN")
+            return quiet()
     monkeypatch.setattr(g, "GuestInventory", Inventory)
     monkeypatch.setattr(g, "tool_binding", lambda *a, **k: tool())
     monkeypatch.setattr(g, "verify_tool", lambda *a, **k: trace.append("tool"))
@@ -404,7 +404,7 @@ def test_guest_budget_rejects_observed_overage(monkeypatch, cpu, rss):
         g.GuestWindow(900, 780, clock=lambda _: 0).check()
 
 
-def test_unclassified_enabled_scheduler_names_exact_blocking_unit():
+def test_enabled_scheduler_reports_reduced_startup_coverage():
     inventory = object.__new__(g.GuestInventory)
     inventory.description = description()
     inventory.roots = ["/fixture"]
@@ -415,9 +415,10 @@ def test_unclassified_enabled_scheduler_names_exact_blocking_unit():
     unit.update(Id="cron.service", LoadState="loaded", ActiveState="active", SubState="running",
                 UnitFileState="enabled", ExecStart="{ path=/usr/sbin/cron ; argv[]=/usr/sbin/cron -f ; }")
     inventory.show_many = lambda *a, **k: {"cron.service": unit}
-    with pytest.raises(g.r.ObservationError, match="INDIRECT_STARTUP_UNVERIFIED"):
-        inventory.startup_manager()
-    assert inventory.context == dict(manager="system", unit="cron.service", action_kind="cron")
+    inventory.description["domain_units"]=[]
+    result=inventory.startup_manager()
+    assert result["indirect_startup"] == "NOT_PERFORMED"
+    assert inventory.context == dict(manager="system", unit="cron.service")
 
 
 def test_actual_active_writer_is_rejected_even_inside_self(monkeypatch, tmp_path):
@@ -436,3 +437,7 @@ def test_actual_active_writer_is_rejected_even_inside_self(monkeypatch, tmp_path
             inventory.processes()
     finally:
         os.close(fd)
+
+
+def quiet():
+    return dict(historical_exit="UNKNOWN",startup=dict(system=dict(unit_count=1,related=[],domains=[],indirect_startup="NOT_PERFORMED")))

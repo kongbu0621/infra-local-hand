@@ -26,7 +26,7 @@ NONCE, SHA = "1" * 64, "2" * 64
 
 
 def report(phase="pre", **changes):
-    value = dict(schema="lhq-journal-growth-guest/v1", session=h.SESSION, phase=phase,
+    value = dict(schema="lhq-journal-growth-guest/v2", session=h.SESSION, phase=phase,
                  nonce=NONCE, source_binding_sha256=SHA,
                  status="GUEST_QUIET" if phase == "pre" else "FILESYSTEM_GROWN",
                  boot_id=BOOT if phase == "pre" else NEW_BOOT)
@@ -67,8 +67,8 @@ def test_pre_capture_durable_before_one_token_and_ack(factory):
     value = report()
     sha = h.digest(h.canonical(value))
     token = h.continue_token(NONCE, sha)
-    ack = dict(schema="lhq-journal-growth-guest/v1", session=h.SESSION,
-               status="POWER_OFF_REQUESTED", nonce=NONCE, pre_report_sha256=sha)
+    ack = dict(schema="lhq-journal-growth-guest/v2", session=h.SESSION,
+               status="POWER_OFF_REQUESTED", nonce=NONCE, pre_report_sha256=sha, guest_startup_assurance=h.guest_startup_assurance())
     code = peer(value, "token=sys.stdin.buffer.readline()\nassert token==" + repr(token) + "\n"
                 "sys.stderr.buffer.write(b'peer stderr\\n');sys.stderr.flush()\n"
                 "sys.stdout.buffer.write(" + repr(h.canonical(ack)) + ");sys.stdout.flush()\n")

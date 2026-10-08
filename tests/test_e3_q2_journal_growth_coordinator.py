@@ -143,7 +143,7 @@ def rig(monkeypatch, tmp_path):
                              absent=nothing, close=nothing, growth_inputs=nothing, previous_maintenance_recheck=nothing,
                              raw={"start.sh": b"fixed"}, retained={})
     inputs = SimpleNamespace(recheck=nothing, close=nothing)
-    frozen = {"boot_id": BOOT, "source_binding_sha256": "a" * 64, "horizon": {},
+    frozen = {"guest_startup_assurance": h.guest_startup_assurance(), "boot_id": BOOT, "source_binding_sha256": "a" * 64, "horizon": {},
               "anchor_path": str(tmp_path), "source_binding": {"resume":h.history.maintenance_resume()}, "inventory": {}}
     sources = {"q2_core_capacity_reader.py": b"pass", "q2_journal_growth_guest.py": b"pass"}
     vm = {"images": Images(), "process": old, "restart_argv": ["qemu", "fixed-arguments"],
@@ -184,7 +184,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v7'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v8'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -218,7 +218,7 @@ def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
 def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.os, "geteuid", lambda: 0)
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
-        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--trusted-single-admin"])
+        "--archives-dir", "archives", "--expected-commit", "d" * 40, "--trusted-single-admin", "--trusted-guest-startup"])
     def unexpected(*args):
         pytest.fail("root must be rejected before source or field admission")
     monkeypatch.setattr(h, "growth_sources", unexpected)
@@ -242,7 +242,7 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
         "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(),
-        "--trusted-single-admin", "--execute"])
+        "--trusted-single-admin", "--trusted-guest-startup", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
     monkeypatch.setattr(h, "Window", lambda: rig.window)
@@ -283,7 +283,7 @@ def test_expired_seal_retains_cached_live_processes(rig, monkeypatch):
 def test_execute_without_original_window_stops_before_field_reads(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40,
-        "--trusted-single-admin", "--execute"])
+        "--trusted-single-admin", "--trusted-guest-startup", "--execute"])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
     def unexpected(*args):
         pytest.fail("field inputs must not be read without original window")
@@ -307,7 +307,7 @@ def test_management_premise_is_required_before_window(rig,monkeypatch,capsys):
 def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypatch, capsys):
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40,
-        "--trusted-single-admin"])
+        "--trusted-single-admin", "--trusted-guest-startup"])
     monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
     def denied(check, report):
         error = guest.r.ObservationError("GROWTH_KERNEL_OPEN")

@@ -358,6 +358,25 @@ EXEC_CLOSURE = {
     "commit": "987c77f6eb16e7ca41d8b1d4ccd7f89faf418d32",
     "tree": "7d24f3cae840a242b39bd796d3ae024570766a29",
 }
+GS_SCOPE = "LH-Q2-CORE-GUEST-STARTUP-CONTINUATION-v1"
+GS_BASELINE = {
+    "commit": "7ea9aed6a4f8be6d6fee0ee549e1e02378f32672",
+    "tree": "87af0b77a932330f0399d4df4ebf2ddfd2c83bf9",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-guest-startup-continuation/REQUIREMENTS.md": "8e02859996b1daa22098e4ee21c1747b9d4a7f6c6f95d43a920f72d113ff3476",
+        "docs/a2-execution/q2-core-guest-startup-continuation/ARCHITECTURE.md": "87f9a21a8b56444fade0bde6750425a71c3a4a1d6274f739fcdc1178ca7e1fa7",
+        "docs/a2-execution/q2-core-guest-startup-continuation/IMPLEMENTATION_PLAN.md": "fb6ed0428afc386ced7bd1e7e09f8f1bb08710967a2dbbd585713135797fbbe0"
+    }
+}
+GS_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-GUEST-STARTUP-CONTINUATION-CLOSURE-20261008-01",
+    "record_path": "docs/governance/Q2_CORE_GUEST_STARTUP_CONTINUATION_OWNER_DECISION.md",
+    "record_sha256": "461d8f7458979786e4a267186fda0ebc07ca2d79e2c020bd9f6891d4af48a98f"
+}
+GS_CLOSURE = {
+    "commit": "001bd4f7baedf115ce67feba87a21d8e259c8d1d",
+    "tree": "57940587f04c3fd2e1fe991c2b0e290aa66d11e6"
+}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

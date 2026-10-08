@@ -159,8 +159,11 @@ def test_startup_guards_inspect_every_retained_exec_member(
     if kind == "domain":
         inventory.description["domain_units"] = [dict(
             name=name, manager="system", control_group="/fixture.slice")]
-    with pytest.raises(g.r.ObservationError, match="^" + reason + "$"):
-        inventory.startup_manager()
+    if kind == "indirect":
+        assert inventory.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
+    else:
+        with pytest.raises(g.r.ObservationError, match="^" + reason + "$"):
+            inventory.startup_manager()
     assert inventory.context["unit"] == name
     assert inventory.command_count == 3
     assert [row for row in trace if row[0] == "collect"] == [

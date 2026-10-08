@@ -154,7 +154,7 @@ def test_device_does_not_accept_truncated_twenty_byte_identity(block_boundary):
 
 def description(serial):
     paths = {role: "/fixture/" + role for role in g.r.ROLES}
-    return dict(schema=g.SCHEMA, session=g.SESSION, phase="pre", nonce="a" * 64,
+    return dict(schema=g.SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", nonce="a" * 64,
         source_binding_sha256="b" * 64, paths=paths,
         saved_rows=[dict(role=role, path=paths[role], filesystem=dict(uuid=UUID)) for role in g.r.ROLES],
         original_boot_id=UUID, journal_serial=serial,

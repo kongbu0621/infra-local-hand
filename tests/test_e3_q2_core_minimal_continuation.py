@@ -24,8 +24,8 @@ def originals(monkeypatch):
     projection=journal_transition(implementation)
     sources={name:b'# synthetic source\n' for name in p.JOURNAL_SOURCE_NAMES}
     desc=description();pre=pre_report()
-    frozen=dict(boot_id=desc['original_boot_id'],paths=desc['paths'],saved_rows=desc['saved_rows'],
-        previous_maintenance_files=previous,source_binding=dict(synthetic='eight fixed input relation',resume=p.maintenance_resume()),
+    frozen=dict(guest_startup_assurance=g.guest_startup_assurance(),boot_id=desc['original_boot_id'],paths=desc['paths'],saved_rows=desc['saved_rows'],
+        previous_maintenance_files=previous,source_binding=dict(synthetic='eight fixed input relation',guest_startup_assurance=g.guest_startup_assurance(),resume=p.maintenance_resume()),
         inventory={key:desc[key] for key in ('expected_units','domain_cgroups','domain_units','protected_roots','essential_paths')},
         horizon={},description=b'synthetic capacity description')
     sha=h.digest(h.canonical(frozen['source_binding']))
@@ -43,7 +43,7 @@ def originals(monkeypatch):
             stdout_bytes=0,stderr_bytes=0,stdout_sha256=h.digest(b''),stderr_sha256=h.digest(b'')))
     post['journal_device']['superblock']['filesystem_bytes']=g.NEW_SIZE
     ack=dict(schema=g.REPORT_SCHEMA,session=g.SESSION,status='POWER_OFF_REQUESTED',
-        nonce=desc['nonce'],pre_report_sha256=h.digest(h.canonical(pre)))
+        nonce=desc['nonce'],pre_report_sha256=h.digest(h.canonical(pre)),guest_startup_assurance=g.guest_startup_assurance())
     streams={'pre.stdout':h.canonical(pre)+h.canonical(ack),'pre.stderr':b'',
         'post.stdout':h.canonical(post),'post.stderr':b''}
     transports=[]
@@ -51,10 +51,10 @@ def originals(monkeypatch):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v7',R=h.R,A=h.EXEC_A,C=h.EXEC_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v8',R=h.R,A=h.GS_A,C=h.GS_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
-        resume=p.maintenance_resume(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
-        historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C),
+        resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
+        historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
         inputs=frozen['source_binding'],window_binding=dict(boot_id=pre['boot_id'],origins=[1,2]),
         inventory_sha256=h.digest(h.canonical(frozen['inventory'])),retained_sha256='e'*64,
         sources={key:dict(bytes=len(raw),sha256=h.digest(raw)) for key,raw in sources.items()},
@@ -64,7 +64,7 @@ def originals(monkeypatch):
         protocol='two fixed phases; post bound to the durably saved pre report; no probe or retry')
     marker=dict(manifest_sha256=h.digest(h.canonical(manifest)),manifest=manifest,nonce=desc['nonce'],
         clocks=[1,2],session=h.SESSION,D=implementation['commit'],access_mode=h.ACCESS_MODE,
-        resume=p.maintenance_resume(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
+        resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         pre_command_sha256='a'*64,post_command_derivation='same fixed sources; post descriptor bound to saved canonical pre report',
         pre_description=desc)
     def image(size):
@@ -85,9 +85,9 @@ def originals(monkeypatch):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v7',R=h.R,A=h.EXEC_A,C=h.EXEC_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v8',R=h.R,A=h.GS_A,C=h.GS_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
-        resume=p.maintenance_resume(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
+        resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],
         state='VERIFIED',reason='MAINTENANCE_COMPLETE',last_step='VERIFIED',started=sorted(h.STATES[1:]),
         marker_created=True,ssh_requests=2,business_cases=0,remote_exit='HELPER_REPORTED_COMPLETE',

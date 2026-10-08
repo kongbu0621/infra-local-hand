@@ -45,7 +45,7 @@ def test_real_protected_reader_retains_exact_failed_prefix_without_atime_change(
     assert p.build_previous_maintenance(raw)==d._validate_maintenance_resume(p.maintenance_resume())
 
 
-@pytest.mark.parametrize('index',[0,1,2,3,4])
+@pytest.mark.parametrize('index',[0,1,2,3,4,5])
 @pytest.mark.parametrize('name',tuple(p.PREVIOUS_JOURNAL_PINS))
 @pytest.mark.parametrize('fault',['missing','bytes','mode','symlink','hardlink'])
 def test_any_old_original_fault_refused_by_protected_reader(retained,index,name,fault):
@@ -61,7 +61,7 @@ def test_any_old_original_fault_refused_by_protected_reader(retained,index,name,
         p.read_previous_journal_files(fd,anchor,call)
 
 
-@pytest.mark.parametrize('index',[0,1,2,3,4])
+@pytest.mark.parametrize('index',[0,1,2,3,4,5])
 @pytest.mark.parametrize('suffix',p.PREVIOUS_JOURNAL_ABSENT)
 def test_old_later_name_even_empty_blocks(retained,index,suffix):
     root,fd,anchor,call,_=retained
@@ -70,7 +70,7 @@ def test_old_later_name_even_empty_blocks(retained,index,suffix):
         p.read_previous_journal_files(fd,anchor,call)
 
 
-@pytest.mark.parametrize('index',[0,1,2,3,4])
+@pytest.mark.parametrize('index',[0,1,2,3,4,5])
 @pytest.mark.parametrize('fault',['D','authority','nonce','input','order','success','exit','actions','streams'])
 def test_old_internal_relation_checked_even_with_matching_synthetic_byte_pins(monkeypatch,index,fault):
     raw=previous_journal_files(monkeypatch,d);fixed=p.previous_journal_profiles()[index]
@@ -94,7 +94,7 @@ def test_old_internal_relation_checked_even_with_matching_synthetic_byte_pins(mo
     with pytest.raises(p.c.ContractError):p.build_previous_maintenance(raw)
 
 
-@pytest.mark.parametrize('index',[0,1,2,3,4])
+@pytest.mark.parametrize('index',[0,1,2,3,4,5])
 @pytest.mark.parametrize('where',['manifest','marker','receipt','input','projection'])
 @pytest.mark.parametrize('fault',['session','D','digest','order','bool','extra'])
 def test_new_binding_and_both_consumers_reject_changed_previous_summary(originals,index,where,fault):
@@ -143,11 +143,11 @@ def test_new_preflight_rejects_old_or_changed_generation(fault):
 
 
 def test_fixed_three_generation_capacity_and_unchanged_action_limits():
-    assert h.SESSION=='lhqjgrow-20261008c'
-    assert (h.HOST_BYTES,h.HOST_INODES)==(7776*1048576,2220)
+    assert h.SESSION=='lhqjgrow-20261008d'
+    assert (h.HOST_BYTES,h.HOST_INODES)==(9072*1048576,2590)
     assert (h.BACKUP_CAP,h.IMAGE_CAP,h.CAPTURE_CAP)==(320*1048576,576*1048576,8*1048576)
     rows=p.maintenance_commitments()['generations']
-    assert sum(row['cpu_seconds'] for row in rows)==720
+    assert sum(row['cpu_seconds'] for row in rows)==840
     assert p.maintenance_commitments()==d._maintenance_commitments()
 
 

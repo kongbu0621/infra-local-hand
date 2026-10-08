@@ -18,9 +18,9 @@ import pwd
 from e3_host import q2_core_capacity_reader as r
 require, canonical, digest=r.require, r.canonical, r.digest
 MAX_BYTES, MAX_ENTRIES=268435456, 32768
-SESSION="lhqjgrow-20261008c"
-SCHEMA="lhq-journal-growth-input/v1"
-REPORT_SCHEMA="lhq-journal-growth-guest/v1"
+SESSION="lhqjgrow-20261008d"
+SCHEMA="lhq-journal-growth-input/v2"
+REPORT_SCHEMA="lhq-journal-growth-guest/v2"
 OLD_SIZE, NEW_SIZE=268435456, 536870912
 STREAM_LIMIT=1048576
 ENVIRONMENT={"HOME": "/root", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
@@ -30,8 +30,25 @@ UNIT_PATTERN=re.compile(r"[A-Za-z0-9_.:@\\x-]{1,240}\.(?:service|scope|slice|soc
 UNIT_FILE_STATES=frozenset(("enabled", "enabled-runtime", "linked", "linked-runtime", "alias",
  "masked", "masked-runtime", "static", "disabled", "indirect", "generated", "transient", "bad"))
 STARTUP_ENABLED_STATES=frozenset(("enabled", "enabled-runtime", "linked", "linked-runtime", "generated"))
-INDIRECT_STARTUP_PATTERN=re.compile(r"(?:/|\s)(?:ba|da)?sh(?:\s|;|$)|/python[0-9.]*(?:\s|;)|/perl(?:\s|;)|"
- r"/(?:cron|crond|atd|run-parts|systemd-run)(?:\s|;|$)")
+def guest_startup_assurance():
+ """Fixed Owner-confirmed management premise, not an observation result."""
+ return dict(mode="TRUSTED_SINGLE_ADMIN", indirect_startup_observation="NOT_PERFORMED",
+ no_undeclared_business_startup=True, continuous_exclusion_proven=False)
+def validate_startup_assurance(value):
+ require(type(value) is dict and canonical(value)==canonical(guest_startup_assurance()),
+ "GROWTH_GUEST_STARTUP_PREMISE")
+ return value
+def validate_startup_report(value, description):
+ validate_startup_assurance(description.get("guest_startup_assurance"))
+ expected={"system"}
+ if any(row["manager"]=="user" for row in description["domain_units"]):expected.add("user_1100")
+ require(type(value) is dict and set(value)==expected, "GROWTH_STARTUP_MANAGERS")
+ for row in value.values():
+  require(type(row) is dict and set(row)=={"unit_count","related","domains","indirect_startup"}
+ and row["indirect_startup"]=="NOT_PERFORMED" and type(row["related"]) is list
+ and type(row["domains"]) is list, "GROWTH_STARTUP_COVERAGE")
+  r.integer(row["unit_count"])
+ return value
 def control_limits():
  for key,value in ((resource.RLIMIT_AS,268435456),(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CORE,0)):
   resource.setrlimit(key,(value,value))
@@ -88,7 +105,8 @@ def proc_bytes(pid, name, cap, check):
  finally:
   os.close(fd)
 def growth_descriptor(frozen, nonce, phase, window, pre=None):
- value=dict(schema="lhq-journal-growth-input/v1", session=SESSION, phase=phase, nonce=nonce,
+ value=dict(schema=SCHEMA, session=SESSION, phase=phase, nonce=nonce,
+ guest_startup_assurance=validate_startup_assurance(frozen.get("guest_startup_assurance")),
  source_binding_sha256=frozen["source_binding_sha256"], paths=frozen["paths"],
  saved_rows=frozen["saved_rows"], original_boot_id=frozen["boot_id"],
  journal_serial=frozen["journal_serial"], **frozen["inventory"],
@@ -140,12 +158,13 @@ def descriptor(raw):
  value=r.parse(raw, 65536)
  keys={"schema", "session", "phase", "nonce", "source_binding_sha256", "paths", "saved_rows",
  "original_boot_id", "journal_serial", "expected_units", "domain_cgroups", "domain_units",
- "protected_roots", "essential_paths", "window_seconds", "change_seconds"}
+ "protected_roots", "essential_paths", "window_seconds", "change_seconds", "guest_startup_assurance"}
  require(type(value) is dict and value.get("phase") in ("pre", "post"), "GROWTH_DESCRIPTION")
  if value["phase"] == "post":
   keys |= {"pre_report", "pre_report_sha256"}
  require(set(value) == keys and value["schema"] == SCHEMA and value["session"] == SESSION,
  "GROWTH_DESCRIPTION")
+ validate_startup_assurance(value.get("guest_startup_assurance"))
  sha_value(value["nonce"]); sha_value(value["source_binding_sha256"])
  uuid_value(value["original_boot_id"])
  require(type(value["journal_serial"]) is str and
@@ -678,25 +697,6 @@ class GuestInventory:
  "GROWTH_TEMPLATE_CONTENT")
   text=raw.decode("utf-8", "strict")
   require(not any(root.encode() in raw for root in self.roots), "GROWTH_UNDECLARED_BUSINESS_UNIT")
-  if state in STARTUP_ENABLED_STATES:
-   # Only remove full-line comments. Retain every Exec directive, including
-   # overridden values: no partial reimplementation of systemd merge semantics.
-   lines="\n".join(line for line in text.splitlines() if not line.lstrip().startswith(("#", ";")))
-   lines=lines.replace("\\\n", " ")
-   commands=[]
-   for action in re.findall(r"^\s*Exec[A-Za-z]*\s*=([^\n]*)", lines, re.M):
-    # Match the executable that show would resolve: quotes and systemd's
-    # command prefixes do not make an interpreter a different executable.
-    action=action.replace('"', "").replace("'", "").strip().lstrip("-@:+!")
-    if not action:
-     continue
-    require("\\" not in action.split(None, 1)[0], "GROWTH_TEMPLATE_EXEC_ENCODING")
-    commands.append(action if action.startswith("/") else "/" + action)
-   actions=" ".join(commands) + " "
-   indirect=INDIRECT_STARTUP_PATTERN.search(" " + actions)
-   if indirect:
-    self.context["action_kind"]=indirect.group(0).strip(" /;")
-    raise r.ObservationError("GROWTH_INDIRECT_STARTUP_UNVERIFIED")
  def startup_manager(self, *, user_uid=None):
   expected={row["name"] for row in self.description["expected_units"]}
   domain_names={row["name"] for row in self.description["domain_units"]}
@@ -733,13 +733,6 @@ class GuestInventory:
     require(actual in expected, "GROWTH_UNDECLARED_BUSINESS_UNIT")
     related.append(self.quiet_service(next(row for row in self.description["expected_units"]
  if row["name"] == actual)))
-   enabled=value["UnitFileState"] in STARTUP_ENABLED_STATES
-   if enabled and actual not in expected and actual not in domain_names:
-    actions=" ".join(value[key] for key in self.SHOW if key.startswith("Exec"))
-    indirect=INDIRECT_STARTUP_PATTERN.search(actions)
-    if indirect:
-     self.context["action_kind"]=indirect.group(0).strip(" /;")
-     raise r.ObservationError("GROWTH_INDIRECT_STARTUP_UNVERIFIED")
   domains=[]
   for item in self.description["domain_units"]:
    if (item["manager"] == "user") != (user_uid is not None):
@@ -753,7 +746,7 @@ class GuestInventory:
    require(item["name"].endswith(".slice") and not any(value[key] for key in self.SHOW if key.startswith("Exec")),
  "GROWTH_DOMAIN_UNIT_ACTION")
    domains.append(dict(name=item["name"], properties_sha256=digest(canonical(value))))
-  return dict(unit_count=len(names), related=related, domains=domains, indirect_startup="CLASSIFIED")
+  return dict(unit_count=len(names), related=related, domains=domains, indirect_startup="NOT_PERFORMED")
  def startup(self):
   result={"system": self.startup_manager()}
   if any(item["manager"] == "user" for item in self.description["domain_units"]):
@@ -932,13 +925,15 @@ def validate_completion(before_rows, after_rows):
    require(after["available"]["bytes"] >= 400 * 1048576 and after["available"]["inodes"] >= 32768,
  "GROWTH_TARGET_CAPACITY")
 PRE_FIELDS={"schema", "session", "phase", "status", "nonce", "source_binding_sha256", "boot_id",
- "rows", "tree", "journal_device", "resize2fs", "quiescence", "resource_observation"}
+ "rows", "tree", "journal_device", "resize2fs", "quiescence", "resource_observation", "guest_startup_assurance"}
 def validate_pre_report(value, description):
  require(type(value) is dict and set(value) == PRE_FIELDS and value["schema"] == REPORT_SCHEMA
  and value["session"] == SESSION and value["phase"] == "pre" and value["status"] == "GUEST_QUIET"
  and value["nonce"] == description["nonce"]
  and value["source_binding_sha256"] == description["source_binding_sha256"]
  and value["boot_id"] == description["original_boot_id"], "GROWTH_PRE_REPORT")
+ validate_startup_assurance(value["guest_startup_assurance"])
+ validate_startup_assurance(description.get("guest_startup_assurance"))
  same_parents(description["saved_rows"], value["rows"])
  tree=value["tree"]
  require(type(tree) is dict and set(tree) == {"entries", "content_bytes", "sha256", "observation_sha256"},
@@ -955,6 +950,7 @@ def validate_pre_report(value, description):
  sha_value(tool["sha256"]); sha_value(tool["version_sha256"])
  require(type(value["quiescence"]) is dict and value["quiescence"].get("historical_exit") == "UNKNOWN",
  "GROWTH_PRE_QUIESCENCE")
+ validate_startup_report(value["quiescence"].get("startup"),description)
  validate_resources(value["resource_observation"])
  return value
 def validate_resources(value):
@@ -976,6 +972,8 @@ def validate_post_report(value, description):
  and value["original_boot_id"] == description["original_boot_id"]
  and value["pre_report_sha256"] == description["pre_report_sha256"] == digest(canonical(before)),
  "GROWTH_POST_REPORT")
+ validate_startup_assurance(value["guest_startup_assurance"])
+ validate_startup_assurance(description.get("guest_startup_assurance"))
  uuid_value(value["boot_id"])
  require(value["boot_id"] != value["original_boot_id"], "GROWTH_POST_BOOT")
  validate_completion(before["rows"], value["rows"])
@@ -999,6 +997,7 @@ def validate_post_report(value, description):
   sha_value(resize[stream + "_sha256"])
  require(type(value["quiescence"]) is dict and value["quiescence"].get("historical_exit") == "UNKNOWN",
  "GROWTH_POST_QUIESCENCE")
+ validate_startup_report(value["quiescence"].get("startup"),description)
  validate_resources(value["resource_observation"])
  return value
 def continue_token(nonce, report_sha256):
@@ -1079,6 +1078,7 @@ class GuestMaintenance:
   self.device.recheck()
   require(boot_id(self.window.check) == current_boot, "GROWTH_BOOT_DRIFT")
   report=dict(schema=REPORT_SCHEMA, session=SESSION, phase="pre", status="GUEST_QUIET",
+ guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance")),
  nonce=self.description["nonce"], source_binding_sha256=self.description["source_binding_sha256"],
  boot_id=current_boot, rows=rows, tree=tree, journal_device=device,
  resize2fs=tool, quiescence=quiet, resource_observation=resource_observation())
@@ -1095,7 +1095,8 @@ class GuestMaintenance:
   self.once("poweroff")
   self.stage="POWER_OFF_REQUESTED"
   output(dict(schema=REPORT_SCHEMA, session=SESSION, status="POWER_OFF_REQUESTED",
- nonce=self.description["nonce"], pre_report_sha256=report_sha))
+ nonce=self.description["nonce"], pre_report_sha256=report_sha,
+ guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance"))))
   self.active_command=bound_command(inventory.systemctl,
  ["--system", "--no-pager", "--no-ask-password", "poweroff"], self.window.check, limit=8192)
   result=self.active_command.collect()
@@ -1144,6 +1145,7 @@ class GuestMaintenance:
   quiet=inventory.collect()
   require(boot_id(self.window.check) == current_boot, "GROWTH_BOOT_DRIFT")
   report=dict(schema=REPORT_SCHEMA, session=SESSION, phase="post", status="FILESYSTEM_GROWN",
+ guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance")),
  nonce=self.description["nonce"], source_binding_sha256=self.description["source_binding_sha256"],
  boot_id=current_boot, original_boot_id=before["boot_id"],
  pre_report_sha256=self.description["pre_report_sha256"], rows=final_rows, tree=tree,
@@ -1171,6 +1173,7 @@ class GuestMaintenance:
    diagnostic["serial"]=dict(serial)
   return dict(schema=REPORT_SCHEMA, session=SESSION, phase=self.description["phase"], status="INCOMPLETE",
  stage=self.stage, reason=code, actions_started=sorted(self.started),
+ guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance")),
  process_pid=process.pid if process else None,
  process_returncode=process.poll() if process else None,
  diagnostic=diagnostic,
@@ -1204,6 +1207,7 @@ def entry(raw):
   try:
    emit(maintenance.failure(error) if maintenance else
  dict(schema=REPORT_SCHEMA, session=SESSION, status="INCOMPLETE", stage="DESCRIPTION",
+ guest_startup_assurance=None,
  reason=str(error) if isinstance(error, r.ObservationError) else "GROWTH_GUEST_IO_OR_RUNTIME"), 2)
   except (OSError, r.ObservationError):
    pass

@@ -58,7 +58,7 @@ def test_templates_use_one_cat_while_plain_and_instance_keep_full_show(user_uid)
                              loaded=["fixture@actual.service", "plain.service"],
                              sources={TEMPLATE: SOURCE})
     result = value.startup_manager(user_uid=user_uid)
-    assert result == dict(unit_count=3, related=[], domains=[], indirect_startup="CLASSIFIED")
+    assert result == dict(unit_count=3, related=[], domains=[], indirect_startup="NOT_PERFORMED")
     assert [call for call, _ in trace if call[0] == "cat"] == [["cat", "--", TEMPLATE]]
     shown = [call[call.index("--") + 1:] for call, _ in trace if call[0] == "show"]
     assert shown == [["fixture@actual.service", "plain.service"]]
@@ -78,50 +78,45 @@ def test_every_template_state_still_reads_and_checks_dropin_contents(state):
 @pytest.mark.parametrize("state", sorted(g.STARTUP_ENABLED_STATES))
 @pytest.mark.parametrize("action", [b"/bin/bash -c true", b"/usr/bin/python3 task.py", b"/usr/bin/perl task.pl",
                                      b"/usr/sbin/cron", b"/usr/bin/systemd-run true"])
-def test_enabled_template_keeps_original_indirect_startup_guard(state, action):
+def test_enabled_template_records_approved_indirect_observation_gap(state, action):
     raw = SOURCE + b"ExecStartPost=" + action + b"\n"
     value, _ = inventory(f"{TEMPLATE} {state}\n".encode(), sources={TEMPLATE: raw})
-    with pytest.raises(g.r.ObservationError, match="INDIRECT_STARTUP_UNVERIFIED"):
-        value.startup_manager()
-    assert "action_kind" in value.context
+    assert value.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
+    assert "action_kind" not in value.context
 
 
 def test_comments_and_description_do_not_create_exec_actions():
     raw = SOURCE + b"# ExecStart=/bin/bash -c true\n; ExecStop=/bin/sh\nDescription=/bin/bash helper\n"
     value, _ = inventory(f"{TEMPLATE} enabled\n".encode(), sources={TEMPLATE: raw})
-    assert value.startup_manager()["indirect_startup"] == "CLASSIFIED"
+    assert value.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
 
 
-def test_continued_exec_with_interleaved_comment_remains_classified():
+def test_continued_exec_with_interleaved_comment_records_unobserved_indirect_startup():
     raw = SOURCE + b"ExecStartPost=\\\n# physical-line comment\n /bin/bash -c true\n"
     value, _ = inventory(f"{TEMPLATE} enabled\n".encode(), sources={TEMPLATE: raw})
-    with pytest.raises(g.r.ObservationError, match="INDIRECT_STARTUP_UNVERIFIED"):
-        value.startup_manager()
+    assert value.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
 
 
 def test_overridden_exec_is_conservatively_retained_without_merge_parser():
     raw = SOURCE + b"ExecStop=/bin/bash -c true\nExecStop=\nExecStop=/usr/bin/true\n"
     value, _ = inventory(f"{TEMPLATE} enabled\n".encode(), sources={TEMPLATE: raw})
-    with pytest.raises(g.r.ObservationError, match="INDIRECT_STARTUP_UNVERIFIED"):
-        value.startup_manager()
+    assert value.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
 
 
 @pytest.mark.parametrize("action", [b'"/usr/bin/python3" -c pass', b"'/usr/bin/perl' -e 1",
                                      b"@bash alternate-name -c true", b"-@bash alternate-name",
                                      b'+"/bin/bash" -c true', b"!python3 -c pass",
                                      b"perl -e 1", b"cron -f", b"systemd-run true"])
-def test_template_interpreter_quotes_prefixes_and_bare_names_still_fail(action):
+def test_template_interpreter_quotes_prefixes_and_bare_names_are_not_classified(action):
     value, _ = inventory(f"{TEMPLATE} enabled\n".encode(),
                          sources={TEMPLATE: SOURCE + b"ExecStartPost=" + action + b"\n"})
-    with pytest.raises(g.r.ObservationError, match="INDIRECT_STARTUP_UNVERIFIED"):
-        value.startup_manager()
+    assert value.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
 
 
 def test_encoded_template_executable_is_not_assumed_to_be_classified():
     value, _ = inventory(f"{TEMPLATE} enabled\n".encode(),
                          sources={TEMPLATE: SOURCE + b"ExecStartPost=/bin/\\x62ash -c true\n"})
-    with pytest.raises(g.r.ObservationError, match="TEMPLATE_EXEC_ENCODING"):
-        value.startup_manager()
+    assert value.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
 
 
 @pytest.mark.parametrize("state", ["disabled", "static", "masked", "masked-runtime"])
