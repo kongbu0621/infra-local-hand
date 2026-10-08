@@ -23,11 +23,17 @@ def originals(monkeypatch):
     implementation=dict(commit='d'*40,tree='e'*40)
     projection=journal_transition(implementation)
     sources={name:b'# synthetic source\n' for name in p.JOURNAL_SOURCE_NAMES}
+    from q1_binding_fixture import source_raw
+    q1_raw=source_raw(monkeypatch,previous)
+    old_inventory,proof=h.q1_declaration(q1_raw)
     desc=description();pre=pre_report()
+    desc.update(h.merge_q1_inventory(old_inventory,proof))
     frozen=dict(guest_startup_assurance=g.guest_startup_assurance(),boot_id=desc['original_boot_id'],paths=desc['paths'],saved_rows=desc['saved_rows'],
         previous_maintenance_files=previous,source_binding=dict(synthetic='eight fixed input relation',guest_startup_assurance=g.guest_startup_assurance(),resume=p.maintenance_resume()),
         inventory={key:desc[key] for key in ('expected_units','domain_cgroups','domain_units','protected_roots','essential_paths')},
         horizon={},description=b'synthetic capacity description')
+    frozen['q1_raw']=q1_raw
+    frozen['source_binding'].update(q1_declaration=proof,sources={'q1_'+k:v for k,v in proof['sources'].items()})
     sha=h.digest(h.canonical(frozen['source_binding']))
     desc['source_binding_sha256']=pre['source_binding_sha256']=sha
     start=b'q1_vm=/fixture\nqemu-system-x86_64 \\\n -serial file:/fixture/serial -pidfile /fixture/vm.pid\n\n'
@@ -51,7 +57,7 @@ def originals(monkeypatch):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v8',R=h.R,A=h.GS_A,C=h.GS_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v9',R=h.R,A=h.QI_A,C=h.QI_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
@@ -85,7 +91,7 @@ def originals(monkeypatch):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v8',R=h.R,A=h.GS_A,C=h.GS_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v9',R=h.R,A=h.QI_A,C=h.QI_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],

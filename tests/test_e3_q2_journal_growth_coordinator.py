@@ -37,6 +37,8 @@ def rig(monkeypatch, tmp_path):
             raise RuntimeError("INJECTED_" + name.upper())
     def nothing(*_args, **_kwargs):
         return None
+    monkeypatch.setattr(h, "recheck_q1_inputs", nothing)
+    monkeypatch.setattr(h, "validate_q1_frozen", nothing)
     class Store:
         def __init__(self, fd, check):
             self.fd, self.opened = fd, {}
@@ -184,7 +186,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v8'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v9'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -241,13 +243,13 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
-        "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(),
+        "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(), "--q1-sources", "{}",
         "--trusted-single-admin", "--trusted-guest-startup", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
     monkeypatch.setattr(h, "Window", lambda: rig.window)
     monkeypatch.setattr(h, "bind_window", rig.nothing)
-    monkeypatch.setattr(h, "freeze_growth_inputs", lambda *_args: rig.frozen)
+    monkeypatch.setattr(h, "freeze_growth_inputs", lambda *_args,**_kwargs: rig.frozen)
     monkeypatch.setattr(h, "GrowthAnchor", lambda *_args: rig.anchor)
     monkeypatch.setattr(h, "Tool", lambda *_args: rig.tools["image"])
     monkeypatch.setattr(h, "freeze_vm", lambda *_args: rig.vm)

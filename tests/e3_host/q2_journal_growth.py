@@ -53,6 +53,8 @@ EXEC_A=history.c.EXEC_BASELINE["commit"]
 EXEC_C=history.c.EXEC_CLOSURE["commit"]
 GS_A=history.c.GS_BASELINE["commit"]
 GS_C=history.c.GS_CLOSURE["commit"]
+QI_A=history.c.QI_BASELINE["commit"]
+QI_C=history.c.QI_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -76,11 +78,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261008d"
+SESSION="lhqjgrow-20261008e"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=9072*MIB,2590
+HOST_BYTES,HOST_INODES=10368*MIB,2960
 STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
@@ -521,7 +523,168 @@ domain_units=[domain_rows[key] for key in sorted(domain_rows)],
 protected_roots=sorted(protected),essential_paths=sorted(essential))
  require(len(canonical(inventory))<=131072,"GROWTH_INPUT_INVENTORY_BYTES")
  return inventory,boots.pop()
-def freeze_growth_inputs(inputs,frame_path,plan_archive,archives_dir):
+Q1_REPORT_PIN=(9632,"0183b985fdab6a755e96c916617484e274f38e284e575dcb298349d44ccba1e9")
+Q1_EXPORT_PIN=(20208,"a5265e00222eb9cea4a9675627650c4a51adeac69c6383732a3aac0e3a3b8deb")
+Q1_ROLES=("report","prepared","started","capture","stdout","stderr","old_marker","old_stderr")
+def q1_declaration(raw):
+ """Derive the one approved forward declaration from retained originals only."""
+ from e3_host import q2_host_export as e,q2_journal_growth_guest as g
+ import json
+ require(type(raw) is dict and set(raw)==set(Q1_ROLES),"GROWTH_Q1_ROLES")
+ for role,data in raw.items():
+  require(type(data) is bytes and len(data)<=(MIB if role in ("stdout","stderr") else 65536),"GROWTH_Q1_LIMIT")
+ require((len(raw["report"]),digest(raw["report"]))==Q1_REPORT_PIN,"GROWTH_Q1_REPORT_PIN")
+ for role,name in (("old_marker","consumed.json"),("old_stderr","pre.stderr")):
+  require((len(raw[role]),digest(raw[role]))==history.SEVENTH_JOURNAL_PINS[name],"GROWTH_Q1_OLD_PIN")
+ report=e.document(raw["report"])
+ require((report.get("schema"),report.get("scope"),report.get("status"),report.get("source_config_status"))==
+ ("local-hand-q2-host-export/v1","READ_ONLY_SELECTED_Q1_HOST_HANDOFF","EXPORTED","Q1_EVIDENCE_ONLY"),"GROWTH_Q1_REPORT")
+ require(all(report.get(k) is False for k in ("q1_history_reassessed","q2_accepted","q3_accepted",
+ "production_supported","complete_q1_domain_inventory","quota_observed","current_capacity_is_new_budget","fixture_generated"))
+ and report.get("independent_supervision_required") is True
+ and report.get("q2_input_groups")==dict.fromkeys(e.MISSING,"NOT_DELIVERED"),"GROWTH_Q1_COVERAGE")
+ def row(name):
+  rows=[x for x in report["checks"] if type(x) is dict and x.get("check")==name]
+  require(len(rows)==1 and rows[0].get("status")=="OBSERVED","GROWTH_Q1_ROW")
+  return rows[0]["facts"]
+ prepared,started,marker,old=[prior.r.parse(raw[k],65536) for k in
+ ("prepared","started","old_marker","old_stderr")]
+ # The retained native capture has one finite elapsed-seconds decimal. Keep
+ # its original bytes pinned; all authority/identity/clock numbers stay ints.
+ from decimal import Decimal
+ def pairs(items):
+  value={}
+  for key,item in items:
+   require(key not in value,"GROWTH_Q1_CAPTURE_DUPLICATE");value[key]=item
+  return value
+ capture=json.loads(raw["capture"],object_pairs_hook=pairs,parse_float=Decimal,parse_constant=Decimal)
+ elapsed=capture.pop("elapsed_seconds",None)
+ require(type(elapsed) in (int,Decimal) and 0<=elapsed<=60,"GROWTH_Q1_CAPTURE_ELAPSED")
+ # json.dumps rejects every other Decimal (including NaN/Infinity).
+ capture=prior.r.parse(json.dumps(capture,allow_nan=False).encode("ascii"),65536)
+ require(prepared.get("kind")==capture.get("kind")=="CURRENT_OBSERVATION"
+ and prepared.get("task_commit")=="38ff001" and prepared.get("manager")=="system"
+ and type(prepared.get("field_commands")) is int and prepared["field_commands"]==1
+ and prepared.get("retry") is False and prepared.get("prior_D")==history.SEVENTH_JOURNAL_D,
+ "GROWTH_Q1_CAPTURE_ORIGIN")
+ require(started.get("prepared_sha256")==digest(raw["prepared"]) and capture.get("start")==started
+ and capture.get("complete") is True and capture.get("error") is None
+ and type(capture.get("exit_code")) is int and capture["exit_code"]==0
+ and type(capture.get("ssh_requests_attempted")) is int and capture["ssh_requests_attempted"]==1
+ and capture.get("eof")==dict(stdout=True,stderr=True) and raw["stderr"]==b"",
+ "GROWTH_Q1_CAPTURE_INDEX")
+ require(capture.get("streams")=={k:dict(bytes=len(raw[k]),sha256=digest(raw[k]),truncated=False) for k in ("stdout","stderr")},
+ "GROWTH_Q1_STREAM_PIN")
+ require(prepared.get("source_originals")=={name:dict(bytes=len(raw[role]),sha256=digest(raw[role]))
+ for role,name in (("old_marker","consumed.json"),("old_stderr","pre.stderr"))}
+ and prepared.get("description")==marker["pre_description"]
+ and prepared.get("prior_manifest_sha256")==marker["manifest_sha256"],"GROWTH_Q1_OLD_SOURCE")
+ unit=prepared["unit"]
+ require(old.get("diagnostic",{}).get("context",{}).get("unit")==unit,"GROWTH_Q1_REQUEST")
+ # No remote executor or GuestInventory constructor is involved.
+ inv=object.__new__(g.GuestInventory);inv.context={}
+ def retained_ctl(args,*,user_uid=None):
+  require(user_uid is None and args==["show","--all","--property="+",".join(g.GuestInventory.SHOW),"--",unit],
+ "GROWTH_Q1_QUERY_SHAPE")
+  return raw["stdout"]
+ inv.ctl=retained_ctl
+ properties=inv.show_many([unit])[unit]
+ require(properties["Id"]==unit and properties["LoadState"]=="loaded","GROWTH_Q1_ID")
+ command=properties.get("ExecStart","")
+ match=re.fullmatch(r"\{ path=(/[A-Za-z0-9_./-]+) ; argv\[\]=([^;\n]+) ; ignore_errors=no ;[^\n]* \}",command)
+ require(match is not None and command.count("argv[]=")==1,"GROWTH_Q1_COMMAND")
+ argv=match[2].split(" ")
+ require(len(argv)==7 and argv[1:3]==["-I","-B"] and argv[0]==match[1],"GROWTH_Q1_ARGUMENTS")
+ configs={label:row(label+"_config") for label in ("original","revision")}
+ for value in configs.values():
+  require(value.get("status")=="Q1_CONFIG_BYTES_LINKED_ONLY"
+ and value.get("independent_authority_proven") is value.get("q2_reusable_allocation") is False,"GROWTH_Q1_CONFIG")
+  for key in ("runtime.json","manifest.json"):e.token(value["files"][key],e.HEX)
+ require([label for label,value in configs.items() if value["files"]["runtime.json"]==argv[5]]==["original"],
+ "GROWTH_Q1_RUNTIME_PAIR")
+ config=configs["original"];manifest=config["files"]["manifest.json"]
+ require(argv[0]==row("original_program_python")["path"] and argv[3]==row("original_program_worker")["path"],
+ "GROWTH_Q1_PROGRAM")
+ suffix="/source/tools/admin/local_hand_quota_observer/worker.py"
+ require(argv[3].endswith(suffix),"GROWTH_Q1_WORKER")
+ base=argv[3][:-len(suffix)]
+ require(argv[4]==base+"/config/runtime.json" and base in prepared["description"]["protected_roots"],"GROWTH_Q1_PATH")
+ e.path(argv[3]);e.path(argv[4]);e.token(argv[6],r"[A-Za-z0-9+/]{1,10922}={0,2}")
+ ticket_raw=base64.b64decode(argv[6],validate=True)
+ require(base64.b64encode(ticket_raw).decode("ascii")==argv[6],"GROWTH_Q1_BASE64")
+ ticket=e.document(ticket_raw)
+ e.keys(ticket,("schema","slot_ref","generation","request_id","allocation_digest","execution_id","phase","issued_ns","deadline_ns"))
+ require(ticket["schema"]=="local-hand-quota-ticket/v1" and json.dumps(ticket,sort_keys=True,separators=(",",":")).encode()==ticket_raw,
+ "GROWTH_Q1_TICKET")
+ for key,pattern in (("slot_ref",r"[a-z0-9][a-z0-9_.-]{0,63}"),("generation",r"[0-9a-f]{32}"),
+ ("request_id",r"[0-9a-f]{32}"),("allocation_digest",e.HEX),("execution_id",r"[0-9a-f]{32}")):
+  e.token(ticket[key],pattern)
+ require(type(ticket["phase"]) is str and ticket["phase"] in ("preflight","business","reconcile","evidence"),"GROWTH_Q1_PHASE")
+ e.number(ticket["issued_ns"]);e.number(ticket["deadline_ns"],ticket["issued_ns"]+1)
+ identity=[manifest]+[ticket[k] for k in ("slot_ref","generation","request_id","allocation_digest","execution_id","phase")]
+ require("lhq-"+digest(json.dumps(identity,separators=(",",":")).encode())+".service"==unit,"GROWTH_Q1_IDENTITY")
+ head=row("original_source_head");row("original_current_boot")
+ e.token(config["source_commit"],e.COMMIT);e.token(config["boot_id"],e.UUID)
+ require(config["source_commit"]==head["declared_commit"]==head["detached_head"]
+ and head["source_bytes_verified"] is head["clean_tree_verified"] is False
+ and config["boot_id"]==row("declared_guest")["boot_id"]==prepared["description"]["original_boot_id"],"GROWTH_Q1_SOURCE")
+ parent=row("original_query_parent")
+ require(parent.get("q2_parent_admitted") is False and type(parent.get("path")) is str
+ and re.fullmatch(r"/sys/fs/cgroup/lhq[a-z0-9]{1,40}\.slice",parent["path"]),"GROWTH_Q1_PARENT")
+ logical=parent["path"].removeprefix("/sys/fs/cgroup")
+ keys=("expected_units","domain_units","domain_cgroups","protected_roots","essential_paths")
+ original={k:prepared["description"][k] for k in keys}
+ additions=dict(expected_units=[dict(name=unit,control_group=logical+"/"+unit)],
+ domain_units=[dict(name=logical[1:],manager="system",control_group=logical)],domain_cgroups=[logical])
+ proof=dict(schema="lhq-journal-q1-declaration/v1",scope=history.c.QI_SCOPE,
+ sources={k:dict(bytes=len(v),sha256=digest(v)) for k,v in raw.items()},config="original_config",
+ runtime_sha256=argv[5],manifest_sha256=manifest,ticket_sha256=digest(ticket_raw),
+ boot_id=config["boot_id"],source_commit=config["source_commit"],additions=additions,additions_sha256=digest(canonical(additions)),
+ original_inventory_sha256=digest(canonical(original)),independent_authority_proven=False,
+ q2_reusable_allocation=False,q2_parent_admitted=False,full_manifest_validated=False)
+ return original,proof
+def merge_q1_inventory(original,proof):
+ import copy
+ require([len(original[k]) for k in ("expected_units","domain_units","domain_cgroups")]==[18,6,6],"GROWTH_Q1_BASE_COUNT")
+ additions=proof["additions"];service=additions["expected_units"][0];domain=additions["domain_units"][0]
+ require(all(x["name"] not in (service["name"],domain["name"])
+ and x["control_group"] not in (service["control_group"],domain["control_group"])
+ for x in original["expected_units"]+original["domain_units"])
+ and domain["control_group"] not in original["domain_cgroups"],"GROWTH_Q1_CONFLICT")
+ value=copy.deepcopy(original)
+ for key,rows in additions.items():value[key].extend(copy.deepcopy(rows))
+ value["expected_units"].sort(key=lambda x:x["name"])
+ value["domain_units"].sort(key=lambda x:(x["manager"],x["name"],x["control_group"]))
+ value["domain_cgroups"].sort()
+ require(len(canonical(value))<=131072,"GROWTH_INPUT_INVENTORY_BYTES")
+ return value
+def read_q1_inputs(inputs,spec):
+ require(type(spec) is dict and set(spec)==set(Q1_ROLES),"GROWTH_Q1_SOURCES_REQUIRED")
+ raw={}
+ for role in Q1_ROLES:
+  row=spec[role]
+  require(type(row) is dict and set(row)=={"path","bytes","sha256"},"GROWTH_Q1_PIN_FIELDS")
+  prior.r.path_value(row["path"]);prior.r.integer(row["bytes"],0,MIB if role in ("stdout","stderr") else 65536)
+  require(type(row["sha256"]) is str and re.fullmatch(r"[0-9a-f]{64}",row["sha256"]),"GROWTH_Q1_PIN")
+  raw[role]=inputs.read(row["path"],row["bytes"],row["sha256"],"q1_"+role)
+ require(len({(os.fstat(fd).st_dev,os.fstat(fd).st_ino) for _,fd,_ in inputs.held})==len(inputs.held),"GROWTH_Q1_SOURCE_ALIAS")
+ return raw
+def recheck_q1_inputs(inputs,frozen,check=lambda:None):
+ for role,row in frozen["q1_sources"].items():
+  fd=next(fd for path,fd,_ in inputs.held if path==row["path"])
+  check();os.lseek(fd,0,os.SEEK_SET)
+  raw,_=local.stable_read(fd,row["bytes"],check)
+  require(raw==frozen["q1_raw"][role] and digest(raw)==row["sha256"],"GROWTH_Q1_SOURCE_DRIFT")
+ inputs.recheck(check)
+def validate_q1_frozen(frozen):
+ original,proof=q1_declaration(frozen["q1_raw"])
+ require(proof==frozen["source_binding"]["q1_declaration"]
+ and proof["boot_id"]==frozen["boot_id"]
+ and merge_q1_inventory(original,proof)==frozen["inventory"],"GROWTH_Q1_FROZEN_BINDING")
+ for role,pin in proof["sources"].items():
+  require(frozen["source_binding"]["sources"]["q1_"+role]==pin,"GROWTH_Q1_FROZEN_PIN")
+ return proof
+def freeze_growth_inputs(inputs,frame_path,plan_archive,archives_dir,*,q1_sources=None):
  raw=inputs.read(frame_path,*GROWTH_FRAME_PIN,"management_frame")
  anchor_path=_growth_frame_anchor(raw)
  archive=inputs.read(plan_archive,*prior.PLAN_ARCHIVE,"plan_archive")
@@ -535,12 +698,22 @@ for batch,name,size,sha in prior.obligations.ARCHIVES}
  prior.verify_threshold_anchors(horizon)
  inventory,boot=_growth_inventory(selected["original_plan"],selected["retry_preparation"],
 documents,horizon,paths)
+ q1_raw=read_q1_inputs(inputs,q1_sources)
+ original,proof=q1_declaration(q1_raw)
+ # The four carrier cgroups are separately recovered from their original HELLOs.
+ import copy
+ before=copy.deepcopy(original)
+ carriers={session.replace("-","",1)+"-carrier.service" for session in GROWTH_CORE_SESSIONS}
+ for row in before["expected_units"]:
+  if row["name"] in carriers:row["control_group"]=None
+ require(before==inventory and proof["boot_id"]==boot,"GROWTH_Q1_ORIGINAL_INVENTORY")
+ inventory=merge_q1_inventory(inventory,proof)
  binding=dict(sources=dict(inputs.bindings),plan_sha256=prior.r.PLAN_SHA,
 inventory_sha256=digest(canonical(inventory)),
-description_sha256=digest(description),horizon_sha256=digest(canonical(horizon)))
+description_sha256=digest(description),horizon_sha256=digest(canonical(horizon)),q1_declaration=proof)
  inputs.recheck()
  return dict(anchor_path=anchor_path,paths=paths,description=description,horizon=horizon,boot_id=boot,
-inventory=inventory,source_binding=binding,source_binding_sha256=digest(canonical(binding)))
+inventory=inventory,source_binding=binding,source_binding_sha256=digest(canonical(binding)),q1_raw=q1_raw,q1_sources=q1_sources)
 class ImageSet:
  def __init__(self,anchor_fd,anchor,argv,check):
   self.anchor_fd,self.anchor,self.check=anchor_fd,anchor,check
@@ -968,6 +1141,17 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  for commit in (GS_C,expected):
   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],
 "GROWTH_GS_B_CHANGED")
+ git("merge-base","--is-ancestor",QI_A,QI_C)
+ git("merge-base","--is-ancestor",QI_C,expected)
+ require(expected!=QI_C,"GROWTH_QI_D")
+ for authority in (history.c.QI_BASELINE,history.c.QI_CLOSURE):
+  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_QI_TREE")
+ for path,sha in history.c.QI_BASELINE["documents_sha256"].items():
+  for commit in (QI_A,QI_C,expected):
+   require(digest(git("show",commit+":"+path))==sha,"GROWTH_QI_A_CHANGED")
+ decision=history.c.QI_OWNER_DECISION
+ for commit in (QI_C,expected):
+  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_QI_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -1001,6 +1185,8 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
 "q2_core_capacity_reader.py","q2_sshd_source_capture.py","q2_sshd_source_reader.py",
 "q2_core_obligation_inputs.py","q2_core_prior_attempt.py","q2_core_delivery_contract.py",
 "q2_local_source_delivery.py","q2_core_approved_inputs.py","q2_host_kernel_facts.py")
+ exporter=git("show",expected+":tests/e3_host/q2_host_export.py")
+ require((len(exporter),digest(exporter))==Q1_EXPORT_PIN,"GROWTH_Q1_EXPORT_SOURCE")
  sources={}
  for name in names:
   fd=os.open(Path(__file__).with_name(name),os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)
@@ -1066,6 +1252,7 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
   self.previous_maintenance_recheck()
   frozen["source_binding"]["inventory_sha256"]=digest(canonical(frozen["inventory"]))
   frozen["source_binding_sha256"]=digest(canonical(frozen["source_binding"]))
+  validate_q1_frozen(frozen)
   self.recheck()
  def previous_maintenance_recheck(self):
   # Held metadata is checked by recheck; this bounded reread binds bytes immediately
@@ -1118,15 +1305,15 @@ def resume_sha256(resume):
  history.validate_maintenance_resume(resume)
  return digest(canonical(resume))
 def make_preflight(commit,manifest,window,nonce,usage,*,resume):
- value=dict(schema="lhq-journal-growth-preflight/v7",R=R,A=GS_A,C=GS_C,D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v8",R=R,A=QI_A,C=QI_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume_sha256=resume_sha256(resume))
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v7",
+"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v8",
 "GROWTH_PREFLIGHT_SCHEMA")
- require(value["R"]==R and value["A"]==GS_A and value["C"]==GS_C,"GROWTH_PREFLIGHT_AUTHORITY")
+ require(value["R"]==R and value["A"]==QI_A and value["C"]==QI_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce","resume_sha256"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
@@ -1154,7 +1341,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v8",session=SESSION,R=R,A=GS_A,C=GS_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v9",session=SESSION,R=R,A=QI_A,C=QI_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1169,6 +1356,8 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
   self.vm["images"].capacity()
  def bindings(self):
   self.inputs.recheck(self.check)
+  recheck_q1_inputs(self.inputs,self.frozen,self.check)
+  validate_q1_frozen(self.frozen)
   self.anchor.recheck(after_create=bool(self.store.opened))
   self.anchor.previous_maintenance_recheck()
   history.validate_maintenance_resume(self.frozen["source_binding"]["resume"])
@@ -1182,7 +1371,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v8",R=R,A=GS_A,C=GS_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v9",R=R,A=QI_A,C=QI_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=self.frozen["source_binding"],
 window_binding=self.window.binding,
@@ -1329,7 +1518,7 @@ for item in self.transports]
   return self.result
 def main():
  parser=argparse.ArgumentParser()
- for name in ("frame","plan-archive","archives-dir","expected-commit","expected-manifest","window-binding","preflight"):
+ for name in ("frame","plan-archive","archives-dir","expected-commit","expected-manifest","window-binding","preflight","q1-sources"):
   parser.add_argument("--"+name)
  parser.add_argument("--execute",action="store_true")
  parser.add_argument("--trusted-single-admin",action="store_true")
@@ -1358,7 +1547,9 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   bind_window(window,args.window_binding.encode("ascii") if args.window_binding else None)
   resource.setrlimit(resource.RLIMIT_AS,(256*MIB,VM_LIMITS[resource.RLIMIT_AS][1]))
   resource.setrlimit(resource.RLIMIT_NOFILE,(128,VM_LIMITS[resource.RLIMIT_NOFILE][1]))
-  frozen=freeze_growth_inputs(inputs,args.frame,args.plan_archive,args.archives_dir)
+  require(args.q1_sources is not None,"GROWTH_Q1_SOURCES_REQUIRED")
+  q1_sources=prior.r.parse(args.q1_sources.encode("ascii"),65536)
+  frozen=freeze_growth_inputs(inputs,args.frame,args.plan_archive,args.archives_dir,q1_sources=q1_sources)
   frozen["guest_startup_assurance"]=guest_startup_assurance()
   window.check()
   anchor=GrowthAnchor(frozen["anchor_path"],window)

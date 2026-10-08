@@ -28,7 +28,7 @@ def test_sixth_failure_keeps_original_five_generation_resume(monkeypatch,locatio
     if fault=='missing':del target['resume']
     elif fault=='new_resume':target['resume']=p.maintenance_resume()
     elif fault=='order':target['resume']['previous_maintenance'].reverse()
-    elif fault=='authority':target['resume']['previous_maintenance'][4]['authority']['A']=h.GS_A
+    elif fault=='authority':target['resume']['previous_maintenance'][4]['authority']['A']=h.QI_A
     elif fault=='bool':target['resume']['previous_maintenance'][4]['window_consumed']=1
     elif fault=='extra':target['resume']['retry']=True
     else:target['resume']['previous_maintenance'].pop()
@@ -46,30 +46,30 @@ def test_sixth_failure_keeps_original_five_generation_resume(monkeypatch,locatio
         p.build_previous_maintenance(files)
 
 
-@pytest.mark.parametrize('record',list(p.c.GS_BASELINE['documents_sha256'])
-                         +[p.c.GS_OWNER_DECISION['record_path']])
+@pytest.mark.parametrize('record',list(p.c.QI_BASELINE['documents_sha256'])
+                         +[p.c.QI_OWNER_DECISION['record_path']])
 def test_exec_authority_bytes_are_required_before_source_admission(source_git,record):
     source_git.changed_doc=record
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_GS_'):
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_'):
         h.growth_sources(source_git.head)
     assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
 
 
-@pytest.mark.parametrize('edge',[(h.GS_A,h.GS_C),(h.GS_C,'d'*40)])
+@pytest.mark.parametrize('edge',[(h.QI_A,h.QI_C),(h.QI_C,'d'*40)])
 def test_exec_candidate_descends_from_independent_closure(source_git,edge):
     source_git.rejected_edge=edge
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.growth_sources(source_git.head)
 
 
-@pytest.mark.parametrize('commit',[h.GS_A,h.GS_C])
+@pytest.mark.parametrize('commit',[h.QI_A,h.QI_C])
 def test_exact_authority_trees_are_checked_before_source_reads(source_git,commit):
     source_git.changed_tree=commit
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_GS_TREE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_TREE'):h.growth_sources(source_git.head)
 
 
 def test_closure_bookkeeping_is_not_an_execution_candidate(source_git):
-    source_git.head=h.GS_C
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_GS_D'):h.growth_sources(source_git.head)
+    source_git.head=h.QI_C
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_D'):h.growth_sources(source_git.head)
 
 
 def test_old_v5_short_handoff_cannot_open_exec_window():
@@ -87,14 +87,14 @@ def test_original_names_resume_digest_cannot_substitute_for_fifth_history():
 def test_exec_candidate_binds_exact_scope_and_new_independent_closure(source_git):
     h.growth_sources(source_git.head)
     value=preflight()
-    assert (value['A'],value['C'])==(h.GS_A,h.GS_C)
-    assert p.maintenance_resume()['scope']==p.c.GS_SCOPE
-    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261008d'
-    assert len(p.previous_journal_profiles())==6
-    assert len(p.previous_maintenance_pins())==30
-    assert len(p.maintenance_commitments()['generations'])==7
-    assert ['merge-base','--is-ancestor',h.GS_A,h.GS_C] in source_git.calls
-    assert ['merge-base','--is-ancestor',h.GS_C,source_git.head] in source_git.calls
+    assert (value['A'],value['C'])==(h.QI_A,h.QI_C)
+    assert p.maintenance_resume()['scope']==p.c.QI_SCOPE
+    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261008e'
+    assert len(p.previous_journal_profiles())==7
+    assert len(p.previous_maintenance_pins())==35
+    assert len(p.maintenance_commitments()['generations'])==8
+    assert ['merge-base','--is-ancestor',h.QI_A,h.QI_C] in source_git.calls
+    assert ['merge-base','--is-ancestor',h.QI_C,source_git.head] in source_git.calls
 
 from e3_host import q2_journal_growth_guest as g
 from test_e3_q2_journal_growth_guest_completion import description, pre_report, post_description, device

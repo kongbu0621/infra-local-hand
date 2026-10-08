@@ -377,6 +377,10 @@ GS_CLOSURE = {
     "commit": "001bd4f7baedf115ce67feba87a21d8e259c8d1d",
     "tree": "57940587f04c3fd2e1fe991c2b0e290aa66d11e6"
 }
+QI_SCOPE = "LH-Q2-CORE-Q1-BINDING-CONTINUATION-v1"
+QI_BASELINE = {'commit': 'e66b1b5524f22d60c810dffac59ca418c5ad4236', 'tree': '21d63b7e40a5e3017b1a35fe159e90fd50bdf712', 'documents_sha256': {'docs/a2-execution/q2-core-q1-binding-continuation/REQUIREMENTS.md': '2c5181ab5a633d9e4b0af824aace9aada6f1679c0cbf0977bcb23004b53ad3dd', 'docs/a2-execution/q2-core-q1-binding-continuation/ARCHITECTURE.md': '2938f0e7b77cbc317093f897f3b8e84074340cbd7f3a1e622d4485d458ddfa49', 'docs/a2-execution/q2-core-q1-binding-continuation/IMPLEMENTATION_PLAN.md': 'fc4a3dc39d9830116f6c4dd881523fb84c8c4b7b81f730203733ca3d61a923f7'}}
+QI_OWNER_DECISION = {'event': 'LH-Q2-CORE-Q1-BINDING-CONTINUATION-CLOSURE-20261008-01', 'record_path': 'docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_OWNER_DECISION.md', 'record_sha256': '55a87331d7648c83779a8796d5c2e3799e651534a3b91fa4e104b6fb57bd4c93'}
+QI_CLOSURE = {'commit': '61fae1da528105605a023f260130c4e0d9c1bc02', 'tree': '88a6d363fe62817dac807e9f279730fa955dec35'}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

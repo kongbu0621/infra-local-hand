@@ -89,7 +89,7 @@ def test_complete_new_preflight_fits_original_limit_and_rejects_old_schema():
         'f' * 64, dict(cpu_nanoseconds=120000000000, rss_peak_bytes=536870912),resume=p.maintenance_resume())
     assert len(h.canonical(value)) <= 4096
     assert value['resume_sha256'] == h.digest(h.canonical(d._maintenance_resume()))
-    assert len(p.maintenance_resume()['previous_maintenance']) == 6
+    assert len(p.maintenance_resume()['previous_maintenance']) == 7
     value['schema'] = 'lhq-journal-growth-preflight/v2'
     with pytest.raises(h.prior.r.ObservationError, match='GROWTH_PREFLIGHT_SCHEMA'):
         h.parse_preflight(h.canonical(value))

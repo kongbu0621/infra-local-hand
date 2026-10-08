@@ -27,6 +27,11 @@ private. This is one approved batch, not a scanner or diagnostic framework; scop
 no repeated approval. Existing source pins, private evidence and installation/SSH are retained.
 Failure stops without retry, supplementary collection, cleanup, recovery, rollback or another window.
 
+The [QI1 implementation review](docs/a2-execution/Q2_CORE_Q1_BINDING_IMPLEMENTATION_REVIEW_20261008.md)
+records the direct descendant implementation, exact retained-source adoption and scoped offline checks.
+Exact candidate CI, independent installed verification and both caller freezes must still complete
+before QI2. This review does not consume the window or establish field success.
+
 ## Current Owner direction: core only (2026-10-07)
 
 Owner directed: “直接推进核心功能，暂停搞分支功能。不要做我不需要的功能。”
