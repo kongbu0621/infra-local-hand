@@ -42,3 +42,38 @@ transition v9、reconciliation/history v13 和 host-capacity v12。保留八代�
 DS2 NOT_STARTED，DS3/H01/Q4/H11 NOT_RUN。全部 DS1 验证通过后才执行唯一08f；
 完整维护原件 VERIFIED 后才可发行原07a核心包。任何失败 STOP_AND_RETAIN，
 不重试、补采、清理或扩展。原所有窗口、预算和期限保持。
+
+## 现场返回后的普通修复
+
+上述为原 D 提交时状态；后续 DS1 已完成、08f 已消费失败，准确事实以
+[现场返回](Q2_CORE_DECLARED_STARTUP_FIELD_20261009.md) 为准。本次基于其登记提交
+`c2faa34f08541d08333c7d1bfc9efcbd584a9956` 修复现有接线和错误归因，无覆盖变更。
+
+发现一处确定的后续阻断：guest 已生成 `lhq-journal-growth-guest/v3`，host 的
+`MaintenanceTransport.receive_report()` 和 `finish()` 仍要求 v2。合成的真实 guest
+v3 报告通过 guest 校验后，会被原 host 拒为 GROWTH_REPORT_BINDING。本次两处统一
+引用 guest 的 REPORT_SCHEMA，仍只接受准确当前版本，旧历史协议校验保持原样。
+该问题尚未在08f触发，因为08f先在进程检查停止；不能冒称它是08f的根因。
+
+进程检查在进入清单和每个PID时更新context，记录PID、观察者PID、已读stat中的
+启动时钟及PPID、准确cmdline/exe/cwd字段、cgroup摘要、保护根序号/摘要、匹配内容
+字节数/摘要及位置。cmdline另记参数序号、参数内偏移和边界；exe/cwd记deleted后缀
+处理。序号中根从1开始，参数和字节偏移从0开始。输出不含路径或参数原文。
+命中时尚未进行末尾stat复核，明确identity_rechecked=false，不声称已证明PID稳定。
+所有诊断来自原有读取；不新增进程扫描、SSH或子进程。诊断计算失败仍返回原拒绝。
+成功后清空context，防止后续persistent失败被误归因进程；FD/maps等保护保持。
+
+验证：相关journal、DS和QI回归568通过、2跳过；最后context清空调整后17项进程
+用例再次通过。新增真实guest生成器→host管道测试覆盖pre/post和关机请求确认，
+拒绝v1/v2/v4报告及旧v2确认。合成进程用例检查准确分支、读取次数、隐私、原拒绝
+和成功路径；独立审查未发现覆盖放宽。没有访问原机或执行真实维护。
+
+源码大小：host81541 B、guest62675 B、reader13357 B，低于原各自上限。
+仅合成描述下的pre/post压缩bundle为34848/35867 B，展开105056/109908 B；
+这不是私有真实输入冻结或下一窗口准入。08f的原冻结与五件原件保持，不更新pins。
+
+本地Codex下一步限于已有原件和已保存启动命令的离线核对：能否从保留资料把保护根
+引用定位到具体启动命令或工作目录；若材料没有该观察，就明确报告缺项，不猜PID，
+不再把旧domain/unit当命中者，不停服务或补采。新诊断不能恢复过去未记录的PID。
+准确CI另以本次修复提交为准。H01/Q4/H11仍NOT_RUN，现场具体进程未定位；
+不能重放08f或发行条件核心包，任何进一步现场动作仍按原R及准确范围处理。

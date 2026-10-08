@@ -44,6 +44,16 @@ cmdline from exe/cwd, and the retained context is the previous domain query, not
 Do not replay callers, relax process/writer protections, query more field data, stop services,
 retry, clean up or start another window. Nine consumed generations and all historical obligations remain.
 
+The [post-return ordinary repair](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#现场返回后的普通修复)
+corrects the two host transport consumers that still expected guest v2, using the guest's exact
+current REPORT_SCHEMA for reports and poweroff acknowledgements. It also binds process failure
+context to the PID/start/field and hashes of the already observed match, without new reads or any
+change to process/writer rejection. Successful process collection clears its context. Synthetic
+transport tests now consume actual guest-generated pre/post reports and reject older schemas.
+This is a repair within the approved implementation, not a new scope or execution permission.
+Old08f cannot identify the matching PID retroactively. Continue only with retained-source offline
+review; do not treat passing tests or these diagnostics as a new field window or a core PASS.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`

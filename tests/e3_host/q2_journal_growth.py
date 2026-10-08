@@ -19,7 +19,7 @@ from e3_host import q2_core_prior_attempt as history
 from e3_host.q2_journal_growth_guest import ProcessIdentity
 from e3_host.q2_journal_growth_guest import (identity,stable_identity,validate_file,
 write_all,hash_fd,proc_start,proc_bytes,growth_descriptor,bind_window,
-control_limits,guest_startup_assurance,validate_startup_assurance)
+control_limits,guest_startup_assurance,validate_startup_assurance,REPORT_SCHEMA)
 local=prior.local
 require,canonical,digest=prior.require,prior.canonical,prior.digest
 R="10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
@@ -980,7 +980,7 @@ sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
     self.pump()
    raw=bytes(self.output["stdout"]).split(b"\n",1)[0]+b"\n"
    value=prior.r.parse(raw,MIB)
-   require(canonical(value)==raw and value.get("schema")=="lhq-journal-growth-guest/v2"
+   require(canonical(value)==raw and value.get("schema")==REPORT_SCHEMA
 and value.get("session")==SESSION and value.get("phase")==self.phase
 and value.get("nonce")==self.nonce and value.get("source_binding_sha256")==self.source_sha
 and value.get("status")==("GUEST_QUIET" if self.phase=="pre" else "FILESYSTEM_GROWN"),
@@ -1024,7 +1024,7 @@ and pre_digest==digest(canonical(self.report)),"GROWTH_CONTINUE_BINDING")
    if self.phase=="pre":
     ack=prior.r.parse(tail,MIB)
     validate_startup_assurance(ack.get("guest_startup_assurance"))
-    require(tail==canonical(ack) and ack==dict(schema="lhq-journal-growth-guest/v2",
+    require(tail==canonical(ack) and ack==dict(schema=REPORT_SCHEMA,
 session=SESSION,status="POWER_OFF_REQUESTED",nonce=self.nonce,
 pre_report_sha256=digest(canonical(self.report)),
 guest_startup_assurance=guest_startup_assurance()),"GROWTH_POWER_OFF_ACK")

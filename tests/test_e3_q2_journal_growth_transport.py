@@ -18,6 +18,10 @@ if not sys.platform.startswith("linux"):
     pytest.skip("Linux maintenance transport", allow_module_level=True)
 
 from e3_host import q2_journal_growth as h
+from e3_host import q2_journal_growth_guest as g
+from test_e3_q2_journal_growth_guest_completion import (
+    effects, description, post_description, NEW_BOOT as GUEST_NEW_BOOT,
+)
 
 
 BOOT = "10000000-0000-4000-8000-000000000001"
@@ -26,7 +30,7 @@ NONCE, SHA = "1" * 64, "2" * 64
 
 
 def report(phase="pre", **changes):
-    value = dict(schema="lhq-journal-growth-guest/v2", session=h.SESSION, phase=phase,
+    value = dict(schema=g.REPORT_SCHEMA, session=h.SESSION, phase=phase,
                  nonce=NONCE, source_binding_sha256=SHA,
                  status="GUEST_QUIET" if phase == "pre" else "FILESYSTEM_GROWN",
                  boot_id=BOOT if phase == "pre" else NEW_BOOT)
@@ -41,11 +45,12 @@ def factory(tmp_path):
     exe = os.open(sys.executable, os.O_PATH | os.O_CLOEXEC)
     store = h.Store(parent, lambda: None)
     transports = []
-    def create(code, *, phase="pre", check=lambda: None, validate=None):
+    def create(code, *, phase="pre", check=lambda: None, validate=None,
+               nonce=NONCE, source_sha=SHA, original_boot=BOOT):
         def spawn(_argv, **kwargs):
             return subprocess.Popen([sys.executable, "-I", "-B", "-c", code], **kwargs)
         result = h.MaintenanceTransport(SimpleNamespace(ssh=exe), store, [sys.executable],
-            phase, NONCE, SHA, BOOT, check, validate=validate, popen=spawn)
+            phase, nonce, source_sha, original_boot, check, validate=validate, popen=spawn)
         transports.append(result)
         return result
     yield create, store, tmp_path
@@ -67,7 +72,7 @@ def test_pre_capture_durable_before_one_token_and_ack(factory):
     value = report()
     sha = h.digest(h.canonical(value))
     token = h.continue_token(NONCE, sha)
-    ack = dict(schema="lhq-journal-growth-guest/v2", session=h.SESSION,
+    ack = dict(schema=g.REPORT_SCHEMA, session=h.SESSION,
                status="POWER_OFF_REQUESTED", nonce=NONCE, pre_report_sha256=sha, guest_startup_assurance=h.guest_startup_assurance())
     code = peer(value, "token=sys.stdin.buffer.readline()\nassert token==" + repr(token) + "\n"
                 "sys.stderr.buffer.write(b'peer stderr\\n');sys.stderr.flush()\n"
@@ -83,6 +88,74 @@ def test_pre_capture_durable_before_one_token_and_ack(factory):
     assert (root / h.NAMES["pre.stdout"]).read_bytes() == h.canonical(value) + h.canonical(ack)
     assert (root / h.NAMES["pre.stderr"]).read_bytes() == b"peer stderr\n"
     assert b'"step":"POWER_OFF_TOKEN"' in (root / h.NAMES["events.jsonl"]).read_bytes()
+
+
+def test_current_guest_pre_and_ack_reach_host_with_full_validation(factory, effects):
+    # Run the real producer with synthetic device/process effects, then use
+    # its reports as the pipe peer; a hand-written v2 fixture hid the mismatch.
+    create, _store, root = factory
+    _trace, prepare = effects
+    desc = description()
+    output = []
+    prepare(desc).pre(output=output.append, receive=lambda *_: None)
+    value, ack = output
+    assert value["schema"] == ack["schema"] == "lhq-journal-growth-guest/v3"
+    sha = g.digest(g.canonical(value))
+    token = g.continue_token(desc["nonce"], sha)
+    code = peer(value, "assert sys.stdin.buffer.readline()==" + repr(token) + "\n"
+                "sys.stdout.buffer.write(" + repr(g.canonical(ack)) + ");sys.stdout.flush()\n")
+    transport = create(code, nonce=desc["nonce"], source_sha=desc["source_binding_sha256"],
+        original_boot=desc["original_boot_id"], validate=lambda report: g.validate_pre_report(report, desc))
+    assert transport.receive_report() == value
+    transport.continue_poweroff(sha)
+    result = transport.finish()
+    assert result["ack"] == ack and result["returncode"] == 0
+    assert (root / h.NAMES["pre.stdout"]).read_bytes() == g.canonical(value) + g.canonical(ack)
+
+
+def test_current_guest_post_reaches_host_with_full_validation(factory, effects, monkeypatch):
+    create, _store, root = factory
+    _trace, prepare = effects
+    desc = post_description()
+    monkeypatch.setattr(g, "boot_id", lambda _: GUEST_NEW_BOOT)
+    output = []
+    value = prepare(desc).post(output=output.append)
+    assert output == [value] and value["schema"] == "lhq-journal-growth-guest/v3"
+    transport = create(peer(value), phase="post", nonce=desc["nonce"],
+        source_sha=desc["source_binding_sha256"], original_boot=desc["original_boot_id"],
+        validate=lambda report: g.validate_post_report(report, desc))
+    assert transport.receive_report() == value
+    assert transport.finish()["returncode"] == 0
+    assert (root / h.NAMES["post.stdout"]).read_bytes() == g.canonical(value)
+
+
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("schema", ["lhq-journal-growth-guest/v1", "lhq-journal-growth-guest/v2",
+                                   "lhq-journal-growth-guest/v4"])
+def test_transport_rejects_noncurrent_report_schema_before_token(factory, phase, schema):
+    create, _store, root = factory
+    transport = create(peer(report(phase, schema=schema)), phase=phase)
+    with pytest.raises(h.prior.r.ObservationError, match="GROWTH_REPORT_BINDING"):
+        transport.receive_report()
+    assert transport.report is None and not transport.sent
+    assert not (root / h.NAMES["events.jsonl"]).exists()
+
+
+def test_transport_rejects_old_ack_after_current_pre_report(factory):
+    create, _store, _root = factory
+    value = report()
+    sha = h.digest(h.canonical(value))
+    ack = dict(schema="lhq-journal-growth-guest/v2", session=h.SESSION,
+               status="POWER_OFF_REQUESTED", nonce=NONCE, pre_report_sha256=sha,
+               guest_startup_assurance=g.guest_startup_assurance())
+    code = peer(value, "sys.stdin.buffer.readline()\n"
+                "sys.stdout.buffer.write(" + repr(h.canonical(ack)) + ");sys.stdout.flush()\n")
+    transport = create(code)
+    transport.receive_report()
+    transport.continue_poweroff(sha)
+    with pytest.raises(h.prior.r.ObservationError, match="GROWTH_POWER_OFF_ACK"):
+        transport.finish()
+    assert transport.sent
 
 
 @pytest.mark.parametrize("changes", [dict(nonce="3" * 64), dict(source_binding_sha256="4" * 64),

@@ -639,28 +639,77 @@ class GuestInventory:
   if group is not None:
    result["cgroup"]=self.cgroup(group)
   return result
+ def _process_reference_diagnostic(self, raw, field):
+  # Describe the same failing comparison using only bytes already observed.
+  # Indices/offsets locate private originals; argument/path values are not logged.
+  path=os.fsdecode(raw).removesuffix(" (deleted)") if field != "cmdline" else None
+  for index,root in enumerate(self.roots,1):
+   root_raw=root.encode()
+   offset=raw.find(root_raw) if field=="cmdline" else (0 if under(path,[root]) else -1)
+   if offset<0:
+    continue
+   result=dict(field=field,comparison="byte_substring" if field=="cmdline" else "path_under_root",
+root_index=index,root_bytes=len(root_raw),root_sha256=digest(root_raw),
+value_bytes=len(raw),value_sha256=digest(raw),byte_offset=offset,
+argument_index=None,argument_byte_offset=None,argument_bytes=None,argument_sha256=None,
+match_at_argument_start=None,match_followed_by=None,
+deleted_suffix_removed=field!="cmdline" and raw.endswith(b" (deleted)"))
+   if field=="cmdline":
+    begin=raw.rfind(b"\0",0,offset)+1
+    end=raw.find(b"\0",offset)
+    if end<0:end=len(raw)
+    following=offset+len(root_raw)
+    result.update(argument_index=raw.count(b"\0",0,offset),argument_byte_offset=offset-begin,
+argument_bytes=end-begin,argument_sha256=digest(raw[begin:end]),
+match_at_argument_start=offset==begin,
+match_followed_by="argument_end" if following==end else "slash" if raw[following:following+1]==b"/" else "other")
+   return result
+  return None
+ def _reject_process_reference(self, value, field):
+  try:
+   raw=value if type(value) is bytes else os.fsencode(value)
+   detail=self._process_reference_diagnostic(raw,field)
+   self.context["process_reference_diagnostic"]=detail if detail is not None else dict(status="UNAVAILABLE")
+  except Exception:
+   # A diagnostic error must not replace or allow the original refusal.
+   self.context["process_reference_diagnostic"]=dict(status="UNAVAILABLE")
+  raise r.ObservationError("GROWTH_BUSINESS_PROCESS")
  def processes(self):
+  self.context=dict(operation="process_inventory",field="list")
   rows, total_fds=[], 0
   names=sorted(name for name in os.listdir("/proc") if name.isdecimal())
   require(len(names) <= 2048, "GROWTH_PROCESS_COUNT")
   self_pid=os.getpid()
   for name in names:
+   self.context=dict(operation="process_inventory",pid=int(name),observer_pid=self_pid,
+start_ticks=None,identity_rechecked=False,field="stat")
    self.check()
    prefix="/proc/" + name
    try:
     start_raw=read_kernel(prefix + "/stat", 4096, self.check, expected_fs=0x9FA0)
     start=process_start(start_raw)
+    fields=start_raw.rpartition(b") ")[2].split()
+    parent=fields[1] if len(fields)>1 else b""
+    self.context.update(start_ticks=start,parent_pid=int(parent) if parent.isdigit() and len(parent)<=10 else None,
+field="cmdline")
     cmdline=read_kernel(prefix + "/cmdline", 65536, self.check, expected_fs=0x9FA0)
+    self.context["field"]="cgroup"
     cgroup=read_kernel(prefix + "/cgroup", 4096, self.check, expected_fs=0x9FA0)
+    self.context.update(cgroup_bytes=len(cgroup),cgroup_sha256=digest(cgroup))
     if int(name) != self_pid:
-     require(not any(root.encode() in cmdline for root in self.roots), "GROWTH_BUSINESS_PROCESS")
+     self.context["field"]="cmdline"
+     if any(root.encode() in cmdline for root in self.roots):
+      self._reject_process_reference(cmdline,"cmdline")
      for link in ("exe", "cwd"):
+      self.context["field"]=link
       try:
        target=os.readlink(prefix + "/" + link)
       except FileNotFoundError:
        require(not cmdline, "GROWTH_PROCESS_LINK_UNKNOWN")
        continue
-      require(not under(target.removesuffix(" (deleted)"), self.roots), "GROWTH_BUSINESS_PROCESS")
+      if under(target.removesuffix(" (deleted)"), self.roots):
+       self._reject_process_reference(target,link)
+    self.context["field"]="fd"
     fd_directory=os.open(prefix + "/fd", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
     try:
      require(r.filesystem_type(fd_directory) == 0x9FA0, "GROWTH_PROCESS_FD_DIRECTORY")
@@ -680,19 +729,24 @@ class GuestInventory:
         require(int(flags[0], 8) & os.O_ACCMODE == os.O_RDONLY, "GROWTH_UNKNOWN_WRITER")
     finally:
      os.close(fd_directory)
+    self.context["field"]="maps"
     maps=read_kernel(prefix + "/maps", 1048576, self.check, expected_fs=0x9FA0)
     for line in maps.splitlines():
      fields=line.split(None, 5)
      if len(fields) == 6 and fields[1][1:2] == b"w" and fields[1][3:4] == b"s":
       mapped=os.fsdecode(fields[5]).removesuffix(" (deleted)")
       require(not under(mapped, self.roots), "GROWTH_MAPPED_WRITER")
+    self.context["field"]="stat_recheck"
     require(process_start(read_kernel(prefix + "/stat", 4096, self.check, expected_fs=0x9FA0)) == start,
  "GROWTH_PROCESS_REUSE")
+    self.context["identity_rechecked"]=True
     rows.append(dict(pid=int(name), start=start, cgroup_sha256=digest(cgroup)))
    except FileNotFoundError as error:
     raise r.ObservationError("GROWTH_PROCESS_INVENTORY_DRIFT") from error
+  self.context=dict(operation="process_inventory",field="list_recheck")
   after=sorted(name for name in os.listdir("/proc") if name.isdecimal())
   require(names == after, "GROWTH_PROCESS_INVENTORY_DRIFT")
+  self.context={}
   return dict(processes=len(rows), fd_count=total_fds, sha256=digest(canonical(rows)))
  def startup_manager(self, *, user_uid=None):
   manager="user" if user_uid is not None else "system"
