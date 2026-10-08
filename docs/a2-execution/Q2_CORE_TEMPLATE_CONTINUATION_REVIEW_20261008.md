@@ -33,3 +33,38 @@ A三文档字节保持；当前实现承接C，旧冻结候选与现场原件未
 
 本记录随实现提交，尚不宣称准确D发布、独立安装、真实保留输入核对、准确CI或冻结已完成。
 这些完成前不得进入TC2。TC2/TC3尚未执行，旧三代消费及UNKNOWN保持。
+
+## Names 显示格式修复
+
+上文是TC1开发时记录；[后续TC2返回](Q2_CORE_TEMPLATE_CONTINUATION_FIELD_20261008.md)
+已登记08a消费失败、PRE_QUIESCENCE/GROWTH_SYSTEMCTL_NAMES、动作空及H01/Q4/H11未运行。
+原现场未保存具体Names或单元，所以无法证明历史错误的唯一子条件；没有为此补查现场。
+
+确定的源码缺陷是把 `Names` 字符串数组显示直接 `.split()`。官方v255
+[数组属性输出](https://github.com/systemd/systemd/blob/v255/src/shared/bus-print-properties.c)
+逐项调用 [shell_maybe_quote](https://github.com/systemd/systemd/blob/v255/src/basic/escape.c)，
+而 [Id/Names 属性](https://github.com/systemd/systemd/blob/v255/src/core/dbus-unit.c) 中 Id 是
+普通字符串。合法字面名称 `system-systemd\x2dfsck.slice` 的 Names 显示会带双引号并双写
+反斜杠；旧解析将引号算进名称，必然触发原格式拒绝。已调用本机系统自带v255纯格式函数
+复现，无systemd manager、D-Bus、SSH或真实配置查询。
+
+修复只用标准库 shlex 解码 Names 的显示层，再保留原重复、名称格式、Id成员关系、请求
+完整覆盖、属性冲突和声明身份检查。额外逐字校验规范重编码，避免未正确转义的反斜杠被
+静默删除；不使用 unicode_escape，不把名称的字面 `\xNN` 转成另一个字符，不扩大名称
+后缀或长度范围。普通标量 Id 和其余属性不改写，命令次数不变。
+
+Names仍拒绝时，原错误码不变；在同次已读响应中记录parse/duplicate/format/id_member/
+encoding具体条件、单元、响应序号、名称数量、Names完整字节数和SHA-256，以及最多512 B
+十六进制前缀和截断标志。不会保存其它属性正文或再发命令。原ctl的返回码、双EOF、
+stderr、工具身份检查及全部现场目标/资源/次数限制保持。
+
+最终本地journal全组加minimal/serial/systemctl/template核心接续组：**765 passed / 5 skipped**，
+6.75s。新增Names组**46 passed**，无跳过，包含原生格式、转义身份、反例和日志边界。
+五个既有环境跳过为PID/proc映射1项、qcow2/ext4工具1项、禁止私有Unix socket的3项模板
+原生测试，不计通过。独立审查核对76个原生格式样例；Python -I -B实际装载含shlex的guest
+成功；合成最大Id/大Names故障报告2192 B，未带出其它属性。以上小组不重复加进765计数。
+`git diff --check`通过；host/guest源64353/60268 B，均低于原98304 B限额。
+
+本次不修改准确批准A或旧冻结D，不创建新维护代次、caller、真实核心包或现场窗口。
+准确修复CI须单独核验；代码验证不是现场扩容或核心验收成功。下一步仍只接续容量维护
+和原H01→Q4→H11，旧08a及之前所有消费和原件保持，不重放、不补采、不清理。

@@ -9,6 +9,7 @@ import re
 import resource
 import select
 import selectors
+import shlex
 import struct
 import subprocess
 import sys
@@ -508,17 +509,36 @@ class GuestInventory:
   result, identities={}, {}
   blocks=raw.decode("utf-8", "strict").strip().split("\n\n")
   require(0 < len(blocks) <= len(names), "GROWTH_SYSTEMCTL_UNIT_SET")
-  for block in blocks:
+  for response_index, block in enumerate(blocks, 1):
    entries=[line.split("=", 1) for line in block.splitlines()]
    require(all(len(item) == 2 for item in entries) and len(entries) == len({item[0] for item in entries}),
  "GROWTH_SYSTEMCTL_FORMAT")
    value=dict(entries)
    require(set(value) <= set(self.SHOW) and {"Id", "LoadState", "ActiveState", "SubState"} <= set(value)
  and UNIT_PATTERN.fullmatch(value["Id"]), "GROWTH_SYSTEMCTL_FIELDS")
-   aliases=value.get("Names", "").split()
-   require(len(aliases) == len(set(aliases)) and
- all(UNIT_PATTERN.fullmatch(name) for name in aliases) and
- (not aliases or value["Id"] in aliases), "GROWTH_SYSTEMCTL_NAMES")
+   names_text=value.get("Names", "")
+   failed_checks=[]
+   try:
+    # systemctl quotes string-array elements; Id is a scalar and stays literal.
+    # Decode only that display layer, never the unit name's literal \\xNN escapes.
+    aliases=shlex.split(names_text, comments=False, posix=True)
+   except ValueError:
+    aliases=None
+    failed_checks.append("parse")
+   if aliases is not None:
+    if len(aliases) != len(set(aliases)): failed_checks.append("duplicate")
+    if not all(UNIT_PATTERN.fullmatch(name) for name in aliases): failed_checks.append("format")
+    if aliases and value["Id"] not in aliases: failed_checks.append("id_member")
+    if "format" not in failed_checks:
+     encoded=" ".join('"' + name.replace("\\", "\\\\") + '"' if "\\" in name else name for name in aliases)
+     if encoded != names_text: failed_checks.append("encoding")
+   if failed_checks:
+    names_raw=names_text.encode("utf-8")
+    self.context.update(unit=value["Id"], response_index=response_index,
+ names_diagnostic=dict(failed_checks=failed_checks,
+ alias_count=None if aliases is None else len(aliases), bytes=len(names_raw),
+ sha256=digest(names_raw), prefix_hex=names_raw[:512].hex(), truncated=len(names_raw)>512))
+    raise r.ObservationError("GROWTH_SYSTEMCTL_NAMES")
    covered=set(names) & ({value["Id"]} | set(aliases))
    require(covered, "GROWTH_SYSTEMCTL_UNIT_SET")
    if value["Id"].endswith(".service") and value["LoadState"] == "loaded":

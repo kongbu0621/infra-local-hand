@@ -1,6 +1,20 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：TC1完整冻结，唯一08a维护在Names校验停止
+## 当前：修正 Names 显示格式解析，现场仍停在已消费08a
+
+最新现场仍为下述 TC2 失败；没有再次查询或运行维护。
+已用本机 systemd v255 的原生 `shell_maybe_quote(..., 0)` 确认：Names 数组会给含反斜杠
+的合法单元名加引号并转义，旧 `.split()` 将显示引号误当成名称。现在只解码这层显示，
+保留字面 `\\xNN`、重复/名称/正式 Id/覆盖/冲突检查，拒绝非规范编码。
+同次失败额外保存具体校验条件、单元与响应序号、Names 字节数/摘要和最多512 B前缀，
+没有新增命令或重试。详见[源码验证](../Q2_CORE_TEMPLATE_CONTINUATION_REVIEW_20261008.md#names-显示格式修复)。
+
+相关本地765项通过、5项环境跳过；新增Names的46项全部通过，含原生格式验证。
+旧现场没有被拒绝Names值，不能认定这就是08a唯一原因。
+本地 Codex 下一步同步修复候选，复用既有安装、SSH和私料，只准备容量维护成功后直接
+接 H01→Q4→H11；原08a窗口已消费，按AGENTS不能重放。本次不产生新caller或新现场权限。
+
+## 先前：TC1完整冻结，唯一08a维护在Names校验停止
 
 [准确返回](../Q2_CORE_TEMPLATE_CONTINUATION_FIELD_20261008.md)：Owner已批准准确A
 `80c7c8eaeda0853317c679b31b0ed1f1ac13e49b` 的TC1–TC3，独立C为
