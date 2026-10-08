@@ -1,25 +1,35 @@
 # Execution guidance
 
-## Current proposal: declared-target startup checks and core continuation (2026-10-08)
+## Current approved batch: declared-target startup checks and core continuation (2026-10-09)
 
-QI1 is complete, but consumed QI2/08e was blocked by a different undeclared service.
-Do not repeat the one-unit capture/C10 lookup or append names one at a time as new side work.
-The [combined scope-reduction proposal](docs/governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_BASELINE.md)
-is **PROPOSED / OPEN**, A `2b13dd653ca19eaaf46a18e6ffc3f447b62eee59`, tree
+QI1 is complete; consumed QI2/08e was blocked by a different undeclared service. Do not repeat
+one-unit capture/C10 lookup or append individual names as side work. The
+[combined scope-reduction baseline](docs/governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_BASELINE.md)
+is **CLOSED for DS1–DS3 only**, exact A `2b13dd653ca19eaaf46a18e6ffc3f447b62eee59`, tree
 `c686e5dbf5454f682603f9b7575cc4292402be34`, scope
-`LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-v1`, DS1–DS3. Its
+`LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-v1`. Its
 [requirements](docs/a2-execution/q2-core-declared-startup-continuation/REQUIREMENTS.md),
-[architecture](docs/a2-execution/q2-core-declared-startup-continuation/ARCHITECTURE.md) and
-[plan](docs/a2-execution/q2-core-declared-startup-continuation/IMPLEMENTATION_PLAN.md)
-propose removing full guest unit/template startup enumeration while retaining the exact 19/7/7
-declarations, declared service/domain/cgroup checks, current process/writer and data protections.
-This reduces observation of unknown automatic startup and requires explicit acceptance of that
-coverage and the management premise; it is not an equivalent repair or proof the new unit is harmless.
-There is no new Owner B, CLOSED C, implementation or field action. R and its adoption rules remain.
-The proposed batch covers both consumers before one new 08f maintenance and conditional original
-07a H01/Q4/H11. Eight prior windows remain consumed, QI3 is unavailable after failed QI2, and all
-core cases remain NOT_RUN. Do not add scanners, collect new field evidence, replay callers, clean up,
-change unapproved runtime checks or start a new window. Scope closure must precede new code.
+[architecture](docs/a2-execution/q2-core-declared-startup-continuation/ARCHITECTURE.md), and
+[plan](docs/a2-execution/q2-core-declared-startup-continuation/IMPLEMENTATION_PLAN.md) retain their
+exact A bytes and historical OPEN labels. R, its readable source/integrity, mandate, Owner authority,
+no exceptions and change rules remain unchanged.
+
+[Owner B](docs/governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_OWNER_DECISION.md), event
+`LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-CLOSURE-20261009-01`, retains the exact request and reply.
+Owner accepts and confirms removing full guest unit/template startup enumeration and its management
+premise, including existing unknown automatic entries and other sessions through maintenance/core handoff.
+Unknown-startup observation is reduced, not equivalent; continuous exclusion is not proven. Declared
+19/7/7 targets, exact Q1 source adoption, domain/cgroup, current process/writer and data protections stay.
+This independent C contains closure bookkeeping only; D must descend from it. Do not squash C with D.
+
+The approved batch includes implementation, verification, publication to main, exact D CI, independent
+installation and both caller freezes, then one new 08f maintenance and conditional original 07a
+H01/Q4/H11. Only complete maintenance verification permits DS3. Owner authorizes three documents,
+sanitized records and the verified old08e five-file basename/bytes/SHA-256 index; raw evidence and new
+08f index remain private. At C, DS1 implementation/DS2 are NOT_STARTED and DS3 cases are NOT_RUN.
+Eight old windows remain consumed. Scope substeps need no repeated approval. Unknown or contradicted
+management premise stops execution; do not add scanners, supplementary field collection, retries,
+cleanup, recovery, rollback, another startup/window or side work. Old callers cannot be replayed.
 
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
