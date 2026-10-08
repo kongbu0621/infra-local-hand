@@ -31,6 +31,19 @@ Eight old windows remain consumed. Scope substeps need no repeated approval. Unk
 management premise stops execution; do not add scanners, supplementary field collection, retries,
 cleanup, recovery, rollback, another startup/window or side work. Old callers cannot be replayed.
 
+The [DS1 freeze and DS2 field return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_FIELD_20261009.md)
+records direct child D `db6e7165322da3072ca1fd88a36401e18ebd4a86`, exact first CI 3/3 success,
+independent installed 94 checks/292 commands, original-input/bounds verification and both frozen callers.
+DS1 is complete. The unique 08f DS2 window passed local preflight, then consumed its marker and
+one pre SSH before PRE_QUIESCENCE / GROWTH_BUSINESS_PROCESS. No poweroff token was sent;
+actions_started is empty, remote_exit UNKNOWN. No journal change or core package was issued.
+DS2 is CONSUMED_FAILED / STOP_AND_RETAIN; DS3/H01/Q4/H11 are NOT_RUN. All five original returns
+and the new index remain private; the release gate now records consumed failure while preserving
+the immutable original freeze. The current-process reason does not identify a PID or distinguish
+cmdline from exe/cwd, and the retained context is the previous domain query, not that process.
+Do not replay callers, relax process/writer protections, query more field data, stop services,
+retry, clean up or start another window. Nine consumed generations and all historical obligations remain.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
