@@ -302,20 +302,20 @@ is terminal `EX2_CONSUMED_FAILED_EX3_NOT_RUN`; the pre-execution freeze and cons
 Do not replay 08c or any earlier caller, retry, supplement evidence, clean up, recover or start side
 work. All old windows, full obligations and UNKNOWNs remain; no further window is automatically requested.
 
-### Proposed guest startup scope reduction — not approved
+### Authorized guest startup scope reduction
 
 Owner again directed core-only progress after the consumed 08c result. Read-only review confirmed
 that the scheduler rejection is deliberate current policy, not another display-format defect;
 the existing exact scheduler test passes. No cron queue or indirect-script verifier exists here.
 Do not add one as side work or silently whitelist cron under the old guest guarantee.
 
-Proposed scope `LH-Q2-CORE-GUEST-STARTUP-CONTINUATION-v1`, GS1–GS3, is **OPEN** at exact A
+Scope `LH-Q2-CORE-GUEST-STARTUP-CONTINUATION-v1`, GS1–GS3, is **CLOSED for GS1–GS3 only** at exact A
 `7ea9aed6a4f8be6d6fee0ee549e1e02378f32672`, tree `87af0b77a932330f0399d4df4ebf2ddfd2c83bf9`.
 Its [requirements](docs/a2-execution/q2-core-guest-startup-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-guest-startup-continuation/ARCHITECTURE.md), and
 [plan](docs/a2-execution/q2-core-guest-startup-continuation/IMPLEMENTATION_PLAN.md) propose only
 removing generic indirect-startup category rejection in both guest maintenance entry points,
-under an explicit Owner-accepted guest management premise through restart and core handoff.
+under the explicitly accepted and confirmed guest management premise through restart and core handoff.
 The [baseline record](docs/governance/Q2_CORE_GUEST_STARTUP_CONTINUATION_BASELINE.md) pins A.
 Indirect-startup exhaustive observation would be NOT_PERFORMED; direct business-root checks,
 declared-unit quiescence/startup edges, cgroups, current-writer and other target protections remain.
@@ -324,11 +324,21 @@ This is reduced coverage, not equivalent proof; previous host-only approval does
 The proposal includes complete maintenance/core consumer binding, six retained failures, one
 fixed new 08d maintenance and the same conditional unissued core batch. Seven full maintenance
 obligations are 9072 MiB/2590 inodes; with original core capture, 9136 MiB/2606. No old window is
-refunded. Disclosure of only the retained 08c five-file minimal index is proposed, not yet approved;
-cloud review has not read or fabricated those private pins. R and all adoption rules remain.
-No B/C, new runtime/test source, caller, configuration, new window or real core package is created
-by this proposal. Exact Owner approval of A, changed assurance and GS1–GS3 must precede independent
-C and implementation. Existing EX consumption/UNKNOWN and all old callers stay unchanged.
+refunded. Owner approves disclosure of only the retained 08c five-file minimal index;
+cloud review has not read or fabricated those private pins, which must match the retained local originals. R and all adoption rules remain.
+Owner B is retained in [the exact decision](docs/governance/Q2_CORE_GUEST_STARTUP_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-GUEST-STARTUP-CONTINUATION-CLOSURE-20261008-01`. Owner explicitly accepts and
+confirms A's guest management premise and coverage reduction, and approves publication of the three
+documents, sanitized records and the old 08c minimal index to `kongbu0621/infra-local-hand` main.
+This independent bookkeeping-only C records accurate B and CLOSED before implementation D;
+A's original document bytes and historical OPEN labels remain unchanged. Do not squash C with D.
+Earlier pending labels describe pre-approval facts, superseded by this B/C. At C there is no new
+implementation, caller, window or real core package. GS1 completes both consumers, verification,
+publication, exact D CI, installation, static inputs and freeze before the one GS2 window. GS3
+requires complete successful maintenance originals. Owner confirms the management premise, so no
+repeated permission request is needed absent contrary evidence or material change. This confirms
+management, not observed continuous exclusion. Existing EX consumption/UNKNOWN and all old callers
+stay unchanged; failure stops without retry, supplementary collection, cleanup or side work.
 
 ## Publication and GX10 handoff
 
