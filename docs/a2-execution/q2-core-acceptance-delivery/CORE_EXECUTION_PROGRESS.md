@@ -38,17 +38,24 @@ Owner 已批准 A `7ea9aed6a4f8be6d6fee0ee549e1e02378f32672`，准确 B 与独�
 新响应为 CURRENT_OBSERVATION，不能回填 08d；任务不得重发。没有新 reader、框架、
 源码、程序 Gate、维护窗口或核心包，也未重复翻旧归档。
 
-唯一处理点是该 Q1 请求的来源与声明接线。当前命令中的票据提供六项身份，尚缺
-manifest_digest 及准确历史来源，runtime 摘要不能替代它；具体所需原件见返回记录。
+唯一处理点是该 Q1 请求的来源与声明接线。首次读取时票据只提供六项身份，尚缺
+manifest_digest 及准确历史来源；后续 C10 核对结果见下节，runtime 摘要本身不能替代它。
 不猜白名单，不修改匹配条件；即便补声明，仍须通过原 quiet/cgroup/启动边和其余检查。
 
-### 当前下一步：利用固定 C10 同条配对摘要，完成离线身份与声明候选核对
+### C10 离线绑定已完成；剩余是准确服务及父域声明接线
 
 历史公开索引的 C10（9632 B，0183b985…ba1e9）已归档 Q1 配置关联报告。
 固定 exporter 的原字节确认同条 facts.files 绑定 runtime.json 与 manifest.json。
 [任务](../CORE_UNIT_CURRENT_TASK_20261008.txt)已补齐精确取件、唯一摘要匹配、七项
-名称重算和对应 query_parent 核对，一次完成后报告声明接线差额，不再发现场命令。
-云端尚无私有原件及准确 argv，匹配结果未验证；旧读取已完成，不能重发。
+名称重算和对应 query_parent 核对，以下是已完成结果，未再发现场命令。
+本地现已找到 C10 直接原件，长度及摘要完全匹配，同目录 C11 也匹配；没有重新验证
+私有 bundle。runtime 唯一匹配 original_config，同条 manifest 摘要与规范票据六项
+身份重算的名称，与当前实际 Id / 请求名相同。对应 parent、boot/source 关联通过。
+准确服务及其父 slice 都不在冻结清单中；expected_units、domain_units、domain_cgroups
+各需增加一条，数量 18/6/6 → 19/7/7，服务 control_group 不为 null。
+私有差额及来源已留存，没有修改旧清单或放宽匹配。完整 Manifest/intent 校验、当前
+cgroup 及维护准入仍未证明；源码、冻结输入和旧消费均未改，H01/Q4/H11 仍 NOT_RUN。
+不再重复取 C10、查询现场或重放维护；详见[本地结果](../Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md)。
 
 以下提案与“下一步”均为历史记录，不构成新执行入口或待重复审批事项。
 

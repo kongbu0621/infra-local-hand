@@ -33,7 +33,7 @@
   cgroup 身份/为空，也不证明持续静止、历史状态或完整维护准入。未调用
   `quiet_service`、`startup_manager`、维护入口或核心入口。
 
-## 唯一针对性处理点及剩余缺项
+## 首次读取后的处理点及当时缺项
 
 处理点是**补齐该准确 Q1 请求的来源绑定，再形成明确的业务单元声明**，而不是修改
 当前路径判断。当前 ExecStart 保留 worker/runtime 路径、runtime 摘要和规范 base64
@@ -68,3 +68,50 @@ UNKNOWN 不变；GS3/H01/Q4/H11 仍 NOT_RUN。此单次查询交接已完成，�
 当前云端未持有该私有对象或当前 argv，尚未确认匹配成功。C10 存在不等于该条一定
 对应本次单元，也不补齐原 Manifest 的全部 slot/deadline 校验或当前 cgroup 证明。
 此处只提出有准确来源的离线核对，不改先前读取事实、路径判断、源码或维护准入。
+
+## 本地 C10 核对完成：准确服务及父域均漏声明
+
+本地已完成 `775de16a6a6c84d9c7e840c5c8c3aa542988ef78` 的离线交接。
+未定位私有 bundle，但在已有交付目录找到 **C10 原始 report.json**；9632 B 及
+SHA-256 与上述公开 C10 pin 完全相同。同目录 C11 exporter、当前仓库 exporter
+均匹配原 20208 B / `a5265e…a3b8deb`。这是直接原始载体的摘要核对，不声称重新
+验证了私有 bundle、其 Git 对象或全部归档。原件经既有有界 no-follow / O_NOATIME
+reader 读取；没有运行 exporter、解包其他历史包或访问 guest。
+
+使用既有 `q2_host_export.document` 解析 C10，schema、scope、EXPORTED 和
+Q1_EVIDENCE_ONLY 均匹配。original_config / revision_config 各唯一且 OBSERVED，
+配置关联状态及两项 false 保持。复核已捕获响应的长度/摘要、完整性及 prepared
+绑定后，在内存复用原 show 解析器；规范 base64、ticket 字段类型及编码检查通过。
+
+- 当前 ExecStart 的 runtime SHA **仅匹配 original_config**。manifest SHA 取自
+  该同一行，未跨 original / revision 拼接。
+- 该 manifest SHA 加票据六项身份，按 `supervision.bind_query` 的原数组顺序及
+  紧凑 JSON 编码重算；结果与当前实际 Id、原请求名**逐字相同**。
+- 同配置的 original_query_parent、original_source_head、original_current_boot
+  均唯一且 OBSERVED；source_commit 和 declared_commit 相同，配置 boot 与报告
+  guest 及冻结 original_boot 相同。父路径符合原严格 slice 格式，与原 exporter
+  的 runtime → manifest → parent 关联一致。
+- **父 slice 不在冻结的六个 domain_units / domain_cgroups 中**，也没有同名或
+  同路径冲突。当前 ControlGroup 为空不能替代声明；服务候选使用历史逻辑父路径
+  加准确单元名，保留非 null 的 control_group。
+
+唯一声明接线差额是这条原 Q1 请求及其父域，须作为同一个来源绑定项处理：
+
+| 字段 | 原数量 | 候选差额 | 候选数量 |
+| --- | ---: | ---: | ---: |
+| expected_units | 18 | 一个准确服务，带完整 control_group | 19 |
+| domain_units | 6 | 对应 system slice，带逻辑父路径 | 7 |
+| domain_cgroups | 6 | 同一逻辑父路径 | 7 |
+
+准确名字、路径、C10 行、七项身份、原响应引用及三个字段的增量已保存为本地私有
+声明候选。原冻结清单未改。后续接线应将这一个已核对的关联及其来源纳入新候选的
+inventory/source binding，再冻结；仅把服务名加入集合、填 null 或放行 lhq 前缀
+均不满足此差额。当前 `_growth_inventory` 的输入扫描未包含这条 C10/Q1 请求关联。
+
+本次完成的是**名称关联、历史父域来源和准确声明差额**。C10 没有完整 Manifest / intent
+原文；未伪造这些对象，也未运行完整 decode_ticket / _validate_intent 校验。其
+independent_authority_proven、q2_reusable_allocation、q2_parent_admitted 仍为 false，
+source-head 观察不等于全源码字节验证。当前 cgroup 身份/为空、持续静止、完整 slot /
+deadline 和维护准入仍未证明；原 quiet、启动边、domain/cgroup、writer、数据及容量
+检查全部保留。此次没有第二条 SSH、维护、源码/配置变更、新窗口或核心执行；七个旧
+窗口及 UNKNOWN 保留，H01/Q4/H11 仍 NOT_RUN。该离线取件任务已完成，无需重复找原件。

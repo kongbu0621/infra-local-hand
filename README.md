@@ -20,17 +20,18 @@ Linux 7133 项通过、89 项跳过，独立安装 94 项检查通过；早期 W
 物理行号。复用已读取内容，不改变拒绝条件。相关本地回归 1374 passed / 5 skipped。
 诊断提交 `fd6f2a6` 的准确 CI 已 3/3 通过，本地定向 48 项通过。
 [本地原件离线核对](docs/a2-execution/Q2_CORE_GUEST_REFERENCE_OFFLINE_REVIEW_20261008.md)已完成：
-清单可从原输入复现，但已检查材料缺少命中单元的当时属性和历史启动绑定，仍不能认定
-是漏声明还是相似路径误匹配。保留原判断，现场问题尚未修复。
+清单可从原输入复现；该轮检查材料缺少命中单元的当时属性和历史启动绑定，当时尚不能
+区分漏声明与相似路径误匹配。后续当前读取和 C10 核对结果如下，现场仍未修复。
 
 [单单元当前读取已完成](docs/a2-execution/Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md)：一次 SSH
 完整返回，当前 ExecStart 命中保护根下真实的 Q1 worker/runtime 路径，不是相似子串。
-该准确单元未声明；当前票据仍缺 manifest 摘要绑定，不能直接加入名单。处理点收窄为
-补齐 Q1 来源及声明；原路径判断保持，未再次执行维护。当前观察不回填 08d 历史。
+该准确单元未声明；原路径判断保持，未再次执行维护。当前观察不回填 08d 历史。
 
-已定位到可离线补齐身份的固定历史 C10 报告：同一配置条目保留 runtime 与 manifest
-的配对摘要。[下一步任务](docs/a2-execution/CORE_UNIT_CURRENT_TASK_20261008.txt)只核对
-这一份原件，重算准确单元名并核对 parent，形成声明接线差额；尚未确认私有摘要匹配。
+[C10 离线核对已完成](docs/a2-execution/Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md)：本地原件
+匹配历史 pin，runtime 唯一匹配同条配置，七项身份重算与准确单元名相同。对应父域
+也未声明，私有候选差额为一个服务及其 system slice / cgroup，数量 18/6/6 → 19/7/7。
+准确来源和差额已留存；原冻结输入未改，当前 cgroup、完整 Manifest 校验和维护准入
+仍未完成。该[离线交接](docs/a2-execution/CORE_UNIT_CURRENT_TASK_20261008.txt)无需重做。
 
 六旧维护窗口与本次消费、原件、完整费用和 UNKNOWN 保留。[获准旧 08c 五件最小索引](docs/a2-execution/Q2_CORE_EXEC_ORIGINALS_INDEX_20261008.md)
 已公开；新 08d 原文及索引保持私有。所有旧交接均不重放，不自动申请下一窗口。

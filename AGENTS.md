@@ -374,11 +374,22 @@ The existing-tool single-unit read specified in
 see [its current-observation result](docs/a2-execution/Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md).
 One SSH/native systemctl show returned complete streams and exit 0. Offline parsing identifies
 ExecStart paths genuinely below one protected root; the current canonical unit is undeclared.
-The ticket lacks manifest_digest for full Q1 identity binding. Preserve the existing predicate;
+The ticket itself lacks manifest_digest. Preserve the existing predicate;
 do not whitelist by prefix or silently adopt this observation as historical provenance.
 No additional command is authorized by this completed task. It is not an 08d replay, GS2
 supplement, historical repair or new maintenance permission. No new diagnostic program or Gate
 was created. Prior failures, source freezes and all admission requirements remain unchanged.
+
+The subsequent fixed-C10 offline task at `775de16a6a6c84d9c7e840c5c8c3aa542988ef78`
+is also complete. The local direct C10 carrier matches its public length/hash pin; its unique
+original_config runtime/manifest pair plus the captured canonical ticket reproduces the exact
+requested/actual unit name. Same-config parent, source and retained boot relations match.
+Both that service and its parent slice are absent from the frozen inventory: the private proposed
+delta is one expected service with non-null control_group, one system domain row and its cgroup
+path (18/6/6 to 19/7/7). See the appended local result in the same review. Do not repeat the C10
+search or field read. This is a private declaration candidate, not an applied inventory change,
+new source-adoption decision or maintenance authorization. Full Manifest/intent validation and
+current cgroup/admission remain unproven; all original checks, consumed windows and UNKNOWNs remain.
 
 ## Publication and GX10 handoff
 
