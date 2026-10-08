@@ -29,18 +29,18 @@ Owner 已批准 A `7ea9aed6a4f8be6d6fee0ee549e1e02378f32672`，准确 B 与独�
 尚不能认定解析遗漏。七份固定历史归档及五份额外本地归档未提供该名称的原属性或
 历史 Q1 启动绑定；准确缺项已登记。现场原因仍未确定，不能猜白名单或重跑旧窗口。
 
-### 当前交接：一次指定单元现状读取
+### 指定单元现状读取已完成
 
-[本地 Codex TASK](../CORE_UNIT_CURRENT_TASK_20261008.txt)已准备：复用既有 SSH 和有界
-捕获，只对原 stderr 中的准确单元作一条原生 systemctl show，随后全部离线分析。
-旧归档检索已完成，不再重复；新响应明确为 CURRENT_OBSERVATION，不能回填 08d 或
-解除原维护准入。没有新 reader、框架、源码、程序 Gate、维护窗口或核心包。
-本任务尚未执行，需由拥有既有 SSH 的本地 Codex 执行；云端未取得现场当前属性。
+[本地 Codex TASK](../CORE_UNIT_CURRENT_TASK_20261008.txt)唯一一次读取已完成，
+[返回及离线分析](../Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md)确认：原生 systemctl show
+完整返回，当前 ExecStart 引用保护根下真实 Q1 worker/runtime 路径，实际 Id 未声明。
+这次命中不是相似子串。当前状态通过原纯属性检查，但未观察 cgroup 或完整准入。
+新响应为 CURRENT_OBSERVATION，不能回填 08d；任务不得重发。没有新 reader、框架、
+源码、程序 Gate、维护窗口或核心包，也未重复翻旧归档。
 
-源码链路已核对：_growth_inventory 只扫描选定原输入的 unit/Id，没有载入缺失的 Q1
-intent；bind_query 的 lhq 名称来自七项身份的摘要，不能由前缀推断归属。Q1 设置
-RemainAfterExit，但正常控制器会停止原单元；不能猜当前终态。即便补声明，仍须通过
-原 quiet/cgroup/启动边检查。故此时直接改名单或改路径匹配都缺少充分现场依据。
+唯一处理点是该 Q1 请求的来源与声明接线。当前命令中的票据提供六项身份，尚缺
+manifest_digest 及准确历史来源，runtime 摘要不能替代它；具体所需原件见返回记录。
+不猜白名单，不修改匹配条件；即便补声明，仍须通过原 quiet/cgroup/启动边和其余检查。
 
 以下提案与“下一步”均为历史记录，不构成新执行入口或待重复审批事项。
 

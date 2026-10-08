@@ -369,13 +369,16 @@ Q1 launch binding. The name shape alone is not provenance or a whitelist. Diagno
 it does not replace the consumed execution candidate or prove the field cause. No field query,
 new window, authority change or runtime repair resulted from this offline review.
 
-The next core-only troubleshooting handoff is one existing-tool, single-unit current read,
-specified in [the local Codex task](docs/a2-execution/CORE_UNIT_CURRENT_TASK_20261008.txt).
-It is prepared, not executed. Reuse existing SSH and bounded capture; one native systemctl
-show for the exact retained name, then offline analysis only. This current observation is not
-an 08d replay, supplemental GS2 evidence, historical repair or new maintenance permission.
-Do not create a diagnostic program, new program Gate or additional field queries for it.
-The prior failures, source freezes and all admission requirements remain unchanged.
+The existing-tool single-unit read specified in
+[the local Codex task](docs/a2-execution/CORE_UNIT_CURRENT_TASK_20261008.txt) is now completed;
+see [its current-observation result](docs/a2-execution/Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md).
+One SSH/native systemctl show returned complete streams and exit 0. Offline parsing identifies
+ExecStart paths genuinely below one protected root; the current canonical unit is undeclared.
+The ticket lacks manifest_digest for full Q1 identity binding. Preserve the existing predicate;
+do not whitelist by prefix or silently adopt this observation as historical provenance.
+No additional command is authorized by this completed task. It is not an 08d replay, GS2
+supplement, historical repair or new maintenance permission. No new diagnostic program or Gate
+was created. Prior failures, source freezes and all admission requirements remain unchanged.
 
 ## Publication and GX10 handoff
 
