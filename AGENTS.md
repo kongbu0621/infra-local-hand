@@ -189,12 +189,12 @@ Do not replay these callers, reissue 08a, retry, collect supplementary evidence,
 recovery under this consumed authorization. Conditional TC3 is not independent remaining permission.
 This factual registration changes neither A's three documents nor the frozen implementation.
 
-### Proposed bounded continuation after Names repair
+### Authorized bounded continuation after Names repair
 
-Scope `LH-Q2-CORE-NAMES-CONTINUATION-v1`, NC1–NC3, is **OPEN / NOT APPROVED**.
+Scope `LH-Q2-CORE-NAMES-CONTINUATION-v1`, NC1–NC3, is **CLOSED for NC1–NC3 only**.
 Its [requirements](docs/a2-execution/q2-core-names-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-names-continuation/ARCHITECTURE.md), and
-[plan](docs/a2-execution/q2-core-names-continuation/IMPLEMENTATION_PLAN.md) form proposed exact A
+[plan](docs/a2-execution/q2-core-names-continuation/IMPLEMENTATION_PLAN.md) form approved exact A
 `68cae882e3b831aaa191e7a877278ccf6ba10e2b`, tree `af1df36d31326ae041fd60f7c77499673aeb0cf9`.
 The [baseline record](docs/governance/Q2_CORE_NAMES_CONTINUATION_BASELINE.md) pins their bytes;
 the [local review](docs/a2-execution/Q2_CORE_NAMES_SYNC_REVIEW_20261008.md) records input repair
@@ -208,13 +208,22 @@ and all checks, binds one new `lhqjgrow-20261008b`, and conditionally continues 
 `lhqcore-20261007a`. Five full maintenance obligations require 6480 MiB/1850 inodes; with original
 core capture, 6544 MiB/1866. No implementation, caller or new window has been issued.
 
-The new exact scope, publication of these documents/sanitized records to public main, and disclosure
-of only the old 08a five-original basename/bytes/SHA-256 index remain pending Owner decision.
+Owner explicitly approves this exact scope, publication of these documents/sanitized records to
+`kongbu0621/infra-local-hand` main, and disclosure of only the old 08a five-original
+basename/bytes/SHA-256 index.
 Private attachment event `TC2-08A-ORIGINALS-INDEX-REVIEW-20261008-01` is verified against retained
-copies and the original private index; raw evidence and machine metadata remain private. This local
-OPEN registration is not B or C. Do not implement the changed contract, raise limits, omit history,
-create new callers or replay any old window before accurate Owner B and independent CLOSED C.
-All consumed TC2 restrictions remain; unrelated CLOSED repair authority is not a new field attempt.
+copies and the original private index; raw evidence and machine metadata remain private.
+Exact Owner B is retained in [the decision](docs/governance/Q2_CORE_NAMES_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-NAMES-CONTINUATION-CLOSURE-20261008-01`. This independent bookkeeping-only C
+contains only that accurate decision and CLOSED registration. A's three bytes and historical OPEN
+labels remain unchanged; implementation D must descend from C, without squashing the two.
+NC1 authorizes both maintenance and complete core-consumer implementation, verification, publication,
+accurate candidate CI and freeze before NC2. NC2 permits one 08b window; NC3 permits the original
+core batch only after complete maintenance verification. No per-substep reapproval is required.
+All original checks, single-attempt limits, deadlines and consumed TC2 restrictions remain. Do not
+raise limits, omit history or replay old windows. Failure stops without retry, supplementary collection,
+cleanup, recovery or side branches. Closure alone proves neither readiness nor success; material
+scope changes still follow R. Earlier pending labels describe pre-approval facts, not a second Gate.
 
 ## Publication and GX10 handoff
 
