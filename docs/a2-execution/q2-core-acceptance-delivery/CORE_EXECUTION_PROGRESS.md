@@ -1,6 +1,26 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：08c保持失败；提出删除通用间接启动类别阻断
+## 当前：GS1 完成，唯一 08d 在未声明业务单元检查停止
+
+Owner 已批准 A `7ea9aed6a4f8be6d6fee0ee549e1e02378f32672`，准确 B 与独立 C
+`001bd4f7baedf115ce67feba87a21d8e259c8d1d` 先于实现登记。候选
+`341796561a6aaa6f95779f438b57d958a1fd5954` 完成两侧实现、发布、首次 CI 3/3、
+独立安装、固定原件/来源/大小核对和冻结。Linux 7133 passed / 89 skipped，独立安装
+94 checks / 292 commands。早期本地与 Windows CI 失败均保留，未作为现场候选执行。
+
+[准确现场返回](../Q2_CORE_GUEST_STARTUP_CONTINUATION_FIELD_20261008.md)：GS2 普通预检通过，
+同窗 execute 创建 marker 并发一次 SSH 后停止；已有 guest v2 报告为
+`PRE_QUIESCENCE / GROWTH_UNDECLARED_BUSINESS_UNIT`，actions_started 为空。
+无关机令牌、备份、扩容或重启；remote_exit 仍 UNKNOWN，journal 扩容未完成。
+未追加现场查询或改变检查，GS3/H01/Q4/H11 均 NOT_RUN，没有真实核心包。
+
+私有 gate 已终止为 GS2_CONSUMED_FAILED_GS3_NOT_RUN。七代维护消费、完整费用和所有
+旧原件/UNKNOWN 保持。获批旧 08c 五件最小索引已公开，新 08d 原文及索引保持私有。
+不重放 caller、不重试、不补采、不清理、不恢复、不扩展支线，也不单独发行条件核心批。
+以下提案与“下一步”均为历史记录，不构成新执行入口或待重复审批事项。
+
+
+## 先前提案：08c保持失败；提出删除通用间接启动类别阻断
 
 只读审查确认当前代码会有意拒绝cron等类别；既有准确scheduler回归 **1 passed**。
 这不是上一轮Exec解析修复未生效的证据，也不能据此断言有定时任务在写业务数据。
@@ -18,7 +38,7 @@
 08c和所有旧窗口仍已消费，不能从本提案推导重试或现场权限。实际是否满足guest前提须
 本地执行者基于既有管理交接确认，云端不替用户证明；相反证据或未知即停止。
 
-## 最近现场：EX1完成，唯一08c在间接启动入口检查停止
+## 先前现场：EX1完成，唯一08c在间接启动入口检查停止
 
 [准确返回](../Q2_CORE_EXEC_CONTINUATION_FIELD_20261008.md)：Owner批准A
 `5b14123206ced8117374d3fd2ef84b9f38784db3` 的EX1–EX3；准确B及独立C

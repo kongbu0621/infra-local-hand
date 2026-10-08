@@ -69,3 +69,10 @@ host 源 67956 B、guest 源 61741 B，均低于各自 98304 B。
 唯一失败是该新测试误把 fixture 的 policy 字典作为序列化输入；修正测试输入后
 该项 **1 passed**。全部首次日志保留，现场窗口仍未消耗。后续修复 D 仍须自身首次
 CI、独立安装、准确来源/大小核对和冻结，不能沿用旧 D 的验证身份。
+
+## 后续准确冻结与实际返回
+
+修复后执行 D `341796561a6aaa6f95779f438b57d958a1fd5954` 已完成自身首次 CI 3/3、
+独立安装、静态核对及冻结。唯一 08d 已消费且在 `PRE_QUIESCENCE /
+GROWTH_UNDECLARED_BUSINESS_UNIT` 停止，维护动作空，GS3/H01/Q4/H11 未执行。
+准确证据及停止边界见[现场记录](Q2_CORE_GUEST_STARTUP_CONTINUATION_FIELD_20261008.md)。
