@@ -320,6 +320,25 @@ TEMPLATE_CLOSURE = {
     "commit": "bb9b3c6e9b397121220c22515e4ef637d12c7297",
     "tree": "d1e7261208ae8093971b6b127c1095c2e45b1b80",
 }
+NAMES_SCOPE = "LH-Q2-CORE-NAMES-CONTINUATION-v1"
+NAMES_BASELINE = {
+    "commit": "68cae882e3b831aaa191e7a877278ccf6ba10e2b",
+    "tree": "af1df36d31326ae041fd60f7c77499673aeb0cf9",
+    "documents_sha256": {
+        "docs/a2-execution/q2-core-names-continuation/REQUIREMENTS.md": "52fad6aec854cdce4031deb09feabf16fdb393c5f3a1e45fb43230afd12a320f",
+        "docs/a2-execution/q2-core-names-continuation/ARCHITECTURE.md": "27883a8b69500fcdfa87e4b865faace1aac8849b5acc9802409fece28a4af4db",
+        "docs/a2-execution/q2-core-names-continuation/IMPLEMENTATION_PLAN.md": "a24b97894fbdcd29da8228076ccedf5afc1cb2906e12ff70aa8d58c06a803a06",
+    },
+}
+NAMES_OWNER_DECISION = {
+    "event": "LH-Q2-CORE-NAMES-CONTINUATION-CLOSURE-20261008-01",
+    "record_path": "docs/governance/Q2_CORE_NAMES_CONTINUATION_OWNER_DECISION.md",
+    "record_sha256": "b49d8d77bcd83d125fc143eb345cb8fc733002f73f5c2c1f78556ed039e5408b",
+}
+NAMES_CLOSURE = {
+    "commit": "eba5023b13e42d4610533b7e7c4eede3ebd658db",
+    "tree": "0cd836080ff9d5957e9eeac7c38c8e884109d26d",
+}
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

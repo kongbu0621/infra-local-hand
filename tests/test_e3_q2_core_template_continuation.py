@@ -63,19 +63,19 @@ def test_template_implementation_requires_its_independent_closure(source_git,edg
 def preflight():
     return h.make_preflight('d'*40,'e'*64,
         dict(boot_id='11111111-2222-3333-4444-555555555555',origins=[10**19,10**19]),
-        'f'*64,dict(cpu_nanoseconds=120000000000,rss_peak_bytes=536870912))
+        'f'*64,dict(cpu_nanoseconds=120000000000,rss_peak_bytes=536870912),resume=p.maintenance_resume())
 
 
-def test_real_three_history_handoff_fits_with_maximum_usage_and_large_clocks():
+def test_four_history_digest_handoff_fits_with_maximum_usage_and_large_clocks():
     value=preflight()
     assert len(h.canonical(value))<=4096
-    assert value['resume']==d._maintenance_resume()
-    assert [row['session'] for row in value['resume']['previous_maintenance']]==[
-        'lhqjgrow-20261006a','lhqjgrow-20261007a','lhqjgrow-20261007b']
-    assert (value['R'],value['A'],value['C'])==(h.R,h.TEMPLATE_A,h.TEMPLATE_C)
+    assert value['resume_sha256']==h.digest(h.canonical(d._maintenance_resume()))
+    assert [row['session'] for row in p.maintenance_resume()['previous_maintenance']]==[
+        'lhqjgrow-20261006a','lhqjgrow-20261007a','lhqjgrow-20261007b','lhqjgrow-20261008a']
+    assert (value['R'],value['A'],value['C'])==(h.R,h.NAMES_A,h.NAMES_C)
 
 
-@pytest.mark.parametrize('old_schema', ['v1','v2','v3'])
+@pytest.mark.parametrize('old_schema', ['v1','v2','v3','v4'])
 def test_no_old_handoff_schema_can_open_new_window(old_schema):
     value=preflight();value['schema']='lhq-journal-growth-preflight/'+old_schema
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_PREFLIGHT_SCHEMA'):
@@ -85,9 +85,11 @@ def test_no_old_handoff_schema_can_open_new_window(old_schema):
 @pytest.mark.parametrize('fault',['old_scope','old_authority','refund','missing_third'])
 def test_rebinding_old_window_does_not_create_new_permission(fault):
     value=preflight()
-    if fault=='old_scope': value['resume']=p.systemctl_maintenance_resume()
+    resume=p.maintenance_resume()
+    if fault=='old_scope': resume=p.systemctl_maintenance_resume()
     elif fault=='old_authority': value.update(A=h.SYSTEMCTL_A,C=h.SYSTEMCTL_C)
-    elif fault=='refund': value['resume']['previous_maintenance'][2]['window_consumed']=False
-    else: value['resume']['previous_maintenance'].pop()
+    elif fault=='refund': resume['previous_maintenance'][2]['window_consumed']=False
+    else: resume['previous_maintenance'].pop()
+    value['resume_sha256']=h.digest(h.canonical(resume))
     with pytest.raises((p.c.ContractError,h.prior.r.ObservationError)):
         h.parse_preflight(h.canonical(value))

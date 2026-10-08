@@ -1045,7 +1045,8 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.MINIMAL_BASELINE, c.MINIMAL_OWNER_DECISION, c.MINIMAL_CLOSURE),
             (c.SERIAL_BASELINE, c.SERIAL_OWNER_DECISION, c.SERIAL_CLOSURE),
             (c.SYSTEMCTL_BASELINE, c.SYSTEMCTL_OWNER_DECISION, c.SYSTEMCTL_CLOSURE),
-            (c.TEMPLATE_BASELINE, c.TEMPLATE_OWNER_DECISION, c.TEMPLATE_CLOSURE)):
+            (c.TEMPLATE_BASELINE, c.TEMPLATE_OWNER_DECISION, c.TEMPLATE_CLOSURE),
+            (c.NAMES_BASELINE, c.NAMES_OWNER_DECISION, c.NAMES_CLOSURE)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")

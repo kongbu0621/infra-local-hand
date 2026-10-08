@@ -184,7 +184,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v5'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v6'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -237,7 +237,7 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     elif stale!='digest': old[stale]='0'*40
     rig.window.binding['origins']=[1,2]
     handoff=h.make_preflight('d'*40,h.digest(h.canonical(rig.manifest)),rig.window.binding,
-        rig.work.nonce,dict(cpu_nanoseconds=1,rss_peak_bytes=1))
+        rig.work.nonce,dict(cpu_nanoseconds=1,rss_peak_bytes=1),resume=rig.manifest['resume'])
     expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
@@ -348,7 +348,7 @@ def test_ordinary_preflight_carries_original_cpu_and_peak_rss(monkeypatch):
     'cpu_limit','rss_zero','rss_limit','fresh_deadline','short_change','boot','origins'])
 def test_ordinary_handoff_rejects_old_or_unbounded_inputs(change):
     value=h.make_preflight('d'*40,'a'*64,dict(boot_id=BOOT,origins=[1,2]),'b'*64,
-        dict(cpu_nanoseconds=1,rss_peak_bytes=1))
+        dict(cpu_nanoseconds=1,rss_peak_bytes=1),resume=h.history.maintenance_resume())
     if change=='old_schema':value['schema']='lhq-journal-writer-preflight/v1'
     elif change=='writer_fields':value['writer']={}
     elif change=='missing':value.pop('usage')

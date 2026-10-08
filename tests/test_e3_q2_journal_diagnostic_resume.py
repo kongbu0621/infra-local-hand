@@ -15,7 +15,7 @@ from e3_host import q2_journal_growth as h
 def source_git(monkeypatch):
     root = Path(h.__file__).resolve().parents[2]
     state = SimpleNamespace(head="d" * 40, rejected_edge=None, changed_doc=None,
-                            calls=[])
+                            calls=[], changed_tree=None)
 
     def run(argv, **kwargs):
         assert argv[:5] == ["git", "-c", "maintenance.auto=false", "-c", "gc.auto=0"]
@@ -26,6 +26,10 @@ def source_git(monkeypatch):
             raw = (state.head + "\n").encode()
         elif args == ["diff", "--quiet", "HEAD"]:
             pass
+        elif args[0] == "rev-parse" and args[1].endswith("^{tree}"):
+            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE)
+                           if args[1]==item['commit']+'^{tree}')
+            raw=(("0"*40 if state.changed_tree==authority['commit'] else authority['tree'])+'\n').encode()
         elif args[:2] == ["merge-base", "--is-ancestor"]:
             code = int(tuple(args[2:]) == state.rejected_edge)
         elif args[0] == "show":

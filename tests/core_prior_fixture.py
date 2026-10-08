@@ -124,10 +124,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v8', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v9', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v8',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v9',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -177,8 +177,8 @@ def diagnostic_files(monkeypatch):
 
 def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
-    return dict(schema='local-hand-q2-core-journal-transition/v4',
-        authority=dict(R=c.RULE['commit'],A=c.TEMPLATE_BASELINE['commit'],C=c.TEMPLATE_CLOSURE['commit']),
+    return dict(schema='local-hand-q2-core-journal-transition/v5',
+        authority=dict(R=c.RULE['commit'],A=c.NAMES_BASELINE['commit'],C=c.NAMES_CLOSURE['commit']),
         previous_maintenance=p.maintenance_resume(),implementation=copy.deepcopy(implementation),session=p.JOURNAL_SESSION,nonce='a'*64,
         access_mode='TRUSTED_SINGLE_ADMIN',host_writer_observation='NOT_PERFORMED',
         continuous_exclusion_proven=False,input_sha256='b'*64,manifest_sha256='c'*64,
@@ -205,7 +205,7 @@ def previous_journal_files(monkeypatch, *dispatchers):
     """Substitute only fixed byte pins for synthetic old originals; use the real relation parser."""
     dump=lambda value:c.canonical(value,newline=True)
     files={}
-    for index in range(3):
+    for index in range(4):
         files.update(_previous_journal_generation(monkeypatch,dispatchers,index))
     p.build_previous_maintenance(files)
     return files
@@ -221,6 +221,7 @@ def _previous_journal_generation(monkeypatch, dispatchers, index):
     inputs=dict(inventory_sha256='8'*64)
     if index==1:inputs['resume']=p.serial_maintenance_resume()
     if index==2:inputs['resume']=p.systemctl_maintenance_resume()
+    if index==3:inputs['resume']=p.template_maintenance_resume()
     desc=dict(session=session,nonce=common['nonce'],original_boot_id='11111111-2222-3333-4444-555555555555',
         source_binding_sha256=c.sha256(dump(inputs)),window_seconds=898,change_seconds=778)
     manifest=dict(common,**authority,schema='lhq-journal-growth-manifest/v'+str(fixed['version']),inputs=inputs,
@@ -241,14 +242,14 @@ def _previous_journal_generation(monkeypatch, dispatchers, index):
         result=dict(manifest_sha256=marker['manifest_sha256'])),dict(step='GUEST_QUIET',state='STARTED'),
         dict(phase='pre',argv_sha256=marker['pre_command_sha256'],description_sha256=c.sha256(dump(desc)),
             window_seconds=898,change_seconds=778)]
-    if index in (1,2):
-        resume=p.serial_maintenance_resume() if index==1 else p.systemctl_maintenance_resume()
+    if index in (1,2,3):
+        resume={1:p.serial_maintenance_resume,2:p.systemctl_maintenance_resume,3:p.template_maintenance_resume}[index]()
         for row in (manifest,marker,receipt):row['resume']=resume
         marker['manifest_sha256']=receipt['manifest_sha256']=c.sha256(dump(manifest))
         events[1]['result']['manifest_sha256']=marker['manifest_sha256']
     raw={'consumed.json':dump(marker),'events.jsonl':b''.join(dump(row) for row in events),
         **streams,'receipt.json':dump(receipt)}
     pins={name:(len(raw[name]),c.sha256(raw[name])) for name in fixed['pins']}
-    for module in (p,*dispatchers):monkeypatch.setattr(module,('PREVIOUS_JOURNAL_PINS','SECOND_JOURNAL_PINS','THIRD_JOURNAL_PINS')[index],pins.copy())
+    for module in (p,*dispatchers):monkeypatch.setattr(module,('PREVIOUS_JOURNAL_PINS','SECOND_JOURNAL_PINS','THIRD_JOURNAL_PINS','FOURTH_JOURNAL_PINS')[index],pins.copy())
     files={'.'+session+'.'+name:data for name,data in raw.items()}
     return files

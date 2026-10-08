@@ -86,10 +86,10 @@ def test_new_implementation_must_descend_from_independent_closure(source_git, ed
 def test_complete_new_preflight_fits_original_limit_and_rejects_old_schema():
     value = h.make_preflight('d' * 40, 'e' * 64,
         dict(boot_id='11111111-2222-3333-4444-555555555555', origins=[10**18, 10**18]),
-        'f' * 64, dict(cpu_nanoseconds=120000000000, rss_peak_bytes=536870912))
+        'f' * 64, dict(cpu_nanoseconds=120000000000, rss_peak_bytes=536870912),resume=p.maintenance_resume())
     assert len(h.canonical(value)) <= 4096
-    assert value['resume'] == d._maintenance_resume()
-    assert len(value['resume']['previous_maintenance']) == 3
+    assert value['resume_sha256'] == h.digest(h.canonical(d._maintenance_resume()))
+    assert len(p.maintenance_resume()['previous_maintenance']) == 4
     value['schema'] = 'lhq-journal-growth-preflight/v2'
     with pytest.raises(h.prior.r.ObservationError, match='GROWTH_PREFLIGHT_SCHEMA'):
         h.parse_preflight(h.canonical(value))
@@ -99,7 +99,7 @@ def test_complete_new_preflight_fits_original_limit_and_rejects_old_schema():
 def test_preflight_rejects_rehashed_wrong_top_level_authority(field):
     value = h.make_preflight('d' * 40, 'e' * 64,
         dict(boot_id='11111111-2222-3333-4444-555555555555', origins=[1, 2]),
-        'f' * 64, dict(cpu_nanoseconds=1, rss_peak_bytes=1))
+        'f' * 64, dict(cpu_nanoseconds=1, rss_peak_bytes=1),resume=p.maintenance_resume())
     value[field] = '0' * 40
     with pytest.raises(h.prior.r.ObservationError, match='GROWTH_PREFLIGHT_AUTHORITY'):
         h.parse_preflight(h.canonical(value))

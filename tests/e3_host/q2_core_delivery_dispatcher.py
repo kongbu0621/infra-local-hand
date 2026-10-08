@@ -1150,7 +1150,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments", "maintenance"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v8"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v9"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     _approved_equal(value["maintenance"],_maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -1737,6 +1737,18 @@ THIRD_JOURNAL_PINS = {
 }
 
 
+FOURTH_JOURNAL_SESSION = 'lhqjgrow-20261008a'
+FOURTH_JOURNAL_D = 'd5b34316bc93b37442eb5db64ba265b965e68379'
+# Owner-approved minimal index; retained originals and diagnostics stay private.
+FOURTH_JOURNAL_PINS = {
+    'consumed.json': (44154, 'b4b413abef4ff36527decd1731cfe92435df1a6b9c58345c64463cd46b06b557'),
+    'events.jsonl': (441, '428dc35e25d521242cdfc4485b8b14687a1d7174eedc8f858158f7d9f53d0969'),
+    'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'),
+    'pre.stderr': (685, '08b9f7866e00edbe02a64bfb05247bdd0cb1ac48064e73c1b6e8485b4ccc8dfa'),
+    'receipt.json': (9872, '85e8edadd61f3d66eb6cc6a1992a0f9d691e1c477270cabe44ce18fb75540b8f'),
+}
+
+
 def previous_journal_profiles():
     return (
         dict(session=PREVIOUS_JOURNAL_SESSION, D=PREVIOUS_JOURNAL_D, pins=PREVIOUS_JOURNAL_PINS,
@@ -1747,11 +1759,14 @@ def previous_journal_profiles():
             version=3, stage='PRE_QUIESCENCE', reason='GROWTH_SYSTEMCTL_STDERR'),
         dict(session=THIRD_JOURNAL_SESSION, D=THIRD_JOURNAL_D, pins=THIRD_JOURNAL_PINS,
             authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04', A='62666eeec9f2f28833876df3d68ce6e8b8e0af54', C='7b342ced547639f93797e849b34ed3da4915c8d3'),
-            version=4, stage='PRE_QUIESCENCE', reason='GROWTH_SYSTEMCTL_STDERR'))
+            version=4, stage='PRE_QUIESCENCE', reason='GROWTH_SYSTEMCTL_STDERR'),
+        dict(session=FOURTH_JOURNAL_SESSION, D=FOURTH_JOURNAL_D, pins=FOURTH_JOURNAL_PINS,
+            authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04', A='80c7c8eaeda0853317c679b31b0ed1f1ac13e49b', C='bb9b3c6e9b397121220c22515e4ef637d12c7297'),
+            version=5, stage='PRE_QUIESCENCE', reason='GROWTH_SYSTEMCTL_NAMES'))
 
 
 def _maintenance_resume():
-    return dict(scope='LH-Q2-CORE-TEMPLATE-CONTINUATION-v1', session='lhqjgrow-20261008a',
+    return dict(scope='LH-Q2-CORE-NAMES-CONTINUATION-v1', session='lhqjgrow-20261008b',
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -1762,7 +1777,7 @@ def _maintenance_resume():
 def _maintenance_commitments():
     return dict(previous_maintenance=_maintenance_resume(),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,'lhqjgrow-20261008a')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,'lhqjgrow-20261008b')],
         released_or_refunded=False)
 
 
@@ -1772,7 +1787,7 @@ def _validate_maintenance_resume(value):
     return value
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261008a'
+JOURNAL_SESSION = 'lhqjgrow-20261008b'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -1793,10 +1808,10 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v4'
-        and value['session']=='lhqjgrow-20261008a', 'JOURNAL_SCHEMA')
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v5'
+        and value['session']=='lhqjgrow-20261008b', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A='80c7c8eaeda0853317c679b31b0ed1f1ac13e49b',C='bb9b3c6e9b397121220c22515e4ef637d12c7297')
+        A='68cae882e3b831aaa191e7a877278ccf6ba10e2b',C='eba5023b13e42d4610533b7e7c4eede3ebd658db')
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     _validate_maintenance_resume(value['previous_maintenance'])
     check.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
@@ -1815,10 +1830,10 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261008a.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261008b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     for row in rows:
         check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261008a.'):]])
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261008b.'):]])
         check.digest(row['sha256'])
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -1879,7 +1894,7 @@ def _validate_approved_components(value):
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v8", "RECONCILIATION_SCHEMA")
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v9", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
