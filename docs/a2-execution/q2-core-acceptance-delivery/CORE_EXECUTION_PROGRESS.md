@@ -1,6 +1,24 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：EX1完成，唯一08c在间接启动入口检查停止
+## 当前：08c保持失败；提出删除通用间接启动类别阻断
+
+只读审查确认当前代码会有意拒绝cron等类别；既有准确scheduler回归 **1 passed**。
+这不是上一轮Exec解析修复未生效的证据，也不能据此断言有定时任务在写业务数据。
+不再向主线加入cron队列/脚本穷尽分析。已发布三文档A
+`7ea9aed6a4f8be6d6fee0ee549e1e02378f32672`，scope
+`LH-Q2-CORE-GUEST-STARTUP-CONTINUATION-v1` / GS1–GS3，**PROPOSED / OPEN**。
+
+[方案](../q2-core-guest-startup-continuation/REQUIREMENTS.md)只删除两个入口的通用类别
+阻断及其专用模板编码判定；以明确的guest管理前提承接该部分，准确标记NOT_PERFORMED。
+保留直接业务路径、声明unit/启动边、domain/cgroup、当前writer、持久证据和目标维护保护。
+独立审查核对三层范围、双方覆盖绑定、完整历史和七代费用；没有新源码/配置/caller。
+
+下一步只有Owner对准确A及覆盖缩减作一次明确决定。若批准，先独立C，再完整实现两侧、
+静态核验/验证/发布/冻结，一次08d维护成功后接原H01→Q4→H11；范围内不逐项重新审批。
+08c和所有旧窗口仍已消费，不能从本提案推导重试或现场权限。实际是否满足guest前提须
+本地执行者基于既有管理交接确认，云端不替用户证明；相反证据或未知即停止。
+
+## 最近现场：EX1完成，唯一08c在间接启动入口检查停止
 
 [准确返回](../Q2_CORE_EXEC_CONTINUATION_FIELD_20261008.md)：Owner批准A
 `5b14123206ced8117374d3fd2ef84b9f38784db3` 的EX1–EX3；准确B及独立C
