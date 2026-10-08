@@ -1,6 +1,25 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：修正 systemctl 多命令属性解析，08b失败状态保持
+## 当前：EX1完成，唯一08c在间接启动入口检查停止
+
+[准确返回](../Q2_CORE_EXEC_CONTINUATION_FIELD_20261008.md)：Owner批准A
+`5b14123206ced8117374d3fd2ef84b9f38784db3` 的EX1–EX3；准确B及独立C
+`987c77f6eb16e7ca41d8b1d4ccd7f89faf418d32` 先于直接实现子提交
+`064bdd614db4224c8c7e9d3b011af90622c11066`。D完成发布、准确首次CI 3/3、独立安装、
+静态输入/原件核验及冻结。Linux6960 passed/89 skipped，独立安装94 checks/292 commands。
+完整五代历史保留，708 B短预检样本低于原4096 B上限，全部原准入和期限保持。
+
+EX2 `lhqjgrow-20261008c` 普通预检通过，同窗execute创建marker、发一次SSH后停止。
+已有guest报告为 `PRE_QUIESCENCE / GROWTH_INDIRECT_STARTUP_UNVERIFIED`，指向定时任务类
+间接启动入口；并不证明有任务正在写入镜像。动作空，无关机token，未备份、扩容或重启。
+没有追加查询或修改检查，remote_exit保持UNKNOWN。EX2为CONSUMED/FAILED；EX3及
+H01/Q4/H11均NOT_RUN，未生成或发送真实核心包。
+
+六代消费、完整费用、原件及UNKNOWN保持；本次五件原件和索引私有，获批旧08b最小索引
+已公开。私有gate终止，不能重放任何caller或单独执行条件核心批。没有重试、补采、清理、
+恢复或扩展支线，本轮不自动申请另一窗口。以下“下一步”等只描述历史，不构成当前入口。
+
+## 先前：修正 systemctl 多命令属性解析，08b失败状态保持
 
 离线检查确认 v255 的 systemctl 对每条 Exec 命令分别输出同名属性；原解析器把合法
 多条命令当成重复标量拒绝。现仅六个既有 Exec 属性可多行，按原顺序保留全部值；
@@ -12,7 +31,7 @@ FORMAT 失败直接记录同一已捕获响应的具体子条件、响应块/行
 仍未运行；本地 Codex 可先同步修复候选核对既有私料，原冻结caller和消费不变。
 本次不产生新窗口、caller或核心包。以下保留最近一次现场返回及历史。
 
-## 最近现场：NC1完成，唯一08b在systemctl响应格式校验停止
+## 先前：NC1完成，唯一08b在systemctl响应格式校验停止
 
 [准确返回](../Q2_CORE_NAMES_CONTINUATION_FIELD_20261008.md)：Owner批准A
 `68cae882e3b831aaa191e7a877278ccf6ba10e2b` 的NC1–NC3；准确B及独立C

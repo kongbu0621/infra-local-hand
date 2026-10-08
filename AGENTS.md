@@ -263,7 +263,8 @@ The proposal preserves the existing bounded history-digest preflight and all che
 failed generations and one new `lhqjgrow-20261008c`, and conditionally continues the same unissued
 `lhqcore-20261007a`. Six full maintenance obligations require 7776 MiB/2220 inodes per relevant
 device; with original core capture, 7840 MiB/2236. All single-attempt limits and deadlines remain.
-There is no new implementation, caller, package or field window for this scope.
+At C, no implementation, caller, package or field window had been issued for this scope;
+the execution record below supersedes that historical status.
 
 Owner explicitly approves these documents and sanitized records for publication to
 `kongbu0621/infra-local-hand` main, and disclosure of only the old 08b five-original
@@ -280,6 +281,26 @@ freeze before EX2. EX2 permits one 08c maintenance window; EX3 permits the origi
 only after full maintenance-original verification. No per-substep reapproval is required.
 Existing NC closure and consumed-window restrictions remain. R, direct source/integrity,
 Owner mandate/authority, no exceptions and material-change rules remain unchanged.
+
+The [EX1 freeze and EX2 return](docs/a2-execution/Q2_CORE_EXEC_CONTINUATION_FIELD_20261008.md)
+records independent C `987c77f6eb16e7ca41d8b1d4ccd7f89faf418d32` and direct implementation child
+D `064bdd614db4224c8c7e9d3b011af90622c11066`. D was published, independently installed, checked
+against retained static inputs, passed its own first-attempt CI `37722136695` on all three jobs,
+and frozen before EX2. Linux returned 6960 passed / 89 skipped; independent installation passed
+94 checks / 292 commands. Complete five-generation history is retained, with a 708 B preflight
+sample under the unchanged 4096 B ceiling. The approved old 08b five-file index is published.
+
+EX2 `lhqjgrow-20261008c` is now **CONSUMED / FAILED**. Preflight passed; same-window execute
+created the marker and made one SSH request, then stopped with `GROWTH_REPORT_MISSING`.
+The already captured guest report is `PRE_QUIESCENCE / GROWTH_INDIRECT_STARTUP_UNVERIFIED`,
+actions empty; a scheduled-task category of indirect startup was rejected by the retained checks.
+This does not prove an actual scheduled job or image write. No poweroff token, backup, growth or
+restart occurred; remote exit remains UNKNOWN. Five existing originals were protected-read,
+cross-checked and retained privately; the new 08c index is not approved for publication.
+EX3 and H01/Q4/H11 are **NOT_RUN**, with no real core package generated or sent. The private gate
+is terminal `EX2_CONSUMED_FAILED_EX3_NOT_RUN`; the pre-execution freeze and consumed callers remain.
+Do not replay 08c or any earlier caller, retry, supplement evidence, clean up, recover or start side
+work. All old windows, full obligations and UNKNOWNs remain; no further window is automatically requested.
 
 ## Publication and GX10 handoff
 

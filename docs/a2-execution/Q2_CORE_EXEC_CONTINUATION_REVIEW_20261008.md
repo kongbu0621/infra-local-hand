@@ -46,3 +46,10 @@ host源66421 B、guest源61275 B均低于98304 B。相对输入修复e2d27ca，g
 原件和完整静态来源核验已经完成。两个新私有caller已准备但未执行，旧caller和
 冻结副本保持原样。必须先完成新D发布、准确CI、安装、来源/原件及全部大小上限，
 再冻结同一D；此前EX2/EX3均NOT_RUN，无现场预检、SSH或真实核心包。
+
+## 后续准确冻结及单次返回
+
+上述为实现提交时的历史状态。后续准确D `064bdd614db4224c8c7e9d3b011af90622c11066`
+完成首次CI 3/3、独立安装、静态输入及原件检查和冻结。唯一08c维护已消费且失败，
+已有报告为 `PRE_QUIESCENCE / GROWTH_INDIRECT_STARTUP_UNVERIFIED`，未开始维护动作；
+EX3及H01/Q4/H11未执行。详见[准确冻结和现场记录](Q2_CORE_EXEC_CONTINUATION_FIELD_20261008.md)。
