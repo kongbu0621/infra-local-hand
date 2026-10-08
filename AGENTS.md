@@ -206,7 +206,8 @@ exceeding its unchanged 4096 B ceiling. The proposal replaces only that duplicat
 with a fixed SHA-256 reference to the fully validated history, retains complete manifest/originals
 and all checks, binds one new `lhqjgrow-20261008b`, and conditionally continues the original unissued
 `lhqcore-20261007a`. Five full maintenance obligations require 6480 MiB/1850 inodes; with original
-core capture, 6544 MiB/1866. No implementation, caller or new window has been issued.
+core capture, 6544 MiB/1866. At C, no implementation, caller or new window had been issued;
+the execution record below supersedes that historical status.
 
 Owner explicitly approves this exact scope, publication of these documents/sanitized records to
 `kongbu0621/infra-local-hand` main, and disclosure of only the old 08a five-original
@@ -224,6 +225,26 @@ All original checks, single-attempt limits, deadlines and consumed TC2 restricti
 raise limits, omit history or replay old windows. Failure stops without retry, supplementary collection,
 cleanup, recovery or side branches. Closure alone proves neither readiness nor success; material
 scope changes still follow R. Earlier pending labels describe pre-approval facts, not a second Gate.
+
+The [NC1 freeze and NC2 return](docs/a2-execution/Q2_CORE_NAMES_CONTINUATION_FIELD_20261008.md)
+records independent C `eba5023b13e42d4610533b7e7c4eede3ebd658db` and direct implementation child
+D `dc538b9034f00c635344defae57b7054319c2184`. D was published, independently installed, verified
+against retained static inputs, passed its own first-attempt CI `37714259488` on all three jobs,
+and frozen before NC2. Linux returned 6740 passed / 89 skipped; independent installation passed
+94 checks / 292 commands. Full four-generation history is preserved; the bounded preflight
+sample is 708 B under the unchanged 4096 B limit. The approved old 08a five-file index is published.
+
+NC2 `lhqjgrow-20261008b` is now **CONSUMED / FAILED**. Preflight passed; same-window execute
+created the marker and made one SSH request, then stopped with `GROWTH_REPORT_MISSING`.
+The already captured guest report is `PRE_QUIESCENCE / GROWTH_SYSTEMCTL_FORMAT`, actions empty.
+Its system-show response failed the key/value-format or key-uniqueness check; the exact subcondition
+and underlying cause are not present in retained output. No supplemental query is authorized.
+No poweroff token, backup, growth or restart occurred; remote exit remains UNKNOWN. Five existing
+originals were protected-read, cross-checked and retained privately, including their private index.
+NC3 and H01/Q4/H11 are **NOT_RUN**, with no real core package generated or sent. The private gate
+is terminal `NC2_CONSUMED_FAILED_NC3_NOT_RUN`; the pre-execution freeze and consumed callers remain.
+Do not replay 08b or any earlier caller, retry, supplement evidence, clean up, recover or start side
+work. All old windows, full obligations and UNKNOWNs remain; no further window is automatically requested.
 
 ## Publication and GX10 handoff
 

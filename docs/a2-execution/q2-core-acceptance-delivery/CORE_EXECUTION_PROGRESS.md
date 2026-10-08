@@ -1,6 +1,24 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：修正 Names 显示格式解析，现场仍停在已消费08a
+## 当前：NC1完成，唯一08b在systemctl响应格式校验停止
+
+[准确返回](../Q2_CORE_NAMES_CONTINUATION_FIELD_20261008.md)：Owner批准A
+`68cae882e3b831aaa191e7a877278ccf6ba10e2b` 的NC1–NC3；准确B及独立C
+`eba5023b13e42d4610533b7e7c4eede3ebd658db` 先于直接实现子提交
+`dc538b9034f00c635344defae57b7054319c2184`。D完成发布、准确首次CI 3/3、独立安装、
+静态输入/原件核验及冻结。Linux6740 passed/89 skipped，独立安装94 checks/292 commands。
+短预检仅摘要绑定重复resume，完整四代历史和所有原件保留；708 B样本低于原4096 B上限。
+
+NC2 `lhqjgrow-20261008b` 普通预检通过，同窗execute创建marker、发一次SSH后停止。
+已有guest报告为 `PRE_QUIESCENCE / GROWTH_SYSTEMCTL_FORMAT`，动作空，无关机token，
+未备份、扩容或重启。具体格式失败子条件没有保留，不补采；remote_exit保持UNKNOWN。
+NC2为CONSUMED/FAILED；NC3及H01/Q4/H11均NOT_RUN，未生成或发送真实核心包。
+
+五代消费、完整费用、原件及UNKNOWN保持；本次五件原件和索引私有，获批旧08a最小索引
+已公开。私有gate终止，不能重放任何caller或单独执行条件核心批。没有重试、补采、清理、
+恢复或扩展支线，本轮不自动申请另一窗口。以下“下一步”等只描述历史，不构成当前入口。
+
+## 先前：修正 Names 显示格式解析，现场仍停在已消费08a
 
 最新现场仍为下述 TC2 失败；没有再次查询或运行维护。
 已用本机 systemd v255 的原生 `shell_maybe_quote(..., 0)` 确认：Names 数组会给含反斜杠
