@@ -51,3 +51,20 @@ unit/cgroup 的原 intent；需分别核对其摘要、单位名称重算、slot
 维护。没有重复检索旧归档、重试、清理、安装、关机、备份、扩容或重启。本轮没有
 源码改动、新 reader、A/B/C、维护窗口或核心包。08d 与六旧窗口保持已消费，旧原件及
 UNKNOWN 不变；GS3/H01/Q4/H11 仍 NOT_RUN。此单次查询交接已完成，不得重发。
+
+## 后续源码复核：已有 C10 可提供配对摘要
+
+公开历史索引已固定 C10/prior_input_report 的长度 9632 B 和 SHA-256
+`0183b985fdab6a755e96c916617484e274f38e284e575dcb298349d44ccba1e9`，归档说明提供
+私有 `evidence-index.json` 按摘要定位接口。无需再次泛查七份归档或读取 guest。
+当前 `q2_host_export.py` 与固定 C11 字节完全相同：20208 B，SHA-256
+`a5265e00222eb9cea4a9675627650c4a51adeac69c6383732a3aac0e3a3b8deb`。
+其 config 先核对 runtime 的 manifest 摘要与原 manifest 字节，再将两者摘要写入
+同条 `facts.files`；报告同时保留对应 original/revision 的 query_parent 来源。
+
+因此下一步已明确为[固定 C10 的一次离线绑定核对](CORE_UNIT_CURRENT_TASK_20261008.txt)：
+若当前 runtime 摘要唯一匹配 C10 的某条 config，取同条 manifest 摘要，与已捕获票据
+六项身份重算完整名称；再核对同配置的 parent，形成准确声明候选和接线差额。
+当前云端未持有该私有对象或当前 argv，尚未确认匹配成功。C10 存在不等于该条一定
+对应本次单元，也不补齐原 Manifest 的全部 slot/deadline 校验或当前 cgroup 证明。
+此处只提出有准确来源的离线核对，不改先前读取事实、路径判断、源码或维护准入。

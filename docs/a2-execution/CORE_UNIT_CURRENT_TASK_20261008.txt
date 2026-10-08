@@ -4,7 +4,49 @@
 准备基线：3eecd47a8f89cf18a65ea320bf325a45a8569976，包含诊断 fd6f2a6。
 状态：本地已完成本任务唯一一次读取及离线分析，不得重发。
 结果见同目录 Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md；不构成程序 Gate 关闭或维护许可。
-下文保留原任务范围及停止条件。
+下一步是下节固定 C10 原件的离线绑定核对，尚未执行；随后保留原读取任务及停止条件。
+
+当前追加交接：用已归档 C10 配对摘要补齐 Q1 身份（零现场命令）
+准备基线：7d720868bf01dea8b382d9d9216704069c5cfb92。
+1. 当前 stdout 已提供准确 runtime SHA、规范 ticket 与实际 Id，不重发 show。
+   从现有 q2-history-evidence-20260927.bundle 对应私有 evidence-index.json，按唯一
+   摘要定位 C10/prior_input_report：9632 bytes，SHA-256
+   0183b985fdab6a755e96c916617484e274f38e284e575dcb298349d44ccba1e9。
+   公开 pin 在 evidence/q2-history-20260927/manifest.json；沿用其归档来源核验。
+   不猜私有成员名，不递归搜索所有包，不重新运行 exporter。对象不可用就报准确缺项。
+2. 先检查长度和 SHA，再用既有 q2_host_export.document 在内存解析。核对 schema
+   local-hand-q2-host-export/v1、scope READ_ONLY_SELECTED_Q1_HOST_HANDOFF、status
+   EXPORTED 和 source_config_status Q1_EVIDENCE_ONLY。checks 中 original_config /
+   revision_config 各须唯一，候选须 status=OBSERVED、facts.status=
+   Q1_CONFIG_BYTES_LINKED_ONLY。保留 false 的 independent_authority_proven 和
+   q2_reusable_allocation，不把字节关联提升为独立权限或可复用额度证明。
+3. 只选 facts.files['runtime.json'] 与当前 ExecStart 的 runtime SHA 完全相等的
+   唯一一条 config；manifest_digest 只取同一条 facts.files['manifest.json']。
+   无匹配、多匹配、字段/摘要/来源冲突均报出，不跨 original/revision 两行拼接。
+   固定 C11 exporter（20208 bytes，SHA-256
+   a5265e00222eb9cea4a9675627650c4a51adeac69c6383732a3aac0e3a3b8deb）已验证
+   runtime.manifest_digest 等于原 manifest 字节摘要，才生成该同条配对记录。
+4. 使用已捕获 ticket 的六项身份，加上述 manifest_digest，按 supervision.bind_query
+   的原顺序 [manifest_digest, slot_ref, generation, request_id, allocation_digest,
+   execution_id, phase] 作紧凑 JSON 数组的 SHA-256，再组成 lhq-<摘要>.service。
+   结果必须与已捕获的实际 Id 和请求名逐字相等。保留规范 base64 和字段类型校验；
+   这是本地内存计算，不新增仓库程序或测试框架。没有完整 Manifest/intent 原件时，
+   不伪造对象调用 decode_ticket / _validate_intent，也不把 Q2 preparation manifest
+   冒充 Q1 manifest。若已有准确原件，优先用现有完整验证器验证真实对象。
+5. 若名字重算匹配，同次核对这条 config 对应的唯一 original_query_parent 或
+   revision_query_parent 的 OBSERVED facts.path，及同条 boot/source 来源；不能借用
+   另一配置的 parent，保留 facts.q2_parent_admitted=false。路径必须严格为
+   /sys/fs/cgroup/<query_slice>，其中 query_slice 符合原 lhq[a-z0-9]{1,40}\.slice。
+   去固定 /sys/fs/cgroup 前缀取得逻辑 /<query_slice>，加准确 unit 形成声明候选的
+   control_group，不能因当前字段为空就填 null；这不证明当前 cgroup 已验证。
+   与原 domain 清单核对；parent 缺失、boot/来源冲突或不在已知域就明确列差额。
+6. 本轮一次完成 runtime 配对、七项名称绑定和 parent 声明候选核对，并给出唯一
+   接线差额。私有候选包含准确 name/control_group、C10 来源行和摘要、当前观察引用；
+   不改原冻结清单、旧失败或准入结果。原 quiet、启动边、cgroup、writer 和容量检查
+   保持。摘要配对不证明原 manifest 的所有 slot/deadline 条件，也不证明当前静止。
+   若只完成名称关联就按实际范围报告，禁止提前声称完整请求已验证或现场已修复。
+本节不用 SSH、guest 文件读取、安装或维护。输出脱敏结论和具体声明接线差额；无需
+重复泛查旧档、等待另一次现场日志或另建诊断 Gate。
 
 目的
 旧材料核对已完成，不再重复搜索同批归档。当前下一步需要确认这一个准确单元的当前
