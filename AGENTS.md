@@ -1,6 +1,27 @@
 # Execution guidance
 
-## Current next step: exact Q1 declaration and core continuation (2026-10-08)
+## Current proposal: declared-target startup checks and core continuation (2026-10-08)
+
+QI1 is complete, but consumed QI2/08e was blocked by a different undeclared service.
+Do not repeat the one-unit capture/C10 lookup or append names one at a time as new side work.
+The [combined scope-reduction proposal](docs/governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_BASELINE.md)
+is **PROPOSED / OPEN**, A `2b13dd653ca19eaaf46a18e6ffc3f447b62eee59`, tree
+`c686e5dbf5454f682603f9b7575cc4292402be34`, scope
+`LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-v1`, DS1–DS3. Its
+[requirements](docs/a2-execution/q2-core-declared-startup-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-declared-startup-continuation/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-declared-startup-continuation/IMPLEMENTATION_PLAN.md)
+propose removing full guest unit/template startup enumeration while retaining the exact 19/7/7
+declarations, declared service/domain/cgroup checks, current process/writer and data protections.
+This reduces observation of unknown automatic startup and requires explicit acceptance of that
+coverage and the management premise; it is not an equivalent repair or proof the new unit is harmless.
+There is no new Owner B, CLOSED C, implementation or field action. R and its adoption rules remain.
+The proposed batch covers both consumers before one new 08f maintenance and conditional original
+07a H01/Q4/H11. Eight prior windows remain consumed, QI3 is unavailable after failed QI2, and all
+core cases remain NOT_RUN. Do not add scanners, collect new field evidence, replay callers, clean up,
+change unapproved runtime checks or start a new window. Scope closure must precede new code.
+
+## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
 identifies one missing Q1 service and its parent slice. Do not repeat either evidence task.

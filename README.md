@@ -3,8 +3,18 @@
 跨平台受控本地执行器，为 AI 与自动化系统提供统一的任务、结果和证据接口。
 
 **当前阶段（2026-10-08）：核心现场链尚未跑通，journal 扩容未完成。**
-最新 GS2 单次维护 `lhqjgrow-20261008d` 已消费且失败；GS3 与 H01/Q4/H11 均未执行。
-见[准确冻结及现场返回](docs/a2-execution/Q2_CORE_GUEST_STARTUP_CONTINUATION_FIELD_20261008.md)。
+最新 QI1 已完成：准确 D `fa30146` 首次 CI 3/3，19/7/7 声明已在现场生效。
+单次 QI2 `lhqjgrow-20261008e` 被另一服务的路径引用检查阻断，已消费且失败；
+没有关机、备份、扩容，QI3 与 H01/Q4/H11 仍未执行。
+见[准确冻结及现场返回](docs/a2-execution/Q2_CORE_Q1_BINDING_FIELD_20261008.md)。
+
+当前[合并方案 A `2b13dd6`](docs/governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_BASELINE.md)
+停止全量服务/模板启动枚举，只查声明目标；保留静止、domain/cgroup、当前进程/writer
+和数据保护。它减少未知自动启动观察，需要明确接受该取舍与管理前提，不能称为等价
+修复。方案为 PROPOSED/OPEN，尚未实现；批准后一次完成两侧接线、一次新 08f 维护，
+成功后直接接原 07a 核心批。八旧窗口不重放，不再逐个搜集服务或新增诊断支线。
+
+以下为 GS/QI 来源定位及前次方案沿革，不作为重放入口。
 
 Owner 批准准确 A `7ea9aed` 的 GS1–GS3，并确认 guest 管理前提和间接启动覆盖缩减。
 准确 B、独立 C 已先行登记；执行候选 `3417965` 已发布、验证并冻结，首次 CI 3/3 通过。
@@ -33,11 +43,10 @@ Linux 7133 项通过、89 项跳过，独立安装 94 项检查通过；早期 W
 准确来源和差额已留存；原冻结输入未改，当前 cgroup、完整 Manifest 校验和维护准入
 仍未完成。该[离线交接](docs/a2-execution/CORE_UNIT_CURRENT_TASK_20261008.txt)无需重做。
 
-已将唯一下一步合为[准确方案 A `e66b1b5`](docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)：
+前次接续采用[准确方案 A `e66b1b5`](docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)：
 采用已核对来源，补齐准确服务及父域，维护/核心两侧一次接齐；新 08e 维护成功后直接
-接原 07a 的 H01→Q4→H11。当前为 PROPOSED/OPEN，尚未批准、实现或执行；保留所有
-原校验，不增加扫描/诊断支线，不再次搜证。按仓库既有 R，需要 Owner 对该准确批次
-及来源采用作一次决定；方案内不逐子步骤重复审批。
+接原 07a 的 H01→Q4→H11。该 A 随后已批准、实现并执行一次，准确结果见页面顶部；
+历史 OPEN 标签不表示待重复批准。原 GS/QI 保证与旧失败均保留，不改作 DS 保证下的成功。
 
 六旧维护窗口与本次消费、原件、完整费用和 UNKNOWN 保留。[获准旧 08c 五件最小索引](docs/a2-execution/Q2_CORE_EXEC_ORIGINALS_INDEX_20261008.md)
 已公开；新 08d 原文及索引保持私有。所有旧交接均不重放，不自动申请下一窗口。

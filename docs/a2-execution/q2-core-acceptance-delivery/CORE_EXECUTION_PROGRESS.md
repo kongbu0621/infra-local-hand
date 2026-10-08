@@ -1,6 +1,23 @@
 # Core execution progress and local Codex handoff — 2026-10-08
 
-## 当前：GS1 完成，唯一 08d 在未声明业务单元检查停止
+## 当前：QI1 完成，08e 遇到另一服务；提出收窄维护启动覆盖
+
+本地已记录准确 QI Owner B、独立 C `61fae1d`，完成 D `fa30146`、首次 CI 3/3、
+独立安装、静态来源/大小核对和冻结。实际清单 19/7/7，前次 Q1 漏声明修复已生效。
+[唯一 08e 返回](../Q2_CORE_Q1_BINDING_FIELD_20261008.md)仍为 PRE_QUIESCENCE /
+GROWTH_UNDECLARED_BUSINESS_UNIT，涉及另一服务 ExecStart。没有关机、备份、扩容或
+核心执行；QI2 CONSUMED_FAILED，QI3/H01/Q4/H11 NOT_RUN。新服务状态未证明。
+
+下一步不再逐个加声明：[准确 A `2b13dd653ca19eaaf46a18e6ffc3f447b62eee59`](../../governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_BASELINE.md)
+提出 DS1–DS3 一批收窄：取消全量单元/模板枚举，仅核对声明目标，保留全部当前进程、
+writer、domain/cgroup、数据和目标维护保护。未知自动启动观察减少，由明确接受的
+管理前提承担；准确报告 NOT_PERFORMED，不冒充等价修复。
+
+当前只有已审查方案，尚无 DS Owner B/C、运行或测试改动及新窗口。批准后先完整
+实现验证两侧，再一次 08f，完整成功后原 07a H01→Q4→H11。八旧消费/原件/UNKNOWN
+全部保留，不追加现场查询或诊断平台，不重试或清理。其它现场准入仍未证明。
+
+## 历史：GS1 完成，唯一 08d 在未声明业务单元检查停止
 
 Owner 已批准 A `7ea9aed6a4f8be6d6fee0ee549e1e02378f32672`，准确 B 与独立 C
 `001bd4f7baedf115ce67feba87a21d8e259c8d1d` 先于实现登记。候选
@@ -57,7 +74,7 @@ manifest_digest 及准确历史来源；后续 C10 核对结果见下节，runti
 cgroup 及维护准入仍未证明；源码、冻结输入和旧消费均未改，H01/Q4/H11 仍 NOT_RUN。
 不再重复取 C10、查询现场或重放维护；详见[本地结果](../Q2_CORE_UNIT_CURRENT_REVIEW_20261008.md)。
 
-### 当前待决：一个来源接线及核心接续批次
+### 先前 QI 提案（后已批准执行，结果见顶部）
 
 [准确 A `e66b1b5524f22d60c810dffac59ca418c5ad4236`](../../governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)
 已形成，scope `LH-Q2-CORE-Q1-BINDING-CONTINUATION-v1` / QI1–QI3，PROPOSED/OPEN。
