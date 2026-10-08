@@ -5,7 +5,7 @@
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
 identifies one missing Q1 service and its parent slice. Do not repeat either evidence task.
 The [single combined proposal](docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_BASELINE.md)
-is **PROPOSED / OPEN**, exact A `e66b1b5524f22d60c810dffac59ca418c5ad4236`, tree
+is **CLOSED for QI1–QI3 only**, exact A `e66b1b5524f22d60c810dffac59ca418c5ad4236`, tree
 `21d63b7e40a5e3017b1a35fe159e90fd50bdf712`, scope
 `LH-Q2-CORE-Q1-BINDING-CONTINUATION-v1`, QI1–QI3. Its
 [requirements](docs/a2-execution/q2-core-q1-binding-continuation/REQUIREMENTS.md),
@@ -13,11 +13,19 @@ is **PROPOSED / OPEN**, exact A `e66b1b5524f22d60c810dffac59ca418c5ad4236`, tree
 [plan](docs/a2-execution/q2-core-q1-binding-continuation/IMPLEMENTATION_PLAN.md) cover only
 fixed-source adoption, the exact service/domain/cgroup increment, complete producer/consumer
 wiring, one new 08e maintenance and conditional original 07a H01/Q4/H11. No current check is relaxed.
-There is no Owner B, CLOSED C, implementation or new execution for this proposal. R and its
-adoption rules remain unchanged. All seven prior windows remain consumed; GS3 is not independently
-available. Current core cases are still NOT_RUN. This is one reviewable batch, not a new scanner,
-diagnostic framework or permission request for each implementation substep. Existing source pins,
-private evidence and original installation/SSH are retained. Scope closure must precede new code.
+Owner B is retained in [the exact decision](docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-Q1-BINDING-CONTINUATION-CLOSURE-20261008-01`, including the exact preceding
+request and reply. Owner accepts A's fixed-source adoption and authorizes publication of the three
+documents, sanitized records and the verified old 08d five-file minimal index to main. This separate
+bookkeeping-only C contains no implementation; new D must descend from it. Do not squash C with D.
+A's three files and historical OPEN labels remain unchanged. R and its adoption rules remain unchanged.
+All seven prior windows remain consumed; GS3 is not independently available. At C, implementation and
+the new 08e window are NOT_ISSUED and core cases are NOT_RUN. QI1 must complete both consumers,
+source/index verification, exact D CI, independent installation, original limits and freezing before
+QI2; only full maintenance verification permits QI3. Current capture/Q1 raw and new 08e index stay
+private. This is one approved batch, not a scanner or diagnostic framework; scope substeps require
+no repeated approval. Existing source pins, private evidence and installation/SSH are retained.
+Failure stops without retry, supplementary collection, cleanup, recovery, rollback or another window.
 
 ## Current Owner direction: core only (2026-10-07)
 
