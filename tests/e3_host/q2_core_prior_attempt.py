@@ -1112,8 +1112,11 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
         A=c.GS_BASELINE['commit'],C=c.GS_CLOSURE['commit'])
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
-    from e3_host.q2_journal_growth_guest import validate_startup_assurance
-    validate_startup_assurance(value['guest_startup_assurance'])
+    require(type(value['guest_startup_assurance']) is dict
+        and c.canonical(value['guest_startup_assurance']) == c.canonical(dict(
+            mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
+            no_undeclared_business_startup=True,continuous_exclusion_proven=False)),
+        'GUEST_STARTUP_PREMISE')
     validate_maintenance_resume(value['previous_maintenance'])
     c.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
     for item in implementation.values(): c.commit(item)

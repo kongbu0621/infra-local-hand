@@ -1,5 +1,6 @@
 """Synthetic boundary tests; none is retained-source or field acceptance."""
 import base64
+import builtins
 import copy
 from dataclasses import replace
 import hashlib
@@ -171,6 +172,17 @@ def test_rehashed_policy_weakening_does_not_pass_template(artifact, change):
 def test_noncanonical_and_ambiguous_json_is_rejected(raw):
     with pytest.raises(a.c.ContractError):
         a.validate(raw)
+
+
+def test_projection_artifact_validation_does_not_import_linux_runtime(monkeypatch):
+    original = builtins.__import__
+    def guarded(name, *args, **kwargs):
+        if name in {'fcntl', 'pwd', 'resource'} or name.endswith('q2_journal_growth_guest'):
+            pytest.fail('portable artifact validation imported Linux runtime: ' + name)
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', guarded)
+    value, _policy_raw, _tokens = artifact.__wrapped__(monkeypatch)
+    assert a.validate(a.c.canonical(value, newline=True)) == value
 
 
 def test_production_pins_reject_arbitrary_input_before_any_legacy_interpreter(monkeypatch):

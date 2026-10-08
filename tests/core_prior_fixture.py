@@ -177,10 +177,11 @@ def diagnostic_files(monkeypatch):
 
 def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
-    from e3_host.q2_journal_growth_guest import guest_startup_assurance
     return dict(schema='local-hand-q2-core-journal-transition/v7',
         authority=dict(R=c.RULE['commit'],A=c.GS_BASELINE['commit'],C=c.GS_CLOSURE['commit']),
-        guest_startup_assurance=guest_startup_assurance(),
+        guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
+            indirect_startup_observation='NOT_PERFORMED',
+            no_undeclared_business_startup=True,continuous_exclusion_proven=False),
         previous_maintenance=p.maintenance_resume(),implementation=copy.deepcopy(implementation),session=p.JOURNAL_SESSION,nonce='a'*64,
         access_mode='TRUSTED_SINGLE_ADMIN',host_writer_observation='NOT_PERFORMED',
         continuous_exclusion_proven=False,input_sha256='b'*64,manifest_sha256='c'*64,

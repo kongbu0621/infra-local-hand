@@ -54,3 +54,18 @@ host 源 67956 B、guest 源 61741 B，均低于各自 98304 B。
 完成。两个新私有 caller 已准备，均未调用；必须完成这些验证后冻结同一个 D，才可
 进入唯一 GS2。GS2 全部成功原件经验证后才允许 GS3；失败即保留并停止。当前未消费
 08d，没有 SSH、维护动作或真实核心包。旧 caller、旧消费和原件保持。
+
+## 首个发布候选的跨平台失败修复
+
+首个 D `1086aa15f2e74ee6012c6ee0d40876742ff90990` 的首次 CI
+[37731069584](https://github.com/kongbu0621/infra-local-hand/actions/runs/37731069584)
+中，Windows 源码组 **1782 passed / 1352 skipped / 26 errors**：纯原件投影校验
+及共用合成 fixture 错误导入 Linux guest runtime，触发缺少 fcntl。未绕过 Windows
+测试或重跑该次 CI；未冻结或执行该 D。
+
+修复使纯投影校验在原模块内执行相同的固定四字段 canonical 严格比较，合成 fixture
+独立声明相同对象，消除 Linux runtime 导入依赖。新测试禁止导入 fcntl/pwd/resource
+及 guest runtime，验证完整 artifact 仍通过。局部组 **166 passed / 1 failed**，
+唯一失败是该新测试误把 fixture 的 policy 字典作为序列化输入；修正测试输入后
+该项 **1 passed**。全部首次日志保留，现场窗口仍未消耗。后续修复 D 仍须自身首次
+CI、独立安装、准确来源/大小核对和冻结，不能沿用旧 D 的验证身份。
