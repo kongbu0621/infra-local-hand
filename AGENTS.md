@@ -246,10 +246,10 @@ is terminal `NC2_CONSUMED_FAILED_NC3_NOT_RUN`; the pre-execution freeze and cons
 Do not replay 08b or any earlier caller, retry, supplement evidence, clean up, recover or start side
 work. All old windows, full obligations and UNKNOWNs remain; no further window is automatically requested.
 
-### Proposed single continuation after Exec property repair
+### Authorized single continuation after Exec property repair
 
-Scope `LH-Q2-CORE-EXEC-CONTINUATION-v1`, EX1–EX3, is **OPEN / NOT APPROVED**.
-Proposed exact A `5b14123206ced8117374d3fd2ef84b9f38784db3`, tree
+Scope `LH-Q2-CORE-EXEC-CONTINUATION-v1`, EX1–EX3, is **CLOSED for EX1–EX3 only**.
+Approved exact A `5b14123206ced8117374d3fd2ef84b9f38784db3`, tree
 `74e55d39aea86775407b566487c5a108a2b42439`, contains only
 [requirements](docs/a2-execution/q2-core-exec-continuation/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-exec-continuation/ARCHITECTURE.md), and
@@ -265,14 +265,19 @@ failed generations and one new `lhqjgrow-20261008c`, and conditionally continues
 device; with original core capture, 7840 MiB/2236. All single-attempt limits and deadlines remain.
 There is no new implementation, caller, package or field window for this scope.
 
-These documents, registration and sanitized local review are prepared locally, not published.
-Publication to `kongbu0621/infra-local-hand` main and disclosure of only the old 08b five-original
-basename/bytes/SHA-256 index are proposed, not approved. Private attachment event
+Owner explicitly approves these documents and sanitized records for publication to
+`kongbu0621/infra-local-hand` main, and disclosure of only the old 08b five-original
+basename/bytes/SHA-256 index. Private attachment event
 `NC2-08B-ORIGINALS-INDEX-REVIEW-20261008-01` is cross-checked against the original private index
 and retained copies. Raw evidence and all other machine metadata remain private.
-No Owner B or independent C exists for EX1–EX3; the screenshot's next-step direction is not an
-exact closure. Before new implementation, obtain accurate Owner B for R/A/scope and disclosure,
-then commit independent bookkeeping-only C. Do not modify A's three bytes or squash C with D.
+Exact Owner B is retained in [the decision](docs/governance/Q2_CORE_EXEC_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-EXEC-CONTINUATION-CLOSURE-20261008-01`. This independent bookkeeping-only C
+contains only that accurate decision and CLOSED registration. A's three bytes and historical OPEN
+labels remain unchanged; D must descend from C, without squashing the two. Earlier pending labels
+describe pre-approval facts and are superseded by this retained B/C.
+EX1 authorizes the complete implementation, verification, publication, accurate candidate CI and
+freeze before EX2. EX2 permits one 08c maintenance window; EX3 permits the original core batch
+only after full maintenance-original verification. No per-substep reapproval is required.
 Existing NC closure and consumed-window restrictions remain. R, direct source/integrity,
 Owner mandate/authority, no exceptions and material-change rules remain unchanged.
 
