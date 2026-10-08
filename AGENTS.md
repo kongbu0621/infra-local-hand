@@ -54,6 +54,13 @@ This is a repair within the approved implementation, not a new scope or executio
 Old08f cannot identify the matching PID retroactively. Continue only with retained-source offline
 review; do not treat passing tests or these diagnostics as a new field window or a core PASS.
 
+The retained-source offline review is now complete in the same implementation review. The exact
+old maintenance argv matches its consumed-marker digest and contains no protected-root literal.
+The pinned historical Q1 ExecStart references a protected root and is already declared, but neither
+record identifies the live matching PID, field or cwd. Do not repeat this lookup or attribute the
+failure to the stale unit context. Repair `c1a47acb0442f874b308f317829f3c9b510abfb0` has exact
+first CI 3/3 success; this does not restore the consumed window. No further field action occurred.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
