@@ -85,11 +85,11 @@ def test_digest_wire_shape_and_exact_full_history(fault):
 
 def test_real_fourth_pins_do_not_need_any_larger_short_record():
     value=preflight();resume=p.maintenance_resume()
-    assert value['schema']=='lhq-journal-growth-preflight/v8'
+    assert value['schema']=='lhq-journal-growth-preflight/v9'
     assert len(h.canonical(value))==708
     assert value['resume_sha256']==h.digest(h.canonical(resume))
     assert h.canonical(resume)==h.canonical(d._maintenance_resume())
-    assert len(resume['previous_maintenance'])==7
+    assert len(resume['previous_maintenance'])==8
     raw=h.canonical(value)
     at_limit=raw+b' '*(4096-len(raw))
     assert h.parse_preflight(at_limit)==value

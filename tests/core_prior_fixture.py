@@ -124,10 +124,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v12', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v13', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v12',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v13',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -177,10 +177,11 @@ def diagnostic_files(monkeypatch):
 
 def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
-    return dict(schema='local-hand-q2-core-journal-transition/v8',
-        authority=dict(R=c.RULE['commit'],A=c.QI_BASELINE['commit'],C=c.QI_CLOSURE['commit']),
+    return dict(schema='local-hand-q2-core-journal-transition/v9',
+        authority=dict(R=c.RULE['commit'],A=c.DS_BASELINE['commit'],C=c.DS_CLOSURE['commit']),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
             indirect_startup_observation='NOT_PERFORMED',
+            undeclared_unit_inventory_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False),
         previous_maintenance=p.maintenance_resume(),implementation=copy.deepcopy(implementation),session=p.JOURNAL_SESSION,nonce='a'*64,
         access_mode='TRUSTED_SINGLE_ADMIN',host_writer_observation='NOT_PERFORMED',
@@ -208,7 +209,7 @@ def previous_journal_files(monkeypatch, *dispatchers):
     """Substitute only fixed byte pins for synthetic old originals; use the real relation parser."""
     dump=lambda value:c.canonical(value,newline=True)
     files={}
-    for index in range(7):
+    for index in range(8):
         files.update(_previous_journal_generation(monkeypatch,dispatchers,index))
     p.build_previous_maintenance(files)
     return files
@@ -228,9 +229,10 @@ def _previous_journal_generation(monkeypatch, dispatchers, index):
     if index==4:inputs['resume']=p.names_maintenance_resume()
     if index==5:inputs['resume']=p.exec_maintenance_resume()
     if index==6:inputs['resume']=p.guest_startup_maintenance_resume()
+    if index==7:inputs['resume']=p.q1_maintenance_resume()
     desc=dict(session=session,nonce=common['nonce'],original_boot_id='11111111-2222-3333-4444-555555555555',
         source_binding_sha256=c.sha256(dump(inputs)),window_seconds=898,change_seconds=778)
-    if index==6:
+    if index in (6,7):
         from q1_binding_fixture import inventory, identity
         assurance=dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False)
@@ -243,7 +245,7 @@ def _previous_journal_generation(monkeypatch, dispatchers, index):
         clocks=[10,20],pre_description=desc,pre_command_sha256='7'*64)
     failure=dict(schema='lhq-journal-growth-guest/v1',session=session,phase='pre',status='INCOMPLETE',
         stage=fixed['stage'],reason=fixed['reason'],actions_started=[])
-    if index==6:
+    if index in (6,7):
         failure.update(schema='lhq-journal-growth-guest/v2',guest_startup_assurance=assurance,
             diagnostic=dict(context=dict(unit=identity()[0])))
     streams={'pre.stdout':b'','pre.stderr':dump(failure)}
@@ -258,14 +260,14 @@ def _previous_journal_generation(monkeypatch, dispatchers, index):
         result=dict(manifest_sha256=marker['manifest_sha256'])),dict(step='GUEST_QUIET',state='STARTED'),
         dict(phase='pre',argv_sha256=marker['pre_command_sha256'],description_sha256=c.sha256(dump(desc)),
             window_seconds=898,change_seconds=778)]
-    if index in (1,2,3,4,5,6):
-        resume={1:p.serial_maintenance_resume,2:p.systemctl_maintenance_resume,3:p.template_maintenance_resume,4:p.names_maintenance_resume,5:p.exec_maintenance_resume,6:p.guest_startup_maintenance_resume}[index]()
+    if index in (1,2,3,4,5,6,7):
+        resume={1:p.serial_maintenance_resume,2:p.systemctl_maintenance_resume,3:p.template_maintenance_resume,4:p.names_maintenance_resume,5:p.exec_maintenance_resume,6:p.guest_startup_maintenance_resume,7:p.q1_maintenance_resume}[index]()
         for row in (manifest,marker,receipt):row['resume']=resume
         marker['manifest_sha256']=receipt['manifest_sha256']=c.sha256(dump(manifest))
         events[1]['result']['manifest_sha256']=marker['manifest_sha256']
     raw={'consumed.json':dump(marker),'events.jsonl':b''.join(dump(row) for row in events),
         **streams,'receipt.json':dump(receipt)}
     pins={name:(len(raw[name]),c.sha256(raw[name])) for name in fixed['pins']}
-    for module in (p,*dispatchers):monkeypatch.setattr(module,('PREVIOUS_JOURNAL_PINS','SECOND_JOURNAL_PINS','THIRD_JOURNAL_PINS','FOURTH_JOURNAL_PINS','FIFTH_JOURNAL_PINS','SIXTH_JOURNAL_PINS','SEVENTH_JOURNAL_PINS')[index],pins.copy())
+    for module in (p,*dispatchers):monkeypatch.setattr(module,('PREVIOUS_JOURNAL_PINS','SECOND_JOURNAL_PINS','THIRD_JOURNAL_PINS','FOURTH_JOURNAL_PINS','FIFTH_JOURNAL_PINS','SIXTH_JOURNAL_PINS','SEVENTH_JOURNAL_PINS','EIGHTH_JOURNAL_PINS')[index],pins.copy())
     files={'.'+session+'.'+name:data for name,data in raw.items()}
     return files

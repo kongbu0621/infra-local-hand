@@ -27,7 +27,7 @@ def source_git(monkeypatch):
         elif args == ["diff", "--quiet", "HEAD"]:
             pass
         elif args[0] == "rev-parse" and args[1].endswith("^{tree}"):
-            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE,h.history.c.EXEC_BASELINE,h.history.c.EXEC_CLOSURE,h.history.c.GS_BASELINE,h.history.c.GS_CLOSURE,h.history.c.QI_BASELINE,h.history.c.QI_CLOSURE)
+            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE,h.history.c.EXEC_BASELINE,h.history.c.EXEC_CLOSURE,h.history.c.GS_BASELINE,h.history.c.GS_CLOSURE,h.history.c.QI_BASELINE,h.history.c.QI_CLOSURE,h.history.c.DS_BASELINE,h.history.c.DS_CLOSURE)
                            if args[1]==item['commit']+'^{tree}')
             raw=(("0"*40 if state.changed_tree==authority['commit'] else authority['tree'])+'\n').encode()
         elif args[:2] == ["merge-base", "--is-ancestor"]:

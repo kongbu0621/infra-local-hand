@@ -68,7 +68,7 @@ BIND_FRAME_LIMIT = 4112
 # GS1 source review binds these bytes; exact candidate CI, GS2 complete
 # originals, new-boot binding and every admission remain required before use.
 # Prior 08d dispatcher pin remains in its exact historical source profile.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"d5f634b43345badc1a9fb5925faf339abceb74a139025316402ab1b2ad709a7d"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"fa7144c32d9bd6938faa038ca4df33647d8748647d6da6f8e85237236c23a72c"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

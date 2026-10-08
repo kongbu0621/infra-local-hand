@@ -87,14 +87,14 @@ def test_original_names_resume_digest_cannot_substitute_for_fifth_history():
 def test_exec_candidate_binds_exact_scope_and_new_independent_closure(source_git):
     h.growth_sources(source_git.head)
     value=preflight()
-    assert (value['A'],value['C'])==(h.QI_A,h.QI_C)
-    assert p.maintenance_resume()['scope']==p.c.QI_SCOPE
-    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261008e'
-    assert len(p.previous_journal_profiles())==7
-    assert len(p.previous_maintenance_pins())==35
-    assert len(p.maintenance_commitments()['generations'])==8
-    assert ['merge-base','--is-ancestor',h.QI_A,h.QI_C] in source_git.calls
-    assert ['merge-base','--is-ancestor',h.QI_C,source_git.head] in source_git.calls
+    assert (value['A'],value['C'])==(h.DS_A,h.DS_C)
+    assert p.maintenance_resume()['scope']==p.c.DS_SCOPE
+    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261008f'
+    assert len(p.previous_journal_profiles())==8
+    assert len(p.previous_maintenance_pins())==40
+    assert len(p.maintenance_commitments()['generations'])==9
+    assert ['merge-base','--is-ancestor',h.DS_A,h.DS_C] in source_git.calls
+    assert ['merge-base','--is-ancestor',h.DS_C,source_git.head] in source_git.calls
 
 from e3_host import q2_journal_growth_guest as g
 from test_e3_q2_journal_growth_guest_completion import description, pre_report, post_description, device
@@ -116,11 +116,13 @@ def changed_assurance(fault):
     elif fault=='observed':value['indirect_startup_observation']='CLASSIFIED'
     elif fault=='proof':value['continuous_exclusion_proven']=True
     elif fault=='extra':value['verified']=True
+    elif fault=='inventory_missing':value.pop('undeclared_unit_inventory_observation')
+    elif fault=='inventory_claim':value['undeclared_unit_inventory_observation']='COMPLETE'
     elif fault=='none':value=None
     return value
 
 
-@pytest.mark.parametrize('fault',['missing','denied','integer','observed','proof','extra','none'])
+@pytest.mark.parametrize('fault',['missing','denied','integer','observed','proof','extra','none','inventory_missing','inventory_claim'])
 @pytest.mark.parametrize('boundary',['description','pre','post','host_projection','guest_projection'])
 def test_reduced_coverage_requires_exact_confirmed_premise(originals,fault,boundary):
     bad=changed_assurance(fault)
@@ -147,7 +149,7 @@ def test_pre_and_post_require_exact_manager_coverage(user,fault):
                                  (post_report(),post_description(),g.validate_post_report)):
         if user:
             desc['domain_units'].append(dict(name='user.slice',manager='user',control_group='/user.slice'))
-            report['quiescence']['startup']['user_1100']=copy.deepcopy(report['quiescence']['startup']['system'])
+            report['quiescence']['startup']['user_1100']=dict(copy.deepcopy(report['quiescence']['startup']['system']),domains=[dict(name='user.slice',properties_sha256='b'*64)])
             if 'pre_report' in desc:
                 desc['pre_report']['quiescence']['startup']['user_1100']=copy.deepcopy(report['quiescence']['startup']['system'])
                 desc['pre_report_sha256']=report['pre_report_sha256']=g.digest(g.canonical(desc['pre_report']))
@@ -200,7 +202,7 @@ def test_pre_and_post_accept_exact_declared_manager_set(user):
     if user:
         desc['domain_units'].append(dict(name='user.slice',manager='user',control_group='/user.slice'))
         for report in (pre,post):
-            report['quiescence']['startup']['user_1100']=copy.deepcopy(report['quiescence']['startup']['system'])
+            report['quiescence']['startup']['user_1100']=dict(copy.deepcopy(report['quiescence']['startup']['system']),domains=[dict(name='user.slice',properties_sha256='b'*64)])
     post['pre_report_sha256']=g.digest(g.canonical(pre))
     post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=post['pre_report_sha256'])
     assert g.validate_pre_report(pre,desc)==pre

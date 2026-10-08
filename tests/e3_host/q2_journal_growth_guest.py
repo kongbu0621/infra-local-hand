@@ -18,21 +18,19 @@ import pwd
 from e3_host import q2_core_capacity_reader as r
 require, canonical, digest=r.require, r.canonical, r.digest
 MAX_BYTES, MAX_ENTRIES=268435456, 32768
-SESSION="lhqjgrow-20261008e"
-SCHEMA="lhq-journal-growth-input/v2"
-REPORT_SCHEMA="lhq-journal-growth-guest/v2"
+SESSION="lhqjgrow-20261008f"
+SCHEMA="lhq-journal-growth-input/v3"
+REPORT_SCHEMA="lhq-journal-growth-guest/v3"
 OLD_SIZE, NEW_SIZE=268435456, 536870912
 STREAM_LIMIT=1048576
 ENVIRONMENT={"HOME": "/root", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
  "LANG": "C", "LC_ALL": "C", "SYSTEMD_COLORS": "0",
  "SYSTEMD_PAGER": "cat"}
 UNIT_PATTERN=re.compile(r"[A-Za-z0-9_.:@\\x-]{1,240}\.(?:service|scope|slice|socket|timer|path|target)")
-UNIT_FILE_STATES=frozenset(("enabled", "enabled-runtime", "linked", "linked-runtime", "alias",
- "masked", "masked-runtime", "static", "disabled", "indirect", "generated", "transient", "bad"))
-STARTUP_ENABLED_STATES=frozenset(("enabled", "enabled-runtime", "linked", "linked-runtime", "generated"))
 def guest_startup_assurance():
  """Fixed Owner-confirmed management premise, not an observation result."""
  return dict(mode="TRUSTED_SINGLE_ADMIN", indirect_startup_observation="NOT_PERFORMED",
+ undeclared_unit_inventory_observation="NOT_PERFORMED",
  no_undeclared_business_startup=True, continuous_exclusion_proven=False)
 def validate_startup_assurance(value):
  require(type(value) is dict and canonical(value)==canonical(guest_startup_assurance()),
@@ -43,11 +41,19 @@ def validate_startup_report(value, description):
  expected={"system"}
  if any(row["manager"]=="user" for row in description["domain_units"]):expected.add("user_1100")
  require(type(value) is dict and set(value)==expected, "GROWTH_STARTUP_MANAGERS")
- for row in value.values():
-  require(type(row) is dict and set(row)=={"unit_count","related","domains","indirect_startup"}
- and row["indirect_startup"]=="NOT_PERFORMED" and type(row["related"]) is list
- and type(row["domains"]) is list, "GROWTH_STARTUP_COVERAGE")
-  r.integer(row["unit_count"])
+ for manager,row in value.items():
+  require(type(row) is dict and set(row)=={"scope","domains","undeclared_unit_inventory","indirect_startup"}
+ and row["scope"]=="DECLARED_ONLY" and row["undeclared_unit_inventory"]=="NOT_PERFORMED"
+ and row["indirect_startup"]=="NOT_PERFORMED" and type(row["domains"]) is list,
+ "GROWTH_STARTUP_COVERAGE")
+  names=sorted(item["name"] for item in description["domain_units"]
+ if item["manager"]==("system" if manager=="system" else "user"))
+  require(len(row["domains"])==len(names),"GROWTH_STARTUP_DOMAINS")
+  for item,name in zip(row["domains"],names):
+   require(type(item) is dict and set(item)=={"name","properties_sha256"}
+ and type(item["name"]) is str and item["name"]==name
+ and type(item["properties_sha256"]) is str
+ and re.fullmatch(r"[0-9a-f]{64}",item["properties_sha256"]),"GROWTH_STARTUP_DOMAINS")
  return value
 def control_limits():
  for key,value in ((resource.RLIMIT_AS,268435456),(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CORE,0)):
@@ -688,93 +694,25 @@ class GuestInventory:
   after=sorted(name for name in os.listdir("/proc") if name.isdecimal())
   require(names == after, "GROWTH_PROCESS_INVENTORY_DRIFT")
   return dict(processes=len(rows), fd_count=total_fds, sha256=digest(canonical(rows)))
- def _business_reference_diagnostic(self, raw, properties=None):
-  # Describe the existing byte-containment decision without retaining values.
-  # Only the first root and first matching property are recorded; no new query.
-  for root_index, root in enumerate(self.roots, 1):
-   root_raw=root.encode()
-   offset=raw.find(root_raw)
-   if offset < 0:
-    continue
-   result=dict(source="systemctl_cat" if properties is None else "systemctl_show",
- root_index=root_index, root_bytes=len(root_raw), root_sha256=digest(root_raw),
- content_bytes=len(raw), content_sha256=digest(raw), byte_offset=offset,
- property=None, property_bytes=None, property_sha256=None, property_byte_offset=None,
- line_index=raw.count(b"\n", 0, offset) + 1 if properties is None else None)
-   if properties is not None:
-    for key in self.SHOW:
-     field=canonical({key: properties[key]})
-     field_offset=field.find(root_raw)
-     if field_offset >= 0:
-      result.update(property=key, property_bytes=len(field), property_sha256=digest(field),
- property_byte_offset=field_offset)
-      break
-   return result
-  return None
- def template_startup(self, name, state, *, user_uid=None):
-  # Templates have no runtime Unit object. cat resolves their fragment and drop-ins
-  # without inventing an instance or changing the manager's configuration.
-  raw=self.ctl(["cat", "--", name], user_uid=user_uid)
-  self.context=dict(manager="user_1100" if user_uid else "system", unit=name)
-  require(raw and len(raw) <= STREAM_LIMIT and b"\0" not in raw and raw.startswith(b"# /"),
- "GROWTH_TEMPLATE_CONTENT")
-  text=raw.decode("utf-8", "strict")
-  if any(root.encode() in raw for root in self.roots):
-   self.context["business_reference_diagnostic"]=self._business_reference_diagnostic(raw)
-   raise r.ObservationError("GROWTH_UNDECLARED_BUSINESS_UNIT")
  def startup_manager(self, *, user_uid=None):
-  expected={row["name"] for row in self.description["expected_units"]}
-  domain_names={row["name"] for row in self.description["domain_units"]}
-  names, templates=set(), {}
-  kinds="--type=service,scope,slice,socket,timer,path,target"
-  for arguments in (["list-units", "--all", "--plain", "--no-legend", kinds],
- ["list-unit-files", "--no-legend", kinds]):
-   for line in self.ctl(arguments, user_uid=user_uid).decode("utf-8", "strict").splitlines():
-    fields=line.split()
-    require(fields and UNIT_PATTERN.fullmatch(fields[0]), "GROWTH_UNIT_LIST")
-    if arguments[0] == "list-unit-files":
-     require(len(fields) in (2, 3) and fields[1] in UNIT_FILE_STATES, "GROWTH_UNIT_FILE_STATE")
-     if fields[0].rsplit(".", 1)[0].endswith("@"):
-      require(fields[0].count("@") == 1 and fields[0] not in templates
- and fields[0] not in expected and fields[0] not in domain_names, "GROWTH_UNIT_TEMPLATE")
-      templates[fields[0]]=fields[1]
-    names.add(fields[0])
-    require(len(names) <= 2048, "GROWTH_UNIT_COUNT")
-  related, observed=[], {}
-  ordered=sorted(names - templates.keys())
-  for offset in range(0, len(ordered), 128):
-   observed.update(self.show_many(ordered[offset:offset + 128], user_uid=user_uid))
-  for name in sorted(names):
-   self.check()
-   if name in templates:
-    self.template_startup(name, templates[name], user_uid=user_uid)
-    continue
-   self.context=dict(manager="user_1100" if user_uid else "system", unit=name)
-   value=observed[name]
-   flat=canonical(value)
-   actual=value["Id"]
-   match=actual in expected or any(root.encode() in flat for root in self.roots)
-   if match and actual not in domain_names:
-    if actual not in expected:
-     self.context.update(actual_unit=actual,
- business_reference_diagnostic=self._business_reference_diagnostic(flat, value))
-     raise r.ObservationError("GROWTH_UNDECLARED_BUSINESS_UNIT")
-    related.append(self.quiet_service(next(row for row in self.description["expected_units"]
- if row["name"] == actual)))
+  manager="user" if user_uid is not None else "system"
+  declared=sorted((row for row in self.description["domain_units"]
+ if row["manager"]==manager),key=lambda row:row["name"])
+  names=[row["name"] for row in declared]
+  observed=self.show_many(names,user_uid=user_uid) if names else {}
   domains=[]
-  for item in self.description["domain_units"]:
-   if (item["manager"] == "user") != (user_uid is not None):
-    continue
-   value=observed.get(item["name"])
-   if value is None:
-    value=self.show_many([item["name"]], user_uid=user_uid)[item["name"]]
+  for item in declared:
+   self.check()
+   self.context=dict(manager="user_1100" if user_uid is not None else "system",unit=item["name"])
+   value=observed[item["name"]]
    require(value["Id"] == item["name"], "GROWTH_DOMAIN_UNIT_IDENTITY")
    require(value["LoadState"] in ("loaded", "not-found") and
  value["ControlGroup"] in ("", item["control_group"]), "GROWTH_DOMAIN_UNIT")
    require(item["name"].endswith(".slice") and not any(value[key] for key in self.SHOW if key.startswith("Exec")),
  "GROWTH_DOMAIN_UNIT_ACTION")
    domains.append(dict(name=item["name"], properties_sha256=digest(canonical(value))))
-  return dict(unit_count=len(names), related=related, domains=domains, indirect_startup="NOT_PERFORMED")
+  return dict(scope="DECLARED_ONLY",domains=domains,
+ undeclared_unit_inventory="NOT_PERFORMED",indirect_startup="NOT_PERFORMED")
  def startup(self):
   result={"system": self.startup_manager()}
   if any(item["manager"] == "user" for item in self.description["domain_units"]):

@@ -381,6 +381,11 @@ QI_SCOPE = "LH-Q2-CORE-Q1-BINDING-CONTINUATION-v1"
 QI_BASELINE = {'commit': 'e66b1b5524f22d60c810dffac59ca418c5ad4236', 'tree': '21d63b7e40a5e3017b1a35fe159e90fd50bdf712', 'documents_sha256': {'docs/a2-execution/q2-core-q1-binding-continuation/REQUIREMENTS.md': '2c5181ab5a633d9e4b0af824aace9aada6f1679c0cbf0977bcb23004b53ad3dd', 'docs/a2-execution/q2-core-q1-binding-continuation/ARCHITECTURE.md': '2938f0e7b77cbc317093f897f3b8e84074340cbd7f3a1e622d4485d458ddfa49', 'docs/a2-execution/q2-core-q1-binding-continuation/IMPLEMENTATION_PLAN.md': 'fc4a3dc39d9830116f6c4dd881523fb84c8c4b7b81f730203733ca3d61a923f7'}}
 QI_OWNER_DECISION = {'event': 'LH-Q2-CORE-Q1-BINDING-CONTINUATION-CLOSURE-20261008-01', 'record_path': 'docs/governance/Q2_CORE_Q1_BINDING_CONTINUATION_OWNER_DECISION.md', 'record_sha256': '55a87331d7648c83779a8796d5c2e3799e651534a3b91fa4e104b6fb57bd4c93'}
 QI_CLOSURE = {'commit': '61fae1da528105605a023f260130c4e0d9c1bc02', 'tree': '88a6d363fe62817dac807e9f279730fa955dec35'}
+DS_SCOPE = "LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-v1"
+DS_BASELINE = {'commit': '2b13dd653ca19eaaf46a18e6ffc3f447b62eee59', 'tree': 'c686e5dbf5454f682603f9b7575cc4292402be34', 'documents_sha256': {'docs/a2-execution/q2-core-declared-startup-continuation/REQUIREMENTS.md': '4ae983f96c2a3e25ebf435b8db2af9abc487c570702a4f8bd7614dc7ac5eb392', 'docs/a2-execution/q2-core-declared-startup-continuation/ARCHITECTURE.md': '61b543eb04810047e9a0f9e0fbeab032de6943792b9e3ca5d4653393da147942', 'docs/a2-execution/q2-core-declared-startup-continuation/IMPLEMENTATION_PLAN.md': '965f841919a015e0f6e6212807fe710c45be21c51b134451d92fe199123e678a'}}
+DS_OWNER_DECISION = {'event': 'LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-CLOSURE-20261009-01', 'record_path': 'docs/governance/Q2_CORE_DECLARED_STARTUP_CONTINUATION_OWNER_DECISION.md', 'record_sha256': 'ec54f363906547a7ee474832eeaa28fd6855a817a7c52e03ae8fd34b4919deaf'}
+DS_CLOSURE = {'commit': 'a2a6d62de08b2d1d8fbf9da97e8ccf938e3777c1', 'tree': 'a9c54bbfe24fefa8e8408846ebaf532a191e237f'}
+
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
 CANDIDATE = {
     "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",

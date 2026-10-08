@@ -141,33 +141,16 @@ def test_every_scalar_property_still_rejects_duplicate_even_if_identical(boundar
 
 @pytest.mark.parametrize("key", EXEC_PROPERTIES)
 @pytest.mark.parametrize("position", [0, 1, 2])
-@pytest.mark.parametrize("kind,reason", [
-    ("protected", "GROWTH_UNDECLARED_BUSINESS_UNIT"),
-    ("indirect", "GROWTH_INDIRECT_STARTUP_UNVERIFIED"),
-    ("domain", "GROWTH_DOMAIN_UNIT_ACTION"),
-])
-def test_startup_guards_inspect_every_retained_exec_member(
-        boundary, key, position, kind, reason):
-    inventory, responses, trace = boundary
-    name = "fixture.slice" if kind == "domain" else "fixture.service"
-    executable = {"protected": "/fixture/private/run", "indirect": "/bin/bash",
-                  "domain": "/usr/bin/true"}[kind]
-    values = ["", "", ""] if kind == "domain" else [command_value()] * 3
-    values[position] = command_value(executable)
-    responses["list-units"] = f"{name} loaded inactive dead\n".encode()
-    responses["show"] = properties(name=name, actions=[(key, value) for value in values])
-    if kind == "domain":
-        inventory.description["domain_units"] = [dict(
-            name=name, manager="system", control_group="/fixture.slice")]
-    if kind == "indirect":
-        assert inventory.startup_manager()["indirect_startup"] == "NOT_PERFORMED"
-    else:
-        with pytest.raises(g.r.ObservationError, match="^" + reason + "$"):
-            inventory.startup_manager()
-    assert inventory.context["unit"] == name
-    assert inventory.command_count == 3
-    assert [row for row in trace if row[0] == "collect"] == [
-        ("collect", "list-units"), ("collect", "list-unit-files"), ("collect", "show")]
+def test_declared_domain_guards_inspect_every_retained_exec_member(boundary,key,position):
+    inventory,responses,trace=boundary
+    name="fixture.slice";values=["", "", ""]
+    values[position]=command_value("/usr/bin/true")
+    responses["show"]=properties(name=name,actions=[(key,value) for value in values])
+    inventory.description["domain_units"]=[dict(name=name,manager="system",control_group="/fixture.slice")]
+    with pytest.raises(g.r.ObservationError,match="^GROWTH_DOMAIN_UNIT_ACTION$"):
+        inventory.startup_manager()
+    assert inventory.context["unit"]==name and inventory.command_count==1
+    assert [row for row in trace if row[0]=="collect"]==[("collect","show")]
 
 
 def test_alias_conflict_in_middle_exec_member_is_not_hidden(boundary):

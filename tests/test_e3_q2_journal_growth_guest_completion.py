@@ -114,7 +114,7 @@ def test_parser_rejects_duplicate_json_and_noninteger_window():
 @pytest.mark.parametrize("suffix", [b"", b"extra", b"\n"])
 def test_exact_continuation_and_eof(suffix):
     expected = g.continue_token("a" * 64, "b" * 64)
-    assert expected.startswith(b"POWER_OFF lhqjgrow-20261008e ")
+    assert expected.startswith(b"POWER_OFF lhqjgrow-20261008f ")
     read, write = os.pipe()
     try:
         os.write(write, expected + suffix); os.close(write); write = None
@@ -418,7 +418,8 @@ def test_enabled_scheduler_reports_reduced_startup_coverage():
     inventory.description["domain_units"]=[]
     result=inventory.startup_manager()
     assert result["indirect_startup"] == "NOT_PERFORMED"
-    assert inventory.context == dict(manager="system", unit="cron.service")
+    assert inventory.context == {}
+    assert result["undeclared_unit_inventory"] == "NOT_PERFORMED"
 
 
 def test_actual_active_writer_is_rejected_even_inside_self(monkeypatch, tmp_path):
@@ -440,4 +441,4 @@ def test_actual_active_writer_is_rejected_even_inside_self(monkeypatch, tmp_path
 
 
 def quiet():
-    return dict(historical_exit="UNKNOWN",startup=dict(system=dict(unit_count=1,related=[],domains=[],indirect_startup="NOT_PERFORMED")))
+    return dict(historical_exit="UNKNOWN",startup=dict(system=dict(scope="DECLARED_ONLY",domains=[dict(name="old.slice",properties_sha256="a"*64)],undeclared_unit_inventory="NOT_PERFORMED",indirect_startup="NOT_PERFORMED")))
