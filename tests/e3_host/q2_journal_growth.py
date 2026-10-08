@@ -49,6 +49,8 @@ TEMPLATE_A=history.c.TEMPLATE_BASELINE["commit"]
 TEMPLATE_C=history.c.TEMPLATE_CLOSURE["commit"]
 NAMES_A=history.c.NAMES_BASELINE["commit"]
 NAMES_C=history.c.NAMES_CLOSURE["commit"]
+EXEC_A=history.c.EXEC_BASELINE["commit"]
+EXEC_C=history.c.EXEC_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -72,11 +74,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261008b"
+SESSION="lhqjgrow-20261008c"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=6480*MIB,1850
+HOST_BYTES,HOST_INODES=7776*MIB,2220
 STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
@@ -936,6 +938,19 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  for commit in (NAMES_C,expected):
   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],
 "GROWTH_NAMES_B_CHANGED")
+ git("merge-base","--is-ancestor",EXEC_A,EXEC_C)
+ git("merge-base","--is-ancestor",EXEC_C,expected)
+ require(expected!=EXEC_C,"GROWTH_EXEC_D")
+ for authority in (history.c.EXEC_BASELINE,history.c.EXEC_CLOSURE):
+  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],
+"GROWTH_EXEC_TREE")
+ for path,sha in history.c.EXEC_BASELINE["documents_sha256"].items():
+  for commit in (EXEC_A,EXEC_C,expected):
+   require(digest(git("show",commit+":"+path))==sha,"GROWTH_EXEC_A_CHANGED")
+ decision=history.c.EXEC_OWNER_DECISION
+ for commit in (EXEC_C,expected):
+  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],
+"GROWTH_EXEC_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -1085,15 +1100,15 @@ def resume_sha256(resume):
  history.validate_maintenance_resume(resume)
  return digest(canonical(resume))
 def make_preflight(commit,manifest,window,nonce,usage,*,resume):
- value=dict(schema="lhq-journal-growth-preflight/v5",R=R,A=NAMES_A,C=NAMES_C,D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v6",R=R,A=EXEC_A,C=EXEC_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume_sha256=resume_sha256(resume))
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v5",
+"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v6",
 "GROWTH_PREFLIGHT_SCHEMA")
- require(value["R"]==R and value["A"]==NAMES_A and value["C"]==NAMES_C,"GROWTH_PREFLIGHT_AUTHORITY")
+ require(value["R"]==R and value["A"]==EXEC_A and value["C"]==EXEC_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce","resume_sha256"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
@@ -1121,7 +1136,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v6",session=SESSION,R=R,A=NAMES_A,C=NAMES_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v7",session=SESSION,R=R,A=EXEC_A,C=EXEC_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1149,9 +1164,9 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v6",R=R,A=NAMES_A,C=NAMES_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v7",R=R,A=EXEC_A,C=EXEC_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
-historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C),inputs=self.frozen["source_binding"],
+historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C),inputs=self.frozen["source_binding"],
 window_binding=self.window.binding,
 inventory_sha256=digest(canonical(self.frozen["inventory"])),
 retained_sha256=digest(canonical(self.anchor.retained)),

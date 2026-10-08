@@ -46,12 +46,12 @@ def test_fourth_failure_keeps_original_three_generation_resume(monkeypatch,locat
         p.build_previous_maintenance(files)
 
 
-@pytest.mark.parametrize('index',range(4))
+@pytest.mark.parametrize('index',range(5))
 @pytest.mark.parametrize('fault',['D','authority','pin','bytes','refund','exit','order'])
 def test_rehashing_changed_full_history_never_admits_it(index,fault):
     resume=p.maintenance_resume();row=resume['previous_maintenance'][index]
     if fault=='D':row['D']='0'*40
-    elif fault=='authority':row['authority']['C']=h.NAMES_C
+    elif fault=='authority':row['authority']['C']=h.EXEC_C
     elif fault=='pin':row['originals'][0]['sha256']='0'*64
     elif fault=='bytes':row['originals'][0]['bytes']=False
     elif fault=='refund':row['window_consumed']=False
@@ -85,11 +85,11 @@ def test_digest_wire_shape_and_exact_full_history(fault):
 
 def test_real_fourth_pins_do_not_need_any_larger_short_record():
     value=preflight();resume=p.maintenance_resume()
-    assert value['schema']=='lhq-journal-growth-preflight/v5'
+    assert value['schema']=='lhq-journal-growth-preflight/v6'
     assert len(h.canonical(value))==708
     assert value['resume_sha256']==h.digest(h.canonical(resume))
     assert h.canonical(resume)==h.canonical(d._maintenance_resume())
-    assert len(resume['previous_maintenance'])==4
+    assert len(resume['previous_maintenance'])==5
     raw=h.canonical(value)
     at_limit=raw+b' '*(4096-len(raw))
     assert h.parse_preflight(at_limit)==value
@@ -125,13 +125,13 @@ def test_bad_handoff_stops_before_any_field_read(monkeypatch,capsys,fault):
     assert returned['marker_created'] is False and returned['ssh_requests']==0
 
 
-@pytest.mark.parametrize('index',range(4))
+@pytest.mark.parametrize('index',range(5))
 @pytest.mark.parametrize('fault',['authority','pin','refund','drop'])
 def test_full_projection_stays_mandatory_for_both_core_consumers(originals,index,fault):
     files,args=originals
     value=p.build_journal_transition(files,**args)
     rows=value['previous_maintenance']['previous_maintenance']
-    if fault=='authority':rows[index]['authority']['A']=h.NAMES_A
+    if fault=='authority':rows[index]['authority']['A']=h.EXEC_A
     elif fault=='pin':rows[index]['originals'][0]['sha256']='0'*64
     elif fault=='refund':rows[index]['window_consumed']=False
     else:rows.pop(index)
