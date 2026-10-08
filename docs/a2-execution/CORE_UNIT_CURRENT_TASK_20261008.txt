@@ -1,0 +1,74 @@
+任务：一次指定单元现状读取，随后离线确定当前命中条件
+
+接收者：本地 Codex。承接 Owner 本轮“直接推进核心功能，暂停搞分支功能”的指令。
+准备基线：3eecd47a8f89cf18a65ea320bf325a45a8569976，包含诊断 fd6f2a6。
+状态：云端已准备任务，尚未执行现场读取；不把本文件当成读取成功或程序 Gate 关闭。
+
+目的
+旧材料核对已完成，不再重复搜索同批归档。当前下一步需要确认这一个准确单元的当前
+属性，区分真实业务引用和相似字符串命中。只使用既有 SSH 和原生命令取得响应，再在本地
+比较；不新建 reader、服务、CLI、探针程序、测试框架或完整维护批次。
+
+旧范围保持
+08d 及六旧窗口仍 CONSUMED / FAILED，原件、费用及 UNKNOWN 原样保留。
+这是本轮只读排障的 CURRENT_OBSERVATION，不是旧 GS2 的补采、续跑或证据回填；
+旧 B 没有批准此次读取。本任务不追加旧 manifest/receipt，不生成新的 A/B/C、维护
+窗口或核心包，不据当前数据重写旧状态或解除维护准入。原生只读调查沿用固定 R 的
+既有只读允许范围；改变检查保证、配置或实际维护仍按它们各自的授权办理。
+
+执行前只用已有本地材料
+1. 复用已经核验的 08d guest stderr 原件及冻结 manifest/pre_description。
+   确认 manager=system，且 context.unit 是唯一准确字符串，符合仓库 UNIT_PATTERN。
+   只取这个名字，不从 lhq- 前缀生成、寻找或猜测别的单元。来源有冲突就停止。
+2. 沿用冻结清单的 230 个 protected_roots、18 个 expected_units 和 6 个 domain_units。
+   数量用于核对原输入，不是重新生成或改写清单的指令。保留原顺序和摘要关系。
+3. 复用当前已配置的原 guest SSH 目标、身份和现有有界捕获能力；不要求重新安装、
+   登录、配置密钥、sudo、修改权限或新增账号。记录这次读取的时间和目标来源。
+   不额外查询 boot、进程、磁盘、目录或服务来准备这一条读取。
+
+唯一现场命令
+通过已有 SSH 执行下面 argv（最后一个参数用上述已核验的准确私有名字）：
+
+  /usr/bin/systemctl --system --no-pager --no-ask-password show --all
+  --property=Id,Names,LoadState,ActiveState,SubState,MainPID,ControlPID,ControlGroup,Restart,UnitFileState,Triggers,TriggeredBy,WantedBy,RequiredBy,UpheldBy,OnSuccess,OnFailure,Job,Transient,FragmentPath,DropInPaths,ExecStart,ExecStartPre,ExecStartPost,ExecStop,ExecStopPost,ExecReload,WorkingDirectory,RootDirectory,RootImage
+  -- <准确私有单元名>
+
+上面换行仅为阅读；实际是一条命令，字段严格等于 GuestInventory.SHOW 原 30 项。
+以参数传值或使用正确 shell quoting；不能把响应内容当命令执行。
+只建立一次 SSH，ConnectionAttempts=1；不自动重连或重试。沿用已有捕获工具限制：
+总时限最多 60 秒，stdout/stderr 分开且各不超过 1 MiB，保留退出码和 EOF/截断状态。
+若既有工具不能给出这些边界，先明确缺项，不另写或部署捕获程序。
+原响应仅保存在新的本地私有 create-only 位置（权限 0600 文件、0700 目录）；
+不写入 guest 业务路径或旧证据目录，不覆盖原件。公开仓库不接收原文或精确单元名。
+即便失败、not-found、超时或截断，也不再发第二条现场命令。
+
+禁止的旁路动作
+不调用 list-units/list-unit-files/cat，不扫描目录，不查询所有 lhq-*；不读取 journal
+或运行 quota worker；不执行 start/stop/reset-failed/enable/disable/daemon-reload。
+不调用 GuestInventory.startup_manager、guest main/run 或原维护 caller。
+不备份、关机、扩容、重启、清理、安装；不减少准入容量，不给名称前缀加白名单。
+
+返回后只在本地分析
+1. 先核对完整 stdout/stderr、退出码、EOF/截断和 LoadState。空响应、缺项、not-found
+   或来源不清只报事实；单元已消失不表示旧单元安全，不推导停止或历史成功。
+2. 复用当前 GuestInventory.show_many 的解析逻辑，在内存中只向 ctl 提供已捕获字节；
+   不构造真实远端执行器，不再调用 SSH。保留全部重复 Exec 项、canonical Id 和 Names。
+   使用原 roots 和 _business_reference_diagnostic 对同一 canonical 属性对象定位。
+   property_* 指 canonical({property: value})，content_* 指完整规范化属性对象；
+   两种偏移各自对应自己的字节，不相减。不改变原匹配谓词来制造通过。
+3. 在私有审阅中列出：请求名/实际 Id、当前 LoadState/ActiveState/SubState/PID/Job、
+   命中属性、具体 root 和路径/参数语义。若命中多个根或多个属性，就对同一已捕获响应
+   离线列全；不因第一个命中已解释而新增现场查询。
+4. 将结果分清：当前真实路径引用、当前仅相似子串、当前未复现、现有响应不足。
+   不从字符串包含直接推导正在写入；当前结果不能证明 08d 当时也是同一属性/状态。
+   lhq- 名称仅是线索：bind_query 用七项身份生成摘要；_validate_intent 可核对已有
+   原 intent，但不能从一个 hash 反推出缺失票据。Q1 的 RemainAfterExit=yes 也不是
+   静止证明；正常控制器会停止原单元，需分别核对实际返回。
+5. 若确认可独立证明的解析/匹配实现缺陷，只修该缺陷并保留已有保证；若是真实旧业务
+   漏声明，先明确准确来源、声明差额及原 quiet/cgroup/启动边检查要求，不能直接把未知
+   名称加入名单。需要改变保证或执行维护时，提交具体差额，不能由本只读任务自动放行。
+
+本地 Codex 本次回报
+给出读取是否执行、一次命令是否完整返回、具体命中条件（敏感内容私有），以及唯一
+针对性修复点或准确剩余缺项。公开只写必要脱敏结论，不发布路径、argv、精确单元名、
+boot/PID、原始流或新私有索引。H01/Q4/H11 仍按实际执行报告，不以查询完成改为 PASS。
