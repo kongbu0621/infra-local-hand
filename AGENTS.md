@@ -38,6 +38,22 @@ originals/index stay private. At C, FD1 NOT_STARTED, FD2 NOT_ISSUED, FD3/H01/Q4/
 This closure supersedes older no-custodian/new-window clauses only within exact FD1–FD3; it is
 neither proof of implementation/readiness nor maintenance/core success.
 
+The [FD1 freeze and FD2 preflight return](docs/a2-execution/Q2_CORE_HOST_FD_FIELD_20261010.md)
+records final D `5db76ed8ad6f336dd5daf2401635c6be7a637d3b`, descending from independent C,
+its own first CI 3/3 success, independently installed 94 checks/292 commands, complete retained-source
+and lifecycle bounds, and both frozen callers. FD1 is complete. The unique FD2 caller was invoked
+once and stopped in local preflight with `BLOCKED / GROWTH_USAGE_UNKNOWN`, exit 3, empty diagnostic.
+SSH requests are zero and no maintenance consumption marker was created; execute was not invoked.
+No poweroff token, backup, journal change, maintenance restart or core package was issued.
+FD2 is PREFLIGHT_FAILED / STOP_AND_RETAIN; FD3/H01/Q4/H11 are NOT_RUN. The original freeze and
+private returns remain retained; the release gate is terminal `FD2_PREFLIGHT_FAILED_FD3_NOT_RUN`.
+Eleven historical maintenance generations remain consumed, not twelve; all original obligations stay.
+The return does not identify a PID, failing field or underlying error. Its management usage is the last
+valid sample, not the failed sample. Do not attribute this to a particular command, exit race, FD limit
+or resource excess. Zero SSH/no marker is not permission to replay this invoked caller. Do not retry,
+supplement field data, relax unknown-usage rejection, clean up, recover or start another window.
+Only retained-return/source offline review remains; no new maintenance index or core PASS exists.
+
 ## Current approved batch: runtime prerequisites and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-RUNTIME-CONTINUATION-v1` is **CLOSED for RT1–RT3 only**.
