@@ -61,3 +61,10 @@ FD1 的最终发行记录还必须包含准确 D 首次 CI、同 D 独立安装�
 在 Windows 收集新测试时提前导入 Linux dispatcher，因缺少 `resource` 失败。
 后续修正仅调整测试加载边界：portable prior 消费者在两平台继续测试，独立现场 dispatcher
 在 Linux 测试。该失败保留，不重跑替换；修正后的准确候选仍须自己的首次完整 CI。
+
+候选 `951d346e4ff8fed0662f2a18944db501e69b73e7` 的首次 CI `37954649663`
+在 Windows 完成新测试后，既有进程树超时测试返回 `tree_termination_unconfirmed`，
+该平台为 1832 passed / 1369 skipped / 1 failed。保留这次失败；返回未确认不能视为成功。
+仅将该合成场景固定为基础解释器直接启动的 parent/child，避免 Windows venv redirector
+增加中间进程，并给测试启动留两秒。仍要求准确 `tree_timeout` 和子进程停止写入。
+生产终止实现、现场预算和 FD1–FD3 范围不变；最终准确候选仍需自己的首次全套 CI。

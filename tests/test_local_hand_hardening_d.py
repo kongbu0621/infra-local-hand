@@ -228,10 +228,14 @@ class LocalHandHardeningDTests(unittest.TestCase):
         )
         with self.assertRaises(LocalHandError) as ctx:
             bounded_io.run_process_bounded(
-                [sys.executable, "parent.py"],
+                # Windows venv python.exe is a redirector with another root
+                # lifetime. Use the real interpreter for this fixed parent /
+                # descendant fixture; both scripts need only the stdlib.
+                [getattr(sys, "_base_executable", sys.executable) if os.name == "nt" else sys.executable,
+                 "parent.py"],
                 cwd=self.root,
                 env=dict(os.environ),
-                timeout=0.5,
+                timeout=2 if os.name == "nt" else 0.5,
                 max_stdout=1024,
                 max_stderr=1024,
                 code_prefix="tree",
