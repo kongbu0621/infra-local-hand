@@ -201,6 +201,26 @@ NOT_RUN. Do not replay the consumed stop or old callers, restart the VM, or exte
 diagnostic execution. Any further work must distinguish retained-source analysis from a new
 field/mutation action; a concrete original-image repair/restart remains outside this approval.
 
+Owner then directed “下一步怎么办？你直接修复？” The [retained-copy module repair](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#保留副本确认模块缺失并完成修复候选)
+is now prepared locally. The boot kernel requires modular quota support, but its matching extra
+modules package and quota files are absent; only the previous kernel's extra package is installed.
+The exact matching official package was downloaded and verified through the retained Ubuntu signed
+InRelease/Packages chain. Both required modules match the kernel version and all 58 imported symbol
+CRCs, using the actual guest header's variable-length layout; incompatible kmod checks remain retained.
+A new scratch copy alone received journal recovery, two bootstrap modules, five dependency indexes,
+the pinned full package and a guarded reconciliation script. Nine file contents/permissions and the
+unchanged fstab were checked, filesystem checks passed, and six synthetic stop/replay cases passed.
+The final standalone system candidate passed qcow2 checks and comparison against the repaired raw
+disk; its virtual capacity and bytes outside the root partition are preserved. No original image,
+VM, SSH or installed package was changed. Bootstrap files are not yet a registered package install.
+The private activation proposal is concrete but NOT_AUTHORIZED/NOT_EXECUTED: select this candidate
+for the original VM, start once, then use one SSH to install only the already verified matching
+package and verify the protected quota mount. Normal package triggers may update initramfs/GRUB on
+the candidate disk. Original system remains retained; normal guest startup would write the existing
+data disks. This prepared action requires explicit Owner review under the existing field boundary.
+No kernel rollback, quota bypass, future-update policy, maintenance growth or core issuance is added.
+Do not replay old callers. Guest boot/package acceptance and H01/Q4/H11 remain NOT_RUN.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
