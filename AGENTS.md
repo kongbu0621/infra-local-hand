@@ -55,6 +55,20 @@ release retained-identity protections, retry, stop services, clean up, recover o
 window under this consumed approval. Further work must remain offline until a sufficient,
 bounded continuation is explicitly authorized.
 
+The [ordinary host FD repair and offline review](docs/a2-execution/Q2_CORE_HOST_FD_REVIEW_20261009.md)
+adds full-lifecycle FD admission before the preflight control command and again before marker
+creation, retaining the original 128 limit and every held identity. Partial transport construction
+now closes temporary I/O and retains its actual stage and original capture files. Real isolated
+128-FD tests reproduce the old EMFILE; relevant local checks passed 592/13 skipped. No field action
+occurred. This prevents a known invalid consumption; it does not make the oversized held set fit.
+An eleventh retained generation requires at least 131 persistent descriptors at completion; the
+old double-history marker shape also grows to 66121 B over 65536. Prepare one combined minimal
+proposal for bounded retained-FD ownership and lossless history-reference encoding. A same-sample
+single-history encoding is 54325 B, not a verified future manifest. The old09b five-file index was
+cross-checked privately under RT2-09B-ORIGINALS-INDEX-REVIEW-20261009-01 and remains private.
+No new helper, changed ownership protocol, limit increase or replacement field window is authorized
+by this ordinary repair. All spent windows, original evidence and NOT_RUN core cases remain.
+
 ## Current approved batch: adopted VM and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1` is **CLOSED for VA1–VA3 only**.

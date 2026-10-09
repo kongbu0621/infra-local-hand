@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import base64
+import errno
 COMMANDS=[]
 VM_LIMITS=None
 if __package__ in (None,""):
@@ -89,6 +90,34 @@ MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
 HOST_BYTES,HOST_INODES=14256*MIB,4070
+# Additional host descriptors from preflight through receipt: post transport
+# peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
+# Three more slots cover bounded identity/usage reads. This is admission only;
+# it neither releases a retained identity nor makes a consumed window reusable.
+HOST_FD_LIMIT,HOST_FD_RESERVE=128,20
+def host_fd_admission(fd,check,stage):
+ check()
+ reserved=[]
+ available=0
+ try:
+  for _ in range(HOST_FD_RESERVE):
+   duplicate=os.dup(fd)  # Same held directory; no new source/path observation.
+   reserved.append(duplicate)
+   if duplicate>=HOST_FD_LIMIT:
+    raise OSError(errno.EMFILE,"host descriptor admission")
+   available+=1
+ except OSError as error:
+  if error.errno!=errno.EMFILE:
+   raise
+  failure=prior.r.ObservationError("GROWTH_HOST_FD_BUDGET")
+  failure.diagnostic=dict(operation="host_fd_admission",stage=stage,
+descriptor_limit=HOST_FD_LIMIT,required_free=HOST_FD_RESERVE,
+available_below_limit=available)
+  raise failure from error
+ finally:
+  for duplicate in reserved:
+   os.close(duplicate)
+ check()
 STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
@@ -1019,25 +1048,36 @@ check,*,validate=None,popen=subprocess.Popen):
   self.is_vm=False
   self.output={name:bytearray() for name in ("stdout","stderr")}
   self.eof={name:False for name in self.output}
-  self.fds={name:store.create(phase+"."+name) for name in self.output}
-  self.selector,self.process=selectors.DefaultSelector(),None
+  self.fds={}
+  self.selector,self.process=None,None
+  stage="capture_stdout"
   try:
+   for name in self.output:
+    stage="capture_"+name
+    self.fds[name]=store.create(phase+"."+name)
+   stage="selector"
+   self.selector=selectors.DefaultSelector()
    check()
    env={key:os.environ[key] for key in ("HOME","USER","LOGNAME") if key in os.environ}
    env.update(PATH="/usr/bin:/bin",LANG="C",LC_ALL="C")
    require(sum(len(x.encode())+1 for x in argv)+
 sum(len((k+"="+v).encode())+1 for k,v in env.items())<=65536,"GROWTH_ARGV_LIMIT")
+   stage="spawn"
    self.process=popen(argv,executable=f"/proc/self/fd/{anchor.ssh}",pass_fds=(anchor.ssh,),
 stdin=subprocess.PIPE if phase=="pre" else subprocess.DEVNULL,
 stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,
 preexec_fn=control_limits,start_new_session=True)
    COMMANDS.append(self)
+   stage="pipe_registration"
    for name in self.output:
     stream=getattr(self.process,name)
     os.set_blocking(stream.fileno(),False)
     self.selector.register(stream,selectors.EVENT_READ,name)
   except BaseException as error:
    error.growth_transport=self
+   if not hasattr(error,"diagnostic"):
+    error.diagnostic=dict(operation="maintenance_transport_construct",phase=phase,
+stage=stage,process_created=self.process is not None)
    self.close()
    raise
  def pump(self):
@@ -1130,7 +1170,8 @@ files={name:dict(bytes=len(raw),sha256=digest(bytes(raw))) for name,raw in self.
   finally:
    self.close()
  def close(self):
-  self.selector.close()
+  if self.selector is not None:
+   self.selector.close()
   if self.process is not None:
    for name in ("stdin","stdout","stderr"):
     stream=getattr(self.process,name)
@@ -1536,6 +1577,7 @@ self.anchor.path+"/"+NAMES["journal.backup.qcow2"]),
 protocol="two fixed phases; post bound to the durably saved pre report; no probe or retry")
  def preflight(self):
   self.store.absent()
+  host_fd_admission(self.anchor.fd,self.check,"preflight")
   self.store.capacity()
   self.vm["process"].recheck()
   self.vm["images"].capacity()
@@ -1567,6 +1609,7 @@ validate=lambda report:validate(report,desc))
   try:
    def consume():
     self.window.change(); self.bindings(); self.store.absent(); self.store.capacity()
+    host_fd_admission(self.anchor.fd,self.check,"before_marker")
     self.store.put("consumed.json",canonical(dict(manifest_sha256=digest(canonical(manifest)),
 manifest=manifest,resume_sha256=resume_sha256(history.maintenance_resume()),nonce=self.nonce,clocks=self.window.origins,session=SESSION,D=self.commit,
 access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,

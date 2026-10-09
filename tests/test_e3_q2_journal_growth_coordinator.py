@@ -197,6 +197,30 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert rig.actions.index("poweroff") < rig.actions.index("backup")
 
 
+@pytest.mark.parametrize("stage", ["preflight", "before_marker"])
+def test_host_fd_deficit_blocks_before_marker_and_any_field_effect(rig, monkeypatch, stage):
+    called = []
+    def reject(fd, check, actual_stage):
+        called.append(actual_stage)
+        assert fd == rig.anchor.fd
+        error = h.prior.r.ObservationError("GROWTH_HOST_FD_BUDGET")
+        error.diagnostic = dict(stage=actual_stage, required_free=20, available_below_limit=12)
+        raise error
+    monkeypatch.setattr(h, "host_fd_admission", reject)
+    monkeypatch.setattr(h, "run_tool", lambda *_a, **_kw: pytest.fail("no command after failed admission"))
+    if stage == "preflight":
+        with pytest.raises(h.prior.r.ObservationError, match="GROWTH_HOST_FD_BUDGET"):
+            rig.work.preflight()
+    else:
+        result = rig.work.run(rig.manifest)
+        assert result["state"] == "STOP_AND_RETAIN"
+        assert result["reason"] == "GROWTH_HOST_FD_BUDGET"
+        assert result["diagnostic"]["stage"] == stage
+        assert not result["marker_created"] and result["ssh_requests"] == 0
+    assert called == [stage]
+    assert not rig.actions and not rig.files and not rig.work.transports
+
+
 @pytest.mark.parametrize("stop", ORDER)
 def test_effect_failure_never_runs_a_later_effect_or_retries(rig, stop):
     rig.failure[0] = stop
