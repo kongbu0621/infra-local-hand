@@ -92,6 +92,18 @@ Owner decision is absent, and field entry/SSH/proc calls and field consumption r
 Next present one new existing-process read for Owner confirmation; do not issue it on repair or test
 success alone. All consumed failures and H01/Q4/H11 NOT_RUN remain unchanged.
 
+Owner subsequently approved one new existing-process read under event
+`LH-CURRENT-PROCESS-READ-20261009-02`; the [retained field return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#修复候选获准的一次只读观察返回)
+supersedes that candidate's NOT_ISSUED status. The verified candidate bytes were unchanged; its
+authority and prepared binding were checked before the one execute call. The new marker was created,
+local budget admission passed, and one SSH attempt returned exit 255 / connection refused.
+No guest process check or PID result was obtained. complete=true denotes stream EOF only, not
+remote success; remote_exit stays UNKNOWN. This observation is CONSUMED_FAILED / STOP_AND_RETAIN.
+Eight originals and their new index remain private. Do not replay, reconnect, probe the endpoint,
+query more field data, start or stop services/VMs, clean up or recover under this consumed approval.
+No maintenance or core package was issued; H01/Q4/H11 remain NOT_RUN. The refusal alone does not
+identify why the endpoint was unavailable, and this run's budget pass does not explain the old failure.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
