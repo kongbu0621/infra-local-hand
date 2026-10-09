@@ -1,5 +1,42 @@
 # Execution guidance
 
+## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
+
+Scope `LH-Q2-CORE-USAGE-CONTINUATION-v1` is **CLOSED for UC1–UC3 only**.
+[Exact A](docs/governance/Q2_CORE_USAGE_CONTINUATION_BASELINE.md)
+`bb75dfd835640ba3fff5d1124b7820b0aecf87e5`, tree `066b1c014c1ce7947f223704a0dbf06969c252a3`,
+retains its three original document bytes and historical OPEN labels. [Owner B](docs/governance/Q2_CORE_USAGE_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-USAGE-CONTINUATION-CLOSURE-20261010-01`, preserves the exact adjacent request and
+reply “批准整批”, with only local link targets sanitized. R/direct source/integrity, mandate,
+Owner authority, no exceptions and change control remain. Independent C is bookkeeping only;
+D must descend from C without squash.
+
+UC1 completes the ordinary owned-control-child usage repair adoption, one bounded private archive
+of the nine old09c local originals/freeze/terminal records, precise producer and independent
+consumer/caller wiring, offline full-lifecycle/source/size/cost verification, main publication,
+exact D first CI, independent installation and both new caller freezes. One added parent input FD
+must fit the unchanged 128 limit throughout; the existing 55-original custodian protocol stays.
+Do not treat old09c local preflight failure as a consumed maintenance generation or create five
+maintenance originals for it. Preserve all eleven consumed generations and the old09c invoked
+caller, immutable freeze, terminal gate and private originals.
+
+UC2 permits one new `lhqjgrow-20261010a`, one preflight and only on PASS same-window execute,
+at most two fixed SSH, one verified normal shutdown, original journal growth and original-config
+restart. Only complete successful maintenance originals plus actual coordinator completion permit
+UC3, the original unissued `lhqcore-20261007a` H01→Q4→H11. Scope substeps need no repeated approval.
+Retain the adopted VM/install, original hard limits, declared 19/7/7, exact Q1, domain/cgroup,
+process/writer/data protections and trusted premises; unknown/contradiction stops.
+
+Thirteen full maintenance obligations (including retained unconsumed09c) plus original core capture
+require 16912 MiB/4826 inodes, with no refunds. Failure stops and retains; no old caller replay,
+scanner, exploratory SSH, retry, supplementary collection, business-service stop, cleanup, rollback,
+extra recovery, startup/window or side work. H11 is only the original same-task recovery case.
+Owner authorizes the three documents, implementation/sanitized records and the verified old09c
+six-file basename/bytes/SHA-256 index for main. Raw evidence, machine metadata, private archive and
+new10a originals/index stay private. At C, UC1 NOT_STARTED, UC2 NOT_ISSUED, UC3/H01/Q4/H11 NOT_RUN.
+This exact closure supersedes older no-new-window clauses only within UC1–UC3; it proves neither
+implementation, readiness, maintenance success nor core PASS.
+
 ## Current approved batch: host FD ownership and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-HOST-FD-CONTINUATION-v1` is **CLOSED for FD1–FD3 only**.
