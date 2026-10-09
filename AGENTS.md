@@ -180,6 +180,27 @@ system/quota copies for read-only diagnosis. It is NOT_AUTHORIZED/NOT_EXECUTED: 
 not a verified guest shutdown, and no original-image repair or restart is included. Present this VM
 change for explicit Owner approval before acting; preserve the running fixture, originals and failures.
 
+Owner subsequently replied “批准” to that exact rescue request, retained as
+`LH-Q1-QUOTA-RESCUE-APPROVAL-20261009-01`. The [approved rescue return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#获准停止与副本只读诊断返回)
+supersedes the preceding pending status. Exact host/QEMU/PID/start/argv/namespace checks passed;
+one SIGTERM through pidfd was sent and exit was confirmed. No SIGKILL, VM restart or SSH occurred.
+Protected system/quota copies and the system image's fixed backing dependency were byte-verified;
+the aggregate system copy stayed below its original cap. Original image contents were not modified.
+Read-only qcow2 checks passed, the quota UUID matched fstab, and e2fsck -fn returned zero while
+explicitly skipping journal recovery. This is not recovered-filesystem or guest-readiness acceptance.
+The host journalctl rejected the already exported guest journal as unsupported; the diagnostic
+tool chain stopped without another image or field command. Subsequent analysis used only that
+retained export, validating specific uncompressed DATA/ENTRY links to the same recorded boot.
+It identifies project-quota tracking initialization failure in ext4_enable_quotas, followed by
+the failed mount and emergency mode. Upstream source suggests quota-format/module availability
+as the next explanation to check; the installed guest module/configuration cause is NOT_VERIFIED.
+Do not infer that e2fsck repair, quota disablement, a fstab change or module installation is justified.
+No original-image repair diff is ready. VM remains stopped; all copies, failed tool output and
+private indexes remain retained. No maintenance/growth/core package was issued; H01/Q4/H11 remain
+NOT_RUN. Do not replay the consumed stop or old callers, restart the VM, or extend this ended
+diagnostic execution. Any further work must distinguish retained-source analysis from a new
+field/mutation action; a concrete original-image repair/restart remains outside this approval.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
