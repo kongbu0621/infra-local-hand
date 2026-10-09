@@ -1,5 +1,40 @@
 # Execution guidance
 
+## Current approved batch: runtime prerequisites and original core continuation (2026-10-09)
+
+Scope `LH-Q2-CORE-RUNTIME-CONTINUATION-v1` is **CLOSED for RT1–RT3 only**.
+[Exact A](docs/governance/Q2_CORE_RUNTIME_CONTINUATION_BASELINE.md)
+`dc6e6c511936e02f41cda0cf86cbd571f3aa253d`, tree `01fa3c68860a2e5106e9d3e59fdb1b9efe63d7b1`,
+retains all three original document bytes and historical OPEN labels.
+[Owner B](docs/governance/Q2_CORE_RUNTIME_CONTINUATION_OWNER_DECISION.md), event
+`LH-Q2-CORE-RUNTIME-CONTINUATION-CLOSURE-20261009-01`, retains the adjacent exact request
+and reply “批准”, with only public link targets sanitized. R/source/integrity, Owner mandate,
+authority, no exceptions and change control remain unchanged. Independent C is bookkeeping
+only; D must descend from C. Do not squash C with implementation.
+
+RT1 completes explicit historical-to-current system/user role binding, bounded runtime
+preparation in both maintenance boots, producer/independent consumer wiring, retained-source
+and size/cost verification, main publication, exact D first CI, independent installation and
+both caller freezes. RT2 permits one new `lhqjgrow-20261009b`, at most two maintenance SSH,
+one verified normal shutdown and one maintenance restart. Each boot permits only A's fixed
+runtime preparation, 12 control commands/60 seconds inside the original total budgets.
+Only full successful RT2 originals permit RT3, the original unissued `lhqcore-20261007a`
+H01→Q4→H11. Complete this batch locally; scope substeps need no repeated approval.
+
+Retain the adopted repaired VM, exact source, declared 19/7/7 domains, process/writer/data
+protections, original hard limits and all ten consumed generations/UNKNOWNs. Eleven maintenance
+obligations plus original core capture require 14320 MiB/4086 inodes; runtime costs are additionally
+accounted in the corresponding guest pools as A specifies, without refunds. Trusted single-admin
+and declared-startup premises remain; unknown/contradiction stops. Do not replay old callers,
+add scanners, exploratory SSH, package reinstall, side work, retries, supplementary collection,
+cleanup, rollback, recovery or an extra startup/window. Preparation cannot bypass quiescence.
+
+Owner authorizes A/implementation/sanitized records and only the verified old09a five-file
+basename/bytes/SHA-256 index for main. Raw evidence, machine targets/paths, activation originals
+and index, and new09b originals/index remain private. At C, RT1 NOT_STARTED, RT2 NOT_ISSUED,
+RT3/H01/Q4/H11 NOT_RUN. This closure supersedes older no-new-window and guest-session-only
+clauses only within exact RT1–RT3; it proves no runtime readiness, maintenance success or core PASS.
+
 ## Current approved batch: adopted VM and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1` is **CLOSED for VA1–VA3 only**.
