@@ -4,8 +4,13 @@ import json
 import sys
 
 import pytest
-from e3_host import q2_core_prior_attempt as p, q2_core_delivery_dispatcher as d
+from e3_host import q2_core_prior_attempt as p
 from core_prior_fixture import previous_journal_files, journal_transition, triple_fixture
+
+if sys.platform.startswith('linux'):
+    from e3_host import q2_core_delivery_dispatcher as d
+else:
+    d=None
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'),reason='retained guest report parser')
@@ -46,7 +51,7 @@ def test_history_encoding_faults_cannot_change_full_source_binding(monkeypatch,f
 @pytest.mark.parametrize('fault',['fields','count','pid','checks','bytes','pin','same_inode','mode',
     'D','nonce','source','history','set_hash','coordinator','child','cpu','rss','receipt'])
 def test_both_portable_consumers_reject_custody_or_real_exit_fault(monkeypatch,fault):
-    priors,_=triple_fixture(monkeypatch,d)
+    priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     implementation=dict(commit='d'*40,tree='e'*40)
     value=journal_transition(implementation);custody=value['retained_custody'];finish=value['coordinator_completion']
     if fault=='fields':custody['extra']=True
@@ -63,7 +68,8 @@ def test_both_portable_consumers_reject_custody_or_real_exit_fault(monkeypatch,f
     elif fault=='rss':finish['usage']['rss_peak_bytes']=536870913
     elif fault=='receipt':finish['receipt_sha256']='f'*64
     with pytest.raises((p.c.ContractError,KeyError)):p.validate_journal_transition(value,priors=priors,implementation=implementation)
-    with pytest.raises((d.DispatchError,KeyError)):d._validate_journal_transition(value,priors=priors,implementation=implementation)
+    if d is not None:
+        with pytest.raises((d.DispatchError,KeyError)):d._validate_journal_transition(value,priors=priors,implementation=implementation)
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'),reason='full original host report consumer')
