@@ -121,6 +121,18 @@ only the two output names; it is not authorized or executed. Starting it would c
 writes and new boot/process identities, requiring fresh binding. Present that action for Owner
 review before any VM/service/network change. All consumed failures and H01/Q4/H11 NOT_RUN remain.
 
+Owner then replied “批准” to that concrete one-start proposal, retained under event
+`LH-Q1-VM-START-20261009-01`. The [startup admission return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#原测试-vm-单次启动获准后的准入返回)
+supersedes its pending-approval status. One new private invocation checked the approved proposal,
+retained inputs and pinned scripts, then stopped at QEMU_IDENTITY: current executable metadata
+did not equal the retained tool identity. QEMU startup calls, version commands, listener queries
+and SSH calls were all zero; no launch-consumption record or new VM output was created.
+The admission record is terminal STOP_AND_RETAIN, with no retry or supplementary field read.
+The differing metadata fields were not retained; this does not establish a binary-content change,
+software update or the cause of the earlier missing VM. Do not replay this invocation or loosen
+the executable binding. Exact authority, helper, result and index remain private. No VM was started
+by this attempt, guest/core checks remain unissued, and H01/Q4/H11 remain NOT_RUN.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
