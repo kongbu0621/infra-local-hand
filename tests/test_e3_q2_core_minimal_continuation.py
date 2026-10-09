@@ -17,7 +17,7 @@ from test_e3_q2_journal_growth_guest_completion import description, pre_report, 
 
 
 @pytest.fixture
-def originals(monkeypatch):
+def originals(monkeypatch,request):
     previous=previous_journal_files(monkeypatch,d)
     priors,_=triple_fixture(monkeypatch,d)
     implementation=dict(commit='d'*40,tree='e'*40)
@@ -41,12 +41,20 @@ def originals(monkeypatch):
         horizon={},description=b'synthetic capacity description')
     frozen['q1_raw']=q1_raw
     frozen['source_binding'].update(q1_declaration=proof,sources={'q1_'+k:v for k,v in proof['sources'].items()})
-    sha=h.digest(h.canonical(frozen['source_binding']))
-    desc['source_binding_sha256']=pre['source_binding_sha256']=sha
-    start=b'q1_vm=/fixture\nqemu-system-x86_64 \\\n -serial file:/fixture/serial -pidfile /fixture/vm.pid\n\n'
+    start=b'q1_vm=/fixture\nqemu-system-x86_64 \\\n -serial file:$q1_log -pidfile /fixture/vm.pid -drive if=none,id=os,format=qcow2,file=/fixture/system.qcow2\n\n'
     monkeypatch.setitem(h.local.PINS,'start.sh',(0o700,h.digest(start)))
     frozen['start_raw']=start
-    original,restart=h.qemu_argv(start,'/fixture','/fixture/serial')
+    activation=None
+    if getattr(request,'param',False):
+        from vm_activation_fixture import records
+        files,index,historical=records(historical_boot=desc['original_boot_id'])
+        activation=p.build_vm_activation(files,index,historical_boot=historical)
+        frozen.update(vm_activation=activation,activation_files=files,activation_index=index,anchor_path='/fixture',boot_id=activation['current_boot_id'])
+        frozen['source_binding']['vm_activation']=activation
+        desc['original_boot_id']=pre['boot_id']=activation['current_boot_id']
+    sha=h.digest(h.canonical(frozen['source_binding']))
+    desc['source_binding_sha256']=pre['source_binding_sha256']=sha
+    original,restart=h.qemu_argv(start,'/fixture',activation['serial'] if activation else '/fixture/serial',activation=activation)
     oldvm=dict(pid=123,starttime=1,argv_sha256=h.digest(b'\0'.join(x.encode() for x in original)+b'\0'))
     newvm=dict(pid=124,starttime=2,argv_sha256=h.digest(b'\0'.join(x.encode() for x in restart)+b'\0'))
     post=copy.deepcopy(pre)
@@ -64,7 +72,7 @@ def originals(monkeypatch):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v10',R=h.R,A=h.DS_A,C=h.DS_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v11',R=h.R,A=h.VM_A,C=h.VM_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
@@ -77,7 +85,7 @@ def originals(monkeypatch):
         protocol='two fixed phases; post bound to the durably saved pre report; no probe or retry')
     marker=dict(manifest_sha256=h.digest(h.canonical(manifest)),manifest=manifest,nonce=desc['nonce'],
         clocks=[1,2],session=h.SESSION,D=implementation['commit'],access_mode=h.ACCESS_MODE,
-        resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
+        resume_sha256=h.resume_sha256(p.maintenance_resume()),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         pre_command_sha256='a'*64,post_command_derivation='same fixed sources; post descriptor bound to saved canonical pre report',
         pre_description=desc)
     def image(size):
@@ -98,7 +106,7 @@ def originals(monkeypatch):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v10',R=h.R,A=h.DS_A,C=h.DS_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v11',R=h.R,A=h.VM_A,C=h.VM_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],

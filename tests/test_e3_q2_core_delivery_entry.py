@@ -229,7 +229,7 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
+    assert e.RELEASABLE_DISPATCHER_SHA256 == (frozenset() if c.VM_ADOPTION_CLOSURE is None else frozenset({digest}))
     # The issued 05c digest and a subsequently repaired dispatcher both stay closed.
     assert '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b' not in e.RELEASABLE_DISPATCHER_SHA256
     assert '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96' not in e.RELEASABLE_DISPATCHER_SHA256
@@ -347,7 +347,7 @@ def test_deliver_once_arg_max_failure_precedes_anchor_marker_and_request(
                 popen_factory=forbidden)
         assert checked == ["SC_ARG_MAX"]
         assert list(tmp_path.iterdir()) == []
-        assert len(e.RELEASABLE_DISPATCHER_SHA256) == 1
+        assert len(e.RELEASABLE_DISPATCHER_SHA256) == int(c.VM_ADOPTION_CLOSURE is not None)
     finally:
         os.close(directory_fd)
 
@@ -843,7 +843,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch, o
             for role,row in transition['image_identities'].items()}
         from e3_host import q2_journal_growth as maintenance
         class Images:
-            def __init__(self,*args):self.fds={role:directory_fd for role in transition['image_identities']}
+            def __init__(self,*args,**kwargs):self.fds={role:directory_fd for role in transition['image_identities']}
             def image_keys(self):return transition['image_identities']
             def recheck(self):pass
             def close(self):pass

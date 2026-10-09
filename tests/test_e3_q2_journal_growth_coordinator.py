@@ -23,6 +23,8 @@ ORDER = ["marker", "pre_ssh", "pre_report", "poweroff", "pre_finish", "backup",
 
 @pytest.fixture
 def rig(monkeypatch, tmp_path):
+    # Synthetic authority allows isolated coordinator admission tests only.
+    monkeypatch.setattr(h.history.c,"VM_ADOPTION_CLOSURE",dict(commit="c"*40))
     # The effects and identity in this fixture model the ordinary coordinator.
     monkeypatch.setattr(h.os, "geteuid", lambda: 1000)
     actions, events, files, failure, clock, errors = [], [], {}, [None], [0.0], []
@@ -186,7 +188,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v10'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v11'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -243,7 +245,7 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
-        "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(), "--q1-sources", "{}",
+        "--vm-activation", "{}", "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(), "--q1-sources", "{}",
         "--trusted-single-admin", "--trusted-guest-startup", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
@@ -252,7 +254,8 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     monkeypatch.setattr(h, "freeze_growth_inputs", lambda *_args,**_kwargs: rig.frozen)
     monkeypatch.setattr(h, "GrowthAnchor", lambda *_args: rig.anchor)
     monkeypatch.setattr(h, "Tool", lambda *_args: rig.tools["image"])
-    monkeypatch.setattr(h, "freeze_vm", lambda *_args: rig.vm)
+    monkeypatch.setattr(h, "freeze_vm", lambda *_args,**_kwargs: rig.vm)
+    monkeypatch.setattr(h, "adopt_vm_activation", lambda *_args:dict(host_boot_id=rig.window.binding["boot_id"]))
     monkeypatch.setattr(h.Store, "absent", rig.nothing)
     monkeypatch.setattr(rig.vm["images"], "image_keys", lambda: {})
     monkeypatch.setattr(rig.work, "preflight", lambda: rig.manifest)

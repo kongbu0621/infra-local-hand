@@ -1027,6 +1027,9 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             c.require(c.sha256(raw) == digest, 'CORE_FREEZE_PRIOR_SOURCE')
     # Final D must descend from every independent amendment/new-batch closure.
     # Authority stays offline; no replacement wire amendment or extra member.
+    adoption = (c.VM_ADOPTION_BASELINE, c.VM_ADOPTION_OWNER_DECISION, c.VM_ADOPTION_CLOSURE)
+    c.require(all(row is None for row in adoption) or all(type(row) is dict for row in adoption),
+              "CORE_FREEZE_VM_AUTHORITY_PARTIAL")
     for baseline, decision, closure in (
             (c.AMENDMENT_BASELINE, c.AMENDMENT_OWNER_DECISION, c.AMENDMENT_CLOSURE),
             (c.WRITER_TRANSPORT_BASELINE, c.WRITER_TRANSPORT_OWNER_DECISION,
@@ -1050,7 +1053,7 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.EXEC_BASELINE, c.EXEC_OWNER_DECISION, c.EXEC_CLOSURE),
             (c.GS_BASELINE, c.GS_OWNER_DECISION, c.GS_CLOSURE),
             (c.QI_BASELINE, c.QI_OWNER_DECISION, c.QI_CLOSURE),
-            (c.DS_BASELINE, c.DS_OWNER_DECISION, c.DS_CLOSURE)):
+            (c.DS_BASELINE, c.DS_OWNER_DECISION, c.DS_CLOSURE)) + (() if adoption[0] is None else (adoption,)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")

@@ -65,10 +65,10 @@ BIND_FRAME_LIMIT = 4112
 
 # All four older core requests remain consumed. Only the reviewed 07a field
 # bytes below are eligible under GS A/C after verified 08d maintenance.
-# GS1 source review binds these bytes; exact candidate CI, GS2 complete
-# originals, new-boot binding and every admission remain required before use.
-# Prior 08d dispatcher pin remains in its exact historical source profile.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"fa7144c32d9bd6938faa038ca4df33647d8748647d6da6f8e85237236c23a72c"})
+# VA1 source review binds these bytes. Exact D CI, full VA2 originals,
+# post-maintenance boot binding and every original admission remain required.
+# Historical dispatcher pins remain in their consumed source profiles.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({'c812c3c92121de7071844b8593e591b76c47be15d67fab45cf2b5f4eb2ba49e4'})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

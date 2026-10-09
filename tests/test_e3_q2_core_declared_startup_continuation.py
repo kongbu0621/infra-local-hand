@@ -78,14 +78,14 @@ def test_old08e_keeps_old_four_field_coverage_and_seven_history(monkeypatch,loca
         files[prefix+name]=raw;monkeypatch.setitem(p.EIGHTH_JOURNAL_PINS,name,(len(raw),h.digest(raw)))
     with pytest.raises(p.c.ContractError,match='PREVIOUS_GS_'):p.build_previous_maintenance(files)
 
-def test_new_success_uses_eight_consumed_histories_and_original_caps(originals):
+def test_new_success_uses_nine_consumed_histories_and_original_caps(originals):
     files,args=originals;value=p.build_journal_transition(files,**args)
     assert d._validate_journal_transition(value,priors=args['priors'],implementation=args['implementation'])==value
-    assert value['authority']==dict(R=h.R,A=h.DS_A,C=h.DS_C)
-    assert value['session']=='lhqjgrow-20261008f'
-    assert len(value['previous_maintenance']['previous_maintenance'])==8
+    assert value['authority']==dict(R=h.R,A=h.VM_A,C=h.VM_C)
+    assert value['session']=='lhqjgrow-20261009a'
+    assert len(value['previous_maintenance']['previous_maintenance'])==9
     rows=p.maintenance_commitments()['generations']
-    assert len(rows)==9 and sum(row['bytes'] for row in rows)==11664*1048576
-    assert sum(row['inodes'] for row in rows)==3330
-    assert sum(row['cpu_seconds'] for row in rows)==1080
-    assert h.HOST_BYTES==11664*1048576 and h.HOST_INODES==3330
+    assert len(rows)==10 and sum(row['bytes'] for row in rows)==12960*1048576
+    assert sum(row['inodes'] for row in rows)==3700
+    assert sum(row['cpu_seconds'] for row in rows)==1200
+    assert h.HOST_BYTES==12960*1048576 and h.HOST_INODES==3700

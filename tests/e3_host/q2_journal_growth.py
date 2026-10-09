@@ -57,6 +57,8 @@ QI_A=history.c.QI_BASELINE["commit"]
 QI_C=history.c.QI_CLOSURE["commit"]
 DS_A=history.c.DS_BASELINE["commit"]
 DS_C=history.c.DS_CLOSURE["commit"]
+VM_A=(history.c.VM_ADOPTION_BASELINE or {}).get("commit")
+VM_C=(history.c.VM_ADOPTION_CLOSURE or {}).get("commit")
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -80,11 +82,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261008f"
+SESSION="lhqjgrow-20261009a"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=11664*MIB,3330
+HOST_BYTES,HOST_INODES=12960*MIB,3700
 STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
@@ -213,7 +215,7 @@ def full_backup(store,source_fd):
  store.budget()
  store.capacity()
  return copied_digest
-def qemu_argv(start,anchor,serial):
+def qemu_argv(start,anchor,serial,*,activation=None):
  require(digest(start)==local.PINS["start.sh"][1],"GROWTH_START_PIN")
  require(re.fullmatch(r"/[A-Za-z0-9_./-]+",anchor) and os.path.normpath(anchor)==anchor,
 "GROWTH_ANCHOR")
@@ -230,6 +232,16 @@ def qemu_argv(start,anchor,serial):
 args[args.index("-pidfile")+1]==anchor+"/vm.pid" and
 args[args.index("-serial")+1]=="file:"+serial,"GROWTH_START_OUTPUT")
  original=["qemu-system-x86_64",*args]
+ if activation is not None:
+  history.validate_vm_activation(activation)
+  require(serial==activation["serial"],"GROWTH_ACTIVATION_SERIAL")
+  original[original.index("-pidfile")+1]=activation["pidfile"]
+  system=[i+1 for i,word in enumerate(original[:-1]) if word=="-drive"
+ and original[i+1]=="if=none,id=os,format=qcow2,file="+anchor+"/system.qcow2"]
+  require(len(system)==1,"GROWTH_ACTIVATION_SYSTEM_ARGUMENT")
+  original[system[0]]="if=none,id=os,format=qcow2,file="+activation["system_path"]
+  require(digest(b"\0".join(word.encode("ascii") for word in original)+b"\0")
+ ==activation["vm"]["argv_sha256"],"GROWTH_ACTIVATION_ARGV")
  new=original.copy()
  new[new.index("-pidfile")+1]=anchor+"/"+NAMES["vm.pid"]
  new[new.index("-serial")+1]="null"
@@ -680,8 +692,13 @@ def recheck_q1_inputs(inputs,frozen,check=lambda:None):
  inputs.recheck(check)
 def validate_q1_frozen(frozen):
  original,proof=q1_declaration(frozen["q1_raw"])
+ activation=frozen.get("vm_activation")
+ if activation is not None:
+  require(history.build_vm_activation(frozen["activation_files"],frozen["activation_index"],
+ historical_boot=proof["boot_id"])==activation==frozen["source_binding"]["vm_activation"]
+ and frozen["boot_id"]==activation["current_boot_id"],"GROWTH_ACTIVATION_FROZEN")
  require(proof==frozen["source_binding"]["q1_declaration"]
- and proof["boot_id"]==frozen["boot_id"]
+ and proof["boot_id"]==(activation["historical_boot_id"] if activation else frozen["boot_id"])
  and merge_q1_inventory(original,proof)==frozen["inventory"],"GROWTH_Q1_FROZEN_BINDING")
  for role,pin in proof["sources"].items():
   require(frozen["source_binding"]["sources"]["q1_"+role]==pin,"GROWTH_Q1_FROZEN_PIN")
@@ -716,11 +733,49 @@ description_sha256=digest(description),horizon_sha256=digest(canonical(horizon))
  inputs.recheck()
  return dict(anchor_path=anchor_path,paths=paths,description=description,horizon=horizon,boot_id=boot,
 inventory=inventory,source_binding=binding,source_binding_sha256=digest(canonical(binding)),q1_raw=q1_raw,q1_sources=q1_sources)
+
+def adopt_vm_activation(inputs,frozen,spec):
+ """One fixed retained archive keeps the original descriptor/FD limits."""
+ import io,tarfile
+ require(type(spec) is dict and set(spec)=={"path","bytes","sha256"},"GROWTH_ACTIVATION_SPEC")
+ prior.r.path_value(spec["path"]);prior.r.integer(spec["bytes"],1,524288)
+ raw=inputs.read(spec["path"],spec["bytes"],spec["sha256"],"vm_activation_archive")
+ files={}
+ with tarfile.open(fileobj=io.BytesIO(raw),mode="r:") as archive:
+  for member in archive:
+   require(member.isfile() and member.name not in files and member.name in
+ (*history.ACTIVATION_FILES,"execution-return-index-private.json") and 0<=member.size<=262144,
+ "GROWTH_ACTIVATION_MEMBER")
+   stream=archive.extractfile(member);data=stream.read(262145)
+   require(len(data)==member.size,"GROWTH_ACTIVATION_MEMBER_BOUND")
+   files[member.name]=data
+ require(set(files)==set(history.ACTIVATION_FILES)|{"execution-return-index-private.json"},"GROWTH_ACTIVATION_FILES")
+ index=files.pop("execution-return-index-private.json")
+ activation=history.build_vm_activation(files,index,historical_boot=frozen["boot_id"])
+ frozen.update(vm_activation=activation,activation_files=files,activation_index=index,activation_archive=spec)
+ frozen["source_binding"]["vm_activation"]=activation
+ frozen["source_binding"]["sources"]["vm_activation_archive"]=dict(bytes=len(raw),sha256=digest(raw))
+ frozen["boot_id"]=activation["current_boot_id"]
+ frozen["source_binding_sha256"]=digest(canonical(frozen["source_binding"]))
+ validate_q1_frozen(frozen)
+ return activation
+
+def recheck_vm_activation(inputs,frozen,check):
+ if frozen.get("vm_activation") is None:return
+ spec=frozen["activation_archive"]
+ fd=next(fd for path,fd,_ in inputs.held if path==spec["path"])
+ check();os.lseek(fd,0,os.SEEK_SET)
+ raw,_=local.stable_read(fd,spec["bytes"],check)
+ require(digest(raw)==spec["sha256"],"GROWTH_ACTIVATION_SOURCE_DRIFT")
+ inputs.recheck(check)
+
 class ImageSet:
- def __init__(self,anchor_fd,anchor,argv,check):
+ def __init__(self,anchor_fd,anchor,argv,check,*,activation=None):
   self.anchor_fd,self.anchor,self.check=anchor_fd,anchor,check
   self.parent_identity=identity(os.fstat(anchor_fd))
   self.fds,self.paths,self.initial={},{},{}
+  self.external_parent=None
+  self.activation=activation
   self.owner=os.geteuid()
   try:
    drives=[argv[index+1] for index,word in enumerate(argv[:-1]) if word=="-drive"]
@@ -732,8 +787,9 @@ class ImageSet:
     options=dict(pairs)
     require(len(pairs)==len(options),"GROWTH_DRIVE_FORMAT")
     path=options.get("file","")
+    external=activation is not None and path==activation["system_path"]
     require(re.fullmatch(r"/[A-Za-z0-9_./-]+",path)
-and os.path.normpath(path)==path and str(Path(path).parent)==anchor,
+and os.path.normpath(path)==path and (str(Path(path).parent)==anchor or external),
 "GROWTH_IMAGE_PATH")
     name=Path(path).name
     if options.get("format")=="qcow2":
@@ -751,8 +807,13 @@ and os.path.normpath(path)==path and str(Path(path).parent)==anchor,
 "GROWTH_SEED_FORMAT")
      role,cap="seed",16*MIB
     require(role not in self.fds,"GROWTH_DRIVE_ROLE")
+    if external:
+     require(role=="system" and options.get("id")=="os" and self.external_parent is None,"GROWTH_ACTIVATION_IMAGE_ROLE")
+     self.external_parent=local.open_directory(str(Path(path).parent),self.owner)
+     self.external_identity=identity(os.fstat(self.external_parent))
+     cap=5*1024**3
     fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC,
-dir_fd=anchor_fd)
+dir_fd=self.external_parent if external else anchor_fd)
     self.fds[role],self.paths[role]=fd,path
     info=os.fstat(fd)
     validate_file(info,cap,self.owner)
@@ -776,6 +837,10 @@ dir_fd=anchor_fd)
 "GROWTH_JOURNAL_SERIAL")
    self.journal_serial=devices[0]
    require(len(set(self.image_keys().values()))==5,"GROWTH_IMAGE_ALIAS")
+   if activation is not None:
+    history.validate_vm_activation(activation)
+    require({role:list(value) for role,value in self.image_keys().items()}==activation["image_identities"],
+ "GROWTH_ACTIVATION_IMAGE_BINDING")
    self.recheck()
   except BaseException:
    self.close()
@@ -796,9 +861,14 @@ dir_fd=anchor_fd)
 "GROWTH_IMAGE_PARENT_DRIFT")
    for role,fd in self.fds.items():
     info=os.fstat(fd)
-    named=os.stat(Path(self.paths[role]).name,dir_fd=parent,follow_symlinks=False)
+    external=role=="system" and self.external_parent is not None
+    if external:
+     check_parent=local.open_directory(str(Path(self.paths[role]).parent),self.owner)
+     try:require(identity(os.fstat(check_parent))==self.external_identity==identity(os.fstat(self.external_parent)),"GROWTH_ACTIVATION_PARENT_DRIFT")
+     finally:os.close(check_parent)
+    named=os.stat(Path(self.paths[role]).name,dir_fd=self.external_parent if external else parent,follow_symlinks=False)
     require(identity(info)==identity(named)==identity(self.initial[role]),"GROWTH_IMAGE_DRIFT")
-    validate_file(info,IMAGE_CAP if role=="journal" else
+    validate_file(info,5*1024**3 if external else IMAGE_CAP if role=="journal" else
 (16*MIB if role=="seed" else 32*1024**3),self.owner)
     require(stable_identity(info)==stable_identity(named),"GROWTH_IMAGE_DRIFT")
     if role=="seed" or (stable and not (journal_changed and role=="journal")):
@@ -841,6 +911,7 @@ and result.get("leaks",0)==0,"GROWTH_IMAGE_CHECK")
   for fd in self.fds.values():
    os.close(fd)
   self.fds.clear()
+  if self.external_parent is not None:os.close(self.external_parent);self.external_parent=None
 def pidfile(anchor_fd,suffix,check):
  require(suffix in ("vm.pid",NAMES["vm.pid"]),"GROWTH_PIDFILE_NAME")
  check()
@@ -858,8 +929,15 @@ stable_identity(os.stat(suffix,dir_fd=anchor_fd,follow_symlinks=False)),"GROWTH_
   return int(raw)
  finally:
   os.close(fd)
-def freeze_vm(start,anchor,anchor_fd,qemu_tool,check):
- pid=pidfile(anchor_fd,"vm.pid",check)
+def freeze_vm(start,anchor,anchor_fd,qemu_tool,check,*,activation=None):
+ if activation is None:pid=pidfile(anchor_fd,"vm.pid",check)
+ else:
+  history.validate_vm_activation(activation)
+  require(Path(activation["pidfile"]).name=="vm.pid","GROWTH_ACTIVATION_PIDFILE")
+  parent=local.open_directory(str(Path(activation["pidfile"]).parent),os.geteuid())
+  try:pid=pidfile(parent,"vm.pid",check)
+  finally:os.close(parent)
+  require(pid==activation["vm"]["pid"],"GROWTH_ACTIVATION_PID")
  raw=proc_bytes(pid,"cmdline",65536,check)
  require(raw.endswith(b"\0"),"GROWTH_PROCESS_ARGV")
  current=[word.decode("ascii","strict") for word in raw[:-1].split(b"\0")]
@@ -869,13 +947,14 @@ def freeze_vm(start,anchor,anchor_fd,qemu_tool,check):
  serial=current[index][5:]
  require(re.fullmatch(r"/[A-Za-z0-9_./-]{1,4095}",serial) and os.path.normpath(serial)==serial,
 "GROWTH_PROCESS_SERIAL")
- original,restart=qemu_argv(start,anchor,serial)
+ original,restart=qemu_argv(start,anchor,serial,activation=activation)
  require(current==original,"GROWTH_PROCESS_ARGV")
  process=ProcessIdentity(pid,original,qemu_tool.fd,check)
  images=None
  try:
-  images=ImageSet(anchor_fd,anchor,original,check)
+  images=ImageSet(anchor_fd,anchor,original,check,activation=activation)
   binding=process.recheck()
+  require(activation is None or binding==activation["vm"],"GROWTH_ACTIVATION_PROCESS")
   return dict(process=process,images=images,original_argv=original,restart_argv=restart,
 binding=binding)
  except BaseException:
@@ -1165,6 +1244,20 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  decision=history.c.DS_OWNER_DECISION
  for commit in (DS_C,expected):
   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_DS_B_CHANGED")
+ adoption=(history.c.VM_ADOPTION_BASELINE,history.c.VM_ADOPTION_OWNER_DECISION,history.c.VM_ADOPTION_CLOSURE)
+ require(all(row is None for row in adoption) or all(type(row) is dict for row in adoption),"GROWTH_VM_AUTHORITY_PARTIAL")
+ if adoption[0] is not None:
+  baseline,decision,closure=adoption
+  require(VM_A==baseline["commit"] and VM_C==closure["commit"] and expected!=VM_C,"GROWTH_VM_AUTHORITY")
+  git("merge-base","--is-ancestor",VM_A,VM_C)
+  git("merge-base","--is-ancestor",VM_C,expected)
+  for authority in (baseline,closure):
+   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_VM_TREE")
+  for path,sha in baseline["documents_sha256"].items():
+   for commit in (VM_A,VM_C,expected):
+    require(digest(git("show",commit+":"+path))==sha,"GROWTH_VM_A_CHANGED")
+  for commit in (VM_C,expected):
+   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_VM_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -1335,15 +1428,15 @@ def resume_sha256(resume):
  history.validate_maintenance_resume(resume)
  return digest(canonical(resume))
 def make_preflight(commit,manifest,window,nonce,usage,*,resume):
- value=dict(schema="lhq-journal-growth-preflight/v9",R=R,A=DS_A,C=DS_C,D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v10",R=R,A=VM_A,C=VM_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume_sha256=resume_sha256(resume))
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v9",
+"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v10",
 "GROWTH_PREFLIGHT_SCHEMA")
- require(value["R"]==R and value["A"]==DS_A and value["C"]==DS_C,"GROWTH_PREFLIGHT_AUTHORITY")
+ require(value["R"]==R and value["A"]==VM_A and value["C"]==VM_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce","resume_sha256"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
@@ -1371,7 +1464,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v10",session=SESSION,R=R,A=DS_A,C=DS_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v11",session=SESSION,R=R,A=VM_A,C=VM_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1387,6 +1480,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
  def bindings(self):
   self.inputs.recheck(self.check)
   recheck_q1_inputs(self.inputs,self.frozen,self.check)
+  recheck_vm_activation(self.inputs,self.frozen,self.check)
   validate_q1_frozen(self.frozen)
   self.anchor.recheck(after_create=bool(self.store.opened))
   self.anchor.previous_maintenance_recheck()
@@ -1401,7 +1495,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v10",R=R,A=DS_A,C=DS_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v11",R=R,A=VM_A,C=VM_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=self.frozen["source_binding"],
 window_binding=self.window.binding,
@@ -1448,7 +1542,7 @@ validate=lambda report:validate(report,desc))
    def consume():
     self.window.change(); self.bindings(); self.store.absent(); self.store.capacity()
     self.store.put("consumed.json",canonical(dict(manifest_sha256=digest(canonical(manifest)),
-manifest=manifest,resume=history.maintenance_resume(),nonce=self.nonce,clocks=self.window.origins,session=SESSION,D=self.commit,
+manifest=manifest,resume_sha256=resume_sha256(history.maintenance_resume()),nonce=self.nonce,clocks=self.window.origins,session=SESSION,D=self.commit,
 access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),
 pre_command_sha256=digest(canonical(self.pre_argv)),
@@ -1548,7 +1642,7 @@ for item in self.transports]
   return self.result
 def main():
  parser=argparse.ArgumentParser()
- for name in ("frame","plan-archive","archives-dir","expected-commit","expected-manifest","window-binding","preflight","q1-sources"):
+ for name in ("frame","plan-archive","archives-dir","expected-commit","expected-manifest","window-binding","preflight","q1-sources","vm-activation"):
   parser.add_argument("--"+name)
  parser.add_argument("--execute",action="store_true")
  parser.add_argument("--trusted-single-admin",action="store_true")
@@ -1564,6 +1658,7 @@ def main():
  VM_LIMITS={key:resource.getrlimit(key) for key in (resource.RLIMIT_AS,resource.RLIMIT_NOFILE)}
  try:
   require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
+  require(history.c.VM_ADOPTION_CLOSURE is not None,"GROWTH_VM_ADOPTION_NOT_AUTHORIZED")
   sources=growth_sources(args.expected_commit)
   require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
 for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")
@@ -1585,9 +1680,12 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   anchor=GrowthAnchor(frozen["anchor_path"],window)
   Store(anchor.fd,window.check).absent()
   anchor.growth_inputs(frozen,sources)
+  require(args.vm_activation is not None,"GROWTH_VM_ACTIVATION_REQUIRED")
+  activation=adopt_vm_activation(inputs,frozen,prior.r.parse(args.vm_activation.encode("ascii"),4096))
+  require(activation["host_boot_id"]==window.binding["boot_id"],"GROWTH_ACTIVATION_HOST_BOOT")
   for name,path in (("qemu","/usr/bin/qemu-system-x86_64"),("image","/usr/bin/qemu-img")):
    tools[name]=Tool(path,window.check)
-  vm=freeze_vm(anchor.raw["start.sh"],anchor.path,anchor.fd,tools["qemu"],window.check)
+  vm=freeze_vm(anchor.raw["start.sh"],anchor.path,anchor.fd,tools["qemu"],window.check,activation=activation)
   frozen["journal_serial"]=vm["images"].journal_serial
   maintenance=Maintenance(anchor,inputs,frozen,sources,vm,tools,window,args.expected_commit,
 usage,None if handoff is None else handoff["nonce"])

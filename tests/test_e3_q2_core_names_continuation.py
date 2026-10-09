@@ -85,11 +85,11 @@ def test_digest_wire_shape_and_exact_full_history(fault):
 
 def test_real_fourth_pins_do_not_need_any_larger_short_record():
     value=preflight();resume=p.maintenance_resume()
-    assert value['schema']=='lhq-journal-growth-preflight/v9'
-    assert len(h.canonical(value))==708
+    assert value['schema']=='lhq-journal-growth-preflight/v10'
+    assert len(h.canonical(dict(value,A="a"*40,C="c"*40)))==709
     assert value['resume_sha256']==h.digest(h.canonical(resume))
     assert h.canonical(resume)==h.canonical(d._maintenance_resume())
-    assert len(resume['previous_maintenance'])==8
+    assert len(resume['previous_maintenance'])==9
     raw=h.canonical(value)
     at_limit=raw+b' '*(4096-len(raw))
     assert h.parse_preflight(at_limit)==value
@@ -120,6 +120,7 @@ def test_bad_handoff_stops_before_any_field_read(monkeypatch,capsys,fault):
     monkeypatch.setattr(h.sys,'argv',['growth','--frame','frame','--plan-archive','plan',
         '--archives-dir','archives','--expected-commit','d'*40,'--window-binding','{}',
         '--preflight',raw.decode(),'--expected-manifest','e'*64,'--trusted-single-admin','--execute'])
+    monkeypatch.setattr(h.history.c,"VM_ADOPTION_CLOSURE",dict(commit="c"*40))
     assert h.main()==3
     returned=json.loads(capsys.readouterr().out)
     assert returned['marker_created'] is False and returned['ssh_requests']==0

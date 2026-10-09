@@ -377,6 +377,7 @@ def test_volatile_evidence_not_durable():
 
 def test_field_entry_is_closed_without_complete_j2(capsys, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["growth", "--execute"])
+    monkeypatch.setattr(h.history.c,"VM_ADOPTION_CLOSURE",dict(commit="c"*40))
     assert h.main() == 3
     value = json.loads(capsys.readouterr().out)
     assert value["marker_created"] is False and value["ssh_requests"] == value["business_cases"] == 0

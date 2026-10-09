@@ -102,7 +102,7 @@ def test_new_binding_and_both_consumers_reject_changed_previous_summary(original
     projection=p.build_journal_transition(files,**args)
     prefix='.'+h.SESSION+'.'
     marker=json.loads(files[prefix+'consumed.json']);receipt=json.loads(files[prefix+'receipt.json'])
-    target={'manifest':marker['manifest']['resume'],'marker':marker['resume'],'receipt':receipt['resume'],
+    target={'manifest':marker['manifest']['resume'],'marker':copy.deepcopy(marker['manifest']['resume']),'receipt':receipt['resume'],
         'input':args['frozen']['source_binding']['resume'],'projection':projection['previous_maintenance']}[where]
     if fault=='session':target['session']=p.PREVIOUS_JOURNAL_SESSION
     elif fault=='D':target['previous_maintenance'][index]['D']='0'*40
@@ -110,6 +110,7 @@ def test_new_binding_and_both_consumers_reject_changed_previous_summary(original
     elif fault=='order':target['previous_maintenance'][index]['originals'].reverse()
     elif fault=='bool':target['previous_maintenance'][index]['window_consumed']=1
     else:target['retry']=True
+    if where=='marker':marker['resume_sha256']=h.digest(h.canonical(target))
     if where=='projection':
         with pytest.raises(p.c.ContractError):p.validate_journal_transition(projection,priors=args['priors'],implementation=args['implementation'])
         with pytest.raises(d.DispatchError):d._validate_journal_transition(projection,priors=args['priors'],implementation=args['implementation'])
@@ -143,11 +144,11 @@ def test_new_preflight_rejects_old_or_changed_generation(fault):
 
 
 def test_fixed_three_generation_capacity_and_unchanged_action_limits():
-    assert h.SESSION=='lhqjgrow-20261008f'
-    assert (h.HOST_BYTES,h.HOST_INODES)==(11664*1048576,3330)
+    assert h.SESSION=='lhqjgrow-20261009a'
+    assert (h.HOST_BYTES,h.HOST_INODES)==(12960*1048576,3700)
     assert (h.BACKUP_CAP,h.IMAGE_CAP,h.CAPTURE_CAP)==(320*1048576,576*1048576,8*1048576)
     rows=p.maintenance_commitments()['generations']
-    assert sum(row['cpu_seconds'] for row in rows)==1080
+    assert sum(row['cpu_seconds'] for row in rows)==1200
     assert p.maintenance_commitments()==d._maintenance_commitments()
 
 

@@ -114,7 +114,7 @@ def test_parser_rejects_duplicate_json_and_noninteger_window():
 @pytest.mark.parametrize("suffix", [b"", b"extra", b"\n"])
 def test_exact_continuation_and_eof(suffix):
     expected = g.continue_token("a" * 64, "b" * 64)
-    assert expected.startswith(b"POWER_OFF lhqjgrow-20261008f ")
+    assert expected.startswith(b"POWER_OFF lhqjgrow-20261009a ")
     read, write = os.pipe()
     try:
         os.write(write, expected + suffix); os.close(write); write = None

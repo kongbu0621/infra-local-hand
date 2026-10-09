@@ -1287,3 +1287,9 @@ def validate_state_path(states):
     require(body == chain[:len(body)] and (states[-1] == terminal or len(body) == len(states)),
             "CORE_STATE_PATH")
     return states
+
+# Exact Owner-approved VM adoption closure; field admission remains independent.
+VM_ADOPTION_SCOPE = "LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1"
+VM_ADOPTION_BASELINE = {'commit': '13cd2d3e7ac9a307a7c960f713524fefa2959a95', 'tree': '9e7ab5eb4b555cfcd33ce1d7aa56f11e26b1055d', 'documents_sha256': {'docs/a2-execution/q2-core-vm-adoption-continuation/ARCHITECTURE.md': '5ca95b118dcf267efe2db2f822341d621c9b22d3cac3f6fbfe7b3c2b2c20eba4', 'docs/a2-execution/q2-core-vm-adoption-continuation/IMPLEMENTATION_PLAN.md': 'de5273f46a01c9412e75abab2a5a222662137d10a8c487f9069d7c9e5819282d', 'docs/a2-execution/q2-core-vm-adoption-continuation/REQUIREMENTS.md': '15a4955d572f16baf9775bb752b2640db2dddcae8d6ad3b7577ab7c64a27c496'}}
+VM_ADOPTION_OWNER_DECISION = {'event': 'LH-Q2-CORE-VM-ADOPTION-CONTINUATION-CLOSURE-20261009-01', 'record_path': 'docs/governance/Q2_CORE_VM_ADOPTION_CONTINUATION_OWNER_DECISION.md', 'record_sha256': '740cb305e75041687f4c229fbecd7d58469993b93b76566000e6a7181758488c'}
+VM_ADOPTION_CLOSURE = {'commit': '31b8e21116edd3678d738c1b9525edb6b3da8ae8', 'tree': 'ff085251c03910410abe54666999ff47b28d4a92'}
