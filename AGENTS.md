@@ -161,6 +161,25 @@ the prior rejection and failed admission remain historical. Do not replay this c
 Guest boot/SSH readiness and process protections were not checked; no maintenance or core package
 was issued, and H01/Q4/H11 remain NOT_RUN. Host endpoint restoration alone is not core acceptance.
 
+The subsequent user-provided continuation screenshot requested one combined SSH readiness/boot/
+existing-process check and correct adoption of the new VM. The [combined read and new-boot serial return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#合并只读检查与当前-guest-启动阻断)
+records a separate private caller bound to the successful startup originals. Eleven offline cases
+passed with unchanged process checks and limits. Current host/QEMU/new PID/start/argv/namespace
+admission passed; the one SSH returned 255, reset by peer during key exchange, with no guest output.
+Guest boot and business PID remain UNKNOWN; the guest helper did not enter. Host VM identity still
+matched after transport. This observation is consumed failed; do not reconnect or replay it.
+One necessary protected read of the new startup's fixed serial log, with no extra SSH or console
+input, retained less than 64 KiB. It records the quota filesystem mount failing, local-fs dependency
+failure and emergency mode; journal/evidence mounts reported success. The underlying quota mount
+error detail is absent. This is new-boot evidence, not the old historical serial tail or an OOM cause.
+The combined reader correctly uses the new VM binding; maintenance still requires explicit adoption
+of the new locator/boot across its consumers, and has not been changed or issued. Do not guess the
+guest boot, waive quota/mount protections, run journal growth or issue core work in this state.
+A private concrete rescue proposal binds the exact original VM, one SIGTERM/exit wait and protected
+system/quota copies for read-only diagnosis. It is NOT_AUTHORIZED/NOT_EXECUTED: stopping QEMU is
+not a verified guest shutdown, and no original-image repair or restart is included. Present this VM
+change for explicit Owner approval before acting; preserve the running fixture, originals and failures.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
