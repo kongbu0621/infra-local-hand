@@ -78,6 +78,12 @@ resource cause. Repair aa4e43c has first exact CI 3/3 success. The separate curr
 also consumed failed, with SSH zero; its frozen caller stays retained. Do not repeat this offline
 lookup, reset accounting, replay the call, or infer permission for a new observation from these checks.
 
+Next complete the [private caller repair task](docs/a2-execution/CORE_PROCESS_CALLER_REPAIR_TASK_20261009.txt):
+prepare a new candidate from the existing caller, bind the verified aa4e43c source, preserve
+error.diagnostic through the actual result/summary path, and verify that path with synthetic
+inputs before any field consumption. Retain the frozen failed caller. Do not repeat the completed
+offline lookup or add more public budget diagnostics. This handoff does not grant a new field call.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
