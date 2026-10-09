@@ -104,6 +104,12 @@ query more field data, start or stop services/VMs, clean up or recover under thi
 No maintenance or core package was issued; H01/Q4/H11 remain NOT_RUN. The refusal alone does not
 identify why the endpoint was unavailable, and this run's budget pass does not explain the old failure.
 
+Next follow the [fixed-endpoint local task](docs/a2-execution/CORE_SSH_ENDPOINT_TASK_20261009.txt)
+in response to the current core-only continuation request: one bounded, non-mutating host check
+of the retained endpoint, fixed VM PID and listener, with zero SSH connections. This is not a replay
+of the consumed observation. Do not add a scanner or another governance document set. Retain all
+failed calls; any service/VM/network change needs a concrete, evidence-backed action for Owner review.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
