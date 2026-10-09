@@ -396,20 +396,19 @@ def test_management_budget_reports_measured_components_without_extra_reads(
         calls.append(("usage", kind))
         return own if kind == h.resource.RUSAGE_SELF else children
 
-    def proc(pid, name, cap, check):
+    def proc(pid, name, cap):
         calls.append(("proc", pid, name, cap))
-        check()
-        return b"VmRSS:\t16384 kB\n"
+        from command_usage_fixture import stat_record
+        return stat_record(pid, start=1, cpu_ticks=2 * h.os.sysconf("SC_CLK_TCK"), rss_bytes=live_rss)
 
     def process(pid, vm, code):
-        return SimpleNamespace(is_vm=vm,
+        return SimpleNamespace(is_vm=vm, identity=dict(pid=pid, starttime=1),
             process=SimpleNamespace(pid=pid, poll=lambda: code))
 
     monkeypatch.setattr(h.resource, "getrusage", usage)
     monkeypatch.setattr(h.resource, "getrlimit", lambda *_:
                         pytest.fail("budget observation must not read RLIMIT"))
-    monkeypatch.setattr(h, "proc_bytes", proc)
-    monkeypatch.setattr(h.custody,"process_stat",lambda pid:(1,2))
+    monkeypatch.setattr(h.custody, "proc", proc)
     monkeypatch.setattr(h, "COMMANDS", [process(11, False, None),
                         process(12, True, None), process(13, False, 0)])
     if not (cpu_exceeded or rss_exceeded):
@@ -429,7 +428,7 @@ def test_management_budget_reports_measured_components_without_extra_reads(
                 live_children=1, live_rss_complete=True))
     assert calls == [("usage", h.resource.RUSAGE_SELF),
                      ("usage", h.resource.RUSAGE_CHILDREN),
-                     ("proc", 11, "status", 16384)]
+                     ("proc", 11, "stat", 4096)]
 
 
 def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
@@ -440,11 +439,11 @@ def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
         process=SimpleNamespace(pid=11, poll=lambda: None))])
     calls = []
 
-    def unavailable(pid, name, cap, check):
+    def unavailable(pid, name, cap):
         calls.append((pid, name, cap))
         raise OSError("synthetic unavailable process")
 
-    monkeypatch.setattr(h, "proc_bytes", unavailable)
+    monkeypatch.setattr(h.custody, "proc", unavailable)
     with pytest.raises(h.prior.r.ObservationError,
                        match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
         h.management_usage()
@@ -455,7 +454,7 @@ def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
     assert diagnostic["components"]["live_non_vm_rss_bytes"] == 0
     assert diagnostic["components"]["live_rss_complete"] is False
     assert diagnostic["components"]["live_children"] == 1
-    assert calls == [(11, "status", 16384)]
+    assert calls == [(11, "stat", 4096)]
 
 
 @pytest.mark.parametrize("case", [

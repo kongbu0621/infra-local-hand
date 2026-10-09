@@ -61,6 +61,13 @@ This repairs the empty diagnostic; it does not identify the historical failing P
 Keep private caller propagation aligned with `error.diagnostic`; do not replace the existing
 terminal return, frozen caller or evidence with the new source. Core continuation remains the goal.
 
+The same field record now includes a reproduced normal-exit accounting repair: ordinary owned
+control children use one bounded stat record for CPU/RSS and their Popen PID/start binding.
+Malformed/missing measurements and identity mismatch still fail closed; no zero substitution,
+extra read, retry or changed resource limit is introduced. Guest process/writer checks and the
+custodian's live-identity requirements stay unchanged. This synthetic reproduction does not
+identify the historical FD2 cause or authorize another field window; old callers remain frozen.
+
 ## Current approved batch: runtime prerequisites and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-RUNTIME-CONTINUATION-v1` is **CLOSED for RT1–RT3 only**.

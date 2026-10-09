@@ -1504,6 +1504,17 @@ def _usage_failure(item,stage,error):
  reason=reason if type(reason) is str and re.fullmatch(r"GROWTH_[A-Z0-9_]{1,80}",reason) else None,
  identity=dict(argv_sha256=argv_sha if type(argv_sha) is str and re.fullmatch(r"[0-9a-f]{64}",argv_sha) else None,
  starttime=start if type(start) is int and start>0 else None))
+def command_usage(pid,raw):
+ # One kernel stat record includes CPU and RSS even during exit. An unreaped
+ # Popen child cannot recycle its PID; bind its start time below as well.
+ head,sep,tail=raw.rpartition(b") ")
+ fields=tail.split()
+ require(sep and head.startswith(str(pid).encode()+b" (") and len(fields)>=22
+and fields[0] in (b"R",b"S",b"D",b"T",b"t",b"Z",b"X",b"x",b"K",b"W",b"P",b"I")
+and all(fields[i].isdigit() and len(fields[i])<=20 for i in (11,12,19,21)),"GROWTH_USAGE_STAT")
+ start=int(fields[19])
+ require(start>0,"GROWTH_USAGE_STAT")
+ return start,(int(fields[11])+int(fields[12]))/os.sysconf("SC_CLK_TCK"),int(fields[21])*os.sysconf("SC_PAGE_SIZE")
 def management_usage():
  live=[item for item in COMMANDS if not item.is_vm and item.process.poll() is None]
  require(len(live)+len(custody.ACTIVE)<=8,"GROWTH_CHILD_BUDGET")
@@ -1513,19 +1524,19 @@ def management_usage():
  complete=True
  failures=[]
  for item in live:
-  stage="status_read"
+  stage="stat_read"
   try:
-   value=proc_bytes(item.process.pid,"status",16384,lambda:None)
-   stage="rss_parse"
-   found=re.search(rb"^VmRSS:\s+([0-9]+) kB$",value,re.M)
-   require(found is not None,"GROWTH_USAGE_UNKNOWN")
-   stage="cpu_stat"
-   _,used=custody.process_stat(item.process.pid)
-   cpu+=used
-   stage="rss_parse"
-   rss+=int(found[1])*1024
+   raw=custody.proc(item.process.pid,"stat",4096)
+   stage="stat_parse"
+   start,used,resident=command_usage(item.process.pid,raw)
+   stage="process_identity"
+   binding=getattr(item,"identity",None)
+   require(type(binding) is dict and binding.get("pid")==item.process.pid
+and (binding.get("starttime") is None or type(binding["starttime"]) is int and binding["starttime"]==start),"GROWTH_USAGE_IDENTITY")
+   binding["starttime"]=start
+   cpu+=used;rss+=resident
   except (OSError,ValueError,RuntimeError) as error:
-   if item.process.poll() is None:
+   if item.process.poll() is None or stage=="process_identity":
     complete=False
     failures.append(_usage_failure(item,stage,error))
    else:

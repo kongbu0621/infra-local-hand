@@ -131,3 +131,33 @@ argv 摘要与 starttime、`status_read/rss_parse/cpu_stat` 阶段、异常类�
 [首次 push CI 37960982460](https://github.com/kongbu0621/infra-local-hand/actions/runs/37960982460)
 为 attempt 1：classify-change 与 Windows 已成功，Linux 尚在运行，不能记为 3/3。
 本次无现场操作；FD2 仍为 PREFLIGHT_FAILED / STOP_AND_RETAIN，FD3/H01/Q4/H11 仍为 NOT_RUN。
+
+## 控制子进程正常退出时的计量修复
+
+诊断修复 `957b300` 的首次 CI 后续已完成，结论为 success。Owner 随后要求本地直接
+修复核心阻塞。隔离的自建普通 Python 子进程在正常释放内存并退出时，首次合成案例
+复现 `stat/status` 分开采样路径中的 `status_read / GROWTH_PROC_DRIFT`，外层返回
+`GROWTH_USAGE_UNKNOWN`。这证明存在一个正常退出计量缺陷；原 FD2 没有诊断，仍不能
+将这次合成原因追认为历史现场原因。复现未读取现场对象或执行 SSH。
+
+普通控制子进程现在用原有有界 proc reader 读取一份 ≤4096 B 的 `stat`，从同一记录
+取得启动时间、CPU ticks 和 RSS pages，核对其已创建且未回收的 Popen PID/start 绑定。
+初始快速启动读取未取得 start 时，只允许绑定这次完整记录的有效 start，不增加观察。
+格式缺失、负数、未知状态、PID/start 不符仍停止；身份不符不能被随后退出掩盖。
+RSS 为零只接受内核完整数值字段，不把缺失数值或读取失败替换为零。
+
+[内核 proc 文档](https://docs.kernel.org/filesystems/proc.html)说明 stat 中的 CPU/RSS
+字段；[内核实现](https://github.com/torvalds/linux/blob/master/fs/proc/array.c)在 mm
+已释放时省略 status 的内存段，而 stat 仍输出数值 RSS。这个变化避免对已知短命
+控制子进程套用稳定文件的 uid/gid 元数据比较；使用原 CPU 读取路径已有的 no-follow、
+大小和 EOF 检查，并增加数值与 PID/start 绑定。业务进程/写入者检查、保留原件保护、
+常驻 custodian 的提前退出拒绝及所有限额均保持。没有增加等待、补读、重试或扫描。
+
+九个相关文件 **209 passed**。新增回归覆盖原限额下真实子进程完整退出、单记录计量、
+明确零值、缺字段/负值/错 PID/start 拒绝、退出后的身份矛盾，以及已有诊断返回通路。
+真实生命周期 fixture 固定八个独立案例；首次测试因合成采样次数上界不足而失败，
+仅调整该测试自身的有限循环上界，生产限额未改，失败日志保留。宿主源码仍小于原
+98304 B 上限。准确提交的 CI 和独立安装结果另行记录，不能用本地通过提前代替。
+
+本节为 FD1 既有资源计量要求内的普通修复，不增加执行许可。旧冻结脚本、终态返回和
+消费记录未改；FD2 仍停止，H01/Q4/H11 仍未运行。
