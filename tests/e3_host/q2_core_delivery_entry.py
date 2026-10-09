@@ -68,7 +68,8 @@ BIND_FRAME_LIMIT = 4112
 # VA1 source review binds these bytes. Exact D CI, full VA2 originals,
 # post-maintenance boot binding and every original admission remain required.
 # Historical dispatcher pins remain in their consumed source profiles.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({'c812c3c92121de7071844b8593e591b76c47be15d67fab45cf2b5f4eb2ba49e4'})
+# The post-return logical-path repair does not restore consumed VA2 permission.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({'c70951623b2f3ed657ac87d1ca0918068e3cf61e149e140aebb5c173f01086d3'})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

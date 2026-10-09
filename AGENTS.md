@@ -45,6 +45,15 @@ from the terminal release gate. Ten consumed generations and full obligations re
 Do not replay callers, relax user-domain/process/writer protections, collect more field data,
 retry, clean up, recover or start another window under this consumed batch.
 
+The [post-return path repair and retained-source review](docs/a2-execution/Q2_CORE_VM_ADOPTION_IMPLEMENTATION_REVIEW_20261009.md#09a-返回后的普通修复与离线接线复核)
+fixes the core consumer's logical-versus-filesystem cgroup path comparison, retaining exact
+target matching. Related offline checks passed 526/10 skipped; no field action occurred.
+Retained sources also prove a missing runtime preparation step across boot and an incorrect
+system/user parent-role binding. The old collector aliases two roles with incompatible task
+limits. Historical plans do not prove those runtime objects currently exist. Do not infer
+the missing ENOENT path, bypass user-domain checks or treat this repair as another window.
+Prepare one combined minimal runtime/role repair proposal; VA2 remains consumed, VA3 NOT_RUN.
+
 ## Current approved batch: declared-target startup checks and core continuation (2026-10-09)
 
 QI1 is complete; consumed QI2/08e was blocked by a different undeclared service. Do not repeat

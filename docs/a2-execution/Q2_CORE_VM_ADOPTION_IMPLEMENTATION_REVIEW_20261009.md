@@ -44,3 +44,42 @@ SHA-256 公开；原始内容、启动返回索引及新09a索引仍私有。
 | .lhqjgrow-20261008f.pre.stderr | 817 | df134297b8556f6d3939fe17424807a44e275c57470c84d81577d1da30d307b8 |
 | .lhqjgrow-20261008f.pre.stdout | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 |
 | .lhqjgrow-20261008f.receipt.json | 15447 | de08569fc6fadccafcf434d842e43ad713fbb4b6fdb7c45d03cf95df5fa3ad4e |
+
+## 09a 返回后的普通修复与离线接线复核
+
+09a 已消费失败，详见[现场记录](Q2_CORE_VM_ADOPTION_FIELD_20261009.md)。保留返回只说明
+用户管理器 show 上下文发生 errno 2，不能识别缺失路径或具体步骤。本复核没有新 SSH、
+VM 查询、服务动作或维护窗口；原返回和冻结字节不变。
+
+已修复独立核心消费者的路径表示错误：历史 systemd `ControlGroup` 为逻辑路径，
+采集端用 `/sys/fs/cgroup` 加该路径并返回完整文件系统路径；原消费者直接比较两者，
+会拒绝正确结果。现在使用采集端相同的前缀转换，然后仍要求完整路径精确相等。
+未修改历史 locator 来源、目标、管理器、权限、cgroup 内容或资源限额。
+对应 dispatcher 发行摘要同步；发行仍受完整维护成功等原条件限制，不能重放旧 caller。
+
+新增回归在修复前得到 **1 failed / 8 passed**，失败为真实逻辑路径表示触发
+`CORE_DISPATCH_ADMISSION_CGROUP_BINDING`。修复后相关 admission、capacity、dispatcher、
+entry、freezer 回归 **526 passed / 10 skipped**。覆盖逻辑/完整两种输入表示、错误管理器、
+重复前缀及缺失挂载前缀拒绝。测试不代表现场验收。
+
+复核还确认两个不能用上述普通修复替代的生命周期/来源问题：
+
+1. 固定候选 `4b6e4a7c403362358192086b88679e1326dcb2e1` 的准备程序在当次启动
+   UID 1100 用户管理器，并把用户 slice 配置写入 `/run`；未开启 linger。VA1 只接入
+   VM/boot 身份，没有补充重启后的运行时准备。原维护 pre/post 都需要该用户 bus。
+   这是源码可证的准备缺口，不是对本次具体缺失路径的现场断言。
+2. 已校验原始 locator 来源中，`ordinary_parent_unit` 与保留用户 slice basename 相同。
+   当前 collector 将两个角色均交给 system manager 并按 unit 名去重，而 geometry 又要求
+   ordinary 为 32 tasks、retained ordinary 为 64 tasks，同一条记录不可能同时满足。
+   已固定的 20261001e 系统准备 plan 指定了不同的 system ordinary slice（32 tasks）及
+   原 retained user slice（64 tasks）。该计划是历史计划，不能据此断言它已经在现场创建。
+
+原 plan/retry 取自既有 collection 的精确归档成员；系统 plan 取自
+`q2_core_obligation_inputs.DELTA_PINS` 的 `plan`，30813 B，SHA-256
+`85633b837718282ba6590b7a6679d51aa60addfb0f5be39ea929af83de4a45c1`。
+归档摘要与成员摘要均已核对；原件、解析投影及机器目标名仅私有保存。
+
+修复后续接线需准确区分历史 locator 与当前 system/user 角色，并在维护两侧准备原目标
+运行时配置。VA1 方案曾明确 guest 仅更换 session；新增启动/创建动作及新窗口不能借用
+消费完的 VA2。先准备合并的最小变更方案，再由 Owner 对这一完整批次决定；不逐步骤
+申请诊断窗口，不跳过 bus 或把域检查改成缺席即通过。H01/Q4/H11 仍 NOT_RUN。

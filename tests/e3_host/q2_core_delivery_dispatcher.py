@@ -8032,7 +8032,10 @@ def _validate_admission(value, context):
             and item['path'].startswith('/sys/fs/cgroup/')
             and PurePosixPath(item['path']).name == expected_unit, 'CGROUP_BINDING')
         if role == 'retained_ordinary_cgroup':
-            _admit(item['path'] == locators['retained_ordinary_parent_path'], 'CGROUP_BINDING')
+            # The pinned systemd record uses a logical ControlGroup. Match
+            # the collector's filesystem path using its same normalization.
+            expected_path = '/sys/fs/cgroup' + locators['retained_ordinary_parent_path'].removeprefix('/sys/fs/cgroup')
+            _admit(item['path'] == expected_path, 'CGROUP_BINDING')
     filesystems = _admit.exact(value["filesystems"], directory_roles, "FILESYSTEM_FIELDS")
     for role, item in filesystems.items():
         _admit.exact(item, _fields('mount_id dev fs_uuid fstype mount_options bytes_available inodes_available'), "FILESYSTEM")
