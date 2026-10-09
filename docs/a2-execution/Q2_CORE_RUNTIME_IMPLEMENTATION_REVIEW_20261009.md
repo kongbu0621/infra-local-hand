@@ -28,7 +28,7 @@ bundle 使用严格 UTF-8 后压缩，避免压缩前重复 base64；源码逐�
   已采用 activation 的 30 件原始返回仍由准确归档和索引验证。没有 VM 查询或 SSH。
 - 从准确历史源码抽取纯模板表达式，核对六个 slice 配置及 manager drop-in 的字节一致性。
   原角色投影 2052 B，未把历史 PID、boot 或 inode 当作当前身份。
-- 工作树静态 pre descriptor 28470 B；消费标记形状 63813 B（最终 40 字符 D 增加 32 B），
+- 工作树静态 pre descriptor 28470 B；消费标记形状 63813 B（两处最终 40 字符 D 共增加 64 B），
   压缩/展开 bundle 33691/143770 B，实际 argv 编码 47224 B。
 - 使用真实角色和明确合成的成功形状测量 post：准备报告 12754 B，descriptor 48655 B，
   压缩/展开 bundle 37116/165929 B，argv 51788 B。合成形状不作为维护成功原件或发行依据。

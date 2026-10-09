@@ -35,6 +35,26 @@ and index, and new09b originals/index remain private. At C, RT1 NOT_STARTED, RT2
 RT3/H01/Q4/H11 NOT_RUN. This closure supersedes older no-new-window and guest-session-only
 clauses only within exact RT1–RT3; it proves no runtime readiness, maintenance success or core PASS.
 
+The [RT1 freeze and RT2 return](docs/a2-execution/Q2_CORE_RUNTIME_FIELD_20261009.md)
+records direct child D `547bbb05816e17525470b1a3c136b328ff96adc1`, its first exact CI 3/3,
+independent installed 94 checks/292 commands, retained-source/size checks and both frozen callers.
+RT1 is complete. Unique RT2 `lhqjgrow-20261009b` passed local preflight, then consumed its marker
+and stopped during local transport construction with `LOCAL_IO_OR_TRANSPORT`, OSError errno 24.
+The request counter is 1 but no completed transport object was recorded; both original pre
+streams are empty. Do not equate that counter with confirmed remote execution. No guest report
+or guest action result exists; remote_exit remains UNKNOWN. No poweroff token, journal mutation,
+maintenance restart or core package was issued. RT2 is CONSUMED_FAILED / STOP_AND_RETAIN;
+RT3/H01/Q4/H11 are NOT_RUN. Five originals and their index remain private. The immutable freeze
+is retained separately from the terminal release gate. All eleven consumed generations remain.
+
+Offline source accounting identifies a host FD admission gap: the declared held objects plus
+pre-transport creation need at least 129 descriptors under the unchanged limit of 128. The earlier
+98/128 bound covered the guest only. The retained return does not identify the exact failing
+allocation; do not invent it or query more field data. Do not replay either caller, raise limits,
+release retained-identity protections, retry, stop services, clean up, recover or start another
+window under this consumed approval. Further work must remain offline until a sufficient,
+bounded continuation is explicitly authorized.
+
 ## Current approved batch: adopted VM and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1` is **CLOSED for VA1–VA3 only**.
