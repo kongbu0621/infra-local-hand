@@ -69,6 +69,15 @@ and the failing stage without changing thresholds or accounting. Inspect the alr
 caller and failure record before changing its wiring. Do not infer guest resource exhaustion,
 clear prior accounting, increase limits, or replay a consumed call on the basis of this repair.
 
+The [local caller and budget-return review](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#本地调用脚本与预算返回核对完成)
+is complete. Retained bindings locate the failure at the first caller Usage.sample before SSH;
+Usage has zero previous accounting and its callback is not wired into Anchor. Original resource
+values and the failing budget stage were not recorded. Six synthetic cases preserve both versions'
+decisions and demonstrate that the caller drops diagnostic; they cannot identify the historical
+resource cause. Repair aa4e43c has first exact CI 3/3 success. The separate current observation is
+also consumed failed, with SSH zero; its frozen caller stays retained. Do not repeat this offline
+lookup, reset accounting, replay the call, or infer permission for a new observation from these checks.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
