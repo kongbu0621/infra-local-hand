@@ -59,6 +59,11 @@ does. The existing single-record sampler binds start; no new process read, ident
 budget change is added. Real isolated pre/post pipe peers cover complete accounting and start
 drift rejection under original limits. This repair and passing tests do not restore UC2 or permit
 UC3; use only retained returns/source for any further offline review.
+Final repair `b65ecb36a166d54e84dcb1ddffb0a64302c40c7d` has its own first CI 3/3 success,
+Linux 7434 passed and Windows 1864 passed, including both independent installations. The prior
+repair CI's single missing-PID test-double failure remains recorded; only that fixture was corrected.
+The immutable UC1 freeze, five caller hashes and terminal gate were rechecked unchanged; no new
+field step or core package followed the consumed failure.
 
 ## Current approved batch: host FD ownership and original core continuation (2026-10-09)
 

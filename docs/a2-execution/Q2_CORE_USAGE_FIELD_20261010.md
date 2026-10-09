@@ -126,3 +126,15 @@ attempt 1：Windows 全部成功，1864 passed / 1376 skipped，独立安装成�
 AttributeError。该失败保留，不重跑覆盖。后续只给 fixture 补齐真实 Popen 固有的 PID
 字段；生产初始化和所有拒绝条件不变。后续提交使用自己的首次 CI，旧本地安装结果
 仍准确标为 `e962306`，不冒充后续提交的独立安装结果。
+
+fixture 修正后的相关两文件为 37 passed。最终提交
+`b65ecb36a166d54e84dcb1ddffb0a64302c40c7d` 的
+[首次 push CI 37974131840](https://github.com/kongbu0621/infra-local-hand/actions/runs/37974131840)
+attempt 1，三个 job 全部 success：Linux 7434 passed / 89 skipped，Windows
+1864 passed / 1376 skipped；准确检出检查和两平台独立安装验收均成功。
+Linux 安装为 94 checks / 292 commands，Windows 为 10 checks / 10 commands。
+完整 CI 原始日志、job/step 状态、准确提交绑定和最终验证索引均私有保留。
+
+最终核验确认：原不可变 freeze、五份调用脚本及四份现场返回未改，gate 仍为
+`UC2_CONSUMED_FAILED_UC3_NOT_RUN`。没有现场重试或核心包；代码修复已验证，现场维护
+仍未完成，H01→Q4→H11 仍 NOT_RUN。本次补记只登记验证结果，不修改实现或增加窗口。
