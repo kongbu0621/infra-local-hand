@@ -121,7 +121,7 @@ def test_partial_transport_construction_retains_files_closes_owned_io(tmp_path, 
             raise error
         for _ in range(3):
             streams.append(open(os.devnull, "rb"))
-        value = SimpleNamespace(stdin=streams[0], stdout=streams[1], stderr=streams[2])
+        value = SimpleNamespace(pid=101, stdin=streams[0], stdout=streams[1], stderr=streams[2])
         spawned.append(value)
         return value
     monkeypatch.setattr(store, "create", create)
