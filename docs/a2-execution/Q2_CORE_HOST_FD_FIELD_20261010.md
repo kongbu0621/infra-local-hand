@@ -107,3 +107,27 @@ argv 摘要与 starttime、`status_read/rss_parse/cpu_stat` 阶段、异常类�
 `error.diagnostic`，并把修复接入新候选的离线验证。不得修改或重放原冻结调用器。
 如果既有原件没有失败 PID/字段，应明确仍未知，不能用推测替代；任何后续现场执行继续
 遵守原有授权范围。维护确实完成后才进入原 H01→Q4→H11，不增加旁支功能。
+
+## 本地接续核验
+
+本地已快进同步诊断修复 `957b300fd710cbbcff6f56b14a2739ba904ed862`，在普通用户环境
+运行八个相关测试文件，**186 passed**，包括 retained-custody 的真实隔离 fork/FD 测试。
+未放宽普通用户、未知资源拒绝或原资源上限。
+
+私有离线检查进一步把新源码实际产生的三种 `status_read/rss_parse/cpu_stat` 失败，
+经过顶层 JSON 输出，再接入原冻结调用器的合成 subprocess 返回：原始 stdout、保存的
+摘要和打印的摘要均完整保留同一诊断。每种情况只模拟一次 preflight 返回，不进入 execute；
+所有启动均被测试替身拦截，无真实命令启动、SSH 或现场窗口。原调用器无需修改。
+五个冻结脚本与原 freeze 哈希一致，六份已保留返回与原索引一致，终态 gate 不变。
+合成结果单独保存，没有替换历史原件或补写缺失的失败 PID。
+
+准确修复提交的 13 份来源、17 个固定输入、55 份旧维护原件及既有 VM 激活材料离线
+核验通过。宿主协调器为 97012 B，仍低于 98304 B；pre/post bundle、argv、描述、marker
+的保留源形状与本记录原核算一致，均在原上限内。这不是当前现场准入或新 freeze。
+首次沙箱内固定源读取被父目录保护检查拒绝；保留该离线失败记录后，在普通用户原生
+文件系统视图下通过同一核验，未修改任何目录保护条件。
+
+截至 2026-10-10 00:50（Asia/Shanghai），修复的
+[首次 push CI 37960982460](https://github.com/kongbu0621/infra-local-hand/actions/runs/37960982460)
+为 attempt 1：classify-change 与 Windows 已成功，Linux 尚在运行，不能记为 3/3。
+本次无现场操作；FD2 仍为 PREFLIGHT_FAILED / STOP_AND_RETAIN，FD3/H01/Q4/H11 仍为 NOT_RUN。
