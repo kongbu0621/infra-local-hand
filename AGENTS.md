@@ -149,6 +149,18 @@ field marker was created, and startup/SSH counts are zero. Do not bypass the rej
 scope interpretation is not startup authority; the prepared action requires explicit Owner approval.
 Repairs and qualification are delivered locally; old failures and H01/Q4/H11 NOT_RUN remain.
 
+Owner then explicitly approved the linked current-binding startup plan. The [approved startup return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#当前绑定获明确批准后的单次启动成功)
+records event `LH-Q1-VM-START-20261009-02` as STARTED_AND_HOST_ENDPOINT_VERIFIED. The new exact
+Owner reply was bound separately; only authority wiring changed from the prepared helper.
+Current host, QEMU content/metadata, five image bindings, resources and output admission passed.
+One QEMU startup returned zero with empty streams; after the retained 60-second passive wait,
+the new fixed PID/start/argv/executable/namespace checks and one fixed-port listener query passed.
+Old pidfile and serial output were preserved. Startup calls are one, SSH calls zero. All originals,
+new identity and verified return index remain private. This supersedes the pending-approval status;
+the prior rejection and failed admission remain historical. Do not replay this consumed startup.
+Guest boot/SSH readiness and process protections were not checked; no maintenance or core package
+was issued, and H01/Q4/H11 remain NOT_RUN. Host endpoint restoration alone is not core acceptance.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
