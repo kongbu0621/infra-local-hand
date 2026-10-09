@@ -15,6 +15,14 @@ from command_usage_fixture import stat_record
 from e3_host import q2_journal_growth as h
 
 
+@pytest.fixture
+def ordinary_budget(monkeypatch):
+    # These identity cases model a short coordinator, not the pytest runner's
+    # cumulative CPU after the complete suite. Real lifecycle runs separately.
+    monkeypatch.setattr(h.resource, "getrusage", lambda _kind:
+        SimpleNamespace(ru_utime=1, ru_stime=1, ru_maxrss=2048))
+
+
 def test_cpu_and_rss_come_from_one_complete_stat_with_parentheses_in_name(monkeypatch):
     monkeypatch.setattr(os, "sysconf", lambda key: 100 if key == "SC_CLK_TCK" else 4096)
     raw = stat_record(101, start=201, cpu_ticks=300, rss_bytes=12288,
@@ -59,7 +67,7 @@ def test_incomplete_or_wrong_stat_is_rejected(change):
 @pytest.mark.parametrize("binding", [None, {}, {"pid": 102, "starttime": 201},
                                    {"pid": 101, "starttime": 202},
                                    {"pid": 101, "starttime": True}])
-def test_wrong_owned_child_identity_stops_with_diagnostic(monkeypatch, binding):
+def test_wrong_owned_child_identity_stops_with_diagnostic(monkeypatch, binding, ordinary_budget):
     child = SimpleNamespace(is_vm=False, identity=binding,
         process=SimpleNamespace(pid=101, poll=lambda: None))
     monkeypatch.setattr(h, "COMMANDS", [child])
@@ -71,7 +79,7 @@ def test_wrong_owned_child_identity_stops_with_diagnostic(monkeypatch, binding):
     assert failure["stage"] == "process_identity" and failure["reason"] == "GROWTH_USAGE_IDENTITY"
 
 
-def test_first_complete_observation_binds_missing_start_without_another_read(monkeypatch):
+def test_first_complete_observation_binds_missing_start_without_another_read(monkeypatch, ordinary_budget):
     child = SimpleNamespace(is_vm=False, identity=dict(pid=101, starttime=None),
         process=SimpleNamespace(pid=101, poll=lambda: None))
     calls = []
