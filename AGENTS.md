@@ -248,6 +248,24 @@ pidfile's absence, without recreating or reusing it. Eleven offline control-flow
 simulated external I/O only. This next concrete activation is PREPARED/NOT_AUTHORIZED/NOT_EXECUTED;
 original limits and failure-stop rules remain. No field readiness or H01/Q4/H11 success is claimed.
 
+Owner subsequently replied “批准” to the corrected PID-file activation proposal, retained as
+`LH-Q1-QUOTA-REPAIR-ACTIVATION-20261009-03`. The [successful activation return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#修复副本启用及准确模块包安装验证通过)
+supersedes that proposal's pending status. The unchanged frozen helper passed admission and started
+the original Q1 configuration once using the verified repaired system copy. After the passive wait,
+the new process identity and fixed listener passed. Exactly one trusted SSH ran the pinned installer:
+the matching kernel extra-modules package installed successfully, its version and package integrity
+passed, and quota module resolution passed. The protected quota mount was present before installation
+and unchanged afterward; the guest boot remained stable. Normal package triggers updated the candidate
+initramfs/GRUB. No package network access, retry, further reboot, stop, maintenance or core issuance occurred.
+Original system and historical outputs remain preserved; original data disks received approved normal
+guest startup writes. The repaired system copy is now active and changed by startup/installation, so
+its prepared SHA-256 is historical prelaunch evidence, not a current-disk content pin. The new private
+binding retains host/VM/guest identity and source returns. Independent retained-return verification
+passed all five host commands and nine guest steps; the private index covers 30 preparation/return files,
+excluding active runtime outputs from immutable indexing. H01/Q4/H11 remain NOT_RUN; maintenance
+consumer adoption and capacity acceptance remain incomplete. This completes the approved activation,
+not the maintenance/core batch. Do not replay its entry or any consumed maintenance caller.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
