@@ -1072,6 +1072,7 @@ sum(len((k+"="+v).encode())+1 for k,v in env.items())<=65536,"GROWTH_ARGV_LIMIT"
 stdin=subprocess.PIPE if phase=="pre" else subprocess.DEVNULL,
 stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,
 preexec_fn=control_limits,start_new_session=True)
+   self.identity=dict(pid=self.process.pid,argv_sha256=digest(canonical(argv)),starttime=None)
    COMMANDS.append(self)
    stage="pipe_registration"
    for name in self.output:

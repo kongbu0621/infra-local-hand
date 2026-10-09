@@ -37,6 +37,29 @@ new10a originals/index stay private. At C, UC1 NOT_STARTED, UC2 NOT_ISSUED, UC3/
 This exact closure supersedes older no-new-window clauses only within UC1–UC3; it proves neither
 implementation, readiness, maintenance success nor core PASS.
 
+The [UC1 freeze and UC2 return](docs/a2-execution/Q2_CORE_USAGE_FIELD_20261010.md) records
+direct child D `8f7a438d8a88c98d85852ebfdb6978c5c7bf9230`, exact first CI 3/3 success,
+independent installed 94 checks/292 commands, retained-input/lifecycle verification and both
+frozen callers. UC1 is complete. The unique 10a caller passed local preflight and invoked
+same-window execute once. The marker was created and one pre SSH was launched; execute exited 3
+with `UNKNOWN / GROWTH_USAGE_UNKNOWN`, specifically `process_identity / GROWTH_USAGE_IDENTITY`
+and absent held identity fields. Four captured originals are retained privately: marker, events,
+empty pre stdout and stderr. The receipt is absent; no guest report or coordinator completion was
+captured. Do not invent a fifth original, guest actions or remote completion. No poweroff token,
+backup, journal growth, maintenance restart or core package was issued. Remote exit remains UNKNOWN.
+UC2 is CONSUMED_FAILED / STOP_AND_RETAIN; UC3/H01/Q4/H11 are NOT_RUN. The terminal gate preserves
+the immutable freeze. Twelve maintenance generations are consumed; old09c remains an invoked
+unconsumed preflight, and all thirteen full maintenance obligations remain. Do not replay either
+caller, issue the original core package, retry, supplement field evidence, clean up, recover or
+start another window. No per-substep approval was needed within the now-consumed batch.
+
+The same record describes the ordinary repair: MaintenanceTransport must initialize its owned
+Popen PID/argv digest and unbound start before joining COMMANDS, just as ordinary Command already
+does. The existing single-record sampler binds start; no new process read, identity exception or
+budget change is added. Real isolated pre/post pipe peers cover complete accounting and start
+drift rejection under original limits. This repair and passing tests do not restore UC2 or permit
+UC3; use only retained returns/source for any further offline review.
+
 ## Current approved batch: host FD ownership and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-HOST-FD-CONTINUATION-v1` is **CLOSED for FD1–FD3 only**.

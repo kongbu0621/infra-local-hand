@@ -137,3 +137,84 @@ def test_real_known_children_complete_exit_accounting_inside_original_limits():
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     value = json.loads(result.stdout)
     assert value["completed"] == 8 and value["live_rss_observed"] and value["exited_cost_included"]
+
+
+TRANSPORT_LIFECYCLE = r'''
+import json,os,resource,subprocess,sys,tempfile,time
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0,sys.argv[1])
+from e3_host import q2_journal_growth as h
+phase,mode=sys.argv[2:]
+resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
+resource.setrlimit(resource.RLIMIT_AS,(256*1048576,256*1048576))
+sampler=h.Usage();reads=[];real=h.custody.proc
+def observed(pid,name,limit):
+    reads.append((pid,name,limit));return real(pid,name,limit)
+h.custody.proc=observed
+nonce,source='1'*64,'2'*64
+old_boot='10000000-0000-4000-8000-000000000001'
+new_boot='20000000-0000-4000-8000-000000000001'
+value=dict(schema=h.REPORT_SCHEMA,session=h.SESSION,phase=phase,nonce=nonce,
+ source_binding_sha256=source,boot_id=old_boot if phase=='pre' else new_boot,
+ status='GUEST_QUIET' if phase=='pre' else 'FILESYSTEM_GROWN')
+if phase=='post':value['original_boot_id']=old_boot
+sha=h.digest(h.canonical(value))
+with tempfile.TemporaryDirectory() as path:
+    root=Path(path);release=root/'release-fixture'
+    parent=os.open(path,os.O_RDONLY|os.O_DIRECTORY)
+    exe=os.open(sys.executable,os.O_PATH|os.O_CLOEXEC)
+    store=h.Store(parent,sampler.sample);transport=None
+    peer='import sys,time\nfrom pathlib import Path\nsys.stdout.buffer.write('+repr(h.canonical(value))+');sys.stdout.flush()\n'
+    if phase=='pre':
+        ack=dict(schema=h.REPORT_SCHEMA,session=h.SESSION,status='POWER_OFF_REQUESTED',
+            nonce=nonce,pre_report_sha256=sha,guest_startup_assurance=h.guest_startup_assurance())
+        peer+='token=sys.stdin.buffer.readline()\nif token=='+repr(h.continue_token(nonce,sha))+':\n sys.stdout.buffer.write('+repr(h.canonical(ack))+');sys.stdout.flush()\n'
+    else:
+        peer+='end=time.monotonic()+5\nwhile not Path('+repr(str(release))+').exists() and time.monotonic()<end: time.sleep(.01)\n'
+    argv=[sys.executable,'-I','-B','-c',peer]
+    try:
+        transport=h.MaintenanceTransport(SimpleNamespace(ssh=exe),store,argv,phase,
+            nonce,source,old_boot,sampler.sample)
+        assert transport.process.poll() is None
+        # Constructor uses only its owned Popen identity; the original sampler
+        # supplies start/CPU/RSS in exactly one read, including the SSH path.
+        before=len(reads);first=sampler.sample()
+        assert reads[before:]==[(transport.process.pid,'stat',4096)]
+        assert transport.identity['pid']==transport.process.pid
+        assert transport.identity['argv_sha256']==h.digest(h.canonical(argv))
+        assert type(transport.identity['starttime']) is int and transport.identity['starttime']>0
+        if mode=='drift':
+            transport.identity['starttime']+=1
+            try:sampler.sample()
+            except h.prior.r.ObservationError as error:
+                assert str(error)=='GROWTH_USAGE_UNKNOWN'
+                failure=error.diagnostic['failed_children'][0]
+                assert failure['stage']=='process_identity' and failure['reason']=='GROWTH_USAGE_IDENTITY'
+            else:raise AssertionError('accepted changed transport identity')
+            assert not transport.sent and transport.report is None
+        else:
+            assert transport.receive_report()==value
+            if phase=='pre':transport.continue_poweroff(sha)
+            else:release.write_bytes(b'fixture complete')
+            result=transport.finish()
+            assert result['returncode']==0 and all(result['eof'].values())
+            assert sampler.sample()['cpu_nanoseconds']>=first['cpu_nanoseconds']>0
+    finally:
+        release.write_bytes(b'fixture complete')
+        if transport is not None:
+            transport.close();transport.process.wait(timeout=5)
+        store.close();os.close(exe);os.close(parent)
+print(json.dumps(dict(phase=phase,mode=mode,complete=True,nofile=128,address_space=256*1048576)))
+'''
+
+
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("mode", ["complete", "drift"])
+def test_actual_transport_uses_owned_identity_and_real_accounting(phase, mode):
+    result = subprocess.run([sys.executable, "-I", "-c", TRANSPORT_LIFECYCLE,
+        str(Path(__file__).parent), phase, mode], stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert json.loads(result.stdout) == dict(phase=phase, mode=mode, complete=True,
+        nofile=128, address_space=256 * 1048576)
