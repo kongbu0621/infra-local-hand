@@ -30,6 +30,21 @@ five-file basename/bytes/SHA-256 index for main. Activation originals/index, mac
 PID/boot/raw streams and new09a originals/index remain private. This closure supersedes
 older no-new-window clauses only for this exact batch and proves no readiness or core PASS.
 
+The [VA1 freeze and VA2 field return](docs/a2-execution/Q2_CORE_VM_ADOPTION_FIELD_20261009.md)
+records direct child D `54d32df2f82fe863e1535ddb8134617c2654e33d`, exact first CI 3/3,
+independent installed 94 checks/292 commands, original-source/bounds verification and both
+frozen callers. VA1 is complete. Unique VA2 `lhqjgrow-20261009a` passed local preflight,
+then consumed its marker and one pre SSH before stopping at PRE_QUIESCENCE /
+GROWTH_GUEST_IO_OR_RUNTIME. The retained context identifies user-manager show and errno 2,
+but not the missing path or whether preparation, execution or recheck failed. Do not claim
+a particular runtime directory or bus was observed absent. No poweroff token was sent,
+actions_started is empty, remote_exit remains UNKNOWN. No journal change, VM restart or
+core package was issued. VA2 is CONSUMED_FAILED / STOP_AND_RETAIN; VA3/H01/Q4/H11 NOT_RUN.
+Five originals and the new index remain private; the immutable freeze is preserved separately
+from the terminal release gate. Ten consumed generations and full obligations remain.
+Do not replay callers, relax user-domain/process/writer protections, collect more field data,
+retry, clean up, recover or start another window under this consumed batch.
+
 ## Current approved batch: declared-target startup checks and core continuation (2026-10-09)
 
 QI1 is complete; consumed QI2/08e was blocked by a different undeclared service. Do not repeat
