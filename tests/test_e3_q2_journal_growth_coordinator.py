@@ -41,6 +41,10 @@ def rig(monkeypatch, tmp_path):
         return None
     monkeypatch.setattr(h, "recheck_q1_inputs", nothing)
     monkeypatch.setattr(h, "validate_q1_frozen", nothing)
+    # This rig models all host effects; pytest's unrelated, accumulated FDs
+    # are not the coordinator's resource pool. Real admission/EMFILE coverage
+    # runs in isolated 128-FD children in test_e3_q2_journal_host_fds.py.
+    monkeypatch.setattr(h, "host_fd_admission", nothing)
     class Store:
         def __init__(self, fd, check):
             self.fd, self.opened = fd, {}

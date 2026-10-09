@@ -69,6 +69,15 @@ cross-checked privately under RT2-09B-ORIGINALS-INDEX-REVIEW-20261009-01 and rem
 No new helper, changed ownership protocol, limit increase or replacement field window is authorized
 by this ordinary repair. All spent windows, original evidence and NOT_RUN core cases remain.
 
+The [combined host FD proposal](docs/governance/Q2_CORE_HOST_FD_CONTINUATION_BASELINE.md)
+is now fixed as exact A `0ed9ba0a8eefa4d1a88ee46192fc18a5ad3fafc8`, tree
+`c29e7439e85229d926a7c632ef1da1a40e95ef7e`, scope `LH-Q2-CORE-HOST-FD-CONTINUATION-v1`.
+It is OPEN, not Owner-approved and not independent closure C. It combines bounded continuous
+custodian FD ownership, lossless history-reference encoding and all producer/consumer verification
+before one proposed 09c maintenance and conditional original 07a core batch. A contains only three
+documents; preserve its bytes. No custodian implementation, new caller or field window was issued.
+The private old09b index remains unpublished pending the specific disclosure approval in A.
+
 ## Current approved batch: adopted VM and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1` is **CLOSED for VA1–VA3 only**.
