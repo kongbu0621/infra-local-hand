@@ -110,6 +110,17 @@ of the retained endpoint, fixed VM PID and listener, with zero SSH connections. 
 of the consumed observation. Do not add a scanner or another governance document set. Retain all
 failed calls; any service/VM/network change needs a concrete, evidence-backed action for Owner review.
 
+The [fixed-endpoint read](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#固定端点宿主只读核对完成)
+is complete: saved target, pinned scripts and hostfwd agree; the fixed pidfile exists but its PID
+is absent, and the single fixed-port ss query found no listener in the diagnostic namespace.
+Current VM identity/namespace remain UNKNOWN. The one retained serial tail contains historical
+events, not a time-bound cause for this disappearance. The bounded check used zero SSH and no
+mutation. Do not repeat it or attribute the missing QEMU process to the old guest OOM event.
+A private concrete one-start proposal preserves the original VM/disks and old evidence, changing
+only the two output names; it is not authorized or executed. Starting it would cause normal guest
+writes and new boot/process identities, requiring fresh binding. Present that action for Owner
+review before any VM/service/network change. All consumed failures and H01/Q4/H11 NOT_RUN remain.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
