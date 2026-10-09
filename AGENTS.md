@@ -54,6 +54,13 @@ or resource excess. Zero SSH/no marker is not permission to replay this invoked 
 supplement field data, relax unknown-usage rejection, clean up, recover or start another window.
 Only retained-return/source offline review remains; no new maintenance index or core PASS exists.
 
+The targeted source diagnostic repair in the same field record preserves the ordinary live-command
+PID, already held identity, failing sampling stage, exception type, errno and bounded reason when
+`GROWTH_USAGE_UNKNOWN` is raised. It adds no process reads, commands, retry or changed admission.
+This repairs the empty diagnostic; it does not identify the historical failing PID or make FD2 pass.
+Keep private caller propagation aligned with `error.diagnostic`; do not replace the existing
+terminal return, frozen caller or evidence with the new source. Core continuation remains the goal.
+
 ## Current approved batch: runtime prerequisites and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-RUNTIME-CONTINUATION-v1` is **CLOSED for RT1–RT3 only**.

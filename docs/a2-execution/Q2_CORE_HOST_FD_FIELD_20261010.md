@@ -81,3 +81,29 @@ release gate 已转为 `FD2_PREFLIGHT_FAILED_FD3_NOT_RUN`，同时保留原不�
 最终状态：**FD1 COMPLETE；FD2 PREFLIGHT_FAILED / STOP_AND_RETAIN；
 FD3/H01/Q4/H11 NOT_RUN。** 不重放任一调用器、不放宽计量/保护、不追加现场读取、重试、
 清理、恢复或新窗口。只可依据既有返回和源码做离线审阅，不能追认缺失的现场事实。
+
+## 空诊断的源码修复
+
+已从准确来源确认：`management_usage()` 对普通活跃控制子进程依次读取 `status`、解析
+`VmRSS`、读取 CPU `stat`。原代码捕获 `OSError/ValueError/RuntimeError` 后丢弃异常；
+若原有第二次 `poll()` 仍未确认退出，只留下 `complete=False`，最终返回没有诊断的
+`GROWTH_USAGE_UNKNOWN`。这能解释空诊断，不能确定本次现场的 PID 或具体失败读取。
+
+针对性修改只把已有观察保留到 `error.diagnostic`：最多八项失败子进程的 PID、已有
+argv 摘要与 starttime、`status_read/rss_parse/cpu_stat` 阶段、异常类型、errno 和固定格式
+原因码。不输出 argv、原始 proc 内容、异常自由文本或路径，不追加进程读取。
+读取顺序、第二次退出确认、已回收 CPU 差值、资源上限、预算错误优先级、未知即拒绝
+保持不变；失败样本不覆盖 `Usage.last`。缺失的已有身份字段明确为 `null`。
+
+新增合成回归覆盖三类失败、退出分支、八子进程界限、诊断脱敏、无额外读取和原始 JSON
+返回通路。既有普通用户持有进程测试必须在非 root 环境验证；不能为适应云端 root 容器
+放宽 `GROWTH_CUSTODY_ORDINARY_OWNER`。源码诊断修复不代表现场故障已排除或核心通过。
+
+本地新增 20 项诊断测试全部通过；与六个相关测试文件联合运行为 209 passed / 2 skipped，
+编译与差异检查通过。另一次运行的既有 retained-custody 测试在云端 root 容器中 7 项通过、
+12 项被原普通用户身份条件拒绝；未修改该条件，该组仍由非 root CI 验证。
+
+本地接续只围绕该核心阻塞：先核对已保留的原始返回和私有调用器，确认它保留完整
+`error.diagnostic`，并把修复接入新候选的离线验证。不得修改或重放原冻结调用器。
+如果既有原件没有失败 PID/字段，应明确仍未知，不能用推测替代；任何后续现场执行继续
+遵守原有授权范围。维护确实完成后才进入原 H01→Q4→H11，不增加旁支功能。

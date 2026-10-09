@@ -1490,6 +1490,20 @@ cpu=dict(actual=cpu,limit=cpu_limit,unit="seconds" if stage=="management_usage" 
 exceeded=cpu>cpu_limit),
 rss=dict(actual=rss,limit=512*MIB,unit="bytes",exceeded=rss>512*MIB),components=components)
  raise error
+def _usage_failure(item,stage,error):
+ # Reuse the command identity already held in memory. Never include argv,
+ # raw proc content, exception text/paths, or perform another observation.
+ binding=getattr(item,"identity",{})
+ if type(binding) is not dict:binding={}
+ argv_sha=binding.get("argv_sha256")
+ start=binding.get("starttime")
+ reason=error.args[0] if error.args else None
+ number=getattr(error,"errno",None)
+ return dict(pid=item.process.pid,stage=stage,error_type=type(error).__name__[:64],
+ errno=number if type(number) is int else None,
+ reason=reason if type(reason) is str and re.fullmatch(r"GROWTH_[A-Z0-9_]{1,80}",reason) else None,
+ identity=dict(argv_sha256=argv_sha if type(argv_sha) is str and re.fullmatch(r"[0-9a-f]{64}",argv_sha) else None,
+ starttime=start if type(start) is int and start>0 else None))
 def management_usage():
  live=[item for item in COMMANDS if not item.is_vm and item.process.poll() is None]
  require(len(live)+len(custody.ACTIVE)<=8,"GROWTH_CHILD_BUDGET")
@@ -1497,15 +1511,23 @@ def management_usage():
  cpu=own.ru_utime+own.ru_stime+children.ru_utime+children.ru_stime
  rss=own.ru_maxrss*1024
  complete=True
+ failures=[]
  for item in live:
+  stage="status_read"
   try:
    value=proc_bytes(item.process.pid,"status",16384,lambda:None)
+   stage="rss_parse"
    found=re.search(rb"^VmRSS:\s+([0-9]+) kB$",value,re.M)
    require(found is not None,"GROWTH_USAGE_UNKNOWN")
+   stage="cpu_stat"
    _,used=custody.process_stat(item.process.pid)
-   cpu+=used;rss+=int(found[1])*1024
-  except (OSError,ValueError,RuntimeError):
-   if item.process.poll() is None:complete=False
+   cpu+=used
+   stage="rss_parse"
+   rss+=int(found[1])*1024
+  except (OSError,ValueError,RuntimeError) as error:
+   if item.process.poll() is None:
+    complete=False
+    failures.append(_usage_failure(item,stage,error))
    else:
     current=resource.getrusage(resource.RUSAGE_CHILDREN)
     cpu+=current.ru_utime+current.ru_stime-children.ru_utime-children.ru_stime
@@ -1517,7 +1539,11 @@ components=dict(self_cpu_seconds=own.ru_utime+own.ru_stime,
 exited_children_cpu_seconds=children.ru_utime+children.ru_stime,
 self_peak_rss_bytes=own.ru_maxrss*1024,live_non_vm_rss_bytes=rss-own.ru_maxrss*1024,
 live_children=len(live)+len(custody.ACTIVE),live_rss_complete=complete))
- require(complete,"GROWTH_USAGE_UNKNOWN")
+ if not complete:
+  error=prior.r.ObservationError("GROWTH_USAGE_UNKNOWN")
+  error.diagnostic=dict(operation="management_usage",stage="live_child_observation",
+ complete=False,live_children=len(live)+len(custody.ACTIVE),failed_children=failures)
+  raise error
  return dict(cpu_seconds=cpu,rss_upper_observation_bytes=rss,complete=True,
 live_children=len(live)+len(custody.ACTIVE),vm_excluded=True,guest_aggregate="UNKNOWN")
 class Usage:
