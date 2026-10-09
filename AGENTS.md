@@ -133,6 +133,22 @@ software update or the cause of the earlier missing VM. Do not replay this invoc
 the executable binding. Exact authority, helper, result and index remain private. No VM was started
 by this attempt, guest/core checks remain unissued, and H01/Q4/H11 remain NOT_RUN.
 
+Owner subsequently directed “下一步怎么办？你直接修复？”; the [local repair and current-input qualification](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#诊断缺口修复与当前绑定核验)
+are complete. The private diagnostic candidate retains expected/current metadata and individual
+differences before the unchanged equality rejection; its actual catch/finally/result path passed
+13 synthetic cases. One necessary fixed-executable read found only a device-number difference;
+the other nine fields match. Current executable content matches the installed package manifest,
+and version output matches the original digest. The current host boot differs from the retained
+boot; all five original image inodes match, while their device numbers differ. These facts support
+a fresh explicit binding, not deletion of the device/boot checks or retroactive evidence repair.
+A separate prepared startup binds the current host, QEMU content/full metadata and all five image
+metadata records, retaining the original VM configuration and changing only its two output names.
+Automatic approval review rejected issuance: the general direct-repair direction was not explicit
+approval of a new VM start after the failed admission. The new helper was not executed, no new
+field marker was created, and startup/SSH counts are zero. Do not bypass the rejection. Its draft
+scope interpretation is not startup authority; the prepared action requires explicit Owner approval.
+Repairs and qualification are delivered locally; old failures and H01/Q4/H11 NOT_RUN remain.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
