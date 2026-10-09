@@ -1150,7 +1150,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments", "maintenance"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v15"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v16"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     _approved_equal(value["maintenance"],_maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -1797,6 +1797,12 @@ TENTH_JOURNAL_D = '54d32df2f82fe863e1535ddb8134617c2654e33d'
 TENTH_JOURNAL_PINS = {'consumed.json': (59556, '777715c3cbf6d9c9ecef43a63ae1fe2dee6fa4c48170f0114aa883383f55c87d'), 'events.jsonl': (441, '687cce89ef1ef88e44d482655d61e2a8e48d84bb4e2da36d154ccf98accfec60'), 'pre.stderr': (922, '6c40a4e9d0882c80ffb89829be5c52cf9bc861a698d5bd498c1efa434539a88e'), 'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'receipt.json': (16482, '1737c6c75c8dc97b80734e94b4d161f33b9893d7ad8e63658acc9514e190d096')}
 
 
+ELEVENTH_JOURNAL_SESSION = 'lhqjgrow-20261009b'
+ELEVENTH_JOURNAL_D = '547bbb05816e17525470b1a3c136b328ff96adc1'
+# Owner-approved old09b minimal index; no remote completion is inferred.
+ELEVENTH_JOURNAL_PINS = {'consumed.json': (63853, '30aa04638c3682a3317a5e83ba5769a167e98ea0e32053b204812ae0a0c03f45'), 'events.jsonl': (441, '9852dffa8014fd2e1385f7aa1d46b6ec37849773830fa13b3d065af0372aa6fd'), 'pre.stderr': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'receipt.json': (17254, 'cd87d061060c3fdbaad785c46f598ec31f5f806f2b0f88a490e1bf4a7a1261e3')}
+
+
 def previous_journal_profiles():
     return (
         dict(session=PREVIOUS_JOURNAL_SESSION, D=PREVIOUS_JOURNAL_D, pins=PREVIOUS_JOURNAL_PINS,
@@ -1828,13 +1834,15 @@ def previous_journal_profiles():
             version=10, stage='PRE_QUIESCENCE', reason='GROWTH_BUSINESS_PROCESS'),
         dict(session=TENTH_JOURNAL_SESSION,D=TENTH_JOURNAL_D,pins=TENTH_JOURNAL_PINS,
             authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04', A='13cd2d3e7ac9a307a7c960f713524fefa2959a95', C='31b8e21116edd3678d738c1b9525edb6b3da8ae8'),
-            version=11,stage='PRE_QUIESCENCE',reason='GROWTH_GUEST_IO_OR_RUNTIME'))
+            version=11,stage='PRE_QUIESCENCE',reason='GROWTH_GUEST_IO_OR_RUNTIME'),
+        dict(session=ELEVENTH_JOURNAL_SESSION,D=ELEVENTH_JOURNAL_D,pins=ELEVENTH_JOURNAL_PINS,
+            authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04', A=RUNTIME_A, C=RUNTIME_C),version=12,stage='LOCAL_TRANSPORT_CONSTRUCTION',reason='LOCAL_IO_OR_TRANSPORT'))
 
 
 
 
 def _maintenance_resume():
-    return dict(scope='LH-Q2-CORE-RUNTIME-CONTINUATION-v1', session='lhqjgrow-20261009b',
+    return dict(scope='LH-Q2-CORE-HOST-FD-CONTINUATION-v1', session='lhqjgrow-20261009c',
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -1845,7 +1853,7 @@ def _maintenance_resume():
 def _maintenance_commitments():
     return dict(previous_maintenance=_maintenance_resume(),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,'lhqjgrow-20261009b')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c')],
         released_or_refunded=False)
 
 
@@ -1855,7 +1863,7 @@ def _validate_maintenance_resume(value):
     return value
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261009b'
+JOURNAL_SESSION = 'lhqjgrow-20261009c'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -1863,7 +1871,7 @@ JOURNAL_SOURCE_NAMES = ('q2_journal_growth.py', 'q2_journal_growth_guest.py',
     'q2_core_capacity_capture.py', 'q2_core_capacity_reader.py', 'q2_sshd_source_capture.py',
     'q2_sshd_source_reader.py', 'q2_core_obligation_inputs.py', 'q2_core_prior_attempt.py',
     'q2_core_delivery_contract.py', 'q2_local_source_delivery.py', 'q2_core_approved_inputs.py',
-    'q2_host_kernel_facts.py')
+    'q2_host_kernel_facts.py', 'q2_journal_retained_fds.py')
 
 
 ACTIVATION_EVENT = 'LH-Q1-QUOTA-REPAIR-ACTIVATION-20261009-03'
@@ -1919,6 +1927,8 @@ def _validate_vm_activation(value):
 # Pending authority is not a commit or execution permission.
 VM_ADOPTION_A = '13cd2d3e7ac9a307a7c960f713524fefa2959a95'
 VM_ADOPTION_C = '31b8e21116edd3678d738c1b9525edb6b3da8ae8'
+HOST_FD_A = '0ed9ba0a8eefa4d1a88ee46192fc18a5ad3fafc8'
+HOST_FD_C = '26a89a1a11a958c24987eb590944331a9769b2ad'
 RUNTIME_A = 'dc6e6c511936e02f41cda0cf86cbd571f3aa253d'
 RUNTIME_C = '3633b1e963b35647bef8d7f94592089130ff25a1'
 
@@ -1963,6 +1973,56 @@ def _validate_runtime_summaries(value,binding,nonce,boots,reports):
  and pool[key][0]>=pool["reserved_bytes"] and pool[key][1]>=pool["reserved_inodes"],"GROWTH_RUNTIME_SUMMARY_CAPACITY")
  return value
 
+def _validate_retained_custody(value, *, implementation, nonce, source_files):
+    check=_Checks('CORE_JOURNAL_')
+    check(type(value) is dict and set(value)=={'schema','binding','pid','starttime','count','checks',
+        'originals','ipc_bytes','cpu_nanoseconds','rss_bytes','state'},'CUSTODY_FIELDS')
+    check(value['schema']=='lhq-retained-custody/v1' and value['state']=='HELD_UNTIL_TEARDOWN'
+        and value['count']==55,'CUSTODY_SCHEMA')
+    for name,low,high in (('pid',2,2147483647),('starttime',1,2**63-1),('checks',1,64),
+        ('ipc_bytes',1,2097152),('cpu_nanoseconds',0,120000000000),('rss_bytes',1,536870912)):
+        check(type(value[name]) is int and low<=value[name]<=high,'CUSTODY_BOUNDS')
+    pins={'.'+row['session']+'.'+name:(size,digest) for row in previous_journal_profiles()
+        for name,(size,digest) in row['pins'].items()}
+    originals=value['originals']
+    check(type(originals) is list and len(originals)==55,'CUSTODY_ORIGINALS')
+    check([row['basename'] for row in originals]==list(pins),'CUSTODY_SET_ORDER')
+    seen=set();owner=None
+    for row in originals:
+        check(type(row) is dict and set(row)=={'basename','metadata','bytes','sha256'}
+            and (row['bytes'],row['sha256'])==pins[row['basename']],'CUSTODY_PIN')
+        info=row['metadata']
+        check(type(info) is dict and set(info)=={'dev','ino','mode','uid','gid','nlink','size','blocks','mtime_ns','ctime_ns'}
+            and all(type(v) is int and v>=0 for v in info.values()),'CUSTODY_METADATA')
+        check(info['mode']==33152 and info['nlink']==1 and info['uid']>0 and info['gid']>0
+            and info['size']==row['bytes'],'CUSTODY_PROTECTION')
+        key=(info['dev'],info['ino']);check(key not in seen,'CUSTODY_ALIAS');seen.add(key)
+        current=(info['uid'],info['gid'],info['dev'])
+        if owner is None:owner=current
+        check(current==owner,'CUSTODY_OWNER')
+    check(value['binding']==dict(D=implementation['commit'],nonce=nonce,
+        source_sha256=source_files['q2_journal_retained_fds.py']['sha256'],
+        history_sha256=_sha(canonical(_maintenance_resume())+b'\n'),set_sha256=_sha(canonical(originals)+b'\n')),'CUSTODY_BINDING')
+    return value
+
+
+def _validate_coordinator_completion(value, custody):
+    check=_Checks('CORE_JOURNAL_')
+    check(type(value) is dict and set(value)=={'returncode','receipt_sha256','child','usage'}
+        and type(value['returncode']) is int and value['returncode']==0,'COORDINATOR_EXIT')
+    check(type(value['receipt_sha256']) is str and re.fullmatch(r'[0-9a-f]{64}',value['receipt_sha256']) is not None,
+        'COORDINATOR_RECEIPT')
+    child=value['child'];usage=value['usage']
+    check(type(child) is dict and set(child)=={'returncode','cpu_nanoseconds','rss_peak_bytes'}
+        and type(child['returncode']) is int and child['returncode']==0,'CUSTODY_EXIT')
+    check(type(usage) is dict and set(usage)=={'cpu_nanoseconds','rss_peak_bytes'},'COORDINATOR_USAGE')
+    for key,low,high in (('cpu_nanoseconds',custody['cpu_nanoseconds'],120000000000),
+        ('rss_peak_bytes',custody['rss_bytes'],536870912)):
+        check(type(child[key]) is int and low<=child[key]<=high
+            and type(usage[key]) is int and child[key]<=usage[key]<=high,'CUSTODY_FINAL_USAGE')
+    return value
+
+
 def _validate_journal_transition(value, *, priors, implementation, current_boot=None):
     """Consume the host projection; no host-original verification is claimed."""
     check = _Checks("CORE_JOURNAL_")
@@ -1971,17 +2031,20 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v11'
-        and value['session']=='lhqjgrow-20261009b', 'JOURNAL_SCHEMA')
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v12'
+        and value['session']=='lhqjgrow-20261009c', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=RUNTIME_A,C=RUNTIME_C)
+        A=HOST_FD_A,C=HOST_FD_C)
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     check(type(value['guest_startup_assurance']) is dict and canonical(value['guest_startup_assurance'])
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False)), 'GUEST_STARTUP_PREMISE')
+    _validate_retained_custody(value['retained_custody'],implementation=implementation,
+        nonce=value['nonce'],source_files=value['source_files'])
+    _validate_coordinator_completion(value['coordinator_completion'],value['retained_custody'])
     _validate_maintenance_resume(value['previous_maintenance'])
     _validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
@@ -2007,15 +2070,17 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261009b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261009c.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+    check(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
+        ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009b.'):]])
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009c.'):]])
         check.digest(row['sha256'])
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
         check.exact(row,{'bytes','sha256'},'CORE_JOURNAL_SOURCE')
-        check.integer(row['bytes'],1,98304 if name.startswith('q2_journal_growth') else 524288);check.digest(row['sha256'])
+        check.integer(row['bytes'],1,16384 if name=='q2_journal_retained_fds.py' else 98304 if name.startswith('q2_journal_growth') else 524288);check.digest(row['sha256'])
     for key in ('old_vm','new_vm'):
         row=value[key];check.exact(row,{'pid','starttime','argv_sha256'},'CORE_JOURNAL_VM')
         check.integer(row['pid'],2);check.integer(row['starttime'],1);check.digest(row['argv_sha256'])
@@ -2071,7 +2136,7 @@ def _validate_approved_components(value):
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v15", "RECONCILIATION_SCHEMA")
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v16", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]

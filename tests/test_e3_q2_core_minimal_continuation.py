@@ -13,7 +13,7 @@ from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_delivery_dispatcher as d
 from e3_host import q2_journal_growth as h
 from e3_host import q2_journal_growth_guest as g
-from test_e3_q2_journal_growth_guest_completion import description, pre_report, device
+from test_e3_q2_journal_growth_guest_completion import description, pre_report, device, effects
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def originals(monkeypatch,request):
     monkeypatch.setitem(h.local.PINS,'start.sh',(0o700,h.digest(start)))
     frozen['start_raw']=start
     activation=None
-    if getattr(request,'param',False):
+    if getattr(request,'param',False) is True:
         from vm_activation_fixture import records
         files,index,historical=records(historical_boot=desc['original_boot_id'])
         activation=p.build_vm_activation(files,index,historical_boot=historical)
@@ -68,6 +68,20 @@ def originals(monkeypatch,request):
             stdout_bytes=0,stderr_bytes=0,stdout_sha256=h.digest(b''),stderr_sha256=h.digest(b'')))
     post['runtime_preparation']=runtime_report(desc,post['boot_id'],'post')
     post['journal_device']['superblock']['filesystem_bytes']=g.NEW_SIZE
+    if getattr(request,'param',False)=='actual_guest':
+        original_inventory=g.GuestInventory
+        _,prepare=request.getfixturevalue('effects')
+        quiet=copy.deepcopy(pre['quiescence'])
+        monkeypatch.setattr(g.GuestInventory,'collect',lambda self:copy.deepcopy(quiet))
+        monkeypatch.setattr(g,'boot_id',lambda _:desc['original_boot_id'])
+        emitted=[]
+        prepare(desc).pre(output=emitted.append,receive=lambda *_:None)
+        pre,produced_ack=emitted
+        actual_post=dict(desc,phase='post',pre_report=pre,pre_report_sha256=h.digest(h.canonical(pre)),window_seconds=600,change_seconds=480)
+        monkeypatch.setattr(g,'boot_id',lambda _:projection['new_boot_id'])
+        post=prepare(actual_post).post(output=lambda _:None)
+        assert produced_ack['pre_report_sha256']==h.digest(h.canonical(pre))
+        monkeypatch.setattr(g,'GuestInventory',original_inventory)
     ack=dict(schema=g.REPORT_SCHEMA,session=g.SESSION,status='POWER_OFF_REQUESTED',
         nonce=desc['nonce'],pre_report_sha256=h.digest(h.canonical(pre)),guest_startup_assurance=g.guest_startup_assurance())
     streams={'pre.stdout':h.canonical(pre)+h.canonical(ack),'pre.stderr':b'',
@@ -77,17 +91,19 @@ def originals(monkeypatch,request):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v12',R=h.R,A=h.RT_A,C=h.RT_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v13',R=h.R,A=h.FD_A,C=h.FD_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
-        inputs=frozen['source_binding'],window_binding=dict(boot_id=pre['boot_id'],origins=[1,2]),
+        inputs=p.encode_manifest_inputs(frozen['source_binding']),window_binding=dict(boot_id=pre['boot_id'],origins=[1,2]),
         inventory_sha256=h.digest(h.canonical(frozen['inventory'])),retained_sha256='e'*64,
         sources={key:dict(bytes=len(raw),sha256=h.digest(raw)) for key,raw in sources.items()},
         tools={},vm=oldvm,image_identities=projection['image_identities'],original_argv=original,
         restart_argv=restart,image_commands=h.image_commands('/fixture/journal.qcow2',
             '/fixture/'+h.NAMES['journal.backup.qcow2']),
         protocol='two fixed phases; post bound to the durably saved pre report; no probe or retry')
+    from core_custody_fixture import evidence
+    manifest['custody_binding']=evidence(implementation,desc['nonce'],manifest['sources'])['binding']
     marker=dict(manifest_sha256=h.digest(h.canonical(manifest)),manifest=manifest,nonce=desc['nonce'],
         clocks=[1,2],session=h.SESSION,D=implementation['commit'],access_mode=h.ACCESS_MODE,
         resume_sha256=h.resume_sha256(p.maintenance_resume()),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
@@ -111,7 +127,7 @@ def originals(monkeypatch,request):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v12',R=h.R,A=h.RT_A,C=h.RT_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v13',R=h.R,A=h.FD_A,C=h.FD_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],
@@ -120,7 +136,7 @@ def originals(monkeypatch,request):
         production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
         original_boot_id=pre['boot_id'],new_boot_id=post['boot_id'],post_transport=transports[1],
         transports=[dict(pid=i+100,exit=t['returncode'],files=t['files']) for i,t in enumerate(transports)],
-        new_vm=newvm,image_identities=projection['image_identities'],processes=[dict(vm=False,exit=0)])
+        new_vm=newvm,image_identities=projection['image_identities'],processes=[dict(identity=dict(pid=90),vm=False,exit=0)]+[dict(identity=dict(pid=100+i),vm=False,exit=t['returncode']) for i,t in enumerate(transports)])
     post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=h.digest(h.canonical(pre)),
         window_seconds=600,change_seconds=480)
     for row in events:
@@ -133,6 +149,10 @@ def originals(monkeypatch,request):
     receipt.update(serial_capture='NOT_CAPTURED_NULL_BACKEND',kernel_report={},
         budget=dict(logical_bytes=10000,allocated_bytes=32768,inodes=7),
         management_usage=dict(cpu_nanoseconds=1000000,rss_peak_bytes=1000000))
+    from core_custody_fixture import evidence,completion
+    receipt['retained_custody']=evidence(implementation,desc['nonce'],manifest['sources'])
+    frozen['previous_maintenance_identities']=copy.deepcopy(receipt['retained_custody']['originals'])
+    frozen['coordinator_completion']=completion(h.digest(h.canonical(receipt)))
     raw=dict(streams,**{'consumed.json':h.canonical(marker),'receipt.json':h.canonical(receipt),
         'events.jsonl':b''.join(h.canonical(row) for row in events),'vm.pid':b'124\n'})
     capraw={name:b'synthetic retained '+name.encode() for name in p.CAPACITY_DIAGNOSTIC_PINS}

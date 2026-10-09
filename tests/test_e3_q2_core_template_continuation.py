@@ -71,8 +71,8 @@ def test_four_history_digest_handoff_fits_with_maximum_usage_and_large_clocks():
     assert len(h.canonical(value))<=4096
     assert value['resume_sha256']==h.digest(h.canonical(d._maintenance_resume()))
     assert [row['session'] for row in p.maintenance_resume()['previous_maintenance']]==[
-        'lhqjgrow-20261006a','lhqjgrow-20261007a','lhqjgrow-20261007b','lhqjgrow-20261008a','lhqjgrow-20261008b','lhqjgrow-20261008c','lhqjgrow-20261008d','lhqjgrow-20261008e','lhqjgrow-20261008f','lhqjgrow-20261009a']
-    assert (value['R'],value['A'],value['C'])==(h.R,h.RT_A,h.RT_C)
+        'lhqjgrow-20261006a','lhqjgrow-20261007a','lhqjgrow-20261007b','lhqjgrow-20261008a','lhqjgrow-20261008b','lhqjgrow-20261008c','lhqjgrow-20261008d','lhqjgrow-20261008e','lhqjgrow-20261008f','lhqjgrow-20261009a','lhqjgrow-20261009b']
+    assert (value['R'],value['A'],value['C'])==(h.R,h.FD_A,h.FD_C)
 
 
 @pytest.mark.parametrize('old_schema', ['v1','v2','v3','v4','v5','v6'])

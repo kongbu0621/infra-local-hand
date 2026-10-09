@@ -17,6 +17,7 @@ if __package__ in (None,""):
  sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from e3_host import q2_core_capacity_capture as prior
 from e3_host import q2_core_prior_attempt as history
+from e3_host import q2_journal_retained_fds as custody
 from e3_host.q2_journal_growth_guest import ProcessIdentity
 from e3_host.q2_journal_growth_guest import (identity,stable_identity,validate_file,
 write_all,hash_fd,proc_start,proc_bytes,growth_descriptor,bind_window,
@@ -62,6 +63,8 @@ VM_A=(history.c.VM_ADOPTION_BASELINE or {}).get("commit")
 VM_C=(history.c.VM_ADOPTION_CLOSURE or {}).get("commit")
 RT_A=history.c.RUNTIME_BASELINE["commit"]
 RT_C=history.c.RUNTIME_CLOSURE["commit"]
+FD_A=history.c.HOST_FD_BASELINE["commit"]
+FD_C=history.c.HOST_FD_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -85,11 +88,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261009b"
+SESSION="lhqjgrow-20261009c"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=14256*MIB,4070
+HOST_BYTES,HOST_INODES=15552*MIB,4440
 # Additional host descriptors from preflight through receipt: post transport
 # peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
 # Three more slots cover bounded identity/usage reads. This is admission only;
@@ -1325,6 +1328,20 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
     require(digest(git("show",commit+":"+path))==sha,"GROWTH_RT_A_CHANGED")
   for commit in (RT_C,expected):
    require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_RUNTIME_B_CHANGED")
+ host_fd=(history.c.HOST_FD_BASELINE,history.c.HOST_FD_OWNER_DECISION,history.c.HOST_FD_CLOSURE)
+ require(all(row is None for row in host_fd) or all(type(row) is dict for row in host_fd),"GROWTH_FD_AUTHORITY_PARTIAL")
+ if host_fd[0] is not None:
+  baseline,decision,closure=host_fd
+  require(FD_A==baseline["commit"] and FD_C==closure["commit"] and expected!=FD_C,"GROWTH_FD_AUTHORITY")
+  git("merge-base","--is-ancestor",FD_A,FD_C)
+  git("merge-base","--is-ancestor",FD_C,expected)
+  for authority in (baseline,closure):
+   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_HOST_FD_TREE")
+  for path,sha in baseline["documents_sha256"].items():
+   for commit in (FD_A,FD_C,expected):
+    require(digest(git("show",commit+":"+path))==sha,"GROWTH_FD_A_CHANGED")
+  for commit in (FD_C,expected):
+   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_HOST_FD_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -1357,7 +1374,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  names=("q2_journal_growth.py","q2_journal_growth_guest.py","q2_core_capacity_capture.py",
 "q2_core_capacity_reader.py","q2_sshd_source_capture.py","q2_sshd_source_reader.py",
 "q2_core_obligation_inputs.py","q2_core_prior_attempt.py","q2_core_delivery_contract.py",
-"q2_local_source_delivery.py","q2_core_approved_inputs.py","q2_host_kernel_facts.py")
+"q2_local_source_delivery.py","q2_core_approved_inputs.py","q2_host_kernel_facts.py","q2_journal_retained_fds.py")
  exporter=git("show",expected+":tests/e3_host/q2_host_export.py")
  require((len(exporter),digest(exporter))==Q1_EXPORT_PIN,"GROWTH_Q1_EXPORT_SOURCE")
  sources={}
@@ -1368,13 +1385,29 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
   finally:
    os.close(fd)
   require(raw==git("show",expected+":tests/e3_host/"+name),"GROWTH_SOURCE_DRIFT")
-  if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py"):
+  if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py","q2_journal_retained_fds.py"):
    require(raw==git("show","8e91fa2631aa18a8469efa5a14e4145eaf781e28:tests/e3_host/"+name),
 "GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw
  require(all(len(sources[name])<=98304 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
+ require(len(sources["q2_journal_retained_fds.py"])<=16384,"GROWTH_CUSTODY_SOURCE_LIMIT")
  return sources
 class GrowthAnchor(prior.Anchor):
+ custody=None
+ def start_custody(self,commit,nonce,sources,frozen):
+  require(self.custody is None,"GROWTH_CUSTODY_NO_RESTART")
+  self.custody=custody.Custodian(self,history.previous_maintenance_pins(),commit=commit,nonce=nonce,
+source_sha256=digest(sources["q2_journal_retained_fds.py"]),history_sha256=resume_sha256(frozen["source_binding"]["resume"]))
+  self.previous_files=frozen["previous_maintenance_files"]
+ def recheck(self,*,after_create=False):
+  super().recheck(after_create=after_create)
+  if self.custody is not None:self.custody.check(after_create)
+ def close(self):
+  try:super().close()
+  finally:
+   if self.custody is not None:
+    held,self.custody=self.custody,None
+    self.custody_exit=held.close()
  def capacity(self):
   Store(self.fd,self.deadline.check).capacity()
  def growth_inputs(self,frozen,sources):
@@ -1408,6 +1441,7 @@ frozen["description"])["rows"]
 "GROWTH_HELLO_BINDING")
    units[carrier["name"]]["control_group"]=carrier["control_group"]
   frozen["previous_maintenance_files"]={}
+  frozen["previous_maintenance_identities"]=[]
   for name,(size,sha) in history.previous_maintenance_pins().items():
    self.deadline.check()
    fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC|os.O_NONBLOCK,dir_fd=self.fd)
@@ -1420,6 +1454,7 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
    raw,_=local.stable_read(fd,65536,self.deadline.check)
    require((len(raw),digest(raw))==(size,sha),"GROWTH_PREVIOUS_PIN")
    frozen["previous_maintenance_files"][name]=raw
+   frozen["previous_maintenance_identities"].append(dict(basename=name,metadata=local.metadata(info),bytes=size,sha256=sha))
   frozen["source_binding"]["guest_startup_assurance"]=validate_startup_assurance(frozen.get("guest_startup_assurance"))
   frozen["source_binding"]["resume"]=history.build_previous_maintenance(frozen["previous_maintenance_files"])
   self.previous_maintenance_recheck()
@@ -1430,14 +1465,18 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
  def previous_maintenance_recheck(self):
   # Held metadata is checked by recheck; this bounded reread binds bytes immediately
   # before consumption as well as during ordinary preflight. No directory scan.
-  files={}
-  for name,(size,sha) in history.previous_maintenance_pins().items():
-   fd=next(fd for held,fd,_ in self.held if held==name)
-   self.deadline.check()
-   os.lseek(fd,0,os.SEEK_SET)
-   raw,_=local.stable_read(fd,65536,self.deadline.check)
-   require((len(raw),digest(raw))==(size,sha),"GROWTH_PREVIOUS_PIN")
-   files[name]=raw
+  if self.custody is not None:
+   self.custody.check(self.custody.after_create)
+   files=self.previous_files
+  else:
+   files={}
+   for name,(size,sha) in history.previous_maintenance_pins().items():
+    fd=next(fd for held,fd,_ in self.held if held==name)
+    self.deadline.check()
+    os.lseek(fd,0,os.SEEK_SET)
+    raw,_=local.stable_read(fd,65536,self.deadline.check)
+    require((len(raw),digest(raw))==(size,sha),"GROWTH_PREVIOUS_PIN")
+    files[name]=raw
   for fixed in history.previous_journal_profiles():
    for suffix in history.PREVIOUS_JOURNAL_ABSENT:
     self.absent("."+fixed["session"]+"."+suffix)
@@ -1452,10 +1491,10 @@ exceeded=cpu>cpu_limit),
 rss=dict(actual=rss,limit=512*MIB,unit="bytes",exceeded=rss>512*MIB),components=components)
  raise error
 def management_usage():
+ live=[item for item in COMMANDS if not item.is_vm and item.process.poll() is None]
+ require(len(live)+len(custody.ACTIVE)<=8,"GROWTH_CHILD_BUDGET")
  own,children=(resource.getrusage(kind) for kind in (resource.RUSAGE_SELF,resource.RUSAGE_CHILDREN))
  cpu=own.ru_utime+own.ru_stime+children.ru_utime+children.ru_stime
- live=[item for item in COMMANDS if not item.is_vm and item.process.poll() is None]
- require(len(live)<=8,"GROWTH_CHILD_BUDGET")
  rss=own.ru_maxrss*1024
  complete=True
  for item in live:
@@ -1463,16 +1502,24 @@ def management_usage():
    value=proc_bytes(item.process.pid,"status",16384,lambda:None)
    found=re.search(rb"^VmRSS:\s+([0-9]+) kB$",value,re.M)
    require(found is not None,"GROWTH_USAGE_UNKNOWN")
-   rss+=int(found[1])*1024
+   _,used=custody.process_stat(item.process.pid)
+   cpu+=used;rss+=int(found[1])*1024
   except (OSError,ValueError,RuntimeError):
-   complete=False
+   if item.process.poll() is None:complete=False
+   else:
+    current=resource.getrusage(resource.RUSAGE_CHILDREN)
+    cpu+=current.ru_utime+current.ru_stime-children.ru_utime-children.ru_stime
+    children=current
+ for item in custody.ACTIVE:
+  used,resident=item.usage();cpu+=used;rss+=resident
  _check_management_budget(cpu,rss,stage="management_usage",cpu_limit=120,
 components=dict(self_cpu_seconds=own.ru_utime+own.ru_stime,
 exited_children_cpu_seconds=children.ru_utime+children.ru_stime,
 self_peak_rss_bytes=own.ru_maxrss*1024,live_non_vm_rss_bytes=rss-own.ru_maxrss*1024,
-live_children=len(live),live_rss_complete=complete))
- return dict(cpu_seconds=cpu,rss_upper_observation_bytes=rss,complete=complete,
-live_children=len(live),vm_excluded=True,guest_aggregate="UNKNOWN")
+live_children=len(live)+len(custody.ACTIVE),live_rss_complete=complete))
+ require(complete,"GROWTH_USAGE_UNKNOWN")
+ return dict(cpu_seconds=cpu,rss_upper_observation_bytes=rss,complete=True,
+live_children=len(live)+len(custody.ACTIVE),vm_excluded=True,guest_aggregate="UNKNOWN")
 class Usage:
  def __init__(self,previous=None):
   self.previous=previous or dict(cpu_nanoseconds=0,rss_peak_bytes=0)
@@ -1495,15 +1542,15 @@ def resume_sha256(resume):
  history.validate_maintenance_resume(resume)
  return digest(canonical(resume))
 def make_preflight(commit,manifest,window,nonce,usage,*,resume):
- value=dict(schema="lhq-journal-growth-preflight/v11",R=R,A=RT_A,C=RT_C,D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v12",R=R,A=FD_A,C=FD_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume_sha256=resume_sha256(resume))
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v11",
+"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v12",
 "GROWTH_PREFLIGHT_SCHEMA")
- require(value["R"]==R and value["A"]==RT_A and value["C"]==RT_C,"GROWTH_PREFLIGHT_AUTHORITY")
+ require(value["R"]==R and value["A"]==FD_A and value["C"]==FD_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce","resume_sha256"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
@@ -1531,7 +1578,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v12",session=SESSION,R=R,A=RT_A,C=RT_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v13",session=SESSION,R=R,A=FD_A,C=FD_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1562,9 +1609,10 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v12",R=R,A=RT_A,C=RT_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v13",R=R,A=FD_A,C=FD_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
-historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=self.frozen["source_binding"],
+historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=history.encode_manifest_inputs(self.frozen["source_binding"]),
+custody_binding=self.anchor.custody.binding,
 window_binding=self.window.binding,
 inventory_sha256=digest(canonical(self.frozen["inventory"])),
 retained_sha256=digest(canonical(self.anchor.retained)),
@@ -1703,11 +1751,13 @@ for item in self.transports]
   self.result["marker_created"]="consumed.json" in self.store.opened
   try:
    self.check()
-   self.result.update(budget=self.store.budget(),management_usage=self.usage.sample())
+   self.bindings()
+   self.result.update(budget=self.store.budget(),management_usage=self.usage.sample(),
+retained_custody=self.anchor.custody.summary())
    if "consumed.json" in self.store.opened:
     self.store.put("receipt.json",canonical(self.result))
   except (Exception,KeyboardInterrupt):
-   self.result.update(state="UNKNOWN",seal="INCOMPLETE")
+   self.result.update(state="UNKNOWN" if self.result["marker_created"] else "STOP_AND_RETAIN",seal="INCOMPLETE")
   return self.result
 def main():
  parser=argparse.ArgumentParser()
@@ -1725,9 +1775,23 @@ def main():
  usage=None
  global VM_LIMITS
  VM_LIMITS={key:resource.getrlimit(key) for key in (resource.RLIMIT_AS,resource.RLIMIT_NOFILE)}
+ released=False
+ def release_owned():
+  nonlocal released
+  if released:return
+  released=True
+  if maintenance is not None:
+   for transport in maintenance.transports:transport.close()
+   maintenance.store.close()
+   if maintenance.new_vm is not None:maintenance.new_vm.close()
+  if vm is not None:
+   vm["process"].close(); vm["images"].close()
+  for tool in tools.values():tool.close()
+  if anchor is not None:anchor.close()
+  inputs.close()
  try:
   require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
-  require(history.c.VM_ADOPTION_CLOSURE is not None and history.c.RUNTIME_CLOSURE is not None,"GROWTH_RUNTIME_NOT_AUTHORIZED")
+  require(history.c.VM_ADOPTION_CLOSURE is not None and history.c.HOST_FD_CLOSURE is not None,"GROWTH_FD_NOT_AUTHORIZED")
   sources=growth_sources(args.expected_commit)
   require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
 for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")
@@ -1758,6 +1822,7 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   frozen["journal_serial"]=vm["images"].journal_serial
   maintenance=Maintenance(anchor,inputs,frozen,sources,vm,tools,window,args.expected_commit,
 usage,None if handoff is None else handoff["nonce"])
+  anchor.start_custody(args.expected_commit,maintenance.nonce,sources,frozen)
   manifest=maintenance.preflight()
   sha=digest(canonical(manifest))
   if args.execute:
@@ -1773,10 +1838,16 @@ window_binding=window.binding,
 preflight=make_preflight(args.expected_commit,sha,window.binding,maintenance.nonce,usage.sample(),resume=manifest["resume"]),
 kernel_report=window.kernel_report,
 manifest=manifest,ssh_requests=0,marker_created=False,business_cases=0)
+  receipt_sha=digest(canonical(result))
+  release_owned()
+  final_usage=usage.sample()
+  if not args.execute:result["preflight"]["usage"]=final_usage
+  else:result["coordinator_completion"]=dict(returncode=0 if result["state"]=="VERIFIED" else 3,receipt_sha256=receipt_sha,
+child=anchor.custody_exit,usage=final_usage)
   print(canonical(result).decode("ascii"),end="")
   return 0 if result["state"] in ("LOCAL_PREFLIGHT_PASSED","VERIFIED") else 3
  except (Exception,KeyboardInterrupt) as error:
-  marked=maintenance is not None and "consumed.json" in maintenance.store.opened
+  marked=maintenance is not None and (maintenance.result.get("marker_created",False) or "consumed.json" in maintenance.store.opened)
   print(canonical(dict(state="UNKNOWN" if marked else "BLOCKED",reason=prior.safe_reason(error),
 error_type=type(error).__name__,errno=getattr(error,"errno",None),marker_created=marked,
 diagnostic=getattr(error,"diagnostic",{}),
@@ -1785,15 +1856,7 @@ window_binding=getattr(window,"binding",dict(origins=window.origins) if window e
 ssh_requests=maintenance.result["ssh_requests"] if maintenance else 0)).decode(),end="")
   return 3
  finally:
-  if maintenance is not None:
-   for transport in maintenance.transports:transport.close()
-   maintenance.store.close()
-   if maintenance.new_vm is not None:maintenance.new_vm.close()
-  if vm is not None:
-   vm["process"].close(); vm["images"].close()
-  for tool in tools.values():tool.close()
-  if anchor is not None:anchor.close()
-  inputs.close()
+  release_owned()
   for key,limits in VM_LIMITS.items():resource.setrlimit(key,limits)
 if __name__=="__main__":
  sys.exit(main())

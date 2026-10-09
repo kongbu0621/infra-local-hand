@@ -38,6 +38,7 @@ def inputs(tmp_path, monkeypatch,originals):
     journal_files,original_args=originals
     transition=p.build_journal_transition(journal_files,**original_args)
     transition['implementation']=args['implementation']
+    transition['retained_custody']['binding']['D']=args['implementation']['commit']
     transition['image_identities']={role:[info.st_dev,row[1]] for role,row in transition['image_identities'].items()}
     args.update(journal=transition,journal_files=journal_files)
     files.update(original_args['frozen']['previous_maintenance_files'])
@@ -58,11 +59,11 @@ def validate(value, args):
 
 
 @pytest.mark.parametrize('frsize,blocks,inodes,accepted', [
-    (1, 15015608320, 4086, True), (1, 15015608319, 4086, False), (4096, 3665920, 4085, False),
-    (4096, 3665920, 4086, True), (4096, 2**30, 2**30, True), (0, 15015608320, 4086, False),
-    (-1, 15015608320, 4086, False), (1, -1, 4086, False), (1, 15015608320, -1, False),
-    (None, 15015608320, 4086, False), (True, 15015608320, 4086, False),
-    (1, '15015608320', 4086, False), (1, 15015608320, 4086.0, False)])
+    (1, 16374562816, 4456, True), (1, 16374562815, 4456, False), (4096, 3997696, 4455, False),
+    (4096, 3997696, 4456, True), (4096, 2**30, 2**30, True), (0, 16374562816, 4456, False),
+    (-1, 16374562816, 4456, False), (1, -1, 4456, False), (1, 16374562816, -1, False),
+    (None, 16374562816, 4456, False), (True, 16374562816, 4456, False),
+    (1, '16374562816', 4456, False), (1, 16374562816, 4456.0, False)])
 def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsize, blocks, inodes, accepted):
     fd, args, clock, _ = inputs
     samples = []
@@ -77,7 +78,7 @@ def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsi
     else:
         value = p.observe_capture_condition(fd, **args)
         assert validate(value, args) is value
-        assert value['capacity']['required_bytes'] == 15015608320
+        assert value['capacity']['required_bytes'] == 16374562816
         assert value['known_commitments']==p._capacity_rows(args['prior'],args['diagnostic'])
         assert value['earlier_host_obligations'] == dict(coverage='UNKNOWN', bytes=None,
                                                       inodes=None, shared_pool='UNKNOWN')
@@ -101,7 +102,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
         elif change == 'backward': clock.now[time.CLOCK_MONOTONIC] -= 1
         elif change == 'io': raise OSError(errno.EIO, 'synthetic IO failure')
         if change == 'missing': return SimpleNamespace()
-        return SimpleNamespace(f_frsize=4096, f_bavail=3665920, f_favail=4086)
+        return SimpleNamespace(f_frsize=4096, f_bavail=3997696, f_favail=4456)
     def identity(held):
         value = fstat(held)
         if held == fd and drifted and change in ('mode', 'uid', 'gid', 'nlink', 'ino', 'dev'):
@@ -137,7 +138,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
     'omit_diagnostic', 'old_threshold'])
 def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypatch, change):
     fd, args, _, _ = inputs
-    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=3665920, f_favail=4086))
+    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=3997696, f_favail=4456))
     value = p.observe_capture_condition(fd, **args)
     if change == 'null': value['earlier_host_obligations']['bytes'] = 0
     elif change == 'false': value['complete_host_admission_proven'] = True
@@ -167,6 +168,7 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     manifest, members = package_fixture(monkeypatch)
     args['implementation']=manifest['implementation']
     args['journal']['implementation']=manifest['implementation']
+    args['journal']['retained_custody']['binding']['D']=manifest['implementation']['commit']
     monkeypatch.setattr(package, '_approved_module', lambda: SimpleNamespace(prior_attempt=p,
         validate=lambda raw: package.c.validate_approved_inputs(package.c.document(raw, limit=1072576, newline=True))))
     old_helper = e._helper
@@ -203,8 +205,8 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     def observe(_):
         observations.append(1)
         if failure == 'late': clock.expire()
-        return SimpleNamespace(f_frsize=1, f_bavail=15015608319 if failure == 'capacity' else 15015608320,
-                               f_favail=4086)
+        return SimpleNamespace(f_frsize=1, f_bavail=16374562815 if failure == 'capacity' else 16374562816,
+                               f_favail=4456)
     monkeypatch.setattr(os, 'fstatvfs', observe)
     if failure == 'writer':
         changed = copy.deepcopy(binding['writer']); changed['process']['starttime_ticks'] += 1

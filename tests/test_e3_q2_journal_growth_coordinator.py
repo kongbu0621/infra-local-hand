@@ -149,6 +149,7 @@ def rig(monkeypatch, tmp_path):
                              origins={"monotonic": 0, "boottime": 0},kernel_report={})
     anchor = SimpleNamespace(fd=parent, path=str(tmp_path), ssh=44, recheck=nothing,
                              absent=nothing, close=nothing, growth_inputs=nothing, previous_maintenance_recheck=nothing,
+                             start_custody=nothing,custody_exit={},custody=SimpleNamespace(binding={},summary=lambda:{}),
                              raw={"start.sh": b"fixed"}, retained={})
     inputs = SimpleNamespace(recheck=nothing, close=nothing)
     frozen = {"guest_startup_assurance": h.guest_startup_assurance(), "boot_id": BOOT, "source_binding_sha256": "a" * 64, "horizon": {},
@@ -192,7 +193,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v12'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v13'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -389,7 +390,7 @@ def test_management_budget_reports_measured_components_without_extra_reads(
     live_rss = 16 * h.MIB
     own = SimpleNamespace(ru_utime=30, ru_stime=10,
                           ru_maxrss=(rss - live_rss) // 1024)
-    children = SimpleNamespace(ru_utime=cpu - 40, ru_stime=0, ru_maxrss=0)
+    children = SimpleNamespace(ru_utime=cpu - 42, ru_stime=0, ru_maxrss=0)
 
     def usage(kind):
         calls.append(("usage", kind))
@@ -408,6 +409,7 @@ def test_management_budget_reports_measured_components_without_extra_reads(
     monkeypatch.setattr(h.resource, "getrlimit", lambda *_:
                         pytest.fail("budget observation must not read RLIMIT"))
     monkeypatch.setattr(h, "proc_bytes", proc)
+    monkeypatch.setattr(h.custody,"process_stat",lambda pid:(1,2))
     monkeypatch.setattr(h, "COMMANDS", [process(11, False, None),
                         process(12, True, None), process(13, False, 0)])
     if not (cpu_exceeded or rss_exceeded):
@@ -422,7 +424,7 @@ def test_management_budget_reports_measured_components_without_extra_reads(
             stage="management_usage",
             cpu=dict(actual=cpu, limit=120, unit="seconds", exceeded=cpu_exceeded),
             rss=dict(actual=rss, limit=512 * h.MIB, unit="bytes", exceeded=rss_exceeded),
-            components=dict(self_cpu_seconds=40, exited_children_cpu_seconds=cpu - 40,
+            components=dict(self_cpu_seconds=40, exited_children_cpu_seconds=cpu - 42,
                 self_peak_rss_bytes=rss - live_rss, live_non_vm_rss_bytes=live_rss,
                 live_children=1, live_rss_complete=True))
     assert calls == [("usage", h.resource.RUSAGE_SELF),

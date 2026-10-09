@@ -69,7 +69,7 @@ BIND_FRAME_LIMIT = 4112
 # post-maintenance boot binding and every original admission remain required.
 # Historical dispatcher pins remain in their consumed source profiles.
 # The post-return logical-path repair does not restore consumed VA2 permission.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"497e0b35f8c24f2c1b103151d0cff19c3524ab6a7b427deca52f63c4246c2f57"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"7304576a99726722e6a2e650b2bc8e61b7a217a049d3c206e5b774cc4018329c"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

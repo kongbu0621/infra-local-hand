@@ -180,6 +180,11 @@ limits. Historical plans do not prove those runtime objects currently exist. Do 
 the missing ENOENT path, bypass user-domain checks or treat this repair as another window.
 Prepare one combined minimal runtime/role repair proposal; VA2 remains consumed, VA3 NOT_RUN.
 
+The [FD implementation review](docs/a2-execution/Q2_CORE_HOST_FD_IMPLEMENTATION_REVIEW_20261009.md)
+records the bounded inherited-FD custodian, lossless history encoding and independent completion
+consumers. Implementation alone does not establish the exact-D freeze, FD2 readiness or core PASS.
+Continue this already approved batch through verification/publication/freeze before the one FD2.
+
 ## Current approved batch: declared-target startup checks and core continuation (2026-10-09)
 
 QI1 is complete; consumed QI2/08e was blocked by a different undeclared service. Do not repeat

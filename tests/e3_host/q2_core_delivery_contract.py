@@ -1306,3 +1306,9 @@ RUNTIME_OWNER_DECISION = dict(event="LH-Q2-CORE-RUNTIME-CONTINUATION-CLOSURE-202
     record_sha256="dbee48fb03ec19bc98486422ad813d50139a68261bb6e1c905daf4823ac72cd1")
 RUNTIME_CLOSURE = dict(commit="3633b1e963b35647bef8d7f94592089130ff25a1",
     tree="d51352ba8d9964745ca7fdda2f05a0a8469da8a7")
+
+# Exact host FD continuation; scope approval does not establish field success.
+HOST_FD_SCOPE = "LH-Q2-CORE-HOST-FD-CONTINUATION-v1"
+HOST_FD_BASELINE = {'commit': '0ed9ba0a8eefa4d1a88ee46192fc18a5ad3fafc8', 'tree': 'c29e7439e85229d926a7c632ef1da1a40e95ef7e', 'documents_sha256': {'docs/a2-execution/q2-core-host-fd-continuation/ARCHITECTURE.md': '48ade8d19b733ed167f056e83b232ad2c41030add31354d9323f613128c30557', 'docs/a2-execution/q2-core-host-fd-continuation/IMPLEMENTATION_PLAN.md': '1cd7d46c870ee630edd883a9cc00104a90a6f2edfde62304327e36a5155d391c', 'docs/a2-execution/q2-core-host-fd-continuation/REQUIREMENTS.md': '06cdab5674d06eb614425585e7c45327fe65975f808800eb8432170626fdd718'}}
+HOST_FD_OWNER_DECISION = {'event': 'LH-Q2-CORE-HOST-FD-CONTINUATION-CLOSURE-20261009-01', 'record_path': 'docs/governance/Q2_CORE_HOST_FD_CONTINUATION_OWNER_DECISION.md', 'record_sha256': '83ae33bd9f5ae7234a87cb74afe5644545f5756c8ae8eeb22b9a0ab398bce42d'}
+HOST_FD_CLOSURE = {'commit': '26a89a1a11a958c24987eb590944331a9769b2ad', 'tree': '8a53bcc57200157d246ccc3140866046a8079250'}

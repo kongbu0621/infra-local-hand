@@ -57,7 +57,7 @@ def test_actual_producer_and_independent_consumer_keep_three_boots(originals):
     assert d._validate_journal_transition(value,priors=args['priors'],implementation=args['implementation'])==value
     activation=value['vm_activation']
     assert len({activation['historical_boot_id'],value['old_boot_id'],value['new_boot_id']})==3
-    assert len(value['previous_maintenance']['previous_maintenance'])==10
+    assert len(value['previous_maintenance']['previous_maintenance'])==11
     marker=json.loads(files['.'+h.SESSION+'.consumed.json'])
     assert 'resume' not in marker and marker['resume_sha256']==h.resume_sha256(marker['manifest']['resume'])
     assert len(h.canonical(marker))<=65536
@@ -134,7 +134,7 @@ def test_pending_adoption_cannot_open_field_window(monkeypatch,capsys):
     monkeypatch.setattr(h,'growth_sources',lambda *_:pytest.fail('pending authority reached source/field admission'))
     assert h.main()==3
     result=json.loads(capsys.readouterr().out)
-    assert result['reason']=='GROWTH_RUNTIME_NOT_AUTHORIZED'
+    assert result['reason']=='GROWTH_FD_NOT_AUTHORIZED'
     assert not result['marker_created'] and result['ssh_requests']==0
 
 @pytest.mark.parametrize('originals',[True],indirect=True)

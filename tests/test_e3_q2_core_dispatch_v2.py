@@ -259,6 +259,7 @@ def _set_approved(value, artifact):
     artifact = copy.deepcopy(artifact)
     artifact["amendment"] = copy.deepcopy(value["manifest"]["amendment"])
     artifact['reconciliation']['journal_transition']['implementation'] = copy.deepcopy(value['manifest']['implementation'])
+    artifact['reconciliation']['journal_transition']['retained_custody']['binding']['D']=value['manifest']['implementation']['commit']
     raw = d.canonical(artifact, newline=True)
     descriptor = {"path": d.APPROVED_INPUTS_PATH, "bytes": len(raw), "sha256": d._sha(raw),
                   "approved_source_relation_sha256": d._sha(d.canonical(artifact["source_relation"]))}

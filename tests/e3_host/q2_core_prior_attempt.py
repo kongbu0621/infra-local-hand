@@ -445,13 +445,14 @@ def _capacity_rows(prior, diagnostic):
         dict(session_id='lhqjgrow-20261008f',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261009a',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261009b',bytes=1296*1048576,inodes=370),
+        dict(session_id='lhqjgrow-20261009c',bytes=1296*1048576,inodes=370),
         dict(session_id=c.SESSION_ID,bytes=c.LIMITS['host_capture_bytes'],
              inodes=c.LIMITS['host_capture_inodes'])]
 
 
 def _capacity_record(binding, prior, diagnostic, journal, implementation, origins, observation, capacity, device_capacity):
-    return dict(schema='local-hand-q2-core-host-capacity-condition/v14',
-        scope=c.RUNTIME_SCOPE, session_id=c.SESSION_ID,
+    return dict(schema='local-hand-q2-core-host-capacity-condition/v15',
+        scope=c.HOST_FD_SCOPE, session_id=c.SESSION_ID,
         implementation=copy.deepcopy(implementation),
         local_management_binding_sha256=c.sha256(c.canonical(binding, newline=True)),
         prior_attempts_sha256=c.sha256(c.canonical(prior)), origins=dict(origins),
@@ -492,8 +493,8 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
     require(all(type(number) is int and number >= 0 for number in capacity.values())
             and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
     rows = _capacity_rows(prior, diagnostic)
-    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 15015608320
-            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 4086
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 16374562816
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 4456
             and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
             'HOST_CAPACITY_ARITHMETIC')
     require(capacity['bytes_available'] >= capacity['required_bytes']
@@ -506,7 +507,7 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
         usage=c.exact(row['capacity'],set(capacity),'CORE_HOST_CAPACITY_FIELDS')
         require(all(type(x) is int and x>=0 for x in usage.values()) and usage['frsize']>0
             and usage['bytes_available']==usage['frsize']*usage['blocks_available']
-            and usage['required_bytes']==15015608320 and usage['required_inodes']==4086
+            and usage['required_bytes']==16374562816 and usage['required_inodes']==4456
             and usage['bytes_available']>=usage['required_bytes']
             and usage['inodes_available']>=usage['required_inodes'],'HOST_CAPACITY_DEVICE_FLOOR')
     require(next(row['capacity'] for row in devices if row['dev']==binding['anchor']['dev'])==capacity,
@@ -670,6 +671,12 @@ TENTH_JOURNAL_D = '54d32df2f82fe863e1535ddb8134617c2654e33d'
 TENTH_JOURNAL_PINS = {'consumed.json': (59556, '777715c3cbf6d9c9ecef43a63ae1fe2dee6fa4c48170f0114aa883383f55c87d'), 'events.jsonl': (441, '687cce89ef1ef88e44d482655d61e2a8e48d84bb4e2da36d154ccf98accfec60'), 'pre.stderr': (922, '6c40a4e9d0882c80ffb89829be5c52cf9bc861a698d5bd498c1efa434539a88e'), 'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'receipt.json': (16482, '1737c6c75c8dc97b80734e94b4d161f33b9893d7ad8e63658acc9514e190d096')}
 
 
+ELEVENTH_JOURNAL_SESSION = 'lhqjgrow-20261009b'
+ELEVENTH_JOURNAL_D = '547bbb05816e17525470b1a3c136b328ff96adc1'
+# Owner-approved old09b minimal index; no remote completion is inferred.
+ELEVENTH_JOURNAL_PINS = {'consumed.json': (63853, '30aa04638c3682a3317a5e83ba5769a167e98ea0e32053b204812ae0a0c03f45'), 'events.jsonl': (441, '9852dffa8014fd2e1385f7aa1d46b6ec37849773830fa13b3d065af0372aa6fd'), 'pre.stderr': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'receipt.json': (17254, 'cd87d061060c3fdbaad785c46f598ec31f5f806f2b0f88a490e1bf4a7a1261e3')}
+
+
 def previous_journal_profiles():
     return (
         dict(session=PREVIOUS_JOURNAL_SESSION, D=PREVIOUS_JOURNAL_D, pins=PREVIOUS_JOURNAL_PINS,
@@ -701,7 +708,9 @@ def previous_journal_profiles():
             version=10, stage='PRE_QUIESCENCE', reason='GROWTH_BUSINESS_PROCESS'),
         dict(session=TENTH_JOURNAL_SESSION,D=TENTH_JOURNAL_D,pins=TENTH_JOURNAL_PINS,
             authority=dict(R=c.RULE['commit'], A=c.VM_ADOPTION_BASELINE['commit'], C=c.VM_ADOPTION_CLOSURE['commit']),
-            version=11,stage='PRE_QUIESCENCE',reason='GROWTH_GUEST_IO_OR_RUNTIME'))
+            version=11,stage='PRE_QUIESCENCE',reason='GROWTH_GUEST_IO_OR_RUNTIME'),
+        dict(session=ELEVENTH_JOURNAL_SESSION,D=ELEVENTH_JOURNAL_D,pins=ELEVENTH_JOURNAL_PINS,
+            authority=dict(R=c.RULE['commit'], A=c.RUNTIME_BASELINE['commit'], C=c.RUNTIME_CLOSURE['commit']),version=12,stage='LOCAL_TRANSPORT_CONSTRUCTION',reason='LOCAL_IO_OR_TRANSPORT'))
 
 
 def previous_maintenance_pins():
@@ -791,8 +800,17 @@ def vm_adoption_maintenance_resume():
             remote_exit='UNKNOWN', window_consumed=True) for row in previous_journal_profiles()[:9]])
 
 
-def maintenance_resume():
+def runtime_maintenance_resume():
     return dict(scope=c.RUNTIME_SCOPE, session='lhqjgrow-20261009b',
+        previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
+            originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
+                       for name,(size,sha) in row['pins'].items()],
+            state='STOP_AND_RETAIN', stage=row['stage'], reason=row['reason'],
+            remote_exit='UNKNOWN', window_consumed=True) for row in previous_journal_profiles()[:10]])
+
+
+def maintenance_resume():
+    return dict(scope=c.HOST_FD_SCOPE, session='lhqjgrow-20261009c',
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -803,7 +821,7 @@ def maintenance_resume():
 def maintenance_commitments():
     return dict(previous_maintenance=maintenance_resume(),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,'lhqjgrow-20261009b')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c')],
         released_or_refunded=False)
 
 
@@ -811,6 +829,24 @@ def validate_maintenance_resume(value):
     require(type(value) is dict and c.canonical(value)==c.canonical(maintenance_resume()),
         'JOURNAL_PREVIOUS_SUMMARY')
     return value
+
+
+def encode_manifest_inputs(binding):
+    require(type(binding) is dict and 'resume' in binding and 'resume_sha256' not in binding,
+        'JOURNAL_INPUT_ENCODING')
+    validate_maintenance_resume(binding['resume'])
+    result=copy.deepcopy(binding)
+    result['resume_sha256']=c.sha256(c.canonical(result.pop('resume'),newline=True))
+    return result
+
+
+def decode_manifest_inputs(manifest):
+    require(manifest.get('schema')=='lhq-journal-growth-manifest/v13','JOURNAL_INPUT_VERSION')
+    value=manifest['inputs'];resume=validate_maintenance_resume(manifest['resume'])
+    require(type(value) is dict and 'resume' not in value and 'resume_sha256' in value
+        and value['resume_sha256']==c.sha256(c.canonical(resume,newline=True)), 'JOURNAL_INPUT_REFERENCE')
+    result=copy.deepcopy(value);result.pop('resume_sha256');result['resume']=copy.deepcopy(resume)
+    return result
 
 
 def build_previous_maintenance(files):
@@ -852,18 +888,23 @@ def _build_previous_generation(files, fixed):
         and manifest['inventory_sha256']==manifest['inputs']['inventory_sha256'],
         'JOURNAL_PREVIOUS_SOURCE')
     require(receipt['state']==receipt['last_step']=='STOP_AND_RETAIN'
-        and receipt['reason']=='GROWTH_REPORT_MISSING'
+        and receipt['reason']==('LOCAL_IO_OR_TRANSPORT' if fixed['version']==12 else 'GROWTH_REPORT_MISSING')
         and receipt['started']==['CONSUMED','GUEST_QUIET'] and receipt['marker_created'] is True
         and type(receipt['ssh_requests']) is int and receipt['ssh_requests']==1
         and type(receipt['business_cases']) is int and receipt['business_cases']==0
         and receipt['remote_exit']=='UNKNOWN' and receipt['old_commitments_refunded'] is False,
         'JOURNAL_PREVIOUS_FAILURE')
-    failure=parse(files[prefix+'pre.stderr'])
-    require(files[prefix+'pre.stdout']==b'' and failure['schema']=='lhq-journal-growth-guest/v'+('3' if fixed['version'] in (10,11) else '2' if fixed['version'] in (8,9) else '1')
-        and failure['session']==fixed['session'] and failure['phase']=='pre'
-        and failure['status']=='INCOMPLETE' and failure['stage']==fixed['stage']
-        and failure['reason']==fixed['reason'] and failure['actions_started']==[],
-        'JOURNAL_PREVIOUS_SERIAL')
+    if fixed['version']==12:
+        require(files[prefix+'pre.stdout']==files[prefix+'pre.stderr']==b''
+            and receipt['transports']==[] and receipt['errno']==24
+            and receipt['error_type']=='OSError','JOURNAL_PREVIOUS_LOCAL_FD')
+    else:
+        failure=parse(files[prefix+'pre.stderr'])
+        require(files[prefix+'pre.stdout']==b'' and failure['schema']=='lhq-journal-growth-guest/v'+('3' if fixed['version'] in (10,11) else '2' if fixed['version'] in (8,9) else '1')
+            and failure['session']==fixed['session'] and failure['phase']=='pre'
+            and failure['status']=='INCOMPLETE' and failure['stage']==fixed['stage']
+            and failure['reason']==fixed['reason'] and failure['actions_started']==[],
+            'JOURNAL_PREVIOUS_SERIAL')
     events=[parse(line+b'\n') for line in files[prefix+'events.jsonl'].splitlines()]
     expected=[dict(step='CONSUMED',state='STARTED'),
         dict(step='CONSUMED',state='RETURNED',result=dict(manifest_sha256=marker['manifest_sha256'])),
@@ -872,9 +913,10 @@ def _build_previous_generation(files, fixed):
             description_sha256=c.sha256(c.canonical(desc,newline=True)),
             window_seconds=desc['window_seconds'],change_seconds=desc['change_seconds'])]
     require(c.canonical(events)==c.canonical(expected),'JOURNAL_PREVIOUS_ORDER')
-    require(len(receipt['transports'])==1 and receipt['transports'][0]['files']=={
-        stream:dict(bytes=len(files[prefix+'pre.'+stream]),sha256=c.sha256(files[prefix+'pre.'+stream]))
-        for stream in ('stdout','stderr')},'JOURNAL_PREVIOUS_STREAMS')
+    if fixed['version']!=12:
+        require(len(receipt['transports'])==1 and receipt['transports'][0]['files']=={
+            stream:dict(bytes=len(files[prefix+'pre.'+stream]),sha256=c.sha256(files[prefix+'pre.'+stream]))
+            for stream in ('stdout','stderr')},'JOURNAL_PREVIOUS_STREAMS')
     if fixed['version'] == 3:
         for row in (manifest,marker,receipt,manifest['inputs']):
             require(c.canonical(row.get('resume')) == c.canonical(serial_maintenance_resume()),
@@ -927,6 +969,16 @@ def _build_previous_generation(files, fixed):
             and 'resume' not in marker,'JOURNAL_PREVIOUS_VM_MARKER')
         require(desc['schema']=='lhq-journal-growth-input/v3','JOURNAL_PREVIOUS_VM_DESCRIPTOR')
         for row in (marker,desc,failure):validate_startup_assurance(row.get('guest_startup_assurance'))
+    if fixed['version'] == 12:
+        from .q2_journal_growth_guest import validate_startup_assurance
+        resume=runtime_maintenance_resume()
+        for row in (manifest,receipt,manifest['inputs']):
+            require(c.canonical(row.get('resume'))==c.canonical(resume),'JOURNAL_PREVIOUS_RT_RESUME')
+            validate_startup_assurance(row.get('guest_startup_assurance'))
+        require(marker.get('resume_sha256')==c.sha256(c.canonical(resume,newline=True))
+            and 'resume' not in marker and desc['schema']=='lhq-journal-growth-input/v4',
+            'JOURNAL_PREVIOUS_RT_MARKER')
+        for row in (marker,desc):validate_startup_assurance(row.get('guest_startup_assurance'))
     return fixed['session']
 
 
@@ -947,7 +999,7 @@ def read_previous_journal_files(directory_fd,anchor,call,*,_seen=None):
     return files
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261009b'
+JOURNAL_SESSION = 'lhqjgrow-20261009c'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -955,7 +1007,7 @@ JOURNAL_SOURCE_NAMES = ('q2_journal_growth.py', 'q2_journal_growth_guest.py',
     'q2_core_capacity_capture.py', 'q2_core_capacity_reader.py', 'q2_sshd_source_capture.py',
     'q2_sshd_source_reader.py', 'q2_core_obligation_inputs.py', 'q2_core_prior_attempt.py',
     'q2_core_delivery_contract.py', 'q2_local_source_delivery.py', 'q2_core_approved_inputs.py',
-    'q2_host_kernel_facts.py')
+    'q2_host_kernel_facts.py', 'q2_journal_retained_fds.py')
 
 
 CAPACITY_DIAGNOSTIC_PINS = {
@@ -1169,7 +1221,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
         'business_cases','remote_exit','production_supported','old_commitments_refunded',
         'exclusive_reservation_proven','original_boot_id','new_boot_id','post_transport',
         'transports','new_vm','image_identities','processes','serial_capture','kernel_report',
-        'budget','management_usage','resume','guest_startup_assurance'}, 'CORE_JOURNAL_RECEIPT_FIELDS')
+        'budget','management_usage','resume','guest_startup_assurance','retained_custody'}, 'CORE_JOURNAL_RECEIPT_FIELDS')
     require(receipt['serial_capture']=='NOT_CAPTURED_NULL_BACKEND','JOURNAL_SERIAL')
     usage=receipt['management_usage'];c.exact(usage,{'cpu_nanoseconds','rss_peak_bytes'},'CORE_JOURNAL_USAGE')
     c.integer(usage['cpu_nanoseconds'],1,120000000000);c.integer(usage['rss_peak_bytes'],1,536870912)
@@ -1183,7 +1235,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     c.exact(manifest, {'schema','R','A','C','D','nonce','access_mode','host_writer_observation',
         'continuous_exclusion_proven','historical_authority','inputs','window_binding',
         'inventory_sha256','retained_sha256','sources','tools','vm','image_identities',
-        'original_argv','restart_argv','image_commands','protocol','resume','guest_startup_assurance'}, 'CORE_JOURNAL_MANIFEST')
+        'original_argv','restart_argv','image_commands','protocol','resume','guest_startup_assurance','custody_binding'}, 'CORE_JOURNAL_MANIFEST')
     c.exact(frozen['capacity_files'],{'.lhqcap-20261006a.'+name for name in CAPACITY_DIAGNOSTIC_PINS},
         'CORE_JOURNAL_CAPACITY_ORIGINALS')
     for name,(size,digest) in CAPACITY_DIAGNOSTIC_PINS.items():
@@ -1192,9 +1244,9 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     saved=h.prior.validate_result(frozen['capacity_files']['.lhqcap-20261006a.stdout'],
         c.sha256(sources['q2_core_capacity_reader.py']),frozen['description'])['rows']
     require(saved==frozen['saved_rows'],'JOURNAL_SAVED_ROWS')
-    expected_authority = dict(R=h.R, A=(c.RUNTIME_BASELINE or {}).get('commit'), C=(c.RUNTIME_CLOSURE or {}).get('commit'))
-    require(manifest['schema'] == 'lhq-journal-growth-manifest/v12'
-        and receipt['schema'] == 'lhq-journal-growth-receipt/v12', 'JOURNAL_SCHEMA')
+    expected_authority = dict(R=h.R, A=(c.HOST_FD_BASELINE or {}).get('commit'), C=(c.HOST_FD_CLOSURE or {}).get('commit'))
+    require(manifest['schema'] == 'lhq-journal-growth-manifest/v13'
+        and receipt['schema'] == 'lhq-journal-growth-receipt/v13', 'JOURNAL_SCHEMA')
     for value in (manifest, receipt):
         require({key:value[key] for key in expected_authority} == expected_authority, 'JOURNAL_AUTHORITY')
     previous=build_previous_maintenance(frozen['previous_maintenance_files'])
@@ -1222,13 +1274,21 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     c.digest(manifest['retained_sha256'])
     g.validate_startup_assurance(frozen.get('guest_startup_assurance'))
     g.validate_startup_assurance(frozen['source_binding'].get('guest_startup_assurance'))
-    require(manifest['inputs'] == frozen['source_binding']
+    require(decode_manifest_inputs(manifest) == frozen['source_binding']
         and manifest['inventory_sha256'] == c.sha256(h.canonical(frozen['inventory']))
         and manifest['sources'] == {name:dict(bytes=len(data),sha256=c.sha256(data))
             for name,data in sources.items()}, 'JOURNAL_INPUT_SOURCE')
     g.validate_runtime_binding(frozen['runtime_parent_binding'],frozen['inventory'])
     require(frozen['source_binding']['runtime_parent_binding_sha256']==h.digest(h.canonical(frozen['runtime_parent_binding']))
         and marker['pre_description']['runtime_parent_binding']==frozen['runtime_parent_binding'],'JOURNAL_RUNTIME_SOURCE')
+    require(receipt['retained_custody']['originals']==frozen['previous_maintenance_identities'],
+        'JOURNAL_CUSTODY_RETAINED_IDENTITIES')
+    completion=frozen['coordinator_completion']
+    validate_retained_custody(receipt['retained_custody'],implementation=implementation,
+        nonce=marker['nonce'],source_files=manifest['sources'])
+    require(manifest['custody_binding']==receipt['retained_custody']['binding'],'JOURNAL_CUSTODY_MANIFEST')
+    validate_coordinator_completion(completion,receipt['retained_custody'])
+    require(completion['receipt_sha256']==c.sha256(raw['receipt.json']),'JOURNAL_COORDINATOR_RECEIPT')
     require(receipt['state'] == 'VERIFIED' and receipt['reason'] == 'MAINTENANCE_COMPLETE'
         and receipt['last_step'] == 'VERIFIED' and receipt['started'] == sorted(h.STATES[1:])
         and receipt['marker_created'] is True and type(receipt['ssh_requests']) is int
@@ -1310,7 +1370,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     activation=frozen.get('vm_activation')
     anchor=frozen['anchor_path'] if activation else str(PurePosixPath(original[pi]).parent)
     require(original[pi] == (activation['pidfile'] if activation else anchor+'/vm.pid') and original[si].startswith('file:')
-        and restart[pi] == anchor+'/.lhqjgrow-20261009b.vm.pid' and restart[si] == 'null'
+        and restart[pi] == anchor+'/.lhqjgrow-20261009c.vm.pid' and restart[si] == 'null'
         and [i for i,(a,b) in enumerate(zip(original,restart)) if a!=b] == sorted((pi,si)),
         'JOURNAL_RESTART_ARGV')
     # Reconstruct the expected original argv from the protected fixed input start script.
@@ -1325,7 +1385,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
         and next(row for row in events if row.get('step')=='POWER_OFF_TOKEN')['pre_report_sha256']
             ==c.sha256(h.canonical(pre)), 'JOURNAL_POWER_TOKEN')
     require(manifest['image_commands']==h.image_commands(anchor+'/journal.qcow2',
-        anchor+'/.lhqjgrow-20261009b.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
+        anchor+'/.lhqjgrow-20261009c.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
     old,new=manifest['vm'],receipt['new_vm']
     for value,argv in ((old,original),(new,restart)):
         c.exact(value, {'pid','starttime','argv_sha256'}, 'CORE_JOURNAL_VM')
@@ -1349,13 +1409,24 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     require(verified==dict(comparison=comparison,tree=post['tree'],rows=post['rows'])
         and all(row[field]['deficit']==0 for row in comparison['pools'] for field in ('bytes','inodes')),
         'JOURNAL_CAPACITY')
+    transport_pids=[row['pid'] for row in receipt['transports']]
+    for pid in transport_pids:c.integer(pid,2,2147483647)
+    require(len(set(transport_pids))==2,'JOURNAL_TRANSPORT_PID')
+    matched=set()
     for process in receipt['processes']:
-        require(type(process['vm']) is bool and type(process['exit']) is int and process['exit']==0,
-            'JOURNAL_PROCESS_EXIT')
+        pid=process['identity']['pid'];c.integer(pid,2,2147483647)
+        expected=receipt['transports'][transport_pids.index(pid)]['exit'] if pid in transport_pids else 0
+        require(type(process['vm']) is bool and type(process['exit']) is int
+            and process['exit']==expected,'JOURNAL_PROCESS_EXIT')
+        if pid in transport_pids:
+            require(process['vm'] is False and pid not in matched,'JOURNAL_TRANSPORT_PROCESS')
+            matched.add(pid)
+    require(matched==set(transport_pids),'JOURNAL_TRANSPORT_PROCESS')
     backup=results['BACKED_UP'];c.exact(backup,{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
     c.integer(backup['bytes'],1,320*1048576);c.digest(backup['sha256'])
     journal=next(row for row in post['rows'] if row['role']=='journal')
-    value=dict(schema='local-hand-q2-core-journal-transition/v11', authority=expected_authority,
+    value=dict(schema='local-hand-q2-core-journal-transition/v12', authority=expected_authority,
+        retained_custody=copy.deepcopy(receipt['retained_custody']),coordinator_completion=copy.deepcopy(completion),
         runtime_parent_binding=copy.deepcopy(frozen['runtime_parent_binding']),
         runtime_preparation={phase:g.runtime_summary(report) for phase,report in (('pre',pre),('post',post))},
         guest_startup_assurance=g.guest_startup_assurance(),
@@ -1452,6 +1523,56 @@ def validate_runtime_summaries(value,binding,nonce,boots,reports):
  and pool[key][0]>=pool["reserved_bytes"] and pool[key][1]>=pool["reserved_inodes"],"GROWTH_RUNTIME_SUMMARY_CAPACITY")
  return value
 
+def validate_retained_custody(value, *, implementation, nonce, source_files):
+    check=lambda ok,reason:require(ok,'JOURNAL_'+reason)
+    check(type(value) is dict and set(value)=={'schema','binding','pid','starttime','count','checks',
+        'originals','ipc_bytes','cpu_nanoseconds','rss_bytes','state'},'CUSTODY_FIELDS')
+    check(value['schema']=='lhq-retained-custody/v1' and value['state']=='HELD_UNTIL_TEARDOWN'
+        and value['count']==55,'CUSTODY_SCHEMA')
+    for name,low,high in (('pid',2,2147483647),('starttime',1,2**63-1),('checks',1,64),
+        ('ipc_bytes',1,2097152),('cpu_nanoseconds',0,120000000000),('rss_bytes',1,536870912)):
+        check(type(value[name]) is int and low<=value[name]<=high,'CUSTODY_BOUNDS')
+    pins={'.'+row['session']+'.'+name:(size,digest) for row in previous_journal_profiles()
+        for name,(size,digest) in row['pins'].items()}
+    originals=value['originals']
+    check(type(originals) is list and len(originals)==55,'CUSTODY_ORIGINALS')
+    check([row['basename'] for row in originals]==list(pins),'CUSTODY_SET_ORDER')
+    seen=set();owner=None
+    for row in originals:
+        check(type(row) is dict and set(row)=={'basename','metadata','bytes','sha256'}
+            and (row['bytes'],row['sha256'])==pins[row['basename']],'CUSTODY_PIN')
+        info=row['metadata']
+        check(type(info) is dict and set(info)=={'dev','ino','mode','uid','gid','nlink','size','blocks','mtime_ns','ctime_ns'}
+            and all(type(v) is int and v>=0 for v in info.values()),'CUSTODY_METADATA')
+        check(info['mode']==33152 and info['nlink']==1 and info['uid']>0 and info['gid']>0
+            and info['size']==row['bytes'],'CUSTODY_PROTECTION')
+        key=(info['dev'],info['ino']);check(key not in seen,'CUSTODY_ALIAS');seen.add(key)
+        current=(info['uid'],info['gid'],info['dev'])
+        if owner is None:owner=current
+        check(current==owner,'CUSTODY_OWNER')
+    check(value['binding']==dict(D=implementation['commit'],nonce=nonce,
+        source_sha256=source_files['q2_journal_retained_fds.py']['sha256'],
+        history_sha256=c.sha256(c.canonical(maintenance_resume())+b'\n'),set_sha256=c.sha256(c.canonical(originals)+b'\n')),'CUSTODY_BINDING')
+    return value
+
+
+def validate_coordinator_completion(value, custody):
+    check=lambda ok,reason:require(ok,'JOURNAL_'+reason)
+    check(type(value) is dict and set(value)=={'returncode','receipt_sha256','child','usage'}
+        and type(value['returncode']) is int and value['returncode']==0,'COORDINATOR_EXIT')
+    check(type(value['receipt_sha256']) is str and re.fullmatch(r'[0-9a-f]{64}',value['receipt_sha256']) is not None,
+        'COORDINATOR_RECEIPT')
+    child=value['child'];usage=value['usage']
+    check(type(child) is dict and set(child)=={'returncode','cpu_nanoseconds','rss_peak_bytes'}
+        and type(child['returncode']) is int and child['returncode']==0,'CUSTODY_EXIT')
+    check(type(usage) is dict and set(usage)=={'cpu_nanoseconds','rss_peak_bytes'},'COORDINATOR_USAGE')
+    for key,low,high in (('cpu_nanoseconds',custody['cpu_nanoseconds'],120000000000),
+        ('rss_peak_bytes',custody['rss_bytes'],536870912)):
+        check(type(child[key]) is int and low<=child[key]<=high
+            and type(usage[key]) is int and child[key]<=usage[key]<=high,'CUSTODY_FINAL_USAGE')
+    return value
+
+
 def validate_journal_transition(value, *, priors, implementation, current_boot=None):
     """Check the fixed host-verified projection; this does not reread host originals."""
     c.exact(value, {'schema','authority','implementation','session','nonce','access_mode',
@@ -1459,12 +1580,12 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion'},
         'CORE_JOURNAL_FIELDS')
-    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v11'
-        and value['session']=='lhqjgrow-20261009b', 'JOURNAL_SCHEMA')
+    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v12'
+        and value['session']=='lhqjgrow-20261009c', 'JOURNAL_SCHEMA')
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=(c.RUNTIME_BASELINE or {}).get('commit'),C=(c.RUNTIME_CLOSURE or {}).get('commit'))
+        A=(c.HOST_FD_BASELINE or {}).get('commit'),C=(c.HOST_FD_CLOSURE or {}).get('commit'))
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     require(type(value['guest_startup_assurance']) is dict
         and c.canonical(value['guest_startup_assurance']) == c.canonical(dict(
@@ -1472,6 +1593,9 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
             undeclared_unit_inventory_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False)),
         'GUEST_STARTUP_PREMISE')
+    validate_retained_custody(value['retained_custody'],implementation=implementation,
+        nonce=value['nonce'],source_files=value['source_files'])
+    validate_coordinator_completion(value['coordinator_completion'],value['retained_custody'])
     validate_maintenance_resume(value['previous_maintenance'])
     validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
@@ -1496,15 +1620,17 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     require(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261009b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261009c.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+    require(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
+        ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         c.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009b.'):]])
+        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009c.'):]])
         c.digest(row['sha256'])
     c.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
         c.exact(row,{'bytes','sha256'},'CORE_JOURNAL_SOURCE')
-        c.integer(row['bytes'],1,98304 if name.startswith('q2_journal_growth') else 524288);c.digest(row['sha256'])
+        c.integer(row['bytes'],1,16384 if name=='q2_journal_retained_fds.py' else 98304 if name.startswith('q2_journal_growth') else 524288);c.digest(row['sha256'])
     for key in ('old_vm','new_vm'):
         row=value[key];c.exact(row,{'pid','starttime','argv_sha256'},'CORE_JOURNAL_VM')
         c.integer(row['pid'],2);c.integer(row['starttime'],1);c.digest(row['argv_sha256'])
