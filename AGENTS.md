@@ -1,5 +1,43 @@
 # Execution guidance
 
+## Current approved batch: host FD ownership and original core continuation (2026-10-09)
+
+Scope `LH-Q2-CORE-HOST-FD-CONTINUATION-v1` is **CLOSED for FD1–FD3 only**.
+[Exact A](docs/governance/Q2_CORE_HOST_FD_CONTINUATION_BASELINE.md)
+`0ed9ba0a8eefa4d1a88ee46192fc18a5ad3fafc8`, tree `c29e7439e85229d926a7c632ef1da1a40e95ef7e`,
+retains its three original document bytes and historical OPEN labels.
+[Owner B](docs/governance/Q2_CORE_HOST_FD_CONTINUATION_OWNER_DECISION.md), event
+`LH-Q2-CORE-HOST-FD-CONTINUATION-CLOSURE-20261009-01`, retains the adjacent exact request
+and reply “批准”, with only public link targets sanitized. R/direct source/integrity, mandate,
+Owner authority, no exceptions and change control remain. Independent C is bookkeeping only;
+D must descend from C, without squash.
+
+FD1 completes the fixed same-permission custodian's continuous inherited ownership of 55 old
+maintenance FDs, parent/child aggregate accounting, full-lifecycle admission, lossless single-history
+manifest encoding, accurate old09b failure handling and all independent consumers. Verify real
+128-FD synthetic lifecycles, retained sources, full payload/cost bounds, main publication, exact D
+first CI, independent installation and both frozen callers before FD2. No reopen of closed evidence
+FDs, dropped protections, limit increase or uncounted helper cost is authorized. Fork handoff must
+retain the same open-file descriptions continuously and fail closed on child/protocol/identity drift.
+
+FD2 permits only one new `lhqjgrow-20261009c`, at most two fixed maintenance SSH, one verified
+normal shutdown, original journal growth and one original-configuration maintenance restart,
+retaining RT's bounded runtime preparation. Only complete successful maintenance originals and
+actual top-level completion permit FD3, the original unissued `lhqcore-20261007a` H01→Q4→H11.
+Complete this batch locally without per-substep reapproval. Keep the adopted VM, installation,
+declared 19/7/7, Q1, process/writer/data checks and trusted premises; unknown/contradiction stops.
+
+All eleven old windows/UNKNOWNs and original freezes remain consumed/retained. Twelve maintenance
+obligations plus original core capture require 15616 MiB/4456 inodes, with no refunds and original
+runtime costs. Preserve all original hard limits and aggregate parent/child CPU/RSS/process costs.
+Do not replay old callers, add scanners, exploratory SSH, reinstallation, side work, retries,
+supplementary collection, stopping business services, cleanup, rollback, recovery or another window.
+Owner authorizes A/implementation/sanitized records and only the verified old09b five-file
+basename/bytes/SHA-256 index. Raw evidence, machine metadata, activation originals/index and new09c
+originals/index stay private. At C, FD1 NOT_STARTED, FD2 NOT_ISSUED, FD3/H01/Q4/H11 NOT_RUN.
+This closure supersedes older no-custodian/new-window clauses only within exact FD1–FD3; it is
+neither proof of implementation/readiness nor maintenance/core success.
+
 ## Current approved batch: runtime prerequisites and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-RUNTIME-CONTINUATION-v1` is **CLOSED for RT1–RT3 only**.

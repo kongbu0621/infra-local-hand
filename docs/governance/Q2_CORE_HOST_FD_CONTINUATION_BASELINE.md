@@ -1,8 +1,10 @@
-# 宿主 FD 与核心接续：待批准基线
+# 宿主 FD 与核心接续：已批准基线
 
-**PROPOSED / Gate OPEN / NOT APPROVED**，scope
+**CLOSED for FD1–FD3 only**，scope
 `LH-Q2-CORE-HOST-FD-CONTINUATION-v1`，FD1–FD3。
-本文件仅固定待审来源，不是独立闭合 C，不替代真实 Owner B。
+真实[Owner B](Q2_CORE_HOST_FD_CONTINUATION_OWNER_DECISION.md)事件
+`LH-Q2-CORE-HOST-FD-CONTINUATION-CLOSURE-20261009-01`保留紧邻准确请求与回复“批准”。
+本独立C只登记闭合，不含实现；D必须继承C，不能squash。
 R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`及其直接来源/完整性、Owner mandate/authority、
 无例外与实质变更规则不变。
 
@@ -29,7 +31,22 @@ A请求一个完整批次：55件历史原件的有界子进程连续FD持有、
 
 新09c caller/package/window **NOT_ISSUED**，FD1 **NOT_STARTED**，FD2 **NOT_ISSUED**，
 FD3/H01/Q4/H11 **NOT_RUN**。旧09b CONSUMED_FAILED，原冻结及终态门不变。
-已核验旧09b五文件最小索引保持私有，待真实Owner明确同意其指定披露；不得提前复制到公共源码。
+Owner已明确同意仅公开下方已核验旧09b最小索引；原文及其它机器信息保持私有。
 
-只有真实B及独立C完成才闭合本范围；C与实现D分离，D必须继承C。不得改动A的历史OPEN
-字节或把本OPEN登记当作闭合/实现/现场授权。普通修复或CI通过均不能代替新批次完整验证。
+真实B及本独立C只闭合A规定范围；C与实现D分离。不得改动A的历史OPEN字节，普通修复或
+旧CI不能代替FD1完整验证。批内子步骤无需重复批准；完整FD2成功原件验证前不允许FD3。
+此前OPEN/待批准描述是审批前事实，不构成第二道待批。旧所有窗口、原冻结和UNKNOWN不变。
+
+## 仅获准公开的旧09b最小索引
+
+准确旧D `547bbb05816e17525470b1a3c136b328ff96adc1`。事件
+`RT2-09B-ORIGINALS-INDEX-REVIEW-20261009-01`已与原私有索引和已留存副本一致核对。
+只公开三列；旧原文、机器元数据和新09c索引仍私有。
+
+| basename | bytes | SHA-256 |
+| --- | ---: | --- |
+| .lhqjgrow-20261009b.consumed.json | 63853 | 30aa04638c3682a3317a5e83ba5769a167e98ea0e32053b204812ae0a0c03f45 |
+| .lhqjgrow-20261009b.events.jsonl | 441 | 9852dffa8014fd2e1385f7aa1d46b6ec37849773830fa13b3d065af0372aa6fd |
+| .lhqjgrow-20261009b.pre.stderr | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 |
+| .lhqjgrow-20261009b.pre.stdout | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 |
+| .lhqjgrow-20261009b.receipt.json | 17254 | cd87d061060c3fdbaad785c46f598ec31f5f806f2b0f88a490e1bf4a7a1261e3 |
