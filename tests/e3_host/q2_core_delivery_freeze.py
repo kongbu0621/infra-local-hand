@@ -1055,7 +1055,8 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.QI_BASELINE, c.QI_OWNER_DECISION, c.QI_CLOSURE),
             (c.DS_BASELINE, c.DS_OWNER_DECISION, c.DS_CLOSURE),
             (c.RUNTIME_BASELINE,c.RUNTIME_OWNER_DECISION,c.RUNTIME_CLOSURE),
-            (c.HOST_FD_BASELINE,c.HOST_FD_OWNER_DECISION,c.HOST_FD_CLOSURE)) + (() if adoption[0] is None else (adoption,)):
+            (c.HOST_FD_BASELINE,c.HOST_FD_OWNER_DECISION,c.HOST_FD_CLOSURE),
+            (c.USAGE_BASELINE,c.USAGE_OWNER_DECISION,c.USAGE_CLOSURE)) + (() if adoption[0] is None else (adoption,)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")

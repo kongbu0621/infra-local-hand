@@ -446,13 +446,14 @@ def _capacity_rows(prior, diagnostic):
         dict(session_id='lhqjgrow-20261009a',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261009b',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261009c',bytes=1296*1048576,inodes=370),
+        dict(session_id='lhqjgrow-20261010a',bytes=1296*1048576,inodes=370),
         dict(session_id=c.SESSION_ID,bytes=c.LIMITS['host_capture_bytes'],
              inodes=c.LIMITS['host_capture_inodes'])]
 
 
 def _capacity_record(binding, prior, diagnostic, journal, implementation, origins, observation, capacity, device_capacity):
-    return dict(schema='local-hand-q2-core-host-capacity-condition/v15',
-        scope=c.HOST_FD_SCOPE, session_id=c.SESSION_ID,
+    return dict(schema='local-hand-q2-core-host-capacity-condition/v16',
+        scope=c.USAGE_SCOPE, session_id=c.SESSION_ID,
         implementation=copy.deepcopy(implementation),
         local_management_binding_sha256=c.sha256(c.canonical(binding, newline=True)),
         prior_attempts_sha256=c.sha256(c.canonical(prior)), origins=dict(origins),
@@ -493,8 +494,8 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
     require(all(type(number) is int and number >= 0 for number in capacity.values())
             and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
     rows = _capacity_rows(prior, diagnostic)
-    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 16374562816
-            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 4456
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 17733517312
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 4826
             and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
             'HOST_CAPACITY_ARITHMETIC')
     require(capacity['bytes_available'] >= capacity['required_bytes']
@@ -507,7 +508,7 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
         usage=c.exact(row['capacity'],set(capacity),'CORE_HOST_CAPACITY_FIELDS')
         require(all(type(x) is int and x>=0 for x in usage.values()) and usage['frsize']>0
             and usage['bytes_available']==usage['frsize']*usage['blocks_available']
-            and usage['required_bytes']==16374562816 and usage['required_inodes']==4456
+            and usage['required_bytes']==17733517312 and usage['required_inodes']==4826
             and usage['bytes_available']>=usage['required_bytes']
             and usage['inodes_available']>=usage['required_inodes'],'HOST_CAPACITY_DEVICE_FLOOR')
     require(next(row['capacity'] for row in devices if row['dev']==binding['anchor']['dev'])==capacity,
@@ -809,8 +810,48 @@ def runtime_maintenance_resume():
             remote_exit='UNKNOWN', window_consumed=True) for row in previous_journal_profiles()[:10]])
 
 
+
+# Only the Owner-approved six local-return pins are public. The other archive
+# pins and frozen caller hashes are private inputs, bound by the new caller freeze.
+LOCAL_PREFLIGHT_D = '5db76ed8ad6f336dd5daf2401635c6be7a637d3b'
+LOCAL_PREFLIGHT_SESSION = 'lhqjgrow-20261009c'
+LOCAL_PREFLIGHT_SCOPE = 'LH-Q2-CORE-HOST-FD-CONTINUATION-v1'
+LOCAL_PREFLIGHT_CALLERS = ('accept_maintenance.py','core_once.py','maintenance_once.py',
+    'offline_maintenance.py','static_inputs.py')
+LOCAL_PREFLIGHT_PINS = {'fd2-caller-started.json': (83, 'd48d67b065b1f86baa47b47590ea22ba0c02f4729a3c15477b8dc70330a7fa3f'), 'fd2-caller.stderr': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'fd2-caller.stdout': (313, '27927a51afe50b131a390a649bd37521fbfaaf531cc340a8d502277ec114cf87'), 'fd2-preflight.stderr': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'fd2-preflight.stdout': (339, '4cdba663538b0c930f36f739235361b00894cc0a603384b85b68a0a199b2079e'), 'fd2-summary.json': (313, '27927a51afe50b131a390a649bd37521fbfaaf531cc340a8d502277ec114cf87')}
+LOCAL_PREFLIGHT_RECORDS = ('freeze-complete.json','execution-result.json','release-gate.json')
+
+
+def local_preflight_summary():
+    return dict(scope=LOCAL_PREFLIGHT_SCOPE,session=LOCAL_PREFLIGHT_SESSION,D=LOCAL_PREFLIGHT_D,
+        originals=[dict(basename=n,bytes=v[0],sha256=v[1]) for n,v in sorted(LOCAL_PREFLIGHT_PINS.items())],
+        state='PREFLIGHT_FAILED_STOP_AND_RETAIN',terminal='FD2_PREFLIGHT_FAILED_FD3_NOT_RUN',
+        caller_invocations=1,execute_invocations=0,ssh_requests=0,marker_created=False,
+        maintenance_window_consumed=False,core_package='NOT_BUILT',core_cases='NOT_RUN',
+        reason='GROWTH_USAGE_UNKNOWN',diagnostic_retained=False,old_commitments_refunded=False)
+
+
+def validate_local_preflight_source(value):
+    c.exact(value,{'schema','summary','archive','originals','freeze_sha256','callers'},'LOCAL_PREFLIGHT_FIELDS')
+    require(value['schema']=='local-hand-q2-local-preflight-source/v1'
+        and c.canonical(value['summary'])==c.canonical(local_preflight_summary()),'LOCAL_PREFLIGHT_SUMMARY')
+    c.exact(value['archive'],{'bytes','sha256'},'LOCAL_PREFLIGHT_ARCHIVE_PIN')
+    c.integer(value['archive']['bytes'],1,131072);c.digest(value['archive']['sha256'])
+    c.digest(value['freeze_sha256'])
+    c.exact(value['callers'],LOCAL_PREFLIGHT_CALLERS,'LOCAL_PREFLIGHT_CALLERS')
+    for pin in value['callers'].values():c.digest(pin)
+    pins=value['originals'];c.exact(pins,(*LOCAL_PREFLIGHT_PINS,*LOCAL_PREFLIGHT_RECORDS),'LOCAL_PREFLIGHT_ORIGINALS')
+    for name,row in pins.items():
+        c.exact(row,{'bytes','sha256'},'LOCAL_PREFLIGHT_PIN')
+        c.integer(row['bytes'],0,65536);c.digest(row['sha256'])
+        if name in LOCAL_PREFLIGHT_PINS:
+            require((row['bytes'],row['sha256'])==LOCAL_PREFLIGHT_PINS[name],'LOCAL_PREFLIGHT_RETURN_PIN')
+    require(pins['freeze-complete.json']['sha256']==value['freeze_sha256'],'LOCAL_PREFLIGHT_FREEZE_PIN')
+    return value
+
 def maintenance_resume():
-    return dict(scope=c.HOST_FD_SCOPE, session='lhqjgrow-20261009c',
+    return dict(scope=c.USAGE_SCOPE, session='lhqjgrow-20261010a',
+        previous_local_preflight=local_preflight_summary(),
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -821,7 +862,7 @@ def maintenance_resume():
 def maintenance_commitments():
     return dict(previous_maintenance=maintenance_resume(),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a')],
         released_or_refunded=False)
 
 
@@ -841,7 +882,7 @@ def encode_manifest_inputs(binding):
 
 
 def decode_manifest_inputs(manifest):
-    require(manifest.get('schema')=='lhq-journal-growth-manifest/v13','JOURNAL_INPUT_VERSION')
+    require(manifest.get('schema')=='lhq-journal-growth-manifest/v14','JOURNAL_INPUT_VERSION')
     value=manifest['inputs'];resume=validate_maintenance_resume(manifest['resume'])
     require(type(value) is dict and 'resume' not in value and 'resume_sha256' in value
         and value['resume_sha256']==c.sha256(c.canonical(resume,newline=True)), 'JOURNAL_INPUT_REFERENCE')
@@ -850,7 +891,7 @@ def decode_manifest_inputs(manifest):
 
 
 def build_previous_maintenance(files):
-    """Consume all nine exact failed generations under their original schemas and authority."""
+    """Consume the eleven exact failed generations under their original schemas."""
     c.exact(files, set(previous_maintenance_pins()), 'CORE_JOURNAL_PREVIOUS_FILES')
     for fixed in previous_journal_profiles():
         prefix='.'+fixed['session']+'.'
@@ -999,7 +1040,7 @@ def read_previous_journal_files(directory_fd,anchor,call,*,_seen=None):
     return files
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261009c'
+JOURNAL_SESSION = 'lhqjgrow-20261010a'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -1207,6 +1248,10 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     from . import q2_journal_growth as h
     from . import q2_journal_growth_guest as g
     h.validate_q1_frozen(frozen)
+    local_source=build_local_preflight_source(frozen['local_preflight_raw'],frozen['local_preflight_spec'])
+    require(local_source==frozen['source_binding']['local_preflight_source']
+        and local_source['archive']==frozen['source_binding']['sources']['local_preflight_archive'],
+        'LOCAL_PREFLIGHT_SOURCE_BINDING')
     c.exact(sources, JOURNAL_SOURCE_NAMES, 'CORE_JOURNAL_SOURCE_SET')
     c.exact(files, {'.' + JOURNAL_SESSION + '.' + name for name in JOURNAL_FILES}, 'CORE_JOURNAL_FILES')
     raw = {name: files['.' + JOURNAL_SESSION + '.' + name] for name in JOURNAL_FILES}
@@ -1244,9 +1289,9 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     saved=h.prior.validate_result(frozen['capacity_files']['.lhqcap-20261006a.stdout'],
         c.sha256(sources['q2_core_capacity_reader.py']),frozen['description'])['rows']
     require(saved==frozen['saved_rows'],'JOURNAL_SAVED_ROWS')
-    expected_authority = dict(R=h.R, A=(c.HOST_FD_BASELINE or {}).get('commit'), C=(c.HOST_FD_CLOSURE or {}).get('commit'))
-    require(manifest['schema'] == 'lhq-journal-growth-manifest/v13'
-        and receipt['schema'] == 'lhq-journal-growth-receipt/v13', 'JOURNAL_SCHEMA')
+    expected_authority = dict(R=h.R, A=(c.USAGE_BASELINE or {}).get('commit'), C=(c.USAGE_CLOSURE or {}).get('commit'))
+    require(manifest['schema'] == 'lhq-journal-growth-manifest/v14'
+        and receipt['schema'] == 'lhq-journal-growth-receipt/v14', 'JOURNAL_SCHEMA')
     for value in (manifest, receipt):
         require({key:value[key] for key in expected_authority} == expected_authority, 'JOURNAL_AUTHORITY')
     previous=build_previous_maintenance(frozen['previous_maintenance_files'])
@@ -1370,7 +1415,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     activation=frozen.get('vm_activation')
     anchor=frozen['anchor_path'] if activation else str(PurePosixPath(original[pi]).parent)
     require(original[pi] == (activation['pidfile'] if activation else anchor+'/vm.pid') and original[si].startswith('file:')
-        and restart[pi] == anchor+'/.lhqjgrow-20261009c.vm.pid' and restart[si] == 'null'
+        and restart[pi] == anchor+'/.lhqjgrow-20261010a.vm.pid' and restart[si] == 'null'
         and [i for i,(a,b) in enumerate(zip(original,restart)) if a!=b] == sorted((pi,si)),
         'JOURNAL_RESTART_ARGV')
     # Reconstruct the expected original argv from the protected fixed input start script.
@@ -1385,7 +1430,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
         and next(row for row in events if row.get('step')=='POWER_OFF_TOKEN')['pre_report_sha256']
             ==c.sha256(h.canonical(pre)), 'JOURNAL_POWER_TOKEN')
     require(manifest['image_commands']==h.image_commands(anchor+'/journal.qcow2',
-        anchor+'/.lhqjgrow-20261009c.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
+        anchor+'/.lhqjgrow-20261010a.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
     old,new=manifest['vm'],receipt['new_vm']
     for value,argv in ((old,original),(new,restart)):
         c.exact(value, {'pid','starttime','argv_sha256'}, 'CORE_JOURNAL_VM')
@@ -1425,7 +1470,8 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     backup=results['BACKED_UP'];c.exact(backup,{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
     c.integer(backup['bytes'],1,320*1048576);c.digest(backup['sha256'])
     journal=next(row for row in post['rows'] if row['role']=='journal')
-    value=dict(schema='local-hand-q2-core-journal-transition/v12', authority=expected_authority,
+    value=dict(schema='local-hand-q2-core-journal-transition/v13', authority=expected_authority,
+        local_preflight_source=copy.deepcopy(local_source),
         retained_custody=copy.deepcopy(receipt['retained_custody']),coordinator_completion=copy.deepcopy(completion),
         runtime_parent_binding=copy.deepcopy(frozen['runtime_parent_binding']),
         runtime_preparation={phase:g.runtime_summary(report) for phase,report in (('pre',pre),('post',post))},
@@ -1580,12 +1626,12 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source'},
         'CORE_JOURNAL_FIELDS')
-    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v12'
-        and value['session']=='lhqjgrow-20261009c', 'JOURNAL_SCHEMA')
+    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v13'
+        and value['session']=='lhqjgrow-20261010a', 'JOURNAL_SCHEMA')
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=(c.HOST_FD_BASELINE or {}).get('commit'),C=(c.HOST_FD_CLOSURE or {}).get('commit'))
+        A=(c.USAGE_BASELINE or {}).get('commit'),C=(c.USAGE_CLOSURE or {}).get('commit'))
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     require(type(value['guest_startup_assurance']) is dict
         and c.canonical(value['guest_startup_assurance']) == c.canonical(dict(
@@ -1597,6 +1643,7 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         nonce=value['nonce'],source_files=value['source_files'])
     validate_coordinator_completion(value['coordinator_completion'],value['retained_custody'])
     validate_maintenance_resume(value['previous_maintenance'])
+    validate_local_preflight_source(value['local_preflight_source'])
     validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
     c.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
@@ -1620,12 +1667,12 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     require(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261009c.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261010a.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     require(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
         ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         c.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009c.'):]])
+        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010a.'):]])
         c.digest(row['sha256'])
     c.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -1665,3 +1712,100 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         and value['logical_compare_exit']==0 and type(value['resize_exit']) is int and value['resize_exit']==0,
         'JOURNAL_CHECKS')
     return value
+
+
+def build_local_preflight_source(raw,spec):
+    """Validate the fixed local failure archive; never import or execute old callers."""
+    import io,tarfile
+    c.exact(spec,{'path','bytes','sha256','freeze_sha256','callers'},'LOCAL_PREFLIGHT_SPEC')
+    c.absolute_path(spec['path'],'LOCAL_PREFLIGHT_PATH')
+    c.integer(spec['bytes'],1,131072);c.digest(spec['sha256']);c.digest(spec['freeze_sha256'])
+    c.exact(spec['callers'],LOCAL_PREFLIGHT_CALLERS,'LOCAL_PREFLIGHT_CALLERS')
+    for pin in spec['callers'].values():c.digest(pin)
+    require(type(raw) is bytes and len(raw)==spec['bytes'] and c.sha256(raw)==spec['sha256'],
+        'LOCAL_PREFLIGHT_ARCHIVE_PIN')
+    files={};end=0
+    try:
+        with tarfile.open(fileobj=io.BytesIO(raw),mode='r:') as archive:
+            for member in archive:
+                require(member.type in (tarfile.REGTYPE,tarfile.AREGTYPE)
+                    and member.offset==end and raw[member.offset+257:member.offset+263]==b'ustar\0'
+                    and not member.pax_headers and member.name not in files
+                    and member.name in (*LOCAL_PREFLIGHT_PINS,*LOCAL_PREFLIGHT_RECORDS)
+                    and 0<=member.size<=65536,'LOCAL_PREFLIGHT_MEMBER')
+                with archive.extractfile(member) as stream:data=stream.read(65537)
+                require(len(data)==member.size,'LOCAL_PREFLIGHT_MEMBER_BOUND')
+                files[member.name]=data
+                end=member.offset_data+(member.size+511)//512*512
+        require(len(raw)%512==0 and len(raw)-end>=1024 and not any(raw[end:]),'LOCAL_PREFLIGHT_TRAILING')
+    except (tarfile.TarError,ValueError,OSError) as error:
+        raise c.ContractError('LOCAL_PREFLIGHT_ARCHIVE') from error
+    c.exact(files,(*LOCAL_PREFLIGHT_PINS,*LOCAL_PREFLIGHT_RECORDS),'LOCAL_PREFLIGHT_ORIGINALS')
+    pins={n:dict(bytes=len(b),sha256=c.sha256(b)) for n,b in files.items()}
+    projection=dict(schema='local-hand-q2-local-preflight-source/v1',summary=local_preflight_summary(),
+        archive={k:spec[k] for k in ('bytes','sha256')},originals=pins,
+        freeze_sha256=spec['freeze_sha256'],callers=copy.deepcopy(spec['callers']))
+    validate_local_preflight_source(projection)
+    def parse(name):
+        try: value=json.loads(files[name].decode('ascii'),object_pairs_hook=c._pairs,parse_constant=c._constant)
+        except (UnicodeError,ValueError) as error:raise c.ContractError('LOCAL_PREFLIGHT_JSON') from error
+        c._shape(value);require(type(value) is dict,'LOCAL_PREFLIGHT_JSON');return value
+    freeze,result,gate=(parse(n) for n in LOCAL_PREFLIGHT_RECORDS)
+    require(freeze['R']==c.RULE['commit'] and freeze['A']==c.HOST_FD_BASELINE['commit']
+        and freeze['C']==c.HOST_FD_CLOSURE['commit'] and freeze['scope']==LOCAL_PREFLIGHT_SCOPE
+        and freeze['state']=='FROZEN_FD1_VERIFIED' and freeze['implementation']==dict(
+            commit=LOCAL_PREFLIGHT_D,tree='a20bf680b8f3d975248a91b251fc7502729b5f46')
+        and freeze['callers']==spec['callers']
+        and freeze['fd2']==dict(session=LOCAL_PREFLIGHT_SESSION,state='NOT_STARTED')
+        and freeze['fd3']==dict(session='lhqcore-20261007a',state='NOT_RUN'),'LOCAL_PREFLIGHT_FREEZE')
+    require(gate==dict(freeze,state='FD2_PREFLIGHT_FAILED_FD3_NOT_RUN',fd2=result),'LOCAL_PREFLIGHT_TERMINAL')
+    require(result['D']==LOCAL_PREFLIGHT_D and result['session']==LOCAL_PREFLIGHT_SESSION
+        and result['freeze_sha256']==spec['freeze_sha256']
+        and result['state']=='PREFLIGHT_FAILED_STOP_AND_RETAIN'
+        and result['retained']=={n:pins[n] for n in LOCAL_PREFLIGHT_PINS}
+        and result['core_package']=='NOT_BUILT'
+        and all(result[k]=='NOT_RUN' for k in ('FD3','H01','Q4','H11'))
+        and result['reason']=='GROWTH_USAGE_UNKNOWN' and result['diagnostic']=={}
+        and result['errno'] is None and result['error_type']=='ObservationError'
+        and result['maintenance_marker_created'] is result['maintenance_actions_started'] is False
+        and result['eleven_historical_generations_still_consumed'] is True
+        and result['failed_sample_measurements']=='NOT_RETAINED'
+        and result['process_identity']=='NOT_IDENTIFIED_BY_RETURN','LOCAL_PREFLIGHT_RESULT')
+    for key,want in (('caller_invocations',1),('execute_invocations',0),('ssh_requests',0)):
+        require(type(result[key]) is int and result[key]==want,'LOCAL_PREFLIGHT_COUNTS')
+    started=parse('fd2-caller-started.json');summary=parse('fd2-summary.json');pre=parse('fd2-preflight.stdout')
+    require(started==dict(D=LOCAL_PREFLIGHT_D,session=LOCAL_PREFLIGHT_SESSION)
+        and files['fd2-caller.stdout']==files['fd2-summary.json']
+        and files['fd2-caller.stderr']==files['fd2-preflight.stderr']==b'', 'LOCAL_PREFLIGHT_CALLER_RETURN')
+    require(summary['D']==LOCAL_PREFLIGHT_D and summary['phase']=='preflight'
+        and type(summary['exit_code']) is int and summary['exit_code']==3
+        and pre['management_usage']==result['last_valid_management_usage'], 'LOCAL_PREFLIGHT_RETURN')
+    for v in (pre,summary):
+        require(v['state']=='BLOCKED' and v['reason']=='GROWTH_USAGE_UNKNOWN'
+            and v['diagnostic']=={} and v['marker_created'] is False
+            and type(v['ssh_requests']) is int and v['ssh_requests']==0
+            and v['errno'] is None and v['error_type']=='ObservationError','LOCAL_PREFLIGHT_RETURN')
+    return projection
+
+
+def adopt_local_preflight(inputs,frozen,spec):
+    # Inputs.read retains exactly one parent FD with all original path protections.
+    c.exact(spec,{'path','bytes','sha256','freeze_sha256','callers'},'LOCAL_PREFLIGHT_SPEC')
+    c.integer(spec['bytes'],1,131072)
+    raw=inputs.read(spec['path'],spec['bytes'],spec['sha256'],'local_preflight_archive')
+    value=build_local_preflight_source(raw,spec)
+    frozen.update(local_preflight_raw=raw,local_preflight_spec=copy.deepcopy(spec))
+    binding=frozen['source_binding'];binding['local_preflight_source']=value
+    binding['sources']['local_preflight_archive']=copy.deepcopy(value['archive'])
+    frozen['source_binding_sha256']=c.sha256(c.canonical(binding,newline=True))
+    return value
+
+
+def recheck_local_preflight(inputs,frozen,check):
+    from . import q2_journal_growth as h
+    spec=frozen['local_preflight_spec'];check()
+    fd=next(fd for path,fd,_ in inputs.held if path==spec['path'])
+    os.lseek(fd,0,os.SEEK_SET);raw,_=h.local.stable_read(fd,spec['bytes'],check)
+    require(build_local_preflight_source(raw,spec)==frozen['source_binding']['local_preflight_source']
+        and raw==frozen['local_preflight_raw'],'LOCAL_PREFLIGHT_SOURCE_DRIFT')
+    inputs.recheck(check)

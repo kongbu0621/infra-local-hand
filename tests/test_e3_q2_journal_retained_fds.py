@@ -1,4 +1,4 @@
-"""Actual 121-FD admission, inherited identity and full output lifetime at limit 128."""
+"""Actual 121/122-FD admission, inherited identity and full output lifetime at limit 128."""
 import json
 import subprocess
 import sys
@@ -15,7 +15,8 @@ from types import SimpleNamespace
 sys.path.insert(0,sys.argv[1])
 from e3_host import q2_journal_retained_fds as c
 from e3_host import q2_journal_growth as h
-path,mode=sys.argv[2:]
+path,mode,initial=sys.argv[2:]
+initial=int(initial)
 original_child=c.child
 def debug_child(*args):
     try:
@@ -52,8 +53,8 @@ def count():
         else:n+=1
     return n
 fill=[]
-while count()<121:fill.append(os.open(os.devnull,os.O_RDONLY|os.O_CLOEXEC))
-assert count()==121
+while count()<initial:fill.append(os.open(os.devnull,os.O_RDONLY|os.O_CLOEXEC))
+assert count()==initial
 if mode in ('bad_ready','bool_ready','missing_ready','wrong_D','truncated','timeout'):
     old=c.Channel.send
     def wrong(self,value,limit,end):
@@ -74,7 +75,7 @@ if mode in ('bad_ready','bool_ready','missing_ready','wrong_D','truncated','time
     try:c.Custodian(a,pins,commit='d'*40,nonce='a'*64,source_sha256='b'*64,history_sha256='c'*64)
     except (RuntimeError,OSError):pass
     else:raise AssertionError('admitted failed handoff')
-    assert len(a.held)==55 and count()==121
+    assert len(a.held)==55 and count()==initial
     for _,fd,_ in rows:os.fstat(fd)
     print(json.dumps(dict(mode=mode,retained=True)));sys.exit(0)
 # Verify shared file position before the parent surrenders its copies.
@@ -89,9 +90,9 @@ def response(self,op,seq,end=None):
     return result
 c.Custodian.response=response
 held=c.Custodian(a,pins,commit='d'*40,nonce='a'*64,source_sha256='b'*64,history_sha256='c'*64)
-assert a.held==[] and count()==68
+assert a.held==[] and count()==initial-53
 h.host_fd_admission(anchor,lambda:None,'after_transfer')
-assert count()==68
+assert count()==initial-53
 # The child inherited the very same open-file description; change its offset
 # via a retained alias and observe it through the child's /proc descriptor.
 assert len(c.ACTIVE)==1
@@ -119,7 +120,7 @@ if mode in ('replace','delete','content','link','mode','sequence','nonce','child
     else:raise AssertionError('admitted identity/protocol failure')
     try:held.close()
     except (RuntimeError,OSError,KeyError):pass
-    assert not c.ACTIVE and count()==66
+    assert not c.ACTIVE and count()==initial-55
     try:os.waitpid(held.pid,os.WNOHANG)
     except ChildProcessError:pass
     else:raise AssertionError('unreaped child')
@@ -152,18 +153,19 @@ assert summary['checks']==3 and 0<summary['ipc_bytes']<=2*1048576
 store.close();os.close(exe);os.close(simulated_vm_pidfd)
 final=held.close()
 assert final['returncode']==0 and final['cpu_nanoseconds']>=summary['cpu_nanoseconds']
-assert final['rss_peak_bytes']>=summary['rss_bytes'] and count()==66,(final,summary['rss_bytes'],count())
+assert final['rss_peak_bytes']>=summary['rss_bytes'] and count()==initial-55,(final,summary['rss_bytes'],count())
 assert not c.ACTIVE
-print(json.dumps(dict(mode=mode,before=121,after_transfer=68,after_close=count(),
+print(json.dumps(dict(mode=mode,before=initial,after_transfer=initial-53,after_close=count(),
     cpu_ns=final['cpu_nanoseconds'],rss=final['rss_peak_bytes'])))
 '''
 
 
+@pytest.mark.parametrize('initial',[121,122])
 @pytest.mark.parametrize('mode',['lifecycle','live_cpu','bad_ready','bool_ready','missing_ready','wrong_D','truncated','timeout',
     'fork_failure','replace','delete','content','link','mode','sequence','nonce','child_exit','unknown_usage','check_limit'])
-def test_bounded_custody_real_process_lifetime(tmp_path,mode):
+def test_bounded_custody_real_process_lifetime(tmp_path,mode,initial):
     result=subprocess.run([sys.executable,'-I','-B','-c',CHILD,str(Path(__file__).parent),
-        str(tmp_path),mode],stdin=subprocess.DEVNULL,capture_output=True,timeout=30)
+        str(tmp_path),mode,str(initial)],stdin=subprocess.DEVNULL,capture_output=True,timeout=30)
     assert result.returncode==0,result.stderr.decode()
     value=json.loads(result.stdout)
     assert value['mode']==mode

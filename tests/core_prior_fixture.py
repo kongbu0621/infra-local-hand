@@ -126,10 +126,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v16', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v17', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v16',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v17',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -179,8 +179,10 @@ def diagnostic_files(monkeypatch):
 
 def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
-    value=dict(schema='local-hand-q2-core-journal-transition/v12',vm_activation=None,
-        authority=dict(R=c.RULE['commit'],A=(c.HOST_FD_BASELINE or {}).get('commit'),C=(c.HOST_FD_CLOSURE or {}).get('commit')),
+    from local_preflight_fixture import source_projection
+    value=dict(schema='local-hand-q2-core-journal-transition/v13',vm_activation=None,
+        local_preflight_source=source_projection(),
+        authority=dict(R=c.RULE['commit'],A=(c.USAGE_BASELINE or {}).get('commit'),C=(c.USAGE_CLOSURE or {}).get('commit')),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
             indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',

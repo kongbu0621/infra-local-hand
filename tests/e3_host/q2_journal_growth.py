@@ -65,6 +65,8 @@ RT_A=history.c.RUNTIME_BASELINE["commit"]
 RT_C=history.c.RUNTIME_CLOSURE["commit"]
 FD_A=history.c.HOST_FD_BASELINE["commit"]
 FD_C=history.c.HOST_FD_CLOSURE["commit"]
+UC_A=history.c.USAGE_BASELINE["commit"]
+UC_C=history.c.USAGE_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -88,11 +90,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261009c"
+SESSION="lhqjgrow-20261010a"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=15552*MIB,4440
+HOST_BYTES,HOST_INODES=16848*MIB,4810
 # Additional host descriptors from preflight through receipt: post transport
 # peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
 # Three more slots cover bounded identity/usage reads. This is admission only;
@@ -1300,48 +1302,20 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  decision=history.c.DS_OWNER_DECISION
  for commit in (DS_C,expected):
   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_DS_B_CHANGED")
- adoption=(history.c.VM_ADOPTION_BASELINE,history.c.VM_ADOPTION_OWNER_DECISION,history.c.VM_ADOPTION_CLOSURE)
- require(all(row is None for row in adoption) or all(type(row) is dict for row in adoption),"GROWTH_VM_AUTHORITY_PARTIAL")
- if adoption[0] is not None:
-  baseline,decision,closure=adoption
-  require(VM_A==baseline["commit"] and VM_C==closure["commit"] and expected!=VM_C,"GROWTH_VM_AUTHORITY")
-  git("merge-base","--is-ancestor",VM_A,VM_C)
-  git("merge-base","--is-ancestor",VM_C,expected)
+ for prefix,a,b in (("VM_ADOPTION",VM_A,VM_C),("RUNTIME",RT_A,RT_C),("HOST_FD",FD_A,FD_C),("USAGE",UC_A,UC_C)):
+  baseline,decision,closure=(getattr(history.c,prefix+suffix) for suffix in ("_BASELINE","_OWNER_DECISION","_CLOSURE"))
+  require(all(row is None for row in (baseline,decision,closure)) or all(type(row) is dict for row in (baseline,decision,closure)),"GROWTH_"+prefix+"_AUTHORITY_PARTIAL")
+  if baseline is None:continue
+  require(a==baseline["commit"] and b==closure["commit"] and expected!=b,"GROWTH_"+prefix+"_AUTHORITY")
+  git("merge-base","--is-ancestor",a,b)
+  git("merge-base","--is-ancestor",b,expected)
   for authority in (baseline,closure):
-   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_VM_TREE")
+   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_"+prefix+"_TREE")
   for path,sha in baseline["documents_sha256"].items():
-   for commit in (VM_A,VM_C,expected):
-    require(digest(git("show",commit+":"+path))==sha,"GROWTH_VM_A_CHANGED")
-  for commit in (VM_C,expected):
-   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_VM_B_CHANGED")
- runtime=(history.c.RUNTIME_BASELINE,history.c.RUNTIME_OWNER_DECISION,history.c.RUNTIME_CLOSURE)
- require(all(row is None for row in runtime) or all(type(row) is dict for row in runtime),"GROWTH_RT_AUTHORITY_PARTIAL")
- if runtime[0] is not None:
-  baseline,decision,closure=runtime
-  require(RT_A==baseline["commit"] and RT_C==closure["commit"] and expected!=RT_C,"GROWTH_RT_AUTHORITY")
-  git("merge-base","--is-ancestor",RT_A,RT_C)
-  git("merge-base","--is-ancestor",RT_C,expected)
-  for authority in (baseline,closure):
-   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_RUNTIME_TREE")
-  for path,sha in baseline["documents_sha256"].items():
-   for commit in (RT_A,RT_C,expected):
-    require(digest(git("show",commit+":"+path))==sha,"GROWTH_RT_A_CHANGED")
-  for commit in (RT_C,expected):
-   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_RUNTIME_B_CHANGED")
- host_fd=(history.c.HOST_FD_BASELINE,history.c.HOST_FD_OWNER_DECISION,history.c.HOST_FD_CLOSURE)
- require(all(row is None for row in host_fd) or all(type(row) is dict for row in host_fd),"GROWTH_FD_AUTHORITY_PARTIAL")
- if host_fd[0] is not None:
-  baseline,decision,closure=host_fd
-  require(FD_A==baseline["commit"] and FD_C==closure["commit"] and expected!=FD_C,"GROWTH_FD_AUTHORITY")
-  git("merge-base","--is-ancestor",FD_A,FD_C)
-  git("merge-base","--is-ancestor",FD_C,expected)
-  for authority in (baseline,closure):
-   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_HOST_FD_TREE")
-  for path,sha in baseline["documents_sha256"].items():
-   for commit in (FD_A,FD_C,expected):
-    require(digest(git("show",commit+":"+path))==sha,"GROWTH_FD_A_CHANGED")
-  for commit in (FD_C,expected):
-   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_HOST_FD_B_CHANGED")
+   for commit in (a,b,expected):
+    require(digest(git("show",commit+":"+path))==sha,"GROWTH_"+prefix+"_A_CHANGED")
+  for commit in (b,expected):
+   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_"+prefix+"_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -1579,15 +1553,15 @@ def resume_sha256(resume):
  history.validate_maintenance_resume(resume)
  return digest(canonical(resume))
 def make_preflight(commit,manifest,window,nonce,usage,*,resume):
- value=dict(schema="lhq-journal-growth-preflight/v12",R=R,A=FD_A,C=FD_C,D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v13",R=R,A=UC_A,C=UC_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume_sha256=resume_sha256(resume))
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v12",
+"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v13",
 "GROWTH_PREFLIGHT_SCHEMA")
- require(value["R"]==R and value["A"]==FD_A and value["C"]==FD_C,"GROWTH_PREFLIGHT_AUTHORITY")
+ require(value["R"]==R and value["A"]==UC_A and value["C"]==UC_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce","resume_sha256"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
@@ -1615,7 +1589,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v13",session=SESSION,R=R,A=FD_A,C=FD_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v14",session=SESSION,R=R,A=UC_A,C=UC_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1632,6 +1606,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
   self.inputs.recheck(self.check)
   recheck_q1_inputs(self.inputs,self.frozen,self.check)
   recheck_vm_activation(self.inputs,self.frozen,self.check)
+  history.recheck_local_preflight(self.inputs,self.frozen,self.check)
   validate_q1_frozen(self.frozen)
   self.anchor.recheck(after_create=bool(self.store.opened))
   self.anchor.previous_maintenance_recheck()
@@ -1646,7 +1621,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v13",R=R,A=FD_A,C=FD_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v14",R=R,A=UC_A,C=UC_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=history.encode_manifest_inputs(self.frozen["source_binding"]),
 custody_binding=self.anchor.custody.binding,
@@ -1798,7 +1773,7 @@ retained_custody=self.anchor.custody.summary())
   return self.result
 def main():
  parser=argparse.ArgumentParser()
- for name in ("frame","plan-archive","archives-dir","expected-commit","expected-manifest","window-binding","preflight","q1-sources","vm-activation"):
+ for name in ("frame","plan-archive","archives-dir","expected-commit","expected-manifest","window-binding","preflight","q1-sources","vm-activation","local-preflight"):
   parser.add_argument("--"+name)
  parser.add_argument("--execute",action="store_true")
  parser.add_argument("--trusted-single-admin",action="store_true")
@@ -1828,7 +1803,7 @@ def main():
   inputs.close()
  try:
   require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
-  require(history.c.VM_ADOPTION_CLOSURE is not None and history.c.HOST_FD_CLOSURE is not None,"GROWTH_FD_NOT_AUTHORIZED")
+  require(history.c.VM_ADOPTION_CLOSURE is not None and history.c.USAGE_CLOSURE is not None,"GROWTH_UC_NOT_AUTHORIZED")
   sources=growth_sources(args.expected_commit)
   require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
 for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")
@@ -1852,6 +1827,8 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   anchor.growth_inputs(frozen,sources)
   require(args.vm_activation is not None,"GROWTH_VM_ACTIVATION_REQUIRED")
   activation=adopt_vm_activation(inputs,frozen,prior.r.parse(args.vm_activation.encode("ascii"),4096))
+  require(args.local_preflight is not None,"GROWTH_LOCAL_PREFLIGHT_REQUIRED")
+  history.adopt_local_preflight(inputs,frozen,prior.r.parse(args.local_preflight.encode("ascii"),4096))
   require(activation["host_boot_id"]==window.binding["boot_id"],"GROWTH_ACTIVATION_HOST_BOOT")
   for name,path in (("qemu","/usr/bin/qemu-system-x86_64"),("image","/usr/bin/qemu-img")):
    tools[name]=Tool(path,window.check)
