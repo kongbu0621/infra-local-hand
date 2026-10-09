@@ -235,6 +235,19 @@ It preserves the original system, repaired candidate, VM configuration and one-s
 only the new output names and private source binding change. Current approval does not authorize
 retry after this failed admission. No new VM/SSH action, maintenance or core issuance occurred.
 
+Owner then replied exactly “准按” to the corrected activation request, retained as assent to that
+specific proposal under `LH-Q1-QUOTA-REPAIR-ACTIVATION-20261009-02`. The [second admission return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#修正版启用在旧运行pid文件检查处停止)
+records that protected-source, trusted local SSH material, host/QEMU and image binding checks passed.
+The entry then failed because the stopped VM's runtime pidfile was absent, but the helper incorrectly
+required it as a surviving historical file. Only the local QEMU version command ran; launch and SSH
+counters are zero. No new listener query, VM start, package install or maintenance window occurred.
+This invocation is stopped and retained, not available for replay. Absence is observed; its deletion
+actor/mechanism is not established. Separate retained PID bytes match their original startup index
+and the confirmed-stop record. A further private candidate preserves those records and the runtime
+pidfile's absence, without recreating or reusing it. Eleven offline control-flow cases pass, using
+simulated external I/O only. This next concrete activation is PREPARED/NOT_AUTHORIZED/NOT_EXECUTED;
+original limits and failure-stop rules remain. No field readiness or H01/Q4/H11 success is claimed.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
