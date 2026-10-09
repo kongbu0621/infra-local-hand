@@ -1,5 +1,35 @@
 # Execution guidance
 
+## Current approved batch: adopted VM and original core continuation (2026-10-09)
+
+Scope `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1` is **CLOSED for VA1–VA3 only**.
+[Exact A](docs/governance/Q2_CORE_VM_ADOPTION_CONTINUATION_BASELINE.md)
+`13cd2d3e7ac9a307a7c960f713524fefa2959a95`, tree `9e7ab5eb4b555cfcd33ce1d7aa56f11e26b1055d`, retains its three
+original document bytes and historical OPEN labels. [Owner B](docs/governance/Q2_CORE_VM_ADOPTION_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-CLOSURE-20261009-01`, records the adjacent batch request
+and exact reply “批准”, with only public link targets sanitized. R/source/integrity,
+Owner mandate/authority, no exceptions and change control remain unchanged.
+
+This independent C contains closure bookkeeping only; D must descend from it, without squash.
+VA1 completes the adopted current VM identity and maintenance/core producer/consumer wiring,
+nine consumed generations, retained-input/bounds checks, main publication, exact D first CI,
+independent installation and both frozen callers. VA2 permits one `lhqjgrow-20261009a`
+maintenance (at most two SSH, one verified normal shutdown and one maintenance restart).
+Only complete successful maintenance originals permit VA3, the original unissued
+`lhqcore-20261007a` H01→Q4→H11. Scope substeps need no repeated approval.
+At C, VA1 is incomplete, VA2 NOT_ISSUED, VA3/H01/Q4/H11 NOT_RUN.
+
+Use the retained successful repaired-copy activation; no exploratory SSH, module reinstall,
+extra VM startup, new scanner or side work. Ten maintenance obligations plus original core
+capture require 13024 MiB/3716 inodes; all original bounds and protections remain.
+Trusted single-admin and declared-startup premises stay; unknown/contradiction stops.
+All nine old windows remain consumed; old callers cannot be replayed. Failure stops and
+retains, without retries, supplementary collection, cleanup, rollback or another window.
+Owner authorizes A, implementation and sanitized records plus only the verified old08f
+five-file basename/bytes/SHA-256 index for main. Activation originals/index, machine paths,
+PID/boot/raw streams and new09a originals/index remain private. This closure supersedes
+older no-new-window clauses only for this exact batch and proves no readiness or core PASS.
+
 ## Current approved batch: declared-target startup checks and core continuation (2026-10-09)
 
 QI1 is complete; consumed QI2/08e was blocked by a different undeclared service. Do not repeat
