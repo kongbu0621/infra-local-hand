@@ -346,6 +346,148 @@ def test_ordinary_preflight_carries_original_cpu_and_peak_rss(monkeypatch):
     assert previous==dict(cpu_nanoseconds=25_000_000_000,rss_peak_bytes=80*h.MIB)
 
 
+@pytest.mark.parametrize("cpu,rss,cpu_exceeded,rss_exceeded", [
+    (120, 512 * h.MIB, False, False),
+    (120.125, 512 * h.MIB, True, False),
+    (120, 512 * h.MIB + 1024, False, True),
+    (120.125, 512 * h.MIB + 1024, True, True),
+])
+def test_management_budget_reports_measured_components_without_extra_reads(
+        monkeypatch, cpu, rss, cpu_exceeded, rss_exceeded):
+    calls = []
+    live_rss = 16 * h.MIB
+    own = SimpleNamespace(ru_utime=30, ru_stime=10,
+                          ru_maxrss=(rss - live_rss) // 1024)
+    children = SimpleNamespace(ru_utime=cpu - 40, ru_stime=0, ru_maxrss=0)
+
+    def usage(kind):
+        calls.append(("usage", kind))
+        return own if kind == h.resource.RUSAGE_SELF else children
+
+    def proc(pid, name, cap, check):
+        calls.append(("proc", pid, name, cap))
+        check()
+        return b"VmRSS:\t16384 kB\n"
+
+    def process(pid, vm, code):
+        return SimpleNamespace(is_vm=vm,
+            process=SimpleNamespace(pid=pid, poll=lambda: code))
+
+    monkeypatch.setattr(h.resource, "getrusage", usage)
+    monkeypatch.setattr(h.resource, "getrlimit", lambda *_:
+                        pytest.fail("budget observation must not read RLIMIT"))
+    monkeypatch.setattr(h, "proc_bytes", proc)
+    monkeypatch.setattr(h, "COMMANDS", [process(11, False, None),
+                        process(12, True, None), process(13, False, 0)])
+    if not (cpu_exceeded or rss_exceeded):
+        assert h.management_usage() == dict(cpu_seconds=cpu,
+            rss_upper_observation_bytes=rss, complete=True, live_children=1,
+            vm_excluded=True, guest_aggregate="UNKNOWN")
+    else:
+        with pytest.raises(h.prior.r.ObservationError,
+                           match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
+            h.management_usage()
+        assert raised.value.diagnostic == dict(operation="management_budget",
+            stage="management_usage",
+            cpu=dict(actual=cpu, limit=120, unit="seconds", exceeded=cpu_exceeded),
+            rss=dict(actual=rss, limit=512 * h.MIB, unit="bytes", exceeded=rss_exceeded),
+            components=dict(self_cpu_seconds=40, exited_children_cpu_seconds=cpu - 40,
+                self_peak_rss_bytes=rss - live_rss, live_non_vm_rss_bytes=live_rss,
+                live_children=1, live_rss_complete=True))
+    assert calls == [("usage", h.resource.RUSAGE_SELF),
+                     ("usage", h.resource.RUSAGE_CHILDREN),
+                     ("proc", 11, "status", 16384)]
+
+
+def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
+    monkeypatch.setattr(h.resource, "getrusage", lambda kind: SimpleNamespace(
+        ru_utime=121 if kind == h.resource.RUSAGE_SELF else 0,
+        ru_stime=0, ru_maxrss=32768))
+    monkeypatch.setattr(h, "COMMANDS", [SimpleNamespace(is_vm=False,
+        process=SimpleNamespace(pid=11, poll=lambda: None))])
+    calls = []
+
+    def unavailable(pid, name, cap, check):
+        calls.append((pid, name, cap))
+        raise OSError("synthetic unavailable process")
+
+    monkeypatch.setattr(h, "proc_bytes", unavailable)
+    with pytest.raises(h.prior.r.ObservationError,
+                       match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
+        h.management_usage()
+    diagnostic = raised.value.diagnostic
+    assert diagnostic["cpu"] == dict(actual=121, limit=120, unit="seconds", exceeded=True)
+    assert diagnostic["rss"] == dict(actual=32 * h.MIB, limit=512 * h.MIB,
+                                      unit="bytes", exceeded=False)
+    assert diagnostic["components"]["live_non_vm_rss_bytes"] == 0
+    assert diagnostic["components"]["live_rss_complete"] is False
+    assert diagnostic["components"]["live_children"] == 1
+    assert calls == [(11, "status", 16384)]
+
+
+@pytest.mark.parametrize("case", [
+    "exact_boundary", "previous_cpu", "previous_rss", "children_peak",
+    "both", "last_peak",
+])
+def test_usage_budget_diagnostic_preserves_handoff_and_rejected_sample(monkeypatch, case):
+    previous = dict(cpu_nanoseconds=119_000_000_000, rss_peak_bytes=32 * h.MIB)
+    current = dict(cpu_seconds=0.5, rss_upper_observation_bytes=64 * h.MIB)
+    child_peak = 128 * h.MIB
+    last_peak = previous["rss_peak_bytes"]
+    if case == "exact_boundary":
+        previous["cpu_nanoseconds"] = 119_999_999_999
+        current["cpu_seconds"] = 0
+        child_peak = 512 * h.MIB
+    elif case in ("previous_cpu", "both"):
+        current["cpu_seconds"] = 1  # Existing +1 ns rounding exceeds the bound.
+    if case in ("previous_rss", "both"):
+        previous["rss_peak_bytes"] = last_peak = 512 * h.MIB + 1
+    elif case == "children_peak":
+        child_peak = 512 * h.MIB + 1024
+    elif case == "last_peak":
+        last_peak = 512 * h.MIB + 1
+    expected_cpu = previous["cpu_nanoseconds"] + int(current["cpu_seconds"] * 1e9 + 1)
+    expected_rss = max(last_peak, current["rss_upper_observation_bytes"], child_peak)
+    calls = []
+
+    def management():
+        calls.append("management")
+        return dict(current)
+
+    def children(kind):
+        calls.append(kind)
+        assert kind == h.resource.RUSAGE_CHILDREN
+        return SimpleNamespace(ru_maxrss=child_peak // 1024)
+
+    monkeypatch.setattr(h, "management_usage", management)
+    monkeypatch.setattr(h.resource, "getrusage", children)
+    usage = h.Usage(previous)
+    usage.last["rss_peak_bytes"] = last_peak
+    before, original = dict(usage.last), dict(previous)
+    if case == "exact_boundary":
+        assert usage.sample() == dict(cpu_nanoseconds=120_000_000_000,
+                                      rss_peak_bytes=512 * h.MIB)
+    else:
+        with pytest.raises(h.prior.r.ObservationError,
+                           match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
+            usage.sample()
+        assert raised.value.diagnostic == dict(operation="management_budget",
+            stage="usage_sample",
+            cpu=dict(actual=expected_cpu, limit=120_000_000_000, unit="nanoseconds",
+                     exceeded=expected_cpu > 120_000_000_000),
+            rss=dict(actual=expected_rss, limit=512 * h.MIB, unit="bytes",
+                     exceeded=expected_rss > 512 * h.MIB),
+            components=dict(previous_cpu_nanoseconds=previous["cpu_nanoseconds"],
+                current_cpu_nanoseconds=int(current["cpu_seconds"] * 1e9 + 1),
+                previous_rss_peak_bytes=previous["rss_peak_bytes"],
+                last_rss_peak_bytes=before["rss_peak_bytes"],
+                management_rss_bytes=current["rss_upper_observation_bytes"],
+                exited_children_peak_rss_bytes=child_peak))
+        assert usage.last == before
+    assert previous == original
+    assert calls == ["management", h.resource.RUSAGE_CHILDREN]
+
+
 @pytest.mark.parametrize('change',['old_schema','writer_fields','missing','cpu_zero','cpu_bool',
     'cpu_limit','rss_zero','rss_limit','fresh_deadline','short_change','boot','origins'])
 def test_ordinary_handoff_rejects_old_or_unbounded_inputs(change):

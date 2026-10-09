@@ -1282,6 +1282,15 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
    for suffix in history.PREVIOUS_JOURNAL_ABSENT:
     self.absent("."+fixed["session"]+"."+suffix)
   history.build_previous_maintenance(files)
+def _check_management_budget(cpu,rss,*,stage,cpu_limit,components):
+ if cpu<=cpu_limit and rss<=512*MIB:
+  return
+ error=prior.r.ObservationError("GROWTH_MANAGEMENT_BUDGET")
+ error.diagnostic=dict(operation="management_budget",stage=stage,
+cpu=dict(actual=cpu,limit=cpu_limit,unit="seconds" if stage=="management_usage" else "nanoseconds",
+exceeded=cpu>cpu_limit),
+rss=dict(actual=rss,limit=512*MIB,unit="bytes",exceeded=rss>512*MIB),components=components)
+ raise error
 def management_usage():
  own,children=(resource.getrusage(kind) for kind in (resource.RUSAGE_SELF,resource.RUSAGE_CHILDREN))
  cpu=own.ru_utime+own.ru_stime+children.ru_utime+children.ru_stime
@@ -1297,7 +1306,11 @@ def management_usage():
    rss+=int(found[1])*1024
   except (OSError,ValueError,RuntimeError):
    complete=False
- require(cpu<=120 and rss<=512*MIB,"GROWTH_MANAGEMENT_BUDGET")
+ _check_management_budget(cpu,rss,stage="management_usage",cpu_limit=120,
+components=dict(self_cpu_seconds=own.ru_utime+own.ru_stime,
+exited_children_cpu_seconds=children.ru_utime+children.ru_stime,
+self_peak_rss_bytes=own.ru_maxrss*1024,live_non_vm_rss_bytes=rss-own.ru_maxrss*1024,
+live_children=len(live),live_rss_complete=complete))
  return dict(cpu_seconds=cpu,rss_upper_observation_bytes=rss,complete=complete,
 live_children=len(live),vm_excluded=True,guest_aggregate="UNKNOWN")
 class Usage:
@@ -1307,9 +1320,13 @@ class Usage:
  def sample(self):
   value=management_usage()
   cpu=self.previous["cpu_nanoseconds"]+int(value["cpu_seconds"]*1000000000+1)
-  rss=max(self.last["rss_peak_bytes"],value["rss_upper_observation_bytes"],
-resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024)
-  require(cpu<=120000000000 and rss<=512*MIB,"GROWTH_MANAGEMENT_BUDGET")
+  children_rss=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024
+  rss=max(self.last["rss_peak_bytes"],value["rss_upper_observation_bytes"],children_rss)
+  _check_management_budget(cpu,rss,stage="usage_sample",cpu_limit=120000000000,
+components=dict(previous_cpu_nanoseconds=self.previous["cpu_nanoseconds"],
+current_cpu_nanoseconds=cpu-self.previous["cpu_nanoseconds"],
+previous_rss_peak_bytes=self.previous["rss_peak_bytes"],last_rss_peak_bytes=self.last["rss_peak_bytes"],
+management_rss_bytes=value["rss_upper_observation_bytes"],exited_children_peak_rss_bytes=children_rss))
   self.last=dict(cpu_nanoseconds=cpu,rss_peak_bytes=rss)
   return dict(self.last)
 def resume_sha256(resume):

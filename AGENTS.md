@@ -61,6 +61,14 @@ record identifies the live matching PID, field or cwd. Do not repeat this lookup
 failure to the stale unit context. Repair `c1a47acb0442f874b308f317829f3c9b510abfb0` has exact
 first CI 3/3 success; this does not restore the consumed window. No further field action occurred.
 
+The [subsequent local budget diagnosis](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#只读调用前的本地预算拒绝)
+addresses a reported private process-check caller stopping at GROWTH_MANAGEMENT_BUDGET with zero
+SSH requests. The caller and raw failure record are not in this repository; its exact cause is
+not established. Both existing host budget checks now attach measured values, limits, components
+and the failing stage without changing thresholds or accounting. Inspect the already saved private
+caller and failure record before changing its wiring. Do not infer guest resource exhaustion,
+clear prior accounting, increase limits, or replay a consumed call on the basis of this repair.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
