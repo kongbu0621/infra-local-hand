@@ -65,6 +65,13 @@ repair CI's single missing-PID test-double failure remains recorded; only that f
 The immutable UC1 freeze, five caller hashes and terminal gate were rechecked unchanged; no new
 field step or core package followed the consumed failure.
 
+The [core transport continuation task](docs/a2-execution/CORE_TRANSPORT_CONTINUATION_TASK_20261010.txt)
+consolidates the next local preparation: exact four-original/absent-receipt adoption, producer and
+independent consumer wiring, full FD lifecycle proof within 128, and unchanged cumulative cost rules.
+One more retained archive FD invalidates the existing conservative 128 bound; actual overflow was
+not observed. Complete the offline candidate and callers as one core work item. This task does not
+reopen consumed UC2, authorize another field window, publish private evidence or add side features.
+
 ## Current approved batch: host FD ownership and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-HOST-FD-CONTINUATION-v1` is **CLOSED for FD1–FD3 only**.
