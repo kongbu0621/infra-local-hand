@@ -221,6 +221,20 @@ data disks. This prepared action requires explicit Owner review under the existi
 No kernel rollback, quota bypass, future-update policy, maintenance growth or core issuance is added.
 Do not replay old callers. Guest boot/package acceptance and H01/Q4/H11 remain NOT_RUN.
 
+Owner replied “批准” to the exact repaired-copy activation proposal, retained as
+`LH-Q1-QUOTA-REPAIR-ACTIVATION-20261009-01`. The [activation admission return](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#获准启用在本地源码保护准入处停止)
+supersedes its pending status. The new private helper stopped during local input admission:
+ordinary repository auxiliary source has mode 0664, which its protected-input reader rejects.
+This is an execution-preparation defect, not a guest return. No host/image admission command,
+QEMU launch, SSH or package install occurred; both launch and SSH counters are zero. The failed
+entry, authority and output remain retained and must not be replayed under the failure-stop rule.
+Offline preparation now uses independent 0600 copies with the same pinned source bytes, retaining
+the original permission checks. Exact rejected input metadata is recorded. Ten additional offline
+checks passed; the separate corrected activation proposal is prepared, NOT_AUTHORIZED/NOT_EXECUTED.
+It preserves the original system, repaired candidate, VM configuration and one-start/one-SSH limits;
+only the new output names and private source binding change. Current approval does not authorize
+retry after this failed admission. No new VM/SSH action, maintenance or core issuance occurred.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`
