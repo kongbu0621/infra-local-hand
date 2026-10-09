@@ -334,6 +334,12 @@ def test_user_manager_records_identity_without_environment_or_credential_side_ef
     assert trace[0][1][0] == "--user"
     assert callable(trace[0][2]["preexec_fn"])
     assert trace[0][2]["environment"]["XDG_RUNTIME_DIR"] == "/run/user/1100"
+    credentials=[]
+    fake_os.setgroups=lambda value:credentials.append(('groups',value))
+    fake_os.setresgid=lambda *value:credentials.append(('gid',value))
+    fake_os.setresuid=lambda *value:credentials.append(('uid',value))
+    trace[0][2]['preexec_fn']()
+    assert credentials==[('groups',[]),('gid',(1100,1100,1100)),('uid',(1100,1100,1100))]
     assert [item[0] for item in trace] == ["bound", "collect"] + ([] if returncode else ["verify"])
     rendered = g.canonical(inventory.context)
     assert b"DBUS_SESSION_BUS_ADDRESS" not in rendered

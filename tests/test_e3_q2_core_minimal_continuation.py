@@ -39,6 +39,9 @@ def originals(monkeypatch,request):
         previous_maintenance_files=previous,source_binding=dict(synthetic='eight fixed input relation',guest_startup_assurance=g.guest_startup_assurance(),resume=p.maintenance_resume()),
         inventory={key:desc[key] for key in ('expected_units','domain_cgroups','domain_units','protected_roots','essential_paths')},
         horizon={},description=b'synthetic capacity description')
+    from core_runtime_fixture import binding, report as runtime_report
+    frozen['runtime_parent_binding']=binding()
+    frozen['source_binding']['runtime_parent_binding_sha256']=h.digest(h.canonical(binding()))
     frozen['q1_raw']=q1_raw
     frozen['source_binding'].update(q1_declaration=proof,sources={'q1_'+k:v for k,v in proof['sources'].items()})
     start=b'q1_vm=/fixture\nqemu-system-x86_64 \\\n -serial file:$q1_log -pidfile /fixture/vm.pid -drive if=none,id=os,format=qcow2,file=/fixture/system.qcow2\n\n'
@@ -52,6 +55,7 @@ def originals(monkeypatch,request):
         frozen.update(vm_activation=activation,activation_files=files,activation_index=index,anchor_path='/fixture',boot_id=activation['current_boot_id'])
         frozen['source_binding']['vm_activation']=activation
         desc['original_boot_id']=pre['boot_id']=activation['current_boot_id']
+    pre['runtime_preparation']=runtime_report(desc,pre['boot_id'])
     sha=h.digest(h.canonical(frozen['source_binding']))
     desc['source_binding_sha256']=pre['source_binding_sha256']=sha
     original,restart=h.qemu_argv(start,'/fixture',activation['serial'] if activation else '/fixture/serial',activation=activation)
@@ -62,6 +66,7 @@ def originals(monkeypatch,request):
         original_boot_id=pre['boot_id'],pre_report_sha256=h.digest(h.canonical(pre)),
         journal_device=device(g.NEW_SIZE),resize_result=dict(returncode=0,both_eof=True,
             stdout_bytes=0,stderr_bytes=0,stdout_sha256=h.digest(b''),stderr_sha256=h.digest(b'')))
+    post['runtime_preparation']=runtime_report(desc,post['boot_id'],'post')
     post['journal_device']['superblock']['filesystem_bytes']=g.NEW_SIZE
     ack=dict(schema=g.REPORT_SCHEMA,session=g.SESSION,status='POWER_OFF_REQUESTED',
         nonce=desc['nonce'],pre_report_sha256=h.digest(h.canonical(pre)),guest_startup_assurance=g.guest_startup_assurance())
@@ -72,7 +77,7 @@ def originals(monkeypatch,request):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v11',R=h.R,A=h.VM_A,C=h.VM_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v12',R=h.R,A=h.RT_A,C=h.RT_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
@@ -106,7 +111,7 @@ def originals(monkeypatch,request):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v11',R=h.R,A=h.VM_A,C=h.VM_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v12',R=h.R,A=h.RT_A,C=h.RT_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],

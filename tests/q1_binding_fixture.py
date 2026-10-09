@@ -28,9 +28,9 @@ def identity():
 
 
 def inventory():
+    from core_runtime_fixture import inventory as runtime_inventory
     return dict(expected_units=[dict(name=f'old{i}.service',control_group=None) for i in range(18)],
-        domain_units=[dict(name=f'old{i}.slice',manager='system',control_group=f'/old{i}.slice') for i in range(6)],
-        domain_cgroups=[f'/old{i}.slice' for i in range(6)],
+        **runtime_inventory(),
         protected_roots=['/fixture',BASE],essential_paths=['/fixture/evidence'])
 
 

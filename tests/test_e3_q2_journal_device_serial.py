@@ -153,16 +153,8 @@ def test_device_does_not_accept_truncated_twenty_byte_identity(block_boundary):
 
 
 def description(serial):
-    paths = {role: "/fixture/" + role for role in g.r.ROLES}
-    return dict(schema=g.SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", nonce="a" * 64,
-        source_binding_sha256="b" * 64, paths=paths,
-        saved_rows=[dict(role=role, path=paths[role], filesystem=dict(uuid=UUID)) for role in g.r.ROLES],
-        original_boot_id=UUID, journal_serial=serial,
-        expected_units=[dict(name="old.service", control_group="/old.service")],
-        domain_cgroups=["/old.slice"],
-        domain_units=[dict(name="old.slice", manager="system", control_group="/old.slice")],
-        protected_roots=["/fixture"], essential_paths=["/fixture/evidence"],
-        window_seconds=900, change_seconds=780)
+    from test_e3_q2_journal_growth_guest_completion import description as fixture
+    return dict(fixture(),journal_serial=serial)
 
 
 @pytest.mark.parametrize("serial", ["x", "A" * 20])
@@ -216,3 +208,9 @@ def test_host_rejects_serial_that_would_be_truncated_by_virtio(image_boundary, s
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_JOURNAL_SERIAL$"):
         images = image_boundary(serial)
         images.close()
+
+
+@pytest.fixture(autouse=True)
+def runtime_pin(monkeypatch):
+    from core_runtime_fixture import patch
+    patch(monkeypatch)

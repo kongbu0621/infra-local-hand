@@ -127,16 +127,11 @@ class FakeEffects:
                           "mount_id": index + 40, "fs_uuid": uuid}
                    for index, role in enumerate(directory_roles)}
         locators = self.context['manifest']['locators']
-        cgroups = {role + '_cgroup': locators[role + '_parent_unit']
-            for role in ('controller', 'management', 'supervisor', 'query', 'ordinary')}
-        cgroups['retained_ordinary_cgroup'] = Path(locators['retained_ordinary_parent_path']).name
-        parents.update({role: {"path": (locators['retained_ordinary_parent_path']
-                                   if role == 'retained_ordinary_cgroup' else '/sys/fs/cgroup/' + unit),
-                               "dev": 99, "ino": index + 50,
-                               "unit": unit,
-                               "invocation_id": str(index + 1) * 32,
-                               "controllers": ["cpu", "memory", "pids"]}
-                        for index, (role, unit) in enumerate(cgroups.items())})
+        from core_runtime_fixture import binding
+        cgroups = binding()['parents']
+        parents.update({role+'_cgroup':dict(path='/sys/fs/cgroup'+row['control_group'],
+            unit=row['unit'],dev=99,ino=index+50,invocation_id=str(index+1)*32,controllers=['cpu','memory','pids'])
+            for index,(role,row) in enumerate(cgroups.items())})
         filesystems = {role: {"mount_id": parents[role]["mount_id"],
                               "dev": parents[role]["dev"], "fs_uuid": uuid,
                               "fstype": "ext4", "mount_options": ["rw", "prjquota"],

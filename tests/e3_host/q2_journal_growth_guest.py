@@ -18,15 +18,58 @@ import pwd
 from e3_host import q2_core_capacity_reader as r
 require, canonical, digest=r.require, r.canonical, r.digest
 MAX_BYTES, MAX_ENTRIES=268435456, 32768
-SESSION="lhqjgrow-20261009a"
-SCHEMA="lhq-journal-growth-input/v3"
-REPORT_SCHEMA="lhq-journal-growth-guest/v3"
+SESSION="lhqjgrow-20261009b"
+SCHEMA="lhq-journal-growth-input/v4"
+REPORT_SCHEMA="lhq-journal-growth-guest/v4"
 OLD_SIZE, NEW_SIZE=268435456, 536870912
 STREAM_LIMIT=1048576
 ENVIRONMENT={"HOME": "/root", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
  "LANG": "C", "LC_ALL": "C", "SYSTEMD_COLORS": "0",
  "SYSTEMD_PAGER": "cat"}
 UNIT_PATTERN=re.compile(r"[A-Za-z0-9_.:@\\x-]{1,240}\.(?:service|scope|slice|socket|timer|path|target)")
+RUNTIME_BINDING_SHA="8593dcfdf2b169176b8f7025e392a9942589ee19d3cc9d3c04a5692a5f6ccd9b"
+RUNTIME_SOURCES={
+ "original_plan":"efff343c7967dcc43c54420accafb2e91a5b4fb563419b00a86d41a58817fa7c",
+ "retry_preparation":"586f0fd79ceb869a8e1ed238d925b6cdbf2cceaddf233687df81ea320bded4fb",
+ "system_plan":"85633b837718282ba6590b7a6679d51aa60addfb0f5be39ea929af83de4a45c1",
+ "q2_prepare.py":"763ac7a7fcfb59f534f5752767cb7b84791cd5538b693fed232248d24da1904b",
+ "q2_prepare_contract.py":"dd2e459798edcfa73742ffea453dd54b81cfaa07cdac9700adf46752ab0af0c5"}
+RUNTIME_ROLES=("controller","management","supervisor","query","ordinary","retained_ordinary")
+def validate_runtime_binding(value, inventory=None):
+ require(type(value) is dict and set(value)=={"schema","sources","account","parents","manager"}
+ and len(canonical(value))<=8192 and digest(canonical(value))==RUNTIME_BINDING_SHA
+ and value["schema"]=="lhq-runtime-parent-binding/v1" and value["sources"]==RUNTIME_SOURCES,
+ "GROWTH_RUNTIME_BINDING")
+ require(type(value["account"]) is dict and set(value["account"])=={"name","uid","gid"}
+ and value["account"]["uid"]==value["account"]["gid"]==1100
+ and re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}",value["account"]["name"]),"GROWTH_RUNTIME_ACCOUNT")
+ require(type(value["parents"]) is dict and set(value["parents"])==set(RUNTIME_ROLES),"GROWTH_RUNTIME_ROLES")
+ for role,row in value["parents"].items():
+  require(type(row) is dict and set(row)=={"unit","manager","control_group","memory_bytes","tasks_max","cpu_quota_per_sec_usec"}
+ and UNIT_PATTERN.fullmatch(row["unit"]) and row["unit"].endswith(".slice")
+ and row["manager"]==("user" if role=="retained_ordinary" else "system")
+ and row["memory_bytes"]==(268435456 if role in ("ordinary","retained_ordinary","query") else 536870912)
+ and row["tasks_max"]==(32 if role=="ordinary" else 64)
+ and row["cpu_quota_per_sec_usec"]==1000000,"GROWTH_RUNTIME_ROLE")
+  r.path_value(row["control_group"])
+  if inventory is not None:
+   require(dict(name=row["unit"],manager=row["manager"],control_group=row["control_group"])
+ in inventory["domain_units"] and row["control_group"] in inventory["domain_cgroups"],"GROWTH_RUNTIME_DOMAIN")
+ manager=value["manager"]
+ require(type(manager) is dict and set(manager)=={"unit","control_group","fragment","dropins"}
+ and manager["unit"]=="user@1100.service" and manager["control_group"]=="/user.slice/user-1100.slice/user@1100.service"
+ and manager["fragment"]=="/usr/lib/systemd/system/user@.service"
+ and type(manager["dropins"]) is list and 1<=len(manager["dropins"])<=8,"GROWTH_RUNTIME_MANAGER")
+ for path in manager["dropins"]:r.path_value(path)
+ require(value["parents"]["ordinary"]["control_group"]=="/"+value["parents"]["controller"]["unit"]+"/"+value["parents"]["ordinary"]["unit"]
+ and value["parents"]["retained_ordinary"]["control_group"]==manager["control_group"]+"/"+value["parents"]["retained_ordinary"]["unit"],"GROWTH_RUNTIME_HIERARCHY")
+ return value
+def runtime_config(row, *, manager=False):
+ prefix=("[Service]\nDelegate=cpu memory pids\n" if manager else
+ "[Unit]\nDescription=Local Hand isolated Q2 preparation\nStopWhenUnneeded=no\n[Slice]\n")
+ require(row["cpu_quota_per_sec_usec"]==1000000,"GROWTH_RUNTIME_CPU")
+ return (prefix+"CPUAccounting=yes\nCPUQuota=100%\nCPUQuotaPeriodSec=100ms\nMemoryAccounting=yes\nMemoryMax="
+ +str(row["memory_bytes"])+"\nMemorySwapMax=0\nTasksAccounting=yes\nTasksMax="+str(row["tasks_max"])+"\n").encode()
 def guest_startup_assurance():
  """Fixed Owner-confirmed management premise, not an observation result."""
  return dict(mode="TRUSTED_SINGLE_ADMIN", indirect_startup_observation="NOT_PERFORMED",
@@ -112,6 +155,7 @@ def proc_bytes(pid, name, cap, check):
   os.close(fd)
 def growth_descriptor(frozen, nonce, phase, window, pre=None):
  value=dict(schema=SCHEMA, session=SESSION, phase=phase, nonce=nonce,
+ runtime_parent_binding=validate_runtime_binding(frozen["runtime_parent_binding"],frozen["inventory"]),
  guest_startup_assurance=validate_startup_assurance(frozen.get("guest_startup_assurance")),
  source_binding_sha256=frozen["source_binding_sha256"], paths=frozen["paths"],
  saved_rows=frozen["saved_rows"], original_boot_id=frozen["boot_id"],
@@ -164,13 +208,14 @@ def descriptor(raw):
  value=r.parse(raw, 65536)
  keys={"schema", "session", "phase", "nonce", "source_binding_sha256", "paths", "saved_rows",
  "original_boot_id", "journal_serial", "expected_units", "domain_cgroups", "domain_units",
- "protected_roots", "essential_paths", "window_seconds", "change_seconds", "guest_startup_assurance"}
+ "protected_roots", "essential_paths", "window_seconds", "change_seconds", "guest_startup_assurance", "runtime_parent_binding"}
  require(type(value) is dict and value.get("phase") in ("pre", "post"), "GROWTH_DESCRIPTION")
  if value["phase"] == "post":
   keys |= {"pre_report", "pre_report_sha256"}
  require(set(value) == keys and value["schema"] == SCHEMA and value["session"] == SESSION,
  "GROWTH_DESCRIPTION")
  validate_startup_assurance(value.get("guest_startup_assurance"))
+ validate_runtime_binding(value.get("runtime_parent_binding"),value)
  sha_value(value["nonce"]); sha_value(value["source_binding_sha256"])
  uuid_value(value["original_boot_id"])
  require(type(value["journal_serial"]) is str and
@@ -483,7 +528,8 @@ class GuestInventory:
   self.records=[]
   self.context={}
   self.command_count=0
- def ctl(self, arguments, *, user_uid=None):
+ def ctl(self, arguments, *, user_uid=None, runtime_missing=False):
+  self.last_result=None
   self.command_count += 1
   self.context=dict(manager="user_1100" if user_uid is not None else "system",
  command_index=self.command_count, verb=arguments[0], arguments_sha256=digest(canonical(arguments)),
@@ -515,7 +561,10 @@ class GuestInventory:
  "--no-ask-password", *arguments], self.check,
  environment=environment, preexec_fn=child_setup)
   result=command.collect()
-  if result["returncode"] != 0 or not result["both_eof"] or result["stderr"]:
+  self.last_result={key:result[key] for key in ("returncode","both_eof")}
+  for stream in ("stdout","stderr"):
+   self.last_result.update({stream+"_bytes":len(result[stream]),stream+"_sha256":digest(result[stream])})
+  if result["returncode"] not in ((0,1) if runtime_missing and arguments[0]=="show" else (0,)) or not result["both_eof"] or result["stderr"]:
    self.context.update(returncode=result["returncode"], both_eof=result["both_eof"], pid=result["pid"],
  stdout_bytes=len(result["stdout"]), stderr_bytes=len(result["stderr"]),
  stdout_sha256=digest(result["stdout"]), stderr_sha256=digest(result["stderr"]),
@@ -528,10 +577,10 @@ class GuestInventory:
  "GROWTH_USER_BUS_DRIFT")
   verify_tool(self.systemctl, self.check)
   return result["stdout"]
- def show_many(self, names, *, user_uid=None):
+ def show_many(self, names, *, user_uid=None, raw=None):
   require(0 < len(names) <= 128 and len(names) == len(set(names)) and
  all(type(name) is str and UNIT_PATTERN.fullmatch(name) for name in names), "GROWTH_UNIT_NAME")
-  raw=self.ctl(["show", "--all", "--property=" + ",".join(self.SHOW), "--", *names], user_uid=user_uid)
+  if raw is None:raw=self.ctl(["show", "--all", "--property=" + ",".join(self.SHOW), "--", *names], user_uid=user_uid)
   result, identities={}, {}
   blocks=raw.decode("utf-8", "strict").strip().split("\n\n")
   require(0 < len(blocks) <= len(names), "GROWTH_SYSTEMCTL_UNIT_SET")
@@ -617,8 +666,8 @@ class GuestInventory:
    return dict(path=logical, state="UNPOPULATED", identity=before, events_sha256=digest(raw))
   finally:
    os.close(fd)
- def quiet_service(self, expected):
-  value=self.show(expected["name"])
+ def quiet_service(self, expected, value=None):
+  if value is None:value=self.show(expected["name"])
   require(value["Id"] == expected["name"], "GROWTH_UNIT_IDENTITY")
   if value["LoadState"] == "not-found":
    require(value["ActiveState"] == "inactive" and value["SubState"] == "dead"
@@ -944,7 +993,7 @@ def validate_completion(before_rows, after_rows):
   if after["role"] == "journal":
    require(after["available"]["bytes"] >= 400 * 1048576 and after["available"]["inodes"] >= 32768,
  "GROWTH_TARGET_CAPACITY")
-PRE_FIELDS={"schema", "session", "phase", "status", "nonce", "source_binding_sha256", "boot_id",
+PRE_FIELDS={"schema", "session", "phase", "status", "nonce", "source_binding_sha256", "boot_id", "runtime_preparation",
  "rows", "tree", "journal_device", "resize2fs", "quiescence", "resource_observation", "guest_startup_assurance"}
 def validate_pre_report(value, description):
  require(type(value) is dict and set(value) == PRE_FIELDS and value["schema"] == REPORT_SCHEMA
@@ -971,6 +1020,7 @@ def validate_pre_report(value, description):
  require(type(value["quiescence"]) is dict and value["quiescence"].get("historical_exit") == "UNKNOWN",
  "GROWTH_PRE_QUIESCENCE")
  validate_startup_report(value["quiescence"].get("startup"),description)
+ validate_runtime_report(value["runtime_preparation"],description,value["boot_id"],"pre")
  validate_resources(value["resource_observation"])
  return value
 def validate_resources(value):
@@ -1018,6 +1068,7 @@ def validate_post_report(value, description):
  require(type(value["quiescence"]) is dict and value["quiescence"].get("historical_exit") == "UNKNOWN",
  "GROWTH_POST_QUIESCENCE")
  validate_startup_report(value["quiescence"].get("startup"),description)
+ validate_runtime_report(value["runtime_preparation"],description,value["boot_id"],"post")
  validate_resources(value["resource_observation"])
  return value
 def continue_token(nonce, report_sha256):
@@ -1047,6 +1098,384 @@ def receive_token(expected, check, *, fd=0):
    continue
  require(bytes(raw) == expected, "GROWTH_CONTINUE_TOKEN")
  check()
+RUNTIME_SHOW=("Id","LoadState","ActiveState","SubState","ControlGroup","InvocationID","Job",
+ "FragmentPath","DropInPaths","MemoryMax","MemorySwapMax","TasksMax","CPUQuotaPerSecUSec",
+ "Delegate","User","MainPID","ControlPID")
+def validate_runtime_report(value, description, current_boot, phase):
+ binding=validate_runtime_binding(description["runtime_parent_binding"],description)
+ require(type(value) is dict and set(value)=={"schema","binding_sha256","nonce","boot_id","phase",
+ "commands","configs","directories","pools","parents","manager","bus","elapsed_ns","tool"}
+ and len(canonical(value))<=16384 and value["schema"]=="lhq-runtime-preparation/v1"
+ and value["binding_sha256"]==digest(canonical(binding)) and value["nonce"]==description["nonce"]
+ and value["boot_id"]==current_boot and value["phase"]==phase,"GROWTH_RUNTIME_REPORT")
+ r.integer(value["elapsed_ns"],0,60000000000)
+ require(type(value["commands"]) is list and 5<=len(value["commands"])<=12,"GROWTH_RUNTIME_COMMANDS")
+ seen=set()
+ allowed={"guard_units","system_before","system_reload","system_start","system_after",
+ "user_before","user_reload","user_start","user_after"}
+ for row in value["commands"]:
+  require(type(row) is dict and set(row)=={"step","arguments","arguments_sha256","returncode","both_eof","stdout_bytes",
+ "stderr_bytes","stdout_sha256","stderr_sha256"} and row["step"] in allowed-seen
+ and row["returncode"] in ((0,1) if row["step"].endswith("before") else (0,))
+ and type(row["returncode"]) is int and row["both_eof"] is True and row["stderr_bytes"]==0,
+ "GROWTH_RUNTIME_COMMAND_RESULT")
+  seen.add(row["step"])
+  args=row["arguments"];step=row["step"]
+  require(type(args) is list and all(type(v) is str for v in args)
+ and digest(canonical(args))==row["arguments_sha256"],"GROWTH_RUNTIME_COMMAND_BINDING")
+  names=([binding["parents"]["retained_ordinary"]["unit"]] if step.startswith("user_") else
+ [parent["unit"] for parent in binding["parents"].values() if parent["manager"]=="system"]
+ +["user-runtime-dir@1100.service",binding["manager"]["unit"]])
+  if step=="guard_units":names=[item["name"] for item in description["expected_units"]]
+  if step.endswith("reload"):require(args==["daemon-reload"],"GROWTH_RUNTIME_COMMAND_POLICY")
+  elif step.endswith("start"):
+   require(args[:2]==["start","--"] and 0<len(args[2:])==len(set(args[2:]))
+ and set(args[2:])<=set(names),"GROWTH_RUNTIME_COMMAND_POLICY")
+  else:
+   require(args[:4]==["show","--all","--property="+",".join(GuestInventory.SHOW if step=="guard_units" else RUNTIME_SHOW),"--"]
+ and len(args[4:])==len(names) and set(args[4:])==set(names),"GROWTH_RUNTIME_COMMAND_POLICY")
+  for key in ("arguments_sha256","stdout_sha256","stderr_sha256"):sha_value(row[key])
+  r.integer(row["stdout_bytes"],0,STREAM_LIMIT)
+ require({"guard_units","system_before","system_after","user_before","user_after"}<=seen,"GROWTH_RUNTIME_COMMAND_COVERAGE")
+ order=("guard_units","system_before","system_reload","system_start","system_after","user_before","user_reload","user_start","user_after")
+ require([row["step"] for row in value["commands"]]==[step for step in order if step in seen],"GROWTH_RUNTIME_COMMAND_ORDER")
+ require(type(value["parents"]) is dict and set(value["parents"])==set(RUNTIME_ROLES),"GROWTH_RUNTIME_PARENT_REPORT")
+ for role,row in value["parents"].items():
+  require(type(row) is dict and set(row)=={"properties","cgroup"},"GROWTH_RUNTIME_PARENT_REPORT")
+  _runtime_properties(row["properties"],binding["parents"][role],active=True)
+  group=row["cgroup"]
+  require(type(group) is dict and group.get("state")=="UNPOPULATED"
+ and group.get("path")==binding["parents"][role]["control_group"],"GROWTH_RUNTIME_PARENT_GROUP")
+ _runtime_properties(value["manager"],dict(binding["parents"]["retained_ordinary"],
+ unit=binding["manager"]["unit"],control_group=binding["manager"]["control_group"]),active=True,manager=True)
+ require(type(value["configs"]) is list and len(value["configs"])==7
+ and type(value["directories"]) is list and len(value["directories"])<=2,"GROWTH_RUNTIME_CONFIG_REPORT")
+ expected={role:runtime_config(row) for role,row in binding["parents"].items()}
+ expected["manager"]=runtime_config(binding["parents"]["retained_ordinary"],manager=True)
+ command_steps=seen
+ seen=set();created=0
+ for row in value["configs"]:
+  require(type(row) is dict and set(row)=={"role","path","identity","bytes","sha256","created"}
+ and row["role"] in set(expected)-seen and type(row["created"]) is bool
+ and row["bytes"]==len(expected[row["role"]]) and row["sha256"]==digest(expected[row["role"]]),"GROWTH_RUNTIME_CONFIG_REPORT")
+  role=row["role"];seen.add(role);created+=int(row["created"])
+  if role=="manager":paths=["/etc/systemd/system/user@1100.service.d/50-local-hand-q2.conf"]
+  elif role=="retained_ordinary":paths=["/run/user/1100/systemd/user/"+binding["parents"][role]["unit"]]
+  else:paths=[prefix+binding["parents"][role]["unit"] for prefix in
+ ("/run/systemd/system/","/etc/systemd/system/","/usr/lib/systemd/system/")]
+  require(row["path"] in paths and (not row["created"] or role in ("ordinary","retained_ordinary")),"GROWTH_RUNTIME_CONFIG_PATH")
+  ident=row["identity"];uid=1100 if role=="retained_ordinary" else 0
+  require(type(ident) is list and len(ident)==6 and all(type(n) is int and n>=0 for n in ident)
+ and ident[2:]==[stat.S_IFREG|0o644,uid,uid,1],"GROWTH_RUNTIME_CONFIG_IDENTITY")
+  require(not row["created"] or row["path"].startswith("/run/"),"GROWTH_RUNTIME_CONFIG_CREATE_PATH")
+ require(created<=2 and sum(row["bytes"] for row in value["configs"] if row["created"])<=8192,"GROWTH_RUNTIME_CONFIG_BOUND")
+ for role,step in (("ordinary","system_reload"),("retained_ordinary","user_reload")):
+  require(next(row["created"] for row in value["configs"] if row["role"]==role)==(step in command_steps),"GROWTH_RUNTIME_RELOAD_BINDING")
+ paths=set()
+ for row in value["directories"]:
+  require(type(row) is dict and set(row)=={"path","identity"} and row["path"] in
+ {"/run/user/1100/systemd","/run/user/1100/systemd/user"}-paths,"GROWTH_RUNTIME_DIRECTORY_REPORT")
+  paths.add(row["path"]);ident=row["identity"]
+  require(type(ident) is list and len(ident)==6 and all(type(n) is int and n>=0 for n in ident)
+ and ident[2:5]==[stat.S_IFDIR|0o755,1100,1100],"GROWTH_RUNTIME_DIRECTORY_IDENTITY")
+ require(type(value["pools"]) is list and 1<=len(value["pools"])<=2
+ and len({row["dev"] for row in value["pools"]})==len(value["pools"]),"GROWTH_RUNTIME_POOLS")
+ for pool in value["pools"]:
+  require(type(pool) is dict and set(pool)=={"dev","reserved_bytes","reserved_inodes","before","after"}
+ and pool["reserved_bytes"]==8192*(1 if phase=="pre" else 2)
+ and pool["reserved_inodes"]==32*(1 if phase=="pre" else 2),"GROWTH_RUNTIME_POOL_RESERVE")
+  for when in ("before","after"):
+   require(type(pool[when]) is list and len(pool[when])==2
+ and pool[when][0]>=pool["reserved_bytes"] and pool[when][1]>=pool["reserved_inodes"],"GROWTH_RUNTIME_POOL_CAPACITY")
+ require(type(value["bus"]) is dict and set(value["bus"])=={"runtime","bus","private"},"GROWTH_RUNTIME_BUS_REPORT")
+ for key,row in value["bus"].items():
+  require(type(row) is list and len(row)==6 and all(type(n) is int and n>=0 for n in row)
+ and row[3:5]==[1100,1100] and (row[2]==stat.S_IFDIR|0o700 if key=="runtime" else stat.S_ISSOCK(row[2])),"GROWTH_RUNTIME_BUS_IDENTITY")
+ tool=value["tool"]
+ require(type(tool) is dict and set(tool)=={"path","identity","bytes","sha256"}
+ and tool["path"]=="/usr/bin/systemctl","GROWTH_RUNTIME_TOOL")
+ r.integer(tool["bytes"],1,16*1048576);sha_value(tool["sha256"])
+ ident=tool["identity"]
+ require(type(ident) is dict and set(ident)=={"dev","ino","mode","uid","gid","nlink"}
+ and all(type(n) is int and n>=0 for n in ident.values()) and ident["uid"]==ident["gid"]==0
+ and ident["nlink"]==1 and stat.S_ISREG(ident["mode"]) and ident["mode"]&0o111
+ and not ident["mode"]&0o022,"GROWTH_RUNTIME_TOOL_IDENTITY")
+ return value
+def _runtime_properties(value, row, *, active, manager=False):
+ require(type(value) is dict and set(value)==set(RUNTIME_SHOW) and value["Id"]==row["unit"]
+ and value["Job"]=="" and value["ControlPID"] in ("","0"),"GROWTH_RUNTIME_PROPERTIES")
+ require((value["ActiveState"],value["SubState"]) in
+ (("active","running" if manager else "active"),) if active else
+ (value["ActiveState"],value["SubState"]) in (("inactive","dead"),("active","running" if manager else "active")),
+ "GROWTH_RUNTIME_STATE")
+ if value["LoadState"]=="not-found":
+  require(not active and value["ActiveState"]=="inactive" and not any(value[k] for k in
+ ("FragmentPath","DropInPaths","ControlGroup","InvocationID")) and value["MainPID"] in ("","0"),"GROWTH_RUNTIME_MISSING")
+  return
+ require(value["LoadState"]=="loaded" and value["MemoryMax"]==str(row["memory_bytes"])
+ and value["TasksMax"]==str(row["tasks_max"]) and value["MemorySwapMax"]=="0"
+ and value["CPUQuotaPerSecUSec"]=="1s","GROWTH_RUNTIME_LIMITS")
+ if value["ActiveState"]=="active":
+  require(value["ControlGroup"]==row["control_group"] and re.fullmatch(r"[0-9a-f]{32}",value["InvocationID"]),"GROWTH_RUNTIME_CURRENT_IDENTITY")
+ else:require(value["ControlGroup"] in ("",row["control_group"]),"GROWTH_RUNTIME_CURRENT_GROUP")
+ if manager:require(value["User"]=="1100" and value["Delegate"]=="yes","GROWTH_RUNTIME_DELEGATE")
+ else:require(value["MainPID"] in ("","0") and not value["DropInPaths"],"GROWTH_RUNTIME_SLICE_ACTION")
+def runtime_summary(report):
+ value=report["runtime_preparation"]
+ return dict(schema="lhq-runtime-transition/v1",binding_sha256=value["binding_sha256"],nonce=value["nonce"],
+ phase=value["phase"],boot_id=value["boot_id"],report_sha256=digest(canonical(report)),
+ runtime_sha256=digest(canonical(value)),commands_sha256=digest(canonical(value["commands"])),
+ configs_sha256=digest(canonical(value["configs"])),elapsed_ns=value["elapsed_ns"],
+ parents={role:dict(unit=row["properties"]["Id"],control_group=row["properties"]["ControlGroup"],
+ invocation_id=row["properties"]["InvocationID"],identity=row["cgroup"]["identity"])
+ for role,row in value["parents"].items()},manager={key:value["manager"][key] for key in
+ ("Id","ControlGroup","InvocationID")},pools=value["pools"])
+def validate_runtime_summaries(value,binding,nonce,boots,reports):
+ validate_runtime_binding(binding)
+ require(type(value) is dict and set(value)=={"pre","post"},"GROWTH_RUNTIME_SUMMARIES")
+ for phase,row in value.items():
+  require(type(row) is dict and set(row)=={"schema","binding_sha256","nonce","phase","boot_id","report_sha256",
+ "runtime_sha256","commands_sha256","configs_sha256","elapsed_ns","parents","manager","pools"}
+ and row["schema"]=="lhq-runtime-transition/v1" and row["binding_sha256"]==digest(canonical(binding))
+ and row["nonce"]==nonce and row["phase"]==phase and row["boot_id"]==boots[phase]
+ and row["report_sha256"]==reports[phase]["sha256"],"GROWTH_RUNTIME_SUMMARY_BINDING")
+  for name in ("runtime_sha256","commands_sha256","configs_sha256"):sha_value(row[name])
+  r.integer(row["elapsed_ns"],0,60000000000)
+  require(type(row["parents"]) is dict and set(row["parents"])==set(RUNTIME_ROLES),"GROWTH_RUNTIME_SUMMARY_PARENTS")
+  for role,item in row["parents"].items():
+   require(type(item) is dict and set(item)=={"unit","control_group","invocation_id","identity"}
+ and all(item[key]==binding["parents"][role][key] for key in ("unit","control_group"))
+ and re.fullmatch(r"[0-9a-f]{32}",item["invocation_id"] or ""),"GROWTH_RUNTIME_SUMMARY_PARENT")
+   require(type(item["identity"]) is dict and set(item["identity"])==set(r.IDENTITY),"GROWTH_RUNTIME_SUMMARY_IDENTITY")
+   for v in item["identity"].values():r.integer(v)
+  require(type(row["manager"]) is dict and set(row["manager"])=={"Id","ControlGroup","InvocationID"}
+ and row["manager"]["Id"]==binding["manager"]["unit"] and row["manager"]["ControlGroup"]==binding["manager"]["control_group"]
+ and re.fullmatch(r"[0-9a-f]{32}",row["manager"]["InvocationID"] or ""),"GROWTH_RUNTIME_SUMMARY_MANAGER")
+  require(type(row["pools"]) is list and 1<=len(row["pools"])<=2,"GROWTH_RUNTIME_SUMMARY_POOLS")
+  for pool in row["pools"]:
+   require(type(pool) is dict and set(pool)=={"dev","reserved_bytes","reserved_inodes","before","after"}
+ and pool["reserved_bytes"]==8192*(1 if phase=="pre" else 2)
+ and pool["reserved_inodes"]==32*(1 if phase=="pre" else 2),"GROWTH_RUNTIME_SUMMARY_POOL")
+   r.integer(pool["dev"])
+   for key in ("before","after"):
+    require(type(pool[key]) is list and len(pool[key])==2 and all(type(n) is int for n in pool[key])
+ and pool[key][0]>=pool["reserved_bytes"] and pool[key][1]>=pool["reserved_inodes"],"GROWTH_RUNTIME_SUMMARY_CAPACITY")
+ return value
+class RuntimePreparation:
+ """One fixed pre/post preparation, inside the existing maintenance budgets."""
+ def __init__(self,maintenance,boot):
+  self.m=maintenance;self.inventory=maintenance.inventory;self.description=maintenance.description
+  self.binding=validate_runtime_binding(self.description["runtime_parent_binding"],self.description)
+  self.start=(time.monotonic_ns(),time.clock_gettime_ns(time.CLOCK_BOOTTIME))
+  self.previous=self.start;self.pool_fds={};self.config_fds=[];self.used=set()
+  self.report=dict(schema="lhq-runtime-preparation/v1",binding_sha256=digest(canonical(self.binding)),
+ nonce=self.description["nonce"],boot_id=boot,phase=self.description["phase"],commands=[],configs=[],directories=[],
+ pools=[],parents={},manager={},bus={},elapsed_ns=0,tool=self.inventory.systemctl)
+ def check(self):
+  self.m.window.check(change=True)
+  now=(time.monotonic_ns(),time.clock_gettime_ns(time.CLOCK_BOOTTIME))
+  require(all(p<=n<s+60000000000 for p,n,s in zip(self.previous,now,self.start)),"GROWTH_RUNTIME_DEADLINE")
+  self.previous=now;self.report["elapsed_ns"]=max(n-s for n,s in zip(now,self.start))
+ def command(self,step,args,*,user=False,missing=False):
+  self.check();require(step not in self.used and len(self.used)<12,"GROWTH_RUNTIME_COMMAND_REPLAY")
+  self.used.add(step)
+  row=dict(step=step,arguments=list(args),arguments_sha256=digest(canonical(args)));self.report["commands"].append(row)
+  old=self.inventory.check;self.inventory.check=self.check
+  try:return self.inventory.ctl(args,user_uid=1100 if user else None,runtime_missing=missing)
+  finally:
+   self.inventory.check=old
+   if self.inventory.last_result is not None:row.update(self.inventory.last_result)
+ def show(self,step,names,*,user=False,missing=False):
+  raw=self.command(step,["show","--all","--property="+",".join(RUNTIME_SHOW),"--",*names],user=user,missing=missing)
+  rows={}
+  for block in raw.decode("utf-8","strict").strip().split("\n\n"):
+   fields=[line.split("=",1) for line in block.splitlines()]
+   require(all(len(row)==2 for row in fields) and len({row[0] for row in fields})==len(fields),"GROWTH_RUNTIME_SHOW_FORMAT")
+   value=dict(fields)
+   require(set(value)<=set(RUNTIME_SHOW) and {"Id","LoadState","ActiveState","SubState"}<=set(value)
+ and value["Id"] in names and value["Id"] not in rows,"GROWTH_RUNTIME_SHOW_SET")
+   rows[value["Id"]]={key:value.get(key,"") for key in RUNTIME_SHOW}
+  require(set(rows)==set(names),"GROWTH_RUNTIME_SHOW_SET")
+  require(self.inventory.last_result["returncode"]==0 or missing and any(row["LoadState"]=="not-found" for row in rows.values()),"GROWTH_RUNTIME_SHOW_EXIT")
+  return rows
+ def pool(self,path):
+  self.check();fd=open_path(path,directory=True,owners=(0,1100));info=os.fstat(fd)
+  try:
+   require(r.filesystem_type(fd)==0x01021994,"GROWTH_RUNTIME_TMPFS")
+   if info.st_dev in self.pool_fds:return
+   size=os.fstatvfs(fd);count=1 if self.description["phase"]=="pre" else 2
+   row=dict(dev=info.st_dev,reserved_bytes=8192*count,reserved_inodes=32*count,
+ before=[size.f_bavail*size.f_frsize,size.f_favail],after=[])
+   require(row["before"][0]>=row["reserved_bytes"] and row["before"][1]>=row["reserved_inodes"],"GROWTH_RUNTIME_CAPACITY")
+   self.report["pools"].append(row);self.pool_fds[info.st_dev]=(fd,row);fd=None
+  finally:
+   if fd is not None:os.close(fd)
+ def absent(self,path):
+  self.check()
+  try:fd=open_path(path,owners=(0,1100))
+  except FileNotFoundError:return
+  os.close(fd);raise r.ObservationError("GROWTH_RUNTIME_SHADOW")
+ def config(self,role,path,raw,*,create=False,uid=0):
+  self.check();parent,name=path.rsplit("/",1)
+  directory=open_path(parent,directory=True,owners=(0,1100));fd=None
+  try:
+   before=identity(os.fstat(directory))
+   flags=os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NOATIME|os.O_NONBLOCK
+   if create:
+    self.m.once("runtime_config_"+role)
+    fd=os.open(name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|flags,0o600,dir_fd=directory)
+    os.fchown(fd,uid,uid);os.fchmod(fd,0o644);write_all(fd,raw,self.check);os.fsync(fd);os.close(fd);fd=None
+   fd=os.open(name,os.O_RDONLY|flags,dir_fd=directory);info=os.fstat(fd)
+   require(stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==uid and stat.S_IMODE(info.st_mode)==0o644
+ and info.st_nlink==1 and info.st_size==len(raw),"GROWTH_RUNTIME_CONFIG")
+   require(read_fd(fd,8192,self.check)==raw and stable_identity(os.fstat(fd))==stable_identity(info)
+ and identity(os.stat(name,dir_fd=directory,follow_symlinks=False))==identity(info)
+ and identity(os.stat(parent,follow_symlinks=False))==before,"GROWTH_RUNTIME_CONFIG_DRIFT")
+   self.report["configs"].append(dict(role=role,path=path,identity=list(identity(info)),bytes=len(raw),sha256=digest(raw),created=create))
+   self.config_fds.append((path,fd,stable_identity(info)));fd=None
+  finally:
+   if fd is not None:os.close(fd)
+   os.close(directory)
+ def slice_config(self,role,*,user=False):
+  row=self.binding["parents"][role];unit=row["unit"]
+  prefixes=("/run/user/1100/systemd/user/","/etc/systemd/user/","/usr/lib/systemd/user/") if user else (
+ "/etc/systemd/system/","/run/systemd/system/","/usr/lib/systemd/system/")
+  found=[]
+  for prefix in prefixes:
+   self.absent(prefix+unit+".d")
+   try:fd=open_path(prefix+unit,owners=(0,1100))
+   except FileNotFoundError:continue
+   os.close(fd);found.append(prefix+unit)
+  require(len(found)<=1,"GROWTH_RUNTIME_CONFIG_SHADOW")
+  if role not in ("ordinary","retained_ordinary"):
+   require(found==["/etc/systemd/system/"+unit],"GROWTH_RUNTIME_ORIGINAL_CONFIG")
+  if user:require(not found or found==[prefixes[0]+unit],"GROWTH_RUNTIME_USER_CONFIG")
+  if found:self.config(role,found[0],runtime_config(row),uid=1100 if user else 0)
+  return found[0] if found else None
+ def user_directories(self):
+  for path in ("/run/user/1100/systemd","/run/user/1100/systemd/user"):
+   parent,name=path.rsplit("/",1);directory=open_path(parent,directory=True,owners=(0,1100))
+   try:
+    try:fd=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC,dir_fd=directory)
+    except FileNotFoundError:
+     self.m.once("runtime_directory_"+name)
+     os.mkdir(name,0o700,dir_fd=directory)
+     fd=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC,dir_fd=directory)
+     os.fchown(fd,1100,1100);os.fchmod(fd,0o755)
+     self.report["directories"].append(dict(path=path,identity=list(identity(os.fstat(fd)))))
+    try:
+     info=os.fstat(fd)
+     require(info.st_uid==info.st_gid==1100 and stat.S_IMODE(info.st_mode) in (0o700,0o755)
+ and identity(os.stat(path,follow_symlinks=False))==identity(info),"GROWTH_RUNTIME_DIRECTORY")
+    finally:os.close(fd)
+   finally:os.close(directory)
+ def bus(self):
+  fd=open_path("/run/user/1100",directory=True,owners=(0,1100))
+  try:
+   info=os.fstat(fd)
+   require(info.st_uid==info.st_gid==1100 and stat.S_IMODE(info.st_mode)==0o700,"GROWTH_RUNTIME_USER_DIRECTORY")
+   result=dict(runtime=list(identity(info)))
+   for key,path in (("bus","bus"),("private","systemd/private")):
+    if key=="private":
+     parent=open_path("/run/user/1100/systemd",directory=True,owners=(0,1100))
+     try:item=os.stat("private",dir_fd=parent,follow_symlinks=False)
+     finally:os.close(parent)
+    else:item=os.stat(path,dir_fd=fd,follow_symlinks=False)
+    require(stat.S_ISSOCK(item.st_mode) and item.st_uid==item.st_gid==1100,"GROWTH_RUNTIME_SOCKET")
+    result[key]=list(identity(item))
+   return result
+  finally:os.close(fd)
+ def group(self,row):
+  result=self.inventory.cgroup(row["control_group"])
+  require(result["state"]=="UNPOPULATED","GROWTH_RUNTIME_GROUP")
+  path="/sys/fs/cgroup"+row["control_group"]
+  for name,expected in (("memory.max",str(row["memory_bytes"])),("memory.swap.max","0"),("pids.max",str(row["tasks_max"]))):
+   require(read_kernel(path+"/"+name,64,self.check,expected_fs=0x63677270).decode().strip()==expected,"GROWTH_RUNTIME_KERNEL_LIMIT")
+  cpu=read_kernel(path+"/cpu.max",128,self.check,expected_fs=0x63677270).decode().split()
+  require(len(cpu)==2 and all(v.isdecimal() for v in cpu) and int(cpu[0])==int(cpu[1])>0,"GROWTH_RUNTIME_KERNEL_CPU")
+  controllers=read_kernel(path+"/cgroup.controllers",256,self.check,expected_fs=0x63677270).decode().split()
+  require({"cpu","memory","pids"}<=set(controllers),"GROWTH_RUNTIME_CONTROLLERS")
+  require(result==self.inventory.cgroup(row["control_group"]),"GROWTH_RUNTIME_GROUP_DRIFT")
+  return result
+ def run(self):
+  self.m.once("runtime_preparation");self.check()
+  account=pwd.getpwuid(1100)
+  require(dict(name=account.pw_name,uid=account.pw_uid,gid=account.pw_gid)==self.binding["account"],"GROWTH_RUNTIME_ACCOUNT_CHANGED")
+  # Existing protections before any write/start, without opening a user bus.
+  names=[item["name"] for item in self.description["expected_units"]]
+  raw=self.command("guard_units",["show","--all","--property="+",".join(self.inventory.SHOW),"--",*names])
+  units=self.inventory.show_many(names,raw=raw)
+  for item in self.description["expected_units"]:self.inventory.quiet_service(item,units[item["name"]])
+  for path in self.description["domain_cgroups"]:self.inventory.cgroup(path)
+  self.inventory.processes();self.inventory.persistent();self.check()
+  self.pool("/run")
+  configs={role:self.slice_config(role) for role in RUNTIME_ROLES if role!="retained_ordinary"}
+  manager=self.binding["manager"];drop="/etc/systemd/system/user@1100.service.d/50-local-hand-q2.conf"
+  self.config("manager",drop,runtime_config(self.binding["parents"]["retained_ordinary"],manager=True))
+  system={role:row for role,row in self.binding["parents"].items() if row["manager"]=="system"}
+  manager_row=dict(self.binding["parents"]["retained_ordinary"],unit=manager["unit"],control_group=manager["control_group"])
+  runtime_unit="user-runtime-dir@1100.service"
+  names=[row["unit"] for row in system.values()]+[runtime_unit,manager["unit"]]
+  before=self.show("system_before",names,missing=configs["ordinary"] is None)
+  for role,row in system.items():
+   value=before[row["unit"]];_runtime_properties(value,row,active=False)
+   require(value["FragmentPath"]==(configs[role] or ""),"GROWTH_RUNTIME_FRAGMENT")
+   if value["ActiveState"]=="active":self.group(row)
+  def manager_check(value,active):
+   _runtime_properties(value,manager_row,active=active,manager=True)
+   require(value["FragmentPath"]==manager["fragment"] and value["DropInPaths"].split()==manager["dropins"],"GROWTH_RUNTIME_MANAGER_CONFIG")
+  manager_check(before[manager["unit"]],False)
+  runtime=before[runtime_unit]
+  require(runtime["LoadState"]=="loaded" and runtime["Job"]=="" and runtime["ControlPID"]=="0"
+ and (runtime["ActiveState"],runtime["SubState"]) in (("inactive","dead"),("active","exited"))
+ and runtime["MainPID"]=="0" and not runtime["DropInPaths"]
+ and runtime["FragmentPath"]=="/usr/lib/systemd/system/user-runtime-dir@.service","GROWTH_RUNTIME_DIR_SERVICE")
+  # Fixed effective manager configuration files are protected before start.
+  for path in [manager["fragment"],*manager["dropins"],runtime["FragmentPath"]]:
+   fd=open_path(path)
+   try:
+    info=os.fstat(fd);require(stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==0 and info.st_nlink==1,"GROWTH_RUNTIME_SYSTEM_CONFIG")
+   finally:os.close(fd)
+  if configs["ordinary"] is None:
+   configs["ordinary"]="/run/systemd/system/"+system["ordinary"]["unit"]
+   self.config("ordinary",configs["ordinary"],runtime_config(system["ordinary"]),create=True)
+   self.command("system_reload",["daemon-reload"])
+  starts=[name for name in names if before[name]["ActiveState"]=="inactive"]
+  if starts:
+   self.m.once("runtime_system_start");self.command("system_start",["start","--",*starts])
+  after=self.show("system_after",names)
+  manager_check(after[manager["unit"]],True);self.report["manager"]=after[manager["unit"]]
+  require(after[runtime_unit]["ActiveState"]=="active" and after[runtime_unit]["SubState"]=="exited","GROWTH_RUNTIME_DIR_NOT_ACTIVE")
+  for role,row in system.items():
+   value=after[row["unit"]];_runtime_properties(value,row,active=True)
+   require(value["FragmentPath"]==configs[role],"GROWTH_RUNTIME_FRAGMENT")
+   self.report["parents"][role]=dict(properties=value,cgroup=self.group(row))
+  self.report["bus"]=self.bus();self.pool("/run/user/1100")
+  row=self.binding["parents"]["retained_ordinary"]
+  found=self.slice_config("retained_ordinary",user=True)
+  before=self.show("user_before",[row["unit"]],user=True,missing=found is None)[row["unit"]]
+  _runtime_properties(before,row,active=False)
+  require(before["FragmentPath"]==(found or ""),"GROWTH_RUNTIME_USER_FRAGMENT")
+  if before["ActiveState"]=="active":self.group(row)
+  if found is None:
+   self.user_directories();found="/run/user/1100/systemd/user/"+row["unit"]
+   self.config("retained_ordinary",found,runtime_config(row),create=True,uid=1100)
+   self.command("user_reload",["daemon-reload"],user=True)
+  if before["ActiveState"]=="inactive":
+   self.m.once("runtime_user_start");self.command("user_start",["start","--",row["unit"]],user=True)
+  value=self.show("user_after",[row["unit"]],user=True)[row["unit"]]
+  _runtime_properties(value,row,active=True)
+  require(value["FragmentPath"]==found and self.bus()==self.report["bus"],"GROWTH_RUNTIME_USER_DRIFT")
+  self.report["parents"]["retained_ordinary"]=dict(properties=value,cgroup=self.group(row))
+  for path,fd,expected in self.config_fds:
+   require(stable_identity(os.fstat(fd))==stable_identity(os.stat(path,follow_symlinks=False))==expected,"GROWTH_RUNTIME_CONFIG_DRIFT")
+  for fd,pool in self.pool_fds.values():
+   size=os.fstatvfs(fd);pool["after"]=[size.f_bavail*size.f_frsize,size.f_favail]
+  self.check()
+  return validate_runtime_report(self.report,self.description,self.report["boot_id"],self.description["phase"])
+ def close(self):
+  for _,fd,_ in self.config_fds:os.close(fd)
+  for fd,_ in self.pool_fds.values():os.close(fd)
 class GuestMaintenance:
  """Single-process, two-phase helper. No generic command or recovery API."""
  def __init__(self, description, *, window=None):
@@ -1056,6 +1485,7 @@ class GuestMaintenance:
   self.device=None
   self.active_command=None
   self.inventory=None
+  self.runtime=None
   self.stage="IDENTITY"
   self.started=set()
  def once(self, action):
@@ -1086,9 +1516,12 @@ class GuestMaintenance:
   rows=self.sample()
   same_parents(self.description["saved_rows"], rows)
   device=self.observe_device(rows, OLD_SIZE)
-  self.stage="PRE_QUIESCENCE"
   inventory=GuestInventory(self.description, self.window.check)
   self.inventory=inventory
+  self.stage="PRE_RUNTIME_PREPARATION"
+  self.runtime=RuntimePreparation(self,current_boot)
+  runtime=self.runtime.run()
+  self.stage="PRE_QUIESCENCE"
   quiet=inventory.collect()
   self.stage="PRE_TOOL"
   tool=tool_binding("/usr/sbin/resize2fs", self.window.check, version=True)
@@ -1101,7 +1534,7 @@ class GuestMaintenance:
  guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance")),
  nonce=self.description["nonce"], source_binding_sha256=self.description["source_binding_sha256"],
  boot_id=current_boot, rows=rows, tree=tree, journal_device=device,
- resize2fs=tool, quiescence=quiet, resource_observation=resource_observation())
+ resize2fs=tool, quiescence=quiet, runtime_preparation=runtime, resource_observation=resource_observation())
   validate_pre_report(report, self.description)
   self.stage="WAIT_HOST_DURABLE_PRE_REPORT"
   output(report)
@@ -1136,9 +1569,12 @@ class GuestMaintenance:
  and device["superblock"]["block_size"] == before["journal_device"]["superblock"]["block_size"]
  and device["superblock"]["filesystem_bytes"] == before["journal_device"]["superblock"]["filesystem_bytes"],
  "GROWTH_POST_DEVICE_CHANGED")
-  self.stage="POST_QUIESCENCE"
   inventory=GuestInventory(self.description, self.window.check)
   self.inventory=inventory
+  self.stage="POST_RUNTIME_PREPARATION"
+  self.runtime=RuntimePreparation(self,current_boot)
+  runtime=self.runtime.run()
+  self.stage="POST_QUIESCENCE"
   inventory.collect()
   self.stage="POST_TOOL"
   verify_tool(before["resize2fs"], self.window.check)
@@ -1169,7 +1605,7 @@ class GuestMaintenance:
  nonce=self.description["nonce"], source_binding_sha256=self.description["source_binding_sha256"],
  boot_id=current_boot, original_boot_id=before["boot_id"],
  pre_report_sha256=self.description["pre_report_sha256"], rows=final_rows, tree=tree,
- journal_device=self.device.report(), resize2fs=before["resize2fs"], quiescence=quiet,
+ journal_device=self.device.report(), resize2fs=before["resize2fs"], quiescence=quiet,runtime_preparation=runtime,
  resource_observation=resource_observation(),
  resize_result=dict(returncode=result["returncode"], both_eof=result["both_eof"],
  stdout_bytes=len(result["stdout"]), stderr_bytes=len(result["stderr"]),
@@ -1183,6 +1619,7 @@ class GuestMaintenance:
   code=str(error) if isinstance(error, r.ObservationError) else "GROWTH_GUEST_IO_OR_RUNTIME"
   require(re.fullmatch(r"[A-Z0-9_]{1,128}", code), "GROWTH_ERROR_CODE")
   diagnostic=dict(errno=getattr(error,"errno",None),context=getattr(self.inventory,"context",{}))
+  if self.runtime is not None:diagnostic["runtime_preparation"]=self.runtime.report
   serial=getattr(error,"serial_diagnostic",None)
   if code=="GROWTH_JOURNAL_SERIAL" and type(serial) is dict and set(serial)=={
  "expected_bytes","actual_bytes","expected_hex","actual_hex"} and all(
@@ -1200,6 +1637,7 @@ class GuestMaintenance:
  resource_observation=resource_observation(),
  process_exit="UNKNOWN" if process and process.poll() is None else "OBSERVED_OR_NOT_STARTED")
  def close(self):
+  if self.runtime is not None:self.runtime.close()
   if self.observation is not None:
    self.observation.close()
   if self.device is not None:

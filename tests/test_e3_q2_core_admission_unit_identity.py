@@ -40,11 +40,11 @@ def test_cgroup_path_must_bind_the_declared_unit_without_guessing_slice_layout(c
         d._validate_admission(value, context)
 
 
-def test_observed_intermediate_cgroup_slices_are_not_guessed():
+def test_runtime_parent_cannot_move_to_an_unbound_intermediate_slice():
     context, value = admission()
     row = value['parents']['controller_cgroup']
     row['path'] = '/sys/fs/cgroup/observed.slice/nested.slice/' + row['unit']
-    assert d._validate_admission(value, context) == value
+    with pytest.raises(d.DispatchError,match='CGROUP_BINDING'):d._validate_admission(value,context)
 
 
 @pytest.mark.parametrize('change', ['missing', 'wrong_unit', 'foreign', 'project_data'])

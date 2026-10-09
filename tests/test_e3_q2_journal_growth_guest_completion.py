@@ -40,13 +40,19 @@ def rows():
     return result
 
 
+@pytest.fixture(autouse=True)
+def runtime_pin(monkeypatch):
+    from core_runtime_fixture import patch
+    patch(monkeypatch)
+
 def description():
+    from core_runtime_fixture import binding, inventory
     samples = rows()
     return dict(schema=g.SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", nonce="a" * 64,
         source_binding_sha256="b" * 64, paths={row["role"]: row["path"] for row in samples},
-        saved_rows=samples, original_boot_id=UUID, journal_serial="lh-journal",
+        runtime_parent_binding=binding(),saved_rows=samples, original_boot_id=UUID, journal_serial="lh-journal",
         expected_units=[dict(name="old.service", control_group="/old.service")],
-        domain_cgroups=["/old.slice"], domain_units=[dict(name="old.slice", manager="system", control_group="/old.slice")],
+        **inventory(),
         protected_roots=["/fixture"], essential_paths=["/fixture/evidence"], window_seconds=900, change_seconds=780)
 
 
@@ -66,8 +72,9 @@ def tool():
 
 
 def pre_report():
+    from core_runtime_fixture import report
     desc = description()
-    return dict(schema=g.REPORT_SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", status="GUEST_QUIET",
+    return dict(runtime_preparation=report(desc),schema=g.REPORT_SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", status="GUEST_QUIET",
         nonce=desc["nonce"], source_binding_sha256=desc["source_binding_sha256"], boot_id=UUID,
         rows=rows(), tree=tree(), journal_device=device(), resize2fs=tool(), quiescence=quiet(),
         resource_observation=dict(self_cpu_microseconds=1000, exited_children_cpu_microseconds=100,
@@ -114,7 +121,7 @@ def test_parser_rejects_duplicate_json_and_noninteger_window():
 @pytest.mark.parametrize("suffix", [b"", b"extra", b"\n"])
 def test_exact_continuation_and_eof(suffix):
     expected = g.continue_token("a" * 64, "b" * 64)
-    assert expected.startswith(b"POWER_OFF lhqjgrow-20261009a ")
+    assert expected.startswith(b"POWER_OFF lhqjgrow-20261009b ")
     read, write = os.pipe()
     try:
         os.write(write, expected + suffix); os.close(write); write = None
@@ -185,12 +192,21 @@ def effects(monkeypatch):
     # This is an entirely synthetic guest; pytest's lifetime RSS is not its usage.
     monkeypatch.setattr(g, "resource_observation", lambda: pre_report()["resource_observation"])
     class Inventory:
+        SHOW=g.GuestInventory.SHOW
         systemctl = dict(path="/usr/bin/systemctl")
         def __init__(self, *_): pass
         def collect(self):
             trace.append("quiet")
             return quiet()
     monkeypatch.setattr(g, "GuestInventory", Inventory)
+    from core_runtime_fixture import report as runtime_report
+    class Runtime:
+        def __init__(self,m,boot):self.m=m;self.boot=boot
+        def run(self):
+            self.report=runtime_report(self.m.description,self.boot)
+            return self.report
+        def close(self):pass
+    monkeypatch.setattr(g,"RuntimePreparation",Runtime)
     monkeypatch.setattr(g, "tool_binding", lambda *a, **k: tool())
     monkeypatch.setattr(g, "verify_tool", lambda *a, **k: trace.append("tool"))
     monkeypatch.setattr(g, "boot_id", lambda _: UUID)
@@ -441,4 +457,10 @@ def test_actual_active_writer_is_rejected_even_inside_self(monkeypatch, tmp_path
 
 
 def quiet():
-    return dict(historical_exit="UNKNOWN",startup=dict(system=dict(scope="DECLARED_ONLY",domains=[dict(name="old.slice",properties_sha256="a"*64)],undeclared_unit_inventory="NOT_PERFORMED",indirect_startup="NOT_PERFORMED")))
+    from core_runtime_fixture import inventory
+    domains=inventory()['domain_units']
+    return dict(historical_exit="UNKNOWN",startup={manager:dict(scope="DECLARED_ONLY",
+        domains=[dict(name=row['name'],properties_sha256='a'*64) for row in sorted(domains,key=lambda r:r['name'])
+                 if row['manager']==('system' if manager=='system' else 'user')],
+        undeclared_unit_inventory="NOT_PERFORMED",indirect_startup="NOT_PERFORMED")
+        for manager in ('system','user_1100')})

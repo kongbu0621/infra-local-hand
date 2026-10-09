@@ -177,7 +177,8 @@ def test_noncanonical_and_ambiguous_json_is_rejected(raw):
 def test_projection_artifact_validation_does_not_import_linux_runtime(monkeypatch):
     original = builtins.__import__
     def guarded(name, *args, **kwargs):
-        if name in {'fcntl', 'pwd', 'resource'} or name.endswith('q2_journal_growth_guest'):
+        fromlist=kwargs.get('fromlist',args[2] if len(args)>2 else ()) or ()
+        if name in {'fcntl', 'pwd', 'resource'} or name.endswith('q2_journal_growth_guest') or 'q2_journal_growth_guest' in fromlist:
             pytest.fail('portable artifact validation imported Linux runtime: ' + name)
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
@@ -204,8 +205,20 @@ def source_fixture(artifact, monkeypatch):
     old = value["source_relation"]["obligations"]["legacy_20260927"]["adoption"]
     original = dict(retained=value["retained_preparation"]["paths"],
                     retained_domains=value["retained_preparation"]["domains"])
+    from core_runtime_fixture import binding
+    b=binding()
+    plain=lambda row:{key:val for key,val in row.items() if key not in ('manager','control_group')}
+    original.update(account=b['account'],parents={role:plain(b['parents'][
+        'retained_ordinary' if role=='ordinary' else role]) for role in
+        ('ordinary','controller','management','supervisor','query')})
+    retry=dict(facts=dict(parents={role:dict(row,path=b['parents'][
+        'retained_ordinary' if role=='ordinary' else role]['control_group'])
+        for role,row in original['parents'].items()}))
+    retry['facts']['parents']['manager']=dict(unit=b['manager']['unit'],Id=b['manager']['unit'],
+        User='1100',Delegate='yes',ControlGroup=b['manager']['control_group'],
+        FragmentPath=b['manager']['fragment'],DropInPaths=' '.join(b['manager']['dropins']))
     locators = dict(retained_paths=original["retained"], retained_domains=original["retained_domains"])
-    monkeypatch.setattr(a, "_read_locators", lambda _raw: ({"original_plan": original}, locators))
+    monkeypatch.setattr(a, "_read_locators", lambda _raw: ({"original_plan": original,'retry_preparation':retry}, locators))
     verified = SimpleNamespace(original=original, obligations=capacity["snapshot_rows"][:7],
         manifest=dict(sources=old["current_owner_supplied_raw"]),
         previous=dict(candidate=dict(source="/synthetic/previous/source")),
@@ -228,6 +241,9 @@ def source_fixture(artifact, monkeypatch):
                                                               historical_physical_charges=physical)),
         ("20261001e", "plan"): dict(mounts={role: dict(device=i + 1)
                                           for i, role in enumerate(("system", "quota", "journal", "evidence"))})}
+    retained['20261001e','plan'].update(account=b['account'],
+        parents={role:plain(row) for role,row in b['parents'].items() if role!='retained_ordinary'},
+        retained_ordinary_parent=dict(path=b['parents']['retained_ordinary']['control_group']))
     monkeypatch.setattr(a.horizon, "read_horizon", lambda _raw: retained)
     later = {path: ("synthetic " + batch).encode() for _scope, batch, path, _pin in a.LATER_REVIEWS}
     monkeypatch.setattr(a, "LATER_REVIEWS", tuple((scope, batch, path, hashlib.sha256(later[path]).hexdigest())
@@ -269,6 +285,8 @@ def test_source_verifier_is_independent_of_builders_and_binds_key_tokens_and_raw
 
 def test_builder_runs_second_source_path_automatically_and_does_not_mutate_inputs(artifact, monkeypatch):
     value, sources = source_fixture(artifact, monkeypatch)
+    from core_runtime_fixture import binding
+    sources=replace(sources,journal_frozen=dict(runtime_parent_binding=binding()))
     capacity = value["historical_capacity_obligations"]
     # These three raw-reading transforms have their own fixed-pin tests. This
     # synthetic aggregate test checks their complete result wiring and the

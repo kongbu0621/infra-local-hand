@@ -338,19 +338,21 @@ def manager_fixture(tmp_path, monkeypatch):
                 ('controller', 'management', 'supervisor', 'query', 'ordinary')}
     locators.update(retained_ordinary_parent_path='/retained.slice', user_manager_unit='user@1100.service',
                     carrier_unit='carrier.service')
-    units = sorted([*locators.values()])
-    units = [item.removeprefix('/') for item in units]
+    from core_runtime_fixture import binding, patch
+    patch(monkeypatch,d)
+    runtime=binding()
+    monkeypatch.setattr(d,'_approved_inputs_envelope',lambda _:dict(reconciliation=dict(journal_transition=dict(runtime_parent_binding=runtime))))
+    units=sorted([row['unit'] for row in runtime['parents'].values()]+['user@1100.service','carrier.service'])
     records = {}
     for unit in units:
         properties = dict(Id=unit, LoadState='loaded', ActiveState='active', SubState='running',
             ControlGroup='/' + unit, InvocationID='a' * 32, MemoryMax='536870912',
             MemorySwapMax='0', TasksMax='64', CPUQuotaPerSecUSec='1s')
-        if unit in ('ordinary.slice', 'retained.slice'):
-            properties['MemoryMax'] = '268435456'
-        if unit == 'ordinary.slice':
-            properties['TasksMax'] = '32'
+        parent=next((row for row in runtime['parents'].values() if row['unit']==unit),None)
+        if parent is not None:
+            properties.update(ControlGroup=parent['control_group'],MemoryMax=str(parent['memory_bytes']),TasksMax=str(parent['tasks_max']),SubState='active')
         if unit == 'user@1100.service':
-            properties.update(Delegate='yes', User='1100')
+            properties.update(Delegate='yes',User='1100',ControlGroup=runtime['manager']['control_group'],MemoryMax='268435456')
         if unit == 'carrier.service':
             properties.update(RuntimeMaxUSec='13min 20s', TimeoutStopUSec='5s', Restart='no',
                               KillMode='control-group', ExitType='cgroup')
@@ -361,10 +363,12 @@ def manager_fixture(tmp_path, monkeypatch):
         memory_max=536870912, memory_swap_max=0, tasks_max=64, cpu_quota_per_sec_usec=1000000,
         restart='no', kill_mode='control-group', exit_type='cgroup')
     value.context = dict(manifest=dict(locators=locators), hello=dict(carrier_unit=hello))
-    def command(arguments, _program):
+    value.runtime_queries=[]
+    def command(arguments, _program, *, user_uid=None):
+        value.runtime_queries.append((user_uid,list(arguments)))
         if arguments[0] == 'show':
             return ('\n\n'.join('\n'.join(key + '=' + item for key, item in properties.items())
-                                for properties in records.values()) + '\n').encode()
+                                for name,properties in records.items() if name in arguments[1:-1]) + '\n').encode()
         return b''
     value._capacity_systemctl = command
     value._capacity_directory = lambda path: os.open(tmp_path / Path(path).name, os.O_RDONLY | os.O_DIRECTORY)
@@ -388,7 +392,11 @@ def test_manager_collects_actual_geometry_and_static_absence(tmp_path, monkeypat
     result = value._capacity_managers({'systemctl': {}}, 1100)
     assert len(result['parents']) == 6
     assert len(result['absence']) == 21
-    assert result['manager']['user_manager_cgroup'] == '/user@1100.service'
+    assert result['manager']['user_manager_cgroup'] == '/user.slice/user-1100.slice/user@1100.service'
+    assert [uid for uid,args in value.runtime_queries if args[0]=='show']==[None,1100]
+    assert 'controller-ordinary.slice' in value.runtime_queries[0][1]
+    assert 'retained.slice' not in value.runtime_queries[0][1]
+    assert value.runtime_queries[1][1][1]=='retained.slice'
     assert value._admission_detail['system_geometry']['ordinary_parent']['memory_bytes'] == 268435456
     assert value._admission_detail['carrier']['inode'] == (tmp_path / 'carrier.service').stat().st_ino
 
@@ -407,6 +415,6 @@ def test_manager_rejects_wrong_account_and_nonempty_units(tmp_path, monkeypatch)
         value._capacity_managers({'systemctl': {}}, 1100)
     records['user@1100.service']['User'] = '1100'
     old = value._capacity_systemctl
-    value._capacity_systemctl = lambda args, program: (d.CASES[0]['controller_prefix'] + '-target.service loaded active running\n').encode() if args[0] == 'list-units' else old(args, program)
+    value._capacity_systemctl = lambda args, program, **kw: (d.CASES[0]['controller_prefix'] + '-target.service loaded active running\n').encode() if args[0] == 'list-units' else old(args, program,**kw)
     with pytest.raises(d.DispatchError, match='UNIT_EXISTS'):
         value._capacity_managers({'systemctl': {}}, 1100)

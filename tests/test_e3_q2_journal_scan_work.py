@@ -47,7 +47,7 @@ def test_bundle_and_actual_loader_apply_only_declared_source_limits(key, cap, ex
     # Harmless synthetic code; the actual loader runs only in an unprivileged subprocess.
     entries = dict(reader=b"VALUE=1\n", guest=b"def entry(raw):\n return 0\n", input=b"{}")
     entries[key] += b" " * (cap + extra - len(entries[key]))
-    packed = h.canonical({k: base64.b64encode(v).decode() for k, v in entries.items()})
+    packed = h.canonical(dict(encoding="utf8",**{k:v.decode() for k,v in entries.items()}))
     zipped = zlib.compress(packed, 9)
     result = subprocess.run([sys.executable, "-I", "-B", "-c", h.GUEST_LOADER,
         base64.b64encode(zipped).decode(), h.digest(zipped)], capture_output=True, timeout=5)
@@ -64,7 +64,7 @@ def test_bundle_and_actual_loader_apply_only_declared_source_limits(key, cap, ex
 
 def test_compressed_bundle_and_argv_limits_remain_independent(monkeypatch):
     # Deterministic high-entropy synthetic input; each source is within its own cap.
-    raw = random.Random(42).randbytes(98304)
+    raw = bytes(random.Random(42).choices(range(32,127),k=98304))
     sources = {"q2_core_capacity_reader.py": b"#reader", "q2_journal_growth_guest.py": raw}
     with pytest.raises(g.r.ObservationError, match="BUNDLE_BOUND"):
         h.source_bundle(sources, {})

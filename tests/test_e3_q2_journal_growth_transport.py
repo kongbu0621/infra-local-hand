@@ -99,7 +99,7 @@ def test_current_guest_pre_and_ack_reach_host_with_full_validation(factory, effe
     output = []
     prepare(desc).pre(output=output.append, receive=lambda *_: None)
     value, ack = output
-    assert value["schema"] == ack["schema"] == "lhq-journal-growth-guest/v3"
+    assert value["schema"] == ack["schema"] == "lhq-journal-growth-guest/v4"
     sha = g.digest(g.canonical(value))
     token = g.continue_token(desc["nonce"], sha)
     code = peer(value, "assert sys.stdin.buffer.readline()==" + repr(token) + "\n"
@@ -120,7 +120,7 @@ def test_current_guest_post_reaches_host_with_full_validation(factory, effects, 
     monkeypatch.setattr(g, "boot_id", lambda _: GUEST_NEW_BOOT)
     output = []
     value = prepare(desc).post(output=output.append)
-    assert output == [value] and value["schema"] == "lhq-journal-growth-guest/v3"
+    assert output == [value] and value["schema"] == "lhq-journal-growth-guest/v4"
     transport = create(peer(value), phase="post", nonce=desc["nonce"],
         source_sha=desc["source_binding_sha256"], original_boot=desc["original_boot_id"],
         validate=lambda report: g.validate_post_report(report, desc))
@@ -131,7 +131,7 @@ def test_current_guest_post_reaches_host_with_full_validation(factory, effects, 
 
 @pytest.mark.parametrize("phase", ["pre", "post"])
 @pytest.mark.parametrize("schema", ["lhq-journal-growth-guest/v1", "lhq-journal-growth-guest/v2",
-                                   "lhq-journal-growth-guest/v4"])
+                                   "lhq-journal-growth-guest/v3"])
 def test_transport_rejects_noncurrent_report_schema_before_token(factory, phase, schema):
     create, _store, root = factory
     transport = create(peer(report(phase, schema=schema)), phase=phase)
@@ -251,3 +251,9 @@ def test_source_bundle_rejects_oversized_second_phase_before_any_ssh():
     sources = {"q2_core_capacity_reader.py": b"# synthetic", "q2_journal_growth_guest.py": b"# synthetic"}
     with pytest.raises(h.prior.r.ObservationError, match="BUNDLE_INPUT"):
         h.source_bundle(sources, dict(pre_report="x" * 65536))
+
+
+@pytest.fixture(autouse=True)
+def runtime_pin(monkeypatch):
+    from core_runtime_fixture import patch
+    patch(monkeypatch)

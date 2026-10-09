@@ -18,13 +18,6 @@ def admission():
     context = fixture.context()
     value = fixture.FakeEffects(context).admit({})
     locators = context['manifest']['locators']
-    for role in ('controller', 'management', 'supervisor', 'query', 'ordinary'):
-        row = value['parents'][role + '_cgroup']
-        row['unit'] = locators[role + '_parent_unit']
-        row['path'] = '/sys/fs/cgroup/' + row['unit']
-    retained = value['parents']['retained_ordinary_cgroup']
-    retained['path'] = locators['retained_ordinary_parent_path']
-    retained['unit'] = PurePosixPath(retained['path']).name
     units = set()
     for case in d.CASES:
         units.update(row[key] for row in d._phase_units(case['operation_id'], case['phases'])
@@ -49,17 +42,17 @@ def test_retained_logical_cgroup_and_collector_filesystem_path_agree(locator_pre
     context, value = admission()
     # Retained systemd ControlGroup is logical; the collector opens the same
     # group below /sys/fs/cgroup and returns its full filesystem path.
-    logical = '/user.slice/user-1100.slice/user@1100.service/fixture-retained.slice'
+    logical = '/user.slice/user-1100.slice/user@1100.service/retained.slice'
     context['manifest']['locators']['retained_ordinary_parent_path'] = locator_prefix + logical
     value['parents']['retained_ordinary_cgroup'].update(
-        unit='fixture-retained.slice', path='/sys/fs/cgroup' + logical)
+        unit='retained.slice', path='/sys/fs/cgroup' + logical)
     assert d._validate_admission(value, context) == value
 
 
 @pytest.mark.parametrize('change', ['logical_only', 'other_manager', 'double_prefix'])
 def test_logical_retained_locator_does_not_weaken_exact_collected_path(change):
     context, value = admission()
-    logical = '/user.slice/user-1100.slice/user@1100.service/fixture-retained.slice'
+    logical = '/user.slice/user-1100.slice/user@1100.service/retained.slice'
     context['manifest']['locators']['retained_ordinary_parent_path'] = logical
     path = '/sys/fs/cgroup' + logical
     if change == 'logical_only':
@@ -68,7 +61,7 @@ def test_logical_retained_locator_does_not_weaken_exact_collected_path(change):
         path = path.replace('user@1100.service', 'user@1101.service')
     else:
         path = '/sys/fs/cgroup' + path
-    value['parents']['retained_ordinary_cgroup'].update(unit='fixture-retained.slice', path=path)
+    value['parents']['retained_ordinary_cgroup'].update(unit='retained.slice', path=path)
     with pytest.raises(d.DispatchError, match='CGROUP_BINDING'):
         d._validate_admission(value, context)
 

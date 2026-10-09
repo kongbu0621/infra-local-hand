@@ -353,6 +353,9 @@ def _derive(sources):
     verified = _verified_legacy(sources)
     _equal(verified.original, documents["original_plan"], "LEGACY_LOCATOR_ORIGINAL")
     vectors = horizon.build_horizon(sources.horizon_archives)
+    runtime = prior_attempt.runtime_parent_binding(documents['original_plan'], documents['retry_preparation'],
+        horizon.read_horizon(sources.horizon_archives)['20261001e', 'plan'])
+    _equal(runtime, sources.journal_frozen['runtime_parent_binding'], 'RUNTIME_SOURCE_BINDING')
     _equal(list(verified.obligations), vectors["snapshot_rows"][:7], "LEGACY_PREFIX")
     relation = dict(schema="local-hand-q2-core-approved-source-relation/v1", locator=_locator_relation(),
         obligations=dict(schema="local-hand-q2-core-approved-obligation-sources/v1",
@@ -367,7 +370,7 @@ def _derive(sources):
     retained = dict(paths=locators["retained_paths"], domains=locators["retained_domains"])
     prior = prior_attempt.build_all(sources.prior_core_files)
     diagnostic = prior_attempt.build_diagnostic(sources.prior_diagnostic_files)
-    historical = dict(schema="local-hand-q2-core-historical-capacity-obligations/v14", source_horizon="20261001e",
+    historical = dict(schema="local-hand-q2-core-historical-capacity-obligations/v15", source_horizon="20261001e",
         source_union_sha256=relation["obligations"]["source_union_sha256"],
         **{key: vectors[key] for key in ("snapshot_rows", "delta_rows", "effective_rows", "row_relation",
                                        "configured_quota_rows", "totals")},
@@ -379,7 +382,7 @@ def _derive(sources):
         policy_basis=policy.build_policy_basis(source_raw=sources.policy_sources, tokens=sources.remote_tokens),
         historical_capacity_obligations=historical, retained_preparation=retained,
         reconciliation=dict(copy.deepcopy(RECONCILIATION),
-            schema="local-hand-q2-core-reconciliation/v14", prior_core_attempts=prior,
+            schema="local-hand-q2-core-reconciliation/v15", prior_core_attempts=prior,
             prior_diagnostic_capture=diagnostic,
             journal_transition=prior_attempt.build_journal_transition(sources.journal_files,
                 implementation=sources.amendment['implementation'],sources=sources.journal_sources,
@@ -494,7 +497,7 @@ def _validate_capacity(value, obligations):
     c.exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
                     "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
                     "released_or_refunded", "prior_commitments", "maintenance"})
-    _require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v14"
+    _require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v15"
              and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
              "CAPACITY_SCHEMA")
     _equal(value["maintenance"],prior_attempt.maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -649,6 +652,10 @@ def _verify_sources(value, sources):
     _equal(adopted["forward_baseline_entries"], verified.forward_baseline["entries"], "SOURCE_FORWARD_BASELINE")
     _equal(adopted["disclosed_atime_changes"], verified.metadata_baselines, "SOURCE_ATIME_DISCLOSURE")
     retained = horizon.read_horizon(sources.horizon_archives)
+    runtime = prior_attempt.runtime_parent_binding(documents['original_plan'],
+        documents['retry_preparation'], retained['20261001e', 'plan'])
+    _equal(value['reconciliation']['journal_transition']['runtime_parent_binding'],
+        runtime, 'SOURCE_RUNTIME_BINDING')
     snapshot = retained["20261001e", "historical-snapshot"]
     _require(snapshot.get("historical_plan_executed") is False
              and snapshot.get("released_or_refunded") is False, "SOURCE_SNAPSHOT_PERMISSION")
@@ -716,7 +723,7 @@ def validate(raw, *, sources=None):
         _validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         c.exact(reconciliation, {*RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"})
-        _require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v14", "RECONCILIATION_SCHEMA")
+        _require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v15", "RECONCILIATION_SCHEMA")
         _equal({key: reconciliation[key] for key in RECONCILIATION}, RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
         prior_attempt.validate_all(prior)

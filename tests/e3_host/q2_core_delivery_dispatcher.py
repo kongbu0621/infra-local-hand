@@ -1150,7 +1150,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments", "maintenance"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v14"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v15"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     _approved_equal(value["maintenance"],_maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -1791,6 +1791,12 @@ NINTH_JOURNAL_D = 'db6e7165322da3072ca1fd88a36401e18ebd4a86'
 NINTH_JOURNAL_PINS = {'consumed.json': (64566, '75e0e745f13745d3efd45d52495d13bd8ea5a3ff626316fbf5168a5a493e30af'), 'events.jsonl': (441, '264edd9660fd59ba3b6884ae4df0cdd8846a16a4cc97665a835f5fa691d91749'), 'pre.stderr': (817, 'df134297b8556f6d3939fe17424807a44e275c57470c84d81577d1da30d307b8'), 'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'receipt.json': (15447, 'de08569fc6fadccafcf434d842e43ad713fbb4b6fdb7c45d03cf95df5fa3ad4e')}
 
 
+TENTH_JOURNAL_SESSION = 'lhqjgrow-20261009a'
+TENTH_JOURNAL_D = '54d32df2f82fe863e1535ddb8134617c2654e33d'
+# Owner-approved old09a minimal index; raw returns remain private.
+TENTH_JOURNAL_PINS = {'consumed.json': (59556, '777715c3cbf6d9c9ecef43a63ae1fe2dee6fa4c48170f0114aa883383f55c87d'), 'events.jsonl': (441, '687cce89ef1ef88e44d482655d61e2a8e48d84bb4e2da36d154ccf98accfec60'), 'pre.stderr': (922, '6c40a4e9d0882c80ffb89829be5c52cf9bc861a698d5bd498c1efa434539a88e'), 'pre.stdout': (0, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'receipt.json': (16482, '1737c6c75c8dc97b80734e94b4d161f33b9893d7ad8e63658acc9514e190d096')}
+
+
 def previous_journal_profiles():
     return (
         dict(session=PREVIOUS_JOURNAL_SESSION, D=PREVIOUS_JOURNAL_D, pins=PREVIOUS_JOURNAL_PINS,
@@ -1819,13 +1825,16 @@ def previous_journal_profiles():
             version=9, stage='PRE_QUIESCENCE', reason='GROWTH_UNDECLARED_BUSINESS_UNIT'),
         dict(session=NINTH_JOURNAL_SESSION, D=NINTH_JOURNAL_D, pins=NINTH_JOURNAL_PINS,
             authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04', A='2b13dd653ca19eaaf46a18e6ffc3f447b62eee59', C='a2a6d62de08b2d1d8fbf9da97e8ccf938e3777c1'),
-            version=10, stage='PRE_QUIESCENCE', reason='GROWTH_BUSINESS_PROCESS'))
+            version=10, stage='PRE_QUIESCENCE', reason='GROWTH_BUSINESS_PROCESS'),
+        dict(session=TENTH_JOURNAL_SESSION,D=TENTH_JOURNAL_D,pins=TENTH_JOURNAL_PINS,
+            authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04', A='13cd2d3e7ac9a307a7c960f713524fefa2959a95', C='31b8e21116edd3678d738c1b9525edb6b3da8ae8'),
+            version=11,stage='PRE_QUIESCENCE',reason='GROWTH_GUEST_IO_OR_RUNTIME'))
 
 
 
 
 def _maintenance_resume():
-    return dict(scope='LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1', session='lhqjgrow-20261009a',
+    return dict(scope='LH-Q2-CORE-RUNTIME-CONTINUATION-v1', session='lhqjgrow-20261009b',
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -1836,7 +1845,7 @@ def _maintenance_resume():
 def _maintenance_commitments():
     return dict(previous_maintenance=_maintenance_resume(),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,'lhqjgrow-20261009a')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,'lhqjgrow-20261009b')],
         released_or_refunded=False)
 
 
@@ -1846,7 +1855,7 @@ def _validate_maintenance_resume(value):
     return value
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261009a'
+JOURNAL_SESSION = 'lhqjgrow-20261009b'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -1910,28 +1919,72 @@ def _validate_vm_activation(value):
 # Pending authority is not a commit or execution permission.
 VM_ADOPTION_A = '13cd2d3e7ac9a307a7c960f713524fefa2959a95'
 VM_ADOPTION_C = '31b8e21116edd3678d738c1b9525edb6b3da8ae8'
+RUNTIME_A = 'dc6e6c511936e02f41cda0cf86cbd571f3aa253d'
+RUNTIME_C = '3633b1e963b35647bef8d7f94592089130ff25a1'
 
+
+RUNTIME_BINDING_SHA="8593dcfdf2b169176b8f7025e392a9942589ee19d3cc9d3c04a5692a5f6ccd9b"
+def _validate_runtime_binding(value):
+    check=_Checks("CORE_RUNTIME_")
+    check.exact(value,{"schema","sources","account","parents","manager"},"BINDING_FIELDS")
+    check(len(canonical(value))<8192 and _sha(canonical(value)+b"\n")==RUNTIME_BINDING_SHA,"BINDING_PIN")
+    return value
+
+def _validate_runtime_summaries(value,binding,nonce,boots,reports):
+ check=_Checks("CORE_RUNTIME_")
+ _validate_runtime_binding(binding)
+ check(type(value) is dict and set(value)=={"pre","post"},"GROWTH_RUNTIME_SUMMARIES")
+ for phase,row in value.items():
+  check(type(row) is dict and set(row)=={"schema","binding_sha256","nonce","phase","boot_id","report_sha256",
+ "runtime_sha256","commands_sha256","configs_sha256","elapsed_ns","parents","manager","pools"}
+ and row["schema"]=="lhq-runtime-transition/v1" and row["binding_sha256"]==_sha(canonical(binding)+b"\n")
+ and row["nonce"]==nonce and row["phase"]==phase and row["boot_id"]==boots[phase]
+ and row["report_sha256"]==reports[phase]["sha256"],"GROWTH_RUNTIME_SUMMARY_BINDING")
+  for name in ("runtime_sha256","commands_sha256","configs_sha256"):check.digest(row[name])
+  check.integer(row["elapsed_ns"],0,60000000000)
+  check(type(row["parents"]) is dict and set(row["parents"])==set(binding["parents"]),"GROWTH_RUNTIME_SUMMARY_PARENTS")
+  for role,item in row["parents"].items():
+   check(type(item) is dict and set(item)=={"unit","control_group","invocation_id","identity"}
+ and all(item[key]==binding["parents"][role][key] for key in ("unit","control_group"))
+ and re.fullmatch(r"[0-9a-f]{32}",item["invocation_id"] or ""),"GROWTH_RUNTIME_SUMMARY_PARENT")
+   check(type(item["identity"]) is dict and set(item["identity"])==set(("dev","ino","mode","uid","gid")),"GROWTH_RUNTIME_SUMMARY_IDENTITY")
+   for v in item["identity"].values():check.integer(v)
+  check(type(row["manager"]) is dict and set(row["manager"])=={"Id","ControlGroup","InvocationID"}
+ and row["manager"]["Id"]==binding["manager"]["unit"] and row["manager"]["ControlGroup"]==binding["manager"]["control_group"]
+ and re.fullmatch(r"[0-9a-f]{32}",row["manager"]["InvocationID"] or ""),"GROWTH_RUNTIME_SUMMARY_MANAGER")
+  check(type(row["pools"]) is list and 1<=len(row["pools"])<=2,"GROWTH_RUNTIME_SUMMARY_POOLS")
+  for pool in row["pools"]:
+   check(type(pool) is dict and set(pool)=={"dev","reserved_bytes","reserved_inodes","before","after"}
+ and pool["reserved_bytes"]==8192*(1 if phase=="pre" else 2)
+ and pool["reserved_inodes"]==32*(1 if phase=="pre" else 2),"GROWTH_RUNTIME_SUMMARY_POOL")
+   check.integer(pool["dev"])
+   for key in ("before","after"):
+    check(type(pool[key]) is list and len(pool[key])==2 and all(type(n) is int for n in pool[key])
+ and pool[key][0]>=pool["reserved_bytes"] and pool[key][1]>=pool["reserved_inodes"],"GROWTH_RUNTIME_SUMMARY_CAPACITY")
+ return value
 
 def _validate_journal_transition(value, *, priors, implementation, current_boot=None):
     """Consume the host projection; no host-original verification is claimed."""
     check = _Checks("CORE_JOURNAL_")
     check.exact(value, {'schema','authority','implementation','session','nonce','access_mode',
-        'host_writer_observation','continuous_exclusion_proven','input_sha256','manifest_sha256',
+        'host_writer_observation','continuous_exclusion_proven','input_sha256','manifest_sha256','runtime_parent_binding','runtime_preparation',
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v10'
-        and value['session']=='lhqjgrow-20261009a', 'JOURNAL_SCHEMA')
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v11'
+        and value['session']=='lhqjgrow-20261009b', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=VM_ADOPTION_A,C=VM_ADOPTION_C)
+        A=RUNTIME_A,C=RUNTIME_C)
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     check(type(value['guest_startup_assurance']) is dict and canonical(value['guest_startup_assurance'])
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False)), 'GUEST_STARTUP_PREMISE')
     _validate_maintenance_resume(value['previous_maintenance'])
+    _validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
+        dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
     check.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
     for item in implementation.values():
         check(type(item) is str and re.fullmatch(r"[0-9a-f]{40}",item), "IMPLEMENTATION")
@@ -1954,10 +2007,10 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261009a.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261009b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     for row in rows:
         check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009a.'):]])
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261009b.'):]])
         check.digest(row['sha256'])
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -2018,7 +2071,7 @@ def _validate_approved_components(value):
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v14", "RECONCILIATION_SCHEMA")
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v15", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
@@ -3689,9 +3742,15 @@ def _admit_exec_binding(effects, path, expected):
         raise
 
 
-def _admit_run_helper(effects, policy, program_check, *, prior_observation=None):
+def _admit_run_helper(effects, policy, program_check, *, prior_observation=None, user_uid=None):
     """One approved semantic child: bounded streams, CPU limit, real wait4/EOF."""
     argv, env, limits = policy["argv"], policy["environment"], policy["limits"]
+    if user_uid is not None:
+        _require(type(user_uid) is int and user_uid == 1100 and prior_observation is None
+            and argv[:5] == ['/usr/bin/systemctl','--user','--no-pager','--no-ask-password','show']
+            and env.get('XDG_RUNTIME_DIR') == '/run/user/1100'
+            and env.get('DBUS_SESSION_BUS_ADDRESS') == 'unix:path=/run/user/1100/bus',
+            'CORE_RUNTIME_HELPER_CREDENTIALS')
     seen = getattr(effects, "_admit_helpers_attempted", None)
     if seen is None:
         effects._admit_helpers_attempted = seen = set()
@@ -3734,6 +3793,10 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None)
                  and time.monotonic_ns() < mono_end, "CORE_ADMIT_HELPER_TIMEOUT")
     def cpu_limit():
         resource.setrlimit(resource.RLIMIT_CPU, (limits["command_cpu_seconds"], limits["command_cpu_seconds"]))
+        if user_uid is not None:
+            os.setgroups([])
+            os.setresgid(1100,1100,1100)
+            os.setresuid(1100,1100,1100)
     def poll(stopping=False):
         nonlocal waited
         check = (lambda: _clock(effects, effects.context["guest_deadlines"])) if stopping else guard
@@ -5193,10 +5256,39 @@ class FieldEffects:
             os.close(fd)
             raise
 
-    def _capacity_systemctl(self, arguments, program, *, prior_observation=None):
+    def _capacity_user_bus(self):
+        result = {}
+        for path, names in (('/run/user/1100',('bus',)),('/run/user/1100/systemd',('private',))):
+            fd = self._capacity_directory(path)
+            try:
+                info = self._capacity_call(os.fstat,fd)
+                _require(info.st_uid == info.st_gid == 1100
+                    and stat.S_IMODE(info.st_mode) in ((0o700,) if path.endswith('/1100') else (0o700,0o755)),
+                    'CORE_RUNTIME_USER_DIRECTORY')
+                result[path] = _admit_stat(info)
+                for name in names:
+                    item = self._capacity_call(os.stat,name,dir_fd=fd,follow_symlinks=False)
+                    _require(stat.S_ISSOCK(item.st_mode) and item.st_uid == item.st_gid == 1100,
+                        'CORE_RUNTIME_USER_SOCKET')
+                    result[path+'/'+name] = _admit_stat(item)
+                _require(_admit_stat(self._capacity_call(os.stat,path,follow_symlinks=False)) == _admit_stat(info),
+                    'CORE_RUNTIME_USER_DIRECTORY_DRIFT')
+            finally:os.close(fd)
+        return result
+
+    def _capacity_systemctl(self, arguments, program, *, prior_observation=None, user_uid=None):
         old_show = any(arguments[:3] == ['show', '--all', _prior_profile(index)['unit']]
                        for index in (0, 1, 2, 3))
         _require(old_show == (prior_observation is not None), 'CORE_PRIOR_SCOPE_SHOW_POLICY')
+        bus = None
+        if user_uid is not None:
+            import pwd
+            binding = _validate_runtime_binding(_approved_inputs_envelope(self.context)['reconciliation']['journal_transition']['runtime_parent_binding'])
+            account = self._capacity_call(pwd.getpwuid,1100)
+            _require(user_uid == 1100 and dict(name=account.pw_name,uid=account.pw_uid,gid=account.pw_gid) == binding['account']
+                and prior_observation is None and arguments[:2] == ['show',binding['parents']['retained_ordinary']['unit']],
+                'CORE_RUNTIME_USER_QUERY')
+            bus = self._capacity_user_bus()
         def verify():
             reader = _admit_reader(self._effect_guard, '/', 0)
             try:
@@ -5205,12 +5297,15 @@ class FieldEffects:
                 return current
             finally:
                 reader.close()
-        policy = dict(argv=[program['path'], '--system', '--no-pager', '--no-ask-password', *arguments],
+        policy = dict(argv=[program['path'], '--user' if user_uid is not None else '--system', '--no-pager', '--no-ask-password', *arguments],
             environment={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'SYSTEMD_COLORS': '0'},
             limits=dict(command_seconds=5, command_cpu_seconds=2, stdout_bytes=32768,
                         stderr_bytes=32768, combined_output_bytes=32768))
+        if user_uid is not None:
+            policy['environment'].update(XDG_RUNTIME_DIR='/run/user/1100',DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/1100/bus')
         if prior_observation is None:
-            raw, stderr, receipt = _admit_run_helper(self, policy, verify)
+            if user_uid is None:raw, stderr, receipt = _admit_run_helper(self, policy, verify)
+            else:raw, stderr, receipt = _admit_run_helper(self, policy, verify,user_uid=1100)
         else:
             membership = ('0::' + self.context['hello']['carrier_unit']['control_group'] + '\n').encode('ascii')
             _require(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
@@ -5219,58 +5314,66 @@ class FieldEffects:
             _require(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
                 'CORE_PRIOR_SCOPE_HELPER_CGROUP')
         _require(not stderr and receipt['exit_status'] == 0, 'CORE_CAP_SYSTEMCTL_FAILED')
+        if bus is not None:_require(bus == self._capacity_user_bus(),'CORE_RUNTIME_USER_BUS_DRIFT')
         return raw
 
     def _capacity_managers(self, programs, ordinary_uid):
         locators = self.context['manifest']['locators']; hello = self.context['hello']['carrier_unit']
-        roles = {role + '_cgroup': locators[role + '_parent_unit']
-                 for role in ('controller', 'management', 'supervisor', 'query', 'ordinary')}
-        roles['retained_ordinary_cgroup'] = PurePosixPath(locators['retained_ordinary_parent_path']).name
+        binding = _validate_runtime_binding(_approved_inputs_envelope(self.context)['reconciliation']['journal_transition']['runtime_parent_binding'])
+        roles = {role + '_cgroup': row['unit'] for role,row in binding['parents'].items()}
         roles['user_manager'] = locators['user_manager_unit']; roles['carrier'] = locators['carrier_unit']
         _require(roles['user_manager'] == 'user@' + str(ordinary_uid) + '.service', 'CORE_CAP_MANAGER_USER')
         properties = ('Id', 'LoadState', 'ActiveState', 'SubState', 'ControlGroup', 'InvocationID',
             'MemoryMax', 'MemorySwapMax', 'TasksMax', 'CPUQuotaPerSecUSec', 'Delegate', 'User',
             'RuntimeMaxUSec', 'TimeoutStopUSec', 'Restart', 'KillMode', 'ExitType')
-        raw = self._capacity_systemctl(['show', *sorted(set(roles.values())), '--property=' + ','.join(properties)],
-                                      programs['systemctl'])
         units = {}
-        for block in raw.decode('ascii', 'strict').strip().split('\n\n'):
-            rows = [line.split('=', 1) for line in block.splitlines()]
-            _require(all(len(row) == 2 for row in rows) and len({row[0] for row in rows}) == len(rows),
-                     'CORE_CAP_MANAGER_FORMAT')
-            value = dict(rows)
-            _require(set(value) <= set(properties) and {'Id', 'LoadState', 'ActiveState', 'SubState',
-                'ControlGroup', 'InvocationID', 'MemoryMax', 'MemorySwapMax', 'TasksMax',
-                'CPUQuotaPerSecUSec'} <= set(value) and value['Id'] not in units, 'CORE_CAP_MANAGER_FORMAT')
-            units[value['Id']] = value
-        _require(set(units) == set(roles.values()), 'CORE_CAP_MANAGER_SET')
+        targets = {role: ('user' if role == 'retained_ordinary_cgroup' else 'system',unit) for role,unit in roles.items()}
+        _require(len(set(targets.values())) == len(targets),'CORE_RUNTIME_ROLE_ALIAS')
+        for manager in ('system','user'):
+            names = sorted(unit for scope,unit in targets.values() if scope == manager)
+            args = ['show', *names, '--property=' + ','.join(properties)]
+            raw = (self._capacity_systemctl(args,programs['systemctl'],user_uid=1100) if manager == 'user'
+                else self._capacity_systemctl(args,programs['systemctl']))
+            found = set()
+            for block in raw.decode('ascii', 'strict').strip().split('\n\n'):
+                rows = [line.split('=', 1) for line in block.splitlines()]
+                _require(all(len(row) == 2 for row in rows) and len({row[0] for row in rows}) == len(rows),
+                         'CORE_CAP_MANAGER_FORMAT')
+                value = dict(rows)
+                _require(set(value) <= set(properties) and {'Id', 'LoadState', 'ActiveState', 'SubState',
+                    'ControlGroup', 'InvocationID', 'MemoryMax', 'MemorySwapMax', 'TasksMax',
+                    'CPUQuotaPerSecUSec'} <= set(value) and value['Id'] not in found, 'CORE_CAP_MANAGER_FORMAT')
+                found.add(value['Id']);units[manager,value['Id']] = value
+            _require(found == set(names),'CORE_CAP_MANAGER_SET')
         parents = {}; observed = {}
         for role, unit in roles.items():
-            value = units[unit]; logical = value['ControlGroup']
+            value = units[targets[role]]; logical = value['ControlGroup']
             _require(value['LoadState'] == 'loaded' and value['ActiveState'] == 'active'
                      and value['SubState'] in ('active', 'running')
                      and re.fullmatch(r'[0-9a-f]{32}', value['InvocationID']) is not None,
                      'CORE_CAP_MANAGER_STATE')
             self._absolute(logical)
-            if role == 'retained_ordinary_cgroup':
-                _require(logical == locators['retained_ordinary_parent_path'].removeprefix('/sys/fs/cgroup'),
-                         'CORE_CAP_RETAINED_CGROUP_CHANGED')
+            if role.endswith('_cgroup'):
+                row = binding['parents'][role.removesuffix('_cgroup')]
+                _require(logical == row['control_group'] and value['MemoryMax'] == str(row['memory_bytes'])
+                    and value['MemorySwapMax'] == '0' and value['TasksMax'] == str(row['tasks_max'])
+                    and _cap_usec(value['CPUQuotaPerSecUSec']) == row['cpu_quota_per_sec_usec'],
+                    'CORE_RUNTIME_CURRENT_PARENT')
             fd = self._capacity_directory('/sys/fs/cgroup' + logical)
             try:
                 info = self._capacity_call(os.fstat, fd)
                 controllers = self._capacity_kernel('cgroup.controllers', 256, dir_fd=fd).decode('ascii').split()
-                if role != 'user_manager':
-                    for filename, property_name in (('memory.max', 'MemoryMax'), ('memory.swap.max', 'MemorySwapMax'),
-                                                     ('pids.max', 'TasksMax')):
-                        actual = self._capacity_kernel(filename, 64, dir_fd=fd).decode('ascii').strip()
-                        _require(actual == ('max' if value[property_name] == 'infinity' else value[property_name]),
-                                 'CORE_CAP_CGROUP_LIMIT_DRIFT')
-                    cpu = self._capacity_kernel('cpu.max', 128, dir_fd=fd).decode('ascii').split()
-                    _require(len(cpu) == 2 and cpu[1].isdecimal() and int(cpu[1]) > 0,
-                             'CORE_CAP_CGROUP_CPU')
-                    _require(cpu[0] == 'max' if value['CPUQuotaPerSecUSec'] == 'infinity' else
-                             cpu[0].isdecimal() and int(cpu[0]) * 1000000 ==
-                             _cap_usec(value['CPUQuotaPerSecUSec']) * int(cpu[1]), 'CORE_CAP_CGROUP_CPU')
+                for filename, property_name in (('memory.max', 'MemoryMax'), ('memory.swap.max', 'MemorySwapMax'),
+                                                 ('pids.max', 'TasksMax')):
+                    actual = self._capacity_kernel(filename, 64, dir_fd=fd).decode('ascii').strip()
+                    _require(actual == ('max' if value[property_name] == 'infinity' else value[property_name]),
+                             'CORE_CAP_CGROUP_LIMIT_DRIFT')
+                cpu = self._capacity_kernel('cpu.max', 128, dir_fd=fd).decode('ascii').split()
+                _require(len(cpu) == 2 and cpu[1].isdecimal() and int(cpu[1]) > 0,
+                         'CORE_CAP_CGROUP_CPU')
+                _require(cpu[0] == 'max' if value['CPUQuotaPerSecUSec'] == 'infinity' else
+                         cpu[0].isdecimal() and int(cpu[0]) * 1000000 ==
+                         _cap_usec(value['CPUQuotaPerSecUSec']) * int(cpu[1]), 'CORE_CAP_CGROUP_CPU')
                 if role not in ('carrier', 'user_manager'):
                     _require({'cpu', 'memory', 'pids'} <= set(controllers), 'CORE_CAP_CONTROLLERS')
                     parents[role] = dict(path='/sys/fs/cgroup' + logical, dev=info.st_dev, ino=info.st_ino,
@@ -5283,6 +5386,12 @@ class FieldEffects:
         manager = observed['user_manager']
         _require(manager['properties']['Delegate'] == 'yes' and manager['properties']['User'] == str(ordinary_uid),
                  'CORE_CAP_MANAGER_DELEGATION')
+        expected_manager = binding['parents']['retained_ordinary']
+        _require(manager['path'] == binding['manager']['control_group']
+            and manager['properties']['MemoryMax'] == str(expected_manager['memory_bytes'])
+            and manager['properties']['TasksMax'] == str(expected_manager['tasks_max'])
+            and manager['properties']['MemorySwapMax'] == '0'
+            and _cap_usec(manager['properties']['CPUQuotaPerSecUSec']) == 1000000, 'CORE_RUNTIME_MANAGER_LIMITS')
         carrier = observed['carrier']; value = carrier['properties']
         expected = {'Id': 'name', 'ControlGroup': 'control_group', 'InvocationID': 'invocation_id',
             'ActiveState': 'active_state', 'SubState': 'sub_state', 'Restart': 'restart',
@@ -8026,16 +8135,13 @@ def _validate_admission(value, context):
             and type(item["controllers"]) is list
             and all(controller in ("cpu", "memory", "pids")
                 for controller in item["controllers"]), "CGROUP")
-        expected_unit = (PurePosixPath(locators['retained_ordinary_parent_path']).name
-            if role == 'retained_ordinary_cgroup' else locators[role.removesuffix('_cgroup') + '_parent_unit'])
+        runtime = _validate_runtime_binding(_approved_inputs_envelope(context)['reconciliation']['journal_transition']['runtime_parent_binding'])
+        target = runtime['parents'][role.removesuffix('_cgroup')]
+        expected_unit = target['unit']
         _admit(item['unit'] == expected_unit
             and item['path'].startswith('/sys/fs/cgroup/')
             and PurePosixPath(item['path']).name == expected_unit, 'CGROUP_BINDING')
-        if role == 'retained_ordinary_cgroup':
-            # The pinned systemd record uses a logical ControlGroup. Match
-            # the collector's filesystem path using its same normalization.
-            expected_path = '/sys/fs/cgroup' + locators['retained_ordinary_parent_path'].removeprefix('/sys/fs/cgroup')
-            _admit(item['path'] == expected_path, 'CGROUP_BINDING')
+        _admit(item['path'] == '/sys/fs/cgroup' + target['control_group'], 'CGROUP_BINDING')
     filesystems = _admit.exact(value["filesystems"], directory_roles, "FILESYSTEM_FIELDS")
     for role, item in filesystems.items():
         _admit.exact(item, _fields('mount_id dev fs_uuid fstype mount_options bytes_available inodes_available'), "FILESYSTEM")

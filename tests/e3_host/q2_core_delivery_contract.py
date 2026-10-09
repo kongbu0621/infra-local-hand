@@ -1293,3 +1293,16 @@ VM_ADOPTION_SCOPE = "LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1"
 VM_ADOPTION_BASELINE = {'commit': '13cd2d3e7ac9a307a7c960f713524fefa2959a95', 'tree': '9e7ab5eb4b555cfcd33ce1d7aa56f11e26b1055d', 'documents_sha256': {'docs/a2-execution/q2-core-vm-adoption-continuation/ARCHITECTURE.md': '5ca95b118dcf267efe2db2f822341d621c9b22d3cac3f6fbfe7b3c2b2c20eba4', 'docs/a2-execution/q2-core-vm-adoption-continuation/IMPLEMENTATION_PLAN.md': 'de5273f46a01c9412e75abab2a5a222662137d10a8c487f9069d7c9e5819282d', 'docs/a2-execution/q2-core-vm-adoption-continuation/REQUIREMENTS.md': '15a4955d572f16baf9775bb752b2640db2dddcae8d6ad3b7577ab7c64a27c496'}}
 VM_ADOPTION_OWNER_DECISION = {'event': 'LH-Q2-CORE-VM-ADOPTION-CONTINUATION-CLOSURE-20261009-01', 'record_path': 'docs/governance/Q2_CORE_VM_ADOPTION_CONTINUATION_OWNER_DECISION.md', 'record_sha256': '740cb305e75041687f4c229fbecd7d58469993b93b76566000e6a7181758488c'}
 VM_ADOPTION_CLOSURE = {'commit': '31b8e21116edd3678d738c1b9525edb6b3da8ae8', 'tree': 'ff085251c03910410abe54666999ff47b28d4a92'}
+
+# Exact runtime continuation; this closes scope, not field readiness.
+RUNTIME_SCOPE = "LH-Q2-CORE-RUNTIME-CONTINUATION-v1"
+RUNTIME_BASELINE = dict(commit="dc6e6c511936e02f41cda0cf86cbd571f3aa253d",
+    tree="01fa3c68860a2e5106e9d3e59fdb1b9efe63d7b1", documents_sha256={
+    "docs/a2-execution/q2-core-runtime-continuation/REQUIREMENTS.md": "35311cf40446b9e87047e74fcb4cbc04c31e6b088c0db382a34d8c789e952448",
+    "docs/a2-execution/q2-core-runtime-continuation/ARCHITECTURE.md": "97e44b405a8c7b89e116e7578c81f6ce97f2f85e2950c6aaa9cdef1e0b386b63",
+    "docs/a2-execution/q2-core-runtime-continuation/IMPLEMENTATION_PLAN.md": "bfb3d448210c01cff0fdae3088eb5f90ea19d978df842b6c773234c5bff40b78"})
+RUNTIME_OWNER_DECISION = dict(event="LH-Q2-CORE-RUNTIME-CONTINUATION-CLOSURE-20261009-01",
+    record_path="docs/governance/Q2_CORE_RUNTIME_CONTINUATION_OWNER_DECISION.md",
+    record_sha256="dbee48fb03ec19bc98486422ad813d50139a68261bb6e1c905daf4823ac72cd1")
+RUNTIME_CLOSURE = dict(commit="3633b1e963b35647bef8d7f94592089130ff25a1",
+    tree="d51352ba8d9964745ca7fdda2f05a0a8469da8a7")

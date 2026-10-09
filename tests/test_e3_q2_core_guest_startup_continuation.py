@@ -87,12 +87,12 @@ def test_original_names_resume_digest_cannot_substitute_for_fifth_history():
 def test_exec_candidate_binds_exact_scope_and_new_independent_closure(source_git):
     h.growth_sources(source_git.head)
     value=preflight()
-    assert (value['A'],value['C'])==(h.VM_A,h.VM_C)
-    assert p.maintenance_resume()['scope']==p.c.VM_ADOPTION_SCOPE
-    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261009a'
-    assert len(p.previous_journal_profiles())==9
-    assert len(p.previous_maintenance_pins())==45
-    assert len(p.maintenance_commitments()['generations'])==10
+    assert (value['A'],value['C'])==(h.RT_A,h.RT_C)
+    assert p.maintenance_resume()['scope']==p.c.RUNTIME_SCOPE
+    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261009b'
+    assert len(p.previous_journal_profiles())==10
+    assert len(p.previous_maintenance_pins())==50
+    assert len(p.maintenance_commitments()['generations'])==11
     assert ['merge-base','--is-ancestor',h.DS_A,h.DS_C] in source_git.calls
     assert ['merge-base','--is-ancestor',h.DS_C,source_git.head] in source_git.calls
 
@@ -104,6 +104,8 @@ def post_report():
     value.update(phase='post',status='FILESYSTEM_GROWN',boot_id='22222222-2222-3333-4444-555555555555',
         original_boot_id=pre['boot_id'],pre_report_sha256=g.digest(g.canonical(pre)),
         journal_device=device(g.NEW_SIZE),resize_result=dict(returncode=0,both_eof=True,stdout_bytes=0,stderr_bytes=0,stdout_sha256=g.digest(b''),stderr_sha256=g.digest(b'')))
+    from core_runtime_fixture import report as runtime_report
+    value['runtime_preparation']=runtime_report(description(),value['boot_id'],'post')
     value['journal_device']['superblock']['filesystem_bytes']=g.NEW_SIZE
     return value
 
@@ -197,14 +199,16 @@ def test_host_only_confirmation_cannot_enter_new_window(monkeypatch,capsys):
     assert result['marker_created'] is False and result['ssh_requests']==0
 
 
-@pytest.mark.parametrize('user',[False,True])
-def test_pre_and_post_accept_exact_declared_manager_set(user):
+def test_pre_and_post_accept_exact_declared_manager_set():
     desc=description();pre=pre_report();post=post_report()
-    if user:
-        desc['domain_units'].append(dict(name='user.slice',manager='user',control_group='/user.slice'))
-        for report in (pre,post):
-            report['quiescence']['startup']['user_1100']=dict(copy.deepcopy(report['quiescence']['startup']['system']),domains=[dict(name='user.slice',properties_sha256='b'*64)])
+    assert {row['manager'] for row in desc['domain_units']}=={'system','user'}
     post['pre_report_sha256']=g.digest(g.canonical(pre))
     post_desc=dict(desc,phase='post',pre_report=pre,pre_report_sha256=post['pre_report_sha256'])
     assert g.validate_pre_report(pre,desc)==pre
     assert g.validate_post_report(post,post_desc)==post
+
+
+@pytest.fixture(autouse=True)
+def runtime_pin(monkeypatch):
+    from core_runtime_fixture import patch
+    patch(monkeypatch)

@@ -59,6 +59,8 @@ DS_A=history.c.DS_BASELINE["commit"]
 DS_C=history.c.DS_CLOSURE["commit"]
 VM_A=(history.c.VM_ADOPTION_BASELINE or {}).get("commit")
 VM_C=(history.c.VM_ADOPTION_CLOSURE or {}).get("commit")
+RT_A=history.c.RUNTIME_BASELINE["commit"]
+RT_C=history.c.RUNTIME_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -82,11 +84,11 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261009a"
+SESSION="lhqjgrow-20261009b"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=12960*MIB,3700
+HOST_BYTES,HOST_INODES=14256*MIB,4070
 STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 "BACKED_UP","IMAGE_GROWN","BOOTED","FILESYSTEM_GROWN","VERIFIED")
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
@@ -703,6 +705,9 @@ def validate_q1_frozen(frozen):
  for role,pin in proof["sources"].items():
   require(frozen["source_binding"]["sources"]["q1_"+role]==pin,"GROWTH_Q1_FROZEN_PIN")
  return proof
+def runtime_parent_binding(original,retry,system):
+ try:return history.runtime_parent_binding(original,retry,system)
+ except history.c.ContractError as error:raise prior.r.ObservationError(str(error)) from error
 def freeze_growth_inputs(inputs,frame_path,plan_archive,archives_dir,*,q1_sources=None):
  raw=inputs.read(frame_path,*GROWTH_FRAME_PIN,"management_frame")
  anchor_path=_growth_frame_anchor(raw)
@@ -727,12 +732,16 @@ documents,horizon,paths)
   if row["name"] in carriers:row["control_group"]=None
  require(before==inventory and proof["boot_id"]==boot,"GROWTH_Q1_ORIGINAL_INVENTORY")
  inventory=merge_q1_inventory(inventory,proof)
+ runtime=runtime_parent_binding(selected["original_plan"],selected["retry_preparation"],documents["20261001e","plan"])
+ from e3_host import q2_journal_growth_guest as g
+ g.validate_runtime_binding(runtime,inventory)
  binding=dict(sources=dict(inputs.bindings),plan_sha256=prior.r.PLAN_SHA,
+runtime_parent_binding_sha256=digest(canonical(runtime)),
 inventory_sha256=digest(canonical(inventory)),
 description_sha256=digest(description),horizon_sha256=digest(canonical(horizon)),q1_declaration=proof)
  inputs.recheck()
  return dict(anchor_path=anchor_path,paths=paths,description=description,horizon=horizon,boot_id=boot,
-inventory=inventory,source_binding=binding,source_binding_sha256=digest(canonical(binding)),q1_raw=q1_raw,q1_sources=q1_sources)
+inventory=inventory,runtime_parent_binding=runtime,source_binding=binding,source_binding_sha256=digest(canonical(binding)),q1_raw=q1_raw,q1_sources=q1_sources)
 
 def adopt_vm_activation(inputs,frozen,spec):
  """One fixed retained archive keeps the original descriptor/FD limits."""
@@ -967,13 +976,15 @@ b=base64.b64decode(sys.argv[1],validate=True)
 if len(b)>49152 or hashlib.sha256(b).hexdigest()!=sys.argv[2]: raise ValueError('BUNDLE_PIN')
 z=zlib.decompressobj(); r=z.decompress(b,393217)
 if len(r)>393216 or not z.eof or z.unconsumed_tail or z.unused_data: raise ValueError('BUNDLE_BOUND')
-d=json.loads(r); p=types.ModuleType('e3_host'); p.__path__=[]; sys.modules['e3_host']=p
+d=json.loads(r)
+if type(d) is not dict or set(d)!={'encoding','reader','guest','input'} or d['encoding']!='utf8': raise ValueError('BUNDLE_ENCODING')
+p=types.ModuleType('e3_host'); p.__path__=[]; sys.modules['e3_host']=p
 for key,name in [('reader','q2_core_capacity_reader'),('guest','q2_journal_growth_guest')]:
- s=base64.b64decode(d[key],validate=True)
+ s=d[key].encode('utf-8')
  if not 0<len(s)<=(98304 if key=='guest' else 65536): raise ValueError('SOURCE_BOUND')
  m=types.ModuleType('e3_host.'+name); m.__package__='e3_host'; sys.modules[m.__name__]=m; setattr(p,name,m)
  exec(compile(s,'<'+name+'>','exec'),m.__dict__)
-v=base64.b64decode(d['input'],validate=True)
+v=d['input'].encode('utf-8')
 if len(v)>65536: raise ValueError('INPUT_BOUND')
 sys.exit(m.entry(v))
 """
@@ -984,7 +995,8 @@ def source_bundle(sources,descriptor):
 (("reader","q2_core_capacity_reader.py"),("guest","q2_journal_growth_guest.py"))})
  require(all(type(raw) is bytes and 0<len(raw)<=(98304 if key=="guest" else 65536)
  for key,raw in value.items()),"GROWTH_BUNDLE_INPUT")
- raw=canonical({key:base64.b64encode(data).decode("ascii") for key,data in value.items()})
+ # Preserve source bytes via strict UTF-8, avoiding base64 inside compressed JSON.
+ raw=canonical(dict(encoding="utf8",**{key:data.decode("utf-8","strict") for key,data in value.items()}))
  require(len(raw)<=393216,"GROWTH_BUNDLE_BOUND")
  compressed=zlib.compress(raw,9)
  require(len(compressed)<=49152,"GROWTH_BUNDLE_BOUND")
@@ -1258,6 +1270,20 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
     require(digest(git("show",commit+":"+path))==sha,"GROWTH_VM_A_CHANGED")
   for commit in (VM_C,expected):
    require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_VM_B_CHANGED")
+ runtime=(history.c.RUNTIME_BASELINE,history.c.RUNTIME_OWNER_DECISION,history.c.RUNTIME_CLOSURE)
+ require(all(row is None for row in runtime) or all(type(row) is dict for row in runtime),"GROWTH_RT_AUTHORITY_PARTIAL")
+ if runtime[0] is not None:
+  baseline,decision,closure=runtime
+  require(RT_A==baseline["commit"] and RT_C==closure["commit"] and expected!=RT_C,"GROWTH_RT_AUTHORITY")
+  git("merge-base","--is-ancestor",RT_A,RT_C)
+  git("merge-base","--is-ancestor",RT_C,expected)
+  for authority in (baseline,closure):
+   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_RUNTIME_TREE")
+  for path,sha in baseline["documents_sha256"].items():
+   for commit in (RT_A,RT_C,expected):
+    require(digest(git("show",commit+":"+path))==sha,"GROWTH_RT_A_CHANGED")
+  for commit in (RT_C,expected):
+   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_RUNTIME_B_CHANGED")
  for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
   require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
  decision=history.c.SERIAL_OWNER_DECISION
@@ -1428,15 +1454,15 @@ def resume_sha256(resume):
  history.validate_maintenance_resume(resume)
  return digest(canonical(resume))
 def make_preflight(commit,manifest,window,nonce,usage,*,resume):
- value=dict(schema="lhq-journal-growth-preflight/v10",R=R,A=VM_A,C=VM_C,D=commit,manifest_sha256=manifest,
+ value=dict(schema="lhq-journal-growth-preflight/v11",R=R,A=RT_A,C=RT_C,D=commit,manifest_sha256=manifest,
 window_binding=window,nonce=nonce,usage=usage,window_seconds=900,change_seconds=780,resume_sha256=resume_sha256(resume))
  return parse_preflight(canonical(value))
 def parse_preflight(raw):
  value=prior.r.parse(raw,4096)
  require(type(value) is dict and set(value)=={"schema","R","A","C","D","manifest_sha256","window_binding",
-"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v10",
+"nonce","usage","window_seconds","change_seconds","resume_sha256"} and value["schema"]=="lhq-journal-growth-preflight/v11",
 "GROWTH_PREFLIGHT_SCHEMA")
- require(value["R"]==R and value["A"]==VM_A and value["C"]==VM_C,"GROWTH_PREFLIGHT_AUTHORITY")
+ require(value["R"]==R and value["A"]==RT_A and value["C"]==RT_C,"GROWTH_PREFLIGHT_AUTHORITY")
  require(type(value["D"]) is str and re.fullmatch("[0-9a-f]{40}",value["D"]),"GROWTH_PREFLIGHT_D")
  for field in ("manifest_sha256","nonce","resume_sha256"):
   require(type(value[field]) is str and re.fullmatch("[0-9a-f]{64}",value[field]),"GROWTH_PREFLIGHT_DIGEST")
@@ -1464,7 +1490,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v11",session=SESSION,R=R,A=VM_A,C=VM_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v12",session=SESSION,R=R,A=RT_A,C=RT_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1495,7 +1521,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v11",R=R,A=VM_A,C=VM_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v12",R=R,A=RT_A,C=RT_C,D=self.commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=self.frozen["source_binding"],
 window_binding=self.window.binding,
@@ -1658,7 +1684,7 @@ def main():
  VM_LIMITS={key:resource.getrlimit(key) for key in (resource.RLIMIT_AS,resource.RLIMIT_NOFILE)}
  try:
   require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
-  require(history.c.VM_ADOPTION_CLOSURE is not None,"GROWTH_VM_ADOPTION_NOT_AUTHORIZED")
+  require(history.c.VM_ADOPTION_CLOSURE is not None and history.c.RUNTIME_CLOSURE is not None,"GROWTH_RUNTIME_NOT_AUTHORIZED")
   sources=growth_sources(args.expected_commit)
   require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
 for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")
