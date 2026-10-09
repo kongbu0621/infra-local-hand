@@ -84,6 +84,14 @@ error.diagnostic through the actual result/summary path, and verify that path wi
 inputs before any field consumption. Retain the frozen failed caller. Do not repeat the completed
 offline lookup or add more public budget diagnostics. This handoff does not grant a new field call.
 
+The [private caller diagnostic repair](docs/a2-execution/Q2_CORE_DECLARED_STARTUP_IMPLEMENTATION_REVIEW_20261009.md#私有调用候选的诊断返回修复完成)
+is complete as an unissued private candidate bound to exact aa4e43c. Its actual catch/finally and
+result/summary writers passed all six synthetic cases with full diagnostic preservation and digest
+binding; the field try body and guest adapter remain unchanged. The old caller is retained, the new
+Owner decision is absent, and field entry/SSH/proc calls and field consumption records are zero.
+Next present one new existing-process read for Owner confirmation; do not issue it on repair or test
+success alone. All consumed failures and H01/Q4/H11 NOT_RUN remain unchanged.
+
 ## Completed QI1 and consumed QI2 (2026-10-08)
 
 The completed C10/current-capture binding at `5d8e5db79ebd137716145a60e71e85fe0252fe1d`

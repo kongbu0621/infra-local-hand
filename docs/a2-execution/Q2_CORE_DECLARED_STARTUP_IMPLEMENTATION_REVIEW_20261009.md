@@ -175,3 +175,38 @@ reason，没有CPU/RSS实际值、失败stage或最后通过用量，无法区�
 SSH、服务操作、维护或核心发行。08f继续CONSUMED_FAILED，当前观察同样消费失败；
 PID及准确匹配字段仍未取得，H01/Q4/H11仍NOT_RUN。旧资料核对至此完成，不再重复；
 新的现场观察仍需单独明确授权，日志修复与上述合成检查不提供该权限。
+
+## 私有调用候选的诊断返回修复完成
+
+已完成[具体修复交接](CORE_PROCESS_CALLER_REPAIR_TASK_20261009.txt)。原已消费caller及
+配套原件保留；新候选位于独立私有目录，来源改为准确
+`aa4e43c7d25022824f5f83d1aa71ff3b66950996`。候选记录和准确SHA-256保留本地。
+没有再修改公开预算函数，没有重复旧现场资料核对。
+
+最小返回修复是在原异常处理处保留完整`error.diagnostic`以及原reason/type/errno，
+将原结果落盘段提取为同一实际输出函数，并在其中写入summary。summary保存完整
+error对象，同时绑定最终result的basename、bytes和SHA-256；打印输出与落盘result
+经解析后完全相同。旧Owner决定没有被复制为新的授权：候选的Owner决定为空，
+prepare和execute首先拒绝未授权调用，候选输出目录仍不存在。
+
+对候选源码的AST比较证明，实际执行try主体（包括Usage初始化、采样位置、时钟、
+限额、运输及调用顺序）与旧caller一致，guest adapter字节也一致。八个注册导入
+通过原来源核对，整个tests/e3_host目录与aa4e43c没有差异；host、guest、reader
+的准确来源字节和摘要另存私有验证记录。候选语法检查通过。
+
+六类合成输入全部通过：self CPU、已回收子进程CPU、self RSS峰值、已回收子进程
+RSS峰值、CPU取整边界及正常路径。测试从候选AST直接提取首次采样语句、完整
+except和finally，调用候选实际put和结果/summary写入函数，没有手抄序列化逻辑。
+现场入口、运输、Anchor、guest相关读取等设置一调用即失败的哨兵，资源与时间
+输入全部合成，模拟输出仅写隔离目录；没有调用prepare或execute。
+
+五种拒绝逐字段核对stage、CPU/RSS的actual/limit/unit/exceeded及全部components，
+同时核对reason/type/errno、摘要绑定和最后通过用量不变。正常路径error为null，
+没有伪造预算拒绝或派发现场调用。每例最终输出四件，最大逻辑1872 B、分配8192 B；
+完整打印结果最大1147 B，均在原限制内。合成完整失败示例与六例输出保留本地，
+不作为历史真实用量，也不发布私有路径或原件索引。
+
+候选修复与离线返回链验证已完成，现场发行仍NOT_ISSUED。本次SSH、/proc读取和
+现场入口调用均为0，没有创建现场消费记录。08f和后来的当前观察仍消费失败，
+PID仍未知，H01/Q4/H11仍NOT_RUN。下一步仅提交一次新的现有进程只读检查供Owner
+确认；本记录、候选或测试本身均不授权现场读取、维护、扩容、关机或核心发行。
