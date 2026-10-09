@@ -68,3 +68,13 @@ Popen 的 `/dev/null`、两组流管道和 exec 错误管道共7个；另留3个
 不足，真实128限额/EMFILE测试仍在独立子进程中运行，生产准入代码未放宽。
 在pytest本身额外持有至220号FD的环境中，三个相关文件87项通过，验证不再依赖测试顺序。
 后续新提交必须检查自己的首次CI，不重跑旧失败候选来替换其历史结果。
+
+修正提交 `2c3982fab8a8d2330a0e161e77d67d2413e43de7` 已发布，其自己的首次push
+[CI 37945349804](https://github.com/kongbu0621/infra-local-hand/actions/runs/37945349804)
+attempt 1三项全部成功，Linux/Windows源码及独立安装验证通过。
+复用该合成夹具的历史接续测试在额外持有至220号FD的pytest环境中另通过426项。
+旧f67首次失败仍原样保留，没有重跑覆盖。新CI结果只验证本次普通修复，不能代替FD1或现场成功。
+
+待审[完整方案A](../governance/Q2_CORE_HOST_FD_CONTINUATION_BASELINE.md)
+`0ed9ba0a8eefa4d1a88ee46192fc18a5ad3fafc8` 已固定且字节不变，仍为OPEN。
+当前只有普通修复和提案完成；新custodian/历史编码实现、09c窗口与原核心批次均未发行。

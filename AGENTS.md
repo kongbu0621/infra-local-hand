@@ -78,6 +78,16 @@ before one proposed 09c maintenance and conditional original 07a core batch. A c
 documents; preserve its bytes. No custodian implementation, new caller or field window was issued.
 The private old09b index remains unpublished pending the specific disclosure approval in A.
 
+Ordinary repair candidate `f67d3076e0bc6717dd94bf1db7e3ecfaba95e290` first CI failed
+in the synthetic coordinator fixture (7251 passed/89 skipped/29 setup errors); it incorrectly
+used the whole pytest process's FD pool. The fixture boundary was corrected without changing
+production admission or isolated real-128-FD tests. New candidate
+`2c3982fab8a8d2330a0e161e77d67d2413e43de7` has its own first push CI `37945349804`,
+attempt 1, all three jobs successful including Linux/Windows and independent installation.
+High-FD synthetic environments also passed 87 relevant and 426 history tests. Preserve the
+earlier failure; no CI rerun replaced it. This ordinary repair does not implement or authorize
+OPEN FD1–FD3, and gives no new field or core PASS.
+
 ## Current approved batch: adopted VM and original core continuation (2026-10-09)
 
 Scope `LH-Q2-CORE-VM-ADOPTION-CONTINUATION-v1` is **CLOSED for VA1–VA3 only**.

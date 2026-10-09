@@ -18,6 +18,9 @@ R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`及其直接来源/完整性、Owner
 
 普通修复见[离线复核](../a2-execution/Q2_CORE_HOST_FD_REVIEW_20261009.md)，只防止已知
 FD不足时继续消费，未实现新所有权协议，也未取得新的现场结果。
+后续普通修复候选 `2c3982fab8a8d2330a0e161e77d67d2413e43de7` 的首次
+[CI 37945349804](https://github.com/kongbu0621/infra-local-hand/actions/runs/37945349804)
+attempt 1为3/3成功；先前f67的首次失败保持，不代替未来FD1准确D验证。
 
 A请求一个完整批次：55件历史原件的有界子进程连续FD持有、重复history引用及全部两端
 验证/发行，随后唯一新09c维护及仅成功后原07a H01/Q4/H11。原128 FD等限制与保护保持；
