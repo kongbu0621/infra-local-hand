@@ -126,10 +126,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v21', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v22', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v21',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v22',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -181,10 +181,10 @@ def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
     from local_preflight_fixture import source_projection
     from transport_failure_fixture import source_projection as transport_source
-    from persistent_continuation_fixture import source as persistent_source
-    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v19',vm_activation=None,
+    from identity_continuation_fixture import source as persistent_source
+    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v20',vm_activation=None,
         local_preflight_source=source_projection(),transport_failure_source=transport_source(),
-        authority=dict(R=c.RULE['commit'],A=(c.PERSISTENT_PATH_BASELINE or {}).get('commit'),C=(c.PERSISTENT_PATH_CLOSURE or {}).get('commit')),
+        authority=dict(R=c.RULE['commit'],A=(c.IDENTITY_RESOURCE_BASELINE or {}).get('commit'),C=(c.IDENTITY_RESOURCE_CLOSURE or {}).get('commit')),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
             indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',

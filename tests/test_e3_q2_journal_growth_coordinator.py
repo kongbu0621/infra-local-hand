@@ -156,7 +156,7 @@ def rig(monkeypatch, tmp_path):
                              start_custody=nothing,custody_exit={},custody=SimpleNamespace(binding={},summary=lambda:{}),
                              raw={"start.sh": b"fixed"}, retained={})
     inputs = SimpleNamespace(recheck=nothing, close=nothing)
-    from persistent_continuation_fixture import source as persistent_source
+    from identity_continuation_fixture import source as persistent_source
     frozen = {"guest_startup_assurance": h.guest_startup_assurance(), "boot_id": BOOT, "source_binding_sha256": "a" * 64, "horizon": {},
               "anchor_path": str(tmp_path), "source_binding": {"resume":h.history.maintenance_resume(),
                   "persistent_source": persistent_source()}, "inventory": {}}
@@ -199,7 +199,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v19'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v20'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]

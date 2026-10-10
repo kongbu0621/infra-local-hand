@@ -1060,7 +1060,8 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
             (c.TRANSPORT_BASELINE,c.TRANSPORT_OWNER_DECISION,c.TRANSPORT_CLOSURE),
             (c.RESUMED_VM_BASELINE,c.RESUMED_VM_OWNER_DECISION,c.RESUMED_VM_CLOSURE),
             (c.PROTECTED_SOURCE_BASELINE,c.PROTECTED_SOURCE_OWNER_DECISION,c.PROTECTED_SOURCE_CLOSURE),
-            (c.PERSISTENT_PATH_BASELINE,c.PERSISTENT_PATH_OWNER_DECISION,c.PERSISTENT_PATH_CLOSURE)) + (() if adoption[0] is None else (adoption,)):
+            (c.PERSISTENT_PATH_BASELINE,c.PERSISTENT_PATH_OWNER_DECISION,c.PERSISTENT_PATH_CLOSURE),
+            (c.IDENTITY_RESOURCE_BASELINE,c.IDENTITY_RESOURCE_OWNER_DECISION,c.IDENTITY_RESOURCE_CLOSURE)) + (() if adoption[0] is None else (adoption,)):
         c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
         for authority in (baseline, closure):
             actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")

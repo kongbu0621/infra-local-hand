@@ -30,6 +30,13 @@ merge commits; raw/index/archive/caller/machine data remain private. R/source/in
 Owner mandate/authority, no exceptions and change control remain. This exact closure
 supersedes older no-new-window clauses only for IR1–IR3; it proves no readiness or PASS.
 
+The [IR1 implementation review](docs/a2-execution/Q2_CORE_IDENTITY_RESOURCE_IMPLEMENTATION_20261011.md)
+records the fixed 19-member old10d consumer, independent current history/cost validation,
+private caller diagnostics and actual top-level completion gates. The new archive is prepared;
+source verification/publication/exact-D CI/independent installations and final caller freezes
+must complete before the one IR2. A's original document bytes and all old freezes remain.
+This implementation record grants no additional window and proves no maintenance/core PASS.
+
 ## Current resource and diagnostic repair (2026-10-11)
 
 Owner directly requested: “上限卡这么死干嘛？ 全部提高一个级别，然后输出加多，加细，可以快速定位问题。”
