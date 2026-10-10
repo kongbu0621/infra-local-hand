@@ -1,5 +1,45 @@
 # Execution guidance
 
+## Current approved batch: persistent-path repair and original core continuation (2026-10-10)
+
+Scope `LH-Q2-CORE-PERSISTENT-PATH-CONTINUATION-v1` is **CLOSED for PP1–PP3 only**.
+[Exact A](docs/governance/Q2_CORE_PERSISTENT_PATH_CONTINUATION_BASELINE.md)
+`4b8e24c1985b19aea957044e5936f4146301c247`, tree `0d4786fecdb1ef1d41e3ad590f4b1a3d7993b017`,
+retains its three document bytes and historical OPEN labels. [Owner B](docs/governance/Q2_CORE_PERSISTENT_PATH_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-PERSISTENT-PATH-CONTINUATION-CLOSURE-20261010-01`, records the adjacent exact
+reply “批准”. The complete request, fixed VM destination and private payload pins are privately retained;
+public records sanitize only local links and that machine destination. R/source/integrity, mandate,
+Owner authority, no exceptions and change control stay. Independent C is bookkeeping only; D must
+descend from C without squash. Scope substeps need no repeated approval.
+
+PP1 authorizes normal PR merge of exact repair #4, fixed one-FD archive adoption of old10c's five
+actual originals/freeze/terminal/completion records, lossless one-level history references, producer
+and independent consumers, full lifecycle/source/payload/cost verification, normal main publication,
+exact D first CI, independent installations and both new caller freezes. Keep all 55 inherited held
+identities and the 128-FD limit; the fixed outer archive remains within 524288 B. Keep both failed
+path reads and their actual originals/freeze/terminal privately; do not imply continuous archive
+ownership of their externally retained records. No extra guest observation is authorized.
+
+PP2 permits one new `lhqjgrow-20261010d`, one preflight and only PASS same-window execute, at most
+two fixed maintenance SSH, one verified normal shutdown, original 256→512 MiB journal growth and
+one original-configuration maintenance restart. Original runtime preparation stays 12 commands/60 s
+per boot inside unchanged totals. Only full successful maintenance originals, actual coordinator/
+custodian completion and independent consumers permit PP3, original unissued `lhqcore-20261007a`
+H01→Q4→H11. Exact destination/private payload are explicitly covered by Owner's batch approval.
+Keep adopted VM/install, Q1, 19/7/7, domain/cgroup/process/writer/data protections and trusted premises.
+
+Sixteen full maintenance obligations plus original core, retained reads/preparation and two new
+1 MiB/32-inode source/archive preparation pools require 20809 MiB/6224 inodes, with no refunds.
+Thirteen historical maintenance generations remain consumed; old09c/old10b are invoked unconsumed
+preflights, and both path reads remain terminal. Failure/unknown/contradiction stops and retains.
+No old replay, scanner, exploratory SSH, retry, supplementary collection, business-service stop,
+cleanup, rollback, other recovery/startup/window or peripheral work. H11 is only the original same-task
+case. Owner authorizes three documents, necessary implementation and sanitized records through normal
+PR merge commits, without direct main push/admin override or squash of C with D. Raw originals,
+indexes, archives, callers and machine metadata stay private. This closure supersedes old no-new-window
+clauses only in PP1–PP3 and proves neither implementation, readiness, maintenance nor core PASS.
+At C, PP1 NOT_STARTED, PP2 NOT_ISSUED, PP3/H01/Q4/H11 NOT_RUN.
+
 ## Fixed read completed; historical path classification repair (2026-10-10)
 
 Owner explicitly approved the adjacent request naming the fixed Q1 VM destination and private
