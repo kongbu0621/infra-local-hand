@@ -21,6 +21,7 @@ import io
 import json
 import math
 import os
+import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import resource
@@ -2020,7 +2021,7 @@ def _validate_vm_activation(value):
     for key in ('system_path','pidfile','serial'):
         path=value[key]
         check(type(path) is str and re.fullmatch(r'/[A-Za-z0-9_./-]{1,4095}',path)
-            and os.path.normpath(path)==path and '..' not in path.split('/'),'ACTIVATION_PATH')
+            and posixpath.normpath(path)==path and '..' not in path.split('/'),'ACTIVATION_PATH')
     check(len({value[k] for k in ('system_path','pidfile','serial')})==3,'ACTIVATION_PATH_ALIAS')
     check.exact(value['index'],{'bytes','sha256'},'CORE_ACTIVATION_INDEX')
     check.integer(value['index']['bytes'],1,65536);check.digest(value['index']['sha256'])

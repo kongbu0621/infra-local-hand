@@ -27,7 +27,7 @@ def limits():
     for key, value in ((resource.RLIMIT_AS, 256*1048576), (resource.RLIMIT_NOFILE, 128), (resource.RLIMIT_CPU, 120)):
         soft, hard = resource.getrlimit(key)
         require(hard == resource.RLIM_INFINITY or hard >= value, 'GUEST_INHERITED_LIMIT')
-        resource.setrlimit(key, (value, hard))
+        resource.setrlimit(key, (value, value))
 
 
 def boot():

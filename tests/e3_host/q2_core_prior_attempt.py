@@ -9,6 +9,7 @@ import base64
 import copy
 import re
 import os
+import posixpath
 import stat
 import struct
 import json
@@ -1168,7 +1169,7 @@ def validate_vm_activation(value):
     for key in ('system_path','pidfile','serial'):
         path=value[key]
         require(type(path) is str and re.fullmatch(r'/[A-Za-z0-9_./-]{1,4095}',path)
-            and os.path.normpath(path)==path and '..' not in path.split('/'),'ACTIVATION_PATH')
+            and posixpath.normpath(path)==path and '..' not in path.split('/'),'ACTIVATION_PATH')
     require(len({value[k] for k in ('system_path','pidfile','serial')})==3,'ACTIVATION_PATH_ALIAS')
     c.exact(value['index'],{'bytes','sha256'},'CORE_ACTIVATION_INDEX')
     c.integer(value['index']['bytes'],1,65536);c.digest(value['index']['sha256'])

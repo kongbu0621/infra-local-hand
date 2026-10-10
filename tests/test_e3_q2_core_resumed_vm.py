@@ -124,8 +124,8 @@ def test_current_guest_real_pipe_peer_under_original_process_limits(case):
 sys.path.insert(0,sys.argv[1])
 from e3_host import q2_current_guest_verification as g
 g.limits()
-assert resource.getrlimit(resource.RLIMIT_AS)[0]==268435456
-assert resource.getrlimit(resource.RLIMIT_NOFILE)[0]==128
+assert resource.getrlimit(resource.RLIMIT_AS)==(268435456,268435456)
+assert resource.getrlimit(resource.RLIMIT_NOFILE)==(128,128)
 mode=sys.argv[2]
 source={'eof':"print('fixed output')",'nonzero':"raise SystemExit(7)",'overflow':"import sys;sys.stdout.write('x'*20000)"}[mode]
 budget=g.Budget()

@@ -364,3 +364,20 @@ def test_historical_ram_loader_rejects_changed_manifest_and_changed_source_befor
     changed.pop("q2_reconciliation_contract.py")
     with pytest.raises(a.c.ContractError, match="LEGACY_TOOL_CLOSURE"):
         a._run_legacy_verifier(manifest, {}, changed)
+
+
+def test_vm_evidence_paths_keep_posix_semantics_on_other_hosts(monkeypatch):
+    import ntpath
+    from types import SimpleNamespace
+    from e3_host import q2_core_prior_attempt as prior
+    from vm_resumption_fixture import records
+    # Only the host path implementation changes; every source relation remains
+    # subject to the ordinary three-source parser and canonical-path rejection.
+    monkeypatch.setattr(prior, 'os', SimpleNamespace(path=ntpath))
+    files, index, boot = records()
+    value = prior.build_vm_resumption(files, index, historical_boot=boot)
+    assert value['system_path'].startswith('/')
+    for path in ('/candidate/../system.qcow2', '/candidate//system.qcow2', '/candidate/./system.qcow2', r'C:\candidate\system.qcow2'):
+        changed = dict(value, system_path=path)
+        with pytest.raises(prior.c.ContractError, match='ACTIVATION_PATH'):
+            prior.validate_vm_activation(changed)
