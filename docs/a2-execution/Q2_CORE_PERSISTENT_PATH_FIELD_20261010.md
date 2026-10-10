@@ -138,3 +138,60 @@ NAS discovery/new-job admission 屏蔽。此前受限环境428通过/5失败，�
 
 这项修复不能补回旧10d未记录的实际 UID/mode，不改变 PP2 已消费失败和
 H01/Q4/H11 NOT_RUN。定位当前具体权限需要新的固定对象读取；现有调用器不可重放。
+
+## 获准固定对象读取完成
+
+Owner 对相邻完整请求回复“批准”，事件为
+`LH-CORE-PATH-PROTECTION-READ-20261010-01`，唯一标识 `lhqprotect-20261010a`。
+请求明确给出固定 VM 目的地、三个源码载荷、一个准确证据对象及身份绑定；完整请求与
+原回复私有保留。本次只批准 PR #8 正常合入和一次当前元数据读取，没有批准维护、
+权限/所有者修改或核心发行。批内启用、冻结、执行与保留不再逐项询问。
+
+[PR #8](https://github.com/kongbu0621/infra-local-hand/pull/8) 的准确修复 D
+`f1481261fdd05ba4641c89c04ec10a6baae1fea7`、tree
+`804b23c365ad19fe1c09ec553798e0a58e5e03a2`，已通过正常 merge commit
+`860424779e90df9d952b5986a2d1839a18747dc9` 合入 main。
+其首次 CI [38054688735](https://github.com/kongbu0621/infra-local-hand/actions/runs/38054688735)，
+attempt 1，三项成功：Linux 7622通过/89跳过，另有 root fixture 16项通过，独立安装
+94检查/292命令通过；Windows 1940通过/1384跳过，独立安装10检查/10命令通过。
+未直接推 main、使用管理员 override 或 rerun 替换首次记录。
+
+私有候选的19项实际本地文件/管道流程与12项 guest/loader 检查通过；调用器 main 和
+guest 已测字节保持，只启用已审直接入口并绑定实际批准。原 prepared freeze 保留，
+另有最终3844 B immutable freeze 绑定准确来源、首 CI、合入、准备费、载荷与原限额。
+准备池实际856064 B/28 inodes；单路径输入502 B，SSH argv 47803 B，合成峰值41 FD。
+原 CPU120秒、RSS512 MiB、FD128 和120秒窗口保持。source/output各1 MiB/32 inodes，
+旧费用不退款，合计20811 MiB/6288 inodes；维护消费代数仍为14，完整维护义务仍为16份。
+
+唯一调用器实际 exit 0，marker 已创建，SSH calls 为1。结果为
+`CURRENT_OBJECT_OBSERVED`：guest returncode 0、stdout/stderr 双 EOF、两层 stderr 均空，
+errors 为空，固定 host/VM 身份前后一致，guest boot 两次绑定一致。
+remote exit 为 `REPORTED_HELPER_RETURN_WITH_SSH_EOF`。
+对象当前写位谓词通过，**只有所有者不在原允许集合内**；保护结果仍为 `REJECTED`。
+当前 device/inode 与旧引用相同，不能据此证明内容连续性或所有者合法性；本次新样本
+也不能倒填旧10d的缺失字段。原始路径、UID/GID/mode、device/inode 等机器元数据保持私有。
+
+聚合 CPU 1528398999 ns、RSS upper 430723072 B，在原上限内；覆盖范围是 guest 到报告、
+host 到最后一次检查，不将其夸大为完整生命周期逐时测量。guest commands 与 maintenance
+actions 均为0。没有 chmod/chown、内容修改、poweroff、journal 增长、重启或核心包发行。
+
+八份实际原件为 marker、guest stdout/stderr、result、caller stdout/stderr、实际顶层
+完成记录和启动请求记录；启动请求不冒充完成。原件及索引私有保留。prepared/final
+freeze 保持原字节，另写终态 `CONSUMED_READ_COMPLETE_PROTECTION_REJECTED`，禁止重放。
+本次批准已完成，未发生新的平台审批拒绝。PP2 旧失败不变；H01/Q4/H11 仍 **NOT_RUN**。
+
+## 所有者来源的离线核对
+
+本次只读保留的本地源码：原 Q1 创建脚本将该目录及关联 canary 交给专用历史账户，
+分别设置受保护目录/文件权限；后续脚本核对并保持已有所有权。脚本通过运行时账户查询
+取得 UID/GID，没有固定本次观察到的数值。它们可解释设计意图，不能单独证明原执行、
+当前账户名映射或当前数字身份的可信性。脚本摘要及准确语句位置已私有固定，未执行脚本。
+已准确 pin 的 Q1 handoff 原报告另有两个历史根由不同专用账户持有；不能套用当前账户
+集合来解释全部历史对象，也不能由此推断这些根当前状态。
+
+当前实现对全部 essential_paths 统一使用当前 owner 集合，因此缺少显式的历史对象
+所有权绑定。下一修复应将历史对象与其可信来源、准确路径和身份逐项绑定，维护生产方
+与独立核心消费者采用同一规则，并保留严格祖先、禁止写位、完整路径覆盖、process/writer
+和原预算检查。当前材料尚不能充当完整的历史 UID/GID 授权表；不得直接全局加入本次
+UID、删除该证据对象或改写其所有权。该策略变更及后续现场窗口均未由本次读取授权。
+已有八原件和离线核对可供下一步使用，不重复读取或重放。NAS 新入口继续关闭，外围工作暂停。
