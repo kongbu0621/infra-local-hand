@@ -1,5 +1,30 @@
 # Execution guidance
 
+## Pending transport-failure adoption and original core continuation (2026-10-10)
+
+The [transport continuation baseline](docs/governance/Q2_CORE_TRANSPORT_CONTINUATION_BASELINE.md)
+is **OPEN / NOT APPROVED**, scope `LH-Q2-CORE-TRANSPORT-CONTINUATION-v1`, TC1–TC3,
+exact A `b55315822472bfb0c9672426392ef1579466f44d`, tree
+`99680c393c82e038730e29da72b8b3311e0ff6c8`. A contains only three documents; preserve their bytes.
+It proposes exact old10a four-original/absent-receipt adoption and a private fifteen-member archive
+bounded at 196608 B, opened only after the existing 55-original custody handoff. The old09c archive
+limit, fixed custody protocol, original 128 FD limit and identity protections stay unchanged.
+Fourteen maintenance obligations plus original core capture require 18208 MiB/5196 inodes, no refunds.
+One proposed new 10b maintenance and conditional original 07a H01→Q4→H11 form one batch.
+
+The [retained-source review](docs/a2-execution/Q2_CORE_TRANSPORT_PREPARATION_REVIEW_20261010.md)
+verified four maintenance originals, eight local returns, original freeze/terminal and five caller
+hashes; receipt remains absent. Its private evidence archive is not runtime admission. Existing-code
+checks passed 144 tests, including the old 121/122-FD lifecycle; the new staged layout remains unproven.
+No production/test source, new caller or field action was issued. The new failure type, versions,
+input layout and obligation count change the exact UC1 baseline, so the fixed R requires accurate
+new Owner B and independent C before the affected implementation. The 4a59bb7 task is not B/C.
+Do not claim new candidate readiness or reinterpret it as an exception. TC1 NOT_STARTED,
+TC2 NOT_ISSUED, TC3/H01/Q4/H11 NOT_RUN; old UC2 remains CONSUMED_FAILED / STOP_AND_RETAIN.
+Raw evidence, old10a/new10b indexes, archives and machine metadata stay private. Request the complete
+TC1–TC3 batch once; after actual closure, scope substeps need no repeated approval. All original R,
+authority, change control, protection and failure-stop constraints remain.
+
 ## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
 
 Scope `LH-Q2-CORE-USAGE-CONTINUATION-v1` is **CLOSED for UC1–UC3 only**.
