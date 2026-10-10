@@ -262,7 +262,7 @@ def package_fixture(tmp_path, monkeypatch):
         prior_profiles.append(dict(commit=_git(implementation, 'rev-parse', 'HEAD'),
             tree=_git(implementation, 'rev-parse', 'HEAD^{tree}'), sources=pins))
     monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', tuple(prior_profiles))
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE", "MINIMAL", "SERIAL", "SYSTEMCTL", "TEMPLATE", "NAMES", "EXEC", "GS", "QI", "DS", "VM_ADOPTION", "RUNTIME", "HOST_FD", "USAGE", "TRANSPORT", "RESUMED_VM", "PROTECTED_SOURCE"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE", "MINIMAL", "SERIAL", "SYSTEMCTL", "TEMPLATE", "NAMES", "EXEC", "GS", "QI", "DS", "VM_ADOPTION", "RUNTIME", "HOST_FD", "USAGE", "TRANSPORT", "RESUMED_VM", "PROTECTED_SOURCE", "PERSISTENT_PATH"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)

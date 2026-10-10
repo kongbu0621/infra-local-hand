@@ -6,6 +6,7 @@ import sys
 import pytest
 from e3_host import q2_core_prior_attempt as p
 from core_prior_fixture import previous_journal_files, journal_transition, triple_fixture
+from persistent_continuation_fixture import source
 
 if sys.platform.startswith('linux'):
     from e3_host import q2_core_delivery_dispatcher as d
@@ -22,30 +23,30 @@ def test_full_history_reconstruction_and_exact_old09b_failure(monkeypatch):
     old=resume['previous_maintenance'][-1]
     assert old['session']=='lhqjgrow-20261009b' and old['remote_exit']=='UNKNOWN'
     assert old['reason']=='LOCAL_IO_OR_TRANSPORT'
-    original=dict(resume=resume,inventory_sha256='a'*64,other=dict(retained=True))
+    original=dict(resume=resume,persistent_source=source(),inventory_sha256='a'*64,other=dict(retained=True))
     compact=p.encode_manifest_inputs(original)
-    manifest=dict(schema='lhq-journal-growth-manifest/v17',resume=resume,inputs=compact)
-    assert p.decode_manifest_inputs(manifest)==original
+    manifest=dict(schema='lhq-journal-growth-manifest/v18',resume=p.encode_maintenance_resume(resume,source()),inputs=compact)
+    assert p.decode_manifest_inputs(manifest,p.legacy_maintenance_resume())==original
     assert len(p.c.canonical(compact))<len(p.c.canonical(original))
     assert 'resume' not in compact and original['resume']==resume
 
 
 @pytest.mark.parametrize('fault',['digest','missing_ref','double','history','old_version','source'])
 def test_history_encoding_faults_cannot_change_full_source_binding(monkeypatch,fault):
-    original=dict(resume=p.maintenance_resume(),inventory_sha256='a'*64)
-    manifest=dict(schema='lhq-journal-growth-manifest/v17',resume=copy.deepcopy(original['resume']),
+    original=dict(resume=p.maintenance_resume(),persistent_source=source(),inventory_sha256='a'*64)
+    manifest=dict(schema='lhq-journal-growth-manifest/v18',resume=p.encode_maintenance_resume(original['resume'],source()),
         inputs=p.encode_manifest_inputs(original))
     if fault=='digest':manifest['inputs']['resume_sha256']='f'*64
     elif fault=='missing_ref':manifest['inputs'].pop('resume_sha256')
     elif fault=='double':manifest['inputs']['resume']=original['resume']
-    elif fault=='history':manifest['resume']['previous_maintenance'].pop()
+    elif fault=='history':manifest['resume']['previous_runtime_failure']['state']='PASS'
     elif fault=='old_version':manifest['schema']='lhq-journal-growth-manifest/v12'
     elif fault=='source':
         manifest['inputs']['inventory_sha256']='b'*64
-        restored=p.decode_manifest_inputs(manifest)
+        restored=p.decode_manifest_inputs(manifest,p.legacy_maintenance_resume())
         assert p.c.sha256(p.c.canonical(restored))!=p.c.sha256(p.c.canonical(original))
         return
-    with pytest.raises(p.c.ContractError):p.decode_manifest_inputs(manifest)
+    with pytest.raises(p.c.ContractError):p.decode_manifest_inputs(manifest,p.legacy_maintenance_resume())
 
 
 @pytest.mark.parametrize('fault',['fields','count','pid','checks','bytes','pin','same_inode','mode',

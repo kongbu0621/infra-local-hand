@@ -87,12 +87,12 @@ def test_original_names_resume_digest_cannot_substitute_for_fifth_history():
 def test_exec_candidate_binds_exact_scope_and_new_independent_closure(source_git):
     h.growth_sources(source_git.head)
     value=preflight()
-    assert (value['A'],value['C'])==(h.PS_A,h.PS_C)
-    assert p.maintenance_resume()['scope']==p.c.PROTECTED_SOURCE_SCOPE
-    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261010c'
+    assert (value['A'],value['C'])==(h.PP_A,h.PP_C)
+    assert p.maintenance_resume()['scope']==p.c.PERSISTENT_PATH_SCOPE
+    assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261010d'
     assert len(p.previous_journal_profiles())==11
     assert len(p.previous_maintenance_pins())==55
-    assert len(p.maintenance_commitments()['generations'])==15
+    assert len(p.maintenance_commitments()['generations'])==16
     assert ['merge-base','--is-ancestor',h.DS_A,h.DS_C] in source_git.calls
     assert ['merge-base','--is-ancestor',h.DS_C,source_git.head] in source_git.calls
 
