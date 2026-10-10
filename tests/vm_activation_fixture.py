@@ -37,7 +37,7 @@ def records(anchor='/fixture', historical_boot='11111111-2222-3333-4444-55555555
     result=dict(event=event,state='ACTIVATED_EXACT_PACKAGE_INSTALLED_QUOTA_VERIFIED',startup_calls=1,ssh_calls=1,package_install_calls=1,
         automatic_retries=0,stop_calls=0,errors=[],guest_completion='VERIFIED',original_system_and_old_outputs_preserved=True,
         guest_boot=boot,new_vm=vm,host_boot='44444444-2222-3333-4444-555555555555',original_images_before=oldimages,candidate_before=candidate,
-        commands=[dict(label=label,returncode=0,eof=True) for label in ('qemu-version','endpoint-before','qemu-start','endpoint-after','ssh-install')])
+        commands=[dict(label=label,returncode=0,eof=True,argv=['ssh','fixed','command']) for label in ('qemu-version','endpoint-before','qemu-start','endpoint-after','ssh-install')])
     files['result-private.json']=dump(result)
     binding=dict(event=event,new_vm=vm,qemu_argv=argv,pidfile=pidfile,serial=serial,active_system_path=system,host_boot=result['host_boot'],guest_boot=boot,
         no_replay_or_new_execution_permission=True,installed_package=package['Package'],installed_package_version=package['Version'],

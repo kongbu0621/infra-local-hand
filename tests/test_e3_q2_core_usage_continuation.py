@@ -23,8 +23,8 @@ def test_nine_originals_preserve_unconsumed_local_failure(monkeypatch):
     assert len(p.maintenance_resume()['previous_maintenance'])==11
     assert p.maintenance_resume()['previous_local_preflight']==value['summary']
     costs=p.maintenance_commitments()['generations']
-    assert len(costs)==14 and sum(row['bytes'] for row in costs)==18144*1048576
-    assert sum(row['inodes'] for row in costs)==5180 and sum(row['cpu_seconds'] for row in costs)==1680
+    assert len(costs)==15 and sum(row['bytes'] for row in costs)==19440*1048576
+    assert sum(row['inodes'] for row in costs)==5550 and sum(row['cpu_seconds'] for row in costs)==1800
     if d is not None:
         assert d.validate_local_preflight_source(value)==value
         assert d._maintenance_resume()==p.maintenance_resume()

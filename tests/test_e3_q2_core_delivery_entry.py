@@ -229,7 +229,7 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == (frozenset() if c.TRANSPORT_CLOSURE is None else frozenset({digest}))
+    assert e.RELEASABLE_DISPATCHER_SHA256 == (frozenset() if c.RESUMED_VM_CLOSURE is None else frozenset({digest}))
     # The issued 05c digest and a subsequently repaired dispatcher both stay closed.
     assert '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b' not in e.RELEASABLE_DISPATCHER_SHA256
     assert '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96' not in e.RELEASABLE_DISPATCHER_SHA256
@@ -842,6 +842,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch, o
         transition['retained_custody']['binding']['D']=resource_context['implementation']['commit']
         transition['image_identities']={role:[capture.anchor['dev'],row[1]]
             for role,row in transition['image_identities'].items()}
+        transition['vm_activation']['image_identities']={k:list(v) for k,v in transition['image_identities'].items()}
         from e3_host import q2_journal_growth as maintenance
         class Images:
             def __init__(self,*args,**kwargs):self.fds={role:directory_fd for role in transition['image_identities']}

@@ -31,6 +31,13 @@ callers and machine metadata remain private. At C RC1 NOT_STARTED, RC2/RC3 NOT_I
 RC4/H01/Q4/H11 NOT_RUN. This exact closure supersedes older no-new-window/observation clauses only
 inside RC1–RC4; it proves neither implementation, readiness nor maintenance/core success.
 
+The [RC1 implementation record](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md)
+describes separate historical-install/current-start/current-guest validation and the v2-only current
+maintenance/core path. The combined archive uses two exact source aliases within the original one FD;
+its maximum RC2 return shape is 512000 B under 524288 B. This is offline implementation/verification,
+not guest readiness or core PASS. Complete exact D publication, its first CI, independent installation
+and the three caller freezes before RC2. No new field action has occurred at this implementation record.
+
 ## Active priority: core only (2026-10-10)
 
 Owner's latest instruction is to disable peripheral functionality and stop side work.

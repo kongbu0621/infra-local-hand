@@ -40,6 +40,7 @@ def inputs(tmp_path, monkeypatch,originals):
     transition['implementation']=args['implementation']
     transition['retained_custody']['binding']['D']=args['implementation']['commit']
     transition['image_identities']={role:[info.st_dev,row[1]] for role,row in transition['image_identities'].items()}
+    transition['vm_activation']['image_identities']=copy.deepcopy(transition['image_identities'])
     args.update(journal=transition,journal_files=journal_files)
     files.update(original_args['frozen']['previous_maintenance_files'])
     files.update(journal_files);files.update(original_args['frozen']['capacity_files'])
@@ -59,11 +60,11 @@ def validate(value, args):
 
 
 @pytest.mark.parametrize('frsize,blocks,inodes,accepted', [
-    (1, 19092471808, 5196, True), (1, 19092471807, 5196, False), (4096, 4661248, 5195, False),
-    (4096, 4661248, 5196, True), (4096, 2**30, 2**30, True), (0, 19092471808, 5196, False),
-    (-1, 19092471808, 5196, False), (1, -1, 5196, False), (1, 19092471808, -1, False),
-    (None, 19092471808, 5196, False), (True, 19092471808, 5196, False),
-    (1, '19092471808', 5196, False), (1, 19092471808, 5196.0, False)])
+    (1, 20452474880, 5598, True), (1, 20452474879, 5598, False), (4096, 4993280, 5597, False),
+    (4096, 4993280, 5598, True), (4096, 2**30, 2**30, True), (0, 20452474880, 5598, False),
+    (-1, 20452474880, 5598, False), (1, -1, 5598, False), (1, 20452474880, -1, False),
+    (None, 20452474880, 5598, False), (True, 20452474880, 5598, False),
+    (1, '20452474880', 5598, False), (1, 20452474880, 5598.0, False)])
 def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsize, blocks, inodes, accepted):
     fd, args, clock, _ = inputs
     samples = []
@@ -78,7 +79,7 @@ def test_exact_fixed_five_rows_and_invalid_observation(inputs, monkeypatch, frsi
     else:
         value = p.observe_capture_condition(fd, **args)
         assert validate(value, args) is value
-        assert value['capacity']['required_bytes'] == 19092471808
+        assert value['capacity']['required_bytes'] == 20452474880
         assert value['known_commitments']==p._capacity_rows(args['prior'],args['diagnostic'])
         assert value['earlier_host_obligations'] == dict(coverage='UNKNOWN', bytes=None,
                                                       inodes=None, shared_pool='UNKNOWN')
@@ -102,7 +103,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
         elif change == 'backward': clock.now[time.CLOCK_MONOTONIC] -= 1
         elif change == 'io': raise OSError(errno.EIO, 'synthetic IO failure')
         if change == 'missing': return SimpleNamespace()
-        return SimpleNamespace(f_frsize=4096, f_bavail=4661248, f_favail=5196)
+        return SimpleNamespace(f_frsize=4096, f_bavail=4993280, f_favail=5598)
     def identity(held):
         value = fstat(held)
         if held == fd and drifted and change in ('mode', 'uid', 'gid', 'nlink', 'ino', 'dev'):
@@ -138,7 +139,7 @@ def test_drift_or_failed_observation_stops_before_marker(inputs, monkeypatch, ch
     'omit_diagnostic', 'old_threshold'])
 def test_live_record_cannot_promote_unknown_or_change_bindings(inputs, monkeypatch, change):
     fd, args, _, _ = inputs
-    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=4661248, f_favail=5196))
+    monkeypatch.setattr(os, 'fstatvfs', lambda _: SimpleNamespace(f_frsize=4096, f_bavail=4993280, f_favail=5598))
     value = p.observe_capture_condition(fd, **args)
     if change == 'null': value['earlier_host_obligations']['bytes'] = 0
     elif change == 'false': value['complete_host_admission_proven'] = True
@@ -205,8 +206,8 @@ def test_real_package_parser_through_pre_marker_and_live_return(inputs, monkeypa
     def observe(_):
         observations.append(1)
         if failure == 'late': clock.expire()
-        return SimpleNamespace(f_frsize=1, f_bavail=19092471807 if failure == 'capacity' else 19092471808,
-                               f_favail=5196)
+        return SimpleNamespace(f_frsize=1, f_bavail=20452474879 if failure == 'capacity' else 20452474880,
+                               f_favail=5598)
     monkeypatch.setattr(os, 'fstatvfs', observe)
     if failure == 'writer':
         changed = copy.deepcopy(binding['writer']); changed['process']['starttime_ticks'] += 1

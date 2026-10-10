@@ -23,7 +23,7 @@ def records(monkeypatch,*consumers):
     pin=lambda raw:dict(bytes=len(raw),sha256=p.c.sha256(raw))
     authority=p.transport_failure_summary()['authority'];old_D=p.TRANSPORT_FAILURE_D
     resume=dict(p.maintenance_resume(),scope='LH-Q2-CORE-USAGE-CONTINUATION-v1',session=p.TRANSPORT_FAILURE_SESSION)
-    resume.pop('previous_transport_failure');resume_sha=p.c.sha256(canonical(resume))
+    resume.pop('previous_transport_failure');resume.pop('previous_host_preflight');resume_sha=p.c.sha256(canonical(resume))
     window=dict(boot_id='10000000-0000-4000-8000-000000000001',origins=[100,200])
     inputs=dict(resume_sha256=resume_sha,inventory_sha256='a'*64,local_preflight_source=local_source())
     restored=dict(inputs,resume=resume);restored.pop('resume_sha256')

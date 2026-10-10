@@ -448,13 +448,15 @@ def _capacity_rows(prior, diagnostic):
         dict(session_id='lhqjgrow-20261009c',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261010a',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261010b',bytes=1296*1048576,inodes=370),
+        dict(session_id='lhqjgrow-20261010c',bytes=1296*1048576,inodes=370),
+        dict(session_id='lhqguest-20261010a',bytes=1048576,inodes=32),
         dict(session_id=c.SESSION_ID,bytes=c.LIMITS['host_capture_bytes'],
              inodes=c.LIMITS['host_capture_inodes'])]
 
 
 def _capacity_record(binding, prior, diagnostic, journal, implementation, origins, observation, capacity, device_capacity):
-    return dict(schema='local-hand-q2-core-host-capacity-condition/v17',
-        scope=c.TRANSPORT_SCOPE, session_id=c.SESSION_ID,
+    return dict(schema='local-hand-q2-core-host-capacity-condition/v18',
+        scope=c.RESUMED_VM_SCOPE, session_id=c.SESSION_ID,
         implementation=copy.deepcopy(implementation),
         local_management_binding_sha256=c.sha256(c.canonical(binding, newline=True)),
         prior_attempts_sha256=c.sha256(c.canonical(prior)), origins=dict(origins),
@@ -495,8 +497,8 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
     require(all(type(number) is int and number >= 0 for number in capacity.values())
             and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
     rows = _capacity_rows(prior, diagnostic)
-    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 19092471808
-            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 5196
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 20452474880
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 5598
             and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
             'HOST_CAPACITY_ARITHMETIC')
     require(capacity['bytes_available'] >= capacity['required_bytes']
@@ -509,7 +511,7 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
         usage=c.exact(row['capacity'],set(capacity),'CORE_HOST_CAPACITY_FIELDS')
         require(all(type(x) is int and x>=0 for x in usage.values()) and usage['frsize']>0
             and usage['bytes_available']==usage['frsize']*usage['blocks_available']
-            and usage['required_bytes']==19092471808 and usage['required_inodes']==5196
+            and usage['required_bytes']==20452474880 and usage['required_inodes']==5598
             and usage['bytes_available']>=usage['required_bytes']
             and usage['inodes_available']>=usage['required_inodes'],'HOST_CAPACITY_DEVICE_FLOOR')
     require(next(row['capacity'] for row in devices if row['dev']==binding['anchor']['dev'])==capacity,
@@ -851,9 +853,10 @@ def validate_local_preflight_source(value):
     return value
 
 def maintenance_resume():
-    return dict(scope=c.TRANSPORT_SCOPE, session='lhqjgrow-20261010b',
+    return dict(scope=c.RESUMED_VM_SCOPE, session='lhqjgrow-20261010c',
         previous_local_preflight=local_preflight_summary(),
         previous_transport_failure=transport_failure_summary(),
+        previous_host_preflight=host_preflight_summary(),
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -913,8 +916,9 @@ def validate_transport_failure_source(value):
 
 def maintenance_commitments():
     return dict(previous_maintenance=maintenance_resume(),
+        guest_verification=dict(session="lhqguest-20261010a",host_bytes=1048576,host_inodes=32,host_cpu_seconds=120,guest_cpu_seconds=120,refunded=False),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b','lhqjgrow-20261010c')],
         released_or_refunded=False)
 
 
@@ -934,7 +938,7 @@ def encode_manifest_inputs(binding):
 
 
 def decode_manifest_inputs(manifest):
-    require(manifest.get('schema')=='lhq-journal-growth-manifest/v15','JOURNAL_INPUT_VERSION')
+    require(manifest.get('schema')=='lhq-journal-growth-manifest/v16','JOURNAL_INPUT_VERSION')
     value=manifest['inputs'];resume=validate_maintenance_resume(manifest['resume'])
     require(type(value) is dict and 'resume' not in value and 'resume_sha256' in value
         and value['resume_sha256']==c.sha256(c.canonical(resume,newline=True)), 'JOURNAL_INPUT_REFERENCE')
@@ -1092,7 +1096,7 @@ def read_previous_journal_files(directory_fd,anchor,call,*,_seen=None):
     return files
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261010b'
+JOURNAL_SESSION = 'lhqjgrow-20261010c'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -1143,8 +1147,11 @@ ACTIVATION_PROJECTION_FIELDS = {'schema','event','historical_boot_id','current_b
 
 def validate_vm_activation(value):
     """Validate the host-verified projection without asserting unseen originals."""
-    c.exact(value, ACTIVATION_PROJECTION_FIELDS, 'CORE_ACTIVATION_FIELDS')
-    require(value['schema']=='local-hand-q2-vm-activation/v1' and value['event']==ACTIVATION_EVENT,
+    require(type(value) is dict,'ACTIVATION_FIELDS')
+    resumed = value.get('schema') == 'local-hand-q2-vm-activation/v2'
+    c.exact(value, ACTIVATION_PROJECTION_FIELDS | (RESUMPTION_FIELDS if resumed else set()), 'CORE_ACTIVATION_FIELDS')
+    require((resumed and value['event']==RESUMPTION_EVENT) or
+        (value['schema']=='local-hand-q2-vm-activation/v1' and value['event']==ACTIVATION_EVENT),
         'ACTIVATION_SCHEMA')
     require(len(c.canonical(value))<=4096, 'ACTIVATION_BOUND')
     for key in ('historical_boot_id','current_boot_id','host_boot_id'):
@@ -1169,11 +1176,17 @@ def validate_vm_activation(value):
     require(value['candidate_digest_scope']=='PRELAUNCH_ONLY'
         and value['package_verified'] is value['quota_verified'] is value['old_records_preserved'] is True
         and value['execution_permission'] is False,'ACTIVATION_ACCEPTANCE')
+    if resumed:
+        for key in RESUMPTION_FIELDS - {'previous_host_preflight'}: c.digest(value[key])
+        require(c.canonical(value['previous_host_preflight']) == c.canonical(host_preflight_summary()),
+            'ACTIVATION_HOST_PREFLIGHT')
     return value
 
 
 def build_vm_activation(files, index_raw, *, historical_boot):
     """Verify all retained activation bytes; never reads a live VM or image."""
+    if 'activation/activate-approved.py' in files:
+        return build_vm_resumption(files, index_raw, historical_boot=historical_boot)
     c.exact(files, ACTIVATION_FILES, 'CORE_ACTIVATION_ORIGINALS')
     def parse(raw):
         require(type(raw) is bytes and len(raw)<=262144,'ACTIVATION_INPUT_BOUND')
@@ -1345,9 +1358,9 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     saved=h.prior.validate_result(frozen['capacity_files']['.lhqcap-20261006a.stdout'],
         c.sha256(sources['q2_core_capacity_reader.py']),frozen['description'])['rows']
     require(saved==frozen['saved_rows'],'JOURNAL_SAVED_ROWS')
-    expected_authority = dict(R=h.R, A=(c.TRANSPORT_BASELINE or {}).get('commit'), C=(c.TRANSPORT_CLOSURE or {}).get('commit'))
-    require(manifest['schema'] == 'lhq-journal-growth-manifest/v15'
-        and receipt['schema'] == 'lhq-journal-growth-receipt/v15', 'JOURNAL_SCHEMA')
+    expected_authority = dict(R=h.R, A=(c.RESUMED_VM_BASELINE or {}).get('commit'), C=(c.RESUMED_VM_CLOSURE or {}).get('commit'))
+    require(manifest['schema'] == 'lhq-journal-growth-manifest/v16'
+        and receipt['schema'] == 'lhq-journal-growth-receipt/v16', 'JOURNAL_SCHEMA')
     for value in (manifest, receipt):
         require({key:value[key] for key in expected_authority} == expected_authority, 'JOURNAL_AUTHORITY')
     previous=build_previous_maintenance(frozen['previous_maintenance_files'])
@@ -1471,7 +1484,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     activation=frozen.get('vm_activation')
     anchor=frozen['anchor_path'] if activation else str(PurePosixPath(original[pi]).parent)
     require(original[pi] == (activation['pidfile'] if activation else anchor+'/vm.pid') and original[si].startswith('file:')
-        and restart[pi] == anchor+'/.lhqjgrow-20261010b.vm.pid' and restart[si] == 'null'
+        and restart[pi] == anchor+'/.lhqjgrow-20261010c.vm.pid' and restart[si] == 'null'
         and [i for i,(a,b) in enumerate(zip(original,restart)) if a!=b] == sorted((pi,si)),
         'JOURNAL_RESTART_ARGV')
     # Reconstruct the expected original argv from the protected fixed input start script.
@@ -1486,7 +1499,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
         and next(row for row in events if row.get('step')=='POWER_OFF_TOKEN')['pre_report_sha256']
             ==c.sha256(h.canonical(pre)), 'JOURNAL_POWER_TOKEN')
     require(manifest['image_commands']==h.image_commands(anchor+'/journal.qcow2',
-        anchor+'/.lhqjgrow-20261010b.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
+        anchor+'/.lhqjgrow-20261010c.journal.backup.qcow2'),'JOURNAL_IMAGE_COMMANDS')
     old,new=manifest['vm'],receipt['new_vm']
     for value,argv in ((old,original),(new,restart)):
         c.exact(value, {'pid','starttime','argv_sha256'}, 'CORE_JOURNAL_VM')
@@ -1526,7 +1539,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     backup=results['BACKED_UP'];c.exact(backup,{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
     c.integer(backup['bytes'],1,320*1048576);c.digest(backup['sha256'])
     journal=next(row for row in post['rows'] if row['role']=='journal')
-    value=dict(schema='local-hand-q2-core-journal-transition/v14', authority=expected_authority,
+    value=dict(schema='local-hand-q2-core-journal-transition/v15', authority=expected_authority,
         local_preflight_source=copy.deepcopy(local_source),
         transport_failure_source=copy.deepcopy(failed_source),
         retained_custody=copy.deepcopy(receipt['retained_custody']),coordinator_completion=copy.deepcopy(completion),
@@ -1685,10 +1698,10 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source'},
         'CORE_JOURNAL_FIELDS')
-    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v14'
-        and value['session']=='lhqjgrow-20261010b', 'JOURNAL_SCHEMA')
+    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v15'
+        and value['session']=='lhqjgrow-20261010c', 'JOURNAL_SCHEMA')
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=(c.TRANSPORT_BASELINE or {}).get('commit'),C=(c.TRANSPORT_CLOSURE or {}).get('commit'))
+        A=(c.RESUMED_VM_BASELINE or {}).get('commit'),C=(c.RESUMED_VM_CLOSURE or {}).get('commit'))
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     require(type(value['guest_startup_assurance']) is dict
         and c.canonical(value['guest_startup_assurance']) == c.canonical(dict(
@@ -1715,6 +1728,8 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         require(type(value[key]) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',value[key]),
             'JOURNAL_BOOT')
     activation=value['vm_activation']
+    require(type(activation) is dict and activation.get('schema')=='local-hand-q2-vm-activation/v2',
+        'CURRENT_GUEST_REQUIRED')
     if activation is not None:
         validate_vm_activation(activation)
         require(activation['current_boot_id']==value['old_boot_id'] and activation['vm']==value['old_vm']
@@ -1725,12 +1740,12 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     require(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261010b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261010c.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     require(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
         ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         c.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010b.'):]])
+        c.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010c.'):]])
         c.digest(row['sha256'])
     c.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -1957,6 +1972,7 @@ def build_transport_failure_source(raw,spec):
         ==c.sha256(c.canonical(manifest,newline=True)),'TRANSPORT_FAILURE_PREFLIGHT')
     old_resume=dict(maintenance_resume(),scope='LH-Q2-CORE-USAGE-CONTINUATION-v1',session=TRANSPORT_FAILURE_SESSION)
     old_resume.pop('previous_transport_failure')
+    old_resume.pop('previous_host_preflight')
     resume_sha=c.sha256(c.canonical(old_resume,newline=True));handoff=pre['preflight']
     require(manifest['schema']=='lhq-journal-growth-manifest/v14'
         and handoff['schema']=='lhq-journal-growth-preflight/v13'
@@ -2010,3 +2026,329 @@ def recheck_transport_failure(inputs,frozen,check):
     require(build_transport_failure_source(raw,spec)==frozen['source_binding']['transport_failure_source']
         and raw==frozen['transport_failure_raw'],'TRANSPORT_FAILURE_SOURCE_DRIFT')
     inputs.recheck(check)
+
+
+# Current runtime identity is independently proven; the historical install is
+# never edited to pretend it took place in this boot.
+RESUMPTION_EVENT = 'LH-Q2-CORE-RESUMED-VM-CLOSURE-20261010-01'
+STARTUP_EVENT = 'LH-Q1-VM-RESUME-20261010-01'
+RESUMPTION_FIELDS = {'historical_activation_sha256', 'startup_evidence_sha256',
+    'guest_evidence_sha256', 'previous_host_preflight'}
+STARTUP_FILES = ('control-flow-result-private.json','execution-freeze-private.json',
+    'explicit-owner-approval-private.json','launch-consumed-private.json','listener.stderr','listener.stdout',
+    'new-pid-cmdline.raw','new-pid-stat.raw','new-pidfile.raw','prepared-index-private.json',
+    'protected-source/q2_sshd_source_capture.py','protected-source/q2_sshd_source_reader.py',
+    'qemu-start.stderr','qemu-start.stdout','qemu-version.stderr','qemu-version.stdout',
+    'result-private.json','start-once.py','start-proposal-private.json','started-private.json',
+    'startup-caller.stderr','startup-caller.stdout')
+HOST_PREFLIGHT_FILES = ('tc2-caller-started.json','tc2-preflight.stdout','tc2-preflight.stderr',
+    'tc2-summary.json','tc2-caller.stdout','tc2-caller.stderr','freeze-complete.json',
+    'tc2-failure-private.json','release-gate.json')
+GUEST_VERIFICATION_FILES = ('check-approved.py','proposal.json','freeze.json','approval.json',
+    'consumed.json','guest.stdout','guest.stderr','result.json','caller.stdout','caller.stderr')
+GUEST_VERIFICATION_CAPS = {'check-approved.py':16384,'proposal.json':8192,'approval.json':4096,
+    'freeze.json':4096,'consumed.json':4096,'guest.stdout':65536,'guest.stderr':65536,
+    'result.json':8192,'caller.stdout':4096,'caller.stderr':4096}
+RESUMPTION_MEMBERS = tuple('activation/'+n for n in (*ACTIVATION_FILES,'execution-return-index-private.json')) + tuple(
+    'startup/'+n for n in (*STARTUP_FILES,'execution-return-index-private.json')) + tuple(
+    'old10b/'+n for n in HOST_PREFLIGHT_FILES) + tuple('guest/'+n for n in GUEST_VERIFICATION_FILES)
+
+
+RESUMPTION_REFERENCES = {
+    'startup/protected-source/q2_sshd_source_capture.py': 'activation/protected-source/q2_sshd_source_capture.py',
+    'startup/protected-source/q2_sshd_source_reader.py': 'activation/protected-source/q2_sshd_source_reader.py',
+}
+RESUMPTION_STORAGE_MEMBERS = tuple(n for n in RESUMPTION_MEMBERS if n not in RESUMPTION_REFERENCES)
+
+
+def host_preflight_summary():
+    return dict(session='lhqjgrow-20261010b',D='776b9810ec07ed8e1d37d4a740eeff5190c1c15c',
+        state='PREFLIGHT_FAILED',phase='preflight',reason='GROWTH_ACTIVATION_HOST_BOOT',
+        invoked=True,window_consumed=False,ssh_requests=0,marker_created=False,
+        execute='NOT_CALLED',core='NOT_RUN',old_commitments_refunded=False)
+
+
+def _resume_json(raw, limit=262144):
+    require(type(raw) is bytes and len(raw)<=limit, 'RESUME_INPUT_BOUND')
+    def pairs(items):
+        require(len(dict(items))==len(items),'RESUME_DUPLICATE_KEY')
+        return dict(items)
+    try:
+        value=json.loads(raw.decode('utf-8'),object_pairs_hook=pairs,
+            parse_constant=lambda _:require(False,'RESUME_JSON_CONSTANT'))
+    except (ValueError,UnicodeError,RecursionError) as error:
+        raise c.ContractError('RESUME_JSON') from error
+    # Retained startup originals contain elapsed-time floats. Accept only finite
+    # JSON numbers here; the outgoing core protocol still forbids all floats.
+    def shape(item, depth=0):
+        import math
+        require(depth<=48,'RESUME_JSON_DEPTH')
+        if isinstance(item,dict):
+            require(len(item)<=4096,'RESUME_JSON_WIDTH')
+            for child in item.values():shape(child,depth+1)
+        elif isinstance(item,list):
+            require(len(item)<=4096,'RESUME_JSON_WIDTH')
+            for child in item:shape(child,depth+1)
+        elif isinstance(item,float):require(math.isfinite(item),'RESUME_JSON_FLOAT')
+    shape(value)
+    require(type(value) is dict,'RESUME_DOCUMENT')
+    return value
+
+
+def _resume_pins(files):
+    return {name:dict(bytes=len(raw),sha256=c.sha256(raw)) for name,raw in sorted(files.items())}
+
+
+def _resume_process(vm, argv, raw_stat, raw_cmdline, *, canonical_digest=False):
+    require(type(argv) is list and all(type(s) is str and s.isascii() for s in argv),'RESUME_ARGV')
+    raw=b'\0'.join(s.encode('ascii') for s in argv)+b'\0'
+    require(raw_cmdline==raw and vm['argv_sha256']==c.sha256(
+        json.dumps(argv,sort_keys=True,separators=(',',':'),ensure_ascii=True).encode('ascii')+b'\n'
+        if canonical_digest else raw),'RESUME_PROCESS_ARGV')
+    c.integer(vm['pid'],2);c.integer(vm['starttime'],1)
+    tail=raw_stat.rpartition(b') ')[2].split()
+    require(raw_stat.startswith(str(vm['pid']).encode()+b' (') and len(tail)>19
+        and tail[19].isdigit() and int(tail[19])==vm['starttime'],'RESUME_PROCESS_START')
+    return dict(pid=vm['pid'],starttime=vm['starttime'],argv_sha256=c.sha256(raw))
+
+
+def _resume_startup(files, historical):
+    c.exact(files,(*STARTUP_FILES,'execution-return-index-private.json'),'RESUME_STARTUP_FILES')
+    doc=lambda name:_resume_json(files[name])
+    index=doc('execution-return-index-private.json');result=doc('result-private.json')
+    proposal=doc('start-proposal-private.json');authority=doc('explicit-owner-approval-private.json')
+    freeze=doc('execution-freeze-private.json');launch=doc('launch-consumed-private.json')
+    pin=lambda name:_resume_pins({name:files[name]})[name]
+    require(index['files']==_resume_pins({n:files[n] for n in STARTUP_FILES}),'RESUME_STARTUP_INDEX')
+    require(all(v['event']==STARTUP_EVENT for v in (index,result,authority,freeze,launch))
+        and proposal['event']=='LH-Q1-VM-RESUME-PROPOSAL-20261010-01', 'RESUME_STARTUP_EVENT')
+    require(authority['state']=='APPROVED' and authority['owner_reply']=='批准'
+        and type(authority['startup_attempts']) is int and authority['startup_attempts']==1
+        and type(authority['ssh_attempts']) is int and authority['ssh_attempts']==0,
+        'RESUME_STARTUP_AUTHORITY')
+    require(authority['proposal_sha256']==freeze['proposal_sha256']==launch['proposal_sha256']==pin('start-proposal-private.json')['sha256']
+        and authority['source_sha256']==pin('start-once.py')['sha256']
+        and freeze['approval_sha256']==launch['authority_sha256']==pin('explicit-owner-approval-private.json')['sha256'],
+        'RESUME_STARTUP_FREEZE')
+    nonruntime=index['nonruntime_test_source_reference']
+    require(nonruntime['name']=='check_control_flow.py' and nonruntime['not_reread_or_executed'] is True,
+        'RESUME_STARTUP_NONRUNTIME')
+    for name,row in freeze['files'].items():
+        require(row==(nonruntime['preparation_pin'] if name=='check_control_flow.py' else pin(name)),
+            'RESUME_STARTUP_SOURCE')
+    require(result['state']==index['result_state']=='STARTED_AND_HOST_ENDPOINT_VERIFIED'
+        and result['startup_calls']==1 and type(result['startup_calls']) is int
+        and result['ssh_calls']==0 and type(result['ssh_calls']) is int
+        and result['listener_queries']==1 and result['listener']=='PRESENT'
+        and result['errors']==[] and result['original_system_and_old_serial_preserved'] is True
+        and result['guest_boot_id']==result['guest_ssh_ready']=='UNKNOWN','RESUME_STARTUP_RESULT')
+    checks=result['identity_checks']
+    require(len(checks)==49 and all(row['actual']==row['expected'] and row['differences']=={} for row in checks),
+        'RESUME_STARTUP_IDENTITIES')
+    commands=result['commands']
+    require([row['label'] for row in commands]==['qemu-version','qemu-start','listener']
+        and all(row['eof'] is True and type(row['returncode']) is int and row['returncode']==0 for row in commands)
+        and all(files[n]==b'' for n in ('qemu-version.stderr','qemu-start.stderr','listener.stderr','startup-caller.stderr')),
+        'RESUME_STARTUP_COMMANDS')
+    argv=proposal['proposed_argv'];old=list(proposal['original_argv'])
+    old[old.index('-serial')+1]='file:'+proposal['output_directory']+'/console.log'
+    old[old.index('-pidfile')+1]=proposal['output_directory']+'/vm.pid'
+    require(argv==old==launch['argv'] and result['host_boot_id']==proposal['host_boot_id']==launch['host_boot_id'],
+        'RESUME_STARTUP_BINDING')
+    require(result['new_vm']['namespace']==proposal['network_namespace'],'RESUME_STARTUP_NAMESPACE')
+    vm=_resume_process(result['new_vm'],argv,files['new-pid-stat.raw'],files['new-pid-cmdline.raw'],canonical_digest=True)
+    require(files['new-pidfile.raw'].strip()==str(vm['pid']).encode(),'RESUME_PIDFILE')
+    images=result['images_before'];c.exact(images,{'system','quota','journal','evidence','seed','original_system'},'RESUME_IMAGES')
+    expected=dict(historical['image_identities'],original_system=historical['original_system_identity'])
+    require({name:[row['metadata']['dev'],row['metadata']['ino']] for name,row in images.items()}==expected
+        and images==proposal['images'] and launch['image_bindings']==images,
+        'RESUME_IMAGE_BINDING')
+    require(images['system']['path']==historical['system_path']
+        and 'if=none,id=os,format=qcow2,file='+historical['system_path'] in argv,'RESUME_SYSTEM_IMAGE')
+    return proposal,result,vm
+
+
+def _resume_host_preflight(files):
+    c.exact(files,HOST_PREFLIGHT_FILES,'RESUME_PREFLIGHT_FILES')
+    doc=lambda name:_resume_json(files[name],65536)
+    frozen=doc('freeze-complete.json');failed=doc('tc2-failure-private.json');gate=doc('release-gate.json')
+    expected=host_preflight_summary();summary=doc('tc2-summary.json');preflight=doc('tc2-preflight.stdout')
+    require(files['tc2-summary.json']==files['tc2-caller.stdout']
+        and files['tc2-preflight.stderr']==files['tc2-caller.stderr']==b'','RESUME_PREFLIGHT_STREAMS')
+    require(doc('tc2-caller-started.json')==dict(D=expected['D'],session=expected['session']), 'RESUME_PREFLIGHT_START')
+    require(frozen['implementation']['commit']==expected['D']
+        and failed['frozen_sha256']==c.sha256(files['freeze-complete.json'])
+        and failed['session']==expected['session'] and failed['D']==expected['D']
+        and failed['originals']=={} and failed['maintenance_window_consumed'] is False
+        and failed['core']=='NOT_RUN' and failed['coordinator_completion']=='NOT_CAPTURED'
+        and failed['core_package']=='NOT_BUILT' and failed['caller_exit']==3
+        and failed['remote_exit']=='UNKNOWN','RESUME_PREFLIGHT_FAILURE')
+    expected_returns={name:_resume_pins(files)[name] for name in HOST_PREFLIGHT_FILES[:6]}
+    require(failed['local_returns']==expected_returns,'RESUME_PREFLIGHT_PINS')
+    for row in (failed,summary,preflight):
+        require(row['reason']==expected['reason'] and row['ssh_requests']==0
+            and type(row['ssh_requests']) is int and row['marker_created'] is False
+            and row['diagnostic']=={},'RESUME_PREFLIGHT_FACTS')
+    require(summary['state']==preflight['state']=='BLOCKED' and summary['phase']=='preflight'
+        and summary['D']==expected['D'] and summary['exit_code']==3 and summary['started'] is None
+        and summary['last_step'] is None and summary['business_cases'] is None, 'RESUME_PREFLIGHT_RETURN')
+    # The terminal gate may shorten its frozen preparation fields, but must
+    # retain the exact frozen caller/source bindings and actual terminal result.
+    require(gate['state']==failed['state']=='TC2_PREFLIGHT_FAILED_TC3_NOT_RUN'
+        and gate['tc2']==failed and gate['tc3']==dict(core_package='NOT_BUILT',reason='INCOMPLETE_TC2',state='NOT_RUN'),
+        'RESUME_PREFLIGHT_TERMINAL')
+    for key in ('implementation','callers'):
+        require(gate[key]==frozen[key],'RESUME_PREFLIGHT_FROZEN')
+    return expected
+
+
+def current_guest_commands(package, mountpoint):
+    name=package['Package'];version=package['Version']
+    require(type(name) is str and re.fullmatch(r'linux-modules-extra-[0-9][a-zA-Z0-9.+-]*',name)
+        and type(version) is str and re.fullmatch(r'[a-zA-Z0-9.+:~_-]+',version),'RESUME_PACKAGE_NAME')
+    c.absolute_path(mountpoint,'RESUME_QUOTA_TARGET')
+    return [('kernel',['uname','-r']),
+        ('installed-package',['dpkg-query','-W','-f=${Status}\t${Version}',name]),
+        ('package-integrity',['dpkg','--verify',name]),
+        ('module-vermagic',['modinfo','-F','vermagic','quota_v2']),
+        ('module-resolution',['modprobe','--show-depends','quota_v2']),
+        ('quota-mount',['findmnt','--json','--mountpoint',mountpoint,'-o','UUID,FSTYPE,OPTIONS'])]
+
+
+def validate_current_guest(value, *, package, quota, nonce):
+    c.exact(value,{'schema','status','nonce','boot_id','boot_end','steps','package_install_calls',
+        'module_load_calls','reboots','management_usage'},'RESUME_GUEST_FIELDS')
+    require(value['schema']=='local-hand-q2-current-guest/v1' and value['status']=='VERIFIED'
+        and value['nonce']==nonce and value['boot_id']==value['boot_end']
+        and type(value['boot_id']) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',value['boot_id']),
+        'RESUME_GUEST_IDENTITY')
+    for key in ('package_install_calls','module_load_calls','reboots'):
+        require(type(value[key]) is int and value[key]==0,'RESUME_GUEST_MUTATION')
+    steps=value['steps'];commands=current_guest_commands(package,quota['target'])
+    require(type(steps) is list and len(steps)==len(commands),'RESUME_GUEST_COMMANDS')
+    for row,(label,argv) in zip(steps,commands):
+        c.exact(row,{'label','argv','exit','stdout','stderr','eof'},'RESUME_GUEST_STEP')
+        require(row['label']==label and row['argv']==argv and type(row['exit']) is int
+            and row['exit']==0 and row['eof'] is True and row['stderr']==''
+            and type(row['stdout']) is str and len(row['stdout'].encode())<=16384,'RESUME_GUEST_STEP')
+    kernel=steps[0]['stdout'].strip()
+    require(package['Package']=='linux-modules-extra-'+kernel
+        and steps[1]['stdout'].strip()=='install ok installed\t'+package['Version']
+        and steps[2]['stdout']=='' and steps[3]['stdout'].startswith(kernel+' '),'RESUME_GUEST_PACKAGE')
+    modules=steps[4]['stdout'].splitlines()
+    require(modules and all(re.fullmatch(r'insmod /(?:usr/)?lib/modules/'+re.escape(kernel)+r'/[a-zA-Z0-9_./-]+\.ko(?:\.(?:zst|xz|gz))?\s*',s) for s in modules)
+        and any('/quota_v2.ko' in s for s in modules),'RESUME_GUEST_MODULES')
+    mounts=_resume_json(steps[5]['stdout'].encode(),16384)['filesystems']
+    require(type(mounts) is list and len(mounts)==1,'RESUME_GUEST_MOUNT')
+    mount=mounts[0]
+    require(all(mount.get(k)==quota[k] for k in ('fstype','uuid'))
+        and mount['fstype']=='ext4' and {'rw','nodev','nosuid','noexec','prjquota'}<=set(mount['options'].split(',')),
+        'RESUME_GUEST_QUOTA')
+    usage=value['management_usage'];c.exact(usage,{'cpu_nanoseconds','rss_peak_bytes','elapsed_nanoseconds'},'RESUME_GUEST_USAGE')
+    for key,limit in (('cpu_nanoseconds',120000000000),('rss_peak_bytes',512*1048576),('elapsed_nanoseconds',120000000000)):
+        c.integer(usage[key],1,limit,'RESUME_GUEST_USAGE')
+    return value
+
+
+def build_vm_resumption(files, index_raw, *, historical_boot):
+    c.exact(files,RESUMPTION_MEMBERS,'RESUME_FILES')
+    index=_resume_json(index_raw,65536)
+    c.exact(index,{'schema','event','files','references','guest_caller_completion'},'RESUME_INDEX_FIELDS')
+    require(index['schema']=='local-hand-q2-vm-resumption-sources/v1' and index['event']==RESUMPTION_EVENT
+        and index['files']==_resume_pins(files) and index['references']==RESUMPTION_REFERENCES
+        and all(files[name]==files[target] for name,target in RESUMPTION_REFERENCES.items()),'RESUME_INDEX')
+    group=lambda prefix:{name[len(prefix)+1:]:raw for name,raw in files.items() if name.startswith(prefix+'/')}
+    old=group('activation');old_index=old.pop('execution-return-index-private.json')
+    historical=build_vm_activation(old,old_index,historical_boot=historical_boot)
+    startup=group('startup');start,result,vm=_resume_startup(startup,historical)
+    preflight=_resume_host_preflight(group('old10b'))
+    guest=group('guest')
+    require(all(type(guest[n]) is bytes and len(guest[n])<=cap for n,cap in GUEST_VERIFICATION_CAPS.items()),'RESUME_GUEST_FILE_BOUND')
+    doc=lambda name:_resume_json(guest[name],GUEST_VERIFICATION_CAPS[name])
+    proposal=doc('proposal.json');freeze=doc('freeze.json');authority=doc('approval.json')
+    marker=doc('consumed.json');returned=doc('result.json')
+    pin=lambda name:_resume_pins({name:guest[name]})[name]
+    old_proposal=_resume_json(old['activation-proposal-private.json'])
+    old_guest=_resume_json(old['ssh-install.stdout'])
+    old_result=_resume_json(old['result-private.json'])
+    quota=dict(_resume_json(old_guest['steps'][2]['stdout'].encode())['filesystems'][0])
+    mount_argv=old_guest['steps'][2]['argv']
+    require(mount_argv==old_guest['steps'][8]['argv'] and mount_argv[:3]==['findmnt','--json','--mountpoint']
+        and mount_argv[4:]==['-o','UUID,FSTYPE,OPTIONS'],'RESUME_OLD_QUOTA_COMMAND')
+    quota['target']=mount_argv[3]
+    require(proposal['historical_activation_sha256']==c.sha256(c.canonical(historical))
+        and proposal['startup_index_sha256']==c.sha256(startup['execution-return-index-private.json'])
+        and proposal['host_preflight_index_sha256']==c.sha256(c.canonical(_resume_pins(group('old10b'))))
+        and proposal['expected_host_boot_id']==result['host_boot_id']
+        and proposal['expected_vm']==result['new_vm'] and proposal['package']==old_proposal['package']
+        and proposal['quota']==quota
+        and proposal['ssh_prefix']==old_result['commands'][-1]['argv'][:-1], 'RESUME_GUEST_PROPOSAL')
+    implementation=proposal['implementation'];c.exact(implementation,{'commit','tree'},'RESUME_IMPLEMENTATION')
+    for value in implementation.values():c.commit(value)
+    c.digest(proposal['guest_source_sha256'])
+    require(freeze['implementation']==returned['implementation']==implementation
+        and returned['guest_source_sha256']==proposal['guest_source_sha256'],'RESUME_SOURCE_BINDING')
+    require(all(row['event']==RESUMPTION_EVENT for row in (proposal,freeze,authority,marker,returned))
+        and authority['owner_reply']=='批准' and authority['A']==c.RESUMED_VM_BASELINE['commit']
+        and authority['C']==c.RESUMED_VM_CLOSURE['commit'] and authority['R']==c.RULE['commit']
+        and authority['state']=='APPROVED','RESUME_GUEST_AUTHORITY')
+    require(freeze['proposal']==pin('proposal.json') and freeze['caller']==pin('check-approved.py')
+        and freeze['approval']==pin('approval.json') and marker['freeze_sha256']==pin('freeze.json')['sha256']
+        and returned['marker_sha256']==pin('consumed.json')['sha256'], 'RESUME_GUEST_FREEZE')
+    c.digest(marker['nonce'])
+    require(c.canonical(index['guest_caller_completion'])==c.canonical(dict(returncode=0,stdout_eof=True,stderr_eof=True,stdout=pin('caller.stdout'),stderr=pin('caller.stderr'))),'RESUME_CALLER_EXIT')
+    require(doc('caller.stdout')==dict(event=RESUMPTION_EVENT,state='CURRENT_GUEST_VERIFIED',result_sha256=pin('result.json')['sha256']), 'RESUME_CALLER_COMPLETION')
+    require(c.canonical([returned[k] for k in ('startup_calls','package_install_calls','retries')])==b'[0,0,0]', 'RESUME_GUEST_COUNTS')
+    usage=returned['management_usage'];c.exact(usage,{'cpu_nanoseconds','rss_peak_bytes'},'RESUME_HOST_USAGE')
+    c.integer(usage['cpu_nanoseconds'],1,120000000000);c.integer(usage['rss_peak_bytes'],1,536870912)
+    require(returned['state']=='CURRENT_GUEST_VERIFIED' and returned['nonce']==marker['nonce']
+        and returned['ssh_calls']==1 and type(returned['ssh_calls']) is int
+        and returned['startup_calls']==returned['package_install_calls']==returned['retries']==0
+        and returned['guest_returncode']==0 and type(returned['guest_returncode']) is int
+        and returned['guest_eof'] is True and returned['errors']==[]
+        and returned['guest_stdout']==pin('guest.stdout') and returned['guest_stderr']==pin('guest.stderr')
+        and guest['guest.stderr']==guest['caller.stderr']==b'', 'RESUME_GUEST_COMPLETION')
+    require(returned['host_before']==returned['host_after']==dict(boot_id=result['host_boot_id'],vm=result['new_vm'])
+        and returned['image_identities']==dict(historical['image_identities'],original_system=historical['original_system_identity']),
+        'RESUME_GUEST_HOST_BINDING')
+    current=validate_current_guest(doc('guest.stdout'),package=proposal['package'],quota=quota,nonce=marker['nonce'])
+    require(current['boot_id']!=historical['current_boot_id'] and returned['guest_boot_id']==current['boot_id'],
+        'RESUME_GUEST_BOOT_CHANGE')
+    value=dict(historical,schema='local-hand-q2-vm-activation/v2',event=RESUMPTION_EVENT,
+        current_boot_id=current['boot_id'],host_boot_id=result['host_boot_id'],vm=vm,
+        pidfile=start['output_directory']+'/vm.pid',serial=start['output_directory']+'/console.log',
+        index=dict(bytes=len(index_raw),sha256=c.sha256(index_raw)),evidence_sha256=c.sha256(c.canonical(_resume_pins(files))),
+        historical_activation_sha256=c.sha256(c.canonical(historical)),
+        startup_evidence_sha256=c.sha256(startup['execution-return-index-private.json']),
+        guest_evidence_sha256=c.sha256(c.canonical(_resume_pins(guest))),previous_host_preflight=preflight)
+    return validate_vm_activation(value)
+
+
+def activation_archive_files(raw):
+    """Read only the fixed USTAR namespace; never extract paths to disk."""
+    import io,tarfile
+    require(type(raw) is bytes and 0<len(raw)<=524288,'RESUME_ARCHIVE_BOUND')
+    permitted=set(ACTIVATION_FILES)|set(RESUMPTION_STORAGE_MEMBERS)|{'execution-return-index-private.json'}
+    files={};end=0
+    try:
+        with tarfile.open(fileobj=io.BytesIO(raw),mode='r:') as archive:
+            for member in archive:
+                require(member.type in (tarfile.REGTYPE,tarfile.AREGTYPE)
+                    and member.offset==end and raw[member.offset+257:member.offset+263]==b'ustar\0'
+                    and not member.pax_headers and not member.linkname and member.name not in files
+                    and member.name in permitted and 0<=member.size<=262144,'RESUME_ARCHIVE_MEMBER')
+                with archive.extractfile(member) as stream:data=stream.read(262145)
+                require(len(data)==member.size,'RESUME_ARCHIVE_MEMBER_BOUND')
+                end=member.offset_data+(member.size+511)//512*512
+                require(not any(raw[member.offset_data+member.size:end]),'RESUME_ARCHIVE_PADDING')
+                files[member.name]=data
+        require(len(raw)%512==0 and len(raw)-end>=1024 and not any(raw[end:]),'RESUME_ARCHIVE_TRAILING')
+    except (tarfile.TarError,ValueError,OSError) as error:
+        raise c.ContractError('RESUME_ARCHIVE') from error
+    require(set(files) in (set(ACTIVATION_FILES)|{'execution-return-index-private.json'},
+        set(RESUMPTION_STORAGE_MEMBERS)|{'execution-return-index-private.json'}),'RESUME_ARCHIVE_FILES')
+    if 'activation/activate-approved.py' in files:
+        index=_resume_json(files['execution-return-index-private.json'],65536)
+        require(index.get('references')==RESUMPTION_REFERENCES,'RESUME_ARCHIVE_REFERENCES')
+        for name,target in RESUMPTION_REFERENCES.items():files[name]=files[target]
+    return files

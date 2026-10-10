@@ -197,7 +197,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v15'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v16'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -288,7 +288,7 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     monkeypatch.setattr(h, "GrowthAnchor", lambda *_args: rig.anchor)
     monkeypatch.setattr(h, "Tool", lambda *_args: rig.tools["image"])
     monkeypatch.setattr(h, "freeze_vm", lambda *_args,**_kwargs: rig.vm)
-    monkeypatch.setattr(h, "adopt_vm_activation", lambda *_args:dict(host_boot_id=rig.window.binding["boot_id"]))
+    monkeypatch.setattr(h, "adopt_vm_activation", lambda *_args:dict(schema="local-hand-q2-vm-activation/v2",host_boot_id=rig.window.binding["boot_id"]))
     monkeypatch.setattr(h.Store, "absent", rig.nothing)
     monkeypatch.setattr(rig.vm["images"], "image_keys", lambda: {})
     staged=[]
