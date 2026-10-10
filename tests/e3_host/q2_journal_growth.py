@@ -736,6 +736,11 @@ def recheck_q1_inputs(inputs,frozen,check=lambda:None):
  inputs.recheck(check)
 def validate_q1_frozen(frozen):
  original,proof=q1_declaration(frozen["q1_raw"])
+ expected=prior.obligations.persistent_inventory(merge_q1_inventory(original,proof))
+ from e3_host import q2_journal_growth_guest as g
+ require("retained_quota_roots" in frozen["inventory"],"GROWTH_RETAINED_ROOT_REQUIRED")
+ g.retained_quota_roots(frozen["inventory"])
+ expected["retained_quota_roots"]=frozen["inventory"]["retained_quota_roots"]
  activation=frozen.get("vm_activation")
  if activation is not None:
   history.validate_persistent_frozen(frozen)
@@ -744,7 +749,7 @@ def validate_q1_frozen(frozen):
  and frozen["boot_id"]==activation["current_boot_id"],"GROWTH_ACTIVATION_FROZEN")
  require(proof==frozen["source_binding"]["q1_declaration"]
  and proof["boot_id"]==(activation["historical_boot_id"] if activation else frozen["boot_id"])
- and prior.obligations.persistent_inventory(merge_q1_inventory(original,proof))==frozen["inventory"],"GROWTH_Q1_FROZEN_BINDING")
+ and expected==frozen["inventory"],"GROWTH_Q1_FROZEN_BINDING")
  for role,pin in proof["sources"].items():
   require(frozen["source_binding"]["sources"]["q1_"+role]==pin,"GROWTH_Q1_FROZEN_PIN")
  return proof
@@ -774,6 +779,7 @@ documents,horizon,paths)
   if row["name"] in carriers:row["control_group"]=None
  require(before==inventory and proof["boot_id"]==boot,"GROWTH_Q1_ORIGINAL_INVENTORY")
  inventory=prior.obligations.persistent_inventory(merge_q1_inventory(inventory,proof))
+ inventory["retained_quota_roots"]=prior.obligations.retained_quota_roots(selected["original_plan"])
  runtime=runtime_parent_binding(selected["original_plan"],selected["retry_preparation"],documents["20261001e","plan"])
  from e3_host import q2_journal_growth_guest as g
  g.validate_runtime_binding(runtime,inventory)
@@ -1371,7 +1377,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
    os.close(fd)
   require(raw==git("show",expected+":tests/e3_host/"+name),"GROWTH_SOURCE_DRIFT")
   if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py","q2_journal_retained_fds.py"):
-   approved="47183cc310cbab15cf78bdb8f3f26cc935c1fb66" if name=="q2_core_obligation_inputs.py" else "8e91fa2631aa18a8469efa5a14e4145eaf781e28"
+   approved="4e9b9cc225285aa9a2d785b23e8344d9a120d5eb" if name=="q2_core_obligation_inputs.py" else "8e91fa2631aa18a8469efa5a14e4145eaf781e28"
    require(raw==git("show",approved+":tests/e3_host/"+name),
 "GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw

@@ -99,6 +99,23 @@ independent consumers; no such policy change or new field window is authorized b
 Use the retained review rather than repeat the completed lookup. Keep NAS discovery/new-job admission
 disabled and peripheral work paused.
 
+The current direct-repair instruction is being implemented as an unissued core identity repair;
+see the candidate section in the same field record. It derives exactly the original plan's four
+retained quota directory identities, without another field read. New input v5 requires the complete
+fixed path/device/inode binding. Only those four read-only leaves use that identity policy; ancestors,
+other paths, forbidden write bits, all 178 required paths and 230 protected paths stay checked.
+Their current UID/GID/mode and filesystem identity are captured by existing samples and must remain
+equal through preparation, pre poweroff, post admission and completion. Host and independent core
+transition v18 consumers require the bound pre/post evidence and reject older projections.
+
+This explicitly replaces the four leaves' current-account owner predicate with source-bound object
+identity plus forward metadata preservation. It is not proof of historical UID/GID or account names,
+and is not an amendment of the spent PP2/read authority. The exact existing core dispatcher release
+pin is unchanged: this candidate cannot issue core work. No new maintenance caller/window is created.
+The candidate can be reviewed and verified offline; field adoption of this changed policy still needs
+an exact continuation covering old10d retention, current costs and a new bounded window. Do not replay
+old callers, globally allow historical UIDs, chmod/chown, remove required evidence or resume side work.
+
 ## Fixed read completed; historical path classification repair (2026-10-10)
 
 Owner explicitly approved the adjacent request naming the fixed Q1 VM destination and private

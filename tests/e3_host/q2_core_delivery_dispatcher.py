@@ -2184,6 +2184,23 @@ def _validate_coordinator_completion(value, custody):
     return value
 
 
+RETAINED_PLAN_SHA="efff343c7967dcc43c54420accafb2e91a5b4fb563419b00a86d41a58817fa7c"
+RETAINED_QUOTA_SHA="b782a2de862b038347d8b224ed55c3e9dff06179f901b06a2506fa542a0357d5"
+
+
+def _validate_retained_identity(value,reports):
+    check=_Checks('CORE_JOURNAL_')
+    check.exact(value,{'schema','source_plan_sha256','roots_sha256','pre','post','reports'},'RETAINED_IDENTITY_FIELDS')
+    check(value['schema']=='lhq-retained-quota-identity/v1'
+        and value['source_plan_sha256']==RETAINED_PLAN_SHA and value['roots_sha256']==RETAINED_QUOTA_SHA
+        and value['reports']==reports,'RETAINED_IDENTITY_SOURCE')
+    for phase in ('pre','post'):
+        check.exact(value[phase],{'count','sha256'},'RETAINED_IDENTITY_SAMPLE')
+        check.integer(value[phase]['count'],4,4);check.digest(value[phase]['sha256'])
+    check(value['pre']==value['post'],'RETAINED_IDENTITY_DRIFT')
+    return value
+
+
 def _validate_journal_transition(value, *, priors, implementation, current_boot=None):
     """Consume the host projection; no host-original verification is claimed."""
     check = _Checks("CORE_JOURNAL_")
@@ -2192,9 +2209,9 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v17'
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v18'
         and value['session']=='lhqjgrow-20261010d', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
         A=PERSISTENT_PATH_A,C=PERSISTENT_PATH_C)
@@ -2210,6 +2227,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
     validate_local_preflight_source(value['local_preflight_source'])
     validate_transport_failure_source(value['transport_failure_source'])
     validate_persistent_source(value['persistent_source'])
+    _validate_retained_identity(value['retained_identity'],value['reports'])
     _validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
     check.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')

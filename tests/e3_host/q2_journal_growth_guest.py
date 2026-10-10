@@ -19,7 +19,8 @@ from e3_host import q2_core_capacity_reader as r
 require, canonical, digest=r.require, r.canonical, r.digest
 MAX_BYTES, MAX_ENTRIES=268435456, 32768
 SESSION="lhqjgrow-20261010d"
-SCHEMA="lhq-journal-growth-input/v4"
+SCHEMA="lhq-journal-growth-input/v5"
+RETAINED_QUOTA_SHA="b782a2de862b038347d8b224ed55c3e9dff06179f901b06a2506fa542a0357d5"
 REPORT_SCHEMA="lhq-journal-growth-guest/v4"
 OLD_SIZE, NEW_SIZE=268435456, 536870912
 STREAM_LIMIT=1048576
@@ -204,16 +205,30 @@ def resource_observation():
  self_peak_rss_bytes=self_use.ru_maxrss * 1024,
  exited_child_peak_rss_bytes=children.ru_maxrss * 1024,
  coverage="THROUGH_REPORT_ONLY", complete=False)
+def retained_quota_roots(value):
+ roots=value["retained_quota_roots"]
+ require(type(roots) is list and len(roots)==4 and digest(canonical(roots))==RETAINED_QUOTA_SHA,
+ "GROWTH_RETAINED_ROOT_PIN")
+ require(all(row["path"] in value["essential_paths"] and row["path"] in value["protected_roots"]
+ for row in roots),"GROWTH_RETAINED_ROOT_COVERAGE")
+ return {row["path"]:row for row in roots}
+def retained_sample(report,description):
+ value=report["quiescence"]["persistent"]["retained_roots"]
+ require(type(value) is dict and set(value)=={"count","sha256"} and type(value["count"]) is int
+ and value["count"]==len(retained_quota_roots(description)),"GROWTH_RETAINED_SAMPLE")
+ sha_value(value["sha256"])
+ return value
 def descriptor(raw):
  value=r.parse(raw, 65536)
  keys={"schema", "session", "phase", "nonce", "source_binding_sha256", "paths", "saved_rows",
  "original_boot_id", "journal_serial", "expected_units", "domain_cgroups", "domain_units",
- "protected_roots", "essential_paths", "window_seconds", "change_seconds", "guest_startup_assurance", "runtime_parent_binding"}
+ "protected_roots", "essential_paths", "retained_quota_roots", "window_seconds", "change_seconds", "guest_startup_assurance", "runtime_parent_binding"}
  require(type(value) is dict and value.get("phase") in ("pre", "post"), "GROWTH_DESCRIPTION")
  if value["phase"] == "post":
   keys |= {"pre_report", "pre_report_sha256"}
  require(set(value) == keys and value["schema"] == SCHEMA and value["session"] == SESSION,
  "GROWTH_DESCRIPTION")
+ retained_quota_roots(value)
  validate_startup_assurance(value.get("guest_startup_assurance"))
  validate_runtime_binding(value.get("runtime_parent_binding"),value)
  sha_value(value["nonce"]); sha_value(value["source_binding_sha256"])
@@ -276,8 +291,10 @@ class GuestWindow:
   cpu=usage.ru_utime + usage.ru_stime + children.ru_utime + children.ru_stime
   require(cpu <= 120 and max(usage.ru_maxrss, children.ru_maxrss) <= 512 * 1024,
  "GROWTH_GUEST_OBSERVATION_BUDGET")
-def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)):
+def open_path(path, *, directory=False, writable=False, block=False, owners=(0,), retained=None):
  """Walk protected ancestors by fd; no symlink or weak atime fallback."""
+ require(retained is None or (directory and not writable and not block and retained["path"]==path),
+ "GROWTH_RETAINED_READ_ONLY")
  parts=r.path_value(path)
  current=None;index=-1;operation="open_root";qualification=None
  try:
@@ -305,10 +322,14 @@ def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)
     require(stat.S_ISDIR(info.st_mode) and info.st_uid in owners and not info.st_mode & 0o022,
  "GROWTH_PATH_ANCESTOR")
    else:
-    require(info.st_uid in owners and not info.st_mode & (0o002 if block else 0o022), "GROWTH_PATH_PROTECTION")
+    if retained is not None:
+     qualification.update(allowed_uids=None,retained_root={k:retained[k] for k in ("device","inode")})
+     require(stat.S_ISDIR(info.st_mode) and (info.st_dev,info.st_ino)==(retained["device"],retained["inode"]),
+ "GROWTH_RETAINED_ROOT_IDENTITY")
+    require((retained is not None or info.st_uid in owners) and not info.st_mode & (0o002 if block else 0o022), "GROWTH_PATH_PROTECTION")
     if block:
      require(stat.S_ISBLK(info.st_mode), "GROWTH_BLOCK_TYPE")
-  result, current=current, None
+  result, current=(current,r.identity(info)) if retained is not None else current, None
   return result
  except (OSError,r.ObservationError) as error:
   # Identify the already attempted lookup, without another read or raw path.
@@ -841,15 +862,19 @@ field="cmdline")
  def persistent(self):
   self.context=dict(operation="persistent_inventory",field="mountinfo")
   mounts=r.mounts(r.kernel_read("/proc/self/mountinfo", 1048576, self.check))
-  records=[]
+  records=[];retained=[]
+  roots=retained_quota_roots(self.description) if "retained_quota_roots" in self.description else {}
   for index,path in enumerate(self.description["essential_paths"]):
    self.context=dict(operation="persistent_inventory",field="open",path_index=index,
  path_bytes=len(path),path_sha256=digest(path.encode("ascii")))
    self.check()
-   fd=open_path(path, owners=(0, 1100))
+   held=None
+   if path in roots:fd,held=open_path(path,directory=True,owners=(0,1100),retained=roots[path])
+   else:fd=open_path(path, owners=(0, 1100))
    try:
     self.context["field"]="stat"
     info=os.fstat(fd)
+    require(held is None or r.identity(info)==held,"GROWTH_RETAINED_ROOT_DRIFT")
     require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode), "GROWTH_ESSENTIAL_OBJECT")
     self.context["field"]="mount_id"
     mid=r.mount_id(r.kernel_read("/proc/self/fdinfo/" + str(fd), 4096, self.check))
@@ -861,10 +886,17 @@ field="cmdline")
     require(filesystem["mount"]["device"] == info.st_dev, "GROWTH_ESSENTIAL_DEVICE")
     records.append(dict(path_sha256=digest(path.encode()), filesystem_uuid=filesystem["uuid"],
  identity=r.identity(info)))
+    if held is not None:retained.append(records[-1])
    finally:
     os.close(fd)
+  result=dict(count=len(records),sha256=digest(canonical(records)))
+  if roots:
+   sample=dict(count=len(retained),sha256=digest(canonical(retained)))
+   expected=retained_sample(self.description["pre_report"],self.description) if self.description.get("phase")=="post" else getattr(self,"retained_snapshot",sample)
+   require(sample==expected,"GROWTH_RETAINED_ROOT_DRIFT")
+   self.retained_snapshot=sample;result["retained_roots"]=sample
   self.context={}
-  return dict(count=len(records), sha256=digest(canonical(records)))
+  return result
  def collect(self):
   units=[self.quiet_service(item) for item in self.description["expected_units"]]
   groups=[self.cgroup(path) for path in self.description["domain_cgroups"]]
@@ -1045,6 +1077,7 @@ def validate_pre_report(value, description):
  require(type(value["quiescence"]) is dict and value["quiescence"].get("historical_exit") == "UNKNOWN",
  "GROWTH_PRE_QUIESCENCE")
  validate_startup_report(value["quiescence"].get("startup"),description)
+ if "retained_quota_roots" in description:retained_sample(value,description)
  validate_runtime_report(value["runtime_preparation"],description,value["boot_id"],"pre")
  validate_resources(value["resource_observation"])
  return value
@@ -1093,6 +1126,8 @@ def validate_post_report(value, description):
  require(type(value["quiescence"]) is dict and value["quiescence"].get("historical_exit") == "UNKNOWN",
  "GROWTH_POST_QUIESCENCE")
  validate_startup_report(value["quiescence"].get("startup"),description)
+ if "retained_quota_roots" in description:
+  require(retained_sample(value,description)==retained_sample(before,description),"GROWTH_RETAINED_ROOT_DRIFT")
  validate_runtime_report(value["runtime_preparation"],description,value["boot_id"],"post")
  validate_resources(value["resource_observation"])
  return value

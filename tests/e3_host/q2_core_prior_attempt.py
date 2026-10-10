@@ -1588,7 +1588,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     backup=results['BACKED_UP'];c.exact(backup,{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
     c.integer(backup['bytes'],1,320*1048576);c.digest(backup['sha256'])
     journal=next(row for row in post['rows'] if row['role']=='journal')
-    value=dict(schema='local-hand-q2-core-journal-transition/v17', authority=expected_authority,
+    value=dict(schema='local-hand-q2-core-journal-transition/v18', authority=expected_authority,
         persistent_source=copy.deepcopy(frozen['source_binding']['persistent_source']),
         local_preflight_source=copy.deepcopy(local_source),
         transport_failure_source=copy.deepcopy(failed_source),
@@ -1616,6 +1616,10 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
         logical_compare_exit=results['IMAGE_GROWN']['logical_compare']['returncode'],
         resize_exit=post['resize_result']['returncode'], all_streams_eof=True,
         historical_exit='UNKNOWN', old_commitments_refunded=False)
+    value['retained_identity']=dict(schema='lhq-retained-quota-identity/v1',
+        source_plan_sha256=RETAINED_PLAN_SHA,roots_sha256=g.RETAINED_QUOTA_SHA,
+        pre=copy.deepcopy(g.retained_sample(pre,desc)),post=copy.deepcopy(g.retained_sample(post,desc)),
+        reports=copy.deepcopy(value['reports']))
     validate_journal_transition(value, priors=priors, implementation=implementation)
     return value
 
@@ -1739,6 +1743,22 @@ def validate_coordinator_completion(value, custody):
     return value
 
 
+RETAINED_PLAN_SHA="efff343c7967dcc43c54420accafb2e91a5b4fb563419b00a86d41a58817fa7c"
+RETAINED_QUOTA_SHA="b782a2de862b038347d8b224ed55c3e9dff06179f901b06a2506fa542a0357d5"
+
+
+def validate_retained_identity(value,reports):
+    c.exact(value,{'schema','source_plan_sha256','roots_sha256','pre','post','reports'})
+    require(value['schema']=='lhq-retained-quota-identity/v1'
+        and value['source_plan_sha256']==RETAINED_PLAN_SHA and value['roots_sha256']==RETAINED_QUOTA_SHA
+        and value['reports']==reports,'RETAINED_IDENTITY_SOURCE')
+    for phase in ('pre','post'):
+        c.exact(value[phase],{'count','sha256'})
+        c.integer(value[phase]['count'],4,4);c.digest(value[phase]['sha256'])
+    require(value['pre']==value['post'],'RETAINED_IDENTITY_DRIFT')
+    return value
+
+
 def validate_journal_transition(value, *, priors, implementation, current_boot=None):
     """Check the fixed host-verified projection; this does not reread host originals."""
     c.exact(value, {'schema','authority','implementation','session','nonce','access_mode',
@@ -1746,9 +1766,9 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
         'CORE_JOURNAL_FIELDS')
-    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v17'
+    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v18'
         and value['session']=='lhqjgrow-20261010d', 'JOURNAL_SCHEMA')
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
         A=(c.PERSISTENT_PATH_BASELINE or {}).get('commit'),C=(c.PERSISTENT_PATH_CLOSURE or {}).get('commit'))
@@ -1766,6 +1786,7 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
     validate_local_preflight_source(value['local_preflight_source'])
     validate_transport_failure_source(value['transport_failure_source'])
     validate_persistent_source(value['persistent_source'])
+    validate_retained_identity(value['retained_identity'],value['reports'])
     validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
     c.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
