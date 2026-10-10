@@ -30,12 +30,35 @@ merge commits; raw/index/archive/caller/machine data remain private. R/source/in
 Owner mandate/authority, no exceptions and change control remain. This exact closure
 supersedes older no-new-window clauses only for IR1–IR3; it proves no readiness or PASS.
 
-The [IR1 implementation review](docs/a2-execution/Q2_CORE_IDENTITY_RESOURCE_IMPLEMENTATION_20261011.md)
-records the fixed 19-member old10d consumer, independent current history/cost validation,
-private caller diagnostics and actual top-level completion gates. The new archive is prepared;
-source verification/publication/exact-D CI/independent installations and final caller freezes
-must complete before the one IR2. A's original document bytes and all old freezes remain.
-This implementation record grants no additional window and proves no maintenance/core PASS.
+The [IR1 freeze and IR2 return](docs/a2-execution/Q2_CORE_IDENTITY_RESOURCE_FIELD_20261011.md)
+records final D `29df25577aa848b4fa6264bd539692d0a2fa6386`, normal PR #13 merge
+`e24aa744767c62214c54db621001f7105a04fe5c`, exact first CI `38073250220` attempt 1
+3/3 success, both CI installations and local installed 94 checks/292 commands. Retained
+source/lifecycle bounds, the private archive and twelve caller/dependency hashes were frozen;
+IR1 is complete. Earlier D `e389448c2b13d9a31087047b6d228cce40812ae2` first CI failed
+one stale test assertion; preserve that failure, not a cancellation or rerun replacement.
+
+Unique IR2 11a passed its one local preflight and invoked same-window execute once. Its marker
+and one pre SSH were created; execute returned STOP_AND_RETAIN / GROWTH_REPORT_MISSING.
+The bound guest failure is PRE_RUNTIME_PREPARATION / GROWTH_RUNTIME_LIMITS. Runtime preparation
+entered; guard_units and system_before returned 0 with both EOF. Five observed configs have
+created=false. No poweroff token, backup, journal growth, restart or core package was issued.
+Five actual originals/index stay private. Caller/coordinator exit 3 and custodian exit 0 are
+actual completion, not maintenance success; remote exit remains UNKNOWN. IR2 is CONSUMED_FAILED;
+IR3/H01/Q4/H11 remain NOT_RUN. The immutable freeze and all twelve caller hashes are unchanged;
+the separate terminal gate is IR2_MAINTENANCE_CONSUMED_FAILED_IR3_NOT_RUN. Fifteen generations
+are consumed; old09c/old10b remain invoked unconsumed preflights. All seventeen full obligations
+and 23079 MiB/6834 inode total reservations remain, without refunds.
+
+The same field record identifies the ordinary runtime preparation bug from the retained return:
+the fixed ordinary slice has no configuration fragment but is loaded/inactive/dead with default
+infinity resource properties. The precheck wrongly demanded configured limits before the already
+approved configuration creation. The offline repair recognizes that exact empty, inactive shape
+only for the two fixed targets whose configuration absence was verified. Existing configuration,
+active state, manager, effective limits, cgroup/kernel identity and conflict checks remain strict.
+No new observation, command, limit or task is added. This repair does not restore IR2 or permit IR3.
+Do not replay either frozen caller, retry, supplement field evidence, clean up, recover or start
+another window. Continue only retained-return/source offline work; peripherals remain paused.
 
 ## Current resource and diagnostic repair (2026-10-11)
 

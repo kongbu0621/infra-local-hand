@@ -1337,7 +1337,7 @@ def validate_runtime_report(value, description, current_boot, phase):
  and ident["nlink"]==1 and stat.S_ISREG(ident["mode"]) and ident["mode"]&0o111
  and not ident["mode"]&0o022,"GROWTH_RUNTIME_TOOL_IDENTITY")
  return value
-def _runtime_properties(value, row, *, active, manager=False):
+def _runtime_properties(value, row, *, active, manager=False, missing_config=False):
  require(type(value) is dict and set(value)==set(RUNTIME_SHOW) and value["Id"]==row["unit"]
  and value["Job"]=="" and value["ControlPID"] in ("","0"),"GROWTH_RUNTIME_PROPERTIES")
  require((value["ActiveState"],value["SubState"]) in
@@ -1347,6 +1347,16 @@ def _runtime_properties(value, row, *, active, manager=False):
  if value["LoadState"]=="not-found":
   require(not active and value["ActiveState"]=="inactive" and not any(value[k] for k in
  ("FragmentPath","DropInPaths","ControlGroup","InvocationID")) and value["MainPID"] in ("","0"),"GROWTH_RUNTIME_MISSING")
+  return
+ if missing_config and value["LoadState"]=="loaded":
+  # An unconfigured slice can be implicitly loaded. Only the two fixed
+  # preparation targets pass verified config absence here, before creation.
+  require(not active and not manager and row["unit"].endswith(".slice")
+ and (value["ActiveState"],value["SubState"])==("inactive","dead")
+ and not any(value[k] for k in ("FragmentPath","DropInPaths","ControlGroup","InvocationID","User"))
+ and value["MainPID"] in ("","0") and value["Delegate"]=="no"
+ and all(value[k]=="infinity" for k in ("MemoryMax","MemorySwapMax","TasksMax","CPUQuotaPerSecUSec")),
+ "GROWTH_RUNTIME_UNCONFIGURED_SLICE")
   return
  require(value["LoadState"]=="loaded" and value["MemoryMax"]==str(row["memory_bytes"])
  and value["TasksMax"]==str(row["tasks_max"]) and value["MemorySwapMax"]=="0"
@@ -1562,7 +1572,8 @@ class RuntimePreparation:
   names=[row["unit"] for row in system.values()]+[runtime_unit,manager["unit"]]
   before=self.show("system_before",names,missing=configs["ordinary"] is None)
   for role,row in system.items():
-   value=before[row["unit"]];_runtime_properties(value,row,active=False)
+   value=before[row["unit"]];_runtime_properties(value,row,active=False,
+ missing_config=role=="ordinary" and configs[role] is None)
    require(value["FragmentPath"]==(configs[role] or ""),"GROWTH_RUNTIME_FRAGMENT")
    if value["ActiveState"]=="active":self.group(row)
   def manager_check(value,active):
@@ -1598,7 +1609,7 @@ class RuntimePreparation:
   row=self.binding["parents"]["retained_ordinary"]
   found=self.slice_config("retained_ordinary",user=True)
   before=self.show("user_before",[row["unit"]],user=True,missing=found is None)[row["unit"]]
-  _runtime_properties(before,row,active=False)
+  _runtime_properties(before,row,active=False,missing_config=found is None)
   require(before["FragmentPath"]==(found or ""),"GROWTH_RUNTIME_USER_FRAGMENT")
   if before["ActiveState"]=="active":self.group(row)
   if found is None:

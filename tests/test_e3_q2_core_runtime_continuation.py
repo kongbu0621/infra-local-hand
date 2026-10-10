@@ -20,6 +20,7 @@ from test_e3_q2_journal_growth_guest_completion import description
 def runtime(monkeypatch):
     patch(monkeypatch)
     desc=description();baseline=report(desc);trace=[];states={}
+    absent_configs={'ordinary','retained_ordinary'};pending_configs=set()
     b=binding()
     for role,row in b['parents'].items():
         manager=row['manager'];unit=row['unit'];value=properties(row,active=False)
@@ -50,6 +51,13 @@ def runtime(monkeypatch):
                 raw=('\n\n'.join('\n'.join(key+'='+row[key] for key in g.RUNTIME_SHOW) for row in selected)+'\n').encode()
                 self.last_result.update(stdout_bytes=len(raw),stdout_sha256=g.digest(raw))
                 return raw
+            if args[0]=='daemon-reload':
+                for role in list(pending_configs):
+                    parent=b['parents'][role]
+                    if parent['manager']!=scope:continue
+                    states[scope,parent['unit']].update(LoadState='loaded',MemoryMax=str(parent['memory_bytes']),
+                        MemorySwapMax='0',TasksMax=str(parent['tasks_max']),CPUQuotaPerSecUSec='1s')
+                    pending_configs.remove(role)
             if args[0]=='start':
                 for name in args[2:]:
                     row=states[scope,name]
@@ -73,9 +81,11 @@ def runtime(monkeypatch):
             trace.append(('config',role,create))
             value=copy.deepcopy(next(row for row in baseline['configs'] if row['role']==role))
             value.update(path=path,created=create);self.report['configs'].append(value)
-            if create:states[b['parents'][role]['manager'],b['parents'][role]['unit']]['FragmentPath']=path
+            if create:
+                absent_configs.remove(role);pending_configs.add(role)
+                states[b['parents'][role]['manager'],b['parents'][role]['unit']]['FragmentPath']=path
         def slice_config(self,role,*,user=False):
-            if role in ('ordinary','retained_ordinary') and states[b['parents'][role]['manager'],b['parents'][role]['unit']]['LoadState']=='not-found':return None
+            if role in absent_configs:return None
             value=next(row for row in baseline['configs'] if row['role']==role)
             self.config(role,value['path'],b'')
             return value['path']
@@ -95,7 +105,7 @@ def runtime(monkeypatch):
     monkeypatch.setattr(os,'close',lambda fd:None if fd==fake_fd else real_close(fd))
     monkeypatch.setattr(g.pwd,'getpwuid',lambda uid:SimpleNamespace(pw_name='q2job',pw_uid=1100,pw_gid=1100))
     value=Runtime(m,desc['original_boot_id']);m.runtime=value
-    return SimpleNamespace(runtime=value,m=m,trace=trace,states=states,binding=b)
+    return SimpleNamespace(runtime=value,m=m,trace=trace,states=states,binding=b,absent_configs=absent_configs)
 
 
 def test_missing_runtime_is_prepared_once_with_complete_current_proof(runtime):
@@ -115,6 +125,7 @@ def test_missing_runtime_is_prepared_once_with_complete_current_proof(runtime):
 @pytest.mark.parametrize('phase',['pre','post'])
 def test_matching_active_runtime_is_reused_without_mutations(runtime,phase):
     f=runtime;f.m.description['phase']=phase;f.runtime.report['phase']=phase
+    f.absent_configs.clear()
     expected=report(f.m.description)
     for role,parent in f.binding['parents'].items():
         value=properties(parent,active=True)
@@ -134,6 +145,76 @@ def test_matching_active_runtime_is_reused_without_mutations(runtime,phase):
     assert not any(row['created'] for row in value['configs'])
     assert f.m.started=={'runtime_preparation'}
     assert all(row['reserved_bytes']==8192*(1 if phase=='pre' else 2) for row in value['pools'])
+
+
+def unconfigured_slice(f,role):
+    parent=f.binding['parents'][role]
+    value=f.states[parent['manager'],parent['unit']]
+    # Retained systemctl shape: an absent slice fragment is implicitly loaded,
+    # with no cgroup, invocation, action or configured resource limits.
+    value.update(LoadState='loaded',Delegate='no',MainPID='',ControlPID='',
+        MemoryMax='infinity',MemorySwapMax='infinity',TasksMax='infinity',CPUQuotaPerSecUSec='infinity')
+    return value
+
+
+@pytest.mark.parametrize('roles',[('ordinary',),('retained_ordinary',),('ordinary','retained_ordinary')])
+def test_implicit_loaded_slices_get_fixed_configs_and_verified_limits(runtime,roles):
+    f=runtime
+    for role in roles:unconfigured_slice(f,role)
+    value=f.runtime.run()
+    assert len(value['commands'])==9
+    assert [row['role'] for row in value['configs'] if row['created']]==['ordinary','retained_ordinary']
+    for role in roles:
+        actual=value['parents'][role]['properties'];expected=f.binding['parents'][role]
+        assert actual['ActiveState']=='active' and actual['MemoryMax']==str(expected['memory_bytes'])
+        assert actual['TasksMax']==str(expected['tasks_max']) and actual['MemorySwapMax']=='0'
+        assert actual['CPUQuotaPerSecUSec']=='1s' and actual['FragmentPath']
+    assert value['parents']['ordinary']['properties']['TasksMax']=='32'
+    assert value['parents']['retained_ordinary']['properties']['TasksMax']=='64'
+
+
+@pytest.mark.parametrize('role',['ordinary','retained_ordinary'])
+@pytest.mark.parametrize('field,value',[
+    ('ActiveState','active'),('SubState','active'),('Job','12'),('ControlPID','12'),('MainPID','12'),
+    ('FragmentPath','/run/foreign.slice'),('DropInPaths','/run/foreign.conf'),('ControlGroup','/foreign.slice'),
+    ('InvocationID','1'*32),('User','1100'),('Delegate','yes'),('LoadState','error'),
+    ('MemoryMax','268435456'),('MemorySwapMax','0'),('TasksMax','32'),('CPUQuotaPerSecUSec','1s')])
+def test_implicit_slice_conflict_stops_before_target_creation_or_start(runtime,role,field,value):
+    f=runtime;unconfigured_slice(f,role)[field]=value
+    with pytest.raises(g.r.ObservationError):f.runtime.run()
+    assert 'runtime_config_'+role not in f.m.started
+    parent=f.binding['parents'][role]
+    assert not any(isinstance(row,tuple) and row[0]==parent['manager'] and row[1][0]=='start'
+        and parent['unit'] in row[1] for row in f.trace)
+
+
+@pytest.mark.parametrize('role',['ordinary','retained_ordinary'])
+def test_existing_slice_config_cannot_claim_unconfigured_defaults(runtime,role):
+    f=runtime;unconfigured_slice(f,role);f.absent_configs.remove(role)
+    with pytest.raises(g.r.ObservationError,match='RUNTIME_LIMITS'):f.runtime.run()
+    assert 'runtime_config_'+role not in f.m.started
+
+
+@pytest.mark.parametrize('role',['ordinary','retained_ordinary'])
+@pytest.mark.parametrize('field',['MemoryMax','MemorySwapMax','TasksMax','CPUQuotaPerSecUSec'])
+def test_implicit_slice_must_acquire_effective_limits_after_reload(runtime,role,field):
+    f=runtime;unconfigured_slice(f,role);original=f.m.inventory.ctl
+    parent=f.binding['parents'][role]
+    def drift(args,**kwargs):
+        result=original(args,**kwargs)
+        scope='user' if kwargs.get('user_uid') is not None else 'system'
+        if args[0]=='daemon-reload' and scope==parent['manager']:
+            f.states[scope,parent['unit']][field]='infinity'
+        return result
+    f.m.inventory.ctl=drift
+    with pytest.raises(g.r.ObservationError,match='RUNTIME_LIMITS'):f.runtime.run()
+    assert 'runtime_config_'+role in f.m.started and 'poweroff' not in f.m.started
+
+
+def test_implicit_slice_is_never_an_active_or_manager_exception(runtime):
+    f=runtime;value=unconfigured_slice(f,'ordinary');parent=f.binding['parents']['ordinary']
+    with pytest.raises(g.r.ObservationError):g._runtime_properties(value,parent,active=True,missing_config=True)
+    with pytest.raises(g.r.ObservationError):g._runtime_properties(value,parent,active=False,manager=True,missing_config=True)
 
 
 def test_bus_identity_drift_stops_before_maintenance(runtime):
