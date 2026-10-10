@@ -229,7 +229,7 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == (frozenset() if c.RESUMED_VM_CLOSURE is None else frozenset({digest}))
+    assert e.RELEASABLE_DISPATCHER_SHA256 == (frozenset() if c.PROTECTED_SOURCE_CLOSURE is None else frozenset({digest}))
     # The issued 05c digest and a subsequently repaired dispatcher both stay closed.
     assert '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b' not in e.RELEASABLE_DISPATCHER_SHA256
     assert '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96' not in e.RELEASABLE_DISPATCHER_SHA256

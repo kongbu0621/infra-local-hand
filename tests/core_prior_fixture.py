@@ -126,10 +126,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v19', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v20', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v19',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v20',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -181,9 +181,9 @@ def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
     from local_preflight_fixture import source_projection
     from transport_failure_fixture import source_projection as transport_source
-    value=dict(schema='local-hand-q2-core-journal-transition/v15',vm_activation=None,
+    value=dict(schema='local-hand-q2-core-journal-transition/v16',vm_activation=None,
         local_preflight_source=source_projection(),transport_failure_source=transport_source(),
-        authority=dict(R=c.RULE['commit'],A=(c.RESUMED_VM_BASELINE or {}).get('commit'),C=(c.RESUMED_VM_CLOSURE or {}).get('commit')),
+        authority=dict(R=c.RULE['commit'],A=(c.PROTECTED_SOURCE_BASELINE or {}).get('commit'),C=(c.PROTECTED_SOURCE_CLOSURE or {}).get('commit')),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
             indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',

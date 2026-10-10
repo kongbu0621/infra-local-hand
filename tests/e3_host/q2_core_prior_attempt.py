@@ -451,13 +451,15 @@ def _capacity_rows(prior, diagnostic):
         dict(session_id='lhqjgrow-20261010b',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqjgrow-20261010c',bytes=1296*1048576,inodes=370),
         dict(session_id='lhqguest-20261010a',bytes=1048576,inodes=32),
+        dict(session_id='lhqguest-20261010b',bytes=1048576,inodes=32),
+        dict(session_id='lhqsource-20261010a',bytes=1048576,inodes=32),
         dict(session_id=c.SESSION_ID,bytes=c.LIMITS['host_capture_bytes'],
              inodes=c.LIMITS['host_capture_inodes'])]
 
 
 def _capacity_record(binding, prior, diagnostic, journal, implementation, origins, observation, capacity, device_capacity):
-    return dict(schema='local-hand-q2-core-host-capacity-condition/v18',
-        scope=c.RESUMED_VM_SCOPE, session_id=c.SESSION_ID,
+    return dict(schema='local-hand-q2-core-host-capacity-condition/v19',
+        scope=c.PROTECTED_SOURCE_SCOPE, session_id=c.SESSION_ID,
         implementation=copy.deepcopy(implementation),
         local_management_binding_sha256=c.sha256(c.canonical(binding, newline=True)),
         prior_attempts_sha256=c.sha256(c.canonical(prior)), origins=dict(origins),
@@ -498,8 +500,8 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
     require(all(type(number) is int and number >= 0 for number in capacity.values())
             and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
     rows = _capacity_rows(prior, diagnostic)
-    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 20452474880
-            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 5598
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 20454572032
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 5662
             and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
             'HOST_CAPACITY_ARITHMETIC')
     require(capacity['bytes_available'] >= capacity['required_bytes']
@@ -512,7 +514,7 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
         usage=c.exact(row['capacity'],set(capacity),'CORE_HOST_CAPACITY_FIELDS')
         require(all(type(x) is int and x>=0 for x in usage.values()) and usage['frsize']>0
             and usage['bytes_available']==usage['frsize']*usage['blocks_available']
-            and usage['required_bytes']==20452474880 and usage['required_inodes']==5598
+            and usage['required_bytes']==20454572032 and usage['required_inodes']==5662
             and usage['bytes_available']>=usage['required_bytes']
             and usage['inodes_available']>=usage['required_inodes'],'HOST_CAPACITY_DEVICE_FLOOR')
     require(next(row['capacity'] for row in devices if row['dev']==binding['anchor']['dev'])==capacity,
@@ -854,7 +856,7 @@ def validate_local_preflight_source(value):
     return value
 
 def maintenance_resume():
-    return dict(scope=c.RESUMED_VM_SCOPE, session='lhqjgrow-20261010c',
+    return dict(scope=c.PROTECTED_SOURCE_SCOPE, session='lhqjgrow-20261010c',
         previous_local_preflight=local_preflight_summary(),
         previous_transport_failure=transport_failure_summary(),
         previous_host_preflight=host_preflight_summary(),
@@ -917,7 +919,8 @@ def validate_transport_failure_source(value):
 
 def maintenance_commitments():
     return dict(previous_maintenance=maintenance_resume(),
-        guest_verification=dict(session="lhqguest-20261010a",host_bytes=1048576,host_inodes=32,host_cpu_seconds=120,guest_cpu_seconds=120,refunded=False),
+        guest_verification=dict(sessions=["lhqguest-20261010a","lhqguest-20261010b"],host_bytes=2097152,host_inodes=64,host_cpu_seconds=240,guest_cpu_seconds=240,per_attempt_cpu_seconds=120,refunded=False),
+        source_preparation=dict(session="lhqsource-20261010a",host_bytes=1048576,host_inodes=32,cpu_seconds=120,refunded=False),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
             for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b','lhqjgrow-20261010c')],
         released_or_refunded=False)
@@ -939,7 +942,7 @@ def encode_manifest_inputs(binding):
 
 
 def decode_manifest_inputs(manifest):
-    require(manifest.get('schema')=='lhq-journal-growth-manifest/v16','JOURNAL_INPUT_VERSION')
+    require(manifest.get('schema')=='lhq-journal-growth-manifest/v17','JOURNAL_INPUT_VERSION')
     value=manifest['inputs'];resume=validate_maintenance_resume(manifest['resume'])
     require(type(value) is dict and 'resume' not in value and 'resume_sha256' in value
         and value['resume_sha256']==c.sha256(c.canonical(resume,newline=True)), 'JOURNAL_INPUT_REFERENCE')
@@ -1359,9 +1362,9 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     saved=h.prior.validate_result(frozen['capacity_files']['.lhqcap-20261006a.stdout'],
         c.sha256(sources['q2_core_capacity_reader.py']),frozen['description'])['rows']
     require(saved==frozen['saved_rows'],'JOURNAL_SAVED_ROWS')
-    expected_authority = dict(R=h.R, A=(c.RESUMED_VM_BASELINE or {}).get('commit'), C=(c.RESUMED_VM_CLOSURE or {}).get('commit'))
-    require(manifest['schema'] == 'lhq-journal-growth-manifest/v16'
-        and receipt['schema'] == 'lhq-journal-growth-receipt/v16', 'JOURNAL_SCHEMA')
+    expected_authority = dict(R=h.R, A=(c.PROTECTED_SOURCE_BASELINE or {}).get('commit'), C=(c.PROTECTED_SOURCE_CLOSURE or {}).get('commit'))
+    require(manifest['schema'] == 'lhq-journal-growth-manifest/v17'
+        and receipt['schema'] == 'lhq-journal-growth-receipt/v17', 'JOURNAL_SCHEMA')
     for value in (manifest, receipt):
         require({key:value[key] for key in expected_authority} == expected_authority, 'JOURNAL_AUTHORITY')
     previous=build_previous_maintenance(frozen['previous_maintenance_files'])
@@ -1540,7 +1543,7 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     backup=results['BACKED_UP'];c.exact(backup,{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
     c.integer(backup['bytes'],1,320*1048576);c.digest(backup['sha256'])
     journal=next(row for row in post['rows'] if row['role']=='journal')
-    value=dict(schema='local-hand-q2-core-journal-transition/v15', authority=expected_authority,
+    value=dict(schema='local-hand-q2-core-journal-transition/v16', authority=expected_authority,
         local_preflight_source=copy.deepcopy(local_source),
         transport_failure_source=copy.deepcopy(failed_source),
         retained_custody=copy.deepcopy(receipt['retained_custody']),coordinator_completion=copy.deepcopy(completion),
@@ -1699,10 +1702,10 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source'},
         'CORE_JOURNAL_FIELDS')
-    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v15'
+    require(len(c.canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v16'
         and value['session']=='lhqjgrow-20261010c', 'JOURNAL_SCHEMA')
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=(c.RESUMED_VM_BASELINE or {}).get('commit'),C=(c.RESUMED_VM_CLOSURE or {}).get('commit'))
+        A=(c.PROTECTED_SOURCE_BASELINE or {}).get('commit'),C=(c.PROTECTED_SOURCE_CLOSURE or {}).get('commit'))
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     require(type(value['guest_startup_assurance']) is dict
         and c.canonical(value['guest_startup_assurance']) == c.canonical(dict(
@@ -2031,10 +2034,10 @@ def recheck_transport_failure(inputs,frozen,check):
 
 # Current runtime identity is independently proven; the historical install is
 # never edited to pretend it took place in this boot.
-RESUMPTION_EVENT = 'LH-Q2-CORE-RESUMED-VM-CLOSURE-20261010-01'
+RESUMPTION_EVENT = 'LH-Q2-CORE-PROTECTED-SOURCE-CLOSURE-20261010-01'
 STARTUP_EVENT = 'LH-Q1-VM-RESUME-20261010-01'
 RESUMPTION_FIELDS = {'historical_activation_sha256', 'startup_evidence_sha256',
-    'guest_evidence_sha256', 'previous_host_preflight'}
+    'guest_evidence_sha256', 'previous_host_preflight', 'protected_source_evidence_sha256'}
 STARTUP_FILES = ('control-flow-result-private.json','execution-freeze-private.json',
     'explicit-owner-approval-private.json','launch-consumed-private.json','listener.stderr','listener.stdout',
     'new-pid-cmdline.raw','new-pid-stat.raw','new-pidfile.raw','prepared-index-private.json',
@@ -2060,6 +2063,39 @@ RESUMPTION_REFERENCES = {
     'startup/protected-source/q2_sshd_source_reader.py': 'activation/protected-source/q2_sshd_source_reader.py',
 }
 RESUMPTION_STORAGE_MEMBERS = tuple(n for n in RESUMPTION_MEMBERS if n not in RESUMPTION_REFERENCES)
+
+
+def validate_protected_source_binding(authority, freeze):
+    # Old local failure stays outside the archive and the maintenance custodian.
+    # These pins bind the offline retention check, not continuous FD ownership.
+    failure=authority['previous_guest_failure'];prep=authority['source_preparation']
+    require(failure==freeze['previous_guest_failure'] and prep==freeze['source_preparation'],
+        'PROTECTED_SOURCE_APPROVAL_BINDING')
+    c.exact(failure,{'event','D','state','reason','ssh_calls','marker_created',
+        'guest_streams','remote_exit','index','freeze','terminal'},'PREVIOUS_GUEST_FAILURE')
+    require(failure['event']==c.RESUMED_VM_OWNER_DECISION['event']
+        and failure['D']=='0eece27637930dfc31f724c7dd1392e11a47cad9'
+        and failure['state']=='INVOKED_FAILED_UNCONSUMED' and failure['reason']=='LOCAL_PARENT'
+        and type(failure['ssh_calls']) is int and failure['ssh_calls']==0
+        and failure['marker_created'] is False and failure['guest_streams']=='ABSENT'
+        and failure['remote_exit']=='UNKNOWN','PREVIOUS_GUEST_FAILURE')
+    for name in ('index','freeze','terminal'):
+        c.exact(failure[name],{'bytes','sha256'},'PREVIOUS_GUEST_PIN')
+        c.integer(failure[name]['bytes'],1,65536);c.digest(failure[name]['sha256'])
+    pins=freeze['source_pins']
+    c.exact(pins,{*JOURNAL_SOURCE_NAMES,'q2_current_guest_verification.py'},'PROTECTED_SOURCE_NAMES')
+    for pin in pins.values():
+        c.exact(pin,{'bytes','sha256'},'PROTECTED_SOURCE_PIN')
+        c.integer(pin['bytes'],1,1048576);c.digest(pin['sha256'])
+    c.exact(prep,{'state','source_index_sha256','source_bytes','allocated_bytes','inodes',
+        'cpu_nanoseconds','rss_peak_bytes','elapsed_nanoseconds'},'SOURCE_PREPARATION')
+    require(prep['state']=='PREPARED' and prep['source_index_sha256']==c.sha256(c.canonical(pins))
+        and prep['source_bytes']==sum(pin['bytes'] for pin in pins.values()),'SOURCE_PREPARATION_BINDING')
+    c.integer(prep['source_bytes'],1,1048576)
+    c.integer(prep['allocated_bytes'],prep['source_bytes'],1048576);c.integer(prep['inodes'],15,32)
+    c.integer(prep['cpu_nanoseconds'],1,120000000000)
+    c.integer(prep['rss_peak_bytes'],1,536870912);c.integer(prep['elapsed_nanoseconds'],1,120000000000)
+    return c.sha256(c.canonical(dict(previous_guest_failure=failure,source_preparation=prep)))
 
 
 def host_preflight_summary():
@@ -2290,9 +2326,12 @@ def build_vm_resumption(files, index_raw, *, historical_boot):
     require(freeze['implementation']==returned['implementation']==implementation
         and returned['guest_source_sha256']==proposal['guest_source_sha256'],'RESUME_SOURCE_BINDING')
     require(all(row['event']==RESUMPTION_EVENT for row in (proposal,freeze,authority,marker,returned))
-        and authority['owner_reply']=='批准' and authority['A']==c.RESUMED_VM_BASELINE['commit']
-        and authority['C']==c.RESUMED_VM_CLOSURE['commit'] and authority['R']==c.RULE['commit']
+        and authority['owner_reply']=='批准' and authority['A']==c.PROTECTED_SOURCE_BASELINE['commit']
+        and authority['C']==c.PROTECTED_SOURCE_CLOSURE['commit'] and authority['R']==c.RULE['commit']
         and authority['state']=='APPROVED','RESUME_GUEST_AUTHORITY')
+    protected_sha=validate_protected_source_binding(authority,freeze)
+    require(freeze['source_pins']['q2_current_guest_verification.py']['sha256']==proposal['guest_source_sha256'],
+        'RESUME_GUEST_SOURCE_PIN')
     require(freeze['proposal']==pin('proposal.json') and freeze['caller']==pin('check-approved.py')
         and freeze['approval']==pin('approval.json') and marker['freeze_sha256']==pin('freeze.json')['sha256']
         and returned['marker_sha256']==pin('consumed.json')['sha256'], 'RESUME_GUEST_FREEZE')
@@ -2321,7 +2360,8 @@ def build_vm_resumption(files, index_raw, *, historical_boot):
         index=dict(bytes=len(index_raw),sha256=c.sha256(index_raw)),evidence_sha256=c.sha256(c.canonical(_resume_pins(files))),
         historical_activation_sha256=c.sha256(c.canonical(historical)),
         startup_evidence_sha256=c.sha256(startup['execution-return-index-private.json']),
-        guest_evidence_sha256=c.sha256(c.canonical(_resume_pins(guest))),previous_host_preflight=preflight)
+        guest_evidence_sha256=c.sha256(c.canonical(_resume_pins(guest))),previous_host_preflight=preflight,
+        protected_source_evidence_sha256=protected_sha)
     return validate_vm_activation(value)
 
 

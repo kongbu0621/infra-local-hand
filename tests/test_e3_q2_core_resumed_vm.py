@@ -140,3 +140,41 @@ else:
     result=subprocess.run([sys.executable,'-I','-B','-c',code,str(Path(__file__).parent.resolve()),case],
         stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
     assert result.returncode==0,result.stderr.decode()
+
+
+@pytest.mark.parametrize('fault',['old_authority','old_failure_erased','invented_marker',
+    'prep_budget','prep_source','missing_source','approval_drift','missing_provenance'])
+def test_protected_source_rejects_rehashed_wrong_authority_or_preparation(fault):
+    files,_,boot=records()
+    authority=json.loads(files['guest/approval.json']);freeze=json.loads(files['guest/freeze.json'])
+    if fault=='old_authority':authority['A']=p.c.RESUMED_VM_BASELINE['commit']
+    elif fault=='old_failure_erased':authority['previous_guest_failure']['state']='PASS'
+    elif fault=='invented_marker':authority['previous_guest_failure']['marker_created']=True
+    elif fault=='prep_budget':authority['source_preparation']['allocated_bytes']=1048577
+    elif fault=='prep_source':authority['source_preparation']['source_index_sha256']='b'*64
+    elif fault=='missing_source':freeze['source_pins'].pop('q2_journal_growth.py')
+    elif fault=='missing_provenance':authority.pop('source_preparation')
+    elif fault=='approval_drift':freeze['previous_guest_failure']['index']['sha256']='b'*64
+    if fault!='approval_drift':
+        for key in ('previous_guest_failure','source_preparation'):
+            if key in authority:freeze[key]=copy.deepcopy(authority[key])
+    files['guest/approval.json']=DUMP(authority);freeze['approval']=PIN(files['guest/approval.json'])
+    files['guest/freeze.json']=DUMP(freeze)
+    marker=json.loads(files['guest/consumed.json']);marker['freeze_sha256']=p.c.sha256(files['guest/freeze.json'])
+    files['guest/consumed.json']=DUMP(marker)
+    returned=json.loads(files['guest/result.json']);returned['marker_sha256']=p.c.sha256(files['guest/consumed.json'])
+    files['guest/result.json']=DUMP(returned)
+    files['guest/caller.stdout']=DUMP(dict(event=p.RESUMPTION_EVENT,state='CURRENT_GUEST_VERIFIED',result_sha256=p.c.sha256(files['guest/result.json'])))
+    with pytest.raises((p.c.ContractError,KeyError)):p.build_vm_resumption(files,index(files),historical_boot=boot)
+
+
+def test_independent_projection_requires_protected_source_provenance():
+    files,idx,boot=records();value=p.build_vm_resumption(files,idx,historical_boot=boot)
+    for verifier in (p.validate_vm_activation,d._validate_vm_activation):
+        bad=copy.deepcopy(value);bad.pop('protected_source_evidence_sha256')
+        with pytest.raises((p.c.ContractError,d.DispatchError)):verifier(bad)
+    costs=p.maintenance_commitments()
+    assert costs==d._maintenance_commitments()
+    assert costs['guest_verification']['sessions']==['lhqguest-20261010a','lhqguest-20261010b']
+    assert costs['guest_verification']['host_bytes']+costs['source_preparation']['host_bytes']==3*1048576
+    assert len(costs['generations'])==15

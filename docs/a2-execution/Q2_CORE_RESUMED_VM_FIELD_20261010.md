@@ -116,3 +116,25 @@ finally；仅 VM 身份、SSH 及密钥命令的现场效应由合成 peer 替�
 下一次现场操作需要与旧失败分开的有限接续。已固定[准确 A](../governance/Q2_CORE_PROTECTED_SOURCE_BASELINE.md)，
 只覆盖修复采用/验证、一次新 guest 核验及条件执行原维护/核心；当前 OPEN，尚无新的
 Owner B/C。没有把本轮继续推进的请求补写成尚未形成时的准确 A 批准。
+
+## PS1：受保护源码接入的批准采用
+
+准确 A `eabffdbfbdc1c2d041f35dd9371714625380bf3f` 经 Owner 相邻回复“批准”，
+独立 C `a6532946abf9e4f1364622398112e681c35de2ec` 只记录 PS1–PS3 关闭，保留 A
+三文档原字节。当前实现下降自 C，继续原 10c 维护与 07a 核心任务。
+
+私有新调用器采用原普通修复：十四份源码在私有受保护目录逐项打开、持有、重检，
+与准确 D 和冻结 pins 比较。原所有者、权限、单链接、大小、O_NOFOLLOW 和资源条件
+全部保留。旧 RC2 八件、原 RC1 freeze/terminal 及十项依赖离线校验，失败事实与摘要
+同时绑定新批准和冻结；旧件不进入新 guest 成功槽，也不增加到 55-FD custody。
+
+producer 与独立消费者改用 PS 授权；activation/v2 增加经验证的源码准备/旧失败绑定
+摘要。原 RC 历史常量和原件保持。当前 manifest/receipt 为 v17、preflight v16、
+transition v16、host-capacity v19、reconciliation/historical-capacity v20。十五维护义务
+加原核心、新旧 guest 读取及一次最终源码准备共 19507 MiB/5662 inodes，不退款、不提限。
+
+首轮相关验证在 preflight 解析处发现旧 RC 权限比较，已对齐 PS 后重新通过 186 项。
+测试包含重哈希后错误旧授权、虚构 marker、缺失来源、准备费用超界及独立消费者拒绝。
+保留原件与合成未来成功组合的归档最大值仍为 512000 B，小于 524288 B；投影 1972 B。
+工作区版本的原件/生命周期核算通过；准确 D 的最终核算、首次 CI、独立安装及三调用器
+冻结尚待完成。此段不宣称 PS1 完成，不发行 PS2/PS3，也不把测试当作核心 PASS。

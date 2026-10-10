@@ -66,7 +66,7 @@ BIND_FRAME_LIMIT = 4112
 # TC1 binds the exact reviewed dispatcher. Exact D first CI, full TC2 originals
 # and actual coordinator completion remain required before original 07a.
 # Historical dispatcher pins remain in their consumed source profiles.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"17739e0f0a1cb62a56d319757e1e2d8ef9b750568de2e020d3a0fa73505b520c"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"23722da3e0919bf605c506d8476c5f821300594a8f58259fb245b5ef121f1389"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

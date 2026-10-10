@@ -29,6 +29,13 @@ Q1, domain/cgroup/process/writer/data checks, trusted premises and hard limits s
 At C PS1 NOT_STARTED, PS2/PS3 NOT_ISSUED and H01/Q4/H11 NOT_RUN. This closure supersedes older
 no-new-window clauses only inside PS1–PS3 and proves no implementation, readiness or core PASS.
 
+
+The [PS1 implementation record](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md#ps1受保护源码接入的批准采用)
+tracks protected fourteen-source adoption, retained old guest failure bindings and independent
+consumer/cost/version wiring. The implementation remains under PS1 verification; exact-D first CI,
+independent installation and all caller freezes are still required before PS2. No new field step
+or core package has followed the failed RC2. Complete this approved batch without substep approval.
+
 ## Current approved batch: resumed VM and original core (2026-10-10)
 
 [Exact A](docs/governance/Q2_CORE_RESUMED_VM_BASELINE.md)

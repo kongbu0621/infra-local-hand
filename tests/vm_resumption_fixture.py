@@ -60,8 +60,9 @@ def records(historical_boot='11111111-2222-3333-4444-555555555555'):
     gf={n:b'' for n in p.GUEST_VERIFICATION_FILES};event=p.RESUMPTION_EVENT
     gp=dict(event=event,historical_activation_sha256=p.c.sha256(p.c.canonical(hist)),startup_index_sha256=p.c.sha256(sf['execution-return-index-private.json']),host_preflight_index_sha256=p.c.sha256(p.c.canonical(p._resume_pins(pf))),expected_host_boot_id=hostboot,expected_vm=vm,package=proposal['package'],quota=quota,ssh_prefix=['ssh','fixed'],implementation=dict(commit='d'*40,tree='e'*40),guest_source_sha256='a'*64)
     gf['proposal.json']=DUMP(gp);gf['check-approved.py']=b'# synthetic one-shot guest caller\n'
-    gf['approval.json']=DUMP(dict(event=event,owner_reply='批准',R=p.c.RULE['commit'],A=p.c.RESUMED_VM_BASELINE['commit'],C=p.c.RESUMED_VM_CLOSURE['commit'],state='APPROVED'))
+    gf['approval.json']=DUMP(dict(event=event,owner_reply='批准',R=p.c.RULE['commit'],A=p.c.PROTECTED_SOURCE_BASELINE['commit'],C=p.c.PROTECTED_SOURCE_CLOSURE['commit'],state='APPROVED'))
     gf['freeze.json']=DUMP(dict(event=event,implementation=gp['implementation'],proposal=PIN(gf['proposal.json']),caller=PIN(gf['check-approved.py']),approval=PIN(gf['approval.json'])))
+    bind_protected_sources(gf)
     gf['consumed.json']=DUMP(dict(event=event,nonce='9'*64,freeze_sha256=p.c.sha256(gf['freeze.json'])))
     outputs=['6.8.0-fixture\n','install ok installed\t1.0','', '6.8.0-fixture SMP\n','insmod /lib/modules/6.8.0-fixture/kernel/fs/quota/quota_v2.ko\n',DUMP(dict(filesystems=[quota])).decode()]
     steps=[dict(label=label,argv=argv,exit=0,eof=True,stdout=out,stderr='') for (label,argv),out in zip(p.current_guest_commands(gp['package'],quota['target']),outputs)]
@@ -86,3 +87,17 @@ def archive(files,idx):
                 continue
             member=tarfile.TarInfo(name);member.size=len(raw);member.mode=0o600;tar.addfile(member,io.BytesIO(raw))
     return stream.getvalue()
+
+
+def bind_protected_sources(gf):
+    """Synthetic retention/preparation, explicitly confined to offline fixtures."""
+    authority=json.loads(gf['approval.json']);freeze=json.loads(gf['freeze.json'])
+    pins={n:dict(bytes=1,sha256='a'*64) for n in (*p.JOURNAL_SOURCE_NAMES,'q2_current_guest_verification.py')}
+    failure=dict(event=p.c.RESUMED_VM_OWNER_DECISION['event'],D='0eece27637930dfc31f724c7dd1392e11a47cad9',
+        state='INVOKED_FAILED_UNCONSUMED',reason='LOCAL_PARENT',ssh_calls=0,marker_created=False,
+        guest_streams='ABSENT',remote_exit='UNKNOWN',index=PIN(b'old index'),freeze=PIN(b'old freeze'),terminal=PIN(b'old terminal'))
+    prep=dict(state='PREPARED',source_index_sha256=p.c.sha256(p.c.canonical(pins)),source_bytes=14,
+        allocated_bytes=65536,inodes=16,cpu_nanoseconds=100,rss_peak_bytes=4096,elapsed_nanoseconds=100)
+    for row in (authority,freeze):row.update(previous_guest_failure=failure,source_preparation=prep)
+    gf['approval.json']=DUMP(authority);freeze.update(source_pins=pins,approval=PIN(gf['approval.json']))
+    gf['freeze.json']=DUMP(freeze)
