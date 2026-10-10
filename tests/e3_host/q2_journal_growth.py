@@ -741,7 +741,7 @@ def validate_q1_frozen(frozen):
  and frozen["boot_id"]==activation["current_boot_id"],"GROWTH_ACTIVATION_FROZEN")
  require(proof==frozen["source_binding"]["q1_declaration"]
  and proof["boot_id"]==(activation["historical_boot_id"] if activation else frozen["boot_id"])
- and merge_q1_inventory(original,proof)==frozen["inventory"],"GROWTH_Q1_FROZEN_BINDING")
+ and prior.obligations.persistent_inventory(merge_q1_inventory(original,proof))==frozen["inventory"],"GROWTH_Q1_FROZEN_BINDING")
  for role,pin in proof["sources"].items():
   require(frozen["source_binding"]["sources"]["q1_"+role]==pin,"GROWTH_Q1_FROZEN_PIN")
  return proof
@@ -764,14 +764,13 @@ for batch,name,size,sha in prior.obligations.ARCHIVES}
 documents,horizon,paths)
  q1_raw=read_q1_inputs(inputs,q1_sources)
  original,proof=q1_declaration(q1_raw)
- # The four carrier cgroups are separately recovered from their original HELLOs.
  import copy
  before=copy.deepcopy(original)
  carriers={session.replace("-","",1)+"-carrier.service" for session in GROWTH_CORE_SESSIONS}
  for row in before["expected_units"]:
   if row["name"] in carriers:row["control_group"]=None
  require(before==inventory and proof["boot_id"]==boot,"GROWTH_Q1_ORIGINAL_INVENTORY")
- inventory=merge_q1_inventory(inventory,proof)
+ inventory=prior.obligations.persistent_inventory(merge_q1_inventory(inventory,proof))
  runtime=runtime_parent_binding(selected["original_plan"],selected["retry_preparation"],documents["20261001e","plan"])
  from e3_host import q2_journal_growth_guest as g
  g.validate_runtime_binding(runtime,inventory)

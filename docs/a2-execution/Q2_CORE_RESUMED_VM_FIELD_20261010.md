@@ -225,3 +225,125 @@ UNKNOWN 保持；这不是成功报告，不能放行 poweroff token 或后续�
 新 pre bundle 为 34081 B 压缩/145251 B 展开，仍在原上限内；精简宿主诊断上界
 4608 B，旧失败 receipt 加此上界为 43308 B，低于 65536 B。
 本轮 SSH/现场步骤均为零，PS3 仍已消费失败，H01/Q4/H11 仍 NOT_RUN。
+
+## 固定路径读取的本地返回与预算修复
+
+Owner 对前一请求中“PR #3 合入 main 和一次固定路径只读核验”回复原文“批准”。
+新读取事件为 `LH-CORE-RUNTIME-PATH-READ-20261010-01`，标识 `lhqpaths-20261010a`；
+完整请求文档、相邻决定绑定和原提案字节保留私有。它只授权沿用固定身份和端点，
+读取旧 pre_description 的原 180 个 essential_paths，并仅在全部通过后读取 `/run`
+池；不授权维护、服务/VM 变更、旧调用重放或原核心包。
+
+[PR #3](https://github.com/kongbu0621/infra-local-hand/pull/3) 已按本次批准准确快进到
+`e03f6a674c3e5592a708b323a14540ac80759095`，GitHub 确认为 merged。
+[首次 CI 38043996956](https://github.com/kongbu0621/infra-local-hand/actions/runs/38043996956)
+attempt 1 三项成功：Linux 7561 passed / 89 skipped，Windows 1908 passed / 1383 skipped；
+Linux 独立安装 94 checks / 292 commands，Windows 10 / 10。此前默认分支发布自动审批
+拒绝已由本次明确发布批准解决，没有强制推送或关闭平台保护。
+
+新入口冻结前，12 项真实本地文件持有/重检/管道流程和 8 项客体/源码装载验证通过。
+客体使用现有 `GuestInventory.persistent()` 和 `RuntimePreparation.pool()`；首错即停，
+没有调用 maintenance pre/run、systemctl、进程扫描或配置/服务变更。
+13 份准确来源共 643499 B；准备目录最终 790528 B、25 inodes，低于预留 1 MiB/32。
+隔离测试 FD 峰值 41，原上限 128；完整 SSH argv 为 52417 B，低于 65536 B。
+源码准备时的沙箱父目录拒绝、随后原生验证的度量断言失败和合成目录权限夹具失败
+均保留私有；同一批源码字节的最终验证通过。未用准备失败构造任何现场结果。
+新来源准备及输出各预留 1 MiB/32，总义务为 19509 MiB/5726 inodes，无退款。
+
+实际新入口只调用一次，顶层退出 3，`STOP_AND_RETAIN / PATH_READ_HOST_PARTITION`。
+拒绝发生在第一个 protected input open 前的 usage 检查，SSH 计数为 0。
+记录值为 CPU 55785001 ns、RSS 峰值 395350016 B；入口额外划分的宿主 RSS 子预算
+为 268435456 B，而原聚合上限为 536870912 B。因此已知拒绝原因是新增子预算过严；
+不能把这个高水位记录解释为当前 RSS，或推断其具体来源。没有 guest 检查、PID 结果
+或路径结果；历史 10c 的具体缺失对象仍 UNKNOWN。
+
+实际只有 caller stdout、空 caller stderr、result 和实际 completion 四份原件；
+consumed marker、guest stdout、guest stderr 全部缺失，不能虚构为零字节客体原件。
+不可变读取 freeze、原件/私有索引和终态分别保留，状态为
+`INVOKED_FAILED_UNCONSUMED / STOP_AND_RETAIN`。未重放、重连或补采。
+原 PS1 freeze、十二项依赖、五份 10c 原件和原维护终态均未改变。
+十三代维护已消费、两次旧未消费 preflight、十五完整维护义务保持；本次读取不是
+新的维护代。没有发出维护或核心包，H01/Q4/H11 仍 NOT_RUN。
+
+后续普通修复只准备独立私有候选：宿主 RSS 子预算 448 MiB、客体 64 MiB，合计仍为
+原 512 MiB；宿主每进程 AS 256 MiB，客体 AS 收紧至 64 MiB。CPU 保持宿主（含准备）
+90 秒加客体 30 秒的原 120 秒总上限，FD 仍为 128，不重置历史核算或替换未知值。
+预算拒绝现在通过实际 result 保留测量值、子预算和聚合上限，无额外进程读取。
+
+候选 15 项完整调用流程及 8 项客体/加载验证通过。真实先分配内存再 exec 的启动
+用例保留了高于现场返回的 RSS 历史峰值，仍在原总上限内完成合成管道；同时验证超限
+必须拒绝。客体完整 180 对象及运行池、首错停止和 FD 关闭在 64 MiB AS 下通过。
+这些是离线合成结果，不是 guest PASS。候选入口禁用、批准状态 NOT_APPROVED；
+不得重放本次失败调用或把普通修复当作新的读取/维护/核心许可。原外围入口屏蔽保持。
+
+## 新入口准备完成但出站审批拒绝
+
+在具体新读取请求之后，Owner 指示直接修复、直接推进核心并屏蔽外围。助手将该回复
+原文绑定到事件 `LH-CORE-RUNTIME-PATH-READ-20261010-02` / `lhqpaths-20261010b` 的准备。
+新来源来自已发布 e03f6a6 的独立干净 checkout，13 份源码字节不变；实际准备计量和
+完整受保护打开/持有/重检通过。最终输入目录为 786432 B、24 inodes，在本次已列明的
+1 MiB/32 准备池内；原准备失败和历史义务不作退款。总预留仍为 19511 MiB/5790 inodes。
+
+真实 caller 原文绑定/来源/文件/管道流程 16 项通过，包含替换 Owner 原文必须拒绝，
+以及真实继承高 RSS 峰值的启动验证。客体包装器与之前 8 项 64 MiB 验证的准确字节
+相同，合计 24 项相关验证。原 10a 冻结以及 PS1 十二项依赖、五份 10c 原件均未改变。
+准备产生独立不可变 freeze；这不等于工具平台准许出站，也不构成任何 guest PASS。
+
+随后调用执行工具时，自动审批在进程创建前拒绝：泛化的直接推进指令未明确授权
+这次新 SSH 事件、私有源码/路径载荷及固定 VM 目的地，不能替代具体敏感出站批准。
+这不是 caller exit 3，也不是连接拒绝。未创建 caller 或 guest 流、result、completion
+或 consumed marker，调用和 SSH 均为零。准备时 authority 文件的 APPROVED 是助手
+对回复的解释，已由独立 release gate 明确阻止执行；原文件/冻结保留，不覆盖历史。
+没有通过其他包装器、工具或连接方式重试。新事件保持 NOT_ISSUED，要求明确出站
+确认后才能继续同一已准备读取，不因此增开窗口、复制源码池或重放任何旧入口。
+
+不依赖现场的核心检查完成：真实本地子进程执行/EOF、运行取消、同任务恢复、结果
+读取，以及 NAS 发现隐藏和规划/资源预留前拒绝，共 191 passed / 1 skipped。
+首次测试命令因误写一个不存在的测试文件而未收集用例，该返回保留；修正文件名后
+运行上述检查。没有新增生产功能或现场观察，H01/Q4/H11 仍 NOT_RUN。
+
+## 明确出站批准后的实际读取与历史路径分类修复
+
+Owner 对相邻请求中明确列出的固定 Q1 VM 目的地、私有源码/路径载荷及唯一一次只读
+SSH 回复“批准”。单独记录这次明确出站决定，并放行同一已冻结的 02 / 10b 事件；
+没有覆盖此前拒绝、原准备 authority 或不可变 freeze，也未换入口或新增准备池。
+执行前复核 13 份源码、调用器、包装器、准备和冻结摘要均不变。工具审批通过后，
+原冻结入口仅运行一次，创建 consumed marker、启动一次 SSH，调用器实际退出 3。
+
+返回的请求绑定 guest report 为 `STOP_AND_RETAIN / PERSISTENT /
+PATH_READ_IO_OR_RUNTIME`，具体为 `FileNotFoundError` / errno 2；原 180 个目标中
+索引 45 的路径，在 `open_component` 索引 1 失败。目标长度/摘要与保留描述逐字对应，
+当前缺少的是一个历史启动核对任务的 staging 目录。SSH 返回 3 且两个流完整 EOF，
+host/VM 前后身份一致，guest boot、nonce 和来源绑定正确。没有执行外部客体控制命令
+或维护动作，`runtime_pool` 尚未到达，不能宣称全部 180 项或运行池检查通过。
+
+主机计量包含准备：CPU 728584001 ns、RSS 峰值 403214336 B；客体报告截止点记录
+CPU 35741 us、RSS 峰值 27639808 B。返回内聚合为 764325001 ns / 430854144 B，
+标明 `GUEST_THROUGH_REPORT_HOST_THROUGH_LAST_CHECK`，不是客体退出后的完整计量证明。
+原聚合 CPU 120 秒/RSS 512 MiB/FD 128 与主机 448 MiB、客体 64 MiB 子限额未提高。
+
+七份实际原件为 caller stdout/stderr、marker、result、guest stdout/stderr 和调用器
+顶层 completion；对应私有索引及独立 terminal 已保存。此次读取为
+`CONSUMED_FAILED / STOP_AND_RETAIN`，禁止重放或补查。旧 10a、PS1 冻结、10c 五份
+维护原件及其失败终态保持。没有 journal 增长、维护重启或核心发行，H01/Q4/H11
+仍 NOT_RUN。本次定位只说明当前读取，不追认原 10c 的空诊断对应同一路径。
+
+离线核验六个固定摘要归档、26 份指定文档和八份 Q1 原件后，定位到来源分类错误：
+六份旧计划的 `retained_inputs` 包含两个未发行 transfer 位置；它们不在已观察到的
+`retained` 对象中，也不是任何已发行容量义务的 evidence。五份 observed 与末次
+preflight/snapshot 一致记录关联发行标记不存在。`retained_inputs` 表示需要保护的
+位置，不能直接等同于已存在且必须打开的证据。
+
+普通修复保留原历史 inventory 和 Q1 来源逐项比较，再用这两个位置的精确长度/摘要
+纠正当前存在性分类。主机 producer 和独立完成消费者都执行此来源变换；部分匹配、
+重复或保护缺失拒绝。178 项真正必需对象仍使用原 guest 检查，230 项保护路径、19/7/7
+声明、历史 horizon/全额义务及硬上限全部保持。没有按 ENOENT 动态跳过、删除路径
+保护、创建空目录或伪造原件。缺失其他证据和修改保护集合仍被拒绝。
+
+真实保留输入重建通过 180→178 对比，16 个输入绑定及八份 Q1 原件重新校验通过，
+独立 Q1 消费者接受准确变换；四个 carrier 的后续完成步骤没有执行，此验证不是新现场
+冻结或许可。首轮 88 项相关检查通过。此前一个新文件夹具受调用环境 umask 影响被
+原保护正确拒绝，已显式设置该夹具权限；生产保护未改。原生完整相关回归完成：
+1946 passed / 21 skipped，覆盖 journal 生命周期、全部核心接续、固定输入和交付链。
+主机源码 98263 B，保留原 98304 B 上限；未改任何载荷或资源限额。这次代码修复、
+测试和后续发布均不释放新读取/维护窗口，不改变已消费失败或核心 NOT_RUN。

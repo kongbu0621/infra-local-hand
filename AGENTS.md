@@ -1,5 +1,82 @@
 # Execution guidance
 
+## Fixed read completed; historical path classification repair (2026-10-10)
+
+Owner explicitly approved the adjacent request naming the fixed Q1 VM destination and private
+source/path payload with “批准”. A separate outbound decision released the same frozen
+`LH-CORE-RUNTIME-PATH-READ-20261010-02` / `lhqpaths-20261010b`; the earlier rejection and prepared
+freeze remain unchanged. The caller ran once, created its marker and made one SSH call. It returned
+exit 3 with a bound guest report, complete SSH EOF and unchanged host/VM identity. Persistent
+object index 45 failed at open component 1 with FileNotFoundError/ENOENT; runtime-pool validation
+was not reached. Seven actual originals, private index and a separate terminal are retained.
+This read is CONSUMED_FAILED / STOP_AND_RETAIN. Do not replay it or reinterpret the earlier
+NOT_ISSUED record as the current state. No maintenance or core package was issued; H01/Q4/H11
+remain NOT_RUN. Current evidence identifies this read's missing object, not the historical 10c cause.
+
+The [offline source review and repair](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md#明确出站批准后的实际读取与历史路径分类修复)
+traces the object to two unissued historical transfer locations. Six pinned archives/26 documents
+and eight Q1 originals distinguish these protected locations from observed retained objects and
+issued obligation evidence. The source transform retains the exact historical Q1 inventory and
+corrects only these two locations after original-source comparison: 180 required objects become
+178; all 230 protected roots, 19/7/7 declarations, source identities, liability totals and limits
+stay unchanged. The independent Q1 completion consumer reconstructs the same classification.
+Guest ENOENT rejection is unchanged; no missing-evidence fallback, fabricated directory, refund,
+field caller or new authority is added. This ordinary repair does not restore any spent approval.
+Related native regression passed 1946 tests / 21 skipped, including both completion consumers
+and real missing-evidence rejection. Publication/CI alone cannot release another field window.
+Keep NAS discovery/new-job admission disabled.
+
+## Prepared fixed read: outbound approval still required (2026-10-10)
+
+After the concrete one-read request, Owner instructed direct repair/core progress and continued
+peripheral suppression. This was recorded verbatim as an instruction to prepare the bounded
+`LH-CORE-RUNTIME-PATH-READ-20261010-02` / `lhqpaths-20261010b` reader. Exact source preparation,
+sixteen full caller cases (including owner-text substitution rejection) and the eight unchanged
+guest/loader cases passed. The immutable prepared freeze exists; no field invocation occurred.
+
+Automatic approval review rejected the attempted tool launch before process creation: the general
+core-progress reply did not explicitly authorize this new SSH event, its private source/path
+payload and its fixed VM destination. The prepared authority record's APPROVED label reflects
+the agent's earlier interpretation; it does not override this rejection. A separate private release
+gate now blocks execution. Caller invocation, SSH and consumption marker are zero; all guest and
+caller output files are absent. Do not report a caller failure, a consumed read or a remote result.
+Do not retry through another wrapper, transport or tool. Present the exact fixed destination and
+private payload for explicit outbound approval; keep the same unissued event and frozen inputs.
+Existing preparation remains chargeable; do not create another window or source-copy pool merely
+to repeat the request. Old 10a and all maintenance freezes/returns remain unchanged.
+
+Unaffected core execution/cancel/recovery/result and NAS suppression checks passed 191 tests,
+with one skipped. This is local validation, not H01/Q4/H11 field PASS. No peripheral functionality,
+maintenance or core package was added or issued. The [field record](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md#新入口准备完成但出站审批拒绝)
+contains the sanitized return; raw destination, payload and decision files stay private.
+
+## Fixed-path read return and ordinary caller budget repair (2026-10-10)
+
+Owner's adjacent reply “批准” authorized publication of reviewed PR #3 and one fixed-path read,
+event `LH-CORE-RUNTIME-PATH-READ-20261010-01`, session `lhqpaths-20261010a`.
+PR #3 is merged by exact fast-forward to `e03f6a674c3e5592a708b323a14540ac80759095`;
+its own first CI 38043996956, attempt 1, passed all three jobs and both installations.
+The [retained local return](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md#固定路径读取的本地返回与预算修复)
+records the frozen new caller's actual exit 3 at `PATH_READ_HOST_PARTITION`, before its first
+protected input read. SSH is zero; consumed marker and both guest streams are absent.
+Recorded host RSS exceeded the caller's added 256 MiB partition, not the original 512 MiB
+aggregate limit. No guest object was checked; the historical missing path remains UNKNOWN.
+Do not infer the peak's cause or actual current RSS from this retained high-water value.
+This read is INVOKED_FAILED_UNCONSUMED / STOP_AND_RETAIN. Preserve its immutable freeze,
+four actual caller/completion originals, private index and terminal; do not replay the caller.
+All PS1 dependencies, five 10c originals and the consumed maintenance gate remain unchanged.
+No new maintenance or core package was issued; H01/Q4/H11 remain NOT_RUN.
+
+An unissued private candidate repairs the overly strict partition: host 448 MiB plus guest
+64 MiB remains within the original aggregate 512 MiB. Host AS stays 256 MiB; guest AS is
+more restrictive at 64 MiB. CPU remains aggregate 120 seconds and FD 128; no accounting
+reset, zero substitution or limit increase is used. Actual budget values survive failures.
+Fifteen real local-I/O/pipe caller cases, including a real inherited high-water launch,
+and eight guest/loader cases at 64 MiB passed. Candidate entry remains disabled and its
+authority is NOT_APPROVED. This ordinary repair is not another read or core release.
+One new fixed read may be presented as a concrete batch; the failed caller stays retained.
+Keep NAS discovery/new-job rejection and pause peripheral work.
+
 ## Current approved batch: protected source inputs and original core (2026-10-10)
 
 Owner again requested direct core progress and suppression of peripheral functionality.
