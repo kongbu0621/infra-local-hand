@@ -101,11 +101,15 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
             d._validate_journal_transition(value,priors=priors,implementation=implementation)
 
 
-def test_all_sixteen_obligations_and_six_additional_pools_remain_charged(monkeypatch):
+def test_all_sixteen_obligations_and_completed_read_pools_remain_charged(monkeypatch):
     priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     rows=p._capacity_rows(priors,p.diagnostic_retention())
-    assert sum(row['bytes'] for row in rows)==21777*1048576
-    assert sum(row['inodes'] for row in rows)==6272
+    assert sum(row['bytes'] for row in rows)==21779*1048576
+    assert sum(row['inodes'] for row in rows)==6336
+    by_session={row['session_id']:row for row in rows}
+    assert len(by_session)==len(rows)
+    for name in ('lhqprotect-20261010a','lhqprotect-source-20261010a'):
+        assert by_session[name]==dict(session_id=name,bytes=1048576,inodes=32)
     costs=p.maintenance_commitments()
     assert len(costs['generations'])==16 and costs['released_or_refunded'] is False
     if d:assert costs==d._maintenance_commitments()

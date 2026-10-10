@@ -1993,6 +1993,8 @@ def _maintenance_commitments():
         source_preparation=dict(session="lhqsource-20261010a",host_bytes=1048576,host_inodes=32,cpu_seconds=120,refunded=False),
         path_reads=dict(sessions=['lhqpaths-20261010a','lhqpaths-20261010b'],host_bytes=2097152,
             host_inodes=64,host_cpu_seconds=240,guest_cpu_seconds=240,per_attempt_cpu_seconds=120,refunded=False),
+        protection_read=dict(session='lhqprotect-20261010a',source_pool='lhqprotect-source-20261010a',
+            host_bytes=2097152,host_inodes=64,aggregate_cpu_seconds=120,source_preparation_included=True,refunded=False),
         additional_preparation=dict(sessions=['lhqpaths-source-20261010a','lhqpaths-source-20261010b',
             'lhqsource-20261010d','lhqarchive-20261010d'],host_bytes=4194304,host_inodes=128,
             cpu_seconds=480,per_attempt_cpu_seconds=120,refunded=False),

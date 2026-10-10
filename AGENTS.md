@@ -17,6 +17,15 @@ public records are sanitized. This source repair issues no caller, restores no s
 not change the dispatcher release pin. All consumed failures and H01/Q4/H11 NOT_RUN remain factual.
 See the [implementation record](docs/a2-execution/Q2_CORE_PERSISTENT_PATH_FIELD_20261010.md#执行上限与私有诊断提升2026-10-11).
 
+The subsequent retained-cost repair restores the completed `lhqprotect-20261010a` read
+and its source preparation: 2 MiB / 64 inodes plus their original CPU commitments.
+Current maintenance admission is 21651 MiB / 6304 inodes; with current core capture,
+21779 MiB / 6336 inodes. Sixteen maintenance obligations remain; this read is not a new
+maintenance generation. Both core consumers reject the omitted or refunded costs.
+Main resource-repair commit `993237649401705b6cf3d9d9be230169630145e3` has successful
+first CI `38068425948`, attempt 1. These ordinary repairs do not restore spent callers
+or change the dispatcher release pin; no new field step or core PASS follows.
+
 ## Current approved batch: persistent-path repair and original core continuation (2026-10-10)
 
 Scope `LH-Q2-CORE-PERSISTENT-PATH-CONTINUATION-v1` is **CLOSED for PP1–PP3 only**.
