@@ -1,6 +1,8 @@
 # IR1 实现与离线核对
 
 本记录落实已关闭的 `LH-Q2-CORE-IDENTITY-RESOURCE-CONTINUATION-v1`。
+后续发行、冻结及唯一维护的实际终态见[IR1 冻结与 IR2 返回](Q2_CORE_IDENTITY_RESOURCE_FIELD_20261011.md)。
+以下待验证/尚未发行措辞保留为实现当时状态；IR1 现已完成，IR2 已消费失败，IR3 未运行。
 准确 A `e16b9038eb825f06306a6fe94bc2be30cc418238` 的三文档未修改；
 独立 C `f74725156ed0fa5bfc1c9760ca9efd1afd110870` 在实现之前。
 Owner 一次批准 IR1–IR3 及固定目的地的私有载荷，范围内无需再逐项审批。
