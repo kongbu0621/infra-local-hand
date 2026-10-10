@@ -138,6 +138,12 @@ def test_oversized_or_unserializable_diagnostic_cannot_mask_primary_failure():
 
 
 def test_cap_change_does_not_release_an_unverified_dispatcher():
-    raw = Path(d.__file__).read_bytes()
-    assert c.sha256(raw) not in e.RELEASABLE_DISPATCHER_SHA256
+    # IR1 now pins the reviewed source. An altered candidate must still fail
+    # the actual gate even when it carries all current level-two ceilings.
+    raw = Path(d.__file__).read_bytes() + b"\n# unreviewed capacity candidate\n"
+    digest = c.sha256(raw)
+    assert digest not in e.RELEASABLE_DISPATCHER_SHA256
+    manifest = {"entry": {"dispatcher_path": "field/dispatcher.py", "dispatcher_sha256": digest}}
+    with pytest.raises(e.contract.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
+        e.field_release_gate(manifest, {"field/dispatcher.py": raw})
     assert (g.OLD_SIZE, g.NEW_SIZE) == (256 * h.MIB, 512 * h.MIB)
