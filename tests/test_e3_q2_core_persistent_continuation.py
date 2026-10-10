@@ -7,6 +7,7 @@ import pytest
 
 from e3_host import q2_core_prior_attempt as p
 from persistent_continuation_fixture import records, archive, source, DUMP
+from identity_continuation_fixture import source as identity_source
 from core_prior_fixture import triple_fixture, journal_transition
 
 if sys.platform.startswith('linux'):
@@ -20,11 +21,7 @@ def test_fixed_envelope_preserves_old_archive_and_restores_full_history():
     proof,old,previous=p.build_persistent_source(raw)
     assert len(raw)==522240<524288 and len(p.persistent_archive_files(raw)[0])==12
     assert old==p.activation_archive_files(files[p.PERSISTENT_INNER])
-    logical=dict(resume=p.maintenance_resume(),persistent_source=proof,other='retained')
-    manifest=dict(schema='lhq-journal-growth-manifest/v19',inputs=p.encode_manifest_inputs(logical),
-        resume=p.encode_maintenance_resume(logical['resume'],proof))
-    assert p.decode_manifest_inputs(manifest,previous)==logical
-    assert len(DUMP(manifest['resume']))<len(DUMP(logical['resume']))
+    assert previous==p.legacy_maintenance_resume()
     assert proof['summary']['remote_exit']=='UNKNOWN'
     assert proof['summary']['coordinator_returncode']==3
     if d:assert d.validate_persistent_source(proof)==proof
@@ -71,9 +68,9 @@ def test_rehashed_old_failure_cannot_become_success_or_different_source(fault):
 
 @pytest.mark.parametrize('fault',['reference','member','cycle','digest','missing','replacement'])
 def test_fixed_history_reference_rejects_loss_or_substitution(fault):
-    proof=source();logical=dict(resume=p.maintenance_resume(),persistent_source=proof)
-    previous=p.legacy_maintenance_resume()
-    manifest=dict(schema='lhq-journal-growth-manifest/v19',inputs=p.encode_manifest_inputs(logical),
+    proof=identity_source();logical=dict(resume=p.maintenance_resume(),persistent_source=proof)
+    previous=p.persistent_maintenance_resume()
+    manifest=dict(schema='lhq-journal-growth-manifest/v20',inputs=p.encode_manifest_inputs(logical),
         resume=p.encode_maintenance_resume(logical['resume'],proof))
     if fault=='reference':manifest['resume']['previous_reference']['field']='manifest.inputs'
     elif fault=='member':manifest['resume']['previous_reference']['member']='other'
@@ -89,7 +86,7 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
     priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     implementation=dict(commit='d'*40,tree='e'*40);value=journal_transition(implementation)
     proof=value['persistent_source']
-    if fault=='archive_limit':proof['archive']['bytes']=524289
+    if fault=='archive_limit':proof['archive']['bytes']=1048577
     elif fault=='reference':proof['predecessor']['resume_sha256']='f'*64
     elif fault=='old_failure':proof['summary']['remote_exit']='SUCCESS'
     elif fault=='missing':value.pop('persistent_source')
@@ -104,12 +101,12 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
 def test_all_sixteen_obligations_and_completed_read_pools_remain_charged(monkeypatch):
     priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     rows=p._capacity_rows(priors,p.diagnostic_retention())
-    assert sum(row['bytes'] for row in rows)==21779*1048576
-    assert sum(row['inodes'] for row in rows)==6336
+    assert sum(row['bytes'] for row in rows)==23079*1048576
+    assert sum(row['inodes'] for row in rows)==6834
     by_session={row['session_id']:row for row in rows}
     assert len(by_session)==len(rows)
     for name in ('lhqprotect-20261010a','lhqprotect-source-20261010a'):
         assert by_session[name]==dict(session_id=name,bytes=1048576,inodes=32)
     costs=p.maintenance_commitments()
-    assert len(costs['generations'])==16 and costs['released_or_refunded'] is False
+    assert len(costs['generations'])==17 and costs['released_or_refunded'] is False
     if d:assert costs==d._maintenance_commitments()

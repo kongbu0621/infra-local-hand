@@ -22,7 +22,7 @@ def test_three_original_groups_build_current_projection_independently():
     assert value['previous_host_preflight']['window_consumed'] is False
     assert value['execution_permission'] is False
     assert len(p.c.canonical(value))<=4096
-    assert len(p.maintenance_commitments()['generations'])==16
+    assert len(p.maintenance_commitments()['generations'])==17
     assert p.maintenance_commitments()==d._maintenance_commitments()
 
 
@@ -177,4 +177,4 @@ def test_independent_projection_requires_protected_source_provenance():
     assert costs==d._maintenance_commitments()
     assert costs['guest_verification']['sessions']==['lhqguest-20261010a','lhqguest-20261010b']
     assert costs['guest_verification']['host_bytes']+costs['source_preparation']['host_bytes']==3*1048576
-    assert len(costs['generations'])==16
+    assert len(costs['generations'])==17

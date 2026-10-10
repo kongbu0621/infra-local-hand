@@ -1,5 +1,42 @@
 # Execution guidance
 
+## Current approved core identity and resource continuation (2026-10-11)
+
+The [fixed proposal](docs/governance/Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_BASELINE.md)
+is CLOSED for IR1–IR3 only: exact A `e16b9038eb825f06306a6fe94bc2be30cc418238`,
+tree `40a9ed9c36bee97409acaac319678613d970a037`, scope
+`LH-Q2-CORE-IDENTITY-RESOURCE-CONTINUATION-v1` / IR1–IR3. Preserve its three original
+document bytes. One proposed 11a maintenance, then conditional original 07a, would adopt
+the repaired retained-root identity policy and level-two ceilings after full wiring,
+verification, normal publication and freezing. Old10d's five actual originals, immutable
+freeze, terminal, raw caller/coordinator returns and all twelve caller hashes were checked
+privately. A fixed 19-member envelope is 798720 bytes in memory, under 1 MiB; it has not
+been written as an execution archive. Proposed costs are 23079 MiB / 6834 inodes, including
+17 full maintenance obligations. The 904 MiB / 32 inode current headroom counts once.
+[Owner B](docs/governance/Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_OWNER_DECISION.md), event
+`LH-Q2-CORE-IDENTITY-RESOURCE-CONTINUATION-CLOSURE-20261011-01`, retains the exact adjacent
+request and reply “批准上述完整批次”, with only destination/local file locations sanitized.
+The complete request and fixed Q1 destination/private payload remain privately retained.
+Owner approves IR1 wiring/verification/normal PR publication/exact D first CI/independent
+installations/freezes, one new 11a maintenance and, only on complete verified maintenance
+and actual coordinator/custodian success, original 07a H01→Q4→H11. No per-substep approval
+is needed. Adopt the four source-bound quota leaves and level-two limits; preserve all
+other identity/process/writer/data checks, Q1, 19/7/7 and trusted premises. At C, IR1
+NOT_STARTED, IR2 NOT_ISSUED, IR3/H01/Q4/H11 NOT_RUN. This C is bookkeeping only; D descends
+from C without squash. Unknown/contradiction/failure stops and retains; no old replay,
+retry, extra collection/startup/window, business-service stop, cleanup, rollback, other
+recovery or peripheral work. Necessary sanitized records/implementation use normal PR
+merge commits; raw/index/archive/caller/machine data remain private. R/source/integrity,
+Owner mandate/authority, no exceptions and change control remain. This exact closure
+supersedes older no-new-window clauses only for IR1–IR3; it proves no readiness or PASS.
+
+The [IR1 implementation review](docs/a2-execution/Q2_CORE_IDENTITY_RESOURCE_IMPLEMENTATION_20261011.md)
+records the fixed 19-member old10d consumer, independent current history/cost validation,
+private caller diagnostics and actual top-level completion gates. The new archive is prepared;
+source verification/publication/exact-D CI/independent installations and final caller freezes
+must complete before the one IR2. A's original document bytes and all old freezes remain.
+This implementation record grants no additional window and proves no maintenance/core PASS.
+
 ## Current resource and diagnostic repair (2026-10-11)
 
 Owner directly requested: “上限卡这么死干嘛？ 全部提高一个级别，然后输出加多，加细，可以快速定位问题。”

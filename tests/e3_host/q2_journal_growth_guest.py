@@ -18,7 +18,7 @@ import pwd
 from e3_host import q2_core_capacity_reader as r
 require, canonical, digest=r.require, r.canonical, r.digest
 MAX_BYTES, MAX_ENTRIES=536870912, 65536
-SESSION="lhqjgrow-20261010d"
+SESSION="lhqjgrow-20261011a"
 SCHEMA="lhq-journal-growth-input/v6"
 RETAINED_QUOTA_SHA="b782a2de862b038347d8b224ed55c3e9dff06179f901b06a2506fa542a0357d5"
 REPORT_SCHEMA="lhq-journal-growth-guest/v5"
