@@ -20,6 +20,9 @@ KINDS = (
     "host.inspect", "ledger.prepare", "ledger.test.source",
     "ledger.test.resources", "ledger.test.installed_local", "ledger.nas.roundtrip",
 )
+# Retain the wire kind for historical records, but do not offer or admit new
+# NAS work while its execution adapter is unavailable and core work is pending.
+DISABLED_JOB_KINDS = frozenset(("ledger.nas.roundtrip",))
 SUITES = ("a1_resources", "a1_response_boundaries", "a2_snapshot_resources", "a2_semantic_resources")
 REF_PATTERN = r"[a-z0-9][a-z0-9._-]{0,127}"
 UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"

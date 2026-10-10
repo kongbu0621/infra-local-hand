@@ -1,5 +1,22 @@
 # Execution guidance
 
+## Active priority: core only (2026-10-10)
+
+Owner's latest instruction is to disable peripheral functionality and stop side work.
+The only current delivery objective is task execution, running-task cancellation,
+same-task recovery/query and result retrieval: the original H01 → Q4 → H11 chain.
+Pause NAS/A2 expansion, new Plugin/Connector features, broad host scanners,
+diagnostic platforms and unrelated refactoring. Do not turn historical review,
+extra diagnostics or additional document sets into separate deliverables.
+Repair concrete core blockers and run checks relevant to the actual change.
+
+NAS execution was already unsupported; discovery and new-job admission must reject
+that path before planning, resource reservation or supervised work. Keep historical
+records readable and cancellable. Core authentication, identity, data protection,
+resource limits, cancellation/recovery and result integrity remain required.
+This priority update does not replay spent callers or mark H01/Q4/H11 as passed.
+Retain the existing field returns and their execution boundaries below.
+
 ## Current approved batch: transport-failure adoption and original core continuation (2026-10-10)
 
 The [transport continuation baseline](docs/governance/Q2_CORE_TRANSPORT_CONTINUATION_BASELINE.md)

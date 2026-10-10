@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 
-from .contract import JobError, Principal, validate_submit, validate_tool_args
+from .contract import DISABLED_JOB_KINDS, JobError, Principal, validate_submit, validate_tool_args
 from . import bootstrap_roots, budget, manager_binding as bindings
 from .resources import ResourceManager
 from .state import encoded
@@ -275,6 +275,8 @@ class Broker:
                 raise JobError("STALE_DEPLOYMENT", "First admission deadline has expired")
             if request["expected"] != thaw(self.policy.expected(request["profile_ref"])):
                 raise JobError("STALE_DEPLOYMENT", "Expected deployment binding does not match")
+            if request["kind"] in DISABLED_JOB_KINDS:
+                raise JobError("UNSUPPORTED", "NAS jobs are disabled; only local core jobs are available")
             plan = thaw(self.registry.resolve(request, self.policy, principal=principal))
             reserved = plan["reservation_bytes"]
             self._capacity(tx, principal, reserved)

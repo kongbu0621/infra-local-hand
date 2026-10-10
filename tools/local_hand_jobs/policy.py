@@ -17,7 +17,7 @@ import threading
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from .contract import (DIGEST_PATTERN, KINDS, MAX_SAFE_INTEGER, REF_PATTERN,
+from .contract import (DIGEST_PATTERN, DISABLED_JOB_KINDS, KINDS, MAX_SAFE_INTEGER, REF_PATTERN,
                        SCHEMA_VERSION, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, UUID_PATTERN,
                        JobError, Principal, canonical_bytes, strict_loads)
 
@@ -494,15 +494,16 @@ class Policy:
         with self._catalog_lock:
             prepared_catalog = list(self._prepared.items())
         for ref, access in sorted(self.principals[principal.principal_id]["profiles"].items()):
-            if not access["kinds"]:
+            kinds = [kind for kind in access["kinds"] if kind not in DISABLED_JOB_KINDS]
+            if not kinds:
                 continue
             prepared_refs = sorted(ref_ for ref_, fact in prepared_catalog
                                    if fact == {"owner": principal.principal_id, "profile_ref": ref, "expected": self.expected(ref)}
                                    and (access["prepared_access"] == "owned" or ref_ in access["prepared_refs"]))
-            profiles.append({"profile_ref": ref, "expected": self.expected(ref), "allowed_kinds": list(access["kinds"]),
+            profiles.append({"profile_ref": ref, "expected": self.expected(ref), "allowed_kinds": kinds,
                 "source_refs": list(access["source_refs"]), "build_cache_refs": list(access["build_cache_refs"]),
-                "storage_refs": list(access["storage_refs"]), "prepared_refs": prepared_refs,
-                "budgets": {kind: thaw(self.profiles[ref]["budgets"][kind]) for kind in access["kinds"]}})
+                "storage_refs": [], "prepared_refs": prepared_refs,
+                "budgets": {kind: thaw(self.profiles[ref]["budgets"][kind]) for kind in kinds}})
         version = hashlib.sha256(canonical_bytes({"principal": principal.principal_id,
                     "policy": self.policy_digest, "profiles": profiles})).hexdigest()
         offset = 0

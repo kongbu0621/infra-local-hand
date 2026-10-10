@@ -147,6 +147,35 @@ class BrokerTests(unittest.TestCase):
         self.assertCode("UNAUTHORIZED", lambda: self.broker.call("lh_job_submit", self.request, outsider))
         self.assertFalse(self.runner.starts)
 
+    def test_new_nas_job_is_rejected_before_planning_or_reserving_resources(self):
+        nas = dict(self.request, kind="ledger.nas.roundtrip",
+                   inputs={"prepared_ref": "prepared", "storage_ref": "storage"})
+        nas["request_digest"] = request_digest(nas)
+        with mock.patch.object(self.broker.registry, "resolve") as resolve:
+            self.assertCode("UNSUPPORTED", lambda: self.broker.call("lh_job_submit", nas, self.owner))
+            resolve.assert_not_called()
+        self.assertIsNone(self.db.get("job", nas["operation_id"]))
+        self.assertFalse(self.runner.starts)
+        # The rejected peripheral job consumes neither this ID nor core capacity.
+        self.submit()
+        self.broker.tick()
+        self.assertEqual(len(self.runner.starts), 1)
+
+    def test_retained_nas_job_stays_queryable_and_cancellable(self):
+        self.request.update(kind="ledger.nas.roundtrip",
+                            inputs={"prepared_ref": "prepared", "storage_ref": "storage"})
+        self.request["request_digest"] = request_digest(self.request)
+        plan = self.broker.registry.resolve(self.request, self.policy, principal=self.owner)
+        identity = self.request["operation_id"]
+        with self.db.transaction() as tx:
+            self.db.insert(tx, "job", identity, identity, self.owner.principal_id,
+                           self.request["request_digest"], self.request, plan, plan["reservation_bytes"])
+        with mock.patch.object(self.broker.registry, "resolve") as resolve:
+            self.assertEqual(dict(self.submit(), reconciliations=[]), self.status())
+            resolve.assert_not_called()
+        self.assertEqual(self.cancel()["outcome"], "CANCELLED")
+        self.assertFalse(self.runner.starts)
+
     def test_preflight_and_business_have_distinct_intents(self):
         self.submit(); self.broker.tick()
         self.assertEqual("preflight", self.runner.starts[0][2]["phase"])

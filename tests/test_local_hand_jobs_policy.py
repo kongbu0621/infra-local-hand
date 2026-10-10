@@ -299,6 +299,22 @@ class PolicyAndRegistryTests(unittest.TestCase):
         self.assertEqual(owner["execution_support"]["ledger.nas.roundtrip"], {
             "status": "UNSUPPORTED", "reason": "NETWORK_ARCHIVE_HARD_QUOTA_ADAPTER_UNIMPLEMENTED"})
 
+    def test_discovery_only_offers_local_jobs_even_with_legacy_nas_grant(self):
+        profile = self.policy.capabilities(self.owner)["profiles"][0]
+        self.assertEqual(set(profile["allowed_kinds"]), set(KINDS) - {"ledger.nas.roundtrip"})
+        self.assertEqual(set(profile["budgets"]), set(profile["allowed_kinds"]))
+        self.assertEqual(profile["storage_refs"], [])
+        # Discovery does not rewrite admission identities or historical grants.
+        self.assertEqual(profile["expected"], self.policy.expected("fixture"))
+        self.assertIn("ledger.nas.roundtrip", self.policy.principals["owner"]["profiles"]["fixture"]["kinds"])
+
+    def test_nas_only_profile_is_absent_from_discovery(self):
+        config = copy.deepcopy(self.config)
+        config["principals"]["owner"]["profiles"]["fixture"]["kinds"] = ["ledger.nas.roundtrip"]
+        catalog = Policy(config).capabilities(self.owner)
+        self.assertEqual(catalog["profiles"], [])
+        self.assertIsNone(catalog["next_cursor"])
+
     def test_capability_cursor_is_principal_and_catalog_bound(self):
         config = copy.deepcopy(self.config)
         config["profiles"]["second"] = copy.deepcopy(config["profiles"]["fixture"])
