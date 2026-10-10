@@ -72,13 +72,24 @@ match. No image content equality, shutdown cause, other-process absence or guest
 inferred. SSH, VM start/stop and maintenance/core issuance were zero. The read is complete;
 do not replay it or append field collection. Original 10b and all maintenance states stay unchanged.
 
-An unissued private startup candidate is prepared from this return: exactly the adopted VM argv
-with only fresh PID/serial output names, current full input bindings, original locks/resources,
-one startup and host verification, zero SSH, failure stops and retains. Its actual control flow
-passed 13 synthetic cases without field calls. The action would create a new guest boot and normal
-guest disk writes; the read approval expressly excluded startup. Await explicit approval of the
-concrete startup proposal before issuing it. No maintenance or core authority follows from
-preparation or future endpoint recovery; do not replay 10b or overwrite historical bindings.
+Owner subsequently replied “批准” to the concrete single-start proposal, event
+`LH-Q1-VM-RESUME-20261010-01`. The exact prepared caller passed source/authority/current-input
+admission and started the adopted Q1 configuration once, changing only PID/serial output names.
+After the original 60-second passive wait, new PID/start/argv/exe/namespace and the one fixed
+listener check passed. The return is `STARTED_AND_HOST_ENDPOINT_VERIFIED`, about 60.14 s,
+startup 1, SSH 0; original system and old serial preserved. Independent retained-return verification
+passed 49 identity comparisons and indexed 22 protected operational/preparation/return files.
+Its initial inclusion of a non-executed 0664 synthetic test source was corrected offline by excluding
+that source from the operational index and retaining its preparation pin; caller/protections and
+field execution were unchanged. Do not replay this completed startup or append observations.
+
+The private derived host binding records guest boot/SSH readiness UNKNOWN and execution permission
+false. It is not the old activation/v1 proof, which also binds guest boot and package/quota results.
+Do not substitute the new host return for that proof or rewrite old identities. Guest verification,
+new-source adoption and any further maintenance/core execution require their applicable bounded
+continuation; no SSH, package installation, journal growth or core package ran in this startup.
+TC2 remains failed, twelve maintenance generations consumed, fourteen obligations retained and
+H01/Q4/H11 NOT_RUN. No new maintenance or core authority follows from endpoint recovery.
 
 ## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
 
