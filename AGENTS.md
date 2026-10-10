@@ -1,5 +1,36 @@
 # Execution guidance
 
+## Current approved batch: resumed VM and original core (2026-10-10)
+
+[Exact A](docs/governance/Q2_CORE_RESUMED_VM_BASELINE.md)
+`b0aa74f9f7a75d70a82575a2e679e540bb47dc1f`, tree
+`ab4861032919d3db94c937100d713e3a35b81ba1`, scope `LH-Q2-CORE-RESUMED-VM-v1`,
+is **CLOSED for RC1–RC4 only** by [Owner B](docs/governance/Q2_CORE_RESUMED_VM_OWNER_DECISION.md),
+event `LH-Q2-CORE-RESUMED-VM-CLOSURE-20261010-01`, exact adjacent reply “批准”.
+Keep A's three document bytes and historical OPEN labels. Independent C is bookkeeping only;
+D must descend from C without squash. R/source/integrity, mandate, Owner authority, no exceptions
+and change control remain. Complete the batch without per-substep reapproval.
+
+RC1 wires historical installation, retained successful startup and current guest verification,
+retains all nine old10b local/freeze/terminal sources, and verifies producers/independent consumers,
+complete resource/size bounds, main publication, exact D first CI, independent installation and
+three frozen callers. A combined archive replaces the one activation FD within 524288 B; original
+55-file custody and 128 FD limits stay. RC2 permits one fixed guest SSH verification, no VM startup,
+package install, module loading, service/config changes or exploratory queries. Only full success
+and final data freeze allow RC3: one new 10c preflight and same-window execute, at most two fixed SSH,
+one verified normal shutdown, original journal growth and one original-configuration restart.
+Only complete maintenance originals and actual coordinator completion allow RC4, original unissued
+07a H01→Q4→H11. All original VM/install, 19/7/7, Q1, process/writer/data protections and premises stay.
+
+Fifteen maintenance obligations plus core capture and the new fixed guest-read output require
+19505 MiB/5598 inodes; RC2 host/guest costs are separately bounded as A specifies. No refunds.
+Failure/unknown/contradiction stops and retains; no old caller replay, retry, supplementary collection,
+cleanup, rollback, extra recovery/startup/window or side work. H11 is the original same-task case.
+Necessary implementation and sanitized records may be published; originals, indexes, archives,
+callers and machine metadata remain private. At C RC1 NOT_STARTED, RC2/RC3 NOT_ISSUED,
+RC4/H01/Q4/H11 NOT_RUN. This exact closure supersedes older no-new-window/observation clauses only
+inside RC1–RC4; it proves neither implementation, readiness nor maintenance/core success.
+
 ## Active priority: core only (2026-10-10)
 
 Owner's latest instruction is to disable peripheral functionality and stop side work.
