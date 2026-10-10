@@ -68,6 +68,13 @@ guess a chmod/chown, replay either caller, retry, collect additional field evide
 recover or start another window under this consumed batch. No further guest action occurred.
 Only retained-return/source offline work remains authorized by this batch; the core remains unrun.
 
+The ordinary protection-return repair in that same record retains device/inode, UID/GID/mode
+and the exact owner/write-bit policy from the already performed fstat. It clears that sample
+before each next component, so open/stat failures cannot inherit an ancestor's metadata.
+Original predicates, path coverage, reads and limits are unchanged. Native related regression
+passed 433 tests, including real pipe/receipt propagation and existing NAS suppression. This does
+not recover old10d's missing metadata, restore the spent batch or grant another field read.
+
 ## Fixed read completed; historical path classification repair (2026-10-10)
 
 Owner explicitly approved the adjacent request naming the fixed Q1 VM destination and private

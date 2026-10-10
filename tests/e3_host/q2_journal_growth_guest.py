@@ -279,12 +279,16 @@ class GuestWindow:
 def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)):
  """Walk protected ancestors by fd; no symlink or weak atime fallback."""
  parts=r.path_value(path)
- current=None;index=-1;operation="open_root"
+ current=None;index=-1;operation="open_root";qualification=None
  try:
   current=os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
   operation="qualify_root"
-  r.qualify(os.fstat(current))
+  info=os.fstat(current)
+  qualification=dict(dev=info.st_dev,ino=info.st_ino,uid=info.st_uid,gid=info.st_gid,mode=info.st_mode,
+ allowed_uids=[0],forbidden_write_bits=0o022)
+  r.qualify(info)
   for index, name in enumerate(parts):
+   qualification=None
    last=index == len(parts) - 1
    flags=(os.O_RDWR if writable and last else os.O_RDONLY) | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME | os.O_NONBLOCK
    if not last or directory:
@@ -295,6 +299,8 @@ def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)
    current=next_fd
    operation="qualify_component"
    info=os.fstat(current)
+   qualification=dict(dev=info.st_dev,ino=info.st_ino,uid=info.st_uid,gid=info.st_gid,mode=info.st_mode,
+ allowed_uids=list(owners),forbidden_write_bits=0o002 if last and block else 0o022)
    if not last:
     require(stat.S_ISDIR(info.st_mode) and info.st_uid in owners and not info.st_mode & 0o022,
  "GROWTH_PATH_ANCESTOR")
@@ -308,6 +314,8 @@ def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)
   # Identify the already attempted lookup, without another read or raw path.
   error.path_diagnostic=dict(operation=operation,path_bytes=len(path),
  path_sha256=digest(path.encode("ascii")),component_index=index)
+  if qualification is not None:
+   error.path_diagnostic["qualification"]=qualification
   raise
  finally:
   if current is not None:

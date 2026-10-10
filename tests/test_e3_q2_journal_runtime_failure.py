@@ -2,6 +2,7 @@
 import copy
 import errno
 import os
+import stat
 import sys
 from types import SimpleNamespace
 
@@ -113,6 +114,74 @@ def test_path_context_never_weakens_existing_protection(local_inventory, fault):
     assert inv.context["field"] == "open"
 
 
+@pytest.mark.parametrize("fault", ["owner", "group_write", "other_write", "both", "ancestor", "root"])
+def test_protection_failure_retains_the_rejected_stat_without_another_read(local_inventory, fault):
+    inv, root, calls, reads = local_inventory
+    target = root / "evidence" / "receipt"
+    target.write_bytes(b"retained evidence"); target.chmod(0o600)
+    failed_index = -1 if fault == "root" else 0 if fault == "ancestor" else 1
+    if fault in ("root", "ancestor"):
+        (root if fault == "root" else target.parent).chmod(0o770)
+    elif fault in ("group_write", "both"):
+        target.chmod(0o620)
+    elif fault == "other_write":
+        target.chmod(0o602)
+    rejected = None
+    sampled = []
+    real_stat = os.fstat
+    def sample(fd):
+        nonlocal rejected
+        info = real_stat(fd)
+        if fault in ("owner", "both") and stat.S_ISREG(info.st_mode):
+            # Only the returned owner differs; opens, FD identity and all I/O
+            # remain real and require neither root nor an actual chown.
+            info = SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino,
+                st_uid=os.getuid() + 1, st_gid=info.st_gid, st_mode=info.st_mode)
+        sampled.append(fd)
+        rejected = info
+        return info
+    g.os.fstat = sample
+    with pytest.raises(g.r.ObservationError) as caught:
+        inv.persistent()
+    expected = ("DIRECTORY_PROTECTION" if fault == "root" else
+        "GROWTH_PATH_ANCESTOR" if fault == "ancestor" else "GROWTH_PATH_PROTECTION")
+    value = maintenance(inv).failure(caught.value)
+    assert value["reason"] == expected and value["status"] == "INCOMPLETE"
+    assert value["diagnostic"]["path_lookup"] == dict(operation="qualify_root" if fault == "root"
+        else "qualify_component", path_bytes=17, path_sha256=g.digest(b"/evidence/receipt"),
+        component_index=failed_index, qualification=dict(dev=rejected.st_dev, ino=rejected.st_ino,
+            uid=rejected.st_uid, gid=rejected.st_gid,
+            mode=rejected.st_mode, allowed_uids=[0] if fault == "root" else [os.getuid()],
+            forbidden_write_bits=0o022))
+    assert calls == ["/", "evidence", "receipt"][:failed_index + 2]
+    assert len(sampled) == len(calls) and reads == ["/proc/self/mountinfo"]
+    for fd in set(sampled):
+        with pytest.raises(OSError) as closed:
+            real_stat(fd)
+        assert closed.value.errno == errno.EBADF
+    assert b"/evidence" not in g.canonical(value)
+
+
+@pytest.mark.parametrize("fail_on", [1, 2, 3])
+def test_stat_failure_does_not_reuse_previous_component_metadata(local_inventory, fail_on):
+    inv, root, _calls, _reads = local_inventory
+    target = root / "evidence" / "receipt"
+    target.write_bytes(b"retained evidence"); target.chmod(0o600)
+    samples = []
+    def sample(fd):
+        samples.append(fd)
+        if len(samples) == fail_on:
+            raise OSError(errno.EIO, "synthetic stat failure")
+        return os.fstat(fd)
+    g.os.fstat = sample
+    with pytest.raises(OSError) as caught:
+        inv.persistent()
+    detail = maintenance(inv).failure(caught.value)["diagnostic"]
+    assert detail["errno"] == errno.EIO
+    assert "qualification" not in detail["path_lookup"]
+    assert len(samples) == fail_on
+
+
 def test_runtime_pool_stat_error_closes_open_fd_and_keeps_context(tmp_path, monkeypatch):
     fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     monkeypatch.setattr(g, "open_path", lambda *a, **kw: fd)
@@ -141,9 +210,18 @@ def guest_failure():
     return maintenance(inv).failure(error)
 
 
-def test_real_failure_pipe_keeps_guest_error_and_never_sends_token(factory):
+@pytest.mark.parametrize("protection", [False, True])
+def test_real_failure_pipe_keeps_guest_error_and_never_sends_token(factory, local_inventory, protection):
     create, _store, root = factory
     value = guest_failure()
+    if protection:
+        inv, guest_root, _calls, _reads = local_inventory
+        target = guest_root / "evidence" / "receipt"
+        target.write_bytes(b"retained evidence"); target.chmod(0o620)
+        with pytest.raises(g.r.ObservationError) as caught:
+            inv.persistent()
+        value = maintenance(inv).failure(caught.value)
+        assert value["diagnostic"]["path_lookup"]["qualification"]["mode"] & 0o020
     raw = h.canonical(value)
     # stdout stays open until stderr is sent, just like the guest's failure path.
     code = "import sys\nsys.stderr.buffer.write(" + repr(raw) + ");sys.stderr.flush()\nsys.exit(3)\n"
@@ -189,8 +267,14 @@ def test_unbound_or_invalid_stderr_never_replaces_failure_or_reads_more(fault):
     assert transport.report is None
 
 
-def test_coordinator_receipt_retains_guest_failure_without_later_effects(rig, monkeypatch):
-    value = guest_failure()
+def test_coordinator_receipt_retains_guest_failure_without_later_effects(rig, monkeypatch, local_inventory):
+    inv, root, _calls, _reads = local_inventory
+    target = root / "evidence" / "receipt"
+    target.write_bytes(b"retained evidence"); target.chmod(0o620)
+    with pytest.raises(g.r.ObservationError) as caught:
+        inv.persistent()
+    value = maintenance(inv).failure(caught.value)
+    assert value["diagnostic"]["path_lookup"]["qualification"]["mode"] & 0o020
     detail = dict(operation="receive_report", phase="pre", guest_failure={
         key: value[key] for key in ("stage", "reason", "diagnostic")})
     def fail(_):
