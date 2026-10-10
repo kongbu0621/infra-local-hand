@@ -2,6 +2,11 @@
 import copy
 import json
 import pytest
+import sys
+
+if not sys.platform.startswith("linux"):
+    pytest.skip("Linux current-VM proof and protected maintenance consumers",allow_module_level=True)
+
 from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_delivery_dispatcher as d
 from vm_resumption_fixture import records,index,archive,DUMP,PIN
