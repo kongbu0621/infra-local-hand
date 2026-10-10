@@ -22,6 +22,8 @@ def binding():
             dropins=['/etc/systemd/system/user@1100.service.d/50-local-hand-q2.conf']))
 
 def patch(monkeypatch,*dispatchers):
+    from retained_root_fixture import patch as retained_patch
+    retained_patch(monkeypatch,*dispatchers)
     import sys
     from e3_host import q2_core_prior_attempt as p
     digest=hashlib.sha256(raw(binding())).hexdigest()

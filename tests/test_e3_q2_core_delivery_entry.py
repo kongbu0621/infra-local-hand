@@ -229,7 +229,13 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    assert e.RELEASABLE_DISPATCHER_SHA256 == (frozenset() if c.PERSISTENT_PATH_CLOSURE is None else frozenset({digest}))
+    # This ordinary identity repair is not a new field release. Preserve the
+    # exact PP1 pin and keep the current candidate closed until its own release.
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
+        '73551b01eb11083b9deb8da15bcc9832b2fe5639455926e33945583156e31d9b'})
+    assert digest not in e.RELEASABLE_DISPATCHER_SHA256
+    with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
+        e.field_release_gate(manifest, {"field/dispatcher.py": raw})
     # The issued 05c digest and a subsequently repaired dispatcher both stay closed.
     assert '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b' not in e.RELEASABLE_DISPATCHER_SHA256
     assert '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96' not in e.RELEASABLE_DISPATCHER_SHA256

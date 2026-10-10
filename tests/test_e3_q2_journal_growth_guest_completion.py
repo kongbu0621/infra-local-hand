@@ -47,13 +47,16 @@ def runtime_pin(monkeypatch):
 
 def description():
     from core_runtime_fixture import binding, inventory
+    from retained_root_fixture import roots
+    retained=roots();paths=[r['path'] for r in retained]
     samples = rows()
     return dict(schema=g.SCHEMA, guest_startup_assurance=g.guest_startup_assurance(), session=g.SESSION, phase="pre", nonce="a" * 64,
         source_binding_sha256="b" * 64, paths={row["role"]: row["path"] for row in samples},
         runtime_parent_binding=binding(),saved_rows=samples, original_boot_id=UUID, journal_serial="lh-journal",
         expected_units=[dict(name="old.service", control_group="/old.service")],
         **inventory(),
-        protected_roots=["/fixture"], essential_paths=["/fixture/evidence"], window_seconds=900, change_seconds=780)
+        protected_roots=["/fixture",*paths], essential_paths=["/fixture/evidence",*paths],
+        retained_quota_roots=retained,window_seconds=900, change_seconds=780)
 
 
 def tree():
@@ -458,8 +461,10 @@ def test_actual_active_writer_is_rejected_even_inside_self(monkeypatch, tmp_path
 
 def quiet():
     from core_runtime_fixture import inventory
+    from retained_root_fixture import sample
     domains=inventory()['domain_units']
-    return dict(historical_exit="UNKNOWN",startup={manager:dict(scope="DECLARED_ONLY",
+    return dict(historical_exit="UNKNOWN",persistent=dict(count=5,sha256='8'*64,retained_roots=sample()),
+        startup={manager:dict(scope="DECLARED_ONLY",
         domains=[dict(name=row['name'],properties_sha256='a'*64) for row in sorted(domains,key=lambda r:r['name'])
                  if row['manager']==('system' if manager=='system' else 'user')],
         undeclared_unit_inventory="NOT_PERFORMED",indirect_startup="NOT_PERFORMED")

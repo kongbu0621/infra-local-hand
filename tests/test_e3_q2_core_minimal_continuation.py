@@ -18,6 +18,8 @@ from test_e3_q2_journal_growth_guest_completion import description, pre_report, 
 
 @pytest.fixture
 def originals(monkeypatch,request):
+    from retained_root_fixture import patch, roots, sample
+    patch(monkeypatch)
     previous=previous_journal_files(monkeypatch,d)
     priors,_=triple_fixture(monkeypatch,d)
     implementation=dict(commit='d'*40,tree='e'*40)
@@ -34,6 +36,8 @@ def originals(monkeypatch,request):
     old_inventory,proof=h.q1_declaration(q1_raw)
     desc=description();pre=pre_report()
     desc.update(h.prior.obligations.persistent_inventory(h.merge_q1_inventory(old_inventory,proof)))
+    desc['retained_quota_roots']=roots()
+    pre['quiescence']['persistent']['retained_roots']=sample()
     pre['quiescence']['startup']={}
     for manager in ('system','user'):
         declared=sorted(row['name'] for row in desc['domain_units'] if row['manager']==manager)
@@ -43,7 +47,7 @@ def originals(monkeypatch,request):
                 undeclared_unit_inventory='NOT_PERFORMED',indirect_startup='NOT_PERFORMED')
     frozen=dict(guest_startup_assurance=g.guest_startup_assurance(),boot_id=desc['original_boot_id'],paths=desc['paths'],saved_rows=desc['saved_rows'],
         previous_maintenance_files=previous,source_binding=dict(synthetic='eight fixed input relation',guest_startup_assurance=g.guest_startup_assurance(),resume=p.maintenance_resume()),
-        inventory={key:desc[key] for key in ('expected_units','domain_cgroups','domain_units','protected_roots','essential_paths')},
+        inventory={key:desc[key] for key in ('expected_units','domain_cgroups','domain_units','protected_roots','essential_paths','retained_quota_roots')},
         horizon={},description=b'synthetic capacity description')
     from core_runtime_fixture import binding, report as runtime_report
     frozen['runtime_parent_binding']=binding()

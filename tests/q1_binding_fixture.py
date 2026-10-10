@@ -29,9 +29,11 @@ def identity():
 
 def inventory():
     from core_runtime_fixture import inventory as runtime_inventory
+    from retained_root_fixture import roots
+    paths=[r['path'] for r in roots()]
     return dict(expected_units=[dict(name=f'old{i}.service',control_group=None) for i in range(18)],
         **runtime_inventory(),
-        protected_roots=['/fixture',BASE],essential_paths=['/fixture/evidence'])
+        protected_roots=sorted(['/fixture',BASE,*paths]),essential_paths=sorted(['/fixture/evidence',*paths]))
 
 
 def source_raw(monkeypatch,previous):
