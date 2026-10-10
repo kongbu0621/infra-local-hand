@@ -31,12 +31,29 @@ callers and machine metadata remain private. At C RC1 NOT_STARTED, RC2/RC3 NOT_I
 RC4/H01/Q4/H11 NOT_RUN. This exact closure supersedes older no-new-window/observation clauses only
 inside RC1–RC4; it proves neither implementation, readiness nor maintenance/core success.
 
-The [RC1 implementation record](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md)
-describes separate historical-install/current-start/current-guest validation and the v2-only current
-maintenance/core path. The combined archive uses two exact source aliases within the original one FD;
-its maximum RC2 return shape is 512000 B under 524288 B. This is offline implementation/verification,
-not guest readiness or core PASS. Complete exact D publication, its first CI, independent installation
-and the three caller freezes before RC2. No new field action has occurred at this implementation record.
+The [RC1 freeze and RC2 return](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md)
+records final D `0eece27637930dfc31f724c7dd1392e11a47cad9`, its first CI 3/3 success,
+Linux 7531 passed/89 skipped, Windows 1908 passed/1382 skipped, both CI installations and
+local independent installation with 94 checks/292 commands. The three callers and ten dependencies
+were frozen; complete bounds retain the one-FD archive maximum 512000 B under 524288 B and
+128-FD handoff. RC1 is complete. Earlier CI failures remain recorded, not replaced by reruns.
+
+The unique RC2 caller exited 3 with `STOP_AND_RETAIN / LOCAL_PARENT` before SSH or marker creation.
+Eight existing caller/input/return records are retained privately; consumed marker and guest streams
+are absent. No new guest report, activation/v2, RC3 maintenance or RC4 core package was issued.
+RC2 is INVOKED_FAILED_UNCONSUMED; RC3 NOT_ISSUED; RC4/H01/Q4/H11 NOT_RUN; remote exit UNKNOWN.
+The immutable RC1 freeze and all ten dependency hashes remain unchanged; the terminal gate is
+`RC2_LOCAL_INPUT_FAILED_RC3_RC4_NOT_RUN`. Twelve consumed maintenance generations, both old invoked
+unconsumed preflights and all fifteen maintenance obligations remain. Do not replay RC2, invoke
+RC3/RC4, supplement field data, retry, clean up, recover or open another window under this batch.
+
+Retained-source-only native review reproduced `LOCAL_PARENT` when the caller tried opening the
+workspace guest source through the strict protected-directory API. Earlier control-flow tests mocked
+that file opening. An unissued private repair candidate holds exact-D source copies in its protected
+private directory, keeps the same protection checks and adds bounded context to existing failures.
+Actual opening/holding/recheck of all fourteen pinned sources passed at 128 FD/256 MiB AS; writable
+parents, links, name drift and content drift were rejected. Eight synthetic caller paths also passed.
+Its executable entry is disabled; no new authority, guest observation or field call followed this repair.
 
 ## Active priority: core only (2026-10-10)
 
