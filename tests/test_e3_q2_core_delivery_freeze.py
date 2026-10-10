@@ -490,7 +490,7 @@ def test_management_anchor_verifies_dependencies_before_held_ssh_keygen_exec(
 
 
 def _origins():
-    return {"host_" + clock + "_" + point + "_ns": (900_000_000_000 if point == "deadline" else 0)
+    return {"host_" + clock + "_" + point + "_ns": (1800_000_000_000 if point == "deadline" else 0)
             for clock in ("boottime", "monotonic") for point in ("origin", "deadline")}
 
 
@@ -501,7 +501,7 @@ def test_expired_freeze_window_reads_no_current_anchor_or_writer(tmp_path, monke
     monkeypatch.setattr(f, "_read_regular", lambda *a, **k: calls.append("read"))
     with pytest.raises(f.entry_api.capture_contract.CaptureError, match="DEADLINE"):
         f.inspect_management_anchor(anchor_root=tmp_path / "absent", cwd=tmp_path,
-            origins=_origins(), tokens=[], clock_gettime_ns=lambda _: 900_000_000_000)
+            origins=_origins(), tokens=[], clock_gettime_ns=lambda _: 1800_000_000_000)
     assert calls == []
 
 

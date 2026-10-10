@@ -24,6 +24,7 @@ from e3_host import q2_journal_growth as h
 mode,count=sys.argv[3],int(sys.argv[4])
 anchor=os.open(sys.argv[2],os.O_RDONLY|os.O_DIRECTORY)
 exe=os.open(sys.executable,os.O_PATH|os.O_CLOEXEC)
+h.HOST_FD_LIMIT=128
 resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
 def descriptors():
     result=set()

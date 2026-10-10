@@ -148,7 +148,7 @@ def rig(monkeypatch, tmp_path):
         return {"pools": [{"bytes": {"deficit": 0}, "inodes": {"deficit": 0}}]}
     def advance(seconds):
         clock[0] += seconds
-    window = SimpleNamespace(check=nothing, change=nothing, remaining=lambda limit=900: limit,
+    window = SimpleNamespace(check=nothing, change=nothing, remaining=lambda limit=1800: limit,
                              binding={"boot_id": BOOT, "origins": [0, 0]},
                              origins={"monotonic": 0, "boottime": 0},kernel_report={})
     anchor = SimpleNamespace(fd=parent, path=str(tmp_path), ssh=44, recheck=nothing,
@@ -199,7 +199,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v18'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v19'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -246,7 +246,7 @@ def test_effect_failure_never_runs_a_later_effect_or_retries(rig, stop):
 def test_oversize_post_descriptor_blocks_before_poweroff_token(rig):
     # Pre transport admits a report under its 1 MiB cap, but embedding it in the
     # post command would exceed the independently bounded 64 KiB descriptor.
-    rig.pre["tree"] = {"retained_entry": "x" * 65536}
+    rig.pre["tree"] = {"retained_entry": "x" * 131072}
     result = rig.work.run(rig.manifest)
     assert result["state"] == "STOP_AND_RETAIN", result
     assert result["reason"] == "GROWTH_BUNDLE_INPUT"
@@ -374,7 +374,8 @@ def test_boot_open_failure_retains_origins_and_never_reads_inputs(rig, monkeypat
     assert h.main() == 3
     result = json.loads(capsys.readouterr().out)
     assert result["reason"] == "GROWTH_KERNEL_OPEN"
-    assert result["diagnostic"] == dict(operation="open_kernel", target="boot", errno=1)
+    assert {key:result["diagnostic"][key] for key in ("operation","target","errno")} == dict(operation="open_kernel", target="boot", errno=1)
+    assert result["diagnostic"]["resource_level"] == 2 and result["diagnostic"]["traceback"]
     assert set(result["window_binding"]) == {"origins"}
     assert len(result["window_binding"]["origins"]) == 2
     assert result["marker_created"] is False and result["ssh_requests"] == 0
@@ -392,17 +393,17 @@ def test_ordinary_preflight_carries_original_cpu_and_peak_rss(monkeypatch):
     # than summing snapshots; peak RSS never resets at process handoff.
     value[0]['cpu_seconds']=3
     assert usage.sample()==dict(cpu_nanoseconds=28_000_000_001,rss_peak_bytes=100*h.MIB)
-    value[0]['cpu_seconds']=96
+    value[0]['cpu_seconds']=216
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_MANAGEMENT_BUDGET'):
         usage.sample()
     assert previous==dict(cpu_nanoseconds=25_000_000_000,rss_peak_bytes=80*h.MIB)
 
 
 @pytest.mark.parametrize("cpu,rss,cpu_exceeded,rss_exceeded", [
-    (120, 512 * h.MIB, False, False),
-    (120.125, 512 * h.MIB, True, False),
-    (120, 512 * h.MIB + 1024, False, True),
-    (120.125, 512 * h.MIB + 1024, True, True),
+    (240, 1024 * h.MIB, False, False),
+    (240.125, 1024 * h.MIB, True, False),
+    (240, 1024 * h.MIB + 1024, False, True),
+    (240.125, 1024 * h.MIB + 1024, True, True),
 ])
 def test_management_budget_reports_measured_components_without_extra_reads(
         monkeypatch, cpu, rss, cpu_exceeded, rss_exceeded):
@@ -440,10 +441,10 @@ def test_management_budget_reports_measured_components_without_extra_reads(
                            match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
             h.management_usage()
         assert raised.value.diagnostic == dict(operation="management_budget",
-            stage="management_usage",
-            cpu=dict(actual=cpu, limit=120, unit="seconds", exceeded=cpu_exceeded),
-            rss=dict(actual=rss, limit=512 * h.MIB, unit="bytes", exceeded=rss_exceeded),
-            components=dict(self_cpu_seconds=40, exited_children_cpu_seconds=cpu - 42,
+            stage="management_usage", resource_level=2,
+            cpu=dict(actual=int(cpu * 1e9), limit=240_000_000_000, unit="nanoseconds", exceeded=cpu_exceeded),
+            rss=dict(actual=rss, limit=1024 * h.MIB, unit="bytes", exceeded=rss_exceeded),
+            components=dict(self_cpu_nanoseconds=40_000_000_000, exited_children_cpu_nanoseconds=int((cpu - 42) * 1e9),
                 self_peak_rss_bytes=rss - live_rss, live_non_vm_rss_bytes=live_rss,
                 live_children=1, live_rss_complete=True))
     assert calls == [("usage", h.resource.RUSAGE_SELF),
@@ -453,7 +454,7 @@ def test_management_budget_reports_measured_components_without_extra_reads(
 
 def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
     monkeypatch.setattr(h.resource, "getrusage", lambda kind: SimpleNamespace(
-        ru_utime=121 if kind == h.resource.RUSAGE_SELF else 0,
+        ru_utime=241 if kind == h.resource.RUSAGE_SELF else 0,
         ru_stime=0, ru_maxrss=32768))
     monkeypatch.setattr(h, "COMMANDS", [SimpleNamespace(is_vm=False,
         process=SimpleNamespace(pid=11, poll=lambda: None))])
@@ -468,8 +469,8 @@ def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
                        match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
         h.management_usage()
     diagnostic = raised.value.diagnostic
-    assert diagnostic["cpu"] == dict(actual=121, limit=120, unit="seconds", exceeded=True)
-    assert diagnostic["rss"] == dict(actual=32 * h.MIB, limit=512 * h.MIB,
+    assert diagnostic["cpu"] == dict(actual=241_000_000_000, limit=240_000_000_000, unit="nanoseconds", exceeded=True)
+    assert diagnostic["rss"] == dict(actual=32 * h.MIB, limit=1024 * h.MIB,
                                       unit="bytes", exceeded=False)
     assert diagnostic["components"]["live_non_vm_rss_bytes"] == 0
     assert diagnostic["components"]["live_rss_complete"] is False
@@ -482,22 +483,22 @@ def test_management_budget_retains_incomplete_live_rss_observation(monkeypatch):
     "both", "last_peak",
 ])
 def test_usage_budget_diagnostic_preserves_handoff_and_rejected_sample(monkeypatch, case):
-    previous = dict(cpu_nanoseconds=119_000_000_000, rss_peak_bytes=32 * h.MIB)
+    previous = dict(cpu_nanoseconds=239_000_000_000, rss_peak_bytes=32 * h.MIB)
     current = dict(cpu_seconds=0.5, rss_upper_observation_bytes=64 * h.MIB)
     child_peak = 128 * h.MIB
     last_peak = previous["rss_peak_bytes"]
     if case == "exact_boundary":
-        previous["cpu_nanoseconds"] = 119_999_999_999
+        previous["cpu_nanoseconds"] = 239_999_999_999
         current["cpu_seconds"] = 0
-        child_peak = 512 * h.MIB
+        child_peak = 1024 * h.MIB
     elif case in ("previous_cpu", "both"):
         current["cpu_seconds"] = 1  # Existing +1 ns rounding exceeds the bound.
     if case in ("previous_rss", "both"):
-        previous["rss_peak_bytes"] = last_peak = 512 * h.MIB + 1
+        previous["rss_peak_bytes"] = last_peak = 1024 * h.MIB + 1
     elif case == "children_peak":
-        child_peak = 512 * h.MIB + 1024
+        child_peak = 1024 * h.MIB + 1024
     elif case == "last_peak":
-        last_peak = 512 * h.MIB + 1
+        last_peak = 1024 * h.MIB + 1
     expected_cpu = previous["cpu_nanoseconds"] + int(current["cpu_seconds"] * 1e9 + 1)
     expected_rss = max(last_peak, current["rss_upper_observation_bytes"], child_peak)
     calls = []
@@ -517,18 +518,18 @@ def test_usage_budget_diagnostic_preserves_handoff_and_rejected_sample(monkeypat
     usage.last["rss_peak_bytes"] = last_peak
     before, original = dict(usage.last), dict(previous)
     if case == "exact_boundary":
-        assert usage.sample() == dict(cpu_nanoseconds=120_000_000_000,
-                                      rss_peak_bytes=512 * h.MIB)
+        assert usage.sample() == dict(cpu_nanoseconds=240_000_000_000,
+                                      rss_peak_bytes=1024 * h.MIB)
     else:
         with pytest.raises(h.prior.r.ObservationError,
                            match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
             usage.sample()
         assert raised.value.diagnostic == dict(operation="management_budget",
-            stage="usage_sample",
-            cpu=dict(actual=expected_cpu, limit=120_000_000_000, unit="nanoseconds",
-                     exceeded=expected_cpu > 120_000_000_000),
-            rss=dict(actual=expected_rss, limit=512 * h.MIB, unit="bytes",
-                     exceeded=expected_rss > 512 * h.MIB),
+            stage="usage_sample", resource_level=2,
+            cpu=dict(actual=expected_cpu, limit=240_000_000_000, unit="nanoseconds",
+                     exceeded=expected_cpu > 240_000_000_000),
+            rss=dict(actual=expected_rss, limit=1024 * h.MIB, unit="bytes",
+                     exceeded=expected_rss > 1024 * h.MIB),
             components=dict(previous_cpu_nanoseconds=previous["cpu_nanoseconds"],
                 current_cpu_nanoseconds=int(current["cpu_seconds"] * 1e9 + 1),
                 previous_rss_peak_bytes=previous["rss_peak_bytes"],
@@ -550,10 +551,10 @@ def test_ordinary_handoff_rejects_old_or_unbounded_inputs(change):
     elif change=='missing':value.pop('usage')
     elif change=='cpu_zero':value['usage']['cpu_nanoseconds']=0
     elif change=='cpu_bool':value['usage']['cpu_nanoseconds']=True
-    elif change=='cpu_limit':value['usage']['cpu_nanoseconds']=120_000_000_001
+    elif change=='cpu_limit':value['usage']['cpu_nanoseconds']=240_000_000_001
     elif change=='rss_zero':value['usage']['rss_peak_bytes']=0
-    elif change=='rss_limit':value['usage']['rss_peak_bytes']=512*h.MIB+1
-    elif change=='fresh_deadline':value['window_seconds']=901
+    elif change=='rss_limit':value['usage']['rss_peak_bytes']=1024*h.MIB+1
+    elif change=='fresh_deadline':value['window_seconds']=1801
     elif change=='short_change':value['change_seconds']=900
     elif change=='boot':value['window_binding']['boot_id']='invalid'
     else:value['window_binding']['origins']=[True,2]

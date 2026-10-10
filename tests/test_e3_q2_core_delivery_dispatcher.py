@@ -47,7 +47,7 @@ def _field_member(path, raw):
                        "path": "tests/e3_host/" + Path(path).name, "blob": "8" * 40}}
 
 
-def context(*, guest_duration_ns=750 * d.NS):
+def context(*, guest_duration_ns=1500 * d.NS):
     # Shared synthetic transport fixture. This does not establish private
     # approved sources or the unresolved host writer preimage.
     spec = importlib.util.spec_from_file_location(
@@ -138,10 +138,10 @@ class FakeEffects:
                               "bytes_available": 2**31, "inodes_available": 100000}
                        for role in directory_roles}
         capacity = [{"dev": 20, "fs_uuid": uuid, "roles": sorted(directory_roles),
-                     "historical_bytes": 4 * d.LIMITS["total_guest_admission_bytes"],
-                     "historical_inodes": 4 * d.LIMITS["total_guest_admission_inodes"],
-                     "new_required_bytes": d.LIMITS["total_guest_admission_bytes"],
-                     "new_required_inodes": d.LIMITS["total_guest_admission_inodes"],
+                     "historical_bytes": 4 * 276 * 1048576,
+                     "historical_inodes": 4 * 16512,
+                     "new_required_bytes": 348 * 1048576,
+                     "new_required_inodes": 21120,
                      "bytes_available": 2**31, "inodes_available": 100000,
                      "admitted": True}]
         absence = [dict(kind='path', name=path, parent_dev=None, parent_ino=None,
@@ -539,14 +539,14 @@ def test_field_readiness_separates_unbound_inputs_from_unimplemented_code():
     }
 
 
-def test_outer_deadline_is_exactly_origin_plus_900_seconds():
+def test_outer_deadline_is_exactly_origin_plus_1800_seconds():
     value = context()
     assert d._validate_context_envelope(value) is value
     for key in ("host_boottime_deadline_ns", "host_monotonic_deadline_ns"):
         changed = context()
         changed["bind"][key] += d.NS
         # The marker digest binds the BIND values, but deadline rejection must
-        # occur before an altered marker can disguise a 901-second window.
+        # occur before an altered marker can disguise a 1801-second window.
         with pytest.raises(d.DispatchError, match="CORE_DISPATCH_OUTER_DEADLINE"):
             d._validate_context(changed)
 
@@ -692,8 +692,8 @@ def _command_effects(tmp_path):
     effects._candidate_root = str(tmp_path)
     now = effects.now()
     effects.context["guest_deadlines"] = dict(boot_id=now["boot_id"],
-        boottime_deadline_ns=now["boottime_ns"] + 60 * d.NS,
-        monotonic_deadline_ns=now["monotonic_ns"] + 60 * d.NS)
+        boottime_deadline_ns=now["boottime_ns"] + 180 * d.NS,
+        monotonic_deadline_ns=now["monotonic_ns"] + 180 * d.NS)
     return effects
 
 

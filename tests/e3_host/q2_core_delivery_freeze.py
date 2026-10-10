@@ -1104,10 +1104,12 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
     _validate_locale_source_preserved(original_dispatcher, dispatcher)
     original_bootstrap = _git(repository, git_path, 'show', c.LOCALE_REPAIR + ':'
         + FIELD_SOURCE_PATHS['field/bootstrap.py'], limit=c.PACKAGE_LIMITS['member_bytes'])
-    c.require(bootstrap == original_bootstrap.replace(b'20261005b', b'20261007a'),
-              'CORE_FREEZE_BOOTSTRAP_DELTA')
-    c.require(c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'],
-              'CORE_FREEZE_LOADER_UNCHANGED')
+    legacy = (bootstrap == original_bootstrap.replace(b'20261005b', b'20261007a')
+              and c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'])
+    # Owner-requested resource level 2; exact source pair, never arbitrary blobs.
+    level2 = (c.sha256(loader) == "9315d0a804df07eab74fd6b1272cf108e81a143c3e535458aa80f403b0b81a36"
+              and c.sha256(bootstrap) == "9a5b0746546b594ede16dfeeea13162a7244db145771bc2cda8a203702739c15")
+    c.require(legacy or level2, 'CORE_FREEZE_BOOTSTRAP_DELTA')
     try:
         parsed = ast.parse(bootstrap.decode("utf-8", "strict"), filename="field/bootstrap.py")
     except (UnicodeError, SyntaxError) as error:

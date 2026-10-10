@@ -25,7 +25,7 @@ def test_full_history_reconstruction_and_exact_old09b_failure(monkeypatch):
     assert old['reason']=='LOCAL_IO_OR_TRANSPORT'
     original=dict(resume=resume,persistent_source=source(),inventory_sha256='a'*64,other=dict(retained=True))
     compact=p.encode_manifest_inputs(original)
-    manifest=dict(schema='lhq-journal-growth-manifest/v18',resume=p.encode_maintenance_resume(resume,source()),inputs=compact)
+    manifest=dict(schema='lhq-journal-growth-manifest/v19',resume=p.encode_maintenance_resume(resume,source()),inputs=compact)
     assert p.decode_manifest_inputs(manifest,p.legacy_maintenance_resume())==original
     assert len(p.c.canonical(compact))<len(p.c.canonical(original))
     assert 'resume' not in compact and original['resume']==resume
@@ -34,7 +34,7 @@ def test_full_history_reconstruction_and_exact_old09b_failure(monkeypatch):
 @pytest.mark.parametrize('fault',['digest','missing_ref','double','history','old_version','source'])
 def test_history_encoding_faults_cannot_change_full_source_binding(monkeypatch,fault):
     original=dict(resume=p.maintenance_resume(),persistent_source=source(),inventory_sha256='a'*64)
-    manifest=dict(schema='lhq-journal-growth-manifest/v18',resume=p.encode_maintenance_resume(original['resume'],source()),
+    manifest=dict(schema='lhq-journal-growth-manifest/v19',resume=p.encode_maintenance_resume(original['resume'],source()),
         inputs=p.encode_manifest_inputs(original))
     if fault=='digest':manifest['inputs']['resume_sha256']='f'*64
     elif fault=='missing_ref':manifest['inputs'].pop('resume_sha256')
@@ -57,7 +57,7 @@ def test_both_portable_consumers_reject_custody_or_real_exit_fault(monkeypatch,f
     value=journal_transition(implementation);custody=value['retained_custody'];finish=value['coordinator_completion']
     if fault=='fields':custody['extra']=True
     elif fault in ('count','pid','checks'):custody[fault]=True
-    elif fault=='bytes':custody['ipc_bytes']=2097153
+    elif fault=='bytes':custody['ipc_bytes']=4194305
     elif fault=='pin':custody['originals'][0]['sha256']='f'*64
     elif fault=='same_inode':custody['originals'][1]['metadata']['ino']=custody['originals'][0]['metadata']['ino']
     elif fault=='mode':custody['originals'][0]['metadata']['mode']=33188
@@ -65,8 +65,8 @@ def test_both_portable_consumers_reject_custody_or_real_exit_fault(monkeypatch,f
     elif fault in ('source','history','set_hash'):custody['binding'][{'source':'source_sha256','history':'history_sha256','set_hash':'set_sha256'}[fault]]='f'*64
     elif fault=='coordinator':finish['returncode']=3
     elif fault=='child':finish['child']['returncode']=3
-    elif fault=='cpu':finish['usage']['cpu_nanoseconds']=120000000001
-    elif fault=='rss':finish['usage']['rss_peak_bytes']=536870913
+    elif fault=='cpu':finish['usage']['cpu_nanoseconds']=240000000001
+    elif fault=='rss':finish['usage']['rss_peak_bytes']=1073741825
     elif fault=='receipt':finish['receipt_sha256']='f'*64
     with pytest.raises((p.c.ContractError,KeyError)):p.validate_journal_transition(value,priors=priors,implementation=implementation)
     if d is not None:

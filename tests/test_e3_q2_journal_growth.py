@@ -54,12 +54,12 @@ def test_state_order_and_event_failure():
 def test_window_dual_clocks_and_mutation_cutoff():
     now = [0]
     w = h.Window(clock=lambda _: now[0])
-    assert w.remaining() == 900
-    now[0] = 780 * 10**9
+    assert w.remaining() == 1800
+    now[0] = 1560 * 10**9
     with pytest.raises(h.local.CaptureError, match="DEADLINE"):
         w.change()
-    assert w.remaining() == 120
-    now[0] = 900 * 10**9
+    assert w.remaining() == 240
+    now[0] = 1800 * 10**9
     with pytest.raises(h.local.CaptureError, match="DEADLINE"):
         w.check()
 
@@ -72,8 +72,8 @@ def test_preflight_and_execute_share_original_clock_and_host_boot(monkeypatch):
     now[0] += 100 * 10**9
     second = h.Window(clock=lambda _: now[0])
     assert g.bind_window(second, h.canonical(saved)) == saved
-    assert second.remaining() == 800 and second.origins == first.origins
-    now[0] += 800 * 10**9
+    assert second.remaining() == 1700 and second.origins == first.origins
+    now[0] += 1700 * 10**9
     with pytest.raises(h.local.CaptureError, match="DEADLINE"):
         g.bind_window(h.Window(clock=lambda _: now[0]), h.canonical(saved))
 
@@ -131,7 +131,7 @@ def test_fsync_failure_does_not_delete_marker(store, monkeypatch):
 
 def test_capture_limit_and_alias(store, tmp_path):
     with pytest.raises(h.prior.r.ObservationError, match="OUTPUT_LIMIT"):
-        store.put("pre.stdout", b"a" * (h.MIB + 1))
+        store.put("pre.stdout", b"a" * (2 * h.MIB + 1))
     with pytest.raises(h.prior.r.ObservationError, match="OUTPUT_NAME"):
         store.create("../elsewhere")
     other = tmp_path / "other"
@@ -218,7 +218,7 @@ def test_image_info_refuses_aliases_or_unsupported_format(change):
 def test_source_ceiling_and_approved_documents_unchanged():
     root = Path(__file__).resolve().parents[1]
     for name in ("q2_journal_growth.py", "q2_journal_growth_guest.py"):
-        assert (root / "tests/e3_host" / name).stat().st_size <= 98304
+        assert (root / "tests/e3_host" / name).stat().st_size <= 196608
     for name, sha in h.DOC_PINS.items():
         assert h.digest((root / "docs/a2-execution/q2-core-journal-growth" / name).read_bytes()) == sha
 

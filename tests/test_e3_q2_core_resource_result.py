@@ -50,10 +50,10 @@ def fixture():
                       "ino": index + 10, "fs_uuid": uuid}
                for index, role in enumerate(("state", "quota", "journal", "evidence", "install"))}
     # Independent literal classification from A, not the consumer's constructor.
-    definitions = [("shared_install", None, 67108864, 4096,
+    definitions = [("shared_install", None, 134217728, 8192,
                     [("install", "local-hand-core-acceptance-20261007a"),
                      ("install", ".local-hand-core-acceptance-20261007a.staging")], None),
-                   ("carrier_audit", None, 8388608, 512,
+                   ("carrier_audit", None, 16777216, 1024,
                     [(role, "lhqcore-20261007a") for role in ("state", "quota", "journal", "evidence")], None)]
     ids = ("c01-h01-normal", "c02-q4-cancel", "c03-h11-recovery")
     refs = ("work-a", "evidence-a", "temporary-a", "work-b", "evidence-b", "temporary-b", "retained_store")
@@ -127,7 +127,7 @@ def incomplete_fixture():
 def test_fixed_pools_and_complete_evidence():
     value, arguments = fixture()
     assert len(value["pools"]) == 32
-    assert sum(row["byte_limit"] for row in value["pools"]) == 180 * 1024**2
+    assert sum(row["byte_limit"] for row in value["pools"]) == 252 * 1024**2
     assert c.validate_resource_accounting(value, **arguments) is value
     assert value["full_guest_filesystem_peak_proven"] is False
 
@@ -137,7 +137,7 @@ def test_fixed_pools_and_complete_evidence():
     (lambda v: v.update(extra=0), "FIELDS"),
     (lambda v: v["pools"].reverse(), "POOL_BINDING"),
     (lambda v: v["pools"].pop(), "POOL_SET"),
-    (lambda v: v["pools"][0].update(byte_limit=67108865), "POOL_BINDING"),
+    (lambda v: v["pools"][0].update(byte_limit=134217729), "POOL_BINDING"),
     (lambda v: v["completion_adjustment"]["implementation"].update(commit="3" * 40), "AUTHORITY"),
     (lambda v: v["pools"][0]["last_observation"].update(boottime_ns=1000), "WINDOW"),
     (lambda v: v["pools"][0]["last_observation"].update(monotonic_ns=199), "WINDOW"),
@@ -233,8 +233,8 @@ def test_actual_over_limit_can_be_retained_but_never_completed():
     value, arguments = fixture()
     pool = value["pools"][0]
     for field in ("last_observation", "bytes_maximum", "inodes_maximum"):
-        pool[field]["allocated_bytes"] = 67108865
-    value["observed_maxima_sum"]["bytes"] += 67108865 - 8192
+        pool[field]["allocated_bytes"] = 134217729
+    value["observed_maxima_sum"]["bytes"] += 134217729 - 8192
     seal(value)
     assert c.validate_resource_accounting(value, **arguments, complete=False) is value
     with pytest.raises(c.ContractError, match="POOL_LIMIT"):

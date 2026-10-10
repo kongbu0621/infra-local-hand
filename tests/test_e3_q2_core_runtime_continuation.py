@@ -154,7 +154,7 @@ def test_runtime_deadline_and_command_ceiling_precede_execution(runtime,monkeypa
     with pytest.raises(g.r.ObservationError,match='COMMAND_REPLAY'):
         f.runtime.command('system_start',['start','--','fixture.slice'])
     assert f.trace==before
-    monkeypatch.setattr(g.time,'monotonic_ns',lambda:f.runtime.start[0]+60000000000)
+    monkeypatch.setattr(g.time,'monotonic_ns',lambda:f.runtime.start[0]+120000000000)
     with pytest.raises(g.r.ObservationError,match='DEADLINE'):f.runtime.check()
 
 

@@ -91,7 +91,7 @@ def post_description():
 
 
 @pytest.mark.parametrize("change", [dict(session="another"), dict(phase="shell"), dict(nonce="x"),
-    dict(window_seconds=901), dict(change_seconds=781), dict(change_seconds=0), dict(original_boot_id="invalid"),
+    dict(window_seconds=1801), dict(change_seconds=1561), dict(change_seconds=0), dict(original_boot_id="invalid"),
     dict(protected_roots=["/fixture/../other"]), dict(essential_paths=[]),
     dict(domain_cgroups=["/old.slice", "/old.slice"]), dict(extra=True),
     dict(expected_units=[dict(name="x.service; rm", control_group=None)])])
@@ -412,11 +412,11 @@ def test_host_post_validator_rejects_wrong_device(field, value, effects, monkeyp
 def test_resource_report_cannot_claim_complete_or_hide_negative_usage():
     value = pre_report()["resource_observation"]
     for changed in (dict(value, complete=True), dict(value, self_cpu_microseconds=-1),
-                    dict(value, self_cpu_microseconds=120000001)):
+                    dict(value, self_cpu_microseconds=240000001)):
         with pytest.raises(g.r.ObservationError): g.validate_resources(changed)
 
 
-@pytest.mark.parametrize("cpu,rss", [(121, 1024), (0, 512 * 1024 + 1)])
+@pytest.mark.parametrize("cpu,rss", [(241, 1024), (0, 1024 * 1024 + 1)])
 def test_guest_budget_rejects_observed_overage(monkeypatch, cpu, rss):
     monkeypatch.setattr(g.resource, "getrusage", lambda _: SimpleNamespace(ru_utime=cpu, ru_stime=0, ru_maxrss=rss))
     with pytest.raises(g.r.ObservationError, match="OBSERVATION_BUDGET"):

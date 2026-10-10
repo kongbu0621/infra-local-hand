@@ -24,8 +24,8 @@ def effects(tmp_path):
     value._candidate_root = str(tmp_path)
     now = value.now()
     value.context["guest_deadlines"] = dict(boot_id=now["boot_id"],
-        boottime_deadline_ns=now["boottime_ns"] + 60 * d.NS,
-        monotonic_deadline_ns=now["monotonic_ns"] + 60 * d.NS)
+        boottime_deadline_ns=now["boottime_ns"] + 180 * d.NS,
+        monotonic_deadline_ns=now["monotonic_ns"] + 180 * d.NS)
     value._active_case_deadlines = dict(owner_deadline_ns=now["boottime_ns"] + 10 * d.NS,
         owner_monotonic_deadline_ns=now["monotonic_ns"] + 10 * d.NS)
     return value, {"deadlines": {"owner_deadline_ns": value._active_case_deadlines["owner_deadline_ns"]}}

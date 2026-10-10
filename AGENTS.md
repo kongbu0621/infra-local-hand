@@ -1,5 +1,22 @@
 # Execution guidance
 
+## Current resource and diagnostic repair (2026-10-11)
+
+Owner directly requested: “上限卡这么死干嘛？ 全部提高一个级别，然后输出加多，加细，可以快速定位问题。”
+This authorizes the ordinary implementation and verification of level-two current execution,
+transport and capture ceilings (twice the former ceilings), with detailed private failure output.
+It supersedes older unchanged-limit clauses for this repair; do not request another approval for
+these source changes or their local verification. Preserve historical records and charges, original
+H01/Q4/H11 task parameters, journal size target and Linux kernel argument limits. Current capacity
+reservations must include the added headroom without multiplying historical obligations.
+
+Keep work on the original core chain; NAS and peripheral functionality remain paused. Diagnostics
+reuse existing observations and captures, including exact failure stage, held identity, measured
+usage/limits, exception/traceback and bounded stream previews. Detailed paths/output remain private;
+public records are sanitized. This source repair issues no caller, restores no spent batch and does
+not change the dispatcher release pin. All consumed failures and H01/Q4/H11 NOT_RUN remain factual.
+See the [implementation record](docs/a2-execution/Q2_CORE_PERSISTENT_PATH_FIELD_20261010.md#执行上限与私有诊断提升2026-10-11).
+
 ## Current approved batch: persistent-path repair and original core continuation (2026-10-10)
 
 Scope `LH-Q2-CORE-PERSISTENT-PATH-CONTINUATION-v1` is **CLOSED for PP1–PP3 only**.

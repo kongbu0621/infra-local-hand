@@ -88,7 +88,7 @@ def test_new_success_uses_nine_consumed_histories_and_original_caps(originals):
     assert len(rows)==16 and sum(row['bytes'] for row in rows)==20736*1048576
     assert sum(row['inodes'] for row in rows)==5920
     assert sum(row['cpu_seconds'] for row in rows)==1920
-    assert h.HOST_BYTES==20745*1048576 and h.HOST_INODES==6208
+    assert h.HOST_BYTES==21649*1048576 and h.HOST_INODES==6240
 
 
 @pytest.fixture(autouse=True)

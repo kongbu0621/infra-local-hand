@@ -22,8 +22,8 @@ SPEC.loader.exec_module(d)
 
 
 def effects():
-    outer = {"boot_id": "test-boot", "boottime_deadline_ns": 100 * d.NS,
-             "monotonic_deadline_ns": 200 * d.NS}
+    outer = {"boot_id": "test-boot", "boottime_deadline_ns": 145 * d.NS,
+             "monotonic_deadline_ns": 245 * d.NS}
     value = d.FieldEffects({"guest_deadlines": copy.deepcopy(outer)})
     now = {"boot_id": "test-boot", "boottime_ns": 10 * d.NS, "monotonic_ns": 110 * d.NS}
     value.now = lambda: dict(now)

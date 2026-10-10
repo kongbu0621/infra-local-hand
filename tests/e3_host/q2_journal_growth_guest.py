@@ -17,13 +17,68 @@ import time
 import pwd
 from e3_host import q2_core_capacity_reader as r
 require, canonical, digest=r.require, r.canonical, r.digest
-MAX_BYTES, MAX_ENTRIES=268435456, 32768
+MAX_BYTES, MAX_ENTRIES=536870912, 65536
 SESSION="lhqjgrow-20261010d"
-SCHEMA="lhq-journal-growth-input/v5"
+SCHEMA="lhq-journal-growth-input/v6"
 RETAINED_QUOTA_SHA="b782a2de862b038347d8b224ed55c3e9dff06179f901b06a2506fa542a0357d5"
-REPORT_SCHEMA="lhq-journal-growth-guest/v4"
+REPORT_SCHEMA="lhq-journal-growth-guest/v5"
 OLD_SIZE, NEW_SIZE=268435456, 536870912
-STREAM_LIMIT=1048576
+RESOURCE_LEVEL=2
+STREAM_LIMIT=2097152
+DIAGNOSTIC_LIMIT=65536
+RECORD_LIMIT=131072
+CONTROL_AS_LIMIT=536870912
+CONTROL_FD_LIMIT=256
+MANAGEMENT_CPU_SECONDS=240
+MANAGEMENT_RSS_BYTES=1073741824
+WINDOW_SECONDS=1800
+CHANGE_SECONDS=1560
+
+def stream_diagnostic(raw, eof=None):
+ """Reuse captured bytes; text is a preview, the digest covers the full stream."""
+ raw=bytes(raw)
+ truncated=len(raw)>2048
+ return dict(bytes=len(raw),sha256=digest(raw),eof=eof,
+ head=raw[:1024 if truncated else 2048].decode("utf-8","replace"),
+ tail=raw[-1024:].decode("utf-8","replace") if truncated else "",
+ truncated=truncated,preview_encoding="utf-8-replace")
+
+def bounded_diagnostic(value):
+ """Retain small fields first, explicitly pin any omitted large field."""
+ try:
+  raw=canonical(value)
+  # Keep the diagnostic consumable by the same strict integer-only reader.
+  value=json.loads(raw,parse_float=str)
+  raw=canonical(value)
+ except (TypeError,ValueError,RecursionError) as error:
+  return dict(truncated=True,serialization_error=type(error).__name__)
+ if len(raw)<=DIAGNOSTIC_LIMIT:return json.loads(raw)
+ result=dict(truncated=True,full_bytes=len(raw),full_sha256=digest(raw),omitted=[],omitted_count=0)
+ # Leave room for omission metadata even with arbitrary exception details.
+ for key,item in sorted(value.items(),key=lambda row:(len(canonical(row[1])),row[0])):
+  candidate=dict(result,**{key:item})
+  if len(canonical(candidate))<=DIAGNOSTIC_LIMIT-8192:
+   result[key]=item
+  else:
+   if key=="guest_failure" and type(item) is dict:
+    result[key]={name:item[name] for name in ("stage","reason") if name in item}
+    result[key]["diagnostic"]=dict(truncated=True,bytes=len(canonical(item.get("diagnostic",{}))),
+     sha256=digest(canonical(item.get("diagnostic",{}))))
+   result["omitted_count"]+=1
+   if len(result["omitted"])<16:
+    result["omitted"].append(dict(field=key[:128],bytes=len(canonical(item)),sha256=digest(canonical(item))))
+ return result
+
+def error_diagnostic(error):
+ """Private failure details without extra process, filesystem or network reads."""
+ frames=[];trace=error.__traceback__
+ while trace is not None:
+  frames.append(dict(file=os.path.basename(trace.tb_frame.f_code.co_filename),
+   function=trace.tb_frame.f_code.co_name,line=trace.tb_lineno))
+  trace=trace.tb_next
+ return dict(error_type=type(error).__name__,errno=getattr(error,"errno",None),
+ message=str(error)[:2048],message_truncated=len(str(error))>2048,
+ traceback=frames[-8:],traceback_truncated=len(frames)>8,resource_level=RESOURCE_LEVEL)
 ENVIRONMENT={"HOME": "/root", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
  "LANG": "C", "LC_ALL": "C", "SYSTEMD_COLORS": "0",
  "SYSTEMD_PAGER": "cat"}
@@ -100,7 +155,7 @@ def validate_startup_report(value, description):
  and re.fullmatch(r"[0-9a-f]{64}",item["properties_sha256"]),"GROWTH_STARTUP_DOMAINS")
  return value
 def control_limits():
- for key,value in ((resource.RLIMIT_AS,268435456),(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CORE,0)):
+ for key,value in ((resource.RLIMIT_AS,CONTROL_AS_LIMIT),(resource.RLIMIT_NOFILE,CONTROL_FD_LIMIT),(resource.RLIMIT_CORE,0)):
   resource.setrlimit(key,(value,value))
 def identity(info):
  return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_nlink)
@@ -161,7 +216,7 @@ def growth_descriptor(frozen, nonce, phase, window, pre=None):
  source_binding_sha256=frozen["source_binding_sha256"], paths=frozen["paths"],
  saved_rows=frozen["saved_rows"], original_boot_id=frozen["boot_id"],
  journal_serial=frozen["journal_serial"], **frozen["inventory"],
- window_seconds=int(window.remaining()), change_seconds=int(window.remaining(780)))
+ window_seconds=int(window.remaining()), change_seconds=int(window.remaining(CHANGE_SECONDS)))
  if pre is not None:
   value.update(pre_report=pre, pre_report_sha256=digest(canonical(pre)))
  descriptor(canonical(value))
@@ -219,7 +274,7 @@ def retained_sample(report,description):
  sha_value(value["sha256"])
  return value
 def descriptor(raw):
- value=r.parse(raw, 65536)
+ value=r.parse(raw, RECORD_LIMIT)
  keys={"schema", "session", "phase", "nonce", "source_binding_sha256", "paths", "saved_rows",
  "original_boot_id", "journal_serial", "expected_units", "domain_cgroups", "domain_units",
  "protected_roots", "essential_paths", "retained_quota_roots", "window_seconds", "change_seconds", "guest_startup_assurance", "runtime_parent_binding"}
@@ -265,8 +320,8 @@ def descriptor(raw):
    if key == "domain_units":
     require(row["manager"] in ("system", "user") and row["control_group"] in value["domain_cgroups"],
  "GROWTH_DOMAIN_DESCRIPTION")
- r.integer(value["window_seconds"], 1, 900)
- r.integer(value["change_seconds"], 1, min(780, value["window_seconds"]))
+ r.integer(value["window_seconds"], 1, WINDOW_SECONDS)
+ r.integer(value["change_seconds"], 1, min(CHANGE_SECONDS, value["window_seconds"]))
  if value["phase"] == "post":
   sha_value(value["pre_report_sha256"])
   require(digest(canonical(value["pre_report"])) == value["pre_report_sha256"], "GROWTH_PRE_REPORT_DIGEST")
@@ -289,8 +344,13 @@ class GuestWindow:
   usage=resource.getrusage(resource.RUSAGE_SELF)
   children=resource.getrusage(resource.RUSAGE_CHILDREN)
   cpu=usage.ru_utime + usage.ru_stime + children.ru_utime + children.ru_stime
-  require(cpu <= 120 and max(usage.ru_maxrss, children.ru_maxrss) <= 512 * 1024,
- "GROWTH_GUEST_OBSERVATION_BUDGET")
+  rss=max(usage.ru_maxrss, children.ru_maxrss)*1024
+  if cpu>MANAGEMENT_CPU_SECONDS or rss>MANAGEMENT_RSS_BYTES:
+   error=r.ObservationError("GROWTH_GUEST_OBSERVATION_BUDGET")
+   error.diagnostic=dict(operation="guest_resource_check",
+    cpu=dict(actual=int(cpu*1000000),limit=MANAGEMENT_CPU_SECONDS*1000000,unit="microseconds"),
+    rss=dict(actual=rss,limit=MANAGEMENT_RSS_BYTES,unit="bytes"))
+   raise error
 def open_path(path, *, directory=False, writable=False, block=False, owners=(0,), retained=None):
  """Walk protected ancestors by fd; no symlink or weak atime fallback."""
  require(retained is None or (directory and not writable and not block and retained["path"]==path),
@@ -332,9 +392,10 @@ def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)
   result, current=(current,r.identity(info)) if retained is not None else current, None
   return result
  except (OSError,r.ObservationError) as error:
-  # Identify the already attempted lookup, without another read or raw path.
+  # Private diagnostics identify the attempted object without another read.
   error.path_diagnostic=dict(operation=operation,path_bytes=len(path),
- path_sha256=digest(path.encode("ascii")),component_index=index)
+ path=path,path_sha256=digest(path.encode("ascii")),component_index=index,
+ component=parts[index] if 0<=index<len(parts) else "/")
   if qualification is not None:
    error.path_diagnostic["qualification"]=qualification
   raise
@@ -376,6 +437,7 @@ class GuestCommand:
  def __init__(self, argv, check, *, limit=STREAM_LIMIT, pass_fds=(), executable=None,
  environment=None, preexec_fn=None):
   self.check, self.limit=check, limit
+  self.argv_sha256=digest(canonical(argv))
   self.check()
   self.process=subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
  stderr=subprocess.PIPE, env=environment or ENVIRONMENT, close_fds=True,
@@ -407,9 +469,16 @@ class GuestCommand:
     self.check()
    return dict(returncode=self.process.returncode, stdout=bytes(self.output["stdout"]),
  stderr=bytes(self.output["stderr"]), both_eof=all(self.eof.values()), pid=self.process.pid)
+  except BaseException as error:
+   error.command_diagnostic=self.diagnostic()
+   raise
   finally:
    selector.close()
    self.close()
+ def diagnostic(self):
+  return dict(pid=self.process.pid,argv_sha256=self.argv_sha256,
+   returncode=self.process.returncode,stream_limit=self.limit,
+   **{name:stream_diagnostic(raw,self.eof[name]) for name,raw in self.output.items()})
  def close(self):
   if not self.closed:
    self.closed=True
@@ -417,7 +486,10 @@ class GuestCommand:
 def run_command(argv, check, *, codes=(0,), limit=STREAM_LIMIT):
  command=GuestCommand(argv, check, limit=limit)
  result=command.collect()
- require(result["returncode"] in codes and result["both_eof"], "GROWTH_GUEST_TOOL_FAILED")
+ if result["returncode"] not in codes or not result["both_eof"]:
+  error=r.ObservationError("GROWTH_GUEST_TOOL_FAILED")
+  error.command_diagnostic=command.diagnostic()
+  raise error
  return result
 def tool_binding(path, check, *, version=False):
  fd=open_path(path)
@@ -426,7 +498,7 @@ def tool_binding(path, check, *, version=False):
   require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_mode & 0o111,
  "GROWTH_TOOL_FILE")
   before=metadata(info)
-  sha, count=file_hash(fd, 16 * 1048576, check)
+  sha, count=file_hash(fd, 32 * 1048576, check)
   require(metadata(os.stat(path, follow_symlinks=False)) == before, "GROWTH_TOOL_NAME")
   result=dict(path=path, identity={k: before[k] for k in ("dev", "ino", "mode", "uid", "gid", "nlink")},
  bytes=count, sha256=sha)
@@ -449,7 +521,7 @@ def bound_command(binding, arguments, check, *, limit=STREAM_LIMIT, environment=
  try:
   before=metadata(os.fstat(fd))
   require({key: before[key] for key in binding["identity"]} == binding["identity"], "GROWTH_TOOL_CHANGED")
-  sha, count=file_hash(fd, 16 * 1048576, check)
+  sha, count=file_hash(fd, 32 * 1048576, check)
   require((sha, count) == (binding["sha256"], binding["bytes"]), "GROWTH_TOOL_CHANGED")
   command=GuestCommand([binding["path"], *arguments], check, limit=limit, pass_fds=(fd,),
  executable="/proc/self/fd/" + str(fd), environment=environment, preexec_fn=preexec_fn)
@@ -568,6 +640,7 @@ class GuestInventory:
   self.command_count=0
  def ctl(self, arguments, *, user_uid=None, runtime_missing=False):
   self.last_result=None
+  self.last_command_diagnostic=None
   self.command_count += 1
   self.context=dict(manager="user_1100" if user_uid is not None else "system",
  command_index=self.command_count, verb=arguments[0], arguments_sha256=digest(canonical(arguments)),
@@ -599,6 +672,9 @@ class GuestInventory:
  "--no-ask-password", *arguments], self.check,
  environment=environment, preexec_fn=child_setup)
   result=command.collect()
+  self.last_command_index=self.command_count
+  self.last_command_diagnostic=dict(pid=result.get("pid"),returncode=result["returncode"],
+   **{name:stream_diagnostic(result[name],result["both_eof"]) for name in ("stdout","stderr")})
   self.last_result={key:result[key] for key in ("returncode","both_eof")}
   for stream in ("stdout","stderr"):
    self.last_result.update({stream+"_bytes":len(result[stream]),stream+"_sha256":digest(result[stream])})
@@ -1087,8 +1163,8 @@ def validate_resources(value):
  and value["coverage"] == "THROUGH_REPORT_ONLY" and value["complete"] is False, "GROWTH_RESOURCE_REPORT")
  for key in counters:
   r.integer(value[key])
- require(value["self_cpu_microseconds"] + value["exited_children_cpu_microseconds"] <= 120000000
- and max(value["self_peak_rss_bytes"], value["exited_child_peak_rss_bytes"]) <= 512 * 1048576,
+ require(value["self_cpu_microseconds"] + value["exited_children_cpu_microseconds"] <= MANAGEMENT_CPU_SECONDS*1000000
+ and max(value["self_peak_rss_bytes"], value["exited_child_peak_rss_bytes"]) <= MANAGEMENT_RSS_BYTES,
  "GROWTH_RESOURCE_REPORT_LIMIT")
 def validate_post_report(value, description):
  before=validate_pre_report(description["pre_report"], description)
@@ -1168,7 +1244,7 @@ def validate_runtime_report(value, description, current_boot, phase):
  and len(canonical(value))<=16384 and value["schema"]=="lhq-runtime-preparation/v1"
  and value["binding_sha256"]==digest(canonical(binding)) and value["nonce"]==description["nonce"]
  and value["boot_id"]==current_boot and value["phase"]==phase,"GROWTH_RUNTIME_REPORT")
- r.integer(value["elapsed_ns"],0,60000000000)
+ r.integer(value["elapsed_ns"],0,120000000000)
  require(type(value["commands"]) is list and 5<=len(value["commands"])<=12,"GROWTH_RUNTIME_COMMANDS")
  seen=set()
  allowed={"guard_units","system_before","system_reload","system_start","system_after",
@@ -1254,7 +1330,7 @@ def validate_runtime_report(value, description, current_boot, phase):
  tool=value["tool"]
  require(type(tool) is dict and set(tool)=={"path","identity","bytes","sha256"}
  and tool["path"]=="/usr/bin/systemctl","GROWTH_RUNTIME_TOOL")
- r.integer(tool["bytes"],1,16*1048576);sha_value(tool["sha256"])
+ r.integer(tool["bytes"],1,32*1048576);sha_value(tool["sha256"])
  ident=tool["identity"]
  require(type(ident) is dict and set(ident)=={"dev","ino","mode","uid","gid","nlink"}
  and all(type(n) is int and n>=0 for n in ident.values()) and ident["uid"]==ident["gid"]==0
@@ -1300,7 +1376,7 @@ def validate_runtime_summaries(value,binding,nonce,boots,reports):
  and row["nonce"]==nonce and row["phase"]==phase and row["boot_id"]==boots[phase]
  and row["report_sha256"]==reports[phase]["sha256"],"GROWTH_RUNTIME_SUMMARY_BINDING")
   for name in ("runtime_sha256","commands_sha256","configs_sha256"):sha_value(row[name])
-  r.integer(row["elapsed_ns"],0,60000000000)
+  r.integer(row["elapsed_ns"],0,120000000000)
   require(type(row["parents"]) is dict and set(row["parents"])==set(RUNTIME_ROLES),"GROWTH_RUNTIME_SUMMARY_PARENTS")
   for role,item in row["parents"].items():
    require(type(item) is dict and set(item)=={"unit","control_group","invocation_id","identity"}
@@ -1334,7 +1410,7 @@ class RuntimePreparation:
  def check(self):
   self.m.window.check(change=True)
   now=(time.monotonic_ns(),time.clock_gettime_ns(time.CLOCK_BOOTTIME))
-  require(all(p<=n<s+60000000000 for p,n,s in zip(self.previous,now,self.start)),"GROWTH_RUNTIME_DEADLINE")
+  require(all(p<=n<s+120000000000 for p,n,s in zip(self.previous,now,self.start)),"GROWTH_RUNTIME_DEADLINE")
   self.previous=now;self.report["elapsed_ns"]=max(n-s for n,s in zip(now,self.start))
  def command(self,step,args,*,user=False,missing=False):
   self.check();require(step not in self.used and len(self.used)<12,"GROWTH_RUNTIME_COMMAND_REPLAY")
@@ -1686,8 +1762,15 @@ class GuestMaintenance:
   process=self.active_command.process if self.active_command else None
   code=str(error) if isinstance(error, r.ObservationError) else "GROWTH_GUEST_IO_OR_RUNTIME"
   require(re.fullmatch(r"[A-Z0-9_]{1,128}", code), "GROWTH_ERROR_CODE")
-  diagnostic=dict(errno=getattr(error,"errno",None),error_type=type(error).__name__,
- context=dict(getattr(self.inventory,"context",{})))
+  diagnostic=error_diagnostic(error)
+  diagnostic["context"]=dict(getattr(self.inventory,"context",{}))
+  command=getattr(self.inventory,"last_command_diagnostic",None)
+  if command is not None and diagnostic["context"].get("command_index")==getattr(self.inventory,"last_command_index",None):
+   diagnostic["command"]=command
+  cause=getattr(error,"diagnostic",None)
+  if type(cause) is dict and cause.get("operation") in ("open_kernel","guest_resource_check"):
+   diagnostic["cause"]=cause
+  if hasattr(error,"command_diagnostic"):diagnostic["command"]=error.command_diagnostic
   if hasattr(error,"path_diagnostic"):diagnostic["path_lookup"]=dict(error.path_diagnostic)
   if self.runtime is not None:diagnostic["runtime_preparation"]=self.runtime.report
   serial=getattr(error,"serial_diagnostic",None)
@@ -1704,7 +1787,7 @@ class GuestMaintenance:
  guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance")),
  process_pid=process.pid if process else None,
  process_returncode=process.poll() if process else None,
- diagnostic=diagnostic,
+ diagnostic=bounded_diagnostic(diagnostic),
  resource_observation=resource_observation(),
  process_exit="UNKNOWN" if process and process.poll() is None else "OBSERVED_OR_NOT_STARTED")
  def close(self):
@@ -1722,7 +1805,7 @@ def entry(raw):
   require(all(resource.getrlimit(key) == (resource.RLIM_INFINITY, resource.RLIM_INFINITY)
  for key in (resource.RLIMIT_CPU, resource.RLIMIT_FSIZE)), "GROWTH_INHERITED_MUTATOR_LIMIT")
   description=descriptor(raw)
-  for key, maximum in ((resource.RLIMIT_AS, 256 * 1048576), (resource.RLIMIT_NOFILE, 128),
+  for key, maximum in ((resource.RLIMIT_AS, CONTROL_AS_LIMIT), (resource.RLIMIT_NOFILE, CONTROL_FD_LIMIT),
  (resource.RLIMIT_CORE, 0)):
    resource.setrlimit(key, (maximum, maximum))
   maintenance=GuestMaintenance(description)

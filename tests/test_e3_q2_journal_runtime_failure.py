@@ -81,10 +81,12 @@ def test_missing_required_object_preserves_exact_lookup_without_another_read(loc
     assert detail["context"] == dict(operation="persistent_inventory", field="open",
         path_index=0, path_bytes=17, path_sha256=g.digest(b"/evidence/receipt"))
     assert detail["path_lookup"] == dict(operation="open_component", path_bytes=17,
-        path_sha256=g.digest(b"/evidence/receipt"), component_index=0 if missing_parent else 1)
+        path_sha256=g.digest(b"/evidence/receipt"), path="/evidence/receipt",
+        component="evidence" if missing_parent else "receipt", component_index=0 if missing_parent else 1)
     assert calls == (["/", "evidence"] if missing_parent else ["/", "evidence", "receipt"])
     assert reads == ["/proc/self/mountinfo"]
-    assert b"/evidence" not in g.canonical(value) and b"stale.service" not in g.canonical(value)
+    assert detail["path_lookup"]["path"] == "/evidence/receipt"
+    assert b"stale.service" not in g.canonical(value)
     assert value["nonce"] == NONCE and value["source_binding_sha256"] == SHA
     assert value["actions_started"] == ["runtime_preparation"]
 
@@ -96,6 +98,7 @@ def test_success_clears_persistent_context_and_failure_snapshot_is_stable(local_
     value = maintenance(inv).failure(caught.value)
     retained = copy.deepcopy(value)
     (root / "evidence" / "receipt").write_bytes(b"synthetic evidence")
+    (root / "evidence" / "receipt").chmod(0o600)
     assert inv.persistent()["count"] == 1 and inv.context == {}
     assert value == retained
 
@@ -149,6 +152,7 @@ def test_protection_failure_retains_the_rejected_stat_without_another_read(local
     assert value["reason"] == expected and value["status"] == "INCOMPLETE"
     assert value["diagnostic"]["path_lookup"] == dict(operation="qualify_root" if fault == "root"
         else "qualify_component", path_bytes=17, path_sha256=g.digest(b"/evidence/receipt"),
+        path="/evidence/receipt", component="/" if fault == "root" else "evidence" if fault == "ancestor" else "receipt",
         component_index=failed_index, qualification=dict(dev=rejected.st_dev, ino=rejected.st_ino,
             uid=rejected.st_uid, gid=rejected.st_gid,
             mode=rejected.st_mode, allowed_uids=[0] if fault == "root" else [os.getuid()],
@@ -159,7 +163,7 @@ def test_protection_failure_retains_the_rejected_stat_without_another_read(local
         with pytest.raises(OSError) as closed:
             real_stat(fd)
         assert closed.value.errno == errno.EBADF
-    assert b"/evidence" not in g.canonical(value)
+    assert value["diagnostic"]["path_lookup"]["path"] == "/evidence/receipt"
 
 
 @pytest.mark.parametrize("fail_on", [1, 2, 3])
@@ -234,7 +238,8 @@ def test_real_failure_pipe_keeps_guest_error_and_never_sends_token(factory, loca
     assert (root / h.NAMES["pre.stderr"]).read_bytes() == raw
     assert transport.report is None and not transport.sent
     assert not (root / h.NAMES["events.jsonl"]).exists()
-    assert b"private/secret" not in h.canonical(detail)
+    assert len(h.canonical(detail)) <= h.DIAGNOSTIC_LIMIT
+    if not protection: assert "/private/secret" in detail["guest_failure"]["diagnostic"]["message"]
 
 
 @pytest.mark.parametrize("fault", ["old", "nonce", "source", "phase", "schema", "success",
@@ -247,8 +252,8 @@ def test_unbound_or_invalid_stderr_never_replaces_failure_or_reads_more(fault):
     elif fault == "phase": value["phase"] = "post"
     elif fault == "schema": value["schema"] = "lhq-journal-growth-guest/v2"
     elif fault == "success": value["status"] = "GUEST_QUIET"
-    elif fault == "large_report": value["diagnostic"]["runtime_preparation"] = "x" * 32768
-    elif fault == "large_detail": value["diagnostic"]["context"] = "x" * 4096
+    elif fault == "large_report": value["diagnostic"]["runtime_preparation"] = "x" * h.RECORD_LIMIT
+    elif fault == "large_detail": value["diagnostic"]["context"] = "x" * h.DIAGNOSTIC_LIMIT
     raw = h.canonical(value)
     if fault == "duplicate": raw = raw[:-2] + b',"status":"INCOMPLETE"}\n'
     elif fault == "partial": raw = raw[:-2]
@@ -262,8 +267,12 @@ def test_unbound_or_invalid_stderr_never_replaces_failure_or_reads_more(fault):
     transport.pump = lambda: pytest.fail("no read or wait after stdout EOF")
     with pytest.raises(h.prior.r.ObservationError, match="GROWTH_REPORT_MISSING") as caught:
         transport.receive_report()
-    assert caught.value.diagnostic == dict(operation="receive_report", phase="pre",
-        stderr=dict(bytes=len(raw), sha256=h.digest(raw), eof=False))
+    detail = caught.value.diagnostic
+    assert detail["operation"] == "receive_report" and detail["phase"] == "pre"
+    assert "guest_failure" not in detail
+    assert detail["stderr"]["bytes"] == len(raw) and detail["stderr"]["sha256"] == h.digest(raw)
+    assert detail["stderr"]["eof"] is False
+    assert detail["guest_failure_parse"]["status"] in ("REJECTED", "OVERSIZE")
     assert transport.report is None
 
 
@@ -283,6 +292,7 @@ def test_coordinator_receipt_retains_guest_failure_without_later_effects(rig, mo
         raise error
     monkeypatch.setattr(h.MaintenanceTransport, "receive_report", fail)
     result = rig.work.run(rig.manifest)
-    assert result["state"] == "STOP_AND_RETAIN" and result["diagnostic"] == detail
+    assert result["state"] == "STOP_AND_RETAIN" and all(result["diagnostic"][k] == v for k,v in detail.items())
     assert rig.actions == ["marker", "pre_ssh"]
-    assert h.prior.r.parse(rig.files["receipt.json"], 65536)["diagnostic"] == detail
+    assert h.prior.r.parse(rig.files["receipt.json"], 131072)["diagnostic"] == result["diagnostic"]
+    assert result["diagnostic"]["traceback"] and result["diagnostic"]["resource_level"] == 2

@@ -13,8 +13,8 @@ import hashlib
 import re
 import sys
 
-BOOTSTRAP_LIMIT = 49152
-ARGUMENT_LIMIT = 65536
+BOOTSTRAP_LIMIT = 98304
+ARGUMENT_LIMIT = 131072
 
 
 def _require(condition, code):
