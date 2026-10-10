@@ -138,3 +138,10 @@ transition v16、host-capacity v19、reconciliation/historical-capacity v20。�
 保留原件与合成未来成功组合的归档最大值仍为 512000 B，小于 524288 B；投影 1972 B。
 工作区版本的原件/生命周期核算通过；准确 D 的最终核算、首次 CI、独立安装及三调用器
 冻结尚待完成。此段不宣称 PS1 完成，不发行 PS2/PS3，也不把测试当作核心 PASS。
+
+
+候选 `11e855d0bd4313b586211b2724b152d7755e5ebd` 的完整本地回归为
+7489 passed / 139 skipped / 1 failed；失败仅为批准缺失用例仍期待旧
+`GROWTH_RC_NOT_AUTHORIZED`，实际正确拒绝并返回 `GROWTH_PS_NOT_AUTHORIZED`。
+下一提交只对齐测试期待并覆盖 PS 批准缺失；生产实现和拒绝行为不改。
+旧失败日志保留，新提交仍须取得自己的首次 CI 与独立安装，不能复用旧提交成功标记。

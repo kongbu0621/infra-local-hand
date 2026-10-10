@@ -126,15 +126,16 @@ def test_external_active_system_keeps_identity_and_write_protection(tmp_path,mon
         with pytest.raises(h.prior.r.ObservationError,match='IMAGE_DRIFT'):value.recheck()
     finally:value.close();os.close(fd)
 
-def test_pending_adoption_cannot_open_field_window(monkeypatch,capsys):
-    monkeypatch.setattr(h.history.c,'VM_ADOPTION_CLOSURE',None)
+@pytest.mark.parametrize('closure',['VM_ADOPTION_CLOSURE','PROTECTED_SOURCE_CLOSURE'])
+def test_pending_adoption_cannot_open_field_window(monkeypatch,capsys,closure):
+    monkeypatch.setattr(h.history.c,closure,None)
     monkeypatch.setattr(h.os,'geteuid',lambda:1000)
     monkeypatch.setattr(h.sys,'argv',['growth','--frame','fixed','--plan-archive','fixed','--archives-dir','fixed',
         '--expected-commit','d'*40,'--trusted-single-admin','--trusted-guest-startup'])
     monkeypatch.setattr(h,'growth_sources',lambda *_:pytest.fail('pending authority reached source/field admission'))
     assert h.main()==3
     result=json.loads(capsys.readouterr().out)
-    assert result['reason']=='GROWTH_RC_NOT_AUTHORIZED'
+    assert result['reason']=='GROWTH_PS_NOT_AUTHORIZED'
     assert not result['marker_created'] and result['ssh_requests']==0
 
 @pytest.mark.parametrize('originals',[True],indirect=True)
