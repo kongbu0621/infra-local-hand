@@ -13,10 +13,11 @@ def sample():
 
 
 def patch(monkeypatch,*dispatchers):
-    from e3_host import q2_core_prior_attempt as p, q2_core_delivery_dispatcher as d
-    modules=[p,d,*dispatchers]
-    g=sys.modules.get('e3_host.q2_journal_growth_guest')
-    if g is not None:modules.append(g)
+    from e3_host import q2_core_prior_attempt as p
+    modules=[p,*dispatchers]
+    for name in ('q2_core_delivery_dispatcher','q2_journal_growth_guest'):
+        module=sys.modules.get('e3_host.'+name)
+        if module is not None:modules.append(module)
     raw=(json.dumps(roots(),sort_keys=True,separators=(',',':'))+'\n').encode()
     for module in modules:
         monkeypatch.setattr(module, 'RETAINED_QUOTA_SHA', hashlib.sha256(raw).hexdigest())

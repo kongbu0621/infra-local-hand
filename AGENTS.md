@@ -115,6 +115,10 @@ pin is unchanged: this candidate cannot issue core work. No new maintenance call
 The candidate can be reviewed and verified offline; field adoption of this changed policy still needs
 an exact continuation covering old10d retention, current costs and a new bounded window. Do not replay
 old callers, globally allow historical UIDs, chmod/chown, remove required evidence or resume side work.
+The candidate's first CI `38058671049` retained a Windows fixture import failure: the common
+synthetic binding helper imported Linux `resource` through the dispatcher. Only its import boundary
+was corrected; production code and test coverage stay unchanged. Local portability checks passed
+38 and relevant Linux checks passed 181. Record the new exact-head CI separately from that failure.
 
 ## Fixed read completed; historical path classification repair (2026-10-10)
 
