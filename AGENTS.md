@@ -62,14 +62,23 @@ Do not replay either caller, retry, supplement field evidence, change VM/service
 recover or open another window. Further offline work must use retained returns/source only;
 the successful software verification does not authorize another field continuation.
 
-The same field record now retains the subsequent direct-core-repair request and a prepared
-fixed-host read. Automatic approval rejected that read before process creation because the
-terminal instructions permit retained-evidence review only. No new host, VM, endpoint or SSH
-observation ran. The private one-shot source and exact bounded proposal are prepared, not
-authorized; do not issue them or another equivalent read without explicit Owner approval of
-that new fixed-host observation. There is no new maintenance consumption, retry or core result.
-Any later VM startup or changed activation binding must use actual evidence and its own
-applicable concrete authorization; do not replay 10b or overwrite its original freeze.
+The same field record preserves the earlier automatic rejection of a fixed-host read before
+process creation. Owner then explicitly replied “批准” to that exact bounded read, event
+`LH-Q2-CORE-HOST-BINDING-READ-20261010-01`. The unchanged reader completed once in about 0.06 s:
+the adopted runtime pidfile and its fixed PID were absent; one fixed-port query returned no
+listener. Host boot differs from activation. QEMU full metadata/content match retained sources;
+all six image file identities match, and the preserved original system and seed full metadata
+match. No image content equality, shutdown cause, other-process absence or guest readiness is
+inferred. SSH, VM start/stop and maintenance/core issuance were zero. The read is complete;
+do not replay it or append field collection. Original 10b and all maintenance states stay unchanged.
+
+An unissued private startup candidate is prepared from this return: exactly the adopted VM argv
+with only fresh PID/serial output names, current full input bindings, original locks/resources,
+one startup and host verification, zero SSH, failure stops and retains. Its actual control flow
+passed 13 synthetic cases without field calls. The action would create a new guest boot and normal
+guest disk writes; the read approval expressly excluded startup. Await explicit approval of the
+concrete startup proposal before issuing it. No maintenance or core authority follows from
+preparation or future endpoint recovery; do not replay 10b or overwrite historical bindings.
 
 ## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
 
