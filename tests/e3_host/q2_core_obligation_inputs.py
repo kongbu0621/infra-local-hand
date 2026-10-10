@@ -104,6 +104,24 @@ UNISSUED_STARTUP_PATH_PINS = (
     (48, "d10ddea0df91fd2ea1b68a3e2a2790b2c90c7dd1162f5a292a32b30883a83146"),
 )
 
+RETAINED_PLAN_SHA = "efff343c7967dcc43c54420accafb2e91a5b4fb563419b00a86d41a58817fa7c"
+RETAINED_QUOTA_SHA = "b782a2de862b038347d8b224ed55c3e9dff06179f901b06a2506fa542a0357d5"
+
+
+def retained_quota_roots(plan):
+    """Four exact historical quota directories, never an owner allowlist.
+
+    Only the pinned original plan supplies these path/device/inode identities.
+    Current owners are observed and must stay identical across the two phases;
+    this does not establish a historical UID or an account-name mapping.
+    """
+    _require(hashlib.sha256(c.canonical(plan, newline=True)).hexdigest() == RETAINED_PLAN_SHA,
+             "RETAINED_PLAN_PIN")
+    roots = copy.deepcopy(plan["retained"][3:7])
+    _require(hashlib.sha256(c.canonical(roots, newline=True)).hexdigest() == RETAINED_QUOTA_SHA,
+             "RETAINED_QUOTA_PIN")
+    return roots
+
 
 def persistent_inventory(inventory):
     """Correct the two unissued locations in a source-verified Q1 inventory.
