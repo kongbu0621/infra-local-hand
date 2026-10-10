@@ -1106,6 +1106,30 @@ stage=stage,process_created=self.process is not None)
 sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
    os.lseek(fd,0,os.SEEK_END)
   self.store.budget()
+ def captured_failure(self):
+  """Summarize captured bytes without another read or wait."""
+  raw=bytes(self.output["stderr"])
+  result=dict(operation="receive_report",phase=self.phase,
+ stderr=dict(bytes=len(raw),sha256=digest(raw),eof=self.eof["stderr"]))
+  if not 0<len(raw)<=32768:return result
+  try:
+   value=prior.r.parse(raw,32768)
+   require(type(value) is dict and canonical(value)==raw
+ and value.get("schema")==REPORT_SCHEMA and value.get("session")==SESSION
+ and value.get("phase")==self.phase and value.get("nonce")==self.nonce
+ and value.get("source_binding_sha256")==self.source_sha
+ and value.get("status")=="INCOMPLETE","GROWTH_FAILURE_BINDING")
+   require(all(type(value.get(key)) is str and re.fullmatch(r"[A-Z0-9_]{1,128}",value[key])
+ for key in ("stage","reason")),"GROWTH_FAILURE_REASON")
+   detail=value.get("diagnostic")
+   require(type(detail) is dict,"GROWTH_FAILURE_DIAGNOSTIC")
+   # Full runtime proof stays in stderr.
+   detail={key:detail[key] for key in ("errno","error_type","context","path_lookup") if key in detail}
+   require(len(canonical(detail))<=4096,"GROWTH_FAILURE_DIAGNOSTIC_LIMIT")
+   result["guest_failure"]=dict(stage=value["stage"],reason=value["reason"],diagnostic=detail)
+  except (ValueError,TypeError,RecursionError,prior.r.ObservationError):
+   pass
+  return result
  def receive_report(self):
   require(self.report is None,"GROWTH_REPORT_ONCE")
   try:
@@ -1130,6 +1154,8 @@ and ((boot==self.old_boot) if self.phase=="pre" else
    return value
   except BaseException as error:
    error.growth_transport=self
+   if isinstance(error,prior.r.ObservationError) and str(error)=="GROWTH_REPORT_MISSING":
+    error.diagnostic=self.captured_failure()
    raise
  def continue_poweroff(self,pre_digest):
   require(self.phase=="pre" and self.report is not None and not self.sent

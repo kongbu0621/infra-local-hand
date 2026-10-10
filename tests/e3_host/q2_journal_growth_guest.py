@@ -279,17 +279,21 @@ class GuestWindow:
 def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)):
  """Walk protected ancestors by fd; no symlink or weak atime fallback."""
  parts=r.path_value(path)
- current=os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+ current=None;index=-1;operation="open_root"
  try:
+  current=os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+  operation="qualify_root"
   r.qualify(os.fstat(current))
   for index, name in enumerate(parts):
    last=index == len(parts) - 1
    flags=(os.O_RDWR if writable and last else os.O_RDONLY) | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME | os.O_NONBLOCK
    if not last or directory:
     flags |= os.O_DIRECTORY
+   operation="open_component"
    next_fd=os.open(name, flags, dir_fd=current)
    os.close(current)
    current=next_fd
+   operation="qualify_component"
    info=os.fstat(current)
    if not last:
     require(stat.S_ISDIR(info.st_mode) and info.st_uid in owners and not info.st_mode & 0o022,
@@ -300,6 +304,11 @@ def open_path(path, *, directory=False, writable=False, block=False, owners=(0,)
      require(stat.S_ISBLK(info.st_mode), "GROWTH_BLOCK_TYPE")
   result, current=current, None
   return result
+ except (OSError,r.ObservationError) as error:
+  # Identify the already attempted lookup, without another read or raw path.
+  error.path_diagnostic=dict(operation=operation,path_bytes=len(path),
+ path_sha256=digest(path.encode("ascii")),component_index=index)
+  raise
  finally:
   if current is not None:
    os.close(current)
@@ -822,23 +831,31 @@ field="cmdline")
    result["user_1100"]=self.startup_manager(user_uid=1100)
   return result
  def persistent(self):
+  self.context=dict(operation="persistent_inventory",field="mountinfo")
   mounts=r.mounts(r.kernel_read("/proc/self/mountinfo", 1048576, self.check))
   records=[]
-  for path in self.description["essential_paths"]:
+  for index,path in enumerate(self.description["essential_paths"]):
+   self.context=dict(operation="persistent_inventory",field="open",path_index=index,
+ path_bytes=len(path),path_sha256=digest(path.encode("ascii")))
    self.check()
    fd=open_path(path, owners=(0, 1100))
    try:
+    self.context["field"]="stat"
     info=os.fstat(fd)
     require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode), "GROWTH_ESSENTIAL_OBJECT")
+    self.context["field"]="mount_id"
     mid=r.mount_id(r.kernel_read("/proc/self/fdinfo/" + str(fd), 4096, self.check))
     require(mid in mounts, "GROWTH_ESSENTIAL_MOUNT")
+    self.context["field"]="filesystem_uuid"
     filesystem=dict(mount=mounts[mid], uuid=r.fs_uuid(fd))
+    self.context["field"]="filesystem_validation"
     validate_durable_filesystem(filesystem)
     require(filesystem["mount"]["device"] == info.st_dev, "GROWTH_ESSENTIAL_DEVICE")
     records.append(dict(path_sha256=digest(path.encode()), filesystem_uuid=filesystem["uuid"],
  identity=r.identity(info)))
    finally:
     os.close(fd)
+  self.context={}
   return dict(count=len(records), sha256=digest(canonical(records)))
  def collect(self):
   units=[self.quiet_service(item) for item in self.description["expected_units"]]
@@ -1299,15 +1316,23 @@ class RuntimePreparation:
   require(self.inventory.last_result["returncode"]==0 or missing and any(row["LoadState"]=="not-found" for row in rows.values()),"GROWTH_RUNTIME_SHOW_EXIT")
   return rows
  def pool(self,path):
-  self.check();fd=open_path(path,directory=True,owners=(0,1100));info=os.fstat(fd)
+  self.inventory.context=dict(operation="runtime_pool",field="open",
+ path_bytes=len(path),path_sha256=digest(path.encode("ascii")))
+  self.check();fd=open_path(path,directory=True,owners=(0,1100))
   try:
+   self.inventory.context["field"]="stat"
+   info=os.fstat(fd)
+   self.inventory.context["field"]="filesystem_type"
    require(r.filesystem_type(fd)==0x01021994,"GROWTH_RUNTIME_TMPFS")
-   if info.st_dev in self.pool_fds:return
+   if info.st_dev in self.pool_fds:
+    self.inventory.context={};return
+   self.inventory.context["field"]="capacity"
    size=os.fstatvfs(fd);count=1 if self.description["phase"]=="pre" else 2
    row=dict(dev=info.st_dev,reserved_bytes=8192*count,reserved_inodes=32*count,
  before=[size.f_bavail*size.f_frsize,size.f_favail],after=[])
    require(row["before"][0]>=row["reserved_bytes"] and row["before"][1]>=row["reserved_inodes"],"GROWTH_RUNTIME_CAPACITY")
    self.report["pools"].append(row);self.pool_fds[info.st_dev]=(fd,row);fd=None
+   self.inventory.context={}
   finally:
    if fd is not None:os.close(fd)
  def absent(self,path):
@@ -1618,7 +1643,9 @@ class GuestMaintenance:
   process=self.active_command.process if self.active_command else None
   code=str(error) if isinstance(error, r.ObservationError) else "GROWTH_GUEST_IO_OR_RUNTIME"
   require(re.fullmatch(r"[A-Z0-9_]{1,128}", code), "GROWTH_ERROR_CODE")
-  diagnostic=dict(errno=getattr(error,"errno",None),context=getattr(self.inventory,"context",{}))
+  diagnostic=dict(errno=getattr(error,"errno",None),error_type=type(error).__name__,
+ context=dict(getattr(self.inventory,"context",{})))
+  if hasattr(error,"path_diagnostic"):diagnostic["path_lookup"]=dict(error.path_diagnostic)
   if self.runtime is not None:diagnostic["runtime_preparation"]=self.runtime.report
   serial=getattr(error,"serial_diagnostic",None)
   if code=="GROWTH_JOURNAL_SERIAL" and type(serial) is dict and set(serial)=={
@@ -1629,6 +1656,7 @@ class GuestMaintenance:
  for name,limit in (("expected",20),("actual",128))):
    diagnostic["serial"]=dict(serial)
   return dict(schema=REPORT_SCHEMA, session=SESSION, phase=self.description["phase"], status="INCOMPLETE",
+ nonce=self.description["nonce"],source_binding_sha256=self.description["source_binding_sha256"],
  stage=self.stage, reason=code, actions_started=sorted(self.started),
  guest_startup_assurance=validate_startup_assurance(self.description.get("guest_startup_assurance")),
  process_pid=process.pid if process else None,

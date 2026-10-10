@@ -62,6 +62,14 @@ preflights, and all fifteen obligations / 19507 MiB / 5662 inodes remain without
 Do not replay callers, reconnect, supplement field evidence, relax protections, clean up, recover,
 start another window or issue 07a under this spent batch. Further review uses retained returns/source.
 
+The ordinary repair in the same field record preserves the existing protected lookup's target digest,
+component and operation, persistent/runtime-pool context, and request-bound captured guest failure
+through the original host diagnostic/receipt. It also closes a runtime-pool FD on fstat failure.
+No extra read, wait, retry, relaxed check or limit increase is added; malformed/unbound stderr never
+admits success. Historical candidate receipts have retained bindings; do not remove required objects
+or infer 10c's exact missing path. All old freezes/returns and the consumed terminal gate remain.
+This repair is not a new observation, maintenance window or permission to issue the original core.
+
 ## Current approved batch: resumed VM and original core (2026-10-10)
 
 [Exact A](docs/governance/Q2_CORE_RESUMED_VM_BASELINE.md)
