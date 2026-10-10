@@ -38,7 +38,7 @@ def repack(value, *, marker=False):
     return value
 
 
-def context_v2(*, guest_duration_ns=750 * d.NS):
+def context_v2(*, guest_duration_ns=1500 * d.NS):
     """Produce a coherent v3 envelope (legacy helper name), not a release."""
     implementation = {"commit": "9" * 40, "tree": "7" * 40}
     amendment = {"baseline": copy.deepcopy(d.AMENDMENT_BASELINE),
@@ -124,24 +124,24 @@ def context_v2(*, guest_duration_ns=750 * d.NS):
              "python": {key: remote["python"][key] for key in d.PROGRAM_FIELDS},
              "carrier_unit": {"name": locators["carrier_unit"],
                  "control_group": "/system.slice/" + locators["carrier_unit"], "invocation_id": "f" * 32,
-                 "active_state": "active", "sub_state": "running", "runtime_max_usec": 800000000,
-                 "timeout_stop_usec": 30000000, "memory_max": 1073741824, "memory_swap_max": 0,
-                 "tasks_max": 128, "cpu_quota_per_sec_usec": 1000000, "restart": "no",
+                 "active_state": "active", "sub_state": "running", "runtime_max_usec": 1600000000,
+                 "timeout_stop_usec": 60000000, "memory_max": 2147483648, "memory_swap_max": 0,
+                 "tasks_max": 256, "cpu_quota_per_sec_usec": 2000000, "restart": "no",
                  "kill_mode": "control-group", "exit_type": "cgroup"},
-             "process_limits": {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
-                 "nofile_hard": 256, "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}}
-    remaining = guest_duration_ns + 17 * d.NS
+             "process_limits": {"cpu_soft": 1600, "cpu_hard": 1600, "nofile_soft": 512,
+                 "nofile_hard": 512, "fsize_soft": 134217728, "fsize_hard": 134217728, "umask": 0o077}}
+    remaining = guest_duration_ns + 32 * d.NS
     bind = {"schema": "local-hand-q2-core-carrier-bind/v1", "scope": d.SCOPE, "session_id": d.SESSION,
             "hello_sha256": "0" * 64, "consumption_sha256": "1" * 64, "package_basename": "lhqcore-20261007a.lhfp",
             "package_bytes": 1, "package_sha256": "0" * 64,
             "host_boottime_origin_ns": host_origin, "host_monotonic_origin_ns": host_origin + d.NS,
-            "host_boottime_deadline_ns": host_origin + 900 * d.NS,
-            "host_monotonic_deadline_ns": host_origin + 901 * d.NS,
-            "host_boottime_bind_ns": host_origin + 900 * d.NS - remaining,
-            "host_monotonic_bind_ns": host_origin + 901 * d.NS - remaining,
+            "host_boottime_deadline_ns": host_origin + 1800 * d.NS,
+            "host_monotonic_deadline_ns": host_origin + 1801 * d.NS,
+            "host_boottime_bind_ns": host_origin + 1800 * d.NS - remaining,
+            "host_monotonic_bind_ns": host_origin + 1801 * d.NS - remaining,
             "host_remaining_floor_ns": remaining, "clock_margin_ns": 2 * d.NS,
-            "local_final_reserve_ns": 15 * d.NS, "mapped_duration_ns": guest_duration_ns,
-            "guest_duration_cap_ns": 750 * d.NS, "guest_duration_ns": guest_duration_ns}
+            "local_final_reserve_ns": 30 * d.NS, "mapped_duration_ns": guest_duration_ns,
+            "guest_duration_cap_ns": 1500 * d.NS, "guest_duration_ns": guest_duration_ns}
     value = {"schema": d.CONTEXT_SCHEMA, "hello": hello, "bind": bind, "manifest": manifest,
              "members": blobs, "guest_deadlines": {"boot_id": hello["guest_boot_id"],
                  "boottime_deadline_ns": guest_origin + guest_duration_ns,

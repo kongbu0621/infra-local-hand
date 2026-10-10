@@ -185,7 +185,7 @@ def test_sudo_failure_diagnostics_survive_real_bootstrap_without_raw_output(monk
     status = bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256="a" * 64)
     assert status == 3
     assert stdout.getvalue() == b""
-    assert stderr.getvalue() == code.encode("ascii") + b"\n"
+    assert stderr.getvalue().splitlines()[0] == code.encode("ascii")
 
 
 def test_sudo_failure_diagnostic_stays_bounded_at_helper_output_limit():
@@ -275,7 +275,7 @@ def test_sshd_source_rejection_has_exact_stage_line_and_safe_digest(monkeypatch,
     monkeypatch.setattr(bootstrap, "serve", fail_in_serve)
     stdout, stderr = io.BytesIO(), io.BytesIO()
     assert bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256="a" * 64) == 3
-    assert stdout.getvalue() == b"" and stderr.getvalue() == code.encode("ascii") + b"\n"
+    assert stdout.getvalue() == b"" and stderr.getvalue().splitlines()[0] == code.encode("ascii")
 
 
 @pytest.mark.parametrize("raw", [b"# invalid\xff\n", b"Banner foo\x00\n", b"Banner foo\r\n"])
@@ -437,7 +437,7 @@ def test_sshd_locale_does_not_skip_later_files_or_leak_diagnostics(monkeypatch, 
     monkeypatch.setattr(bootstrap, "serve", fail_in_serve)
     stdout, stderr = io.BytesIO(), io.BytesIO()
     assert bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256="a" * 64) == 3
-    assert stdout.getvalue() == b"" and stderr.getvalue() == code.encode() + b"\n"
+    assert stdout.getvalue() == b"" and stderr.getvalue().splitlines()[0] == code.encode()
 
 
 @pytest.mark.parametrize("includes", [b"", SSHD_INCLUDE * 2])

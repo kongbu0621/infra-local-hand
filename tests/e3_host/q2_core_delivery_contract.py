@@ -431,7 +431,7 @@ HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
 SESSION_SCHEMA = "local-hand-q2-core-dispatch-session/v2"
 APPROVED_INPUTS_SCHEMA = "local-hand-q2-core-approved-inputs/v1"
 APPROVED_INPUTS_PATH = "private/approved-inputs.json"
-APPROVED_INPUTS_LIMIT = 1048576
+APPROVED_INPUTS_LIMIT = 2097152
 CARRIER_ARGV_SCHEMA = "local-hand-q2-core-carrier-argv/v1"
 MANAGEMENT_BINDING_SCHEMA = "local-hand-q2-core-local-management-binding/v1"
 LOCAL_WRITER_SCHEMA = "local-hand-q2-core-local-writer/v1"
@@ -441,61 +441,61 @@ REMOTE_RESULT_SCHEMA = "local-hand-q2-core-remote-result/v2"
 RESOURCE_ACCOUNTING_SCHEMA = "local-hand-q2-core-resource-accounting/v1"
 
 PACKAGE_LIMITS = {
-    "package_bytes": 33550320,
-    "manifest_bytes": 1048576,
-    "members": 4096,
-    "member_bytes": 16777216,
-    "shared_allocated_bytes": 67108864,
-    "shared_entries": 4096,
-    "carrier_audit_bytes": 8388608,
-    "carrier_audit_inodes": 512,
-    "carrier_output_bytes": 62914560,
+    "package_bytes": 67100656,
+    "manifest_bytes": 2097152,
+    "members": 8192,
+    "member_bytes": 33554432,
+    "shared_allocated_bytes": 134217728,
+    "shared_entries": 8192,
+    "carrier_audit_bytes": 16777216,
+    "carrier_audit_inodes": 1024,
+    "carrier_output_bytes": 125829120,
 }
 LIMITS = {
-    "carrier_seconds": 900,
-    "remote_unit_seconds": 800,
-    "guest_duration_cap_seconds": 750,
-    "preparation_seconds": 150,
-    "owner_seconds": 120,
-    "case_gate_seconds": 315,
-    "hello_frame_bytes": 4112,
-    "bind_frame_bytes": 4112,
-    "package_bytes": 33550320,
-    "carrier_input_bytes": 33554432,
-    "output_package_bytes": 58716144,
-    "carrier_stderr_bytes": 4194304,
-    "carrier_output_bytes": 62914560,
-    "host_capture_bytes": 67108864,
-    "host_capture_inodes": 16,
-    "carrier_cpu_seconds": 800,
-    "carrier_memory_bytes": 1073741824,
-    "carrier_pids": 128,
-    "carrier_audit_bytes": 8388608,
-    "carrier_audit_inodes": 512,
-    "shared_bytes": 67108864,
-    "shared_inodes": 4096,
-    "case_physical_bytes": 37748736,
-    "case_physical_inodes": 2944,
-    "all_case_physical_bytes": 113246208,
-    "all_case_physical_inodes": 8832,
-    "case_admission_bytes": 71303168,
-    "case_admission_inodes": 3968,
-    "all_case_admission_bytes": 213909504,
-    "all_case_admission_inodes": 11904,
-    "all_case_cpu_seconds": 1290,
-    "total_cpu_seconds": 2090,
-    "all_case_output_bytes": 50331648,
-    "peak_memory_bytes": 2751463424,
-    "peak_pids": 1160,
+    "carrier_seconds": 1800,
+    "remote_unit_seconds": 1600,
+    "guest_duration_cap_seconds": 1500,
+    "preparation_seconds": 300,
+    "owner_seconds": 240,
+    "case_gate_seconds": 630,
+    "hello_frame_bytes": 8208,
+    "bind_frame_bytes": 8208,
+    "package_bytes": 67100656,
+    "carrier_input_bytes": 67108864,
+    "output_package_bytes": 117432304,
+    "carrier_stderr_bytes": 8388608,
+    "carrier_output_bytes": 125829120,
+    "host_capture_bytes": 134217728,
+    "host_capture_inodes": 32,
+    "carrier_cpu_seconds": 1600,
+    "carrier_memory_bytes": 2147483648,
+    "carrier_pids": 256,
+    "carrier_audit_bytes": 16777216,
+    "carrier_audit_inodes": 1024,
+    "shared_bytes": 134217728,
+    "shared_inodes": 8192,
+    "case_physical_bytes": 75497472,
+    "case_physical_inodes": 5888,
+    "all_case_physical_bytes": 226492416,
+    "all_case_physical_inodes": 17664,
+    "case_admission_bytes": 142606336,
+    "case_admission_inodes": 7936,
+    "all_case_admission_bytes": 427819008,
+    "all_case_admission_inodes": 23808,
+    "all_case_cpu_seconds": 2580,
+    "total_cpu_seconds": 4180,
+    "all_case_output_bytes": 100663296,
+    "peak_memory_bytes": 5502926848,
+    "peak_pids": 2320,
     "job_units": 15,
     "controller_units": 6,
     "quota_query_units": 5,
     "dynamic_quota_units": 15,
     "native_children": 16,
-    "total_guest_physical_bytes": 188743680,
-    "total_guest_physical_inodes": 13440,
-    "total_guest_admission_bytes": 289406976,
-    "total_guest_admission_inodes": 16512,
+    "total_guest_physical_bytes": 377487360,
+    "total_guest_physical_inodes": 26880,
+    "total_guest_admission_bytes": 578813952,
+    "total_guest_admission_inodes": 33024,
 }
 
 DIRECTORY_ROLES = (
@@ -819,10 +819,10 @@ def resource_pool_definitions(locators):
     def path(role, suffix):
         parent = absolute_path(locators[role + "_parent"])
         return parent + "/" + suffix, role
-    add("shared_install", None, 67108864, 4096,
+    add("shared_install", None, 134217728, 8192,
         [path("install", name) for name in (INSTALL_BASENAME, STAGING_BASENAME)])
     roles = ("state", "quota", "journal", "evidence")
-    add("carrier_audit", None, 8388608, 512, [path(role, SESSION_ID) for role in roles])
+    add("carrier_audit", None, 16777216, 1024, [path(role, SESSION_ID) for role in roles])
     for case in CASES:
         case_id = case["case_id"]; prefix = SESSION_ID + "/" + case_id
         add(case_id + "/state", case_id, 8388608, 1536, [path(role, prefix) for role in roles])
@@ -1129,22 +1129,22 @@ def validate_bind(value):
         integer(value[key], 1 if key in ("mapped_duration_ns", "guest_duration_ns") else 0,
                 code="CORE_BIND_CLOCK")
     require(value["host_boottime_deadline_ns"]
-            == value["host_boottime_origin_ns"] + 900_000_000_000
+            == value["host_boottime_origin_ns"] + 1800000000000
             and value["host_monotonic_deadline_ns"]
-            == value["host_monotonic_origin_ns"] + 900_000_000_000
+            == value["host_monotonic_origin_ns"] + 1800000000000
             and value["host_boottime_bind_ns"] >= value["host_boottime_origin_ns"]
             and value["host_monotonic_bind_ns"] >= value["host_monotonic_origin_ns"],
             "CORE_BIND_HOST_WINDOW")
     require(value["clock_margin_ns"] == 2_000_000_000
-            and value["local_final_reserve_ns"] == 15_000_000_000
-            and value["guest_duration_cap_ns"] == 750_000_000_000, "CORE_BIND_LIMIT")
+            and value["local_final_reserve_ns"] == 30000000000
+            and value["guest_duration_cap_ns"] == 1500000000000, "CORE_BIND_LIMIT")
     remaining = min(value["host_boottime_deadline_ns"] - value["host_boottime_bind_ns"],
                     value["host_monotonic_deadline_ns"] - value["host_monotonic_bind_ns"])
     expected_floor = remaining // 1_000_000 * 1_000_000
     require(value["host_boottime_deadline_ns"]
-                == value["host_boottime_origin_ns"] + 900_000_000_000
+                == value["host_boottime_origin_ns"] + 1800000000000
             and value["host_monotonic_deadline_ns"]
-                == value["host_monotonic_origin_ns"] + 900_000_000_000
+                == value["host_monotonic_origin_ns"] + 1800000000000
             and value["host_boottime_origin_ns"] <= value["host_boottime_bind_ns"]
             and value["host_monotonic_origin_ns"] <= value["host_monotonic_bind_ns"]
             and remaining > 0 and value["host_remaining_floor_ns"] == expected_floor
@@ -1222,6 +1222,7 @@ def validate_hello(value, *, loader_sha256=None, bootstrap_sha256=None, remote_e
 def _validate_hello_identity(value, *, carrier_unit, loader_sha256=None,
                              bootstrap_sha256=None, remote_expectation=None):
     """Frozen HELLO grammar; historical callers bind their original unit and sources."""
+    factor = 2 if carrier_unit == CARRIER_UNIT else 1
     validate_record(value, HELLO_SCHEMA)
     require(value["scope"] == SCOPE, "CORE_HELLO_AUTHORITY")
     for key, expected in (("loader_sha256", loader_sha256),
@@ -1256,20 +1257,20 @@ def _validate_hello_identity(value, *, carrier_unit, loader_sha256=None,
     require(unit["name"] == carrier_unit and unit["control_group"].endswith("/" + carrier_unit)
             and re.fullmatch(r"[0-9a-f]{32}", unit["invocation_id"] or "")
             and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
-            and unit["runtime_max_usec"] == 800_000_000
-            and unit["timeout_stop_usec"] == 30_000_000
-            and unit["memory_max"] == 1_073_741_824 and unit["memory_swap_max"] == 0
-            and unit["tasks_max"] == 128 and unit["cpu_quota_per_sec_usec"] == 1_000_000
+            and unit["runtime_max_usec"] == (800000000 * factor)
+            and unit["timeout_stop_usec"] == (30000000 * factor)
+            and unit["memory_max"] == (1073741824 * factor) and unit["memory_swap_max"] == 0
+            and unit["tasks_max"] == (128 * factor) and unit["cpu_quota_per_sec_usec"] == (1000000 * factor)
             and unit["restart"] == "no" and unit["kill_mode"] == "control-group"
             and unit["exit_type"] == "cgroup", "CORE_HELLO_CARRIER")
     process = exact(value["process_limits"],
         {"cpu_soft", "cpu_hard", "nofile_soft", "nofile_hard", "fsize_soft", "fsize_hard", "umask"},
         "CORE_HELLO_PROCESS_LIMITS")
-    require(process == {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
-                        "nofile_hard": 256, "fsize_soft": 67_108_864,
-                        "fsize_hard": 67_108_864, "umask": 0o077},
+    require(process == {"cpu_soft": (800 * factor), "cpu_hard": (800 * factor), "nofile_soft": (256 * factor),
+                        "nofile_hard": (256 * factor), "fsize_soft": (67108864 * factor),
+                        "fsize_hard": (67108864 * factor), "umask": 0o077},
             "CORE_HELLO_PROCESS_LIMITS")
-    require(len(canonical(value, newline=True)) <= 4096, "CORE_HELLO_LIMIT")
+    require(len(canonical(value, newline=True)) <= (4096 * factor), "CORE_HELLO_LIMIT")
     return value
 
 

@@ -43,25 +43,25 @@ require = contract.require
 dispatcher_contract = _helper("q2_core_delivery_dispatcher")
 capture_contract = _helper("q2_core_capture")
 
-HOST_WINDOW_NS = 900_000_000_000
+HOST_WINDOW_NS = 1800000000000
 CLOCK_MARGIN_NS = 2_000_000_000
-LOCAL_FINAL_RESERVE_NS = 15_000_000_000
-GUEST_CAP_NS = 750_000_000_000
-MARKER_LIMIT = 16_384
-REMOTE_COMMAND_LIMIT = 98_304
-LOCAL_ARG_ENV_LIMIT = 524_288
+LOCAL_FINAL_RESERVE_NS = 30000000000
+GUEST_CAP_NS = 1500000000000
+MARKER_LIMIT = 32768
+REMOTE_COMMAND_LIMIT = 131_071
+LOCAL_ARG_ENV_LIMIT = 1048576
 LINUX_SINGLE_ARGUMENT_LIMIT = 131_072
-REMOTE_RESULT_LIMIT = 262_144
-CAPTURE_LIMIT = 67_108_864
-CAPTURE_INODE_LIMIT = 16
-STDERR_LIMIT = 4_194_304
-OUTPUT_FRAME_LIMIT = 58_716_144
-CARRIER_OUTPUT_LIMIT = 62_914_560
-STREAM_CAPTURE_LIMIT = 54_525_952
-HELLO_JSON_LIMIT = 4096
-HELLO_FRAME_LIMIT = 4112
-BIND_JSON_LIMIT = 4096
-BIND_FRAME_LIMIT = 4112
+REMOTE_RESULT_LIMIT = 524288
+CAPTURE_LIMIT = 134217728
+CAPTURE_INODE_LIMIT = 32
+STDERR_LIMIT = 8388608
+OUTPUT_FRAME_LIMIT = 117432304
+CARRIER_OUTPUT_LIMIT = 125829120
+STREAM_CAPTURE_LIMIT = 109051904
+HELLO_JSON_LIMIT = 8192
+HELLO_FRAME_LIMIT = 8208
+BIND_JSON_LIMIT = 8192
+BIND_FRAME_LIMIT = 8208
 
 # PP1 binds the exact reviewed dispatcher. Exact D first CI, full PP2 originals
 # and actual coordinator completion remain required before original 07a.
@@ -70,9 +70,9 @@ RELEASABLE_DISPATCHER_SHA256 = frozenset({"73551b01eb11083b9deb8da15bcc9832b2fe5
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
-    "manifest_bytes": 1_048_576,
-    "members": 4096,
-    "member_bytes": 16_777_216,
+    "manifest_bytes": 2_097_152,
+    "members": 8192,
+    "member_bytes": 33_554_432,
     "stderr_bytes": STDERR_LIMIT,
 }
 
@@ -213,28 +213,28 @@ def controlled_environment(source=None):
 
 def remote_tokens(loader_raw, bootstrap_raw):
     """Construct the only remote token vector approved by exact A."""
-    require(type(loader_raw) is bytes and 0 < len(loader_raw) <= 8192,
+    require(type(loader_raw) is bytes and 0 < len(loader_raw) <= 16384,
             "CORE_LOADER_LIMIT")
-    require(type(bootstrap_raw) is bytes and 0 < len(bootstrap_raw) <= 49_152,
+    require(type(bootstrap_raw) is bytes and 0 < len(bootstrap_raw) <= 98_304,
             "CORE_BOOTSTRAP_LIMIT")
     try:
         loader = loader_raw.decode("utf-8", "strict")
     except UnicodeError as error:
         raise contract.ContractError("CORE_LOADER_ENCODING") from error
     encoded = base64.b64encode(bootstrap_raw).decode("ascii")
-    require(len(encoded.encode("ascii")) <= 65_536, "CORE_BOOTSTRAP_ARGUMENT")
+    require(len(encoded.encode("ascii")) <= 131_071, "CORE_BOOTSTRAP_ARGUMENT")
     tokens = [
         "exec", "/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i",
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C",
         "SYSTEMD_COLORS=0", "/usr/bin/systemd-run", "--system",
         "--no-ask-password", "--quiet", "--wait", "--pipe", "--collect",
         "--service-type=exec", "--unit=lhqcore20261007a-carrier.service",
-        "--property=Restart=no", "--property=RuntimeMaxSec=800s",
-        "--property=TimeoutStopSec=30s", "--property=KillMode=control-group",
-        "--property=ExitType=cgroup", "--property=CPUQuota=100%",
-        "--property=LimitCPU=800", "--property=MemoryMax=1073741824",
-        "--property=MemorySwapMax=0", "--property=TasksMax=128",
-        "--property=LimitNOFILE=256", "--property=LimitFSIZE=67108864",
+        "--property=Restart=no", "--property=RuntimeMaxSec=1600s",
+        "--property=TimeoutStopSec=60s", "--property=KillMode=control-group",
+        "--property=ExitType=cgroup", "--property=CPUQuota=200%",
+        "--property=LimitCPU=1600", "--property=MemoryMax=2147483648",
+        "--property=MemorySwapMax=0", "--property=TasksMax=256",
+        "--property=LimitNOFILE=512", "--property=LimitFSIZE=134217728",
         "--property=UMask=0077", "--", "/usr/bin/python3", "-I", "-B", "-c",
         loader, encoded, hashlib.sha256(bootstrap_raw).hexdigest(),
     ]
@@ -1144,8 +1144,8 @@ def validate_output_semantics(manifest, values, *, consumption_sha256,
                     "CORE_REMOTE_USAGE_MISSING")
         else:
             contract.integer(usage[key], 0, code="CORE_REMOTE_USAGE")
-    ceilings = {"guest_elapsed_ns": GUEST_CAP_NS, "carrier_cpu_ns": 800_000_000_000,
-        "carrier_memory_peak_bytes": 1_073_741_824, "carrier_pids_peak": 128,
+    ceilings = {"guest_elapsed_ns": GUEST_CAP_NS, "carrier_cpu_ns": 1_600_000_000_000,
+        "carrier_memory_peak_bytes": 2_147_483_648, "carrier_pids_peak": 256,
         "guest_allocated_bytes": contract.LIMITS["total_guest_physical_bytes"],
         "guest_allocated_inodes": contract.LIMITS["total_guest_physical_inodes"],
         "job_units_started": 15, "controller_units_started": 6, "quota_query_units_started": 5,

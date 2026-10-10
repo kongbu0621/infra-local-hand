@@ -21,7 +21,7 @@ def test_fixed_envelope_preserves_old_archive_and_restores_full_history():
     assert len(raw)==522240<524288 and len(p.persistent_archive_files(raw)[0])==12
     assert old==p.activation_archive_files(files[p.PERSISTENT_INNER])
     logical=dict(resume=p.maintenance_resume(),persistent_source=proof,other='retained')
-    manifest=dict(schema='lhq-journal-growth-manifest/v18',inputs=p.encode_manifest_inputs(logical),
+    manifest=dict(schema='lhq-journal-growth-manifest/v19',inputs=p.encode_manifest_inputs(logical),
         resume=p.encode_maintenance_resume(logical['resume'],proof))
     assert p.decode_manifest_inputs(manifest,previous)==logical
     assert len(DUMP(manifest['resume']))<len(DUMP(logical['resume']))
@@ -73,7 +73,7 @@ def test_rehashed_old_failure_cannot_become_success_or_different_source(fault):
 def test_fixed_history_reference_rejects_loss_or_substitution(fault):
     proof=source();logical=dict(resume=p.maintenance_resume(),persistent_source=proof)
     previous=p.legacy_maintenance_resume()
-    manifest=dict(schema='lhq-journal-growth-manifest/v18',inputs=p.encode_manifest_inputs(logical),
+    manifest=dict(schema='lhq-journal-growth-manifest/v19',inputs=p.encode_manifest_inputs(logical),
         resume=p.encode_maintenance_resume(logical['resume'],proof))
     if fault=='reference':manifest['resume']['previous_reference']['field']='manifest.inputs'
     elif fault=='member':manifest['resume']['previous_reference']['member']='other'
@@ -104,8 +104,8 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
 def test_all_sixteen_obligations_and_six_additional_pools_remain_charged(monkeypatch):
     priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     rows=p._capacity_rows(priors,p.diagnostic_retention())
-    assert sum(row['bytes'] for row in rows)==20809*1048576
-    assert sum(row['inodes'] for row in rows)==6224
+    assert sum(row['bytes'] for row in rows)==21777*1048576
+    assert sum(row['inodes'] for row in rows)==6272
     costs=p.maintenance_commitments()
     assert len(costs['generations'])==16 and costs['released_or_refunded'] is False
     if d:assert costs==d._maintenance_commitments()

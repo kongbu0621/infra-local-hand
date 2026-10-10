@@ -29,9 +29,9 @@ def test_fixed_triple_has_distinct_original_truth_and_nonrefundable_cost(monkeyp
         assert raw['wait']['status'] == (255, 3, 3, 3)[index]
         assert raw['real_task_execution']['status'] == 'UNKNOWN'
     charges = [p.commitment(prior, index=index) for index, prior in enumerate(priors)]
-    assert sum(row['logical_bytes'] for row in charges) + c.LIMITS['total_guest_admission_bytes'] == 1447034880
-    assert sum(row['logical_inodes'] for row in charges) + c.LIMITS['total_guest_admission_inodes'] == 82560
-    assert sum(row['cpu_seconds'] for row in charges) + c.LIMITS['total_cpu_seconds'] == 10450
+    assert sum(row['logical_bytes'] for row in charges) + c.LIMITS['total_guest_admission_bytes'] == 1736441856
+    assert sum(row['logical_inodes'] for row in charges) + c.LIMITS['total_guest_admission_inodes'] == 99072
+    assert sum(row['cpu_seconds'] for row in charges) + c.LIMITS['total_cpu_seconds'] == 12540
     assert all(row['released_or_refunded'] is False for row in charges)
 
 
@@ -108,8 +108,8 @@ def test_fifteen_original_reader_checks_each_profile(tmp_path, monkeypatch, inde
 def test_triple_quiescence_exact_order_and_four_carrier_bound(monkeypatch, change):
     priors, _ = triple_fixture(monkeypatch, d); context = context_v2()
     values = [quiescence(prior, context) for prior in priors]
-    assert d._prior_concurrency_bound(context) == dict(memory_bytes=5368709120, pids=640)
-    assert d.LIMITS['peak_memory_bytes'] == 2624 * 1048576 and d.LIMITS['peak_pids'] == 1160
+    assert d._prior_concurrency_bound(context) == dict(memory_bytes=6442450944, pids=768)
+    assert d.LIMITS['peak_memory_bytes'] == 5248 * 1048576 and d.LIMITS['peak_pids'] == 2320
     if change == 'second_loaded':
         values[1]['branch'] = 'LOADED_TERMINAL'
         for row in values[1]['observations']:

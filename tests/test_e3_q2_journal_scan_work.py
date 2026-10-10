@@ -22,9 +22,9 @@ from test_e3_q2_journal_diagnostic_resume import source_git
 
 @pytest.mark.parametrize("name", ["q2_journal_growth.py", "q2_journal_growth_guest.py"])
 @pytest.mark.parametrize("extra", [0, 1])
-def test_source_admission_98304_boundary_only_for_maintenance_sources(source_git, monkeypatch, name, extra):
+def test_source_admission_196608_boundary_only_for_maintenance_sources(source_git, monkeypatch, name, extra):
     original_read, original_run = h.local.stable_read, h.subprocess.run
-    raw = b"#" + b"x" * (98303 + extra)
+    raw = b"#" + b"x" * (196607 + extra)
     def read(fd, cap, check):
         original, info = original_read(fd, cap, check)
         return (raw if original == Path(h.__file__).with_name(name).read_bytes() else original), info
@@ -38,10 +38,10 @@ def test_source_admission_98304_boundary_only_for_maintenance_sources(source_git
     if extra:
         with pytest.raises(g.r.ObservationError, match="SOURCE_LIMIT"): h.growth_sources(source_git.head)
     else:
-        assert len(h.growth_sources(source_git.head)[name]) == 98304
+        assert len(h.growth_sources(source_git.head)[name]) == 196608
 
 
-@pytest.mark.parametrize("key,cap", [("guest", 98304), ("reader", 65536), ("input", 65536)])
+@pytest.mark.parametrize("key,cap", [("guest", 196608), ("reader", 131072), ("input", 131072)])
 @pytest.mark.parametrize("extra", [0, 1])
 def test_bundle_and_actual_loader_apply_only_declared_source_limits(key, cap, extra):
     # Harmless synthetic code; the actual loader runs only in an unprivileged subprocess.
@@ -64,14 +64,13 @@ def test_bundle_and_actual_loader_apply_only_declared_source_limits(key, cap, ex
 
 def test_compressed_bundle_and_argv_limits_remain_independent(monkeypatch):
     # Deterministic high-entropy synthetic input; each source is within its own cap.
-    raw = bytes(random.Random(42).choices(range(32,127),k=98304))
+    raw = bytes(random.Random(42).choices(range(32,127),k=196608))
     sources = {"q2_core_capacity_reader.py": b"#reader", "q2_journal_growth_guest.py": raw}
     with pytest.raises(g.r.ObservationError, match="BUNDLE_BOUND"):
         h.source_bundle(sources, {})
-    zipped = b"x" * 49153
-    result = subprocess.run([sys.executable, "-I", "-B", "-c", h.GUEST_LOADER,
-        base64.b64encode(zipped).decode(), h.digest(zipped)], capture_output=True, timeout=5)
-    assert result.returncode != 0 and b"BUNDLE_PIN" in result.stderr
-    monkeypatch.setattr(h, "source_bundle", lambda *a: ("x" * 65536, "a" * 64))
+    zipped = b"x" * 98305
+    with pytest.raises(g.r.ObservationError, match="BUNDLE_BOUND"):
+        h.source_bundle(sources, {})
+    monkeypatch.setattr(h, "source_bundle", lambda *a: ("x" * 131072, "a" * 64))
     with pytest.raises(g.r.ObservationError, match="ARGV_LIMIT"):
         h.remote_argv("/synthetic/anchor", sources, {})

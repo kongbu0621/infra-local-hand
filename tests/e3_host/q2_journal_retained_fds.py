@@ -12,9 +12,9 @@ import socket
 import stat
 import time
 
-LIMIT = 128
+LIMIT = 256
 MAX_CHECKS = 64
-IPC_LIMIT = 2 * 1048576
+IPC_LIMIT = 4 * 1048576
 META = ('dev', 'ino', 'mode', 'uid', 'gid', 'nlink', 'size', 'blocks', 'mtime_ns', 'ctime_ns')
 ACTIVE = []
 

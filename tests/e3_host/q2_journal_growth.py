@@ -21,7 +21,10 @@ from e3_host import q2_journal_retained_fds as custody
 from e3_host.q2_journal_growth_guest import ProcessIdentity
 from e3_host.q2_journal_growth_guest import (identity,stable_identity,validate_file,
 write_all,hash_fd,proc_start,proc_bytes,growth_descriptor,bind_window,
-control_limits,guest_startup_assurance,validate_startup_assurance,REPORT_SCHEMA)
+control_limits,guest_startup_assurance,validate_startup_assurance,REPORT_SCHEMA,
+RESOURCE_LEVEL,STREAM_LIMIT,DIAGNOSTIC_LIMIT,RECORD_LIMIT,CONTROL_AS_LIMIT,
+CONTROL_FD_LIMIT,MANAGEMENT_CPU_SECONDS,MANAGEMENT_RSS_BYTES,WINDOW_SECONDS,
+CHANGE_SECONDS,stream_diagnostic,bounded_diagnostic,error_diagnostic)
 local=prior.local
 require,canonical,digest=prior.require,prior.canonical,prior.digest
 R="10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
@@ -101,13 +104,17 @@ READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 SESSION="lhqjgrow-20261010d"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
-BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=320*MIB,576*MIB,8*MIB
-HOST_BYTES,HOST_INODES=20745*MIB,6208
+BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=640*MIB,1152*MIB,16*MIB
+# Preserve historical commitments. Reserve only the added current backup,
+# image and capture headroom; a minimum-free check is not an upper limit.
+HOST_HEADROOM_BYTES=(BACKUP_CAP-320*MIB)+(IMAGE_CAP-576*MIB)+(CAPTURE_CAP-8*MIB)
+HOST_HEADROOM_INODES=32
+HOST_BYTES,HOST_INODES=20745*MIB+HOST_HEADROOM_BYTES,6208+HOST_HEADROOM_INODES
 # Additional host descriptors from preflight through receipt: post transport
 # peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
 # Three more slots cover bounded identity/usage reads. This is admission only;
 # it neither releases a retained identity nor makes a consumed window reusable.
-HOST_FD_LIMIT,HOST_FD_RESERVE=128,20
+HOST_FD_LIMIT,HOST_FD_RESERVE=CONTROL_FD_LIMIT,20
 def host_fd_admission(fd,check,stage):
  check()
  reserved=[]
@@ -148,10 +155,10 @@ CAPACITY_PINS={
 "receipt.json":(1807,"575e74006d530fd562a67d66d5ce066a8e941d914da1f84bec2eb839b7ee4270"),
 }
 class Window(local.Deadline):
- def remaining(self,limit=900):
+ def remaining(self,limit=WINDOW_SECONDS):
   return super().remaining(limit)
  def change(self):
-  self.remaining(780)
+  self.remaining(CHANGE_SECONDS)
 class Sequence:
  def __init__(self,check,record):
   self.state="LOCAL_CHECKED"
@@ -189,8 +196,12 @@ class Store:
  def capacity(self):
   self.check()
   value=os.fstatvfs(self.fd)
-  require(value.f_bavail*value.f_frsize>=HOST_BYTES and value.f_favail>=HOST_INODES,
-"GROWTH_HOST_CAPACITY")
+  actual=dict(bytes=value.f_bavail*value.f_frsize,inodes=value.f_favail)
+  if actual["bytes"]<HOST_BYTES or actual["inodes"]<HOST_INODES:
+   error=prior.r.ObservationError("GROWTH_HOST_CAPACITY")
+   error.diagnostic=dict(operation="capture_capacity",actual=actual,
+    required=dict(bytes=HOST_BYTES,inodes=HOST_INODES),resource_level=RESOURCE_LEVEL)
+   raise error
  def create(self,suffix):
   require(suffix in NAMES and suffix not in self.opened,"GROWTH_OUTPUT_NAME")
   self.check()
@@ -212,11 +223,11 @@ follow_symlinks=False)),"GROWTH_OUTPUT_DRIFT")
     count+=1
     logical+=info.st_size
     allocated+=info.st_blocks*512
-  require(max(logical,allocated)<=CAPTURE_CAP and count<=32,"GROWTH_CAPTURE_BUDGET")
+  require(max(logical,allocated)<=CAPTURE_CAP and count<=64,"GROWTH_CAPTURE_BUDGET")
   return dict(logical_bytes=logical,allocated_bytes=allocated,inodes=count)
  def put(self,suffix,raw):
-  require(type(raw) is bytes and len(raw)<=(MIB if suffix.endswith(("stdout","stderr"))
-else 65536),"GROWTH_OUTPUT_LIMIT")
+  require(type(raw) is bytes and len(raw)<=(STREAM_LIMIT if suffix.endswith(("stdout","stderr"))
+else RECORD_LIMIT),"GROWTH_OUTPUT_LIMIT")
   fd=self.create(suffix)
   write_all(fd,raw,self.check)
   os.fsync(fd)
@@ -224,11 +235,11 @@ else 65536),"GROWTH_OUTPUT_LIMIT")
   return fd
  def event(self,value):
   raw=canonical(value)
-  require(len(raw)<=65536,"GROWTH_EVENT_LIMIT")
+  require(len(raw)<=RECORD_LIMIT,"GROWTH_EVENT_LIMIT")
   fd=self.opened.get("events.jsonl")
   if fd is None:
    fd=self.create("events.jsonl")
-  require(os.fstat(fd).st_size+len(raw)<=MIB,"GROWTH_EVENTS_LIMIT")
+  require(os.fstat(fd).st_size+len(raw)<=STREAM_LIMIT,"GROWTH_EVENTS_LIMIT")
   write_all(fd,raw,self.check)
   os.fsync(fd)
   self.budget()
@@ -312,9 +323,9 @@ def vm_limits():
   for key,limits in VM_LIMITS.items():
    resource.setrlimit(key,limits)
 class Command:
- def __init__(self,argv,check,*,executable=None,pass_fds=(),limit=MIB,limits=True,
+ def __init__(self,argv,check,*,executable=None,pass_fds=(),limit=STREAM_LIMIT,limits=True,
 stderr_limit=None):
-  require(0<limit<=MIB,"GROWTH_STREAM_CAP")
+  require(0<limit<=STREAM_LIMIT,"GROWTH_STREAM_CAP")
   check()
   self.check=check
   self.caps=dict(stdout=limit,stderr=limit if stderr_limit is None else stderr_limit)
@@ -997,19 +1008,19 @@ binding=binding)
   raise
 GUEST_LOADER="""import base64,hashlib,json,sys,types,zlib
 b=base64.b64decode(sys.argv[1],validate=True)
-if len(b)>49152 or hashlib.sha256(b).hexdigest()!=sys.argv[2]: raise ValueError('BUNDLE_PIN')
-z=zlib.decompressobj(); r=z.decompress(b,393217)
-if len(r)>393216 or not z.eof or z.unconsumed_tail or z.unused_data: raise ValueError('BUNDLE_BOUND')
+if len(b)>98304 or hashlib.sha256(b).hexdigest()!=sys.argv[2]: raise ValueError('BUNDLE_PIN')
+z=zlib.decompressobj(); r=z.decompress(b,786433)
+if len(r)>786432 or not z.eof or z.unconsumed_tail or z.unused_data: raise ValueError('BUNDLE_BOUND')
 d=json.loads(r)
 if type(d) is not dict or set(d)!={'encoding','reader','guest','input'} or d['encoding']!='utf8': raise ValueError('BUNDLE_ENCODING')
 p=types.ModuleType('e3_host'); p.__path__=[]; sys.modules['e3_host']=p
 for key,name in [('reader','q2_core_capacity_reader'),('guest','q2_journal_growth_guest')]:
  s=d[key].encode('utf-8')
- if not 0<len(s)<=(98304 if key=='guest' else 65536): raise ValueError('SOURCE_BOUND')
+ if not 0<len(s)<=(196608 if key=='guest' else 131072): raise ValueError('SOURCE_BOUND')
  m=types.ModuleType('e3_host.'+name); m.__package__='e3_host'; sys.modules[m.__name__]=m; setattr(p,name,m)
  exec(compile(s,'<'+name+'>','exec'),m.__dict__)
 v=d['input'].encode('utf-8')
-if len(v)>65536: raise ValueError('INPUT_BOUND')
+if len(v)>131072: raise ValueError('INPUT_BOUND')
 sys.exit(m.entry(v))
 """
 def source_bundle(sources,descriptor):
@@ -1017,13 +1028,13 @@ def source_bundle(sources,descriptor):
  value={"input":canonical(descriptor)}
  value.update({key:sources[name] for key,name in
 (("reader","q2_core_capacity_reader.py"),("guest","q2_journal_growth_guest.py"))})
- require(all(type(raw) is bytes and 0<len(raw)<=(98304 if key=="guest" else 65536)
+ require(all(type(raw) is bytes and 0<len(raw)<=(196608 if key=="guest" else 131072)
  for key,raw in value.items()),"GROWTH_BUNDLE_INPUT")
  # Preserve source bytes via strict UTF-8, avoiding base64 inside compressed JSON.
  raw=canonical(dict(encoding="utf8",**{key:data.decode("utf-8","strict") for key,data in value.items()}))
- require(len(raw)<=393216,"GROWTH_BUNDLE_BOUND")
+ require(len(raw)<=786432,"GROWTH_BUNDLE_BOUND")
  compressed=zlib.compress(raw,9)
- require(len(compressed)<=49152,"GROWTH_BUNDLE_BOUND")
+ require(len(compressed)<=98304,"GROWTH_BUNDLE_BOUND")
  return base64.b64encode(compressed).decode("ascii"),digest(compressed)
 def remote_argv(anchor_path,sources,descriptor):
  encoded,sha=source_bundle(sources,descriptor)
@@ -1031,7 +1042,7 @@ def remote_argv(anchor_path,sources,descriptor):
 "PATH=/usr/bin:/bin","LANG=C","LC_ALL=C","/usr/bin/python3","-I","-B","-c",
 GUEST_LOADER,encoded,sha]
  argv=local.make_argv(anchor_path,b"# unused")[:-1]+[shlex.join(command)]
- require(sum(len(word.encode())+1 for word in argv)<=65536,"GROWTH_ARGV_LIMIT")
+ require(sum(len(word.encode())+1 for word in argv)<=131071,"GROWTH_ARGV_LIMIT")
  return argv
 class MaintenanceTransport:
  def __init__(self,anchor,store,argv,phase,nonce,source_binding_sha256,original_boot_id,
@@ -1056,7 +1067,7 @@ check,*,validate=None,popen=subprocess.Popen):
    env={key:os.environ[key] for key in ("HOME","USER","LOGNAME") if key in os.environ}
    env.update(PATH="/usr/bin:/bin",LANG="C",LC_ALL="C")
    require(sum(len(x.encode())+1 for x in argv)+
-sum(len((k+"="+v).encode())+1 for k,v in env.items())<=65536,"GROWTH_ARGV_LIMIT")
+sum(len((k+"="+v).encode())+1 for k,v in env.items())<=131071,"GROWTH_ARGV_LIMIT")
    stage="spawn"
    self.process=popen(argv,executable=f"/proc/self/fd/{anchor.ssh}",pass_fds=(anchor.ssh,),
 stdin=subprocess.PIPE if phase=="pre" else subprocess.DEVNULL,
@@ -1080,13 +1091,13 @@ stage=stage,process_created=self.process is not None)
   self.check()
   for key,_ in self.selector.select(0.05):
    name=key.data
-   raw=os.read(key.fileobj.fileno(),min(65536,MIB+1-len(self.output[name])))
+   raw=os.read(key.fileobj.fileno(),min(65536,STREAM_LIMIT+1-len(self.output[name])))
    self.check()
    if not raw:
     self.eof[name]=True
     self.selector.unregister(key.fileobj)
    else:
-    room=MIB-len(self.output[name])
+    room=STREAM_LIMIT-len(self.output[name])
     part=raw[:room]
     write_all(self.fds[name],part,self.check)
     self.output[name].extend(part)
@@ -1095,7 +1106,7 @@ stage=stage,process_created=self.process is not None)
  def seal(self):
   for name,fd in self.fds.items():
    os.fsync(fd)
-   require(hash_fd(fd,MIB,self.check)==dict(bytes=len(self.output[name]),
+   require(hash_fd(fd,STREAM_LIMIT,self.check)==dict(bytes=len(self.output[name]),
 sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
    os.lseek(fd,0,os.SEEK_END)
   self.store.budget()
@@ -1103,10 +1114,13 @@ sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
   """Summarize captured bytes without another read or wait."""
   raw=bytes(self.output["stderr"])
   result=dict(operation="receive_report",phase=self.phase,
- stderr=dict(bytes=len(raw),sha256=digest(raw),eof=self.eof["stderr"]))
-  if not 0<len(raw)<=32768:return result
+ resource_level=RESOURCE_LEVEL,
+ **{name:stream_diagnostic(data,self.eof[name]) for name,data in self.output.items()})
+  if not 0<len(raw)<=RECORD_LIMIT:
+   result["guest_failure_parse"]=dict(status="EMPTY" if not raw else "OVERSIZE",limit=RECORD_LIMIT)
+   return result
   try:
-   value=prior.r.parse(raw,32768)
+   value=prior.r.parse(raw,RECORD_LIMIT)
    require(type(value) is dict and canonical(value)==raw
  and value.get("schema")==REPORT_SCHEMA and value.get("session")==SESSION
  and value.get("phase")==self.phase and value.get("nonce")==self.nonce
@@ -1116,13 +1130,11 @@ sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
  for key in ("stage","reason")),"GROWTH_FAILURE_REASON")
    detail=value.get("diagnostic")
    require(type(detail) is dict,"GROWTH_FAILURE_DIAGNOSTIC")
-   # Full runtime proof stays in stderr.
-   detail={key:detail[key] for key in ("errno","error_type","context","path_lookup") if key in detail}
-   require(len(canonical(detail))<=4096,"GROWTH_FAILURE_DIAGNOSTIC_LIMIT")
+   require(len(canonical(detail))<=DIAGNOSTIC_LIMIT,"GROWTH_FAILURE_DIAGNOSTIC_LIMIT")
    result["guest_failure"]=dict(stage=value["stage"],reason=value["reason"],diagnostic=detail)
-  except (ValueError,TypeError,RecursionError,prior.r.ObservationError):
-   pass
-  return result
+  except (ValueError,TypeError,RecursionError,prior.r.ObservationError) as error:
+   result["guest_failure_parse"]=dict(status="REJECTED",error=error_diagnostic(error))
+  return bounded_diagnostic(result)
  def receive_report(self):
   require(self.report is None,"GROWTH_REPORT_ONCE")
   try:
@@ -1130,7 +1142,7 @@ sha256=digest(bytes(self.output[name]))),"GROWTH_STREAM_REREAD")
     require(not self.eof["stdout"],"GROWTH_REPORT_MISSING")
     self.pump()
    raw=bytes(self.output["stdout"]).split(b"\n",1)[0]+b"\n"
-   value=prior.r.parse(raw,MIB)
+   value=prior.r.parse(raw,STREAM_LIMIT)
    require(canonical(value)==raw and value.get("schema")==REPORT_SCHEMA
 and value.get("session")==SESSION and value.get("phase")==self.phase
 and value.get("nonce")==self.nonce and value.get("source_binding_sha256")==self.source_sha
@@ -1147,6 +1159,8 @@ and ((boot==self.old_boot) if self.phase=="pre" else
    return value
   except BaseException as error:
    error.growth_transport=self
+   error.diagnostic=bounded_diagnostic(dict(error_diagnostic(error),
+    **getattr(error,"diagnostic",{}),transport=self.captured_failure()))
    if isinstance(error,prior.r.ObservationError) and str(error)=="GROWTH_REPORT_MISSING":
     error.diagnostic=self.captured_failure()
    raise
@@ -1372,7 +1386,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  for name in names:
   fd=os.open(Path(__file__).with_name(name),os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)
   try:
-   raw,_=local.stable_read(fd,524288,lambda:None)
+   raw,_=local.stable_read(fd,1048576,lambda:None)
   finally:
    os.close(fd)
   require(raw==git("show",expected+":tests/e3_host/"+name),"GROWTH_SOURCE_DRIFT")
@@ -1381,8 +1395,8 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
    require(raw==git("show",approved+":tests/e3_host/"+name),
 "GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw
- require(all(len(sources[name])<=98304 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
- require(len(sources["q2_journal_retained_fds.py"])<=16384,"GROWTH_CUSTODY_SOURCE_LIMIT")
+ require(all(len(sources[name])<=196608 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
+ require(len(sources["q2_journal_retained_fds.py"])<=32768,"GROWTH_CUSTODY_SOURCE_LIMIT")
  return sources
 class GrowthAnchor(prior.Anchor):
  custody=None
@@ -1474,24 +1488,28 @@ and len({(os.fstat(x).st_dev,os.fstat(x).st_ino) for _,x,_ in self.held})==len(s
     self.absent("."+fixed["session"]+"."+suffix)
   history.build_previous_maintenance(files)
 def _check_management_budget(cpu,rss,*,stage,cpu_limit,components):
- if cpu<=cpu_limit and rss<=512*MIB:
+ if cpu<=cpu_limit and rss<=MANAGEMENT_RSS_BYTES:
   return
  error=prior.r.ObservationError("GROWTH_MANAGEMENT_BUDGET")
+ scale=1000000000 if stage=="management_usage" else 1
+ components={key.removesuffix("_seconds")+"_nanoseconds" if key.endswith("_seconds") else key:
+ int(value*1000000000) if key.endswith("_seconds") else value for key,value in components.items()}
  error.diagnostic=dict(operation="management_budget",stage=stage,
-cpu=dict(actual=cpu,limit=cpu_limit,unit="seconds" if stage=="management_usage" else "nanoseconds",
+cpu=dict(actual=int(cpu*scale),limit=int(cpu_limit*scale),unit="nanoseconds",
 exceeded=cpu>cpu_limit),
-rss=dict(actual=rss,limit=512*MIB,unit="bytes",exceeded=rss>512*MIB),components=components)
+rss=dict(actual=rss,limit=MANAGEMENT_RSS_BYTES,unit="bytes",exceeded=rss>MANAGEMENT_RSS_BYTES),
+resource_level=RESOURCE_LEVEL,components=components)
  raise error
 def _usage_failure(item,stage,error):
- # Reuse the command identity already held in memory. Never include argv,
- # raw proc content, exception text/paths, or perform another observation.
+ # Reuse held identity and exception details for the private report. Never
+ # read argv or raw proc content again, or perform another observation.
  binding=getattr(item,"identity",{})
  if type(binding) is not dict:binding={}
  argv_sha=binding.get("argv_sha256")
  start=binding.get("starttime")
  reason=error.args[0] if error.args else None
  number=getattr(error,"errno",None)
- return dict(pid=item.process.pid,stage=stage,error_type=type(error).__name__[:64],
+ return dict(pid=item.process.pid,stage=stage,error=error_diagnostic(error),error_type=type(error).__name__[:64],
  errno=number if type(number) is int else None,
  reason=reason if type(reason) is str and re.fullmatch(r"GROWTH_[A-Z0-9_]{1,80}",reason) else None,
  identity=dict(argv_sha256=argv_sha if type(argv_sha) is str and re.fullmatch(r"[0-9a-f]{64}",argv_sha) else None,
@@ -1509,7 +1527,7 @@ and all(fields[i].isdigit() and len(fields[i])<=20 for i in (11,12,19,21)),"GROW
  return start,(int(fields[11])+int(fields[12]))/os.sysconf("SC_CLK_TCK"),int(fields[21])*os.sysconf("SC_PAGE_SIZE")
 def management_usage():
  live=[item for item in COMMANDS if not item.is_vm and item.process.poll() is None]
- require(len(live)+len(custody.ACTIVE)<=8,"GROWTH_CHILD_BUDGET")
+ require(len(live)+len(custody.ACTIVE)<=16,"GROWTH_CHILD_BUDGET")
  own,children=(resource.getrusage(kind) for kind in (resource.RUSAGE_SELF,resource.RUSAGE_CHILDREN))
  cpu=own.ru_utime+own.ru_stime+children.ru_utime+children.ru_stime
  rss=own.ru_maxrss*1024
@@ -1537,7 +1555,7 @@ and (binding.get("starttime") is None or type(binding["starttime"]) is int and b
     children=current
  for item in custody.ACTIVE:
   used,resident=item.usage();cpu+=used;rss+=resident
- _check_management_budget(cpu,rss,stage="management_usage",cpu_limit=120,
+ _check_management_budget(cpu,rss,stage="management_usage",cpu_limit=MANAGEMENT_CPU_SECONDS,
 components=dict(self_cpu_seconds=own.ru_utime+own.ru_stime,
 exited_children_cpu_seconds=children.ru_utime+children.ru_stime,
 self_peak_rss_bytes=own.ru_maxrss*1024,live_non_vm_rss_bytes=rss-own.ru_maxrss*1024,
@@ -1558,7 +1576,7 @@ class Usage:
   cpu=self.previous["cpu_nanoseconds"]+int(value["cpu_seconds"]*1000000000+1)
   children_rss=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024
   rss=max(self.last["rss_peak_bytes"],value["rss_upper_observation_bytes"],children_rss)
-  _check_management_budget(cpu,rss,stage="usage_sample",cpu_limit=120000000000,
+  _check_management_budget(cpu,rss,stage="usage_sample",cpu_limit=MANAGEMENT_CPU_SECONDS*1000000000,
 components=dict(previous_cpu_nanoseconds=self.previous["cpu_nanoseconds"],
 current_cpu_nanoseconds=cpu-self.previous["cpu_nanoseconds"],
 previous_rss_peak_bytes=self.previous["rss_peak_bytes"],last_rss_peak_bytes=self.last["rss_peak_bytes"],
@@ -1582,7 +1600,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v18",session=SESSION,R=R,A=PP_A,C=PP_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v19",session=SESSION,R=R,A=PP_A,C=PP_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1615,7 +1633,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v18",R=R,A=PP_A,C=PP_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v19",R=R,A=PP_A,C=PP_C,D=self.commit,
 nonce=self.nonce,resume=history.encode_maintenance_resume(history.maintenance_resume(),self.frozen["source_binding"]["persistent_source"]),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=history.encode_manifest_inputs(self.frozen["source_binding"]),
 custody_binding=self.anchor.custody.binding,
@@ -1740,11 +1758,11 @@ new_vm=self.new_vm.recheck(),image_identities=images.image_keys())
   except (Exception,KeyboardInterrupt) as error:
    self.result.update(state="STOP_AND_RETAIN",reason=prior.safe_reason(error),
 error_type=type(error).__name__,errno=getattr(error,"errno",None),
-diagnostic=getattr(error,"diagnostic",{}))
+diagnostic=bounded_diagnostic(dict(error_diagnostic(error),**getattr(error,"diagnostic",{}))))
    failed=getattr(error,"growth_result",None)
    if failed is not None:
     self.result["failed_tool"]=dict(returncode=failed["returncode"],eof=failed["eof"],
-streams={name:dict(bytes=len(failed[name]),sha256=digest(failed[name]))
+streams={name:stream_diagnostic(failed[name])
 for name in ("stdout","stderr")})
   self.result.update(last_step=self.seq.state,started=sorted(self.seq.started),
 clock_origins_ns=self.window.origins)
@@ -1809,8 +1827,8 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   usage=Usage(None if handoff is None else handoff["usage"])
   window=Window()
   bind_window(window,args.window_binding.encode("ascii") if args.window_binding else None)
-  resource.setrlimit(resource.RLIMIT_AS,(256*MIB,VM_LIMITS[resource.RLIMIT_AS][1]))
-  resource.setrlimit(resource.RLIMIT_NOFILE,(128,VM_LIMITS[resource.RLIMIT_NOFILE][1]))
+  resource.setrlimit(resource.RLIMIT_AS,(CONTROL_AS_LIMIT,VM_LIMITS[resource.RLIMIT_AS][1]))
+  resource.setrlimit(resource.RLIMIT_NOFILE,(CONTROL_FD_LIMIT,VM_LIMITS[resource.RLIMIT_NOFILE][1]))
   require(args.q1_sources is not None,"GROWTH_Q1_SOURCES_REQUIRED")
   q1_sources=prior.r.parse(args.q1_sources.encode("ascii"),65536)
   frozen=freeze_growth_inputs(inputs,args.frame,args.plan_archive,args.archives_dir,q1_sources=q1_sources)
@@ -1861,7 +1879,7 @@ child=anchor.custody_exit,usage=final_usage)
   marked=maintenance is not None and (maintenance.result.get("marker_created",False) or "consumed.json" in maintenance.store.opened)
   print(canonical(dict(state="UNKNOWN" if marked else "BLOCKED",reason=prior.safe_reason(error),
 error_type=type(error).__name__,errno=getattr(error,"errno",None),marker_created=marked,
-diagnostic=getattr(error,"diagnostic",{}),
+diagnostic=bounded_diagnostic(dict(error_diagnostic(error),**getattr(error,"diagnostic",{}))),
 management_usage=None if usage is None else usage.last,
 window_binding=getattr(window,"binding",dict(origins=window.origins) if window else None),
 ssh_requests=maintenance.result["ssh_requests"] if maintenance else 0)).decode(),end="")

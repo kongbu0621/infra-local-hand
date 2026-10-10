@@ -74,9 +74,9 @@ ROLES = {
 }
 FIELD_PATHS = ("field/loader.py", "field/bootstrap.py", "field/dispatcher.py")
 FIELD_LIMITS = {
-    "field/loader.py": 8192,
-    "field/bootstrap.py": 49152,
-    "field/dispatcher.py": 524288,
+    "field/loader.py": 16384,
+    "field/bootstrap.py": 98304,
+    "field/dispatcher.py": 1048576,
 }
 
 

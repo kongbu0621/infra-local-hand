@@ -115,7 +115,11 @@ def _exact(value, fields, code):
 
 
 def _integer(value, low=0, high=2**63 - 1, code="CORE_DISPATCH_INTEGER"):
-    _require(type(value) is int and low <= value <= high, code)
+    if type(value) is not int or not low <= value <= high:
+        error = DispatchError(code)
+        error.diagnostic = dict(operation="integer_range", actual=value[:512] if type(value) is str else value if type(value) in (int,bool) else None,
+            actual_type=type(value).__name__, minimum=low, maximum=high, resource_level=2)
+        raise error
     return value
 
 
@@ -338,48 +342,48 @@ PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v3"
 HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
 SESSION_SCHEMA = "local-hand-q2-core-dispatch-session/v2"
 APPROVED_INPUTS_PATH = "private/approved-inputs.json"
-APPROVED_INPUTS_LIMIT = 1048576
+APPROVED_INPUTS_LIMIT = 2097152
 REMOTE_ALIASES = {"shell": "/bin/bash", "sudo": "/usr/bin/sudo", "env": "/usr/bin/env",
     "systemd_run": "/usr/bin/systemd-run", "python": "/usr/bin/python3"}
 PROGRAM_FIELDS = {"path", "dev", "ino", "mode", "uid", "gid", "nlink", "bytes", "sha256"}
 ADMISSION_COMPONENTS = _fields('source_relation policy_basis historical_capacity_obligations retained_preparation reconciliation')
 
 NS = 1_000_000_000
-REMOTE_FINAL_RESERVE_NS = 45 * NS
-CASE_GATE_NS = 315 * NS
-PREPARATION_NS = 150 * NS
-OWNER_NS = 120 * NS
-MANIFEST_LIMIT = 1_048_576
-MEMBER_LIMIT = 16_777_216
-MEMBER_COUNT_LIMIT = 4096
-FRAME_LIMIT = 58_716_144
-STDERR_LIMIT = 4_194_304
-CASE_BYTES_LIMIT = 16_777_216
+REMOTE_FINAL_RESERVE_NS = 90 * NS
+CASE_GATE_NS = 630 * NS
+PREPARATION_NS = 300 * NS
+OWNER_NS = 240 * NS
+MANIFEST_LIMIT = 2097152
+MEMBER_LIMIT = 33554432
+MEMBER_COUNT_LIMIT = 8192
+FRAME_LIMIT = 117432304
+STDERR_LIMIT = 8388608
+CASE_BYTES_LIMIT = 33554432
 
 LIMITS = {
-    "carrier_seconds": 900, "remote_unit_seconds": 800,
-    "guest_duration_cap_seconds": 750, "preparation_seconds": 150,
-    "owner_seconds": 120, "case_gate_seconds": 315,
-    "hello_frame_bytes": 4112, "bind_frame_bytes": 4112,
-    "package_bytes": 33550320, "carrier_input_bytes": 33554432,
+    "carrier_seconds": 1800, "remote_unit_seconds": 1600,
+    "guest_duration_cap_seconds": 1500, "preparation_seconds": 300,
+    "owner_seconds": 240, "case_gate_seconds": 630,
+    "hello_frame_bytes": 8208, "bind_frame_bytes": 8208,
+    "package_bytes": 67100656, "carrier_input_bytes": 67108864,
     "output_package_bytes": FRAME_LIMIT, "carrier_stderr_bytes": STDERR_LIMIT,
-    "carrier_output_bytes": 62914560, "host_capture_bytes": 67108864,
-    "host_capture_inodes": 16, "carrier_cpu_seconds": 800,
-    "carrier_memory_bytes": 1073741824, "carrier_pids": 128,
-    "carrier_audit_bytes": 8388608, "carrier_audit_inodes": 512,
-    "shared_bytes": 67108864, "shared_inodes": 4096,
-    "case_physical_bytes": 37748736, "case_physical_inodes": 2944,
-    "all_case_physical_bytes": 113246208, "all_case_physical_inodes": 8832,
-    "case_admission_bytes": 71303168, "case_admission_inodes": 3968,
-    "all_case_admission_bytes": 213909504, "all_case_admission_inodes": 11904,
-    "all_case_cpu_seconds": 1290, "total_cpu_seconds": 2090,
-    "all_case_output_bytes": 50331648, "peak_memory_bytes": 2751463424,
-    "peak_pids": 1160, "job_units": 15, "controller_units": 6,
+    "carrier_output_bytes": 125829120, "host_capture_bytes": 134217728,
+    "host_capture_inodes": 32, "carrier_cpu_seconds": 1600,
+    "carrier_memory_bytes": 2147483648, "carrier_pids": 256,
+    "carrier_audit_bytes": 16777216, "carrier_audit_inodes": 1024,
+    "shared_bytes": 134217728, "shared_inodes": 8192,
+    "case_physical_bytes": 75497472, "case_physical_inodes": 5888,
+    "all_case_physical_bytes": 226492416, "all_case_physical_inodes": 17664,
+    "case_admission_bytes": 142606336, "case_admission_inodes": 7936,
+    "all_case_admission_bytes": 427819008, "all_case_admission_inodes": 23808,
+    "all_case_cpu_seconds": 2580, "total_cpu_seconds": 4180,
+    "all_case_output_bytes": 100663296, "peak_memory_bytes": 5502926848,
+    "peak_pids": 2320, "job_units": 15, "controller_units": 6,
     "quota_query_units": 5, "dynamic_quota_units": 15, "native_children": 16,
-    "total_guest_physical_bytes": 188743680,
-    "total_guest_physical_inodes": 13440,
-    "total_guest_admission_bytes": 289406976,
-    "total_guest_admission_inodes": 16512,
+    "total_guest_physical_bytes": 377487360,
+    "total_guest_physical_inodes": 26880,
+    "total_guest_admission_bytes": 578813952,
+    "total_guest_admission_inodes": 33024,
 }
 OUTPUT_LIMITS = {
     "frame_bytes": FRAME_LIMIT, "manifest_bytes": MANIFEST_LIMIT,
@@ -387,10 +391,10 @@ OUTPUT_LIMITS = {
     "stderr_bytes": STDERR_LIMIT,
 }
 PACKAGE_LIMITS = {
-    "package_bytes": 33550320, "manifest_bytes": 1048576, "members": 4096,
-    "member_bytes": 16777216, "shared_allocated_bytes": 67108864,
-    "shared_entries": 4096, "carrier_audit_bytes": 8388608,
-    "carrier_audit_inodes": 512, "carrier_output_bytes": 62914560,
+    "package_bytes": 67100656, "manifest_bytes": 2097152, "members": 8192,
+    "member_bytes": 33554432, "shared_allocated_bytes": 134217728,
+    "shared_entries": 8192, "carrier_audit_bytes": 16777216,
+    "carrier_audit_inodes": 1024, "carrier_output_bytes": 125829120,
 }
 
 DIRECTORY_ROLES = _fields('reservation state authority journal capture declarations session control profile_work profile_evidence profile_temporary store_parent')
@@ -1533,7 +1537,7 @@ def _prior_concurrency_bound(context):
     memory = sum(value['memory_max'] for value in units)
     pids = sum(value['tasks_max'] for value in units)
     _require(len({value['name'] for value in units}) == 5
-        and memory == 5368709120 and pids == 640, 'CORE_PRIOR_CONCURRENCY')
+        and memory == 6442450944 and pids == 768, 'CORE_PRIOR_CONCURRENCY')
     return dict(memory_bytes=memory, pids=pids)
 
 
@@ -2004,9 +2008,9 @@ def _validate_maintenance_resume(value):
 
 
 JOURNAL_SESSION = 'lhqjgrow-20261010d'
-JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
-    'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
-    'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
+JOURNAL_FILES = {'consumed.json': 131072, 'events.jsonl': 2097152,
+    'pre.stdout': 2097152, 'pre.stderr': 2097152, 'post.stdout': 2097152,
+    'post.stderr': 2097152, 'receipt.json': 131072, 'vm.pid': 64}
 JOURNAL_SOURCE_NAMES = ('q2_journal_growth.py', 'q2_journal_growth_guest.py',
     'q2_core_capacity_capture.py', 'q2_core_capacity_reader.py', 'q2_sshd_source_capture.py',
     'q2_sshd_source_reader.py', 'q2_core_obligation_inputs.py', 'q2_core_prior_attempt.py',
@@ -2112,7 +2116,7 @@ def _validate_runtime_summaries(value,binding,nonce,boots,reports):
  and row["nonce"]==nonce and row["phase"]==phase and row["boot_id"]==boots[phase]
  and row["report_sha256"]==reports[phase]["sha256"],"GROWTH_RUNTIME_SUMMARY_BINDING")
   for name in ("runtime_sha256","commands_sha256","configs_sha256"):check.digest(row[name])
-  check.integer(row["elapsed_ns"],0,60000000000)
+  check.integer(row["elapsed_ns"],0,120000000000)
   check(type(row["parents"]) is dict and set(row["parents"])==set(binding["parents"]),"GROWTH_RUNTIME_SUMMARY_PARENTS")
   for role,item in row["parents"].items():
    check(type(item) is dict and set(item)=={"unit","control_group","invocation_id","identity"}
@@ -2141,7 +2145,7 @@ def _validate_retained_custody(value, *, implementation, nonce, source_files):
     check(value['schema']=='lhq-retained-custody/v1' and value['state']=='HELD_UNTIL_TEARDOWN'
         and value['count']==55,'CUSTODY_SCHEMA')
     for name,low,high in (('pid',2,2147483647),('starttime',1,2**63-1),('checks',1,64),
-        ('ipc_bytes',1,2097152),('cpu_nanoseconds',0,120000000000),('rss_bytes',1,536870912)):
+        ('ipc_bytes',1,4194304),('cpu_nanoseconds',0,240000000000),('rss_bytes',1,1073741824)):
         check(type(value[name]) is int and low<=value[name]<=high,'CUSTODY_BOUNDS')
     pins={'.'+row['session']+'.'+name:(size,digest) for row in previous_journal_profiles()
         for name,(size,digest) in row['pins'].items()}
@@ -2177,8 +2181,8 @@ def _validate_coordinator_completion(value, custody):
     check(type(child) is dict and set(child)=={'returncode','cpu_nanoseconds','rss_peak_bytes'}
         and type(child['returncode']) is int and child['returncode']==0,'CUSTODY_EXIT')
     check(type(usage) is dict and set(usage)=={'cpu_nanoseconds','rss_peak_bytes'},'COORDINATOR_USAGE')
-    for key,low,high in (('cpu_nanoseconds',custody['cpu_nanoseconds'],120000000000),
-        ('rss_peak_bytes',custody['rss_bytes'],536870912)):
+    for key,low,high in (('cpu_nanoseconds',custody['cpu_nanoseconds'],240000000000),
+        ('rss_peak_bytes',custody['rss_bytes'],1073741824)):
         check(type(child[key]) is int and low<=child[key]<=high
             and type(usage[key]) is int and child[key]<=usage[key]<=high,'CUSTODY_FINAL_USAGE')
     return value
@@ -2211,7 +2215,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v18'
+    check(len(canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v19'
         and value['session']=='lhqjgrow-20261010d', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
         A=PERSISTENT_PATH_A,C=PERSISTENT_PATH_C)
@@ -2264,7 +2268,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
         check.exact(row,{'bytes','sha256'},'CORE_JOURNAL_SOURCE')
-        check.integer(row['bytes'],1,16384 if name=='q2_journal_retained_fds.py' else 98304 if name.startswith('q2_journal_growth') else 524288);check.digest(row['sha256'])
+        check.integer(row['bytes'],1,32768 if name=='q2_journal_retained_fds.py' else 196608 if name.startswith('q2_journal_growth') else 1048576);check.digest(row['sha256'])
     for key in ('old_vm','new_vm'):
         row=value[key];check.exact(row,{'pid','starttime','argv_sha256'},'CORE_JOURNAL_VM')
         check.integer(row['pid'],2);check.integer(row['starttime'],1);check.digest(row['argv_sha256'])
@@ -2275,7 +2279,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         check.integer(row[0]);check.integer(row[1],1)
     check(len({tuple(row) for row in images.values()})==5,'JOURNAL_IMAGE_ALIAS')
     check.exact(value['backup'],{'bytes','sha256'},'CORE_JOURNAL_BACKUP')
-    check.integer(value['backup']['bytes'],1,335544320);check.digest(value['backup']['sha256'])
+    check.integer(value['backup']['bytes'],1,671088640);check.digest(value['backup']['sha256'])
     check(canonical(value['virtual_bytes'])==canonical(dict(before=268435456,after=536870912)),
         'JOURNAL_SIZE')
     fs=value['filesystem'];check.exact(fs,{'uuid','before_bytes','after_bytes','available'},'CORE_JOURNAL_FILESYSTEM')
@@ -2286,10 +2290,10 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
     check.exact(fs['available'],{'bytes','inodes'},'CORE_JOURNAL_CAPACITY')
     check.integer(fs['available']['bytes'],419430400);check.integer(fs['available']['inodes'],32768)
     content=value['content'];check.exact(content,{'entries','content_bytes','sha256'},'CORE_JOURNAL_CONTENT')
-    check.integer(content['entries'],1,32768);check.integer(content['content_bytes'],0,268435456);check.digest(content['sha256'])
+    check.integer(content['entries'],1,65536);check.integer(content['content_bytes'],0,536870912);check.digest(content['sha256'])
     check.exact(value['reports'],{'pre','post'},'CORE_JOURNAL_REPORTS')
     for row in value['reports'].values():
-        check.exact(row,{'bytes','sha256'},'CORE_JOURNAL_REPORT');check.integer(row['bytes'],1,1048576);check.digest(row['sha256'])
+        check.exact(row,{'bytes','sha256'},'CORE_JOURNAL_REPORT');check.integer(row['bytes'],1,2097152);check.digest(row['sha256'])
     check(value['completed_steps']==['CONSUMED','GUEST_QUIET','POWERED_OFF','BACKED_UP','IMAGE_GROWN',
         'BOOTED','FILESYSTEM_GROWN','VERIFIED'] and value['all_streams_eof'] is True,'JOURNAL_COMPLETION')
     check(type(value['transport_exits']) is list and len(value['transport_exits'])==2
@@ -2454,6 +2458,7 @@ def _validate_admission_binding(value, context):
 
 def _validate_hello_identity(hello, carrier_name):
     """Pure frozen HELLO shape/limits; callers provide one of three fixed names."""
+    factor = 2 if carrier_name == "lhqcore20261007a-carrier.service" else 1
     _check.exact(hello, _fields('schema scope loader_sha256 bootstrap_sha256 guest_boot_id guest_boottime_origin_ns guest_monotonic_origin_ns pid uid gid euid egid python carrier_unit process_limits remote_management'),
         "HELLO_FIELDS")
     _check(hello["schema"] == HELLO_SCHEMA
@@ -2480,16 +2485,16 @@ def _validate_hello_identity(hello, carrier_name):
         and unit["active_state"] == "active" and unit["sub_state"] in ("running", "start")
         and unit["restart"] == "no" and unit["kill_mode"] == "control-group"
         and unit["exit_type"] == "cgroup", "CARRIER")
-    for key, expected in {"runtime_max_usec": 800000000, "timeout_stop_usec": 30000000,
-        "memory_max": 1073741824, "memory_swap_max": 0, "tasks_max": 128,
-        "cpu_quota_per_sec_usec": 1000000}.items():
+    for key, expected in {"runtime_max_usec": (800000000 * factor), "timeout_stop_usec": (30000000 * factor),
+        "memory_max": (1073741824 * factor), "memory_swap_max": 0, "tasks_max": (128 * factor),
+        "cpu_quota_per_sec_usec": (1000000 * factor)}.items():
         _check.integer(unit[key], expected, expected, "CARRIER")
-    limits = {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256, "nofile_hard": 256,
-        "fsize_soft": 67108864, "fsize_hard": 67108864, "umask": 0o077}
+    limits = {"cpu_soft": (800 * factor), "cpu_hard": (800 * factor), "nofile_soft": (256 * factor), "nofile_hard": (256 * factor),
+        "fsize_soft": (67108864 * factor), "fsize_hard": (67108864 * factor), "umask": 0o077}
     _check.exact(hello["process_limits"], limits, "PROCESS_LIMITS")
     for key, expected in limits.items():
         _check.integer(hello["process_limits"][key], expected, expected, "PROCESS_LIMITS")
-    canonical(hello, newline=True, limit=4096)
+    canonical(hello, newline=True, limit=(4096 * factor))
     return hello
 
 
@@ -2523,10 +2528,10 @@ def _validate_context_envelope(context):
     floor = remaining // 1_000_000 * 1_000_000
     _check(remaining > 0 and bind["host_remaining_floor_ns"] == floor
         and bind["clock_margin_ns"] == 2_000_000_000
-        and bind["local_final_reserve_ns"] == 15_000_000_000
-        and bind["mapped_duration_ns"] == floor - 17_000_000_000 > 0
-        and bind["guest_duration_cap_ns"] == 750_000_000_000
-        and bind["guest_duration_ns"] == min(bind["mapped_duration_ns"], 750_000_000_000),
+        and bind["local_final_reserve_ns"] == 30000000000
+        and bind["mapped_duration_ns"] == floor - 32_000_000_000 > 0
+        and bind["guest_duration_cap_ns"] == 1500000000000
+        and bind["guest_duration_ns"] == min(bind["mapped_duration_ns"], 1500000000000),
         "BIND_MAPPING")
     _check.exact(manifest, _fields('schema scope rule baseline owner_decision closure implementation candidate wheel projection entry locators members limits amendment approved_inputs'), "MANIFEST_FIELDS")
     _check(manifest["schema"] == PACKAGE_SCHEMA
@@ -2915,7 +2920,7 @@ def _prep_settings(case, expires_at):
             "storage_inodes": m["storage_inodes"], "cpu_ns": m["cpu_seconds"] * NS,
             "memory_bytes": m["memory_bytes"], "pids": m["pids"],
             "output_bytes": m["output_bytes"]},
-        "owner": {"runtime_ns": OWNER_NS, "cpu_ns": b["owner"]["cpu_seconds"] * NS,
+        "owner": {"runtime_ns": b["owner"]["wall_seconds"] * NS, "cpu_ns": b["owner"]["cpu_seconds"] * NS,
             "memory_bytes": b["owner"]["memory_bytes"], "pids": b["owner"]["tasks_max"],
             "storage_bytes": b["owner"]["storage_bytes"],
             "storage_inodes": b["owner"]["storage_inodes"],
@@ -4383,10 +4388,10 @@ def _resource_pools(locators):
             byte_limit=amount, inode_limit=inodes, roots=roots, project_id=project))
     def root(role, suffix):
         return dict(path=locators[role + '_parent'] + '/' + suffix, parent_role=role)
-    add('shared_install', None, 67108864, 4096,
+    add('shared_install', None, 134217728, 8192,
         [root('install', name) for name in (INSTALL_BASENAME, STAGING_BASENAME)])
     roles = ('state', 'quota', 'journal', 'evidence')
-    add('carrier_audit', None, 8388608, 512, [root(role, SESSION) for role in roles])
+    add('carrier_audit', None, 16777216, 1024, [root(role, SESSION) for role in roles])
     for case in CASES:
         case_id = case['case_id']; prefix = SESSION + '/' + case_id
         add(case_id + '/state', case_id, 8388608, 1536, [root(role, prefix) for role in roles])
@@ -4396,15 +4401,20 @@ def _resource_pools(locators):
         for row in FieldEffects.preparation_paths(case, locators)['roots']:
             add(case_id + '/quota/' + row['ref'], case_id, 1048576, 128,
                 [dict(path=row['path'], parent_role='quota')], row['project_id'])
-    _cap(len(pools) == 32 and sum(p['byte_limit'] for p in pools) == 188743680
-        and sum(p['inode_limit'] for p in pools) == 13440, 'POOL_DEFINITION')
+    _cap(len(pools) == 32 and sum(p['byte_limit'] for p in pools) == 264241152
+        and sum(p['inode_limit'] for p in pools) == 18048, 'POOL_DEFINITION')
     return pools
 
 
-def _cap_new_reservations(filesystems, locators):
+def _cap_new_reservations(filesystems, locators, *, historical=False):
     """Reserve full pool amount on every physical output device, never a spendable increase."""
     charges = {}
     for pool in _resource_pools(locators):
+        # Four consumed core attempts retain their original level-one charges.
+        # Only the current shared installation and audit pools have changed.
+        if historical and pool['pool_id'] in ('shared_install', 'carrier_audit'):
+            pool = dict(pool, byte_limit=pool['byte_limit']//2,
+                inode_limit=pool['inode_limit']//2)
         keys = {(filesystems[r['parent_role']]['dev'], filesystems[r['parent_role']]['fs_uuid'])
             for r in pool['roots']}
         for key in keys:
@@ -4542,10 +4552,10 @@ def _cap_charge(approved, filesystems, path_pool, inventory, locators):
                     _cap(suffix == SESSION or suffix.startswith(SESSION + '/'), 'PRIOR_PLACEMENT')
                     old_suffix = old_session + suffix[len(SESSION):]
                 _cap(path_pool(parent + old_suffix) == byrole[root['parent_role']], 'PRIOR_PLACEMENT')
-    for key, values in _cap_new_reservations(filesystems, locators).items():
-        # Each consumed batch retains its own full 32 pools and headroom.
+    for key, values in _cap_new_reservations(filesystems, locators, historical=True).items():
         for _ in (0, 1, 2, 3):
             charge(key, values, 'historical')
+    for key, values in _cap_new_reservations(filesystems, locators).items():
         charge(key, values, 'new_required')
     for row in pools.values():
         row['roles'].sort()
@@ -4576,9 +4586,8 @@ def _cap_historical_expected(approved, filesystems, locators):
             row['commitment']['bytes'], row['commitment']['inodes'])
     for row in obligations['configured_quota_rows']:
         add(byrole['quota'], row['hard_bytes'], row['inode_hard_limit'])
-    # Old and new pool *identities* are distinct; their fixed role placement and
-    # ceilings are identical. This is a conservative reservation, not old usage.
-    for key, values in _cap_new_reservations(filesystems, locators).items():
+    # Historical reservations retain the ceilings used by those attempts.
+    for key, values in _cap_new_reservations(filesystems, locators, historical=True).items():
         for _ in (0, 1, 2, 3):
             add(key, values['bytes'], values['inodes'])
     return totals
@@ -5061,12 +5070,12 @@ class _PoolAccounting:
                 selected = maxima if case_id is None else [row for row in maxima if row[0] == case_id]
                 amount = sum(row[1]['allocated_bytes'] for row in selected if row[1] is not None)
                 inodes = sum(row[2]['allocated_inodes'] for row in selected if row[2] is not None)
-                if amount > (188743680 if case_id is None else 37748736) or inodes > (13440 if case_id is None else 2944):
+                if amount > (LIMITS["total_guest_physical_bytes"] if case_id is None else LIMITS["case_physical_bytes"]) or inodes > (LIMITS["total_guest_physical_inodes"] if case_id is None else LIMITS["case_physical_inodes"]):
                     for definition in self.definitions:
                         if case_id is None or definition['case_id'] == case_id:
-                            if amount > (188743680 if case_id is None else 37748736):
+                            if amount > (LIMITS["total_guest_physical_bytes"] if case_id is None else LIMITS["case_physical_bytes"]):
                                 self.mark_incomplete(definition['pool_id'], 'bytes_maximum', 'AGGREGATE_LIMIT')
-                            if inodes > (13440 if case_id is None else 2944):
+                            if inodes > (LIMITS["total_guest_physical_inodes"] if case_id is None else LIMITS["case_physical_inodes"]):
                                 self.mark_incomplete(definition['pool_id'], 'inodes_maximum', 'AGGREGATE_LIMIT')
                     raise DispatchError('CORE_POOL_AGGREGATE_LIMIT')
         if any(row['status'] == 'INCOMPLETE' or row['missing'] for row in self.rows.values()):
@@ -8240,9 +8249,9 @@ def _usage(value, context, frame_bytes, *, accounting=None, missing=(), complete
             _check.integer(value[key], 0, code="USAGE")
     _check(value["stdin_bytes_received"] == context["stdin_bytes_received"]
         and value["output_frame_bytes"] in (0, frame_bytes), "USAGE_BINDING")
-    ceilings = {"carrier_cpu_ns": 800 * NS, "carrier_memory_peak_bytes": 1073741824,
-        "carrier_pids_peak": 128, "guest_allocated_bytes": 188743680,
-        "guest_allocated_inodes": 13440, "job_units_started": 15,
+    ceilings = {"carrier_cpu_ns": 1600 * NS, "carrier_memory_peak_bytes": 2147483648,
+        "carrier_pids_peak": 256, "guest_allocated_bytes": 377487360,
+        "guest_allocated_inodes": 26880, "job_units_started": 15,
         "controller_units_started": 6, "quota_query_units_started": 5,
         "dynamic_quota_units_started": 15, "native_children_started": 16}
     ceilings['guest_elapsed_ns'] = context['bind']['guest_duration_ns']

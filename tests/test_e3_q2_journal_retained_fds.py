@@ -1,4 +1,4 @@
-"""Actual 121/122-FD admission, inherited identity and full output lifetime at limit 128."""
+"""Actual 249/250-FD admission, inherited identity and full output lifetime at limit 256."""
 import json
 import os
 import subprocess
@@ -32,8 +32,8 @@ def debug_child(*args):
         traceback.print_exc()
         raise
 c.child=debug_child
-resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
-resource.setrlimit(resource.RLIMIT_AS,(256*1048576,256*1048576))
+resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
+resource.setrlimit(resource.RLIMIT_AS,(512*1048576,512*1048576))
 os.chmod(path,0o700)
 anchor=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
 rows=[];pins={}
@@ -50,7 +50,7 @@ def remaining():
 a=SimpleNamespace(fd=anchor,info=c.metadata(os.fstat(anchor)),held=rows.copy(),deadline=SimpleNamespace(remaining=remaining))
 def count():
     n=0
-    for fd in range(128):
+    for fd in range(256):
         try:os.fstat(fd)
         except OSError as e:assert e.errno==errno.EBADF
         else:n+=1
@@ -169,7 +169,7 @@ minimum=own.ru_utime+own.ru_stime+done.ru_utime+done.ru_stime+held.usage()[0]
 usage=h.management_usage()
 assert usage['cpu_seconds']>=minimum
 assert usage['live_children']==1 and usage['rss_upper_observation_bytes']>=rss
-assert summary['checks']==3 and 0<summary['ipc_bytes']<=2*1048576
+assert summary['checks']==3 and 0<summary['ipc_bytes']<=4*1048576
 store.close();os.close(exe);os.close(simulated_vm_pidfd)
 inputs.close()
 final=held.close()
@@ -181,7 +181,7 @@ print(json.dumps(dict(mode=mode,before=initial,after_transfer=initial-53,after_c
 '''
 
 
-@pytest.mark.parametrize('initial',[121,122])
+@pytest.mark.parametrize('initial',[249,250])
 @pytest.mark.parametrize('mode',['lifecycle','live_cpu','bad_ready','bool_ready','missing_ready','wrong_D','truncated','timeout',
     'fork_failure','replace','delete','content','link','mode','sequence','nonce','child_exit','unknown_usage','check_limit'])
 def test_bounded_custody_real_process_lifetime(tmp_path,mode,initial):
@@ -193,7 +193,7 @@ def test_bounded_custody_real_process_lifetime(tmp_path,mode,initial):
 
 
 @pytest.mark.parametrize('mode',['lifecycle','live_cpu','bad_ready','fork_failure','child_exit','archive_drift'])
-def test_staged_archive_full_lifecycle_at_actual_128_limit(monkeypatch,mode):
+def test_staged_archive_full_lifecycle_at_actual_256_limit(monkeypatch,mode):
     from transport_failure_fixture import records
     raw,spec,_=records(monkeypatch)
     # Protected input traversal rejects world-writable ancestors, including /tmp.
@@ -204,7 +204,7 @@ def test_staged_archive_full_lifecycle_at_actual_128_limit(monkeypatch,mode):
         path=Path(directory)/'retained.tar';path.write_bytes(raw);path.chmod(0o600)
         spec['path']=str(path)
         result=subprocess.run([sys.executable,'-I','-B','-c',CHILD,str(Path(__file__).parent),
-            directory,mode,'122',json.dumps(spec)],stdin=subprocess.DEVNULL,capture_output=True,timeout=30)
+            directory,mode,'250',json.dumps(spec)],stdin=subprocess.DEVNULL,capture_output=True,timeout=30)
         assert result.returncode==0,result.stderr.decode()
         value=json.loads(result.stdout)
         assert value['mode']==mode

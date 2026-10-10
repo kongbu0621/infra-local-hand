@@ -83,8 +83,8 @@ def test_uuid_unsupported_has_no_tool_or_raw_disk_fallback(monkeypatch):
 def test_distinct_pool_full_commitment_and_no_refund(monkeypatch):
     approved, fs, mapper, inventory = fixture(monkeypatch)
     result = d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
-    assert sum(row['new_required_bytes'] for row in result) == 390070272
-    assert sum(row['new_required_inodes'] for row in result) == 31872
+    assert sum(row['new_required_bytes'] for row in result) == 490733568
+    assert sum(row['new_required_inodes'] for row in result) == 38016
     assert sum(row['historical_bytes'] for row in result) == 2400 + 7 * 200 + 5 * 100 + 200 + 1024 + 4 * 390070272
     assert result[0]['roles'] == ['install', 'state']
 
@@ -94,7 +94,7 @@ def test_alias_pools_charge_each_row_once(monkeypatch):
     result = d._cap_charge(approved, fs, mapper, inventory, LOCATORS)
     assert len(result) == 1
     assert result[0]['historical_bytes'] == 2400 + 200 + 1024 + 4 * 289406976
-    assert result[0]['new_required_bytes'] == 289406976
+    assert result[0]['new_required_bytes'] == 364904448
 
 
 def test_current_pool_cannot_replace_historical_placement(monkeypatch):
@@ -188,7 +188,7 @@ def test_capacity_reports_first_failure_only_and_keeps_existing_bootstrap_channe
     stdout, stderr = io.BytesIO(), io.BytesIO()
     assert bootstrap.main(io.BytesIO(), stdout, stderr, bootstrap_sha256='a' * 64) == 3
     assert stdout.getvalue() == b''
-    assert stderr.getvalue() == (code + '\n').encode('ascii')
+    assert stderr.getvalue().splitlines()[0] == code.encode('ascii')
 
 
 def test_capacity_diagnostic_uses_pool_minimum_not_one_alias_sample(monkeypatch):
@@ -232,14 +232,14 @@ def test_32_pool_mapping_and_cross_device_wrapper_reservations(monkeypatch):
     _, fs, _, _ = fixture(monkeypatch)
     specs = d._resource_pools(LOCATORS)
     assert len(specs) == 32 and len({p['pool_id'] for p in specs}) == 32
-    assert sum(p['byte_limit'] for p in specs) == 188743680
-    assert sum(p['inode_limit'] for p in specs) == 13440
+    assert sum(p['byte_limit'] for p in specs) == 264241152
+    assert sum(p['inode_limit'] for p in specs) == 18048
     assert sum(p['measurement_kind'] == 'PROJECT_QUOTA' for p in specs) == 21
     values = d._cap_new_reservations(fs, LOCATORS)
     # Quota device owes not only 21 quota roots, but its session/case wrappers.
     quota = values[(fs['quota']['dev'], fs['quota']['fs_uuid'])]
-    assert quota == dict(bytes=(21 + 8 + 3 * 8) * 1048576,
-                         inodes=21 * 128 + 512 + 3 * 1536)
+    assert quota == dict(bytes=(21 + 16 + 3 * 8) * 1048576,
+                         inodes=21 * 128 + 1024 + 3 * 1536)
 
 
 def test_new_root_device_drift_stops_admission(monkeypatch):

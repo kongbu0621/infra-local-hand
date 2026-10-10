@@ -62,5 +62,5 @@ def test_loader_rejects_extra_argument_before_bootstrap_execution():
 
 def test_loader_blob_stays_inside_approved_argument_limit():
     raw = Path(loader.__file__).read_bytes()
-    assert 0 < len(raw) <= 8192
-    assert hashlib.sha256(raw).hexdigest() == "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61"
+    assert 0 < len(raw) <= 16384
+    assert hashlib.sha256(raw).hexdigest() == "9315d0a804df07eab74fd6b1272cf108e81a143c3e535458aa80f403b0b81a36"

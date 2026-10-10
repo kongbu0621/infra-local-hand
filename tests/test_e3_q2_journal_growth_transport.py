@@ -99,7 +99,7 @@ def test_current_guest_pre_and_ack_reach_host_with_full_validation(factory, effe
     output = []
     prepare(desc).pre(output=output.append, receive=lambda *_: None)
     value, ack = output
-    assert value["schema"] == ack["schema"] == "lhq-journal-growth-guest/v4"
+    assert value["schema"] == ack["schema"] == "lhq-journal-growth-guest/v5"
     sha = g.digest(g.canonical(value))
     token = g.continue_token(desc["nonce"], sha)
     code = peer(value, "assert sys.stdin.buffer.readline()==" + repr(token) + "\n"
@@ -120,7 +120,7 @@ def test_current_guest_post_reaches_host_with_full_validation(factory, effects, 
     monkeypatch.setattr(g, "boot_id", lambda _: GUEST_NEW_BOOT)
     output = []
     value = prepare(desc).post(output=output.append)
-    assert output == [value] and value["schema"] == "lhq-journal-growth-guest/v4"
+    assert output == [value] and value["schema"] == "lhq-journal-growth-guest/v5"
     transport = create(peer(value), phase="post", nonce=desc["nonce"],
         source_sha=desc["source_binding_sha256"], original_boot=desc["original_boot_id"],
         validate=lambda report: g.validate_post_report(report, desc))
@@ -219,12 +219,12 @@ def test_deadline_retains_live_peer_and_partial_capture(factory):
     assert (root / h.NAMES["pre.stdout"]).read_bytes() == h.canonical(report())
 
 
-def test_exact_one_mebibyte_cap_preserves_prefix(factory):
+def test_exact_two_mebibyte_cap_preserves_prefix(factory):
     create, _store, root = factory
-    transport = create("import sys\nsys.stdout.buffer.write(b'x'*(1048576+1));sys.stdout.flush()\n")
+    transport = create("import sys\nsys.stdout.buffer.write(b'x'*(2097152+1));sys.stdout.flush()\n")
     with pytest.raises(h.prior.r.ObservationError, match="STREAM_LIMIT"):
         transport.receive_report()
-    assert (root / h.NAMES["pre.stdout"]).stat().st_size == h.MIB
+    assert (root / h.NAMES["pre.stdout"]).stat().st_size == h.STREAM_LIMIT
 
 
 def test_memory_loader_only_executes_supplied_synthetic_modules():
@@ -241,7 +241,7 @@ def test_memory_loader_only_executes_supplied_synthetic_modules():
 
 
 def test_memory_loader_rejects_compressed_expansion():
-    raw = zlib.compress(b"x" * 400000)
+    raw = zlib.compress(b"x" * 800000)
     result = subprocess.run([sys.executable, "-I", "-B", "-c", h.GUEST_LOADER,
                             base64.b64encode(raw).decode(), h.digest(raw)], capture_output=True, timeout=5)
     assert result.returncode != 0 and b"BUNDLE_BOUND" in result.stderr
@@ -250,7 +250,7 @@ def test_memory_loader_rejects_compressed_expansion():
 def test_source_bundle_rejects_oversized_second_phase_before_any_ssh():
     sources = {"q2_core_capacity_reader.py": b"# synthetic", "q2_journal_growth_guest.py": b"# synthetic"}
     with pytest.raises(h.prior.r.ObservationError, match="BUNDLE_INPUT"):
-        h.source_bundle(sources, dict(pre_report="x" * 65536))
+        h.source_bundle(sources, dict(pre_report="x" * 131072))
 
 
 @pytest.fixture(autouse=True)

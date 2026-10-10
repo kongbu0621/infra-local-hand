@@ -182,7 +182,7 @@ def journal_transition(implementation):
     from local_preflight_fixture import source_projection
     from transport_failure_fixture import source_projection as transport_source
     from persistent_continuation_fixture import source as persistent_source
-    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v18',vm_activation=None,
+    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v19',vm_activation=None,
         local_preflight_source=source_projection(),transport_failure_source=transport_source(),
         authority=dict(R=c.RULE['commit'],A=(c.PERSISTENT_PATH_BASELINE or {}).get('commit'),C=(c.PERSISTENT_PATH_CLOSURE or {}).get('commit')),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',

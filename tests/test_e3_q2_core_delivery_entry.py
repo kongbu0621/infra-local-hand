@@ -103,16 +103,16 @@ def hello():
             "name": c.CARRIER_UNIT,
             "control_group": "/system.slice/" + c.CARRIER_UNIT,
             "invocation_id": "4" * 32, "active_state": "active",
-            "sub_state": "running", "runtime_max_usec": 800_000_000,
-            "timeout_stop_usec": 30_000_000, "memory_max": 1_073_741_824,
-            "memory_swap_max": 0, "tasks_max": 128,
-            "cpu_quota_per_sec_usec": 1_000_000, "restart": "no",
+            "sub_state": "running", "runtime_max_usec": 1_600_000_000,
+            "timeout_stop_usec": 60_000_000, "memory_max": 2_147_483_648,
+            "memory_swap_max": 0, "tasks_max": 256,
+            "cpu_quota_per_sec_usec": 2_000_000, "restart": "no",
             "kill_mode": "control-group", "exit_type": "cgroup",
         },
         "process_limits": {
-            "cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
-            "nofile_hard": 256, "fsize_soft": 67_108_864,
-            "fsize_hard": 67_108_864, "umask": 0o077,
+            "cpu_soft": 1600, "cpu_hard": 1600, "nofile_soft": 512,
+            "nofile_hard": 512, "fsize_soft": 134_217_728,
+            "fsize_hard": 134_217_728, "umask": 0o077,
         },
     }
 
@@ -444,9 +444,9 @@ def test_host_window_and_bind_mapping_are_not_refreshed():
     bind = e.build_bind(hello(), "a" * 64, "lhqcore-20261007a.lhfp", package, origins,
                         package_entry=entry, remote_expectation=remote_expectation(), boot_bind_ns=30_000,
                         mono_bind_ns=40_000)
-    assert bind["host_remaining_floor_ns"] == 899_999_000_000
-    assert bind["mapped_duration_ns"] == 882_999_000_000
-    assert bind["guest_duration_ns"] == 750_000_000_000
+    assert bind["host_remaining_floor_ns"] == 1799_999_000_000
+    assert bind["mapped_duration_ns"] == 1767_999_000_000
+    assert bind["guest_duration_ns"] == 1_500_000_000_000
     changed = dict(bind,
                    host_boottime_deadline_ns=bind["host_boottime_deadline_ns"] + 1_000_000,
                    host_monotonic_deadline_ns=bind["host_monotonic_deadline_ns"] + 1_000_000)
@@ -861,7 +861,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch, o
             implementation=resource_context['implementation'], deadline=capture.deadline,
             writer_observer=e.capture_contract.observe_writer)
         expected_context = {"manifest": {key: resource_context[key] for key in ("implementation", "locators")},
-                            "hello": hello(), "bind": {"guest_duration_ns": 750_000_000_000},
+                            "hello": hello(), "bind": {"guest_duration_ns": 1_500_000_000_000},
                             "binding": binding, "approved_inputs_raw": c.canonical(
                                 dict(reconciliation=dict(prior_core_attempts=prior,journal_transition=transition,
                                     prior_diagnostic_capture=prior_api.diagnostic_retention())), newline=True)}

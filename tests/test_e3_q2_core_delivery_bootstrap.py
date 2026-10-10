@@ -44,13 +44,13 @@ def hello(bootstrap_sha):
                    "sha256": "4" * 64},
         "carrier_unit": {"name": b.CARRIER_UNIT,
             "control_group": "/system.slice/" + b.CARRIER_UNIT, "invocation_id": "5" * 32,
-            "active_state": "active", "sub_state": "running", "runtime_max_usec": 800_000_000,
-            "timeout_stop_usec": 30_000_000, "memory_max": 1_073_741_824,
-            "memory_swap_max": 0, "tasks_max": 128, "cpu_quota_per_sec_usec": 1_000_000,
+            "active_state": "active", "sub_state": "running", "runtime_max_usec": 1600000000,
+            "timeout_stop_usec": 60000000, "memory_max": 2147483648,
+            "memory_swap_max": 0, "tasks_max": 256, "cpu_quota_per_sec_usec": 2000000,
             "restart": "no", "kill_mode": "control-group", "exit_type": "cgroup"},
-        "process_limits": {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
-                           "nofile_hard": 256, "fsize_soft": 67_108_864,
-                           "fsize_hard": 67_108_864, "umask": 0o077},
+        "process_limits": {"cpu_soft": 1600, "cpu_hard": 1600, "nofile_soft": 512,
+                           "nofile_hard": 512, "fsize_soft": 134217728,
+                           "fsize_hard": 134217728, "umask": 0o077},
     }
 
 
@@ -145,7 +145,7 @@ def input_stream(hello_value, package, *, trailing=b""):
     hello_raw = b.encoded(hello_value)
     origin = 1_000_000_000_000
     bind_at = origin + 1_000_000_000
-    deadline = origin + 900_000_000_000
+    deadline = origin + 1800_000_000_000
     floor = (deadline - bind_at) // 1_000_000 * 1_000_000
     value = {"schema": b.BIND_SCHEMA, "scope": b.SCOPE, "session_id": b.SESSION_ID,
         "hello_sha256": b.sha(hello_raw), "consumption_sha256": "2" * 64,
@@ -154,10 +154,10 @@ def input_stream(hello_value, package, *, trailing=b""):
         "host_monotonic_origin_ns": origin, "host_boottime_deadline_ns": deadline,
         "host_monotonic_deadline_ns": deadline, "host_boottime_bind_ns": bind_at,
         "host_monotonic_bind_ns": bind_at, "host_remaining_floor_ns": floor,
-        "clock_margin_ns": 2_000_000_000, "local_final_reserve_ns": 15_000_000_000,
-        "mapped_duration_ns": floor - 17_000_000_000,
-        "guest_duration_cap_ns": 750_000_000_000,
-        "guest_duration_ns": min(floor - 17_000_000_000, 750_000_000_000)}
+        "clock_margin_ns": 2_000_000_000, "local_final_reserve_ns": 30_000_000_000,
+        "mapped_duration_ns": floor - 32_000_000_000,
+        "guest_duration_cap_ns": 1500_000_000_000,
+        "guest_duration_ns": min(floor - 32_000_000_000, 1500_000_000_000)}
     raw = b.encoded(value)
     return io.BytesIO(b.BIND_MAGIC + struct.pack(">Q", len(raw)) + raw + package + trailing)
 
@@ -243,13 +243,17 @@ def test_bootstrap_main_reports_bounded_code_and_never_synthesizes_output(monkey
     assert status == 3
     assert out.getvalue().startswith(b.HELLO_MAGIC)
     assert b.OUTPUT_MAGIC not in out.getvalue()
-    assert err.getvalue() == b"CORE_BOOTSTRAP_PACKAGE_EOF\n"
+    code, detail = err.getvalue().split(b"\n", 1)
+    detail = b.document(detail, 65536)
+    assert code == b"CORE_BOOTSTRAP_PACKAGE_EOF"
+    assert detail["reason"] == code.decode() and detail["resource_level"] == 2
+    assert detail["traceback"] and detail["message"] == code.decode()
 
 
 def test_bootstrap_blob_and_loader_binding_fit_approved_limits():
     bootstrap = Path("tests/e3_host/q2_core_delivery_bootstrap.py").read_bytes()
     loader = Path("tests/e3_host/q2_core_delivery_loader.py").read_bytes()
-    assert 0 < len(bootstrap) <= 49152
+    assert 0 < len(bootstrap) <= 98304
     assert 0 < len(loader) <= 8192
     assert hashlib.sha256(loader).hexdigest() == b.LOADER_SHA256
 
@@ -374,7 +378,8 @@ def test_hello_v2_alias_projection_limit_and_old_schema_rejection():
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_HELLO_AUTHORITY"):
         b.validate_hello(invalid, "1" * 64)
     invalid = copy.deepcopy(value)
-    invalid["remote_management"]["shell"]["resolved_path"] = "/" + "x" * 4000
+    for role in ("shell", "sudo", "env"):
+        invalid["remote_management"][role]["resolved_path"] = "/" + "x" * 2000
     with pytest.raises(ValueError, match="CORE_BOOTSTRAP_HELLO_LIMIT"):
         b.validate_hello(invalid, "1" * 64)
 

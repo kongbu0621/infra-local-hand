@@ -98,8 +98,8 @@ EXIT_LIFECYCLE = r'''
 import json,resource,sys,time
 sys.path.insert(0,sys.argv[1])
 from e3_host import q2_journal_growth as h
-resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
-resource.setrlimit(resource.RLIMIT_AS,(256*1048576,256*1048576))
+resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
+resource.setrlimit(resource.RLIMIT_AS,(512*1048576,512*1048576))
 sampler=h.Usage();started=time.monotonic();samples=0;completed=0;observed_rss=0
 source='import mmap,os,time; pages=[mmap.mmap(-1,65536) for _ in range(512)]; [p.write(b"x"*65536) for p in pages]; time.sleep(0.01); os._exit(0)'
 real=h.command_usage
@@ -126,7 +126,7 @@ assert completed==8 and samples>0 and observed_rss>=16*1048576
 assert all(command.process.returncode==0 for command in h.COMMANDS)
 assert final['cpu_nanoseconds']>0 and final['rss_peak_bytes']>=observed_rss
 print(json.dumps(dict(completed=completed,samples=samples,live_rss_observed=True,
- exited_cost_included=True,nofile=128,address_space=256*1048576)))
+ exited_cost_included=True,nofile=256,address_space=512*1048576)))
 '''
 
 
@@ -146,8 +146,8 @@ from types import SimpleNamespace
 sys.path.insert(0,sys.argv[1])
 from e3_host import q2_journal_growth as h
 phase,mode=sys.argv[2:]
-resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
-resource.setrlimit(resource.RLIMIT_AS,(256*1048576,256*1048576))
+resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
+resource.setrlimit(resource.RLIMIT_AS,(512*1048576,512*1048576))
 sampler=h.Usage();reads=[];real=h.custody.proc
 def observed(pid,name,limit):
     reads.append((pid,name,limit));return real(pid,name,limit)
@@ -205,7 +205,7 @@ with tempfile.TemporaryDirectory() as path:
         if transport is not None:
             transport.close();transport.process.wait(timeout=5)
         store.close();os.close(exe);os.close(parent)
-print(json.dumps(dict(phase=phase,mode=mode,complete=True,nofile=128,address_space=256*1048576)))
+print(json.dumps(dict(phase=phase,mode=mode,complete=True,nofile=256,address_space=512*1048576)))
 '''
 
 
@@ -217,4 +217,4 @@ def test_actual_transport_uses_owned_identity_and_real_accounting(phase, mode):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False)
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert json.loads(result.stdout) == dict(phase=phase, mode=mode, complete=True,
-        nofile=128, address_space=256 * 1048576)
+        nofile=256, address_space=512 * 1048576)

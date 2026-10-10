@@ -80,6 +80,8 @@ def test_live_failure_keeps_exact_stage_and_existing_read_poll_count(model, stag
         model.records[101] = stat_record(101, start=202)
         expected_type, expected_errno, expected_reason = "ObservationError", None, "GROWTH_USAGE_IDENTITY"
     error = failed_usage()
+    detail = error.diagnostic["failed_children"][0].pop("error")
+    assert detail["error_type"] == expected_type and detail["traceback"]
     assert error.diagnostic == dict(operation="management_usage",
         stage="live_child_observation", complete=False, live_children=1,
         failed_children=[dict(pid=101, stage=stage, error_type=expected_type,
@@ -95,14 +97,15 @@ def test_live_failure_keeps_exact_stage_and_existing_read_poll_count(model, stag
     ValueError("secret-argv /private/key"),
     RuntimeError("GROWTH_INVALID secret-argv /private/key"),
 ])
-def test_failure_output_omits_exception_text_paths_and_raw_command(model, problem):
+def test_private_failure_preserves_exception_without_reading_raw_command(model, problem):
     child = model.add(101)
     child.identity.update(argv=["secret-argv", "/private/key"], arbitrary="private data")
     child.process.args = ["secret-argv", "/private/key"]
     model.records[101] = problem
     detail = failed_usage().diagnostic
     serialized = json.dumps(detail)
-    assert "secret-argv" not in serialized and "/private" not in serialized
+    assert detail["failed_children"][0]["error"]["message"] == str(problem)
+    assert "\"argv\"" not in serialized
     assert "arbitrary" not in serialized and "private data" not in serialized
     failed = detail["failed_children"][0]
     assert failed["reason"] is None
@@ -136,12 +139,12 @@ def test_eight_failed_children_are_all_reported_with_no_additional_reads(model):
     assert len([call for call in model.calls if call[0] == "poll"]) == 16
 
 
-def test_existing_child_limit_rejects_ninth_child_before_resource_or_proc_reads(model):
-    for pid in range(101, 110):
+def test_existing_child_limit_rejects_seventeenth_child_before_resource_or_proc_reads(model):
+    for pid in range(101, 118):
         model.add(pid)
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_CHILD_BUDGET$"):
         h.management_usage()
-    assert model.calls == [("poll", pid) for pid in range(101, 110)]
+    assert model.calls == [("poll", pid) for pid in range(101, 118)]
 
 
 def test_custody_counts_toward_existing_limit_and_diagnostic(model, monkeypatch):
@@ -181,7 +184,7 @@ def test_identity_mismatch_is_not_excused_by_a_later_exit(model):
 def test_known_budget_excess_retains_precedence_over_incomplete_usage(model):
     model.add(101)
     model.records[101] = OSError(errno.EIO, "unavailable")
-    model.own.ru_utime = 121
+    model.own.ru_utime = 241
     with pytest.raises(h.prior.r.ObservationError,
                        match="^GROWTH_MANAGEMENT_BUDGET$") as raised:
         h.management_usage()
@@ -242,7 +245,11 @@ def test_main_json_boundary_retains_usage_diagnostic_before_any_field_effect(mod
     value = json.loads(captured.out)
     assert value["state"] == "BLOCKED" and value["reason"] == "GROWTH_USAGE_UNKNOWN"
     assert value["marker_created"] is False and value["ssh_requests"] == 0
-    assert value["diagnostic"] == dict(operation="management_usage",
+    detail = value["diagnostic"]
+    assert detail["traceback"] and detail["resource_level"] == 2
+    child_error = detail["failed_children"][0].pop("error")
+    assert child_error["message"] == "[Errno 13] private stat detail"
+    assert {key:detail[key] for key in ("operation","stage","complete","live_children","failed_children")} == dict(operation="management_usage",
         stage="live_child_observation", complete=False, live_children=1,
         failed_children=[dict(pid=101, stage="stat_read", error_type="PermissionError",
             errno=errno.EACCES, reason=None,

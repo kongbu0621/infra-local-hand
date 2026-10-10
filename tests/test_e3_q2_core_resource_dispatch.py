@@ -39,7 +39,7 @@ def test_dispatcher_validates_all_thirty_two_pools_and_preserves_false_guarantee
     (lambda v: v.update(extra=0), 'FIELDS'),
     (lambda v: v['pools'].reverse(), 'POOL_BINDING'),
     (lambda v: v['pools'].pop(), 'POOL_SET'),
-    (lambda v: v['pools'][0].update(byte_limit=67108865), 'POOL_BINDING'),
+    (lambda v: v['pools'][0].update(byte_limit=134217729), 'POOL_BINDING'),
     (lambda v: v['completion_adjustment']['implementation'].update(commit='3' * 40), 'AUTHORITY'),
     (lambda v: v['pools'][0]['last_observation'].update(boottime_ns=1000), 'WINDOW'),
     (lambda v: v['pools'][0]['last_observation'].update(monotonic_ns=199), 'WINDOW'),
@@ -117,8 +117,8 @@ def test_guest_metadata_identity_replacement_cannot_hide_behind_same_quota_value
 def test_guest_can_retain_known_over_limit_observation_only_as_incomplete():
     value, context, kwargs = arguments()
     for field in ('last_observation', 'bytes_maximum', 'inodes_maximum'):
-        value['pools'][0][field]['allocated_bytes'] = 67108865
-    value['observed_maxima_sum']['bytes'] += 67108865 - 8192; seal(value)
+        value['pools'][0][field]['allocated_bytes'] = 134217729
+    value['observed_maxima_sum']['bytes'] += 134217729 - 8192; seal(value)
     assert d._validate_resource_accounting(value, context, **kwargs, complete=False) is value
     with pytest.raises(d.DispatchError, match='LIMIT'):
         d._validate_resource_accounting(value, context, **kwargs)
@@ -143,8 +143,8 @@ def test_guest_usage_null_requires_its_own_missing_role_and_cannot_complete():
         d._usage(counts, context, 100, accounting=value, missing=rows, complete=True)
 
 
-@pytest.mark.parametrize('key,amount', [('guest_elapsed_ns',901),('carrier_cpu_ns',800*d.NS+1),
-    ('carrier_memory_peak_bytes',1073741825),('carrier_pids_peak',129),('job_units_started',16),
+@pytest.mark.parametrize('key,amount', [('guest_elapsed_ns',901),('carrier_cpu_ns',1600*d.NS+1),
+    ('carrier_memory_peak_bytes',2147483649),('carrier_pids_peak',257),('job_units_started',16),
     ('controller_units_started',7),('quota_query_units_started',6),('dynamic_quota_units_started',16),
     ('native_children_started',17)])
 def test_guest_usage_original_limits_are_rejection_lines_never_actual_counts(key, amount):

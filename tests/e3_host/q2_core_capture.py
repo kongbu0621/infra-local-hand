@@ -21,12 +21,12 @@ c = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(c)
 
 
-WINDOW_NS = 900_000_000_000
-STREAM_LIMIT = 54_525_952
-ALLOCATION_LIMIT = 67_108_864
-ROLE_LIMITS = {"marker": 16_384, "stdout": STREAM_LIMIT, "stderr": 4_194_304,
-               "remote_result": 262_144, "capture_manifest": 262_144,
-               "local_receipt": 65_536}
+WINDOW_NS = 1800000000000
+STREAM_LIMIT = 109051904
+ALLOCATION_LIMIT = 134217728
+ROLE_LIMITS = {"marker": 32768, "stdout": STREAM_LIMIT, "stderr": 8388608,
+               "remote_result": 524288, "capture_manifest": 524288,
+               "local_receipt": 131072}
 BASENAMES = {"marker": c.MARKER_BASENAME,
              **{key.removesuffix("_basename"): name for key, name in c.OUTPUT_BASENAMES.items()}}
 ACCOUNTING_MODE = "APPLICATION_LIMIT_AND_OBSERVED_FILE_ALLOCATION"

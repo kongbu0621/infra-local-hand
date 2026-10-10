@@ -57,7 +57,7 @@ def test_candidate_requires_all_closures_and_approved_source_caps(source_git):
                            (h.MINIMAL_C,source_git.head)):
         assert ["merge-base", "--is-ancestor", earlier, later] in source_git.calls
     assert len(sources) == 13
-    assert all(len(sources[name]) <= 98304 for name in
+    assert all(len(sources[name]) <= 196608 for name in
                ("q2_journal_growth.py", "q2_journal_growth_guest.py"))
     assert ["show", "4e9b9cc225285aa9a2d785b23e8344d9a120d5eb:tests/e3_host/q2_core_obligation_inputs.py"] in source_git.calls
     assert ["show", "8e91fa2631aa18a8469efa5a14e4145eaf781e28:tests/e3_host/q2_core_obligation_inputs.py"] not in source_git.calls

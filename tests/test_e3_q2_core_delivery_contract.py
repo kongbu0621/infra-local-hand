@@ -9,7 +9,7 @@ from e3_host import q2_core_delivery_contract as c
 def bind_record():
     origin = 1_000_000_000_000
     bind = origin + 1_000_000_000
-    deadline = origin + 900_000_000_000
+    deadline = origin + 1800000000000
     floor = (deadline - bind) // 1_000_000 * 1_000_000
     return {
         "schema": "local-hand-q2-core-carrier-bind/v1", "scope": c.SCOPE,
@@ -20,10 +20,10 @@ def bind_record():
         "host_boottime_deadline_ns": deadline, "host_monotonic_deadline_ns": deadline,
         "host_boottime_bind_ns": bind, "host_monotonic_bind_ns": bind,
         "host_remaining_floor_ns": floor, "clock_margin_ns": 2_000_000_000,
-        "local_final_reserve_ns": 15_000_000_000,
-        "mapped_duration_ns": floor - 17_000_000_000,
-        "guest_duration_cap_ns": 750_000_000_000,
-        "guest_duration_ns": min(floor - 17_000_000_000, 750_000_000_000),
+        "local_final_reserve_ns": 30000000000,
+        "mapped_duration_ns": floor - 32000000000,
+        "guest_duration_cap_ns": 1500000000000,
+        "guest_duration_ns": min(floor - 32000000000, 1500000000000),
     }
 
 
@@ -33,9 +33,9 @@ def test_frozen_authority_and_budget_values_are_exact():
     assert c.CLOSURE["commit"] == "a8dd077392ebb656770c8f94ca3b051e93fc296d"
     assert c.CANDIDATE["commit"] == "4b6e4a7c403362358192086b88679e1326dcb2e1"
     assert c.WHEEL["sha256"] == "ce31fa11caf5995a3c62611660a3908b78d68b88ee80196900bf69a7702856c9"
-    assert c.LIMITS["total_guest_physical_bytes"] == 180 * 1024**2
-    assert c.LIMITS["total_guest_admission_bytes"] == 276 * 1024**2
-    assert (c.LIMITS["total_cpu_seconds"], c.LIMITS["peak_pids"]) == (2090, 1160)
+    assert c.LIMITS["total_guest_physical_bytes"] == 360 * 1024**2
+    assert c.LIMITS["total_guest_admission_bytes"] == 552 * 1024**2
+    assert (c.LIMITS["total_cpu_seconds"], c.LIMITS["peak_pids"]) == (4180, 2320)
     assert [item["kind"] for item in c.CASES] == [
         "H01_NORMAL", "Q4_HELPER_RUNNING_CANCEL_SUBSET", "H11_SAME_LEDGER_RECOVERY"]
     assert [item["project_ids"] for item in c.CASES] == [
@@ -112,12 +112,12 @@ def hello_record():
                    "uid": 0, "gid": 0, "nlink": 1, "bytes": 3, "sha256": "3" * 64},
         "carrier_unit": {"name": c.CARRIER_UNIT,
             "control_group": "/system.slice/" + c.CARRIER_UNIT, "invocation_id": "4" * 32,
-            "active_state": "active", "sub_state": "running", "runtime_max_usec": 800_000_000,
-            "timeout_stop_usec": 30_000_000, "memory_max": 1_073_741_824,
-            "memory_swap_max": 0, "tasks_max": 128, "cpu_quota_per_sec_usec": 1_000_000,
+            "active_state": "active", "sub_state": "running", "runtime_max_usec": 1_600_000_000,
+            "timeout_stop_usec": 60_000_000, "memory_max": 2_147_483_648,
+            "memory_swap_max": 0, "tasks_max": 256, "cpu_quota_per_sec_usec": 2_000_000,
             "restart": "no", "kill_mode": "control-group", "exit_type": "cgroup"},
-        "process_limits": {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
-            "nofile_hard": 256, "fsize_soft": 67_108_864, "fsize_hard": 67_108_864,
+        "process_limits": {"cpu_soft": 1600, "cpu_hard": 1600, "nofile_soft": 512,
+            "nofile_hard": 512, "fsize_soft": 134_217_728, "fsize_hard": 134_217_728,
             "umask": 0o077}, "remote_management": remote}
 
 

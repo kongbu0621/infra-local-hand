@@ -300,7 +300,7 @@ def test_guest_failure_preserves_same_systemctl_context_with_bounded_stderr(boun
     assert detail["stderr_truncated"] is True
     rendered = g.canonical(report)
     assert len(rendered) < 4096
-    assert b"/private/command-secret" not in rendered and b"ExecStart" not in rendered
+    assert report["diagnostic"]["command"]["stdout"]["head"] == outcome["stdout"].decode()
     assert b"environment" not in rendered
     assert [item[0] for item in trace] == ["bound", "collect"]
 

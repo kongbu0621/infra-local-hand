@@ -23,7 +23,7 @@ import time
 SCOPE = "LH-Q2-CORE-ACCEPTANCE-DELIVERY-v1"
 SESSION_ID = "lhqcore-20261007a"
 CARRIER_UNIT = "lhqcore20261007a-carrier.service"
-LOADER_SHA256 = "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61"
+LOADER_SHA256 = "9315d0a804df07eab74fd6b1272cf108e81a143c3e535458aa80f403b0b81a36"
 RULE = {"commit": "10d2a5c827964989f41ca6e8eeac3d44de6d0f04",
     "source_sha256": "c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5"}
 BASELINE = {
@@ -67,10 +67,10 @@ WHEEL = {"basename": "infra_local_hand-0.2.0a1-py3-none-any.whl", "bytes": 28837
 PROJECTION = {"basename": ".local-hand-source-projection.json", "bytes": 11811,
     "sha256": "55f555fc225edca943b8c86cee8119c4878f5ec1e9503a084ba7a560cf2c991d",
     "file_count": 89}
-PACKAGE_LIMITS = {"package_bytes": 33550320, "manifest_bytes": 1048576, "members": 4096,
-    "member_bytes": 16777216, "shared_allocated_bytes": 67108864,
-    "shared_entries": 4096, "carrier_audit_bytes": 8388608,
-    "carrier_audit_inodes": 512, "carrier_output_bytes": 62914560}
+PACKAGE_LIMITS = {"package_bytes": 67100656, "manifest_bytes": 2097152, "members": 8192,
+    "member_bytes": 33554432, "shared_allocated_bytes": 134217728,
+    "shared_entries": 8192, "carrier_audit_bytes": 16777216,
+    "carrier_audit_inodes": 1024, "carrier_output_bytes": 125829120}
 PACKAGE_MAGIC, HELLO_MAGIC, BIND_MAGIC, OUTPUT_MAGIC = b"LHCFP1\n", b"LHCHLO1\n", b"LHCBND1\n", b"LHCOUT1\n"
 PACKAGE_SCHEMA = "local-hand-q2-core-field-package/v3"
 HELLO_SCHEMA = "local-hand-q2-core-carrier-hello/v2"
@@ -78,7 +78,7 @@ BIND_SCHEMA = "local-hand-q2-core-carrier-bind/v1"
 CONTEXT_SCHEMA = "local-hand-q2-core-bootstrap-context/v1"
 FIELD_PATHS = {"loader": "field/loader.py", "bootstrap": "field/bootstrap.py",
     "dispatcher": "field/dispatcher.py"}
-FIELD_LIMITS = {"loader": 8192, "bootstrap": 49152, "dispatcher": 524288}
+FIELD_LIMITS = {"loader": 16384, "bootstrap": 98304, "dispatcher": 1048576}
 HELLO_FIELDS = {"schema", "scope", "loader_sha256", "bootstrap_sha256", "guest_boot_id",
     "guest_boottime_origin_ns", "guest_monotonic_origin_ns", "pid", "uid", "gid",
     "euid", "egid", "python", "carrier_unit", "process_limits", "remote_management"}
@@ -423,24 +423,24 @@ def _remote_command_digests(bootstrap_sha256):
     require(all(type(item) is str and item and "\0" not in item for item in original),
             "CORE_BOOTSTRAP_INVOKED_ARGV")
     loader = original[4].encode("utf-8")
-    require(0 < len(loader) <= 8192 and sha(loader) == LOADER_SHA256
-            and original[5].isascii() and 0 < len(original[5]) <= 65536,
+    require(0 < len(loader) <= 16384 and sha(loader) == LOADER_SHA256
+            and original[5].isascii() and 0 < len(original[5]) <= 131071,
             "CORE_BOOTSTRAP_INVOKED_LOADER")
     try:
         raw = base64.b64decode(original[5], validate=True)
     except (ValueError, binascii.Error) as error:
         raise ValueError("CORE_BOOTSTRAP_INVOKED_BASE64") from error
-    require(0 < len(raw) <= 49152 and base64.b64encode(raw).decode("ascii") == original[5]
+    require(0 < len(raw) <= 98304 and base64.b64encode(raw).decode("ascii") == original[5]
             and sha(raw) == bootstrap_sha256, "CORE_BOOTSTRAP_INVOKED_BASE64")
     tokens = [
         "exec", "/usr/bin/sudo", "-n", "--", "/usr/bin/env", "-i",
         "HOME=/root", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "SYSTEMD_COLORS=0",
         "/usr/bin/systemd-run", "--system", "--no-ask-password", "--quiet", "--wait", "--pipe",
         "--collect", "--service-type=exec", "--unit=lhqcore20261007a-carrier.service",
-        "--property=Restart=no", "--property=RuntimeMaxSec=800s", "--property=TimeoutStopSec=30s",
-        "--property=KillMode=control-group", "--property=ExitType=cgroup", "--property=CPUQuota=100%",
-        "--property=LimitCPU=800", "--property=MemoryMax=1073741824", "--property=MemorySwapMax=0",
-        "--property=TasksMax=128", "--property=LimitNOFILE=256", "--property=LimitFSIZE=67108864",
+        "--property=Restart=no", "--property=RuntimeMaxSec=1600s", "--property=TimeoutStopSec=60s",
+        "--property=KillMode=control-group", "--property=ExitType=cgroup", "--property=CPUQuota=200%",
+        "--property=LimitCPU=1600", "--property=MemoryMax=2147483648", "--property=MemorySwapMax=0",
+        "--property=TasksMax=256", "--property=LimitNOFILE=512", "--property=LimitFSIZE=134217728",
         "--property=UMask=0077", "--", *original]
     command = shlex.join(tokens).encode("utf-8")
     require(len(command) <= 98304, "CORE_BOOTSTRAP_COMMAND_LIMIT")
@@ -531,7 +531,7 @@ def _properties():
                 numerator, divisor = int(fraction) * scale, 10 ** len(fraction)
                 require(numerator % divisor == 0, "CORE_BOOTSTRAP_UNIT")
                 amount += numerator // divisor
-            total += amount; require(total <= 900_000_000, "CORE_BOOTSTRAP_UNIT")
+            total += amount; require(total <= 1800000000, "CORE_BOOTSTRAP_UNIT")
         return total
     value = {"name": CARRIER_UNIT, "control_group": rows["ControlGroup"],
              "invocation_id": rows["InvocationID"], "active_state": rows["ActiveState"],
@@ -552,10 +552,10 @@ def validate_carrier(value):
     require(value["name"] == CARRIER_UNIT and value["control_group"].endswith("/" + CARRIER_UNIT)
             and re.fullmatch(r"[0-9a-f]{32}", value["invocation_id"] or "")
             and value["active_state"] == "active" and value["sub_state"] in ("running", "start")
-            and value["runtime_max_usec"] == 800_000_000
-            and value["timeout_stop_usec"] == 30_000_000
-            and value["memory_max"] == 1_073_741_824 and value["memory_swap_max"] == 0
-            and value["tasks_max"] == 128 and value["cpu_quota_per_sec_usec"] == 1_000_000
+            and value["runtime_max_usec"] == 1600000000
+            and value["timeout_stop_usec"] == 60000000
+            and value["memory_max"] == 2147483648 and value["memory_swap_max"] == 0
+            and value["tasks_max"] == 256 and value["cpu_quota_per_sec_usec"] == 2000000
             and value["restart"] == "no" and value["kill_mode"] == "control-group"
             and value["exit_type"] == "cgroup", "CORE_BOOTSTRAP_CARRIER")
 
@@ -611,11 +611,11 @@ def validate_hello(value, bootstrap_sha256):
         "fsize_soft", "fsize_hard", "umask"},
           "CORE_BOOTSTRAP_PROCESS_LIMITS")
     limits = value["process_limits"]
-    require(limits == {"cpu_soft": 800, "cpu_hard": 800, "nofile_soft": 256,
-        "nofile_hard": 256, "fsize_soft": 67108864,
-        "fsize_hard": 67108864, "umask": 0o077},
+    require(limits == {"cpu_soft": 1600, "cpu_hard": 1600, "nofile_soft": 512,
+        "nofile_hard": 512, "fsize_soft": 134217728,
+        "fsize_hard": 134217728, "umask": 0o077},
             "CORE_BOOTSTRAP_PROCESS_LIMITS")
-    require(len(encoded(value)) <= 4096, "CORE_BOOTSTRAP_HELLO_LIMIT")
+    require(len(encoded(value)) <= 8192, "CORE_BOOTSTRAP_HELLO_LIMIT")
     return value
 
 
@@ -638,17 +638,17 @@ def validate_bind(value, hello_raw):
                     value["host_monotonic_deadline_ns"] - value["host_monotonic_bind_ns"])
     floor = remaining // 1_000_000 * 1_000_000
     require(value["host_boottime_deadline_ns"]
-                == value["host_boottime_origin_ns"] + 900_000_000_000
+                == value["host_boottime_origin_ns"] + 1800000000000
             and value["host_monotonic_deadline_ns"]
-                == value["host_monotonic_origin_ns"] + 900_000_000_000
+                == value["host_monotonic_origin_ns"] + 1800000000000
             and value["host_boottime_origin_ns"] <= value["host_boottime_bind_ns"]
             and value["host_monotonic_origin_ns"] <= value["host_monotonic_bind_ns"]
             and remaining > 0 and value["host_remaining_floor_ns"] == floor
             and value["clock_margin_ns"] == 2_000_000_000
-            and value["local_final_reserve_ns"] == 15_000_000_000
-            and value["mapped_duration_ns"] == floor - 17_000_000_000 > 0
-            and value["guest_duration_cap_ns"] == 750_000_000_000
-            and value["guest_duration_ns"] == min(value["mapped_duration_ns"], 750_000_000_000),
+            and value["local_final_reserve_ns"] == 30000000000
+            and value["mapped_duration_ns"] == floor - 32_000_000_000 > 0
+            and value["guest_duration_cap_ns"] == 1500000000000
+            and value["guest_duration_ns"] == min(value["mapped_duration_ns"], 1500000000000),
             "CORE_BOOTSTRAP_BIND_MAPPING")
     return value
 
@@ -674,12 +674,12 @@ def _validate_manifest(value, members, bootstrap_sha256):
     approved = exact(value["approved_inputs"], {"path", "bytes", "sha256", "approved_source_relation_sha256"},
         "CORE_BOOTSTRAP_APPROVED_INPUTS")
     require(approved["path"] == "private/approved-inputs.json" and type(approved["bytes"]) is int
-            and 0 < approved["bytes"] <= 1048576 and approved["path"] in members,
+            and 0 < approved["bytes"] <= 2097152 and approved["path"] in members,
             "CORE_BOOTSTRAP_APPROVED_INPUTS")
     approved_raw = bytes(members[approved["path"]])
     require(len(approved_raw) == approved["bytes"] and sha(approved_raw) == approved["sha256"],
             "CORE_BOOTSTRAP_APPROVED_INPUTS")
-    artifact = document(approved_raw, 1048576)
+    artifact = document(approved_raw, 2097152)
     components = {"source_relation", "policy_basis", "historical_capacity_obligations",
         "retained_preparation", "reconciliation"}
     exact(artifact, {"schema", "scope", "amendment"} | components, "CORE_BOOTSTRAP_APPROVED_FIELDS")
@@ -825,7 +825,7 @@ def _execute(context):
     require(callable(factory) and callable(dispatch), "CORE_BOOTSTRAP_DISPATCHER_ABI")
     frame = dispatch(context, factory(context))
     require(type(frame) is bytes and frame.startswith(OUTPUT_MAGIC)
-            and len(frame) <= 58_716_144, "CORE_BOOTSTRAP_OUTPUT_FRAME")
+            and len(frame) <= 117432304, "CORE_BOOTSTRAP_OUTPUT_FRAME")
     return frame
 
 
@@ -834,13 +834,13 @@ def serve(*, stdin, stdout, bootstrap_sha256, hello_factory=None, dispatch=None)
     hello = (make_hello(bootstrap_sha256) if hello_factory is None
              else validate_hello(hello_factory(bootstrap_sha256), bootstrap_sha256))
     hello_raw = encoded(hello)
-    initial_deadlines = (hello["guest_boottime_origin_ns"] + 750_000_000_000,
-                         hello["guest_monotonic_origin_ns"] + 750_000_000_000)
+    initial_deadlines = (hello["guest_boottime_origin_ns"] + 1500000000000,
+                         hello["guest_monotonic_origin_ns"] + 1500000000000)
     _write_all(stdout, HELLO_MAGIC + struct.pack(">Q", len(hello_raw)) + hello_raw,
                initial_deadlines)
-    bind_raw = _frame(stdin, BIND_MAGIC, 4096, initial_deadlines)
-    bind = validate_bind(document(bind_raw, 4096), hello_raw)
-    require(bind["package_bytes"] + len(BIND_MAGIC) + 8 + len(bind_raw) <= 33_554_432,
+    bind_raw = _frame(stdin, BIND_MAGIC, 8192, initial_deadlines)
+    bind = validate_bind(document(bind_raw, 8192), hello_raw)
+    require(bind["package_bytes"] + len(BIND_MAGIC) + 8 + len(bind_raw) <= 67108864,
             "CORE_BOOTSTRAP_INPUT_LIMIT")
     boot_deadline = hello["guest_boottime_origin_ns"] + bind["guest_duration_ns"]
     mono_deadline = hello["guest_monotonic_origin_ns"] + bind["guest_duration_ns"]
@@ -856,7 +856,7 @@ def serve(*, stdin, stdout, bootstrap_sha256, hello_factory=None, dispatch=None)
         "boottime_deadline_ns": boot_deadline, "monotonic_deadline_ns": mono_deadline},
                "stdin_bytes_received": len(BIND_MAGIC) + 8 + len(bind_raw) + len(package_raw)}
     frame = _execute(context) if dispatch is None else dispatch(context)
-    require(type(frame) is bytes and frame.startswith(OUTPUT_MAGIC) and len(frame) <= 58_716_144,
+    require(type(frame) is bytes and frame.startswith(OUTPUT_MAGIC) and len(frame) <= 117432304,
             "CORE_BOOTSTRAP_OUTPUT_FRAME")
     _write_all(stdout, frame, guest_deadlines)
     return context
@@ -876,7 +876,24 @@ def main(stdin=None, stdout=None, stderr=None, *, bootstrap_sha256=None,
     except Exception as error:
         code = str(error)
         if not re.fullmatch(r"CORE_[A-Z0-9_]+", code): code = "CORE_BOOTSTRAP_FAILURE"
-        stderr.write((code + "\n").encode("ascii")); stderr.flush()
+        trace, frames = error.__traceback__, []
+        while trace is not None:
+            frames.append(dict(file=os.path.basename(trace.tb_frame.f_code.co_filename),
+                function=trace.tb_frame.f_code.co_name, line=trace.tb_lineno))
+            trace = trace.tb_next
+        detail = dict(schema="local-hand-q2-core-failure/v1", reason=code, resource_level=2,
+            error_type=type(error).__name__, errno=getattr(error,"errno",None),
+            message=str(error)[:2048], message_truncated=len(str(error))>2048,
+            traceback=frames[-8:], traceback_truncated=len(frames)>8)
+        observed = getattr(error, "diagnostic", None)
+        if type(observed) is dict:
+            try:
+                raw = encoded(observed)
+                detail["diagnostic"] = (observed if len(raw) <= 32768 else
+                    dict(truncated=True, bytes=len(raw), sha256=sha(raw)))
+            except (TypeError, ValueError, RecursionError) as invalid:
+                detail["diagnostic"] = dict(truncated=True, serialization_error=type(invalid).__name__)
+        stderr.write((code + "\n").encode("ascii") + encoded(detail)); stderr.flush()
         return 3
 
 
