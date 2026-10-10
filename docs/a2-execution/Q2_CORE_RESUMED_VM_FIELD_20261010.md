@@ -145,3 +145,55 @@ transition v16、host-capacity v19、reconciliation/historical-capacity v20。�
 `GROWTH_RC_NOT_AUTHORIZED`，实际正确拒绝并返回 `GROWTH_PS_NOT_AUTHORIZED`。
 下一提交只对齐测试期待并覆盖 PS 批准缺失；生产实现和拒绝行为不改。
 旧失败日志保留，新提交仍须取得自己的首次 CI 与独立安装，不能复用旧提交成功标记。
+
+## PS1 最终冻结与 PS2/PS3 实际返回
+
+最终 D `b10cdae51f098b12e62c7ca5fbd971b0dab7b56e` 下降自独立 C，未 squash。
+[自己的首次 CI 38040883977](https://github.com/kongbu0621/infra-local-hand/actions/runs/38040883977)
+attempt 1 三项成功：Linux 7541 passed / 89 skipped，Windows 1908 passed / 1382 skipped。
+Linux CI 和本地独立安装各 94 checks / 292 commands；Windows 独立安装 10 / 10。
+此前候选 11e855d 的首次 CI 38040299309 保留为失败：Linux 7539 passed / 89 skipped /
+1 failed，仍是旧错误名断言；Windows 1908 passed / 1382 skipped 且独立安装通过。
+最终改动只有该测试和脱敏说明，生产实现未变；修正后相关 72 项通过。
+
+最终十四份源码 647328 B；准备池实际计入 692224 B、17 inodes，CPU 306556999 ns、
+RSS 峰值 45613056 B、双时钟 elapsed 374524556 ns，均在原上限内。全部源码按准确 D
+准备、打开持有并重检；三调用器及十二项依赖形成不可变 PS1 freeze。准确来源的
+真实本地 I/O 六组、维护/核心条件接续、完整原件消费和尺寸/FD 验证均通过。
+PS1 COMPLETE；旧 RC2 八件、旧冻结及十项依赖、终态保持原样。
+
+PS2 唯一调用实际退出 0，一次 SSH，两个流完整 EOF；原六命令核验通过，返回
+`CURRENT_GUEST_VERIFIED`，host/VM 前后身份一致。没有启动、安装、模块加载或重试。
+原始流、调用器实际顶层完成及新源码准备原件均保留私有；成功归档仅装入本次 guest
+返回，旧 RC2 失败通过新批准/冻结绑定，未伪称被归档或 custodian 连续持有。
+
+首次离线 finalizer 使用了缺少 pytest 的独立安装解释器，在剩余边界检查导入时退出 1；
+不是新的 guest 调用失败。四个已写数据输出及失败日志保留。随后使用已验证离线环境，
+重新计算冻结代码的只读前缀并逐字节比较既存四件，执行同一冻结代码尚未完成的后缀。
+没有改冻结代码、mock 校验、覆盖原件、重跑 PS2 或新增现场观察。完整边界与依赖重检
+通过后才 create-only 写入最终数据冻结和放行门；离线接续顶层退出 0。
+实际归档 348160 B，允许的最大归档 512000 B（上限 524288）；v2 投影 1972 B。
+实际数据重核 marker 64753 B、receipt 保守形状 44408 B、transition 52253 B、
+approved-input 435395 B，核心包保守上界 19477377 B。128-FD 维护交接及 126-FD
+核心准备上界保持；这一步没有创建或发行真实核心包。
+
+PS3 原未发行 `lhqjgrow-20261010c` 调用一次。本地 preflight PASS 后同窗 execute；
+消费 marker、一次 pre SSH，顶层退出 3，`STOP_AND_RETAIN / GROWTH_REPORT_MISSING`。
+pre stdout 0 B，pre stderr 2840 B。已保存 stderr 是结构化 guest/v4 不完整报告：
+`PRE_RUNTIME_PREPARATION / GROWTH_GUEST_IO_OR_RUNTIME`、errno 2、context 空。
+它仅记录 `runtime_preparation` 意图和成功的 `guard_units` 命令；configs/directories/pools
+为空，parents/manager/bus 尚无记录。没有完整 GUEST_QUIET 报告或 poweroff token。
+不把“开始准备”当作配置、启动或维护成功，不从 errno 2 推断具体缺失路径。
+
+维护 transport 退出 3；实际 coordinator completion 为 3，custodian child 为 0，
+不等于维护成功；`remote_exit` 保持 UNKNOWN。marker、events、空 pre stdout、pre stderr、
+receipt 五份实际维护原件及新索引保留私有。post 流、维护 pidfile 和 journal backup
+未生成。没有 journal 增长、维护重启或原 07a 核心发行；H01/Q4/H11 均 NOT_RUN。
+PS3 为 CONSUMED_FAILED / STOP_AND_RETAIN，terminal 为
+`PS3_MAINTENANCE_CONSUMED_FAILED_CORE_NOT_RUN`，原不可变 PS1 freeze 和十二项依赖重检未变。
+
+现在十三代维护已消费，old09c 和 old10b 仍是已调用但未消费的 preflight；十五维护
+义务和 19507 MiB/5662 inodes 总义务不退款。当前批次不允许重放任一调用器、重新连接、
+补采、放宽数据保护、清理、恢复、另起窗口或发行核心包。已保存返回没有指出具体
+缺失对象；不能把它直接归因为运行目录、配置、持久性条目或进程退出竞态。
+后续仅可用保留返回/源码离线复核，不以 PS2 或测试成功恢复已经消费的维护许可。

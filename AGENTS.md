@@ -36,6 +36,32 @@ consumer/cost/version wiring. The implementation remains under PS1 verification;
 independent installation and all caller freezes are still required before PS2. No new field step
 or core package has followed the failed RC2. Complete this approved batch without substep approval.
 
+
+The [PS1 freeze and PS2/PS3 return](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md#ps1-最终冻结与-ps2ps3-实际返回)
+records final D `b10cdae51f098b12e62c7ca5fbd971b0dab7b56e`, own first CI 3/3 success,
+Linux 7541 passed and Windows 1908 passed, both CI installations and local independent 94/292.
+PS1 is complete; fourteen final source copies and twelve caller/dependency hashes are frozen.
+The prior candidate's sole old-error-name test failure remains recorded; only that fixture changed.
+PS2 ran once and completed successfully: one SSH, six original commands, full EOF and host/VM identity.
+An offline finalizer interpreter-dependency failure was retained; unchanged frozen code completed
+its remaining data checks in the verified offline environment, without replaying PS2 or new field reads.
+Only then was the actual data freeze released for original 10c.
+
+Unique PS3 10c passed preflight and invoked same-window execute once. It consumed its marker and
+one pre SSH, then exited 3 at `GROWTH_REPORT_MISSING`. Saved pre stderr reports guest/v4 INCOMPLETE,
+`PRE_RUNTIME_PREPARATION / GROWTH_GUEST_IO_OR_RUNTIME`, errno 2 and empty context. Only runtime
+preparation intent and the successful guard_units command are recorded; no complete pre report or
+poweroff token exists. The exact missing path is not recorded. Do not infer a runtime directory,
+configuration, persistent object or process race. Coordinator completion is 3, custodian child 0;
+remote_exit remains UNKNOWN. Five actual maintenance originals and their index remain private.
+No journal growth, maintenance restart or core package occurred. PS3 is CONSUMED_FAILED /
+STOP_AND_RETAIN; H01/Q4/H11 NOT_RUN. The terminal gate is
+`PS3_MAINTENANCE_CONSUMED_FAILED_CORE_NOT_RUN`; immutable PS1 freeze and twelve hashes are unchanged.
+Thirteen maintenance generations are consumed, old09c and old10b remain invoked unconsumed
+preflights, and all fifteen obligations / 19507 MiB / 5662 inodes remain without refunds.
+Do not replay callers, reconnect, supplement field evidence, relax protections, clean up, recover,
+start another window or issue 07a under this spent batch. Further review uses retained returns/source.
+
 ## Current approved batch: resumed VM and original core (2026-10-10)
 
 [Exact A](docs/governance/Q2_CORE_RESUMED_VM_BASELINE.md)
