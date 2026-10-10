@@ -1,6 +1,6 @@
 # 原核心身份与资源接续待审基线
 
-**PROPOSED / Gate OPEN / NOT APPROVED**；scope
+**CLOSED for IR1–IR3 only**；scope
 `LH-Q2-CORE-IDENTITY-RESOURCE-CONTINUATION-v1`，IR1–IR3。
 准确 A `e16b9038eb825f06306a6fe94bc2be30cc418238`，tree
 `40a9ed9c36bee97409acaac319678613d970a037`，该提交仅增加以下三文档：
@@ -21,5 +21,9 @@ private待审请求另列准确原Q1目的地、维护源码/目标元数据及�
 审批。固定归档798720B/19成员只做内存核算，没有生成执行归档。17份维护义务、
 所有读取/准备及原核心合计23079MiB/6834inodes，无退款、无旧重放或新补采。
 
-当前没有本范围Owner B/C或接续实现，IR1 NOT_STARTED、IR2 NOT_ISSUED，
-IR3/H01/Q4/H11 NOT_RUN。普通容量修复PR #12不是本批执行批准。
+[Owner B](Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_OWNER_DECISION.md)事件
+`LH-Q2-CORE-IDENTITY-RESOURCE-CONTINUATION-CLOSURE-20261011-01`，准确相邻回答
+“批准上述完整批次”。本独立C只登记闭合，D须下降自C，不squash；A三文档原字节和
+历史OPEN标签保持。整批准确目的地/私有载荷亦获批准，批内不逐项确认。当前尚无
+接续实现，IR1 NOT_STARTED、IR2 NOT_ISSUED、IR3/H01/Q4/H11 NOT_RUN。
+普通容量修复PR #12和本闭合均不构成维护或核心PASS。
