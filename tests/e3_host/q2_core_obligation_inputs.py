@@ -94,6 +94,35 @@ TOTALS = dict(snapshot_bytes=626790400, snapshot_inodes=32113,
               effective_bytes=765202432, effective_inodes=40177,
               configured_quota_bytes=249561088, configured_quota_inodes=17792)
 
+# The pinned historical-snapshot's first startup_issuance_observations row
+# records an unissued transfer marker. Its associated staging root and marker
+# occur in retained_inputs (protected locations), not retained (observed objects)
+# or any obligation's evidence. Keep their private names out of this source.
+# These are source classifications, never an ENOENT fallback or a budget release.
+UNISSUED_STARTUP_PATH_PINS = (
+    (36, "d18d4fb487c40a7675713d377efc2dd206d7082ffd188f3a17eddfc9075316ba"),
+    (48, "d10ddea0df91fd2ea1b68a3e2a2790b2c90c7dd1162f5a292a32b30883a83146"),
+)
+
+
+def persistent_inventory(inventory):
+    """Correct the two unissued locations in a source-verified Q1 inventory.
+
+    Callers must still reconstruct and verify the entire historical inventory
+    against the pinned plans and Q1 originals before applying this transform.
+    No historical artifact, protected root, domain or liability is changed.
+    """
+    value = copy.deepcopy(inventory)
+    pins = set(UNISSUED_STARTUP_PATH_PINS)
+    matched = [path for path in value["essential_paths"]
+               if (len(path.encode()), hashlib.sha256(path.encode()).hexdigest()) in pins]
+    _require(not matched or len(matched) == len(set(matched)) == len(pins),
+             "PERSISTENT_CLASSIFICATION_PARTIAL")
+    _require(all(path in value["protected_roots"] for path in matched),
+             "PERSISTENT_CLASSIFICATION_PROTECTION")
+    value["essential_paths"] = [path for path in value["essential_paths"] if path not in matched]
+    return value
+
 
 def _require(condition, code):
     c.require(condition, "CORE_OBLIGATION_" + code)

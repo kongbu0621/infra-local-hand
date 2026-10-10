@@ -33,7 +33,7 @@ def originals(monkeypatch,request):
     q1_raw=source_raw(monkeypatch,previous)
     old_inventory,proof=h.q1_declaration(q1_raw)
     desc=description();pre=pre_report()
-    desc.update(h.merge_q1_inventory(old_inventory,proof))
+    desc.update(h.prior.obligations.persistent_inventory(h.merge_q1_inventory(old_inventory,proof)))
     pre['quiescence']['startup']={}
     for manager in ('system','user'):
         declared=sorted(row['name'] for row in desc['domain_units'] if row['manager']==manager)
