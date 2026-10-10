@@ -63,10 +63,10 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# TC1 binds the exact reviewed dispatcher. Exact D first CI, full TC2 originals
+# PP1 binds the exact reviewed dispatcher. Exact D first CI, full PP2 originals
 # and actual coordinator completion remain required before original 07a.
 # Historical dispatcher pins remain in their consumed source profiles.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"23722da3e0919bf605c506d8476c5f821300594a8f58259fb245b5ef121f1389"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"73551b01eb11083b9deb8da15bcc9832b2fe5639455926e33945583156e31d9b"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

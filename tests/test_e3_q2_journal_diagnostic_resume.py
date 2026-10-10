@@ -27,7 +27,7 @@ def source_git(monkeypatch):
         elif args == ["diff", "--quiet", "HEAD"]:
             pass
         elif args[0] == "rev-parse" and args[1].endswith("^{tree}"):
-            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE,h.history.c.EXEC_BASELINE,h.history.c.EXEC_CLOSURE,h.history.c.GS_BASELINE,h.history.c.GS_CLOSURE,h.history.c.QI_BASELINE,h.history.c.QI_CLOSURE,h.history.c.DS_BASELINE,h.history.c.DS_CLOSURE,h.history.c.VM_ADOPTION_BASELINE,h.history.c.VM_ADOPTION_CLOSURE,h.history.c.RUNTIME_BASELINE,h.history.c.RUNTIME_CLOSURE,h.history.c.HOST_FD_BASELINE,h.history.c.HOST_FD_CLOSURE,h.history.c.USAGE_BASELINE,h.history.c.USAGE_CLOSURE,h.history.c.TRANSPORT_BASELINE,h.history.c.TRANSPORT_CLOSURE,h.history.c.RESUMED_VM_BASELINE,h.history.c.RESUMED_VM_CLOSURE,h.history.c.PROTECTED_SOURCE_BASELINE,h.history.c.PROTECTED_SOURCE_CLOSURE)
+            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE,h.history.c.EXEC_BASELINE,h.history.c.EXEC_CLOSURE,h.history.c.GS_BASELINE,h.history.c.GS_CLOSURE,h.history.c.QI_BASELINE,h.history.c.QI_CLOSURE,h.history.c.DS_BASELINE,h.history.c.DS_CLOSURE,h.history.c.VM_ADOPTION_BASELINE,h.history.c.VM_ADOPTION_CLOSURE,h.history.c.RUNTIME_BASELINE,h.history.c.RUNTIME_CLOSURE,h.history.c.HOST_FD_BASELINE,h.history.c.HOST_FD_CLOSURE,h.history.c.USAGE_BASELINE,h.history.c.USAGE_CLOSURE,h.history.c.TRANSPORT_BASELINE,h.history.c.TRANSPORT_CLOSURE,h.history.c.RESUMED_VM_BASELINE,h.history.c.RESUMED_VM_CLOSURE,h.history.c.PROTECTED_SOURCE_BASELINE,h.history.c.PROTECTED_SOURCE_CLOSURE,h.history.c.PERSISTENT_PATH_BASELINE,h.history.c.PERSISTENT_PATH_CLOSURE)
                            if args[1]==item['commit']+'^{tree}')
             raw=(("0"*40 if state.changed_tree==authority['commit'] else authority['tree'])+'\n').encode()
         elif args[:2] == ["merge-base", "--is-ancestor"]:
@@ -59,6 +59,29 @@ def test_candidate_requires_all_closures_and_approved_source_caps(source_git):
     assert len(sources) == 13
     assert all(len(sources[name]) <= 98304 for name in
                ("q2_journal_growth.py", "q2_journal_growth_guest.py"))
+
+
+@pytest.mark.parametrize("fault", ["closure", "ancestor", "tree", "owner",
+    "REQUIREMENTS.md", "ARCHITECTURE.md", "IMPLEMENTATION_PLAN.md"])
+def test_persistent_continuation_requires_exact_approved_lineage(source_git, fault):
+    if fault == "closure":
+        source_git.head = h.PP_C
+        reason = "GROWTH_PERSISTENT_PATH_AUTHORITY"
+    elif fault == "ancestor":
+        source_git.rejected_edge = (h.PP_C, source_git.head)
+        reason = "GROWTH_SOURCE"
+    elif fault == "tree":
+        source_git.changed_tree = h.PP_A
+        reason = "GROWTH_PERSISTENT_PATH_TREE"
+    elif fault == "owner":
+        source_git.changed_doc = h.history.c.PERSISTENT_PATH_OWNER_DECISION['record_path']
+        reason = "GROWTH_PERSISTENT_PATH_B_CHANGED"
+    else:
+        source_git.changed_doc = "docs/a2-execution/q2-core-persistent-path-continuation/" + fault
+        reason = "GROWTH_PERSISTENT_PATH_A_CHANGED"
+    with pytest.raises(h.prior.r.ObservationError, match="^" + reason + "$"):
+        h.growth_sources(source_git.head)
+    assert not any(call[0] == "show" and ":tests/" in call[1] for call in source_git.calls)
 
 
 @pytest.mark.parametrize("version", ["v1", "v2", "maps_budget", "scan_work", "drift_resume", "minimal"])

@@ -156,8 +156,10 @@ def rig(monkeypatch, tmp_path):
                              start_custody=nothing,custody_exit={},custody=SimpleNamespace(binding={},summary=lambda:{}),
                              raw={"start.sh": b"fixed"}, retained={})
     inputs = SimpleNamespace(recheck=nothing, close=nothing)
+    from persistent_continuation_fixture import source as persistent_source
     frozen = {"guest_startup_assurance": h.guest_startup_assurance(), "boot_id": BOOT, "source_binding_sha256": "a" * 64, "horizon": {},
-              "anchor_path": str(tmp_path), "source_binding": {"resume":h.history.maintenance_resume()}, "inventory": {}}
+              "anchor_path": str(tmp_path), "source_binding": {"resume":h.history.maintenance_resume(),
+                  "persistent_source": persistent_source()}, "inventory": {}}
     sources = {"q2_core_capacity_reader.py": b"pass", "q2_journal_growth_guest.py": b"pass"}
     vm = {"images": Images(), "process": old, "restart_argv": ["qemu", "fixed-arguments"],
           "binding": {}, "original_argv": ["qemu", "old-arguments"]}
@@ -197,7 +199,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v17'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v18'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -274,7 +276,7 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     elif stale!='digest': old[stale]='0'*40
     rig.window.binding['origins']=[1,2]
     handoff=h.make_preflight('d'*40,h.digest(h.canonical(rig.manifest)),rig.window.binding,
-        rig.work.nonce,dict(cpu_nanoseconds=1,rss_peak_bytes=1),resume=rig.manifest['resume'])
+        rig.work.nonce,dict(cpu_nanoseconds=1,rss_peak_bytes=1),resume=rig.frozen['source_binding']['resume'])
     expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,

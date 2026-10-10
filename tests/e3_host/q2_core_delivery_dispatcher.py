@@ -1151,7 +1151,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments", "maintenance"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v20"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v21"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     _approved_equal(value["maintenance"],_maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -1933,7 +1933,7 @@ def validate_transport_failure_source(value):
     return value
 
 
-def _maintenance_resume():
+def _legacy_maintenance_resume():
     return dict(scope='LH-Q2-CORE-PROTECTED-SOURCE-v1', session='lhqjgrow-20261010c',
         previous_local_preflight=local_preflight_summary(),
         previous_transport_failure=transport_failure_summary(),
@@ -1945,12 +1945,55 @@ def _maintenance_resume():
             remote_exit='UNKNOWN', window_consumed=True) for row in previous_journal_profiles()])
 
 
+
+def persistent_failure_summary():
+    return dict(session='lhqjgrow-20261010c',D='b10cdae51f098b12e62c7ca5fbd971b0dab7b56e',
+        state='CONSUMED_FAILED_STOP_AND_RETAIN',reason='GROWTH_REPORT_MISSING',
+        original_count=5,ssh_requests=1,marker_created=True,remote_exit='UNKNOWN',
+        coordinator_returncode=3,custodian_returncode=0,core_cases='NOT_RUN',
+        guest_stage='PRE_RUNTIME_PREPARATION',guest_reason='GROWTH_GUEST_IO_OR_RUNTIME',
+        exact_missing_path='NOT_RECORDED',old_commitments_refunded=False)
+
+
+def _maintenance_resume():
+    value=_legacy_maintenance_resume()
+    value.update(scope='LH-Q2-CORE-PERSISTENT-PATH-CONTINUATION-v1',session='lhqjgrow-20261010d',
+        previous_runtime_failure=persistent_failure_summary())
+    return value
+
+
+def validate_persistent_source(value):
+    check=_Checks('CORE_JOURNAL_')
+    check.exact(value,{'schema','archive','index_sha256','records_sha256','predecessor','summary'},
+        'PERSISTENT_SOURCE_FIELDS')
+    check(value['schema']=='local-hand-q2-persistent-continuation-archive/v1'
+        and canonical(value['summary'])==canonical(persistent_failure_summary()),'PERSISTENT_SOURCE_SUMMARY')
+    check.exact(value['archive'],{'bytes','sha256'},'PERSISTENT_ARCHIVE_PIN')
+    check(type(value['archive']['bytes']) is int and value['archive']['bytes']==522240,
+        'PERSISTENT_ARCHIVE_BOUND')
+    for digest in (value['archive']['sha256'],value['index_sha256'],value['records_sha256']):check.digest(digest)
+    reference=value['predecessor']
+    check.exact(reference,{'member','marker','field','resume_sha256'},'PERSISTENT_REFERENCE_FIELDS')
+    check(reference['member']=='old10c/.lhqjgrow-20261010c.consumed.json'
+        and reference['field']=='manifest.resume'
+        and reference['resume_sha256']==_sha(canonical(_legacy_maintenance_resume())+b'\n'),
+        'PERSISTENT_REFERENCE_TARGET')
+    check.exact(reference['marker'],{'bytes','sha256'},'PERSISTENT_MARKER_PIN')
+    check.integer(reference['marker']['bytes'],1,65536);check.digest(reference['marker']['sha256'])
+    return value
+
+
 def _maintenance_commitments():
     return dict(previous_maintenance=_maintenance_resume(),
         guest_verification=dict(sessions=["lhqguest-20261010a","lhqguest-20261010b"],host_bytes=2097152,host_inodes=64,host_cpu_seconds=240,guest_cpu_seconds=240,per_attempt_cpu_seconds=120,refunded=False),
         source_preparation=dict(session="lhqsource-20261010a",host_bytes=1048576,host_inodes=32,cpu_seconds=120,refunded=False),
+        path_reads=dict(sessions=['lhqpaths-20261010a','lhqpaths-20261010b'],host_bytes=2097152,
+            host_inodes=64,host_cpu_seconds=240,guest_cpu_seconds=240,per_attempt_cpu_seconds=120,refunded=False),
+        additional_preparation=dict(sessions=['lhqpaths-source-20261010a','lhqpaths-source-20261010b',
+            'lhqsource-20261010d','lhqarchive-20261010d'],host_bytes=4194304,host_inodes=128,
+            cpu_seconds=480,per_attempt_cpu_seconds=120,refunded=False),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b','lhqjgrow-20261010c')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b','lhqjgrow-20261010c','lhqjgrow-20261010d')],
         released_or_refunded=False)
 
 
@@ -1960,7 +2003,7 @@ def _validate_maintenance_resume(value):
     return value
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261010c'
+JOURNAL_SESSION = 'lhqjgrow-20261010d'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -2149,12 +2192,12 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v16'
-        and value['session']=='lhqjgrow-20261010c', 'JOURNAL_SCHEMA')
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v17'
+        and value['session']=='lhqjgrow-20261010d', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=PROTECTED_SOURCE_A,C=PROTECTED_SOURCE_C)
+        A=PERSISTENT_PATH_A,C=PERSISTENT_PATH_C)
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     check(type(value['guest_startup_assurance']) is dict and canonical(value['guest_startup_assurance'])
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
@@ -2166,6 +2209,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
     _validate_maintenance_resume(value['previous_maintenance'])
     validate_local_preflight_source(value['local_preflight_source'])
     validate_transport_failure_source(value['transport_failure_source'])
+    validate_persistent_source(value['persistent_source'])
     _validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
     check.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
@@ -2192,12 +2236,12 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261010c.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261010d.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     check(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
         ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010c.'):]])
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010d.'):]])
         check.digest(row['sha256'])
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -2258,7 +2302,7 @@ def _validate_approved_components(value):
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v20", "RECONCILIATION_SCHEMA")
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v21", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
@@ -8532,3 +8576,6 @@ __all__ = [
     "DispatchError", "FieldEffects", "build_intent", "validate_plan", "required_paths",
     "phase_source_specs", "dispatch",
 ]
+
+PERSISTENT_PATH_A = '4b8e24c1985b19aea957044e5936f4146301c247'
+PERSISTENT_PATH_C = 'd77315e5792c54c406b000b2179ef179ec900c94'

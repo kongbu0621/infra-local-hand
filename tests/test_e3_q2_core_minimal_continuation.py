@@ -65,6 +65,8 @@ def originals(monkeypatch,request):
     activation=p.build_vm_activation(files,index,historical_boot=historical)
     frozen.update(vm_activation=activation,activation_files=files,activation_index=index,anchor_path='/fixture',boot_id=activation['current_boot_id'])
     frozen['source_binding']['vm_activation']=activation
+    from persistent_continuation_fixture import bind
+    bind(frozen)
     desc['original_boot_id']=pre['boot_id']=activation['current_boot_id']
     pre['runtime_preparation']=runtime_report(desc,pre['boot_id'])
     sha=h.digest(h.canonical(frozen['source_binding']))
@@ -102,9 +104,9 @@ def originals(monkeypatch,request):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v17',R=h.R,A=h.PS_A,C=h.PS_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v18',R=h.R,A=h.PP_A,C=h.PP_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
-        resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
+        resume=p.encode_maintenance_resume(p.maintenance_resume(),frozen['source_binding']['persistent_source']),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
         inputs=p.encode_manifest_inputs(frozen['source_binding']),window_binding=dict(boot_id=pre['boot_id'],origins=[1,2]),
         inventory_sha256=h.digest(h.canonical(frozen['inventory'])),retained_sha256='e'*64,
@@ -138,7 +140,7 @@ def originals(monkeypatch,request):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v17',R=h.R,A=h.PS_A,C=h.PS_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v18',R=h.R,A=h.PP_A,C=h.PP_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],
