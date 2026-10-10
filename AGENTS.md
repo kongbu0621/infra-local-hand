@@ -62,6 +62,15 @@ Do not replay either caller, retry, supplement field evidence, change VM/service
 recover or open another window. Further offline work must use retained returns/source only;
 the successful software verification does not authorize another field continuation.
 
+The same field record now retains the subsequent direct-core-repair request and a prepared
+fixed-host read. Automatic approval rejected that read before process creation because the
+terminal instructions permit retained-evidence review only. No new host, VM, endpoint or SSH
+observation ran. The private one-shot source and exact bounded proposal are prepared, not
+authorized; do not issue them or another equivalent read without explicit Owner approval of
+that new fixed-host observation. There is no new maintenance consumption, retry or core result.
+Any later VM startup or changed activation binding must use actual evidence and its own
+applicable concrete authorization; do not replay 10b or overwrite its original freeze.
+
 ## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
 
 Scope `LH-Q2-CORE-USAGE-CONTINUATION-v1` is **CLOSED for UC1–UC3 only**.
