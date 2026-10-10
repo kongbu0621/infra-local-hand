@@ -43,6 +43,25 @@ verification and the 44-test real FD lifecycle passed; historical pins remain un
 TC1 verification/publication/installation/freeze is in progress; TC2 NOT_ISSUED and TC3 cases NOT_RUN.
 Implementation or offline synthetic success alone does not release either field caller.
 
+The [TC1 freeze and TC2 return](docs/a2-execution/Q2_CORE_TRANSPORT_FIELD_20261010.md)
+records direct child D `776b9810ec07ed8e1d37d4a740eeff5190c1c15c`, its own first CI 3/3 success,
+Linux 7494 passed and Windows 1907 passed, both CI installations and the local independent
+94-check/292-command installation. Complete retained-source/size/resource checks and both caller
+freezes passed; TC1 is complete. The unique 10b caller was invoked once and stopped in local
+preflight with `BLOCKED / GROWTH_ACTIVATION_HOST_BOOT`, exit 3, empty diagnostic, zero SSH and
+no consumption marker. Execute was not invoked; no poweroff token, backup, journal change,
+maintenance restart or core package was issued. Six local returns remain private; there are no
+new maintenance originals. The immutable freeze and five caller hashes remain unchanged.
+TC2 is PREFLIGHT_FAILED / STOP_AND_RETAIN, terminal `TC2_PREFLIGHT_FAILED_TC3_NOT_RUN`;
+TC3/H01/Q4/H11 remain NOT_RUN. Twelve maintenance generations remain consumed; old09c and new10b
+are invoked unconsumed preflights. All fourteen obligations and original limits remain.
+Retained freeze/preflight values prove the adopted host boot and current window boot differ.
+This does not establish the current VM's identity, existence or liveness, or when/why the boot
+changed. Do not overwrite the old boot binding, reuse an old PID or bypass identity protection.
+Do not replay either caller, retry, supplement field evidence, change VM/services, clean up,
+recover or open another window. Further offline work must use retained returns/source only;
+the successful software verification does not authorize another field continuation.
+
 ## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
 
 Scope `LH-Q2-CORE-USAGE-CONTINUATION-v1` is **CLOSED for UC1–UC3 only**.
