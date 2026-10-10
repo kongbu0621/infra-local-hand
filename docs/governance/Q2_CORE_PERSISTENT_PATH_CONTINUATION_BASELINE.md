@@ -26,3 +26,10 @@ R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04` 的固定直接规则已读取，SH
 脱敏记录；原件/索引/归档/调用器/机器信息保持私有。批内不逐项审批。
 本闭合仅在 PP1–PP3 中取代旧批次禁止新窗口条款，不恢复旧批次。
 在 C：PP1 NOT_STARTED，PP2 NOT_ISSUED，PP3/H01/Q4/H11 NOT_RUN。
+
+后续[准确冻结与返回](../a2-execution/Q2_CORE_PERSISTENT_PATH_FIELD_20261010.md)：
+最终 D `a3f9dbeca268de80124f524ccee4f1437bd61784` 已正常合入，首次 CI 三项、双平台
+及本地独立安装、完整来源/预算/调用器冻结均完成；PP1 COMPLETE。唯一10d预检通过，
+execute 消耗 marker 和一次 pre SSH 后在必备对象保护校验停止。PP2 CONSUMED_FAILED /
+STOP_AND_RETAIN；PP3/H01/Q4/H11 NOT_RUN。实际五原件保持私有，原冻结和独立终态分开。
+本闭合不提供重试、补采或另一窗口；14次已消费及16份完整义务全部保持。

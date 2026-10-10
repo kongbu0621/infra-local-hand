@@ -40,6 +40,34 @@ indexes, archives, callers and machine metadata stay private. This closure super
 clauses only in PP1–PP3 and proves neither implementation, readiness, maintenance nor core PASS.
 At C, PP1 NOT_STARTED, PP2 NOT_ISSUED, PP3/H01/Q4/H11 NOT_RUN.
 
+The [PP1 freeze and PP2 return](docs/a2-execution/Q2_CORE_PERSISTENT_PATH_FIELD_20261010.md)
+records final D `a3f9dbeca268de80124f524ccee4f1437bd61784`, descending from independent C,
+normal PR #6 merge `e8868806dfc9ef413177420eb1157bcd4131da07`, its own first CI 3/3,
+both CI installations and local installed 94 checks/292 commands, exact retained-source/full
+lifecycle bounds and both frozen callers. PP1 is complete. The unique 10d caller passed its
+one local preflight and invoked same-window execute once. Its marker and one pre SSH were
+created; execute returned STOP_AND_RETAIN / GROWTH_REPORT_MISSING. The bound guest failure
+is PRE_RUNTIME_PREPARATION / GROWTH_PATH_PROTECTION at persistent inventory index 73,
+component index 3, qualify_component. These indices are zero-based; the failed component
+is the final object. Its actual UID/mode were not recorded. Do not infer which side of the
+owner-or-write-permission predicate failed. Five actual originals and their index stay private;
+post streams, maintenance pidfile and backup are absent. Coordinator exit 3/custodian exit 0
+are actual completion, not maintenance success; remote exit remains UNKNOWN. Runtime preparation
+was entered and guard_units completed, but no poweroff, journal growth, restart or core package
+was issued. PP2 is CONSUMED_FAILED / STOP_AND_RETAIN; PP3/H01/Q4/H11 are NOT_RUN.
+The immutable PP1 freeze and twelve caller/dependency hashes remain unchanged; a separate
+terminal gate blocks both callers. Fourteen maintenance generations are now consumed; old09c
+and old10b remain invoked unconsumed preflights. All sixteen full obligations and costs remain.
+
+The fixed retained-source review is complete: six pinned archives/26 documents plus two original
+plan/preparation documents contain nine references to this genuinely retained quota evidence
+object, including seven plan retained rows and the old before/after roots. It is not either of
+the two unissued paths corrected by PR #4. The historical references do not establish current
+ownership or permissions. Do not remove the object from required evidence, relax protection,
+guess a chmod/chown, replay either caller, retry, collect additional field evidence, clean up,
+recover or start another window under this consumed batch. No further guest action occurred.
+Only retained-return/source offline work remains authorized by this batch; the core remains unrun.
+
 ## Fixed read completed; historical path classification repair (2026-10-10)
 
 Owner explicitly approved the adjacent request naming the fixed Q1 VM destination and private
