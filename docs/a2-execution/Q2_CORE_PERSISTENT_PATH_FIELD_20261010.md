@@ -46,6 +46,14 @@ diagnostic 的完整保留、create-only 拒绝重复、一次 preflight/PASS �
 归档准备脚本初次加载因错误的 Inputs 模块定位停止，尚未访问原件或创建准备池；
 修正后一次实际准备完成，原错误记录私有保留。没有因此创建新现场窗口。
 
+首个本地实现提交 `eb8384174253d21b8731d3b01fb0aa8148b3676e` 的真实准确来源核对
+在 `GROWTH_DEPENDENCY_CHANGED` 停止：维护入口仍将 `q2_core_obligation_inputs.py`
+与旧版本比较，无法采用已批准的 PR #4 分类修复。该单个依赖现在准确绑定到
+`47183cc310cbab15cf78bdb8f3f26cc935c1fb66`；其他固定依赖和完整 A/C/D 校验不变。
+此发现来自保留来源与 Git 字节，无新现场观察。原本地提交/失败日志保留，尚未推送
+实现 CI 或消耗 PP2。独立 wheel 构建改在准确提交的隔离 checkout 完成，保留用户
+工作区的既有未跟踪条目，不改动构建器的 clean-source 要求。
+
 此记录版本：PP1 IN_PROGRESS，PP2 NOT_ISSUED，PP3/H01/Q4/H11 NOT_RUN。
 只有完整 PP1 后执行本批唯一10d；其完整成功原件及实际 coordinator/custodian
 完成通过独立校验，才发行原未发行07a。失败/未知立即停止并保留，无重试或补采。

@@ -1371,7 +1371,8 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
    os.close(fd)
   require(raw==git("show",expected+":tests/e3_host/"+name),"GROWTH_SOURCE_DRIFT")
   if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py","q2_journal_retained_fds.py"):
-   require(raw==git("show","8e91fa2631aa18a8469efa5a14e4145eaf781e28:tests/e3_host/"+name),
+   approved="47183cc310cbab15cf78bdb8f3f26cc935c1fb66" if name=="q2_core_obligation_inputs.py" else "8e91fa2631aa18a8469efa5a14e4145eaf781e28"
+   require(raw==git("show",approved+":tests/e3_host/"+name),
 "GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw
  require(all(len(sources[name])<=98304 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
