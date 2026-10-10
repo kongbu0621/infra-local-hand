@@ -1,6 +1,6 @@
 # Execution guidance
 
-## Prepared core continuation: protected source inputs (2026-10-10)
+## Current approved batch: protected source inputs and original core (2026-10-10)
 
 Owner again requested direct core progress and suppression of peripheral functionality.
 Keep the existing NAS discovery/admission block and pause all listed side work.
@@ -10,17 +10,24 @@ only VM/SSH/key-command effects were replaced by synthetic peers. No field call 
 
 The [minimal core continuation](docs/governance/Q2_CORE_PROTECTED_SOURCE_BASELINE.md) is exact A
 `eabffdbfbdc1c2d041f35dd9371714625380bf3f`, tree `0de0a04ed246bbbc95b20f30696214a1ed6354d9`,
-scope `LH-Q2-CORE-PROTECTED-SOURCE-v1`, **OPEN for PS1–PS3**. It proposes final protected-source
+scope `LH-Q2-CORE-PROTECTED-SOURCE-v1`, **CLOSED for PS1–PS3 only** by
+[Owner B](docs/governance/Q2_CORE_PROTECTED_SOURCE_OWNER_DECISION.md), event
+`LH-Q2-CORE-PROTECTED-SOURCE-CLOSURE-20261010-01`, exact adjacent reply “批准”. It authorizes protected-source
 adoption and verification, one new fixed guest verification, then conditional original unissued
 10c maintenance and original unissued 07a H01→Q4→H11. It adds no peripheral product behavior.
 Keep the three A document bytes. R/source/integrity, mandate, Owner authority, no exceptions and
-change control remain. No exact-A Owner B or independent C exists; no new continuation implementation,
-caller release or field execution is authorized by this prepared baseline. Prior ordinary repair
-remains unissued; the failed RC2, immutable freeze and terminal gate stay retained.
-The proposed total is 19507 MiB/5662 inodes, preserving fifteen maintenance obligations and old
+change control remain. This independent C is closure bookkeeping only; D must descend from C without
+squash. Complete PS1 verification/publication/exact-D first CI/independent installation/all caller
+freezes before the unique PS2. Prior ordinary repair remains unissued at C; the failed RC2, immutable
+freeze and terminal gate stay retained. The approved total is 19507 MiB/5662 inodes, preserving fifteen maintenance obligations and old
 costs plus one new guest capture and one final source-copy preparation pool, with original limits.
-If approved, complete PS1–PS3 without per-substep reapproval; current PS2/PS3 NOT_ISSUED and
-H01/Q4/H11 NOT_RUN. Do not interpret this OPEN preparation as permission to replay the old caller.
+Complete PS1–PS3 without per-substep reapproval. Only full PS2 success and final data freeze permit
+the original unissued 10c preflight/PASS same-window maintenance; full originals and actual coordinator
+completion alone permit original 07a H01→Q4→H11. No old replay, retry, supplementary field collection,
+cleanup, rollback, extra recovery/startup/window or peripheral work. All original VM/install, 19/7/7,
+Q1, domain/cgroup/process/writer/data checks, trusted premises and hard limits stay; unknown stops.
+At C PS1 NOT_STARTED, PS2/PS3 NOT_ISSUED and H01/Q4/H11 NOT_RUN. This closure supersedes older
+no-new-window clauses only inside PS1–PS3 and proves no implementation, readiness or core PASS.
 
 ## Current approved batch: resumed VM and original core (2026-10-10)
 
