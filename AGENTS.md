@@ -75,6 +75,30 @@ Original predicates, path coverage, reads and limits are unchanged. Native relat
 passed 433 tests, including real pipe/receipt propagation and existing NAS suppression. This does
 not recover old10d's missing metadata, restore the spent batch or grant another field read.
 
+The separately approved fixed-object read is now complete. Owner's adjacent reply “批准” closed
+`LH-CORE-PATH-PROTECTION-READ-20261010-01` / `lhqprotect-20261010a`, including the exact private
+destination/payload and normal PR #8 merge. Repair D `f1481261fdd05ba4641c89c04ec10a6baae1fea7`
+has its own first CI 38054688735, attempt 1, all three jobs successful including both installations;
+normal merge commit is `860424779e90df9d952b5986a2d1839a18747dc9`.
+The frozen caller ran once, made one SSH call and actually exited 0. Its bound guest report exited
+0 with both stream EOFs and unchanged host/VM identity. The fixed object's current write-bit check
+passes, while its owner is outside the original allowed set. This is a successful observation of
+REJECTED protection, not maintenance admission or a retrospective proof of old10d's missing sample.
+Eight actual originals, their index, prepared/final freezes and the separate terminal gate remain
+private. State is CONSUMED_READ_COMPLETE_PROTECTION_REJECTED; do not replay this reader or any old
+caller. No ownership/mode/content change, maintenance or core package followed. H01/Q4/H11 remain
+NOT_RUN. Reservations are now 20811 MiB/6288 inodes, with no refunds; all maintenance obligations stay.
+
+Offline review found a retained Q1 creation script assigning this object to a dedicated historical
+account and a continuation script preserving that ownership. Those scripts specify runtime account
+lookup, not the numeric UID/GID observed now; they do not prove their own execution or the current
+account mapping. The already pinned Q1 handoff also records other historical owners outside the
+current fixed set. Do not globally add an observed UID, remove required evidence or guess chmod/chown.
+The next repair needs an explicit source-bound historical-object ownership policy and aligned
+independent consumers; no such policy change or new field window is authorized by this completed read.
+Use the retained review rather than repeat the completed lookup. Keep NAS discovery/new-job admission
+disabled and peripheral work paused.
+
 ## Fixed read completed; historical path classification repair (2026-10-10)
 
 Owner explicitly approved the adjacent request naming the fixed Q1 VM destination and private
