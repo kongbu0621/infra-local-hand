@@ -1,5 +1,27 @@
 # Execution guidance
 
+## Prepared core continuation: protected source inputs (2026-10-10)
+
+Owner again requested direct core progress and suppression of peripheral functionality.
+Keep the existing NAS discovery/admission block and pause all listed side work.
+The ordinary private caller repair now also passed six complete control-flow cases with real
+local file opening/holding/rechecks, exact Git source binding, accounting and result persistence;
+only VM/SSH/key-command effects were replaced by synthetic peers. No field call occurred.
+
+The [minimal core continuation](docs/governance/Q2_CORE_PROTECTED_SOURCE_BASELINE.md) is exact A
+`eabffdbfbdc1c2d041f35dd9371714625380bf3f`, tree `0de0a04ed246bbbc95b20f30696214a1ed6354d9`,
+scope `LH-Q2-CORE-PROTECTED-SOURCE-v1`, **OPEN for PS1–PS3**. It proposes final protected-source
+adoption and verification, one new fixed guest verification, then conditional original unissued
+10c maintenance and original unissued 07a H01→Q4→H11. It adds no peripheral product behavior.
+Keep the three A document bytes. R/source/integrity, mandate, Owner authority, no exceptions and
+change control remain. No exact-A Owner B or independent C exists; no new continuation implementation,
+caller release or field execution is authorized by this prepared baseline. Prior ordinary repair
+remains unissued; the failed RC2, immutable freeze and terminal gate stay retained.
+The proposed total is 19507 MiB/5662 inodes, preserving fifteen maintenance obligations and old
+costs plus one new guest capture and one final source-copy preparation pool, with original limits.
+If approved, complete PS1–PS3 without per-substep reapproval; current PS2/PS3 NOT_ISSUED and
+H01/Q4/H11 NOT_RUN. Do not interpret this OPEN preparation as permission to replay the old caller.
+
 ## Current approved batch: resumed VM and original core (2026-10-10)
 
 [Exact A](docs/governance/Q2_CORE_RESUMED_VM_BASELINE.md)
