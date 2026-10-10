@@ -1,5 +1,22 @@
 # Execution guidance
 
+## Prepared core identity and resource continuation (2026-10-11)
+
+The [fixed proposal](docs/governance/Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_BASELINE.md)
+is OPEN, not an Owner closure: exact A `e16b9038eb825f06306a6fe94bc2be30cc418238`,
+tree `40a9ed9c36bee97409acaac319678613d970a037`, scope
+`LH-Q2-CORE-IDENTITY-RESOURCE-CONTINUATION-v1` / IR1–IR3. Preserve its three original
+document bytes. One proposed 11a maintenance, then conditional original 07a, would adopt
+the repaired retained-root identity policy and level-two ceilings after full wiring,
+verification, normal publication and freezing. Old10d's five actual originals, immutable
+freeze, terminal, raw caller/coordinator returns and all twelve caller hashes were checked
+privately. A fixed 19-member envelope is 798720 bytes in memory, under 1 MiB; it has not
+been written as an execution archive. Proposed costs are 23079 MiB / 6834 inodes, including
+17 full maintenance obligations. The 904 MiB / 32 inode current headroom counts once.
+There is no new Owner decision, implementation, caller or field window. Current request
+and exact private outbound scope need one concrete batch decision; no old caller replay,
+additional guest observation or peripheral work follows from this proposal or PR #12.
+
 ## Current resource and diagnostic repair (2026-10-11)
 
 Owner directly requested: “上限卡这么死干嘛？ 全部提高一个级别，然后输出加多，加细，可以快速定位问题。”
