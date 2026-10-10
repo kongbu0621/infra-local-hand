@@ -1,7 +1,9 @@
 """Actual 121/122-FD admission, inherited identity and full output lifetime at limit 128."""
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -15,8 +17,9 @@ from types import SimpleNamespace
 sys.path.insert(0,sys.argv[1])
 from e3_host import q2_journal_retained_fds as c
 from e3_host import q2_journal_growth as h
-path,mode,initial=sys.argv[2:]
+path,mode,initial=sys.argv[2:5]
 initial=int(initial)
+archive_spec=json.loads(sys.argv[5]) if len(sys.argv)>5 else None
 original_child=c.child
 def debug_child(*args):
     try:
@@ -91,12 +94,27 @@ def response(self,op,seq,end=None):
 c.Custodian.response=response
 held=c.Custodian(a,pins,commit='d'*40,nonce='a'*64,source_sha256='b'*64,history_sha256='c'*64)
 assert a.held==[] and count()==initial-53
+# The new protected input starts only after READY and continuous FD surrender.
+inputs=h.prior.Inputs();frozen={'source_binding':{'sources':{}}}
+if archive_spec is not None:
+    h.history.TRANSPORT_FAILURE_FREEZE=archive_spec['freeze_sha256']
+    h.history.adopt_transport_failure(inputs,frozen,archive_spec)
+    assert count()==initial-52 and len(inputs.held)==1
+    h.history.recheck_transport_failure(inputs,frozen,lambda:None)
 h.host_fd_admission(anchor,lambda:None,'after_transfer')
-assert count()==initial-53
+assert count()==initial-53+int(archive_spec is not None)
 # The child inherited the very same open-file description; change its offset
 # via a retained alias and observe it through the child's /proc descriptor.
 assert len(c.ACTIVE)==1
 if mode=='live_cpu':assert held.usage()[0]>=.07
+if mode=='archive_drift':
+    fd=os.open(archive_spec['path'],os.O_WRONLY);os.write(fd,b'changed');os.close(fd)
+    try:h.history.recheck_transport_failure(inputs,frozen,lambda:None)
+    except (h.history.c.ContractError,h.prior.r.ObservationError):pass
+    else:raise AssertionError('admitted changed held archive')
+    inputs.close();held.close()
+    assert count()==initial-55 and not c.ACTIVE
+    print(json.dumps(dict(mode=mode,rejected=True)));sys.exit(0)
 if mode in ('replace','delete','content','link','mode','sequence','nonce','child_exit','unknown_usage','check_limit'):
     if mode=='replace':
         os.rename(path+'/evidence0',path+'/old0')
@@ -120,6 +138,7 @@ if mode in ('replace','delete','content','link','mode','sequence','nonce','child
     else:raise AssertionError('admitted identity/protocol failure')
     try:held.close()
     except (RuntimeError,OSError,KeyError):pass
+    inputs.close()
     assert not c.ACTIVE and count()==initial-55
     try:os.waitpid(held.pid,os.WNOHANG)
     except ChildProcessError:pass
@@ -137,6 +156,7 @@ for phase in ('pre','post'):
     t.process.wait(timeout=5)
     t.close()
     held.check(True)
+    if archive_spec is not None:h.history.recheck_transport_failure(inputs,frozen,lambda:None)
     if phase=='pre':
         store.put('journal.backup.qcow2',b'backup')
         store.put('vm.pid',b'123\n')
@@ -151,6 +171,7 @@ assert usage['cpu_seconds']>=minimum
 assert usage['live_children']==1 and usage['rss_upper_observation_bytes']>=rss
 assert summary['checks']==3 and 0<summary['ipc_bytes']<=2*1048576
 store.close();os.close(exe);os.close(simulated_vm_pidfd)
+inputs.close()
 final=held.close()
 assert final['returncode']==0 and final['cpu_nanoseconds']>=summary['cpu_nanoseconds']
 assert final['rss_peak_bytes']>=summary['rss_bytes'] and count()==initial-55,(final,summary['rss_bytes'],count())
@@ -169,3 +190,21 @@ def test_bounded_custody_real_process_lifetime(tmp_path,mode,initial):
     assert result.returncode==0,result.stderr.decode()
     value=json.loads(result.stdout)
     assert value['mode']==mode
+
+
+@pytest.mark.parametrize('mode',['lifecycle','live_cpu','bad_ready','fork_failure','child_exit','archive_drift'])
+def test_staged_archive_full_lifecycle_at_actual_128_limit(monkeypatch,mode):
+    from transport_failure_fixture import records
+    raw,spec,_=records(monkeypatch)
+    # Protected input traversal rejects world-writable ancestors, including /tmp.
+    # A checkout can also have a group-writable parent. Use an owned private
+    # home directory so the real protected reader remains enabled unchanged.
+    parent=os.environ.get('LOCAL_HAND_Q2_TEST_PARENT',str(Path.home()))
+    with tempfile.TemporaryDirectory(prefix='.transport-fd-test-',dir=parent) as directory:
+        path=Path(directory)/'retained.tar';path.write_bytes(raw);path.chmod(0o600)
+        spec['path']=str(path)
+        result=subprocess.run([sys.executable,'-I','-B','-c',CHILD,str(Path(__file__).parent),
+            directory,mode,'122',json.dumps(spec)],stdin=subprocess.DEVNULL,capture_output=True,timeout=30)
+        assert result.returncode==0,result.stderr.decode()
+        value=json.loads(result.stdout)
+        assert value['mode']==mode

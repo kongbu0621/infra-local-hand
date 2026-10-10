@@ -41,7 +41,9 @@ def rig(monkeypatch, tmp_path):
         return None
     monkeypatch.setattr(h, "recheck_q1_inputs", nothing)
     monkeypatch.setattr(h.history, "recheck_local_preflight", nothing)
+    monkeypatch.setattr(h.history, "recheck_transport_failure", nothing)
     monkeypatch.setattr(h.history, "adopt_local_preflight", nothing)
+    monkeypatch.setattr(h.history, "adopt_transport_failure", nothing)
     monkeypatch.setattr(h, "validate_q1_frozen", nothing)
     # This rig models all host effects; pytest's unrelated, accumulated FDs
     # are not the coordinator's resource pool. Real admission/EMFILE coverage
@@ -195,7 +197,7 @@ def test_real_coordinator_orders_exactly_two_ssh_and_one_restart(rig):
     assert result["production_supported"] is False
     assert result['host_writer_observation']=='NOT_PERFORMED'
     assert result['continuous_exclusion_proven'] is False
-    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v14'
+    assert 'writer_reports' not in result and result['schema']=='lhq-journal-growth-receipt/v15'
     assert rig.clock[0] >= 60
     assert rig.files["consumed.json"] and rig.files["receipt.json"]
     started = [row["step"] for row in rig.events if row.get("state") == "STARTED"]
@@ -265,7 +267,7 @@ def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypa
     assert rig.actions == []
 
 
-@pytest.mark.parametrize("stale", ["digest", "missing_scope", "A", "C", "D"])
+@pytest.mark.parametrize("stale", ["digest", "missing_scope", "A", "C", "D", "custody", "archive"])
 def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch, capsys, stale):
     old=json.loads(h.canonical(rig.manifest))
     if stale=='missing_scope': old.pop('A')
@@ -276,7 +278,7 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     expected = "0" * 64 if stale == "digest" else h.digest(h.canonical(old))
     monkeypatch.setattr(h.sys, "argv", ["growth", "--frame", "frame", "--plan-archive", "plan",
         "--archives-dir", "archives", "--expected-commit", "d" * 40, "--expected-manifest", expected,
-        "--vm-activation", "{}", "--local-preflight", "{}", "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(), "--q1-sources", "{}",
+        "--vm-activation", "{}", "--local-preflight", "{}", "--transport-failure", "{}", "--window-binding", h.canonical(rig.window.binding).decode(), "--preflight",h.canonical(handoff).decode(), "--q1-sources", "{}",
         "--trusted-single-admin", "--trusted-guest-startup", "--execute"])
     monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
     monkeypatch.setattr(h, "growth_sources", lambda _commit: rig.sources)
@@ -289,14 +291,28 @@ def test_main_manifest_mismatch_creates_no_marker_or_transport(rig, monkeypatch,
     monkeypatch.setattr(h, "adopt_vm_activation", lambda *_args:dict(host_boot_id=rig.window.binding["boot_id"]))
     monkeypatch.setattr(h.Store, "absent", rig.nothing)
     monkeypatch.setattr(rig.vm["images"], "image_keys", lambda: {})
-    monkeypatch.setattr(rig.work, "preflight", lambda: rig.manifest)
+    staged=[]
+    def custody(*args):
+        staged.append('custody')
+        if stale=='custody':raise h.prior.r.ObservationError('GROWTH_CUSTODY_TEST')
+    def archive(*args):
+        assert staged==['custody']
+        staged.append('archive')
+        if stale=='archive':raise h.prior.r.ObservationError('GROWTH_ARCHIVE_TEST')
+    def preflight():
+        assert staged==['custody','archive']
+        staged.append('preflight');return rig.manifest
+    monkeypatch.setattr(rig.anchor,'start_custody',custody)
+    monkeypatch.setattr(h.history,'adopt_transport_failure',archive)
+    monkeypatch.setattr(rig.work, "preflight", preflight)
     monkeypatch.setattr(h, "Maintenance", lambda *_args: rig.work)
     monkeypatch.setattr(h, "resource", SimpleNamespace(RLIMIT_AS=1, RLIMIT_NOFILE=2,
         RLIMIT_CPU=3, RLIMIT_FSIZE=4, RLIM_INFINITY=-1,
         getrlimit=lambda kind: (-1, -1) if kind in (3, 4) else (100, 100), setrlimit=rig.nothing))
     assert h.main() == 3
     result = json.loads(capsys.readouterr().out)
-    assert result["reason"] == "GROWTH_MANIFEST_NOT_FROZEN"
+    assert result["reason"] == {'custody':'GROWTH_CUSTODY_TEST','archive':'GROWTH_ARCHIVE_TEST'}.get(stale,"GROWTH_MANIFEST_NOT_FROZEN")
+    assert staged==['custody']+([] if stale=='custody' else ['archive']+([] if stale=='archive' else ['preflight']))
     assert result["marker_created"] is False and result["ssh_requests"] == 0
     assert rig.actions == [] and rig.files == {} and rig.work.transports == []
 

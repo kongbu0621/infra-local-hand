@@ -134,7 +134,7 @@ def test_pending_adoption_cannot_open_field_window(monkeypatch,capsys):
     monkeypatch.setattr(h,'growth_sources',lambda *_:pytest.fail('pending authority reached source/field admission'))
     assert h.main()==3
     result=json.loads(capsys.readouterr().out)
-    assert result['reason']=='GROWTH_UC_NOT_AUTHORIZED'
+    assert result['reason']=='GROWTH_TC_NOT_AUTHORIZED'
     assert not result['marker_created'] and result['ssh_requests']==0
 
 @pytest.mark.parametrize('originals',[True],indirect=True)

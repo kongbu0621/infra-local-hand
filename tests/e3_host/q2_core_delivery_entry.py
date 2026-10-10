@@ -63,13 +63,10 @@ HELLO_FRAME_LIMIT = 4112
 BIND_JSON_LIMIT = 4096
 BIND_FRAME_LIMIT = 4112
 
-# All four older core requests remain consumed. Only the reviewed 07a field
-# bytes below are eligible under GS A/C after verified 08d maintenance.
-# VA1 source review binds these bytes. Exact D CI, full VA2 originals,
-# post-maintenance boot binding and every original admission remain required.
+# TC1 binds the exact reviewed dispatcher. Exact D first CI, full TC2 originals
+# and actual coordinator completion remain required before original 07a.
 # Historical dispatcher pins remain in their consumed source profiles.
-# The post-return logical-path repair does not restore consumed VA2 permission.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"21fe7f5c2d81108bcd539120bdd6d4914fca7790ca63e631c4efecd253fde8d9"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"907cbb14017fe3df2500b2644adf5cc4d52e6c9277b4cf0e21115b177b5a6287"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

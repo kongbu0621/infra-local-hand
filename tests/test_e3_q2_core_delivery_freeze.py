@@ -262,7 +262,7 @@ def package_fixture(tmp_path, monkeypatch):
         prior_profiles.append(dict(commit=_git(implementation, 'rev-parse', 'HEAD'),
             tree=_git(implementation, 'rev-parse', 'HEAD^{tree}'), sources=pins))
     monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', tuple(prior_profiles))
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE", "MINIMAL", "SERIAL", "SYSTEMCTL", "TEMPLATE", "NAMES", "EXEC", "GS", "QI", "DS", "VM_ADOPTION", "RUNTIME", "HOST_FD", "USAGE"):
+    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE", "MINIMAL", "SERIAL", "SYSTEMCTL", "TEMPLATE", "NAMES", "EXEC", "GS", "QI", "DS", "VM_ADOPTION", "RUNTIME", "HOST_FD", "USAGE", "TRANSPORT"):
         doc = name.lower() + "-requirements.md"
         (implementation / doc).write_bytes(b"synthetic A\n")
         _git(implementation, "add", doc)
@@ -531,7 +531,7 @@ def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "TRANSPORT"])
 @pytest.mark.parametrize("record", ["BASELINE", "OWNER_DECISION", "CLOSURE"])
 def test_lineage_rejects_wrong_authority_bytes_or_tree(tmp_path, monkeypatch, scope, record):
     arguments = package_fixture(tmp_path, monkeypatch)
@@ -553,7 +553,7 @@ def test_old_amendment_descendant_without_new_closure_is_not_releasable_d(tmp_pa
         f.freeze_package_members(**arguments)
 
 
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO"])
+@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "TRANSPORT"])
 def test_final_d_cannot_rewrite_approved_document_even_after_valid_c(tmp_path, monkeypatch, scope):
     arguments = package_fixture(tmp_path, monkeypatch)
     path = next(iter(getattr(f.c, scope + "_BASELINE")["documents_sha256"]))

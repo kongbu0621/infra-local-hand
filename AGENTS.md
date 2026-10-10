@@ -36,6 +36,13 @@ H11 is only the original same-task recovery case. This closure supersedes older 
 clauses only for exact TC1–TC3; it proves neither implementation/readiness nor maintenance/core PASS.
 All original R, authority, change control, protection and failure-stop constraints remain.
 
+The [TC1 implementation review](docs/a2-execution/Q2_CORE_TRANSPORT_IMPLEMENTATION_REVIEW_20261010.md)
+records the distinct fifteen-member absent-receipt source, staged opening after custody,
+producer/independent-consumer wiring and fourteen complete obligations. Real retained-source
+verification and the 44-test real FD lifecycle passed; historical pins remain unchanged.
+TC1 verification/publication/installation/freeze is in progress; TC2 NOT_ISSUED and TC3 cases NOT_RUN.
+Implementation or offline synthetic success alone does not release either field caller.
+
 ## Current approved batch: owned-child usage repair and original core continuation (2026-10-10)
 
 Scope `LH-Q2-CORE-USAGE-CONTINUATION-v1` is **CLOSED for UC1–UC3 only**.

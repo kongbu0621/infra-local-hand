@@ -24,6 +24,9 @@ def originals(monkeypatch,request):
     from local_preflight_fixture import records
     local_raw,local_spec,_=records(monkeypatch,d)
     local_source=p.build_local_preflight_source(local_raw,local_spec)
+    from transport_failure_fixture import records as transport_records
+    failed_raw,failed_spec,_=transport_records(monkeypatch,d)
+    failed_source=p.build_transport_failure_source(failed_raw,failed_spec)
     projection=journal_transition(implementation)
     sources={name:b'# synthetic source\n' for name in p.JOURNAL_SOURCE_NAMES}
     from q1_binding_fixture import source_raw
@@ -53,6 +56,9 @@ def originals(monkeypatch,request):
     frozen.update(local_preflight_raw=local_raw,local_preflight_spec=local_spec)
     frozen['source_binding']['local_preflight_source']=local_source
     frozen['source_binding']['sources']['local_preflight_archive']=local_source['archive']
+    frozen.update(transport_failure_raw=failed_raw,transport_failure_spec=failed_spec)
+    frozen['source_binding']['transport_failure_source']=failed_source
+    frozen['source_binding']['sources']['transport_failure_archive']=failed_source['archive']
     activation=None
     if getattr(request,'param',False) is True:
         from vm_activation_fixture import records
@@ -97,7 +103,7 @@ def originals(monkeypatch,request):
         transports.append(dict(returncode=255 if phase=='pre' else 0,eof=dict(stdout=True,stderr=True),
             ack=ack if phase=='pre' else None,files={key:dict(bytes=len(streams[phase+'.'+key]),
                 sha256=h.digest(streams[phase+'.'+key])) for key in ('stdout','stderr')}))
-    manifest=dict(schema='lhq-journal-growth-manifest/v14',R=h.R,A=h.UC_A,C=h.UC_C,
+    manifest=dict(schema='lhq-journal-growth-manifest/v15',R=h.R,A=h.TC_A,C=h.TC_C,
         D=implementation['commit'],nonce=desc['nonce'],access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         historical_authority=dict(A=h.A,C=h.C,observer_superseded_by=h.MINIMAL_A,minimal_C=h.MINIMAL_C,serial_A=h.SERIAL_A,serial_C=h.SERIAL_C,systemctl_A=h.SYSTEMCTL_A,systemctl_C=h.SYSTEMCTL_C,template_A=h.TEMPLATE_A,template_C=h.TEMPLATE_C,names_A=h.NAMES_A,names_C=h.NAMES_C,exec_A=h.EXEC_A,exec_C=h.EXEC_C),
@@ -133,7 +139,7 @@ def originals(monkeypatch,request):
             events.append(dict(phase='pre' if step=='GUEST_QUIET' else 'post',argv_sha256='a'*64,description_sha256='b'*64))
         if step=='POWERED_OFF':events.append(dict(step='POWER_OFF_TOKEN',state='STARTED',pre_report_sha256=h.digest(h.canonical(pre))))
         events.append(dict(step=step,state='RETURNED',result=results[step]))
-    receipt=dict(schema='lhq-journal-growth-receipt/v14',R=h.R,A=h.UC_A,C=h.UC_C,
+    receipt=dict(schema='lhq-journal-growth-receipt/v15',R=h.R,A=h.TC_A,C=h.TC_C,
         D=implementation['commit'],nonce=desc['nonce'],session=h.SESSION,access_mode=h.ACCESS_MODE,
         resume=p.maintenance_resume(),guest_startup_assurance=g.guest_startup_assurance(),host_writer_observation='NOT_PERFORMED',continuous_exclusion_proven=False,
         manifest_sha256=marker['manifest_sha256'],clock_origins_ns=[1,2],

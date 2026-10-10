@@ -1150,7 +1150,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments", "maintenance"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v17"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v18"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     _approved_equal(value["maintenance"],_maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -1881,9 +1881,61 @@ def validate_local_preflight_source(value):
     check(pins['freeze-complete.json']['sha256']==value['freeze_sha256'],'LOCAL_PREFLIGHT_FREEZE_PIN')
     return value
 
+# Old10a pins remain private. The new immutable caller freezes the external
+# fifteen-member index; these fixed facts cannot be replaced by that input.
+TRANSPORT_FAILURE_D = '8f7a438d8a88c98d85852ebfdb6978c5c7bf9230'
+TRANSPORT_FAILURE_TREE = '118aeaad621e7aa88a9b60836f6cacb196db4590'
+TRANSPORT_FAILURE_FREEZE = '3f9a4b2941a4926f23345cd8f93efa82e9724070ed10f60d68d836814bed6eee'
+TRANSPORT_FAILURE_SESSION = 'lhqjgrow-20261010a'
+TRANSPORT_FAILURE_ORIGINALS = tuple('.'+TRANSPORT_FAILURE_SESSION+'.'+suffix
+    for suffix in ('consumed.json','events.jsonl','pre.stdout','pre.stderr'))
+TRANSPORT_FAILURE_RETURNS = ('uc2-caller-started.json','uc2-caller.stderr','uc2-caller.stdout',
+    'uc2-execute.stderr','uc2-execute.stdout','uc2-preflight.stderr','uc2-preflight.stdout','uc2-summary.json')
+TRANSPORT_FAILURE_RECORDS = ('freeze-complete.json','uc2-failure-private.json','release-gate.json')
+TRANSPORT_FAILURE_MEMBERS = (*TRANSPORT_FAILURE_ORIGINALS,*TRANSPORT_FAILURE_RETURNS,*TRANSPORT_FAILURE_RECORDS)
+
+
+def transport_failure_summary():
+    return dict(scope='LH-Q2-CORE-USAGE-CONTINUATION-v1',session=TRANSPORT_FAILURE_SESSION,
+        D=TRANSPORT_FAILURE_D,authority=dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
+            A='bb75dfd835640ba3fff5d1124b7820b0aecf87e5',C='2a4282800eaae404ff3163446cc06297ce99526a'),
+        state='CONSUMED_FAILED_STOP_AND_RETAIN',terminal='UC2_CONSUMED_FAILED_UC3_NOT_RUN',
+        originals=list(TRANSPORT_FAILURE_ORIGINALS),
+        missing_expected=['.'+TRANSPORT_FAILURE_SESSION+'.receipt.json'],
+        caller_invocations=1,execute_invocations=1,ssh_requests=1,marker_created=True,
+        maintenance_window_consumed=True,remote_exit='UNKNOWN',guest_progress='UNKNOWN',
+        coordinator_completion='NOT_CAPTURED',core_package='NOT_BUILT',core_cases='NOT_RUN',
+        reason='GROWTH_USAGE_UNKNOWN',diagnostic_retained=True,old_commitments_refunded=False)
+
+
+def validate_transport_failure_source(value):
+    check=_Checks('CORE_JOURNAL_')
+    check.exact(value,{'schema','summary','archive','originals','freeze_sha256','callers','diagnostic_sha256'},
+        'TRANSPORT_FAILURE_FIELDS')
+    check(value['schema']=='local-hand-q2-transport-failure-source/v1'
+        and canonical(value['summary'])==canonical(transport_failure_summary()),'TRANSPORT_FAILURE_SUMMARY')
+    check.exact(value['archive'],{'bytes','sha256'},'TRANSPORT_FAILURE_ARCHIVE_PIN')
+    check.integer(value['archive']['bytes'],1,196608);check.digest(value['archive']['sha256'])
+    check(value['freeze_sha256']==TRANSPORT_FAILURE_FREEZE,'TRANSPORT_FAILURE_FREEZE_PIN')
+    check.digest(value['diagnostic_sha256'])
+    check.exact(value['callers'],LOCAL_PREFLIGHT_CALLERS,'TRANSPORT_FAILURE_CALLERS')
+    for pin in value['callers'].values():check.digest(pin)
+    pins=value['originals'];check.exact(pins,TRANSPORT_FAILURE_MEMBERS,'TRANSPORT_FAILURE_ORIGINALS')
+    for name,row in pins.items():
+        check.exact(row,{'bytes','sha256'},'TRANSPORT_FAILURE_PIN')
+        check.integer(row['bytes'],0,65536);check.digest(row['sha256'])
+        if name.endswith(('pre.stdout','pre.stderr','caller.stderr','execute.stderr','preflight.stderr')):
+            check(row==dict(bytes=0,sha256=_sha(b'')),'TRANSPORT_FAILURE_EMPTY_STREAM')
+        else:check(row['bytes']>0,'TRANSPORT_FAILURE_REQUIRED_BYTES')
+    check(pins['freeze-complete.json']['sha256']==TRANSPORT_FAILURE_FREEZE
+        and pins['uc2-summary.json']==pins['uc2-caller.stdout'],'TRANSPORT_FAILURE_RETURN_PIN')
+    return value
+
+
 def _maintenance_resume():
-    return dict(scope='LH-Q2-CORE-USAGE-CONTINUATION-v1', session='lhqjgrow-20261010a',
+    return dict(scope='LH-Q2-CORE-TRANSPORT-CONTINUATION-v1', session='lhqjgrow-20261010b',
         previous_local_preflight=local_preflight_summary(),
+        previous_transport_failure=transport_failure_summary(),
         previous_maintenance=[dict(session=row['session'], D=row['D'], authority=row['authority'],
             originals=[dict(basename='.'+row['session']+'.'+name, bytes=size, sha256=sha)
                        for name,(size,sha) in row['pins'].items()],
@@ -1894,7 +1946,7 @@ def _maintenance_resume():
 def _maintenance_commitments():
     return dict(previous_maintenance=_maintenance_resume(),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
-            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a')],
+            for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b')],
         released_or_refunded=False)
 
 
@@ -1904,7 +1956,7 @@ def _validate_maintenance_resume(value):
     return value
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261010a'
+JOURNAL_SESSION = 'lhqjgrow-20261010b'
 JOURNAL_FILES = {'consumed.json': 65536, 'events.jsonl': 1048576,
     'pre.stdout': 1048576, 'pre.stderr': 1048576, 'post.stdout': 1048576,
     'post.stderr': 1048576, 'receipt.json': 65536, 'vm.pid': 64}
@@ -1972,6 +2024,8 @@ HOST_FD_A = '0ed9ba0a8eefa4d1a88ee46192fc18a5ad3fafc8'
 HOST_FD_C = '26a89a1a11a958c24987eb590944331a9769b2ad'
 USAGE_A = 'bb75dfd835640ba3fff5d1124b7820b0aecf87e5'
 USAGE_C = '2a4282800eaae404ff3163446cc06297ce99526a'
+TRANSPORT_A = 'b55315822472bfb0c9672426392ef1579466f44d'
+TRANSPORT_C = '2bac65db690759bfe89a03228dc3b5186056569d'
 RUNTIME_A = 'dc6e6c511936e02f41cda0cf86cbd571f3aa253d'
 RUNTIME_C = '3633b1e963b35647bef8d7f94592089130ff25a1'
 
@@ -2074,12 +2128,12 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v13'
-        and value['session']=='lhqjgrow-20261010a', 'JOURNAL_SCHEMA')
+    check(len(canonical(value)) <= 65536 and value['schema']=='local-hand-q2-core-journal-transition/v14'
+        and value['session']=='lhqjgrow-20261010b', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=USAGE_A,C=USAGE_C)
+        A=TRANSPORT_A,C=TRANSPORT_C)
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     check(type(value['guest_startup_assurance']) is dict and canonical(value['guest_startup_assurance'])
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
@@ -2090,6 +2144,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
     _validate_coordinator_completion(value['coordinator_completion'],value['retained_custody'])
     _validate_maintenance_resume(value['previous_maintenance'])
     validate_local_preflight_source(value['local_preflight_source'])
+    validate_transport_failure_source(value['transport_failure_source'])
     _validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
     check.exact(implementation,{'commit','tree'},'CORE_JOURNAL_IMPLEMENTATION')
@@ -2114,12 +2169,12 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261010a.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261010b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     check(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
         ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010a.'):]])
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261010b.'):]])
         check.digest(row['sha256'])
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -2180,7 +2235,7 @@ def _validate_approved_components(value):
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v17", "RECONCILIATION_SCHEMA")
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v18", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
