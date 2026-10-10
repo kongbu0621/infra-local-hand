@@ -1,6 +1,9 @@
-# 传输失败保留与原核心接续：待确认基线
+# 传输失败保留与原核心接续：已批准基线
 
-**OPEN / NOT APPROVED**，scope `LH-Q2-CORE-TRANSPORT-CONTINUATION-v1`，TC1–TC3。
+**CLOSED for TC1–TC3 only**，scope `LH-Q2-CORE-TRANSPORT-CONTINUATION-v1`。
+真实[Owner B](Q2_CORE_TRANSPORT_CONTINUATION_OWNER_DECISION.md)，事件
+`LH-Q2-CORE-TRANSPORT-CONTINUATION-CLOSURE-20261010-01`，保留准确相邻请求与回复“批准”。
+本独立 C 仅登记真实 B 与闭合；D 必须下降自 C，不 squash。准确 A 三文档原字节不变。
 准确 A `b55315822472bfb0c9672426392ef1579466f44d`，tree
 `99680c393c82e038730e29da72b8b3311e0ff6c8`，父提交
 `4a59bb75712f8d7982c5ba4596424b83fe6a6067`。A 只包含下列三份文档：
@@ -13,10 +16,10 @@
 
 R 仍为 `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，直接固定规则已读取并核对
 SHA-256 `c6a749c4966f8b4c7d7a41e7d664f8cebe20eb68f344156d5fbd540353ab70f5`。
-Owner mandate/authority、无例外、直接来源/完整性和变更规则不变。当前无新 Owner B，
-本登记不是 CLOSED C；不得将“接续任务”或已有 CI 解释为新实现/现场授权。
+Owner mandate/authority、无例外、直接来源/完整性和变更规则不变。授权来自上述真实 B，
+不是由接续任务或已有 CI 推断；闭合本身不证明实现或现场就绪。
 
-## 请求的一次完整批次
+## 获准的一次完整批次
 
 TC1 接入 old10a 的真实四原件/缺失 receipt、原 freeze/本地返回/终态，新十五成员私有
 归档≤196608 B；在原55件custodian交接后打开新增输入，保留原128 FD上限与全部身份。
@@ -30,9 +33,9 @@ TC3 才执行原未发行的 `lhqcore-20261007a` H01→Q4→H11。批内不逐�
 
 十四份维护义务加原核心捕获为18208 MiB/5196 inodes；old09c不退款，也不追认为已消费。
 所有旧窗口、UNKNOWN、原件、freeze、terminal gate和旧caller继续保留，不可重放。
-仅请求三文档、实现及脱敏记录公开；old10a/新10b原件、索引、归档和机器信息仍私有。
+Owner 批准三文档、实现及脱敏记录公开；old10a/新10b原件、索引、归档和机器信息仍私有。
 
-Owner确认准确R/A/范围后，独立C只登记真实B和CLOSED；D从C下降，不squash。
+Owner 已确认准确R/A/范围，独立C只登记真实B和CLOSED；D从C下降，不squash。
 当前 TC1 NOT_STARTED，TC2 NOT_ISSUED，TC3/H01/Q4/H11 NOT_RUN。
 
 [离线核验记录](../a2-execution/Q2_CORE_TRANSPORT_PREPARATION_REVIEW_20261010.md)仅证明原件
