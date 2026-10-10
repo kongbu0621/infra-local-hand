@@ -457,6 +457,8 @@ def _capacity_rows(prior, diagnostic):
         *[dict(session_id=session,bytes=1048576,inodes=32) for session in
           ('lhqpaths-20261010a','lhqpaths-20261010b','lhqpaths-source-20261010a',
            'lhqpaths-source-20261010b','lhqsource-20261010d','lhqarchive-20261010d')],
+        dict(session_id='lhqprotect-20261010a',bytes=1048576,inodes=32),
+        dict(session_id='lhqprotect-source-20261010a',bytes=1048576,inodes=32),
         # Reservation headroom only: not another executed maintenance generation.
         dict(session_id='lhq-resource-headroom-v2',bytes=904*1048576,inodes=32),
         dict(session_id=c.SESSION_ID,bytes=c.LIMITS['host_capture_bytes'],
@@ -506,8 +508,8 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
     require(all(type(number) is int and number >= 0 for number in capacity.values())
             and capacity['frsize'] > 0, 'HOST_CAPACITY_UNKNOWN')
     rows = _capacity_rows(prior, diagnostic)
-    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 22834839552
-            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 6272
+    require(capacity['required_bytes'] == sum(row['bytes'] for row in rows) == 22836936704
+            and capacity['required_inodes'] == sum(row['inodes'] for row in rows) == 6336
             and capacity['bytes_available'] == capacity['frsize'] * capacity['blocks_available'],
             'HOST_CAPACITY_ARITHMETIC')
     require(capacity['bytes_available'] >= capacity['required_bytes']
@@ -520,7 +522,7 @@ def validate_capacity_condition(value, *, binding, prior, diagnostic, journal, i
         usage=c.exact(row['capacity'],set(capacity),'CORE_HOST_CAPACITY_FIELDS')
         require(all(type(x) is int and x>=0 for x in usage.values()) and usage['frsize']>0
             and usage['bytes_available']==usage['frsize']*usage['blocks_available']
-            and usage['required_bytes']==22834839552 and usage['required_inodes']==6272
+            and usage['required_bytes']==22836936704 and usage['required_inodes']==6336
             and usage['bytes_available']>=usage['required_bytes']
             and usage['inodes_available']>=usage['required_inodes'],'HOST_CAPACITY_DEVICE_FLOOR')
     require(next(row['capacity'] for row in devices if row['dev']==binding['anchor']['dev'])==capacity,
@@ -963,6 +965,8 @@ def maintenance_commitments():
         source_preparation=dict(session="lhqsource-20261010a",host_bytes=1048576,host_inodes=32,cpu_seconds=120,refunded=False),
         path_reads=dict(sessions=['lhqpaths-20261010a','lhqpaths-20261010b'],host_bytes=2097152,
             host_inodes=64,host_cpu_seconds=240,guest_cpu_seconds=240,per_attempt_cpu_seconds=120,refunded=False),
+        protection_read=dict(session='lhqprotect-20261010a',source_pool='lhqprotect-source-20261010a',
+            host_bytes=2097152,host_inodes=64,aggregate_cpu_seconds=120,source_preparation_included=True,refunded=False),
         additional_preparation=dict(sessions=['lhqpaths-source-20261010a','lhqpaths-source-20261010b',
             'lhqsource-20261010d','lhqarchive-20261010d'],host_bytes=4194304,host_inodes=128,
             cpu_seconds=480,per_attempt_cpu_seconds=120,refunded=False),

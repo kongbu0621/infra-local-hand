@@ -109,7 +109,9 @@ BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=640*MIB,1152*MIB,16*MIB
 # image and capture headroom; a minimum-free check is not an upper limit.
 HOST_HEADROOM_BYTES=(BACKUP_CAP-320*MIB)+(IMAGE_CAP-576*MIB)+(CAPTURE_CAP-8*MIB)
 HOST_HEADROOM_INODES=32
-HOST_BYTES,HOST_INODES=20745*MIB+HOST_HEADROOM_BYTES,6208+HOST_HEADROOM_INODES
+# The completed fixed-object read and its source pool remain charged (2 MiB,
+# 64 inodes). Neither that read nor this accounting repair is another window.
+HOST_BYTES,HOST_INODES=20747*MIB+HOST_HEADROOM_BYTES,6272+HOST_HEADROOM_INODES
 # Additional host descriptors from preflight through receipt: post transport
 # peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
 # Three more slots cover bounded identity/usage reads. This is admission only;
