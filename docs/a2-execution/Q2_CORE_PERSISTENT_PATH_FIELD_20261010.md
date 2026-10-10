@@ -3,7 +3,7 @@
 授权为 [persistent-path baseline](../governance/Q2_CORE_PERSISTENT_PATH_CONTINUATION_BASELINE.md)，
 Owner 事件 `LH-Q2-CORE-PERSISTENT-PATH-CONTINUATION-CLOSURE-20261010-01`。
 准确 A 三文档原字节保持，独立 C 为 `d77315e5792c54c406b000b2179ef179ec900c94`。
-本实现直接下降自 C；本节是实现记录，不是现场成功或核心验收。
+本实现系列下降自 C；本节是实现记录，不是现场成功或核心验收。
 
 ## 最小实现
 
@@ -57,3 +57,68 @@ diagnostic 的完整保留、create-only 拒绝重复、一次 preflight/PASS �
 此记录版本：PP1 IN_PROGRESS，PP2 NOT_ISSUED，PP3/H01/Q4/H11 NOT_RUN。
 只有完整 PP1 后执行本批唯一10d；其完整成功原件及实际 coordinator/custodian
 完成通过独立校验，才发行原未发行07a。失败/未知立即停止并保留，无重试或补采。
+
+## 最终 PP1 冻结
+
+最终 D `a3f9dbeca268de80124f524ccee4f1437bd61784` 下降自独立 C，保留初始实现
+`eb8384174253d21b8731d3b01fb0aa8148b3676e` 及真实来源核对失败。PR #6 通过正常
+merge commit `e8868806dfc9ef413177420eb1157bcd4131da07` 合入 main。
+其自身首次 CI [38052327972](https://github.com/kongbu0621/infra-local-hand/actions/runs/38052327972)，
+attempt 1，head 为准确 D，三项全部成功；没有用 rerun 替换首次记录。
+
+- Linux：源码7612通过/89跳过，独立 cgroup fixture 另有16项通过；独立安装94项
+  检查/292条命令通过。Windows：1940通过/1384跳过，独立安装10项检查/10条命令通过。
+- 本地完整回归7561通过/140跳过；这是依赖 pin 修正前的实现，最后唯一源码差异
+  另经54项针对性检查、准确 D 真实来源验证以及上述准确 D CI 覆盖。
+  本地准确 D 独立安装94项检查/292条命令通过；最终私有调用器18项合成检查通过。
+- 准确 D 的实际留存输入、归档/历史、两个完成消费者、完整 FD 生命周期和大小/费用
+  上界核对通过。维护交接峰值128、核心准备126；synthetic transition 53861 B、
+  approved input 438037 B、核心包上界19480174 B，原限额不变。未提前创建核心现场包。
+- 最终13个受保护来源副本准备占704512 B/16 inodes；固定归档准备占532480 B/3 inodes。
+  两个池均在各自原1 MiB/32-inode及 CPU/RSS/时间预算内。原件和旧准备费用不退款。
+- 42437 B 的私有 `pp1-freeze.json` 绑定12个调用器/依赖、批准记录、准确提交/CI/安装、
+  固定出站槽、全部来源、两次路径读取原件核对及预算。旧文件不改，两个新调用器冻结。
+
+PP1 完成；以下是冻结后的唯一 PP2 实际返回，不将准备成功解释为维护成功。
+
+## 唯一 PP2 返回与终态
+
+新 `lhqjgrow-20261010d` 调用器只调用一次。一次 local preflight 返回
+`LOCAL_PREFLIGHT_PASSED`，随后同窗 execute 一次；新 marker 已创建，pre SSH 请求为1。
+execute 返回 `STOP_AND_RETAIN / GROWTH_REPORT_MISSING`，调用器实际 exit 3。
+实际 coordinator completion 为 returncode 3，custodian returncode 0；receipt 摘要绑定一致。
+聚合完成用量为 CPU 2280254000 ns / RSS upper 157270016 B，在原上限内。
+
+已捕获 guest stderr 与本次 nonce/source/session 绑定，其 failure 为
+`PRE_RUNTIME_PREPARATION / GROWTH_PATH_PROTECTION`；已有诊断完整穿过
+receipt、调用结果和 summary。persistent_inventory 的 path_index 73、component_index 3
+均为零基，operation 为 `qualify_component`，对应最后一级对象。该对象已打开并进入
+既有 fstat 后的所有者/写权限谓词；errno 为 null，实际 UID/GID/mode 未记录，不能
+判定是所有者集合不符、group/other write 位，或二者。它不是 ENOENT 返回。
+
+guest `actions_started` 为 runtime_preparation；已完成的 guard_units 命令有 exit 0/
+双 EOF。其余配置/目录/父域/池/manager 记录为空，不能据此声称准备完成。失败时
+stderr EOF 为 false，remote_exit 为 UNKNOWN；不以 guest 自述或 custodian 0 冒充远端成功。
+未发送 poweroff token，未备份/增长 journal，未维护重启，未发行原核心包。
+
+实际五原件：marker、events、空 pre stdout、pre stderr、receipt。post stdout/stderr、
+maintenance pidfile 和 journal backup 均不存在；没有伪造补件。五原件、大小/摘要索引、
+caller stdout/stderr、实际退出及终态均私有保留。原 immutable freeze 与12个哈希保持；
+另写 `PP2_MAINTENANCE_CONSUMED_FAILED_PP3_NOT_RUN` 终态 gate，阻止两调用器重放。
+
+当前 PP2 **CONSUMED_FAILED / STOP_AND_RETAIN**；PP3/H01/Q4/H11 **NOT_RUN**。
+维护已消费代数为14；old09c/old10b仍为调用过但未消费的预检。16份完整维护义务、
+原核心、读取与准备费用全部保持20809 MiB/6224 inodes，不退款。本次没有平台审批拒绝。
+
+## 仅保留来源的后续定位
+
+只用本次已保存 marker/guest 返回，将索引、长度、摘要定位到原配额边界证据对象的
+最后一级；未读取当前 guest 元数据。随后校验原六个固定 archive/26个准确文档和两个
+原计划/准备文档，得到九个准确引用：七个 plan 的 `retained` 项及原 before/after 根身份。
+这证明它属于原来明确保留的证据，不是 PR #4 修正的两个未发行位置；不能将该修复扩大为
+删除此必备对象。上述旧根身份只有原路径/device/inode，不能填补当前 UID/mode 的缺失。
+
+该离线来源核对已完成，私有映射保留。没有额外 SSH、探测、chmod/chown、权限放宽、
+服务停止、清理、回滚、恢复或新窗口。已获批实现修复和准备均已交付，但核心仍未跑通。
+本批失败即停止的边界不允许另读当前权限或再次执行；下一现场动作需要另一个准确、
+有界的 Owner 决定，不能从本次测试、CI、普通修复或旧“批准”中推导新窗口。
