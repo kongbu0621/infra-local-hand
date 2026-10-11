@@ -6705,8 +6705,8 @@ class FieldEffects:
             for name in sorted(names):
                 _cap(re.fullmatch(r'[A-Za-z0-9._-]+', name) and name not in ('.', '..'), 'RETAINED_NAME')
                 child = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
-                protection(child, path + '/' + name)
                 _cap(child.st_dev == device and not stat.S_ISLNK(child.st_mode), 'RETAINED_TYPE')
+                protection(child, path + '/' + name)
                 if stat.S_ISDIR(child.st_mode):
                     opened = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
                         os.O_NOFOLLOW, dir_fd=fd, release=os.close)

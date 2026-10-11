@@ -296,6 +296,7 @@ def test_absence_rejects_symlink_and_existing_empty_directory(tmp_path):
 
 def test_retained_snapshot_keeps_identity_and_content_without_atime(tmp_path, monkeypatch):
     value = effects(); file = tmp_path / 'retained'; file.write_bytes(b'old evidence')
+    file.chmod(0o600)
     os.utime(file, ns=(1000000000, 2000000000))
     root = tmp_path.stat()
     monkeypatch.setattr(d, '_approved_inputs_envelope', lambda _context:
