@@ -5822,7 +5822,7 @@ class FieldEffects:
         fixed = _admission_absent_units()
         for arguments in (['list-units', '--all', '--plain', '--no-legend', '--type=service,slice'],
                           ['list-unit-files', '--no-legend', '--type=service,slice']):
-            output = self._capacity_systemctl(arguments, programs['systemctl'])
+            output = self._capacity_systemctl(arguments + sorted(fixed), programs['systemctl'])
             names = {line.split()[0] for line in output.decode('ascii', 'strict').splitlines() if line.split()}
             _require(not fixed & names, 'CORE_CAP_UNIT_EXISTS')
         for unit in sorted(fixed):

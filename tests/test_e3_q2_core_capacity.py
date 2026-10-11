@@ -399,6 +399,9 @@ def test_manager_collects_actual_geometry_and_static_absence(tmp_path, monkeypat
     assert value.runtime_queries[1][1][1]=='retained.slice'
     assert value._admission_detail['system_geometry']['ordinary_parent']['memory_bytes'] == 268435456
     assert value._admission_detail['carrier']['inode'] == (tmp_path / 'carrier.service').stat().st_ino
+    for _uid, args in value.runtime_queries:
+        if args[0] in ('list-units', 'list-unit-files'):
+            assert {arg for arg in args[1:] if not arg.startswith('--')} == d._admission_absent_units()
 
 
 def test_manager_rejects_carrier_invocation_change(tmp_path, monkeypatch):
