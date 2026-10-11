@@ -1895,7 +1895,8 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   activation=adopt_vm_activation(inputs,frozen,prior.r.parse(args.vm_activation.encode("ascii"),4096))
   require(args.local_preflight is not None,"GROWTH_LOCAL_PREFLIGHT_REQUIRED")
   history.adopt_local_preflight(inputs,frozen,prior.r.parse(args.local_preflight.encode("ascii"),4096))
-  require(activation["schema"]=="local-hand-q2-vm-activation/v2","GROWTH_CURRENT_GUEST_REQUIRED")
+  require(activation["schema"] in ("local-hand-q2-vm-activation/v2",
+"local-hand-q2-vm-activation/v3","local-hand-q2-vm-activation/v4"),"GROWTH_CURRENT_GUEST_REQUIRED")
   check_activation_host_boot(activation,window)
   for name,path in (("qemu","/usr/bin/qemu-system-x86_64"),("image","/usr/bin/qemu-img")):
    tools[name]=Tool(path,window.check)
