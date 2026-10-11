@@ -273,6 +273,19 @@ class GatewayTests(unittest.TestCase):
             gateway._command = mock.Mock(return_value=dict(returncode=0, stderr="",
                 stdout="".join(key + "=" + value + "\n" for key, value in data.items())))
             return gateway._show(part)
+        pending = dict(values, ActiveState="activating", SubState="start", InvocationID="", ControlGroup="", Job="17")
+        response = lambda data: dict(returncode=0, stderr="",
+            stdout="".join(key + "=" + value + "\n" for key, value in data.items()))
+        part["process"] = mock.Mock(poll=mock.Mock(return_value=None))
+        gateway._command = mock.Mock(side_effect=[response(pending), response(values)])
+        with mock.patch.object(server.time, "sleep"):
+            gateway._show(part)
+        self.assertEqual(2, gateway._command.call_count)
+        self.assertEqual("a" * 32, part["invocation_id"])
+        self.assertEqual("a" * 32, part["last_identity_observation"]["InvocationID"])
+        # A missing identity after binding is a contradiction, not a new wait.
+        with self.assertRaises(q.QuotaError): observe(pending)
+        self.assertEqual(1, gateway._command.call_count)
         observe(values)
         self.assertEqual("a" * 32, part["invocation_id"])
         observe(dict(values, ReadWritePaths=" ".join('"' + path + '"' for path in properties["ReadWritePaths"].split())))
@@ -281,6 +294,13 @@ class GatewayTests(unittest.TestCase):
                            ("ReadWritePaths", "/"), ("InaccessiblePaths", ""), ("ReadOnlyPaths", "/extra"),
                            ("SendSIGKILL", "no"), ("RestrictNamespaces", "true")):
             with self.subTest(key=key), self.assertRaises(q.QuotaError): observe(dict(values, **{key: value}))
+
+        part["invocation_id"] = None
+        gateway._command = mock.Mock(return_value=response(pending))
+        with mock.patch.object(server.time, "sleep"), self.assertRaisesRegex(q.QuotaError, "SYSTEM_START_IDENTITY_PENDING"):
+            gateway._show(part)
+        self.assertEqual(20, gateway._command.call_count)
+        self.assertIsNone(part["invocation_id"])
 
     def test_recovery_stop_ack_and_retained_identity_survive_immediate_unit_gc(self):
         gateway, _ = self.gateway()

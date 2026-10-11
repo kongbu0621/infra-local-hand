@@ -375,9 +375,25 @@ class Gateway:
         return dict(token=part["token"], pid=process.pid, start_ticks=part["start_ticks"], returncode=code)
 
     def _show(self, part):
-        result = self._command("show", part["unit"], "--all", "--property=" + ",".join(_ALL_FIELDS))
-        q.require(result["returncode"] == 0, "SYSTEM_SHOW_FAILED")
-        values = _properties(result["stdout"].encode())
+        # StartTransientUnit can expose the new loaded unit before its start
+        # job assigns InvocationID. Wait only for this first delivery; never
+        # accept a missing/replaced identity after one has been bound.
+        end = min(self.end, self._time() + 2_000_000_000)
+        for attempt in range(20):
+            result = self._command("show", part["unit"], "--all", "--property=" + ",".join(_ALL_FIELDS))
+            q.require(result["returncode"] == 0, "SYSTEM_SHOW_FAILED")
+            values = _properties(result["stdout"].encode())
+            part["last_identity_observation"] = {key: values.get(key) for key in
+                ("Id", "LoadState", "ActiveState", "SubState", "InvocationID", "ControlGroup", "Job")}
+            pending = (part["invocation_id"] is None and values.get("Id") == part["unit"]
+                and values.get("LoadState") == "loaded" and values.get("InvocationID") == ""
+                and values.get("ActiveState") in ("inactive", "activating")
+                and values.get("ControlGroup") in ("", self.binding["parent"]["path"] + "/" + part["unit"])
+                and part.get("process") is not None and part["process"].poll() is None)
+            if not pending:
+                break
+            q.require(attempt < 19 and self._time() < end, "SYSTEM_START_IDENTITY_PENDING")
+            time.sleep(0.01)
         for key in ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"):
             values.setdefault(key, "")
         q._keys(values, set(_ALL_FIELDS))
@@ -741,6 +757,7 @@ class Gateway:
                     abandoned_client=copy.deepcopy(part.get("abandoned_client")),
                     collectors_lost=part.get("collectors_lost") is True,
                     recovery_observed=part.get("recovery_observed") is True,
+                    last_identity_observation=copy.deepcopy(part.get("last_identity_observation")),
                     identity_observation=(None if part.get("identity_observation") is None else
                         {key: part["identity_observation"][key] for key in life.FIELDS}),
                     terminal=(None if part.get("terminal") is None else
