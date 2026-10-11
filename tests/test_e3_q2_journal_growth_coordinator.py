@@ -266,7 +266,92 @@ def test_root_coordinator_is_rejected_before_source_or_field_reads(rig, monkeypa
     result = json.loads(capsys.readouterr().out)
     assert result["reason"] == "GROWTH_ORDINARY_COORDINATOR"
     assert result["marker_created"] is False and result["ssh_requests"] == 0
+    assert result["management_usage"] is None
+    assert result["diagnostic"]["management_usage_observation"]["state"] == "NOT_INITIALIZED"
     assert rig.actions == []
+
+
+@pytest.mark.parametrize("execute", [False, True])
+@pytest.mark.parametrize("same_boot", [False, True])
+def test_host_boot_comparison_preserves_evidence_and_stops_before_vm_effects(
+        rig, monkeypatch, capsys, execute, same_boot):
+    previous = dict(cpu_nanoseconds=25_000_000_000, rss_peak_bytes=80*h.MIB)
+    rig.window.binding["origins"] = [1, 2]
+    activation = dict(schema="local-hand-q2-vm-activation/v2",
+                      host_boot_id=BOOT if same_boot else NEW_BOOT)
+    before_activation, before_window = h.canonical(activation), h.canonical(rig.window.binding)
+    argv = ["growth", "--frame", "frame", "--plan-archive", "plan", "--archives-dir", "archives",
+            "--expected-commit", "d"*40, "--vm-activation", "{}", "--local-preflight", "{}",
+            "--q1-sources", "{}", "--trusted-single-admin", "--trusted-guest-startup"]
+    if execute:
+        handoff = h.make_preflight("d"*40, h.digest(h.canonical(rig.manifest)), rig.window.binding,
+                                  rig.work.nonce, previous, resume=rig.frozen["source_binding"]["resume"])
+        argv += ["--execute", "--window-binding", before_window.decode(),
+                 "--preflight", h.canonical(handoff).decode()]
+    monkeypatch.setattr(h.sys, "argv", argv)
+    monkeypatch.setattr(h.prior, "Inputs", lambda: rig.inputs)
+    monkeypatch.setattr(h, "growth_sources", lambda _: rig.sources)
+    monkeypatch.setattr(h, "Window", lambda: rig.window)
+    monkeypatch.setattr(h, "bind_window", rig.nothing)
+    monkeypatch.setattr(h, "freeze_growth_inputs", lambda *_a, **_kw: rig.frozen)
+    monkeypatch.setattr(h, "GrowthAnchor", lambda *_a: rig.anchor)
+    monkeypatch.setattr(h, "adopt_vm_activation", lambda *_a: activation)
+    monkeypatch.setattr(h, "resource", SimpleNamespace(RLIMIT_AS=1, RLIMIT_NOFILE=2,
+        RLIMIT_CPU=3, RLIMIT_FSIZE=4, RLIM_INFINITY=-1,
+        getrlimit=lambda kind: (-1, -1) if kind in (3, 4) else (100, 100), setrlimit=rig.nothing))
+    def no_observation(*_a, **_kw):
+        pytest.fail("identity failure must not sample usage, reread boot or freeze a VM")
+    monkeypatch.setattr(h, "management_usage", no_observation)
+    monkeypatch.setattr(h, "freeze_vm", no_observation)
+    monkeypatch.setattr(guest, "host_boot_id", no_observation)
+    reached = []
+    def tool(path, check):
+        reached.append(path)
+        raise h.prior.r.ObservationError("TEST_STOP_AFTER_IDENTITY")
+    monkeypatch.setattr(h, "Tool", tool)
+    assert h.main() == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == ("TEST_STOP_AFTER_IDENTITY" if same_boot else "GROWTH_ACTIVATION_HOST_BOOT")
+    assert reached == (["/usr/bin/qemu-system-x86_64"] if same_boot else [])
+    assert result["marker_created"] is False and result["ssh_requests"] == 0
+    assert result["management_usage"] is None
+    assert result["diagnostic"]["management_usage_observation"] == dict(
+        state="NOT_SAMPLED", successful_samples=0, inherited_usage=previous if execute else None, last=None)
+    if not same_boot:
+        detail = result["diagnostic"]
+        assert detail["stage"] == "HOST_ACTIVATION_BINDING"
+        assert detail["operation"] == "compare_activation_host_boot"
+        assert detail["expected_host_boot_id"] == NEW_BOOT
+        assert detail["observed_host_boot_id"] == BOOT
+        assert detail["activation_sha256"] == h.digest(before_activation)
+        assert detail["window_binding_sha256"] == h.digest(before_window)
+    assert result["window_binding"] == rig.window.binding
+    assert h.canonical(activation) == before_activation and h.canonical(rig.window.binding) == before_window
+    assert rig.actions == [] and rig.files == {} and rig.work.transports == []
+
+
+def test_usage_failure_snapshot_retains_last_success_without_new_sampling(monkeypatch):
+    previous = dict(cpu_nanoseconds=25_000_000_000, rss_peak_bytes=80*h.MIB)
+    usage = h.Usage(previous)
+    assert usage.failure_snapshot() == dict(state="NOT_SAMPLED", successful_samples=0,
+                                           inherited_usage=previous, last=None)
+    monkeypatch.setattr(h, "management_usage", lambda: dict(cpu_seconds=2, rss_upper_observation_bytes=100*h.MIB))
+    monkeypatch.setattr(h.resource, "getrusage", lambda _: SimpleNamespace(ru_maxrss=0))
+    actual = usage.sample()
+    calls = []
+    def reject():
+        calls.append("sample")
+        raise h.prior.r.ObservationError("GROWTH_USAGE_UNKNOWN")
+    monkeypatch.setattr(h, "management_usage", reject)
+    with pytest.raises(h.prior.r.ObservationError, match="GROWTH_USAGE_UNKNOWN"):
+        usage.sample()
+    snapshot = usage.failure_snapshot()
+    assert snapshot == dict(state="LAST_SUCCESSFUL_SAMPLE", successful_samples=1,
+                            inherited_usage=previous, last=actual)
+    assert calls == ["sample"]
+    snapshot["last"]["cpu_nanoseconds"] = 0
+    snapshot["inherited_usage"]["rss_peak_bytes"] = 0
+    assert usage.last == actual and usage.previous == previous
 
 
 @pytest.mark.parametrize("stale", ["digest", "missing_scope", "A", "C", "D", "custody", "archive"])

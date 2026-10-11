@@ -68,3 +68,34 @@ RP2为`INVOKED_FAILED_UNCONSUMED / STOP_AND_RETAIN`，RP3/H01/Q4/H11保持NOT_RU
 现场证据、探测SSH、替换host boot/VM身份、放宽校验、启动、清理、回滚或另开窗口。
 后续仅使用保留返回及源码进行离线工作。NAS发现与新作业准入继续关闭，外围保持暂停。
 所有原始返回、索引、归档、caller、路径和机器资料私有；本记录不构成新的现场授权。
+
+## 保留返回驱动的普通输出修复
+
+Owner随后直接要求修复问题、推进核心并继续屏蔽外围。此次普通修复保持原宿主boot
+相等判定及其位置，只复用已校验的activation和window binding，在私有失败返回中记录
+准确阶段、两侧boot及两份完整输入的摘要；不刷新身份、不增加采样或读取。
+
+另修正失败用量的表示：当前协调器尚无成功采样时，`management_usage`为null，明确
+标为NOT_SAMPLED；尚未创建Usage时为NOT_INITIALIZED。继承自preflight的用量单独保留；
+已有成功样本则保留最后成功值、样本数及LAST_SUCCESSFUL_SAMPLE状态。失败处理不补采，
+原累计CPU、RSS峰值、超限拒绝和成功handoff格式不变。旧RP2的0/0原始字节不改写。
+
+从两个固定归档重建的activation与RP1 immutable freeze逐值相等；将已保存的RP2
+window binding交给修复后的比较函数，仍准确拒绝同一身份矛盾，并产生来源绑定的诊断。
+全部15份新caller/dependency摘要、原freeze和terminal保持，无新host/VM观察或SSH。
+这些证据排除了此次归档接线误替换activation；无法证明当前VM状态或宿主身份变化原因。
+
+随后Owner对“这期间是否重启过宿主机、恢复快照或迁移过运行环境”的直接回答为
+“重启过宿主机”。这为启动标识变化提供Owner说明，不代替当前VM、镜像或监听的现场
+证明，也不是新启动/读取/维护批次的批准。旧activation继续表示重启前的实例。
+
+新增回归走真实main的preflight/execute失败路径，覆盖匹配与不匹配、无新采样/VM
+读取/marker/SSH、继承用量及失败后最后成功样本保留。初次为55通过/2失败，原因是新
+合成execute fixture的clock origins仍为0；修正为原contract要求的正值后57项全部通过。
+首次扩大回归在受限沙箱中出现本地socket EPERM和只读home失败，卡住后主动中止：
+58失败/3716通过/48跳过，exit 2；这是本地测试中断，不是现场caller或CI中断。
+正常环境独立回归为3880通过/48跳过/23失败；23项均为临时文件保护拒绝，继承的
+umask实测0002。明确使用022、保持生产校验不变后，覆盖全部这些失败的五个文件为
+80通过/1跳过；另有维护输入/传输/资源及NAS discovery策略101通过。失败记录保留，
+不将分次核验合写成一次全绿运行。
+这次修复不改变dispatcher发行摘要、会话、费用或现场权限；RP2终态和核心NOT_RUN保持。

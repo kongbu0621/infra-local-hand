@@ -70,6 +70,14 @@ relax checks, collect supplementary field evidence, probe SSH, start/recover/cle
 or open another window under this batch. Continue retained-return/source offline work only;
 NAS discovery/admission stay disabled and peripherals remain paused.
 
+The ordinary retained-return repair in the same field record preserves the host-boot equality
+check and reuses only the captured activation/window values for private mismatch diagnostics.
+It also labels unsampled failure usage as unknown (null), retains inherited usage separately,
+and identifies the last successful sample without another read. Historical 0/0 originals stay
+unchanged. Offline reconstruction of both fixed archives equals the frozen activation; the
+retained RP2 window still fails that comparison. No host/VM observation, caller, new window,
+release-pin change or replay authority follows. Continue original core work and peripheral suppression.
+
 ## Current approved core identity and resource continuation (2026-10-11)
 
 The [fixed proposal](docs/governance/Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_BASELINE.md)
