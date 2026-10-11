@@ -147,22 +147,22 @@ def test_full_projection_stays_mandatory_for_both_core_consumers(originals,index
 def test_names_authority_bytes_are_required_before_source_admission(source_git,record):
     source_git.changed_doc=record
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
 
 
 @pytest.mark.parametrize('edge',[(h.NAMES_A,h.NAMES_C),(h.NAMES_C,'d'*40)])
 def test_names_candidate_descends_from_independent_closure(source_git,edge):
     source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.audit_historical_growth_sources(source_git.head)
 
 
 @pytest.mark.parametrize('commit',[h.NAMES_A,h.NAMES_C])
 def test_exact_authority_trees_are_checked_before_source_reads(source_git,commit):
     source_git.changed_tree=commit
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_TREE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_TREE'):h.audit_historical_growth_sources(source_git.head)
 
 
 def test_closure_bookkeeping_is_not_an_execution_candidate(source_git):
     source_git.head=h.NAMES_C
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_D'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_D'):h.audit_historical_growth_sources(source_git.head)

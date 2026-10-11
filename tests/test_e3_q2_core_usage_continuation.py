@@ -122,7 +122,7 @@ def test_uc_authority_is_verified_before_field_effects(source_git,fault):
     elif fault=='tree':source_git.changed_tree=h.UC_C
     else:source_git.rejected_edge=(h.UC_C,source_git.head)
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
 
 
 if sys.platform.startswith('linux'):

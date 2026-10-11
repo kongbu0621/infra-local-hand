@@ -49,7 +49,7 @@ def test_third_failure_retains_its_original_two_generation_resume(monkeypatch, l
 def test_template_authority_rejected_before_source_admission(source_git,record):
     source_git.changed_doc=record
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_TEMPLATE_'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
 
 
@@ -57,7 +57,7 @@ def test_template_authority_rejected_before_source_admission(source_git,record):
 def test_template_implementation_requires_its_independent_closure(source_git,edge):
     source_git.rejected_edge=edge
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
 
 
 def preflight():

@@ -51,25 +51,25 @@ def test_sixth_failure_keeps_original_five_generation_resume(monkeypatch,locatio
 def test_exec_authority_bytes_are_required_before_source_admission(source_git,record):
     source_git.changed_doc=record
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
 
 
 @pytest.mark.parametrize('edge',[(h.QI_A,h.QI_C),(h.QI_C,'d'*40)])
 def test_exec_candidate_descends_from_independent_closure(source_git,edge):
     source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.audit_historical_growth_sources(source_git.head)
 
 
 @pytest.mark.parametrize('commit',[h.QI_A,h.QI_C])
 def test_exact_authority_trees_are_checked_before_source_reads(source_git,commit):
     source_git.changed_tree=commit
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_TREE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_TREE'):h.audit_historical_growth_sources(source_git.head)
 
 
 def test_closure_bookkeeping_is_not_an_execution_candidate(source_git):
     source_git.head=h.QI_C
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_D'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_QI_D'):h.audit_historical_growth_sources(source_git.head)
 
 
 def test_old_v5_short_handoff_cannot_open_exec_window():
@@ -85,7 +85,7 @@ def test_original_names_resume_digest_cannot_substitute_for_fifth_history():
 
 
 def test_exec_candidate_binds_exact_scope_and_new_independent_closure(source_git):
-    h.growth_sources(source_git.head)
+    h.audit_historical_growth_sources(source_git.head)
     value=preflight()
     assert (value['A'],value['C'])==(h.GR_A,h.GR_C)
     assert p.maintenance_resume()['scope']==p.c.GUEST_RESUMPTION_SCOPE

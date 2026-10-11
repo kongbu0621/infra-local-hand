@@ -72,7 +72,7 @@ def test_both_consumers_reject_wrong_history_list(originals, fault):
 def test_systemctl_authority_bytes_required_before_source_admission(source_git, record):
     source_git.changed_doc = record
     with pytest.raises(h.prior.r.ObservationError, match='GROWTH_SYSTEMCTL_'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0] == 'show' and ':tests/' in call[1] for call in source_git.calls)
 
 
@@ -80,7 +80,7 @@ def test_systemctl_authority_bytes_required_before_source_admission(source_git, 
 def test_new_implementation_must_descend_from_independent_closure(source_git, edge):
     source_git.rejected_edge = edge
     with pytest.raises(h.prior.r.ObservationError, match='GROWTH_SOURCE'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
 
 
 def test_complete_new_preflight_fits_original_limit_and_rejects_old_schema():
