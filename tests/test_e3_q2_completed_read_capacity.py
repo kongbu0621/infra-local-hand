@@ -36,14 +36,14 @@ def test_maintenance_admission_includes_completed_read_without_a_new_observation
     calls=[]
     def observe(fd):
         calls.append(fd)
-        return SimpleNamespace(f_frsize=1,f_bavail=25155*1048576-byte_short,
-            f_favail=7332-inode_short)
+        return SimpleNamespace(f_frsize=1,f_bavail=27369*1048576-byte_short,
+            f_favail=8182-inode_short)
     monkeypatch.setattr(h.os,'fstatvfs',observe)
     store=h.Store(7,lambda:None)
     if byte_short or inode_short:
         with pytest.raises(h.prior.r.ObservationError,match='GROWTH_HOST_CAPACITY') as caught:
             store.capacity()
-        assert caught.value.diagnostic['required']==dict(bytes=25155*1048576,inodes=7332)
+        assert caught.value.diagnostic['required']==dict(bytes=27369*1048576,inodes=8182)
     else:store.capacity()
     assert calls==[7]
 

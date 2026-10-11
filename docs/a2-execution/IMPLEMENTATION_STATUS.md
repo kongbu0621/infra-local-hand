@@ -15,8 +15,10 @@ PID/pidfile 缺失、固定端口空闲、六镜像当前保护通过但旧 devi
 
 [HR1–HR4整批接续](../governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md)已获明确批准。
 HR1离线核对发现原启动器没有方案所称的有界串口监督，因此尚未运行现场。
-[串口后端最小修订](../governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)拟在同一未发行批次
-使用null，等待准确修订确认；不新增窗口或费用池，不重复申请原基线及出站授权。
+[串口后端最小修订](../governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)已获明确批准，独立C为
+`4acf0dbfe99d0c7e170b6102f861fa9671d09da2`。HR1正在完成v3证明、null参数重建、
+独立消费者及私有四阶段调用器；准确D的首次CI、独立安装和全部冻结尚未完成。
+HR2/HR3尚未发行，不新增窗口或费用池，不重复申请原基线及出站授权。
 H01/Q4/H11仍NOT_RUN；NAS和外围继续暂停。
 当前入口见[首页](../../README.md)及[执行约束](../../AGENTS.md)。
 以下保留各日期的历史事实，不作为当前状态或新的执行授权。

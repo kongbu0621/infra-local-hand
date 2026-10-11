@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import importlib.util
 import os
 from pathlib import Path
@@ -229,10 +230,11 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    # RP1 adopts the reviewed complete dispatcher; old and edited bytes remain closed.
+    # HR1 adopts the reviewed complete dispatcher; old and edited bytes remain closed.
     assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
-        '5a0ba993039908220a56ab9c5c6649c942f15689242eb0b464a6b9b9da459a8a'})
+        'b316922af61ace9de08db7e4a6904fdb03c479b9761e1798def7f83309351b5f'})
     assert '645de8571fb812c7b713af2eff53ab0255814ed7ce1edf57f139bcbc69000152' not in e.RELEASABLE_DISPATCHER_SHA256
+    assert '5a0ba993039908220a56ab9c5c6649c942f15689242eb0b464a6b9b9da459a8a' not in e.RELEASABLE_DISPATCHER_SHA256
     assert digest in e.RELEASABLE_DISPATCHER_SHA256
     assert e.field_release_gate(manifest, {"field/dispatcher.py": raw}) == {
         "dispatcher_sha256": digest, "releasable": True}
@@ -850,6 +852,7 @@ def test_one_fake_pipe_request_and_not_run_finalization(tmp_path, monkeypatch, o
         transition['image_identities']={role:[capture.anchor['dev'],row[1]]
             for role,row in transition['image_identities'].items()}
         transition['vm_activation']['image_identities']={k:list(v) for k,v in transition['image_identities'].items()}
+        transition['persistent_source']['activation_sha256']=hashlib.sha256(json.dumps(transition['vm_activation'],sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
         from e3_host import q2_journal_growth as maintenance
         class Images:
             def __init__(self,*args,**kwargs):self.fds={role:directory_fd for role in transition['image_identities']}

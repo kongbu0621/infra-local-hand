@@ -27,7 +27,7 @@ def source_git(monkeypatch):
         elif args == ["diff", "--quiet", "HEAD"]:
             pass
         elif args[0] == "rev-parse" and args[1].endswith("^{tree}"):
-            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE,h.history.c.EXEC_BASELINE,h.history.c.EXEC_CLOSURE,h.history.c.GS_BASELINE,h.history.c.GS_CLOSURE,h.history.c.QI_BASELINE,h.history.c.QI_CLOSURE,h.history.c.DS_BASELINE,h.history.c.DS_CLOSURE,h.history.c.VM_ADOPTION_BASELINE,h.history.c.VM_ADOPTION_CLOSURE,h.history.c.RUNTIME_BASELINE,h.history.c.RUNTIME_CLOSURE,h.history.c.HOST_FD_BASELINE,h.history.c.HOST_FD_CLOSURE,h.history.c.USAGE_BASELINE,h.history.c.USAGE_CLOSURE,h.history.c.TRANSPORT_BASELINE,h.history.c.TRANSPORT_CLOSURE,h.history.c.RESUMED_VM_BASELINE,h.history.c.RESUMED_VM_CLOSURE,h.history.c.PROTECTED_SOURCE_BASELINE,h.history.c.PROTECTED_SOURCE_CLOSURE,h.history.c.PERSISTENT_PATH_BASELINE,h.history.c.PERSISTENT_PATH_CLOSURE,h.history.c.IDENTITY_RESOURCE_BASELINE,h.history.c.IDENTITY_RESOURCE_CLOSURE,h.history.c.RUNTIME_PREPARATION_BASELINE,h.history.c.RUNTIME_PREPARATION_CLOSURE)
+            authority=next(item for item in (h.history.c.NAMES_BASELINE,h.history.c.NAMES_CLOSURE,h.history.c.EXEC_BASELINE,h.history.c.EXEC_CLOSURE,h.history.c.GS_BASELINE,h.history.c.GS_CLOSURE,h.history.c.QI_BASELINE,h.history.c.QI_CLOSURE,h.history.c.DS_BASELINE,h.history.c.DS_CLOSURE,h.history.c.VM_ADOPTION_BASELINE,h.history.c.VM_ADOPTION_CLOSURE,h.history.c.RUNTIME_BASELINE,h.history.c.RUNTIME_CLOSURE,h.history.c.HOST_FD_BASELINE,h.history.c.HOST_FD_CLOSURE,h.history.c.USAGE_BASELINE,h.history.c.USAGE_CLOSURE,h.history.c.TRANSPORT_BASELINE,h.history.c.TRANSPORT_CLOSURE,h.history.c.RESUMED_VM_BASELINE,h.history.c.RESUMED_VM_CLOSURE,h.history.c.PROTECTED_SOURCE_BASELINE,h.history.c.PROTECTED_SOURCE_CLOSURE,h.history.c.PERSISTENT_PATH_BASELINE,h.history.c.PERSISTENT_PATH_CLOSURE,h.history.c.IDENTITY_RESOURCE_BASELINE,h.history.c.IDENTITY_RESOURCE_CLOSURE,h.history.c.RUNTIME_PREPARATION_BASELINE,h.history.c.RUNTIME_PREPARATION_CLOSURE,h.history.c.HOST_REBIND_ORIGINAL_BASELINE,h.history.c.HOST_REBIND_ORIGINAL_CLOSURE,h.history.c.HOST_REBIND_BASELINE,h.history.c.HOST_REBIND_CLOSURE)
                            if args[1]==item['commit']+'^{tree}')
             raw=(("0"*40 if state.changed_tree==authority['commit'] else authority['tree'])+'\n').encode()
         elif args[:2] == ["merge-base", "--is-ancestor"]:
@@ -56,7 +56,7 @@ def test_candidate_requires_all_closures_and_approved_source_caps(source_git):
                            (h.DRIFT_C, source_git.head), (h.MINIMAL_A,h.MINIMAL_C),
                            (h.MINIMAL_C,source_git.head)):
         assert ["merge-base", "--is-ancestor", earlier, later] in source_git.calls
-    assert len(sources) == 13
+    assert len(sources) == 15
     assert all(len(sources[name]) <= 196608 for name in
                ("q2_journal_growth.py", "q2_journal_growth_guest.py"))
     assert ["show", "4e9b9cc225285aa9a2d785b23e8344d9a120d5eb:tests/e3_host/q2_core_obligation_inputs.py"] in source_git.calls

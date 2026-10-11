@@ -7,7 +7,7 @@ import pytest
 
 from e3_host import q2_core_prior_attempt as p
 from persistent_continuation_fixture import records, archive, source, DUMP
-from runtime_preparation_continuation_fixture import source as identity_source
+from host_rebind_fixture import source as identity_source
 from core_prior_fixture import triple_fixture, journal_transition
 
 if sys.platform.startswith('linux'):
@@ -69,8 +69,8 @@ def test_rehashed_old_failure_cannot_become_success_or_different_source(fault):
 @pytest.mark.parametrize('fault',['reference','member','cycle','digest','missing','replacement'])
 def test_fixed_history_reference_rejects_loss_or_substitution(fault):
     proof=identity_source();logical=dict(resume=p.maintenance_resume(),persistent_source=proof)
-    previous=p.identity_maintenance_resume()
-    manifest=dict(schema='lhq-journal-growth-manifest/v21',inputs=p.encode_manifest_inputs(logical),
+    previous=p.runtime_preparation_maintenance_resume()
+    manifest=dict(schema='lhq-journal-growth-manifest/v22',inputs=p.encode_manifest_inputs(logical),
         resume=p.encode_maintenance_resume(logical['resume'],proof))
     if fault=='reference':manifest['resume']['previous_reference']['field']='manifest.inputs'
     elif fault=='member':manifest['resume']['previous_reference']['member']='other'
@@ -87,7 +87,7 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
     implementation=dict(commit='d'*40,tree='e'*40);value=journal_transition(implementation)
     proof=value['persistent_source']
     if fault=='archive_limit':proof['archive']['bytes']=1048577
-    elif fault=='reference':proof['predecessor']['resume_sha256']='f'*64
+    elif fault=='reference':proof['prior']['predecessor']['resume_sha256']='f'*64
     elif fault=='old_failure':proof['summary']['remote_exit']='SUCCESS'
     elif fault=='missing':value.pop('persistent_source')
     else:proof['summary']['ssh_requests']=True
@@ -101,12 +101,12 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
 def test_all_sixteen_obligations_and_completed_read_pools_remain_charged(monkeypatch):
     priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     rows=p._capacity_rows(priors,p.diagnostic_retention())
-    assert sum(row['bytes'] for row in rows)==25283*1048576
-    assert sum(row['inodes'] for row in rows)==7364
+    assert sum(row['bytes'] for row in rows)==27497*1048576
+    assert sum(row['inodes'] for row in rows)==8214
     by_session={row['session_id']:row for row in rows}
     assert len(by_session)==len(rows)
     for name in ('lhqprotect-20261010a','lhqprotect-source-20261010a'):
         assert by_session[name]==dict(session_id=name,bytes=1048576,inodes=32)
     costs=p.maintenance_commitments()
-    assert len(costs['generations'])==18 and costs['released_or_refunded'] is False
+    assert len(costs['generations'])==19 and costs['released_or_refunded'] is False
     if d:assert costs==d._maintenance_commitments()

@@ -82,6 +82,8 @@ IR_A=history.c.IDENTITY_RESOURCE_BASELINE["commit"]
 IR_C=history.c.IDENTITY_RESOURCE_CLOSURE["commit"]
 RP_A=history.c.RUNTIME_PREPARATION_BASELINE["commit"]
 RP_C=history.c.RUNTIME_PREPARATION_CLOSURE["commit"]
+HR_A=history.c.HOST_REBIND_BASELINE["commit"]
+HR_C=history.c.HOST_REBIND_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -105,7 +107,7 @@ DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
 READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
 "6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
 "7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
-SESSION="lhqjgrow-20261011b"
+SESSION="lhqjgrow-20261011c"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
 BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=640*MIB,1152*MIB,16*MIB
@@ -113,9 +115,9 @@ BACKUP_CAP,IMAGE_CAP,CAPTURE_CAP=640*MIB,1152*MIB,16*MIB
 # image and capture headroom; a minimum-free check is not an upper limit.
 HOST_HEADROOM_BYTES=(BACKUP_CAP-320*MIB)+(IMAGE_CAP-576*MIB)+(CAPTURE_CAP-8*MIB)
 HOST_HEADROOM_INODES=32
-# Sixteen original full obligations, retained 11a and new 11b (each headroom once),
+# Sixteen original full obligations, retained 11a/11b and new 11c (each headroom once),
 # all completed reads and all old/new preparation pools stay charged.
-HOST_BYTES,HOST_INODES=25155*MIB,7332
+HOST_BYTES,HOST_INODES=27369*MIB,8182
 # Additional host descriptors from preflight through receipt: post transport
 # peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
 # Three more slots cover bounded identity/usage reads. This is admission only;
@@ -287,15 +289,19 @@ def qemu_argv(start,anchor,serial,*,activation=None):
  command=pieces[1].split("\n\n",1)[0].replace("\\\n"," ")
  args=shlex.split(command)
  require(all(arg.isascii() for arg in args),"GROWTH_START_ENCODING")
- args=[arg.replace("$q1_vm",anchor).replace("$q1_log",serial) for arg in args]
+ rebound=activation is not None and activation.get("schema")=="local-hand-q2-vm-activation/v3"
+ require(not rebound or serial is None,"GROWTH_NULL_SERIAL")
+ source_serial=anchor+"/.unused-null-serial" if rebound else serial
+ args=[arg.replace("$q1_vm",anchor).replace("$q1_log",source_serial) for arg in args]
  require(not any("$" in arg or "`" in arg for arg in args),"GROWTH_START_EXPANSION")
  require(args.count("-pidfile")==args.count("-serial")==1 and
 args[args.index("-pidfile")+1]==anchor+"/vm.pid" and
-args[args.index("-serial")+1]=="file:"+serial,"GROWTH_START_OUTPUT")
+args[args.index("-serial")+1]=="file:"+source_serial,"GROWTH_START_OUTPUT")
  original=["qemu-system-x86_64",*args]
  if activation is not None:
   history.validate_vm_activation(activation)
   require(serial==activation["serial"],"GROWTH_ACTIVATION_SERIAL")
+  if rebound:original[original.index("-serial")+1]="null"
   original[original.index("-pidfile")+1]=activation["pidfile"]
   system=[i+1 for i,word in enumerate(original[:-1]) if word=="-drive"
  and original[i+1]=="if=none,id=os,format=qcow2,file="+anchor+"/system.qcow2"]
@@ -306,7 +312,9 @@ args[args.index("-serial")+1]=="file:"+serial,"GROWTH_START_OUTPUT")
  new=original.copy()
  new[new.index("-pidfile")+1]=anchor+"/"+NAMES["vm.pid"]
  new[new.index("-serial")+1]="null"
- require(sum(a!=b for a,b in zip(original,new))==2,"GROWTH_START_DELTA")
+ require([i for i,(a,b) in enumerate(zip(original,new)) if a!=b]==
+ sorted([original.index("-pidfile")+1]+([] if rebound else [original.index("-serial")+1])),
+ "GROWTH_START_DELTA")
  return original,new
 def image_commands(path,backup):
  return dict(info=["info","--output=json","-f","qcow2",path],
@@ -761,8 +769,7 @@ def validate_q1_frozen(frozen):
  activation=frozen.get("vm_activation")
  if activation is not None:
   history.validate_persistent_frozen(frozen)
-  require(history.build_vm_activation(frozen["activation_files"],frozen["activation_index"],
- historical_boot=proof["boot_id"])==activation==frozen["source_binding"]["vm_activation"]
+  require(history.activation_from_frozen(frozen)==activation==frozen["source_binding"]["vm_activation"]
  and frozen["boot_id"]==activation["current_boot_id"],"GROWTH_ACTIVATION_FROZEN")
  require(proof==frozen["source_binding"]["q1_declaration"]
  and proof["boot_id"]==(activation["historical_boot_id"] if activation else frozen["boot_id"])
@@ -822,7 +829,9 @@ activation_sha256=digest(canonical(activation)),window_binding_sha256=digest(can
 
 def recheck_vm_activation(inputs,frozen,check):
  if frozen.get("vm_activation") is None:return
- for name in ("activation_archive","runtime_preparation_archive"):
+ names=("activation_archive","runtime_preparation_archive")
+ if frozen["vm_activation"].get("schema")=="local-hand-q2-vm-activation/v3":names+=("rebind_archive",)
+ for name in names:
   spec=frozen[name]
   fd=next(fd for path,fd,_ in inputs.held if path==spec["path"])
   check();os.lseek(fd,0,os.SEEK_SET)
@@ -1004,9 +1013,14 @@ def freeze_vm(start,anchor,anchor_fd,qemu_tool,check,*,activation=None):
  current=[word.decode("ascii","strict") for word in raw[:-1].split(b"\0")]
  require(current.count("-serial")==1,"GROWTH_PROCESS_SERIAL")
  index=current.index("-serial")+1
- require(index<len(current) and current[index].startswith("file:"),"GROWTH_PROCESS_SERIAL")
- serial=current[index][5:]
- require(re.fullmatch(r"/[A-Za-z0-9_./-]{1,4095}",serial) and os.path.normpath(serial)==serial,
+ rebound=activation is not None and activation.get("schema")=="local-hand-q2-vm-activation/v3"
+ if rebound:
+  require(index<len(current) and current[index]=="null","GROWTH_PROCESS_SERIAL")
+  serial=None
+ else:
+  require(index<len(current) and current[index].startswith("file:"),"GROWTH_PROCESS_SERIAL")
+  serial=current[index][5:]
+  require(re.fullmatch(r"/[A-Za-z0-9_./-]{1,4095}",serial) and os.path.normpath(serial)==serial,
 "GROWTH_PROCESS_SERIAL")
  original,restart=qemu_argv(start,anchor,serial,activation=activation)
  require(current==original,"GROWTH_PROCESS_ARGV")
@@ -1350,7 +1364,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  decision=history.c.DS_OWNER_DECISION
  for commit in (DS_C,expected):
   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_DS_B_CHANGED")
- for prefix,a,b in (("VM_ADOPTION",VM_A,VM_C),("RUNTIME",RT_A,RT_C),("HOST_FD",FD_A,FD_C),("USAGE",UC_A,UC_C),("TRANSPORT",TC_A,TC_C),("RESUMED_VM",RC_A,RC_C),("PROTECTED_SOURCE",PS_A,PS_C),("PERSISTENT_PATH",PP_A,PP_C),("IDENTITY_RESOURCE",IR_A,IR_C),("RUNTIME_PREPARATION",RP_A,RP_C)):
+ for prefix,a,b in (("VM_ADOPTION",VM_A,VM_C),("RUNTIME",RT_A,RT_C),("HOST_FD",FD_A,FD_C),("USAGE",UC_A,UC_C),("TRANSPORT",TC_A,TC_C),("RESUMED_VM",RC_A,RC_C),("PROTECTED_SOURCE",PS_A,PS_C),("PERSISTENT_PATH",PP_A,PP_C),("IDENTITY_RESOURCE",IR_A,IR_C),("RUNTIME_PREPARATION",RP_A,RP_C),("HOST_REBIND_ORIGINAL",history.c.HOST_REBIND_ORIGINAL_BASELINE["commit"],history.c.HOST_REBIND_ORIGINAL_CLOSURE["commit"]),("HOST_REBIND",HR_A,HR_C)):
   baseline,decision,closure=(getattr(history.c,prefix+suffix) for suffix in ("_BASELINE","_OWNER_DECISION","_CLOSURE"))
   require(all(row is None for row in (baseline,decision,closure)) or all(type(row) is dict for row in (baseline,decision,closure)),"GROWTH_"+prefix+"_AUTHORITY_PARTIAL")
   if baseline is None:continue
@@ -1393,10 +1407,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  for name,sha in zip(DOC_PINS,READ_PINS):
   require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-host-read/"+name))==sha,
 "GROWTH_READ_A_CHANGED")
- names=("q2_journal_growth.py","q2_journal_growth_guest.py","q2_core_capacity_capture.py",
-"q2_core_capacity_reader.py","q2_sshd_source_capture.py","q2_sshd_source_reader.py",
-"q2_core_obligation_inputs.py","q2_core_prior_attempt.py","q2_core_delivery_contract.py",
-"q2_local_source_delivery.py","q2_core_approved_inputs.py","q2_host_kernel_facts.py","q2_journal_retained_fds.py")
+ names=history.JOURNAL_SOURCE_NAMES
  exporter=git("show",expected+":tests/e3_host/q2_host_export.py")
  require((len(exporter),digest(exporter))==Q1_EXPORT_PIN,"GROWTH_Q1_EXPORT_SOURCE")
  sources={}
@@ -1407,7 +1418,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
   finally:
    os.close(fd)
   require(raw==git("show",expected+":tests/e3_host/"+name),"GROWTH_SOURCE_DRIFT")
-  if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py","q2_journal_retained_fds.py"):
+  if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py","q2_journal_retained_fds.py","q2_host_rebind.py","q2_host_reboot_consumer.py"):
    approved="4e9b9cc225285aa9a2d785b23e8344d9a120d5eb" if name=="q2_core_obligation_inputs.py" else "8e91fa2631aa18a8469efa5a14e4145eaf781e28"
    require(raw==git("show",approved+":tests/e3_host/"+name),
 "GROWTH_DEPENDENCY_CHANGED")
@@ -1627,7 +1638,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v21",session=SESSION,R=R,A=RP_A,C=RP_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v22",session=SESSION,R=R,A=HR_A,C=HR_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1660,7 +1671,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v21",R=R,A=RP_A,C=RP_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v22",R=R,A=HR_A,C=HR_C,D=self.commit,
 nonce=self.nonce,resume=history.encode_maintenance_resume(history.maintenance_resume(),self.frozen["source_binding"]["persistent_source"]),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=history.encode_manifest_inputs(self.frozen["source_binding"]),
 custody_binding=self.anchor.custody.binding,
@@ -1844,7 +1855,7 @@ def main():
   require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
   require(all(value is not None for value in (history.c.VM_ADOPTION_CLOSURE,
 history.c.PROTECTED_SOURCE_CLOSURE,history.c.PERSISTENT_PATH_CLOSURE,
-history.c.IDENTITY_RESOURCE_CLOSURE,history.c.RUNTIME_PREPARATION_CLOSURE)),"GROWTH_RP_NOT_AUTHORIZED")
+history.c.IDENTITY_RESOURCE_CLOSURE,history.c.RUNTIME_PREPARATION_CLOSURE,history.c.HOST_REBIND_ORIGINAL_CLOSURE,history.c.HOST_REBIND_CLOSURE)),"GROWTH_HR_NOT_AUTHORIZED")
   sources=growth_sources(args.expected_commit)
   require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
 for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")

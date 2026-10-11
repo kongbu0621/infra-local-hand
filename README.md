@@ -32,8 +32,8 @@ Owner已批准[HR1–HR4整批接续](docs/governance/Q2_CORE_HOST_REBIND_CONTIN
 采用HB2新基线，再接原配置启动、现有guest核验、一次维护及原H01/Q4/H11。
 [HR1私有源码离线复核](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)发现原启动器
 直接写串口文件，未受捕获上限约束，与方案假设不符；现场尚未启动，未消耗新调用。
-已准备[仅串口后端改为null的修订](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)，
-当前待确认。原镜像、目的地/载荷、会话、次数、费用和已批准核心范围保持；复用已有
+Owner已批准[仅串口后端改为null的修订](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)，
+HR1正在接入新基线证明、独立消费者和私有调用器。原镜像、目的地/载荷、会话、次数、费用保持；复用已有
 后端、验收脚本和安装。历史文件系统/内容连续性仍UNKNOWN，NAS和外围继续暂停。
 
 ## 使用与开发入口

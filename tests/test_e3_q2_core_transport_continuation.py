@@ -26,8 +26,8 @@ def test_four_original_failure_with_full_local_returns_and_no_refund(monkeypatch
     assert resume['previous_local_preflight']['maintenance_window_consumed'] is False
     assert resume['previous_transport_failure']['maintenance_window_consumed'] is True
     costs=p.maintenance_commitments()['generations']
-    assert len(costs)==18 and sum(r['bytes'] for r in costs)==25136*1048576
-    assert sum(r['inodes'] for r in costs)==6724 and sum(r['cpu_seconds'] for r in costs)==2400
+    assert len(costs)==19 and sum(r['bytes'] for r in costs)==27336*1048576
+    assert sum(r['inodes'] for r in costs)==7126 and sum(r['cpu_seconds'] for r in costs)==2640
     if d is not None:
         assert d.validate_transport_failure_source(value)==value
         assert d._maintenance_resume()==resume and d._maintenance_commitments()==p.maintenance_commitments()

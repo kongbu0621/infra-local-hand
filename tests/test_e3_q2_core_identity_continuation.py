@@ -95,10 +95,10 @@ def test_independent_projection_rejects_changed_predecessor(fault):
 
 def test_new_generation_preserves_all_sixteen_original_charges():
     costs=p.maintenance_commitments();rows=costs['generations']
-    assert len(rows)==18 and len({r['session'] for r in rows})==18
-    assert all((r['bytes'],r['inodes'],r['cpu_seconds'])==(1296*1048576,370,120) for r in rows[:-2])
-    assert rows[-3]['session']=='lhqjgrow-20261010d'
-    assert rows[-2]==dict(session='lhqjgrow-20261011a',bytes=2200*1048576,inodes=402,cpu_seconds=240)
+    assert len(rows)==19 and len({r['session'] for r in rows})==19
+    assert all((r['bytes'],r['inodes'],r['cpu_seconds'])==(1296*1048576,370,120) for r in rows[:16])
+    assert rows[15]['session']=='lhqjgrow-20261010d'
+    assert rows[16]==dict(session='lhqjgrow-20261011a',bytes=2200*1048576,inodes=402,cpu_seconds=240)
     assert costs['protection_read']['source_preparation_included'] is True
     assert costs['protection_read']['aggregate_cpu_seconds']==120
     if d:assert costs==d._maintenance_commitments()
