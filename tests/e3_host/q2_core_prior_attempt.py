@@ -254,7 +254,7 @@ def _records(raw_files, *, index):
     require(all(record["session_id"] == fixed['session'] for record in (marker, capture, receipt)), "SESSION")
     require(marker["scope"] == receipt["scope"] == c.SCOPE and marker["implementation"] == fixed['implementation']
             and marker["baseline"] == c.BASELINE and marker["owner_decision"] == c.OWNER_DECISION
-            and marker["closure"] == c.CLOSURE and marker["candidate"] == c.CANDIDATE
+            and marker["closure"] == c.CLOSURE and marker["candidate"] == c.HISTORICAL_CANDIDATE
             and marker["state"] == "CONSUMPTION_RECORD_COMPLETE", "MARKER")
     c.validate_amendment(marker["amendment"], implementation=fixed['implementation'])
     c.validate_local_writer(marker["writer"])

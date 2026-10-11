@@ -232,7 +232,7 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
                            "dispatcher_sha256": digest}}
     # GR1 adopts the reviewed complete dispatcher; old and edited bytes remain closed.
     assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
-        'b722206ae4d2f5c2c6980aba2af71010af34838ab8ccd063a950815eebb17b1d'})
+        '2ebf958caabeb33947a97456e27d5add08d5070bcda0db2d55cb58826d2f06aa'})
     assert '645de8571fb812c7b713af2eff53ab0255814ed7ce1edf57f139bcbc69000152' not in e.RELEASABLE_DISPATCHER_SHA256
     assert '5a0ba993039908220a56ab9c5c6649c942f15689242eb0b464a6b9b9da459a8a' not in e.RELEASABLE_DISPATCHER_SHA256
     assert digest in e.RELEASABLE_DISPATCHER_SHA256

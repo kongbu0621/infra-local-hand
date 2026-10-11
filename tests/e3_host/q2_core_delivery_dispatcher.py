@@ -274,20 +274,24 @@ COMPLETION_ADJUSTMENT_CLOSURE = {
     "commit": "c32799c03a32d81deec02f7492c1b71eb47b2b6d",
     "tree": "1ccf7b10f65e43f5099c17c7c7fb7e9f5e5da77b",
 }
+HISTORICAL_CANDIDATE = {
+    'commit': '4b6e4a7c403362358192086b88679e1326dcb2e1',
+    'tree': '4d4349580c9f4b67cc26f601126849c2bc8d76a4',
+}
 CANDIDATE = {
-    "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
-    "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
+    "commit": "319aa93f9ab16dd618d57f871b4c7db1cd9d7a2e",
+    "tree": "94503c1fec4e30968fd61989d76ec9a53b9f63b0",
 }
 WHEEL = {
     "basename": "infra_local_hand-0.2.0a1-py3-none-any.whl",
     "bytes": 288375,
-    "sha256": "ce31fa11caf5995a3c62611660a3908b78d68b88ee80196900bf69a7702856c9",
+    "sha256": "e3381c2c160ea83c049ef9e8239de350b259393b64828d2febbb1b90e9127897",
     "payload_digest": "b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23",
 }
 PROJECTION = {
     "basename": ".local-hand-source-projection.json",
     "bytes": 11811,
-    "sha256": "55f555fc225edca943b8c86cee8119c4878f5ec1e9503a084ba7a560cf2c991d",
+    "sha256": "55e69c1346827b1528ae6ca4570ee58366c666fb49b9e9bf347c28b56d221e32",
     "file_count": 89,
 }
 
@@ -1358,7 +1362,7 @@ def _prior_attempt(prior, index=0):
         and marker['scope'] == receipt['scope'] == SCOPE, 'SCHEMAS')
     check(marker['implementation'] == fixed['implementation'] and marker['baseline'] == BASELINE
         and marker['owner_decision'] == OWNER_DECISION and marker['closure'] == CLOSURE
-        and marker['candidate'] == CANDIDATE and marker['state'] == 'CONSUMPTION_RECORD_COMPLETE', 'AUTHORITY')
+        and marker['candidate'] == HISTORICAL_CANDIDATE and marker['state'] == 'CONSUMPTION_RECORD_COMPLETE', 'AUTHORITY')
     _amendment(marker['amendment'], fixed['implementation'])
     _validate_local_writer(marker['writer'])
     check.exact(marker['package'], _fields('basename bytes sha256 manifest_sha256'), 'PACKAGE')

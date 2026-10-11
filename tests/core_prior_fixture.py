@@ -33,7 +33,7 @@ def raw_files(index=0):
     marker = dict(schema=c.CONSUMPTION_SCHEMA, scope=c.SCOPE, session_id=fixed['session'],
         baseline=copy.deepcopy(c.BASELINE), owner_decision=copy.deepcopy(c.OWNER_DECISION),
         closure=copy.deepcopy(c.CLOSURE), implementation=copy.deepcopy(fixed['implementation']),
-        amendment=c.make_amendment(fixed['implementation']), candidate=copy.deepcopy(c.CANDIDATE),
+        amendment=c.make_amendment(fixed['implementation']), candidate=copy.deepcopy(c.HISTORICAL_CANDIDATE),
         package=dict(basename=fixed['session'] + '.lhfp', bytes=fixed['package_bytes'],
             sha256=fixed['package_sha'], manifest_sha256=fixed['manifest_sha']),
         approved_inputs_sha256=('c' * 64,

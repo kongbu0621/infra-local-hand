@@ -387,21 +387,25 @@ DS_OWNER_DECISION = {'event': 'LH-Q2-CORE-DECLARED-STARTUP-CONTINUATION-CLOSURE-
 DS_CLOSURE = {'commit': 'a2a6d62de08b2d1d8fbf9da97e8ccf938e3777c1', 'tree': 'a9c54bbfe24fefa8e8408846ebaf532a191e237f'}
 
 LOCALE_REPAIR = "d0c8749e47647264c14c406cd85c8c68006689a0"
-CANDIDATE = {
-    "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
-    "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
+HISTORICAL_CANDIDATE = {
+    'commit': '4b6e4a7c403362358192086b88679e1326dcb2e1',
+    'tree': '4d4349580c9f4b67cc26f601126849c2bc8d76a4',
 }
-CANDIDATE_PARENT = "607100a57206f7dc7cfcbd6cae8507cfa599b813"
+CANDIDATE = {
+    "commit": "319aa93f9ab16dd618d57f871b4c7db1cd9d7a2e",
+    "tree": "94503c1fec4e30968fd61989d76ec9a53b9f63b0",
+}
+CANDIDATE_PARENT = "4b6e4a7c403362358192086b88679e1326dcb2e1"
 WHEEL = {
     "basename": "infra_local_hand-0.2.0a1-py3-none-any.whl",
     "bytes": 288375,
-    "sha256": "ce31fa11caf5995a3c62611660a3908b78d68b88ee80196900bf69a7702856c9",
+    "sha256": "e3381c2c160ea83c049ef9e8239de350b259393b64828d2febbb1b90e9127897",
     "payload_digest": "b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23",
 }
 PROJECTION = {
     "basename": ".local-hand-source-projection.json",
     "bytes": 11811,
-    "sha256": "55f555fc225edca943b8c86cee8119c4878f5ec1e9503a084ba7a560cf2c991d",
+    "sha256": "55e69c1346827b1528ae6ca4570ee58366c666fb49b9e9bf347c28b56d221e32",
     "file_count": 89,
 }
 
