@@ -97,6 +97,10 @@ and identifies the last successful sample without another read. Historical 0/0 o
 unchanged. Offline reconstruction of both fixed archives equals the frozen activation; the
 retained RP2 window still fails that comparison. No host/VM observation, caller, new window,
 release-pin change or replay authority follows. Continue original core work and peripheral suppression.
+This repair is published by normal PR #18 merge `a859e4b6fa5d594f9f9afabb799e243359d10a05`;
+exact D `9630cef0c50146960d90bf8cc418bcedca78dce7` first CI `38135941620`, attempt 1,
+passed all three jobs and both independent installations. Earlier local fixture/sandbox/umask
+failures remain recorded separately. This publication grants no new field action.
 
 ## Current approved core identity and resource continuation (2026-10-11)
 

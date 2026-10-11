@@ -99,3 +99,14 @@ umask实测0002。明确使用022、保持生产校验不变后，覆盖全部�
 80通过/1跳过；另有维护输入/传输/资源及NAS discovery策略101通过。失败记录保留，
 不将分次核验合写成一次全绿运行。
 这次修复不改变dispatcher发行摘要、会话、费用或现场权限；RP2终态和核心NOT_RUN保持。
+
+准确修复提交`9630cef0c50146960d90bf8cc418bcedca78dce7`由正常
+[PR #18](https://github.com/kongbu0621/infra-local-hand/pull/18) merge
+`a859e4b6fa5d594f9f9afabb799e243359d10a05`发布。自己的首次CI
+[38135941620](https://github.com/kongbu0621/infra-local-hand/actions/runs/38135941620)，
+attempt 1，三项成功：Linux 7815通过/89跳过、独立root文件检查16通过；Windows
+2025通过/1390跳过。独立安装分别94检查/292命令和10检查/10命令PASS。
+这份CI独立记录，不覆盖此前本地fixture/环境失败。
+
+重启后的[固定本机读取方案](../governance/Q2_CORE_HOST_REBOOT_READ_BASELINE.md)只准备
+一次有界本机观察，尚未获批/实现/执行；不包含SSH、VM启动或维护。它不恢复旧批次。
