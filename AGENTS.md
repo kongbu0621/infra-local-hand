@@ -1,5 +1,23 @@
 # Execution guidance
 
+## Prepared whole core continuation after HB2 (2026-10-11)
+
+The [requirements](docs/a2-execution/q2-core-host-rebind-continuation/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-host-rebind-continuation/ARCHITECTURE.md), and
+[implementation plan](docs/a2-execution/q2-core-host-rebind-continuation/IMPLEMENTATION_PLAN.md)
+form one proposed `LH-Q2-CORE-HOST-REBIND-CONTINUATION-v1` / HR1–HR4 batch.
+It is OPEN / NOT APPROVED: no Owner B, CLOSED C, new implementation or field call is recorded.
+The [local Codex task](docs/a2-execution/CORE_HOST_REBIND_TASK_20261011.txt) keeps the next work
+on adoption of the exact HB2 image baseline, one original-configuration startup/current guest
+verification, one maintenance, and original H01/Q4/H11. No separate UUID/scanner/read project.
+Owner must explicitly accept that this is a new current baseline, not proof of historical
+filesystem/content continuity. Current device/boot checks remain strict. Preserve HB2/RP2
+and all historical callers; the previous closure is not replay or new-start authority.
+The proposed complete budget is 27497 MiB/8214 inodes and 19 full maintenance obligations,
+including old 25287 MiB/7492 inodes, one new 2200 MiB/402 inode maintenance and three new
+preparation/capture pools totaling 10 MiB/320 inodes. No double-counting old core capture.
+HR1 is NOT_STARTED, HR2/HR3 NOT_ISSUED, H01/Q4/H11 NOT_RUN. NAS/peripherals remain paused.
+
 ## Approved fixed local host read after reboot (2026-10-11)
 
 The [fixed proposal](docs/governance/Q2_CORE_HOST_REBOOT_READ_BASELINE.md), exact A
