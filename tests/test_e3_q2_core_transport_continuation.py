@@ -128,7 +128,7 @@ def test_tc_authority_precedes_any_field_effect(source_git,fault):
     elif fault=='B':source_git.changed_doc=p.c.TRANSPORT_OWNER_DECISION['record_path']
     elif fault=='tree':source_git.changed_tree=h.TC_C
     else:source_git.rejected_edge=(h.TC_C,source_git.head)
-    with pytest.raises(h.prior.r.ObservationError):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError):h.audit_historical_growth_sources(source_git.head)
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'),reason='source-aware host consumer')

@@ -157,14 +157,14 @@ def test_fixed_three_generation_capacity_and_unchanged_action_limits():
 def test_serial_authority_exact_bytes_are_required_before_source_admission(source_git,record):
     source_git.changed_doc=record
     with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SERIAL_'):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
 
 
 @pytest.mark.parametrize('edge',[(h.SERIAL_A,h.SERIAL_C),(h.SERIAL_C,'d'*40)])
 def test_serial_closure_lineage_is_required(source_git,edge):
     source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.audit_historical_growth_sources(source_git.head)
 
 
 @pytest.mark.parametrize('changed',[False,True])

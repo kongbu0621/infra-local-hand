@@ -46,7 +46,7 @@ def source_git(monkeypatch):
 
 
 def test_candidate_requires_all_closures_and_approved_source_caps(source_git):
-    sources = h.growth_sources(source_git.head)
+    sources = h.audit_historical_growth_sources(source_git.head)
     for earlier, later in ((h.C, source_git.head), (h.TERM_C, source_git.head),
                            (h.DR_A, h.DR_C), (h.DR_C, source_git.head),
                            (h.DRV2_A, h.DRV2_C), (h.DRV2_C, source_git.head),
@@ -82,7 +82,7 @@ def test_persistent_continuation_requires_exact_approved_lineage(source_git, fau
         source_git.changed_doc = "docs/a2-execution/q2-core-persistent-path-continuation/" + fault
         reason = "GROWTH_PERSISTENT_PATH_A_CHANGED"
     with pytest.raises(h.prior.r.ObservationError, match="^" + reason + "$"):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0] == "show" and ":tests/" in call[1] for call in source_git.calls)
 
 
@@ -95,7 +95,7 @@ def test_unrelated_candidate_or_closure_is_refused_before_source_reads(source_gi
     source_git.rejected_edge = ((approval, closure) if edge == "approval_to_closure"
                                 else (closure, source_git.head))
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_SOURCE$"):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0] == "show" for call in source_git.calls)
 
 
@@ -107,7 +107,7 @@ def test_unrelated_candidate_or_closure_is_refused_before_source_reads(source_gi
 def test_bookkeeping_closure_cannot_be_execution_candidate(source_git, closure, reason):
     source_git.head = closure
     with pytest.raises(h.prior.r.ObservationError, match="^" + reason + "$"):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0] == "show" for call in source_git.calls)
 
 
@@ -120,14 +120,14 @@ def test_bookkeeping_closure_cannot_be_execution_candidate(source_git, closure, 
 def test_changed_resume_approval_is_refused_before_implementation_reads(source_git, name, scope, reason):
     source_git.changed_doc = "docs/a2-execution/q2-core-journal-" + scope + "/" + name
     with pytest.raises(h.prior.r.ObservationError, match="^" + reason + "$"):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0] == "show" and ":tests/" in call[1] for call in source_git.calls)
 
 
 def test_drift_repair_identity_must_precede_exact_approval(source_git):
     source_git.rejected_edge = (h.DRIFT_REPAIR, h.DRIFT_A)
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_SOURCE$"):
-        h.growth_sources(source_git.head)
+        h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0] == "show" for call in source_git.calls)
 
 
@@ -136,5 +136,5 @@ def test_old_w2_and_unbound_repair_cannot_supply_new_approval(source_git, old):
     source_git.head = old
     source_git.rejected_edge = (h.DRIFT_C, old)
     with pytest.raises(h.prior.r.ObservationError, match="^GROWTH_SOURCE$"):
-        h.growth_sources(old)
+        h.audit_historical_growth_sources(old)
     assert not any(call[0] == "show" for call in source_git.calls)

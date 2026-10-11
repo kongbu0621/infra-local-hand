@@ -15,22 +15,22 @@ from test_e3_q2_journal_growth_guest_completion import description, pre_report
 @pytest.mark.parametrize('record',list(p.c.DS_BASELINE['documents_sha256'])+[p.c.DS_OWNER_DECISION['record_path']])
 def test_exact_ds_authority_is_required_before_sources(source_git,record):
     source_git.changed_doc=record
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_DS_'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_DS_'):h.audit_historical_growth_sources(source_git.head)
     assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
 
 @pytest.mark.parametrize('edge',[(h.DS_A,h.DS_C),(h.DS_C,'d'*40)])
 def test_ds_implementation_must_descend_from_separate_closure(source_git,edge):
     source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.audit_historical_growth_sources(source_git.head)
 
 @pytest.mark.parametrize('commit',[h.DS_A,h.DS_C])
 def test_ds_trees_are_exact(source_git,commit):
     source_git.changed_tree=commit
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_DS_TREE'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_DS_TREE'):h.audit_historical_growth_sources(source_git.head)
 
 def test_ds_closure_cannot_execute(source_git):
     source_git.head=h.DS_C
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_DS_D'):h.growth_sources(source_git.head)
+    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_DS_D'):h.audit_historical_growth_sources(source_git.head)
 
 @pytest.mark.parametrize('phase',['pre','post'])
 @pytest.mark.parametrize('fault',['missing','extra','duplicate','order','foreign_name','name_type','bad_sha','row_extra','scope','unknown_claim','old_fields'])

@@ -36,9 +36,9 @@ def test_source_admission_196608_boundary_only_for_maintenance_sources(source_gi
     monkeypatch.setattr(h.local, "stable_read", read)
     monkeypatch.setattr(h.subprocess, "run", run)
     if extra:
-        with pytest.raises(g.r.ObservationError, match="SOURCE_LIMIT"): h.growth_sources(source_git.head)
+        with pytest.raises(g.r.ObservationError, match="SOURCE_LIMIT"): h.audit_historical_growth_sources(source_git.head)
     else:
-        assert len(h.growth_sources(source_git.head)[name]) == 196608
+        assert len(h.audit_historical_growth_sources(source_git.head)[name]) == 196608
 
 
 @pytest.mark.parametrize("key,cap", [("guest", 196608), ("reader", 131072), ("input", 131072)])

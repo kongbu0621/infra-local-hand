@@ -128,15 +128,16 @@ def previous_failure():
         old_commitments_refunded=False)
 
 
-def envelope(files, *, final=True, resumed=False):
-    expected = set((GR_FINAL_MEMBERS if final else GR_BASE_MEMBERS) if resumed else
+def envelope(files, *, final=True, resumed=False, repaired=False):
+    require(not repaired or (final and resumed), 'REPAIR_ENVELOPE_MODE')
+    expected = set(REPAIR_MEMBERS if repaired else (GR_FINAL_MEMBERS if final else GR_BASE_MEMBERS) if resumed else
                    (FINAL_MEMBERS if final else BASE_MEMBERS))
     require(set(files) == expected and all(type(b) is bytes and len(b) <= 131072
             for b in files.values()), 'ENVELOPE_COVERAGE')
     for name, target in REFERENCES.items():
         require(files[name] == files[target], 'ENVELOPE_REFERENCE')
     stored = {n:b for n,b in files.items() if n not in REFERENCES}
-    stored['index.json'] = canonical(dict(schema='lhq-host-rebind-envelope/v2' if resumed else 'lhq-host-rebind-envelope/v1',
+    stored['index.json'] = canonical(dict(schema='lhq-host-rebind-envelope/v3' if repaired else 'lhq-host-rebind-envelope/v2' if resumed else 'lhq-host-rebind-envelope/v1',
         files={n:pin(b) for n,b in stored.items()}, references=REFERENCES))
     require(len(stored['index.json']) <= 65536, 'ENVELOPE_INDEX_BOUND')
     output = io.BytesIO()
@@ -149,10 +150,11 @@ def envelope(files, *, final=True, resumed=False):
     return raw
 
 
-def read_envelope(raw, *, final=True, resumed=False):
+def read_envelope(raw, *, final=True, resumed=False, repaired=False):
     require(type(raw) is bytes and 0 < len(raw) <= 1048576 and len(raw) % 512 == 0,
             'ENVELOPE_BOUND')
-    expected = set((GR_FINAL_MEMBERS if final else GR_BASE_MEMBERS) if resumed else
+    require(not repaired or (final and resumed), 'REPAIR_ENVELOPE_MODE')
+    expected = set(REPAIR_MEMBERS if repaired else (GR_FINAL_MEMBERS if final else GR_BASE_MEMBERS) if resumed else
                    (FINAL_MEMBERS if final else BASE_MEMBERS)) - REFERENCES.keys()
     expected.add('index.json')
     files = {}
@@ -171,12 +173,12 @@ def read_envelope(raw, *, final=True, resumed=False):
     require(set(files) == expected, 'ENVELOPE_COVERAGE')
     index_raw = files.pop('index.json'); index = document(index_raw)
     require(set(index) == {'schema', 'files', 'references'} and
-        index['schema'] == ('lhq-host-rebind-envelope/v2' if resumed else 'lhq-host-rebind-envelope/v1') and
+        index['schema'] == ('lhq-host-rebind-envelope/v3' if repaired else 'lhq-host-rebind-envelope/v2' if resumed else 'lhq-host-rebind-envelope/v1') and
         index['files'] == {n: pin(b) for n, b in files.items()} and
         index['references'] == REFERENCES, 'ENVELOPE_INDEX')
     for name, target in REFERENCES.items():
         files[name] = files[target]
-    require(raw == envelope(files, final=final, resumed=resumed), 'ENVELOPE_ENCODING')
+    require(raw == envelope(files, final=final, resumed=resumed, repaired=repaired), 'ENVELOPE_ENCODING')
     return files, pin(index_raw)
 
 
@@ -522,6 +524,10 @@ GR_BASE_MEMBERS = (*BASE_MEMBERS, 'hr1-freeze.json',
     'failed-guest/index.json', 'failed-guest/terminal.json', 'continuation-owner.json')
 GR_FINAL_MEMBERS = (*GR_BASE_MEMBERS, 'continuation-freeze.json',
                     *('guest/' + n for n in GUEST_FILES))
+REPAIR_FILES = ('record.json', 'identity.json', 'request.json', 'completion.json',
+                'guest.stdout', 'guest.stderr', 'pid-stat.raw', 'pid-cmdline.raw', 'pidfile.raw')
+REPAIR_MEMBERS = (*GR_BASE_MEMBERS, 'continuation-freeze.json',
+                  *('repair/' + n for n in REPAIR_FILES))
 GR_EXTRA_FIELDS = frozenset(('continuation_owner_sha256', 'previous_guest_failure_sha256'))
 
 
@@ -642,9 +648,70 @@ def validate_gr_activation(value):
     return value
 
 
-def build_gr_activation(raw, identity_raw, failure_raw):
+def verify_boot_repair(files, base, freeze, old_start):
+    """Adopt an explicitly approved repair from actual restart/read returns.
+
+    Old startup and failed reads stay untouched. This consumes the successful
+    read already made after repair instead of requiring another guest probe.
+    """
     from . import q2_core_prior_attempt as history
-    files, index = read_envelope(raw, resumed=True)
+    require(set(files) == set(REPAIR_FILES) and
+            freeze['boot_repair_files'] == {n: pin(b) for n,b in files.items()}, 'REPAIR_SOURCES')
+    record = document(files['record.json']); observed = document(files['identity.json'])
+    request = document(files['request.json']); completed = document(files['completion.json'])
+    require(record['state'] == 'REPAIRED_VM_STARTED' and record['owner_reply'] ==
+            '好，选第一项，我没选错，是我想要的意思。你继续', 'REPAIR_APPROVAL')
+    require(record['old_vm'] == old_start['process'] and record['host'] == base['host']
+            and record['normal_guest_shutdown'] is False and record['changed_files'] ==
+            ['/etc/default/grub', '/boot/grub/grub.cfg'], 'REPAIR_TARGET')
+    require(set(record['backups']) == ROLES and all(
+        record['backups'][n]['source'] == base['images'][n]['path'] for n in ROLES), 'REPAIR_BACKUPS')
+    required = {'backup-'+n for n in ROLES} | {'backup-closed-system', 'start',
+        'root-edit', 'boot-edit', 'root-readback', 'boot-readback', 'root-check', 'boot-check'}
+    steps = {row['name']:row['returncode'] for row in record['steps']}
+    require(required <= steps.keys() and all(type(steps[n]) is int and steps[n] == 0
+            for n in required), 'REPAIR_COMPLETION')
+    argv = observed['argv']; pidfile = argv[argv.index('-pidfile')+1]
+    expected = startup_argv(base['original_argv'], pidfile)
+    if argv[0] == '/usr/bin/qemu-system-x86_64': expected[0] = argv[0]
+    require(argv == expected and record['new_argv'][1:] == argv[1:], 'REPAIR_ARGV')
+    process = observed['process']
+    require(all(process[k] == v for k,v in record['new_vm'].items()) and
+            process['exe'] == '/usr/bin/qemu-system-x86_64' and
+            process['exe_metadata'] == base['tools']['qemu'] and
+            process['namespaces'] == base['host']['namespaces'] and
+            observed['host'] == base['host'], 'REPAIR_PROCESS')
+    vm = history._resume_process(process, argv, files['pid-stat.raw'], files['pid-cmdline.raw'])
+    require((vm['pid'],vm['starttime']) != (old_start['process']['pid'],old_start['process']['starttime'])
+            and files['pidfile.raw'].strip() == str(vm['pid']).encode(), 'REPAIR_NEW_PROCESS')
+    image_transition(old_start['images_after'], observed['images'], base['owner_uid'])
+    require(completed['vm'] == record['new_vm'] and type(completed['returncode']) is int
+            and completed['returncode'] == 0 and completed['eof'] == dict(stdout=True,stderr=True)
+            and completed['request_sha256'] == sha(files['request.json']) and files['guest.stderr'] == b'',
+            'REPAIR_GUEST_COMPLETION')
+    require(request['package'] == base['package'] and request['quota'] == base['quota']
+            and request['ssh_prefix'] == base['ssh_prefix'] and
+            request['guest_source'] == GUEST_SOURCE_PIN, 'REPAIR_GUEST_TARGET')
+    # Validate the frozen remote program independently of its request digest.
+    tokens = shlex.split(request['remote_command'])
+    prefix = ['exec','/usr/bin/sudo','-n','--','/usr/bin/env','-i','HOME=/root',
+        'PATH=/usr/sbin:/usr/bin:/sbin:/bin','LANG=C','LC_ALL=C','/usr/bin/python3','-I','-B','-c']
+    prelude = ('import resource\nfor key,value in ((resource.RLIMIT_AS,268435456),'
+        '(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CPU,120),(resource.RLIMIT_CORE,0)):\n'
+        '    resource.setrlimit(key,(value,value))\n')
+    require(len(tokens) == len(prefix)+2 and tokens[:len(prefix)] == prefix and
+            tokens[-2].startswith(prelude) and pin(tokens[-2][len(prelude):].encode('ascii')) == GUEST_SOURCE_PIN
+            and tokens[-1] == canonical(dict(nonce=request['nonce'],package=base['package'],quota=base['quota'])).decode('ascii')
+            and shlex.join(tokens) == request['remote_command'], 'REPAIR_REMOTE_PROGRAM')
+    current = history.validate_current_guest(document(files['guest.stdout']),
+        package=base['package'],quota=base['quota'],nonce=request['nonce'])
+    require(current['boot_id'] != base['historical']['current_boot_id'], 'REPAIR_GUEST_BOOT')
+    return current, vm, pidfile
+
+
+def build_gr_activation(raw, identity_raw, failure_raw, *, repaired=False):
+    from . import q2_core_prior_attempt as history
+    files, index = read_envelope(raw, resumed=True, repaired=repaired)
     retained = {n: files[n] for n in GR_BASE_MEMBERS}
     base, old, start_request, start, vm = gr_baseline(retained, identity_raw, failure_raw)
     freeze = document(files['continuation-freeze.json'])
@@ -653,10 +720,15 @@ def build_gr_activation(raw, identity_raw, failure_raw):
         and freeze['limits'] == limits() and freeze['baseline_sha256'] == sha(canonical(base))
         and freeze['retained_files'] == {n: pin(b) for n, b in retained.items()}
         and freeze['external'] == dict(identity=pin(identity_raw), failure=pin(failure_raw)), 'GR_FREEZE')
-    guest = {n: files['guest/' + n] for n in GUEST_FILES}
-    require(document(guest['request.json'])['implementation'] == freeze['implementation'], 'GR_D')
-    old_request = dict(old, guest_request_raw=files['failed-guest/request.json'])
-    current, result = verify_gr_guest(guest, base, freeze, old_request, start, files['start/result.json'])
+    if repaired:
+        guest = {n: files['repair/' + n] for n in REPAIR_FILES}
+        current, vm, pidfile = verify_boot_repair(guest, base, freeze, start)
+    else:
+        guest = {n: files['guest/' + n] for n in GUEST_FILES}
+        require(document(guest['request.json'])['implementation'] == freeze['implementation'], 'GR_D')
+        old_request = dict(old, guest_request_raw=files['failed-guest/request.json'])
+        current, result = verify_gr_guest(guest, base, freeze, old_request, start, files['start/result.json'])
+        pidfile = start_request['pidfile']
     historical = base['historical']
     value = {k: copy.deepcopy(historical[k]) for k in history.ACTIVATION_PROJECTION_FIELDS}
     value.update(schema='local-hand-q2-vm-activation/v4', event=GR_EVENT,
@@ -664,14 +736,15 @@ def build_gr_activation(raw, identity_raw, failure_raw):
         image_identities={n: [base['images'][n]['metadata'][k] for k in ('dev', 'ino')]
                           for n in ROLES - {'original_system'}},
         original_system_identity=[base['images']['original_system']['metadata'][k] for k in ('dev', 'ino')],
-        system_path=base['images']['system']['path'], pidfile=start_request['pidfile'], serial=None,
+        system_path=base['images']['system']['path'], pidfile=pidfile, serial=None,
         index=index, evidence_sha256=sha(canonical({n: pin(b) for n, b in files.items()})),
         baseline_policy='OWNER_ADOPTED_HB2_BASELINE', historical_filesystem_continuity='UNKNOWN',
         historical_content_continuity='UNKNOWN', owner_decision_sha256=OWNER_SHA,
         serial_revision_sha256=REVISION_SHA, hb2_evidence_sha256=base['hb2_evidence_sha256'],
         rp2_evidence_sha256=base['rp2_evidence_sha256'],
         historical_activation_sha256=sha(history.c.canonical(historical)),
-        startup_evidence_sha256=sha(canonical({n: pin(files['start/' + n]) for n in START_FILES})),
+        startup_evidence_sha256=sha(canonical({n: pin(b) for n,b in guest.items()})) if repaired else
+            sha(canonical({n: pin(files['start/' + n]) for n in START_FILES})),
         guest_evidence_sha256=sha(canonical({n: pin(b) for n, b in guest.items()})),
         serial_backend='null', serial_capture='NOT_CAPTURED_NULL_BACKEND',
         continuation_owner_sha256=GR_OWNER_SHA, previous_guest_failure_sha256=HR_TERMINAL_SHA)
@@ -692,5 +765,7 @@ def consume_activation(raw, identity_raw, failure_raw):
         require(stream is not None, 'ENVELOPE_INDEX')
         with stream:
             index = document(stream.read(65537), 65536)
+    if index['schema'] == 'lhq-host-rebind-envelope/v3':
+        return build_gr_activation(raw, identity_raw, failure_raw, repaired=True)
     build = build_gr_activation if index['schema'] == 'lhq-host-rebind-envelope/v2' else build_activation
     return build(raw, identity_raw, failure_raw)

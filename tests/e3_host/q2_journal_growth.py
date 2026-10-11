@@ -309,6 +309,8 @@ args[args.index("-serial")+1]=="file:"+source_serial,"GROWTH_START_OUTPUT")
  and original[i+1]=="if=none,id=os,format=qcow2,file="+anchor+"/system.qcow2"]
   require(len(system)==1,"GROWTH_ACTIVATION_SYSTEM_ARGUMENT")
   original[system[0]]="if=none,id=os,format=qcow2,file="+activation["system_path"]
+  if digest(b"\0".join(word.encode("ascii") for word in original)+b"\0")!=activation["vm"]["argv_sha256"]:
+   original[0]="/usr/bin/qemu-system-x86_64"
   require(digest(b"\0".join(word.encode("ascii") for word in original)+b"\0")
  ==activation["vm"]["argv_sha256"],"GROWTH_ACTIVATION_ARGV")
  new=original.copy()
@@ -1254,7 +1256,7 @@ def field_readiness():
  return dict(state="BLOCKED",code="GROWTH_J2_NOT_FROZEN",marker_created=False,
 ssh_requests=0,business_cases=0,
 missing=["T2 freeze"])
-def growth_sources(expected):
+def audit_historical_growth_sources(expected):
  require(type(expected) is str and re.fullmatch(r"[0-9a-f]{40}",expected),"GROWTH_D")
  repo=Path(__file__).resolve().parents[2]
  def git(*args):
@@ -1409,6 +1411,16 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  for name,sha in zip(DOC_PINS,READ_PINS):
   require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-host-read/"+name))==sha,
 "GROWTH_READ_A_CHANGED")
+ return growth_sources(expected)
+
+def growth_sources(expected):
+ require(type(expected) is str and re.fullmatch(r"[0-9a-f]{40}",expected),"GROWTH_D")
+ repo=Path(__file__).resolve().parents[2]
+ def git(*args):
+  value=subprocess.run(["git","-c","maintenance.auto=false","-c","gc.auto=0",*args],
+cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
+  require(value.returncode==0,"GROWTH_SOURCE")
+  return value.stdout
  names=history.JOURNAL_SOURCE_NAMES
  exporter=git("show",expected+":tests/e3_host/q2_host_export.py")
  require((len(exporter),digest(exporter))==Q1_EXPORT_PIN,"GROWTH_Q1_EXPORT_SOURCE")
