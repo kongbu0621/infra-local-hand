@@ -6641,6 +6641,27 @@ class FieldEffects:
         _cap(info.st_uid in getattr(self, '_capacity_owners', {0})
             and not info.st_mode & 0o022, 'PATH_PROTECTION')
 
+    @staticmethod
+    def _retained_file_digest(directory_fd, name, expected, guard):
+        """Hash existing data in bounded blocks, independent of package member size."""
+        call = partial(_guard_call, guard)
+        fd = call(os.open, name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
+                  dir_fd=directory_fd, release=os.close)
+        try:
+            _cap_same(expected, call(os.fstat, fd))
+            digest = hashlib.sha256()
+            remaining = expected.st_size
+            while remaining:
+                block = call(os.read, fd, min(65536, remaining))
+                _cap(bool(block), 'RETAINED_DRIFT')
+                digest.update(block)
+                remaining -= len(block)
+            _cap(not call(os.read, fd, 1), 'RETAINED_DRIFT')
+            _cap_same(expected, call(os.fstat, fd))
+            return digest.hexdigest()
+        finally:
+            os.close(fd)
+
     def _capacity_retained_snapshot(self, *, guard=None):
         """Read only approved roots, with no-atime enumeration and named rechecks."""
         guard = self._effect_guard if guard is None else guard
@@ -6697,10 +6718,14 @@ class FieldEffects:
                 else:
                     count += 1; total += child.st_size
                     _cap(stat.S_ISREG(child.st_mode) and child.st_nlink == 1 and count <= 32768
-                        and 0 <= child.st_size <= MEMBER_LIMIT and total <= 536870912, 'RETAINED_LIMIT')
-                    raw, pin = self.stable_read_at(fd, name, maximum=child.st_size, guard=guard)
-                    _cap((pin['dev'], pin['ino']) == (child.st_dev, child.st_ino), 'RETAINED_DRIFT')
-                    rows.append(dict(path=path + '/' + name, identity=list(_capacity_stat(child)), sha256=_sha(raw)))
+                        and 0 <= child.st_size and total <= 536870912, 'RETAINED_LIMIT')
+                    if child.st_size <= MEMBER_LIMIT:
+                        raw, pin = self.stable_read_at(fd, name, maximum=child.st_size, guard=guard)
+                        _cap((pin['dev'], pin['ino']) == (child.st_dev, child.st_ino), 'RETAINED_DRIFT')
+                        digest = _sha(raw)
+                    else:
+                        digest = self._retained_file_digest(fd, name, child, guard)
+                    rows.append(dict(path=path + '/' + name, identity=list(_capacity_stat(child)), sha256=digest))
                 named = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
                 _cap_same(child, named)
             _cap_same(before, call(os.fstat, fd))

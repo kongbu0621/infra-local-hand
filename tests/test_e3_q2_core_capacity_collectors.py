@@ -240,8 +240,16 @@ def test_parent_protection_is_checked_before_child_open(fixture):
     assert not any(name == "." for name, _ in fixture.flags)
 
 
-def test_oversized_retained_file_is_rejected_before_read(fixture, monkeypatch):
+def test_retained_file_larger_than_package_member_is_streamed(fixture, monkeypatch):
     monkeypatch.setattr(d, "MEMBER_LIMIT", 4)
+    rows = fixture.e._capacity_retained_snapshot()
+    assert rows[0]['files'][-1]['sha256'] == d._sha(b'original payload')
+    assert any(name == 'payload' and flags & os.O_NOATIME for name, flags in fixture.flags)
+
+
+def test_oversized_retained_total_is_rejected_before_read(fixture):
+    with (fixture.tree / 'child' / 'payload').open('wb') as stream:
+        stream.truncate(536870913)
     with pytest.raises(d.DispatchError, match="RETAINED_LIMIT"):
         fixture.e._capacity_retained_snapshot()
     assert not any(name == "payload" for name, _ in fixture.flags)
