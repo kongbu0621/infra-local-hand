@@ -810,6 +810,16 @@ inventory=inventory,runtime_parent_binding=runtime,source_binding=binding,source
 
 adopt_vm_activation=history.adopt_persistent_vm
 
+def check_activation_host_boot(activation,window):
+ # Both identities were already captured and validated. Never refresh either
+ # side on mismatch: that would replace the retained VM's continuity proof.
+ if activation["host_boot_id"]!=window.binding["boot_id"]:
+  error=prior.r.ObservationError("GROWTH_ACTIVATION_HOST_BOOT")
+  error.diagnostic=dict(operation="compare_activation_host_boot",stage="HOST_ACTIVATION_BINDING",
+expected_host_boot_id=activation["host_boot_id"],observed_host_boot_id=window.binding["boot_id"],
+activation_sha256=digest(canonical(activation)),window_binding_sha256=digest(canonical(window.binding)))
+  raise error
+
 def recheck_vm_activation(inputs,frozen,check):
  if frozen.get("vm_activation") is None:return
  for name in ("activation_archive","runtime_preparation_archive"):
@@ -1576,8 +1586,17 @@ live_children=len(live)+len(custody.ACTIVE),live_rss_complete=complete))
 live_children=len(live)+len(custody.ACTIVE),vm_excluded=True,guest_aggregate="UNKNOWN")
 class Usage:
  def __init__(self,previous=None):
+  self.inherited=previous is not None
   self.previous=previous or dict(cpu_nanoseconds=0,rss_peak_bytes=0)
   self.last=dict(self.previous)
+  self.sample_count=0
+ def failure_snapshot(self):
+  # Do not sample while handling an earlier failure or represent initialization
+  # zeros / the previous process's handoff as a current-process observation.
+  return dict(state="LAST_SUCCESSFUL_SAMPLE" if self.sample_count else "NOT_SAMPLED",
+successful_samples=self.sample_count,
+inherited_usage=dict(self.previous) if self.inherited else None,
+last=dict(self.last) if self.sample_count else None)
  def sample(self):
   value=management_usage()
   cpu=self.previous["cpu_nanoseconds"]+int(value["cpu_seconds"]*1000000000+1)
@@ -1589,6 +1608,7 @@ current_cpu_nanoseconds=cpu-self.previous["cpu_nanoseconds"],
 previous_rss_peak_bytes=self.previous["rss_peak_bytes"],last_rss_peak_bytes=self.last["rss_peak_bytes"],
 management_rss_bytes=value["rss_upper_observation_bytes"],exited_children_peak_rss_bytes=children_rss))
   self.last=dict(cpu_nanoseconds=cpu,rss_peak_bytes=rss)
+  self.sample_count+=1
   return dict(self.last)
 def resume_sha256(resume):
  # Preserve the complete validated history elsewhere; hash its canonical bytes,
@@ -1851,7 +1871,7 @@ for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATO
   require(args.local_preflight is not None,"GROWTH_LOCAL_PREFLIGHT_REQUIRED")
   history.adopt_local_preflight(inputs,frozen,prior.r.parse(args.local_preflight.encode("ascii"),4096))
   require(activation["schema"]=="local-hand-q2-vm-activation/v2","GROWTH_CURRENT_GUEST_REQUIRED")
-  require(activation["host_boot_id"]==window.binding["boot_id"],"GROWTH_ACTIVATION_HOST_BOOT")
+  check_activation_host_boot(activation,window)
   for name,path in (("qemu","/usr/bin/qemu-system-x86_64"),("image","/usr/bin/qemu-img")):
    tools[name]=Tool(path,window.check)
   vm=freeze_vm(anchor.raw["start.sh"],anchor.path,anchor.fd,tools["qemu"],window.check,activation=activation)
@@ -1886,10 +1906,13 @@ child=anchor.custody_exit,usage=final_usage)
   return 0 if result["state"] in ("LOCAL_PREFLIGHT_PASSED","VERIFIED") else 3
  except (Exception,KeyboardInterrupt) as error:
   marked=maintenance is not None and (maintenance.result.get("marker_created",False) or "consumed.json" in maintenance.store.opened)
+  usage_failure=usage.failure_snapshot() if usage is not None else dict(
+state="NOT_INITIALIZED",successful_samples=0,inherited_usage=None,last=None)
   print(canonical(dict(state="UNKNOWN" if marked else "BLOCKED",reason=prior.safe_reason(error),
 error_type=type(error).__name__,errno=getattr(error,"errno",None),marker_created=marked,
-diagnostic=bounded_diagnostic(dict(error_diagnostic(error),**getattr(error,"diagnostic",{}))),
-management_usage=None if usage is None else usage.last,
+diagnostic=bounded_diagnostic(dict(error_diagnostic(error),management_usage_observation=usage_failure,
+**getattr(error,"diagnostic",{}))),
+management_usage=usage_failure["last"],
 window_binding=getattr(window,"binding",dict(origins=window.origins) if window else None),
 ssh_requests=maintenance.result["ssh_requests"] if maintenance else 0)).decode(),end="")
   return 3
