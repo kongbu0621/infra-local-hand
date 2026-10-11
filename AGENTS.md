@@ -1,30 +1,46 @@
 # Execution guidance
 
-## Pending original core runtime preparation continuation (2026-10-11)
+## Approved original core runtime preparation continuation (2026-10-11)
 
 The [fixed proposal](docs/governance/Q2_CORE_RUNTIME_PREPARATION_CONTINUATION_BASELINE.md)
-is OPEN / NOT APPROVED: exact A `e64d4d73488026247b03fd7d41387ef8f3887dd8`, tree
+is CLOSED for RP1–RP3 only: exact A `e64d4d73488026247b03fd7d41387ef8f3887dd8`, tree
 `b749cdd0a71e7921502f4456300da39c323cb377`, scope
-`LH-Q2-CORE-RUNTIME-PREPARATION-CONTINUATION-v1` / RP1–RP3. Preserve its three document bytes.
-The retained 11a five originals, immutable IR1 freeze, IR2 terminal, actual caller/coordinator/
-custodian completion and twelve dependency hashes were verified offline. The existing 798720-byte
-identity archive remains unchanged; a proposed separate 18-member failure envelope is 409600 bytes
-in memory only. The proposal uses two fixed held archive inputs, each under the existing 1 MiB
-ceiling, with the existing 55-original custody and 256-FD limit. New lifecycle/source/payload checks
-remain required; no new archive file, protected source copy or caller has been created.
+`LH-Q2-CORE-RUNTIME-PREPARATION-CONTINUATION-v1`. Preserve its three original document bytes.
+[Owner B](docs/governance/Q2_CORE_RUNTIME_PREPARATION_CONTINUATION_OWNER_DECISION.md), event
+`LH-Q2-CORE-RUNTIME-PREPARATION-CONTINUATION-CLOSURE-20261011-01`, retains the exact adjacent
+request and reply “批准”, sanitizing only destination and local file locations. The complete request
+and fixed Q1 destination/private payload remain private. No per-substep approval is needed.
 
-RP1 would adopt the merged ordinary slice repair and wire/verify/publish/freeze the retained failure
-and full costs; RP2 would permit one new 11b maintenance; only full success and independent consumers
-would permit RP3, original 07a H01→Q4→H11. Proposed total is 25283 MiB/7364 inodes, including eighteen
-full maintenance obligations. All old obligations, including 11a's full 2200 MiB/402 inodes, remain.
-The current approved total remains 23079 MiB/6834 inodes until an exact new decision. No budget refund
-or retroactive multiplication is permitted. Current level-two execution/transport/capture limits stay.
+RP1 adopts the merged ordinary slice repair and wires/verifies/publishes/freezes the old11a failure,
+full history and costs through producer and independent consumers, normal PR merge, exact D first
+CI, both CI installations, local independent installation, complete lifecycle/source/payload bounds
+and two new private caller freezes. Preserve the existing 798720-byte identity archive and its
+parser; add one fixed 409600-byte/18-member failure archive as a second held input. Each is under
+the existing 1 MiB ceiling. The original 55 held originals and 256-FD ceiling stay. Verify all
+new source bindings, complete CPU/RSS/AS/FD bounds and serialization; no field step before RP1.
 
-Owner has not closed this exact R/A/scope; no B or C exists. Prepare the exact fixed destination and
-private source/path payload for one explicit batch decision. Do not launch new SSH, reinterpret the
-general core-progress instruction as that decision, replay either spent caller, or implement this
-new continuation before closure. Ordinary retained-return/source work within existing authority
-remains available. RP1 NOT_STARTED, RP2 NOT_ISSUED, RP3/H01/Q4/H11 NOT_RUN; peripherals stay disabled.
+RP2 authorizes one new `lhqjgrow-20261011b`: one local preflight and only PASS same-window execute,
+at most two fixed maintenance SSH, one verified normal shutdown, original backup and journal
+256→512 MiB growth, and one original-configuration restart. Only complete successful originals,
+actual caller/coordinator/custodian success and both independent consumers permit RP3, original
+unissued `lhqcore-20261007a` H01→Q4→H11 over its original one connection. Original VM/install,
+Q1, 19/7/7, four source-bound quota leaves, all other identity/process/writer/data protections,
+trusted premises, original core task parameters and current level-two limits remain.
+
+Eighteen full maintenance obligations plus all old reads/preparation, new source/archive pools
+and original core capture total 25283 MiB/7364 inodes; maintenance admission is 25155 MiB/7332.
+Old11a's full 2200 MiB/402 inodes remain; new11b's full 2200 MiB/402 inodes count once, including
+its own 904 MiB/32 inode headroom. Do not multiply older obligations or refund spent costs.
+
+This independent C is bookkeeping only; D descends from C without squash. R/source/integrity,
+Owner mandate/authority, no exceptions and change control remain. At C, RP1 NOT_STARTED,
+RP2 NOT_ISSUED, RP3/H01/Q4/H11 NOT_RUN. Fifteen old generations remain consumed; old09c/old10b
+are invoked unconsumed preflights. The old IR2 failure, immutable freeze and all twelve caller
+hashes stay unchanged. Unknown/contradiction/failure stops and retains: no replay, retry, extra
+collection/startup/window, business-service stop, cleanup, rollback, other recovery or peripheral
+work. Necessary sanitized records and implementation use normal PR merge commits; raw/index/
+archive/caller/machine data remain private. This closure supersedes older no-new-window clauses
+only within RP1–RP3; it proves neither readiness nor maintenance/core PASS.
 
 ## Current approved core identity and resource continuation (2026-10-11)
 
