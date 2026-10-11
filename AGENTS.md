@@ -1,5 +1,25 @@
 # Execution guidance
 
+## Owner-confirmed host reboot and proposed fixed local read (2026-10-11)
+
+After directing core repair and continued peripheral suppression, Owner answered the host-history
+question with “重启过宿主机”. This explains the reported boot transition but is not a current VM,
+image or listener observation. The old activation remains evidence for the pre-reboot instance.
+The [fixed local-read proposal](docs/governance/Q2_CORE_HOST_REBOOT_READ_BASELINE.md), exact A
+`b2a326036b634bb007a6adeec8929084bce3ccbd`, tree `be83d89f0bd22249b3d576c4b4c56e00816d3107`,
+scope `LH-Q2-CORE-HOST-REBOOT-READ-v1` / HB1–HB2, is OPEN / NOT APPROVED. Preserve its three
+document bytes. No Owner B, new reader, execution preparation pool, archive or field call exists.
+Private retained-only review verified both archives, startup argv, six image identities, ten RP2
+local originals and all fifteen caller hashes; it does not establish current field state.
+
+The proposal is one bounded read of the fixed local host/VM objects and one fixed local TCP
+listener query; no SSH, outbound payload, startup, service/image/config change, replay or core
+package. Current 25283 MiB/7364 inodes and all eighteen maintenance obligations remain. Proposed
+source/capture pools add 4 MiB/128 inodes only if approved, for 25287 MiB/7492 total. HB1 requires
+accurate R/A/B, independent C then D, normal publication, exact first CI, independent installation,
+bounds and freeze before HB2. Retain RP2 terminal and all core NOT_RUN states. No general repair
+instruction or reboot fact substitutes for that future decision. NAS/peripheral suppression stays.
+
 ## Approved original core runtime preparation continuation (2026-10-11)
 
 The [fixed proposal](docs/governance/Q2_CORE_RUNTIME_PREPARATION_CONTINUATION_BASELINE.md)
