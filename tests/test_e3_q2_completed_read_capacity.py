@@ -36,13 +36,33 @@ def test_maintenance_admission_includes_completed_read_without_a_new_observation
     calls=[]
     def observe(fd):
         calls.append(fd)
-        return SimpleNamespace(f_frsize=1,f_bavail=22951*1048576-byte_short,
-            f_favail=6802-inode_short)
+        return SimpleNamespace(f_frsize=1,f_bavail=25155*1048576-byte_short,
+            f_favail=7332-inode_short)
     monkeypatch.setattr(h.os,'fstatvfs',observe)
     store=h.Store(7,lambda:None)
     if byte_short or inode_short:
         with pytest.raises(h.prior.r.ObservationError,match='GROWTH_HOST_CAPACITY') as caught:
             store.capacity()
-        assert caught.value.diagnostic['required']==dict(bytes=22951*1048576,inodes=6802)
+        assert caught.value.diagnostic['required']==dict(bytes=25155*1048576,inodes=7332)
     else:store.capacity()
     assert calls==[7]
+
+
+@pytest.mark.parametrize('fault', ['old_generation', 'new_generation', 'old_headroom',
+    'new_headroom', 'old_preparation', 'new_preparation', 'duplicate_headroom'])
+def test_rehashed_runtime_preparation_refund_or_double_count_rejected(artifact, fault):
+    value=copy.deepcopy(artifact[0]);capacity=value['historical_capacity_obligations']
+    maintenance=capacity['maintenance']
+    if fault=='old_generation':maintenance['generations'].pop(-2)
+    elif fault=='new_generation':maintenance['generations'].pop()
+    elif fault=='old_headroom':maintenance['generations'][-2]['bytes']-=904*1048576
+    elif fault=='new_headroom':maintenance['generations'][-1]['inodes']-=32
+    elif fault=='old_preparation':maintenance.pop('identity_preparation')
+    elif fault=='new_preparation':maintenance.pop('runtime_preparation')
+    else:maintenance['generations'][-1]['bytes']+=904*1048576
+    with pytest.raises(a.c.ContractError,match='MAINTENANCE_COMMITMENTS'):
+        a.validate(a.c.canonical(value,newline=True))
+    if sys.platform.startswith('linux'):
+        from e3_host import q2_core_delivery_dispatcher as d
+        with pytest.raises(d.DispatchError,match='MAINTENANCE_COMMITMENTS'):
+            d._approved_validate_capacity(capacity,value['source_relation']['obligations'])
