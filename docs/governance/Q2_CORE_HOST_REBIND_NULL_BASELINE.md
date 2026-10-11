@@ -1,5 +1,11 @@
 # 同一 HR1–HR4 的串口后端最小修订基线
 
+2026-10-11；当前CLOSED，准确修订A `4af01900cfe462cec4762cb04966dab139a0a31c`。
+[Owner实际决定](Q2_CORE_HOST_REBIND_NULL_OWNER_DECISION.md)，事件
+`LH-Q2-CORE-HOST-REBIND-NULL-CLOSURE-20261011-01`，批准null调整并按原HR1–HR4连续推进。
+独立C仅登记；D下降自新C。准确三文档不改，无新增窗口/池/费用或逐项审批。
+历史提议记录保留下文，其OPEN标签不再表示当前批准状态。
+
 2026-10-11；**OPEN / NOT APPROVED**，仅原范围中 HR2 startup serial 后端及相关实现修订。
 准确 A `4af01900cfe462cec4762cb04966dab139a0a31c`，tree `99679292050d02d5ae75d88309c6473950a1d1a1`。
 原整批 A `ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0` 的 Owner 批准与
