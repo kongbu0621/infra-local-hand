@@ -1,5 +1,6 @@
 """A repaired VM uses its actual new process; historical evidence stays intact."""
 import json
+import sys
 
 import pytest
 
@@ -77,6 +78,7 @@ def test_repair_rejects_wrong_target_or_incomplete_actual_returns(monkeypatch,fa
         r.consume_activation(r.envelope(files,resumed=True,repaired=True),identity,failure)
 
 
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='Linux maintenance entry')
 def test_runtime_sources_ignore_unrelated_head_and_old_document_gates(monkeypatch):
     from test_e3_q2_journal_diagnostic_resume import source_git
     state=source_git.__wrapped__(monkeypatch)
@@ -87,6 +89,7 @@ def test_runtime_sources_ignore_unrelated_head_and_old_document_gates(monkeypatc
     assert all(args[0]=='show' and ':tests/e3_host/' in args[1] for args in state.calls)
 
 
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='Linux maintenance entry')
 def test_runtime_sources_still_reject_changed_code(monkeypatch):
     from test_e3_q2_journal_diagnostic_resume import source_git
     state=source_git.__wrapped__(monkeypatch)

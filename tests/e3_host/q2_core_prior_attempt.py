@@ -1460,6 +1460,10 @@ def build_journal_transition(files, *, implementation, sources, frozen, priors):
     parse = lambda data, limit: c.document(data, limit=limit, newline=True)
     marker = parse(raw['consumed.json'], 131072)
     receipt = parse(raw['receipt.json'], 131072)
+    if receipt.get('schema') == 'lhq-journal-growth-continuation/v1':
+        from .q2_journal_continuation import build
+        return build(raw, marker, receipt, implementation=implementation, sources=sources,
+            frozen=frozen, priors=priors, local_source=local_source, failed_source=failed_source)
     c.exact(receipt, {'schema','R','A','C','D','session','nonce','access_mode',
         'host_writer_observation','continuous_exclusion_proven','manifest_sha256',
         'clock_origins_ns','state','reason','last_step','started','marker_created','ssh_requests',
