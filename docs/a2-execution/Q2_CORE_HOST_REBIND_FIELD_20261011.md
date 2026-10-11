@@ -1,6 +1,56 @@
-# HR1 新基线接线与原启动器离线复核
+# HR1 新基线冻结与 HR2 实际返回
 
-## 修订批准后的实现进度
+## 当前结果：启动通过，guest传输失败（2026-10-12）
+
+HR1已完成。准确D `0b84bbcf8108522305d1e23c9378f6d0a8f50bcc`，tree
+`61a3bda99259c406eaaff2e2e7dc37d763979866`，下降自独立C且没有squash；
+[PR #25](https://github.com/kongbu0621/infra-local-hand/pull/25)正常merge为
+`3d3d8075cdd45665217a2be9c269eed6ccbbb998`。
+它自己的[首次CI `38152488046`](https://github.com/kongbu0621/infra-local-hand/actions/runs/38152488046)
+attempt1三项成功：Linux7950通过/89跳过，Windows2089通过/1391跳过；两平台独立安装
+成功，本地独立安装94检查/292命令通过。此前候选`8440020`的首次CI `38151005286`
+保留Windows2087通过/1391跳过/3错误：131073字节输入被pytest当作完整用例名，超过
+Windows环境变量长度。后续只缩短该测试的参数标识，未删校验、取消或重跑覆盖旧失败。
+
+新基线原件消费、独立核心消费者、null参数重建、三归档持有和全部费用已接齐。
+定向验证为64项来源检查、14项真实FD生命周期、64项私有四阶段/资源检查、5项数据门检查。
+实际保留来源的完整维护/核心上界在512 MiB AS、256 FD、240秒限制内通过，记录CPU约8.04秒、
+RSS峰值355106816 B；维护交接上界130 FD，核心准备上界128 FD。明确合成的未来原件
+归档471040 B，固定成功结构保守上界849920 B，均低于1 MiB；这些不是现场执行归档。
+
+工作树保持既有稳定读取和准确Git字节校验；启动/guest阶段只从17份受保护源码副本加载。
+准备中的工作树保护和相对路径索引错误均在发行前修正，既有请求/nonce未替换。
+24个私有程序、全部来源/目标/载荷和四阶段数据槽在现场前冻结。
+不可变freeze为32672 B，SHA256
+`0d5bb5140b7687dd77714a0ce1f5f30f956e431aadce702e9bc1ab6ba2305d98`。
+两版A的六份文档字节保持；旧阻塞gate、HB2/RP2及更早终态均未覆盖。
+
+### HR2实际顺序与证据范围
+
+唯一`lhqstart-20261011b`完成一次临启动检查和一次原配置启动，serial为null，原VM限额保持。
+caller和外层工具实际退出0，双EOF；19件启动核验原件重新消费通过，新VM身份、监听和
+host绑定一致，得到`START_VERIFIED_GUEST_READY`。没有新串口文件或转发器。
+
+随后唯一`lhqguest-20261011c`按原端点、host-key信任和冻结六命令载荷发起一次SSH。
+caller与外层工具实际退出3，caller双EOF完整；guest stdout为0 B，stderr为103 B，
+记录`kex_exchange_identification: read: Connection reset by peer`及原固定端口连接重置。
+本地失败为`HOST_REBIND_COMMAND_COMPLETION`，没有guest核验报告。
+这能确认传输在握手阶段失败，不能确定guest侧原因、证明sshd故障或推断它只需再等一次。
+SSH子进程的完成行未在capture异常后写入结果，不能把caller退出3当作SSH子进程或远端退出；
+remote exit继续UNKNOWN。没有成功的六命令结果、最终v3数据冻结或后续释放。
+
+9件guest原件、其索引及独立`GUEST_FAILED_STOP_AND_RETAIN`终态保持私有。返回后核对
+不可变freeze、24个程序摘要、17份源码和两个原请求均未变化；维护/核心槽仍为空。
+本批自动审批拒绝为0；记录的是实际SSH传输失败，不据此归因于审批系统。
+
+HR2为CONSUMED_FAILED / STOP_AND_RETAIN；HR3 NOT_ISSUED，HR4/H01/Q4/H11 NOT_RUN。
+没有维护关机、备份、journal扩容、维护重启或原核心包。依照原批准方案的失败边界，
+不重试、不补采、不重置信任、不额外启动/开窗，不清理、回滚、恢复或停止业务服务；
+不能修改冻结caller再继续。后续只使用现有返回和源码离线核对，连接重置原因保留未知。
+十九份完整维护义务和27497 MiB/8214 inodes预留无退款；历史文件系统/内容连续性仍UNKNOWN。
+NAS发现/新任务准入继续禁用，外围暂停。
+
+## 修订批准后的历史准备进度
 
 Owner已明确批准修订A `4af01900cfe462cec4762cb04966dab139a0a31c` 的null串口调整，
 并连续推进原HR1–HR4。[准确决定](../governance/Q2_CORE_HOST_REBIND_NULL_OWNER_DECISION.md)
