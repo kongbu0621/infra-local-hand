@@ -74,7 +74,7 @@ TRIPLE_CHILD = TRIPLE_CHILD.replace(
     "frozen=dict(vm_activation={'schema':'local-hand-q2-vm-activation/v2'},",
     "from e3_host import q2_host_rebind as rebind\n"
     "for key,value in pair_spec['synthetic_pins'].items():setattr(rebind,key,value)\n"
-    "activation,proof,_=rebind.build_activation(raws['rebind'],raws['identity'],raws['failure'])\n"
+    "activation,proof,_=rebind.build_gr_activation(raws['rebind'],raws['identity'],raws['failure'])\n"
     "frozen=dict(vm_activation=activation,rebind_archive=pair_spec['rebind'],")
 TRIPLE_CHILD = TRIPLE_CHILD.replace("len(inputs.held)==2", "len(inputs.held)==3")
 TRIPLE_CHILD = TRIPLE_CHILD.replace("('identity_drift','failure_drift')",
@@ -91,7 +91,8 @@ def test_three_bound_archives_stay_held_through_real_handoff(monkeypatch,initial
     parent=os.environ.get('LOCAL_HAND_Q2_TEST_PARENT',str(Path.home()))
     with tempfile.TemporaryDirectory(prefix='.core-hr-fd-test-',dir=parent) as directory:
         specs={'synthetic_pins':{k:getattr(r,k) for k in ('OWNER_SHA','REVISION_SHA',
-            'HB_FREEZE_SHA','HB_REQUEST_SHA','HB_TERMINAL_SHA','RP_FREEZE_SHA')}}
+            'HB_FREEZE_SHA','HB_REQUEST_SHA','HB_TERMINAL_SHA','RP_FREEZE_SHA',
+            'GR_OWNER_SHA','HR_FREEZE_SHA','HR_TERMINAL_SHA','HR_FAILED_INDEX_SHA')}}
         for name,raw in (('identity',identity),('failure',failure),('rebind',hr_archive(files))):
             path=Path(directory)/(name+'.tar');path.write_bytes(raw);path.chmod(0o600)
             specs[name]=dict(PIN(raw),path=str(path))
