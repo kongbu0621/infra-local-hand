@@ -577,7 +577,8 @@ def observe_capture_condition(directory_fd, *, binding, prior, diagnostic, journ
     before = deadline.check()
     images=maintenance.ImageSet(directory_fd,anchor['path'],marker['manifest']['restart_argv'],deadline.check,activation=journal.get('vm_activation'))
     try:
-        require(c.canonical(images.image_keys())==c.canonical(journal['image_identities']),'HOST_CAPACITY_IMAGE_DRIFT')
+        image_keys={role:list(identity) for role,identity in images.image_keys().items()}
+        require(c.canonical(image_keys)==c.canonical(journal['image_identities']),'HOST_CAPACITY_IMAGE_DRIFT')
         grouped={anchor['dev']:directory_fd}
         for role,fd in images.fds.items():grouped.setdefault(journal['image_identities'][role][0],fd)
         devices=[]
