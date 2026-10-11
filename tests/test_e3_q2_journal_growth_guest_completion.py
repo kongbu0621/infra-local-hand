@@ -295,6 +295,22 @@ def test_post_exactly_one_resize_and_only_final_tree_scan(effects, monkeypatch):
     assert len(output) == 1
 
 
+def test_post_reconciles_completed_fixed_size_resize(effects, monkeypatch):
+    trace, prepare = effects
+    monkeypatch.setattr(g, 'boot_id', lambda _: NEW_BOOT)
+    maintenance = prepare(post_description())
+    observed = maintenance.observe_device
+    def completed(rows, size):
+        value = observed(rows, size)
+        value['superblock']['filesystem_bytes'] = g.NEW_SIZE
+        return value
+    maintenance.observe_device = completed
+    report = maintenance.post(output=lambda _: None)
+    assert report['journal_device']['superblock']['filesystem_bytes'] == g.NEW_SIZE
+    assert report['resize_result']['returncode'] == 0
+    assert trace.count(('/usr/sbin/resize2fs', ('/dev/vdc',))) == 1
+
+
 def test_post_changed_content_reports_failure_after_single_resize(effects, monkeypatch):
     trace, prepare = effects
     monkeypatch.setattr(g, "boot_id", lambda _: NEW_BOOT)
