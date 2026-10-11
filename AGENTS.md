@@ -30,6 +30,37 @@ be decided from actual returns. Raw/index/caller/machine data remain private; sa
 normal PR merge. NAS/peripherals remain paused. At C HB1 NOT_STARTED, HB2 NOT_ISSUED and
 H01/Q4/H11 NOT_RUN. This closure supersedes older no-new-observation clauses only for HB1–HB2.
 
+The [HB1 freeze and HB2 return](docs/a2-execution/Q2_CORE_HOST_REBOOT_READ_FIELD_20261011.md)
+records final D `240ee61c84531af843499b251d0e259736a66816`, normal PR #20 merge
+`9f2156d3d644869e8ea4561843037dcf138b9840`, its own first CI `38139680995` attempt 1
+3/3 success, both CI installations and local installed 94 checks/292 commands. Preserve earlier
+D `d8bbad055d819cd5f40307e75c5c0917855c495f` first CI `38138701783` failure: file/pipe unit
+fixtures incorrectly used the entire pytest process's prior CPU/RSS. Only the test budget seam
+changed; production cumulative accounting and limits did not. Five complete private carrier cases
+passed. Final immutable freeze SHA256 is `bdd83c731ed558b2997aefbe3c16456fae2e42663011fe34739b2b4d6b46b5c9`.
+HB1 is complete. The unique HB2 caller ran once and actually exited 0 with both pipe EOFs;
+the sole local listener command also returned 0/both EOF. Independent consumption passed:
+`CONSUMED_FIXED_HOST_READ_COMPLETE`. Twelve actual file originals, actual tool completion, private
+index, independent result and separate terminal remain private. No SSH/network connection or VM
+action occurred, and no approval review rejection occurred. Do not replay or supplement this read.
+
+Current host boot matches RP2's retained window and differs from old activation; boot/self namespaces
+were stable within the read. The original PID and pidfile are ABSENT, serial is PRESENT, and the
+fixed port has no listener. Only one PID slot was queried. All six image inodes and retained
+UID/GID/mode/nlink agree, but their device number uniformly differs from the old one; all six old
+device/inode pairs therefore mismatch. Current protection and within-read stability passed. Do not
+infer the cause, unchanged image content, filesystem continuity or permission to replace device
+bindings. No filesystem UUID/mount provenance was observed; an old retained data_mount boolean is
+not that evidence. The candidate system's historical digest remains PRELAUNCH_ONLY.
+
+This is successful fixed observation, not an accepted VM/guest/maintenance/core identity. No current
+original VM instance can be adopted and guest identity remains UNKNOWN. Further core continuation
+must resolve host/image identity adoption before a separately bounded original-configuration start
+and guest verification; HB1–HB2 does not authorize those actions. Old RP1/RP2 and fifteen caller
+hashes remain unchanged. Eighteen obligations and 25287 MiB/7492 inodes stay without refunds.
+H01/Q4/H11 remain NOT_RUN; NAS/peripherals remain paused. Continue only retained-return/source
+offline work; no new field query, startup, cleanup, recovery, old caller or additional window.
+
 ## Owner-confirmed host reboot and proposed fixed local read (2026-10-11)
 
 After directing core repair and continued peripheral suppression, Owner answered the host-history

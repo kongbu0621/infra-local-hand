@@ -50,3 +50,50 @@ symlink、六镜像身份与保护、监听空/占用、非零退出、双EOF缺
 限额与生产代码保持原字节。独立子进程中的真实FD/AS/CPU/RSS测试和完整私有载体
 仍运行原Budget。失败不取消、不重跑替换；新准确D另取自己的首次CI/独立安装结果。
 HB2尚未发行，没有现场读取或审批拒绝。
+
+## HB1 最终冻结与 HB2 实际返回
+
+最终 D `240ee61c84531af843499b251d0e259736a66816` 下降自独立 C，准确首次 CI
+`38139680995` attempt 1，3/3 success。Linux 7878 passed /89 skipped，另有真实root
+隔离检查16 passed；Windows2025 passed /1391 skipped。两端独立安装分别94检查/
+292命令和10检查/10命令通过；本地准确D的独立安装同为94/292 PASS。对单元测试宿主
+人为注入超限的历史CPU/RSS后，新63项仍通过；生产Budget原字节未变。前一候选的
+首次CI失败及其安装记录独立保留，没有取消或重跑替代。
+
+[PR #20](https://github.com/kongbu0621/infra-local-hand/pull/20)正常merge commit
+`9f2156d3d644869e8ea4561843037dcf138b9840`保留C→D次序，未squash。六份私有准备/
+调用/保留辅助脚本、两个准确D源码副本、完整请求及36个输入已核对并冻结。最终私有
+freeze 5303 B，SHA256 `bdd83c731ed558b2997aefbe3c16456fae2e42663011fe34739b2b4d6b46b5c9`。
+私有完整载体5项隔离测试通过，实际FD峰值75；固定完整生命周期FD上界108，合成最坏
+单记录95851 B，总捕获上界917504 B，均在原限额内。reader从父进程时钟原点计225秒
+停止，父捕获在原240秒内留15秒收尾；CPU/AS分区及所有原限额不变。HB1 COMPLETE。
+
+唯一事件`LH-Q2-CORE-HOST-REBOOT-READ-20261011-01` / `lhqhost-20261011a`随后执行一次。
+新调用记录已创建；工具和父/子调用实际退出均为0，父捕获双EOF，唯一本机监听命令
+实际退出0/双EOF。独立离线消费者通过，终态为`CONSUMED_FIXED_HOST_READ_COMPLETE`。
+12个实际文件原件、实际工具完成返回、私有原件索引、独立结果及单独terminal保留；
+pidfile.raw不存在，因为固定pidfile本身明确ABSENT。freeze及全部冻结辅助脚本未改。
+
+这次读取的明确事实：
+
+- 当前host boot与RP2实际window一致，与旧activation不同；同次读取前后boot和三个
+  自身namespace保持一致。没有伪造旧boot或变换运行视图。
+- 固定旧PID和pidfile均ABSENT，因此只查询一个PID槽；serial存在，只读metadata。
+  原固定端口无监听，没有查其它PID、端口或读取其它程序cmdline。
+- 六个镜像均通过当前类型、属主/写位和同次稳定性保护；工具身份通过。六个inode、
+  UID/GID/mode/nlink与固定保留来源一致，但六个对象的设备号统一不同于历史设备号，
+  因此六个历史device/inode二元组都不匹配。
+
+后续分类只使用已捕获返回及已pin的启动来源，未补采。设备号变化的原因未被本次读取
+证明；本次没有filesystem UUID或挂载来源观察。旧固定本机返回中的data_mount只是
+布尔值，也不是filesystem UUID证据。不得由inode/权限相同推导内容相同、磁盘连续性
+或允许自动替换设备号；候选system的旧内容摘要仍仅适用于PRELAUNCH范围。
+
+读取成功不是VM、guest或核心通过：没有可采用的原VM运行实例，guest身份仍UNKNOWN，
+旧镜像绑定不能直接使用。后续核心接续必须先解决当前宿主/镜像身份采用，再决定新的
+原配置启动和guest验证；本批不授权这些动作。未发SSH/网络连接、VM启动/停止/重启、
+guest命令、维护或核心包，未更改任何镜像/权限/配置，未删旧文件，未触发审批拒绝。
+
+HB2已经终结，不重放、重试、补采、换wrapper或开启另一窗口。旧RP1 freeze、RP2终态
+及其全部15个caller/dependency保持；十八份完整维护义务和25287 MiB/7492 inodes总
+预约不退款。H01/Q4/H11仍NOT_RUN，NAS discovery/admission和外围继续屏蔽/暂停。
