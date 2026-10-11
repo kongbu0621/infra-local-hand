@@ -18,7 +18,7 @@ from typing import Callable
 import uuid
 
 from local_hand_jobs.contract import (
-    JobError, KINDS, REF_PATTERN, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
+    DISABLED_JOB_KINDS, JobError, KINDS, REF_PATTERN, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, canonical_bytes,
     request_digest, strict_loads, validate_submit, validate_tool_args,
 )
 from local_hand_jobs.evidence import EvidenceError, _close_descriptors, _publish_create_only
@@ -92,6 +92,8 @@ class Workflow:
         self._preflight_verified = False
 
     def _require_supported(self, kind):
+        if kind in DISABLED_JOB_KINDS:
+            _fail("UNSUPPORTED", "This job kind is disabled; only local core jobs are available")
         status = self._execution_support.get(kind, {}).get("status")
         if status in ("UNSUPPORTED", "BLOCKED"):
             _fail("UNSUPPORTED", "The backend reports this execution kind is not available")
@@ -280,6 +282,7 @@ class Workflow:
                 hashlib.sha256(canonical_bytes(self.contract["tools"])).hexdigest() != TOOL_SCHEMA_DIGEST):
             _fail("UNSUPPORTED", "Plugin and installed client contracts differ")
         profiles, cursor, seen, version, support = {}, None, set(), None, None
+        seen_profiles = set()
         for _ in range(self.contract["client_limits"]["max_discovery_pages"]):
             page = self._invoke("lh_capabilities", {} if cursor is None else {"cursor": cursor})
             if page.get("schema_version") != SCHEMA_VERSION or page.get("tool_schema_digest") != TOOL_SCHEMA_DIGEST:
@@ -317,8 +320,18 @@ class Workflow:
                             or len(set(values)) != len(values)
                             or (field == "allowed_kinds" and not set(values) <= set(KINDS))):
                         _fail("IO_UNCERTAIN", "Malformed grant directory in capability catalog")
-                if ref in profiles:
+                if ref in seen_profiles:
                     _fail("IO_UNCERTAIN", "Duplicate profile in capability catalog")
+                seen_profiles.add(ref)
+                profile = _copy(profile)
+                profile["allowed_kinds"] = [kind for kind in profile["allowed_kinds"]
+                                            if kind not in DISABLED_JOB_KINDS]
+                profile["storage_refs"] = []
+                if isinstance(profile.get("budgets"), dict):
+                    profile["budgets"] = {kind: value for kind, value in profile["budgets"].items()
+                                          if kind in profile["allowed_kinds"]}
+                if not profile["allowed_kinds"]:
+                    continue
                 profiles[ref] = profile
             cursor = page.get("next_cursor")
             if cursor is None:
@@ -340,10 +353,10 @@ class Workflow:
             if (original["kind"], original["profile_ref"], original["inputs"]) != (kind, profile_ref, inputs):
                 _fail("CONFLICT", "Client intent key already names a different job")
             return old
+        self._require_supported(kind)
         profile = self._profiles.get(profile_ref)
         if profile is None or kind not in profile.get("allowed_kinds", []):
             _fail("UNAUTHORIZED", "Preflight has not admitted this target and job kind")
-        self._require_supported(kind)
         if type(lifetime_seconds) is not int or not 1 <= lifetime_seconds <= 3600:
             _fail("INVALID_REQUEST", "Client submission lifetime must be finite")
         for field, directory in (("source_ref", "source_refs"), ("build_cache_ref", "build_cache_refs"),
@@ -366,12 +379,12 @@ class Workflow:
     def submit(self, key):
         record = self._job(key)
         request = record["request"]
+        self._require_supported(request["kind"])
         profile = self._profiles.get(request["profile_ref"])
         if profile is None or profile.get("expected") != request["expected"]:
             _fail("STALE_DEPLOYMENT", "Do not rebind a saved request before submission")
         if request["kind"] not in profile.get("allowed_kinds", []):
             _fail("UNAUTHORIZED", "The discovered grant does not allow this job")
-        self._require_supported(request["kind"])
         return self._invoke_bound("lh_job_submit", request, request["request_digest"])
 
     def _job(self, key):

@@ -1,5 +1,22 @@
 # Execution guidance
 
+## Core delivery priority reaffirmed (2026-10-12)
+
+Owner again directs core progress and suppression of unwanted peripheral work.
+Keep delivery on submission/execution, cancellation, same-task recovery/query and
+result retrieval. Pause NAS expansion, new Plugin/Connector features, broad host
+scans, diagnostic platforms and unrelated refactoring. Use existing implementation
+and records; no additional document suite or approval layer is a deliverable.
+Repair confirmed core failures, verify the affected behavior and report actual
+execution outcomes. Preserve explicit destination/payload authority and platform
+checks; do not route around a rejection or repeat already covered approvals.
+
+Client discovery and new submission now also enforce the existing disabled NAS
+kind even if a backend incorrectly advertises support. Historical identities stay
+readable/cancellable. The existing HR capture failure has an offline source repair:
+retain the observed child completion before rejecting it. This adds no field call,
+release or authority; the consumed HR2 terminal and original freezes below remain.
+
 ## HR1 complete; HR2 guest transport failed and retained (2026-10-12)
 
 The [field record](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md) records exact D

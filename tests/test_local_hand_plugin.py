@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from local_hand_jobs.contract import JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, TOOL_SCHEMAS, canonical_bytes
+from local_hand_jobs.contract import JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, TOOL_SCHEMAS, canonical_bytes, request_digest
 
 PLUGIN = ROOT / "plugins" / "local-hand-a2"
 spec = importlib.util.spec_from_file_location("local_hand_plugin_workflow", PLUGIN / "scripts" / "workflow.py")
@@ -356,6 +356,51 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.execution_support, announcement)
         self.assert_error("UNSUPPORTED", self.client.reserve_job, "nas", kind="ledger.nas.roundtrip",
                           profile_ref="fixture", inputs={"prepared_ref": "prepared", "storage_ref": "storage"})
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+
+    def test_disabled_nas_cannot_be_reenabled_by_discovery_or_support_claim(self):
+        profile = self.host.page["profiles"][0]
+        profile["allowed_kinds"].append("ledger.nas.roundtrip")
+        profile["storage_refs"] = ["storage"]
+        profile["budgets"] = {"host.inspect": {"wall_seconds": 10},
+                              "ledger.nas.roundtrip": {"wall_seconds": 20}}
+        for support in ({}, {"ledger.nas.roundtrip": {"status": "SUPPORTED"}}):
+            with self.subTest(support=support):
+                self.host.page["execution_support"] = support
+                catalog = self.client.preflight()["fixture"]
+                self.assertNotIn("ledger.nas.roundtrip", catalog["allowed_kinds"])
+                self.assertEqual(catalog["storage_refs"], [])
+                self.assertEqual(catalog["budgets"], {"host.inspect": {"wall_seconds": 10}})
+                self.assert_error("UNSUPPORTED", self.client.reserve_job, "nas",
+                    kind="ledger.nas.roundtrip", profile_ref="fixture",
+                    inputs={"prepared_ref": "prepared", "storage_ref": "storage"})
+                self.assertIsNone(self.client._read(self.client._record_name("job", "nas")))
+        self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
+        self.reserve()
+        self.client.submit("inspect")
+        self.assertEqual([args["kind"] for name, args in self.host.calls if name == "lh_job_submit"],
+                         ["host.inspect"])
+
+    def test_disabled_only_profile_is_hidden_without_hiding_duplicate_catalog_entries(self):
+        profile = self.host.page["profiles"][0]
+        profile["allowed_kinds"] = ["ledger.nas.roundtrip"]
+        self.assertEqual(self.client.preflight(), {})
+        self.host.page["profiles"].append(copy.deepcopy(profile))
+        self.assert_error("IO_UNCERTAIN", self.client.preflight)
+
+    def test_retained_nas_identity_is_readable_and_cancellable_but_never_resubmitted(self):
+        record = self.reserve("retained")
+        record["request"].update(kind="ledger.nas.roundtrip",
+            inputs={"prepared_ref": "prepared", "storage_ref": "storage"})
+        record["request"]["request_digest"] = request_digest(record["request"])
+        self.client._save(self.client._record_name("job", "nas-history"), record)
+        self.host.requests[record["request"]["operation_id"]] = copy.deepcopy(record["request"])
+        self.assertEqual(self.client.reserve_job("nas-history", kind="ledger.nas.roundtrip",
+            profile_ref="fixture", inputs=record["request"]["inputs"]), record)
+        self.assert_error("UNSUPPORTED", self.client.submit, "nas-history")
+        self.host.status.update(lifecycle="TERMINAL", outcome="CANCELLED")
+        self.assertTrue(self.client.observe(job_key="nas-history")["observation_complete"])
+        self.assertTrue(self.client.cancel_job("nas-history")["accepted"])
         self.assertFalse(any(name == "lh_job_submit" for name, _ in self.host.calls))
 
     def test_durability_failure_prevents_first_submission(self):
