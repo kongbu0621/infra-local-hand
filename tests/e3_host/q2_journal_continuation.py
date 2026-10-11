@@ -12,6 +12,38 @@ import zlib
 from . import q2_core_prior_attempt as p, q2_journal_growth as h, q2_journal_growth_guest as g
 
 
+MAINTENANCE_IMPLEMENTATION = {'commit': 'e1330c8e455ab38dcd5747c7334832c46ca92a5d', 'tree': '9123c5022f655db8d4c4e5d486fa63d271271d4c'}
+MAINTENANCE_SOURCES = {'q2_core_approved_inputs.py': {'bytes': 45022,
+                                'sha256': 'db37f59890c332cfc042ac653fea41ab75c87e59c70e71fb9c73618ab5ec48b0'},
+ 'q2_core_capacity_capture.py': {'bytes': 33917,
+                                 'sha256': '77c12ca96732fb9a7353a1536533fbdaa382a0b21f3f5fb4c4908d1e54464767'},
+ 'q2_core_capacity_reader.py': {'bytes': 13357,
+                                'sha256': '9c91b70cefce29e2f49fe0428caaa3b4196d6a5fed05a8d4a08691a4759d6744'},
+ 'q2_core_delivery_contract.py': {'bytes': 84717,
+                                  'sha256': '500b692d4ce3356960c3f8930c384cbcb01d3e3d79356078ccafccd25d89c226'},
+ 'q2_core_obligation_inputs.py': {'bytes': 19564,
+                                  'sha256': '3e72e2d3ec5562e33b24ec4dc232e74f71b0e9e829c21b8f6da317d0f0ec9c6b'},
+ 'q2_core_prior_attempt.py': {'bytes': 217865,
+                              'sha256': '19bf5f7a2819abe9a05e33d782fe3b72a0f0615fd48c96b9a4ceaabec695216e'},
+ 'q2_host_kernel_facts.py': {'bytes': 15055,
+                             'sha256': '947469560ca3bdc4997a56739b42561c4a616a5dc8b250b919db589689eecc02'},
+ 'q2_host_rebind.py': {'bytes': 49415,
+                       'sha256': '983d648d41c07e1c34a2f5e14164e569c20ef0dfc0948e4a4acd7e936f6d1ab6'},
+ 'q2_host_reboot_consumer.py': {'bytes': 10200,
+                                'sha256': '740c05d68f72f3477ee10ceb84b0280b4796a0a986edab62c5e548141c8a26d7'},
+ 'q2_journal_growth.py': {'bytes': 101304,
+                          'sha256': 'a5d8739f1437466b523637da4dab65bac5da16840fa46695f27518c10448f256'},
+ 'q2_journal_growth_guest.py': {'bytes': 102869,
+                                'sha256': '4c151f803100901898fe77e1203cdcbf8a4f2319c5d7d71d9da664f1b9ae82a7'},
+ 'q2_journal_retained_fds.py': {'bytes': 12722,
+                                'sha256': '55275efcf0bc3816441c7306891a0dd520fa9d8fc17a9117d4cca84ed3b86dea'},
+ 'q2_local_source_delivery.py': {'bytes': 27013,
+                                 'sha256': '2013643bcbc1f80e8d012de6cd1f1d4efae64789e80c946e6986b9539efe64b4'},
+ 'q2_sshd_source_capture.py': {'bytes': 33426,
+                               'sha256': 'cbf8e3de028f987ca5e034a12dc7d870dcb163c48e1e8713cfc72108b9e5ee91'},
+ 'q2_sshd_source_reader.py': {'bytes': 8656,
+                              'sha256': '68c594cedbea15768789690b4afd0797bfff1057760a522f931e16a4a7ca3108'}}
+
 def build(raw, marker, receipt, *, implementation, sources, frozen, priors, local_source, failed_source):
     require = lambda ok, reason: p.require(ok, 'CONTINUATION_'+reason)
     pin = lambda b: dict(bytes=len(b),sha256=h.digest(b))
@@ -23,13 +55,13 @@ def build(raw, marker, receipt, *, implementation, sources, frozen, priors, loca
     require(old['state']=='STOP_AND_RETAIN' and old['reason']=='GROWTH_PROCESS_ARGV'
         and old['ssh_requests']==1 and old['marker_created'] is True
         and old['started']==sorted(h.STATES[1:7]), 'PREFIX_STATE')
-    require(old['D']==marker['D']==manifest['D']==implementation['commit']
+    require(old['D']==marker['D']==manifest['D']==MAINTENANCE_IMPLEMENTATION['commit']
         and old['nonce']==marker['nonce']==manifest['nonce']==completed['nonce']==start['nonce']
         and old['manifest_sha256']==marker['manifest_sha256']==h.digest(h.canonical(manifest)), 'BINDING')
     previous = receipt['previous_coordinator_completion']
     require(previous['returncode']==3 and previous['child']['returncode']==0
         and previous['receipt_sha256']==h.digest(h.canonical(old)), 'PREVIOUS_COMPLETION')
-    require(manifest['sources']=={n:pin(b) for n,b in sources.items()}, 'ORIGINAL_SOURCES')
+    require(manifest['sources']==MAINTENANCE_SOURCES, 'ORIGINAL_SOURCES')
     require(manifest['R']==h.R and manifest['A']==h.GR_A and manifest['C']==h.GR_C,
             'AUTHORITY')
     require(p.decode_manifest_inputs(manifest,frozen['persistent_predecessor'])==frozen['source_binding'],
@@ -71,7 +103,7 @@ def build(raw, marker, receipt, *, implementation, sources, frozen, priors, loca
     require(pin(post_source)==dict(bytes=103400,sha256=
         'd23f88a47def91684556afd06c8f986a38ece0834575206b429d47b2e2ebf426'), 'POST_REPAIR_SOURCE')
     post_sources['q2_journal_growth_guest.py'] = post_source
-    require(start['post_sources']=={n:pin(b) for n,b in post_sources.items()}
+    require(start['post_sources']==(MAINTENANCE_SOURCES | {'q2_journal_growth_guest.py':pin(post_source)})
         and start['ssh_argv_sha256']==h.digest(h.canonical(h.remote_argv(frozen['anchor_path'],post_sources,post_desc))), 'POST_SOURCE')
     transport = completed['transport']
     require(completed['state']=='POST_CONTINUATION_VERIFIED' and completed['new_ssh_calls']==1
@@ -102,14 +134,14 @@ def build(raw, marker, receipt, *, implementation, sources, frozen, priors, loca
     comparison=h.prior.compare(dict(rows=post['rows']),frozen['horizon'])
     require(completed['comparison']==comparison and all(row[k]['deficit']==0
         for row in comparison['pools'] for k in ('bytes','inodes')), 'CAPACITY')
-    p.validate_retained_custody(old['retained_custody'],implementation=implementation,
+    p.validate_retained_custody(old['retained_custody'],implementation=MAINTENANCE_IMPLEMENTATION,
         nonce=marker['nonce'],source_files=manifest['sources'])
     require(old['retained_custody']['originals']==frozen['previous_maintenance_identities']
         and receipt['history_recheck']=='REOPENED_AND_RECHECKED', 'RETAINED_HISTORY')
     p.validate_coordinator_completion(completion,old['retained_custody'])
     require(completion['receipt_sha256']==h.digest(raw['receipt.json']), 'FINAL_RECEIPT')
     journal=next(row for row in post['rows'] if row['role']=='journal')
-    value=dict(schema='local-hand-q2-core-journal-transition/v23',authority={k:manifest[k] for k in ('R','A','C')},
+    value=dict(schema='local-hand-q2-core-journal-transition/v24',maintenance_implementation=copy.deepcopy(MAINTENANCE_IMPLEMENTATION),authority={k:manifest[k] for k in ('R','A','C')},
         implementation=copy.deepcopy(implementation),session=h.SESSION,nonce=marker['nonce'],
         persistent_source=copy.deepcopy(frozen['source_binding']['persistent_source']),
         local_preflight_source=local_source,transport_failure_source=failed_source,

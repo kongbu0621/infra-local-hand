@@ -40,6 +40,7 @@ def fixture(tmp_path, monkeypatch):
     tree.mkdir(mode=0o700)
     (tree / "child").mkdir(mode=0o700)
     (tree / "child" / "payload").write_bytes(b"original payload")
+    (tree / "child" / "payload").chmod(0o600)
     for path in (tree, tree / "child", tree / "child" / "payload"):
         os.utime(path, ns=(1000000000, 2000000000))
     pin = tree.stat()
@@ -93,6 +94,26 @@ def test_root_must_match_approved_object_before_enumeration(fixture, field):
     with pytest.raises(d.DispatchError, match="RETAINED_IDENTITY"):
         fixture.e._capacity_retained_snapshot()
     assert not any(name == "." for name, _ in fixture.flags)
+
+
+def test_source_bound_retained_root_accepts_historical_owner_only_at_leaf(fixture, monkeypatch):
+    f = fixture
+    root_inode = f.tree.stat().st_ino
+    child_inode = (f.tree / 'child').stat().st_ino
+    changed = {root_inode}
+    real_stat, real_fstat = os.stat, os.fstat
+    class HistoricalOwner:
+        def __init__(self, info): self.info = info
+        def __getattr__(self, name):
+            return 54321 if name == 'st_uid' else getattr(self.info, name)
+    def observe(info):
+        return HistoricalOwner(info) if info.st_ino in changed else info
+    monkeypatch.setattr(os, 'stat', lambda *a, **kw: observe(real_stat(*a, **kw)))
+    monkeypatch.setattr(os, 'fstat', lambda *a, **kw: observe(real_fstat(*a, **kw)))
+    assert f.e._capacity_retained_snapshot()
+    changed.add(child_inode)
+    with pytest.raises(d.DispatchError, match='PATH_PROTECTION'):
+        f.e._capacity_retained_snapshot()
 
 
 @pytest.mark.parametrize("kind", ["directory_link", "file_link", "hardlink", "fifo", "writable"])

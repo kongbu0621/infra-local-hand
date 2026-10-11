@@ -1855,9 +1855,9 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'} | ({'maintenance_implementation'} if 'maintenance_implementation' in value else set()),
         'CORE_JOURNAL_FIELDS')
-    require(len(c.canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v23'
+    require(len(c.canonical(value)) <= 131072 and value['schema']==('local-hand-q2-core-journal-transition/v24' if 'maintenance_implementation' in value else 'local-hand-q2-core-journal-transition/v23')
         and value['session']=='lhqjgrow-20261011c', 'JOURNAL_SCHEMA')
     require(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
         A=(c.GUEST_RESUMPTION_BASELINE or {}).get('commit'),C=(c.GUEST_RESUMPTION_CLOSURE or {}).get('commit'))
@@ -1868,7 +1868,11 @@ def validate_journal_transition(value, *, priors, implementation, current_boot=N
             undeclared_unit_inventory_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False)),
         'GUEST_STARTUP_PREMISE')
-    validate_retained_custody(value['retained_custody'],implementation=implementation,
+    if 'maintenance_implementation' in value:
+        require(value['maintenance_implementation']==dict(
+            commit='e1330c8e455ab38dcd5747c7334832c46ca92a5d',
+            tree='9123c5022f655db8d4c4e5d486fa63d271271d4c'), 'JOURNAL_MAINTENANCE_IMPLEMENTATION')
+    validate_retained_custody(value['retained_custody'],implementation=value.get('maintenance_implementation',implementation),
         nonce=value['nonce'],source_files=value['source_files'])
     validate_coordinator_completion(value['coordinator_completion'],value['retained_custody'])
     validate_maintenance_resume(value['previous_maintenance'])
