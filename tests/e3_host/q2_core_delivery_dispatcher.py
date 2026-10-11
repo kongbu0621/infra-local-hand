@@ -279,19 +279,19 @@ HISTORICAL_CANDIDATE = {
     'tree': '4d4349580c9f4b67cc26f601126849c2bc8d76a4',
 }
 CANDIDATE = {
-    "commit": "515bbb03045110417ffd87ce5b13f3918d5f0344",
-    "tree": "6a1eebbb347c5de7fcd66cc00d2dafa6821596a2",
+    "commit": "c458cf518ff80ee91d6fc2a42bb2c729e03f5a1b",
+    "tree": "7f54a71d3ef949e1aa3ff51e1aa837c32e9879d6",
 }
 WHEEL = {
     "basename": "infra_local_hand-0.2.0a1-py3-none-any.whl",
-    "bytes": 288373,
-    "sha256": "327d1c20b47afc78582c52605f5fa6c56117fdafc4a3a34203cd69d4a1e1f9b1",
+    "bytes": 288374,
+    "sha256": "196f30e028ab7e711e54b91cf094ce7dfa7ecc8a6c696fc182d76d007d54032d",
     "payload_digest": "b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23",
 }
 PROJECTION = {
     "basename": ".local-hand-source-projection.json",
     "bytes": 11811,
-    "sha256": "bb0f629e5192ae083188fb1da09fff1430417eccc2d912bb58a7121702a19444",
+    "sha256": "415c0c3acecf76267fed1f56d6d2babee3596fc9a71993944a60fb9b88a54a79",
     "file_count": 89,
 }
 

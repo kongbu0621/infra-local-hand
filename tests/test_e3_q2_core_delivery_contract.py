@@ -31,8 +31,8 @@ def test_frozen_authority_and_budget_values_are_exact():
     assert c.RULE["commit"] == "10d2a5c827964989f41ca6e8eeac3d44de6d0f04"
     assert c.BASELINE["commit"] == "74366b3fe41e675b1aa2d677228714a5606c275c"
     assert c.CLOSURE["commit"] == "a8dd077392ebb656770c8f94ca3b051e93fc296d"
-    assert c.CANDIDATE["commit"] == "515bbb03045110417ffd87ce5b13f3918d5f0344"
-    assert c.WHEEL["sha256"] == "327d1c20b47afc78582c52605f5fa6c56117fdafc4a3a34203cd69d4a1e1f9b1"
+    assert c.CANDIDATE["commit"] == "c458cf518ff80ee91d6fc2a42bb2c729e03f5a1b"
+    assert c.WHEEL["sha256"] == "196f30e028ab7e711e54b91cf094ce7dfa7ecc8a6c696fc182d76d007d54032d"
     assert c.LIMITS["total_guest_physical_bytes"] == 360 * 1024**2
     assert c.LIMITS["total_guest_admission_bytes"] == 552 * 1024**2
     assert (c.LIMITS["total_cpu_seconds"], c.LIMITS["peak_pids"]) == (4180, 2320)
