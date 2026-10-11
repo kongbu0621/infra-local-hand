@@ -1,5 +1,25 @@
 # Execution guidance
 
+## HR1 retained startup review: serial bound correction pending (2026-10-11)
+
+Owner's HR1–HR4 approval and independent C `608f8d70c8fd43b82b613f49b26d6870e5e7f944`
+remain accurately recorded below. [Offline retained-source review](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)
+found that the original startup's QEMU file serial bypasses its bounded record writer. Original
+VM FSIZE is infinity; the new console is neither capped nor included in the return index. Thus
+A's assertion of inherited bounded serial supervision cannot support its 4 MiB startup pool.
+This is an offline plan-assumption failure, not an actual field overrun or startup failure.
+
+The [minimal revision](docs/a2-execution/q2-core-host-rebind-null-continuation/REQUIREMENTS.md)
+proposes `-serial null`, matching the existing maintenance backend, with no new serial file or
+forwarder. It preserves the approved baseline, sessions, endpoint/payload, counts, 19 obligations
+and 27497 MiB/8214 inodes; there is no new window, preparation pool or refund. Original A's three
+bytes stay unchanged. R change control keeps the affected startup implementation/HR2 and dependent
+release OPEN until Owner confirms this exact revision; prior unaffected source review remains valid.
+HR1 OFFLINE_REVIEW_BLOCKED; HR2/HR3 NOT_ISSUED; HR4/H01/Q4/H11 NOT_RUN. New callers/markers,
+field reads, startups, SSH and approval review rejections are all zero. Private review and separate
+release gate retain the reason. Do not implement the revised backend or start under the old path-only
+allowance. Preserve HB2/RP2, all old callers and terminal facts; NAS/peripherals remain paused.
+
 ## Approved whole core continuation after HB2 (2026-10-11)
 
 The [fixed baseline](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md), exact A
