@@ -4,6 +4,7 @@ Socket transport runs only where permitted; this is not the Q3 host harness.
 """
 import copy
 import hashlib
+import json
 import os
 from pathlib import Path
 import socket
@@ -59,6 +60,30 @@ def fixture_open(path, *, directory=False):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrative runtime")
 class ConfigAndRuntimeTests(unittest.TestCase):
+    def test_query_passes_verified_invocation_to_real_native_children(self):
+        from types import SimpleNamespace
+        cfg = config()
+        identity = dict(unit=cfg.active().request.query_unit, invocation_id="a" * 32,
+                        cgroup="/fixture")
+        with tempfile.TemporaryDirectory() as directory:
+            entry = Path(directory) / "native.py"
+            entry.write_text("import json,os\nprint(json.dumps([os.environ.get('INVOCATION_ID'),"
+                             "os.environ.get('UNRELATED_PARENT_VALUE')]))\n")
+            data = cfg.data()
+            data["programs"]["python"]["path"] = sys.executable
+            data["entry"]["path"] = str(entry)
+            runtime = SimpleNamespace(data=lambda: data, active=cfg.active,
+                                      path=cfg.path, digest=cfg.digest)
+            observed = []
+            with mock.patch.dict(os.environ, INVOCATION_ID="b" * 32, UNRELATED_PARENT_VALUE="discard"), \
+                 mock.patch.object(r, "host", return_value=identity), \
+                 mock.patch.object(r, "boottime_ns", return_value=2 * SECOND), \
+                 mock.patch.object(r, "native_context", return_value=(None, None)), \
+                 mock.patch.object(a, "match_report", side_effect=lambda raw, *_: observed.append(json.loads(raw))), \
+                 mock.patch.object(r.os, "write", side_effect=lambda fd, raw: len(raw)):
+                r.query(runtime)
+            self.assertEqual([["a" * 32, None]] * len(cfg.active().as_dict()["roots"]), observed)
+
     def test_config_and_fixed_three_unit_commands(self):
         cfg = config()
         for role, prefix in (("listener","lhqoc-"),("admission","lhqoa-"),("query","lhqo-")):
