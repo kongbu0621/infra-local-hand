@@ -10,9 +10,10 @@
 **PROPOSED / Gate OPEN / NOT APPROVED**。只实施[需求](REQUIREMENTS.md)与
 [架构](ARCHITECTURE.md)，无需另开专门的诊断、UUID 读取或外围批次。
 
-1. 准确 A 为包含本三文档的 Git commit；文档导航/交接不构成 C。Owner 明确确认准确
-   R/A、采用 HB2 六对象为本次新基线及历史连续性 UNKNOWN、HR1–HR4 固定动作与出站
-   边界后，独立 C 仅登记真实决定。实现 D 下降自 C，正常 PR merge 保留顺序。
+1. 准确 A 为包含本三文档的 Git commit；文档导航/交接不构成 C。Owner 确认同一 R 下新准确
+   A 的串口后端修订后，独立 C 仅登记真实决定；HB2 基线、历史连续性 UNKNOWN、
+   HR1–HR4 固定动作及私有出站边界继续沿用原明确批准。实现 D 下降自新 C，
+   正常 PR merge 保留顺序。
    原批准与 C 已存在；本修订仍需针对新准确 A 的 Owner 决定和独立 C，不能转用旧 closure。
 2. HR1 先用已有私有来源离线核对 HB2 freeze
    `bdd83c731ed558b2997aefbe3c16456fae2e42663011fe34739b2b4d6b46b5c9`、原请求/12件原件/
