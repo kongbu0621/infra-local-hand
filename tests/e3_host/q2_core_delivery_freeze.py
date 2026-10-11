@@ -1268,7 +1268,7 @@ def freeze_package_members(*, candidate_checkout, wheel_path, projection_path,
         raw = member_bytes[row["path"]]
         c.require(len(raw) == row["bytes"] and c.sha256(raw) == row["sha256"],
                   "CORE_FREEZE_MEMBER_BYTES")
-    derived_directories = set()
+    derived_directories = {'candidate/.git/refs'}
     for row in rows:
         parent = PurePosixPath(row["path"]).parent
         while parent.as_posix() != ".":

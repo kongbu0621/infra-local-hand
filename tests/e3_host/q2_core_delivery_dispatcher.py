@@ -6196,6 +6196,12 @@ class FieldEffects:
                 _effect(identity["uid"] == identity["gid"] == 0,
                     "INSTALL_MEMBER_CHANGED")
                 self._effect_guard()
+            # A detached checkout can have no loose refs. File-only transport
+            # omits that empty directory, but Git still requires its existence.
+            if 'candidate/.git' in directories and 'candidate/.git/refs' not in directories:
+                directories['candidate/.git/refs'] = self._mkdir_at(
+                    directories['candidate/.git'], 'refs', 0o700, guard=self._effect_guard,
+                    accounting=accounting, path=staging + '/candidate/.git/refs')
         finally:
             for path, fd in directories.items():
                 if path:
@@ -6571,6 +6577,13 @@ class FieldEffects:
             return bytes(output["stdout"])
         except BaseException as error:
             failure = str(error)[:128] if isinstance(error, DispatchError) else type(error).__name__
+            error.diagnostic = dict(stage='INSTALLATION_COMMAND',
+                argv=[str(arg)[:256] for arg in argv[:16]], argv_sha256=_sha(canonical(list(argv))),
+                returncode=None if proc is None else proc.returncode,
+                stdout_preview=bytes(output['stdout'][:4096]).decode('utf-8','backslashreplace'),
+                stderr_preview=bytes(output['stderr'][:4096]).decode('utf-8','backslashreplace'),
+                stdout_captured_bytes=len(output['stdout']), stderr_captured_bytes=len(output['stderr']),
+                streams_eof=sorted(eof))
             if proc is not None and accounting is not None and not child_after_observed:
                 for identifier in accounting.by_id:
                     accounting.mark_incomplete(identifier, 'last_observation', 'CHILD_AFTER_MISSING')
