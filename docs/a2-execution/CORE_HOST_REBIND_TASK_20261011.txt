@@ -1,22 +1,18 @@
-本地 Codex 接续：只完成原 H01 → Q4 → H11
+本地 Codex 接续状态（2026-10-11）：
 
-当前基线 83089b17909795e1a19ecfbbf2129ef21a73cea6。
-准确下一段方案：q2-core-host-rebind-continuation/ 下的 REQUIREMENTS.md、
-ARCHITECTURE.md、IMPLEMENTATION_PLAN.md。以包含这三文档的完整 Git commit 为 A。
+原A ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0 的HR1–HR4已获本会话Owner明确批准。
+独立C 608f8d70c8fd43b82b613f49b26d6870e5e7f944已登记；原三文档字节保持。
+不要再次请求原镜像采用、原Q1目的地/冻结载荷或整批动作的批准。
 
-已完成：HB2 固定读取及独立消费；原 VM 缺失；六镜像设备号变更。
-尚未完成：新身份采用、原配置新启动、当前 guest 验证、维护和原三项核心用例。
-历史 inode/权限相同或只读成功，均不得当作旧镜像内容连续、guest 或核心通过。
+HR1离线复核发现原启动器的QEMU file串口未受捕获池约束，方案“继承有界监督”不成立。
+当前HR1 OFFLINE_REVIEW_BLOCKED；HR2/HR3 NOT_ISSUED；H01/Q4/H11 NOT_RUN。
+新caller/marker/启动/SSH/现场读取均0，未消耗现场次数。所有旧caller仍禁止重放。
 
-只做一个 HR1–HR4 批次：准确批准采用 HB2 当前六对象的新基线（历史连续性 UNKNOWN）
-→ 一次原配置启动及现有 guest 核验 → 一次新维护 → 原07a三案。
-不追加找 UUID 的专门读取，不重放 HB2/RP2，不清理或重装，不改 SSH 信任。
+最小修订A 4af01900cfe462cec4762cb04966dab139a0a31c，见
+../governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md 和 q2-core-host-rebind-null-continuation/。
+仅改HR2新启动serial file后端为null，保持原批次、身份、目的地/载荷、次数、费用。
+该修订当前OPEN，尚无B/C或运行实现。先核对是否已有对此准确修订的真实Owner决定；
+确认后独立C，再完成原HR1全链接线/验证/发布/冻结，连续HR2→HR3→HR4，不逐步请示。
 
-先检查仓库是否已有针对准确 A 的真实 Owner B 和独立 C。
-若没有，仅核对已有私有原件与本方案固定目标/费用，形成同一个准确整批请求；
-不得把一般“继续”补写为批准，不先写新实现或运行现场。
-若已具备，按计划连续完成 HR1–HR4，无需逐小步骤向云端要提示词。
-私有启动器/完整载体及现场由你负责；云端合成测试不替代私有源核验与真实完成。
-
-最终只交代实际结果：H01、Q4、H11 各自 PASS/FAILED/NOT_RUN；若停止，附最早内层
-原因、准确阶段与已有安全诊断，不以测试数、文档数、读完成或 VM 启动代替核心完成。
+不得用轮询文件大小冒充硬上界，不能新增日志转发平台、降低镜像写入限额或静默改参数。
+原批准、离线依据及状态见Q2_CORE_HOST_REBIND_FIELD_20261011.md。NAS/外围保持暂停。

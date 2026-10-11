@@ -9,8 +9,8 @@ VM FSIZE is infinity; the new console is neither capped nor included in the retu
 A's assertion of inherited bounded serial supervision cannot support its 4 MiB startup pool.
 This is an offline plan-assumption failure, not an actual field overrun or startup failure.
 
-The [minimal revision](docs/a2-execution/q2-core-host-rebind-null-continuation/REQUIREMENTS.md)
-proposes `-serial null`, matching the existing maintenance backend, with no new serial file or
+The [minimal revision](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md), exact A
+`4af01900cfe462cec4762cb04966dab139a0a31c`, proposes `-serial null`, matching the existing maintenance backend, with no new serial file or
 forwarder. It preserves the approved baseline, sessions, endpoint/payload, counts, 19 obligations
 and 27497 MiB/8214 inodes; there is no new window, preparation pool or refund. Original A's three
 bytes stay unchanged. R change control keeps the affected startup implementation/HR2 and dependent
