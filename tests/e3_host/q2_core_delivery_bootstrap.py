@@ -59,13 +59,13 @@ AMENDMENT_CLOSURE = {
     "commit": "7598886e15ed6911fe0e09e2f8d66203455f9057",
     "tree": "7f2178942c126f883829a139b842cfc2c2e12159",
 }
-CANDIDATE = {"commit": "319aa93f9ab16dd618d57f871b4c7db1cd9d7a2e",
-    "tree": "94503c1fec4e30968fd61989d76ec9a53b9f63b0"}
-WHEEL = {"basename": "infra_local_hand-0.2.0a1-py3-none-any.whl", "bytes": 288375,
-    "sha256": "e3381c2c160ea83c049ef9e8239de350b259393b64828d2febbb1b90e9127897",
+CANDIDATE = {"commit": "515bbb03045110417ffd87ce5b13f3918d5f0344",
+    "tree": "6a1eebbb347c5de7fcd66cc00d2dafa6821596a2"}
+WHEEL = {"basename": "infra_local_hand-0.2.0a1-py3-none-any.whl", "bytes": 288373,
+    "sha256": "327d1c20b47afc78582c52605f5fa6c56117fdafc4a3a34203cd69d4a1e1f9b1",
     "payload_digest": "b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23"}
 PROJECTION = {"basename": ".local-hand-source-projection.json", "bytes": 11811,
-    "sha256": "55e69c1346827b1528ae6ca4570ee58366c666fb49b9e9bf347c28b56d221e32",
+    "sha256": "bb0f629e5192ae083188fb1da09fff1430417eccc2d912bb58a7121702a19444",
     "file_count": 89}
 PACKAGE_LIMITS = {"package_bytes": 67100656, "manifest_bytes": 2097152, "members": 8192,
     "member_bytes": 33554432, "shared_allocated_bytes": 134217728,
