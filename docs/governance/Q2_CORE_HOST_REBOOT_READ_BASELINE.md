@@ -1,7 +1,16 @@
-# 宿主重启后的固定本机读取：待审基线
+# 宿主重启后的固定本机读取：批准基线
 
-2026-10-11；PROPOSED / Gate OPEN / NOT APPROVED。
+2026-10-11；CLOSED，仅 HB1–HB2。历史提议记录保留下文；新增实际决定优先。
 Scope `LH-Q2-CORE-HOST-REBOOT-READ-v1`，仅HB1–HB2。
+
+[Owner B](Q2_CORE_HOST_REBOOT_READ_OWNER_DECISION.md) 在准确相邻请求后回复“批准”，
+事件 `LH-Q2-CORE-HOST-REBOOT-READ-CLOSURE-20261011-01`。准确 R/A、固定本机目标及
+完整私有请求涵盖 HB1 实现/验证/正常发布/冻结和 HB2 唯一读取，无逐步审批。
+独立 C 仅闭合登记；D 下降自 C，不 squash。A 三文档不改；其历史 OPEN 标签保留。
+总预约采用25287 MiB/7492 inodes及十八份维护义务，无退款；其余保护和限制不变。
+在 C：HB1 NOT_STARTED、HB2 NOT_ISSUED、H01/Q4/H11 NOT_RUN。
+
+## 原提议记录（不作为当前未批准状态）
 
 规则R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，直接规则来源与完整性、Owner
 mandate、Owner-only authority、无例外及变更控制均保持。准确A
