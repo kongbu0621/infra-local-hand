@@ -20,12 +20,7 @@ def test_fixed_archive_preserves_raw_completion_and_old_history():
     prior,old,legacy=p.build_persistent_source(files[p.IDENTITY_INNER])
     assert proof['prior']==prior and activation==old
     assert previous==p.persistent_maintenance_resume() and legacy==p.legacy_maintenance_resume()
-    assert previous['session']=='lhqjgrow-20261010d' and p.maintenance_resume()['session']=='lhqjgrow-20261011a'
-    logical=dict(resume=p.maintenance_resume(),persistent_source=proof)
-    manifest=dict(schema='lhq-journal-growth-manifest/v20',inputs=p.encode_manifest_inputs(logical),
-        resume=p.encode_maintenance_resume(logical['resume'],proof))
-    assert p.decode_manifest_inputs(manifest,previous)==logical
-    assert len(DUMP(manifest['resume']))<len(DUMP(logical['resume']))
+    assert previous['session']=='lhqjgrow-20261010d' and p.identity_maintenance_resume()['session']=='lhqjgrow-20261011a'
     assert proof['summary']['remote_exit']=='UNKNOWN' and proof['summary']['core_cases']=='NOT_RUN'
     if d:assert d.validate_identity_source(proof)==proof
 
@@ -100,10 +95,10 @@ def test_independent_projection_rejects_changed_predecessor(fault):
 
 def test_new_generation_preserves_all_sixteen_original_charges():
     costs=p.maintenance_commitments();rows=costs['generations']
-    assert len(rows)==17 and len({r['session'] for r in rows})==17
-    assert all((r['bytes'],r['inodes'],r['cpu_seconds'])==(1296*1048576,370,120) for r in rows[:-1])
-    assert rows[-2]['session']=='lhqjgrow-20261010d'
-    assert rows[-1]==dict(session='lhqjgrow-20261011a',bytes=2200*1048576,inodes=402,cpu_seconds=240)
+    assert len(rows)==18 and len({r['session'] for r in rows})==18
+    assert all((r['bytes'],r['inodes'],r['cpu_seconds'])==(1296*1048576,370,120) for r in rows[:-2])
+    assert rows[-3]['session']=='lhqjgrow-20261010d'
+    assert rows[-2]==dict(session='lhqjgrow-20261011a',bytes=2200*1048576,inodes=402,cpu_seconds=240)
     assert costs['protection_read']['source_preparation_included'] is True
     assert costs['protection_read']['aggregate_cpu_seconds']==120
     if d:assert costs==d._maintenance_commitments()

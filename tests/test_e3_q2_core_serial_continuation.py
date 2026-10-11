@@ -145,11 +145,11 @@ def test_new_preflight_rejects_old_or_changed_generation(fault):
 
 
 def test_fixed_three_generation_capacity_and_unchanged_action_limits():
-    assert h.SESSION=='lhqjgrow-20261011a'
-    assert (h.HOST_BYTES,h.HOST_INODES)==(22951*1048576,6802)
+    assert h.SESSION=='lhqjgrow-20261011b'
+    assert (h.HOST_BYTES,h.HOST_INODES)==(25155*1048576,7332)
     assert (h.BACKUP_CAP,h.IMAGE_CAP,h.CAPTURE_CAP)==(640*1048576,1152*1048576,16*1048576)
     rows=p.maintenance_commitments()['generations']
-    assert sum(row['cpu_seconds'] for row in rows)==2160
+    assert sum(row['cpu_seconds'] for row in rows)==2400
     assert p.maintenance_commitments()==d._maintenance_commitments()
 
 

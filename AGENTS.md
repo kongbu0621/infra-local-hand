@@ -42,6 +42,13 @@ work. Necessary sanitized records and implementation use normal PR merge commits
 archive/caller/machine data remain private. This closure supersedes older no-new-window clauses
 only within RP1–RP3; it proves neither readiness nor maintenance/core PASS.
 
+The [RP1 implementation record](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_IMPLEMENTATION_20261011.md)
+tracks the two fixed archives, old11a failure binding, full eighteen-obligation costs and independent
+consumers. The new archive was prepared privately and both existing originals and old callers remain
+unchanged. Local source/FD/caller verification is underway; exact D first CI, normal publication,
+independent installations, complete bounds and final freezes remain mandatory before RP2. No new
+maintenance or core field step has occurred. Continue this approved batch without substep approval.
+
 ## Current approved core identity and resource continuation (2026-10-11)
 
 The [fixed proposal](docs/governance/Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_BASELINE.md)
