@@ -198,7 +198,8 @@ def test_plan_case_creates_original_candidate_handoff_once(case, tmp_path, monke
     e.now = lambda: {"boot_id": boot, "boottime_ns": 100 * d.NS, "monotonic_ns": 110 * d.NS}
     e._active_case_deadlines = {"preparation_deadline_ns": 200 * d.NS,
         "preparation_monotonic_deadline_ns": 210 * d.NS,
-        "owner_deadline_ns": 220 * d.NS, "owner_monotonic_deadline_ns": 230 * d.NS}
+        "owner_deadline_ns": 100 * d.NS + d.OWNER_NS,
+        "owner_monotonic_deadline_ns": 110 * d.NS + d.OWNER_NS}
     runtime = driver.helper("q2_prepare_run")
     e._candidate_modules = lambda names: {"q2_prepare_run": runtime}
     monkeypatch.setattr(d.time, "time_ns", lambda: 1899999950 * d.NS)
@@ -210,7 +211,7 @@ def test_plan_case_creates_original_candidate_handoff_once(case, tmp_path, monke
             prepared["source_objects"][role] = d._prep_file(e, str(tmp_path / (role + ".json")),
                 d.canonical(value, newline=True), 200 * d.NS, uid=os.getuid(), gid=os.getgid())
         deadlines = {"case_origin_ns": 1, "preparation_deadline_ns": 200 * d.NS,
-            "owner_deadline_ns": 220 * d.NS, "remote_final_deadline_ns": 705 * d.NS,
+            "owner_deadline_ns": 100 * d.NS + d.OWNER_NS, "remote_final_deadline_ns": 705 * d.NS,
             "carrier_deadline_ns": 750 * d.NS}
         result = e.plan_case(case, prepared, deadlines)
         raw = Path(prepared["handoff_path"]).read_bytes()
