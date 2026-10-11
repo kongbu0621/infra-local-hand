@@ -172,6 +172,10 @@ def native(config, role):
                     if error.errno != 9:
                         raise
         os.dup2(root, 3, inheritable=True)
+        # dup2(fd, fd) leaves FD_CLOEXEC unchanged. The protected directory
+        # walk can already return descriptor 3, which the native ABI needs
+        # to survive the following exec.
+        os.set_inheritable(3, True)
         q.require(os.execve in os.supports_fd and boottime_ns() < deadline(config, "native"), "NATIVE_DEADLINE")
         os.execve(executable, [config.data()["programs"]["native"]["path"]], {"LANG": "C", "LC_ALL": "C"})
     finally:
