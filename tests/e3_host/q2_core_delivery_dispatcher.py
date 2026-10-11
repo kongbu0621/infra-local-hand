@@ -6866,7 +6866,13 @@ class FieldEffects:
                 uid, gid = (account["uid"], account["gid"]) if row["owner"] == "ordinary" else (0, 0)
                 directories[role] = directory(row["path"], uid, gid, row["mode"])
             for name in _fields('preflight business evidence management_evidence launcher_output supervisor_output owner_output launcher_declarations supervisor_declarations owner_declarations'):
-                parent = directories["declarations" if name.endswith("declarations") else "capture"]["path"]
+                # Only launcher declarations are read by the ordinary task.
+                # Its existing public control directory is accessible without
+                # changing the private evidence parent's permissions. These
+                # files remain charged to the task's existing state pool.
+                role = "control" if name == "launcher_declarations" else (
+                    "declarations" if name.endswith("declarations") else "capture")
+                parent = directories[role]["path"]
                 children[name] = _prep_pin(directory(parent + "/" + name,
                     mode=493 if name == "launcher_declarations" else 448))
             roots = [_prep_root(self, row, account, plan["mounts"]["quota"], deadline) for row in plan["roots"]]
