@@ -28,13 +28,13 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 因宿主 boot 与旧 activation 不一致而停止，SSH 为 0、消费标记未创建；它和其他旧返回
 保持原样，不重放。HB2 固定读取成功不等于 VM、guest 或核心验收通过。
 
-下一步已在 [PR #22](https://github.com/kongbu0621/infra-local-hand/pull/22) 准备为一个
-[HR1–HR4 整批接续](docs/a2-execution/q2-core-host-rebind-continuation/IMPLEMENTATION_PLAN.md)：
-明确采用 HB2 固定六镜像为本次新启动基线，再接原配置启动、现有 guest 核验、一次维护
-及原 H01/Q4/H11。方案仍为 OPEN / NOT APPROVED，尚无新范围实现或现场执行；
-历史文件系统及内容连续性仍 UNKNOWN，当前身份校验不放宽。复用已有后端、验收脚本
-和安装，不重新实现核心功能；[本地 Codex 交接](docs/a2-execution/CORE_HOST_REBIND_TASK_20261011.txt)
-已备好，NAS 和外围继续暂停。
+Owner已批准[HR1–HR4整批接续](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md)：
+采用HB2新基线，再接原配置启动、现有guest核验、一次维护及原H01/Q4/H11。
+[HR1私有源码离线复核](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)发现原启动器
+直接写串口文件，未受捕获上限约束，与方案假设不符；现场尚未启动，未消耗新调用。
+已准备[仅串口后端改为null的修订](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)，
+当前待确认。原镜像、目的地/载荷、会话、次数、费用和已批准核心范围保持；复用已有
+后端、验收脚本和安装。历史文件系统/内容连续性仍UNKNOWN，NAS和外围继续暂停。
 
 ## 使用与开发入口
 

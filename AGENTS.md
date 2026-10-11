@@ -1,5 +1,60 @@
 # Execution guidance
 
+## HR1 retained startup review: serial bound correction pending (2026-10-11)
+
+Owner's HR1–HR4 approval and independent C `608f8d70c8fd43b82b613f49b26d6870e5e7f944`
+remain accurately recorded below. [Offline retained-source review](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)
+found that the original startup's QEMU file serial bypasses its bounded record writer. Original
+VM FSIZE is infinity; the new console is neither capped nor included in the return index. Thus
+A's assertion of inherited bounded serial supervision cannot support its 4 MiB startup pool.
+This is an offline plan-assumption failure, not an actual field overrun or startup failure.
+
+The [minimal revision](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md), exact A
+`4af01900cfe462cec4762cb04966dab139a0a31c`, proposes `-serial null`, matching the existing maintenance backend, with no new serial file or
+forwarder. It preserves the approved baseline, sessions, endpoint/payload, counts, 19 obligations
+and 27497 MiB/8214 inodes; there is no new window, preparation pool or refund. Original A's three
+bytes stay unchanged. R change control keeps the affected startup implementation/HR2 and dependent
+release OPEN until Owner confirms this exact revision; prior unaffected source review remains valid.
+HR1 OFFLINE_REVIEW_BLOCKED; HR2/HR3 NOT_ISSUED; HR4/H01/Q4/H11 NOT_RUN. New callers/markers,
+field reads, startups, SSH and approval review rejections are all zero. Private review and separate
+release gate retain the reason. Do not implement the revised backend or start under the old path-only
+allowance. Preserve HB2/RP2, all old callers and terminal facts; NAS/peripherals remain paused.
+
+## Approved whole core continuation after HB2 (2026-10-11)
+
+The [fixed baseline](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md), exact A
+`ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0`, tree `526a4b709aae89b1d15b00441b884f6ea8ae4ea5`,
+is CLOSED for `LH-Q2-CORE-HOST-REBIND-CONTINUATION-v1` / HR1–HR4 only. Preserve its three
+original document bytes and historical OPEN labels. [Owner B](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_OWNER_DECISION.md),
+event `LH-Q2-CORE-HOST-REBIND-CONTINUATION-CLOSURE-20261011-01`, preserves the exact adjacent
+approval with only the machine endpoint sanitized; full request/reply and destination remain private.
+Owner explicitly adopts the six fixed HB2 objects as the one new current baseline and accepts
+UNKNOWN historical filesystem/content continuity. Strict current host/device/process/tool/protection,
+Q1, 19/7/7, source integrity, SSH trust and all other premises stay. No automatic future rebind.
+
+HR1 wires producer and independent consumers, full retained sources/costs/lifecycle bounds and
+all four stage callers, normal publication, exact D first CI, independent installations and freeze.
+Only then HR2 permits one fixed prelaunch check, one original-configuration start and one existing
+six-command guest SSH verification. Only full successful originals/actual completion and final data
+freeze allow HR3, unique new 11c preflight and PASS same-window maintenance: at most two fixed SSH,
+verified normal shutdown, original backup/journal 256→512 MiB growth and one maintenance restart.
+Only full maintenance success and both consumers allow HR4 original unissued 07a H01→Q4→H11.
+No per-substep approval. Frozen programs stay unchanged while predetermined data slots are filled.
+
+Keep all eighteen old obligations and 25287 MiB/7492 inodes; add one full 2200 MiB/402 inode
+maintenance and three fixed preparation/startup/guest pools totaling 10 MiB/320 inodes. Total
+27497 MiB/8214 inodes, nineteen obligations; maintenance admission27369 MiB/8182 inodes.
+Old core capture counts once. Preserve all historical CPU and A's process/transport/output limits;
+VM retains original 4 vCPU/8192 MiB and VM limits, never inherits management AS/CPU limits.
+Failure/unknown/contradiction stops and retains, except the two explicitly accepted historical
+continuity UNKNOWNs. No old replay, retry, extra collection/window, cleanup, recovery, rollback,
+reinstall, SSH-trust reset, business-service stop or peripheral work. Raw/index/archive/caller and
+machine data stay private; necessary source and sanitized records use normal PR merge commits.
+R/source/integrity, Owner mandate/authority, no exceptions and change control remain. Independent
+C is bookkeeping only; D descends from C without squash. At C HR1 NOT_STARTED, HR2/HR3 NOT_ISSUED,
+HR4/H01/Q4/H11 NOT_RUN. This exact closure supersedes earlier no-new-action clauses only for
+HR1–HR4; HB2/RP2 and old callers/returns remain terminal and unchanged. NAS/peripherals stay paused.
+
 ## Prepared whole core continuation after HB2 (2026-10-11)
 
 The [requirements](docs/a2-execution/q2-core-host-rebind-continuation/REQUIREMENTS.md),

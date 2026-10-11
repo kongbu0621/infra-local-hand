@@ -13,9 +13,11 @@ PID/pidfile 缺失、固定端口空闲、六镜像当前保护通过但旧 devi
 当前没有可直接采用的原 VM 实例，H01/Q4/H11 仍 NOT_RUN。最新代码 CI 为
 `9f2156d` / `38140957241` 三项成功，后续文档提交不另算运行验证。
 
-下一步为已准备的 [HR1–HR4 整批接续](q2-core-host-rebind-continuation/IMPLEMENTATION_PLAN.md)，
-当前 OPEN / NOT APPROVED：采用明确的新镜像基线，复用既有启动、核验、维护与核心链。
-不重装、不重放已消费调用、不恢复退役 H07 实验，NAS 和外围继续暂停。
+[HR1–HR4整批接续](../governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md)已获明确批准。
+HR1离线核对发现原启动器没有方案所称的有界串口监督，因此尚未运行现场。
+[串口后端最小修订](../governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)拟在同一未发行批次
+使用null，等待准确修订确认；不新增窗口或费用池，不重复申请原基线及出站授权。
+H01/Q4/H11仍NOT_RUN；NAS和外围继续暂停。
 当前入口见[首页](../../README.md)及[执行约束](../../AGENTS.md)。
 以下保留各日期的历史事实，不作为当前状态或新的执行授权。
 
