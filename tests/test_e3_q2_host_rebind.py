@@ -139,6 +139,7 @@ def test_sidecar_bounds_canonical_encoding_and_exact_coverage(evidence,fault):
 
 
 @pytest.mark.parametrize('raw',[b'{"a":1,"a":2}',b'{"a":NaN}',b'{"a":1e400}',
-    b'{"a":'+b'['*70+b'0'+b']'*70+b'}',b'x'*131073])
+    b'{"a":'+b'['*70+b'0'+b']'*70+b'}',b'x'*131073],
+    ids=['duplicate-key','nan','infinite-float','too-deep','oversized'])
 def test_record_decoder_is_bounded_and_unambiguous(raw):
     with pytest.raises(ValueError):r.document(raw)
