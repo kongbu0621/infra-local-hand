@@ -14,19 +14,27 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 
 ## 核心实际状态（2026-10-11）
 
-运行准备修复及接续实现已由[PR #16](https://github.com/kongbu0621/infra-local-hand/pull/16)
-正常合入，准确提交的首次CI三项成功，两平台及本地独立安装通过。
-唯一新维护预检因宿主机启动身份与保留证明不一致而停止：**SSH为0、未创建消费标记**，
-没有关机、扩展journal、重启VM或发行核心包。**H01/Q4/H11均为NOT_RUN**。
+**核心代码和验收脚本已经存在；当前目标环境的 H01/Q4/H11 整链尚未验收。**
 
-最新事实见[现场记录](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_FIELD_20261011.md)。
-本次为已调用、未消费的预检失败；返回、冻结调用器、费用和独立终态完整保留，不能重放。
-后续工作限于保留返回和源码的离线分析，外围继续暂停。
+| 层次 | 已完成与当前边界 |
+| --- | --- |
+| 作业后端 | 已有提交、执行、状态查询、取消、同账本恢复观测和结果读取；CLI/MCP 共用后端。恢复不重放业务，证据不足时保留 UNKNOWN。 |
+| 验收链 | 已有 H01 正常执行、Q4 运行中取消、H11 同任务恢复观测脚本及离线回归；原 `lhqcore-20261007a` 三案仍为 NOT_RUN。 |
+| 原现场环境 | 曾完成原配置 VM 启动及[当前 guest 六命令核验](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md)。随后宿主机重启，旧运行身份不再适用于当前环境。 |
+| 最新现场结果 | [HB1/HB2 已完成](docs/a2-execution/Q2_CORE_HOST_REBOOT_READ_FIELD_20261011.md)：旧 PID/pidfile 缺失、固定端口无监听；六镜像当前保护检查通过，但 device/inode 组合与旧记录不符。 |
+| 当前代码验证 | 最新代码合入点 `9f2156d` 的 [CI 三项成功](https://github.com/kongbu0621/infra-local-hand/actions/runs/38140957241)，Linux/Windows 独立安装通过。后续状态与方案提交仅改文档。 |
 
-Owner已确认期间重启过宿主机；旧运行身份不能直接改写。失败身份差异及未采样用量
-误报已由[PR #18](https://github.com/kongbu0621/infra-local-hand/pull/18)修复并通过首次CI。
-重启后的[固定本机身份读取](docs/governance/Q2_CORE_HOST_REBOOT_READ_BASELINE.md)仍待批准，
-不包含SSH、VM启动或维护；当前没有新的现场执行。
+此前 [RP2 维护预检](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_FIELD_20261011.md)
+因宿主 boot 与旧 activation 不一致而停止，SSH 为 0、消费标记未创建；它和其他旧返回
+保持原样，不重放。HB2 固定读取成功不等于 VM、guest 或核心验收通过。
+
+下一步已在 [PR #22](https://github.com/kongbu0621/infra-local-hand/pull/22) 准备为一个
+[HR1–HR4 整批接续](docs/a2-execution/q2-core-host-rebind-continuation/IMPLEMENTATION_PLAN.md)：
+明确采用 HB2 固定六镜像为本次新启动基线，再接原配置启动、现有 guest 核验、一次维护
+及原 H01/Q4/H11。方案仍为 OPEN / NOT APPROVED，尚无新范围实现或现场执行；
+历史文件系统及内容连续性仍 UNKNOWN，当前身份校验不放宽。复用已有后端、验收脚本
+和安装，不重新实现核心功能；[本地 Codex 交接](docs/a2-execution/CORE_HOST_REBIND_TASK_20261011.txt)
+已备好，NAS 和外围继续暂停。
 
 ## 使用与开发入口
 
