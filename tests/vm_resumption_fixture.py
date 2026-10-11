@@ -40,6 +40,7 @@ def records(historical_boot='11111111-2222-3333-4444-555555555555'):
     hostboot='66666666-2222-3333-4444-555555555555'
     images={name:dict(path=hist['system_path'] if name=='system' else '/fixture/'+name,metadata=dict(dev=pair[0],ino=pair[1])) for name,pair in dict(hist['image_identities'],original_system=hist['original_system_identity']).items()}
     start=dict(event='LH-Q1-VM-RESUME-PROPOSAL-20261010-01',images=images,proposed_argv=argv,original_argv=proposal['minimal_change']['full_argv'],output_directory='/resumed',host_boot_id=hostboot,network_namespace=vm['namespace'])
+    start.update(qemu_version_sha256=p.c.sha256(b'fixture qemu version\n'),qemu=dict(sha256='a'*64))
     sf['start-proposal-private.json']=DUMP(start);sf['start-once.py']=b'# retained startup, never executed\n'
     authority=dict(event=event,state='APPROVED',owner_reply='批准',startup_attempts=1,ssh_attempts=0,proposal_sha256=p.c.sha256(sf['start-proposal-private.json']),source_sha256=p.c.sha256(sf['start-once.py']))
     sf['explicit-owner-approval-private.json']=DUMP(authority)
@@ -92,7 +93,7 @@ def archive(files,idx):
 def bind_protected_sources(gf):
     """Synthetic retention/preparation, explicitly confined to offline fixtures."""
     authority=json.loads(gf['approval.json']);freeze=json.loads(gf['freeze.json'])
-    pins={n:dict(bytes=1,sha256='a'*64) for n in (*p.JOURNAL_SOURCE_NAMES,'q2_current_guest_verification.py')}
+    pins={n:dict(bytes=1,sha256='a'*64) for n in (*p.LEGACY_JOURNAL_SOURCE_NAMES,'q2_current_guest_verification.py')}
     failure=dict(event=p.c.RESUMED_VM_OWNER_DECISION['event'],D='0eece27637930dfc31f724c7dd1392e11a47cad9',
         state='INVOKED_FAILED_UNCONSUMED',reason='LOCAL_PARENT',ssh_calls=0,marker_created=False,
         guest_streams='ABSENT',remote_exit='UNKNOWN',index=PIN(b'old index'),freeze=PIN(b'old freeze'),terminal=PIN(b'old terminal'))

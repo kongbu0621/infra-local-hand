@@ -1,18 +1,20 @@
 本地 Codex 接续状态（2026-10-11）：
 
-原A ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0 的HR1–HR4已获本会话Owner明确批准。
-独立C 608f8d70c8fd43b82b613f49b26d6870e5e7f944已登记；原三文档字节保持。
-不要再次请求原镜像采用、原Q1目的地/冻结载荷或整批动作的批准。
+原A ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0 的HR1–HR4已获明确批准。
+Owner又明确批准修订A 4af01900cfe462cec4762cb04966dab139a0a31c 的null串口调整，
+新独立C为4acf0dbfe99d0c7e170b6102f861fa9671d09da2。两版A六份文档字节保持。
+原六镜像基线、原Q1目的地/冻结载荷及整批动作授权继续有效，无需重复请示。
 
-HR1离线复核发现原启动器的QEMU file串口未受捕获池约束，方案“继承有界监督”不成立。
-当前HR1 OFFLINE_REVIEW_BLOCKED；HR2/HR3 NOT_ISSUED；H01/Q4/H11 NOT_RUN。
-新caller/marker/启动/SSH/现场读取均0，未消耗现场次数。所有旧caller仍禁止重放。
+当前HR1在实现和验证：v3重新消费HB2/RP2及旧两归档，采用当前六镜像，保留历史
+连续性UNKNOWN；启动null与维护null分别重建。十九份义务及27497 MiB/8214 inodes
+不退款，不重复核心捕获，不另开准备池。旧file串口缺口和旧阻塞gate只作历史保留。
 
-最小修订A 4af01900cfe462cec4762cb04966dab139a0a31c，见
-../governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md 和 q2-core-host-rebind-null-continuation/。
-仅改HR2新启动serial file后端为null，保持原批次、身份、目的地/载荷、次数、费用。
-该修订当前OPEN，尚无B/C或运行实现。先核对是否已有对此准确修订的真实Owner决定；
-确认后独立C，再完成原HR1全链接线/验证/发布/冻结，连续HR2→HR3→HR4，不逐步请示。
+完成所有源码、私有四阶段调用器、完整大小/FD/资源生命周期验证，正常PR发布准确D，
+通过其首次CI、独立安装及全部冻结后，再一次HR2临启动检查→启动→现有六命令guest核验。
+实际原件与真实完成全部通过后填预定数据槽，HR3唯一11c预检/PASS同窗维护；完整维护
+和两消费者成功才HR4原07a H01→Q4→H11。批内不逐步请示，程序冻结后不修改。
 
-不得用轮询文件大小冒充硬上界，不能新增日志转发平台、降低镜像写入限额或静默改参数。
-原批准、离线依据及状态见Q2_CORE_HOST_REBIND_FIELD_20261011.md。NAS/外围保持暂停。
+HR2/HR3 NOT_ISSUED，H01/Q4/H11 NOT_RUN。尚无现场启动、SSH、维护或核心包。
+失败/未知/漂移停止保留；禁止旧caller重放、重试、补采、清理、恢复或追加窗口。
+不新增串口文件、FIFO或日志转发器。NAS及外围继续暂停。
+当前进度与历史依据见Q2_CORE_HOST_REBIND_FIELD_20261011.md。

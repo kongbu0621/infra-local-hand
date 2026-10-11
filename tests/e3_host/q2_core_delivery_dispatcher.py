@@ -1155,7 +1155,7 @@ def _approved_validate_capacity(value, obligations):
     _approved_exact(value, {"schema", "source_horizon", "source_union_sha256", "snapshot_rows", "delta_rows",
             "effective_rows", "row_relation", "placement", "configured_quota_rows", "totals",
             "released_or_refunded", "prior_commitments", "maintenance"})
-    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v23"
+    _approved_require(value["schema"] == "local-hand-q2-core-historical-capacity-obligations/v24"
         and value["source_horizon"] == "20261001e" and value["released_or_refunded"] is False,
         "CAPACITY_SCHEMA")
     _approved_equal(value["maintenance"],_maintenance_commitments(),"MAINTENANCE_COMMITMENTS")
@@ -1991,10 +1991,48 @@ def runtime_preparation_failure_summary():
         old_commitments_refunded=False)
 
 
-def _maintenance_resume():
+def _runtime_preparation_maintenance_resume():
     value=_identity_maintenance_resume()
     value.update(scope='LH-Q2-CORE-RUNTIME-PREPARATION-CONTINUATION-v1',session='lhqjgrow-20261011b',
         previous_preparation_failure=runtime_preparation_failure_summary())
+    return value
+
+
+def host_reboot_failure_summary():
+    return dict(session='lhqjgrow-20261011b',D='934122fab56f1a78f43dbc773e0de9598ea63078',
+        state='INVOKED_FAILED_UNCONSUMED',reason='GROWTH_ACTIVATION_HOST_BOOT',phase='preflight',
+        ssh_requests=0,marker_created=False,execute='NOT_CALLED',caller_returncode=3,
+        coordinator_completion=None,core='NOT_RUN',old_commitments_refunded=False)
+
+
+def _maintenance_resume():
+    value=_runtime_preparation_maintenance_resume()
+    value.update(scope='LH-Q2-CORE-HOST-REBIND-CONTINUATION-v1',session='lhqjgrow-20261011c',
+        previous_host_reboot_failure=host_reboot_failure_summary())
+    return value
+
+
+def host_rebind_costs():
+    return dict(old_mib=25287,old_inodes=7492,maintenance_mib=2200,maintenance_inodes=402,
+        preparation_mib=4,preparation_inodes=128,startup_mib=4,startup_inodes=128,
+        guest_mib=2,guest_inodes=64,total_mib=27497,total_inodes=8214,
+        maintenance_admission_mib=27369,maintenance_admission_inodes=8182,
+        maintenance_obligations=19,core_capture_counted_once=True,refunded=False)
+
+
+def validate_host_rebind_source(value):
+    check=_Checks('CORE_JOURNAL_')
+    check.exact(value,{'schema','archive','index','prior','summary','owner','revision',
+        'activation_sha256','baseline_sha256','costs'},'REBIND_SOURCE_FIELDS')
+    check(value['schema']=='local-hand-q2-host-rebind-source/v1' and
+        canonical(value['summary'])==canonical(host_reboot_failure_summary()) and
+        value['owner']==HOST_REBIND_OWNER and value['revision']==HOST_REBIND_REVISION and
+        canonical(value['costs'])==canonical(host_rebind_costs()),'REBIND_SOURCE_POLICY')
+    validate_runtime_preparation_source(value['prior'])
+    for name,cap in (('archive',1048576),('index',65536)):
+        check.exact(value[name],{'bytes','sha256'},'REBIND_SOURCE_PIN');check.integer(value[name]['bytes'],1,cap)
+        check.digest(value[name]['sha256'])
+    check.digest(value['activation_sha256']);check.digest(value['baseline_sha256'])
     return value
 
 
@@ -2076,9 +2114,13 @@ def _maintenance_commitments():
             host_bytes=4194304,host_inodes=128,cpu_seconds=480,per_attempt_cpu_seconds=240,refunded=False),
         runtime_preparation=dict(sessions=['lhqsource-20261011b','lhqarchive-20261011b'],
             host_bytes=4194304,host_inodes=128,cpu_seconds=480,per_attempt_cpu_seconds=240,refunded=False),
+        host_read=dict(sessions=['lhqhost-source-20261011a','lhqhost-20261011a'],
+            host_bytes=4194304,host_inodes=128,cpu_seconds=480,refunded=False),
+        host_rebind=dict(sessions=['lhqrebind-source-20261011','lhqstart-20261011b','lhqguest-20261011c'],
+            host_bytes=10485760,host_inodes=320,cpu_seconds=720,per_pool_cpu_seconds=240,refunded=False),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
             for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b','lhqjgrow-20261010c','lhqjgrow-20261010d')]+[dict(session=session,bytes=2200*1048576,inodes=402,cpu_seconds=240)
-                for session in ('lhqjgrow-20261011a','lhqjgrow-20261011b')],
+                for session in ('lhqjgrow-20261011a','lhqjgrow-20261011b','lhqjgrow-20261011c')],
         released_or_refunded=False)
 
 
@@ -2088,7 +2130,7 @@ def _validate_maintenance_resume(value):
     return value
 
 
-JOURNAL_SESSION = 'lhqjgrow-20261011b'
+JOURNAL_SESSION = 'lhqjgrow-20261011c'
 JOURNAL_FILES = {'consumed.json': 131072, 'events.jsonl': 2097152,
     'pre.stdout': 2097152, 'pre.stderr': 2097152, 'post.stdout': 2097152,
     'post.stderr': 2097152, 'receipt.json': 131072, 'vm.pid': 64}
@@ -2096,7 +2138,7 @@ JOURNAL_SOURCE_NAMES = ('q2_journal_growth.py', 'q2_journal_growth_guest.py',
     'q2_core_capacity_capture.py', 'q2_core_capacity_reader.py', 'q2_sshd_source_capture.py',
     'q2_sshd_source_reader.py', 'q2_core_obligation_inputs.py', 'q2_core_prior_attempt.py',
     'q2_core_delivery_contract.py', 'q2_local_source_delivery.py', 'q2_core_approved_inputs.py',
-    'q2_host_kernel_facts.py', 'q2_journal_retained_fds.py')
+    'q2_host_kernel_facts.py', 'q2_journal_retained_fds.py', 'q2_host_rebind.py', 'q2_host_reboot_consumer.py')
 
 
 ACTIVATION_EVENT = 'LH-Q1-QUOTA-REPAIR-ACTIVATION-20261009-03'
@@ -2130,6 +2172,8 @@ def _validate_vm_activation(value):
     """Validate the host-verified projection without asserting unseen originals."""
     check = _Checks("CORE_ACTIVATION_")
     check(type(value) is dict,'ACTIVATION_FIELDS')
+    if value.get('schema')=='local-hand-q2-vm-activation/v3':
+        return _validate_rebound_activation(value)
     resumed=value.get('schema')=='local-hand-q2-vm-activation/v2'
     check.exact(value, ACTIVATION_PROJECTION_FIELDS | (RESUMPTION_FIELDS if resumed else set()), 'CORE_ACTIVATION_FIELDS')
     check((resumed and value['event']==RESUMPTION_EVENT) or
@@ -2296,10 +2340,10 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v21'
-        and value['session']=='lhqjgrow-20261011b', 'JOURNAL_SCHEMA')
+    check(len(canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v22'
+        and value['session']=='lhqjgrow-20261011c', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=RUNTIME_PREPARATION_A,C=RUNTIME_PREPARATION_C)
+        A=HOST_REBIND_A,C=HOST_REBIND_C)
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     check(type(value['guest_startup_assurance']) is dict and canonical(value['guest_startup_assurance'])
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
@@ -2311,7 +2355,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
     _validate_maintenance_resume(value['previous_maintenance'])
     validate_local_preflight_source(value['local_preflight_source'])
     validate_transport_failure_source(value['transport_failure_source'])
-    validate_runtime_preparation_source(value['persistent_source'])
+    validate_host_rebind_source(value['persistent_source'])
     _validate_retained_identity(value['retained_identity'],value['reports'])
     _validate_runtime_summaries(value['runtime_preparation'],value['runtime_parent_binding'],value['nonce'],
         dict(pre=value['old_boot_id'],post=value['new_boot_id']),value['reports'])
@@ -2327,10 +2371,11 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         check(type(value[key]) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',value[key]),
             'JOURNAL_BOOT')
     activation=value['vm_activation']
-    check(type(activation) is dict and activation.get('schema')=='local-hand-q2-vm-activation/v2',
+    check(type(activation) is dict and activation.get('schema')=='local-hand-q2-vm-activation/v3',
         'CURRENT_GUEST_REQUIRED')
     if activation is not None:
         _validate_vm_activation(activation)
+        check(value['persistent_source']['activation_sha256']==_sha(canonical(activation)), 'REBIND_ACTIVATION_SOURCE')
         check(activation['current_boot_id']==value['old_boot_id'] and activation['vm']==value['old_vm']
             and activation['image_identities']==value['image_identities'], 'ACTIVATION_MAINTENANCE_BINDING')
     history_boot=activation['historical_boot_id'] if activation else value['old_boot_id']
@@ -2339,12 +2384,12 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         and (current_boot is None or current_boot==value['new_boot_id']), 'JOURNAL_BOOT_BINDING')
     rows=value['originals']
     check(type(rows) is list and len(rows)==8 and [row.get('basename') for row in rows]
-        == sorted('.lhqjgrow-20261011b.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
+        == sorted('.lhqjgrow-20261011c.'+name for name in JOURNAL_FILES), 'JOURNAL_ORIGINALS')
     check(next(row['sha256'] for row in value['originals'] if row['basename'].endswith('.receipt.json'))
         ==value['coordinator_completion']['receipt_sha256'],'JOURNAL_COMPLETION_RECEIPT')
     for row in rows:
         check.exact(row,{'basename','bytes','sha256'},'CORE_JOURNAL_ORIGINAL')
-        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261011b.'):]])
+        check.integer(row['bytes'],0,JOURNAL_FILES[row['basename'][len('.lhqjgrow-20261011c.'):]])
         check.digest(row['sha256'])
     check.exact(value['source_files'],JOURNAL_SOURCE_NAMES,'CORE_JOURNAL_SOURCES')
     for name,row in value['source_files'].items():
@@ -2405,7 +2450,7 @@ def _validate_approved_components(value):
         _approved_validate_retained(value["retained_preparation"])
         reconciliation = value["reconciliation"]
         _approved_exact(reconciliation, (*APPROVED_RECONCILIATION, "schema", "prior_core_attempts", "prior_diagnostic_capture", "journal_transition"))
-        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v23", "RECONCILIATION_SCHEMA")
+        _approved_require(reconciliation["schema"] == "local-hand-q2-core-reconciliation/v24", "RECONCILIATION_SCHEMA")
         _approved_equal({key: reconciliation[key] for key in APPROVED_RECONCILIATION},
                         APPROVED_RECONCILIATION, "RECONCILIATION")
         prior = reconciliation["prior_core_attempts"]
@@ -8693,3 +8738,33 @@ IDENTITY_RESOURCE_C = "f74725156ed0fa5bfc1c9760ca9efd1afd110870"
 
 RUNTIME_PREPARATION_A = 'e64d4d73488026247b03fd7d41387ef8f3887dd8'
 RUNTIME_PREPARATION_C = '4ae2b8f83f65b3262015e46f43d64ea035e89c91'
+
+HOST_REBIND_A = '4af01900cfe462cec4762cb04966dab139a0a31c'
+HOST_REBIND_C = '4acf0dbfe99d0c7e170b6102f861fa9671d09da2'
+HOST_REBIND_OWNER = '17fe31a85856c67fa2159e50c3b32c4967c1c755ea8cfde26335a821f6fdbe0e'
+HOST_REBIND_REVISION = 'b1eec1914a2d7a02a1d799673aabe0ff5f204faf70479520292547cbedb3c84b'
+
+
+def _validate_rebound_activation(value):
+    check=_Checks('CORE_ACTIVATION_')
+    extras={'baseline_policy','historical_filesystem_continuity','historical_content_continuity',
+        'owner_decision_sha256','serial_revision_sha256','hb2_evidence_sha256','rp2_evidence_sha256',
+        'historical_activation_sha256','startup_evidence_sha256','guest_evidence_sha256',
+        'serial_backend','serial_capture'}
+    check.exact(value,ACTIVATION_PROJECTION_FIELDS|extras,'REBIND_FIELDS')
+    check(len(canonical(value))<=4095 and value['event']=='LH-Q2-CORE-HOST-REBIND-CONTINUATION-CLOSURE-20261011-01'
+        and value['schema']=='local-hand-q2-vm-activation/v3'
+        and value['baseline_policy']=='OWNER_ADOPTED_HB2_BASELINE'
+        and value['historical_filesystem_continuity']==value['historical_content_continuity']=='UNKNOWN'
+        and value['owner_decision_sha256']==HOST_REBIND_OWNER
+        and value['serial_revision_sha256']==HOST_REBIND_REVISION
+        and value['serial_backend']=='null' and value['serial'] is None
+        and value['serial_capture']=='NOT_CAPTURED_NULL_BACKEND','REBIND_POLICY')
+    for key in extras-{'baseline_policy','historical_filesystem_continuity','historical_content_continuity',
+            'serial_backend','serial_capture'}:check.digest(value[key])
+    # Scalar/path/image requirements are independently implemented above for v1.
+    old={k:value[k] for k in ACTIVATION_PROJECTION_FIELDS}
+    old.update(schema='local-hand-q2-vm-activation/v1',event=ACTIVATION_EVENT,
+        serial=value['pidfile']+'.unused-null-serial')
+    _validate_vm_activation(old)
+    return value

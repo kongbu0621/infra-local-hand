@@ -126,10 +126,10 @@ def envelope():
 
 def embed(value, monkeypatch, *dispatchers):
     prior, files = triple_fixture(monkeypatch, *dispatchers)
-    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v23', prior_core_attempts=prior,
+    value['reconciliation'].update(schema='local-hand-q2-core-reconciliation/v24', prior_core_attempts=prior,
                                   prior_diagnostic_capture=p.diagnostic_retention(),
                                   journal_transition=journal_transition(value['amendment']['implementation']))
-    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v23',
+    value['historical_capacity_obligations'].update(schema='local-hand-q2-core-historical-capacity-obligations/v24',
         maintenance=p.maintenance_commitments(),prior_commitments=[p.commitment(value, index=index) for index, value in enumerate(prior)])
     return files
 
@@ -181,10 +181,10 @@ def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
     from local_preflight_fixture import source_projection
     from transport_failure_fixture import source_projection as transport_source
-    from runtime_preparation_continuation_fixture import source as persistent_source
-    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v21',vm_activation=None,
+    from host_rebind_fixture import source as persistent_source, projection
+    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v22',vm_activation=None,
         local_preflight_source=source_projection(),transport_failure_source=transport_source(),
-        authority=dict(R=c.RULE['commit'],A=(c.RUNTIME_PREPARATION_BASELINE or {}).get('commit'),C=(c.RUNTIME_PREPARATION_CLOSURE or {}).get('commit')),
+        authority=dict(R=c.RULE['commit'],A=c.HOST_REBIND_BASELINE['commit'],C=c.HOST_REBIND_CLOSURE['commit']),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
             indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',
@@ -210,9 +210,7 @@ def journal_transition(implementation):
         transport_exits=[255,0],image_checks=[0,0],logical_compare_exit=0,resize_exit=0,
         all_streams_eof=True,historical_exit='UNKNOWN',old_commitments_refunded=False)
 
-    from vm_resumption_fixture import records
-    raw,index,boot=records()
-    activation=p.build_vm_resumption(raw,index,historical_boot=boot)
+    activation=projection()
     value['vm_activation']=activation
     value['old_boot_id']=activation['current_boot_id']
     value['old_vm']=copy.deepcopy(activation['vm'])

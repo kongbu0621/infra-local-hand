@@ -1,5 +1,26 @@
 # Execution guidance
 
+## Approved null-serial revision of the same HR1–HR4 batch (2026-10-11)
+
+The [revision baseline](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md), exact A
+`4af01900cfe462cec4762cb04966dab139a0a31c`, tree `99679292050d02d5ae75d88309c6473950a1d1a1`,
+is CLOSED by [Owner B](docs/governance/Q2_CORE_HOST_REBIND_NULL_OWNER_DECISION.md), event
+`LH-Q2-CORE-HOST-REBIND-NULL-CLOSURE-20261011-01`. The exact adjacent reply approves the null
+serial change and continued original HR1–HR4. Preserve both original/revision three-document bytes.
+Prior explicit HB2 adoption and private Q1 destination/frozen-payload approval remain in force.
+Use null for the new start, no serial file/forwarder, and explicit NOT_CAPTURED_NULL_BACKEND;
+all other configuration, current identity/protection, historical UNKNOWNs, source/SSH trust and
+failure boundaries stay. Legacy v1/v2 semantics remain unchanged. No new window, pool, attempt,
+refund or higher limit. Keep19 obligations and27497 MiB/8214 inodes. No per-substep approval.
+
+This supersedes the pending-serial stop below for the exact approved revision only. Independent
+C is bookkeeping only; D descends from it without squash. R/source/integrity, Owner mandate/
+authority, no exceptions and change control remain. Complete HR1 full implementation, verification,
+normal publication, exact D first CI, independent installations and all caller freezes before HR2.
+Retain the offline finding and historical private gate as history; new data never overwrites it.
+At C HR1 RESUMING_OFFLINE, HR2/HR3 NOT_ISSUED, HR4/H01/Q4/H11 NOT_RUN. No field action or
+core PASS is implied. Old HB2/RP2 callers remain terminal; NAS/peripherals stay paused.
+
 ## HR1 retained startup review: serial bound correction pending (2026-10-11)
 
 Owner's HR1–HR4 approval and independent C `608f8d70c8fd43b82b613f49b26d6870e5e7f944`

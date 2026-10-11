@@ -24,11 +24,13 @@ def test_two_fixed_archives_preserve_old_failure_and_exact_history():
     assert len(p.runtime_preparation_archive_files(raw)[0]) == 18
     assert previous == p.identity_maintenance_resume()
     assert legacy == p.persistent_maintenance_resume()
-    logical = dict(resume=p.maintenance_resume(), persistent_source=proof)
-    manifest = dict(schema='lhq-journal-growth-manifest/v21',
+    from host_rebind_fixture import source as current_source
+    current = current_source()
+    logical = dict(resume=p.maintenance_resume(), persistent_source=current)
+    manifest = dict(schema='lhq-journal-growth-manifest/v22',
         inputs=p.encode_manifest_inputs(logical),
-        resume=p.encode_maintenance_resume(logical['resume'], proof))
-    assert p.decode_manifest_inputs(manifest, previous) == logical
+        resume=p.encode_maintenance_resume(logical['resume'], current))
+    assert p.decode_manifest_inputs(manifest, p.runtime_preparation_maintenance_resume()) == logical
     assert len(DUMP(manifest['resume'])) < len(DUMP(logical['resume']))
     assert proof['summary']['remote_exit'] == 'UNKNOWN'
     assert proof['summary']['core_cases'] == 'NOT_RUN'
@@ -125,12 +127,12 @@ def test_independent_consumers_reject_source_projection_changes(fault):
 def test_old_full_costs_and_new_full_costs_are_separate():
     costs = p.maintenance_commitments()
     rows = costs['generations']
-    assert len(rows) == len({r['session'] for r in rows}) == 18
+    assert len(rows) == len({r['session'] for r in rows}) == 19
     assert all((r['bytes'], r['inodes'], r['cpu_seconds']) == (1296*1048576,370,120)
         for r in rows[:16])
-    assert rows[-2:] == [dict(session=s,bytes=2200*1048576,inodes=402,cpu_seconds=240)
-        for s in ('lhqjgrow-20261011a','lhqjgrow-20261011b')]
-    assert sum(r['cpu_seconds'] for r in rows) == 2400
+    assert rows[-3:] == [dict(session=s,bytes=2200*1048576,inodes=402,cpu_seconds=240)
+        for s in ('lhqjgrow-20261011a','lhqjgrow-20261011b','lhqjgrow-20261011c')]
+    assert sum(r['cpu_seconds'] for r in rows) == 2640
     assert costs['identity_preparation']['host_bytes'] == costs['runtime_preparation']['host_bytes'] == 4194304
     assert costs['protection_read']['source_preparation_included'] is True
     if d: assert costs == d._maintenance_commitments()
