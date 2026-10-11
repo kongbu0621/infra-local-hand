@@ -96,11 +96,11 @@ def test_root_must_match_approved_object_before_enumeration(fixture, field):
     assert not any(name == "." for name, _ in fixture.flags)
 
 
-def test_source_bound_retained_root_accepts_historical_owner_only_at_leaf(fixture, monkeypatch):
+def test_source_bound_retained_tree_preserves_historical_owners_but_not_ancestors(fixture, monkeypatch):
     f = fixture
     root_inode = f.tree.stat().st_ino
     child_inode = (f.tree / 'child').stat().st_ino
-    changed = {root_inode}
+    changed = {root_inode, child_inode, (f.tree / 'child' / 'payload').stat().st_ino}
     real_stat, real_fstat = os.stat, os.fstat
     class HistoricalOwner:
         def __init__(self, info): self.info = info
@@ -110,8 +110,9 @@ def test_source_bound_retained_root_accepts_historical_owner_only_at_leaf(fixtur
         return HistoricalOwner(info) if info.st_ino in changed else info
     monkeypatch.setattr(os, 'stat', lambda *a, **kw: observe(real_stat(*a, **kw)))
     monkeypatch.setattr(os, 'fstat', lambda *a, **kw: observe(real_fstat(*a, **kw)))
-    assert f.e._capacity_retained_snapshot()
-    changed.add(child_inode)
+    rows = f.e._capacity_retained_snapshot()
+    assert all(row['identity'][3] == 54321 for row in rows[0]['files'])
+    changed.add(f.root.stat().st_ino)
     with pytest.raises(d.DispatchError, match='PATH_PROTECTION'):
         f.e._capacity_retained_snapshot()
 
@@ -202,7 +203,7 @@ def test_root_replacement_is_not_hidden_by_held_old_descriptor(fixture, monkeypa
         f.tree.mkdir(mode=0o700)
         return result
     monkeypatch.setattr(f.e, "stable_read_at", replace)
-    with pytest.raises(d.DispatchError, match="RETAINED_DRIFT"):
+    with pytest.raises(d.DispatchError, match="RETAINED_(DRIFT|IDENTITY)"):
         f.e._capacity_retained_snapshot()
     assert (f.root / "retained-old-tree" / "child" / "payload").read_bytes() == b"original payload"
 

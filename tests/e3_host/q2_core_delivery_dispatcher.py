@@ -6650,11 +6650,14 @@ class FieldEffects:
         roots = {root['path']:root for root in approved['retained_preparation']['paths']}
         def protection(info, path):
             root = roots.get(path)
-            if root is None:
-                self._capacity_protection(info)
-            else:
+            if root is not None:
                 _cap((info.st_dev,info.st_ino)==(root['device'],root['inode']), 'RETAINED_IDENTITY')
-                _cap(not info.st_mode & 0o022, 'PATH_PROTECTION')
+            # Historical data can retain its original account. Its held root,
+            # stable per-object metadata and content hashes establish continuity;
+            # the current execution account is not its owner policy.
+            _cap(root is not None or any(path.startswith(name + '/') for name in roots),
+                 'RETAINED_IDENTITY')
+            _cap(not info.st_mode & 0o022, 'PATH_PROTECTION')
         def directory(path):
             return self._held_directory(path, guard=guard, validate=self._capacity_protection,
                 validate_leaf=lambda info:protection(info,path))
@@ -6681,7 +6684,7 @@ class FieldEffects:
             for name in sorted(names):
                 _cap(re.fullmatch(r'[A-Za-z0-9._-]+', name) and name not in ('.', '..'), 'RETAINED_NAME')
                 child = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
-                self._capacity_protection(child)
+                protection(child, path + '/' + name)
                 _cap(child.st_dev == device and not stat.S_ISLNK(child.st_mode), 'RETAINED_TYPE')
                 if stat.S_ISDIR(child.st_mode):
                     opened = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
