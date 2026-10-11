@@ -1,5 +1,20 @@
 # Execution guidance
 
+## Proposed guest resumption into original core (2026-10-12)
+
+Exact A `54036654c399cdab0386a65f53f06283c2a92032`, tree
+`f20da7b12e52c292a147797746fec5448affc269`, contains the
+[requirements](docs/a2-execution/q2-core-guest-resumption/REQUIREMENTS.md),
+[architecture](docs/a2-execution/q2-core-guest-resumption/ARCHITECTURE.md) and
+[plan](docs/a2-execution/q2-core-guest-resumption/IMPLEMENTATION_PLAN.md).
+Scope `LH-Q2-CORE-GUEST-RESUMPTION-v1` / GR1–GR4 is OPEN / NOT APPROVED under the same R.
+It proposes one new original-six-command verification of the same retained VM, then conditional
+original unissued 11c maintenance and 07a H01→Q4→H11, without another startup or maintenance
+generation. Total proposed reservations are 27503 MiB/8406 inodes, retaining all nineteen
+obligations. Original HR2 failure, freeze and callers stay unchanged. No new implementation,
+caller, preparation pool or field action has been issued. Owner's exact A/scope and outbound
+decision is pending; ordinary source repairs remain separate from that new field authority.
+
 ## Core delivery priority reaffirmed (2026-10-12)
 
 Owner again directs core progress and suppression of unwanted peripheral work.

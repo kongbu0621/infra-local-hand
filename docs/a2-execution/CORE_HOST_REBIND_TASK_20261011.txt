@@ -1,4 +1,13 @@
-本地 Codex 实际接续结果（2026-10-12）：
+当前待确认的最小接续（2026-10-12）：
+
+A 54036654c399cdab0386a65f53f06283c2a92032，LH-Q2-CORE-GUEST-RESUMPTION-v1 / GR1–GR4。
+三层方案位于 q2-core-guest-resumption/。一次新的原六命令 guest 核验，通过才接原未发行
+11c维护和07a H01→Q4→H11；不重新启动VM、不另增维护代次。27503 MiB/8406 inodes，
+十九份维护义务保留。旧19件启动原件、24个caller和17份源码已离线重核，旧终态不变。
+状态OPEN / NOT APPROVED；准确A/范围及原固定端点/载荷的出站决定待Owner确认。
+本轮尚无新实现、执行准备池、caller或现场动作；不要执行下面历史批次的冻结入口。
+
+本地 Codex 已保留的实际接续结果（2026-10-12）：
 
 原A ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0、null修订A
 4af01900cfe462cec4762cb04966dab139a0a31c 的既有批准保持真实记录；两版A六份文档原字节保持。
