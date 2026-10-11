@@ -1,5 +1,31 @@
 # Execution guidance
 
+## Pending original core runtime preparation continuation (2026-10-11)
+
+The [fixed proposal](docs/governance/Q2_CORE_RUNTIME_PREPARATION_CONTINUATION_BASELINE.md)
+is OPEN / NOT APPROVED: exact A `e64d4d73488026247b03fd7d41387ef8f3887dd8`, tree
+`b749cdd0a71e7921502f4456300da39c323cb377`, scope
+`LH-Q2-CORE-RUNTIME-PREPARATION-CONTINUATION-v1` / RP1–RP3. Preserve its three document bytes.
+The retained 11a five originals, immutable IR1 freeze, IR2 terminal, actual caller/coordinator/
+custodian completion and twelve dependency hashes were verified offline. The existing 798720-byte
+identity archive remains unchanged; a proposed separate 18-member failure envelope is 409600 bytes
+in memory only. The proposal uses two fixed held archive inputs, each under the existing 1 MiB
+ceiling, with the existing 55-original custody and 256-FD limit. New lifecycle/source/payload checks
+remain required; no new archive file, protected source copy or caller has been created.
+
+RP1 would adopt the merged ordinary slice repair and wire/verify/publish/freeze the retained failure
+and full costs; RP2 would permit one new 11b maintenance; only full success and independent consumers
+would permit RP3, original 07a H01→Q4→H11. Proposed total is 25283 MiB/7364 inodes, including eighteen
+full maintenance obligations. All old obligations, including 11a's full 2200 MiB/402 inodes, remain.
+The current approved total remains 23079 MiB/6834 inodes until an exact new decision. No budget refund
+or retroactive multiplication is permitted. Current level-two execution/transport/capture limits stay.
+
+Owner has not closed this exact R/A/scope; no B or C exists. Prepare the exact fixed destination and
+private source/path payload for one explicit batch decision. Do not launch new SSH, reinterpret the
+general core-progress instruction as that decision, replay either spent caller, or implement this
+new continuation before closure. Ordinary retained-return/source work within existing authority
+remains available. RP1 NOT_STARTED, RP2 NOT_ISSUED, RP3/H01/Q4/H11 NOT_RUN; peripherals stay disabled.
+
 ## Current approved core identity and resource continuation (2026-10-11)
 
 The [fixed proposal](docs/governance/Q2_CORE_IDENTITY_RESOURCE_CONTINUATION_BASELINE.md)
