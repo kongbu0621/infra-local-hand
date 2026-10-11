@@ -36,3 +36,17 @@ symlink、六镜像身份与保护、监听空/占用、非零退出、双EOF缺
 当前HB1 VERIFYING、HB2 NOT_ISSUED。RP2继续INVOKED_FAILED_UNCONSUMED，旧终态和
 全部caller保持；H01/Q4/H11 NOT_RUN。NAS和外围暂停。本批完成或失败都不重放、补采、
 更换wrapper或修复现场；读取事实不预先授权启动、guest核验、维护或07a。
+
+## 首次候选 CI 与测试隔离修复
+
+候选 `d8bbad055d819cd5f40307e75c5c0917855c495f` 的首次CI `38138701783` attempt 1
+保留为失败：Linux 7830 passed / 89 skipped / 48 failed；48项都在新增文件/管道测试的
+资源准入处提前失败。单文件运行正常，但整个pytest进程此前累计的CPU/RSS被该单次
+读取测试误当成自身用量。Windows2025 passed /1391 skipped，其独立安装10/10通过；
+该候选本地独立安装94检查/292命令通过。主工作区第一次构建因用户未跟踪`.codex`
+被洁净来源保护拒绝，文件保留，安装验收改在准确候选的独立checkout完成。
+
+只为文件/管道单元测试提供明确的合成正值预算样本；真实Budget的累计CPU、高水位、
+限额与生产代码保持原字节。独立子进程中的真实FD/AS/CPU/RSS测试和完整私有载体
+仍运行原Budget。失败不取消、不重跑替换；新准确D另取自己的首次CI/独立安装结果。
+HB2尚未发行，没有现场读取或审批拒绝。

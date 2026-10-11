@@ -77,7 +77,17 @@ def run(fixture, **kwargs):
     root, request = fixture
     held = h.Held(lambda: None, root=str(root), tool_owner=os.geteuid())
     output = h.Outputs(held, '/out')
-    budget = h.Budget()
+    # File/pipe unit cases are hosted by the entire pytest process. Its prior
+    # suite CPU/RSS is not this synthetic reader's usage. Native resource tests
+    # below and the private carrier tests run the unchanged Budget in fresh
+    # processes; this seam supplies an explicitly synthetic positive sample.
+    class FixtureBudget:
+        last = dict(cpu_seconds=0.1, peak_rss_bytes=16777216, elapsed_seconds=0.1)
+
+        def check(self):
+            return self.last
+
+    budget = FixtureBudget()
     try:
         rc = h.run_once(request, held=held, output=output, budget=budget,
                         host=kwargs.pop('host', host), process=kwargs.pop('process', absent),
