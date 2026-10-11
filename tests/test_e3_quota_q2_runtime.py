@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -60,6 +61,33 @@ def fixture_open(path, *, directory=False):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrative runtime")
 class ConfigAndRuntimeTests(unittest.TestCase):
+    def test_native_exec_keeps_root_when_open_slot_returns_fd_three(self):
+        script = '''
+import os,sys
+from types import SimpleNamespace
+from unittest.mock import patch
+from admin.local_hand_quota_observer import q2_runtime as r
+original_exec=os.execve
+def execute(fd, argv, env):
+    original_exec(fd,[sys.executable,"-c","import os;os.fstat(3);print('ROOT_FD_RETAINED')"],env)
+def root(*args, **kwargs):
+    fd=os.open('/dev/null',os.O_RDONLY|os.O_CLOEXEC)
+    assert fd==3 and not os.get_inheritable(fd)
+    return fd
+cfg=SimpleNamespace(active=lambda:SimpleNamespace(as_dict=lambda:{'roots':[{'role':'work'}]}),
+    data=lambda:{'programs':{'native':{'path':sys.executable}}})
+with patch.object(r,'host',return_value={}), patch.object(r,'native_context',return_value=(None,None)), \
+     patch.object(r.c,'executable',side_effect=lambda pin:os.open(pin['path'],os.O_RDONLY|os.O_CLOEXEC)), \
+     patch.object(r.worker,'open_slot',side_effect=root), patch.object(r,'deadline',return_value=10**30), \
+     patch.object(r.os,'execve',side_effect=execute) as replacement:
+    with patch.object(r.os,'supports_fd',{replacement}):r.native(cfg,'work')
+'''
+        environment = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "tools"))
+        result = subprocess.run([sys.executable, "-c", script], stdin=subprocess.DEVNULL,
+                                capture_output=True, env=environment, timeout=5)
+        self.assertEqual(0, result.returncode, result.stderr.decode())
+        self.assertEqual(b"ROOT_FD_RETAINED\n", result.stdout)
+
     def test_query_passes_verified_invocation_to_real_native_children(self):
         from types import SimpleNamespace
         cfg = config()
