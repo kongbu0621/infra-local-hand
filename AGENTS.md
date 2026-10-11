@@ -42,12 +42,33 @@ work. Necessary sanitized records and implementation use normal PR merge commits
 archive/caller/machine data remain private. This closure supersedes older no-new-window clauses
 only within RP1–RP3; it proves neither readiness nor maintenance/core PASS.
 
-The [RP1 implementation record](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_IMPLEMENTATION_20261011.md)
-tracks the two fixed archives, old11a failure binding, full eighteen-obligation costs and independent
-consumers. The new archive was prepared privately and both existing originals and old callers remain
-unchanged. Local source/FD/caller verification is underway; exact D first CI, normal publication,
-independent installations, complete bounds and final freezes remain mandatory before RP2. No new
-maintenance or core field step has occurred. Continue this approved batch without substep approval.
+The [RP1 freeze and RP2 return](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_FIELD_20261011.md)
+records final D `934122fab56f1a78f43dbc773e0de9598ea63078`, normal PR #16 merge
+`b3c828face975c9b28a6bbfc06ea78f51cde8113`, its own first CI `38133163908` attempt 1
+3/3 success, both CI installations and local independent installed 94 checks/292 commands.
+Full retained-source/lifecycle/payload bounds and actual bounded local verification passed;
+source copies, both archives and all fifteen new caller/dependency hashes were frozen. RP1 is complete.
+
+The unique 11b caller ran its one local preflight and returned exit 3 / BLOCKED /
+GROWTH_ACTIVATION_HOST_BOOT. The retained activation host boot did not match the window binding;
+the actual preflight window binding and frozen activation retain the differing UUIDs privately.
+The offline comparison reused those returns without a new observation. Do not infer current VM
+state, guest boot, installation or the cause of that mismatch. Same-window execute was not invoked, SSH is zero,
+and the consumed marker and all nine maintenance outputs are absent. Ten actual local returns,
+their private index, immutable freeze and separate terminal are retained. Caller exit 3 and both
+local pipe EOFs are actual completion, not maintenance success; no guest/execute result exists.
+Returned CPU/RSS 0/0 are pre-sample initialization values, not observed zero usage or refund evidence.
+
+RP2 is INVOKED_FAILED_UNCONSUMED / STOP_AND_RETAIN. The separate terminal gate is
+RP2_INVOKED_FAILED_UNCONSUMED_RP3_NOT_RUN; RP3/H01/Q4/H11 remain NOT_RUN. No poweroff token,
+backup, growth, maintenance restart or core package was issued. All fifteen frozen new caller
+hashes and the old11a twelve hashes/freeze/terminal remain unchanged. Fifteen old generations
+remain consumed; old09c/old10b and new11b are invoked unconsumed preflights. All eighteen full
+obligations and 25283 MiB/7364 inodes remain without refunds. This unconsumed failure is not
+replay authority. Do not replay either new caller or any old caller, replace host/VM identity,
+relax checks, collect supplementary field evidence, probe SSH, start/recover/clean up/roll back,
+or open another window under this batch. Continue retained-return/source offline work only;
+NAS discovery/admission stay disabled and peripherals remain paused.
 
 ## Current approved core identity and resource continuation (2026-10-11)
 
