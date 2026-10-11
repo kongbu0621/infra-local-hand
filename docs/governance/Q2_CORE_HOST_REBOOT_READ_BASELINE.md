@@ -10,6 +10,10 @@ Scope `LH-Q2-CORE-HOST-REBOOT-READ-v1`，仅HB1–HB2。
 总预约采用25287 MiB/7492 inodes及十八份维护义务，无退款；其余保护和限制不变。
 在 C：HB1 NOT_STARTED、HB2 NOT_ISSUED、H01/Q4/H11 NOT_RUN。
 
+后续[实际冻结与返回](../a2-execution/Q2_CORE_HOST_REBOOT_READ_FIELD_20261011.md#hb1-最终冻结与-hb2-实际返回)
+记录HB1 COMPLETE、HB2 CONSUMED_FIXED_HOST_READ_COMPLETE。该读取已终结，不能重放或
+补采；当前镜像设备号与历史不同，旧身份没有被放行，H01/Q4/H11仍NOT_RUN。
+
 ## 原提议记录（不作为当前未批准状态）
 
 规则R `10d2a5c827964989f41ca6e8eeac3d44de6d0f04`，直接规则来源与完整性、Owner
