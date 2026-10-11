@@ -607,8 +607,12 @@ class JournalDevice:
  block_size=1024 << log_size, filesystem_bytes=blocks * (1024 << log_size))
  def recheck(self):
   self.check()
-  require(metadata(os.fstat(self.fd)) == self.info and
- metadata(os.stat(self.path, follow_symlinks=False)) == self.info
+  # Reads and resize2fs legitimately update a block node's timestamps. Bind
+  # the device object and permissions, not metadata changed by our own I/O.
+  stable=lambda value:{key:item for key,item in value.items()
+ if key not in ("atime_ns","mtime_ns","ctime_ns")}
+  require(stable(metadata(os.fstat(self.fd))) == stable(self.info) and
+ stable(metadata(os.stat(self.path, follow_symlinks=False))) == stable(self.info)
  and os.stat(self.path, follow_symlinks=False).st_rdev == self.rdev,
  "GROWTH_JOURNAL_DEVICE_DRIFT")
   require(os.readlink(self.syslink) == self.syslink_target and os.path.realpath(self.syslink) == self.syspath,
@@ -1722,7 +1726,8 @@ class GuestMaintenance:
   require(all(device[key] == before["journal_device"][key] for key in ("uuid", "serial", "node"))
  and device["superblock"]["features"] == before["journal_device"]["superblock"]["features"]
  and device["superblock"]["block_size"] == before["journal_device"]["superblock"]["block_size"]
- and device["superblock"]["filesystem_bytes"] == before["journal_device"]["superblock"]["filesystem_bytes"],
+ and device["superblock"]["filesystem_bytes"] in
+ (before["journal_device"]["superblock"]["filesystem_bytes"],NEW_SIZE),
  "GROWTH_POST_DEVICE_CHANGED")
   inventory=GuestInventory(self.description, self.window.check)
   self.inventory=inventory
@@ -1737,6 +1742,9 @@ class GuestMaintenance:
   self.device.recheck()
   self.once("resize2fs")
   self.stage="RESIZE2FS_STARTED"
+  # A completed prior resize is reconciled above by exact UUID, device,
+  # features, block size and final size. resize2fs is then a bounded no-op;
+  # it cannot double the fixed-size block device on a resumed post phase.
   self.active_command=bound_command(before["resize2fs"], [self.device.path], self.window.check)
   result=self.active_command.collect()
   require(result["returncode"] == 0 and result["both_eof"], "GROWTH_RESIZE2FS_FAILED")

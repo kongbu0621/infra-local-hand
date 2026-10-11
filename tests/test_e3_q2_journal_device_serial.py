@@ -127,6 +127,23 @@ def test_device_accepts_exact_linux_virtio_serial_without_newline(block_boundary
     assert trace.count("close") == 1
 
 
+def test_device_io_timestamps_do_not_invalidate_held_block_identity(block_boundary):
+    construct, trace = block_boundary
+    device = construct(SERIAL.encode())
+    try:
+        info = g.os.fstat(device.fd)
+        info.st_atime_ns += 10
+        info.st_mtime_ns += 10
+        info.st_ctime_ns += 10
+        device.recheck()
+        info.st_ino += 1
+        with pytest.raises(g.r.ObservationError, match='DEVICE_DRIFT'):
+            device.recheck()
+    finally:
+        device.close()
+    assert trace.count("close") == 1
+
+
 @pytest.mark.parametrize("raw", [
     b"", b"wrong-journal", SERIAL[:-1].encode("ascii"),
     SERIAL.encode("ascii") + b"\n", SERIAL.encode("ascii") + b"\r\n",
