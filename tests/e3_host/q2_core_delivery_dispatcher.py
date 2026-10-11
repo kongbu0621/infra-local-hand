@@ -3053,7 +3053,8 @@ def _prep_settings(case, expires_at):
             "storage_bytes": v["storage_bytes"], "storage_inodes": v["storage_inodes"]}
     m = b["management"]
     settings = {"identity": identity, "original_budgets": b["operation"],
-        "limits": {"max_queued": 1, "max_running": 1, "retained_bytes": 8388608,
+        "limits": {"max_queued": 1, "max_running": 1,
+            "retained_bytes": b["operation"]["reservation_bytes"] + 65536,
             "ledger_emergency_bytes": 65536, "requests_per_minute": 1},
         "controllers": controllers,
         "management": {"receive_ns": NS, "stop_ns": NS, "storage_bytes": 1048576,

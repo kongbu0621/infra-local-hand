@@ -56,6 +56,24 @@ def test_fixed_settings_validate_under_original_candidate(case):
 
 
 @pytest.mark.parametrize("case", d.CASES)
+def test_original_task_fits_empty_broker_with_emergency_space(case):
+    from types import SimpleNamespace
+    from local_hand_jobs.broker import Broker
+    from local_hand_jobs.contract import JobError
+    from local_hand_jobs.policy import Policy
+    plan, receipt, children, helpers = translated(case)
+    assembled = d._prep_translate(case, plan, receipt, children, helpers)["assembled"]
+    policy = Policy(assembled["policy"])
+    reserved = d._budget(case["phases"])["operation"]["reservation_bytes"]
+    broker = SimpleNamespace(policy=policy, state=SimpleNamespace(all=lambda tx: []))
+    Broker._capacity(broker, None, None, reserved)
+    # The former configuration refused even the first submission.
+    broker.policy = SimpleNamespace(limits=dict(policy.limits, retained_bytes=reserved))
+    with pytest.raises(JobError, match="Admitted queue or retained evidence budget"):
+        Broker._capacity(broker, None, None, reserved)
+
+
+@pytest.mark.parametrize("case", d.CASES)
 def test_exact_candidate_translation_and_scoped_schema_only(case):
     plan, receipt, children, helpers = translated(case)
     before = copy.deepcopy((plan, receipt))
