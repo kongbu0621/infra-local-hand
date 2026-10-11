@@ -1337,9 +1337,16 @@ def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inpu
     approved_row, approved_header = p.approved_input_member(
         approved_inputs_raw, amendment=amendment)
     approved = c.document(approved_inputs_raw, limit=1_048_576, newline=True)
-    c.require(approved['reconciliation']['journal_transition']['source_files'] == {
-        name:dict(bytes=len(raw),sha256=c.sha256(raw))
-        for name,raw in static_freeze['journal_sources'].items()}, 'CORE_FREEZE_JOURNAL_SOURCE')
+    transition = approved['reconciliation']['journal_transition']
+    if transition.get('schema') == 'local-hand-q2-core-journal-transition/v24':
+        from .q2_journal_continuation import MAINTENANCE_IMPLEMENTATION, MAINTENANCE_SOURCES
+        c.require(transition['maintenance_implementation'] == MAINTENANCE_IMPLEMENTATION,
+                  'CORE_FREEZE_JOURNAL_IMPLEMENTATION')
+        journal_pins = MAINTENANCE_SOURCES
+    else:
+        journal_pins = {name:dict(bytes=len(raw),sha256=c.sha256(raw))
+                        for name,raw in static_freeze['journal_sources'].items()}
+    c.require(transition['source_files'] == journal_pins, 'CORE_FREEZE_JOURNAL_SOURCE')
     binding = local_anchor["binding_preimage"]
     writer = copy.deepcopy(c.validate_local_writer(binding["writer"]))
     tokens, argv = local_anchor["tokens"], local_anchor["argv"]
