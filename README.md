@@ -12,7 +12,7 @@
 鉴权、任务身份、数据保护、资源上限和结果完整性属于核心保障。
 MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 
-## 核心实际状态（2026-10-11）
+## 核心实际状态（2026-10-12）
 
 **核心代码和验收脚本已经存在；当前目标环境的 H01/Q4/H11 整链尚未验收。**
 
@@ -21,20 +21,18 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 | 作业后端 | 已有提交、执行、状态查询、取消、同账本恢复观测和结果读取；CLI/MCP 共用后端。恢复不重放业务，证据不足时保留 UNKNOWN。 |
 | 验收链 | 已有 H01 正常执行、Q4 运行中取消、H11 同任务恢复观测脚本及离线回归；原 `lhqcore-20261007a` 三案仍为 NOT_RUN。 |
 | 原现场环境 | 曾完成原配置 VM 启动及[当前 guest 六命令核验](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md)。随后宿主机重启，旧运行身份不再适用于当前环境。 |
-| 最新现场结果 | [HB1/HB2 已完成](docs/a2-execution/Q2_CORE_HOST_REBOOT_READ_FIELD_20261011.md)：旧 PID/pidfile 缺失、固定端口无监听；六镜像当前保护检查通过，但 device/inode 组合与旧记录不符。 |
-| 当前代码验证 | 最新代码合入点 `9f2156d` 的 [CI 三项成功](https://github.com/kongbu0621/infra-local-hand/actions/runs/38140957241)，Linux/Windows 独立安装通过。后续状态与方案提交仅改文档。 |
+| 最新现场结果 | [HR2 单次启动成功](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)，采用批准的 HB2 基线和 null 串口；随后唯一一次 guest SSH 在握手阶段被连接对端重置，未获得 guest 报告，已停止保留。 |
+| 当前代码验证 | 准确 D `0b84bbc` 经 PR #25 正常合入 `3d3d807`；[首次 CI 三项成功](https://github.com/kongbu0621/infra-local-hand/actions/runs/38152488046)，Linux 7950、Windows 2089 项通过，两平台及本地独立安装通过。 |
 
 此前 [RP2 维护预检](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_FIELD_20261011.md)
 因宿主 boot 与旧 activation 不一致而停止，SSH 为 0、消费标记未创建；它和其他旧返回
 保持原样，不重放。HB2 固定读取成功不等于 VM、guest 或核心验收通过。
 
-Owner已批准[HR1–HR4整批接续](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md)：
-采用HB2新基线，再接原配置启动、现有guest核验、一次维护及原H01/Q4/H11。
-[HR1私有源码离线复核](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)发现原启动器
-直接写串口文件，未受捕获上限约束，与方案假设不符；现场尚未启动，未消耗新调用。
-Owner已批准[仅串口后端改为null的修订](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)，
-HR1正在接入新基线证明、独立消费者和私有调用器。原镜像、目的地/载荷、会话、次数、费用保持；复用已有
-后端、验收脚本和安装。历史文件系统/内容连续性仍UNKNOWN，NAS和外围继续暂停。
+已批准的[HR1–HR4接续](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md)和
+[null串口修订](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)已完成HR1实现、验证与冻结。
+HR2启动原件通过，但guest传输失败，未形成最终v3数据冻结；HR3维护未发行，H01/Q4/H11
+仍NOT_RUN。冻结程序和原件保持，没有重试或追加探测；连接重置的guest侧原因尚未知。
+十九份维护义务及完整费用保留，历史文件系统/内容连续性仍UNKNOWN；NAS和外围继续暂停。
 
 ## 使用与开发入口
 

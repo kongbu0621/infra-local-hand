@@ -1,5 +1,36 @@
 # Execution guidance
 
+## HR1 complete; HR2 guest transport failed and retained (2026-10-12)
+
+The [field record](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md) records exact D
+`0b84bbcf8108522305d1e23c9378f6d0a8f50bcc`, normal PR #25 merge
+`3d3d8075cdd45665217a2be9c269eed6ccbbb998`, and its first CI `38152488046`, attempt 1,
+3/3 success. Linux 7950 and Windows 2089 source tests passed; both CI installations and
+local independent installation (94 checks/292 commands) passed. The earlier candidate's
+Windows pytest environment-length failure remains recorded, not cancelled or replaced.
+HR1 is complete. Twenty-four private programs, seventeen protected source copies, exact
+targets/payloads and all four stage slots were frozen before any field action.
+
+Unique HR2 startup completed once with null serial, original VM limits, actual caller/tool
+exit 0 and both EOFs. All nineteen startup originals passed independent consumption.
+Unique guest caller then invoked one SSH and actually exited 3 with both caller EOFs.
+Its guest stdout is empty; retained SSH stderr says the peer reset the connection during
+key exchange. No guest verification report exists. This establishes a transport failure,
+not its guest-side cause. Remote exit remains UNKNOWN; do not invent readiness, an SSH
+service fault, a host-key mismatch or a verification PASS. The SSH child completion row
+was not persisted after the capture exception; do not infer its exit code from caller 3.
+
+Nine guest originals/index and separate terminal `GUEST_FAILED_STOP_AND_RETAIN` stay
+private. HR2 is CONSUMED_FAILED / STOP_AND_RETAIN; HR3 is NOT_ISSUED and HR4/H01/Q4/H11
+remain NOT_RUN. No final v3 data freeze, maintenance or original core package followed.
+The immutable freeze and all twenty-four program hashes remain unchanged. Both stage
+parents reject the terminal. No retry, new observation, SSH-trust reset, extra startup,
+maintenance window, cleanup, rollback, recovery or business-service stop is authorized
+by this failed batch. Retained-return/source offline work only; do not change a frozen
+caller and continue. All nineteen full obligations and 27497 MiB/8214 inode reservations
+remain without refunds. Original/revised A bytes, historical UNKNOWNs and old HB2/RP2
+terminals stay. NAS/new-job admission remains disabled; peripherals remain paused.
+
 ## Approved null-serial revision of the same HR1–HR4 batch (2026-10-11)
 
 The [revision baseline](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md), exact A

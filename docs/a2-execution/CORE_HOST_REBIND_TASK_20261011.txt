@@ -1,20 +1,21 @@
-本地 Codex 接续状态（2026-10-11）：
+本地 Codex 实际接续结果（2026-10-12）：
 
-原A ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0 的HR1–HR4已获明确批准。
-Owner又明确批准修订A 4af01900cfe462cec4762cb04966dab139a0a31c 的null串口调整，
-新独立C为4acf0dbfe99d0c7e170b6102f861fa9671d09da2。两版A六份文档字节保持。
-原六镜像基线、原Q1目的地/冻结载荷及整批动作授权继续有效，无需重复请示。
+原A ee69dc80db82c3fbf3bd2c5d5c0e0ad0882a84c0、null修订A
+4af01900cfe462cec4762cb04966dab139a0a31c 的既有批准保持真实记录；两版A六份文档原字节保持。
 
-当前HR1在实现和验证：v3重新消费HB2/RP2及旧两归档，采用当前六镜像，保留历史
-连续性UNKNOWN；启动null与维护null分别重建。十九份义务及27497 MiB/8214 inodes
-不退款，不重复核心捕获，不另开准备池。旧file串口缺口和旧阻塞gate只作历史保留。
+HR1完成。准确D 0b84bbcf8108522305d1e23c9378f6d0a8f50bcc，正常PR #25合并
+3d3d8075cdd45665217a2be9c269eed6ccbbb998。首次CI38152488046 attempt1三项成功，
+Linux7950/Windows2089通过；两平台独立安装和本地94检查/292命令通过。
+24个私有程序、17份受保护源码、全部目标/载荷及未来数据槽已冻结。
 
-完成所有源码、私有四阶段调用器、完整大小/FD/资源生命周期验证，正常PR发布准确D，
-通过其首次CI、独立安装及全部冻结后，再一次HR2临启动检查→启动→现有六命令guest核验。
-实际原件与真实完成全部通过后填预定数据槽，HR3唯一11c预检/PASS同窗维护；完整维护
-和两消费者成功才HR4原07a H01→Q4→H11。批内不逐步请示，程序冻结后不修改。
+HR2唯一启动已成功，19件原件独立通过。唯一guest调用发起一次SSH，握手阶段被连接
+对端重置，guest stdout为空，无核验报告；caller实际退出3且双EOF，远端退出UNKNOWN。
+9件guest原件、索引和独立终态GUEST_FAILED_STOP_AND_RETAIN保持私有。
+不可变freeze及24份程序摘要经返回后核对不变，后续父入口受终态门阻止。
 
-HR2/HR3 NOT_ISSUED，H01/Q4/H11 NOT_RUN。尚无现场启动、SSH、维护或核心包。
-失败/未知/漂移停止保留；禁止旧caller重放、重试、补采、清理、恢复或追加窗口。
-不新增串口文件、FIFO或日志转发器。NAS及外围继续暂停。
-当前进度与历史依据见Q2_CORE_HOST_REBIND_FIELD_20261011.md。
+HR2 CONSUMED_FAILED / STOP_AND_RETAIN；HR3 NOT_ISSUED，HR4/H01/Q4/H11 NOT_RUN。
+没有最终v3数据冻结、维护或核心包。不得改冻结caller后继续、重试、补采、重置信任、
+额外启动/窗口、清理、回滚或恢复。后续仅已有返回和源码离线工作，不推断sshd故障或就绪。
+完整十九份维护义务和27497 MiB/8214 inodes预留保留，无退款。历史连续性UNKNOWN不变；
+原HB2/RP2与更早终态不重放。NAS及外围继续暂停。
+完整实际返回见Q2_CORE_HOST_REBIND_FIELD_20261011.md。
