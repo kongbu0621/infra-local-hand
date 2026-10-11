@@ -5,7 +5,8 @@ The administrator supplies existing finite grants, storage and process parents.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from copy import deepcopy
 import hashlib
 import os
 from pathlib import PurePosixPath
@@ -56,20 +57,33 @@ def overlap(a, b):
 class Config:
     wire: bytes
     path: str
+    _data: dict = field(init=False, repr=False, compare=False)
+    _grants: tuple = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        # Parsed declarations belong to these immutable bytes, never to a
+        # caller's mutable buffer or to a later configuration at the same path.
+        object.__setattr__(self, "wire", bytes(self.wire))
+        data = q._load(self.wire, LIMIT, 18)
+        grants = tuple((key, g.decode_grant(q._canonical(value, g.GRANT_LIMIT)))
+                       for key, value in data["grants"].items())
+        object.__setattr__(self, "_data", data)
+        object.__setattr__(self, "_grants", grants)
 
     @property
     def digest(self):
         return hashlib.sha256(self.wire).hexdigest()
 
     def data(self):
-        return q._load(self.wire, LIMIT, 18)
+        return deepcopy(self._data)
 
     def active(self):
-        return self.grants()[self.data()["service"]["request_id"]]
+        return self.grants()[self._data["service"]["request_id"]]
 
     def grants(self):
-        return {key: g.decode_grant(q._canonical(value, g.GRANT_LIMIT))
-                for key, value in self.data()["grants"].items()}
+        # Grants hold immutable canonical bytes. Return a fresh mapping so
+        # consumers cannot alter a later lookup while reusing validated grants.
+        return dict(self._grants)
 
 
 def decode(raw, path, digest):

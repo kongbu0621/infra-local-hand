@@ -61,6 +61,35 @@ def fixture_open(path, *, directory=False):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrative runtime")
 class ConfigAndRuntimeTests(unittest.TestCase):
+    def test_bound_config_reuses_validation_without_sharing_mutable_views(self):
+        cfg = config()
+        expected = cfg.data()
+        with mock.patch.object(g, "decode_grant", wraps=g.decode_grant) as decode:
+            cfg = c.Config(cfg.wire, cfg.path)
+            original = cfg.active()
+            for _ in range(12):
+                cfg.data()["service"]["request_id"] = "different"
+                cfg.data()["grants"].clear()
+                cfg.grants().clear()
+                cfg.active().as_dict()["roots"].clear()
+                self.assertEqual(original, cfg.active())
+            self.assertEqual(len(expected["grants"]), decode.call_count)
+        self.assertEqual(expected, cfg.data())
+        changed = cfg.data()
+        changed["service"]["end_ns"] -= SECOND
+        self.assertEqual(changed, config(changed).data())
+        self.assertEqual(expected, cfg.data())
+
+    def test_config_cache_is_bound_to_immutable_source_bytes(self):
+        raw = bytearray(q._canonical(declaration(), c.LIMIT))
+        cfg = c.Config(raw, "/synthetic/config.json")
+        expected = cfg.data()
+        original = cfg.active()
+        raw[:] = b"{}"
+        self.assertEqual(expected, cfg.data())
+        self.assertEqual(original, cfg.active())
+        self.assertIs(type(cfg.wire), bytes)
+
     def test_native_exec_keeps_root_when_open_slot_returns_fd_three(self):
         script = '''
 import os,sys
