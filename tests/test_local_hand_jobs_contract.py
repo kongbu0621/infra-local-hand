@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import unittest
 
-from local_hand_jobs.contract import (KINDS, SUITES, Principal, JobError, MAX_SAFE_INTEGER,
+from local_hand_jobs.contract import (DISABLED_JOB_KINDS, KINDS, SUITES, Principal, JobError, MAX_SAFE_INTEGER,
     TOOL_SCHEMAS, TOOL_SCHEMA_DIGEST, canonical_bytes, request_digest, strict_loads,
     validate_submit, validate_tool_args)
 
@@ -22,6 +22,15 @@ def submit_fixture(kind="host.inspect", **inputs):
 
 
 class StrictJobContractTests(unittest.TestCase):
+    def test_disabled_submissions_are_hidden_without_changing_retained_requests(self):
+        schema = TOOL_SCHEMAS["lh_job_submit"]
+        self.assertEqual({row["properties"]["kind"]["const"] for row in schema["oneOf"]},
+                         set(KINDS) - DISABLED_JOB_KINDS)
+        self.assertNotIn("ledger.nas.roundtrip", json.dumps(TOOL_SCHEMAS))
+        retained = submit_fixture("ledger.nas.roundtrip", prepared_ref="prepared", storage_ref="storage")
+        self.assertEqual(validate_tool_args("lh_job_submit", retained), retained)
+        self.assertEqual(request_digest(retained), retained["request_digest"])
+
     def test_all_six_kinds_have_exact_input_contract(self):
         inputs = ({}, {"source_ref": "source", "build_cache_ref": "cache"},
             {"prepared_ref": "prepared"}, {"prepared_ref": "prepared", "suite": "a1_resources"},

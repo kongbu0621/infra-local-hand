@@ -60,6 +60,11 @@ No new observation, command, limit or task is added. This repair does not restor
 Do not replay either frozen caller, retry, supplement field evidence, clean up, recover or start
 another window. Continue only retained-return/source offline work; peripherals remain paused.
 
+The ordinary slice repair `3b3163bdd4ae1f10a71ab9721a3647e54a8651bb` is normally merged
+by PR #14 as `8ef34fcab33e9b7a7d9e3928cff23e9c853524ca`. Its own first CI
+`38075262477`, attempt 1, has all three jobs successful, including both installations.
+This publication does not restore IR2 or release IR3.
+
 ## Current resource and diagnostic repair (2026-10-11)
 
 Owner directly requested: “上限卡这么死干嘛？ 全部提高一个级别，然后输出加多，加细，可以快速定位问题。”
@@ -422,6 +427,9 @@ NAS execution was already unsupported; discovery and new-job admission must reje
 that path before planning, resource reservation or supervised work. Keep historical
 records readable and cancellable. Core authentication, identity, data protection,
 resource limits, cancellation/recovery and result integrity remain required.
+The published MCP submission schema and bundled contract must also omit disabled
+kinds; capability diagnostics and submission guidance must not advertise NAS as a
+next step. Retained wire requests keep their original parsing and digest semantics.
 This priority update does not replay spent callers or mark H01/Q4/H11 as passed.
 Retain the existing field returns and their execution boundaries below.
 

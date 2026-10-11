@@ -195,7 +195,12 @@ CANCEL_TARGET_SCHEMA = {"oneOf": [
 ]}
 TOOL_SCHEMAS = {
     "lh_capabilities": _object({"cursor": _CURSOR, "page_size": _PAGE}, ()),
-    "lh_job_submit": SUBMIT_SCHEMA,
+    # Advertise only enabled submissions; SUBMIT_SCHEMA still decodes retained
+    # requests with their original identity for broker/CLI history handling.
+    "lh_job_submit": {"type": "object", "oneOf": [
+        schema for schema in SUBMIT_SCHEMA["oneOf"]
+        if schema["properties"]["kind"]["const"] not in DISABLED_JOB_KINDS
+    ]},
     "lh_job_status": _object({"operation_id": UUID4, "reconcile_id": UUID4}, ("operation_id",)),
     "lh_job_cancel": _object({"operation_id": UUID4, "expected_request_digest": DIGEST, "target": CANCEL_TARGET_SCHEMA}),
     "lh_job_reconcile": _object({"operation_id": UUID4, "expected_request_digest": DIGEST, "reconcile_id": UUID4}),

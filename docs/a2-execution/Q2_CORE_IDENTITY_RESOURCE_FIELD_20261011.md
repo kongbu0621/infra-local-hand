@@ -80,3 +80,25 @@ drop-in、cgroup/invocation、Job/PID、用户、委派或混合资源值均不�
 有效限制检查拒绝。此复现没有现场查询。运行准备完整生命周期及拒绝路径共 81 项
 通过；含维护报告、核心身份消费者、资源上限和诊断的相关离线回归 248 项通过。
 这些验证只证明普通源码修复，不恢复已消费的 IR2，也不构成核心 PASS。
+
+## 修复发布与外围入口收口（2026-10-11）
+
+上述 slice 修复准确 D `3b3163bdd4ae1f10a71ab9721a3647e54a8651bb` 已经
+[PR #14](https://github.com/kongbu0621/infra-local-hand/pull/14) 正常合入
+`8ef34fcab33e9b7a7d9e3928cff23e9c853524ca`；首次 CI `38075262477` attempt 1
+三项成功，包含 Linux/Windows 源码检查及两侧独立安装。
+
+Owner 再次要求直接推进核心、屏蔽外围。检查发现 NAS 虽已在能力列表和新任务准入
+禁用，MCP 提交参数、随包契约和能力诊断仍显示该类型。此次只移除这些展示与建议，
+同步随包契约摘要；保留历史请求解析、摘要、查询和取消，以及计划/预留前拒绝新 NAS
+任务的检查。README 同步最新维护失败状态，不增加外围功能或新的执行权限。
+
+源码改动前核心相关检查在正常本地环境为 413 passed / 1 skipped；跳过项需要真实
+systemd 委派。此前受限环境首轮为 33 failed / 379 passed / 2 skipped，包含只读 home、
+受限本地 socket 与默认 umask=0002 的 fixture 影响；保留首轮，不作为产品 PASS。
+展示修复的中间检查为 49 failed / 94 passed / 17 skipped，发现尚未同步的随包契约，
+并含受限环境问题及未安装可选 SDK。同步后，在隔离环境安装仓库已有锁定依赖，
+按 umask=0022 验证实际 SDK、共享 CLI、契约、旧记录和核心流程，266 passed / 0 skipped。
+
+核心 entry/dispatcher 与发行摘要未变；未发行新 caller、执行现场查询或改变任何旧冻结。
+IR2 仍为 CONSUMED_FAILED；IR3/H01/Q4/H11 仍为 NOT_RUN，十七份维护义务与费用不变。

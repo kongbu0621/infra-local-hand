@@ -296,8 +296,8 @@ class PolicyAndRegistryTests(unittest.TestCase):
         self.assertEqual(other["profiles"][0]["prepared_refs"], [])
         self.assertNotIn(str(self.root), json.dumps(owner))
         self.assertEqual(set(owner["profiles"][0]["expected"]), set(self.policy.expected("fixture")))
-        self.assertEqual(owner["execution_support"]["ledger.nas.roundtrip"], {
-            "status": "UNSUPPORTED", "reason": "NETWORK_ARCHIVE_HARD_QUOTA_ADAPTER_UNIMPLEMENTED"})
+        self.assertEqual(owner["execution_support"], {})
+        self.assertNotIn("ledger.nas.roundtrip", json.dumps(owner))
 
     def test_discovery_only_offers_local_jobs_even_with_legacy_nas_grant(self):
         profile = self.policy.capabilities(self.owner)["profiles"][0]
