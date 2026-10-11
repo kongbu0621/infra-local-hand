@@ -1,5 +1,35 @@
 # Execution guidance
 
+## Approved fixed local host read after reboot (2026-10-11)
+
+The [fixed proposal](docs/governance/Q2_CORE_HOST_REBOOT_READ_BASELINE.md), exact A
+`b2a326036b634bb007a6adeec8929084bce3ccbd`, tree `be83d89f0bd22249b3d576c4b4c56e00816d3107`,
+is CLOSED for `LH-Q2-CORE-HOST-REBOOT-READ-v1` / HB1–HB2 only. Preserve its three document bytes.
+[Owner B](docs/governance/Q2_CORE_HOST_REBOOT_READ_OWNER_DECISION.md), event
+`LH-Q2-CORE-HOST-REBOOT-READ-CLOSURE-20261011-01`, records the exact adjacent request and reply
+“批准”; only the local request link is sanitized. Full request and fixed machine objects remain
+private. R/source/integrity, Owner mandate/authority, no exceptions and change control remain.
+Independent C is bookkeeping only; D descends from C without squash. No per-substep approval.
+
+HB1 implements/verifies the fixed local reader and independent offline consumer, source bindings,
+real file/pipe negative cases and complete resource/serialization bounds, normal PR publication,
+exact D first CI, independent installation and freeze. Only then HB2 runs the unique fixed local
+read on the normal user host view: boot/self namespaces, original pidfile/serial, at most two
+source-bound PID slots, six images metadata, fixed tools and one original-port local ss query.
+Read stat/exe before cmdline; no foreign-program cmdline, enumeration, SSH or network connection.
+No VM startup/stop/change, image/config/permission change, maintenance or core package is authorized.
+
+Keep eighteen full obligations and old 25283 MiB/7364 inodes. Preparation and capture each add
+2 MiB/64 inodes: total 25287 MiB/7492, no refunds/new maintenance generation. Each pool retains
+CPU/wall240s, aggregate RSS1024MiB, per-process AS512MiB/FD256; one control command/child,
+64KiB per stream, 128KiB per record and 2MiB capture. Keep all historical CPU commitments.
+Failure/unknown/contradiction stops and retains; no replay, retry, extra collection, wrapper/tool
+replacement, cleanup, recovery or extra window. Preserve old RP1 freeze, RP2 terminal and callers.
+HB2 facts do not create activation or release guest/maintenance/07a; subsequent continuation must
+be decided from actual returns. Raw/index/caller/machine data remain private; sanitized records use
+normal PR merge. NAS/peripherals remain paused. At C HB1 NOT_STARTED, HB2 NOT_ISSUED and
+H01/Q4/H11 NOT_RUN. This closure supersedes older no-new-observation clauses only for HB1–HB2.
+
 ## Owner-confirmed host reboot and proposed fixed local read (2026-10-11)
 
 After directing core repair and continued peripheral suppression, Owner answered the host-history
