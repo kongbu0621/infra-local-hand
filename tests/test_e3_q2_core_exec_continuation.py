@@ -87,8 +87,8 @@ def test_original_names_resume_digest_cannot_substitute_for_fifth_history():
 def test_exec_candidate_binds_exact_scope_and_new_independent_closure(source_git):
     h.growth_sources(source_git.head)
     value=preflight()
-    assert (value['A'],value['C'])==(h.HR_A,h.HR_C)
-    assert p.maintenance_resume()['scope']==p.c.HOST_REBIND_SCOPE
+    assert (value['A'],value['C'])==(h.GR_A,h.GR_C)
+    assert p.maintenance_resume()['scope']==p.c.GUEST_RESUMPTION_SCOPE
     assert p.maintenance_resume()['session']==h.SESSION=='lhqjgrow-20261011c'
     assert len(p.previous_journal_profiles())==11
     assert len(p.previous_maintenance_pins())==55

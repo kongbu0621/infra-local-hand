@@ -181,10 +181,10 @@ def journal_transition(implementation):
     """Synthetic projection, never substitutes for the host original consumer."""
     from local_preflight_fixture import source_projection
     from transport_failure_fixture import source_projection as transport_source
-    from host_rebind_fixture import source as persistent_source, projection
-    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v22',vm_activation=None,
+    from guest_resumption_fixture import source as persistent_source, projection
+    value=dict(persistent_source=persistent_source(),schema='local-hand-q2-core-journal-transition/v23',vm_activation=None,
         local_preflight_source=source_projection(),transport_failure_source=transport_source(),
-        authority=dict(R=c.RULE['commit'],A=c.HOST_REBIND_BASELINE['commit'],C=c.HOST_REBIND_CLOSURE['commit']),
+        authority=dict(R=c.RULE['commit'],A=c.GUEST_RESUMPTION_BASELINE['commit'],C=c.GUEST_RESUMPTION_CLOSURE['commit']),
         guest_startup_assurance=dict(mode='TRUSTED_SINGLE_ADMIN',
             indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',

@@ -2007,8 +2007,9 @@ def host_reboot_failure_summary():
 
 def _maintenance_resume():
     value=_runtime_preparation_maintenance_resume()
-    value.update(scope='LH-Q2-CORE-HOST-REBIND-CONTINUATION-v1',session='lhqjgrow-20261011c',
-        previous_host_reboot_failure=host_reboot_failure_summary())
+    value.update(scope='LH-Q2-CORE-GUEST-RESUMPTION-v1',session='lhqjgrow-20261011c',
+        previous_host_reboot_failure=host_reboot_failure_summary(),
+        previous_guest_failure=guest_failure_summary())
     return value
 
 
@@ -2022,12 +2023,19 @@ def host_rebind_costs():
 
 def validate_host_rebind_source(value):
     check=_Checks('CORE_JOURNAL_')
+    resumed=type(value) is dict and value.get('schema')=='local-hand-q2-host-rebind-source/v2'
+    extra={'continuation_owner','previous_guest_failure','previous_terminal_sha256','previous_freeze_sha256'} if resumed else set()
     check.exact(value,{'schema','archive','index','prior','summary','owner','revision',
-        'activation_sha256','baseline_sha256','costs'},'REBIND_SOURCE_FIELDS')
-    check(value['schema']=='local-hand-q2-host-rebind-source/v1' and
+        'activation_sha256','baseline_sha256','costs'}|extra,'REBIND_SOURCE_FIELDS')
+    check(value['schema']==('local-hand-q2-host-rebind-source/v2' if resumed else 'local-hand-q2-host-rebind-source/v1') and
         canonical(value['summary'])==canonical(host_reboot_failure_summary()) and
         value['owner']==HOST_REBIND_OWNER and value['revision']==HOST_REBIND_REVISION and
-        canonical(value['costs'])==canonical(host_rebind_costs()),'REBIND_SOURCE_POLICY')
+        canonical(value['costs'])==canonical(guest_resumption_costs() if resumed else host_rebind_costs()),'REBIND_SOURCE_POLICY')
+    if resumed:
+        check(value['continuation_owner']==GUEST_RESUMPTION_OWNER and
+            value['previous_terminal_sha256']==HOST_REBIND_FAILED_TERMINAL and
+            value['previous_freeze_sha256']==HOST_REBIND_FROZEN and
+            canonical(value['previous_guest_failure'])==canonical(guest_failure_summary()),'GUEST_RESUMPTION_SOURCE')
     validate_runtime_preparation_source(value['prior'])
     for name,cap in (('archive',1048576),('index',65536)):
         check.exact(value[name],{'bytes','sha256'},'REBIND_SOURCE_PIN');check.integer(value[name]['bytes'],1,cap)
@@ -2118,6 +2126,8 @@ def _maintenance_commitments():
             host_bytes=4194304,host_inodes=128,cpu_seconds=480,refunded=False),
         host_rebind=dict(sessions=['lhqrebind-source-20261011','lhqstart-20261011b','lhqguest-20261011c'],
             host_bytes=10485760,host_inodes=320,cpu_seconds=720,per_pool_cpu_seconds=240,refunded=False),
+        guest_resumption=dict(sessions=['lhqcore-guest-resumption-20261012','lhqguest-20261012a'],
+            host_bytes=6291456,host_inodes=192,cpu_seconds=480,per_pool_cpu_seconds=240,refunded=False),
         generations=[dict(session=session,bytes=1296*1048576,inodes=370,cpu_seconds=120)
             for session in (PREVIOUS_JOURNAL_SESSION,SECOND_JOURNAL_SESSION,THIRD_JOURNAL_SESSION,FOURTH_JOURNAL_SESSION,FIFTH_JOURNAL_SESSION,SIXTH_JOURNAL_SESSION,SEVENTH_JOURNAL_SESSION,EIGHTH_JOURNAL_SESSION,NINTH_JOURNAL_SESSION,TENTH_JOURNAL_SESSION,ELEVENTH_JOURNAL_SESSION,'lhqjgrow-20261009c','lhqjgrow-20261010a','lhqjgrow-20261010b','lhqjgrow-20261010c','lhqjgrow-20261010d')]+[dict(session=session,bytes=2200*1048576,inodes=402,cpu_seconds=240)
                 for session in ('lhqjgrow-20261011a','lhqjgrow-20261011b','lhqjgrow-20261011c')],
@@ -2174,6 +2184,8 @@ def _validate_vm_activation(value):
     check(type(value) is dict,'ACTIVATION_FIELDS')
     if value.get('schema')=='local-hand-q2-vm-activation/v3':
         return _validate_rebound_activation(value)
+    if value.get('schema')=='local-hand-q2-vm-activation/v4':
+        return _validate_guest_resumption_activation(value)
     resumed=value.get('schema')=='local-hand-q2-vm-activation/v2'
     check.exact(value, ACTIVATION_PROJECTION_FIELDS | (RESUMPTION_FIELDS if resumed else set()), 'CORE_ACTIVATION_FIELDS')
     check((resumed and value['event']==RESUMPTION_EVENT) or
@@ -2340,10 +2352,10 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
         'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v22'
+    check(len(canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v23'
         and value['session']=='lhqjgrow-20261011c', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
-        A=HOST_REBIND_A,C=HOST_REBIND_C)
+        A=GUEST_RESUMPTION_A,C=GUEST_RESUMPTION_C)
         and value['implementation']==implementation, 'JOURNAL_AUTHORITY')
     check(type(value['guest_startup_assurance']) is dict and canonical(value['guest_startup_assurance'])
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
@@ -2371,7 +2383,7 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         check(type(value[key]) is str and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',value[key]),
             'JOURNAL_BOOT')
     activation=value['vm_activation']
-    check(type(activation) is dict and activation.get('schema')=='local-hand-q2-vm-activation/v3',
+    check(type(activation) is dict and activation.get('schema')=='local-hand-q2-vm-activation/v4' and value['persistent_source']['schema']=='local-hand-q2-host-rebind-source/v2',
         'CURRENT_GUEST_REQUIRED')
     if activation is not None:
         _validate_vm_activation(activation)
@@ -8743,6 +8755,42 @@ HOST_REBIND_A = '4af01900cfe462cec4762cb04966dab139a0a31c'
 HOST_REBIND_C = '4acf0dbfe99d0c7e170b6102f861fa9671d09da2'
 HOST_REBIND_OWNER = '17fe31a85856c67fa2159e50c3b32c4967c1c755ea8cfde26335a821f6fdbe0e'
 HOST_REBIND_REVISION = 'b1eec1914a2d7a02a1d799673aabe0ff5f204faf70479520292547cbedb3c84b'
+GUEST_RESUMPTION_A = '54036654c399cdab0386a65f53f06283c2a92032'
+GUEST_RESUMPTION_C = '5692d8c532815d7f741c0f9dc040c4a5a3198058'
+GUEST_RESUMPTION_OWNER = '06f6b8c9542a48e360664258d4b4c22e4594c6947d6f2cc543eec5885606a1b9'
+HOST_REBIND_FAILED_TERMINAL = 'b602284213c57f1e3a140dff0cfb3b60661d79ba4eadb83ac866722a8182141b'
+HOST_REBIND_FROZEN = '0d5bb5140b7687dd77714a0ce1f5f30f956e431aadce702e9bc1ab6ba2305d98'
+
+
+def guest_failure_summary():
+    return dict(session='lhqguest-20261011c',D='0b84bbcf8108522305d1e23c9378f6d0a8f50bcc',
+        state='CONSUMED_FAILED_STOP_AND_RETAIN',terminal='GUEST_FAILED_STOP_AND_RETAIN',
+        reason='HOST_REBIND_COMMAND_COMPLETION',stage='SSH_KEY_EXCHANGE',ssh_requests=1,
+        original_count=9,caller_returncode=3,tool_returncode=3,ssh_child_returncode='UNKNOWN',
+        remote_exit='UNKNOWN',guest_report=False,maintenance='NOT_ISSUED',core='NOT_RUN',
+        old_commitments_refunded=False)
+
+
+def guest_resumption_costs():
+    return dict(old_mib=27497,old_inodes=8214,preparation_mib=4,preparation_inodes=128,
+        guest_mib=2,guest_inodes=64,total_mib=27503,total_inodes=8406,
+        maintenance_admission_mib=27375,maintenance_admission_inodes=8374,
+        maintenance_obligations=19,core_capture_counted_once=True,refunded=False)
+
+
+def _validate_guest_resumption_activation(value):
+    check=_Checks('CORE_ACTIVATION_')
+    extra={'continuation_owner_sha256','previous_guest_failure_sha256'}
+    check(type(value) is dict and extra<=value.keys() and len(canonical(value))<=4095,
+        'GUEST_RESUMPTION_FIELDS')
+    check(value['schema']=='local-hand-q2-vm-activation/v4'
+        and value['event']=='LH-Q2-CORE-GUEST-RESUMPTION-CLOSURE-20261012-01'
+        and value['continuation_owner_sha256']==GUEST_RESUMPTION_OWNER
+        and value['previous_guest_failure_sha256']==HOST_REBIND_FAILED_TERMINAL,'GUEST_RESUMPTION_POLICY')
+    original={k:v for k,v in value.items() if k not in extra}
+    original.update(schema='local-hand-q2-vm-activation/v3',event='LH-Q2-CORE-HOST-REBIND-CONTINUATION-CLOSURE-20261011-01')
+    _validate_rebound_activation(original)
+    return value
 
 
 def _validate_rebound_activation(value):

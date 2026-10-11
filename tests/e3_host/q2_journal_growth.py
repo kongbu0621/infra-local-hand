@@ -84,6 +84,8 @@ RP_A=history.c.RUNTIME_PREPARATION_BASELINE["commit"]
 RP_C=history.c.RUNTIME_PREPARATION_CLOSURE["commit"]
 HR_A=history.c.HOST_REBIND_BASELINE["commit"]
 HR_C=history.c.HOST_REBIND_CLOSURE["commit"]
+GR_A=history.c.GUEST_RESUMPTION_BASELINE["commit"]
+GR_C=history.c.GUEST_RESUMPTION_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
 MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
 "121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
@@ -117,7 +119,7 @@ HOST_HEADROOM_BYTES=(BACKUP_CAP-320*MIB)+(IMAGE_CAP-576*MIB)+(CAPTURE_CAP-8*MIB)
 HOST_HEADROOM_INODES=32
 # Sixteen original full obligations, retained 11a/11b and new 11c (each headroom once),
 # all completed reads and all old/new preparation pools stay charged.
-HOST_BYTES,HOST_INODES=27369*MIB,8182
+HOST_BYTES,HOST_INODES=27375*MIB,8374
 # Additional host descriptors from preflight through receipt: post transport
 # peaks at 17 (9 retained outputs/pidfd, selector, 7 Popen descriptors).
 # Three more slots cover bounded identity/usage reads. This is admission only;
@@ -289,7 +291,7 @@ def qemu_argv(start,anchor,serial,*,activation=None):
  command=pieces[1].split("\n\n",1)[0].replace("\\\n"," ")
  args=shlex.split(command)
  require(all(arg.isascii() for arg in args),"GROWTH_START_ENCODING")
- rebound=activation is not None and activation.get("schema")=="local-hand-q2-vm-activation/v3"
+ rebound=activation is not None and activation.get("schema") in ("local-hand-q2-vm-activation/v3","local-hand-q2-vm-activation/v4")
  require(not rebound or serial is None,"GROWTH_NULL_SERIAL")
  source_serial=anchor+"/.unused-null-serial" if rebound else serial
  args=[arg.replace("$q1_vm",anchor).replace("$q1_log",source_serial) for arg in args]
@@ -830,7 +832,7 @@ activation_sha256=digest(canonical(activation)),window_binding_sha256=digest(can
 def recheck_vm_activation(inputs,frozen,check):
  if frozen.get("vm_activation") is None:return
  names=("activation_archive","runtime_preparation_archive")
- if frozen["vm_activation"].get("schema")=="local-hand-q2-vm-activation/v3":names+=("rebind_archive",)
+ if frozen["vm_activation"].get("schema") in ("local-hand-q2-vm-activation/v3","local-hand-q2-vm-activation/v4"):names+=("rebind_archive",)
  for name in names:
   spec=frozen[name]
   fd=next(fd for path,fd,_ in inputs.held if path==spec["path"])
@@ -1013,7 +1015,7 @@ def freeze_vm(start,anchor,anchor_fd,qemu_tool,check,*,activation=None):
  current=[word.decode("ascii","strict") for word in raw[:-1].split(b"\0")]
  require(current.count("-serial")==1,"GROWTH_PROCESS_SERIAL")
  index=current.index("-serial")+1
- rebound=activation is not None and activation.get("schema")=="local-hand-q2-vm-activation/v3"
+ rebound=activation is not None and activation.get("schema") in ("local-hand-q2-vm-activation/v3","local-hand-q2-vm-activation/v4")
  if rebound:
   require(index<len(current) and current[index]=="null","GROWTH_PROCESS_SERIAL")
   serial=None
@@ -1364,7 +1366,7 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
  decision=history.c.DS_OWNER_DECISION
  for commit in (DS_C,expected):
   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_DS_B_CHANGED")
- for prefix,a,b in (("VM_ADOPTION",VM_A,VM_C),("RUNTIME",RT_A,RT_C),("HOST_FD",FD_A,FD_C),("USAGE",UC_A,UC_C),("TRANSPORT",TC_A,TC_C),("RESUMED_VM",RC_A,RC_C),("PROTECTED_SOURCE",PS_A,PS_C),("PERSISTENT_PATH",PP_A,PP_C),("IDENTITY_RESOURCE",IR_A,IR_C),("RUNTIME_PREPARATION",RP_A,RP_C),("HOST_REBIND_ORIGINAL",history.c.HOST_REBIND_ORIGINAL_BASELINE["commit"],history.c.HOST_REBIND_ORIGINAL_CLOSURE["commit"]),("HOST_REBIND",HR_A,HR_C)):
+ for prefix,a,b in (("VM_ADOPTION",VM_A,VM_C),("RUNTIME",RT_A,RT_C),("HOST_FD",FD_A,FD_C),("USAGE",UC_A,UC_C),("TRANSPORT",TC_A,TC_C),("RESUMED_VM",RC_A,RC_C),("PROTECTED_SOURCE",PS_A,PS_C),("PERSISTENT_PATH",PP_A,PP_C),("IDENTITY_RESOURCE",IR_A,IR_C),("RUNTIME_PREPARATION",RP_A,RP_C),("HOST_REBIND_ORIGINAL",history.c.HOST_REBIND_ORIGINAL_BASELINE["commit"],history.c.HOST_REBIND_ORIGINAL_CLOSURE["commit"]),("HOST_REBIND",HR_A,HR_C),("GUEST_RESUMPTION",GR_A,GR_C)):
   baseline,decision,closure=(getattr(history.c,prefix+suffix) for suffix in ("_BASELINE","_OWNER_DECISION","_CLOSURE"))
   require(all(row is None for row in (baseline,decision,closure)) or all(type(row) is dict for row in (baseline,decision,closure)),"GROWTH_"+prefix+"_AUTHORITY_PARTIAL")
   if baseline is None:continue
@@ -1638,7 +1640,7 @@ class Maintenance:
   self.usage=usage or Usage()
   self.seq=Sequence(self.boundary,self.event)
   self.pending=[]
-  self.result=dict(schema="lhq-journal-growth-receipt/v22",session=SESSION,R=R,A=HR_A,C=HR_C,D=commit,
+  self.result=dict(schema="lhq-journal-growth-receipt/v23",session=SESSION,R=R,A=GR_A,C=GR_C,D=commit,
 nonce=self.nonce,resume=history.maintenance_resume(),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 state="LOCAL_CHECKED",marker_created=False,ssh_requests=0,business_cases=0,
 production_supported=False,old_commitments_refunded=False,exclusive_reservation_proven=False,
@@ -1671,7 +1673,7 @@ original_boot_id=frozen["boot_id"],remote_exit="UNKNOWN",serial_capture="NOT_CAP
    self.store.event(value)
  def manifest(self):
   self.bindings()
-  return dict(schema="lhq-journal-growth-manifest/v22",R=R,A=HR_A,C=HR_C,D=self.commit,
+  return dict(schema="lhq-journal-growth-manifest/v23",R=R,A=GR_A,C=GR_C,D=self.commit,
 nonce=self.nonce,resume=history.encode_maintenance_resume(history.maintenance_resume(),self.frozen["source_binding"]["persistent_source"]),guest_startup_assurance=validate_startup_assurance(self.frozen.get("guest_startup_assurance")),access_mode=ACCESS_MODE,host_writer_observation="NOT_PERFORMED",continuous_exclusion_proven=False,
 historical_authority=dict(A=A,C=C,observer_superseded_by=MINIMAL_A,minimal_C=MINIMAL_C,serial_A=SERIAL_A,serial_C=SERIAL_C,systemctl_A=SYSTEMCTL_A,systemctl_C=SYSTEMCTL_C,template_A=TEMPLATE_A,template_C=TEMPLATE_C,names_A=NAMES_A,names_C=NAMES_C,exec_A=EXEC_A,exec_C=EXEC_C),inputs=history.encode_manifest_inputs(self.frozen["source_binding"]),
 custody_binding=self.anchor.custody.binding,
@@ -1855,7 +1857,7 @@ def main():
   require(os.geteuid()!=0,"GROWTH_ORDINARY_COORDINATOR")
   require(all(value is not None for value in (history.c.VM_ADOPTION_CLOSURE,
 history.c.PROTECTED_SOURCE_CLOSURE,history.c.PERSISTENT_PATH_CLOSURE,
-history.c.IDENTITY_RESOURCE_CLOSURE,history.c.RUNTIME_PREPARATION_CLOSURE,history.c.HOST_REBIND_ORIGINAL_CLOSURE,history.c.HOST_REBIND_CLOSURE)),"GROWTH_HR_NOT_AUTHORIZED")
+history.c.IDENTITY_RESOURCE_CLOSURE,history.c.RUNTIME_PREPARATION_CLOSURE,history.c.HOST_REBIND_ORIGINAL_CLOSURE,history.c.HOST_REBIND_CLOSURE,history.c.GUEST_RESUMPTION_CLOSURE)),"GROWTH_GR_NOT_AUTHORIZED")
   sources=growth_sources(args.expected_commit)
   require(all(resource.getrlimit(key)==(resource.RLIM_INFINITY,resource.RLIM_INFINITY)
 for key in (resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)),"GROWTH_INHERITED_MUTATOR_LIMIT")

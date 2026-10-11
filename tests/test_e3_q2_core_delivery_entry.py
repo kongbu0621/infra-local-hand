@@ -230,9 +230,9 @@ def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(mo
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    # HR1 adopts the reviewed complete dispatcher; old and edited bytes remain closed.
+    # GR1 adopts the reviewed complete dispatcher; old and edited bytes remain closed.
     assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
-        'b316922af61ace9de08db7e4a6904fdb03c479b9761e1798def7f83309351b5f'})
+        '741633cb0bb4bc7dcc4821dd41952aea01086f471cfbd17b4098c7816c356d62'})
     assert '645de8571fb812c7b713af2eff53ab0255814ed7ce1edf57f139bcbc69000152' not in e.RELEASABLE_DISPATCHER_SHA256
     assert '5a0ba993039908220a56ab9c5c6649c942f15689242eb0b464a6b9b9da459a8a' not in e.RELEASABLE_DISPATCHER_SHA256
     assert digest in e.RELEASABLE_DISPATCHER_SHA256

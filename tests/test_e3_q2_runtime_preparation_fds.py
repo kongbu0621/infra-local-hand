@@ -85,7 +85,7 @@ TRIPLE_CHILD = TRIPLE_CHILD.replace('initial-57', 'initial-58')
 @pytest.mark.parametrize('initial', [130, 250])
 @pytest.mark.parametrize('mode', ['lifecycle','identity_drift','failure_drift','rebind_drift'])
 def test_three_bound_archives_stay_held_through_real_handoff(monkeypatch,initial,mode):
-    from host_rebind_fixture import records as hr_records, archive as hr_archive
+    from guest_resumption_fixture import records as hr_records, archive as hr_archive
     from e3_host import q2_host_rebind as r
     files,identity,failure=hr_records(monkeypatch)
     parent=os.environ.get('LOCAL_HAND_Q2_TEST_PARENT',str(Path.home()))

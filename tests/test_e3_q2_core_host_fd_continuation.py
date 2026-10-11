@@ -6,7 +6,7 @@ import sys
 import pytest
 from e3_host import q2_core_prior_attempt as p
 from core_prior_fixture import previous_journal_files, journal_transition, triple_fixture
-from host_rebind_fixture import source
+from guest_resumption_fixture import source
 
 if sys.platform.startswith('linux'):
     from e3_host import q2_core_delivery_dispatcher as d
@@ -25,7 +25,7 @@ def test_full_history_reconstruction_and_exact_old09b_failure(monkeypatch):
     assert old['reason']=='LOCAL_IO_OR_TRANSPORT'
     original=dict(resume=resume,persistent_source=source(),inventory_sha256='a'*64,other=dict(retained=True))
     compact=p.encode_manifest_inputs(original)
-    manifest=dict(schema='lhq-journal-growth-manifest/v22',resume=p.encode_maintenance_resume(resume,source()),inputs=compact)
+    manifest=dict(schema='lhq-journal-growth-manifest/v23',resume=p.encode_maintenance_resume(resume,source()),inputs=compact)
     assert p.decode_manifest_inputs(manifest,p.runtime_preparation_maintenance_resume())==original
     assert len(p.c.canonical(compact))<len(p.c.canonical(original))
     assert 'resume' not in compact and original['resume']==resume
@@ -34,7 +34,7 @@ def test_full_history_reconstruction_and_exact_old09b_failure(monkeypatch):
 @pytest.mark.parametrize('fault',['digest','missing_ref','double','history','old_version','source'])
 def test_history_encoding_faults_cannot_change_full_source_binding(monkeypatch,fault):
     original=dict(resume=p.maintenance_resume(),persistent_source=source(),inventory_sha256='a'*64)
-    manifest=dict(schema='lhq-journal-growth-manifest/v22',resume=p.encode_maintenance_resume(original['resume'],source()),
+    manifest=dict(schema='lhq-journal-growth-manifest/v23',resume=p.encode_maintenance_resume(original['resume'],source()),
         inputs=p.encode_manifest_inputs(original))
     if fault=='digest':manifest['inputs']['resume_sha256']='f'*64
     elif fault=='missing_ref':manifest['inputs'].pop('resume_sha256')

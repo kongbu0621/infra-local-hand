@@ -7,7 +7,7 @@ import pytest
 
 from e3_host import q2_core_prior_attempt as p
 from persistent_continuation_fixture import records, archive, source, DUMP
-from host_rebind_fixture import source as identity_source
+from guest_resumption_fixture import source as identity_source
 from core_prior_fixture import triple_fixture, journal_transition
 
 if sys.platform.startswith('linux'):
@@ -70,7 +70,7 @@ def test_rehashed_old_failure_cannot_become_success_or_different_source(fault):
 def test_fixed_history_reference_rejects_loss_or_substitution(fault):
     proof=identity_source();logical=dict(resume=p.maintenance_resume(),persistent_source=proof)
     previous=p.runtime_preparation_maintenance_resume()
-    manifest=dict(schema='lhq-journal-growth-manifest/v22',inputs=p.encode_manifest_inputs(logical),
+    manifest=dict(schema='lhq-journal-growth-manifest/v23',inputs=p.encode_manifest_inputs(logical),
         resume=p.encode_maintenance_resume(logical['resume'],proof))
     if fault=='reference':manifest['resume']['previous_reference']['field']='manifest.inputs'
     elif fault=='member':manifest['resume']['previous_reference']['member']='other'
@@ -101,8 +101,8 @@ def test_both_completion_consumers_require_new_retained_failure_proof(monkeypatc
 def test_all_sixteen_obligations_and_completed_read_pools_remain_charged(monkeypatch):
     priors,_=triple_fixture(monkeypatch,*(() if d is None else (d,)))
     rows=p._capacity_rows(priors,p.diagnostic_retention())
-    assert sum(row['bytes'] for row in rows)==27497*1048576
-    assert sum(row['inodes'] for row in rows)==8214
+    assert sum(row['bytes'] for row in rows)==27503*1048576
+    assert sum(row['inodes'] for row in rows)==8406
     by_session={row['session_id']:row for row in rows}
     assert len(by_session)==len(rows)
     for name in ('lhqprotect-20261010a','lhqprotect-source-20261010a'):

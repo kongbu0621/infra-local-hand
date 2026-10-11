@@ -1359,3 +1359,9 @@ HOST_REBIND_BASELINE = {'commit': '4af01900cfe462cec4762cb04966dab139a0a31c', 't
 HOST_REBIND_OWNER_DECISION = {'event': 'LH-Q2-CORE-HOST-REBIND-NULL-CLOSURE-20261011-01', 'record_path': 'docs/governance/Q2_CORE_HOST_REBIND_NULL_OWNER_DECISION.md', 'record_sha256': 'eb9dc92003131d28f94caeef700dc70a095cd1305321ad07755ca8b72b281689'}
 HOST_REBIND_CLOSURE = {'commit': '4acf0dbfe99d0c7e170b6102f861fa9671d09da2', 'tree': 'ca538686be7cb01b00ed265ff91587ae63d76ad2'}
 HOST_REBIND_SCOPE = "LH-Q2-CORE-HOST-REBIND-CONTINUATION-v1"
+
+# Original HR failure stays terminal; one GR verification may admit the unused 11c.
+GUEST_RESUMPTION_BASELINE = {'commit': '54036654c399cdab0386a65f53f06283c2a92032', 'tree': 'f20da7b12e52c292a147797746fec5448affc269', 'documents_sha256': {'docs/a2-execution/q2-core-guest-resumption/ARCHITECTURE.md': '13bd480916c213ccabd9711af94f18acf7016b6383c59762776935a51efeebc9', 'docs/a2-execution/q2-core-guest-resumption/IMPLEMENTATION_PLAN.md': '379d6573738bfa57731cae9c91f2878e473126c41204f1a88fa9c38abf773edc', 'docs/a2-execution/q2-core-guest-resumption/REQUIREMENTS.md': '007efffb46fa7fea57c9df3f5d9a8e0c26baf6c6c838d87cf52a1938e6b94ae0'}}
+GUEST_RESUMPTION_OWNER_DECISION = {'event': 'LH-Q2-CORE-GUEST-RESUMPTION-CLOSURE-20261012-01', 'record_path': 'docs/governance/Q2_CORE_GUEST_RESUMPTION_OWNER_DECISION.md', 'record_sha256': '5b32f1d24bacb296bdc9459069e8cabcc234df2fd51e5f0153d2c5271f6238bb'}
+GUEST_RESUMPTION_CLOSURE = {'commit': '5692d8c532815d7f741c0f9dc040c4a5a3198058', 'tree': '662bb64a5d73f7ded2f39510053e34eef6368461'}
+GUEST_RESUMPTION_SCOPE = 'LH-Q2-CORE-GUEST-RESUMPTION-v1'
