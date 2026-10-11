@@ -4138,6 +4138,14 @@ def _admit_exec_binding(effects, path, expected):
         raise
 
 
+def _empty_fixed_unit_files(argv, status, stdout, stderr):
+    """systemctl returns 1, with empty streams, when no requested unit file exists."""
+    return (status == 1 and not stdout and not stderr and argv ==
+            ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
+             'list-unit-files', '--no-legend', '--type=service,slice',
+             *sorted(_admission_absent_units())])
+
+
 def _admit_run_helper(effects, policy, program_check, *, prior_observation=None, user_uid=None):
     """One approved semantic child: bounded streams, CPU limit, real wait4/EOF."""
     argv, env, limits = policy["argv"], policy["environment"], policy["limits"]
@@ -4243,7 +4251,9 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None,
             poll()
             if waited is None or len(eof) != 2:
                 time.sleep(0.002)
-        _require(proc.returncode == 0 and waited["user_cpu_ns"] + waited["system_cpu_ns"] <= limits["command_cpu_seconds"] * NS,
+        _require((proc.returncode == 0 or _empty_fixed_unit_files(argv, proc.returncode,
+                 output['stdout'], output['stderr'])) and
+                 waited["user_cpu_ns"] + waited["system_cpu_ns"] <= limits["command_cpu_seconds"] * NS,
                  "CORE_ADMIT_HELPER_EXIT")
         guard(); program_check(); guard()
     except BaseException as error:
@@ -5714,7 +5724,9 @@ class FieldEffects:
             raw, stderr, receipt = _admit_run_helper(self, policy, verify, prior_observation=prior_observation)
             _require(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
                 'CORE_PRIOR_SCOPE_HELPER_CGROUP')
-        _require(not stderr and receipt['exit_status'] == 0, 'CORE_CAP_SYSTEMCTL_FAILED')
+        _require(not stderr and (receipt['exit_status'] == 0 or
+                 _empty_fixed_unit_files(policy['argv'], receipt['exit_status'], raw, stderr)),
+                 'CORE_CAP_SYSTEMCTL_FAILED')
         if bus is not None:_require(bus == self._capacity_user_bus(),'CORE_RUNTIME_USER_BUS_DRIFT')
         return raw
 
