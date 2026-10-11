@@ -91,7 +91,7 @@ def package_fixture(monkeypatch, *, journal=False):
     rows, field_bytes = p.field_member_blobs(
         loader, bootstrap, dispatcher, implementation_commit=IMPLEMENTATION["commit"])
     rows.append(approved_row)
-    candidate, git_head = b"candidate\n", b"c458cf518ff80ee91d6fc2a42bb2c729e03f5a1b\n"
+    candidate, git_head = b"candidate\n", b"ee4484fac86b5d6bc69571a0a8336ef66b8902ee\n"
     rows.extend([
         p.member("candidate/README.md", "candidate-worktree", 0o644, candidate,
                  {"kind": "candidate-blob", "commit": p.c.CANDIDATE["commit"],

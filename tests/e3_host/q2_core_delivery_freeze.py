@@ -1113,7 +1113,7 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
               and c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'])
     # Owner-requested resource level 2; exact source pair, never arbitrary blobs.
     level2 = (c.sha256(loader) == "9315d0a804df07eab74fd6b1272cf108e81a143c3e535458aa80f403b0b81a36"
-              and c.sha256(bootstrap) == "1587a0f1cacbec772ed068f5016252938754f71d59abc24b12e4a1ece3f78eab")
+              and c.sha256(bootstrap) == "76c886621e545ecee2bbe50ecf8beaab4bd7d8a8e5f7dafe774eb3a2aa4ab96c")
     c.require(legacy or level2, 'CORE_FREEZE_BOOTSTRAP_DELTA')
     try:
         parsed = ast.parse(bootstrap.decode("utf-8", "strict"), filename="field/bootstrap.py")
