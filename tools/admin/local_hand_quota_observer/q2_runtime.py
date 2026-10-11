@@ -160,7 +160,7 @@ def native(config, role):
         os.close(binary)
     root = None
     try:
-        root = worker.open_slot(slot)
+        root = worker.open_slot(slot, ordinary_parent=True)
         q.require(host(config, "native") == before, "INVOCATION_CHANGED")
         descriptors = os.listdir("/proc/self/fd")
         q.require(len(descriptors) <= 256, "DESCRIPTOR_LIMIT")

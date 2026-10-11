@@ -247,6 +247,39 @@ class WorkerTests(unittest.TestCase):
                     w.open_slot(slot)
                 proc.assert_not_called()
 
+    def test_q2_slot_parent_uses_bound_account_and_real_no_follow_walk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "profile-work"
+            parent.mkdir(mode=0o700)
+            root = parent / "work-a"
+            root.mkdir(mode=0o700)
+            info = root.stat()
+            pin = a.Root(info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+            slot = replace(decode().slots[0], path=str(root), root=pin)
+            with patch.object(p, "open_protected", side_effect=lambda *_args, **_kw: os.open(directory, os.O_RDONLY)) as ancestors, \
+                 patch.object(w, "match_mount") as mount:
+                fd = w.open_slot(slot, ordinary_parent=True)
+                try:
+                    self.assertEqual(info.st_ino, os.fstat(fd).st_ino)
+                finally:
+                    os.close(fd)
+                ancestors.assert_called_with(directory, directory=True)
+                mount.assert_called_once()
+                for wrong in (replace(pin, uid=info.st_uid + 1), replace(pin, gid=info.st_gid + 1),
+                              replace(pin, device=info.st_dev + 1)):
+                    with self.assertRaisesRegex(a.Rejected, "ROOT_PARENT_UNPROTECTED"):
+                        w.open_slot(replace(slot, root=wrong), ordinary_parent=True)
+                parent.chmod(0o720)
+                with self.assertRaisesRegex(a.Rejected, "ROOT_PARENT_UNPROTECTED"):
+                    w.open_slot(slot, ordinary_parent=True)
+                parent.chmod(0o700)
+                with self.assertRaisesRegex(a.Rejected, "ROOT_CHANGED"):
+                    w.open_slot(replace(slot, root=replace(pin, inode=info.st_ino + 1)), ordinary_parent=True)
+                parent.rename(Path(directory) / "held-profile")
+                parent.symlink_to(Path(directory) / "held-profile", target_is_directory=True)
+                with self.assertRaises(OSError):
+                    w.open_slot(slot, ordinary_parent=True)
+
     def test_bootstrap_rejects_unpinned_module_before_execution(self):
         value = runtime_value()
         value["worker_path"] = str(Path(w.__file__).absolute())

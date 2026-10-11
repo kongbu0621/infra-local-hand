@@ -211,11 +211,31 @@ def match_mount(fdinfo, mountinfo, slot):
             "WRITABLE_QUOTA_FILESYSTEM_REQUIRED")
 
 
-def open_slot(slot):
+def open_slot(slot, *, ordinary_parent=False):
     from .admission import Root, require
     from .protected_inputs import open_protected
+    require(type(ordinary_parent) is bool, "ROOT_PARENT_POLICY")
     parent_path = str(PurePosixPath(slot.path).parent)
-    if parent_path == "/":
+    if ordinary_parent:
+        # Q2 allocates slots below the bound ordinary account's profile
+        # directory. Only that immediate parent uses its account ownership;
+        # every ancestor still uses the protected root-owned traversal.
+        grandparent = open_protected(str(PurePosixPath(parent_path).parent), directory=True)
+        try:
+            parent = os.open(PurePosixPath(parent_path).name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                dir_fd=grandparent)
+        finally:
+            os.close(grandparent)
+        try:
+            observed = os.fstat(parent)
+            require(stat.S_ISDIR(observed.st_mode) and observed.st_mode & 0o022 == 0
+                    and (observed.st_dev, observed.st_uid, observed.st_gid)
+                        == (slot.root.device, slot.root.uid, slot.root.gid), "ROOT_PARENT_UNPROTECTED")
+        except BaseException:
+            os.close(parent)
+            raise
+    elif parent_path == "/":
         parent = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
         observed = os.fstat(parent)
         if observed.st_uid != 0 or observed.st_mode & 0o022:
