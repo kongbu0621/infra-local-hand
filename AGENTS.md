@@ -1,19 +1,30 @@
 # Execution guidance
 
-## Proposed guest resumption into original core (2026-10-12)
+## Approved guest resumption into original core (2026-10-12)
 
 Exact A `54036654c399cdab0386a65f53f06283c2a92032`, tree
 `f20da7b12e52c292a147797746fec5448affc269`, contains the
 [requirements](docs/a2-execution/q2-core-guest-resumption/REQUIREMENTS.md),
 [architecture](docs/a2-execution/q2-core-guest-resumption/ARCHITECTURE.md) and
 [plan](docs/a2-execution/q2-core-guest-resumption/IMPLEMENTATION_PLAN.md).
-Scope `LH-Q2-CORE-GUEST-RESUMPTION-v1` / GR1–GR4 is OPEN / NOT APPROVED under the same R.
-It proposes one new original-six-command verification of the same retained VM, then conditional
+Scope `LH-Q2-CORE-GUEST-RESUMPTION-v1` / GR1–GR4 is CLOSED under the same R by
+[Owner B](docs/governance/Q2_CORE_GUEST_RESUMPTION_OWNER_DECISION.md), event
+`LH-Q2-CORE-GUEST-RESUMPTION-CLOSURE-20261012-01`. The adjacent exact reply explicitly approves
+PR #28, this A and the original private destination/frozen payload. PR #28 merged normally as
+`db05ba3e7a718bef437f7d0899d17287755d7451`; its earlier rejected merge remains historical.
+Preserve A's three original bytes and historical OPEN labels. This independent C is bookkeeping
+only; D descends from it without squash. R/source/integrity, Owner mandate/authority, no exceptions
+and change control remain. Complete the batch without per-substep reapproval.
+It authorizes one new original-six-command verification of the same retained VM, then conditional
 original unissued 11c maintenance and 07a H01→Q4→H11, without another startup or maintenance
 generation. Total proposed reservations are 27503 MiB/8406 inodes, retaining all nineteen
-obligations. Original HR2 failure, freeze and callers stay unchanged. No new implementation,
-caller, preparation pool or field action has been issued. Owner's exact A/scope and outbound
-decision is pending; ordinary source repairs remain separate from that new field authority.
+obligations. Original HR2 failure, freeze and callers stay unchanged. Complete GR1 source wiring,
+independent consumers, full cost/lifecycle bounds, normal publication, exact-D first CI, installations
+and caller freezes before GR2. Actual full GR2 success and final data freeze alone permit GR3;
+actual full maintenance success alone permits GR4. At C GR1 NOT_STARTED, GR2/GR3 NOT_ISSUED,
+GR4/H01/Q4/H11 NOT_RUN. This closure supersedes older no-new-field clauses only for GR1–GR4;
+failure/unknown/drift stops and retains, with no retry, new startup, trust reset, supplementary
+collection, cleanup, rollback or other recovery. NAS and peripheral work remain paused.
 
 ## Core delivery priority reaffirmed (2026-10-12)
 

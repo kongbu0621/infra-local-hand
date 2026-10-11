@@ -24,10 +24,10 @@ def test_two_fixed_archives_preserve_old_failure_and_exact_history():
     assert len(p.runtime_preparation_archive_files(raw)[0]) == 18
     assert previous == p.identity_maintenance_resume()
     assert legacy == p.persistent_maintenance_resume()
-    from host_rebind_fixture import source as current_source
+    from guest_resumption_fixture import source as current_source
     current = current_source()
     logical = dict(resume=p.maintenance_resume(), persistent_source=current)
-    manifest = dict(schema='lhq-journal-growth-manifest/v22',
+    manifest = dict(schema='lhq-journal-growth-manifest/v23',
         inputs=p.encode_manifest_inputs(logical),
         resume=p.encode_maintenance_resume(logical['resume'], current))
     assert p.decode_manifest_inputs(manifest, p.runtime_preparation_maintenance_resume()) == logical

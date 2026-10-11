@@ -13,6 +13,7 @@ import math
 import re
 import stat
 import tarfile
+import shlex
 
 R = '10d2a5c827964989f41ca6e8eeac3d44de6d0f04'
 A = '4af01900cfe462cec4762cb04966dab139a0a31c'
@@ -127,14 +128,15 @@ def previous_failure():
         old_commitments_refunded=False)
 
 
-def envelope(files, *, final=True):
-    expected = set(FINAL_MEMBERS if final else BASE_MEMBERS)
+def envelope(files, *, final=True, resumed=False):
+    expected = set((GR_FINAL_MEMBERS if final else GR_BASE_MEMBERS) if resumed else
+                   (FINAL_MEMBERS if final else BASE_MEMBERS))
     require(set(files) == expected and all(type(b) is bytes and len(b) <= 131072
             for b in files.values()), 'ENVELOPE_COVERAGE')
     for name, target in REFERENCES.items():
         require(files[name] == files[target], 'ENVELOPE_REFERENCE')
     stored = {n:b for n,b in files.items() if n not in REFERENCES}
-    stored['index.json'] = canonical(dict(schema='lhq-host-rebind-envelope/v1',
+    stored['index.json'] = canonical(dict(schema='lhq-host-rebind-envelope/v2' if resumed else 'lhq-host-rebind-envelope/v1',
         files={n:pin(b) for n,b in stored.items()}, references=REFERENCES))
     require(len(stored['index.json']) <= 65536, 'ENVELOPE_INDEX_BOUND')
     output = io.BytesIO()
@@ -147,10 +149,11 @@ def envelope(files, *, final=True):
     return raw
 
 
-def read_envelope(raw, *, final=True):
+def read_envelope(raw, *, final=True, resumed=False):
     require(type(raw) is bytes and 0 < len(raw) <= 1048576 and len(raw) % 512 == 0,
             'ENVELOPE_BOUND')
-    expected = set(FINAL_MEMBERS if final else BASE_MEMBERS) - REFERENCES.keys()
+    expected = set((GR_FINAL_MEMBERS if final else GR_BASE_MEMBERS) if resumed else
+                   (FINAL_MEMBERS if final else BASE_MEMBERS)) - REFERENCES.keys()
     expected.add('index.json')
     files = {}
     with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
@@ -168,12 +171,12 @@ def read_envelope(raw, *, final=True):
     require(set(files) == expected, 'ENVELOPE_COVERAGE')
     index_raw = files.pop('index.json'); index = document(index_raw)
     require(set(index) == {'schema', 'files', 'references'} and
-        index['schema'] == 'lhq-host-rebind-envelope/v1' and
+        index['schema'] == ('lhq-host-rebind-envelope/v2' if resumed else 'lhq-host-rebind-envelope/v1') and
         index['files'] == {n: pin(b) for n, b in files.items()} and
         index['references'] == REFERENCES, 'ENVELOPE_INDEX')
     for name, target in REFERENCES.items():
         files[name] = files[target]
-    require(raw == envelope(files, final=final), 'ENVELOPE_ENCODING')
+    require(raw == envelope(files, final=final, resumed=resumed), 'ENVELOPE_ENCODING')
     return files, pin(index_raw)
 
 
@@ -307,16 +310,16 @@ def validate_activation(value):
     return value
 
 
-def binding(request_raw):
+def binding(request_raw, *, resumed=False):
     request = document(request_raw)
-    require(set(request['authority']) == {'R', 'A', 'C', 'owner', 'revision'} and
-        request['authority'] == dict(R=R, A=A, C=C, owner=OWNER_SHA, revision=REVISION_SHA),
+    expected_authority = gr_authority() if resumed else dict(R=R, A=A, C=C, owner=OWNER_SHA, revision=REVISION_SHA)
+    require(request['authority'] == expected_authority,
         'REQUEST_AUTHORITY')
     require(type(request['nonce']) is str and re.fullmatch('[0-9a-f]{64}', request['nonce']),
         'REQUEST_NONCE')
     require(set(request['implementation']) == {'commit', 'tree'} and all(type(v) is str and
         re.fullmatch('[0-9a-f]{40}', v) for v in request['implementation'].values()), 'REQUEST_D')
-    require(request['costs'] == costs(), 'REQUEST_COSTS')
+    require(canonical(request['costs']) == canonical(gr_costs() if resumed else costs()), 'REQUEST_COSTS')
     return dict(authority=request['authority'], implementation=request['implementation'],
                 session=request['session'], nonce=request['nonce'], request=pin(request_raw))
 
@@ -417,11 +420,11 @@ def verify_start(files, base, freeze):
     return request, result, vm
 
 
-def verify_guest(files, base, freeze, start, start_raw):
+def verify_guest(files, base, freeze, start, start_raw, *, resumed=False):
     from . import q2_core_prior_attempt as history
     require(set(files) == set(GUEST_FILES), 'GUEST_FILES')
-    request = document(files['request.json']); bound = binding(files['request.json'])
-    require(bound['session'] == GUEST_SESSION and freeze['requests']['guest'] == bound['request']
+    request = document(files['request.json']); bound = binding(files['request.json'], resumed=resumed)
+    require(bound['session'] == (GR_GUEST_SESSION if resumed else GUEST_SESSION) and freeze['requests']['guest'] == bound['request']
         and request['baseline_sha256'] == sha(canonical(base)) and request['limits'] == limits()
         and request['package'] == base['package'] and request['quota'] == base['quota']
         and request['ssh_prefix'] == base['ssh_prefix'], 'GUEST_REQUEST')
@@ -500,3 +503,194 @@ def build_activation(raw, identity_raw, failure_raw):
         owner=OWNER_SHA, revision=REVISION_SHA, activation_sha256=sha(history.c.canonical(value)),
         baseline_sha256=sha(canonical(base)), costs=costs())
     return validate_activation(value), source, base
+
+
+# GR adopts only the retained successful start. Its new guest result never
+# replaces HR's failed guest bytes or changes the meaning of the old formats.
+GR_A = '54036654c399cdab0386a65f53f06283c2a92032'
+GR_C = '5692d8c532815d7f741c0f9dc040c4a5a3198058'
+GR_SCOPE = 'LH-Q2-CORE-GUEST-RESUMPTION-v1'
+GR_EVENT = 'LH-Q2-CORE-GUEST-RESUMPTION-CLOSURE-20261012-01'
+GR_OWNER_SHA = '06f6b8c9542a48e360664258d4b4c22e4594c6947d6f2cc543eec5885606a1b9'
+GR_GUEST_SESSION = 'lhqguest-20261012a'
+HR_FREEZE_SHA = '0d5bb5140b7687dd77714a0ce1f5f30f956e431aadce702e9bc1ab6ba2305d98'
+HR_TERMINAL_SHA = 'b602284213c57f1e3a140dff0cfb3b60661d79ba4eadb83ac866722a8182141b'
+HR_FAILED_INDEX_SHA = '7ba15c2645a8ed6d9991189f42a950a086f435815d740ff4314678f86defdc5e'
+GUEST_SOURCE_PIN = dict(bytes=6674, sha256='fe7591911150090d33db9f2e007da8b3e5aae404d795462161e2435c08b524db')
+GR_BASE_MEMBERS = (*BASE_MEMBERS, 'hr1-freeze.json',
+    *('start/' + n for n in START_FILES), *('failed-guest/' + n for n in GUEST_FILES),
+    'failed-guest/index.json', 'failed-guest/terminal.json', 'continuation-owner.json')
+GR_FINAL_MEMBERS = (*GR_BASE_MEMBERS, 'continuation-freeze.json',
+                    *('guest/' + n for n in GUEST_FILES))
+GR_EXTRA_FIELDS = frozenset(('continuation_owner_sha256', 'previous_guest_failure_sha256'))
+
+
+def gr_authority():
+    return dict(R=R, A=GR_A, C=GR_C, owner=GR_OWNER_SHA)
+
+
+def gr_costs():
+    return dict(old_mib=27497, old_inodes=8214, preparation_mib=4, preparation_inodes=128,
+        guest_mib=2, guest_inodes=64, total_mib=27503, total_inodes=8406,
+        maintenance_admission_mib=27375, maintenance_admission_inodes=8374,
+        maintenance_obligations=19, core_capture_counted_once=True, refunded=False)
+
+
+def guest_failure_summary():
+    return dict(session=GUEST_SESSION, D='0b84bbcf8108522305d1e23c9378f6d0a8f50bcc',
+        state='CONSUMED_FAILED_STOP_AND_RETAIN', terminal='GUEST_FAILED_STOP_AND_RETAIN',
+        reason='HOST_REBIND_COMMAND_COMPLETION', stage='SSH_KEY_EXCHANGE', ssh_requests=1,
+        original_count=9, caller_returncode=3, tool_returncode=3,
+        ssh_child_returncode='UNKNOWN', remote_exit='UNKNOWN', guest_report=False,
+        maintenance='NOT_ISSUED', core='NOT_RUN', old_commitments_refunded=False)
+
+
+def gr_baseline(files, identity_raw, failure_raw):
+    require(set(files) == set(GR_BASE_MEMBERS), 'GR_BASE_COVERAGE')
+    for name, digest in (('hr1-freeze.json', HR_FREEZE_SHA),
+            ('failed-guest/index.json', HR_FAILED_INDEX_SHA),
+            ('failed-guest/terminal.json', HR_TERMINAL_SHA),
+            ('continuation-owner.json', GR_OWNER_SHA)):
+        require(sha(files[name]) == digest, 'GR_FROZEN_' + name)
+    owner = document(files['continuation-owner.json'])
+    require(owner['R'] == R and owner['A'] == GR_A and owner['scope'] == GR_SCOPE
+        and owner['event'] == GR_EVENT and owner['state'] == 'APPROVED'
+        and owner['previous_hr1_freeze_sha256'] == HR_FREEZE_SHA
+        and owner['previous_terminal_sha256'] == HR_TERMINAL_SHA, 'GR_OWNER')
+    base = baseline({n: files[n] for n in BASE_MEMBERS}, identity_raw, failure_raw)
+    old = document(files['hr1-freeze.json'])
+    require(old['schema'] == 'lhq-host-rebind-freeze/v1' and
+        old['state'] == 'FROZEN_HR1_VERIFIED' and old['authority'] ==
+        dict(R=R, A=A, C=C, owner=OWNER_SHA, revision=REVISION_SHA)
+        and old['baseline_sha256'] == sha(canonical(base))
+        and old['costs'] == costs() and old['limits'] == limits()
+        and old['baseline_files'] == {n: pin(files[n]) for n in BASE_MEMBERS}
+        and old['external'] == dict(identity=pin(identity_raw), failure=pin(failure_raw)), 'GR_OLD_FREEZE')
+    start = {n: files['start/' + n] for n in START_FILES}
+    start_request, started, vm = verify_start(start, base, old)
+    failed = {n: files['failed-guest/' + n] for n in GUEST_FILES}
+    index = document(files['failed-guest/index.json'])
+    require(index == dict(actual={n: pin(b) for n, b in failed.items()}, missing=[], phase='guest'),
+            'GR_FAILURE_INDEX')
+    bound = binding(failed['request.json'])
+    request = document(failed['request.json'])
+    require(bound['session'] == GUEST_SESSION and bound['implementation'] == old['implementation']
+        == start_request['implementation'] and old['requests']['guest'] == pin(failed['request.json'])
+        and request['baseline_sha256'] == sha(canonical(base)), 'GR_FAILURE_REQUEST')
+    result = document(failed['result.json']); caller = document(failed['caller-completion.json'])
+    tool = document(failed['tool-completion.json']); terminal = document(files['failed-guest/terminal.json'])
+    require(document(failed['started.json']) == dict(binding=bound, startup=pin(start['result.json']))
+        and result['binding'] == bound and result['startup'] == pin(start['result.json'])
+        and result['state'] == 'STOP_AND_RETAIN'
+        and result['errors'] == [dict(type='RebindError', reason='HOST_REBIND_COMMAND_COMPLETION')]
+        and result['error']['reason'] == 'HOST_REBIND_COMMAND_COMPLETION'
+        and result['ssh_calls'] == 1 and type(result['ssh_calls']) is int
+        and result['host_before'] == base['host'] and result['vm_before'] == started['process']
+        and 'command' not in result and 'guest_boot_id' not in result, 'GR_FAILURE_RESULT')
+    for key in ('startup_calls', 'package_install_calls', 'module_load_calls', 'retries'):
+        require(type(result[key]) is int and result[key] == 0, 'GR_FAILURE_COUNTS')
+    image_transition(started['images_after'], result['images_before'], base['owner_uid'])
+    require(failed['guest.stdout'] == b'' and failed['caller.stderr'] == b''
+        and b'kex_exchange_identification: read: Connection reset by peer' in failed['guest.stderr']
+        and len(failed['guest.stderr']) <= 65536, 'GR_FAILURE_STREAMS')
+    require(caller['binding'] == bound and type(caller['returncode']) is int and caller['returncode'] == 3
+        and type(caller['invocations']) is int and caller['invocations'] == 1
+        and caller['eof'] == dict(stdout=True, stderr=True)
+        and all(caller[s] == pin(failed['caller.' + s]) for s in ('stdout', 'stderr'))
+        and document(failed['caller.stdout']) == dict(state=result['state'], result=pin(failed['result.json']))
+        and type(tool['exit_code']) is int and tool['exit_code'] == 3, 'GR_FAILURE_COMPLETION')
+    require(terminal['state'] == 'GUEST_FAILED_STOP_AND_RETAIN' and terminal['phase'] == 'guest'
+        and terminal['freeze'] == pin(files['hr1-freeze.json'])
+        and terminal['originals_index'] == pin(files['failed-guest/index.json'])
+        and terminal['caller_completion'] == caller and terminal['tool_completion'] == tool
+        and terminal['retry_allowed'] is False and terminal['maintenance_consumed'] is None
+        and all(terminal[n] == 'NOT_RUN' for n in ('HR4', 'H01', 'Q4', 'H11')), 'GR_TERMINAL')
+    usage(result['usage'], 120); usage(caller['usage'])
+    return base, old, start_request, started, vm
+
+
+def verify_gr_guest(files, base, freeze, old, start, start_raw):
+    request = document(files['request.json'])
+    require(request['retained_freeze_sha256'] == HR_FREEZE_SHA
+        and request['previous_terminal_sha256'] == HR_TERMINAL_SHA
+        and request['guest_source'] == GUEST_SOURCE_PIN
+        and request['nonce'] != document(old['guest_request_raw'])['nonce'], 'GR_GUEST_SOURCE')
+    # Bind the complete remote program to the original source digest and six
+    # command description; a request hash alone must not authorize arbitrary code.
+    tokens = shlex.split(request['remote_command'])
+    prefix = ['exec', '/usr/bin/sudo', '-n', '--', '/usr/bin/env', '-i', 'HOME=/root',
+        'PATH=/usr/sbin:/usr/bin:/sbin:/bin', 'LANG=C', 'LC_ALL=C', '/usr/bin/python3', '-I', '-B', '-c']
+    prelude = ('import resource\nfor key,value in ((resource.RLIMIT_AS,268435456),'
+        '(resource.RLIMIT_NOFILE,128),(resource.RLIMIT_CPU,120),(resource.RLIMIT_CORE,0)):\n'
+        '    resource.setrlimit(key,(value,value))\n')
+    require(len(tokens) == len(prefix) + 2 and tokens[:len(prefix)] == prefix
+        and tokens[-2].startswith(prelude) and pin(tokens[-2][len(prelude):].encode('ascii')) == GUEST_SOURCE_PIN
+        and tokens[-1] == canonical(dict(nonce=request['nonce'], package=base['package'], quota=base['quota'])).decode('ascii')
+        and shlex.join(tokens) == request['remote_command'], 'GR_REMOTE_PROGRAM')
+    return verify_guest(files, base, freeze, start, start_raw, resumed=True)
+
+
+def validate_gr_activation(value):
+    require(type(value) is dict and set(value) >= GR_EXTRA_FIELDS and len(canonical(value)) <= 4096,
+            'GR_ACTIVATION_FIELDS')
+    require(value['schema'] == 'local-hand-q2-vm-activation/v4' and value['event'] == GR_EVENT
+        and value['continuation_owner_sha256'] == GR_OWNER_SHA
+        and value['previous_guest_failure_sha256'] == HR_TERMINAL_SHA, 'GR_ACTIVATION_POLICY')
+    old = {k: v for k, v in value.items() if k not in GR_EXTRA_FIELDS}
+    old.update(schema='local-hand-q2-vm-activation/v3', event=EVENT)
+    validate_activation(old)
+    return value
+
+
+def build_gr_activation(raw, identity_raw, failure_raw):
+    from . import q2_core_prior_attempt as history
+    files, index = read_envelope(raw, resumed=True)
+    retained = {n: files[n] for n in GR_BASE_MEMBERS}
+    base, old, start_request, start, vm = gr_baseline(retained, identity_raw, failure_raw)
+    freeze = document(files['continuation-freeze.json'])
+    require(freeze['schema'] == 'lhq-guest-resumption-freeze/v1' and freeze['state'] == 'FROZEN_GR1_VERIFIED'
+        and freeze['authority'] == gr_authority() and freeze['costs'] == gr_costs()
+        and freeze['limits'] == limits() and freeze['baseline_sha256'] == sha(canonical(base))
+        and freeze['retained_files'] == {n: pin(b) for n, b in retained.items()}
+        and freeze['external'] == dict(identity=pin(identity_raw), failure=pin(failure_raw)), 'GR_FREEZE')
+    guest = {n: files['guest/' + n] for n in GUEST_FILES}
+    require(document(guest['request.json'])['implementation'] == freeze['implementation'], 'GR_D')
+    old_request = dict(old, guest_request_raw=files['failed-guest/request.json'])
+    current, result = verify_gr_guest(guest, base, freeze, old_request, start, files['start/result.json'])
+    historical = base['historical']
+    value = {k: copy.deepcopy(historical[k]) for k in history.ACTIVATION_PROJECTION_FIELDS}
+    value.update(schema='local-hand-q2-vm-activation/v4', event=GR_EVENT,
+        current_boot_id=current['boot_id'], host_boot_id=base['host']['boot_id'], vm=vm,
+        image_identities={n: [base['images'][n]['metadata'][k] for k in ('dev', 'ino')]
+                          for n in ROLES - {'original_system'}},
+        original_system_identity=[base['images']['original_system']['metadata'][k] for k in ('dev', 'ino')],
+        system_path=base['images']['system']['path'], pidfile=start_request['pidfile'], serial=None,
+        index=index, evidence_sha256=sha(canonical({n: pin(b) for n, b in files.items()})),
+        baseline_policy='OWNER_ADOPTED_HB2_BASELINE', historical_filesystem_continuity='UNKNOWN',
+        historical_content_continuity='UNKNOWN', owner_decision_sha256=OWNER_SHA,
+        serial_revision_sha256=REVISION_SHA, hb2_evidence_sha256=base['hb2_evidence_sha256'],
+        rp2_evidence_sha256=base['rp2_evidence_sha256'],
+        historical_activation_sha256=sha(history.c.canonical(historical)),
+        startup_evidence_sha256=sha(canonical({n: pin(files['start/' + n]) for n in START_FILES})),
+        guest_evidence_sha256=sha(canonical({n: pin(b) for n, b in guest.items()})),
+        serial_backend='null', serial_capture='NOT_CAPTURED_NULL_BACKEND',
+        continuation_owner_sha256=GR_OWNER_SHA, previous_guest_failure_sha256=HR_TERMINAL_SHA)
+    source = dict(schema='local-hand-q2-host-rebind-source/v2', archive=pin(raw), index=index,
+        prior=base['persistent_source'], summary=previous_failure(), owner=OWNER_SHA,
+        revision=REVISION_SHA, activation_sha256=sha(history.c.canonical(value)),
+        baseline_sha256=sha(canonical(base)), costs=gr_costs(), continuation_owner=GR_OWNER_SHA,
+        previous_guest_failure=guest_failure_summary(), previous_terminal_sha256=HR_TERMINAL_SHA,
+        previous_freeze_sha256=HR_FREEZE_SHA)
+    history.validate_host_rebind_source(source)
+    return validate_gr_activation(value), source, base
+
+
+def consume_activation(raw, identity_raw, failure_raw):
+    require(type(raw) is bytes and 0 < len(raw) <= 1048576, 'ENVELOPE_BOUND')
+    with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
+        stream = archive.extractfile('index.json')
+        require(stream is not None, 'ENVELOPE_INDEX')
+        with stream:
+            index = document(stream.read(65537), 65536)
+    build = build_gr_activation if index['schema'] == 'lhq-host-rebind-envelope/v2' else build_activation
+    return build(raw, identity_raw, failure_raw)
