@@ -21,18 +21,13 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 | 作业后端 | 已有提交、执行、状态查询、取消、同账本恢复观测和结果读取；CLI/MCP 共用后端。恢复不重放业务，证据不足时保留 UNKNOWN。 |
 | 验收链 | 已有 H01 正常执行、Q4 运行中取消、H11 同任务恢复观测脚本及离线回归；原 `lhqcore-20261007a` 三案仍为 NOT_RUN。 |
 | 原现场环境 | 曾完成原配置 VM 启动及[当前 guest 六命令核验](docs/a2-execution/Q2_CORE_RESUMED_VM_FIELD_20261010.md)。随后宿主机重启，旧运行身份不再适用于当前环境。 |
-| 最新现场结果 | [HR2 单次启动成功](docs/a2-execution/Q2_CORE_HOST_REBIND_FIELD_20261011.md)，采用批准的 HB2 基线和 null 串口；随后唯一一次 guest SSH 在握手阶段被连接对端重置，未获得 guest 报告，已停止保留。 |
-| 当前代码验证 | 准确 D `0b84bbc` 经 PR #25 正常合入 `3d3d807`；[首次 CI 三项成功](https://github.com/kongbu0621/infra-local-hand/actions/runs/38152488046)，Linux 7950、Windows 2089 项通过，两平台及本地独立安装通过。 |
+| 最新现场结果 | 原 VM 启动成功。GR2 的本地重复打开文件错误已修复；继续及有界重试的两次 SSH 均在握手阶段被对端重置，子进程退出 255，未获得 guest 报告。原 VM 进程及固定转发端口仍在，guest 侧原因未知。 |
+| 当前代码验证 | 准确 D `1fa0c02` 经 PR #29 正常合入 `ab24988`；[首次 CI 三项成功](https://github.com/kongbu0621/infra-local-hand/actions/runs/38163132161)，Linux 7993、Windows 2124 项通过，两平台及本地独立安装通过。私有调用器和重试修复另经真实加载器及 25 项相关检查验证。 |
 
-此前 [RP2 维护预检](docs/a2-execution/Q2_CORE_RUNTIME_PREPARATION_FIELD_20261011.md)
-因宿主 boot 与旧 activation 不一致而停止，SSH 为 0、消费标记未创建；它和其他旧返回
-保持原样，不重放。HB2 固定读取成功不等于 VM、guest 或核心验收通过。
-
-已批准的[HR1–HR4接续](docs/governance/Q2_CORE_HOST_REBIND_CONTINUATION_BASELINE.md)和
-[null串口修订](docs/governance/Q2_CORE_HOST_REBIND_NULL_BASELINE.md)已完成HR1实现、验证与冻结。
-HR2启动原件通过，但guest传输失败，未形成最终v3数据冻结；HR3维护未发行，H01/Q4/H11
-仍NOT_RUN。冻结程序和原件保持，没有重试或追加探测；连接重置的guest侧原因尚未知。
-十九份维护义务及完整费用保留，历史文件系统/内容连续性仍UNKNOWN；NAS和外围继续暂停。
+用户已撤销“一次失败就封死整批任务、禁止重试”等旧规则。修复后继续已批准的核心工作；
+本地错误及只读连接错误允许有界重试，可能已写入的操作先确认完成状态。
+普通修复不重走审批套件，也不强制重复全量测试和安装。当前规则以 [AGENTS.md](AGENTS.md)
+为准；历史记录不构成新的审批门槛，未知结果仍如实保留。
 
 ## 使用与开发入口
 
