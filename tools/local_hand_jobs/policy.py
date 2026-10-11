@@ -537,8 +537,7 @@ class Policy:
         return {"schema_version": SCHEMA_VERSION, "supported_versions": [SCHEMA_VERSION],
             "tool_schema_digest": TOOL_SCHEMA_DIGEST, "authority_id": self.authority_id,
             "policy_digest": self.policy_digest, "generation": self.generation, "catalog_version": version,
-            "execution_support": {"ledger.nas.roundtrip": {"status": "UNSUPPORTED",
-                "reason": "NETWORK_ARCHIVE_HARD_QUOTA_ADAPTER_UNIMPLEMENTED"}},
+            "execution_support": {},
             "profiles": page, "next_cursor": next_cursor}
 
 

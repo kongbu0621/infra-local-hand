@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+import hashlib
 import importlib.util
 import io
 import json
@@ -18,7 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_hand_jobs.contract import JobError, Principal, TOOL_SCHEMAS
+from local_hand_jobs.contract import JobError, Principal, TOOL_SCHEMAS, TOOL_SCHEMA_DIGEST, canonical_bytes
 from local_hand_mcp.server import create_app, main
 from test_local_hand_mcp_auth import HAS_EXTRA, SyntheticIssuer
 
@@ -96,6 +97,9 @@ class ServerTests(unittest.TestCase):
         response = self.rpc("tools/list")
         tools = response.json()["result"]["tools"]
         self.assertEqual(set(TOOL_SCHEMAS), {tool["name"] for tool in tools})
+        published = {tool["name"]: tool["inputSchema"] for tool in tools}
+        self.assertNotIn("ledger.nas.roundtrip", json.dumps(published))
+        self.assertEqual(hashlib.sha256(canonical_bytes(published)).hexdigest(), TOOL_SCHEMA_DIGEST)
         self.assertTrue(all(tool["_meta"]["securitySchemes"][0]["type"] == "oauth2" for tool in tools))
         self.assertTrue(all(tool["outputSchema"]["type"] == "object" for tool in tools))
         response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})

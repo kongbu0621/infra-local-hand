@@ -2,7 +2,7 @@
   "schema_version": "lh-plugin-contract-v1",
   "plugin_version": "0.1.0",
   "job_schema_version": "lh-job-v1",
-  "tool_schema_digest": "1ff6930c4908ca4f34a563b375e28df8597de4df199a66b8c7420b17e7bf9ab3",
+  "tool_schema_digest": "22251ebc3567a3a2792c07b5a15f1fc25d2cb4794a1fcf73ffdf967b65094331",
   "backend_contract_compatibility": {
     "minimum": "lh-job-v1",
     "maximum": "lh-job-v1",
@@ -466,102 +466,6 @@
               },
               "required": [
                 "prepared_ref"
-              ],
-              "additionalProperties": false
-            },
-            "expires_at": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "request_digest": {
-              "type": "string",
-              "pattern": "^(?:[0-9a-f]{64})$"
-            }
-          },
-          "required": [
-            "schema_version",
-            "operation_id",
-            "kind",
-            "profile_ref",
-            "expected",
-            "inputs",
-            "expires_at",
-            "request_digest"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "schema_version": {
-              "const": "lh-job-v1"
-            },
-            "operation_id": {
-              "type": "string",
-              "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
-            },
-            "kind": {
-              "const": "ledger.nas.roundtrip"
-            },
-            "profile_ref": {
-              "type": "string",
-              "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,127})$"
-            },
-            "expected": {
-              "type": "object",
-              "properties": {
-                "node_id": {
-                  "type": "string",
-                  "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,127})$"
-                },
-                "install_uuid": {
-                  "type": "string",
-                  "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
-                },
-                "deployment_epoch": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 9007199254740991
-                },
-                "profile_digest": {
-                  "type": "string",
-                  "pattern": "^(?:[0-9a-f]{64})$"
-                },
-                "policy_digest": {
-                  "type": "string",
-                  "pattern": "^(?:[0-9a-f]{64})$"
-                },
-                "registry_digest": {
-                  "type": "string",
-                  "pattern": "^(?:[0-9a-f]{64})$"
-                }
-              },
-              "required": [
-                "node_id",
-                "install_uuid",
-                "deployment_epoch",
-                "profile_digest",
-                "policy_digest",
-                "registry_digest"
-              ],
-              "additionalProperties": false
-            },
-            "inputs": {
-              "type": "object",
-              "properties": {
-                "prepared_ref": {
-                  "type": "string",
-                  "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,127})$"
-                },
-                "storage_ref": {
-                  "type": "string",
-                  "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,127})$"
-                }
-              },
-              "required": [
-                "prepared_ref",
-                "storage_ref"
               ],
               "additionalProperties": false
             },
