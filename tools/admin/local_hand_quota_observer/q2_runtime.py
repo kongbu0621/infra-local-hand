@@ -188,7 +188,8 @@ def query(config):
         capture = Capture(a.MAX_REPORT_BYTES)
         try:
             capture.start((v["programs"]["python"]["path"], "-I", "-B", v["entry"]["path"],
-                           "native", config.path, config.digest, root["role"]))
+                           "native", config.path, config.digest, root["role"]),
+                          invocation_id=identity["invocation_id"])
             while boottime_ns() < deadline(config, "query") and not capture.settled:
                 capture.pump()
                 if capture.error:

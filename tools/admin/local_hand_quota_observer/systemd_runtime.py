@@ -107,10 +107,15 @@ class Capture:
         self.error = None
         self.configured = False
 
-    def start(self, argv):
+    def start(self, argv, *, invocation_id=None):
         require(self.process is None, "CAPTURE_ALREADY_STARTED")
+        environment = dict(ENVIRONMENT)
+        if invocation_id is not None:
+            require(type(invocation_id) is str and re.fullmatch(r"[0-9a-f]{32}", invocation_id),
+                    "CAPTURE_INVOCATION_ID")
+            environment["INVOCATION_ID"] = invocation_id
         self.process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, close_fds=True, env=ENVIRONMENT)
+                                        stderr=subprocess.PIPE, close_fds=True, env=environment)
         for stream in (self.process.stdout, self.process.stderr):
             os.set_blocking(stream.fileno(), False)
         self.configured = True
