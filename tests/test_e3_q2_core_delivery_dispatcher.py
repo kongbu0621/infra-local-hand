@@ -744,6 +744,7 @@ def test_install_command_requires_exit_even_after_both_eof(tmp_path):
 
 
 def _guarded_installation_clock(effects):
+    effects.close()  # Drop the real clock descriptors before installing a synthetic clock.
     outer = {"boot_id": "11111111-2222-3333-4444-555555555555",
              "boottime_deadline_ns": 1000 * d.NS, "monotonic_deadline_ns": 2000 * d.NS}
     effects.context["guest_deadlines"] = outer

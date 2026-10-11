@@ -66,7 +66,7 @@ BIND_FRAME_LIMIT = 8208
 # PP1 binds the exact reviewed dispatcher. Exact D first CI, full PP2 originals
 # and actual coordinator completion remain required before original 07a.
 # Historical dispatcher pins remain in their consumed source profiles.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"e63949a305e84ecc15201faec4332b75110ab663ea292f42fde371b5676bb97d"})
+RELEASABLE_DISPATCHER_SHA256 = frozenset({"fcf62b89288d6818ae54bbbbbf7b5a0f1e1cc2665abfbecc0f4c2857cc7346ba"})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,

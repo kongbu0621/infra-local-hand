@@ -74,6 +74,19 @@ def test_each_call_reads_fresh_boot_bytes_and_both_clocks(clock, monkeypatch):
     assert len(opened) == 6
 
 
+def test_io_guard_reads_held_boot_file_without_rewalking_paths(clock, monkeypatch):
+    effect, target, _parent, _opened = clock
+    first = effect.now()
+    effect.context['guest_deadlines'] = dict(boot_id=BOOT,
+        boottime_deadline_ns=first['boottime_ns'] + 10**12,
+        monotonic_deadline_ns=first['monotonic_ns'] + 10**12)
+    monkeypatch.setattr(d.os, 'stat', lambda *a, **kw: pytest.fail('guard repeated path lookup'))
+    assert effect._effect_guard()['boot_id'] == BOOT
+    target.write_text(OTHER + '\n', encoding='ascii')
+    with pytest.raises(d.DispatchError, match='BOOT_CHANGED'):
+        effect._effect_guard()
+
+
 @pytest.mark.parametrize('replace', ['file', 'parent', 'ancestor_alias'])
 def test_reused_descriptors_reject_changed_names(clock, replace):
     effect, target, parent, opened = clock

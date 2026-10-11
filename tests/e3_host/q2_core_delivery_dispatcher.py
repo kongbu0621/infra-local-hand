@@ -6071,11 +6071,22 @@ class FieldEffects:
         # Installation, extraction and new child work cannot borrow it. Keep
         # the original outer deadlines unchanged for the remote finalizer.
         outer = self.context["guest_deadlines"]
-        return _clock(self, {
+        deadlines = {
             "boot_id": outer["boot_id"],
             "boottime_deadline_ns": outer["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS,
             "monotonic_deadline_ns": outer["monotonic_deadline_ns"] - REMOTE_FINAL_RESERVE_NS,
-        })
+        }
+        cached = getattr(self, '_clock_fds', None)
+        if cached is None:
+            return _clock(self, deadlines)
+        # The verified open kernel file cannot be redirected by a pathname
+        # change. Read fresh boot bytes and both clocks for every I/O guard;
+        # now() still rechecks the complete path at observation boundaries.
+        raw = os.pread(cached[1], 65, 0)
+        _effect(raw == (outer['boot_id'] + '\n').encode('ascii'), 'BOOT_CHANGED')
+        return _check_clock(dict(boot_id=outer['boot_id'],
+            boottime_ns=time.clock_gettime_ns(time.CLOCK_BOOTTIME),
+            monotonic_ns=time.clock_gettime_ns(time.CLOCK_MONOTONIC)), deadlines)
 
     def _prepare_carrier_storage(self):
         _effect(not self._persistence_ready and self._admission is not None,
@@ -6176,14 +6187,14 @@ class FieldEffects:
                 _effect(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
                     "INSTALL_MEMBER_CHANGED")
                 self._effect_guard()
-                self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard,
+                identity = self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard,
                     accounting=accounting, path=staging + '/' + relative.as_posix())
                 self._effect_guard()
-                reread, identity = self.stable_read_at(fd, relative.name,
-                    maximum=row["bytes"], expected_mode=row["mode"], guard=self._effect_guard)
-                _effect(identity["uid"] == identity["gid"] == 0 and reread == raw,
+                # create_only_at already compares a full readback with raw.
+                # Controlled I/O accounts every write; install() measures the
+                # complete tree once extraction ends, before starting a child.
+                _effect(identity["uid"] == identity["gid"] == 0,
                     "INSTALL_MEMBER_CHANGED")
-                self._observe_install_storage()
                 self._effect_guard()
         finally:
             for path, fd in directories.items():
@@ -8064,7 +8075,10 @@ def _phase_raw_binding(case, phase, plan, values, grant_digest, facts):
 
 
 def _clock(effects, deadlines):
-    now = effects.now()
+    return _check_clock(effects.now(), deadlines)
+
+
+def _check_clock(now, deadlines):
     _check.exact(now, ("boot_id", "boottime_ns", "monotonic_ns"), 'CLOCK_FIELDS')
     _check(now["boot_id"] == deadlines["boot_id"], 'BOOT_CHANGED')
     _check.integer(now["boottime_ns"], 1, code='CLOCK')
