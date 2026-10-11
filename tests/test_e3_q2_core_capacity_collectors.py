@@ -40,6 +40,7 @@ def fixture(tmp_path, monkeypatch):
     tree.mkdir(mode=0o700)
     (tree / "child").mkdir(mode=0o700)
     (tree / "child" / "payload").write_bytes(b"original payload")
+    (tree / "child" / "payload").chmod(0o600)
     for path in (tree, tree / "child", tree / "child" / "payload"):
         os.utime(path, ns=(1000000000, 2000000000))
     pin = tree.stat()
@@ -93,6 +94,27 @@ def test_root_must_match_approved_object_before_enumeration(fixture, field):
     with pytest.raises(d.DispatchError, match="RETAINED_IDENTITY"):
         fixture.e._capacity_retained_snapshot()
     assert not any(name == "." for name, _ in fixture.flags)
+
+
+def test_source_bound_retained_tree_preserves_historical_owners_but_not_ancestors(fixture, monkeypatch):
+    f = fixture
+    root_inode = f.tree.stat().st_ino
+    child_inode = (f.tree / 'child').stat().st_ino
+    changed = {root_inode, child_inode, (f.tree / 'child' / 'payload').stat().st_ino}
+    real_stat, real_fstat = os.stat, os.fstat
+    class HistoricalOwner:
+        def __init__(self, info): self.info = info
+        def __getattr__(self, name):
+            return 54321 if name == 'st_uid' else getattr(self.info, name)
+    def observe(info):
+        return HistoricalOwner(info) if info.st_ino in changed else info
+    monkeypatch.setattr(os, 'stat', lambda *a, **kw: observe(real_stat(*a, **kw)))
+    monkeypatch.setattr(os, 'fstat', lambda *a, **kw: observe(real_fstat(*a, **kw)))
+    rows = f.e._capacity_retained_snapshot()
+    assert all(row['identity'][3] == 54321 for row in rows[0]['files'])
+    changed.add(f.root.stat().st_ino)
+    with pytest.raises(d.DispatchError, match='PATH_PROTECTION'):
+        f.e._capacity_retained_snapshot()
 
 
 @pytest.mark.parametrize("kind", ["directory_link", "file_link", "hardlink", "fifo", "writable"])
@@ -181,7 +203,7 @@ def test_root_replacement_is_not_hidden_by_held_old_descriptor(fixture, monkeypa
         f.tree.mkdir(mode=0o700)
         return result
     monkeypatch.setattr(f.e, "stable_read_at", replace)
-    with pytest.raises(d.DispatchError, match="RETAINED_DRIFT"):
+    with pytest.raises(d.DispatchError, match="RETAINED_(DRIFT|IDENTITY)"):
         f.e._capacity_retained_snapshot()
     assert (f.root / "retained-old-tree" / "child" / "payload").read_bytes() == b"original payload"
 
@@ -218,8 +240,16 @@ def test_parent_protection_is_checked_before_child_open(fixture):
     assert not any(name == "." for name, _ in fixture.flags)
 
 
-def test_oversized_retained_file_is_rejected_before_read(fixture, monkeypatch):
+def test_retained_file_larger_than_package_member_is_streamed(fixture, monkeypatch):
     monkeypatch.setattr(d, "MEMBER_LIMIT", 4)
+    rows = fixture.e._capacity_retained_snapshot()
+    assert rows[0]['files'][-1]['sha256'] == d._sha(b'original payload')
+    assert any(name == 'payload' and flags & os.O_NOATIME for name, flags in fixture.flags)
+
+
+def test_oversized_retained_total_is_rejected_before_read(fixture):
+    with (fixture.tree / 'child' / 'payload').open('wb') as stream:
+        stream.truncate(536870913)
     with pytest.raises(d.DispatchError, match="RETAINED_LIMIT"):
         fixture.e._capacity_retained_snapshot()
     assert not any(name == "payload" for name, _ in fixture.flags)

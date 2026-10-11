@@ -154,7 +154,8 @@ class SystemParentAdmissionTests(unittest.TestCase):
             return SimpleNamespace(st_uid=self.owners.get(info.st_ino, info.st_uid), st_mode=info.st_mode)
         def pinned(pin):
             return os.open(self.directories[pin["path"]], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        with mock.patch.object(q2_config, "pinned_directory", side_effect=pinned), \
+        with mock.patch.object(launcher, "system_parent_directory", side_effect=lambda pin, owner:
+                pinned(dict(pin, path="/sys/fs/cgroup" + pin["path"]))), \
              mock.patch.object(launcher.os, "fstat", side_effect=ownership):
             launcher.system_parent_admission(self.value, self.spec, BOOT)
 
@@ -185,6 +186,56 @@ class SystemParentAdmissionTests(unittest.TestCase):
         with self.assertRaises(OSError): self.admit()
         file.unlink(); os.mkfifo(file)
         with self.assertRaises(ValueError): self.admit()
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux FD-relative cgroup parent reads")
+class UserParentDirectoryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name); self.owner = 1100; self.owners = {}
+        current = self.root
+        for index, name in enumerate(("user.slice", "user-1100.slice", "user@1100.service", "ordinary.slice")):
+            current = current / name; current.mkdir(mode=0o755)
+            self.owners[current.stat().st_ino] = self.owner if index >= 2 else 0
+        self.leaf = current
+        self.pin = dict(path="/user.slice/user-1100.slice/user@1100.service/ordinary.slice",
+            device=current.stat().st_dev, inode=current.stat().st_ino)
+
+    def open(self):
+        original = os.fstat
+        def ownership(fd):
+            info = original(fd)
+            return SimpleNamespace(st_uid=self.owners.get(info.st_ino, info.st_uid),
+                st_dev=info.st_dev, st_ino=info.st_ino, st_mode=info.st_mode)
+        def root(path, *, directory):
+            self.assertEqual(path, "/sys/fs/cgroup"); self.assertTrue(directory)
+            return os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        with mock.patch.object(q2_config, "open_protected", side_effect=root), \
+             mock.patch.object(launcher.os, "fstat", side_effect=ownership):
+            return launcher.system_parent_directory(self.pin, self.owner)
+
+    def test_real_path_walk_accepts_only_bound_user_manager_and_leaf(self):
+        fd = self.open()
+        try: self.assertEqual(os.fstat(fd).st_ino, self.pin["inode"])
+        finally: os.close(fd)
+        self.owners[(self.root / "user.slice").stat().st_ino] = self.owner
+        with self.assertRaisesRegex(ValueError, "PARENT_OWNER"): self.open()
+
+    def test_wrong_owner_write_bits_and_replaced_leaf_are_rejected(self):
+        self.owners[self.pin["inode"]] = self.owner + 1
+        with self.assertRaisesRegex(ValueError, "PARENT_OWNER"): self.open()
+        self.owners[self.pin["inode"]] = self.owner
+        self.leaf.chmod(0o775)
+        with self.assertRaisesRegex(ValueError, "PARENT_OWNER"): self.open()
+        self.leaf.chmod(0o755); self.pin["inode"] += 1
+        with self.assertRaisesRegex(ValueError, "PARENT_CHANGED"): self.open()
+
+    def test_symlink_and_another_user_namespace_are_rejected(self):
+        self.leaf.rename(self.leaf.with_name("retained.slice"))
+        self.leaf.symlink_to("retained.slice", target_is_directory=True)
+        with self.assertRaises(OSError): self.open()
+        self.pin["path"] = self.pin["path"].replace("user-1100.slice", "user-1101.slice")
+        with self.assertRaisesRegex(ValueError, "RETAINED_PARENT"): self.open()
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux resident system channel binding")

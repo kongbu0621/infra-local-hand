@@ -56,6 +56,24 @@ def test_fixed_settings_validate_under_original_candidate(case):
 
 
 @pytest.mark.parametrize("case", d.CASES)
+def test_original_task_fits_empty_broker_with_emergency_space(case):
+    from types import SimpleNamespace
+    from local_hand_jobs.broker import Broker
+    from local_hand_jobs.contract import JobError
+    from local_hand_jobs.policy import Policy
+    plan, receipt, children, helpers = translated(case)
+    assembled = d._prep_translate(case, plan, receipt, children, helpers)["assembled"]
+    policy = Policy(assembled["policy"])
+    reserved = d._budget(case["phases"])["operation"]["reservation_bytes"]
+    broker = SimpleNamespace(policy=policy, state=SimpleNamespace(all=lambda tx: []))
+    Broker._capacity(broker, None, None, reserved)
+    # The former configuration refused even the first submission.
+    broker.policy = SimpleNamespace(limits=dict(policy.limits, retained_bytes=reserved))
+    with pytest.raises(JobError, match="Admitted queue or retained evidence budget"):
+        Broker._capacity(broker, None, None, reserved)
+
+
+@pytest.mark.parametrize("case", d.CASES)
 def test_exact_candidate_translation_and_scoped_schema_only(case):
     plan, receipt, children, helpers = translated(case)
     before = copy.deepcopy((plan, receipt))
@@ -198,7 +216,8 @@ def test_plan_case_creates_original_candidate_handoff_once(case, tmp_path, monke
     e.now = lambda: {"boot_id": boot, "boottime_ns": 100 * d.NS, "monotonic_ns": 110 * d.NS}
     e._active_case_deadlines = {"preparation_deadline_ns": 200 * d.NS,
         "preparation_monotonic_deadline_ns": 210 * d.NS,
-        "owner_deadline_ns": 220 * d.NS, "owner_monotonic_deadline_ns": 230 * d.NS}
+        "owner_deadline_ns": 100 * d.NS + d.OWNER_NS,
+        "owner_monotonic_deadline_ns": 110 * d.NS + d.OWNER_NS}
     runtime = driver.helper("q2_prepare_run")
     e._candidate_modules = lambda names: {"q2_prepare_run": runtime}
     monkeypatch.setattr(d.time, "time_ns", lambda: 1899999950 * d.NS)
@@ -210,7 +229,7 @@ def test_plan_case_creates_original_candidate_handoff_once(case, tmp_path, monke
             prepared["source_objects"][role] = d._prep_file(e, str(tmp_path / (role + ".json")),
                 d.canonical(value, newline=True), 200 * d.NS, uid=os.getuid(), gid=os.getgid())
         deadlines = {"case_origin_ns": 1, "preparation_deadline_ns": 200 * d.NS,
-            "owner_deadline_ns": 220 * d.NS, "remote_final_deadline_ns": 705 * d.NS,
+            "owner_deadline_ns": 100 * d.NS + d.OWNER_NS, "remote_final_deadline_ns": 705 * d.NS,
             "carrier_deadline_ns": 750 * d.NS}
         result = e.plan_case(case, prepared, deadlines)
         raw = Path(prepared["handoff_path"]).read_bytes()

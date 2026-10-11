@@ -321,6 +321,37 @@ def validate_h11_result(result, resident):
     return proof
 
 
+def system_parent_directory(pin, owner):
+    """Open the declared parent with its actual system/user ownership model."""
+    from admin.local_hand_quota_observer import q2_config as c
+    if owner == 0:
+        return c.pinned_directory(dict(pin, path="/sys/fs/cgroup" + pin["path"]))
+    require(type(owner) is int and owner > 0, "LAUNCHER_SYSTEM_PARENT_OWNER")
+    parts = PurePosixPath(pin["path"]).parts
+    require(len(parts) == 5 and parts[:4] == (
+        "/", "user.slice", "user-" + str(owner) + ".slice",
+        "user@" + str(owner) + ".service") and parts[4].endswith(".slice"),
+        "LAUNCHER_SYSTEM_RETAINED_PARENT")
+    fd = c.open_protected("/sys/fs/cgroup", directory=True)
+    try:
+        device = os.fstat(fd).st_dev
+        for index, name in enumerate(parts[1:]):
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=fd)
+            os.close(fd); fd = child
+            info = os.fstat(fd)
+            # Only the bound user manager and its child use the ordinary UID.
+            require(stat.S_ISDIR(info.st_mode) and not info.st_mode & 0o022
+                and info.st_dev == device and info.st_uid == (owner if index >= 2 else 0),
+                "LAUNCHER_SYSTEM_PARENT_OWNER")
+        require((info.st_dev, info.st_ino) == (pin["device"], pin["inode"]),
+            "LAUNCHER_SYSTEM_PARENT_CHANGED")
+        result, fd = fd, -1
+        return result
+    finally:
+        if fd >= 0: os.close(fd)
+
+
 def system_parent_admission(value, spec, boot_id):
     """Verify the approved real sibling geometry and unchanged parent limits."""
     from admin.local_hand_quota_observer import q2_config as c
@@ -350,7 +381,7 @@ def system_parent_admission(value, spec, boot_id):
             (("memory_bytes", memory), ("tasks_max", tasks), ("cpu_quota_per_sec_usec", 1_000_000),
              ("memory_swap_max", 0))), "LAUNCHER_SYSTEM_PARENT_LIMITS")
         pin = record["parent"]
-        descriptor = c.pinned_directory(dict(pin, path="/sys/fs/cgroup" + pin["path"]))
+        descriptor = system_parent_directory(pin, owner)
         try:
             info = os.fstat(descriptor)
             require(info.st_uid == owner and not info.st_mode & 0o022, "LAUNCHER_SYSTEM_PARENT_OWNER")

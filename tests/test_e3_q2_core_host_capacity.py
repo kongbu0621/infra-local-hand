@@ -49,7 +49,8 @@ def inputs(tmp_path, monkeypatch,originals):
     files.update(journal_files);files.update(original_args['frozen']['capacity_files'])
     class Images:
         def __init__(self,*args,**kwargs):self.fds={role:fd for role in transition['image_identities']}
-        def image_keys(self):return transition['image_identities']
+        # The real ImageSet returns tuples; JSON records contain lists.
+        def image_keys(self):return {role:tuple(value) for role,value in transition['image_identities'].items()}
         def recheck(self):pass
         def close(self):pass
     monkeypatch.setattr(maintenance,'ImageSet',Images)

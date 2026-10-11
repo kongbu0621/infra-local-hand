@@ -274,20 +274,24 @@ COMPLETION_ADJUSTMENT_CLOSURE = {
     "commit": "c32799c03a32d81deec02f7492c1b71eb47b2b6d",
     "tree": "1ccf7b10f65e43f5099c17c7c7fb7e9f5e5da77b",
 }
+HISTORICAL_CANDIDATE = {
+    'commit': '4b6e4a7c403362358192086b88679e1326dcb2e1',
+    'tree': '4d4349580c9f4b67cc26f601126849c2bc8d76a4',
+}
 CANDIDATE = {
-    "commit": "4b6e4a7c403362358192086b88679e1326dcb2e1",
-    "tree": "4d4349580c9f4b67cc26f601126849c2bc8d76a4",
+    "commit": "ee4484fac86b5d6bc69571a0a8336ef66b8902ee",
+    "tree": "18cf196f8a9127943988bdf85542f424d80b8da4",
 }
 WHEEL = {
     "basename": "infra_local_hand-0.2.0a1-py3-none-any.whl",
-    "bytes": 288375,
-    "sha256": "ce31fa11caf5995a3c62611660a3908b78d68b88ee80196900bf69a7702856c9",
+    "bytes": 288373,
+    "sha256": "e461a51adb4731cf41bb4dffbd31c8eb7e34cb0fd83e9a83320d7d3b06d35b6c",
     "payload_digest": "b4d094a9f70c308c63870c9fbf273b6b0646ad211d6f61a79901f52e67cf2e23",
 }
 PROJECTION = {
     "basename": ".local-hand-source-projection.json",
     "bytes": 11811,
-    "sha256": "55f555fc225edca943b8c86cee8119c4878f5ec1e9503a084ba7a560cf2c991d",
+    "sha256": "755b149dd76b2dd8991219245294661245a9103655da95df4b15c20434741c3f",
     "file_count": 89,
 }
 
@@ -352,7 +356,7 @@ NS = 1_000_000_000
 REMOTE_FINAL_RESERVE_NS = 90 * NS
 CASE_GATE_NS = 630 * NS
 PREPARATION_NS = 300 * NS
-OWNER_NS = 240 * NS
+OWNER_NS = 120 * NS  # Original task owner budget; transport ceilings are separate.
 MANIFEST_LIMIT = 2097152
 MEMBER_LIMIT = 33554432
 MEMBER_COUNT_LIMIT = 8192
@@ -1358,7 +1362,7 @@ def _prior_attempt(prior, index=0):
         and marker['scope'] == receipt['scope'] == SCOPE, 'SCHEMAS')
     check(marker['implementation'] == fixed['implementation'] and marker['baseline'] == BASELINE
         and marker['owner_decision'] == OWNER_DECISION and marker['closure'] == CLOSURE
-        and marker['candidate'] == CANDIDATE and marker['state'] == 'CONSUMPTION_RECORD_COMPLETE', 'AUTHORITY')
+        and marker['candidate'] == HISTORICAL_CANDIDATE and marker['state'] == 'CONSUMPTION_RECORD_COMPLETE', 'AUTHORITY')
     _amendment(marker['amendment'], fixed['implementation'])
     _validate_local_writer(marker['writer'])
     check.exact(marker['package'], _fields('basename bytes sha256 manifest_sha256'), 'PACKAGE')
@@ -2350,9 +2354,9 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         'source_files','originals','old_boot_id','new_boot_id','vm_activation','old_vm','new_vm','image_identities',
         'old_pidfd_exited','original_argv_sha256','restart_argv_sha256','backup','virtual_bytes',
         'filesystem','content','reports','completed_steps','transport_exits','image_checks',
-        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'},
+        'logical_compare_exit','resize_exit','all_streams_eof','historical_exit','old_commitments_refunded','previous_maintenance','guest_startup_assurance','retained_custody','coordinator_completion','local_preflight_source','transport_failure_source','persistent_source','retained_identity'} | ({'maintenance_implementation'} if 'maintenance_implementation' in value else set()),
         'CORE_JOURNAL_FIELDS')
-    check(len(canonical(value)) <= 131072 and value['schema']=='local-hand-q2-core-journal-transition/v23'
+    check(len(canonical(value)) <= 131072 and value['schema']==('local-hand-q2-core-journal-transition/v24' if 'maintenance_implementation' in value else 'local-hand-q2-core-journal-transition/v23')
         and value['session']=='lhqjgrow-20261011c', 'JOURNAL_SCHEMA')
     check(value['authority']==dict(R='10d2a5c827964989f41ca6e8eeac3d44de6d0f04',
         A=GUEST_RESUMPTION_A,C=GUEST_RESUMPTION_C)
@@ -2361,7 +2365,11 @@ def _validate_journal_transition(value, *, priors, implementation, current_boot=
         == canonical(dict(mode='TRUSTED_SINGLE_ADMIN',indirect_startup_observation='NOT_PERFORMED',
             undeclared_unit_inventory_observation='NOT_PERFORMED',
             no_undeclared_business_startup=True,continuous_exclusion_proven=False)), 'GUEST_STARTUP_PREMISE')
-    _validate_retained_custody(value['retained_custody'],implementation=implementation,
+    if 'maintenance_implementation' in value:
+        check(value['maintenance_implementation']==dict(
+            commit='e1330c8e455ab38dcd5747c7334832c46ca92a5d',
+            tree='9123c5022f655db8d4c4e5d486fa63d271271d4c'), 'JOURNAL_MAINTENANCE_IMPLEMENTATION')
+    _validate_retained_custody(value['retained_custody'],implementation=value.get('maintenance_implementation',implementation),
         nonce=value['nonce'],source_files=value['source_files'])
     _validate_coordinator_completion(value['coordinator_completion'],value['retained_custody'])
     _validate_maintenance_resume(value['previous_maintenance'])
@@ -3045,7 +3053,8 @@ def _prep_settings(case, expires_at):
             "storage_bytes": v["storage_bytes"], "storage_inodes": v["storage_inodes"]}
     m = b["management"]
     settings = {"identity": identity, "original_budgets": b["operation"],
-        "limits": {"max_queued": 1, "max_running": 1, "retained_bytes": 8388608,
+        "limits": {"max_queued": 1, "max_running": 1,
+            "retained_bytes": b["operation"]["reservation_bytes"] + 65536,
             "ledger_emergency_bytes": 65536, "requests_per_minute": 1},
         "controllers": controllers,
         "management": {"receive_ns": NS, "stop_ns": NS, "storage_bytes": 1048576,
@@ -4134,6 +4143,14 @@ def _admit_exec_binding(effects, path, expected):
         raise
 
 
+def _empty_fixed_unit_files(argv, status, stdout, stderr):
+    """systemctl returns 1, with empty streams, when no requested unit file exists."""
+    return (status == 1 and not stdout and not stderr and argv ==
+            ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
+             'list-unit-files', '--no-legend', '--type=service,slice',
+             *sorted(_admission_absent_units())])
+
+
 def _admit_run_helper(effects, policy, program_check, *, prior_observation=None, user_uid=None):
     """One approved semantic child: bounded streams, CPU limit, real wait4/EOF."""
     argv, env, limits = policy["argv"], policy["environment"], policy["limits"]
@@ -4239,7 +4256,9 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None,
             poll()
             if waited is None or len(eof) != 2:
                 time.sleep(0.002)
-        _require(proc.returncode == 0 and waited["user_cpu_ns"] + waited["system_cpu_ns"] <= limits["command_cpu_seconds"] * NS,
+        _require((proc.returncode == 0 or _empty_fixed_unit_files(argv, proc.returncode,
+                 output['stdout'], output['stderr'])) and
+                 waited["user_cpu_ns"] + waited["system_cpu_ns"] <= limits["command_cpu_seconds"] * NS,
                  "CORE_ADMIT_HELPER_EXIT")
         guard(); program_check(); guard()
     except BaseException as error:
@@ -5353,7 +5372,7 @@ class FieldEffects:
         return parsed
 
     @staticmethod
-    def _held_directory(path, *, guard=None, validate=None):
+    def _held_directory(path, *, guard=None, validate=None, validate_leaf=None):
         """Walk an absolute directory from a held slash fd without symlinks."""
         parsed = FieldEffects._absolute(path)
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
@@ -5361,11 +5380,12 @@ class FieldEffects:
         current = call(os.open, "/", flags, release=os.close)
         try:
             if validate: validate(call(os.fstat, current))
-            for component in parsed.parts[1:]:
+            for index, component in enumerate(parsed.parts[1:], 1):
                 following = call(os.open, component, flags, dir_fd=current, release=os.close)
                 os.close(current)
                 current = following
-                if validate: validate(call(os.fstat, current))
+                check = validate_leaf if validate_leaf and index == len(parsed.parts)-1 else validate
+                if check: check(call(os.fstat, current))
             info = call(os.fstat, current)
             _effect(stat.S_ISDIR(info.st_mode), "DIRECTORY")
             return current
@@ -5709,7 +5729,9 @@ class FieldEffects:
             raw, stderr, receipt = _admit_run_helper(self, policy, verify, prior_observation=prior_observation)
             _require(self._capacity_kernel('/proc/self/cgroup', 4096) == membership,
                 'CORE_PRIOR_SCOPE_HELPER_CGROUP')
-        _require(not stderr and receipt['exit_status'] == 0, 'CORE_CAP_SYSTEMCTL_FAILED')
+        _require(not stderr and (receipt['exit_status'] == 0 or
+                 _empty_fixed_unit_files(policy['argv'], receipt['exit_status'], raw, stderr)),
+                 'CORE_CAP_SYSTEMCTL_FAILED')
         if bus is not None:_require(bus == self._capacity_user_bus(),'CORE_RUNTIME_USER_BUS_DRIFT')
         return raw
 
@@ -5817,7 +5839,7 @@ class FieldEffects:
         fixed = _admission_absent_units()
         for arguments in (['list-units', '--all', '--plain', '--no-legend', '--type=service,slice'],
                           ['list-unit-files', '--no-legend', '--type=service,slice']):
-            output = self._capacity_systemctl(arguments, programs['systemctl'])
+            output = self._capacity_systemctl(arguments + sorted(fixed), programs['systemctl'])
             names = {line.split()[0] for line in output.decode('ascii', 'strict').splitlines() if line.split()}
             _require(not fixed & names, 'CORE_CAP_UNIT_EXISTS')
         for unit in sorted(fixed):
@@ -6054,11 +6076,22 @@ class FieldEffects:
         # Installation, extraction and new child work cannot borrow it. Keep
         # the original outer deadlines unchanged for the remote finalizer.
         outer = self.context["guest_deadlines"]
-        return _clock(self, {
+        deadlines = {
             "boot_id": outer["boot_id"],
             "boottime_deadline_ns": outer["boottime_deadline_ns"] - REMOTE_FINAL_RESERVE_NS,
             "monotonic_deadline_ns": outer["monotonic_deadline_ns"] - REMOTE_FINAL_RESERVE_NS,
-        })
+        }
+        cached = getattr(self, '_clock_fds', None)
+        if cached is None:
+            return _clock(self, deadlines)
+        # The verified open kernel file cannot be redirected by a pathname
+        # change. Read fresh boot bytes and both clocks for every I/O guard;
+        # now() still rechecks the complete path at observation boundaries.
+        raw = os.pread(cached[1], 65, 0)
+        _effect(raw == (outer['boot_id'] + '\n').encode('ascii'), 'BOOT_CHANGED')
+        return _check_clock(dict(boot_id=outer['boot_id'],
+            boottime_ns=time.clock_gettime_ns(time.CLOCK_BOOTTIME),
+            monotonic_ns=time.clock_gettime_ns(time.CLOCK_MONOTONIC)), deadlines)
 
     def _prepare_carrier_storage(self):
         _effect(not self._persistence_ready and self._admission is not None,
@@ -6159,15 +6192,21 @@ class FieldEffects:
                 _effect(len(raw) == row["bytes"] and _sha(raw) == row["sha256"],
                     "INSTALL_MEMBER_CHANGED")
                 self._effect_guard()
-                self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard,
+                identity = self.create_only_at(fd, relative.name, raw, mode=row["mode"], guard=self._effect_guard,
                     accounting=accounting, path=staging + '/' + relative.as_posix())
                 self._effect_guard()
-                reread, identity = self.stable_read_at(fd, relative.name,
-                    maximum=row["bytes"], expected_mode=row["mode"], guard=self._effect_guard)
-                _effect(identity["uid"] == identity["gid"] == 0 and reread == raw,
+                # create_only_at already compares a full readback with raw.
+                # Controlled I/O accounts every write; install() measures the
+                # complete tree once extraction ends, before starting a child.
+                _effect(identity["uid"] == identity["gid"] == 0,
                     "INSTALL_MEMBER_CHANGED")
-                self._observe_install_storage()
                 self._effect_guard()
+            # A detached checkout can have no loose refs. File-only transport
+            # omits that empty directory, but Git still requires its existence.
+            if 'candidate/.git' in directories and 'candidate/.git/refs' not in directories:
+                directories['candidate/.git/refs'] = self._mkdir_at(
+                    directories['candidate/.git'], 'refs', 0o700, guard=self._effect_guard,
+                    accounting=accounting, path=staging + '/candidate/.git/refs')
         finally:
             for path, fd in directories.items():
                 if path:
@@ -6543,6 +6582,13 @@ class FieldEffects:
             return bytes(output["stdout"])
         except BaseException as error:
             failure = str(error)[:128] if isinstance(error, DispatchError) else type(error).__name__
+            error.diagnostic = dict(stage='INSTALLATION_COMMAND',
+                argv=[str(arg)[:256] for arg in argv[:16]], argv_sha256=_sha(canonical(list(argv))),
+                returncode=None if proc is None else proc.returncode,
+                stdout_preview=bytes(output['stdout'][:4096]).decode('utf-8','backslashreplace'),
+                stderr_preview=bytes(output['stderr'][:4096]).decode('utf-8','backslashreplace'),
+                stdout_captured_bytes=len(output['stdout']), stderr_captured_bytes=len(output['stderr']),
+                streams_eof=sorted(eof))
             if proc is not None and accounting is not None and not child_after_observed:
                 for identifier in accounting.by_id:
                     accounting.mark_incomplete(identifier, 'last_observation', 'CHILD_AFTER_MISSING')
@@ -6636,18 +6682,51 @@ class FieldEffects:
         _cap(info.st_uid in getattr(self, '_capacity_owners', {0})
             and not info.st_mode & 0o022, 'PATH_PROTECTION')
 
+    @staticmethod
+    def _retained_file_digest(directory_fd, name, expected, guard):
+        """Hash existing data in bounded blocks, independent of package member size."""
+        call = partial(_guard_call, guard)
+        fd = call(os.open, name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
+                  dir_fd=directory_fd, release=os.close)
+        try:
+            _cap_same(expected, call(os.fstat, fd))
+            digest = hashlib.sha256()
+            remaining = expected.st_size
+            while remaining:
+                block = call(os.read, fd, min(65536, remaining))
+                _cap(bool(block), 'RETAINED_DRIFT')
+                digest.update(block)
+                remaining -= len(block)
+            _cap(not call(os.read, fd, 1), 'RETAINED_DRIFT')
+            _cap_same(expected, call(os.fstat, fd))
+            return digest.hexdigest()
+        finally:
+            os.close(fd)
+
     def _capacity_retained_snapshot(self, *, guard=None):
         """Read only approved roots, with no-atime enumeration and named rechecks."""
         guard = self._effect_guard if guard is None else guard
         call = partial(_guard_call, guard)
         approved = _approved_inputs_envelope(self.context)
         count = total = 0
+        roots = {root['path']:root for root in approved['retained_preparation']['paths']}
+        def protection(info, path):
+            root = roots.get(path)
+            if root is not None:
+                _cap((info.st_dev,info.st_ino)==(root['device'],root['inode']), 'RETAINED_IDENTITY')
+            # Historical data can retain its original account. Its held root,
+            # stable per-object metadata and content hashes establish continuity;
+            # the current execution account is not its owner policy.
+            _cap(root is not None or any(path.startswith(name + '/') for name in roots),
+                 'RETAINED_IDENTITY')
+            _cap(not info.st_mode & 0o022, 'PATH_PROTECTION')
         def directory(path):
-            return self._held_directory(path, guard=guard, validate=self._capacity_protection)
+            return self._held_directory(path, guard=guard, validate=self._capacity_protection,
+                validate_leaf=lambda info:protection(info,path))
         def snapshot(fd, path, device, rows, depth=0):
             nonlocal count, total
             before = call(os.fstat, fd)
-            self._capacity_protection(before)
+            protection(before, path)
             count += 1
             _cap(depth <= 64 and len(path) <= 4096 and count <= 32768
                 and before.st_dev == device, 'RETAINED_LIMIT')
@@ -6667,8 +6746,8 @@ class FieldEffects:
             for name in sorted(names):
                 _cap(re.fullmatch(r'[A-Za-z0-9._-]+', name) and name not in ('.', '..'), 'RETAINED_NAME')
                 child = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
-                self._capacity_protection(child)
                 _cap(child.st_dev == device and not stat.S_ISLNK(child.st_mode), 'RETAINED_TYPE')
+                protection(child, path + '/' + name)
                 if stat.S_ISDIR(child.st_mode):
                     opened = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC |
                         os.O_NOFOLLOW, dir_fd=fd, release=os.close)
@@ -6680,10 +6759,14 @@ class FieldEffects:
                 else:
                     count += 1; total += child.st_size
                     _cap(stat.S_ISREG(child.st_mode) and child.st_nlink == 1 and count <= 32768
-                        and 0 <= child.st_size <= MEMBER_LIMIT and total <= 536870912, 'RETAINED_LIMIT')
-                    raw, pin = self.stable_read_at(fd, name, maximum=child.st_size, guard=guard)
-                    _cap((pin['dev'], pin['ino']) == (child.st_dev, child.st_ino), 'RETAINED_DRIFT')
-                    rows.append(dict(path=path + '/' + name, identity=list(_capacity_stat(child)), sha256=_sha(raw)))
+                        and 0 <= child.st_size and total <= 536870912, 'RETAINED_LIMIT')
+                    if child.st_size <= MEMBER_LIMIT:
+                        raw, pin = self.stable_read_at(fd, name, maximum=child.st_size, guard=guard)
+                        _cap((pin['dev'], pin['ino']) == (child.st_dev, child.st_ino), 'RETAINED_DRIFT')
+                        digest = _sha(raw)
+                    else:
+                        digest = self._retained_file_digest(fd, name, child, guard)
+                    rows.append(dict(path=path + '/' + name, identity=list(_capacity_stat(child)), sha256=digest))
                 named = call(os.stat, name, dir_fd=fd, follow_symlinks=False)
                 _cap_same(child, named)
             _cap_same(before, call(os.fstat, fd))
@@ -6788,7 +6871,13 @@ class FieldEffects:
                 uid, gid = (account["uid"], account["gid"]) if row["owner"] == "ordinary" else (0, 0)
                 directories[role] = directory(row["path"], uid, gid, row["mode"])
             for name in _fields('preflight business evidence management_evidence launcher_output supervisor_output owner_output launcher_declarations supervisor_declarations owner_declarations'):
-                parent = directories["declarations" if name.endswith("declarations") else "capture"]["path"]
+                # Only launcher declarations are read by the ordinary task.
+                # Its existing public control directory is accessible without
+                # changing the private evidence parent's permissions. These
+                # files remain charged to the task's existing state pool.
+                role = "control" if name == "launcher_declarations" else (
+                    "declarations" if name.endswith("declarations") else "capture")
+                parent = directories[role]["path"]
                 children[name] = _prep_pin(directory(parent + "/" + name,
                     mode=493 if name == "launcher_declarations" else 448))
             roots = [_prep_root(self, row, account, plan["mounts"]["quota"], deadline) for row in plan["roots"]]
@@ -8010,7 +8099,10 @@ def _phase_raw_binding(case, phase, plan, values, grant_digest, facts):
 
 
 def _clock(effects, deadlines):
-    now = effects.now()
+    return _check_clock(effects.now(), deadlines)
+
+
+def _check_clock(now, deadlines):
     _check.exact(now, ("boot_id", "boottime_ns", "monotonic_ns"), 'CLOCK_FIELDS')
     _check(now["boot_id"] == deadlines["boot_id"], 'BOOT_CHANGED')
     _check.integer(now["boottime_ns"], 1, code='CLOCK')

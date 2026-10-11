@@ -744,6 +744,7 @@ def test_install_command_requires_exit_even_after_both_eof(tmp_path):
 
 
 def _guarded_installation_clock(effects):
+    effects.close()  # Drop the real clock descriptors before installing a synthetic clock.
     outer = {"boot_id": "11111111-2222-3333-4444-555555555555",
              "boottime_deadline_ns": 1000 * d.NS, "monotonic_deadline_ns": 2000 * d.NS}
     effects.context["guest_deadlines"] = outer
@@ -843,7 +844,7 @@ def test_install_selector_creation_failure_kills_reaps_and_closes_child_pipes(tm
 
 def test_install_nonzero_exit_keeps_real_wait_resources_and_both_streams(tmp_path):
     effects = _command_effects(tmp_path)
-    with pytest.raises(d.DispatchError, match="INSTALL_COMMAND_FAILED"):
+    with pytest.raises(d.DispatchError, match="INSTALL_COMMAND_FAILED") as failure:
         effects._installation_command([sys.executable, "-I", "-B", "-c",
             "import sys; print('before-failure'); print('reason',file=sys.stderr); sys.exit(7)"])
     record = effects._install_commands[0]
@@ -852,6 +853,8 @@ def test_install_nonzero_exit_keeps_real_wait_resources_and_both_streams(tmp_pat
     assert record["stdout"] == b"before-failure\n" and record["stderr"] == b"reason\n"
     assert record["eof"] == ["stderr", "stdout"]
     assert record["cleanup_failure"] is None
+    assert failure.value.diagnostic['returncode'] == 7
+    assert failure.value.diagnostic['stderr_preview'] == 'reason\n'
     assert not record["kill_sent"]  # do not signal an already reaped, EOF-closed group
 
 

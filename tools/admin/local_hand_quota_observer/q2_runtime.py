@@ -160,7 +160,7 @@ def native(config, role):
         os.close(binary)
     root = None
     try:
-        root = worker.open_slot(slot)
+        root = worker.open_slot(slot, ordinary_parent=True)
         q.require(host(config, "native") == before, "INVOCATION_CHANGED")
         descriptors = os.listdir("/proc/self/fd")
         q.require(len(descriptors) <= 256, "DESCRIPTOR_LIMIT")
@@ -172,6 +172,10 @@ def native(config, role):
                     if error.errno != 9:
                         raise
         os.dup2(root, 3, inheritable=True)
+        # dup2(fd, fd) leaves FD_CLOEXEC unchanged. The protected directory
+        # walk can already return descriptor 3, which the native ABI needs
+        # to survive the following exec.
+        os.set_inheritable(3, True)
         q.require(os.execve in os.supports_fd and boottime_ns() < deadline(config, "native"), "NATIVE_DEADLINE")
         os.execve(executable, [config.data()["programs"]["native"]["path"]], {"LANG": "C", "LC_ALL": "C"})
     finally:
@@ -188,7 +192,8 @@ def query(config):
         capture = Capture(a.MAX_REPORT_BYTES)
         try:
             capture.start((v["programs"]["python"]["path"], "-I", "-B", v["entry"]["path"],
-                           "native", config.path, config.digest, root["role"]))
+                           "native", config.path, config.digest, root["role"]),
+                          invocation_id=identity["invocation_id"])
             while boottime_ns() < deadline(config, "query") and not capture.settled:
                 capture.pump()
                 if capture.error:

@@ -633,6 +633,26 @@ def test_real_helper_wait4_two_eof_fixed_invocation_and_no_retry(monkeypatch):
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize('change', [None, 'stderr', 'stdout', 'query', 'status'])
+def test_fixed_unit_files_empty_status_uses_real_wait_and_streams(monkeypatch, change):
+    script = "import os; "
+    if change == 'stderr': script += "os.write(2,b'failed'); "
+    if change == 'stdout': script += "os.write(1,b'unit.service'); "
+    script += 'raise SystemExit(' + ('2' if change == 'status' else '1') + ')'
+    effects, policy, _calls = helper_fixture(monkeypatch, script)
+    policy['argv'] = ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
+                      'list-unit-files', '--no-legend', '--type=service,slice',
+                      *sorted(d._admission_absent_units())]
+    if change == 'query': policy['argv'][4] = 'list-units'
+    if change is not None:
+        with pytest.raises(d.DispatchError, match='HELPER_EXIT'):
+            d._admit_run_helper(effects, policy, lambda: None)
+    else:
+        stdout, stderr, receipt = d._admit_run_helper(effects, policy, lambda: None)
+        assert stdout == stderr == b'' and receipt['exit_status'] == 1
+        assert receipt['stdout_eof'] and receipt['stderr_eof']
+
+
 @pytest.mark.parametrize('failure_slot', [None, 0, 1, 2, 3, 4, 5, 6, 7])
 def test_prior_show_slots_allow_eight_real_waits_but_never_a_retry(monkeypatch, failure_slot):
     effects, policy, calls = helper_fixture(monkeypatch, 'import os; os.write(1,b"show")', output=32768)

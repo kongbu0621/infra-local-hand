@@ -654,6 +654,22 @@ def test_v2_freeze_builds_exact_private_member_and_preserves_original_window(tmp
     assert "policy_source_raw" not in result and "policy_source_raw" not in manifest
 
 
+def test_freeze_preserves_completed_maintenance_sources_for_repaired_core(tmp_path, monkeypatch):
+    from e3_host.q2_journal_continuation import MAINTENANCE_IMPLEMENTATION, MAINTENANCE_SOURCES
+    arguments = frozen_v2_fixture(tmp_path, monkeypatch)
+    approved = json.loads(arguments['approved_inputs_raw'])
+    transition = approved['reconciliation']['journal_transition']
+    transition.update(schema='local-hand-q2-core-journal-transition/v24',
+                      maintenance_implementation=dict(MAINTENANCE_IMPLEMENTATION),
+                      source_files=copy.deepcopy(MAINTENANCE_SOURCES))
+    arguments['approved_inputs_raw'] = f.c.canonical(approved, newline=True)
+    assert f.build_frozen_package(**arguments)['package_raw']
+    transition['source_files']['q2_journal_growth.py']['sha256'] = '0' * 64
+    arguments['approved_inputs_raw'] = f.c.canonical(approved, newline=True)
+    with pytest.raises(f.c.ContractError, match='CORE_FREEZE_JOURNAL_SOURCE'):
+        f.build_frozen_package(**arguments)
+
+
 @pytest.mark.parametrize("mutation", ["remote_expectation", "source", "field_blob"])
 def test_v2_freeze_rejects_equal_envelope_with_wrong_bound_inputs(tmp_path, monkeypatch, mutation):
     arguments = frozen_v2_fixture(tmp_path, monkeypatch)

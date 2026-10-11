@@ -1113,7 +1113,7 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
               and c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'])
     # Owner-requested resource level 2; exact source pair, never arbitrary blobs.
     level2 = (c.sha256(loader) == "9315d0a804df07eab74fd6b1272cf108e81a143c3e535458aa80f403b0b81a36"
-              and c.sha256(bootstrap) == "9a5b0746546b594ede16dfeeea13162a7244db145771bc2cda8a203702739c15")
+              and c.sha256(bootstrap) == "76c886621e545ecee2bbe50ecf8beaab4bd7d8a8e5f7dafe774eb3a2aa4ab96c")
     c.require(legacy or level2, 'CORE_FREEZE_BOOTSTRAP_DELTA')
     try:
         parsed = ast.parse(bootstrap.decode("utf-8", "strict"), filename="field/bootstrap.py")
@@ -1268,7 +1268,7 @@ def freeze_package_members(*, candidate_checkout, wheel_path, projection_path,
         raw = member_bytes[row["path"]]
         c.require(len(raw) == row["bytes"] and c.sha256(raw) == row["sha256"],
                   "CORE_FREEZE_MEMBER_BYTES")
-    derived_directories = set()
+    derived_directories = {'candidate/.git/refs'}
     for row in rows:
         parent = PurePosixPath(row["path"]).parent
         while parent.as_posix() != ".":
@@ -1337,9 +1337,16 @@ def build_frozen_package(*, static_freeze, local_anchor, locators, approved_inpu
     approved_row, approved_header = p.approved_input_member(
         approved_inputs_raw, amendment=amendment)
     approved = c.document(approved_inputs_raw, limit=1_048_576, newline=True)
-    c.require(approved['reconciliation']['journal_transition']['source_files'] == {
-        name:dict(bytes=len(raw),sha256=c.sha256(raw))
-        for name,raw in static_freeze['journal_sources'].items()}, 'CORE_FREEZE_JOURNAL_SOURCE')
+    transition = approved['reconciliation']['journal_transition']
+    if transition.get('schema') == 'local-hand-q2-core-journal-transition/v24':
+        from .q2_journal_continuation import MAINTENANCE_IMPLEMENTATION, MAINTENANCE_SOURCES
+        c.require(transition['maintenance_implementation'] == MAINTENANCE_IMPLEMENTATION,
+                  'CORE_FREEZE_JOURNAL_IMPLEMENTATION')
+        journal_pins = MAINTENANCE_SOURCES
+    else:
+        journal_pins = {name:dict(bytes=len(raw),sha256=c.sha256(raw))
+                        for name,raw in static_freeze['journal_sources'].items()}
+    c.require(transition['source_files'] == journal_pins, 'CORE_FREEZE_JOURNAL_SOURCE')
     binding = local_anchor["binding_preimage"]
     writer = copy.deepcopy(c.validate_local_writer(binding["writer"]))
     tokens, argv = local_anchor["tokens"], local_anchor["argv"]

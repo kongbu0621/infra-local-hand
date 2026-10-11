@@ -191,6 +191,22 @@ def test_full_original_consumer_and_independent_projection(originals):
     assert len(p.c.canonical(value))<65536
 
 
+def test_repaired_core_keeps_completed_maintenance_implementation(originals):
+    from e3_host.q2_journal_continuation import MAINTENANCE_IMPLEMENTATION
+    files, args = originals
+    value = p.build_journal_transition(files, **args)
+    value['schema'] = 'local-hand-q2-core-journal-transition/v24'
+    value['maintenance_implementation'] = dict(MAINTENANCE_IMPLEMENTATION)
+    value['retained_custody']['binding']['D'] = MAINTENANCE_IMPLEMENTATION['commit']
+    for validate in (p.validate_journal_transition, d._validate_journal_transition):
+        assert validate(value, priors=args['priors'], implementation=args['implementation']) == value
+    value['maintenance_implementation']['tree'] = '0' * 40
+    with pytest.raises(p.c.ContractError, match='JOURNAL_MAINTENANCE_IMPLEMENTATION'):
+        p.validate_journal_transition(value, priors=args['priors'], implementation=args['implementation'])
+    with pytest.raises(d.DispatchError, match='JOURNAL_MAINTENANCE_IMPLEMENTATION'):
+        d._validate_journal_transition(value, priors=args['priors'], implementation=args['implementation'])
+
+
 @pytest.mark.parametrize('change',['missing','truncated','D','nonce','order','repeat','failure','old_boot',
     'new_boot','backup','image_check','compare','pidfd','pid','argv','eof','transport_exit','streams','content','size','capacity','phase_window','phase_digest'])
 def test_original_failure_cannot_become_new_boot_permission(originals,change):

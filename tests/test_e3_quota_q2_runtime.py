@@ -4,10 +4,12 @@ Socket transport runs only where permitted; this is not the Q3 host harness.
 """
 import copy
 import hashlib
+import json
 import os
 from pathlib import Path
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,6 +61,86 @@ def fixture_open(path, *, directory=False):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrative runtime")
 class ConfigAndRuntimeTests(unittest.TestCase):
+    def test_bound_config_reuses_validation_without_sharing_mutable_views(self):
+        cfg = config()
+        expected = cfg.data()
+        with mock.patch.object(g, "decode_grant", wraps=g.decode_grant) as decode:
+            cfg = c.Config(cfg.wire, cfg.path)
+            original = cfg.active()
+            for _ in range(12):
+                cfg.data()["service"]["request_id"] = "different"
+                cfg.data()["grants"].clear()
+                cfg.grants().clear()
+                cfg.active().as_dict()["roots"].clear()
+                self.assertEqual(original, cfg.active())
+            self.assertEqual(len(expected["grants"]), decode.call_count)
+        self.assertEqual(expected, cfg.data())
+        changed = cfg.data()
+        changed["service"]["end_ns"] -= SECOND
+        self.assertEqual(changed, config(changed).data())
+        self.assertEqual(expected, cfg.data())
+
+    def test_config_cache_is_bound_to_immutable_source_bytes(self):
+        raw = bytearray(q._canonical(declaration(), c.LIMIT))
+        cfg = c.Config(raw, "/synthetic/config.json")
+        expected = cfg.data()
+        original = cfg.active()
+        raw[:] = b"{}"
+        self.assertEqual(expected, cfg.data())
+        self.assertEqual(original, cfg.active())
+        self.assertIs(type(cfg.wire), bytes)
+
+    def test_native_exec_keeps_root_when_open_slot_returns_fd_three(self):
+        script = '''
+import os,sys
+from types import SimpleNamespace
+from unittest.mock import patch
+from admin.local_hand_quota_observer import q2_runtime as r
+original_exec=os.execve
+def execute(fd, argv, env):
+    original_exec(fd,[sys.executable,"-c","import os;os.fstat(3);print('ROOT_FD_RETAINED')"],env)
+def root(*args, **kwargs):
+    fd=os.open('/dev/null',os.O_RDONLY|os.O_CLOEXEC)
+    assert fd==3 and not os.get_inheritable(fd)
+    return fd
+cfg=SimpleNamespace(active=lambda:SimpleNamespace(as_dict=lambda:{'roots':[{'role':'work'}]}),
+    data=lambda:{'programs':{'native':{'path':sys.executable}}})
+with patch.object(r,'host',return_value={}), patch.object(r,'native_context',return_value=(None,None)), \
+     patch.object(r.c,'executable',side_effect=lambda pin:os.open(pin['path'],os.O_RDONLY|os.O_CLOEXEC)), \
+     patch.object(r.worker,'open_slot',side_effect=root), patch.object(r,'deadline',return_value=10**30), \
+     patch.object(r.os,'execve',side_effect=execute) as replacement:
+    with patch.object(r.os,'supports_fd',{replacement}):r.native(cfg,'work')
+'''
+        environment = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "tools"))
+        result = subprocess.run([sys.executable, "-c", script], stdin=subprocess.DEVNULL,
+                                capture_output=True, env=environment, timeout=5)
+        self.assertEqual(0, result.returncode, result.stderr.decode())
+        self.assertEqual(b"ROOT_FD_RETAINED\n", result.stdout)
+
+    def test_query_passes_verified_invocation_to_real_native_children(self):
+        from types import SimpleNamespace
+        cfg = config()
+        identity = dict(unit=cfg.active().request.query_unit, invocation_id="a" * 32,
+                        cgroup="/fixture")
+        with tempfile.TemporaryDirectory() as directory:
+            entry = Path(directory) / "native.py"
+            entry.write_text("import json,os\nprint(json.dumps([os.environ.get('INVOCATION_ID'),"
+                             "os.environ.get('UNRELATED_PARENT_VALUE')]))\n")
+            data = cfg.data()
+            data["programs"]["python"]["path"] = sys.executable
+            data["entry"]["path"] = str(entry)
+            runtime = SimpleNamespace(data=lambda: data, active=cfg.active,
+                                      path=cfg.path, digest=cfg.digest)
+            observed = []
+            with mock.patch.dict(os.environ, INVOCATION_ID="b" * 32, UNRELATED_PARENT_VALUE="discard"), \
+                 mock.patch.object(r, "host", return_value=identity), \
+                 mock.patch.object(r, "boottime_ns", return_value=2 * SECOND), \
+                 mock.patch.object(r, "native_context", return_value=(None, None)), \
+                 mock.patch.object(a, "match_report", side_effect=lambda raw, *_: observed.append(json.loads(raw))), \
+                 mock.patch.object(r.os, "write", side_effect=lambda fd, raw: len(raw)):
+                r.query(runtime)
+            self.assertEqual([["a" * 32, None]] * len(cfg.active().as_dict()["roots"]), observed)
+
     def test_config_and_fixed_three_unit_commands(self):
         cfg = config()
         for role, prefix in (("listener","lhqoc-"),("admission","lhqoa-"),("query","lhqo-")):
