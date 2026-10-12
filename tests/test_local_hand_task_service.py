@@ -5,6 +5,7 @@ import select
 import socket
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -17,6 +18,26 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrator task service")
 class TaskServiceTests(unittest.TestCase):
+    def test_original_failure_is_retained_before_recovery_changes_gateway(self):
+        service = task_service.TaskService.__new__(task_service.TaskService)
+        service.process = Mock()
+        service.process.poll.return_value = -9
+        service.gateway = Mock()
+        service.gateway.snapshot.return_value = {"failure": "SYSTEM_PEER_CHANGED"}
+        service.failures = ["QuotaError"]
+        with tempfile.TemporaryDirectory() as root:
+            service.intents = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                service.retain_failure(ValueError("BRIDGE_PEER_EXITED"))
+                from pathlib import Path
+                import json
+                retained = json.loads(next(Path(root).glob("failure-*.json")).read_text())
+                self.assertEqual("BRIDGE_PEER_EXITED", retained["reason"])
+                self.assertEqual(-9, retained["returncode"])
+                self.assertEqual("SYSTEM_PEER_CHANGED", retained["manager"]["failure"])
+            finally:
+                os.close(service.intents)
+
     def test_root_reconstructs_phase_plan_and_rejects_client_command_substitution(self):
         fixture = session_fixtures.TaskSessionTests()
         fixture.setUp()

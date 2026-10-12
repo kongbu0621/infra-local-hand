@@ -95,6 +95,19 @@ class TaskSessionTests(unittest.TestCase):
         self.command("finish")
         self.assertTrue(self.session.finished)
 
+    def test_cancel_after_preparation_answers_inflight_start_without_launch(self):
+        self.session.tick()
+        self.broker.cancel(self.f.identity, self.f.f.request["request_digest"],
+                           {"kind": "job"}, self.f.f.owner)
+        for action in ("bind", "start"):
+            result = self.command(action)
+            self.assertEqual("CANCELLED", result["task"]["outcome"])
+        self.assertFalse(self.f.row()["record"]["handles"])
+        self.assertEqual([], self.f.runner.starts)
+        self.assertIsNone(self.session.failure)
+        self.command("finish")
+        self.assertTrue(self.session.finished)
+
     def test_wrong_task_rejected_before_creating_a_second_row_or_leases(self):
         request = copy.deepcopy(self.f.f.request)
         request["operation_id"] = "11111111-2222-4333-8444-666666666666"

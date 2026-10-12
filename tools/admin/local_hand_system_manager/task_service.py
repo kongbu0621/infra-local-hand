@@ -383,6 +383,13 @@ class TaskService:
             threading.Event().wait(0.05)
         return dict(status="RECOVERY_RECORDED", operation_id=self.request["operation_id"], start_replayed=False)
 
+    def retain_failure(self, error):
+        """Keep the triggering error before a recovery attempt can replace it."""
+        value = dict(error_type=type(error).__name__, reason=str(error)[:4096],
+            returncode=self.process.poll(), manager_failures=list(self.failures),
+            manager=None if self.gateway is None else self.gateway.snapshot())
+        save(self.intents, "failure-" + os.urandom(16).hex() + ".json", value)
+
     def close(self):
         # No implicit replay, signal to a saved PID, or deletion of user files.
         if self.closed:
@@ -400,6 +407,8 @@ class TaskService:
         for thread in self.capture_workers:
             attempt(lambda thread=thread: thread.join(timeout=1))
         if self.intents >= 0:
+            if self.gateway is not None:
+                attempt(lambda: save(self.intents, "manager-final.json", self.gateway.snapshot()))
             for index, captured in enumerate(self.captures):
                 value = dict(captured)
                 for name in ("stdout", "stderr"):
@@ -432,7 +441,8 @@ def main(argv=None):
         service.start()
         try:
             result = service.run()
-        except Exception:
+        except Exception as error:
+            service.retain_failure(error)
             if service.process.poll() is None:
                 raise
             result = service.recover()
