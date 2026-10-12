@@ -287,13 +287,18 @@ class JWTVerifier:
                     for item in raw_keys:
                         if not isinstance(item, dict):
                             raise _deny()
+                        if any(k in item for k in ("d", "p", "q", "dp", "dq", "qi", "oth", "k")):
+                            raise _deny()
+                        # Issuers can publish encryption keys alongside their
+                        # signing keys. They are never JWT verification keys.
+                        if item.get("use") == "enc":
+                            continue
                         key_id = item.get("kid")
                         alg = item.get("alg")
                         if (not isinstance(key_id, str) or not _SCOPE.fullmatch(key_id)
                                 or key_id in keys or alg not in self.config.algorithms
                                 or item.get("use", "sig") != "sig"
-                                or item.get("key_ops", ["verify"]) != ["verify"]
-                                or any(k in item for k in ("d", "p", "q", "dp", "dq", "qi", "oth", "k"))):
+                                or item.get("key_ops", ["verify"]) != ["verify"]):
                             raise _deny()
                         key = jwt.PyJWK.from_dict(item, algorithm=alg)
                         if (alg == "RS256" and (key.key_type != "RSA" or not 2048 <= key.key.key_size <= 8192)
