@@ -113,6 +113,18 @@ class TaskStopped(Exception):
         self.snapshot = snapshot
 
 
+def finish_stopped_management(coordinator):
+    if coordinator.management_closed:
+        q.require(coordinator.management_result is not None, "TASK_MANAGEMENT_CLOSURE_MISSING")
+        return coordinator.management_result
+    if coordinator.management.used:
+        while coordinator.management.poll() is None:
+            coordinator._pump()
+            threading.Event().wait(0.05)
+        return coordinator.management.finish()
+    return None
+
+
 class PhaseClient(quota_bridge.Client):
     def call(self, action, value=None):
         result = super().call(action, value)
@@ -313,12 +325,7 @@ class TaskService:
                 except TaskStopped as stopped:
                     # Ordinary cancellation closes no fabricated full-stage
                     # quota fence. Management still has its real exit duties.
-                    management = None
-                    if coordinator.management.used:
-                        while coordinator.management.poll() is None:
-                            coordinator._pump()
-                            threading.Event().wait(0.05)
-                        management = coordinator.management.finish()
+                    management = finish_stopped_management(coordinator)
                     result = dict(status="STOPPED", task=stopped.snapshot["task"], management=management)
                     save(self.intents, "stopped-" + phase + ".json", result)
                     self.channel.send(dict(action="finish", value=None))
@@ -405,6 +412,24 @@ finally:os.close(fd)
             manager=None if self.gateway is None else self.gateway.snapshot())
         save(self.intents, "failure-" + os.urandom(16).hex() + ".json", value)
 
+    def stop_api(self):
+        """End the API window through its own account and a live child pidfd."""
+        if self.process.poll() is not None:
+            return
+        descriptor = os.pidfd_open(self.process.pid)
+        try:
+            command = service_command(self.value, "unused")
+            result = subprocess.run(command[:command.index("-c")] + ["-c",
+                "import signal,sys; signal.pidfd_send_signal(int(sys.argv[1]), signal.SIGINT)",
+                str(descriptor)], pass_fds=(descriptor,), stdin=subprocess.DEVNULL,
+                capture_output=True, timeout=2, cwd="/", env={"PATH": "/usr/bin:/bin"})
+            save(self.intents, "api-stop-" + os.urandom(16).hex() + ".json",
+                 dict(returncode=result.returncode, stderr_hex=result.stderr.hex()))
+            q.require(result.returncode == 0 or self.process.poll() is not None, "TASK_API_STOP_FAILED")
+            self.process.wait(timeout=2)
+        finally:
+            os.close(descriptor)
+
     def close(self):
         # No implicit replay, signal to a saved PID, or deletion of user files.
         if self.closed:
@@ -467,6 +492,7 @@ def main(argv=None):
         end = value["controller_envelope"]["deadline_ns"]
         while service.process.poll() is None and budget.current_clock()["boottime_ns"] < end:
             threading.Event().wait(0.05)
+        service.stop_api()
         return 0
     except BaseException:
         failed = True

@@ -18,6 +18,30 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrator task service")
 class TaskServiceTests(unittest.TestCase):
+    def test_cancel_after_management_closure_reuses_proof_without_second_finish(self):
+        coordinator = Mock(management_closed=True, management_result={"original": "closure"})
+        coordinator.management.finish.side_effect = ValueError("MANAGEMENT_RECORD_CLOSED")
+        self.assertIs(coordinator.management_result, task_service.finish_stopped_management(coordinator))
+        coordinator.management.poll.assert_not_called()
+        coordinator.management.finish.assert_not_called()
+
+    def test_api_window_stops_actual_child_by_pidfd_and_waits_for_exit(self):
+        code = "import signal,time;signal.signal(signal.SIGINT,lambda *_:exit(0));print('ready',flush=True);time.sleep(10)"
+        process = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE)
+        self.addCleanup(process.stdout.close)
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+        self.assertEqual(b"ready\n", process.stdout.readline())
+        service = task_service.TaskService.__new__(task_service.TaskService)
+        service.process, service.value = process, {}
+        with tempfile.TemporaryDirectory() as root:
+            service.intents = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with patch.object(task_service, "service_command", return_value=[sys.executable, "-c", "unused"]):
+                    service.stop_api()
+                self.assertEqual(0, process.returncode)
+            finally:
+                os.close(service.intents)
+
     def test_original_failure_is_retained_before_recovery_changes_gateway(self):
         service = task_service.TaskService.__new__(task_service.TaskService)
         service.process = Mock()

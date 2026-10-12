@@ -47,7 +47,7 @@ _STATUS_SCHEMA = {
         "evidence": {"enum": ["STAGING", "SEALED", "DURABILITY_UNKNOWN", "FAILED"]},
         "phase": _STRING, "event_seq": _INTEGER, "observed_at": {"type": "number"},
         "cancel_requested": {"type": "boolean"}, "business_started": {"type": "boolean"},
-        "helper_started": {"type": "boolean"}, "side_effects": _STRING,
+        "helper_started": {"type": ["boolean", "null"]}, "side_effects": _STRING,
         "gaps": {"type": "array", "items": _STRING}, "exit_proof": {"type": ["object", "null"]},
         "seal_refs": {"type": "array", "items": {"type": "object"}},
         "reconciliations": {"type": "array", "items": {"type": "object"}},
