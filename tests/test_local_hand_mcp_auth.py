@@ -223,6 +223,23 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(JobError):
             await self.issuer.verifier.validate_issuer_metadata()
 
+    async def test_public_client_discovery_does_not_require_none_auth_method(self):
+        for methods in (["private_key_jwt", "client_secret_basic", "client_secret_post"], None):
+            with self.subTest(methods=methods):
+                issuer = SyntheticIssuer()
+                if methods is None:
+                    issuer.metadata.pop("token_endpoint_auth_methods_supported")
+                else:
+                    issuer.metadata["token_endpoint_auth_methods_supported"] = methods
+                await issuer.verifier.validate_issuer_metadata()
+                access = await issuer.verifier.authenticate(issuer.token())
+                self.assertEqual("project-owner", issuer.verifier.principal(access).principal_id)
+                self.assertIsNone(await issuer.verifier.verify_token(
+                    issuer.token(claims={"client_id": "other-client"})))
+                issuer.metadata["code_challenge_methods_supported"] = ["plain"]
+                with self.assertRaises(JobError):
+                    await issuer.verifier.validate_issuer_metadata()
+
     async def test_issuer_http_errors_are_sanitized(self):
         self.issuer.status = 302
         with self.assertRaises(JobError) as caught:

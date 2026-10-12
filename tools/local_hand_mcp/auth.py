@@ -253,10 +253,13 @@ class JWTVerifier:
             raise _deny()
         for key, value in (("response_types_supported", "code"),
                            ("grant_types_supported", "authorization_code"),
-                           ("code_challenge_methods_supported", "S256"),
-                           ("token_endpoint_auth_methods_supported", "none")):
+                           ("code_challenge_methods_supported", "S256")):
             if type(metadata.get(key)) is not list or value not in metadata[key]:
                 raise _deny()
+        # This resource server never exchanges authorization codes. Client
+        # authentication is configured for the predefined OAuth client, not
+        # inferred from the issuer-wide methods list: Keycloak omits "none"
+        # there even for public clients that enforce PKCE S256.
         scopes = metadata.get("scopes_supported")
         if (type(scopes) is not list or any(not isinstance(scope, str) for scope in scopes)
                 or not set(self.config.scopes) <= set(scopes)):
