@@ -154,6 +154,8 @@ class H11LauncherProcessTests(unittest.TestCase):
                 self.closed = False
                 test.gateways.append(self)
             def authorize_phase(self, plan, execution, grant, config):
+                test.assertEqual(test.value["resident"]["ordinary"]["manager_binding"],
+                                 plan.get("manager_binding"))
                 operation = test.value["resident"]["request"]["operation_id"]
                 execution_id = plan["execution_id"]
                 units = {stage: "lhj-" + hashlib.sha256(

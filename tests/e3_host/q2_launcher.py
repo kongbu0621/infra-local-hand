@@ -722,8 +722,8 @@ def run(value, repository):
     manager_sockets = []; gateway_failures = []; resident_pidfd = -1
     origin_capture = None; origin_pid = None; coordinator_worker = None; coordinator_errors = []
     result = dict(schema="local-hand-q4-h11-launcher-result/v1" if h11 else
-                  "local-hand-q2-system-launcher-result/v1" if system else
                   "local-hand-q4-cancel-launcher-result/v1" if cancelled else
+                  "local-hand-q2-system-launcher-result/v1" if system else
                   "local-hand-q2-launcher-result/v2" if chained else "local-hand-q2-launcher-result/v1", status="INCOMPLETE", q3_accepted=False,
                   production_supported=False, independent_controller_stop_required=True)
     if cancelled:
@@ -829,6 +829,10 @@ def run(value, repository):
                 plan = dict(resident["plan"], phase=phase, execution_id=prep["budget"]["execution_id"],
                     budget_grant=prep["budget"], budgets=prep["budget"]["limits"], bootstrap_allocation=prep["allocation"],
                     supervision_version=3, quota_observation_grant=grant.as_dict())
+                if system:
+                    # The controller and gateway validate this original binding;
+                    # single-phase Q4/H11 must carry it just as the normal chain does.
+                    plan["manager_binding"] = resident["ordinary"]["manager_binding"]
             # Fixed setpriv delivery inherits this mount namespace. No extra
             # SYS_PTRACE authority is acquired merely to inspect another UID.
             namespace = os.readlink("/proc/self/ns/mnt")

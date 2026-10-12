@@ -37,6 +37,8 @@ CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
 CANCEL_SUPERVISOR = "local-hand-q4-cancel-supervisor/v1"
 SYSTEM_SUPERVISOR = "local-hand-q2-system-supervisor/v1"
 SYSTEM_LAUNCHER = "local-hand-q2-system-launcher/v1"
+SYSTEM_CANCEL_SUPERVISOR = "local-hand-q4-system-cancel-supervisor/v1"
+SYSTEM_CANCEL_LAUNCHER = "local-hand-q4-system-cancel-launcher/v1"
 SYSTEM_WIRE_LIMIT = 4 * 1024 * 1024
 
 
@@ -68,13 +70,14 @@ def cancel_fixture(fixture):
     pair = fixture.get("schema"), fixture.get("purpose")
     require(pair in (("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"),
                      (SYSTEM_SUPERVISOR, "ISOLATED_Q2_SUPERVISION"),
+                     (SYSTEM_CANCEL_SUPERVISOR, CANCEL_PURPOSE),
                      (CANCEL_SUPERVISOR, CANCEL_PURPOSE)), "REVIEW_FIXTURE_VERSION")
     nested = fixture["launcher"]
-    cancel = pair == (CANCEL_SUPERVISOR, CANCEL_PURPOSE)
-    require(cancel == (nested.get("schema") == CANCEL_LAUNCHER), "REVIEW_SCENARIO_BINDING")
-    system = pair[0] == SYSTEM_SUPERVISOR
-    require(system == (nested.get("schema") == SYSTEM_LAUNCHER), "REVIEW_MANAGER_BINDING")
-    if system:
+    cancel = pair in ((CANCEL_SUPERVISOR, CANCEL_PURPOSE), (SYSTEM_CANCEL_SUPERVISOR, CANCEL_PURPOSE))
+    require(cancel == (nested.get("schema") in (CANCEL_LAUNCHER, SYSTEM_CANCEL_LAUNCHER)), "REVIEW_SCENARIO_BINDING")
+    system = pair[0] in (SYSTEM_SUPERVISOR, SYSTEM_CANCEL_SUPERVISOR)
+    require(system == (nested.get("schema") in (SYSTEM_LAUNCHER, SYSTEM_CANCEL_LAUNCHER)), "REVIEW_MANAGER_BINDING")
+    if system and not cancel:
         require(nested.get("purpose") == "ISOLATED_Q2_CHAIN", "REVIEW_LAUNCHER_VERSION")
     if cancel:
         require(nested.get("purpose") == CANCEL_PURPOSE, "REVIEW_LAUNCHER_VERSION")
@@ -83,11 +86,11 @@ def cancel_fixture(fixture):
 
 def system_fixture(fixture):
     cancel_fixture(fixture)
-    return fixture["schema"] == SYSTEM_SUPERVISOR
+    return fixture["schema"] in (SYSTEM_SUPERVISOR, SYSTEM_CANCEL_SUPERVISOR)
 
 
 def record_schema(cancel, suffix, *, system=False):
-    require(type(cancel) is bool and type(system) is bool and not (cancel and system), "REVIEW_RECORD_KIND")
+    require(type(cancel) is bool and type(system) is bool, "REVIEW_RECORD_KIND")
     return ("local-hand-q4-cancel-" if cancel else "local-hand-q2-system-" if system
             else "local-hand-q2-") + suffix + "/v1"
 
@@ -110,7 +113,8 @@ def cancel_case_facts(result, fixture, completed_ns=None):
     """Bind a recorded case to its fixture; recording proves no task closure."""
     require(cancel_fixture(fixture), "REVIEW_CANCEL_FIXTURE")
     nested = fixture["launcher"]; resident = nested["resident"]; assembly = nested["assembly"]
-    require(resident.get("schema") == "local-hand-q4-cancel-resident/v1"
+    require(resident.get("schema") == ("local-hand-q4-system-cancel-resident/v1" if system_fixture(fixture)
+            else "local-hand-q4-cancel-resident/v1")
             and resident.get("purpose") == CANCEL_PURPOSE and resident.get("phases") == ["preflight"],
             "REVIEW_CANCEL_RESIDENT")
     require(result.get("schema") == "local-hand-q4-cancel-launcher-result/v1"
