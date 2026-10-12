@@ -87,7 +87,7 @@ preflight 和 business；两阶段的 bootstrap、helper、result_reader 均退�
 证据恢复进程实际退出 0，生成的 zip、manifest、seal 经原证据读取接口取回并核对摘要。
 登记首次因旧安装接口不兼容失败且未写账本；采用实现 `d96c8b5` 的兼容恢复组件，
 复用已生成的同一证据包完成登记，没有重复封装或重跑业务。
-当前 H01 为 TERMINAL / SUCCEEDED / SEALED，账本 1 个 operation、49 个 event、13 个 lease。
+当时 H01 为 TERMINAL / SUCCEEDED / SEALED，账本 1 个 operation、49 个 event、13 个 lease。
 新增事件仅 EVIDENCE_RECOVERY_COMPLETED、EVIDENCE_SEALED；原有事件和执行句柄未改写。
 旧配额阶段未闭合的 13 个 lease 保留，不把恢复成功冒充原证据阶段三进程全部通过。
 
@@ -95,8 +95,8 @@ Q4 已在实现 `8ad46ae` 上实际完成运行中取消。原用户管理器能
 binding、停止后单元被回收导致的误拒均已留档并修复。最终返回 CANCEL_CASE_RECORDED / EXERCISED，
 helper_exit_proven=true，完成原因为 HELPER_EXIT；取消请求落账、原身份停止确认、进程树退出、
 双流 EOF 均已核实，取消后没有继续下发，result_reader 未下发。退出码未知仍保留为 null。
-Q4 账本 1 个 operation、16 个 event、7 个 lease，状态 RECONCILE_REQUIRED / UNKNOWN / STAGING。
-取消记录不冒充普通三阶段闭合，不释放保留的 lease。
+Q4 当时账本 1 个 operation、16 个 event、7 个 lease，状态 RECONCILE_REQUIRED / UNKNOWN / STAGING。
+这份取消记录不冒充普通三阶段闭合，当时保留全部 lease。
 
 H11 已在实现 `647071c` 上实际完成同任务恢复查询，返回 RECOVERY_RECORDED。
 已修复 RECONCILE_REQUIRED 标签误阻断、单阶段遗漏原请求摘要、历史失败单元永久封锁、
@@ -105,8 +105,23 @@ EOF 被误报身份错误及跨用户 pidfd 信号权限缺口。中断由原普
 同一账本由 17 条事件增至 21 条，仅追加恢复屏障、未知状态、身份观察和退出待收尾事件；
 请求、预算、原下发集合和 lease 保留，没有重新提交、重放业务或重读结果。
 原进程树和写入者停止已证实；原匿名管道丢失，collectors_stopped/effects_checked 仍为 false。
-H11 账本 1 个 operation、21 个 event、7 个 lease，状态 RECONCILE_REQUIRED / UNKNOWN / STAGING。
-最终只读核对确认 H01 仍为 1/49/13 和 SUCCEEDED / SEALED，Q4/H11 实际下发的原单元均已停止。
+H11 当时账本 1 个 operation、21 个 event、7 个 lease，状态 RECONCILE_REQUIRED / UNKNOWN / STAGING。
+当时只读核对确认 H01 仍为 1/49/13 和 SUCCEEDED / SEALED，Q4/H11 实际下发的原单元均已停止。
 历史尝试、失败原件、安装、账本、证据及保留资源继续保存；当前三项现场记录不代表生产资格。
+
+随后以 `1a81e48` 完成同一 Q4/H11 的退出收尾。原业务未启动，原账本已证明禁止后续启动、
+进程树及写入者停止；不再要求普通全阶段验证齐全才能结束取消或恢复。
+两项各追加一条 PREFLIGHT_STOPPED，释放一个执行租约，保留六个目录保护 lease。
+Q4 现为 TERMINAL / EXITED / CANCELLED，账本 1/17/6；H11 现为 TERMINAL / EXITED / UNKNOWN，
+账本 1/22/6。原退出码、缺失采集、请求、预算、下发集合和历史事件未改写；保留文件一致。
+真实 CLI 进程通过原身份映射的 Unix socket 查询两项成功，重复收尾不产生新写入或执行。
+
+H01 又以 `8053d3a` 的兼容组件释放一个执行租约，追加 EXECUTION_RESOURCES_RELEASED。
+现为 TERMINAL / EXITED / SUCCEEDED / SEALED，账本 1/50/12；十二个目录保护 lease 保留。
+第一次加载新 broker 因旧安装接口不兼容失败，账本未打开；改为仅加载兼容组件后收尾成功。
+随后 CLI 状态查询成功，证据读取被原测试配置每分钟一次请求的限额阻断；已核对收尾成功，
+没有再次写入。当前核心配置改为每分钟 60 次请求；原配置保留，仅有读取权限的临时会话已通过
+真实 CLI 取回原 zip、manifest、seal 并核对全部摘要。原业务、封装、退出证明、文件和其他账本未改写。
+这些旧失败不阻止已修复后的继续工作。CLI 已实测，外部 MCP 客户端接入尚未现场验证。
 
 旧的详细指令可在 Git 历史中追溯，不再逐条加载为当前任务的审批条件。
