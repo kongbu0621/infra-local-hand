@@ -73,13 +73,37 @@ def test_entry_rejects_wrong_fixed_case(tmp_path, method, index):
         getattr(value, method)(d.CASES[(index + 1) % 3], {}, plan)
 
 
-def test_once_attempt_barrier_precedes_another_child(tmp_path, monkeypatch):
+def test_possible_execution_requires_reconciliation_before_another_child(tmp_path, monkeypatch):
     value, plan = effects(tmp_path); case = d.CASES[0]
     plan.update(case_id=case["case_id"], operation_id=case["operation_id"])
     prepared = {"case": case, "_exec_attempted": True}
     monkeypatch.setattr(value, "_exec_child", lambda *a: pytest.fail("replayed"))
-    with pytest.raises(d.DispatchError, match="ALREADY_ATTEMPTED"):
+    with pytest.raises(d.DispatchError, match="RECONCILIATION_REQUIRED"):
         value.run_h01(case, prepared, plan)
+
+
+def test_owner_exec_failure_can_be_fixed_without_consuming_the_case(tmp_path):
+    value, plan = effects(tmp_path)
+    prepared = {}
+    with pytest.raises(FileNotFoundError):
+        value._exec_owner(prepared, [str(tmp_path / "missing")], plan)
+    assert not prepared.get("_exec_attempted")
+    assert value._install_commands[-1]["child_started"] is False
+    result = value._exec_owner(prepared,
+        [sys.executable, "-I", "-B", "-c", "print('continued')"], plan)
+    assert result == b"continued\n"
+    with pytest.raises(d.DispatchError, match="RECONCILIATION_REQUIRED"):
+        value._exec_owner(prepared, [sys.executable, "-c", "raise SystemExit(9)"], plan)
+    assert len(value._install_commands) == 2
+
+
+def test_failed_child_is_retained_for_reconciliation(tmp_path):
+    value, plan = effects(tmp_path)
+    prepared = {}
+    with pytest.raises(d.DispatchError, match="INSTALL_COMMAND_FAILED"):
+        value._exec_owner(prepared, [sys.executable, "-I", "-B", "-c", "raise SystemExit(3)"], plan)
+    assert prepared["_exec_attempted"]
+    assert value._install_commands[-1]["child_started"] is True
 
 
 def test_h11_source_reader_cannot_read_business_result(tmp_path, monkeypatch):

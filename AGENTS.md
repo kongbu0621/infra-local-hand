@@ -73,13 +73,23 @@ quota 模块仅为 6.8.0-142 准备，quota 挂载失败使 guest 进入紧急�
 
 核心实现 `823f99117bdb15bd78da5f7e6c1302805ddc0ad1` 已实际完成 H01 的
 preflight 和 business；两阶段的 bootstrap、helper、result_reader 均退出 0，
-两个原阶段闭合记录保留，业务结果为 SUCCEEDED。账本现有 1 个 operation、47 个 event、
+两个原阶段闭合记录保留，业务结果为 SUCCEEDED。原执行账本有 1 个 operation、47 个 event、
 13 个 lease。证据阶段的原 admission 和 query 分别触发 6 秒、4 秒运行时限；
 证据 bootstrap 已退出，证据 helper/result_reader 未下发。原业务结果保持成功，
-整体仍为 RECONCILE_REQUIRED / EVIDENCE，不能报告 H01 完整 PASS；Q4/H11 尚未执行。
+当时整体为 RECONCILE_REQUIRED / EVIDENCE；这份失败原件保留。
 保留当前安装、账本、日志、配额目录和原件。不得再使用业务启动前的空目录留档/释放脚本，
-也不得重跑已完成业务。后续从同一任务的结果及证据收尾继续，再推进 Q4/H11。
+也不得重跑已完成业务。
 最新描述符继承及不可变配置解析复用修复已在源码中，尚未用于这次已结束的现场执行；
-不能把本地回归或 PR 合并报告成现场证据收尾成功。
+不能把本地回归或 PR 合并报告成现场执行成功。
+
+随后发现宿主再次重启、原 VM 已退出，已按原磁盘身份、硬件和端点恢复 VM。
+同一 H01 的原业务结果和 47 条事件核对一致，旧阶段单元均已退出。
+证据恢复进程实际退出 0，生成的 zip、manifest、seal 经原证据读取接口取回并核对摘要。
+登记首次因旧安装接口不兼容失败且未写账本；采用实现 `d96c8b5` 的兼容恢复组件，
+复用已生成的同一证据包完成登记，没有重复封装或重跑业务。
+当前 H01 为 TERMINAL / SUCCEEDED / SEALED，账本 1 个 operation、49 个 event、13 个 lease。
+新增事件仅 EVIDENCE_RECOVERY_COMPLETED、EVIDENCE_SEALED；原有事件和执行句柄未改写。
+旧配额阶段未闭合的 13 个 lease 保留，不把恢复成功冒充原证据阶段三进程全部通过。
+接下来推进各自独立任务的 Q4 运行中取消和 H11 同账本恢复查询；两项尚未现场执行。
 
 旧的详细指令可在 Git 历史中追溯，不再逐条加载为当前任务的审批条件。

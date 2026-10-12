@@ -3,8 +3,10 @@
 ## 2026-10-12 当前核心状态
 
 H01 在实现 `823f991` 上已完成 preflight 和 business，业务结果为 SUCCEEDED。
-证据 admission/query 超时，整体保持 RECONCILE_REQUIRED / EVIDENCE；Q4/H11 尚未执行。
-保留原安装、账本、日志和配额目录，后续从同一任务的结果与证据收尾继续，不重跑已完成业务。
+原证据 admission/query 超时已留档。恢复组件 `d96c8b5` 已实际完成同一任务证据登记，
+当前为 TERMINAL / SUCCEEDED / SEALED；zip、manifest、seal 已从原证据接口取回并核对摘要。
+原 47 条事件保留，只新增两条收尾事件；未重复封装证据或重跑业务，13 个旧配额 lease 保留。
+Q4/H11 尚未执行，接下来推进各自独立任务的取消和恢复查询。
 内核/quota 挂载修复和 journal 扩容已经完成，详情及当前授权以[AGENTS.md](../../AGENTS.md)为准。
 
 普通修复、只读失败重试和局部验证按实际影响处理。当前打包不再要求历史审批链、

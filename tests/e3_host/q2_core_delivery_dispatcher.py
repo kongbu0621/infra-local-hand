@@ -6471,7 +6471,7 @@ class FieldEffects:
             raise
 
     def _installation_command(self, argv):
-        """One real child, wait4 accounting and paired EOF; never retry.
+        """One real child, with wait4 accounting and paired EOF.
 
         Normal work cannot borrow the remote-final reserve. After a failure,
         only kill/reap/drain is permitted inside the unchanged outer window.
@@ -6625,6 +6625,7 @@ class FieldEffects:
                 os.close(fd)
             if attempted:
                 self._install_commands.append({"argv": list(argv),
+                    "child_started": proc is not None,
                     "returncode": proc.returncode if proc is not None else None,
                     "eof": sorted(eof), "failure": failure, "cleanup_failure": cleanup_failure,
                     "kill_sent": killed, "wait4": waited,
@@ -7017,8 +7018,17 @@ class FieldEffects:
             "sidecars": [], "checked_boottime_ns": self.now()["boottime_ns"],
             "stage": "fixture", "before_submit": True}
         raw = canonical(gate, newline=True)
-        _prep_file(self, prepared["paths"]["reservation"] + "/empty-ledger-gate.json", raw,
-            plan["deadlines"]["owner_deadline_ns"])
+        previous = prepared.get("_exec_gate")
+        if previous is not None:
+            saved = document(_prep_reread(self, previous, plan["deadlines"]["owner_deadline_ns"]),
+                limit=65536, newline=True)
+            _effect(all(saved.get(key) == value for key, value in gate.items()
+                if key != "checked_boottime_ns"), "EMPTY_LEDGER_CHANGED")
+            raw = previous["raw"]
+        else:
+            prepared["_exec_gate"] = _prep_file(self,
+                prepared["paths"]["reservation"] + "/empty-ledger-gate.json", raw,
+                plan["deadlines"]["owner_deadline_ns"])
         return {"path": "cases/" + case["case_id"] + "/reservation/empty-ledger-gate.json",
             "role": "empty-ledger-gate", "mode": 384, "raw": raw}
 
@@ -7178,6 +7188,19 @@ class FieldEffects:
             if previous is None: del self._effect_guard
             else: self._effect_guard = previous
 
+    def _exec_owner(self, prepared, argv, plan):
+        """A local failure before exec does not consume the case's execution."""
+        _effect(not prepared.get("_exec_attempted"), "CASE_RECONCILIATION_REQUIRED")
+        before = len(self._install_commands)
+        prepared["_exec_attempted"] = True
+        try:
+            return self._exec_child(argv, plan)
+        except BaseException:
+            attempts = self._install_commands[before:]
+            if all(item.get("child_started") is False for item in attempts):
+                prepared.pop("_exec_attempted", None)
+            raise
+
     def _exec_source(self, case, prepared, plan, suffix, role, mode=384):
         _effect.path(suffix, 'CASE_SOURCE_PATH')
         root, relative = suffix.split("/", 1)
@@ -7240,7 +7263,7 @@ class FieldEffects:
         _effect(case in CASES and prepared.get("case") == case
             and plan["case_id"] == case["case_id"] and plan["operation_id"] == case["operation_id"],
             "CASE_INPUT")
-        _effect(not prepared.get("_exec_attempted"), "CASE_ALREADY_ATTEMPTED")
+        _effect(not prepared.get("_exec_attempted"), "CASE_RECONCILIATION_REQUIRED")
         self._exec_guard(plan)
         handoff = prepared["handoff"]
         for record in prepared["source_objects"].values():
@@ -7275,9 +7298,9 @@ class FieldEffects:
             prepared["_exec_ledger_fd"] = fd
             prepared["_exec_ledger_identity"] = {"path": plan["ledger_path"], "dev": info.st_dev, "ino": info.st_ino}
             gate_source = self._exec_empty_ledger_gate(case, prepared, plan)
-            prepared.setdefault("sources", []).append(gate_source)
-            prepared["_exec_attempted"] = True
-            child_raw = self._exec_child([python["path"], "-I", "-B", runtime_root +
+            if gate_source not in prepared.setdefault("sources", []):
+                prepared["sources"].append(gate_source)
+            child_raw = self._exec_owner(prepared, [python["path"], "-I", "-B", runtime_root +
                 "/tests/e3_host/q2_prepare_run.py", "--plan", prepared["handoff_path"], "--sha256", _sha(raw)], plan)
             child = document(child_raw, limit=69632, newline=True)
             for record in prepared["source_objects"].values():
