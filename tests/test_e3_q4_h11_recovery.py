@@ -197,6 +197,17 @@ class H11RecoveryBrokerTests(unittest.TestCase):
                          (observer.reattaches, observer.observations, observer.stops,
                           observer.starts))
 
+    def test_original_durable_receipts_allow_recovery_after_uncertain_delivery(self):
+        case, original = self.fixture()
+        with case.f.db.transaction() as tx:
+            case.f.db.update(tx, "job", case.identity, "EXECUTION_UNCERTAIN",
+                             {"lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN"})
+        before = self.ledger(case)
+        plan = resident.h11_plan(case.broker, case.identity, original["controller_deadline_ns"])
+        self.assertEqual(original["handle_sha256"], plan["handle_sha256"])
+        self.assertEqual(original["units"], plan["units"])
+        self.assertEqual(before, self.ledger(case))
+
     def test_origin_plan_rejects_invocation_identity_reuse(self):
         case, _ = self.fixture()
         row = case.row()

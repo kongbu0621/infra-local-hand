@@ -401,7 +401,11 @@ def h11_plan(broker, identity, controller_deadline_ns):
         delivered = record.get("delivery_intents", [])
         require(type(delivered) is list and delivered == expected_delivery[:len(delivered)]
                 and len(delivered) <= len(expected_delivery), "H11_MANAGER_RECEIPT")
-        require(record["lifecycle"] == "RUNNING" and record["cancel_requested"] is False
+        # Initial asynchronous delivery may leave RECONCILE_REQUIRED even after
+        # all three original identities are durable. The receipt below decides
+        # readiness; recovery must preserve that uncertainty rather than wait
+        # for a cosmetic lifecycle transition.
+        require(record["lifecycle"] in ("RUNNING", "RECONCILE_REQUIRED") and record["cancel_requested"] is False
                 and record.get("recovered") is not True
                 and not record.get("quota_pending") and not record.get("quota_closed"),
                 "H11_CRASH_NOT_READY")

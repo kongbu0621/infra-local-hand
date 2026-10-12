@@ -590,9 +590,9 @@ def command(value, fixture_path, fixture_digest):
 
 def reason(error):
     code = getattr(error, "code", None)
-    if not isinstance(code, str) or not re.fullmatch(r"[A-Z_]{1,100}", code):
+    if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", code):
         code = str(error)
-    return code if re.fullmatch(r"[A-Z_]{1,100}", code) else type(error).__name__[:100]
+    return code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", code) else type(error).__name__[:100]
 
 
 def validate_phase_plan(resident, prepared, grant, previous_plans):

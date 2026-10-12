@@ -58,6 +58,9 @@ else:
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux pidfd H11 launcher handoff")
 class H11LauncherProcessTests(unittest.TestCase):
+    def test_h11_reason_keeps_the_actual_failure_code(self):
+        self.assertEqual("H11_ARM_FAILED", launcher.reason(ValueError("H11_ARM_FAILED")))
+
     def setUp(self):
         fixture = base.LauncherOrderingTests()
         with mock.patch.object(base.Path, "home", return_value=Path("/tmp")):
