@@ -138,9 +138,13 @@ class StartupRetryDriverTests(unittest.TestCase):
         self.assertEqual(retry["predecessors"], authority["predecessors"])
         self.assertEqual(plan["candidate"]["destination"] + "/source/tests/e3_host/q2_prepare_run.py", invocation[3])
         handoff = files.writes[invocation[invocation.index("--plan") + 1]][0]
-        domains = handoff["template"]["launcher"]["assembly"]["installation"]["capacity"]["domains"]
-        self.assertEqual(11, len(domains))
-        self.assertEqual(203 * 1024**2, sum(domain["hard_bytes"] for domain in domains))
+        capacity = handoff["template"]["launcher"]["assembly"]["installation"]["capacity"]
+        domains = capacity["domains"]
+        self.assertEqual(7, len(domains))
+        self.assertEqual(7 * 1024**2, sum(domain["hard_bytes"] for domain in domains))
+        self.assertEqual((124 + 196) * 1024**2, capacity["retained_bytes"])
+        self.assertEqual(1000 + sum(root["inode_hard_limit"] for root in plan["retained_domains"]),
+                         capacity["retained_inodes"])
 
     def test_real_assembly_and_ledger_bind_both_predecessors_and_fresh_exec(self):
         args = fixture(); plan, retry, receipt, entry, guest = args
