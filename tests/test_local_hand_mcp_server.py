@@ -102,6 +102,17 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertEqual(before, len(self.broker.calls))
 
+    def test_unknown_start_facts_remain_null_in_status_result(self):
+        operation = "12345678-1234-4234-8234-123456789abc"
+        self.broker.output = dict(operation_id=operation, request_digest="a" * 64,
+            lifecycle="RUNNING", outcome="UNKNOWN", evidence="STAGING", phase="BUSINESS",
+            business_started=None, helper_started=None)
+        response = self.rpc("tools/call", {"name": "lh_job_status", "arguments": {"operation_id": operation}, "_meta": {}})
+        self.assertEqual(200, response.status_code, response.text)
+        result = response.json()["result"]
+        self.assertFalse(result["isError"])
+        self.assertEqual(self.broker.output, result["structuredContent"])
+
     def test_real_sdk_initialization_tools_and_principal_mapping(self):
         response = self.rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                             "clientInfo": {"name": "fixture", "version": "1"}})
