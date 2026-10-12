@@ -79,8 +79,8 @@ preflight 和 business；两阶段的 bootstrap、helper、result_reader 均退�
 当时整体为 RECONCILE_REQUIRED / EVIDENCE；这份失败原件保留。
 保留当前安装、账本、日志、配额目录和原件。不得再使用业务启动前的空目录留档/释放脚本，
 也不得重跑已完成业务。
-最新描述符继承及不可变配置解析复用修复已在源码中，尚未用于这次已结束的现场执行；
-不能把本地回归或 PR 合并报告成现场执行成功。
+描述符继承及不可变配置解析复用修复没有回写原 H01 执行；后续 Q4/H11 使用各自明确绑定的
+新实现。不能把本地回归或 PR 合并报告成现场执行成功。
 
 随后发现宿主再次重启、原 VM 已退出，已按原磁盘身份、硬件和端点恢复 VM。
 同一 H01 的原业务结果和 47 条事件核对一致，旧阶段单元均已退出。
@@ -90,6 +90,23 @@ preflight 和 business；两阶段的 bootstrap、helper、result_reader 均退�
 当前 H01 为 TERMINAL / SUCCEEDED / SEALED，账本 1 个 operation、49 个 event、13 个 lease。
 新增事件仅 EVIDENCE_RECOVERY_COMPLETED、EVIDENCE_SEALED；原有事件和执行句柄未改写。
 旧配额阶段未闭合的 13 个 lease 保留，不把恢复成功冒充原证据阶段三进程全部通过。
-接下来推进各自独立任务的 Q4 运行中取消和 H11 同账本恢复查询；两项尚未现场执行。
+
+Q4 已在实现 `8ad46ae` 上实际完成运行中取消。原用户管理器能力错误、单阶段缺失 manager
+binding、停止后单元被回收导致的误拒均已留档并修复。最终返回 CANCEL_CASE_RECORDED / EXERCISED，
+helper_exit_proven=true，完成原因为 HELPER_EXIT；取消请求落账、原身份停止确认、进程树退出、
+双流 EOF 均已核实，取消后没有继续下发，result_reader 未下发。退出码未知仍保留为 null。
+Q4 账本 1 个 operation、16 个 event、7 个 lease，状态 RECONCILE_REQUIRED / UNKNOWN / STAGING。
+取消记录不冒充普通三阶段闭合，不释放保留的 lease。
+
+H11 已在实现 `647071c` 上实际完成同任务恢复查询，返回 RECOVERY_RECORDED。
+已修复 RECONCILE_REQUIRED 标签误阻断、单阶段遗漏原请求摘要、历史失败单元永久封锁、
+EOF 被误报身份错误及跨用户 pidfd 信号权限缺口。中断由原普通用户通过已保留的 pidfd 发出，
+未扩大控制器能力；原进程实际退出 -9，新恢复进程退出 0，双流 EOF 完整。
+同一账本由 17 条事件增至 21 条，仅追加恢复屏障、未知状态、身份观察和退出待收尾事件；
+请求、预算、原下发集合和 lease 保留，没有重新提交、重放业务或重读结果。
+原进程树和写入者停止已证实；原匿名管道丢失，collectors_stopped/effects_checked 仍为 false。
+H11 账本 1 个 operation、21 个 event、7 个 lease，状态 RECONCILE_REQUIRED / UNKNOWN / STAGING。
+最终只读核对确认 H01 仍为 1/49/13 和 SUCCEEDED / SEALED，Q4/H11 实际下发的原单元均已停止。
+历史尝试、失败原件、安装、账本、证据及保留资源继续保存；当前三项现场记录不代表生产资格。
 
 旧的详细指令可在 Git 历史中追溯，不再逐条加载为当前任务的审批条件。
