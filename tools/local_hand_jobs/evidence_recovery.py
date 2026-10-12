@@ -6,11 +6,56 @@ installation without replacing its business implementation or policy.
 from __future__ import annotations
 
 import hashlib
+import json
 
 from . import budget
 from .broker import thaw
 from .contract import JobError
 from .state import encoded
+
+
+def release_completed_evidence(broker, tx, row):
+    """Release execution capacity after durably completed evidence recovery.
+
+    Retained directory allocations and historical quota phase records stay put.
+    The completed recovery already proves the old units absent and all new
+    writers stopped; repeating the failed evidence phase provides no new fact.
+    """
+    record = row["record"]
+    proof = record.get("exit_proof") or {}
+    if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
+            or record["lifecycle"] != "TERMINAL" or record["phase"] != "EXITED"
+            or record["evidence"] != "SEALED" or record.get("execution_resources_released")
+            or record["outcome"] not in ("SUCCEEDED", "FAILED", "CANCELLED")
+            or record["outcome"] != record.get("business_outcome")
+            or proof.get("kind") != "EVIDENCE_RECOVERY"
+            or ("job", row["id"]) in broker._active or ("job", row["id"]) in broker._recovering):
+        return False
+    if tx.execute("SELECT 1 FROM leases WHERE owner=? LIMIT 1", (row["id"],)).fetchone() is None:
+        return False  # Earlier installations may already have released capacity.
+    events = [json.loads(item["data_json"]) for item in tx.execute(
+        "SELECT data_json FROM events WHERE namespace='job' AND id=? AND kind='EVIDENCE_RECOVERY_COMPLETED'",
+        (row["id"],))]
+    sealed = tx.execute("SELECT data_json FROM events WHERE namespace='job' AND id=? "
+                        "AND kind='EVIDENCE_SEALED' ORDER BY seq DESC LIMIT 1", (row["id"],)).fetchone()
+    flags = ("future_start_blocked", "tree_exited", "collectors_stopped", "writers_stopped", "effects_checked")
+    original = record.get("business_exit_proof") or {}
+    if (len(events) != 1 or events[0].get("exit_proof") != proof
+            or sealed is None or json.loads(sealed["data_json"]).get("seals") != record.get("seals")
+            or proof.get("operation_id") != row["id"] or proof.get("request_digest") != row["digest"]
+            or proof.get("prior_units_absent") is not True
+            or proof.get("state") != "EXITED" or proof.get("exit_code") != 0
+            or not all(proof.get(key) is True and original.get(key) is True for key in flags)
+            or proof.get("snapshot_sha256") != hashlib.sha256(encoded(record.get("frozen_snapshot")).encode()).hexdigest()):
+        raise JobError("IO_UNCERTAIN", "Completed evidence recovery differs from its durable proof")
+    for item in broker.state.all(tx):
+        if item["namespace"] == "reconcile" and item["parent"] == row["id"] and item["record"]["lifecycle"] != "TERMINAL":
+            return False
+    broker.resources.assert_owned(tx, row["id"], row["request"]["expected"]["deployment_epoch"], row["plan"]["resource_ids"])
+    broker.resources.release(tx, row["id"], future_start_blocked=True, tree_exited=True, effects_checked=True)
+    broker.state.update(tx, "job", row["id"], "EXECUTION_RESOURCES_RELEASED", {
+        "execution_resources_released": True, "artifacts_retained": True})
+    return True
 
 
 def complete_recovered_evidence(broker, operation_id, expected_request_digest, seal, proof):
@@ -33,7 +78,8 @@ def complete_recovered_evidence(broker, operation_id, expected_request_digest, s
         if existing:
             if len(existing) != 1 or existing[0] != dict(thaw(seal), evidence_state="SEALED"):
                 raise JobError("CONFLICT", "Evidence recovery publication differs")
-            return broker._view(row)
+            release_completed_evidence(broker, tx, row)
+            return broker._view(broker.state.get("job", operation_id, tx))
         original = record.get("business_exit_proof", {})
         frozen = record.get("frozen_snapshot", {})
         handle = record.get("handles", {}).get("evidence", {})
@@ -83,7 +129,9 @@ def complete_recovered_evidence(broker, operation_id, expected_request_digest, s
             "phase": "EXITED", "lifecycle": "TERMINAL", "outcome": record["business_outcome"],
             "exit_proof": thaw(proof), "gaps": []})
         broker._register_seal(tx, seal)
-        broker._release(tx, row, original)
+        current = broker.state.get("job", operation_id, tx)
+        if not release_completed_evidence(broker, tx, current):
+            broker._release(tx, current, original)
         result = broker._view(broker.state.get("job", operation_id, tx))
     broker._catalog(broker.state.get("job", operation_id))
     return result

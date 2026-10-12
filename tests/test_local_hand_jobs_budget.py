@@ -133,6 +133,7 @@ class BudgetTests(unittest.TestCase):
         self.f.broker.evidence = store
         previous_boot = self.clock["boot_id"]
         self.clock["boot_id"] = "22222222-2222-4222-8222-222222222222"
+        self.f.broker._active.clear()  # Recovery uses a new process after the old boot ended.
         execution_id = "evidence-recovery-" + str(uuid.uuid4())
         proof = dict(kind="EVIDENCE_RECOVERY", operation_id=row["id"], request_digest=row["digest"],
             snapshot_sha256=hashlib.sha256(encoded(frozen).encode()).hexdigest(),
@@ -160,6 +161,48 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(self.f.broker.complete_recovered_evidence(*args), result)
         self.assertEqual(self.row()["record"]["event_seq"], after["record"]["event_seq"])
         self.assertEqual(self.f.runner.starts, starts)
+        self.assertTrue(result["execution_resources_released"])
+
+    def retained_publication(self):
+        args = self.recovered_publication()
+        with self.f.db.transaction() as tx:
+            self.f.broker.resources.acquire(tx, "bootstrap:retained", 1, ["retained-work", "retained-evidence"])
+        # The old callback recorded successful recovery but retained its execution lease.
+        with mock.patch("local_hand_jobs.evidence_recovery.release_completed_evidence", return_value=False), \
+             mock.patch.object(self.f.broker, "_release"):
+            self.f.broker.complete_recovered_evidence(*args)
+        return args
+
+    def test_retained_completed_recovery_releases_only_execution_on_restart(self):
+        args = self.retained_publication()
+        before = copy.deepcopy(self.row())
+        events = self.f.db.events("job", args[0])
+        self.clock["boottime_ns"] += 10000 * budget.NANOSECONDS
+        self.f.broker.recover()
+        after = self.row()
+        self.assertTrue(after["record"]["execution_resources_released"])
+        for key in ("handles", "execution_budget", "exit_proof", "seals", "frozen_snapshot"):
+            self.assertEqual(before["record"][key], after["record"][key])
+        later = self.f.db.events("job", args[0])
+        self.assertEqual(events, later[:-1])
+        self.assertEqual("EXECUTION_RESOURCES_RELEASED", later[-1]["kind"])
+        with self.f.db.transaction() as tx:
+            self.assertEqual(["bootstrap:retained"] * 2,
+                             [r[0] for r in tx.execute("SELECT owner FROM leases")])
+            self.f.broker.resources.acquire(tx, "next-job", 1, after["plan"]["resource_ids"])
+        self.f.broker.recover()
+        self.f.broker.complete_recovered_evidence(*args)
+        self.assertEqual(after, self.row())
+
+    def test_retained_recovery_cannot_release_with_changed_proof(self):
+        from local_hand_jobs.evidence_recovery import release_completed_evidence
+        args = self.retained_publication()
+        with self.f.db.transaction() as tx:
+            row = self.f.db.get("job", args[0], tx)
+            row["record"]["exit_proof"]["prior_units_absent"] = False
+            leases = list(tx.execute("SELECT * FROM leases"))
+            self.assert_error("IO_UNCERTAIN", lambda: release_completed_evidence(self.f.broker, tx, row))
+            self.assertEqual(leases, list(tx.execute("SELECT * FROM leases")))
 
     def test_recovered_publication_rejects_live_or_unbound_proof_without_ledger_changes(self):
         args = self.recovered_publication()

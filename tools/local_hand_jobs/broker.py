@@ -418,11 +418,14 @@ class Broker:
     def recover(self):
         """Crash recovery records uncertainty; never reissues a persisted intent."""
         from .preflight_completion import complete_stopped_preflight
+        from .evidence_recovery import release_completed_evidence
         reconnect = []
         with self.fence, self.state.transaction() as tx:
             for row in self.state.all(tx):
                 record = row["record"]
                 if complete_stopped_preflight(self, tx, row):
+                    continue
+                if release_completed_evidence(self, tx, row):
                     continue
                 if record["lifecycle"] != "TERMINAL" and record["phase"] != "QUEUED":
                     changes = {
