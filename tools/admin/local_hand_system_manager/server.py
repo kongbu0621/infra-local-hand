@@ -433,8 +433,9 @@ class Gateway:
                       and values["SubState"] == "dead" and values["Job"] in ("", "0"), "SYSTEM_UNIT_MISSING")
             # Before a delayed first delivery, absence remains pending only.
             q.require(part["invocation_id"] is None or part["stop_ok"] and
-                      ("terminal" in part or self.recovery_only and
-                       type(part.get("identity_observation")) is dict),
+                      ("terminal" in part or
+                       type(part.get("identity_observation")) is dict and
+                       part["identity_observation"].get("InvocationID") == part["invocation_id"]),
                       "SYSTEM_ORIGINAL_UNIT_MISSING")
         part["after"] = values
         return result, values
@@ -574,12 +575,16 @@ class Gateway:
         q.require(not part["sealed"], "SYSTEM_SEAL_REPLAY")
         _, after = self._show(part)
         terminal = part.get("terminal")
-        q.require(part["stop_ok"] and terminal is not None and part["invocation_id"] is not None
+        q.require(part["stop_ok"] and part["invocation_id"] is not None
                   and after["ActiveState"] in ("inactive", "failed") and after["Job"] in ("", "0")
-                  and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit(),
+                  and (terminal is not None or
+                       part.get("identity_observation", {}).get("InvocationID") == part["invocation_id"]),
                   "SYSTEM_STAGE_EXIT_UNPROVEN")
         self._parent(empty=True)
-        q.require(part["process"].poll() == int(terminal["ExecMainStatus"])
+        code = (int(terminal["ExecMainStatus"]) if terminal is not None
+                and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit() else None)
+        q.require(part["process"].poll() is not None
+                  and (code is None or part["process"].poll() == code)
                   and all(_drained(getattr(part["process"], name).fileno()) for name in ("stdout", "stderr")),
                   "SYSTEM_CLIENT_EOF_UNPROVEN")
         for name in ("stdout", "stderr"):

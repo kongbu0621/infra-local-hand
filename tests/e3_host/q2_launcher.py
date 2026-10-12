@@ -1008,7 +1008,8 @@ def run(value, repository):
                     and phase_result["production_supported"] is False, "LAUNCHER_PHASE_UNCLOSED")
             if system:
                 require(not gateway_failures and gateway.failure is None, "LAUNCHER_SYSTEM_MANAGER_FAILED")
-                gateway.close_phase(phase_result["fence"])
+                if not cancelled:
+                    gateway.close_phase(phase_result["fence"])
             if cancelled:
                 require(phase_result["ordinary_phase_closed"] is False
                         and phase_result["independent_ordinary_cleanup_required"] is True,

@@ -321,8 +321,32 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual("not-found", values["LoadState"])
         self.assertNotIn("terminal", part)
         gateway.recovery_only = False
+        _, values = gateway._show(part)
+        self.assertEqual("not-found", values["LoadState"])
+        self.assertNotIn("terminal", part)
+        part["stop_ok"] = False
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_ORIGINAL_UNIT_MISSING"):
             gateway._show(part)
+
+    def test_seal_after_cancel_gc_requires_real_client_eofs_and_keeps_status_unknown(self):
+        gateway, _ = self.gateway()
+        process = subprocess.Popen([sys.executable, "-c", "print('retained')"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        part = dict(sealed=False, stop_ok=True, invocation_id="b" * 32,
+                    identity_observation=dict(InvocationID="b" * 32),
+                    process=process, pidfd=os.pidfd_open(os.getpid(), 0))
+        gateway._show = mock.Mock(return_value=({}, dict(ActiveState="inactive", Job="")))
+        try:
+            process.wait(timeout=3)
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_CLIENT_EOF_UNPROVEN"):
+                gateway._seal(part)
+            process.stdout.read(); process.stderr.read()
+            gateway._seal(part)
+            self.assertTrue(part["sealed"])
+            self.assertNotIn("terminal", part)
+        finally:
+            process.stdout.close(); process.stderr.close()
+            if part["pidfd"] >= 0:os.close(part["pidfd"])
 
     def test_runtime_shrinks_after_intent_io_and_expiry_never_delivers(self):
         for late_ns in (6 * SECOND, 12 * SECOND):

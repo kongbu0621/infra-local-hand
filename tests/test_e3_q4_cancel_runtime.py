@@ -273,7 +273,7 @@ class CancelCoordinatorTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux modeled Q4 launcher")
 class CancelLauncherTests(unittest.TestCase):
-    def invoke(self, *, fail=False, foreign_final=False):
+    def invoke(self, *, fail=False, foreign_final=False, system=False):
         fixture = launcher_models.LauncherOrderingTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -282,6 +282,10 @@ class CancelLauncherTests(unittest.TestCase):
         value["resident"].update(schema="local-hand-q4-cancel-resident/v1", purpose=launcher.CANCEL_PURPOSE,
             principal={"principal_id": "q4-synthetic-owner"})
         value["resident"]["request"]["request_digest"] = "d" * 64
+        if system:
+            value["schema"] = launcher.SYSTEM_CANCEL_SCHEMA
+            value["resident"]["schema"] = "local-hand-q4-system-cancel-resident/v1"
+            value["resident"]["ordinary"]["manager_binding"] = {"schema": "modeled-original-binding"}
         case = dict(schema="modeled-case", operation_id=value["resident"]["request"]["operation_id"],
             request_digest="d" * 64, principal_id="q4-synthetic-owner", ready_for_finish=True,
             status="INCOMPLETE", chain_closed=False, helper_exit_proven=False)
@@ -343,6 +347,15 @@ class CancelLauncherTests(unittest.TestCase):
             mock.patch.object(budget, "current_clock", return_value=fixture.clock)]
         from contextlib import ExitStack
         with ExitStack() as stack:
+            if system:
+                from local_hand_jobs import system_manager_protocol
+                from admin.local_hand_system_manager import server
+                closed = threading.Event()
+                gateway = SimpleNamespace(failure=None, serve=lambda: closed.wait(2),
+                    authorize_phase=mock.Mock(), close=lambda: closed.set(), snapshot=lambda: {},
+                    close_phase=mock.Mock(side_effect=AssertionError("cancel has no ordinary phase fence")))
+                stack.enter_context(mock.patch.object(system_manager_protocol, "Channel", return_value=SimpleNamespace(close=lambda: None)))
+                stack.enter_context(mock.patch.object(server, "Gateway", return_value=gateway))
             for patch in patches:
                 stack.enter_context(patch)
             result = launcher.run(value, fixture.repository)
@@ -363,6 +376,12 @@ class CancelLauncherTests(unittest.TestCase):
         self.assertEqual("INCOMPLETE", result["status"])
         self.assertEqual("CANCEL_RESIDENT_RESULT", result["reason"])
         self.assertFalse(result["case"]["helper_exit_proven"])
+
+    def test_system_cancellation_finishes_without_a_result_reader_fence(self):
+        result = self.invoke(system=True)
+        self.assertEqual("CANCEL_CASE_RECORDED", result["status"])
+        self.assertEqual("local-hand-q4-cancel-launcher-result/v1", result["schema"])
+        self.assertFalse(result["ordinary_phase_closed"])
 
     def test_runtime_error_keeps_case_and_events_without_finish_or_replay(self):
         result = self.invoke(fail=True)

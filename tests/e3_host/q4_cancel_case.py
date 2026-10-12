@@ -227,8 +227,9 @@ def _helper_exit(report):
     helper, trigger, deadline = report["helper"], report["trigger"], report["phase_deadline_ns"]
     return bool(helper and helper["state"] == "EXITED" and helper["identity"] is not None
         and helper["error"] is None and all(helper["exit_flags"].values()) and helper["stdout_eof"]
-        and helper["stderr_eof"] and helper["exit_code"] is not None
-        and helper["exit_code"] == helper["client_returncode"] and deadline is not None
+        and helper["stderr_eof"] and helper["client_returncode"] is not None
+        and (helper["exit_code"] == helper["client_returncode"]
+             or helper["exit_code"] is None and _exercised(report)) and deadline is not None
         and helper["observed_ns"] < deadline and (trigger is None or helper["identity"] == trigger["identity"]))
 
 

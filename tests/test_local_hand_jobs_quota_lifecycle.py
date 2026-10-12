@@ -77,16 +77,35 @@ class LifecycleTests(unittest.TestCase):
                 self.assertEqual("EXITED",result["state"])
                 self.assertEqual("inactive",part["quota_terminal"]["ActiveState"])
 
-    def test_cancel_then_collection_without_original_terminal_stays_unknown(self):
+    def test_cancel_then_collection_closes_tree_without_inventing_exit_status(self):
         part,props,manager,calls=self.setup_part()
         props.update(SubState="running",ExecMainCode="0")
         part["stop_requested"]=True
         life.observe(manager,part,runner._unknown)
         self.assertEqual(1,sum(args[0]=="stop" for args in calls))
         self.unload(props)
-        with self.assertRaisesRegex(q.QuotaError,"ORIGINAL_UNIT_MISSING"):
-            life.observe(manager,part,runner._unknown)
-        self.assertNotIn("quota_exit",part)
+        result=life.observe(manager,part,runner._unknown)
+        self.assertEqual("EXITED",result["state"])
+        self.assertIsNone(result["exit_code"])
+        self.assertEqual("UNKNOWN",result["result"]["outcome"])
+        self.assertFalse(result["effects_checked"])
+        self.assertNotIn("quota_terminal",part)
+        self.assertTrue(all(part["quota_exit"][key] for key in q.EXIT_FLAGS))
+
+    def test_cancel_gc_still_requires_original_stop_identity_and_ack(self):
+        for fault in ("identity", "ack", "snapshot", "empty"):
+            with self.subTest(fault=fault):
+                part,props,manager,calls=self.setup_part()
+                props.update(SubState="running",ExecMainCode="0")
+                part["stop_requested"]=True
+                life.observe(manager,part,runner._unknown)
+                self.unload(props)
+                if fault=="identity":part["quota_stop_observation"]["InvocationID"]="b"*32
+                if fault=="ack":part["quota_stop_ok"]=False
+                if fault=="snapshot":part.pop("quota_stop_observation")
+                with mock.patch.object(life,"parent",return_value=(part["quota_parent"],fault!="empty")):
+                    with self.assertRaises(q.QuotaError):life.observe(manager,part,runner._unknown)
+                self.assertNotIn("quota_exit",part)
 
     def test_cancel_rejects_replaced_identity_and_configuration_before_stopping(self):
         for fault in ("invocation", "cgroup", "restart", "boot"):
