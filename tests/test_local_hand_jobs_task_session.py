@@ -189,6 +189,7 @@ class TaskSessionTests(unittest.TestCase):
         self.assertEqual(("TERMINAL", "SUCCEEDED", "SEALED"),
                          (record["lifecycle"], record["outcome"], record["evidence"]))
         self.assertEqual(3, len(self.f.runner.starts))
+        self.assertNotIn("Original management and ordinary phase closure is pending", record["gaps"])
         self.assertTrue(self.session.finished)
 
     def test_real_unix_client_submits_queries_and_cancels_the_session_task(self):

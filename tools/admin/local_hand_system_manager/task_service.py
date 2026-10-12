@@ -347,16 +347,31 @@ class TaskService:
         if self.socket_pin is not None:
             # Keep the old endpoint inode as crash evidence. Never unlink or
             # rename a replacement endpoint created by another service.
-            root = os.open(self.policy.broker_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                info = os.stat("maintenance.sock", dir_fd=root, follow_symlinks=False)
-                q.require(stat.S_ISSOCK(info.st_mode) and
-                          (info.st_dev, info.st_ino, info.st_uid) == self.socket_pin, "TASK_SOCKET_CHANGED")
-                os.rename("maintenance.sock", "maintenance-stopped-" + os.urandom(16).hex() + ".sock",
-                          src_dir_fd=root, dst_dir_fd=root)
-                os.fsync(root)
-            finally:
-                os.close(root)
+            # This controller has read/search capability, not write override
+            # over the ordinary account's private state directory. Perform the
+            # fixed archive operation as that same admitted account.
+            command = service_command(self.value, "unused")
+            code = """import json,os,stat,sys
+path,pin,name=json.loads(sys.argv[1])
+fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+try:
+ s=os.fstat(fd)
+ assert s.st_uid==os.geteuid() and not s.st_mode&0o077
+ s=os.stat('maintenance.sock',dir_fd=fd,follow_symlinks=False)
+ assert stat.S_ISSOCK(s.st_mode) and [s.st_dev,s.st_ino,s.st_uid]==pin
+ assert not os.path.lexists(path+'/'+name)
+ os.rename('maintenance.sock',name,src_dir_fd=fd,dst_dir_fd=fd)
+ os.fsync(fd)
+finally:os.close(fd)
+"""
+            archived = "maintenance-stopped-" + os.urandom(16).hex() + ".sock"
+            result = subprocess.run(command[:command.index("-c")] + ["-c", code,
+                json.dumps([str(self.policy.broker_root), self.socket_pin, archived])],
+                stdin=subprocess.DEVNULL, capture_output=True, timeout=3,
+                cwd="/", env={"PATH": "/usr/bin:/bin"})
+            save(self.intents, "socket-archive-" + os.urandom(16).hex() + ".json",
+                 dict(returncode=result.returncode, stdout_hex=result.stdout.hex(), stderr_hex=result.stderr.hex()))
+            q.require(result.returncode == 0, "TASK_SOCKET_ARCHIVE_FAILED")
         left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
         self.sockets.extend((left, right))
         for sock in (left, right):

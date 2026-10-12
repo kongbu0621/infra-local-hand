@@ -93,6 +93,7 @@ class Broker:
             authority_id=getattr(policy, "authority_id", None))
         self.runner, self.evidence = runner, evidence
         self.task_session = None
+        self.read_only = getattr(state, "read_only", False) is True
         if type(quota_required) is not bool:
             raise ValueError("quota_required must be an installation boolean")
         self.quota_required = quota_required
@@ -207,6 +208,9 @@ class Broker:
         return result
 
     def call(self, tool_name, arguments, principal):
+        if self.read_only and tool_name not in (
+                "lh_capabilities", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"):
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         scope = SCOPES.get(tool_name)
         if scope is None:
             raise JobError("UNSUPPORTED", "Unknown tool")
@@ -259,6 +263,8 @@ class Broker:
             recent.append(now)
 
     def submit(self, request, principal):
+        if self.read_only:
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         self._authorize(principal, "lh:submit")
         request = validate_submit(request)
         identity, digest = request["operation_id"], request["request_digest"]
@@ -340,6 +346,8 @@ class Broker:
                                tree_exited=proof.get("tree_exited"), effects_checked=proof.get("effects_checked"))
 
     def cancel(self, operation_id, expected_request_digest, target, principal):
+        if self.read_only:
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         namespace = target["kind"]
         identity = operation_id if namespace == "job" else target["reconcile_id"]
         with self.fence, self.state.transaction() as tx:
@@ -363,6 +371,8 @@ class Broker:
         return result
 
     def reconcile(self, operation_id, expected_request_digest, reconcile_id, principal):
+        if self.read_only:
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         with self.fence, self.state.transaction() as tx:
             parent = self._row(tx, "job", operation_id, principal, "lh:reconcile")
             if parent["digest"] != expected_request_digest:
@@ -745,7 +755,9 @@ class Broker:
             q.require(row["record"]["phase"].lower() == phase, "PHASE_CHANGED")
             self.state.update(tx, namespace, identity, "QUOTA_PHASE_CLOSED", {
                 "quota_event_phase": phase, "quota_closed": dict(row["record"].get("quota_closed", {}),
-                    **{phase: {"phase": phase, "fence": value}})})
+                    **{phase: {"phase": phase, "fence": value}}),
+                "gaps": [gap for gap in row["record"].get("gaps", [])
+                         if gap != "Original management and ordinary phase closure is pending"]})
         # The two journals are deliberately not claimed to commit atomically.
         # A crash here retains closure and pending proof without another launch.
         self._complete(namespace, identity, pending)
@@ -1233,6 +1245,8 @@ class Broker:
                 self._unknown(*key, "Startup binding or supervisor acknowledgement is unresolved")
 
     def start(self):
+        if self.read_only:
+            return  # Historical reads do not attach, restart or reconcile execution.
         if self._thread is not None:
             raise JobError("CONFLICT", "Coordinator is already running")
         if self.task_session is None:
