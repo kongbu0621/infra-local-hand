@@ -302,6 +302,8 @@ def deep_context(monkeypatch):
 
 def test_standalone_component_parser_has_no_host_import_or_pin_drift():
     from e3_host import q2_core_approved_inputs as a
+    from e3_host import q2_core_delivery_bootstrap as bootstrap
+    from e3_host import q2_core_delivery_package as package
     import ast
     tree = ast.parse(PATH.read_text())
     assert all(not isinstance(node, ast.ImportFrom) or node.level == 0 for node in ast.walk(tree))
@@ -314,7 +316,9 @@ def test_standalone_component_parser_has_no_host_import_or_pin_drift():
     assert d.APPROVED_VECTOR_PINS == a.horizon.VECTOR_PINS
     assert d.APPROVED_RETAINED_PINS == a.RETAINED_PINS
     assert d.APPROVED_POLICY_SOURCE_PINS == a.policy.SOURCE_PINS
-    assert PATH.stat().st_size <= 524288
+    limit = package.FIELD_LIMITS["field/dispatcher.py"]
+    assert limit == bootstrap.FIELD_LIMITS["dispatcher"]
+    assert PATH.stat().st_size <= limit
     with pytest.raises(d.DispatchError, match="CORE_DISPATCH_APPROVED_FIELDS"):
         d._validate_approved_components(d._approved_inputs_envelope(context_v2()))
 

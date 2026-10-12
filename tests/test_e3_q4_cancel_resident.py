@@ -97,6 +97,7 @@ class AssemblyTests(unittest.TestCase):
 
 
 class ResidentTransportTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux system manager")
     def test_system_cancel_entry_passes_observer_to_composition_and_case_runner(self):
         from local_hand_jobs import cli, system_manager
         peer = dict(pid=123, uid=0, gid=0, start_ticks=456, boot_id="boot", deadline_ns=100)
