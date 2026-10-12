@@ -135,4 +135,3 @@ def complete_recovered_evidence(broker, operation_id, expected_request_digest, s
         result = broker._view(broker.state.get("job", operation_id, tx))
     broker._catalog(broker.state.get("job", operation_id))
     return result
-
