@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from functools import partial
 import hashlib
 import importlib.util
@@ -143,6 +144,43 @@ class ServerTests(unittest.TestCase):
         self.assertIn("oauth-protected-resource/mcp", response.headers["www-authenticate"])
         self.assertEqual([], self.broker.calls)
 
+    def test_read_only_deployment_publishes_only_usable_tools_and_scopes(self):
+        self.broker.read_only = True
+        with ASGIClient(create_app(self.broker, self.issuer.verifier), self.client.base_url) as client:
+            response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                   headers=self.headers)
+            tools = response.json()["result"]["tools"]
+            self.assertEqual({"lh_capabilities", "lh_job_status", "lh_evidence_manifest",
+                              "lh_evidence_read_chunk"}, {tool["name"] for tool in tools})
+            self.assertTrue(all(tool["annotations"]["readOnlyHint"] for tool in tools))
+            metadata = client.get("/.well-known/oauth-protected-resource/mcp").json()
+            self.assertEqual({"lh:inspect", "lh:read", "lh:evidence"}, set(metadata["scopes_supported"]))
+            # A stale client must not request an impossible permission upgrade.
+            response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "lh_job_cancel", "arguments": {
+                    "operation_id": "12345678-1234-4234-8234-123456789abc",
+                    "expected_request_digest": "a" * 64, "target": {"kind": "job"}}}},
+                headers={**self.headers, "Authorization": "Bearer " + self.issuer.token(
+                    claims={"scope": "lh:read"})})
+            result = response.json()["result"]
+            self.assertEqual("UNSUPPORTED", result["structuredContent"]["error"]["code"])
+            self.assertNotIn("mcp/www_authenticate", result.get("_meta") or {})
+            self.assertEqual([], self.broker.calls)
+
+    def test_unconfigured_scope_is_not_advertised_or_requested(self):
+        self.issuer.verifier.config = replace(self.issuer.config, scopes=("lh:read", "lh:evidence"))
+        with ASGIClient(create_app(self.broker, self.issuer.verifier), self.client.base_url) as client:
+            response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                                   headers=self.headers)
+            self.assertEqual({"lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"},
+                             {tool["name"] for tool in response.json()["result"]["tools"]})
+            response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "lh_capabilities", "arguments": {}}}, headers=self.headers)
+            result = response.json()["result"]
+            self.assertEqual("UNSUPPORTED", result["structuredContent"]["error"]["code"])
+            self.assertNotIn("mcp/www_authenticate", result.get("_meta") or {})
+            self.assertEqual([], self.broker.calls)
+
     def test_duplicate_json_unicode_depth_size_and_free_input_are_rejected_before_sdk(self):
         bad = [b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lh_capabilities","arguments":{},"arguments":{}}}',
                b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"bad":"\\ud800"}}',
@@ -159,6 +197,8 @@ class ServerTests(unittest.TestCase):
 
     def test_tool_scope_error_and_local_revocation_return_standard_challenges(self):
         read_only = {**self.headers, "Authorization": "Bearer " + self.issuer.token(claims={"scope": "lh:read"})}
+        tools = self.rpc("tools/list", headers=read_only).json()["result"]["tools"]
+        self.assertIn("lh_capabilities", {tool["name"] for tool in tools})
         response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}}, headers=read_only)
         result = response.json()["result"]
         self.assertTrue(result["isError"])

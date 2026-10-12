@@ -208,6 +208,15 @@ def create_app(broker, verifier):
     pending: set[asyncio.Task] = set()
     slots = asyncio.Semaphore(MAX_CONTROL_REQUESTS)
     closing = threading.Event()
+    config = verifier.config
+    # Publish deployment capabilities, not every protocol operation. Keep this
+    # independent of the current token so enabled tools can request step-up auth.
+    enabled_tools = {
+        name: schema for name, schema in TOOL_SCHEMAS.items()
+        if TOOL_SCOPES[name] in config.scopes
+        and (not getattr(broker, "read_only", False) or name in _READ_ONLY)
+    }
+    enabled_scopes = sorted({TOOL_SCOPES[name] for name in enabled_tools})
     output_validators = {name: Draft202012Validator(schema) for name, schema in _OUTPUT_SCHEMAS.items()}
 
     def result_error(code: str, message: str):
@@ -233,7 +242,7 @@ def create_app(broker, verifier):
                 ),
                 meta={"securitySchemes": [{"type": "oauth2", "scopes": [TOOL_SCOPES[name]]}]},
             )
-            for name, schema in TOOL_SCHEMAS.items()
+            for name, schema in enabled_tools.items()
         ])
 
     async def call_tool(context, params):
@@ -243,6 +252,8 @@ def create_app(broker, verifier):
             access_token = get_access_token()
             principal = verifier.principal(access_token)
             arguments = validate_tool_args(params.name, params.arguments or {})
+            if params.name not in enabled_tools:
+                raise JobError("UNSUPPORTED", "This deployment does not offer this tool")
             if TOOL_SCOPES[params.name] not in principal.scopes:
                 raise JobError("UNAUTHORIZED", "The current token does not grant this tool")
             limits = getattr(getattr(broker, "policy", None), "limits", {})
@@ -308,7 +319,6 @@ def create_app(broker, verifier):
         except Exception:
             return result_error("IO_UNCERTAIN", "Local Hand request could not be completed")
 
-    config = verifier.config
     resource = urlsplit(config.resource)
     sdk = Server("infra-local-hand", version="0.2.0a1", on_list_tools=list_tools, on_call_tool=call_tool)
     app = sdk.streamable_http_app(
@@ -331,7 +341,7 @@ def create_app(broker, verifier):
 
     async def resource_metadata(request):
         return JSONResponse({"resource": config.resource, "authorization_servers": [config.issuer],
-                             "scopes_supported": list(config.scopes), "bearer_methods_supported": ["header"]},
+                             "scopes_supported": enabled_scopes, "bearer_methods_supported": ["header"]},
                             headers={"Cache-Control": "no-store"})
 
     from starlette.routing import request_response
