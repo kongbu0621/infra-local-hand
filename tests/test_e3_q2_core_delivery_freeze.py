@@ -228,7 +228,8 @@ def test_locator_source_rejects_scattered_copy_wrong_pin_and_cross_file_mismatch
 def _git(repository, *args):
     environment = dict(os.environ, GIT_AUTHOR_NAME="freeze", GIT_AUTHOR_EMAIL="freeze@example.invalid",
                        GIT_COMMITTER_NAME="freeze", GIT_COMMITTER_EMAIL="freeze@example.invalid")
-    return subprocess.run(["/usr/bin/git", "-C", str(repository), *args], check=True,
+    return subprocess.run(["/usr/bin/git", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+                           "-C", str(repository), *args], check=True,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           env=environment).stdout.decode().strip()
 
@@ -293,6 +294,24 @@ def package_fixture(tmp_path, monkeypatch):
         implementation_commit=implementation_commit, implementation_tree=implementation_tree,
     )
     return arguments
+
+
+def test_package_fixture_does_not_start_automatic_git_maintenance(tmp_path, monkeypatch):
+    trace = tmp_path / "git-trace.jsonl"
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "3")
+    for index, (name, value) in enumerate((
+            ("maintenance.auto", "true"), ("maintenance.autoDetach", "false"),
+            ("gc.autoPackLimit", "1"))):
+        monkeypatch.setenv(f"GIT_CONFIG_KEY_{index}", name)
+        monkeypatch.setenv(f"GIT_CONFIG_VALUE_{index}", value)
+    package_fixture(tmp_path, monkeypatch)
+    events = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert any(event.get("event") == "start" and "commit" in event.get("argv", [])
+               for event in events)
+    children = [event["argv"] for event in events if event.get("event") == "child_start"
+                and any(arg in ("maintenance", "gc") for arg in event.get("argv", []))]
+    assert not children, f"fixture maintenance can race metadata capture: {children}"
 
 
 def test_static_member_freeze_reads_committed_blobs_and_does_not_build_package(
