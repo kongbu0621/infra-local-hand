@@ -204,11 +204,33 @@ class GatewayTests(unittest.TestCase):
         gateway, item = self.gateway()
         gateway._command = mock.Mock(return_value=dict(returncode=0,
             stdout="lhj-" + "f" * 64 + ".service loaded failed failed unknown\n", stderr=""))
+        original = gateway._command.return_value
+        gateway._command.side_effect = [original, dict(returncode=0, stderr="", stdout="Id=unknown\n")]
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_INVENTORY_UNKNOWN"):
             gateway.dispatch("inventory", {})
         gateway._journal = mock.Mock(return_value=dict(status="RESULT"))
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_PREDECESSOR_UNSEALED"):
             gateway._predecessor("preflight", "helper")
+
+    def test_retained_failed_inventory_does_not_block_new_work_or_get_adopted(self):
+        gateway, _ = self.gateway()
+        unit = "lhj-" + "f" * 64 + ".service"
+        fields = dict(Id=unit, LoadState="loaded", ActiveState="failed", SubState="failed",
+                      MainPID="0", ControlGroup="", Job="")
+        def command(*args):
+            return dict(returncode=0, stderr="", stdout=(unit + " loaded failed failed retained\n"
+                if args[0] == "list-units" else "".join(k + "=" + v + "\n" for k, v in fields.items())))
+        gateway._command = mock.Mock(side_effect=command)
+        result, _ = gateway.dispatch("inventory", {})
+        self.assertEqual("", result["stdout"])
+        self.assertEqual({}, gateway.parts)
+        self.assertEqual(["list-units", "show"], [call.args[0] for call in gateway._command.call_args_list])
+        for key, value in (("MainPID", "123"), ("ControlGroup", "/occupied"), ("Job", "4"),
+                           ("ActiveState", "active")):
+            previous = fields[key]; fields[key] = value
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_INVENTORY_UNKNOWN"):
+                gateway.dispatch("inventory", {})
+            fields[key] = previous
 
     def test_actual_root_client_and_two_pipe_eofs_are_required_for_seal(self):
         gateway, item = self.gateway()

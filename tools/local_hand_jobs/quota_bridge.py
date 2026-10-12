@@ -138,6 +138,12 @@ class Channel:
                 # Close even rejected descriptors, including those returned on
                 # ancillary truncation. The kernel closes omitted rights.
                 try:
+                    if not packet:
+                        # A closed socket has no message credentials. Recheck
+                        # the retained peer, then report EOF rather than a
+                        # fabricated credential conflict. It is never an ACK.
+                        self._time()
+                        raise q.QuotaError("BRIDGE_EOF")
                     q.require(not descriptors and not unexpected and credentials == [self.peer]
                         and not flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC), "BRIDGE_CREDENTIALS")
                 finally:

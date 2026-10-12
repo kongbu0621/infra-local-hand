@@ -132,7 +132,7 @@ class H11LauncherProcessTests(unittest.TestCase):
                 except OSError:
                     pass
                 error = RuntimeError("origin bridge peer exited")
-                error.code = "BRIDGE_PEER_EXITED"
+                error.code = "BRIDGE_EOF"
                 raise error
 
         class ManagerChannel:
@@ -256,7 +256,7 @@ class H11LauncherProcessTests(unittest.TestCase):
         self.assertEqual("RECOVERY_RECORDED", result["status"], result)
         self.assertNotEqual(result["original_resident_pid"], result["recovery_resident_pid"])
         self.assertEqual(-signal.SIGKILL, result["origin_capture"]["returncode"])
-        self.assertEqual({"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_PEER_EXITED"},
+        self.assertEqual({"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_EOF"},
                          result["origin_coordinator"])
         gateway = self.gateways[0]
         self.assertEqual(result["original_resident_pid"], gateway.old_peer)

@@ -299,7 +299,8 @@ def validate_h11_result(result, resident):
     require(type(capture) is dict and capture.get("complete") is True
             and capture.get("returncode") == -signal.SIGKILL, "H11_ORIGIN_EXIT_PROOF")
     coordinator = result.get("origin_coordinator")
-    require(coordinator == {"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_PEER_EXITED"},
+    require(coordinator in ({"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_PEER_EXITED"},
+                            {"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_EOF"}),
             "H11_ORIGIN_COORDINATOR_EXIT")
     proof = result.get("recovery")
     require(type(proof) is dict
@@ -904,7 +905,7 @@ def run(value, repository):
                         and capture.get("stdout") == capture.get("stderr") == b"",
                         "H11_ORIGIN_CAPTURE_UNPROVEN")
                 require(not coordinator_result
-                        and coordinator_errors == ["BRIDGE_PEER_EXITED"],
+                        and coordinator_errors in (["BRIDGE_PEER_EXITED"], ["BRIDGE_EOF"]),
                         "H11_ORIGIN_COORDINATOR_UNSETTLED")
                 require(gateway.failure is None and gateway.recovery_armed is True
                         and gateway.recovery_arm_ack is True,

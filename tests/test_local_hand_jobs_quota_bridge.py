@@ -121,6 +121,13 @@ class ChannelTests(unittest.TestCase):
         self.addCleanup(a.close);right.close();os.close(write);os.waitpid(child,0)
         with self.assertRaises(q.QuotaError):a.receive()
 
+    def test_closed_socket_is_eof_without_invented_credential_conflict(self):
+        a, b = self.pair()
+        b.close()
+        with self.assertRaisesRegex(q.QuotaError, "BRIDGE_EOF"):
+            a.receive()
+        self.assertTrue(a.poisoned)
+
     def test_inherited_socket_reports_child_sender_not_creator(self):
         left,right=socket.socketpair(socket.AF_UNIX,socket.SOCK_SEQPACKET)
         left.setsockopt(socket.SOL_SOCKET,socket.SO_PASSCRED,1)
