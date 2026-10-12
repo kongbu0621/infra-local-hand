@@ -90,6 +90,18 @@ class ServerTests(unittest.TestCase):
                                              "params": {} if params is None else params},
                                 headers=self.headers if headers is None else headers)
 
+    def test_official_client_metadata_is_accepted_without_changing_principal_or_arguments(self):
+        for metadata in ({}, {"principal": "untrusted", "progressToken": "request-1"}):
+            response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}, "_meta": metadata})
+            self.assertEqual(200, response.status_code, response.text)
+            self.assertEqual(self.broker.output, response.json()["result"]["structuredContent"])
+            self.assertEqual({}, self.broker.calls[-1][1])
+            self.assertEqual("project-owner", self.broker.calls[-1][2].principal_id)
+        before = len(self.broker.calls)
+        response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}, "_meta": []})
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(before, len(self.broker.calls))
+
     def test_real_sdk_initialization_tools_and_principal_mapping(self):
         response = self.rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                             "clientInfo": {"name": "fixture", "version": "1"}})

@@ -121,8 +121,13 @@ def validate_rpc(payload: dict) -> None:
         if "id" not in payload:
             raise JobError("UNSUPPORTED", "Tool calls require a transport request identity")
         params = payload.get("params")
-        if not isinstance(params, dict) or set(params) - {"name", "arguments"}:
+        if not isinstance(params, dict) or set(params) - {"name", "arguments", "_meta"}:
             raise JobError("UNSUPPORTED", "Invalid tool-call parameters")
+        # The official client includes _meta even when it is empty. It is
+        # transport metadata, never a replacement for authenticated identity
+        # or broker arguments; the raw document size/depth limits still apply.
+        if "_meta" in params and type(params["_meta"]) is not dict:
+            raise JobError("UNSUPPORTED", "Invalid tool-call metadata")
         if not isinstance(params.get("name"), str):
             raise JobError("UNSUPPORTED", "Missing tool name")
         validate_tool_args(params["name"], params.get("arguments", {}))
