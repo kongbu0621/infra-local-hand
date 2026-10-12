@@ -74,8 +74,8 @@ class BootstrapCompositionTests(unittest.TestCase):
         with patch("local_hand_jobs.policy.Policy.from_file", return_value=self.policy), \
                 patch("local_hand_jobs.deployment.verify_release"), \
                 patch("local_hand_jobs.resources.verify_local_filesystem"), \
-                patch("local_hand_jobs.runner.SystemdManager", return_value=manager):
-            broker = create_broker("synthetic", actual_entrypoint=self.policy.execution_entrypoint)
+                patch("local_hand_jobs.task_session.TaskSession.open", return_value=Mock(manager=manager)):
+            broker = create_broker("synthetic", actual_entrypoint=self.policy.execution_entrypoint, session_path="synthetic-session")
         try:
             known = manager.scan.call_args.args[0]
             execution = allocation["execution_id"]

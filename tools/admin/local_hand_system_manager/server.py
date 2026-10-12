@@ -179,6 +179,10 @@ class Gateway:
     def _recovery_time(self):
         """Recovery never receives a fresh observation/stop window."""
         now = self._time()
+        if getattr(self, "service_recovery", False):
+            # The surviving controller's original deadline bounds observation.
+            # Expired execution grants cannot authorize another launch.
+            return now
         q.require(type(self.recovery_plan) is dict
                   and now < min(self.recovery_plan["phase_deadline_ns"],
                                 self.recovery_plan["budget_deadline_ns"], self.end),
@@ -274,6 +278,47 @@ class Gateway:
             self.failure = None
             self.recovery_only = True
             self.recovery_rebinds = 1
+            self.recovery_finished = False
+
+    def rebind_service_recovery(self, channel):
+        """Adopt an exited service peer for observation/stop of retained units.
+
+        Unlike the deterministic H11 crash fixture, an actual service crash
+        needs no prearranged reader hold. Its original pidfd proves death and
+        the surviving controller retains every delivered identity and budget.
+        """
+        with self.lock:
+            old = self.channel
+            now = budget.current_clock()
+            q.require(not self.closed and not self._serving and self.pending_control is None
+                      and self.peer_pidfd >= 0 and select.select([self.peer_pidfd], [], [], 0)[0]
+                      and self.parts and self.recovery_rebinds < 3, "SYSTEM_RECOVERY_STATE")
+            q.require(channel.peer[0] != old.peer[0] and channel.peer[1:] == (self.uid, self.gid)
+                      and channel.boot_id == now["boot_id"] == self.binding["boot_id"]
+                      and channel.end == self.end and now["boottime_ns"] < self.end
+                      and channel.sequence == channel.total == 0 and channel.pending is None
+                      and channel.session_id != old.session_id, "SYSTEM_RECOVERY_PEER")
+            q.require(self.failure in (None, "SYSTEM_PEER_CHANGED", "SYSTEM_CHANNEL_DISCONNECTED",
+                                       "SYSTEM_CHANNEL_EOF", "SYSTEM_CHANNEL_UNAVAILABLE"),
+                      "SYSTEM_RECOVERY_IDENTITY_UNRESOLVED")
+            # Retiring an unanswered packet grants no replay. The new peer is
+            # observation-only; launch and publication operations stay closed.
+            retired_bytes = self.retired_wire_bytes + old.total
+            retired_calls = self.retired_calls + old.sequence
+            q.require(self.control_bytes + retired_bytes < wire.WIRE_LIMIT
+                      and retired_calls < wire.CALL_LIMIT, "SYSTEM_RECOVERY_BUDGET")
+            self._discard_original_clients()
+            if self.failure is not None:
+                self.session_failures.append(self.failure)
+            old.close()
+            os.close(self.peer_pidfd)
+            self.peer_pidfd = os.dup(channel.pidfd)
+            self.channel = channel
+            self.retired_wire_bytes = retired_bytes
+            self.retired_calls = retired_calls
+            self.failure = None
+            self.recovery_only = self.service_recovery = True
+            self.recovery_rebinds += 1
             self.recovery_finished = False
 
     def _parent(self, *, empty=False):
@@ -669,7 +714,7 @@ class Gateway:
                               and part["identity_observation"].get("InvocationID") == part.get("invocation_id")
                               and part.get("after", {}).get("ActiveState") in ("inactive", "failed")
                               and part.get("after", {}).get("Job") in ("", "0")
-                              for part in self.parts.values()),
+                              for (phase, _), part in self.parts.items() if phase not in self.closed_phases),
                           "SYSTEM_RECOVERY_INCOMPLETE")
                 self._parent(empty=True)
                 self.recovery_finished = True

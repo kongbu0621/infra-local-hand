@@ -356,7 +356,7 @@ class ServerTests(unittest.TestCase):
                         mock.patch("local_hand_mcp.server.create_app", return_value=mock.Mock()), \
                         mock.patch("local_hand_mcp.server.sys.stderr", stderr), \
                         mock.patch("uvicorn.run", side_effect=RuntimeError("synthetic primary run failure") if body_fails else None):
-                    args = ["--config", "synthetic", "--auth-config", "synthetic", "--port", "8765"]
+                    args = ["--config", "synthetic", "--session", "synthetic-session", "--auth-config", "synthetic", "--port", "8765"]
                     if body_fails:
                         self.assertEqual(2, main(args))
                         self.assertIn("synthetic primary run failure", stderr.getvalue())

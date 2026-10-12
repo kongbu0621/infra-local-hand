@@ -360,6 +360,7 @@ def create_app(broker, verifier):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the authenticated MCP adapter with the single Local Hand broker")
     parser.add_argument("--config", required=True, help="Private admitted broker policy")
+    parser.add_argument("--session", required=True, help="Administrator-created task session descriptor")
     parser.add_argument("--auth-config", required=True, help="Private external-issuer admission")
     parser.add_argument("--port", required=True, type=int, help="Admitted loopback listener port")
     args = parser.parse_args(argv)
@@ -376,7 +377,7 @@ def main(argv=None) -> int:
         # The first implementation only listens on loopback, for an admitted
         # TLS gateway/Tunnel; it cannot accidentally publish an unauthenticated
         # host interface. External connection admission remains E4.
-        broker = create_broker(args.config, actual_entrypoint=__file__)
+        broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session)
         maintenance = None
         failed = False
         try:

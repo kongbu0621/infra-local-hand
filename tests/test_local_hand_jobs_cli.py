@@ -653,12 +653,12 @@ class CliTests(unittest.TestCase):
                 patch("local_hand_jobs.deployment.verify_release"), \
                 patch("local_hand_jobs.resources.verify_local_filesystem"), \
                 patch("local_hand_jobs.resources.AuthorityLock", return_value=authority), \
-                patch("local_hand_jobs.runner.SystemdManager", return_value=manager), \
+                patch("local_hand_jobs.task_session.TaskSession.open", return_value=Mock(manager=manager)), \
                 patch("local_hand_jobs.state.StateStore", return_value=state), \
                 patch("local_hand_jobs.broker.Broker"), \
                 patch("local_hand_jobs.evidence.EvidenceStore", side_effect=JobError("IO_UNCERTAIN", "synthetic construction failure")):
             with self.assertRaises(JobError):
-                create_broker("synthetic", actual_entrypoint="synthetic")
+                create_broker("synthetic", actual_entrypoint="synthetic", session_path="synthetic-session")
         state.close.assert_called_once()
         authority.close.assert_called_once()
 
@@ -679,12 +679,12 @@ class CliTests(unittest.TestCase):
                 patch("local_hand_jobs.deployment.verify_release"), \
                 patch("local_hand_jobs.resources.verify_local_filesystem"), \
                 patch("local_hand_jobs.resources.AuthorityLock", return_value=authority), \
-                patch("local_hand_jobs.runner.SystemdManager", return_value=manager), \
+                patch("local_hand_jobs.task_session.TaskSession.open", return_value=Mock(manager=manager)), \
                 patch("local_hand_jobs.state.StateStore", return_value=state), \
                 patch("local_hand_jobs.broker.Broker"), \
                 patch("local_hand_jobs.evidence.EvidenceStore", side_effect=primary):
             with self.assertRaises(JobError) as caught:
-                create_broker("synthetic", actual_entrypoint="synthetic")
+                create_broker("synthetic", actual_entrypoint="synthetic", session_path="synthetic-session")
         self.assertIs(primary, caught.exception)
         state.close.assert_called_once()
         authority.close.assert_called_once()
@@ -713,7 +713,7 @@ class CliTests(unittest.TestCase):
                         raise ValueError("unrelated caller error")
                     except ValueError:
                         with self.assertRaises(OSError) as caught:
-                            broker_main(["--policy", "synthetic"])
+                            broker_main(["--policy", "synthetic", "--session", "synthetic-session"])
                 self.assertIs(failure, caught.exception)
                 self.assertEqual(["transport", "broker", "state", "authority"], attempted)
 
@@ -728,7 +728,7 @@ class CliTests(unittest.TestCase):
         with patch("local_hand_jobs.cli.create_broker", return_value=broker), \
                 patch("local_hand_jobs.cli.MaintenanceServer", return_value=server), \
                 patch("local_hand_jobs.cli.sys.stderr", stderr):
-            result = broker_main(["--policy", "synthetic"])
+            result = broker_main(["--policy", "synthetic", "--session", "synthetic-session"])
         self.assertEqual(2, result)
         self.assertIn("synthetic primary startup failure", stderr.getvalue())
         self.assertNotIn("synthetic cleanup failure", stderr.getvalue())

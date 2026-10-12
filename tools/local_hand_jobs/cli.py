@@ -582,7 +582,7 @@ def _admitted_evidence_store(policy):
     return Path(binding["path"]), {key: binding[key] for key in ("device", "inode", "uid")}
 
 
-def create_broker(policy_path, *, actual_entrypoint, initialize=False):
+def create_broker(policy_path, *, actual_entrypoint, initialize=False, session_path=None):
     """Both service entrypoints use this production-only composition root.
 
     Missing supervision, private admission or provenance is a hard failure.
@@ -592,24 +592,41 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         raise JobError("UNSUPPORTED", "The restricted job service requires Linux supervision")
     from .deployment import verify_release
     from .policy import Policy
-    from .runner import SystemdManager
+    from .task_session import TaskSession
     policy = Policy.from_file(policy_path)
     verify_release(expected_source_commit=policy.source_commit,
                    expected_payload_digest=policy.installed_payload_digest,
                    expected_entrypoint=policy.execution_entrypoint,
                    actual_entrypoint=actual_entrypoint)
-    manager = SystemdManager(policy.config.get("process_manager"))
-    support = manager.support()
-    if support.get("supported") is not True:
-        raise JobError("UNSUPPORTED", "The admitted independent process supervisor is unavailable")
-    return _compose_broker(policy, manager, initialize=initialize)
+    if session_path is None:
+        raise JobError("UNSUPPORTED", "An administrator-created task session is required (--session)")
+    session = broker = None
+    try:
+        session = TaskSession.open(session_path, policy)
+        support = session.manager.support()
+        if support.get("supported") is not True:
+            raise JobError("UNSUPPORTED", "The admitted independent process supervisor is unavailable")
+        broker = _compose_broker(policy, session.manager, initialize=initialize, quota_required=True)
+        session.attach(broker)
+        return broker
+    except BaseException as error:
+        if broker is not None:
+            close_service(broker, None, failed=True)
+        if session is not None:
+            try:
+                session.close()
+            except BaseException:
+                pass  # Preserve the admission failure after attempting cleanup.
+        if isinstance(error, (OSError, ValueError)):
+            raise JobError("IO_UNCERTAIN", "Task session admission could not be verified") from error
+        raise
 
 
 def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
     """Shared assembly after trusted caller's release and supervisor admission.
 
-    This private function never supplies a production qualification override.
-    The test-only caller verifies its own finite fixture before reaching here.
+    Production callers authenticate an inherited task session before assembly.
+    Tests may supply their own finite process-manager fixture.
     """
     from .broker import Broker
     from .registry import Registry
@@ -731,11 +748,13 @@ def broker_main(argv=None):
     parser = argparse.ArgumentParser(description="Run the single admitted Local Hand broker")
     parser.add_argument("--policy", required=True, type=Path)
     parser.add_argument("--initialize", action="store_true", help="Explicitly initialize an absent first ledger")
+    parser.add_argument("--session", required=True, type=Path, help="Administrator-created task session descriptor")
     args = parser.parse_args(argv)
     broker = server = None
     failed = False
     try:
-        broker = create_broker(args.policy, actual_entrypoint=__file__, initialize=args.initialize)
+        broker = create_broker(args.policy, actual_entrypoint=__file__, initialize=args.initialize,
+                               session_path=args.session)
         peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
                  for uid, identity in broker.policy.local_peers.items()}
         server = MaintenanceServer(broker, Path(broker.policy.broker_root) / "maintenance.sock", peers)
