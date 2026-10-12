@@ -27,6 +27,7 @@ SCHEMA = "local-hand-q2-original-handoff/v1"
 ENVELOPE_SCHEMA = "local-hand-q2-issued-handoff/v1"
 RESULT_SCHEMA = "local-hand-q2-handoff-result/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-original-handoff/v1"
+SYSTEM_CANCEL_SCHEMA = "local-hand-q4-system-cancel-original-handoff/v1"
 SYSTEM_SCHEMA = "local-hand-q2-system-original-handoff/v1"
 H11_SCHEMA = "local-hand-q4-h11-original-handoff/v1"
 CANCEL_PURPOSE = "ONE_ORIGINAL_Q4_CANCEL_HANDOFF"
@@ -180,10 +181,10 @@ def protected(path, limit=LIMIT):
 
 def cancellation(plan):
     pair = plan.get("schema"), plan.get("purpose")
-    require(pair in ((SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"), (CANCEL_SCHEMA, CANCEL_PURPOSE),
+    require(pair in ((SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"), (CANCEL_SCHEMA, CANCEL_PURPOSE), (SYSTEM_CANCEL_SCHEMA, CANCEL_PURPOSE),
                     (SYSTEM_SCHEMA, "ONE_ORIGINAL_Q2_HANDOFF"),
                     (H11_SCHEMA, H11_PURPOSE)), "HANDOFF_SCHEMA")
-    return pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
+    return pair in ((CANCEL_SCHEMA, CANCEL_PURPOSE), (SYSTEM_CANCEL_SCHEMA, CANCEL_PURPOSE))
 
 
 def h11(plan):
@@ -193,7 +194,7 @@ def h11(plan):
 
 def system_manager(plan):
     cancellation(plan)
-    return plan["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
+    return plan["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA)
 
 
 def record_schema(plan, suffix):
@@ -258,18 +259,18 @@ def cancel_child_result(plan, result):
 
 def static_template(value, *, cancel=False, system=False, h11=False):
     require(all(type(item) is bool for item in (cancel, system, h11))
-            and not (cancel and system) and not (cancel and h11)
+            and not (cancel and h11)
             and (not h11 or system), "HANDOFF_TEMPLATE_KIND")
     keys(value, {"schema", "purpose", "launcher", "controller_parent", "supervisor_envelope", "output", "declarations"})
     expected = (("local-hand-q4-h11-supervisor/v1", H11_TEMPLATE_PURPOSE) if h11 else
-                ("local-hand-q4-cancel-supervisor/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+                ("local-hand-q4-system-cancel-supervisor/v1" if system else "local-hand-q4-cancel-supervisor/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
                 ("local-hand-q2-system-supervisor/v1", "ISOLATED_Q2_SUPERVISION") if system else
                 ("local-hand-q2-supervisor/v1", "ISOLATED_Q2_SUPERVISION"))
     require((value["schema"], value["purpose"]) == expected,
             "HANDOFF_TEMPLATE_SCHEMA")
     nested = value["launcher"]
     expected = (("local-hand-q4-h11-launcher/v1", H11_TEMPLATE_PURPOSE) if h11 else
-                ("local-hand-q4-cancel-launcher/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
+                ("local-hand-q4-system-cancel-launcher/v1" if system else "local-hand-q4-cancel-launcher/v1", CANCEL_TEMPLATE_PURPOSE) if cancel else
                 ("local-hand-q2-system-launcher/v1", "ISOLATED_Q2_CHAIN") if system else
                 ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"))
     require((nested.get("schema"), nested.get("purpose")) == expected,
@@ -277,13 +278,13 @@ def static_template(value, *, cancel=False, system=False, h11=False):
     if cancel:
         resident = nested.get("resident", {})
         require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
-                ("local-hand-q4-cancel-resident/v1", CANCEL_TEMPLATE_PURPOSE, ["preflight"]), "HANDOFF_CANCEL_RESIDENT")
+                ("local-hand-q4-system-cancel-resident/v1" if system else "local-hand-q4-cancel-resident/v1", CANCEL_TEMPLATE_PURPOSE, ["preflight"]), "HANDOFF_CANCEL_RESIDENT")
     if h11:
         resident = nested.get("resident", {})
         require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
                 ("local-hand-q4-h11-origin-resident/v1", "ISOLATED_Q4_H11_ORIGIN", ["preflight"]),
                 "HANDOFF_H11_RESIDENT")
-    elif system:
+    elif system and not cancel:
         resident = nested.get("resident", {})
         require((resident.get("schema"), resident.get("purpose"), resident.get("phases")) ==
                 ("local-hand-q2-system-resident/v1", "ISOLATED_Q2_CHAIN", ["preflight", "business", "evidence"]),

@@ -109,7 +109,7 @@ def validate_report(value):
             "lifecycle", "outcome", "evidence", "phase", "cancel_requested", "reader_delivered", "leases_retained",
             "observed_ns", "state_converged"}, "CASE_LEDGER")
         _require(_positive(ledger["observed_ns"]) and ledger["observed_ns"] <= value["observed_ns"]
-                 and ledger["state_converged"] is False, "CASE_LEDGER_ASOF")
+                 and ledger["state_converged"] is (ledger["lifecycle"] == "TERMINAL"), "CASE_LEDGER_ASOF")
         _require(type(ledger["delivery_events"]) is list and len(ledger["delivery_events"]) <= 12, "CASE_DELIVERY_BOUND")
         previous = 0
         for row in ledger["delivery_events"]:
@@ -227,8 +227,9 @@ def _helper_exit(report):
     helper, trigger, deadline = report["helper"], report["trigger"], report["phase_deadline_ns"]
     return bool(helper and helper["state"] == "EXITED" and helper["identity"] is not None
         and helper["error"] is None and all(helper["exit_flags"].values()) and helper["stdout_eof"]
-        and helper["stderr_eof"] and helper["exit_code"] is not None
-        and helper["exit_code"] == helper["client_returncode"] and deadline is not None
+        and helper["stderr_eof"] and helper["client_returncode"] is not None
+        and (helper["exit_code"] == helper["client_returncode"]
+             or helper["exit_code"] is None and _exercised(report)) and deadline is not None
         and helper["observed_ns"] < deadline and (trigger is None or helper["identity"] == trigger["identity"]))
 
 
@@ -447,7 +448,8 @@ class Case:
                 no_delivery_after_cancel=None if event is None else all(item["seq"] < event["seq"] for item in deliveries),
                 **{key: record[key] for key in ("lifecycle", "outcome", "evidence", "phase", "cancel_requested")},
                 reader_delivered=any(self._report["target_execution_id"] + ":result_reader" in item["delivery_ids"] for item in deliveries),
-                leases_retained=leases > 0, observed_ns=ledger_observed_ns, state_converged=False)
+                leases_retained=leases > 0, observed_ns=ledger_observed_ns,
+                state_converged=record["lifecycle"] == "TERMINAL")
             with self._lock:
                 if version != self._cancel_version:
                     return copy.deepcopy(self._report)  # Retry observation next tick, never freeze a mixed snapshot.
@@ -505,7 +507,8 @@ class Case:
 def observe_manager(core):
     """Wrap exactly the installed core; all management/inspection calls pass through."""
     from local_hand_jobs.runner import _SystemdExecutionCore
-    _require(core is _SystemdExecutionCore, "CASE_REAL_CORE_REQUIRED")
+    from local_hand_jobs.system_manager import SystemManager
+    _require(core in (_SystemdExecutionCore, SystemManager), "CASE_REAL_CORE_REQUIRED")
 
     class Observed(core):
         _q4_observer = True

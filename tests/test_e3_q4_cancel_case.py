@@ -7,6 +7,7 @@ from __future__ import annotations
 import copy
 import contextlib
 import hashlib
+import io
 from pathlib import Path
 import subprocess
 import sys
@@ -151,6 +152,27 @@ class CancelCaseTests(unittest.TestCase):
         self.case._thread.join(1)
         self.assertFalse(self.case._thread.is_alive())
         self.assertTrue(self.state.get("job", self.request["operation_id"])["record"]["cancel_requested"])
+
+    def test_collected_cancelled_unit_proves_exit_without_a_service_exit_code(self):
+        self.trigger()
+        self.broker.tick()
+        self.values.update(LoadState="not-found", ActiveState="inactive", SubState="dead",
+                           InvocationID="", ControlGroup="", ExecMainCode="", ExecMainStatus="")
+        self.part["launch"].returncode = 0
+        self.part["launch"].stdout = io.BytesIO()
+        self.part["launch"].stderr = io.BytesIO()
+        self.part["quota_transport"].eof.update(("stdout", "stderr"))
+        with mock.patch.object(life, "parent", return_value=(self.pin, True)):
+            self.manager._inspect_unit(self.part)
+        report = self.case.poll()
+        self.assertEqual([], case_module.validate_report(report))
+        self.assertEqual("EXERCISED", report["status"])
+        self.assertTrue(report["helper_exit_proven"])
+        self.assertIsNone(report["helper"]["exit_code"])
+        self.assertEqual("UNKNOWN", report["ledger"]["outcome"])
+        changed = copy.deepcopy(report)
+        changed["stops"][0]["ack"] = False
+        self.assertFalse(case_module._helper_exit(changed))
 
     def test_natural_end_or_no_running_before_record_deadline_is_not_exercised(self):
         report = self.finish_at_record_deadline()

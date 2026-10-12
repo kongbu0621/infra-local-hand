@@ -204,11 +204,33 @@ class GatewayTests(unittest.TestCase):
         gateway, item = self.gateway()
         gateway._command = mock.Mock(return_value=dict(returncode=0,
             stdout="lhj-" + "f" * 64 + ".service loaded failed failed unknown\n", stderr=""))
+        original = gateway._command.return_value
+        gateway._command.side_effect = [original, dict(returncode=0, stderr="", stdout="Id=unknown\n")]
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_INVENTORY_UNKNOWN"):
             gateway.dispatch("inventory", {})
         gateway._journal = mock.Mock(return_value=dict(status="RESULT"))
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_PREDECESSOR_UNSEALED"):
             gateway._predecessor("preflight", "helper")
+
+    def test_retained_failed_inventory_does_not_block_new_work_or_get_adopted(self):
+        gateway, _ = self.gateway()
+        unit = "lhj-" + "f" * 64 + ".service"
+        fields = dict(Id=unit, LoadState="loaded", ActiveState="failed", SubState="failed",
+                      MainPID="0", ControlGroup="", Job="")
+        def command(*args):
+            return dict(returncode=0, stderr="", stdout=(unit + " loaded failed failed retained\n"
+                if args[0] == "list-units" else "".join(k + "=" + v + "\n" for k, v in fields.items())))
+        gateway._command = mock.Mock(side_effect=command)
+        result, _ = gateway.dispatch("inventory", {})
+        self.assertEqual("", result["stdout"])
+        self.assertEqual({}, gateway.parts)
+        self.assertEqual(["list-units", "show"], [call.args[0] for call in gateway._command.call_args_list])
+        for key, value in (("MainPID", "123"), ("ControlGroup", "/occupied"), ("Job", "4"),
+                           ("ActiveState", "active")):
+            previous = fields[key]; fields[key] = value
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_INVENTORY_UNKNOWN"):
+                gateway.dispatch("inventory", {})
+            fields[key] = previous
 
     def test_actual_root_client_and_two_pipe_eofs_are_required_for_seal(self):
         gateway, item = self.gateway()
@@ -321,8 +343,32 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual("not-found", values["LoadState"])
         self.assertNotIn("terminal", part)
         gateway.recovery_only = False
+        _, values = gateway._show(part)
+        self.assertEqual("not-found", values["LoadState"])
+        self.assertNotIn("terminal", part)
+        part["stop_ok"] = False
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_ORIGINAL_UNIT_MISSING"):
             gateway._show(part)
+
+    def test_seal_after_cancel_gc_requires_real_client_eofs_and_keeps_status_unknown(self):
+        gateway, _ = self.gateway()
+        process = subprocess.Popen([sys.executable, "-c", "print('retained')"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        part = dict(sealed=False, stop_ok=True, invocation_id="b" * 32,
+                    identity_observation=dict(InvocationID="b" * 32),
+                    process=process, pidfd=os.pidfd_open(os.getpid(), 0))
+        gateway._show = mock.Mock(return_value=({}, dict(ActiveState="inactive", Job="")))
+        try:
+            process.wait(timeout=3)
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_CLIENT_EOF_UNPROVEN"):
+                gateway._seal(part)
+            process.stdout.read(); process.stderr.read()
+            gateway._seal(part)
+            self.assertTrue(part["sealed"])
+            self.assertNotIn("terminal", part)
+        finally:
+            process.stdout.close(); process.stderr.close()
+            if part["pidfd"] >= 0:os.close(part["pidfd"])
 
     def test_runtime_shrinks_after_intent_io_and_expiry_never_delivers(self):
         for late_ns in (6 * SECOND, 12 * SECOND):
@@ -407,6 +453,15 @@ class GatewayTests(unittest.TestCase):
             self.assertTrue(gateway.recovery_arm_ack)
         finally:
             release.set(); thread.join(1)
+
+    def test_rejected_arm_response_preserves_failure_and_does_not_ack(self):
+        gateway, _ = self.gateway()
+        channel = SimpleNamespace(session_id="a" * 64, sequence=0, total=0, pending=None,
+                                  respond=mock.Mock())
+        gateway.channel = channel
+        gateway._respond(dict(op="recovery_arm"), {"error": "SYSTEM_GATEWAY_REJECTED"})
+        channel.respond.assert_called_once()
+        self.assertFalse(gateway.recovery_arm_ack)
 
     def test_real_peer_exit_is_required_before_single_rebind_and_budgets_accumulate(self):
         clock = budget.current_clock()

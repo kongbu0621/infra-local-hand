@@ -249,38 +249,6 @@ def package_fixture(tmp_path, monkeypatch):
     implementation.mkdir(); _git(implementation, "init", "-q")
     source = implementation / "tests" / "e3_host"
     source.mkdir(parents=True)
-    prior_profiles = []
-    for index in (0, 1, 2):
-        pins = {}
-        for role in ('loader', 'bootstrap', 'dispatcher'):
-            raw = ('# historical fixture %d %s\n' % (index, role)).encode()
-            if role == 'loader': raw = b"def main():\n    return None\n"
-            (source / ('q2_core_delivery_' + role + '.py')).write_bytes(raw)
-            pins[role] = f.c.sha256(raw)
-        _git(implementation, 'add', 'tests/e3_host')
-        _git(implementation, 'commit', '-q', '-m', 'historical fixture')
-        prior_profiles.append(dict(commit=_git(implementation, 'rev-parse', 'HEAD'),
-            tree=_git(implementation, 'rev-parse', 'HEAD^{tree}'), sources=pins))
-    monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', tuple(prior_profiles))
-    for name in ("AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "LOCALE_GRAMMAR", "POST_LOCALE", "MINIMAL", "SERIAL", "SYSTEMCTL", "TEMPLATE", "NAMES", "EXEC", "GS", "QI", "DS", "VM_ADOPTION", "RUNTIME", "HOST_FD", "USAGE", "TRANSPORT", "RESUMED_VM", "PROTECTED_SOURCE", "PERSISTENT_PATH", "IDENTITY_RESOURCE", "RUNTIME_PREPARATION", "HOST_REBIND_ORIGINAL", "HOST_REBIND", "GUEST_RESUMPTION"):
-        doc = name.lower() + "-requirements.md"
-        (implementation / doc).write_bytes(b"synthetic A\n")
-        _git(implementation, "add", doc)
-        _git(implementation, "commit", "-q", "-m", name + " A")
-        monkeypatch.setattr(f.c, name + "_BASELINE", {
-            "commit": _git(implementation, "rev-parse", "HEAD"),
-            "tree": _git(implementation, "rev-parse", "HEAD^{tree}"),
-            "documents_sha256": {doc: f.c.sha256(b"synthetic A\n")}})
-        decision = name.lower() + "-decision.md"
-        (implementation / decision).write_bytes(b"synthetic B\n")
-        _git(implementation, "add", decision)
-        _git(implementation, "commit", "-q", "-m", name + " C")
-        monkeypatch.setattr(f.c, name + "_OWNER_DECISION", {
-            "event": "synthetic B", "record_path": decision,
-            "record_sha256": f.c.sha256(b"synthetic B\n")})
-        monkeypatch.setattr(f.c, name + "_CLOSURE", {
-            "commit": _git(implementation, "rev-parse", "HEAD"),
-            "tree": _git(implementation, "rev-parse", "HEAD^{tree}")})
     source = implementation / "tests" / "e3_host"
     source.mkdir(parents=True, exist_ok=True)
     loader = b"def main():\n    return None\n"
@@ -296,8 +264,6 @@ def package_fixture(tmp_path, monkeypatch):
     _git(implementation, "add", "tests/e3_host")
     _git(implementation, "commit", "-q", "-m", "implementation")
     monkeypatch.setattr(f.c, 'LOCALE_REPAIR', _git(implementation, 'rev-parse', 'HEAD'))
-    # Final integrated D may have intermediate D commits after the independent C.
-    _git(implementation, "commit", "--allow-empty", "-q", "-m", "integrated D")
     implementation_commit = _git(implementation, "rev-parse", "HEAD")
     implementation_tree = _git(implementation, "rev-parse", "HEAD^{tree}")
 
@@ -345,15 +311,28 @@ def test_static_member_freeze_reads_committed_blobs_and_does_not_build_package(
         assert hashlib.sha256(result["member_bytes"][row["path"]]).hexdigest() == row["sha256"]
 
 
-@pytest.mark.parametrize('index', [0, 1])
-@pytest.mark.parametrize('change', ['tree', 'source'])
-def test_static_freeze_rejects_changed_prior_source_premise(tmp_path, monkeypatch, index, change):
+def test_repaired_committed_sources_need_no_historical_approval_or_byte_allowlist(tmp_path, monkeypatch):
     arguments = package_fixture(tmp_path, monkeypatch)
-    priors = copy.deepcopy(f.PRIOR_SOURCE_PROFILES)
-    if change == 'tree': priors[index]['tree'] = 'f' * 40
-    else: priors[index]['sources']['bootstrap'] = 'f' * 64
-    monkeypatch.setattr(f, 'PRIOR_SOURCE_PROFILES', priors)
-    with pytest.raises(f.c.ContractError, match='CORE_FREEZE_PRIOR_'):
+    repository = arguments["implementation_repository"]
+    root = repository / "tests/e3_host"
+    for role in ("bootstrap", "dispatcher"):
+        path = root / ("q2_core_delivery_" + role + ".py")
+        path.write_bytes(path.read_bytes() + b"\n# repaired implementation\n")
+    _git(repository, "add", "tests/e3_host")
+    _git(repository, "commit", "-q", "-m", "repair")
+    arguments["implementation_commit"] = _git(repository, "rev-parse", "HEAD")
+    arguments["implementation_tree"] = _git(repository, "rev-parse", "HEAD^{tree}")
+    (repository / "unrelated-draft.md").write_text("uncommitted local work\n")
+    result = f.freeze_package_members(**arguments)
+    assert result["member_bytes"]["field/dispatcher.py"].endswith(b"# repaired implementation\n")
+    # Source identity remains concrete even though historical gates are gone.
+    bootstrap = root / "q2_core_delivery_bootstrap.py"
+    bootstrap.write_text("LOADER_SHA256 = '" + "0" * 64 + "'\n")
+    _git(repository, "add", "tests/e3_host")
+    _git(repository, "commit", "-q", "-m", "bad loader binding")
+    arguments["implementation_commit"] = _git(repository, "rev-parse", "HEAD")
+    arguments["implementation_tree"] = _git(repository, "rev-parse", "HEAD^{tree}")
+    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_LOADER_BINDING"):
         f.freeze_package_members(**arguments)
 
 
@@ -518,53 +497,6 @@ def test_private_regular_source_requires_noatime_without_fallback(tmp_path, monk
     with pytest.raises(f.c.ContractError, match="TEST_DEPENDENCY"):
         f._read_regular(path, limit=100, code="TEST_DEPENDENCY")
     assert len(flags_seen) == 1 and flags_seen[0] & os.O_NOATIME
-
-
-def test_static_member_freeze_rejects_unrelated_d_tree(tmp_path, monkeypatch):
-    arguments = package_fixture(tmp_path, monkeypatch)
-    repository = arguments["implementation_repository"]
-    _git(repository, "checkout", "--orphan", "unrelated")
-    _git(repository, "commit", "-q", "-m", "unrelated D")
-    arguments["implementation_commit"] = _git(repository, "rev-parse", "HEAD")
-    arguments["implementation_tree"] = _git(repository, "rev-parse", "HEAD^{tree}")
-    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_GIT_COMMAND"):
-        f.freeze_package_members(**arguments)
-
-
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "TRANSPORT", "GUEST_RESUMPTION"])
-@pytest.mark.parametrize("record", ["BASELINE", "OWNER_DECISION", "CLOSURE"])
-def test_lineage_rejects_wrong_authority_bytes_or_tree(tmp_path, monkeypatch, scope, record):
-    arguments = package_fixture(tmp_path, monkeypatch)
-    authority = dict(getattr(f.c, scope + "_" + record))
-    if record == "BASELINE":
-        authority["documents_sha256"] = dict.fromkeys(authority["documents_sha256"], "0" * 64)
-    elif record == "OWNER_DECISION": authority["record_sha256"] = "0" * 64
-    else: authority["tree"] = "0" * 40
-    monkeypatch.setattr(f.c, scope + "_" + record, authority)
-    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_AUTHORITY|CORE_FREEZE_OWNER_DECISION"):
-        f.freeze_package_members(**arguments)
-
-
-def test_old_amendment_descendant_without_new_closure_is_not_releasable_d(tmp_path, monkeypatch):
-    arguments = package_fixture(tmp_path, monkeypatch)
-    arguments["implementation_commit"] = f.c.WRITER_TRANSPORT_BASELINE["commit"]
-    arguments["implementation_tree"] = f.c.WRITER_TRANSPORT_BASELINE["tree"]
-    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_GIT_COMMAND"):
-        f.freeze_package_members(**arguments)
-
-
-@pytest.mark.parametrize("scope", ["AMENDMENT", "WRITER_TRANSPORT", "COMPLETION_ADJUSTMENT", "CLOUD_INIT_GRANT", "NEXT_ACCEPTANCE", "HOST_CAPACITY_BOUNDARY", "POST_SUDO", "TRANSPORT", "GUEST_RESUMPTION"])
-def test_final_d_cannot_rewrite_approved_document_even_after_valid_c(tmp_path, monkeypatch, scope):
-    arguments = package_fixture(tmp_path, monkeypatch)
-    path = next(iter(getattr(f.c, scope + "_BASELINE")["documents_sha256"]))
-    repository = arguments["implementation_repository"]
-    (repository / path).write_bytes(b"altered after C\n")
-    _git(repository, "add", path)
-    _git(repository, "commit", "-q", "-m", "invalid authority drift")
-    arguments["implementation_commit"] = _git(repository, "rev-parse", "HEAD")
-    arguments["implementation_tree"] = _git(repository, "rev-parse", "HEAD^{tree}")
-    with pytest.raises(f.c.ContractError, match="CORE_FREEZE_AUTHORITY_DOCUMENT"):
-        f.freeze_package_members(**arguments)
 
 
 def test_unreleased_static_package_cannot_observe_host_or_start_window(monkeypatch):

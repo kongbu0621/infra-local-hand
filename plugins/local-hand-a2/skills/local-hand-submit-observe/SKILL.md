@@ -6,7 +6,7 @@ description: 提交或继续观察已获准的 Local Hand A2 固定作业；在�
 先完成 local-hand-preflight，读取插件根 `contract.json` 和 `scripts/workflow.py`。调用共享 broker 的七项工具；不要使用任意 shell、客户端路径、环境或代码输入，不另建执行器。没有可信连接与私有准入即 BLOCKED。
 
 1. 使用 `Workflow.reserve_job` 在专属私有客户端账本中持久保存小写 UUID v4 `operation_id`、完整请求与 `request_digest`，再调用 `lh_job_submit`。本地记录失败时不要提交。业务意图键复用原记录；真的新业务才使用新键。用已冻结契约构造摘要，不以 MCP 传输 id 代替业务 id。
-2. 回执丢失先 `lh_job_status` 查询原 id，或原请求原 id 重送。`NOT_FOUND` 只说明本次尚无记录，在途请求仍可稍后受理；不要换 id 或宣布未执行。过期、断线或 token 到期不取消已受理业务。`CONFLICT`、`IO_UNCERTAIN`、`UNAUTHORIZED` 明确停止本次推进，保留记录。
+2. 回执丢失先 `lh_job_status` 查询原 id，或原请求原 id 重送。`NOT_FOUND` 只说明本次尚无记录，在途请求仍可稍后受理；不要换 id 或宣布未执行。过期、断线或 token 到期不取消已受理业务。`CONFLICT`、`UNAUTHORIZED` 先解决绑定或权限问题；`IO_UNCERTAIN` 先查询原任务实际状态。只读连接错误可有界重试，本地未投递错误修复后继续，失败原件保留。
 3. 使用 `Workflow.observe` 有界轮询，单轮最多 12 次、总观察上限 60 秒，每次回调本身也须有宿主超时。提交、查询和取消回包都核对原 operation_id、request_digest 与准确轮次；缺字段或错绑定即停止，不采纳其他作业的完成状态。观察预算到期只报当前状态及原 id，不重新投递，也不把 PENDING/UNKNOWN 改成 FAILED。长期观察跨轮沿用原身份。
 4. 分开报告 lifecycle、outcome、evidence、事件序号、已执行辅助观察、业务是否启动、已知副作用和缺口。exit 0 不代表 SEALED，取消不是撤销，超时或发送 KILL 不代表整个进程树退出。
 5. `ledger.prepare` 必须 SUCCEEDED 且 SEALED，才从 status 的版本化 outputs 取得稳定 `prepared_ref`；核对 source/wheel/installed/runtime 与 seal 绑定，使用 `Workflow.prepared_reference` 检查。重新 preflight 取得当前可见 prepared 目录，保持原私有 expected 不变，再构造后续测试。不要从日志猜引用；失败或持久化不明时禁止继续测试。

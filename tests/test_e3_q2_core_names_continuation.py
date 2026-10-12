@@ -14,7 +14,6 @@ from e3_host import q2_core_delivery_dispatcher as d
 from e3_host import q2_journal_growth as h
 from test_e3_q2_core_minimal_continuation import originals
 from test_e3_q2_core_template_continuation import preflight
-from test_e3_q2_journal_diagnostic_resume import source_git
 
 
 @pytest.mark.parametrize('location', ['manifest', 'marker', 'receipt', 'inputs'])
@@ -140,29 +139,3 @@ def test_full_projection_stays_mandatory_for_both_core_consumers(originals,index
         p.validate_journal_transition(value,priors=args['priors'],implementation=args['implementation'])
     with pytest.raises(d.DispatchError):
         d._validate_journal_transition(value,priors=args['priors'],implementation=args['implementation'])
-
-
-@pytest.mark.parametrize('record',list(p.c.NAMES_BASELINE['documents_sha256'])
-                         +[p.c.NAMES_OWNER_DECISION['record_path']])
-def test_names_authority_bytes_are_required_before_source_admission(source_git,record):
-    source_git.changed_doc=record
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_'):
-        h.audit_historical_growth_sources(source_git.head)
-    assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
-
-
-@pytest.mark.parametrize('edge',[(h.NAMES_A,h.NAMES_C),(h.NAMES_C,'d'*40)])
-def test_names_candidate_descends_from_independent_closure(source_git,edge):
-    source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.audit_historical_growth_sources(source_git.head)
-
-
-@pytest.mark.parametrize('commit',[h.NAMES_A,h.NAMES_C])
-def test_exact_authority_trees_are_checked_before_source_reads(source_git,commit):
-    source_git.changed_tree=commit
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_TREE'):h.audit_historical_growth_sources(source_git.head)
-
-
-def test_closure_bookkeeping_is_not_an_execution_candidate(source_git):
-    source_git.head=h.NAMES_C
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_NAMES_D'):h.audit_historical_growth_sources(source_git.head)

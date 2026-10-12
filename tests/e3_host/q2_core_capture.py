@@ -3,7 +3,8 @@
 This is a local component, not a carrier entry or a restart verifier. The caller
 must already have qualified the held management anchor and frozen binding within
 the original window. No file is adopted, overwritten, removed or reopened for
-writing. Failure permanently poisons this instance, retaining all created bytes.
+writing. Partial writes retain their bytes and require reconciliation. Read-only
+or pre-creation failures may be retried inside the original resource window.
 Allocation accounting observes owned files, not the whole filesystem's peak.
 """
 from __future__ import annotations
@@ -33,7 +34,7 @@ ACCOUNTING_MODE = "APPLICATION_LIMIT_AND_OBSERVED_FILE_ALLOCATION"
 
 
 class CaptureError(RuntimeError):
-    """A fixed, non-private reason; no exception authorizes a retry."""
+    """A fixed, non-private reason; callers retain the actual failure."""
 
 
 def _require(condition, reason):
@@ -71,6 +72,10 @@ class Deadline:
             _require(all(_integer(value) and earlier <= value < limit
                          for earlier, value, limit in zip(self.previous, now, limits)), "DEADLINE")
             self.previous = now
+        except OSError:
+            # A clock read failure grants no time and need not poison a later
+            # observation of the same original deadline.
+            raise
         except BaseException:
             self.failed = True
             raise
@@ -314,30 +319,27 @@ class LiveCapture:
                         allocated_bytes=record["allocated_bytes"], sha256=record["sha256"],
                         dev=created.st_dev, ino=created.st_ino, mode=0o600, nlink=1)
         except BaseException:
-            self.failed = True
+            # Pre-creation failures have no write to replay. Partial objects
+            # still require reconciliation and keep their charged bytes.
+            self.failed = self.failed or any(not item.get("complete", False)
+                                             for item in self.objects.values())
+            if isinstance(role, str) and role not in self.objects:
+                self.attempted.discard(role)
             raise
 
     def finish(self):
         """Only this original live instance can finish; disk text is not consulted."""
-        try:
-            _require(not self.failed and self.objects.get("local_receipt", {}).get("complete") is True,
-                     "LIVE_RECEIPT")
-            self._sample()
-            self.deadline.check()
-            return dict(mode=ACCOUNTING_MODE, logical_bytes_written=self.logical,
-                        created_inodes=len(self.objects), max_observed_allocated_bytes=self.max_allocated,
-                        full_filesystem_peak_proven=False)
-        except BaseException:
-            self.failed = True
-            raise
+        _require(not self.failed and self.objects.get("local_receipt", {}).get("complete") is True,
+                 "LIVE_RECEIPT")
+        self._sample()
+        self.deadline.check()
+        return dict(mode=ACCOUNTING_MODE, logical_bytes_written=self.logical,
+                    created_inodes=len(self.objects), max_observed_allocated_bytes=self.max_allocated,
+                    full_filesystem_peak_proven=False)
 
     def sample(self):
-        """Public checked observation; a failed sample cannot be retried."""
-        try:
-            return self._sample()
-        except BaseException:
-            self.failed = True
-            raise
+        """Read-only observation; retry rechecks the same file identities."""
+        return self._sample()
 
     def close_handles(self):
         """Close only owned descriptors, never persisted files, and never after expiry."""

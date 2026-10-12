@@ -433,8 +433,9 @@ class Gateway:
                       and values["SubState"] == "dead" and values["Job"] in ("", "0"), "SYSTEM_UNIT_MISSING")
             # Before a delayed first delivery, absence remains pending only.
             q.require(part["invocation_id"] is None or part["stop_ok"] and
-                      ("terminal" in part or self.recovery_only and
-                       type(part.get("identity_observation")) is dict),
+                      ("terminal" in part or
+                       type(part.get("identity_observation")) is dict and
+                       part["identity_observation"].get("InvocationID") == part["invocation_id"]),
                       "SYSTEM_ORIGINAL_UNIT_MISSING")
         part["after"] = values
         return result, values
@@ -574,12 +575,16 @@ class Gateway:
         q.require(not part["sealed"], "SYSTEM_SEAL_REPLAY")
         _, after = self._show(part)
         terminal = part.get("terminal")
-        q.require(part["stop_ok"] and terminal is not None and part["invocation_id"] is not None
+        q.require(part["stop_ok"] and part["invocation_id"] is not None
                   and after["ActiveState"] in ("inactive", "failed") and after["Job"] in ("", "0")
-                  and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit(),
+                  and (terminal is not None or
+                       part.get("identity_observation", {}).get("InvocationID") == part["invocation_id"]),
                   "SYSTEM_STAGE_EXIT_UNPROVEN")
         self._parent(empty=True)
-        q.require(part["process"].poll() == int(terminal["ExecMainStatus"])
+        code = (int(terminal["ExecMainStatus"]) if terminal is not None
+                and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit() else None)
+        q.require(part["process"].poll() is not None
+                  and (code is None or part["process"].poll() == code)
                   and all(_drained(getattr(part["process"], name).fileno()) for name in ("stdout", "stderr")),
                   "SYSTEM_CLIENT_EOF_UNPROVEN")
         for name in ("stdout", "stderr"):
@@ -602,13 +607,29 @@ class Gateway:
             if op == "inventory":
                 self._parent()
                 result = self._command("list-units", "lhj-*.service", "--all", "--plain", "--no-legend")
-                names = [line.split()[0] for line in result["stdout"].splitlines() if line.strip()]
-                q.require(len(names) <= 9 and len(names) == len(set(names)), "SYSTEM_INVENTORY_LIMIT")
+                lines = [line for line in result["stdout"].splitlines() if line.strip()]
+                names = [line.split()[0] for line in lines]
+                q.require(len(names) == len(set(names)), "SYSTEM_INVENTORY_LIMIT")
                 known = {part["unit"]: part for part in self.parts.values()}
-                q.require(set(names) <= known.keys(), "SYSTEM_INVENTORY_UNKNOWN")
                 for unit in names:
-                    self._show(known[unit])
-                return result, ()
+                    if unit in known:
+                        self._show(known[unit])
+                        continue
+                    # Retained failed units are history, not a permanent lock
+                    # on new work. Never adopt or modify them; verify that no
+                    # process, cgroup or pending job remains before filtering.
+                    q.require(re.fullmatch(r"lhj-[0-9a-f]{64}\.service", unit), "SYSTEM_INVENTORY_UNKNOWN")
+                    observed = self._command("show", unit,
+                        "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlGroup,Job")
+                    fields = _properties(observed["stdout"].encode())
+                    q.require(observed["returncode"] == 0 and fields.get("Id") == unit
+                              and fields.get("LoadState") in ("loaded", "not-found")
+                              and fields.get("ActiveState") in ("inactive", "failed")
+                              and fields.get("SubState") in ("dead", "failed")
+                              and fields.get("MainPID") == "0" and fields.get("ControlGroup") == ""
+                              and fields.get("Job") in ("", "0"), "SYSTEM_INVENTORY_UNKNOWN")
+                selected = [line for line in lines if line.split()[0] in known]
+                return dict(result, stdout="".join(line + "\n" for line in selected)), ()
             if op == "launch":
                 return self._launch(body)
             if op == "recovery_arm":
@@ -737,7 +758,7 @@ class Gateway:
                   + len(raw) + 12 + 4 * len(fds) <= wire.WIRE_LIMIT,
                   "SYSTEM_AGGREGATE_OUTPUT_LIMIT")
         self.channel.respond(request, result, fds=fds)
-        if request["op"] == "recovery_arm":
+        if request["op"] == "recovery_arm" and result == {"armed": True}:
             q.require(self.recovery_armed and self.channel.pending is None,
                       "SYSTEM_RECOVERY_ARM_ACK")
             self.recovery_arm_ack = True

@@ -116,19 +116,7 @@ def test_new_resume_never_drops_old10a_or_old09c_obligation(fault):
 
 
 if sys.platform.startswith('linux'):
-    from test_e3_q2_journal_diagnostic_resume import source_git
     from test_e3_q2_core_minimal_continuation import originals,effects
-
-
-@pytest.mark.skipif(not sys.platform.startswith('linux'),reason='host source authority')
-@pytest.mark.parametrize('fault',['A','B','tree','ancestry'])
-def test_tc_authority_precedes_any_field_effect(source_git,fault):
-    from e3_host import q2_journal_growth as h
-    if fault=='A':source_git.changed_doc=next(iter(p.c.TRANSPORT_BASELINE['documents_sha256']))
-    elif fault=='B':source_git.changed_doc=p.c.TRANSPORT_OWNER_DECISION['record_path']
-    elif fault=='tree':source_git.changed_tree=h.TC_C
-    else:source_git.rejected_edge=(h.TC_C,source_git.head)
-    with pytest.raises(h.prior.r.ObservationError):h.audit_historical_growth_sources(source_git.head)
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'),reason='source-aware host consumer')

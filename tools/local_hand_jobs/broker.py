@@ -195,7 +195,7 @@ class Broker:
         for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents",
                     "execution_budget", "budget_grant", "bootstrap_grants", "bootstrap_completed", "helper_completed",
                     "quota_binding_version", "quota_preparations", "quota_bindings", "quota_observed", "quota_event_phase",
-                    "quota_pending", "quota_closed"):
+                    "quota_pending", "quota_closed", "preflight_completion"):
             result.pop(key, None)
         result["seal_refs"] = [{"seal_id": item["seal_id"], "seal_sha256": item.get("seal_sha256")}
                                for item in result.pop("seals", [])]
@@ -417,10 +417,16 @@ class Broker:
 
     def recover(self):
         """Crash recovery records uncertainty; never reissues a persisted intent."""
+        from .preflight_completion import complete_stopped_preflight
+        from .evidence_recovery import release_completed_evidence
         reconnect = []
         with self.fence, self.state.transaction() as tx:
             for row in self.state.all(tx):
                 record = row["record"]
+                if complete_stopped_preflight(self, tx, row):
+                    continue
+                if release_completed_evidence(self, tx, row):
+                    continue
                 if record["lifecycle"] != "TERMINAL" and record["phase"] != "QUEUED":
                     changes = {
                         "lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN",
@@ -1039,6 +1045,8 @@ class Broker:
                         original = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")
                         if original["proof"] != thaw(proof):
                             raise JobError("IO_UNCERTAIN", "Original pending exit proof changed")
+                    from .preflight_completion import complete_stopped_preflight
+                    complete_stopped_preflight(self, tx, self.state.get(namespace, identity, tx))
                     return
                 quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
             if record["phase"] == "EVIDENCE":
@@ -1140,10 +1148,17 @@ class Broker:
 
     def tick(self):
         """One bounded coordinator pass, also usable by deterministic fixture tests."""
+        from .preflight_completion import complete_stopped_preflight
         with self.state.transaction() as tx:
             rows = self.state.all(tx)
         for row in rows:
             key, record = (row["namespace"], row["id"]), row["record"]
+            if (key not in self._active and key not in self._recovering and record["phase"] == "PREFLIGHT"
+                    and "preflight" in record.get("quota_pending", {})
+                    and (record["cancel_requested"] or record.get("recovered"))):
+                with self.fence, self.state.transaction() as tx:
+                    if complete_stopped_preflight(self, tx, self.state.get(*key, tx)):
+                        continue
             if key in self._recovering and key not in self._active:
                 pending = self._recovering[key]
                 cancel_wake = (record["cancel_requested"] is True and
@@ -1245,6 +1260,11 @@ class Broker:
         with self.state.transaction() as tx:
             self._register_seal(tx, seal)
         self._catalog(self.state.get("job", seal["operation_id"]))
+
+    def complete_recovered_evidence(self, operation_id, expected_request_digest, seal, proof):
+        """Trusted callback for supervised sealing after an evidence-only failure."""
+        from .evidence_recovery import complete_recovered_evidence
+        return complete_recovered_evidence(self, operation_id, expected_request_digest, seal, proof)
 
     def _register_seal(self, tx, seal):
         identity = seal.get("reconcile_id") or seal["operation_id"]

@@ -75,8 +75,19 @@ def test_gate_hashes_original_wal_header_without_modifying_ledger(ledger_gate, m
     assert value["before_submit"] is True and value["stage"] == "fixture"
     assert path.read_bytes() == original
     assert (reservation / "empty-ledger-gate.json").read_bytes() == source["raw"]
-    with pytest.raises(FileExistsError):
+    assert effects._exec_empty_ledger_gate(d.CASES[0], prepared, plan) == source
+    assert path.read_bytes() == original
+
+
+def test_gate_retry_rechecks_ledger_before_reusing_retained_result(ledger_gate):
+    effects, prepared, plan, path, reservation, checker = ledger_gate
+    source = effects._exec_empty_ledger_gate(d.CASES[0], prepared, plan)
+    db = sqlite3.connect(path)
+    db.execute("INSERT INTO events VALUES(1)")
+    db.commit(); db.close()
+    with pytest.raises(ValueError, match="LEDGER"):
         effects._exec_empty_ledger_gate(d.CASES[0], prepared, plan)
+    assert (reservation / "empty-ledger-gate.json").read_bytes() == source["raw"]
 
 
 @pytest.mark.parametrize("fault", ["used", "ledger_id", "authority", "generation", "sidecar"])

@@ -261,7 +261,7 @@ class SystemResidentChannelTests(unittest.TestCase):
              mock.patch.object(resident, "channel_from_pin", return_value=quota), \
              mock.patch.object(system_manager, "channel_from_pin", side_effect=manager_from_pin), \
              mock.patch.object(resident, "compose", side_effect=compose), \
-             mock.patch.object(resident, "run", side_effect=lambda *_: events.append("run") or result), \
+             mock.patch.object(resident, "run", side_effect=lambda *_, **kwargs: events.append("run") or result), \
              mock.patch("local_hand_jobs.cli.close_service") as close, \
              mock.patch.object(resident.os, "write") as write:
             code = resident.main(["--fixture", "/protected/resident.json", "--sha256", "a" * 64])

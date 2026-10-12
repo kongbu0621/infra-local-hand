@@ -4,7 +4,8 @@ This test-only entry opens the original ledger and asks the existing Broker to
 recover it.  It never submits a request, calls a runner start API, creates a
 grant, reads a result file or advances a phase.  A successful case proves only
 the original unit trees and future starts are closed; lost anonymous pipes
-remain an explicit collector barrier.
+remain an explicit result gap. The execution lease is released after stopped
+preflight is proven; retained directory allocations are preserved.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ PHASES = ("preflight", "business", "evidence")
 RECOVERY_EVENTS = frozenset({
     "RECOVERY_BARRIER", "SUPERVISOR_IDENTITY_OBSERVED",
     "EXECUTION_UNCERTAIN", "QUOTA_EXIT_PENDING",
+    "PREFLIGHT_STOPPED",
 })
 
 
@@ -143,13 +145,16 @@ def run(broker, plan, *, current_clock=None, max_ticks=512):
                  "H11_DEADLINE_CHANGED")
         leases = [tuple(item) for item in tx.execute(
             "SELECT resource,owner,epoch FROM leases ORDER BY resource").fetchall()]
-        _require(leases == before["leases"], "H11_RESOURCE_RELEASED")
+        _require(leases == [item for item in before["leases"] if item[1] != plan["operation_id"]]
+                 and record.get("execution_resources_released") is True,
+                 "H11_EXECUTION_RESOURCE_CLOSURE")
         events = [dict(item) for item in tx.execute(
             "SELECT seq,kind FROM events WHERE namespace='job' AND id=? AND seq>? ORDER BY seq",
             (plan["operation_id"], before["event_seq"])).fetchall()]
         kinds = [item["kind"] for item in events]
         _require(kinds.count("RECOVERY_BARRIER") == 1
                  and kinds.count("QUOTA_EXIT_PENDING") == 1
+                 and kinds.count("PREFLIGHT_STOPPED") == 1
                  and set(kinds) <= RECOVERY_EVENTS, "H11_RECOVERY_EVENTS")
         pending = record.get("quota_pending", {}).get(plan["phase"])
         proof = record.get("exit_proof")
@@ -163,7 +168,7 @@ def run(broker, plan, *, current_clock=None, max_ticks=512):
                  and proof.get("effects_checked") is False
                  and proof.get("result", {}).get("outcome") == "UNKNOWN",
                  "H11_LOST_COLLECTOR_BARRIER")
-        _require(record["lifecycle"] == "RECONCILE_REQUIRED"
+        _require(record["lifecycle"] == "TERMINAL" and record["phase"] == "EXITED"
                  and record["outcome"] == "UNKNOWN" and record["evidence"] != "SEALED",
                  "H11_RECOVERY_PROMOTION")
     return dict(schema=RESULT_SCHEMA, status="RECOVERY_RECORDED",

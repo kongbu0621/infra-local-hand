@@ -145,8 +145,8 @@ def observe(manager, part, unknown):
             part["reader"].bind_reader(identity)
         terminal = _terminal(values)
         if terminal:
-            # A running pre-stop snapshot cannot prove exit after unit GC.
-            # Keep the first actual terminal observation of this invocation.
+                # Retain the first actual terminal status when available;
+                # cancellation may collect the unit before one is observed.
             part.setdefault("quota_terminal", values)
         cancel = part.get("cancel_event")
         requested = part.get("stop_requested") or (cancel is not None and cancel.is_set())
@@ -157,36 +157,49 @@ def observe(manager, part, unknown):
             # identity check; it never permits another start or adoption.
             same = manager._command("show", part["unit"], "--property=InvocationID", "--value")
             q.require(same.returncode == 0 and same.stdout.decode().strip() == inv, "ORIGINAL_INVOCATION_CHANGED")
+            part["quota_stop_observation"] = dict(values)
+            part["quota_cancel_stop"] = bool(requested)
             part["quota_stop_ok"] = manager._command("stop", part["unit"]).returncode == 0
             return {**unknown("stop requested; original unit exit and pipe EOF remain unproven"), "identity": identity}
         if not terminal:
             return {**unknown(), "state": "RUNNING", "identity": identity}
     else:
         # A successful StopUnit may garbage-collect the transient unit. Only
-        # this same process's retained loaded terminal observation and stop ACK
-        # can bridge that absence; it can never adopt a missing or new launch.
+        # this same process's identity check and stop ACK bridge that absence.
+        # Cancellation can collect the unit before a terminal snapshot exists;
+        # the original pipes, empty tree and client exit are still required.
         q.require(values["LoadState"] == "not-found" and values["Id"] == part["unit"]
                   and values["InvocationID"] == "" and values["ControlGroup"] == ""
                   and values["ActiveState"] == "inactive" and values["SubState"] == "dead"
                   and values["Job"] in ("", "0") and part.get("quota_stop_attempted") is True
                   and part.get("quota_stop_ok") is True and part.get("launch_acked") is True
-                  and part.get("invocation_id") is not None and type(part.get("quota_terminal")) is dict,
+                  and part.get("invocation_id") is not None,
                   "ORIGINAL_UNIT_MISSING")
-        identity = _loaded_identity(part, part["quota_terminal"])
-        q.require(_terminal(part["quota_terminal"]), "ORIGINAL_TERMINAL_UNPROVEN")
+        terminal = part.get("quota_terminal")
+        if terminal is not None:
+            identity = _loaded_identity(part, terminal)
+            q.require(_terminal(terminal), "ORIGINAL_TERMINAL_UNPROVEN")
+        else:
+            q.require(part.get("quota_cancel_stop") is True
+                      and type(part.get("quota_stop_observation")) is dict, "ORIGINAL_UNIT_MISSING")
+            identity = _loaded_identity(part, part["quota_stop_observation"])
     _, empty = parent(part["cgroup_parent"], part["quota_parent"])
     now = budget.current_clock()
     q.require(now["boot_id"] == part["boot_id"], "BOOT_CHANGED")
     q.require(not expired and now["boottime_ns"] < part["phase_deadline_boottime_ns"], "ORIGINAL_DEADLINE")
     q.require(part.get("quota_stop_ok") and values["ActiveState"] in ("inactive", "failed")
         and values["Job"] in ("", "0") and empty, "ORIGINAL_EXIT_UNPROVEN")
-    terminal = part["quota_terminal"]
-    q.require(terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit(), "ORIGINAL_EXIT_STATUS")
-    code = int(terminal["ExecMainStatus"])
+    terminal = part.get("quota_terminal")
+    code = None
+    if terminal is not None and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit():
+        code = int(terminal["ExecMainStatus"])
+    else:
+        q.require(part.get("quota_cancel_stop") is True, "ORIGINAL_EXIT_STATUS")
     q.require(cap.eof == {"stdout", "stderr"} and cap.error is None
-              and part["launch"].poll() == code, "ORIGINAL_CLIENT_EOF_UNPROVEN")
+              and part["launch"].poll() is not None
+              and (code is None or part["launch"].poll() == code), "ORIGINAL_CLIENT_EOF_UNPROVEN")
     result = dict(outcome="UNKNOWN")
-    if "quota_pipe" in part:
+    if "quota_pipe" in part and code is not None:
         result = dict(outcome="SUCCEEDED" if code == 0 else "FAILED", bootstrap_prepared=code == 0,
                       business_started=False, helper_started=True,
                       quota_observation=part["quota_pipe"].finish(part["quota_grant"], now_ns=now["boottime_ns"]))
@@ -194,6 +207,8 @@ def observe(manager, part, unknown):
         part["reader"].finish()
     evidence = dict(identity=identity, terminal=terminal, after=values, transport=cap.record(part["launch"]),
                     parent=part["quota_parent"])
+    if terminal is None:
+        evidence["stop_observation"] = part["quota_stop_observation"]
     if bound is not None:
         evidence["manager_binding"] = bound
     stage = dict.fromkeys(q.EXIT_FLAGS, True)

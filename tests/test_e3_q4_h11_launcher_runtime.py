@@ -58,6 +58,16 @@ else:
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux pidfd H11 launcher handoff")
 class H11LauncherProcessTests(unittest.TestCase):
+    def test_h11_reason_keeps_the_actual_failure_code(self):
+        self.assertEqual("H11_ARM_FAILED", launcher.reason(ValueError("H11_ARM_FAILED")))
+
+    def test_crash_command_keeps_original_owner_and_inherited_pidfd(self):
+        command = launcher.crash_command(self.value, 71)
+        self.assertIn("--reuid=" + str(self.value["resident"]["ordinary"]["uid"]), command)
+        self.assertIn("--bounding-set=-all", command)
+        self.assertEqual("71", command[-1])
+        self.assertIn("pidfd_send_signal", command[-2])
+
     def setUp(self):
         fixture = base.LauncherOrderingTests()
         with mock.patch.object(base.Path, "home", return_value=Path("/tmp")):
@@ -87,6 +97,7 @@ class H11LauncherProcessTests(unittest.TestCase):
         test = self
         spawned = []
         real_popen = launcher.subprocess.Popen
+        real_crash_command = launcher.crash_command
 
         def spawn(*args, **kwargs):
             process = real_popen(*args, **kwargs)
@@ -129,7 +140,7 @@ class H11LauncherProcessTests(unittest.TestCase):
                 except OSError:
                     pass
                 error = RuntimeError("origin bridge peer exited")
-                error.code = "BRIDGE_PEER_EXITED"
+                error.code = "BRIDGE_EOF"
                 raise error
 
         class ManagerChannel:
@@ -154,6 +165,10 @@ class H11LauncherProcessTests(unittest.TestCase):
                 self.closed = False
                 test.gateways.append(self)
             def authorize_phase(self, plan, execution, grant, config):
+                test.assertEqual(test.value["resident"]["ordinary"]["manager_binding"],
+                                 plan.get("manager_binding"))
+                test.assertEqual(test.value["resident"]["request"]["request_digest"],
+                                 plan.get("request_digest"))
                 operation = test.value["resident"]["request"]["operation_id"]
                 execution_id = plan["execution_id"]
                 units = {stage: "lhj-" + hashlib.sha256(
@@ -220,6 +235,8 @@ class H11LauncherProcessTests(unittest.TestCase):
             mock.patch.object(launcher, "directory", side_effect=directory),
             mock.patch.object(launcher, "command", side_effect=lambda value, path, digest:
                               [sys.executable, "-B", "-c", CHILD, path]),
+            mock.patch.object(launcher, "crash_command", side_effect=lambda value, fd:
+                              [sys.executable, *real_crash_command(value, fd)[-5:]]),
             mock.patch.object(launcher.subprocess, "Popen", side_effect=spawn),
             mock.patch.object(budget, "current_clock", return_value=dict(self.clock)),
             mock.patch.object(quota_bridge, "Channel", BridgeChannel),
@@ -249,7 +266,7 @@ class H11LauncherProcessTests(unittest.TestCase):
         self.assertEqual("RECOVERY_RECORDED", result["status"], result)
         self.assertNotEqual(result["original_resident_pid"], result["recovery_resident_pid"])
         self.assertEqual(-signal.SIGKILL, result["origin_capture"]["returncode"])
-        self.assertEqual({"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_PEER_EXITED"},
+        self.assertEqual({"status": "ORIGIN_PEER_EXITED", "reason": "BRIDGE_EOF"},
                          result["origin_coordinator"])
         gateway = self.gateways[0]
         self.assertEqual(result["original_resident_pid"], gateway.old_peer)

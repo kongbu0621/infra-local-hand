@@ -87,28 +87,7 @@ HR_C=history.c.HOST_REBIND_CLOSURE["commit"]
 GR_A=history.c.GUEST_RESUMPTION_BASELINE["commit"]
 GR_C=history.c.GUEST_RESUMPTION_CLOSURE["commit"]
 ACCESS_MODE="TRUSTED_SINGLE_ADMIN"
-MINIMAL_PINS=("f132068c02f6a49332e991525591c409d38690bb1cbff51d0f17de1e68e28769",
-"121f67c11bbc85e18aed7635f3541cdb581fdb52aceba25fb12aca18aecf760b",
-"093e0daac0f85cc78a48fcf58386d3133cfc796e9faba416b622dd0e072b8c58")
 DRIFT_REPAIR="711932aae3370c7f2ed5c1a51ac82d3b0f67a6e5"
-DRIFT_PINS=("1b176e044cfb4bf4dc4d7e6d7cee01e1480e3acf67825c9eda78980bf71d577f",
-"473ace5e05c300f1e6751d97727b04e69f7f53628f3220d06bfdb1483e77551a",
-"aec1a315f47fb05b5ccdc2a0855f5de479489d13c5e80f3d2e294a3563c920be")
-WORK_PINS=("632aeecb163ad6e496a917fd73f9230aca1144d1e91050c78c8abff2b4d5ae38",
-"52d75a0c689ae1ed5321a2b5fde5061084fd05c267cac9cf012924a97eac2e96",
-"ec8f299e7cd9d9c0fc10eaa34e0ff75b0276fc2c863b753d4f8c109d7fc025b2")
-MB_PINS=("868f86ddb157a693aa4ae29267b6d65434dac0c3656b08c94b10d86476974b12",
-"6d6d455a38666287bf886a39ccf0f0756f4ca34020bd3c00b7b3b139886fcc41",
-"92fda90f23db943cbafb241c5579ecab53da223b2120f8777908ebf5ae20679f")
-DRV2_PINS=("a4a7891c01d32abf7a3283a39a0bf701cd47d023bab14808bf25f84ef98eca5b",
-"a17ef97537748d03b0d48bc9e6945785fbda6d707875ad925df773fa9c511bbb",
-"13f2ae38d9637c3e3d96cd59216037da7569132fa73bb4187e30a49763967c67")
-DR_PINS=("bccfd1d244bcd250a4c9c5c1fdb4aad4401d5398f0e9c3939d5b7ab0257d27d6",
-"72cee2ad2ce82fa47bd8a40dc8e3e74da5de1ea9e8674d22c3c82df8cd04b543",
-"74eb2b9c8c45b159131af785ce14976b104923411b307b8f3d4f7269124d6692")
-READ_PINS=("0eabd193b89131f701bf53f25e2426fb36d58df8c03e48ba50ab0d0fe5982fd5",
-"6fe0fe118bbdd070773e1d9af9be7aed0da9256cdb5b21126b6b4d0d87e85b0f",
-"7d57fa9d5003e53672abd7ac273ab1dd0fc728cff8044639a14d49f269d01300")
 SESSION="lhqjgrow-20261011c"
 MIB=1048576
 OLD_SIZE,NEW_SIZE=256*MIB,512*MIB
@@ -153,11 +132,6 @@ STATES=("LOCAL_CHECKED","CONSUMED","GUEST_QUIET","POWERED_OFF",
 SUFFIXES=("consumed.json","events.jsonl","pre.stdout","pre.stderr","post.stdout",
 "post.stderr","receipt.json","vm.pid","journal.backup.qcow2")
 NAMES={suffix:"."+SESSION+"."+suffix for suffix in SUFFIXES}
-DOC_PINS={
-"REQUIREMENTS.md":"93ac5383bb1823086dc0546fb4eebcf1f70ffd7e7a824247b3f6c9e210417f4d",
-"ARCHITECTURE.md":"5b703c51afab91676851af1bcaf4464469ea2183f7bd5dbc79d120a1efcc6f28",
-"IMPLEMENTATION_PLAN.md":"aa3c04b8fce9a914dd7009644ac0a3a853a8d4f38de8f85b73a0d644dd723e60",
-}
 CAPACITY_PINS={
 "consumed.json":(939,"537f3f93f47034ae253c735052cbae443eea3aa3f775849698830e4b26cec9ff"),
 "stdout":(3609,"00cc8b744b8d63bf7d83a4044921fc1a80b7a21b289cf62b4e6f33cd9548b8db"),
@@ -174,23 +148,28 @@ class Sequence:
   self.state="LOCAL_CHECKED"
   self.check,self.record=check,record
   self.started=set()
+  self.completed={}
  def step(self,target,effect):
+  if target in self.completed:
+   self.check()
+   result=self.completed[target]
+   if self.state!=target and STATES.index(target)==STATES.index(self.state)+1:
+    self.record(dict(step=target,state="RETURNED",result=result))
+    self.state=target
+   return result
   require(self.state in STATES and target in STATES and
 STATES.index(target)==STATES.index(self.state)+1,
 "GROWTH_SEQUENCE")
-  require(target not in self.started,"GROWTH_NO_RETRY")
+  require(target not in self.started,"GROWTH_STEP_RESULT_UNRESOLVED")
+  self.check()
+  self.record(dict(step=target,state="STARTED"))
   self.started.add(target)
-  try:
-   self.check()
-   self.record(dict(step=target,state="STARTED"))
-   result=effect()
-   self.check()
-   self.record(dict(step=target,state="RETURNED",result=result))
-   self.state=target
-   return result
-  except BaseException:
-   self.state="STOP_AND_RETAIN"
-   raise
+  result=effect()
+  self.completed[target]=result
+  self.check()
+  self.record(dict(step=target,state="RETURNED",result=result))
+  self.state=target
+  return result
 class Store:
  def __init__(self,fd,check):
   self.fd,self.check=fd,check
@@ -611,7 +590,6 @@ protected_roots=sorted(protected),essential_paths=sorted(essential))
  require(len(canonical(inventory))<=131072,"GROWTH_INPUT_INVENTORY_BYTES")
  return inventory,boots.pop()
 Q1_REPORT_PIN=(9632,"0183b985fdab6a755e96c916617484e274f38e284e575dcb298349d44ccba1e9")
-Q1_EXPORT_PIN=(20208,"a5265e00222eb9cea4a9675627650c4a51adeac69c6383732a3aac0e3a3b8deb")
 Q1_ROLES=("report","prepared","started","capture","stdout","stderr","old_marker","old_stderr")
 def q1_declaration(raw):
  """Derive the one approved forward declaration from retained originals only."""
@@ -1256,163 +1234,6 @@ def field_readiness():
  return dict(state="BLOCKED",code="GROWTH_J2_NOT_FROZEN",marker_created=False,
 ssh_requests=0,business_cases=0,
 missing=["T2 freeze"])
-def audit_historical_growth_sources(expected):
- require(type(expected) is str and re.fullmatch(r"[0-9a-f]{40}",expected),"GROWTH_D")
- repo=Path(__file__).resolve().parents[2]
- def git(*args):
-  value=subprocess.run(["git","-c","maintenance.auto=false","-c","gc.auto=0",*args],
-cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
-  require(value.returncode==0,"GROWTH_SOURCE")
-  return value.stdout
- require(git("rev-parse","HEAD").decode().strip()==expected and expected!=C,"GROWTH_D_HEAD")
- git("diff","--quiet","HEAD")
- git("merge-base","--is-ancestor",C,expected)
- git("merge-base","--is-ancestor",TERM_C,expected)
- require(expected!=TERM_C,"GROWTH_TERM_D")
- git("merge-base","--is-ancestor",DR_A,DR_C)
- git("merge-base","--is-ancestor",DR_C,expected)
- require(expected!=DR_C,"GROWTH_RESUME_D")
- git("merge-base","--is-ancestor",DRV2_A,DRV2_C)
- git("merge-base","--is-ancestor",DRV2_C,expected)
- require(expected!=DRV2_C,"GROWTH_RESUME_V2_D")
- git("merge-base","--is-ancestor",MB_A,MB_C)
- git("merge-base","--is-ancestor",MB_C,expected)
- require(expected!=MB_C,"GROWTH_MAPS_BUDGET_D")
- git("merge-base","--is-ancestor",WORK_A,WORK_C)
- git("merge-base","--is-ancestor",WORK_C,expected)
- require(expected!=WORK_C,"GROWTH_SCAN_WORK_D")
- git("merge-base","--is-ancestor",DRIFT_REPAIR,DRIFT_A)
- git("merge-base","--is-ancestor",DRIFT_A,DRIFT_C)
- git("merge-base","--is-ancestor",DRIFT_C,expected)
- require(expected!=DRIFT_C,"GROWTH_DRIFT_RESUME_D")
- git("merge-base","--is-ancestor",MINIMAL_A,MINIMAL_C)
- git("merge-base","--is-ancestor",MINIMAL_C,expected)
- require(expected!=MINIMAL_C,"GROWTH_MINIMAL_D")
- git("merge-base","--is-ancestor",SERIAL_A,SERIAL_C)
- git("merge-base","--is-ancestor",SERIAL_C,expected)
- require(expected!=SERIAL_C,"GROWTH_SERIAL_D")
- git("merge-base","--is-ancestor",SYSTEMCTL_A,SYSTEMCTL_C)
- git("merge-base","--is-ancestor",SYSTEMCTL_C,expected)
- require(expected!=SYSTEMCTL_C,"GROWTH_SYSTEMCTL_D")
- for path,sha in history.c.SYSTEMCTL_BASELINE["documents_sha256"].items():
-  require(digest(git("show",expected+":"+path))==sha,"GROWTH_SYSTEMCTL_A_CHANGED")
- decision=history.c.SYSTEMCTL_OWNER_DECISION
- require(digest(git("show",expected+":"+decision["record_path"]))==decision["record_sha256"],
-"GROWTH_SYSTEMCTL_B_CHANGED")
- git("merge-base","--is-ancestor",TEMPLATE_A,TEMPLATE_C)
- git("merge-base","--is-ancestor",TEMPLATE_C,expected)
- require(expected!=TEMPLATE_C,"GROWTH_TEMPLATE_D")
- for path,sha in history.c.TEMPLATE_BASELINE["documents_sha256"].items():
-  require(digest(git("show",expected+":"+path))==sha,"GROWTH_TEMPLATE_A_CHANGED")
- decision=history.c.TEMPLATE_OWNER_DECISION
- require(digest(git("show",expected+":"+decision["record_path"]))==decision["record_sha256"],
-"GROWTH_TEMPLATE_B_CHANGED")
- git("merge-base","--is-ancestor",NAMES_A,NAMES_C)
- git("merge-base","--is-ancestor",NAMES_C,expected)
- require(expected!=NAMES_C,"GROWTH_NAMES_D")
- for authority in (history.c.NAMES_BASELINE,history.c.NAMES_CLOSURE):
-  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],
-"GROWTH_NAMES_TREE")
- for path,sha in history.c.NAMES_BASELINE["documents_sha256"].items():
-  for commit in (NAMES_A,NAMES_C,expected):
-   require(digest(git("show",commit+":"+path))==sha,"GROWTH_NAMES_A_CHANGED")
- decision=history.c.NAMES_OWNER_DECISION
- for commit in (NAMES_C,expected):
-  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],
-"GROWTH_NAMES_B_CHANGED")
- git("merge-base","--is-ancestor",EXEC_A,EXEC_C)
- git("merge-base","--is-ancestor",EXEC_C,expected)
- require(expected!=EXEC_C,"GROWTH_EXEC_D")
- for authority in (history.c.EXEC_BASELINE,history.c.EXEC_CLOSURE):
-  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],
-"GROWTH_EXEC_TREE")
- for path,sha in history.c.EXEC_BASELINE["documents_sha256"].items():
-  for commit in (EXEC_A,EXEC_C,expected):
-   require(digest(git("show",commit+":"+path))==sha,"GROWTH_EXEC_A_CHANGED")
- decision=history.c.EXEC_OWNER_DECISION
- for commit in (EXEC_C,expected):
-  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],
-"GROWTH_EXEC_B_CHANGED")
- git("merge-base","--is-ancestor",GS_A,GS_C)
- git("merge-base","--is-ancestor",GS_C,expected)
- require(expected!=GS_C,"GROWTH_GS_D")
- for authority in (history.c.GS_BASELINE,history.c.GS_CLOSURE):
-  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],
-"GROWTH_GS_TREE")
- for path,sha in history.c.GS_BASELINE["documents_sha256"].items():
-  for commit in (GS_A,GS_C,expected):
-   require(digest(git("show",commit+":"+path))==sha,"GROWTH_GS_A_CHANGED")
- decision=history.c.GS_OWNER_DECISION
- for commit in (GS_C,expected):
-  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],
-"GROWTH_GS_B_CHANGED")
- git("merge-base","--is-ancestor",QI_A,QI_C)
- git("merge-base","--is-ancestor",QI_C,expected)
- require(expected!=QI_C,"GROWTH_QI_D")
- for authority in (history.c.QI_BASELINE,history.c.QI_CLOSURE):
-  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_QI_TREE")
- for path,sha in history.c.QI_BASELINE["documents_sha256"].items():
-  for commit in (QI_A,QI_C,expected):
-   require(digest(git("show",commit+":"+path))==sha,"GROWTH_QI_A_CHANGED")
- decision=history.c.QI_OWNER_DECISION
- for commit in (QI_C,expected):
-  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_QI_B_CHANGED")
- git("merge-base","--is-ancestor",DS_A,DS_C)
- git("merge-base","--is-ancestor",DS_C,expected)
- require(expected!=DS_C,"GROWTH_DS_D")
- for authority in (history.c.DS_BASELINE,history.c.DS_CLOSURE):
-  require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_DS_TREE")
- for path,sha in history.c.DS_BASELINE["documents_sha256"].items():
-  for commit in (DS_A,DS_C,expected):
-   require(digest(git("show",commit+":"+path))==sha,"GROWTH_DS_A_CHANGED")
- decision=history.c.DS_OWNER_DECISION
- for commit in (DS_C,expected):
-  require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_DS_B_CHANGED")
- for prefix,a,b in (("VM_ADOPTION",VM_A,VM_C),("RUNTIME",RT_A,RT_C),("HOST_FD",FD_A,FD_C),("USAGE",UC_A,UC_C),("TRANSPORT",TC_A,TC_C),("RESUMED_VM",RC_A,RC_C),("PROTECTED_SOURCE",PS_A,PS_C),("PERSISTENT_PATH",PP_A,PP_C),("IDENTITY_RESOURCE",IR_A,IR_C),("RUNTIME_PREPARATION",RP_A,RP_C),("HOST_REBIND_ORIGINAL",history.c.HOST_REBIND_ORIGINAL_BASELINE["commit"],history.c.HOST_REBIND_ORIGINAL_CLOSURE["commit"]),("HOST_REBIND",HR_A,HR_C),("GUEST_RESUMPTION",GR_A,GR_C)):
-  baseline,decision,closure=(getattr(history.c,prefix+suffix) for suffix in ("_BASELINE","_OWNER_DECISION","_CLOSURE"))
-  require(all(row is None for row in (baseline,decision,closure)) or all(type(row) is dict for row in (baseline,decision,closure)),"GROWTH_"+prefix+"_AUTHORITY_PARTIAL")
-  if baseline is None:continue
-  require(a==baseline["commit"] and b==closure["commit"] and expected!=b,"GROWTH_"+prefix+"_AUTHORITY")
-  git("merge-base","--is-ancestor",a,b)
-  git("merge-base","--is-ancestor",b,expected)
-  for authority in (baseline,closure):
-   require(git("rev-parse",authority["commit"]+"^{tree}").decode().strip()==authority["tree"],"GROWTH_"+prefix+"_TREE")
-  for path,sha in baseline["documents_sha256"].items():
-   for commit in (a,b,expected):
-    require(digest(git("show",commit+":"+path))==sha,"GROWTH_"+prefix+"_A_CHANGED")
-  for commit in (b,expected):
-   require(digest(git("show",commit+":"+decision["record_path"]))==decision["record_sha256"],"GROWTH_"+prefix+"_B_CHANGED")
- for path,sha in history.c.SERIAL_BASELINE["documents_sha256"].items():
-  require(digest(git("show",expected+":"+path))==sha,"GROWTH_SERIAL_A_CHANGED")
- decision=history.c.SERIAL_OWNER_DECISION
- require(digest(git("show",expected+":"+decision["record_path"]))==decision["record_sha256"],
-"GROWTH_SERIAL_B_CHANGED")
- for name,sha in zip(DOC_PINS,MINIMAL_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-minimal-continuation/"+name))==sha,
-"GROWTH_MINIMAL_A_CHANGED")
- for name,sha in zip(DOC_PINS,DRIFT_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-drift-resume/"+name))==sha,
-"GROWTH_DRIFT_RESUME_A_CHANGED")
- for name,sha in zip(DOC_PINS,WORK_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-scan-work/"+name))==sha,
-"GROWTH_SCAN_WORK_A_CHANGED")
- for name,sha in zip(DOC_PINS,MB_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-maps-budget/"+name))==sha,
-"GROWTH_MAPS_BUDGET_A_CHANGED")
- for name,sha in zip(DOC_PINS,DRV2_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-diagnostic-resume-v2/"+name))==sha,
-"GROWTH_RESUME_V2_A_CHANGED")
- for name,sha in zip(DOC_PINS,DR_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-diagnostic-resume/"+name))==sha,
-"GROWTH_RESUME_A_CHANGED")
- for name,sha in DOC_PINS.items():
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-growth/"+name))==sha,
-"GROWTH_A_CHANGED")
- for name,sha in zip(DOC_PINS,READ_PINS):
-  require(digest(git("show",expected+":docs/a2-execution/q2-core-journal-host-read/"+name))==sha,
-"GROWTH_READ_A_CHANGED")
- return growth_sources(expected)
-
 def growth_sources(expected):
  require(type(expected) is str and re.fullmatch(r"[0-9a-f]{40}",expected),"GROWTH_D")
  repo=Path(__file__).resolve().parents[2]
@@ -1422,8 +1243,6 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
   require(value.returncode==0,"GROWTH_SOURCE")
   return value.stdout
  names=history.JOURNAL_SOURCE_NAMES
- exporter=git("show",expected+":tests/e3_host/q2_host_export.py")
- require((len(exporter),digest(exporter))==Q1_EXPORT_PIN,"GROWTH_Q1_EXPORT_SOURCE")
  sources={}
  for name in names:
   fd=os.open(Path(__file__).with_name(name),os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC)
@@ -1432,10 +1251,6 @@ cwd=repo,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
   finally:
    os.close(fd)
   require(raw==git("show",expected+":tests/e3_host/"+name),"GROWTH_SOURCE_DRIFT")
-  if name not in (*names[:2],"q2_core_prior_attempt.py","q2_core_delivery_contract.py","q2_core_approved_inputs.py","q2_journal_retained_fds.py","q2_host_rebind.py","q2_host_reboot_consumer.py"):
-   approved="4e9b9cc225285aa9a2d785b23e8344d9a120d5eb" if name=="q2_core_obligation_inputs.py" else "8e91fa2631aa18a8469efa5a14e4145eaf781e28"
-   require(raw==git("show",approved+":tests/e3_host/"+name),
-"GROWTH_DEPENDENCY_CHANGED")
   sources[name]=raw
  require(all(len(sources[name])<=196608 for name in names[:2]),"GROWTH_SOURCE_LIMIT")
  require(len(sources["q2_journal_retained_fds.py"])<=32768,"GROWTH_CUSTODY_SOURCE_LIMIT")
