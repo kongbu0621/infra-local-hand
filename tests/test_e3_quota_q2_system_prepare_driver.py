@@ -42,6 +42,24 @@ def translate(plan, receipt):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Q2 Linux system-manager preparation")
 class SystemPreparationTests(unittest.TestCase):
+    def test_historical_projects_are_charged_without_consuming_task_domains(self):
+        from local_hand_jobs import quota_grant as grants
+        plan, receipt = system_fixture()
+        old = [dict(project=0, hard=0, ihard=0)] + [
+            dict(project=900000 + i, hard=1024, ihard=16) for i in range(160)]
+        receipt["facts"]["capacity_observed"]["quota_inventory"] = old
+        facts, _, _ = translate(plan, receipt)
+        capacity = grants.decode_capacity(d.encoded(facts["capacity"]))
+        self.assertEqual(7, len(capacity["domains"]))
+        self.assertEqual((124 + 160) * 1024**2, capacity["retained_bytes"])
+        self.assertEqual(1000 + 160 * 16, capacity["retained_inodes"])
+        capacity["ceiling_bytes"] = capacity["retained_bytes"]
+        with self.assertRaisesRegex(ValueError, "GLOBAL_CAPACITY"):
+            grants.decode_capacity(d.encoded(capacity))
+        old[-1]["project"] = receipt["facts"]["roots"][0]["project_id"]
+        with self.assertRaisesRegex(ValueError, "DRIVER_RETAINED_DOMAIN_ALIAS"):
+            translate(plan, receipt)
+
     def test_explicit_versions_are_paired_and_legacy_keeps_shape(self):
         plan, receipt = fixture()
         facts, _, manifest = translate(plan, receipt)

@@ -177,7 +177,10 @@ class Quota:
 
     def inventory(self, guard):
         rows = []; start = 0
-        for _ in range(128):
+        # Retained task projects are never deleted merely to make admission
+        # pass. Allow a bounded inventory large enough for those retained
+        # records; the caller's deadline still bounds every syscall.
+        for _ in range(4096):
             guard(); result = self.Block()
             try: self.call(0x800009, start, result)
             except OSError as error:
