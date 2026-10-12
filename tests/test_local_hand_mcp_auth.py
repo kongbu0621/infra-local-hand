@@ -88,6 +88,25 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("project-owner", self.issuer.verifier.principal(first).principal_id)
         self.assertEqual(1, len(self.issuer.calls))
 
+    async def test_encryption_keys_do_not_block_or_authorize_signatures(self):
+        # Keycloak publishes RSA-OAEP encryption keys in the same JWKS as
+        # its RS256 signing key. Only the signing key can authorize a token.
+        for algorithm in ("RSA-OAEP", "RS256"):
+            for encryption_first in (True, False):
+                with self.subTest(algorithm=algorithm, encryption_first=encryption_first):
+                    issuer = SyntheticIssuer()
+                    encryption = {**issuer.other_key, "use": "enc", "alg": algorithm,
+                                  "key_ops": ["encrypt", "wrapKey"]}
+                    issuer.keys = ([encryption, issuer.key] if encryption_first
+                                   else [issuer.key, encryption])
+                    access = await issuer.verifier.authenticate(issuer.token())
+                    self.assertEqual("project-owner", issuer.verifier.principal(access).principal_id)
+                    self.assertIsNone(await issuer.verifier.verify_token(issuer.token(
+                        private=issuer.other_private, headers={"kid": "key-two"})))
+        issuer = SyntheticIssuer()
+        issuer.keys = [{**issuer.key, "use": "enc"}]
+        self.assertIsNone(await issuer.verifier.verify_token(issuer.token()))
+
     async def test_expired_in_process_authentication_cannot_authorize_a_new_call(self):
         access = await self.issuer.verifier.authenticate(self.issuer.token())
         with patch("local_hand_mcp.auth.time.time", return_value=access.expires_at + 1):
