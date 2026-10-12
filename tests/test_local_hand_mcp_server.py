@@ -20,7 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_hand_jobs.contract import JobError, Principal, TOOL_SCHEMAS, TOOL_SCHEMA_DIGEST, canonical_bytes
+from local_hand_jobs.contract import JobError, Principal, TOOL_SCHEMAS, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, canonical_bytes
 from local_hand_mcp.server import create_app, main
 from test_local_hand_mcp_auth import HAS_EXTRA, SyntheticIssuer
 
@@ -124,7 +124,10 @@ class ServerTests(unittest.TestCase):
         published = {tool["name"]: tool["inputSchema"] for tool in tools}
         self.assertNotIn("ledger.nas.roundtrip", json.dumps(published))
         self.assertEqual(hashlib.sha256(canonical_bytes(published)).hexdigest(), TOOL_SCHEMA_DIGEST)
-        self.assertTrue(all(tool["_meta"]["securitySchemes"][0]["type"] == "oauth2" for tool in tools))
+        for tool in tools:
+            expected = [{"type": "oauth2", "scopes": [TOOL_SCOPES[tool["name"]]]}]
+            self.assertEqual(expected, tool.get("securitySchemes"))
+            self.assertEqual(expected, tool["_meta"]["securitySchemes"])
         self.assertTrue(all(tool["outputSchema"]["type"] == "object" for tool in tools))
         response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
         self.assertEqual(200, response.status_code, response.text)
@@ -203,7 +206,21 @@ class ServerTests(unittest.TestCase):
         result = response.json()["result"]
         self.assertTrue(result["isError"])
         self.assertIn("mcp/www_authenticate", result["_meta"])
+        challenge = result["_meta"]["mcp/www_authenticate"][0]
+        self.assertIn('error="insufficient_scope"', challenge)
+        self.assertIn('scope="lh:inspect"', challenge)
+        self.assertNotIn('lh:submit', challenge)
+        self.assertNotIn('lh:cancel', challenge)
+        self.assertNotIn('lh:reconcile', challenge)
         self.assertEqual([], self.broker.calls)
+        upgraded = {**read_only, "Authorization": "Bearer " + self.issuer.token(
+            claims={"scope": "lh:read lh:inspect"})}
+        response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}}, headers=upgraded)
+        self.assertFalse(response.json()["result"]["isError"])
+        self.assertEqual(self.broker.output, response.json()["result"]["structuredContent"])
+        self.assertEqual(1, len(self.broker.calls))
+        self.assertEqual("project-owner", self.broker.calls[0][2].principal_id)
+        self.assertEqual({"lh:read", "lh:inspect"}, self.broker.calls[0][2].scopes)
         self.broker.revoked = True
         response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
         self.assertEqual("UNAUTHORIZED", response.json()["result"]["structuredContent"]["error"]["code"])

@@ -185,12 +185,15 @@ class AuthConfig:
             raise ValueError("Authorization configuration exceeds its size bound")
         return cls.from_dict(strict_loads(raw))
 
-    def challenge(self, *, insufficient_scope: bool = False) -> str:
+    def challenge(self, *, insufficient_scope: bool = False, required_scope: str | None = None) -> str:
+        if required_scope is not None and (not insufficient_scope or required_scope not in self.scopes):
+            raise ValueError("Scope challenges must name a configured scope")
         part = urlsplit(self.resource)
         metadata = f"{part.scheme}://{part.netloc}/.well-known/oauth-protected-resource{part.path}"
         error = "insufficient_scope" if insufficient_scope else "invalid_token"
         return (f'Bearer error="{error}", error_description="Authentication or authorization required", '
-                f'resource_metadata="{metadata}"')
+                f'resource_metadata="{metadata}"'
+                + (f', scope="{required_scope}"' if required_scope is not None else ""))
 
 
 class JWTVerifier:

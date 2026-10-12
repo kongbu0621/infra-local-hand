@@ -219,10 +219,11 @@ def create_app(broker, verifier):
     enabled_scopes = sorted({TOOL_SCOPES[name] for name in enabled_tools})
     output_validators = {name: Draft202012Validator(schema) for name, schema in _OUTPUT_SCHEMAS.items()}
 
-    def result_error(code: str, message: str):
+    def result_error(code: str, message: str, *, required_scope: str | None = None):
         metadata = None
         if code == "UNAUTHORIZED":
-            metadata = {"mcp/www_authenticate": [verifier.config.challenge(insufficient_scope=True)]}
+            metadata = {"mcp/www_authenticate": [verifier.config.challenge(
+                insufficient_scope=True, required_scope=required_scope)]}
         return types.CallToolResult(
             content=[types.TextContent(type="text", text=message)],
             structured_content={"error": {"code": code, "message": message}},
@@ -255,7 +256,8 @@ def create_app(broker, verifier):
             if params.name not in enabled_tools:
                 raise JobError("UNSUPPORTED", "This deployment does not offer this tool")
             if TOOL_SCOPES[params.name] not in principal.scopes:
-                raise JobError("UNAUTHORIZED", "The current token does not grant this tool")
+                return result_error("UNAUTHORIZED", "The current token does not grant this tool",
+                                    required_scope=TOOL_SCOPES[params.name])
             limits = getattr(getattr(broker, "policy", None), "limits", {})
             control_seconds = min(CONTROL_SECONDS, limits.get("control_response_seconds", CONTROL_SECONDS))
             try:
@@ -321,6 +323,21 @@ def create_app(broker, verifier):
 
     resource = urlsplit(config.resource)
     sdk = Server("infra-local-hand", version="0.2.0a1", on_list_tools=list_tools, on_call_tool=call_tool)
+
+    async def publish_oauth_schemes(context, call_next):
+        result = await call_next(context)
+        if context.method == "tools/list":
+            # SDK 2.2's version serializer strips unknown Tool fields, even
+            # declared subclass fields. Its public middleware hook runs after
+            # that serializer; mirror our trusted metadata into the OpenAI
+            # top-level extension here while retaining the compatibility copy.
+            return {**result, "tools": [
+                {**tool, "securitySchemes": tool["_meta"]["securitySchemes"]}
+                for tool in result["tools"]
+            ]}
+        return result
+
+    sdk.middleware.append(publish_oauth_schemes)
     app = sdk.streamable_http_app(
         streamable_http_path=resource.path or "/mcp", json_response=True, stateless_http=True,
         max_request_body_size=MAX_BODY, max_sessions=MAX_CONTROL_REQUESTS,
