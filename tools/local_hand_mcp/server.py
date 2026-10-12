@@ -46,8 +46,8 @@ _STATUS_SCHEMA = {
         "outcome": {"enum": ["PENDING", "SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN"]},
         "evidence": {"enum": ["STAGING", "SEALED", "DURABILITY_UNKNOWN", "FAILED"]},
         "phase": _STRING, "event_seq": _INTEGER, "observed_at": {"type": "number"},
-        "cancel_requested": {"type": "boolean"}, "business_started": {"type": "boolean"},
-        "helper_started": {"type": "boolean"}, "side_effects": _STRING,
+        "cancel_requested": {"type": "boolean"}, "business_started": {"type": ["boolean", "null"]},
+        "helper_started": {"type": ["boolean", "null"]}, "side_effects": _STRING,
         "gaps": {"type": "array", "items": _STRING}, "exit_proof": {"type": ["object", "null"]},
         "seal_refs": {"type": "array", "items": {"type": "object"}},
         "reconciliations": {"type": "array", "items": {"type": "object"}},
@@ -121,8 +121,13 @@ def validate_rpc(payload: dict) -> None:
         if "id" not in payload:
             raise JobError("UNSUPPORTED", "Tool calls require a transport request identity")
         params = payload.get("params")
-        if not isinstance(params, dict) or set(params) - {"name", "arguments"}:
+        if not isinstance(params, dict) or set(params) - {"name", "arguments", "_meta"}:
             raise JobError("UNSUPPORTED", "Invalid tool-call parameters")
+        # The official client includes _meta even when it is empty. It is
+        # transport metadata, never a replacement for authenticated identity
+        # or broker arguments; the raw document size/depth limits still apply.
+        if "_meta" in params and type(params["_meta"]) is not dict:
+            raise JobError("UNSUPPORTED", "Invalid tool-call metadata")
         if not isinstance(params.get("name"), str):
             raise JobError("UNSUPPORTED", "Missing tool name")
         validate_tool_args(params["name"], params.get("arguments", {}))
@@ -360,6 +365,9 @@ def create_app(broker, verifier):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the authenticated MCP adapter with the single Local Hand broker")
     parser.add_argument("--config", required=True, help="Private admitted broker policy")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--session", help="Administrator-created task session descriptor")
+    mode.add_argument("--read-only", action="store_true", help="Read retained results without an execution session")
     parser.add_argument("--auth-config", required=True, help="Private external-issuer admission")
     parser.add_argument("--port", required=True, type=int, help="Admitted loopback listener port")
     args = parser.parse_args(argv)
@@ -376,7 +384,8 @@ def main(argv=None) -> int:
         # The first implementation only listens on loopback, for an admitted
         # TLS gateway/Tunnel; it cannot accidentally publish an unauthenticated
         # host interface. External connection admission remains E4.
-        broker = create_broker(args.config, actual_entrypoint=__file__)
+        broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
+                               **({"read_only": True} if args.read_only else {}))
         maintenance = None
         failed = False
         try:

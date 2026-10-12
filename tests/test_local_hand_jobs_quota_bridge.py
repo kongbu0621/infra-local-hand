@@ -82,6 +82,18 @@ class ChannelTests(unittest.TestCase):
         with self.assertRaisesRegex(q.QuotaError,'NON_INTEGER_NUMBER'):b.receive()
         self.assertTrue(b.poisoned)
 
+    def test_task_snapshot_preserves_elapsed_result_over_real_channel(self):
+        a,b=self.pair(version=2)
+        value=dict(preparation={},observation=None,closed=None,
+            pending=dict(phase='preflight',proof=dict(state='EXITED',result=dict(
+                stages=[dict(name='interpreter',elapsed_seconds=0.0123456789,exit_code=0)]))),
+            task=dict(lifecycle='RUNNING',phase='PREFLIGHT',outcome='UNKNOWN',cancel_requested=False))
+        a.send(value)
+        self.assertEqual(value,b.receive())
+        value['task']['deadline_ns']=1.5
+        a.send(value)
+        with self.assertRaisesRegex(q.QuotaError,'NON_INTEGER_NUMBER'):b.receive()
+
     def test_wrong_actual_uid_poisoned_before_payload_use(self):
         a,b=self.pair(peer=(os.getpid(),os.getuid()+1,os.getgid()))
         a.send({'safe':True})

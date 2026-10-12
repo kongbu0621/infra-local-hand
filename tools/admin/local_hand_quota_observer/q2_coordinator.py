@@ -132,6 +132,7 @@ class Coordinator:
         self.management = m.Management(installation,envelope,record)
         self.end = min(envelope['deadline_ns'],budget.phase_deadline_ns(installation.active().as_dict()['budget']))
         self.management_closed = False
+        self.management_result = None
         self.used = False
         self.failed = False
         self.events = []
@@ -236,6 +237,7 @@ class Coordinator:
                             next_management=now+interval
                     if done is not None:
                         management=done
+                        self.management_result=done
                         self.management_closed=True
                         self._event('MANAGEMENT_CLOSED',management)
                 if boottime_ns() >= next_snapshot and (snapshot is None or snapshot['pending'] is None):

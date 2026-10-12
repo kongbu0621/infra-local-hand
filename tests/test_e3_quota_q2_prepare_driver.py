@@ -113,7 +113,9 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(0o755,files.dirs[handoff["template"]["launcher"]["declarations"]["path"]][1])
         self.assertEqual(plan["account"]["uid"],files.writes[prepared["policy"]["path"]][1]["owner"])
         chain=handoff["template"]["launcher"]["assembly"]
-        self.assertEqual(8,len(chain["installation"]["capacity"]["domains"]))
+        self.assertEqual(7,len(chain["installation"]["capacity"]["domains"]))
+        self.assertEqual(188*1024**2,chain["installation"]["capacity"]["retained_bytes"])
+        self.assertEqual(5096,chain["installation"]["capacity"]["retained_inodes"])
         self.assertTrue(invocation[3].endswith("/q2_prepare_run.py"))
         runtime=d.helper("q2_prepare_run"); supervisor=d.helper("q2_supervisor"); launcher=d.helper("q2_launcher")
         issued=runtime.issue(handoff,supervisor,dict(boot_id=handoff["boot_id"],boottime_ns=1000000001))

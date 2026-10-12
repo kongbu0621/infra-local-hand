@@ -193,6 +193,21 @@ class OrdinaryAccount(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform.startswith("linux"),"Linux no-follow and process-group primitives")
 class RealFileAndCapture(unittest.TestCase):
+    def test_retained_inventory_over_128_records_keeps_observation_deadline(self):
+        quota = m.Quota("/synthetic/device")
+        def observe(command, start, result):
+            self.assertEqual(0x800009, command)
+            if start == 161:
+                raise OSError(errno.ENOENT, "end")
+            result.project = start
+        quota.call = observe
+        guard = mock.Mock()
+        self.assertEqual(list(range(161)), [r["project"] for r in quota.inventory(guard)])
+        self.assertEqual(162, guard.call_count)
+        guard.side_effect = TimeoutError("observation deadline")
+        with self.assertRaises(TimeoutError):
+            quota.inventory(guard)
+
     def test_later_project_collision_is_rejected_before_any_quota_mutation(self):
         b=m.LinuxBackend(fixture());b.command=mock.Mock()
         with mock.patch.object(m,"Quota") as quota,mock.patch.object(m,"create_directory") as create:

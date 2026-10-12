@@ -582,7 +582,7 @@ def _admitted_evidence_store(policy):
     return Path(binding["path"]), {key: binding[key] for key in ("device", "inode", "uid")}
 
 
-def create_broker(policy_path, *, actual_entrypoint, initialize=False):
+def create_broker(policy_path, *, actual_entrypoint, initialize=False, session_path=None, read_only=False):
     """Both service entrypoints use this production-only composition root.
 
     Missing supervision, private admission or provenance is a hard failure.
@@ -592,24 +592,45 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False):
         raise JobError("UNSUPPORTED", "The restricted job service requires Linux supervision")
     from .deployment import verify_release
     from .policy import Policy
-    from .runner import SystemdManager
+    from .task_session import TaskSession
     policy = Policy.from_file(policy_path)
     verify_release(expected_source_commit=policy.source_commit,
                    expected_payload_digest=policy.installed_payload_digest,
                    expected_entrypoint=policy.execution_entrypoint,
                    actual_entrypoint=actual_entrypoint)
-    manager = SystemdManager(policy.config.get("process_manager"))
-    support = manager.support()
-    if support.get("supported") is not True:
-        raise JobError("UNSUPPORTED", "The admitted independent process supervisor is unavailable")
-    return _compose_broker(policy, manager, initialize=initialize)
+    if read_only:
+        if initialize or session_path is not None:
+            raise JobError("UNSUPPORTED", "Read-only service cannot initialize or execute a task session")
+        return _compose_broker(policy, None, quota_required=True, read_only=True)
+    if session_path is None:
+        raise JobError("UNSUPPORTED", "An administrator-created task session is required (--session)")
+    session = broker = None
+    try:
+        session = TaskSession.open(session_path, policy)
+        support = session.manager.support()
+        if support.get("supported") is not True:
+            raise JobError("UNSUPPORTED", "The admitted independent process supervisor is unavailable")
+        broker = _compose_broker(policy, session.manager, initialize=initialize, quota_required=True)
+        session.attach(broker)
+        return broker
+    except BaseException as error:
+        if broker is not None:
+            close_service(broker, None, failed=True)
+        if session is not None:
+            try:
+                session.close()
+            except BaseException:
+                pass  # Preserve the admission failure after attempting cleanup.
+        if isinstance(error, (OSError, ValueError)):
+            raise JobError("IO_UNCERTAIN", "Task session admission could not be verified") from error
+        raise
 
 
-def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
+def _compose_broker(policy, manager, *, initialize=False, quota_required=False, read_only=False):
     """Shared assembly after trusted caller's release and supervisor admission.
 
-    This private function never supplies a production qualification override.
-    The test-only caller verifies its own finite fixture before reaching here.
+    Production callers authenticate an inherited task session before assembly.
+    Tests may supply their own finite process-manager fixture.
     """
     from .broker import Broker
     from .registry import Registry
@@ -622,7 +643,10 @@ def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
     configuration = getattr(policy, "config", {}).get("process_manager", {})
     expected_manager = bindings.from_configuration(configuration, authority_id=policy.authority_id)
     actual_configuration = getattr(manager, "configuration", {})
-    if isinstance(actual_configuration, Mapping):
+    if read_only:
+        if manager is not None or initialize:
+            raise JobError("UNSUPPORTED", "Read-only service has no execution manager")
+    elif isinstance(actual_configuration, Mapping):
         bindings.check(expected_manager, bindings.from_configuration(actual_configuration))
     elif expected_manager is not None:
         raise JobError("IO_UNCERTAIN", "Admitted system manager configuration is unavailable")
@@ -663,14 +687,16 @@ def _compose_broker(policy, manager, *, initialize=False, quota_required=False):
                     os.close(directory)
             except OSError as exc:
                 raise JobError("IO_UNCERTAIN", "Ledger bootstrap is already recorded or its durability is unresolved") from exc
+        options = {"read_only": True} if read_only else {}
         state = StateStore(Path(policy.broker_root) / "jobs.sqlite", policy.authority_id,
-                           ledger_id, initialize=initialize)
-        with state.transaction() as tx:
-            units = _known_manager_units(state.all(tx), manager_binding=expected_manager)
-        inventory = manager.scan(units)
-        if inventory.get("status") != "READY":
-            raise JobError("IO_UNCERTAIN", "Supervisor inventory has orphaned or unresolved executions")
-        broker = Broker(state, policy, Registry(), Runner(manager), quota_required=quota_required)
+                           ledger_id, initialize=initialize, **options)
+        if not read_only:
+            with state.transaction() as tx:
+                units = _known_manager_units(state.all(tx), manager_binding=expected_manager)
+            inventory = manager.scan(units)
+            if inventory.get("status") != "READY":
+                raise JobError("IO_UNCERTAIN", "Supervisor inventory has orphaned or unresolved executions")
+        broker = Broker(state, policy, Registry(), None if read_only else Runner(manager), quota_required=quota_required)
         def no_direct_seal(_):
             raise JobError("UNSUPPORTED", "Evidence publication must use a registered supervised phase")
         def authorize_evidence(principal, operation_id):
@@ -731,11 +757,15 @@ def broker_main(argv=None):
     parser = argparse.ArgumentParser(description="Run the single admitted Local Hand broker")
     parser.add_argument("--policy", required=True, type=Path)
     parser.add_argument("--initialize", action="store_true", help="Explicitly initialize an absent first ledger")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--session", type=Path, help="Administrator-created task session descriptor")
+    mode.add_argument("--read-only", action="store_true", help="Read retained results without an execution session")
     args = parser.parse_args(argv)
     broker = server = None
     failed = False
     try:
-        broker = create_broker(args.policy, actual_entrypoint=__file__, initialize=args.initialize)
+        broker = create_broker(args.policy, actual_entrypoint=__file__, initialize=args.initialize,
+                               session_path=args.session, **({"read_only": True} if args.read_only else {}))
         peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
                  for uid, identity in broker.policy.local_peers.items()}
         server = MaintenanceServer(broker, Path(broker.policy.broker_root) / "maintenance.sock", peers)

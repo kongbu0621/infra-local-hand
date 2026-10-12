@@ -41,7 +41,10 @@ class StateStore:
     All externally visible identities and events are append-only.
     """
 
-    def __init__(self, path, authority_id, ledger_id, *, initialize=False):
+    def __init__(self, path, authority_id, ledger_id, *, initialize=False, read_only=False):
+        if type(read_only) is not bool or read_only and initialize:
+            raise ValueError("Read-only observation cannot initialize a ledger")
+        self.read_only = read_only
         self.path = Path(path).absolute()
         self.authority_id, self.ledger_id = authority_id, ledger_id
         self.lock = threading.RLock()
@@ -72,14 +75,17 @@ class StateStore:
             # initialize already created its entry explicitly. Even a removal
             # between the identity check and SQLite open must not create a
             # replacement ledger during ordinary recovery.
-            self._db = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True,
+            self._db = sqlite3.connect(self.path.as_uri() + ("?mode=ro" if read_only else "?mode=rw"), uri=True,
                                        timeout=0.5, isolation_level=None, check_same_thread=False)
             identity_after = self.path.lstat()
             if (identity_before.st_ino, identity_before.st_dev) != (identity_after.st_ino, identity_after.st_dev):
                 raise JobError("IO_UNCERTAIN", "Ledger entry changed while opening")
             self._db.row_factory = sqlite3.Row
-            self._db.execute("PRAGMA journal_mode=WAL")
-            self._db.execute("PRAGMA synchronous=FULL")
+            if read_only:
+                self._db.execute("PRAGMA query_only=ON")
+            else:
+                self._db.execute("PRAGMA journal_mode=WAL")
+                self._db.execute("PRAGMA synchronous=FULL")
             self._db.execute("PRAGMA foreign_keys=ON")
             if initialize:
                 self._create()
@@ -143,7 +149,7 @@ class StateStore:
             if not self.healthy:
                 raise JobError("IO_UNCERTAIN", "Ledger durability is unresolved")
             try:
-                self._db.execute("BEGIN IMMEDIATE")
+                self._db.execute("BEGIN" if self.read_only else "BEGIN IMMEDIATE")
                 yield self._db
                 self._db.execute("COMMIT")
             except sqlite3.Error as exc:

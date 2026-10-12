@@ -228,13 +228,22 @@ def facts_from_observed(plan, observed, children, authority):
     capobs = observed["mounts"]["quota"]
     domains = [dict(filesystem_uuid=root["filesystem_uuid"], project_id=root["project_id"],
         hard_bytes=root["hard_bytes"], hard_inodes=root["inode_hard_limit"]) for root in roots]
-    domains.extend(dict(filesystem_uuid=plan["mounts"]["quota"]["uuid"], project_id=old["project"],
-        hard_bytes=old["hard"]*1024, hard_inodes=old["ihard"])
-        for old in observed["capacity_observed"]["quota_inventory"] if old["hard"] > 0)
+    # Historical reservations still count in full. They are retained capacity,
+    # not domains this task can receive grants for; their count must not consume
+    # the current task's domain allowance.
+    retained = observed["capacity_observed"]["quota_inventory"]
+    seen = {root["project_id"] for root in roots}
+    for old in retained:
+        require(type(old["project"]) is int and 0 <= old["project"] < 2**32
+                and old["project"] not in seen, "DRIVER_RETAINED_DOMAIN_ALIAS")
+        seen.add(old["project"])
+        require(all(type(old[key]) is int and old[key] >= 0 for key in ("hard", "ihard")),
+                "DRIVER_RETAINED_DOMAIN_LIMIT")
     capacity = dict(schema="local-hand-quota-capacity/v1", boot_id=observed["host"]["boot_id"], epoch=identity["epoch"],
         authority_digest=identity["authority_digest"], domains=domains, ceiling_bytes=capobs["total_bytes"],
-        ceiling_inodes=capobs["total_inodes"], retained_bytes=capobs["total_bytes"]-capobs["available_bytes"],
-        retained_inodes=capobs["total_inodes"]-capobs["free_inodes"],
+        ceiling_inodes=capobs["total_inodes"], retained_bytes=capobs["total_bytes"]-capobs["available_bytes"]
+            + sum(old["hard"] * 1024 for old in retained),
+        retained_inodes=capobs["total_inodes"]-capobs["free_inodes"] + sum(old["ihard"] for old in retained),
         management=settings["capacity_management"])
     controls = {}
     for key, parentrole in (("target", "controller"), ("supervisor", "supervisor")):

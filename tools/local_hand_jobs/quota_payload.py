@@ -137,7 +137,8 @@ def _ordinary(proof):
 
 def encode_bridge_value(value):
     """V2 only: leave authority messages strict, wrap the original proof."""
-    if type(value) is not dict or set(value) != SNAPSHOT_KEYS or value["pending"] is None:
+    if (type(value) is not dict or set(value) not in (SNAPSHOT_KEYS, SNAPSHOT_KEYS | {"task"})
+            or value["pending"] is None):
         return value
     pending = value["pending"]
     if type(pending) is not dict or set(pending) != {"phase", "proof"}:
@@ -148,7 +149,8 @@ def encode_bridge_value(value):
 
 
 def decode_bridge_value(value):
-    if type(value) is not dict or set(value) != SNAPSHOT_KEYS or value["pending"] is None:
+    if (type(value) is not dict or set(value) not in (SNAPSHOT_KEYS, SNAPSHOT_KEYS | {"task"})
+            or value["pending"] is None):
         return value
     pending = value["pending"]
     if type(pending) is not dict or set(pending) != {"phase", "proof"}:

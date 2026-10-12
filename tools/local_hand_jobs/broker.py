@@ -92,6 +92,8 @@ class Broker:
             getattr(policy, "config", {}).get("process_manager", {}),
             authority_id=getattr(policy, "authority_id", None))
         self.runner, self.evidence = runner, evidence
+        self.task_session = None
+        self.read_only = getattr(state, "read_only", False) is True
         if type(quota_required) is not bool:
             raise ValueError("quota_required must be an installation boolean")
         self.quota_required = quota_required
@@ -206,6 +208,9 @@ class Broker:
         return result
 
     def call(self, tool_name, arguments, principal):
+        if self.read_only and tool_name not in (
+                "lh_capabilities", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"):
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         scope = SCOPES.get(tool_name)
         if scope is None:
             raise JobError("UNSUPPORTED", "Unknown tool")
@@ -258,6 +263,8 @@ class Broker:
             recent.append(now)
 
     def submit(self, request, principal):
+        if self.read_only:
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         self._authorize(principal, "lh:submit")
         request = validate_submit(request)
         identity, digest = request["operation_id"], request["request_digest"]
@@ -271,6 +278,8 @@ class Broker:
                     raise JobError("CONFLICT", "The operation ID already binds different content")
                 return self._view(old)
             self._authorize(principal, "lh:submit", request=request, tx=tx)
+            if self.task_session is not None:
+                self.task_session.admit(request, principal)
             if request["expires_at"] <= time.time():
                 raise JobError("STALE_DEPLOYMENT", "First admission deadline has expired")
             if request["expected"] != thaw(self.policy.expected(request["profile_ref"])):
@@ -337,6 +346,8 @@ class Broker:
                                tree_exited=proof.get("tree_exited"), effects_checked=proof.get("effects_checked"))
 
     def cancel(self, operation_id, expected_request_digest, target, principal):
+        if self.read_only:
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         namespace = target["kind"]
         identity = operation_id if namespace == "job" else target["reconcile_id"]
         with self.fence, self.state.transaction() as tx:
@@ -360,6 +371,8 @@ class Broker:
         return result
 
     def reconcile(self, operation_id, expected_request_digest, reconcile_id, principal):
+        if self.read_only:
+            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         with self.fence, self.state.transaction() as tx:
             parent = self._row(tx, "job", operation_id, principal, "lh:reconcile")
             if parent["digest"] != expected_request_digest:
@@ -374,6 +387,8 @@ class Broker:
             # A new observation consumes capacity and may launch a helper. Its
             # current profile/input grant must hold before durable admission;
             # retrieving an existing observation retains the original identity.
+            if self.task_session is not None:
+                raise JobError("UNSUPPORTED", "This task session supports same-task recovery; a new reconciliation needs its own session")
             self._authorize(principal, "lh:reconcile", request=parent["request"], tx=tx)
             if parent["record"]["lifecycle"] in ("ACCEPTED", "RUNNING"):
                 raise JobError("RESOURCE_BUSY", "Business execution has not become quiescent")
@@ -740,13 +755,18 @@ class Broker:
             q.require(row["record"]["phase"].lower() == phase, "PHASE_CHANGED")
             self.state.update(tx, namespace, identity, "QUOTA_PHASE_CLOSED", {
                 "quota_event_phase": phase, "quota_closed": dict(row["record"].get("quota_closed", {}),
-                    **{phase: {"phase": phase, "fence": value}})})
+                    **{phase: {"phase": phase, "fence": value}}),
+                "gaps": [gap for gap in row["record"].get("gaps", [])
+                         if gap != "Original management and ordinary phase closure is pending"]})
         # The two journals are deliberately not claimed to commit atomically.
         # A crash here retains closure and pending proof without another launch.
         self._complete(namespace, identity, pending)
 
     def _start(self, namespace, identity, phase):
         # Slow preflight facts are produced by the runner; no filesystem access here.
+        if self.task_session is not None and (self.task_session.value["mode"] != "execute"
+                                              or self.task_session.failure is not None):
+            raise JobError("UNSUPPORTED", "This task session cannot authorize a new execution phase")
         with self.fence:
             with self.state.transaction() as tx:
                 row = self.state.get(namespace, identity, tx)
@@ -1225,13 +1245,21 @@ class Broker:
                 self._unknown(*key, "Startup binding or supervisor acknowledgement is unresolved")
 
     def start(self):
+        if self.read_only:
+            return  # Historical reads do not attach, restart or reconcile execution.
         if self._thread is not None:
             raise JobError("CONFLICT", "Coordinator is already running")
-        self.recover()
+        if self.task_session is None:
+            self.recover()
+        else:
+            self.task_session.recover()
         def coordinate():
             while not self._shutdown.is_set():
                 try:
-                    self.tick()
+                    if self.task_session is None:
+                        self.tick()
+                    else:
+                        self.task_session.tick()
                 except JobError:
                     # A broken local ledger stops admission, not just this iteration.
                     if not self.state.healthy:
@@ -1249,10 +1277,20 @@ class Broker:
     def close(self):
         self._shutdown.set()
         self._wake.set()
+        failure = None
+        cleanup = ([self.task_session.close] if self.task_session is not None else [])
         if self._thread is not None:
-            self._thread.join(timeout=1)
+            cleanup.append(lambda: self._thread.join(timeout=1))
         if hasattr(self.runner, "close"):
-            self.runner.close()
+            cleanup.append(self.runner.close)
+        for action in cleanup:
+            try:
+                action()
+            except BaseException as error:
+                if failure is None:
+                    failure = error
+        if failure is not None:
+            raise failure
         # Supervised executions remain recorded. No implicit cancellation or deletion.
 
     def register_seal(self, seal):

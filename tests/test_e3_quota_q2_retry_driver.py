@@ -89,8 +89,11 @@ class RetryDriverTests(unittest.TestCase):
             authority["unused_root_operation_binding"]["attestation_sha256"])
         self.assertEqual(receipt["facts"]["roots"],authority["unused_root_operation_binding"]["roots"])
         self.assertNotIn("original_request_unissued",authority["new_request_issuance"])
-        domains=handoff["template"]["launcher"]["assembly"]["installation"]["capacity"]["domains"]
-        self.assertEqual(8,len(domains))
+        capacity=handoff["template"]["launcher"]["assembly"]["installation"]["capacity"]
+        domains=capacity["domains"]
+        self.assertEqual(7,len(domains))
+        self.assertEqual(188*1024**2,capacity["retained_bytes"])
+        self.assertEqual(5096,capacity["retained_inodes"])
         self.assertEqual(len(domains),len({(item["filesystem_uuid"],item["project_id"]) for item in domains}))
         self.assertEqual(1,len([name for name in files.writes if name.endswith("new-request-issuance.json")]))
         self.assertTrue(invocation[3].endswith("/tests/e3_host/q2_prepare_run.py"))
@@ -133,9 +136,13 @@ class RetryDriverTests(unittest.TestCase):
         files=ModelFiles()
         prepared,invocation=assemble(plan,retry,receipt,entry,guest,files=files)
         envelope=files.writes[invocation[invocation.index("--plan")+1]][0]
-        domains=envelope["template"]["launcher"]["assembly"]["installation"]["capacity"]["domains"]
-        self.assertEqual(11,len(domains))
-        self.assertEqual(203*1024**2,sum(domain["hard_bytes"] for domain in domains))
+        capacity=envelope["template"]["launcher"]["assembly"]["installation"]["capacity"]
+        domains=capacity["domains"]
+        self.assertEqual(7,len(domains))
+        self.assertEqual(7*1024**2,sum(domain["hard_bytes"] for domain in domains))
+        self.assertEqual((124+196)*1024**2,capacity["retained_bytes"])
+        self.assertEqual(1000+sum(root["inode_hard_limit"] for root in plan["retained_domains"]),
+                         capacity["retained_inodes"])
         self.assertEqual(contract.CANDIDATE_COMMIT,prepared["source_commit"])
         self.assertEqual(plan["candidate"]["destination"]+"/source/tests/e3_host/q2_prepare_run.py",invocation[3])
 
