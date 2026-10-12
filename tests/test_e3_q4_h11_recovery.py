@@ -18,6 +18,7 @@ if not sys.platform.startswith("linux"):
 from e3_host import q2_resident as resident
 from e3_host import q4_h11_recovery as recovery
 from local_hand_jobs import budget, result_reader, runner as runner_module
+from local_hand_jobs.preflight_completion import complete_stopped_preflight
 from local_hand_jobs.broker import Broker
 from test_local_hand_jobs_quota_binding import observed
 import test_local_hand_jobs_quota_resident_chain as chain_fixtures
@@ -53,7 +54,7 @@ class RecoveryObserver:
         # Models the recovery manager's identity-bound observe/StopUnit/recheck
         # transaction.  Anonymous collectors were owned by the dead resident.
         self.stops += 1
-        return {"state": "EXITED", "future_start_blocked": True,
+        return {"execution_id": handle["execution_id"], "state": "EXITED", "future_start_blocked": True,
                 "tree_exited": True, "writers_stopped": True,
                 "collectors_stopped": False, "effects_checked": False,
                 "exit_code": None, "facts": {},
@@ -65,7 +66,7 @@ class RecoveryObserver:
 
 
 class H11RecoveryBrokerTests(unittest.TestCase):
-    def fixture(self):
+    def fixture(self, *, with_reader=True):
         case = chain_fixtures.ResidentChainTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
@@ -89,6 +90,8 @@ class H11RecoveryBrokerTests(unittest.TestCase):
         self.assertTrue(case.broker._guard_start(
             execution_id, lambda: True, stage="helper",
             bootstrap_proof=bootstrap_proof))
+        if not with_reader:
+            return case, None
         helper_proof = dict(bootstrap_proof, unit=_unit(execution_id, "helper"),
             identity={"cgroup": "/synthetic-job.slice/" + _unit(execution_id, "helper"),
                       "boot_id": grant.as_dict()["budget"]["boot_id"],
@@ -153,9 +156,7 @@ class H11RecoveryBrokerTests(unittest.TestCase):
         recovered = Broker(case.f.db, case.f.policy, chain_fixtures.ChainRegistry(),
                            observer, case.broker.evidence, quota_required=True)
         self.addCleanup(recovered.close)
-        with mock.patch.object(recovered, "_release",
-                               side_effect=AssertionError("H11 must retain every lease")), \
-             mock.patch.object(result_reader, "_read_result",
+        with mock.patch.object(result_reader, "_read_result",
                                side_effect=AssertionError("H11 must not reread a result")):
             summary = recovery.run(recovered, plan,
                 current_clock=lambda: {"boot_id": plan.get("boot_id", "unused"),
@@ -172,14 +173,105 @@ class H11RecoveryBrokerTests(unittest.TestCase):
                          after["record"]["delivery_intents"])
         self.assertEqual(before["record"]["execution_budget"],
                          after["record"]["execution_budget"])
-        self.assertEqual(leases_before, leases_after)
+        self.assertEqual([item for item in leases_before if item[1] != case.identity], leases_after)
         appended = [kind for _, kind in events_after[len(events_before):]]
-        self.assertEqual(["RECOVERY_BARRIER", "QUOTA_EXIT_PENDING"], appended)
+        self.assertEqual(["RECOVERY_BARRIER", "QUOTA_EXIT_PENDING", "PREFLIGHT_STOPPED"], appended)
         proof = after["record"]["exit_proof"]
         self.assertIs(proof["collectors_stopped"], False)
         self.assertIs(proof["effects_checked"], False)
         self.assertEqual("UNKNOWN", proof["result"]["outcome"])
-        self.assertEqual("RECONCILE_REQUIRED", after["record"]["lifecycle"])
+        self.assertEqual("TERMINAL", after["record"]["lifecycle"])
+        self.assertEqual("UNKNOWN", after["record"]["outcome"])
+        self.assertTrue(after["record"]["execution_resources_released"])
+
+    def cancelled(self, *, pending=False, **proof_changes):
+        case, _ = self.fixture(with_reader=False)
+        case.broker.cancel(case.identity, case.row()["digest"], {"kind": "job"}, case.f.owner)
+        execution = "job-" + case.identity + "-preflight"
+        proof = RecoveryObserver().inspect({"execution_id": execution})
+        proof.update(collectors_stopped=True, **proof_changes)
+        case.runner.proofs[execution] = proof
+        if pending:
+            # Model a retained installation that persisted exit before the fix.
+            with mock.patch("local_hand_jobs.preflight_completion.complete_stopped_preflight", return_value=False):
+                case.broker.tick()
+        return case, proof
+
+    def test_cancelled_helper_finishes_without_reader_and_only_releases_execution(self):
+        case, proof = self.cancelled()
+        before, leases, events = self.ledger(case)
+        case.broker.tick()
+        after, retained, later = self.ledger(case)
+        record = after["record"]
+        self.assertEqual(("TERMINAL", "EXITED", "CANCELLED"),
+                         tuple(record[k] for k in ("lifecycle", "phase", "outcome")))
+        self.assertEqual(proof, record["exit_proof"])
+        self.assertIsNone(record["exit_proof"]["exit_code"])
+        self.assertEqual([item for item in leases if item[1] != case.identity], retained)
+        self.assertEqual(6, len(retained))
+        self.assertEqual(["QUOTA_EXIT_PENDING", "PREFLIGHT_STOPPED"],
+                         [kind for _, kind in later[len(events):]])
+        for key in ("execution_budget", "delivery_intents", "handles"):
+            self.assertEqual(before["record"][key], record[key])
+        launch = mock.Mock(side_effect=AssertionError("Cancelled reader must not start"))
+        self.assertIsNone(case.broker._guard_start(proof["execution_id"], launch, stage="result_reader"))
+        launch.assert_not_called()
+        case.broker.tick()
+        case.broker.recover()
+        self.assertEqual((after, retained, later), self.ledger(case))
+        # An independent task can acquire execution capacity; old directories stay protected.
+        with case.f.db.transaction() as tx:
+            case.broker.resources.acquire(tx, "next-task", 1, after["plan"]["resource_ids"])
+
+    def test_retained_exit_can_finish_after_deadline_without_observation_or_replay(self):
+        case, proof = self.cancelled(pending=True)
+        original = case.row()["record"]["execution_budget"]
+        case.now += 10000 * budget.NANOSECONDS
+        observer = RecoveryObserver()
+        recovered = Broker(case.f.db, case.f.policy, chain_fixtures.ChainRegistry(),
+                           observer, case.broker.evidence, quota_required=True)
+        self.addCleanup(recovered.close)
+        recovered.recover()
+        self.assertEqual("TERMINAL", case.row()["record"]["lifecycle"])
+        self.assertEqual(original, case.row()["record"]["execution_budget"])
+        self.assertEqual(proof, case.row()["record"]["exit_proof"])
+        self.assertEqual((0, 0, []), (observer.reattaches, observer.observations, observer.starts))
+        before = self.ledger(case)
+        recovered.recover()
+        recovered.tick()
+        self.assertEqual(before, self.ledger(case))
+
+    def test_missing_stop_or_actual_business_intent_cannot_release_execution(self):
+        for corruption in ("writers_stopped", "future_start_blocked", "tree_exited", "business_intent"):
+            with self.subTest(corruption=corruption):
+                case, _ = self.cancelled(pending=True)
+                if corruption == "business_intent":
+                    with case.f.db.transaction() as tx:
+                        case.f.db.update(tx, "job", case.identity, "EXECUTION_INTENT", {"phase": "BUSINESS"})
+                        case.f.db.update(tx, "job", case.identity, "SYNTHETIC_STALE_LABEL", {"phase": "PREFLIGHT"})
+                before = self.ledger(case)
+                with case.f.db.transaction() as tx:
+                    row = case.f.db.get("job", case.identity, tx)
+                    if corruption != "business_intent":
+                        # Keep the durable binding real while testing a proof without a stop fact.
+                        pending = copy.deepcopy(row["record"]["quota_pending"]["preflight"])
+                        pending["proof"][corruption] = False
+                        with mock.patch("local_hand_jobs.quota_binding.original", return_value=pending):
+                            self.assertFalse(complete_stopped_preflight(case.broker, tx, row))
+                    else:
+                        self.assertFalse(complete_stopped_preflight(case.broker, tx, row))
+                self.assertEqual(before, self.ledger(case))
+
+    def test_completion_and_release_roll_back_together_then_allow_retry(self):
+        case, _ = self.cancelled(pending=True)
+        before = self.ledger(case)
+        with self.assertRaisesRegex(RuntimeError, "interrupted"), \
+             mock.patch.object(case.f.db, "update", side_effect=RuntimeError("interrupted")), \
+             case.f.db.transaction() as tx:
+            complete_stopped_preflight(case.broker, tx, case.f.db.get("job", case.identity, tx))
+        self.assertEqual(before, self.ledger(case))
+        case.broker.tick()
+        self.assertEqual("TERMINAL", case.row()["record"]["lifecycle"])
 
     def test_original_phase_deadline_blocks_recovery_before_ledger_mutation(self):
         case, plan = self.fixture()

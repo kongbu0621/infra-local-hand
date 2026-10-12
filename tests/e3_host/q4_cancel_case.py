@@ -109,7 +109,7 @@ def validate_report(value):
             "lifecycle", "outcome", "evidence", "phase", "cancel_requested", "reader_delivered", "leases_retained",
             "observed_ns", "state_converged"}, "CASE_LEDGER")
         _require(_positive(ledger["observed_ns"]) and ledger["observed_ns"] <= value["observed_ns"]
-                 and ledger["state_converged"] is False, "CASE_LEDGER_ASOF")
+                 and ledger["state_converged"] is (ledger["lifecycle"] == "TERMINAL"), "CASE_LEDGER_ASOF")
         _require(type(ledger["delivery_events"]) is list and len(ledger["delivery_events"]) <= 12, "CASE_DELIVERY_BOUND")
         previous = 0
         for row in ledger["delivery_events"]:
@@ -448,7 +448,8 @@ class Case:
                 no_delivery_after_cancel=None if event is None else all(item["seq"] < event["seq"] for item in deliveries),
                 **{key: record[key] for key in ("lifecycle", "outcome", "evidence", "phase", "cancel_requested")},
                 reader_delivered=any(self._report["target_execution_id"] + ":result_reader" in item["delivery_ids"] for item in deliveries),
-                leases_retained=leases > 0, observed_ns=ledger_observed_ns, state_converged=False)
+                leases_retained=leases > 0, observed_ns=ledger_observed_ns,
+                state_converged=record["lifecycle"] == "TERMINAL")
             with self._lock:
                 if version != self._cancel_version:
                     return copy.deepcopy(self._report)  # Retry observation next tick, never freeze a mixed snapshot.
