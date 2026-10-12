@@ -742,7 +742,7 @@ class Gateway:
                   + len(raw) + 12 + 4 * len(fds) <= wire.WIRE_LIMIT,
                   "SYSTEM_AGGREGATE_OUTPUT_LIMIT")
         self.channel.respond(request, result, fds=fds)
-        if request["op"] == "recovery_arm":
+        if request["op"] == "recovery_arm" and result == {"armed": True}:
             q.require(self.recovery_armed and self.channel.pending is None,
                       "SYSTEM_RECOVERY_ARM_ACK")
             self.recovery_arm_ack = True

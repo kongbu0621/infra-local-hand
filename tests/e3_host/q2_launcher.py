@@ -833,6 +833,7 @@ def run(value, repository):
                     # The controller and gateway validate this original binding;
                     # single-phase Q4/H11 must carry it just as the normal chain does.
                     plan["manager_binding"] = resident["ordinary"]["manager_binding"]
+                    plan["request_digest"] = resident["request"]["request_digest"]
             # Fixed setpriv delivery inherits this mount namespace. No extra
             # SYS_PTRACE authority is acquired merely to inspect another UID.
             namespace = os.readlink("/proc/self/ns/mnt")

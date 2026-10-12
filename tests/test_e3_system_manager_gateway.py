@@ -432,6 +432,15 @@ class GatewayTests(unittest.TestCase):
         finally:
             release.set(); thread.join(1)
 
+    def test_rejected_arm_response_preserves_failure_and_does_not_ack(self):
+        gateway, _ = self.gateway()
+        channel = SimpleNamespace(session_id="a" * 64, sequence=0, total=0, pending=None,
+                                  respond=mock.Mock())
+        gateway.channel = channel
+        gateway._respond(dict(op="recovery_arm"), {"error": "SYSTEM_GATEWAY_REJECTED"})
+        channel.respond.assert_called_once()
+        self.assertFalse(gateway.recovery_arm_ack)
+
     def test_real_peer_exit_is_required_before_single_rebind_and_budgets_accumulate(self):
         clock = budget.current_clock()
         end = clock["boottime_ns"] + 10 * SECOND

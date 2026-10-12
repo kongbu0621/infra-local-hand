@@ -159,6 +159,8 @@ class H11LauncherProcessTests(unittest.TestCase):
             def authorize_phase(self, plan, execution, grant, config):
                 test.assertEqual(test.value["resident"]["ordinary"]["manager_binding"],
                                  plan.get("manager_binding"))
+                test.assertEqual(test.value["resident"]["request"]["request_digest"],
+                                 plan.get("request_digest"))
                 operation = test.value["resident"]["request"]["operation_id"]
                 execution_id = plan["execution_id"]
                 units = {stage: "lhj-" + hashlib.sha256(
