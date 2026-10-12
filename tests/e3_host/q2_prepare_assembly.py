@@ -18,6 +18,7 @@ import stat
 SCHEMA = "local-hand-q2-assembly-facts/v1"
 SYSTEM_SCHEMA = "local-hand-q2-system-assembly-facts/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-assembly-facts/v1"
+SYSTEM_CANCEL_SCHEMA = "local-hand-q4-system-cancel-assembly-facts/v1"
 H11_SCHEMA = "local-hand-q4-h11-assembly-facts/v1"
 PHASES = ("preflight", "business", "evidence")
 DYNAMIC = {"invocation_id", "cgroup_device", "cgroup_inode"}
@@ -125,12 +126,12 @@ def assemble(facts):
 
     f = copy.deepcopy(facts)
     h11 = f.get("schema") == H11_SCHEMA
-    system = f.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA)
+    system = f.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA)
     _keys(f, {"schema", "identity", "source", "installation", "admin", "python_identity", "ordinary",
         "paths", "slots", "store", "capacity", "management", "controllers", "setpriv", "original_budgets", "limits"}
         | ({"system_geometry"} if system else set()))
-    require(f["schema"] in (SCHEMA, CANCEL_SCHEMA, SYSTEM_SCHEMA, H11_SCHEMA), "PREP_ASSEMBLY_SCHEMA")
-    cancellation = f["schema"] == CANCEL_SCHEMA
+    require(f["schema"] in (SCHEMA, CANCEL_SCHEMA, SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA), "PREP_ASSEMBLY_SCHEMA")
+    cancellation = f["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA)
     ident = f["identity"]
     _keys(ident, {"id", "authority_id", "node_id", "install_uuid", "deployment_epoch", "generation",
         "operation_id", "profile_ref", "principal_id", "epoch", "authority_digest", "manifest_digest",
@@ -317,13 +318,13 @@ def assemble(facts):
         # Only one original preflight is selected; unused roots are not reused
         # or credited back, and the old three-phase policy is never modified.
         purpose = "ISOLATED_Q4_CANCEL_HELPER"
-        resident.update(schema="local-hand-q4-cancel-resident/v1", purpose=purpose, phases=["preflight"],
+        resident.update(schema="local-hand-q4-system-cancel-resident/v1" if system else "local-hand-q4-cancel-resident/v1", purpose=purpose, phases=["preflight"],
             cancel_case=dict(path=source["root"] + "/tests/e3_host/q4_cancel_case.py",
                 sha256=source["files"]["tests/e3_host/q4_cancel_case.py"]))
-        launcher.update(schema="local-hand-q4-cancel-launcher/v1", purpose=purpose,
+        launcher.update(schema="local-hand-q4-system-cancel-launcher/v1" if system else "local-hand-q4-cancel-launcher/v1", purpose=purpose,
                         assembly=dict(q2_chain.phase_template(checked, "preflight").data(),
                                       purpose="ISOLATED_Q2_PREFLIGHT"))
-        supervisor.update(schema="local-hand-q4-cancel-supervisor/v1", purpose=purpose)
+        supervisor.update(schema="local-hand-q4-system-cancel-supervisor/v1" if system else "local-hand-q4-cancel-supervisor/v1", purpose=purpose)
     require(controllers["target"]["runtime_max_usec"] + controllers["target"]["timeout_stop_usec"] + 2_000_000
         <= controllers["supervisor"]["runtime_max_usec"], "PREP_ASSEMBLY_CLEANUP_BUDGET")
     # Account both original controller levels before any time is issued. This
@@ -357,6 +358,7 @@ def assemble(facts):
     require(all((pin["device"], pin["inode"]) != (root["device"], root["inode"])
                 for pin in pins for root in roots), "PREP_ASSEMBLY_ORDINARY_OUTPUT_ALIAS")
     return dict(schema="local-hand-q4-h11-static-assembly/v1" if h11 else
+        "local-hand-q4-system-cancel-static-assembly/v1" if system and cancellation else
         "local-hand-q2-system-static-assembly/v1" if system else
         "local-hand-q4-cancel-static-assembly/v1" if cancellation else "local-hand-q2-static-assembly/v1",
         status="ASSEMBLED", policy=config,

@@ -29,6 +29,8 @@ SYSTEM_SCHEMA = "local-hand-q2-system-supervisor/v1"
 SYSTEM_LAUNCHER = "local-hand-q2-system-launcher/v1"
 SYSTEM_WIRE_BYTES = 4 * 1024**2
 CANCEL_SCHEMA = "local-hand-q4-cancel-supervisor/v1"
+SYSTEM_CANCEL_SCHEMA = "local-hand-q4-system-cancel-supervisor/v1"
+SYSTEM_CANCEL_LAUNCHER = "local-hand-q4-system-cancel-launcher/v1"
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
 H11_SCHEMA = "local-hand-q4-h11-supervisor/v1"
@@ -138,21 +140,21 @@ def cancel_fixture(value):
     """A cancellation record cannot enter the legacy phase-closure contract."""
     pair = value.get("schema"), value.get("purpose")
     require(pair in ((SCHEMA, "ISOLATED_Q2_SUPERVISION"), (SYSTEM_SCHEMA, "ISOLATED_Q2_SUPERVISION"),
-                    (CANCEL_SCHEMA, CANCEL_PURPOSE), (H11_SCHEMA, H11_PURPOSE)),
+                    (CANCEL_SCHEMA, CANCEL_PURPOSE), (SYSTEM_CANCEL_SCHEMA, CANCEL_PURPOSE), (H11_SCHEMA, H11_PURPOSE)),
             "SUPERVISOR_SCHEMA")
     nested = value["launcher"]
     status = expected_status(nested)
-    cancel = pair == (CANCEL_SCHEMA, CANCEL_PURPOSE)
+    cancel = pair in ((CANCEL_SCHEMA, CANCEL_PURPOSE), (SYSTEM_CANCEL_SCHEMA, CANCEL_PURPOSE))
     require(cancel == (status == "CANCEL_CASE_RECORDED"), "SUPERVISOR_SCENARIO_BINDING")
-    expected_manager = {SYSTEM_SCHEMA: SYSTEM_LAUNCHER, H11_SCHEMA: H11_LAUNCHER}.get(pair[0])
-    require((expected_manager is None and nested["schema"] not in (SYSTEM_LAUNCHER, H11_LAUNCHER))
+    expected_manager = {SYSTEM_SCHEMA: SYSTEM_LAUNCHER, H11_SCHEMA: H11_LAUNCHER, SYSTEM_CANCEL_SCHEMA: SYSTEM_CANCEL_LAUNCHER}.get(pair[0])
+    require((expected_manager is None and nested["schema"] not in (SYSTEM_LAUNCHER, H11_LAUNCHER, SYSTEM_CANCEL_LAUNCHER))
             or nested["schema"] == expected_manager, "SUPERVISOR_MANAGER_VERSION")
     return cancel
 
 
 def system_fixture(value):
     cancel_fixture(value)
-    return value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
+    return value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA)
 
 
 def h11_fixture(value):
@@ -163,7 +165,7 @@ def h11_fixture(value):
 def record_schema(value, suffix):
     prefix = ("local-hand-q4-h11-" if value.get("schema") == H11_SCHEMA else
               "local-hand-q2-system-" if value.get("schema") == SYSTEM_SCHEMA else
-              "local-hand-q4-cancel-" if value.get("schema") == CANCEL_SCHEMA else "local-hand-q2-")
+              "local-hand-q4-cancel-" if value.get("schema") in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA) else "local-hand-q2-")
     return prefix + suffix + "/v1"
 
 
@@ -174,6 +176,7 @@ def expected_status(launcher):
                 ("local-hand-q2-launcher/v2", "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
                 (SYSTEM_LAUNCHER, "ISOLATED_Q2_CHAIN"): "CHAIN_CLOSED",
                 (CANCEL_LAUNCHER, CANCEL_PURPOSE): "CANCEL_CASE_RECORDED",
+                (SYSTEM_CANCEL_LAUNCHER, CANCEL_PURPOSE): "CANCEL_CASE_RECORDED",
                 (H11_LAUNCHER, H11_PURPOSE): "RECOVERY_RECORDED"}
     require(pair in statuses, "SUPERVISOR_LAUNCHER_SCHEMA")
     return statuses[pair]
@@ -223,7 +226,8 @@ def validate_system_geometry(nested, controller_parent, target, *, boot_id):
     from admin.local_hand_quota_observer import q2_config as c
     from local_hand_jobs import quota_contract as q, manager_binding
     pair = nested["schema"], nested["resident"]["schema"]
-    require(pair in ((SYSTEM_LAUNCHER, "local-hand-q2-system-resident/v1"),
+    require(pair in ((SYSTEM_CANCEL_LAUNCHER, "local-hand-q4-system-cancel-resident/v1"),
+                    (SYSTEM_LAUNCHER, "local-hand-q2-system-resident/v1"),
                      (H11_LAUNCHER, "local-hand-q4-h11-origin-resident/v1")),
             "SUPERVISOR_MANAGER_VERSION")
     geometry = nested["system_geometry"]

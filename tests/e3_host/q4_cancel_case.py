@@ -505,7 +505,8 @@ class Case:
 def observe_manager(core):
     """Wrap exactly the installed core; all management/inspection calls pass through."""
     from local_hand_jobs.runner import _SystemdExecutionCore
-    _require(core is _SystemdExecutionCore, "CASE_REAL_CORE_REQUIRED")
+    from local_hand_jobs.system_manager import SystemManager
+    _require(core in (_SystemdExecutionCore, SystemManager), "CASE_REAL_CORE_REQUIRED")
 
     class Observed(core):
         _q4_observer = True

@@ -30,6 +30,7 @@ LIMIT = 2 * 1024 * 1024
 PHASES = ("preflight", "business", "evidence")
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 CANCEL_LAUNCHER = "local-hand-q4-cancel-launcher/v1"
+SYSTEM_CANCEL_LAUNCHER = "local-hand-q4-system-cancel-launcher/v1"
 CANCEL_RESIDENT = "local-hand-q4-cancel-resident/v1"
 H11_SCHEMA = "local-hand-q4-h11-fixture-check/v1"
 H11_LAUNCHER = "local-hand-q4-h11-launcher/v1"
@@ -260,7 +261,7 @@ def static_binding(value, supervisor, repository):
     fields = {"schema", "purpose", "entry", "installation", "policy", "ordinary", "principal", "request", "plan", "phases"}
     q._keys(resident, fields | {"cancel_case"} if cancel else fields)
     expected = (H11_RESIDENT, "ISOLATED_Q4_H11_ORIGIN", ["preflight"]) if h11 else (
-        CANCEL_RESIDENT, CANCEL_PURPOSE, ["preflight"]) if cancel else (
+        "local-hand-q4-system-cancel-resident/v1" if system else CANCEL_RESIDENT, CANCEL_PURPOSE, ["preflight"]) if cancel else (
         "local-hand-q2-system-resident/v1" if system else "local-hand-q2-resident/v2", "ISOLATED_Q2_CHAIN", list(PHASES))
     require((resident["schema"], resident["purpose"], resident["phases"]) == expected, "FIXTURE_RESIDENT_VERSION")
     if cancel:
@@ -380,7 +381,7 @@ def resident_paths(nested):
     # q2_resident.protected opens EVERY directory with O_RDONLY|O_DIRECTORY;
     # its ancestors therefore need read+search, not only pathname traversal.
     paths = [(resident["entry"]["path"], 0, 4)]
-    if nested["schema"] == CANCEL_LAUNCHER:
+    if nested["schema"] in (CANCEL_LAUNCHER, SYSTEM_CANCEL_LAUNCHER):
         paths.append((resident["cancel_case"]["path"], 0, 4))
     if nested["schema"] == H11_LAUNCHER:
         paths.append((nested["recovery_case"]["path"], 0, 4))
@@ -484,7 +485,7 @@ def policy_snapshot(nested):
             and policy.execution_entrypoint == resident["installation"]["package_root"] + "/local_hand_jobs/cli.py",
             "FIXTURE_POLICY_BINDING")
     require(policy.config["process_manager"]["cgroup"] == "/sys/fs/cgroup" + ordinary["parent"]["path"], "FIXTURE_POLICY_PARENT")
-    if nested["schema"] in (SYSTEM_LAUNCHER, H11_LAUNCHER):
+    if nested["schema"] in (SYSTEM_LAUNCHER, H11_LAUNCHER, SYSTEM_CANCEL_LAUNCHER):
         from local_hand_jobs import manager_binding
         require(policy.config["schema_version"] == "lh-policy-v2", "FIXTURE_POLICY_MANAGER_VERSION")
         manager_binding.check(ordinary["manager_binding"], manager_binding.from_configuration(
@@ -496,7 +497,7 @@ def policy_snapshot(nested):
         chain_raw = q2_chain.q._canonical(nested["assembly"], q2_chain.c.LIMIT)
         chain = q2_chain.decode(chain_raw, sha(chain_raw))
         q2_chain.check_policy(chain, policy, resident["request"]["profile_ref"])
-    elif nested["schema"] == CANCEL_LAUNCHER:
+    elif nested["schema"] in (CANCEL_LAUNCHER, SYSTEM_CANCEL_LAUNCHER):
         cancel_policy_binding(nested, policy)
     elif nested["schema"] == H11_LAUNCHER:
         h11_policy_binding(nested, policy)

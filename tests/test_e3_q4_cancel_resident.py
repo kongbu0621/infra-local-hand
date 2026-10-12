@@ -6,13 +6,40 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from test_e3_quota_q2_prepare_assembly import a, facts, host_module
+from test_e3_quota_q2_prepare_assembly import a, facts, system_facts, host_module
 
 resident = host_module("q2_resident")
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux isolated fixture")
 class AssemblyTests(unittest.TestCase):
+    def test_system_cancel_uses_existing_gateway_and_single_phase_contract(self):
+        declaration = system_facts()
+        declaration["schema"] = a.SYSTEM_CANCEL_SCHEMA
+        original = copy.deepcopy(declaration)
+        assembled = a.assemble(declaration)
+        self.assertEqual(original, declaration)
+        self.assertEqual(["preflight"], assembled["resident"]["phases"])
+        self.assertEqual(resident.SYSTEM_CANCEL_SCHEMA, assembled["resident"]["schema"])
+        self.assertEqual(resident.PHASES, resident.fixture_phases(assembled["resident"]))
+        self.assertEqual(declaration["ordinary"]["manager_binding"],
+                         assembled["policy"]["process_manager"]["manager_binding"])
+        launcher = host_module("q2_launcher")
+        raw = launcher.encoded(assembled["launcher"], launcher.LIMIT)
+        self.assertEqual(assembled["launcher"], launcher.decode(raw, hashlib.sha256(raw).hexdigest()))
+        supervisor = host_module("q2_supervisor")
+        raw = supervisor.encoded(assembled["supervisor_template"], supervisor.LIMIT)
+        checked = supervisor.decode(raw, supervisor.sha(raw))
+        self.assertTrue(supervisor.cancel_fixture(checked))
+        self.assertTrue(supervisor.system_fixture(checked))
+        self.assertEqual("CANCEL_CASE_RECORDED", supervisor.expected_status(assembled["launcher"]))
+        handoff = host_module("q2_prepare_run")
+        handoff.static_template(checked, cancel=True, system=True)
+        with self.assertRaisesRegex(ValueError, "TEMPLATE_SCHEMA"):
+            handoff.static_template(checked, cancel=True, system=False)
+        from local_hand_jobs.policy import Policy
+        host_module("q2_fixture_check").cancel_policy_binding(assembled["launcher"], Policy(assembled["policy"]))
+
     def test_separate_owner_policy_and_single_original_phase(self):
         from admin.local_hand_quota_observer import q2_assembly
         declaration = facts()
@@ -67,6 +94,25 @@ class AssemblyTests(unittest.TestCase):
 
 
 class ResidentTransportTests(unittest.TestCase):
+    def test_system_cancel_entry_passes_observer_to_composition_and_case_runner(self):
+        from local_hand_jobs import cli, system_manager
+        peer = dict(pid=123, uid=0, gid=0, start_ticks=456, boot_id="boot", deadline_ns=100)
+        value = dict(schema=resident.SYSTEM_CANCEL_SCHEMA,
+            bridge=dict(peer, fd=7), manager_channel=dict(peer, fd=8))
+        channel, manager, broker, observer = mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock()
+        result = dict(schema="local-hand-q4-cancel-resident-result/v1", status="CANCEL_CASE_RECORDED")
+        with mock.patch.object(resident, "bootstrap", return_value=value), \
+             mock.patch.object(resident, "load_cancel_case", return_value=observer), \
+             mock.patch.object(resident, "channel_from_pin", return_value=channel), \
+             mock.patch.object(system_manager, "channel_from_pin", return_value=manager), \
+             mock.patch.object(resident, "compose", return_value=broker) as compose, \
+             mock.patch.object(resident, "run", return_value=result) as run, \
+             mock.patch.object(cli, "close_service"), mock.patch.object(resident.os, "write"):
+            self.assertEqual(0, resident.main(["--fixture", "private", "--sha256", "digest"]))
+        compose.assert_called_once_with(value, cancel_module=observer, manager_channel=manager)
+        run.assert_called_once_with(value, channel, broker, cancel_module=observer)
+        manager.close.assert_called_once()
+
     def invoke(self, commands, ready=True):
         from local_hand_jobs import quota_bridge
         case = mock.Mock()

@@ -23,6 +23,7 @@ SCHEMA = "local-hand-q2-resident/v1"
 CHAIN_SCHEMA = "local-hand-q2-resident/v2"
 SYSTEM_SCHEMA = "local-hand-q2-system-resident/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-resident/v1"
+SYSTEM_CANCEL_SCHEMA = "local-hand-q4-system-cancel-resident/v1"
 ORIGIN_SCHEMA = "local-hand-q4-h11-origin-resident/v1"
 RECOVERY_SCHEMA = "local-hand-q4-h11-recovery-resident/v1"
 LIMIT = 262144
@@ -48,6 +49,7 @@ def fixture_phases(value):
                 CHAIN_SCHEMA: (CHAIN_PHASES, "ISOLATED_Q2_CHAIN"),
                 SYSTEM_SCHEMA: (CHAIN_PHASES, "ISOLATED_Q2_CHAIN"),
                 ORIGIN_SCHEMA: (PHASES, "ISOLATED_Q4_H11_ORIGIN"),
+                SYSTEM_CANCEL_SCHEMA: (PHASES, "ISOLATED_Q4_CANCEL_HELPER"),
                 CANCEL_SCHEMA: (PHASES, "ISOLATED_Q4_CANCEL_HELPER")}
     phases, purpose = variants.get(value.get("schema"), ((), None))
     require(bool(phases) and value.get("phases") == list(phases)
@@ -122,7 +124,7 @@ def bootstrap(path, digest):
             and hashlib.sha256(raw).hexdigest() == digest, "RESIDENT_FIXTURE_DIGEST")
     value = json.loads(raw, object_pairs_hook=unique)
     require(type(value) is dict, "RESIDENT_SCHEMA")
-    extra = {"cancel_case"} if value.get("schema") == CANCEL_SCHEMA else set()
+    extra = {"cancel_case"} if value.get("schema") in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA) else set()
     if value.get("schema") == RECOVERY_SCHEMA:
         extra = {"recovery", "recovery_case", "manager_channel"}
         required = {"schema", "purpose", "entry", "installation", "policy", "ordinary"} | extra
@@ -132,7 +134,7 @@ def bootstrap(path, digest):
         required = {
             "schema", "purpose", "entry", "installation", "policy", "ordinary", "principal",
             "request", "plan", "phases", "bridge"} | extra
-    if value.get("schema") in (SYSTEM_SCHEMA, ORIGIN_SCHEMA):
+    if value.get("schema") in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         extra.add("manager_channel")
         required.add("manager_channel")
     require(set(value) == required, "RESIDENT_SCHEMA")
@@ -168,7 +170,7 @@ def bootstrap(path, digest):
 
 def load_cancel_case(value):
     """Only this adjacent, separately pinned test module may observe the core."""
-    require(value["schema"] == CANCEL_SCHEMA, "RESIDENT_CANCEL_SCHEMA")
+    require(value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA), "RESIDENT_CANCEL_SCHEMA")
     pin = value["cancel_case"]
     path = str(Path(__file__).with_name("q4_cancel_case.py"))
     require(type(pin) is dict and set(pin) == {"path", "sha256"}
@@ -235,7 +237,7 @@ def host_admission(value, policy, manager):
     """Actual existing account, initial namespace, delegation and parent pins."""
     from local_hand_jobs import budget, quota_contract as q, quota_lifecycle
     pin = value["ordinary"]
-    system = value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA)
+    system = value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA, SYSTEM_CANCEL_SCHEMA)
     q._keys(pin, {"uid", "gid", "parent", "broker_cgroup", "initial_userns"}
             | ({"manager_binding"} if system else set()))
     q.integer(pin["uid"], 1)
@@ -333,21 +335,21 @@ def _compose(value, *, cancel_module=None, manager_channel=None):
     require(all(os.path.realpath(profile["python"]) == programs["python"]["path"]
                 for profile in policy.profiles.values()), "RESIDENT_INTERPRETER_BINDING")
     manager_class = _SystemdExecutionCore
-    if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA):
+    if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         from local_hand_jobs.system_manager import SystemManager
-        require(cancel_module is None and manager_channel is not None, "RESIDENT_SYSTEM_CHANNEL")
-        manager_class = SystemManager
-    elif value["schema"] == CANCEL_SCHEMA:
+        require(manager_channel is not None and (cancel_module is not None if value["schema"] == SYSTEM_CANCEL_SCHEMA else cancel_module is None), "RESIDENT_SYSTEM_CHANNEL")
+        manager_class = cancel_module.observe_manager(SystemManager) if cancel_module is not None else SystemManager
+    elif value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         require(cancel_module is not None, "RESIDENT_CANCEL_ENTRY")
         manager_class = cancel_module.observe_manager(_SystemdExecutionCore)
     else:
         require(cancel_module is None, "RESIDENT_CANCEL_SCHEMA")
-    if value["schema"] not in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA):
+    if value["schema"] not in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         require(manager_channel is None, "RESIDENT_SYSTEM_CHANNEL")
     manager = (manager_class(policy.config.get("process_manager"), channel=manager_channel,
                              recovery=value["schema"] == RECOVERY_SCHEMA,
                              h11_origin=value["schema"] == ORIGIN_SCHEMA)
-        if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA) else manager_class(policy.config.get("process_manager")))
+        if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA, SYSTEM_CANCEL_SCHEMA) else manager_class(policy.config.get("process_manager")))
     host_admission(value, policy, manager)
     return cli._compose_broker(policy, manager, quota_required=True)
 
@@ -495,7 +497,7 @@ def prepare_request(value, broker):
     require(type(pin["principal_id"]) is str and re.fullmatch(r"q2-synthetic-[a-z0-9-]{1,64}", pin["principal_id"]),
             "RESIDENT_SYNTHETIC_PRINCIPAL")
     scopes = {"lh:submit", "lh:read", "lh:evidence"}
-    if value.get("schema") == CANCEL_SCHEMA:
+    if value.get("schema") in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         scopes.add("lh:cancel")
     require(type(pin["scopes"]) is list and len(set(pin["scopes"])) == len(pin["scopes"])
             and set(pin["scopes"]) == scopes, "RESIDENT_SCOPES")
@@ -691,7 +693,7 @@ def run_cancel(value, channel, broker, module, identity, principal):
 
 def run(value, channel, broker, *, cancel_module=None):
     identity, principal = prepare_request(value, broker)
-    if value["schema"] == CANCEL_SCHEMA:
+    if value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         require(cancel_module is not None, "RESIDENT_CANCEL_ENTRY")
         return run_cancel(value, channel, broker, cancel_module, identity, principal)
     from local_hand_jobs import quota_closure
@@ -729,7 +731,7 @@ def main(argv=None):
     try:
         require(args.fixture and args.sha256, "EXPLICIT_PRIVATE_FIXTURE_REQUIRED")
         value = bootstrap(args.fixture, args.sha256)
-        if value["schema"] == CANCEL_SCHEMA:
+        if value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA):
             result["schema"] = "local-hand-q4-cancel-resident-result/v1"
         elif value["schema"] == SYSTEM_SCHEMA:
             result["schema"] = "local-hand-q2-system-resident-result/v1"
@@ -737,13 +739,13 @@ def main(argv=None):
             result["schema"] = "local-hand-q4-h11-origin-result/v1"
         elif value["schema"] == RECOVERY_SCHEMA:
             result["schema"] = "local-hand-q4-h11-recovery-result/v1"
-        cancel_module = load_cancel_case(value) if value["schema"] == CANCEL_SCHEMA else None
+        cancel_module = load_cancel_case(value) if value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA) else None
         recovery_module = load_recovery_case(value) if value["schema"] == RECOVERY_SCHEMA else None
         if value["schema"] != RECOVERY_SCHEMA:
             channel = channel_from_pin(value["bridge"], version=2 if value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA) else 1)
-        if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA):
+        if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, RECOVERY_SCHEMA, SYSTEM_CANCEL_SCHEMA):
             from local_hand_jobs.system_manager import channel_from_pin as manager_from_pin
-            if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA):
+            if value["schema"] in (SYSTEM_SCHEMA, ORIGIN_SCHEMA, SYSTEM_CANCEL_SCHEMA):
                 require(value["manager_channel"]["fd"] != value["bridge"]["fd"], "RESIDENT_CHANNEL_ALIAS")
                 require(all(value["manager_channel"][k] == value["bridge"][k] for k in
                         ("pid", "uid", "gid", "start_ticks", "boot_id", "deadline_ns")), "RESIDENT_SYSTEM_PEER_BINDING")
@@ -753,12 +755,13 @@ def main(argv=None):
                 result = recovery_module.run(broker, value["recovery"])
                 broker.runner.manager.finish_recovery()
             else:
-                broker = compose(value, manager_channel=manager_channel)
+                broker = compose(value, cancel_module=cancel_module, manager_channel=manager_channel)
                 result = (run_h11_origin(value, channel, broker)
-                          if value["schema"] == ORIGIN_SCHEMA else run(value, channel, broker))
+                          if value["schema"] == ORIGIN_SCHEMA else run(value, channel, broker,
+                              cancel_module=cancel_module))
         elif cancel_module is None:
             broker = compose(value)
-            result = run(value, channel, broker)
+            result = run(value, channel, broker, cancel_module=cancel_module)
         else:
             broker = compose(value, cancel_module=cancel_module)
             result = run(value, channel, broker, cancel_module=cancel_module)

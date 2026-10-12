@@ -29,6 +29,7 @@ SCHEMA = "local-hand-q2-launcher/v1"
 CHAIN_SCHEMA = "local-hand-q2-launcher/v2"
 SYSTEM_SCHEMA = "local-hand-q2-system-launcher/v1"
 CANCEL_SCHEMA = "local-hand-q4-cancel-launcher/v1"
+SYSTEM_CANCEL_SCHEMA = "local-hand-q4-system-cancel-launcher/v1"
 H11_SCHEMA = "local-hand-q4-h11-launcher/v1"
 CANCEL_PURPOSE = "ISOLATED_Q4_CANCEL_HELPER"
 H11_PURPOSE = "ISOLATED_Q4_H11_RECOVERY"
@@ -113,11 +114,11 @@ def decode(raw, digest):
     finite(value)
     require(type(value) is dict and set(value) == {"schema", "purpose", "source", "resident", "assembly",
             "controller_envelope", "setpriv", "output", "declarations", "session"}
-            | ({"system_geometry"} if value.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA) else set())
+            | ({"system_geometry"} if value.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA) else set())
             | ({"recovery_case"} if value.get("schema") == H11_SCHEMA else set())
             and (value["schema"], value["purpose"]) in ((SCHEMA, "ISOLATED_Q2_PREFLIGHT"),
                 (CHAIN_SCHEMA, "ISOLATED_Q2_CHAIN"), (SYSTEM_SCHEMA, "ISOLATED_Q2_CHAIN"),
-                (CANCEL_SCHEMA, CANCEL_PURPOSE), (H11_SCHEMA, H11_PURPOSE)), "LAUNCHER_SCHEMA")
+                (CANCEL_SCHEMA, CANCEL_PURPOSE), (SYSTEM_CANCEL_SCHEMA, CANCEL_PURPOSE), (H11_SCHEMA, H11_PURPOSE)), "LAUNCHER_SCHEMA")
     return value
 
 
@@ -213,7 +214,7 @@ def source(value, repository):
             require(path.relative_to(repository).as_posix() in files, "LAUNCHER_SOURCE_MISSING")
     for name in ("q2_launcher", "q2_resident"):
         require("tests/e3_host/" + name + ".py" in files, "LAUNCHER_ENTRY_MISSING")
-    if value.get("schema") == CANCEL_SCHEMA:
+    if value.get("schema") in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA):
         for name in ("q4_cancel_case", "q4_cancel_runtime"):
             require("tests/e3_host/" + name + ".py" in files, "LAUNCHER_ENTRY_MISSING")
     if value.get("schema") == H11_SCHEMA:
@@ -243,7 +244,7 @@ def source(value, repository):
 
 def load_cancel_modules(value, repository):
     """Two fixed test-only modules, from retained protected and pinned bytes."""
-    require((value["schema"], value["purpose"]) == (CANCEL_SCHEMA, CANCEL_PURPOSE), "CANCEL_LAUNCHER_SCHEMA")
+    require((value["schema"], value["purpose"]) in ((CANCEL_SCHEMA, CANCEL_PURPOSE), (SYSTEM_CANCEL_SCHEMA, CANCEL_PURPOSE)), "CANCEL_LAUNCHER_SCHEMA")
     loaded = {}
     for name in ("q4_cancel_runtime", "q4_cancel_case"):
         relative = "tests/e3_host/" + name + ".py"
@@ -421,7 +422,7 @@ def controller(value, template, declared_totals=None):
               <= envelope["issued_ns"] + spec.runtime_max_usec * 1000, "LAUNCHER_DEADLINE")
     q.integer(envelope["output_bytes"], 1, 32768)
     q.integer(envelope["storage_bytes"], 1024 * 1024)
-    system = value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
+    system = value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA)
     phase_count = 3 if value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA) else 1
     q.integer(envelope["storage_inodes"], max(8, 6 + phase_count))
     # Capacity must fund the controller/resident before the resident reserves
@@ -446,7 +447,7 @@ def controller(value, template, declared_totals=None):
         # Resident pipes, manager-control captures and the outer summary have
         # independent finite buffers; none is charged as zero.
         output_bytes=phase_count * envelope["output_bytes"] + 32768
-                     + (32768 if value["schema"] == CANCEL_SCHEMA else 4096)
+                     + (32768 if value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA) else 4096)
                      + (4 * 1024**2 if system else 0)
                      + (8192 if value["schema"] == H11_SCHEMA else 0))
     for key, amount in costs.items():
@@ -650,9 +651,9 @@ def run(value, repository):
     from admin.local_hand_quota_observer.q2_capture import capture_existing
     raw = encoded(value["assembly"], LIMIT)
     h11 = value["schema"] == H11_SCHEMA
-    system = value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA)
+    system = value["schema"] in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA)
     chained = value["schema"] in (CHAIN_SCHEMA, SYSTEM_SCHEMA)
-    cancelled = value["schema"] == CANCEL_SCHEMA
+    cancelled = value["schema"] in (CANCEL_SCHEMA, SYSTEM_CANCEL_SCHEMA)
     cancel_runtime, cancel_report = load_cancel_modules(value, repository) if cancelled else (None, None)
     phases = PHASES if chained else ("preflight",)
     chain = chains.decode(raw, hashlib.sha256(raw).hexdigest()) if chained else None
@@ -676,7 +677,8 @@ def run(value, repository):
             require((phase_work["uid"], phase_work["gid"]) == (resident["ordinary"]["uid"], resident["ordinary"]["gid"]),
                     "LAUNCHER_ORDINARY_ACCOUNT")
     if cancelled:
-        require(resident["schema"] == "local-hand-q4-cancel-resident/v1"
+        require(resident["schema"] == ("local-hand-q4-system-cancel-resident/v1" if system
+                else "local-hand-q4-cancel-resident/v1")
                 and resident["purpose"] == CANCEL_PURPOSE, "LAUNCHER_RESIDENT_BINDING")
     if h11:
         require(resident["schema"] == "local-hand-q4-h11-origin-resident/v1"
