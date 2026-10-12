@@ -134,7 +134,7 @@ def test_third_original_is_independently_bound(monkeypatch, change):
 @pytest.mark.parametrize('index', [0, 1, 2, 3])
 @pytest.mark.parametrize('ordinal', [1, 2])
 @pytest.mark.parametrize('failure', ['truncated', 'active', 'timeout', 'late', 'populated', 'boot', 'parent_drift'])
-def test_each_old_observer_failure_is_terminal(monkeypatch, index, ordinal, failure):
+def test_each_old_observer_failure_rechecks_unresolved_conditions(monkeypatch, index, ordinal, failure):
     priors, _ = triple_fixture(monkeypatch, d)
     observer, state = observer_fixture((d, priors[index], context_v2()), monkeypatch,
                                       index=index, present=False)
@@ -154,20 +154,8 @@ def test_each_old_observer_failure_is_terminal(monkeypatch, index, ordinal, fail
         else: state['bad_show'] = failure
         with pytest.raises(d.DispatchError): observer.observe()
         calls = state['calls']
-        with pytest.raises(d.DispatchError, match='STOPPED'): observer.observe()
-        assert state['calls'] == calls and observer.effects._installation is None
+        with pytest.raises(d.DispatchError) as repeated: observer.observe()
+        assert 'STOPPED' not in str(repeated.value)
+        assert state['calls'] >= calls and observer.effects._installation is None
     finally: observer.close()
     assert not state['open_fds']
-
-
-@pytest.mark.parametrize('change', [None, 'body', 'missing', 'duplicate', 'decorator'])
-def test_locale_source_comparison_does_not_execute_or_reparse_snapshot(change):
-    original = b'def _require():\n    pass\ndef _admit_text():\n    pass\ndef _admit_sshd_source():\n    pass\n'
-    current = original
-    if change == 'body': current = current.replace(b'    pass', b'    return None', 1)
-    elif change == 'missing': current = current.replace(b'_admit_text', b'_other')
-    elif change == 'duplicate': current += b'def _admit_text():\n    pass\n'
-    elif change == 'decorator': current = current.replace(b'def _require', b'@replacement\ndef _require')
-    if change is None: f._validate_locale_source_preserved(original, current)
-    else:
-        with pytest.raises(f.c.ContractError): f._validate_locale_source_preserved(original, current)

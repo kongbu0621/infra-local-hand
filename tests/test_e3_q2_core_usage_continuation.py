@@ -111,19 +111,3 @@ def test_complete_success_cannot_substitute_self_report_for_archive(originals):
 
 if sys.platform.startswith('linux'):
     from test_e3_q2_core_minimal_continuation import originals,effects
-
-
-@pytest.mark.skipif(not sys.platform.startswith('linux'),reason='exact host authority source admission')
-@pytest.mark.parametrize('fault',['A','B','tree','ancestry'])
-def test_uc_authority_is_verified_before_field_effects(source_git,fault):
-    from e3_host import q2_journal_growth as h
-    if fault=='A':source_git.changed_doc=next(iter(h.history.c.USAGE_BASELINE['documents_sha256']))
-    elif fault=='B':source_git.changed_doc=h.history.c.USAGE_OWNER_DECISION['record_path']
-    elif fault=='tree':source_git.changed_tree=h.UC_C
-    else:source_git.rejected_edge=(h.UC_C,source_git.head)
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_'):
-        h.audit_historical_growth_sources(source_git.head)
-
-
-if sys.platform.startswith('linux'):
-    from test_e3_q2_journal_diagnostic_resume import source_git

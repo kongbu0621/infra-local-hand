@@ -618,7 +618,7 @@ def helper_fixture(monkeypatch, script, *, seconds=5, output=65536):
     return effects, policy, calls
 
 
-def test_real_helper_wait4_two_eof_fixed_invocation_and_no_retry(monkeypatch):
+def test_real_helper_wait4_two_eof_allows_another_bounded_read(monkeypatch):
     effects, policy, calls = helper_fixture(monkeypatch, "import os; os.write(1,b'ok'); os.write(2,b'note')")
     checks = []
     stdout, stderr, facts = d._admit_helper(effects, policy, lambda: checks.append(True))
@@ -628,9 +628,8 @@ def test_real_helper_wait4_two_eof_fixed_invocation_and_no_retry(monkeypatch):
     usage = effects._admit_helper_usage[0]
     assert usage["wait4"]["max_rss_bytes"] > 0 and usage["eof"] == ["stderr", "stdout"]
     assert calls[0][1]["shell"] is False and calls[0][1]["cwd"] == "/" and len(checks) == 2
-    with pytest.raises(d.DispatchError, match="REPLAY"):
-        d._admit_helper(effects, policy, lambda: None)
-    assert len(calls) == 1
+    assert d._admit_helper(effects, policy, lambda: None)[:2] == (b"ok", b"note")
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize('change', [None, 'stderr', 'stdout', 'query', 'status'])
@@ -653,33 +652,19 @@ def test_fixed_unit_files_empty_status_uses_real_wait_and_streams(monkeypatch, c
         assert receipt['stdout_eof'] and receipt['stderr_eof']
 
 
-@pytest.mark.parametrize('failure_slot', [None, 0, 1, 2, 3, 4, 5, 6, 7])
-def test_prior_show_slots_allow_eight_real_waits_but_never_a_retry(monkeypatch, failure_slot):
+def test_prior_show_can_retry_local_failure_without_consuming_observation(monkeypatch):
     effects, policy, calls = helper_fixture(monkeypatch, 'import os; os.write(1,b"show")', output=32768)
-    slots = ((0, 1), (1, 1), (2, 1), (3, 1), (0, 2), (1, 2), (2, 2), (3, 2))
-    for number, slot in enumerate(slots):
-        policy['argv'] = ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
-            'show', '--all', d._prior_profile(slot[0])['unit'], '--property=' + ','.join(d.PRIOR_SHOW_FIELDS)]
-        def check():
-            if number == failure_slot: raise d.DispatchError('TEST_PRIOR_SHOW_START')
-        if number == failure_slot:
-            with pytest.raises(d.DispatchError, match='TEST_PRIOR_SHOW_START'):
-                d._admit_run_helper(effects, policy, check, prior_observation=slot)
-            with pytest.raises(d.DispatchError, match='SHOW_SLOT'):
-                d._admit_run_helper(effects, policy, lambda: None, prior_observation=slot)
-            if number + 1 < len(slots):
-                with pytest.raises(d.DispatchError, match='SHOW_SLOT'):
-                    d._admit_run_helper(effects, policy, lambda: None, prior_observation=slots[number+1])
-            break
-        stdout, stderr, receipt = d._admit_run_helper(effects, policy, check, prior_observation=slot)
-        assert stdout == b'show' and stderr == b'' and receipt['stdout_eof'] and receipt['stderr_eof']
-    assert len(calls) == (8 if failure_slot is None else failure_slot)
-    assert len(effects._admit_helper_usage) == len(calls)
-    assert all(row['wait4'] is not None and row['failure'] is None for row in effects._admit_helper_usage)
-    if failure_slot is None:
-        with pytest.raises(d.DispatchError, match='SHOW_SLOT'):
-            d._admit_run_helper(effects, policy, lambda: None, prior_observation=(1, 2))
-        assert len(calls) == 8
+    policy['argv'] = ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
+        'show', '--all', d._prior_profile(0)['unit'], '--property=' + ','.join(d.PRIOR_SHOW_FIELDS)]
+    def failed(): raise d.DispatchError('TEST_PRIOR_SHOW_START')
+    with pytest.raises(d.DispatchError, match='TEST_PRIOR_SHOW_START'):
+        d._admit_run_helper(effects, policy, failed, prior_observation=(0, 1))
+    assert calls == []
+    stdout, stderr, receipt = d._admit_run_helper(effects, policy, lambda: None, prior_observation=(0, 1))
+    assert stdout == b'show' and stderr == b'' and receipt['stdout_eof'] and receipt['stderr_eof']
+    assert len(calls) == 1
+    assert effects._admit_helper_usage[0]['failure'] == 'TEST_PRIOR_SHOW_START'
+    assert effects._admit_helper_usage[1]['failure'] is None
 
 
 @pytest.mark.parametrize("script,seconds,output,reason", [
@@ -694,6 +679,20 @@ def test_real_helper_failure_kills_reaps_and_keeps_no_success(monkeypatch, scrip
     usage = effects._admit_helper_usage[0]
     assert usage["wait4"] is not None and usage["eof"] == ["stderr", "stdout"]
     assert usage["failure"] and usage["cleanup_failure"] is None
+
+
+def test_failed_read_can_retry_after_reap_but_not_while_exit_is_unresolved(monkeypatch):
+    effects, policy, calls = helper_fixture(monkeypatch, "raise SystemExit(7)")
+    for _ in range(2):
+        with pytest.raises(d.DispatchError, match="HELPER_EXIT"):
+            d._admit_helper(effects, policy, lambda: None)
+    assert len(calls) == len(effects._admit_helper_usage) == 2
+    assert all(row['failure'] and row['wait4'] and row['eof'] == ['stderr', 'stdout']
+               for row in effects._admit_helper_usage)
+    effects._admit_helpers_pending.add(tuple(policy['argv']))
+    with pytest.raises(d.DispatchError, match="EXIT_UNRESOLVED"):
+        d._admit_helper(effects, policy, lambda: None)
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("key,value", [
@@ -796,8 +795,14 @@ def test_real_admit_orders_components_and_never_retries(monkeypatch, stage):
         with pytest.raises(d.DispatchError, match='TEST_' + stage): effect.admit(argument)
         assert trace == order[:order.index(stage) + 1] and effect._admission is None
     prior = list(trace)
-    with pytest.raises(d.DispatchError, match='ADMISSION_BINDING'): effect.admit(argument)
-    assert trace == prior and effect._installation is None and not effect.held
+    if stage is None:
+        with pytest.raises(d.DispatchError, match='ADMISSION_BINDING'): effect.admit(argument)
+        assert trace == prior
+    else:
+        stage = None
+        assert effect.admit(argument) == expected
+        assert trace[len(prior):] == order + ['accounting']
+    assert effect._installation is None and not effect.held
 
 
 @pytest.mark.parametrize('change', ['boot', 'account', 'groups', 'manager', 'parent', 'owner',

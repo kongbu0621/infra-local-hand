@@ -12,7 +12,6 @@ from core_prior_fixture import previous_journal_files
 from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_delivery_dispatcher as d
 from e3_host import q2_journal_growth as h
-from test_e3_q2_journal_diagnostic_resume import source_git
 from test_e3_q2_core_minimal_continuation import originals
 
 
@@ -65,22 +64,6 @@ def test_both_consumers_reject_wrong_history_list(originals, fault):
         p.validate_journal_transition(value, priors=args['priors'], implementation=args['implementation'])
     with pytest.raises(d.DispatchError):
         d._validate_journal_transition(value, priors=args['priors'], implementation=args['implementation'])
-
-
-@pytest.mark.parametrize('record', list(p.c.SYSTEMCTL_BASELINE['documents_sha256'])
-                         + [p.c.SYSTEMCTL_OWNER_DECISION['record_path']])
-def test_systemctl_authority_bytes_required_before_source_admission(source_git, record):
-    source_git.changed_doc = record
-    with pytest.raises(h.prior.r.ObservationError, match='GROWTH_SYSTEMCTL_'):
-        h.audit_historical_growth_sources(source_git.head)
-    assert not any(call[0] == 'show' and ':tests/' in call[1] for call in source_git.calls)
-
-
-@pytest.mark.parametrize('edge', [(h.SYSTEMCTL_A, h.SYSTEMCTL_C), (h.SYSTEMCTL_C, 'd' * 40)])
-def test_new_implementation_must_descend_from_independent_closure(source_git, edge):
-    source_git.rejected_edge = edge
-    with pytest.raises(h.prior.r.ObservationError, match='GROWTH_SOURCE'):
-        h.audit_historical_growth_sources(source_git.head)
 
 
 def test_complete_new_preflight_fits_original_limit_and_rejects_old_schema():

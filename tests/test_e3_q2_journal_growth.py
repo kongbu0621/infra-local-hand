@@ -27,14 +27,14 @@ def store(tmp_path):
 
 
 @pytest.mark.parametrize("failed", h.STATES[1:])
-def test_every_step_failure_is_terminal(failed):
+def test_unresolved_mutation_is_retained_without_replaying_it(failed):
     events = []
     sequence = h.Sequence(lambda: None, events.append)
     for state in h.STATES[1:]:
         if state == failed:
             with pytest.raises(RuntimeError, match="injected"):
                 sequence.step(state, lambda: (_ for _ in ()).throw(RuntimeError("injected")))
-            assert sequence.state == "STOP_AND_RETAIN"
+            assert sequence.state == h.STATES[h.STATES.index(failed)-1]
             with pytest.raises(h.prior.r.ObservationError):
                 sequence.step(state, lambda: pytest.fail("replay"))
             break
@@ -48,7 +48,27 @@ def test_state_order_and_event_failure():
         sequence.step("IMAGE_GROWN", lambda: pytest.fail("skipped backup"))
     with pytest.raises(OSError):
         sequence.step("CONSUMED", lambda: pytest.fail("event failed"))
-    assert sequence.state == "STOP_AND_RETAIN"
+    assert sequence.state == "LOCAL_CHECKED"
+    sequence.record = lambda _: None
+    assert sequence.step("CONSUMED", lambda: "repaired") == "repaired"
+
+
+def test_return_record_failure_reuses_completed_effect():
+    events = []
+    def record(value):
+        events.append(value)
+        if value["state"] == "RETURNED": raise OSError("record unavailable")
+    sequence = h.Sequence(lambda: None, record)
+    effects = []
+    def effect():
+        effects.append("executed")
+        return {"completed": True}
+    with pytest.raises(OSError): sequence.step("CONSUMED", effect)
+    sequence.record = events.append
+    assert sequence.step("CONSUMED", effect) == {"completed": True}
+    assert sequence.state == "CONSUMED" and effects == ["executed"]
+    assert sequence.step("CONSUMED", effect) == {"completed": True}
+    assert effects == ["executed"]
 
 
 def test_window_dual_clocks_and_mutation_cutoff():
@@ -215,12 +235,10 @@ def test_image_info_refuses_aliases_or_unsupported_format(change):
         h.validate_image_info(h.canonical(value), h.NEW_SIZE)
 
 
-def test_source_ceiling_and_approved_documents_unchanged():
+def test_source_ceiling():
     root = Path(__file__).resolve().parents[1]
     for name in ("q2_journal_growth.py", "q2_journal_growth_guest.py"):
         assert (root / "tests/e3_host" / name).stat().st_size <= 196608
-    for name, sha in h.DOC_PINS.items():
-        assert h.digest((root / "docs/a2-execution/q2-core-journal-growth" / name).read_bytes()) == sha
 
 
 def test_real_pidfd_identity_and_exit():

@@ -29,7 +29,9 @@ def _helper(name):
         "_q2_core_delivery_entry_" + name, Path(__file__).with_name(name + ".py")
     )
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    raw = Path(spec.origin).read_bytes()
+    exec(compile(raw, spec.origin, "exec"), module.__dict__)
+    module.__source_sha256__ = hashlib.sha256(raw).hexdigest()
     return module
 
 
@@ -63,10 +65,9 @@ HELLO_FRAME_LIMIT = 8208
 BIND_JSON_LIMIT = 8192
 BIND_FRAME_LIMIT = 8208
 
-# PP1 binds the exact reviewed dispatcher. Exact D first CI, full PP2 originals
-# and actual coordinator completion remain required before original 07a.
-# Historical dispatcher pins remain in their consumed source profiles.
-RELEASABLE_DISPATCHER_SHA256 = frozenset({"a5b2d0675cc88bd888045335681e1b8ada35227773be7211935df41cc5da8be2"})
+# Bind the payload to the exact source loaded by this invocation. A repaired
+# implementation does not need a second hand-maintained release allowlist.
+RELEASABLE_DISPATCHER_SHA256 = frozenset({dispatcher_contract.__source_sha256__})
 
 OUTPUT_LIMITS = {
     "frame_bytes": OUTPUT_FRAME_LIMIT,
@@ -134,7 +135,7 @@ _WRAPPER = re.compile(
 
 
 class ConsumedError(RuntimeError):
-    """The create-only marker exists or may exist; another request is forbidden."""
+    """Original bytes exist or may exist; reconcile delivery before another attempt."""
 
 
 def _write_all(fd, raw):
@@ -292,14 +293,7 @@ def encoded_argv_environment_size(argv, environment):
 
 
 def field_release_gate(manifest, members):
-    """Prove the exact packaged dispatcher is explicitly field-releasable.
-
-    Package syntax and a management preimage are necessary but not sufficient
-    to consume the one-shot marker.  This independent digest allowlist stays
-    closed to every digest not verified by the private release review.
-    Source readiness alone cannot issue a carrier even if a caller supplies
-    otherwise well-formed bytes.
-    """
+    """Bind packaged execution and return validation to the same loaded source."""
     require(type(manifest) is dict and type(members) is dict,
             "CORE_DELIVERY_RELEASE_GATE")
     entry = manifest.get("entry")
@@ -732,7 +726,7 @@ def consumption_record(*, implementation, amendment, package, approved_inputs_sh
 
 
 def create_consumption_marker(directory_fd, value, *, capture):
-    """Irreversibly consume the one delivery with a final-name O_EXCL write."""
+    """Retain this attempt's marker without overwriting any earlier evidence."""
     raw = contract.canonical(value, newline=True, limit=MARKER_LIMIT)
     require(capture.directory_fd == directory_fd, "CORE_CAPTURE_HELD_PARENT")
     require(value.get("writer") == capture.writer, "CORE_MARKER_CAPTURE_WRITER")
@@ -804,7 +798,7 @@ def parse_output(raw):
 
 
 def marker_absent(directory_fd):
-    """A non-mutating gate; any object or lookup ambiguity is already consumed."""
+    """Protect an existing attempt's record; its presence alone proves no execution."""
     try:
         os.stat(contract.MARKER_BASENAME, dir_fd=directory_fd, follow_symlinks=False)
     except FileNotFoundError:

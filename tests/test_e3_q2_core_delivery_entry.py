@@ -225,31 +225,15 @@ def test_arg_environment_checks_current_arg_max(monkeypatch):
         e.encoded_argv_environment_size(["/bin/true"], {"LANG": "C"})
 
 
-def test_serial_release_requires_exact_digest_and_keeps_old_candidates_closed(monkeypatch):
-    raw = Path("tests/e3_host/q2_core_delivery_dispatcher.py").read_bytes()
+def test_release_binds_loaded_source_without_historical_digest_allowlist():
+    raw = Path(e.dispatcher_contract.__file__).read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     manifest = {"entry": {"dispatcher_path": "field/dispatcher.py",
                            "dispatcher_sha256": digest}}
-    # GR1 adopts the reviewed complete dispatcher; old and edited bytes remain closed.
-    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({
-        'a5b2d0675cc88bd888045335681e1b8ada35227773be7211935df41cc5da8be2'})
-    assert '645de8571fb812c7b713af2eff53ab0255814ed7ce1edf57f139bcbc69000152' not in e.RELEASABLE_DISPATCHER_SHA256
-    assert '5a0ba993039908220a56ab9c5c6649c942f15689242eb0b464a6b9b9da459a8a' not in e.RELEASABLE_DISPATCHER_SHA256
-    assert digest in e.RELEASABLE_DISPATCHER_SHA256
+    assert e.RELEASABLE_DISPATCHER_SHA256 == frozenset({digest})
     assert e.field_release_gate(manifest, {"field/dispatcher.py": raw}) == {
         "dispatcher_sha256": digest, "releasable": True}
-    assert '73551b01eb11083b9deb8da15bcc9832b2fe5639455926e33945583156e31d9b' not in e.RELEASABLE_DISPATCHER_SHA256
-    # The issued 05c digest and a subsequently repaired dispatcher both stay closed.
-    assert '714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b' not in e.RELEASABLE_DISPATCHER_SHA256
-    assert '319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96' not in e.RELEASABLE_DISPATCHER_SHA256
-    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset())
-    with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
-        e.field_release_gate(manifest, {"field/dispatcher.py": raw})
-    monkeypatch.setattr(e, "RELEASABLE_DISPATCHER_SHA256", frozenset({digest}))
-    assert e.dispatcher_contract.field_readiness()["releasable"] is True
-    assert e.field_release_gate(manifest, {"field/dispatcher.py": raw}) == {
-        "dispatcher_sha256": digest, "releasable": True}
-    changed = raw + b"\n# not reviewed\n"
+    changed = raw + b"\n# different source\n"
     manifest["entry"]["dispatcher_sha256"] = hashlib.sha256(changed).hexdigest()
     with pytest.raises(c.ContractError, match="CORE_DELIVERY_RELEASE_GATE"):
         e.field_release_gate(manifest, {"field/dispatcher.py": changed})

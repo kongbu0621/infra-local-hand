@@ -43,7 +43,7 @@ Q2 真实整链尚未验收，不能据此安装到 GX10 或宣布 E3 通过。
 - 固定三次 quota syscall：`Q_XGETQSTATV/PRJQUOTA` → `Q_GETQUOTA/PRJQUOTA` →
   `Q_XGETQSTATV/PRJQUOTA`。前后状态须具有 project accounting/enforcement 标志；
   generic Q_GETQUOTA 的 hard limit 是 1024-byte 单位，并检查有效位、零值和换算溢出。
-- 中途失败立即停止后续查询，不重试、不更换 API、不设置 quota；逐项保存原 rc 和即时 errno。
+- 单次查询保留各项原 rc 和即时 errno；失败后先确认原查询进程已退出，再在原资源限制内重试只读查询。查询器不更换 API、不设置 quota。
 - 再次观察 FD 的 dev/inode/uid/gid/mode 和 project/继承，保存前后事实；漂移/复查失败为 IO_UNCERTAIN。
 - 固定 `local-hand-quota-abi/v2` 有界 JSON，小于 4096 bytes；不输出路径，不把错误文本拼成协议。
   `hard_bytes` 未能验证/换算时为 null。保留成功 syscall 的 errno 快照，判定以 rc 为准。

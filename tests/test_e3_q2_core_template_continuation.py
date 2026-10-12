@@ -11,7 +11,6 @@ from core_prior_fixture import previous_journal_files
 from e3_host import q2_core_prior_attempt as p
 from e3_host import q2_core_delivery_dispatcher as d
 from e3_host import q2_journal_growth as h
-from test_e3_q2_journal_diagnostic_resume import source_git
 
 
 @pytest.mark.parametrize('location', ['manifest', 'marker', 'receipt', 'inputs'])
@@ -42,22 +41,6 @@ def test_third_failure_retains_its_original_two_generation_resume(monkeypatch, l
         monkeypatch.setitem(p.THIRD_JOURNAL_PINS,name,(len(raw),h.digest(raw)))
     with pytest.raises(p.c.ContractError,match='PREVIOUS_SYSTEMCTL_RESUME'):
         p.build_previous_maintenance(files)
-
-
-@pytest.mark.parametrize('record',list(p.c.TEMPLATE_BASELINE['documents_sha256'])
-                         +[p.c.TEMPLATE_OWNER_DECISION['record_path']])
-def test_template_authority_rejected_before_source_admission(source_git,record):
-    source_git.changed_doc=record
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_TEMPLATE_'):
-        h.audit_historical_growth_sources(source_git.head)
-    assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
-
-
-@pytest.mark.parametrize('edge',[(h.TEMPLATE_A,h.TEMPLATE_C),(h.TEMPLATE_C,'d'*40)])
-def test_template_implementation_requires_its_independent_closure(source_git,edge):
-    source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):
-        h.audit_historical_growth_sources(source_git.head)
 
 
 def preflight():

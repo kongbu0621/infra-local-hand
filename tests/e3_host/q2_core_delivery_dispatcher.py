@@ -1571,18 +1571,25 @@ class _PriorScopeObserver:
 
     def _parents(self):
         call = self.effects._capacity_call
-        if not self.nodes:
-            parts = PurePosixPath(self.parent_path).parts
-            parent = None; path = ''
+        parts = PurePosixPath(self.parent_path).parts
+        if len(self.nodes) < len(parts):
+            start = len(self.nodes)
+            parent = self.nodes[-1][0] if self.nodes else None
+            path = ''
             for index, name in enumerate(parts):
                 path = '/' if index == 0 else path.rstrip('/') + '/' + name
+                if index < start:
+                    continue
                 fd = call(os.open, name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
                           dir_fd=parent, release=os.close)
-                self.nodes.append((fd, parent, name, path, None))
-                identity = self.identity(path, call(os.fstat, fd))
-                self.nodes[-1] = (fd, parent, name, path, identity)
+                try:
+                    identity = self.identity(path, call(os.fstat, fd))
+                except BaseException:
+                    os.close(fd)
+                    raise
+                self.nodes.append((fd, parent, name, path, identity))
                 parent = fd
-            _require(call(_kernel_fs_type, self.nodes[-1][0]) == 0x63677270, 'CORE_PRIOR_SCOPE_FILESYSTEM')
+        _require(call(_kernel_fs_type, self.nodes[-1][0]) == 0x63677270, 'CORE_PRIOR_SCOPE_FILESYSTEM')
         for fd, parent, name, path, identity in self.nodes:
             _require(self.identity(path, call(os.fstat, fd)) == identity
                 == self.identity(path, call(os.stat, name, dir_fd=parent, follow_symlinks=False)),
@@ -1590,11 +1597,12 @@ class _PriorScopeObserver:
         return self.nodes[-1][0], self.nodes[-1][4]
 
     def observe(self):
-        _require(len(self.observations) < 2, 'CORE_PRIOR_SCOPE_NO_RETRY')
-        # Consume the observation slot before any effect. A failed A cannot be
-        # retried or advanced to B by this same observer.
+        if len(self.observations) == 2:
+            self.recheck()
+            return self.observations[-1]
+        # Only a complete observation advances A/B. Read failures may be
+        # retried against the same held identities and original deadline.
         ordinal = len(self.observations) + 1
-        _require(not getattr(self, 'failed', False), 'CORE_PRIOR_SCOPE_STOPPED')
         self.failed = True
         e = self.effects; call = e._capacity_call
         e._effect_guard(); parent, parent_pin = self._parents()
@@ -4160,17 +4168,14 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None,
             and env.get('XDG_RUNTIME_DIR') == '/run/user/1100'
             and env.get('DBUS_SESSION_BUS_ADDRESS') == 'unix:path=/run/user/1100/bus',
             'CORE_RUNTIME_HELPER_CREDENTIALS')
-    seen = getattr(effects, "_admit_helpers_attempted", None)
-    if seen is None:
-        effects._admit_helpers_attempted = seen = set()
+    pending = getattr(effects, "_admit_helpers_pending", None)
+    if pending is None:
+        effects._admit_helpers_pending = pending = set()
     attempt_key = tuple(argv)
     if prior_observation is not None:
-        slots = ((0, 1), (1, 1), (2, 1), (3, 1), (0, 2), (1, 2), (2, 2), (3, 2))
-        consumed = getattr(effects, '_prior_show_slots', [])
-        _require(type(prior_observation) is tuple
+        _require(type(prior_observation) is tuple and len(prior_observation) == 2
             and all(type(value) is int for value in prior_observation)
-            and not getattr(effects, '_prior_show_stopped', False)
-            and len(consumed) < 8 and prior_observation == slots[len(consumed)],
+            and prior_observation[0] in range(4) and prior_observation[1] in (1, 2),
             'CORE_PRIOR_SCOPE_SHOW_SLOT')
         index, ordinal = prior_observation
         _require(argv == ['/usr/bin/systemctl', '--system', '--no-pager', '--no-ask-password',
@@ -4178,13 +4183,7 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None,
             and limits == dict(command_seconds=5, command_cpu_seconds=2,
                 stdout_bytes=32768, stderr_bytes=32768, combined_output_bytes=32768),
             'CORE_PRIOR_SCOPE_SHOW_POLICY')
-        effects._prior_show_slots = [*consumed, prior_observation]
-        effects._prior_show_stopped = True
-        attempt_key += ('prior-observation', ordinal)
-    _require(attempt_key not in seen, "CORE_ADMIT_HELPER_REPLAY")
-    seen.add(attempt_key)
-    effects._effect_guard()
-    expected_program = program_check()
+    _require(attempt_key not in pending, "CORE_ADMIT_HELPER_EXIT_UNRESOLVED")
     started = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
     started_mono = time.monotonic_ns()
     end = started + limits["command_seconds"] * NS
@@ -4242,8 +4241,10 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None,
             guard()
     try:
         guard()
+        expected_program = program_check()
         executable_reader, executable_fd = _admit_exec_binding(effects, argv[0], expected_program)
         guard()
+        pending.add(attempt_key)
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, cwd="/", env=env, shell=False, close_fds=True,
             start_new_session=True, preexec_fn=cpu_limit,
@@ -4288,13 +4289,13 @@ def _admit_run_helper(effects, policy, program_check, *, prior_observation=None,
             wait4=waited, eof=sorted(eof), failure=failure, cleanup_failure=cleanup,
             stdout_bytes=observed_bytes["stdout"], stderr_bytes=observed_bytes["stderr"],
             retained_stdout_bytes=len(output["stdout"]), retained_stderr_bytes=len(output["stderr"])))
+        if proc is None or (waited is not None and len(eof) == 2):
+            pending.discard(attempt_key)
         if proc is not None:
             proc.stdout.close(); proc.stderr.close()
         if executable_reader is not None:
             executable_reader.close()
     stdout, stderr = bytes(output["stdout"]), bytes(output["stderr"])
-    if prior_observation is not None:
-        effects._prior_show_stopped = False
     return stdout, stderr, dict(argv_sha256=_sha(canonical(argv)), environment_sha256=_sha(canonical(env)),
         started_boottime_ns=started, finished_boottime_ns=finished, exit_status=proc.returncode,
         stdout_bytes=len(stdout), stdout_sha256=_sha(stdout), stderr_bytes=len(stderr), stderr_sha256=_sha(stderr),
@@ -5912,9 +5913,8 @@ class FieldEffects:
     def admit(self, expected):
         _exact(expected, ("hello", "manifest", "guest_deadlines"), "CORE_EFFECT_ADMISSION_INPUT")
         _require(all(expected[key] == self.context[key] for key in expected)
-                 and self._admission is None and not getattr(self, "_admit_attempted", False),
+                 and self._admission is None,
                  "CORE_EFFECT_ADMISSION_BINDING")
-        self._admit_attempted = True
         self._effect_guard()
         approved = _approved_inputs_envelope(self.context)
         _validate_approved_components(approved)

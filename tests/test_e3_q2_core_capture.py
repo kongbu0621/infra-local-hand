@@ -112,23 +112,23 @@ def test_all_six_files_fsync_reread_and_observed_accounting(capture):
     assert clock.calls == [time.CLOCK_BOOTTIME, time.CLOCK_MONOTONIC] * (len(clock.calls) // 2)
 
 
-def test_marker_is_first_and_failure_cannot_resume(capture):
+def test_marker_validation_failure_can_resume_before_any_creation(capture):
     obj, _, path, _ = capture
     with pytest.raises(cap.CaptureError, match="MARKER_FIRST"):
         obj.create("stdout", b"x")
     assert not list(path.iterdir())
-    with pytest.raises(cap.CaptureError, match="CREATE_ONCE"):
-        obj.create("marker", b"x")
+    obj.create("marker", b"x")
+    assert (path / cap.BASENAMES["marker"]).read_bytes() == b"x"
 
 
-def test_existing_object_never_adopted_overwritten_or_retried(capture):
+def test_retry_still_cannot_adopt_or_overwrite_existing_object(capture):
     obj, _, path, _ = capture
     target = path / cap.BASENAMES["marker"]
     target.write_bytes(b"old partial")
     with pytest.raises(FileExistsError):
         obj.create("marker", b"replacement")
     assert target.read_bytes() == b"old partial"
-    with pytest.raises(cap.CaptureError):
+    with pytest.raises(FileExistsError):
         obj.create("marker", b"second")
     assert obj.logical == 0 and not obj.objects
 
@@ -150,6 +150,23 @@ def test_fixed_role_caps_checked_before_creation(capture, monkeypatch, role):
     with pytest.raises(cap.CaptureError, match="ROLE_LIMIT"):
         obj.create(role, b"1234")
     assert not (path / cap.BASENAMES[role]).exists()
+    assert not obj.failed
+    obj.create(role, b"ok")
+    assert (path / cap.BASENAMES[role]).read_bytes() == b"ok"
+
+
+def test_read_only_capture_failure_can_retry_without_rewriting(capture, monkeypatch):
+    obj, _, path, _ = capture
+    obj.create("marker", b"original")
+    original = obj.observer
+    def unavailable(_): raise OSError("temporary observation failure")
+    monkeypatch.setattr(obj, "observer", unavailable)
+    with pytest.raises(OSError): obj.sample()
+    assert not obj.failed
+    monkeypatch.setattr(obj, "observer", original)
+    obj.sample()
+    obj.create("stdout", b"result")
+    assert (path / cap.BASENAMES["marker"]).read_bytes() == b"original"
 
 
 def test_combined_stream_cap_cannot_borrow_remaining_files(capture, monkeypatch):

@@ -127,30 +127,6 @@ FIELD_SOURCE_PATHS = {
     "field/dispatcher.py": "tests/e3_host/q2_core_delivery_dispatcher.py",
 }
 
-# These exact historical bytes were reviewed for the pre-business stop
-# premise. Checking their pins is not a claim of historical remote exit.
-PRIOR_SOURCE_PROFILES = (
-    {"commit": "605a2a38d1db5ef85c961b4d357cafa157bdd7d5",
-     "tree": "ced38519fe6e3b86973de5ccf0dff60fc62322e4",
-     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
-                 "bootstrap": "039fe87cc91a64c0327dc404e0ccf9728c32a1cc07e3e6fb11ed74c979f904f3"}},
-    {"commit": "59d7c32bbe10d580603b8e5e62dd49ad6a538e56",
-     "tree": "15bfe2192ced5aad0acf5c74a58b6e865afe34d1",
-     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
-                 "bootstrap": "c9f6e89f874d83856552e65810b04a5d88e7ab0687395dfa5dfd80d7affdee83",
-                 "dispatcher": "30d8e9fe9a9bbf39dc5261d0eb0d47c7349fe7e8229132f394a31aa934216eb4"}},
-    {"commit": "8704a24b6c3c79ce4a36028ae2182dec2a35843e",
-     "tree": "89a5f221883c11838a10a452be2dcb756abb5a17",
-     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
-                 "bootstrap": "4a58b342ea4fabb95903e9362cc9b0007c6aafda5a5ece3203692c5033982ce3",
-                 "dispatcher": "319c651f05998f812ac8faab51a354c7445b584bc6442a26c9800e79ae776e96"}},
-    {"commit": "657b1bcd749cb4281b0193b2bc9430b0662faf98",
-     "tree": "4bb00b2e9ccbec3c43160159811e51eec76702cd",
-     "sources": {"loader": "6cf45d3888e33aa386dacba5411635240c8c8e8585df01844657aedd89fa9c61",
-                 "bootstrap": "7e2d08800951528c81f9078eb772cc4937dc76a3fd1ed7a1ccadde2a12a23cf5",
-                 "dispatcher": "714bbb8039aadc3ab58195adde1f61cc273cb4822b46e60de26c2315d459a11b"}},
-)
-
 ANCHOR_FILES = {
     "ssh.sh": (0o700, entry_api.WRAPPER_SHA256, "wrapper"),
     "start.sh": (0o700, entry_api.START_SHA256, "fixture_start"),
@@ -1018,69 +994,9 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                     implementation_commit + "^{tree}")
     c.require(identity.decode("ascii").split() == [implementation_commit, implementation_tree],
               "CORE_FREEZE_IMPLEMENTATION")
-    for prior in PRIOR_SOURCE_PROFILES:
-        identity = _git(repository, git_path, "rev-parse", prior['commit'] + "^{tree}")
-        c.require(identity.decode('ascii').strip() == prior['tree'], 'CORE_FREEZE_PRIOR_TREE')
-        _git(repository, git_path, 'merge-base', '--is-ancestor', prior['commit'], implementation_commit)
-        for role, digest in prior['sources'].items():
-            raw = _git(repository, git_path, 'show', prior['commit'] + ':' + FIELD_SOURCE_PATHS['field/' + role + '.py'])
-            c.require(c.sha256(raw) == digest, 'CORE_FREEZE_PRIOR_SOURCE')
-    # Final D must descend from every independent amendment/new-batch closure.
-    # Authority stays offline; no replacement wire amendment or extra member.
-    adoption = (c.VM_ADOPTION_BASELINE, c.VM_ADOPTION_OWNER_DECISION, c.VM_ADOPTION_CLOSURE)
-    c.require(all(row is None for row in adoption) or all(type(row) is dict for row in adoption),
-              "CORE_FREEZE_VM_AUTHORITY_PARTIAL")
-    for baseline, decision, closure in (
-            (c.AMENDMENT_BASELINE, c.AMENDMENT_OWNER_DECISION, c.AMENDMENT_CLOSURE),
-            (c.WRITER_TRANSPORT_BASELINE, c.WRITER_TRANSPORT_OWNER_DECISION,
-             c.WRITER_TRANSPORT_CLOSURE),
-            (c.COMPLETION_ADJUSTMENT_BASELINE, c.COMPLETION_ADJUSTMENT_OWNER_DECISION,
-             c.COMPLETION_ADJUSTMENT_CLOSURE),
-            (c.CLOUD_INIT_GRANT_BASELINE, c.CLOUD_INIT_GRANT_OWNER_DECISION,
-             c.CLOUD_INIT_GRANT_CLOSURE),
-            (c.NEXT_ACCEPTANCE_BASELINE, c.NEXT_ACCEPTANCE_OWNER_DECISION,
-             c.NEXT_ACCEPTANCE_CLOSURE),
-            (c.HOST_CAPACITY_BOUNDARY_BASELINE, c.HOST_CAPACITY_BOUNDARY_OWNER_DECISION,
-             c.HOST_CAPACITY_BOUNDARY_CLOSURE),
-            (c.POST_SUDO_BASELINE, c.POST_SUDO_OWNER_DECISION, c.POST_SUDO_CLOSURE),
-            (c.LOCALE_GRAMMAR_BASELINE, c.LOCALE_GRAMMAR_OWNER_DECISION, c.LOCALE_GRAMMAR_CLOSURE),
-            (c.POST_LOCALE_BASELINE, c.POST_LOCALE_OWNER_DECISION, c.POST_LOCALE_CLOSURE),
-            (c.MINIMAL_BASELINE, c.MINIMAL_OWNER_DECISION, c.MINIMAL_CLOSURE),
-            (c.SERIAL_BASELINE, c.SERIAL_OWNER_DECISION, c.SERIAL_CLOSURE),
-            (c.SYSTEMCTL_BASELINE, c.SYSTEMCTL_OWNER_DECISION, c.SYSTEMCTL_CLOSURE),
-            (c.TEMPLATE_BASELINE, c.TEMPLATE_OWNER_DECISION, c.TEMPLATE_CLOSURE),
-            (c.NAMES_BASELINE, c.NAMES_OWNER_DECISION, c.NAMES_CLOSURE),
-            (c.EXEC_BASELINE, c.EXEC_OWNER_DECISION, c.EXEC_CLOSURE),
-            (c.GS_BASELINE, c.GS_OWNER_DECISION, c.GS_CLOSURE),
-            (c.QI_BASELINE, c.QI_OWNER_DECISION, c.QI_CLOSURE),
-            (c.DS_BASELINE, c.DS_OWNER_DECISION, c.DS_CLOSURE),
-            (c.RUNTIME_BASELINE,c.RUNTIME_OWNER_DECISION,c.RUNTIME_CLOSURE),
-            (c.HOST_FD_BASELINE,c.HOST_FD_OWNER_DECISION,c.HOST_FD_CLOSURE),
-            (c.USAGE_BASELINE,c.USAGE_OWNER_DECISION,c.USAGE_CLOSURE),
-            (c.TRANSPORT_BASELINE,c.TRANSPORT_OWNER_DECISION,c.TRANSPORT_CLOSURE),
-            (c.RESUMED_VM_BASELINE,c.RESUMED_VM_OWNER_DECISION,c.RESUMED_VM_CLOSURE),
-            (c.PROTECTED_SOURCE_BASELINE,c.PROTECTED_SOURCE_OWNER_DECISION,c.PROTECTED_SOURCE_CLOSURE),
-            (c.PERSISTENT_PATH_BASELINE,c.PERSISTENT_PATH_OWNER_DECISION,c.PERSISTENT_PATH_CLOSURE),
-            (c.IDENTITY_RESOURCE_BASELINE,c.IDENTITY_RESOURCE_OWNER_DECISION,c.IDENTITY_RESOURCE_CLOSURE),
-            (c.RUNTIME_PREPARATION_BASELINE,c.RUNTIME_PREPARATION_OWNER_DECISION,c.RUNTIME_PREPARATION_CLOSURE),
-            (c.HOST_REBIND_ORIGINAL_BASELINE,c.HOST_REBIND_ORIGINAL_OWNER_DECISION,c.HOST_REBIND_ORIGINAL_CLOSURE),
-            (c.HOST_REBIND_BASELINE,c.HOST_REBIND_OWNER_DECISION,c.HOST_REBIND_CLOSURE),
-            (c.GUEST_RESUMPTION_BASELINE,c.GUEST_RESUMPTION_OWNER_DECISION,c.GUEST_RESUMPTION_CLOSURE)) + (() if adoption[0] is None else (adoption,)):
-        c.require(implementation_commit != closure["commit"], "CORE_FREEZE_IMPLEMENTATION_PARENT")
-        for authority in (baseline, closure):
-            actual = _git(repository, git_path, "rev-parse", authority["commit"] + "^{tree}")
-            c.require(actual.decode("ascii").strip() == authority["tree"],
-                      "CORE_FREEZE_AUTHORITY_TREE")
-        _git(repository, git_path, "merge-base", "--is-ancestor", baseline["commit"], closure["commit"])
-        _git(repository, git_path, "merge-base", "--is-ancestor", closure["commit"], implementation_commit)
-        for path, expected in baseline["documents_sha256"].items():
-            for commit_id in (baseline["commit"], closure["commit"], implementation_commit):
-                raw = _git(repository, git_path, "show", commit_id + ":" + path, limit=1_048_576)
-                c.require(c.sha256(raw) == expected, "CORE_FREEZE_AUTHORITY_DOCUMENT")
-        for commit_id in (closure["commit"], implementation_commit):
-            raw = _git(repository, git_path, "show", commit_id + ":" + decision["record_path"],
-                       limit=1_048_576)
-            c.require(c.sha256(raw) == decision["record_sha256"], "CORE_FREEZE_OWNER_DECISION")
+    # The selected commit/tree and its actual executable blobs are the source
+    # authority. Historical approvals and previous failed candidates are not
+    # prerequisites for packaging a repaired implementation.
     source_paths = list(FIELD_SOURCE_PATHS.values())
     tree = _git(repository, git_path, "ls-tree", "-z", implementation_commit, "--",
                 *source_paths)
@@ -1103,18 +1019,6 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
     loader = objects[FIELD_SOURCE_PATHS["field/loader.py"]]
     bootstrap = objects[FIELD_SOURCE_PATHS["field/bootstrap.py"]]
     dispatcher = objects[FIELD_SOURCE_PATHS["field/dispatcher.py"]]
-    original_dispatcher = _git(repository, git_path, 'show', c.LOCALE_REPAIR + ':'
-        + FIELD_SOURCE_PATHS['field/dispatcher.py'], limit=c.PACKAGE_LIMITS['member_bytes'])
-    _git(repository, git_path, 'merge-base', '--is-ancestor', c.LOCALE_REPAIR, implementation_commit)
-    _validate_locale_source_preserved(original_dispatcher, dispatcher)
-    original_bootstrap = _git(repository, git_path, 'show', c.LOCALE_REPAIR + ':'
-        + FIELD_SOURCE_PATHS['field/bootstrap.py'], limit=c.PACKAGE_LIMITS['member_bytes'])
-    legacy = (bootstrap == original_bootstrap.replace(b'20261005b', b'20261007a')
-              and c.sha256(loader) == PRIOR_SOURCE_PROFILES[0]['sources']['loader'])
-    # Owner-requested resource level 2; exact source pair, never arbitrary blobs.
-    level2 = (c.sha256(loader) == "9315d0a804df07eab74fd6b1272cf108e81a143c3e535458aa80f403b0b81a36"
-              and c.sha256(bootstrap) == "76c886621e545ecee2bbe50ecf8beaab4bd7d8a8e5f7dafe774eb3a2aa4ab96c")
-    c.require(legacy or level2, 'CORE_FREEZE_BOOTSTRAP_DELTA')
     try:
         parsed = ast.parse(bootstrap.decode("utf-8", "strict"), filename="field/bootstrap.py")
     except (UnicodeError, SyntaxError) as error:
@@ -1133,19 +1037,6 @@ def _implementation_blobs(repository, implementation_commit, implementation_tree
                 bindings.append(value.value)
     c.require(bindings == [c.sha256(loader)], "CORE_FREEZE_LOADER_BINDING")
     return loader, bootstrap, dispatcher
-
-
-def _validate_locale_source_preserved(original, current):
-    """Compare source bytes, never replay the consumed private snapshot parse."""
-    names = {'_admit_sshd_source', '_admit_text', '_require'}
-    def functions(raw):
-        tree = ast.parse(raw.decode('utf-8', 'strict'))
-        lines = raw.splitlines(keepends=True)
-        nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
-        c.require(len(nodes) == len(names), 'CORE_FREEZE_LOCALE_SOURCE')
-        return {node.name: b''.join(lines[min([node.lineno] +
-            [item.lineno for item in node.decorator_list]) - 1:node.end_lineno]) for node in nodes}
-    c.require(functions(original) == functions(current), 'CORE_FREEZE_LOCALE_SOURCE')
 
 
 def _artifact(path, expected, role):

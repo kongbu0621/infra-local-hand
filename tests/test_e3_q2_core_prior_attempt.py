@@ -256,7 +256,7 @@ def observer_fixture(guest, monkeypatch, *, present=False, index=0):
     e._effect_guard = guard; e._capacity_call = guarded
     def show(arguments, program, *, prior_observation):
         state['calls'] += 1
-        assert prior_observation == (index, state['calls'])
+        assert prior_observation == (index, len(observer.observations) + 1)
         assert arguments == ['show', '--all', old_unit, '--property=' + ','.join(d.PRIOR_SHOW_FIELDS)]
         if state['bad_show'] == 'timeout': raise d.DispatchError('TEST_TIMEOUT')
         if state['bad_show'] == 'late': state['late'] = True
@@ -270,7 +270,8 @@ def observer_fixture(guest, monkeypatch, *, present=False, index=0):
     e._capacity_systemctl = show
     e._capacity_kernel = lambda name, *_args, **_kwargs: (b'' if name == 'cgroup.procs'
         else b'populated ' + (b'1' if state['populated'] else b'0') + b'\nfrozen 0\n')
-    return d._PriorScopeObserver(e, {'systemctl': {}}, index), state
+    observer = d._PriorScopeObserver(e, {'systemctl': {}}, index)
+    return observer, state
 
 
 @pytest.mark.parametrize('present', [False, True])
@@ -285,14 +286,37 @@ def test_two_observations_use_same_held_parent_and_no_third_call(guest, monkeypa
         observer.observe(); observer.observe()
         result = observer.finish()
         assert state['calls'] == 2 and result['current_scope_quiescent'] is True
-        with pytest.raises(guest[0].DispatchError, match='NO_RETRY'): observer.observe()
+        assert observer.observe() == observer.observations[-1]
         assert state['calls'] == 2
     finally: observer.close()
     assert not state['open_fds']
 
 
+def test_parent_read_failure_retries_without_partial_identity_or_descriptor_leak(guest, monkeypatch):
+    observer, state = observer_fixture(guest, monkeypatch)
+    original = observer.effects._capacity_call
+    failed = False
+    def temporary_failure(function, *args, **kwargs):
+        nonlocal failed
+        if function is os.fstat and len(state['open_fds']) == 3 and not failed:
+            failed = True
+            raise OSError('temporary parent read')
+        return original(function, *args, **kwargs)
+    observer.effects._capacity_call = temporary_failure
+    try:
+        with pytest.raises(OSError, match='temporary parent read'): observer.observe()
+        assert len(observer.nodes) == len(state['open_fds']) == 2
+        assert state['calls'] == 0
+        held = tuple(observer.nodes)
+        observer.observe(); observer.observe()
+        assert tuple(observer.nodes[:2]) == held
+        assert observer.finish()['current_scope_quiescent'] is True
+    finally: observer.close()
+    assert not state['open_fds']
+
+
 @pytest.mark.parametrize('failure', ['truncated', 'duplicate', 'active', 'timeout', 'late', 'populated', 'boot', 'parent_drift'])
-def test_failed_observation_never_retries_or_installs(guest, monkeypatch, failure):
+def test_failed_observation_rechecks_actual_state_without_installing(guest, monkeypatch, failure):
     d, _, _ = guest
     observer, state = observer_fixture(guest, monkeypatch, present=failure == 'populated')
     try:
@@ -303,8 +327,16 @@ def test_failed_observation_never_retries_or_installs(guest, monkeypatch, failur
         else: state['bad_show'] = failure
         with pytest.raises(d.DispatchError): observer.observe()
         calls = state['calls']
-        with pytest.raises(d.DispatchError, match='STOPPED'): observer.observe()
+        # The same unresolved condition still fails; it is not replaced with
+        # a permanent STOPPED sentinel that would survive a repaired cause.
+        with pytest.raises(d.DispatchError) as repeated: observer.observe()
+        assert 'STOPPED' not in str(repeated.value)
         with pytest.raises(d.DispatchError, match='INCOMPLETE'): observer.finish()
-        assert state['calls'] == calls and observer.effects._installation is None
+        assert state['calls'] >= calls and observer.effects._installation is None
+        if failure in ('truncated', 'duplicate', 'active', 'timeout', 'boot'):
+            state['bad_show'] = None
+            state['boot'] = observer.effects.context['hello']['guest_boot_id']
+            observer.observe(); observer.observe()
+            assert observer.finish()['current_scope_quiescent'] is True
     finally: observer.close()
     assert not state['open_fds']

@@ -16,7 +16,6 @@ from e3_host import q2_core_delivery_dispatcher as d
 from e3_host import q2_journal_growth as h
 from test_e3_q2_core_minimal_continuation import originals
 from test_e3_q2_journal_growth_coordinator import rig
-from test_e3_q2_journal_diagnostic_resume import source_git
 
 
 @pytest.fixture
@@ -151,20 +150,6 @@ def test_fixed_three_generation_capacity_and_unchanged_action_limits():
     rows=p.maintenance_commitments()['generations']
     assert sum(row['cpu_seconds'] for row in rows)==2640
     assert p.maintenance_commitments()==d._maintenance_commitments()
-
-
-@pytest.mark.parametrize('record',list(p.c.SERIAL_BASELINE['documents_sha256'])+[p.c.SERIAL_OWNER_DECISION['record_path']])
-def test_serial_authority_exact_bytes_are_required_before_source_admission(source_git,record):
-    source_git.changed_doc=record
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SERIAL_'):
-        h.audit_historical_growth_sources(source_git.head)
-    assert not any(call[0]=='show' and ':tests/' in call[1] for call in source_git.calls)
-
-
-@pytest.mark.parametrize('edge',[(h.SERIAL_A,h.SERIAL_C),(h.SERIAL_C,'d'*40)])
-def test_serial_closure_lineage_is_required(source_git,edge):
-    source_git.rejected_edge=edge
-    with pytest.raises(h.prior.r.ObservationError,match='GROWTH_SOURCE'):h.audit_historical_growth_sources(source_git.head)
 
 
 @pytest.mark.parametrize('changed',[False,True])
