@@ -61,6 +61,13 @@ class H11LauncherProcessTests(unittest.TestCase):
     def test_h11_reason_keeps_the_actual_failure_code(self):
         self.assertEqual("H11_ARM_FAILED", launcher.reason(ValueError("H11_ARM_FAILED")))
 
+    def test_crash_command_keeps_original_owner_and_inherited_pidfd(self):
+        command = launcher.crash_command(self.value, 71)
+        self.assertIn("--reuid=" + str(self.value["resident"]["ordinary"]["uid"]), command)
+        self.assertIn("--bounding-set=-all", command)
+        self.assertEqual("71", command[-1])
+        self.assertIn("pidfd_send_signal", command[-2])
+
     def setUp(self):
         fixture = base.LauncherOrderingTests()
         with mock.patch.object(base.Path, "home", return_value=Path("/tmp")):
@@ -90,6 +97,7 @@ class H11LauncherProcessTests(unittest.TestCase):
         test = self
         spawned = []
         real_popen = launcher.subprocess.Popen
+        real_crash_command = launcher.crash_command
 
         def spawn(*args, **kwargs):
             process = real_popen(*args, **kwargs)
@@ -227,6 +235,8 @@ class H11LauncherProcessTests(unittest.TestCase):
             mock.patch.object(launcher, "directory", side_effect=directory),
             mock.patch.object(launcher, "command", side_effect=lambda value, path, digest:
                               [sys.executable, "-B", "-c", CHILD, path]),
+            mock.patch.object(launcher, "crash_command", side_effect=lambda value, fd:
+                              [sys.executable, *real_crash_command(value, fd)[-5:]]),
             mock.patch.object(launcher.subprocess, "Popen", side_effect=spawn),
             mock.patch.object(budget, "current_clock", return_value=dict(self.clock)),
             mock.patch.object(quota_bridge, "Channel", BridgeChannel),

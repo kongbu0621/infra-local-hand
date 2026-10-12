@@ -596,6 +596,16 @@ def reason(error):
     return code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", code) else type(error).__name__[:100]
 
 
+def crash_command(value, pidfd):
+    """Signal only the inherited original pidfd as the ordinary task owner."""
+    ordinary = value["resident"]["ordinary"]
+    return [value["setpriv"]["path"], "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all",
+            "--no-new-privs", "--reuid=" + str(ordinary["uid"]), "--regid=" + str(ordinary["gid"]),
+            "--clear-groups", "--", value["resident"]["installation"]["programs"]["python"]["path"],
+            "-I", "-B", "-c", "import signal,sys; signal.pidfd_send_signal(int(sys.argv[1]), signal.SIGKILL, None, 0)",
+            str(pidfd)]
+
+
 def validate_phase_plan(resident, prepared, grant, previous_plans):
     """Bind the pinned resident's durable facts to the immutable declaration.
 
@@ -891,7 +901,14 @@ def run(value, repository):
                 require(resident_pidfd >= 0 and process.poll() is None
                         and start_ticks(process.pid) == child_start,
                         "H11_ORIGIN_REPLACED")
-                signal.pidfd_send_signal(resident_pidfd, signal.SIGKILL, None, 0)
+                # The root controller deliberately lacks CAP_KILL. Its fixed
+                # ordinary-owner child can signal this inherited pidfd without
+                # broadening controller privileges or looking up another PID.
+                crash = subprocess.run(crash_command(value, resident_pidfd),
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    close_fds=True, pass_fds=(resident_pidfd,), cwd="/",
+                    env={"PATH": "/usr/bin:/bin"}, timeout=min(2, (end-budget.current_clock()["boottime_ns"])/1e9))
+                require(crash.returncode == 0 and crash.stdout == crash.stderr == b"", "H11_CRASH_DELIVERY")
                 while ((worker.is_alive() or gateway_worker.is_alive()
                         or coordinator_worker.is_alive())
                        and budget.current_clock()["boottime_ns"] < end):
