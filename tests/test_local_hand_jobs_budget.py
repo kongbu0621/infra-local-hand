@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -16,7 +17,7 @@ from test_local_hand_jobs_broker import (DeferredDeliverySupervisor, RegistryFix
 from local_hand_jobs import budget
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.contract import JobError
-from local_hand_jobs.state import StateStore
+from local_hand_jobs.state import StateStore, encoded
 
 
 class BudgetTests(unittest.TestCase):
@@ -110,6 +111,73 @@ class BudgetTests(unittest.TestCase):
                     sealed = fixture.db.get(namespace, identity)["record"]
                     self.assertEqual(sealed["evidence"], "SEALED")
                     self.assertEqual(sealed["outcome"], original["business_outcome"])
+
+    def recovered_publication(self):
+        from local_hand_jobs.evidence import EvidenceStore, FrozenSnapshot, QuiescenceProof
+        self.await_seal(); self.f.broker.tick()
+        row = self.row(); record = row["record"]
+        handle = dict(record["handles"]["evidence"], manager={
+            "bootstrap": {"boot_id": self.clock["boot_id"]}, "helper": None, "result_reader": None})
+        with self.f.db.transaction() as tx:
+            self.f.db.update(tx, "job", row["id"], "SUPERVISOR_IDENTITY_OBSERVED", {
+                "handles": dict(record["handles"], evidence=handle)})
+        frozen = record["frozen_snapshot"]
+        Path(frozen["root"]).mkdir(mode=0o700)
+        snapshot = FrozenSnapshot(**dict(frozen, root=Path(frozen["root"]),
+            members=tuple(frozen["members"]), broker_events=tuple(frozen["broker_events"]),
+            quiescence=QuiescenceProof(**frozen["quiescence"])))
+        store = EvidenceStore(Path(self.f.temp.name) / "sealed", snapshot_provider=lambda _: snapshot,
+            register_seal=self.f.broker.register_seal, is_registered=self.f.broker.is_registered,
+            list_seals=self.f.broker.list_seals)
+        seal = store.publish_only(snapshot)
+        self.f.broker.evidence = store
+        previous_boot = self.clock["boot_id"]
+        self.clock["boot_id"] = "22222222-2222-4222-8222-222222222222"
+        execution_id = "evidence-recovery-" + str(uuid.uuid4())
+        proof = dict(kind="EVIDENCE_RECOVERY", operation_id=row["id"], request_digest=row["digest"],
+            snapshot_sha256=hashlib.sha256(encoded(frozen).encode()).hexdigest(),
+            prior_boot_id=previous_boot, boot_id=self.clock["boot_id"], prior_units_absent=True,
+            execution_id=execution_id, unit="lhj-" + hashlib.sha256(execution_id.encode()).hexdigest() + ".service",
+            invocation_id="a" * 32, state="EXITED", exit_code=0, future_start_blocked=True,
+            tree_exited=True, collectors_stopped=True, writers_stopped=True, effects_checked=True,
+            stdout_eof=True, stderr_eof=True, publication_sha256=hashlib.sha256(encoded(seal).encode()).hexdigest())
+        return row["id"], row["digest"], seal, proof
+
+    def test_recovered_publication_finishes_same_task_and_duplicate_callback_reuses_it(self):
+        args = self.recovered_publication()
+        before = copy.deepcopy(self.row())
+        starts = list(self.f.runner.starts)
+        result = self.f.broker.complete_recovered_evidence(*args)
+        self.assertEqual((result["lifecycle"], result["outcome"], result["evidence"]),
+                         ("TERMINAL", "SUCCEEDED", "SEALED"))
+        after = self.row()
+        for key in ("handles", "execution_budget", "frozen_snapshot", "business_exit_proof", "business_outcome"):
+            self.assertEqual(before["record"][key], after["record"][key])
+        for key in ("request", "plan", "digest", "id", "parent"):
+            self.assertEqual(before[key], after[key])
+        manifest = self.f.broker.evidence.manifest(args[0])
+        self.assertTrue(manifest["artifacts"])
+        self.assertEqual(self.f.broker.complete_recovered_evidence(*args), result)
+        self.assertEqual(self.row()["record"]["event_seq"], after["record"]["event_seq"])
+        self.assertEqual(self.f.runner.starts, starts)
+
+    def test_recovered_publication_rejects_live_or_unbound_proof_without_ledger_changes(self):
+        args = self.recovered_publication()
+        for key, value in (("prior_units_absent", False), ("boot_id", args[3]["prior_boot_id"]),
+                           ("snapshot_sha256", "0" * 64), ("stdout_eof", False), ("exit_code", 1)):
+            with self.subTest(key=key):
+                before = copy.deepcopy(self.row())
+                proof = dict(args[3], **{key: value})
+                self.assert_error("IO_UNCERTAIN", lambda: self.f.broker.complete_recovered_evidence(*args[:3], proof))
+                self.assertEqual(self.row(), before)
+
+    def test_recovered_publication_keeps_unknown_prior_helper_delivery_blocked(self):
+        args = self.recovered_publication()
+        row = self.row()
+        with self.f.db.transaction() as tx:
+            self.f.db.update(tx, "job", args[0], "MANAGER_DELIVERY_INTENT", {
+                "delivery_intents": [*row["record"].get("delivery_intents", []), "job-" + args[0] + "-evidence:helper"]})
+        self.assert_error("IO_UNCERTAIN", lambda: self.f.broker.complete_recovered_evidence(*args))
 
     def test_recovered_seal_refuses_missing_proofs_and_any_prior_evidence_intent(self):
         for fault in ("effects", "collectors", "writers", "snapshot", "frozen_event", "old_intent"):
