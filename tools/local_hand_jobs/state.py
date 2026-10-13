@@ -148,14 +148,16 @@ class StateStore:
         with self.lock:
             if not self.healthy:
                 raise JobError("IO_UNCERTAIN", "Ledger durability is unresolved")
+            began = False
             try:
                 self._db.execute("BEGIN" if self.read_only else "BEGIN IMMEDIATE")
+                began = True
                 yield self._db
                 self._db.execute("COMMIT")
             except sqlite3.Error as exc:
                 code = getattr(exc, "sqlite_errorcode", None)
-                retryable_read = (self.read_only and self.healthy and type(code) is int
-                                  and (code & 0xff) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED))
+                retryable_contention = ((self.read_only or not began) and self.healthy and type(code) is int
+                                        and (code & 0xff) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED))
                 self.healthy = False
                 try:
                     if self._db.in_transaction:
@@ -163,10 +165,11 @@ class StateStore:
                 except sqlite3.Error:
                     pass
                 else:
-                    # The SQLite connection itself forbids writes. Once its
-                    # read transaction has ended, lock contention is not an
-                    # unknown commit and must not permanently disable queries.
-                    if retryable_read and not self._db.in_transaction:
+                    # A read-only connection cannot write, and a rejected
+                    # BEGIN never entered the caller's transaction body.
+                    # Neither is an unknown commit. Errors after a writable
+                    # BEGIN still retain the original uncertainty barrier.
+                    if retryable_contention and not self._db.in_transaction:
                         self.healthy = True
                 raise JobError("IO_UNCERTAIN", "Ledger transaction outcome is unresolved") from exc
             except BaseException:

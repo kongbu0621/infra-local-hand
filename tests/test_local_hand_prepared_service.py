@@ -50,6 +50,111 @@ class FixedLaunchTests(unittest.TestCase):
             with self.assertRaises(JobError):self.launcher.start()
         popen.assert_not_called()
 
+    def test_capture_thread_start_failure_precedes_process_delivery_and_allows_retry(self):
+        create=subprocess.Popen
+        command=[sys.executable,'-c',"print('completed once after local failures')"]
+        with patch.object(prepared,'controller_command',return_value=command), \
+             patch.object(prepared.budget,'current_clock',return_value={'boot_id':'test-boot'}), \
+             patch.object(prepared.q2_config,'executable',side_effect=lambda _:os.open('/dev/null',os.O_RDONLY)), \
+             patch.object(prepared.subprocess,'Popen',side_effect=create) as popen:
+            with patch.object(prepared.threading.Thread,'start',side_effect=RuntimeError('no thread resources')):
+                for _ in range(2):
+                    with self.assertRaises(JobError):self.launcher.start()
+                    self.assertEqual('IDLE',self.launcher.state())
+                popen.assert_not_called()
+            self.assertFalse((self.launcher.output/'launch-intent.json').exists())
+            self.launcher.start()
+            self.assertTrue(self.launcher.complete.wait(3))
+            self.assertEqual('EXITED',self.launcher.start())
+            popen.assert_called_once()
+        self.assertEqual(2,len(list(self.launcher.output.glob('local-start-failed-*.json'))))
+        self.assertEqual(0,self.launcher.result['returncode'])
+        self.assertEqual(b'completed once after local failures\n',
+                         bytes.fromhex(self.launcher.result['streams']['stdout']['hex']))
+
+    def test_started_capture_worker_cannot_adopt_a_later_attempt_after_start_raises(self):
+        original_start=threading.Thread.start
+        workers=[]
+        def interrupted_start(worker):
+            workers.append(worker)
+            original_start(worker)
+            raise RuntimeError('interrupted after native thread start')
+        with patch.object(prepared,'controller_command',return_value=['/synthetic/absent']), \
+             patch.object(prepared.budget,'current_clock',return_value={'boot_id':'test-boot'}), \
+             patch.object(prepared.q2_config,'executable',side_effect=lambda _:os.open('/dev/null',os.O_RDONLY)), \
+             patch.object(prepared.threading.Thread,'start',new=interrupted_start), \
+             patch.object(self.launcher,'_capture') as capture, \
+             patch.object(prepared.subprocess,'Popen') as popen:
+            try:
+                with self.assertRaises(JobError):self.launcher.start()
+            finally:
+                for worker in workers:worker.join(timeout=1)
+            self.assertTrue(all(not worker.is_alive() for worker in workers))
+            popen.assert_not_called()
+            capture.assert_not_called()
+        self.assertEqual('IDLE',self.launcher.state())
+
+    def test_capture_drains_large_real_dual_streams_without_additional_threads(self):
+        process=subprocess.Popen([sys.executable,'-c',
+            "import os;os.write(1,b'x'*100000);os.write(2,b'y'*100000)"],
+            stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        def cleanup():
+            if process.poll() is None:process.kill()
+            process.wait(timeout=3)
+            for stream in (process.stdout,process.stderr):
+                if not stream.closed:stream.close()
+        self.addCleanup(cleanup)
+        self.launcher.process=process
+        self.launcher.started=True
+        with patch.object(prepared.threading.Thread,'start',side_effect=RuntimeError('no thread resources')):
+            self.launcher._capture()
+        self.assertEqual('EXITED',self.launcher.state())
+        self.assertTrue(self.launcher.result['streams_eof'])
+        for name,byte in [('stdout',b'x'),('stderr',b'y')]:
+            stream=self.launcher.result['streams'][name]
+            self.assertEqual(100000,stream['total_bytes'])
+            self.assertEqual(byte*32768,bytes.fromhex(stream['hex']))
+            self.assertTrue(stream['truncated'])
+
+    def test_waiter_exit_does_not_finish_capture_while_descendant_holds_pipes(self):
+        process=subprocess.Popen([sys.executable,'-c',
+            "import os\nif os.fork()==0:\n os.read(0,1)\n os._exit(0)\nos._exit(0)"],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        self.launcher.process=process
+        self.launcher.started=True
+        worker=threading.Thread(target=self.launcher._capture,daemon=True)
+        try:
+            self.assertEqual(0,process.wait(timeout=3))
+            worker.start()
+            self.assertFalse(self.launcher.complete.wait(.05))
+            self.assertEqual('RUNNING',self.launcher.state())
+            self.assertFalse((self.launcher.output/'finished.json').exists())
+        finally:
+            process.stdin.close()
+            if worker.ident is not None:worker.join(timeout=3)
+            if process.poll() is None:process.kill()
+            process.wait(timeout=3)
+            for stream in (process.stdout,process.stderr):
+                if not stream.closed:stream.close()
+        self.assertFalse(worker.is_alive())
+        self.assertEqual('EXITED',self.launcher.state())
+        self.assertTrue(self.launcher.result['streams_eof'])
+
+    def test_capture_read_failure_is_unknown_and_never_an_exit_or_second_launch(self):
+        process=subprocess.Popen([sys.executable,'-c',"print('retained')"],
+            stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        process.wait(timeout=3)
+        self.launcher.process=process
+        self.launcher.started=True
+        with patch.object(prepared.os,'read',side_effect=OSError('pipe failure')):
+            self.launcher._capture()
+        self.assertFalse(self.launcher.complete.is_set())
+        self.assertFalse((self.launcher.output/'finished.json').exists())
+        with patch.object(prepared.subprocess,'Popen') as popen:
+            with self.assertRaises(JobError):self.launcher.state()
+            with self.assertRaises(JobError):self.launcher.start()
+            popen.assert_not_called()
+
     def test_intent_commit_failure_before_popen_does_not_block_local_retry(self):
         fsync=os.fsync
         interrupted_once=False

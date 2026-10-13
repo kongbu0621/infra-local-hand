@@ -147,6 +147,64 @@ class BrokerTests(unittest.TestCase):
         self.assertCode("UNAUTHORIZED", lambda: self.broker.call("lh_job_submit", self.request, outsider))
         self.assertFalse(self.runner.starts)
 
+    def test_status_lock_contention_before_transaction_does_not_disable_live_broker(self):
+        self.submit()
+        before=self.db.events('job',self.request['operation_id'])
+        writer=sqlite3.connect(self.db.path,isolation_level=None)
+        self.addCleanup(writer.close)
+        writer.execute('BEGIN IMMEDIATE')
+        try:
+            with self.assertRaises(JobError) as caught:self.status()
+            self.assertEqual(sqlite3.SQLITE_BUSY,caught.exception.__cause__.sqlite_errorcode)
+        finally:
+            writer.execute('ROLLBACK')
+        self.assertEqual('ACCEPTED',self.status()['lifecycle'])
+        self.assertEqual(before,self.db.events('job',self.request['operation_id']))
+        self.assertTrue(self.db.healthy)
+        self.assertEqual('CANCELLED',self.cancel()['outcome'])
+        self.assertEqual([],self.runner.starts)
+
+    def test_submit_lock_contention_before_transaction_consumes_no_execution(self):
+        writer=sqlite3.connect(self.db.path,isolation_level=None)
+        self.addCleanup(writer.close)
+        writer.execute('BEGIN IMMEDIATE')
+        try:
+            with self.assertRaises(JobError) as caught:self.submit()
+            self.assertEqual(sqlite3.SQLITE_BUSY,caught.exception.__cause__.sqlite_errorcode)
+        finally:
+            writer.execute('ROLLBACK')
+        self.assertIsNone(self.db.get('job',self.request['operation_id']))
+        self.assertEqual([],self.db.events('job',self.request['operation_id']))
+        with self.db.transaction() as tx:
+            self.assertEqual(0,tx.execute('SELECT count(*) FROM leases').fetchone()[0])
+        first=self.submit()
+        self.assertEqual(first,self.submit())
+        self.assertEqual(1,sum(event['kind']=='ACCEPTED' for event in
+                               self.db.events('job',self.request['operation_id'])))
+        self.assertEqual([],self.runner.starts)
+
+    def test_commit_contention_after_body_keeps_uncertainty_barrier(self):
+        # Unlike a failed BEGIN, the body may already have delivered a side
+        # effect. A real reader lock prevents this write transaction's COMMIT.
+        self.db._db.execute('PRAGMA journal_mode=DELETE')
+        reader=sqlite3.connect(self.db.path,isolation_level=None)
+        self.addCleanup(reader.close)
+        reader.execute('BEGIN')
+        reader.execute('SELECT * FROM counters').fetchall()
+        marker=Path(self.temp.name)/'delivered'
+        try:
+            with self.assertRaises(JobError) as caught:
+                with self.db.transaction() as tx:
+                    tx.execute("UPDATE counters SET value=value+1 WHERE key='generation'")
+                    marker.write_text('original side effect')
+            self.assertEqual(sqlite3.SQLITE_BUSY,caught.exception.__cause__.sqlite_errorcode)
+        finally:
+            reader.execute('ROLLBACK')
+        self.assertEqual('original side effect',marker.read_text())
+        self.assertFalse(self.db.healthy)
+        self.assertCode('IO_UNCERTAIN',self.submit)
+        self.assertEqual(1,reader.execute("SELECT value FROM counters WHERE key='generation'").fetchone()[0])
+
     def test_new_nas_job_is_rejected_before_planning_or_reserving_resources(self):
         nas = dict(self.request, kind="ledger.nas.roundtrip",
                    inputs={"prepared_ref": "prepared", "storage_ref": "storage"})

@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import select
 import socket
 import stat
 import struct
@@ -105,35 +106,43 @@ class FixedLauncher:
         return 'IDLE'
 
     def _capture(self):
-        streams = {}
-        failures = []
-        def drain(name):
-            try:
+        # This worker was started before process delivery. Multiplex both
+        # pipes here: allocating more threads after Popen could strand the
+        # original child and leave the service reporting RUNNING forever.
+        try:
+            poller = select.poll()
+            pending, streams = {}, {}
+            for name in ('stdout','stderr'):
                 stream = getattr(self.process, name)
-                content = bytearray(); total = 0
-                while True:
-                    raw = stream.read(4096)
-                    if not raw:
-                        break
-                    total += len(raw)
-                    content.extend(raw[:max(0,32768-len(content))])
-                stream.close()
-                streams[name] = dict(hex=content.hex(), total_bytes=total, truncated=total>len(content))
-            except BaseException as error:
-                failures.append(type(error).__name__)
-        workers = [threading.Thread(target=drain,args=(name,),daemon=True) for name in ('stdout','stderr')]
-        for thread in workers:thread.start()
-        code = self.process.wait()
-        for thread in workers:thread.join()
-        if failures:
-            self.failure = failures
-        else:
+                fd = stream.fileno()
+                os.set_blocking(fd, False)
+                poller.register(fd, select.POLLIN|select.POLLHUP|select.POLLERR)
+                pending[fd] = (name, stream, bytearray(), 0)
+            while pending:
+                for fd, _ in poller.poll(100):
+                    name, stream, content, total = pending[fd]
+                    try:
+                        raw = os.read(fd, 4096)
+                    except BlockingIOError:
+                        continue
+                    if raw:
+                        total += len(raw)
+                        content.extend(raw[:max(0,32768-len(content))])
+                        pending[fd] = (name, stream, content, total)
+                    else:
+                        poller.unregister(fd)
+                        stream.close()
+                        del pending[fd]
+                        streams[name] = dict(hex=content.hex(), total_bytes=total, truncated=total>len(content))
+            code = self.process.wait()
             self.result = dict(returncode=code, streams_eof=True, streams=streams)
             self.complete.set()
-            try:
-                self.state() # Persist exit/EOF even if no client polls again.
-            except Exception as error:
-                self.failure = [type(error).__name__]
+            self.state() # Persist exit/EOF even if no client polls again.
+        except BaseException as error:
+            self.failure = [type(error).__name__]
+            for name in ('stdout','stderr'):
+                try:getattr(self.process, name).close()
+                except OSError:pass
 
     def _commit_intent(self, command):
         raw = q._canonical(dict(command=command,
@@ -179,17 +188,36 @@ class FixedLauncher:
         command = controller_command(self.launch, self.installation, self.static, dynamic)
         for name in ('python','systemd_run'):
             os.close(q2_config.executable(self.installation['installed']['programs'][name]))
+        gate = threading.Event()
+        delivered = False
+        def capture_after_delivery():
+            gate.wait()
+            # The decision belongs to this attempt. A worker whose start
+            # raised after native creation must never adopt a later child.
+            if delivered:self._capture()
+        worker = threading.Thread(target=capture_after_delivery, daemon=True)
         self._commit_intent(command)
         try:
-            self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})
-        except OSError as error:
-            os.rename('launch-intent.json', 'local-start-failed-'+str(time.time_ns())+'.json',
-                      src_dir_fd=self.directory, dst_dir_fd=self.directory)
-            os.fsync(self.directory)
-            raise JobError('IO_UNCERTAIN', 'Controller process could not be created') from error
-        self.started = True
-        threading.Thread(target=self._capture, daemon=True).start()
+            try:
+                worker.start()
+            except BaseException as error:
+                os.rename('launch-intent.json', 'local-start-failed-'+str(time.time_ns())+'.json',
+                          src_dir_fd=self.directory, dst_dir_fd=self.directory)
+                os.fsync(self.directory)
+                if isinstance(error, (KeyboardInterrupt, SystemExit)):raise
+                raise JobError('IO_UNCERTAIN', 'Controller capture could not be started; no process was created') from error
+            try:
+                self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})
+            except OSError as error:
+                os.rename('launch-intent.json', 'local-start-failed-'+str(time.time_ns())+'.json',
+                          src_dir_fd=self.directory, dst_dir_fd=self.directory)
+                os.fsync(self.directory)
+                raise JobError('IO_UNCERTAIN', 'Controller process could not be created') from error
+            self.started = True
+            delivered = True
+        finally:
+            gate.set()
         task_service.save(self.directory, 'started.json', dict(pid=self.process.pid,
             operation_id=self.launch['request']['operation_id']))
         # Readiness is only a socket observation. No helper submits a job here.
