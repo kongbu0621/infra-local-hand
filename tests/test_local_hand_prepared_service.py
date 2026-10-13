@@ -71,4 +71,3 @@ class FixedLaunchTests(unittest.TestCase):
         self.assertEqual('EXITED',self.launcher.state())
         self.assertTrue((self.launcher.output/'finished.json').exists())
         self.assertEqual('EXITED',self.launcher.start())
-

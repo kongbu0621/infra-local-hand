@@ -121,4 +121,3 @@ class PreparedTests(unittest.TestCase):
         self.retained.close.assert_called_once()
         self.reader.state.close.assert_called_once()
         self.reader.authority_lock.close.assert_called_once()
-
