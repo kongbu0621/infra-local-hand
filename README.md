@@ -23,6 +23,7 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 | 原现场环境 | 已修复启动内核与 quota 模块不匹配，六项 guest 核验通过；journal 文件系统已扩至 512 MiB，内容保留及运行环境检查通过。 |
 | 正式提交与结果 | CLI 与官方 MCP 客户端分别提交独立 H01；两项均三个阶段闭合，TERMINAL / SUCCEEDED / SEALED，账本各 1 个 operation、58 个 event、12 个目录保护 lease。zip、manifest、seal 均已通过正式入口取回并核对摘要。 |
 | ChatGPT 提交与结果 | `8115973` 已通过现有 OAuth 和网关接收 ChatGPT 对一个预备 `host.inspect` 的真实提交；三阶段闭合，TERMINAL / EXITED / SUCCEEDED / SEALED，退出码 0、无报告缺口，账本 1/58/12。通过真实连接取回 zip、manifest、seal，摘要及包内成员一致；原任务账本未变。 |
+| 常驻自动准备 | `c5cc461` 的常驻入口已由认证 CLI 连续自动准备并提交两个独立 H01，各为 SUCCEEDED / SEALED、1/58/12；ChatGPT 连接已取回两项结果及全部证据。执行 VM 正常重启后，两项服务自动启动，四个已有账本内容摘要一致，旧任务查询成功。新增准备工具在 ChatGPT 的完整调用待刷新连接后核验。 |
 | 正式取消与恢复 | Q4 在实际运行中取消，TERMINAL / CANCELLED，账本 1/17/6，控制器正常退出。H11 在原 API 中断后恢复同一任务，TERMINAL / UNKNOWN，账本 1/21/6；业务未启动或重放，丢失的采集事实保持未知。 |
 | 历史原任务 | 此前 H01 为 SUCCEEDED / SEALED，账本 1/50/12；Q4 为 CANCELLED，1/17/6；H11 为 UNKNOWN，1/22/6。这些任务、证据和历史事件保持原样。 |
 | 代码验证 | 相关本地回归及独立安装通过；正式入口修复和现有 CI 见 [PR #35](https://github.com/kongbu0621/infra-local-hand/pull/35)。 |
@@ -48,8 +49,15 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 随后以 `--prepared-task` 复用现有 ChatGPT/OAuth 和网关完成一个新 H01。能力接口返回
 `prepared_request`，客户端原样提交；固定任务启动器只在认证通过后的提交时启动原执行后端，
 状态查询不启动执行。控制器结束后，同一入口只读返回该任务及保留的原任务结果。
-本次是单个预备任务的真实闭环，仍需逐任务准备；执行入口是本次开机的临时服务，
-原只读服务的开机恢复配置保留。尚未验证 ChatGPT 的运行中取消、同任务恢复或常驻提交入口。
+这次单任务验证后，`--resident` 已接入常驻自动准备服务。客户端从能力接口取得
+`preparation`，以新的任务 UUID 调用 `lh_job_prepare`，READY 后把返回的 `request`
+原样交给 `lh_job_submit`；PREPARING 用同一 UUID 查询准备进度。准备需要 `lh:submit`，
+只读查询不会创建任务。失败准备保留原件，修复后可用 `retry_failed=true` 沿同一任务重试；
+已提交业务及不确定的执行不会因此重放。
+常驻服务按当前启动环境绑定新任务的资源，并继续只读返回已完成任务。现场配置仅开放
+`host.inspect`，同时一个执行会话，最多保留 32 个任务；前一会话退出前返回 RESOURCE_BUSY，
+稍后沿用原任务 UUID 重试。原只读配置和安装保留，开机入口已切换到常驻服务。
+ChatGPT 的运行中取消及同任务恢复尚未现场验证。
 已退出的历史失败单元经实际状态核对后不再封锁新任务；停止后的单元回收不再要求补造终态快照。
 
 ## 使用与开发入口
@@ -63,4 +71,4 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 | [作业接口](docs/a2-execution/ARCHITECTURE.md) | 受限作业后端、CLI 与 MCP 接口 |
 
 历史方案和验证记录仍保存在 `docs/`；[旧首页完整记录](https://github.com/kongbu0621/infra-local-hand/blob/b0fffefd95335fd8835f0ac5a6b01c3d2ca51654/README.md)可追溯。
-生产切换、免逐任务准备的日常入口与 NAS 验收尚未完成。暂不添加许可证；任务、日志、凭据和原始证据保持私有。
+生产资格、更多核心作业类型与 NAS 验收尚未完成。暂不添加许可证；任务、日志、凭据和原始证据保持私有。
