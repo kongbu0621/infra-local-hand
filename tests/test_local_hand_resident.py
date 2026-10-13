@@ -1,6 +1,7 @@
 """Task preparation authorization, durable retry boundaries and result routing."""
 import copy
 import json
+import sys
 from pathlib import Path
 import tempfile
 import threading
@@ -9,6 +10,9 @@ import unittest
 import uuid
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+if not sys.platform.startswith('linux'):
+    raise unittest.SkipTest('Linux resident task service')
 
 from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES, request_digest
 from local_hand_jobs.policy import Policy

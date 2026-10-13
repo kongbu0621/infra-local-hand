@@ -8,6 +8,9 @@ import threading
 import unittest
 from unittest.mock import Mock, patch
 
+if not sys.platform.startswith('linux'):
+    raise unittest.SkipTest('Linux administrator task launcher')
+
 from admin.local_hand_system_manager import prepared_service as prepared
 from local_hand_jobs.contract import JobError
 
