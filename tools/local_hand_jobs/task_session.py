@@ -240,8 +240,12 @@ class TaskSession:
             if ("job", self.value["operation_id"]) in self.broker._active:
                 self.broker.tick()
             return
+        # This iteration has not consumed a packet or advanced execution. A
+        # transient read failure must leave the original session retryable;
+        # StateStore still blocks an actually damaged or uncertain ledger.
+        row = self.broker.state.get("job", self.value["operation_id"])
         try:
-            self._tick()
+            self._tick(row)
         except Exception as error:
             # A failed control exchange never becomes an automatic resubmit.
             # Keep the public read/cancel transports and the original ledger.
@@ -251,9 +255,8 @@ class TaskSession:
                 self.broker._unknown("job", row["id"], "Task session requires recovery; original execution retained")
             raise JobError("IO_UNCERTAIN", "Original task session requires recovery") from error
 
-    def _tick(self):
+    def _tick(self, row):
         b, identity = self.broker, self.value["operation_id"]
-        row = b.state.get("job", identity)
         if row is None:
             self.channel._time()
             return  # Only a real client submission may create this task.

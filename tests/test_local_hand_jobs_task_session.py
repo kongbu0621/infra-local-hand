@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import select
 import socket
+import sqlite3
 import sys
 import time
 import unittest
@@ -69,6 +70,57 @@ class TaskSessionTests(unittest.TestCase):
         self.channel.enqueue(dict(action=action, value=value))
         self.session.tick()
         return self.channel.outgoing[-1]
+
+    def test_initial_read_contention_preserves_session_and_queued_command(self):
+        self.session.tick()
+        prepared = self.channel.outgoing[-1]
+        grant = self.f.make_grant("preflight", prepared["snapshot"]["preparation"])
+        self.channel.enqueue(dict(action="bind", value=grant.as_dict()))
+        before = self.broker.state.events("job", self.f.identity)
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        writer.execute("BEGIN IMMEDIATE")
+        try:
+            for _ in range(2):
+                with self.assertRaises(JobError) as caught:
+                    self.session.tick()
+                self.assertEqual(sqlite3.SQLITE_BUSY, caught.exception.__cause__.sqlite_errorcode)
+                self.assertIsNone(self.session.failure)
+                self.assertEqual(1, len(self.channel.incoming))
+        finally:
+            writer.execute("ROLLBACK")
+        self.assertEqual(before, self.broker.state.events("job", self.f.identity))
+        self.assertEqual([], self.f.runner.starts)
+        self.session.tick()
+        self.assertEqual([], self.channel.incoming)
+        self.assertIsNone(self.session.failure)
+        self.command("start")
+        self.assertEqual(1, len(self.f.runner.starts))
+
+    def test_contention_after_consuming_command_keeps_recovery_barrier(self):
+        self.session.tick()
+        prepared = self.channel.outgoing[-1]
+        grant = self.f.make_grant("preflight", prepared["snapshot"]["preparation"])
+        self.command("bind", grant.as_dict())
+        self.channel.enqueue(dict(action="start", value=None))
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        receive = self.channel.receive
+        def receive_then_lock():
+            command = receive()
+            writer.execute("BEGIN IMMEDIATE")
+            return command
+        try:
+            with patch.object(self.channel, "receive", side_effect=receive_then_lock):
+                with self.assertRaises(JobError):self.session.tick()
+        finally:
+            if writer.in_transaction:writer.execute("ROLLBACK")
+        self.assertEqual([], self.channel.incoming)
+        self.assertIsNotNone(self.session.failure)
+        before = copy.deepcopy(self.channel.outgoing)
+        self.session.tick()
+        self.assertEqual(before, self.channel.outgoing)
+        self.assertEqual([], self.f.runner.starts)
 
     def test_preparation_is_not_launch_and_bind_waits_for_controller_start(self):
         self.session.tick()
