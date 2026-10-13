@@ -263,6 +263,29 @@ def prepare_main(input_path,result_path):
     finally:os.close(directory)
 
 
+def initialize_host(config):
+    """Start the original execution slices; new tasks bind their current pins."""
+    q.require(os.getuid()==os.geteuid()==0,'RESIDENT_ADMINISTRATOR')
+    template=config['template'];uid,gid=config['uid'],config['gid']
+    systemctl=config['installation']['installed']['programs']['systemctl']['path']
+    units=sorted({Path(value['path']).name for value in template['observed']['parents'].values()})
+    def run(argv,env=None):
+        result=subprocess.run(argv,capture_output=True,timeout=15,env=env)
+        q.require(result.returncode==0,'RESIDENT_RUNTIME_PREPARATION')
+    run([systemctl,'start',*units,'user@'+str(uid)+'.service'])
+    old=template['observed']['system_geometry']['retained_ordinary_parent']
+    q.require((old['memory_bytes'],old['tasks_max'],old['memory_swap_max'],old['cpu_quota_per_sec_usec'])
+              ==(268435456,64,0,1000000),'RESIDENT_RETAINED_PARENT_BUDGET')
+    prefix=[template['plan']['tools']['setpriv']['path'],'--reuid='+str(uid),'--regid='+str(gid),
+            '--clear-groups','--no-new-privs','--',systemctl,'--user']
+    env={'PATH':'/usr/bin:/bin','XDG_RUNTIME_DIR':'/run/user/'+str(uid),
+         'DBUS_SESSION_BUS_ADDRESS':'unix:path=/run/user/'+str(uid)+'/bus'}
+    name=Path(old['parent']['path']).name
+    run(prefix+['start',name],env)
+    run(prefix+['set-property','--runtime',name,'MemoryMax=268435456','MemorySwapMax=0',
+                'TasksMax=64','CPUQuota=100%','CPUQuotaPeriodSec=100ms'],env)
+
+
 def serve(config):
     q.require(os.getuid()==os.geteuid()==0,'RESIDENT_ADMINISTRATOR')
     for key in ('private_root','catalog'):
@@ -303,8 +326,11 @@ def serve(config):
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Run the persistent Local Hand preparation service')
     parser.add_argument('--config',required=True)
+    parser.add_argument('--initialize-host',action='store_true')
     args=parser.parse_args(argv)
-    serve(load(args.config))
+    config=load(args.config)
+    if args.initialize_host:initialize_host(config)
+    else:serve(config)
 
 
 if __name__=='__main__':main()
