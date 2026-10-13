@@ -195,6 +195,8 @@ CANCEL_TARGET_SCHEMA = {"oneOf": [
 ]}
 TOOL_SCHEMAS = {
     "lh_capabilities": _object({"cursor": _CURSOR, "page_size": _PAGE}, ()),
+    "lh_job_prepare": _object({"operation_id": UUID4, "kind": {"const": "host.inspect"}, "profile_ref": REF,
+                                "retry_failed": {"const": True}}, ("operation_id", "kind", "profile_ref")),
     # Advertise only enabled submissions; SUBMIT_SCHEMA still decodes retained
     # requests with their original identity for broker/CLI history handling.
     "lh_job_submit": {"type": "object", "oneOf": [
@@ -210,7 +212,7 @@ TOOL_SCHEMAS = {
         ("artifact_id", "offset", "expected_sha256")),
 }
 TOOL_SCOPES = {
-    "lh_capabilities": "lh:inspect", "lh_job_submit": "lh:submit", "lh_job_status": "lh:read",
+    "lh_capabilities": "lh:inspect", "lh_job_prepare": "lh:submit", "lh_job_submit": "lh:submit", "lh_job_status": "lh:read",
     "lh_job_cancel": "lh:cancel", "lh_job_reconcile": "lh:reconcile",
     "lh_evidence_manifest": "lh:evidence", "lh_evidence_read_chunk": "lh:evidence",
 }

@@ -32,6 +32,8 @@ SOURCE_PROJECTION_MANIFEST = ".local-hand-source-projection.json"
 SOURCE_PROJECTION_HARNESS = frozenset({
     "tests/e3_host/q2_fixture_check.py",
     "tests/e3_host/q2_launcher.py",
+    "tests/e3_host/q2_prepare.py",
+    "tests/e3_host/q2_prepare_contract.py",
     "tests/e3_host/q2_prepare_assembly.py",
     "tests/e3_host/q2_prepare_driver.py",
     "tests/e3_host/q2_prepare_run.py",

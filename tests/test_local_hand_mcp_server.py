@@ -114,16 +114,36 @@ class ServerTests(unittest.TestCase):
         self.assertFalse(result["isError"])
         self.assertEqual(self.broker.output, result["structuredContent"])
 
+    def test_resident_preparation_has_submit_scope_and_valid_async_result(self):
+        from local_hand_mcp.resident import ResidentBroker
+        broker = MemoryBroker()
+        broker.supported_tools = ResidentBroker.supported_tools
+        operation = "12345678-1234-4234-8234-123456789abc"
+        broker.output = dict(operation_id=operation, state="PREPARING")
+        with ASGIClient(create_app(broker, self.issuer.verifier), base_url="http://127.0.0.1:8765") as client:
+            response = client.post("/mcp", json=dict(jsonrpc="2.0", id=1, method="tools/list"), headers=self.headers)
+            tools = {tool["name"]: tool for tool in response.json()["result"]["tools"]}
+            self.assertEqual(set(ResidentBroker.supported_tools), set(tools))
+            self.assertEqual([{"type": "oauth2", "scopes": ["lh:submit"]}], tools["lh_job_prepare"]["securitySchemes"])
+            args = dict(operation_id=operation, kind="host.inspect", profile_ref="fixture")
+            response = client.post("/mcp", json=dict(jsonrpc="2.0", id=2, method="tools/call",
+                params=dict(name="lh_job_prepare", arguments=args)), headers=self.headers)
+            result = response.json()["result"]
+            self.assertFalse(result["isError"])
+            self.assertEqual(broker.output, result["structuredContent"])
+            self.assertEqual("project-owner", broker.calls[0][2].principal_id)
+
     def test_real_sdk_initialization_tools_and_principal_mapping(self):
         response = self.rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                             "clientInfo": {"name": "fixture", "version": "1"}})
         self.assertEqual(200, response.status_code, response.text)
         response = self.rpc("tools/list")
         tools = response.json()["result"]["tools"]
-        self.assertEqual(set(TOOL_SCHEMAS), {tool["name"] for tool in tools})
+        expected_schemas = {k:v for k,v in TOOL_SCHEMAS.items() if k != "lh_job_prepare"}
+        self.assertEqual(set(expected_schemas), {tool["name"] for tool in tools})
         published = {tool["name"]: tool["inputSchema"] for tool in tools}
         self.assertNotIn("ledger.nas.roundtrip", json.dumps(published))
-        self.assertEqual(hashlib.sha256(canonical_bytes(published)).hexdigest(), TOOL_SCHEMA_DIGEST)
+        self.assertEqual(published, expected_schemas)
         for tool in tools:
             expected = [{"type": "oauth2", "scopes": [TOOL_SCOPES[tool["name"]]]}]
             self.assertEqual(expected, tool.get("securitySchemes"))

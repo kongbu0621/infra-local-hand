@@ -140,9 +140,10 @@ const bytes=canonical(value);process.stdout.write(JSON.stringify({bytes,digest:c
         with self.assertRaises(JobError):
             validate_tool_args("lh_job_cancel", base)
 
-    def test_seven_tools_reject_extras_and_bounded_evidence_chunk(self):
+    def test_tools_reject_extras_and_bounded_evidence_chunk(self):
         operation = submit_fixture()["operation_id"]
         valid = {"lh_capabilities": {}, "lh_job_submit": submit_fixture(),
+            "lh_job_prepare": {"operation_id": operation, "kind": "host.inspect", "profile_ref": "fixture"},
             "lh_job_status": {"operation_id": operation},
             "lh_job_cancel": {"operation_id": operation, "expected_request_digest": "0" * 64, "target": {"kind": "job"}},
             "lh_job_reconcile": {"operation_id": operation, "expected_request_digest": "0" * 64, "reconcile_id": operation},

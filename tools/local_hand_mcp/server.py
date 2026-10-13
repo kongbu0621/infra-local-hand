@@ -27,6 +27,7 @@ _READ_ONLY = frozenset({"lh_capabilities", "lh_job_status", "lh_evidence_manifes
 _DESCRIPTIONS = {
     "lh_capabilities": "Discover admitted references and bindings. If prepared_request is present, submit that exact request once and retain its identity.",
     "lh_job_submit": "Durably submit one fixed job; preserve its operation ID across uncertain replies.",
+    "lh_job_prepare": "Automatically prepare a new host.inspect using a fresh operation UUID. Poll that same UUID while PREPARING; when READY, submit the returned request unchanged. FAILED is retained; retry_failed=true retries preparation after its cause is resolved. Preparation does not execute the job.",
     "lh_job_status": "Read one owned job or the exact requested reconciliation round.",
     "lh_job_cancel": "Durably request cancellation of the explicitly selected execution identity.",
     "lh_job_reconcile": "Observe original effects under a stable reconciliation ID; never rerun business work.",
@@ -60,11 +61,16 @@ _STATUS_SCHEMA = {
 _OUTPUT_SCHEMAS = {name: _STATUS_SCHEMA for name in
                    ("lh_job_submit", "lh_job_status", "lh_job_cancel", "lh_job_reconcile")}
 _OUTPUT_SCHEMAS.update({
+    "lh_job_prepare": {"type": "object", "required": ["operation_id", "state"],
+        "properties": {"operation_id": _STRING, "state": {"enum": ["PREPARING", "READY", "FAILED"]},
+            "retryable": {"type": "boolean"}, "request": TOOL_SCHEMAS["lh_job_submit"]}},
     "lh_capabilities": {"type": "object", "required": ["schema_version", "authority_id", "tool_schema_digest", "profiles"],
         "properties": {"schema_version": _STRING, "supported_versions": {"type": "array", "items": _STRING},
             "authority_id": _STRING, "tool_schema_digest": _STRING, "policy_digest": _STRING,
             "generation": _INTEGER, "catalog_version": _STRING,
             "prepared_request": TOOL_SCHEMAS["lh_job_submit"],
+            "preparation": {"type": "object", "properties": {
+                "tool": _STRING, "profile_ref": _STRING, "kind": _STRING, "max_active": _INTEGER}},
             "execution_support": {"type": "object", "additionalProperties": {"type": "object",
                 "properties": {"status": _STRING, "reason": _STRING}}},
             "profiles": {"type": "array", "maxItems": 100, "items": {"type": "object", "properties": {
@@ -216,6 +222,7 @@ def create_app(broker, verifier):
         name: schema for name, schema in TOOL_SCHEMAS.items()
         if TOOL_SCOPES[name] in config.scopes
         and (not getattr(broker, "read_only", False) or name in _READ_ONLY)
+        and name in getattr(broker, "supported_tools", set(TOOL_SCHEMAS) - {"lh_job_prepare"})
     }
     enabled_scopes = sorted({TOOL_SCOPES[name] for name in enabled_tools})
     output_validators = {name: Draft202012Validator(schema) for name, schema in _OUTPUT_SCHEMAS.items()}
@@ -397,6 +404,7 @@ def main(argv=None) -> int:
     mode.add_argument("--session", help="Administrator-created task session descriptor")
     mode.add_argument("--read-only", action="store_true", help="Read retained results without an execution session")
     mode.add_argument("--prepared-task", help="Admitted single task launcher; retain --config history for reads")
+    mode.add_argument("--resident", help="Persistent task preparation and routing descriptor")
     parser.add_argument("--auth-config", required=True, help="Private external-issuer admission")
     parser.add_argument("--port", required=True, type=int, help="Admitted loopback listener port")
     args = parser.parse_args(argv)
@@ -414,7 +422,7 @@ def main(argv=None) -> int:
         # TLS gateway/Tunnel; it cannot accidentally publish an unauthenticated
         # host interface. External connection admission remains E4.
         broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
-                               **({"read_only": True} if args.read_only or args.prepared_task else {}))
+                               **({"read_only": True} if args.read_only or args.prepared_task or args.resident else {}))
         maintenance = None
         failed = False
         try:
@@ -422,6 +430,9 @@ def main(argv=None) -> int:
             if args.prepared_task:
                 from local_hand_mcp.prepared import PreparedBroker
                 broker = PreparedBroker.open(retained, args.prepared_task, actual_entrypoint=__file__)
+            if args.resident:
+                from local_hand_mcp.resident import ResidentBroker
+                broker = ResidentBroker.open(retained, args.resident)
             peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
                      for uid, identity in broker.policy.local_peers.items()}
             maintenance = MaintenanceServer(broker, Path(retained.policy.broker_root) / "maintenance.sock", peers)

@@ -76,6 +76,7 @@ class FixedLauncher:
         q.require(info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700, 'PREPARED_OUTPUT_PROTECTION')
         self.process = None
         self.complete = threading.Event()
+        self.record_lock = threading.Lock()
         self.result = None
         self.failure = None
         self.sequence = 0
@@ -93,8 +94,10 @@ class FixedLauncher:
             return 'EXITED'
         if self.process is not None:
             if self.complete.is_set():
-                task_service.save(self.directory, 'finished.json', self.result)
-                self.finished = True
+                with self.record_lock:
+                    if not self.finished:
+                        task_service.save(self.directory, 'finished.json', self.result)
+                        self.finished = True
                 return 'EXITED'
             return 'RUNNING'
         if self.started:
@@ -127,6 +130,10 @@ class FixedLauncher:
         else:
             self.result = dict(returncode=code, streams_eof=True, streams=streams)
             self.complete.set()
+            try:
+                self.state() # Persist exit/EOF even if no client polls again.
+            except Exception as error:
+                self.failure = [type(error).__name__]
 
     def start(self):
         state = self.state()

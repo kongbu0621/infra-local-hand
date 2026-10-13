@@ -22,6 +22,7 @@ class FixedLaunchTests(unittest.TestCase):
         item.directory=os.open(root.name,os.O_RDONLY|os.O_DIRECTORY)
         self.addCleanup(os.close,item.directory)
         item.process=None;item.complete=threading.Event();item.result=None;item.failure=None
+        item.record_lock=threading.Lock()
         item.started=False;item.finished=False
         item.static='/synthetic/static.json'
         item.installation={'installed':{'programs':{'python':{},'systemd_run':{}}}}
