@@ -144,6 +144,14 @@ class ResidentBroker:
             if name == 'lh_job_prepare':
                 if args['profile_ref'] != self.config['profile_ref']:
                     raise JobError('UNAUTHORIZED', 'Profile is not admitted')
+                if self._record(args['operation_id']) is None:
+                    # The catalog routes by UUID across deployments. Creating a
+                    # new entry for retained history would hide that original
+                    # task and defeat same-identity recovery.
+                    for path in (None, *self.config['retained']):
+                        reader = self.retained if path is None else self._reader(path)
+                        if reader.state.get('job', args['operation_id']) is not None:
+                            raise JobError('CONFLICT', 'Task identity already belongs to retained history')
                 return self.service.call('prepare', principal_id=principal.principal_id, **args)
             if name == 'lh_evidence_read_chunk':
                 return self._artifact(args, principal)

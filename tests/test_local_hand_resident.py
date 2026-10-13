@@ -55,6 +55,29 @@ class ResidentTests(unittest.TestCase):
         self.service.call.assert_called_once_with('prepare',principal_id='owner',**args)
         self.local.assert_not_called()
 
+    def test_preparation_cannot_shadow_a_retained_task_with_the_same_uuid(self):
+        self.lookup.return_value=None
+        self.retained.state.get.return_value={'id':self.request['operation_id'],'principal':'owner'}
+        self.broker.config['retained']=['/unrelated-policy']
+        args=dict(operation_id=self.request['operation_id'],kind='host.inspect',profile_ref='fixture')
+        with self.assertRaises(JobError) as caught:self.call('lh_job_prepare',args)
+        self.assertEqual('CONFLICT',caught.exception.code)
+        self.retained.state.get.assert_called_once_with('job',self.request['operation_id'])
+        self.service.call.assert_not_called();self.factory.assert_not_called()
+
+    def test_new_uuid_checks_older_deployments_and_prepares_only_when_absent(self):
+        self.lookup.return_value=None
+        self.retained.state.get.return_value=None
+        self.broker.config['retained']=['/older-policy']
+        self.reader.state.get.return_value={'id':self.request['operation_id'],'principal':'other'}
+        args=dict(operation_id=self.request['operation_id'],kind='host.inspect',profile_ref='fixture')
+        with self.assertRaises(JobError) as caught:self.call('lh_job_prepare',args)
+        self.assertEqual('CONFLICT',caught.exception.code)
+        self.service.call.assert_not_called()
+        self.reader.state.get.return_value=None
+        self.call('lh_job_prepare',args)
+        self.service.call.assert_called_once_with('prepare',principal_id='owner',**args)
+
     def test_capabilities_and_idle_status_do_not_prepare_or_submit(self):
         self.retained.policy=self.policy
         self.call('lh_capabilities',{})
