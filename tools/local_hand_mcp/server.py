@@ -25,7 +25,7 @@ CONTROL_SECONDS = 5
 MAX_CONTROL_REQUESTS = 32
 _READ_ONLY = frozenset({"lh_capabilities", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"})
 _DESCRIPTIONS = {
-    "lh_capabilities": "Discover only admitted logical references and exact deployment bindings.",
+    "lh_capabilities": "Discover admitted references and bindings. If prepared_request is present, submit that exact request once and retain its identity.",
     "lh_job_submit": "Durably submit one fixed job; preserve its operation ID across uncertain replies.",
     "lh_job_status": "Read one owned job or the exact requested reconciliation round.",
     "lh_job_cancel": "Durably request cancellation of the explicitly selected execution identity.",
@@ -64,6 +64,7 @@ _OUTPUT_SCHEMAS.update({
         "properties": {"schema_version": _STRING, "supported_versions": {"type": "array", "items": _STRING},
             "authority_id": _STRING, "tool_schema_digest": _STRING, "policy_digest": _STRING,
             "generation": _INTEGER, "catalog_version": _STRING,
+            "prepared_request": TOOL_SCHEMAS["lh_job_submit"],
             "execution_support": {"type": "object", "additionalProperties": {"type": "object",
                 "properties": {"status": _STRING, "reason": _STRING}}},
             "profiles": {"type": "array", "maxItems": 100, "items": {"type": "object", "properties": {
@@ -395,6 +396,7 @@ def main(argv=None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--session", help="Administrator-created task session descriptor")
     mode.add_argument("--read-only", action="store_true", help="Read retained results without an execution session")
+    mode.add_argument("--prepared-task", help="Admitted single task launcher; retain --config history for reads")
     parser.add_argument("--auth-config", required=True, help="Private external-issuer admission")
     parser.add_argument("--port", required=True, type=int, help="Admitted loopback listener port")
     args = parser.parse_args(argv)
@@ -412,13 +414,17 @@ def main(argv=None) -> int:
         # TLS gateway/Tunnel; it cannot accidentally publish an unauthenticated
         # host interface. External connection admission remains E4.
         broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
-                               **({"read_only": True} if args.read_only else {}))
+                               **({"read_only": True} if args.read_only or args.prepared_task else {}))
         maintenance = None
         failed = False
         try:
+            retained = broker
+            if args.prepared_task:
+                from local_hand_mcp.prepared import PreparedBroker
+                broker = PreparedBroker.open(retained, args.prepared_task, actual_entrypoint=__file__)
             peers = {int(uid): Principal(identity, frozenset(broker.policy.principals[identity]["scopes"]))
                      for uid, identity in broker.policy.local_peers.items()}
-            maintenance = MaintenanceServer(broker, Path(broker.policy.broker_root) / "maintenance.sock", peers)
+            maintenance = MaintenanceServer(broker, Path(retained.policy.broker_root) / "maintenance.sock", peers)
             broker.start()
             maintenance.start()
             uvicorn.run(create_app(broker, JWTVerifier(auth)), host="127.0.0.1", port=args.port,
