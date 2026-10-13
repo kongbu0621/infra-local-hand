@@ -135,6 +135,38 @@ class FixedLauncher:
             except Exception as error:
                 self.failure = [type(error).__name__]
 
+    def _commit_intent(self, command):
+        raw = q._canonical(dict(command=command,
+            operation_id=self.launch['request']['operation_id']), 2*1024**2)+b'\n'
+        try:
+            fd = os.open('launch-intent.json', os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,
+                         0o600, dir_fd=self.directory)
+        except FileExistsError as error:
+            # This intent was not created by this call. Its effects are unknown.
+            self.started = True
+            raise JobError('IO_UNCERTAIN', 'A prior launch intent requires inspection') from error
+        except OSError as error:
+            raise JobError('IO_UNCERTAIN', 'Launch intent could not be opened; no process was created') from error
+        try:
+            try:
+                os.fchmod(fd, 0o600)
+                pending = memoryview(raw)
+                while pending:
+                    count = os.write(fd, pending)
+                    q.require(count > 0, 'PREPARED_INTENT_WRITE')
+                    pending = pending[count:]
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.fsync(self.directory)
+        except (OSError, ValueError) as error:
+            # O_EXCL proved this call created the intent, and Popen has not
+            # run. Retain these bytes while allowing a later local retry.
+            os.rename('launch-intent.json', 'local-intent-failed-'+str(time.time_ns())+'.json',
+                      src_dir_fd=self.directory, dst_dir_fd=self.directory)
+            os.fsync(self.directory)
+            raise JobError('IO_UNCERTAIN', 'Launch intent could not be committed; no process was created') from error
+
     def start(self):
         state = self.state()
         if state != 'IDLE':
@@ -147,8 +179,7 @@ class FixedLauncher:
         command = controller_command(self.launch, self.installation, self.static, dynamic)
         for name in ('python','systemd_run'):
             os.close(q2_config.executable(self.installation['installed']['programs'][name]))
-        task_service.save(self.directory, 'launch-intent.json', dict(command=command,
-            operation_id=self.launch['request']['operation_id']))
+        self._commit_intent(command)
         try:
             self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})

@@ -87,8 +87,8 @@ class ResidentBroker:
         # A small administrator-owned retained-policy list preserves older
         # deployments; newly prepared tasks are selected by their own catalog.
         from local_hand_jobs.evidence import EvidenceError
-        readers = [self.retained, *(self._reader(path) for path in self.config['retained'])]
-        for reader in readers:
+        for path in (None, *self.config['retained']):
+            reader = self.retained if path is None else self._reader(path)
             try:
                 return reader.call(name, args, principal)
             except (JobError, EvidenceError) as error:
@@ -190,8 +190,17 @@ class ResidentBroker:
     def close(self):
         with self.fence:
             self.closed = True
-            try:
-                for reader in self.readers.values():
+            failure = None
+            for reader in self.readers.values():
+                try:
                     cli.close_service(reader, None)
-            finally:
+                except BaseException as error:
+                    if failure is None:
+                        failure = error
+            try:
                 self.retained.close()
+            except BaseException as error:
+                if failure is None:
+                    failure = error
+            if failure is not None:
+                raise failure

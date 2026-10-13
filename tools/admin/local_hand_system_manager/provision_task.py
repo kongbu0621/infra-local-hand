@@ -96,7 +96,9 @@ def _helper(installation, name):
         raise ValueError('PROVISION_SOURCE_CHANGED')
     spec = importlib.util.spec_from_file_location('provision_' + name, path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Execute the held, verified bytes; the loader would reopen the path (or a
+    # bytecode cache) after the source digest check.
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
     return module
 
 def prepare(v):

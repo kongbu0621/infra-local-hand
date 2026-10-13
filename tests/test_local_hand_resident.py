@@ -1,5 +1,6 @@
 """Task preparation authorization, durable retry boundaries and result routing."""
 import copy
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -98,6 +99,35 @@ class ResidentTests(unittest.TestCase):
         self.call('lh_job_status',args)
         self.reader.call.assert_called_once_with('lh_job_status',args,self.owner)
 
+    def test_retained_result_does_not_open_an_unrelated_broken_reader(self):
+        self.lookup.return_value=None
+        self.broker.config['retained']=['/unrelated-policy']
+        self.factory.side_effect=OSError('unrelated retained configuration unavailable')
+        self.retained.call.return_value={'operation_id':self.request['operation_id'],'outcome':'SUCCEEDED'}
+        result=self.call('lh_job_status',{'operation_id':self.request['operation_id']})
+        self.assertEqual('SUCCEEDED',result['outcome'])
+        self.factory.assert_not_called()
+
+    def test_close_attempts_all_readers_after_one_cleanup_fails(self):
+        second=Mock()
+        self.broker.readers={'first':self.reader,'second':second}
+        with patch('local_hand_mcp.resident.cli.close_service',side_effect=[OSError('close failed'),None]) as close:
+            with self.assertRaises(OSError):self.broker.close()
+        self.assertEqual([self.reader,second],[call.args[0] for call in close.call_args_list])
+        self.retained.close.assert_called_once()
+
+    def test_history_falls_through_only_on_not_found(self):
+        self.lookup.return_value=None
+        self.broker.config['retained']=['/next-policy']
+        args=dict(operation_id=self.request['operation_id'])
+        self.retained.call.side_effect=JobError('UNAUTHORIZED','owner mismatch')
+        with self.assertRaises(JobError):self.call('lh_job_status',args)
+        self.factory.assert_not_called()
+        self.retained.call.side_effect=JobError('NOT_FOUND','not retained here')
+        self.reader.call.return_value={'outcome':'SUCCEEDED'}
+        self.assertEqual({'outcome':'SUCCEEDED'},self.call('lh_job_status',args))
+        self.factory.assert_called_once_with('/next-policy')
+
 
 class PreparationTests(unittest.TestCase):
     def setUp(self):
@@ -169,8 +199,107 @@ class PreparationTests(unittest.TestCase):
              patch.object(self.service,'_has_committed_task',return_value=True):
             self.assertFalse(self.service._replaceable(record))
 
+    def ready_record(self):
+        operation=self.args['operation_id']
+        root=Path(self.config['private_root'])/operation;root.mkdir()
+        return dict(state='READY',operation_id=operation,principal_id='owner',
+            attempt=str(root/'attempt-1'),boot_id='boot-one',policy_path='/synthetic-policy',
+            request=dict(operation_id=operation,request_digest='a'*64,expires_at=int(time.time())+300))
+
+    def test_restart_repairs_catalog_after_private_commit_before_publication(self):
+        record=self.ready_record()
+        with patch.object(self.service,'_catalog',side_effect=OSError('publication interrupted')):
+            with self.assertRaises(OSError):self.service._save(record)
+        restarted=admin.ResidentService(self.config)
+        public=json.loads((Path(self.config['catalog'])/(record['operation_id']+'.json')).read_text())
+        self.assertEqual('READY',public['state'])
+        self.assertEqual(record['request'],public['request'])
+        self.assertEqual(record,restarted.records[record['operation_id']])
+
+    def test_ready_poll_repairs_stale_public_catalog_without_new_preparation(self):
+        record=self.ready_record();self.service._save(record)
+        path=Path(self.config['catalog'])/(record['operation_id']+'.json')
+        path.write_text(json.dumps(dict(operation_id=record['operation_id'],principal_id='owner',state='PREPARING')))
+        with patch.object(self.service,'_prepare_worker') as worker:
+            self.assertEqual('READY',self.service.call(self.args)['state'])
+        worker.assert_not_called()
+        self.assertEqual(record['request'],json.loads(path.read_text())['request'])
+
+    def test_recovered_preparation_admission_failure_can_retry_same_identity(self):
+        operation=self.args['operation_id'];root=Path(self.config['private_root'])/operation
+        attempt=root/'attempt-1';attempt.mkdir(parents=True)
+        result=attempt/'result.json';result.write_text('{"retained":"original preparation"}')
+        record=dict(state='PREPARING',operation_id=operation,principal_id='owner',attempt=str(attempt),
+            boot_id='boot-one',serial=1,prepare_unit='original.service')
+        self.service._save(record)
+        with patch.object(self.service,'_preparation_active',return_value=False), \
+             patch.object(self.service,'_ready',side_effect=OSError('preparation admission unavailable')) as ready, \
+             patch.object(self.service,'_prepare_worker') as worker:
+            self.assertEqual('FAILED',self.service.call(self.args)['state'])
+            self.assertEqual('PREPARING',self.service.call(dict(self.args,retry_failed=True))['state'])
+            self.service.worker.join(2)
+        ready.assert_called_once()
+        self.assertEqual('boot-one',worker.call_args.args[0]['boot_id'])
+        self.assertEqual(operation,worker.call_args.args[0]['operation_id'])
+        self.assertEqual('{"retained":"original preparation"}',result.read_text())
+
+    def test_recovery_publication_failure_does_not_demote_committed_ready_state(self):
+        record=self.ready_record();record['state']='PREPARING'
+        attempt=Path(record['attempt']);attempt.mkdir()
+        record.update(serial=1,prepare_unit='original.service')
+        launch=dict(request=record.pop('request'),principal_id='owner',policy_path=record['policy_path'],
+            controller_envelope=dict(controller=dict(unit='controller.service')))
+        result=json.dumps(dict(launch=launch,reservation=str(attempt)))
+        (attempt/'result.json').write_text(result)
+        self.service._save(record)
+        catalog=self.service._catalog
+        def interrupted(value):
+            # Inject exactly the split commit: private READY persisted while
+            # readers still see the earlier public PREPARING record.
+            public=json.loads((Path(self.config['catalog'])/(record['operation_id']+'.json')).read_text())
+            if public['state']=='PREPARING' and not (attempt/'preparation-failure.json').exists():
+                raise OSError('public view unavailable once')
+            catalog(value)
+        with patch.object(self.service,'_preparation_active',return_value=False), \
+             patch.object(admin.task_service,'TaskService') as admission, \
+             patch.object(self.service,'_catalog',side_effect=interrupted), \
+             patch.object(self.service,'_prepare_worker') as worker:
+            response=self.service.call(self.args)
+        self.assertEqual('READY',response['state'])
+        self.assertEqual(launch['request'],response['request'])
+        self.assertEqual('READY',self.service.records[record['operation_id']]['state'])
+        worker.assert_not_called();admission.assert_called_once_with(launch)
+        self.assertEqual(result,(attempt/'result.json').read_text())
+        self.assertTrue((attempt/'preparation-failure.json').exists())
+
+    def test_exact_quota_pool_end_accepts_last_complete_allocation(self):
+        self.config['last_project_id']=self.config['first_project_id']+6
+        with patch.object(self.service,'_prepare_worker'):
+            self.assertEqual('PREPARING',self.service.call(self.args)['state'])
+            self.service.worker.join(2)
+            with self.assertRaises(JobError) as caught:
+                self.service.call(dict(self.args,operation_id=str(uuid.uuid4())))
+        self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+
 
 class GeneratedInputTests(unittest.TestCase):
+    def test_helper_executes_the_verified_bytes_without_reopening_source(self):
+        with tempfile.TemporaryDirectory() as root:
+            relative='tests/e3_host/fixture.py';path=Path(root)/relative
+            path.parent.mkdir(parents=True);raw=b'VALUE = "verified"\n';path.write_bytes(raw)
+            installation={'source':{'root':root,'files':{relative:hashlib.sha256(raw).hexdigest()}}}
+            def read(*args):
+                path.write_bytes(b'VALUE = "replacement"\n')
+                return raw
+            with patch.object(provision_task,'read_protected',side_effect=read):
+                self.assertEqual('verified',provision_task._helper(installation,'fixture').VALUE)
+
+    def test_helper_digest_mismatch_is_rejected_before_execution(self):
+        installation={'source':{'root':'/synthetic-source','files':{'tests/e3_host/fixture.py':'0'*64}}}
+        with patch.object(provision_task,'read_protected',return_value=b'raise RuntimeError("must not execute")'):
+            with self.assertRaisesRegex(ValueError,'PROVISION_SOURCE_CHANGED'):
+                provision_task._helper(installation,'fixture')
+
     def test_server_generated_request_material_is_serializable_and_unique(self):
         template=dict(plan=dict(host=dict(hostname='guest',dmi_vendor='QEMU',dmi_product='fixture'),
             mounts=dict(quota=dict(uuid='quota-id',source='/dev/fixture',path='/fixture')),

@@ -7,6 +7,7 @@ Preparation and execution have separate durable records; reads start neither.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import fcntl
 import json
 import os
@@ -57,6 +58,10 @@ class ResidentService:
             validate_tool_args('lh_job_status',dict(operation_id=operation))
             q.require(path.parent.name==operation, 'RESIDENT_TASK_IDENTITY')
             self.records[operation]=record
+        # The private record is authoritative. Publication may have been
+        # interrupted after its commit but before replacing this derived view.
+        for record in self.records.values():
+            self._catalog(record)
 
     def _catalog(self, record):
         public={k:record[k] for k in ('operation_id','principal_id','state')}
@@ -112,7 +117,7 @@ class ResidentService:
     def _has_committed_task(self, record):
         policy=load(record['launch_path'])['policy']
         path=Path(policy['broker_root'])/'jobs.sqlite'
-        with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as db:
+        with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)) as db:
             return db.execute("select 1 from operations where namespace='job' and id=?",
                               (record['operation_id'],)).fetchone() is not None
 
@@ -158,12 +163,14 @@ class ResidentService:
                     # its failure. Neither path submits any business operation.
                     if self._preparation_active(record):return dict(operation_id=operation,state='PREPARING')
                     if (Path(record['attempt'])/'result.json').exists():
-                        record=self._ready(record)
+                        try:record=self._ready(record)
+                        except Exception as error:record=self._preparation_failed(record,error)
                     else:
                         record=dict(record,state='FAILED');self._save(record)
                 if record['state']=='READY':
                     stale=record['boot_id']!=self.boot or record['request']['expires_at']<=time.time()
                     if not (stale or args.get('retry_failed')) or not self._replaceable(record):
+                        self._catalog(record)
                         return dict(operation_id=operation,state='READY',request=record['request'])
                 if record['state']=='FAILED' and not args.get('retry_failed'):
                     return dict(operation_id=operation,state='FAILED',retryable=True)
@@ -174,7 +181,7 @@ class ResidentService:
             operation_root.mkdir(mode=0o700,exist_ok=True)
             used=[int(p.name.split('-')[-1]) for p in self.root.glob('*/attempt-*') if p.is_dir()]
             serial=max(used,default=0)+1
-            if self.config['first_project_id']+serial*7>self.config['last_project_id']:
+            if self.config['first_project_id']+serial*7-1>self.config['last_project_id']:
                 raise JobError('LIMIT_EXCEEDED','Configured quota project range is full')
             attempt=operation_root/('attempt-'+str(serial))
             attempt.mkdir(mode=0o700)
@@ -224,8 +231,24 @@ class ResidentService:
             if result.returncode!=0:raise ValueError('PROVISION_PROCESS_FAILED')
             with self.fence:self._ready(record)
         except BaseException as error:
-            publish(attempt/'preparation-failure.json',dict(type=type(error).__name__,message=str(error)[:2048]))
-            with self.fence:self._save(dict(record,state='FAILED'))
+            with self.fence:self._preparation_failed(record,error)
+
+    def _preparation_failed(self, record, error):
+        directory=os.open(record['attempt'],os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        failure=dict(type=type(error).__name__,message=str(error)[:2048])
+        try:
+            try:task_service.save(directory,'preparation-failure.json',failure)
+            except FileExistsError:
+                task_service.save(directory,'preparation-failure-'+uuid.uuid4().hex+'.json',failure)
+        finally:os.close(directory)
+        current=self.records[record['operation_id']]
+        # A publication error after the private READY commit must not demote a
+        # successful preparation. A later poll/restart repairs its public view.
+        if current['state']=='READY' and current['attempt']==record['attempt']:
+            return current
+        failed=dict(record,state='FAILED')
+        self._save(failed)
+        return failed
 
     def call(self, request):
         with self.fence:
