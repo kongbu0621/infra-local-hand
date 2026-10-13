@@ -1,5 +1,6 @@
 """Fixed launch retention and real pipe exit; no production host claim."""
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,7 @@ if not sys.platform.startswith('linux'):
     raise unittest.SkipTest('Linux administrator task launcher')
 
 from admin.local_hand_system_manager import prepared_service as prepared
+from admin.local_hand_system_manager.resident_service import ResidentService
 from local_hand_jobs.contract import JobError
 
 
@@ -154,6 +156,135 @@ class FixedLaunchTests(unittest.TestCase):
             with self.assertRaises(JobError):self.launcher.state()
             with self.assertRaises(JobError):self.launcher.start()
             popen.assert_not_called()
+
+    def completed_child(self):
+        process=subprocess.Popen([sys.executable,'-c',"print('original exit proof')"],
+            stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        def cleanup():
+            if process.poll() is None:process.kill()
+            process.wait(timeout=3)
+            for stream in (process.stdout,process.stderr):
+                if not stream.closed:stream.close()
+        self.addCleanup(cleanup)
+        self.launcher.process=process
+        self.launcher.started=True
+        return process
+
+    def test_exit_record_open_failure_retries_publication_without_recapturing_or_launching(self):
+        process=self.completed_child()
+        with patch.object(prepared.task_service,'save',side_effect=OSError('record open unavailable')):
+            self.launcher._capture()
+        self.assertEqual(0,process.returncode)
+        self.assertTrue(self.launcher.complete.is_set())
+        original=self.launcher.result
+        with patch.object(prepared.subprocess,'Popen') as spawn, \
+             patch.object(self.launcher,'_capture') as capture:
+            self.assertEqual('EXITED',self.launcher.state())
+            self.assertEqual('EXITED',self.launcher.start())
+            spawn.assert_not_called()
+            capture.assert_not_called()
+        self.assertIs(original,self.launcher.result)
+        self.assertEqual(original,json.loads((self.launcher.output/'finished.json').read_bytes()))
+
+    def test_partial_exit_record_is_retained_without_publishing_a_truncated_completion(self):
+        self.completed_child()
+        write=os.write
+        calls=0
+        def interrupted(fd,raw):
+            nonlocal calls
+            calls+=1
+            if calls==1:return write(fd,raw[:19])
+            raise OSError('storage interrupted after partial write')
+        with patch.object(prepared.os,'write',side_effect=interrupted):
+            self.launcher._capture()
+        partials={p:p.read_bytes() for p in self.launcher.output.iterdir()}
+        self.assertEqual(1,len(partials))
+        self.assertEqual([19],[len(raw) for raw in partials.values()])
+        self.assertFalse((self.launcher.output/'finished.json').exists())
+        self.assertEqual('EXITED',self.launcher.state())
+        self.assertEqual(partials,{p:p.read_bytes() for p in partials})
+        self.assertEqual(self.launcher.result,json.loads((self.launcher.output/'finished.json').read_bytes()))
+
+    def test_published_exit_record_sync_failure_reuses_same_inode_and_result(self):
+        self.completed_child()
+        resident=ResidentService.__new__(ResidentService)
+        resident.boot='test-boot'
+        resident.launchers={'original-attempt':self.launcher}
+        record=dict(output=str(self.launcher.output),attempt='original-attempt',boot_id=resident.boot)
+        self.enterContext(patch('admin.local_hand_system_manager.resident_service.load',
+                               side_effect=lambda path:json.loads(Path(path).read_bytes())))
+        fsync=os.fsync
+        def interrupted(fd):
+            if fd==self.launcher.directory and (self.launcher.output/'finished.json').exists():
+                raise OSError('completion directory sync failed')
+            fsync(fd)
+        with patch.object(prepared.os,'fsync',side_effect=interrupted):
+            self.launcher._capture()
+            with self.assertRaises(JobError):self.launcher.state()
+            with self.assertRaises(JobError):resident.execution_state(record)
+        path=self.launcher.output/'finished.json'
+        identity=path.stat().st_ino
+        original=path.read_bytes()
+        with patch.object(prepared.task_service,'save') as save:
+            self.assertEqual('EXITED',resident.execution_state(record))
+            save.assert_not_called()
+        self.assertEqual(identity,path.stat().st_ino)
+        self.assertEqual(original,path.read_bytes())
+
+    def test_conflicting_exit_record_is_never_replaced_or_treated_as_this_result(self):
+        self.completed_child()
+        path=self.launcher.output/'finished.json'
+        original=b'{"returncode":7,"streams_eof":true}\n'
+        path.write_bytes(original)
+        path.chmod(0o600)
+        self.launcher._capture()
+        with patch.object(prepared.subprocess,'Popen') as spawn:
+            for _ in range(2):
+                with self.assertRaises(JobError):self.launcher.start()
+            spawn.assert_not_called()
+        self.assertEqual(original,path.read_bytes())
+
+    def test_completion_cannot_follow_aliases_or_accept_shared_or_public_records(self):
+        self.completed_child()
+        with patch.object(prepared.task_service,'save',side_effect=OSError('not published yet')):
+            self.launcher._capture()
+        raw=prepared.q._canonical(self.launcher.result,2*1024**2)+b'\n'
+        path=self.launcher.output/'finished.json'
+        retained=self.launcher.output/'retained.json'
+        retained.write_bytes(raw)
+        retained.chmod(0o600)
+        for kind in ('symlink','hardlink','fifo','public'):
+            with self.subTest(kind=kind):
+                if kind=='symlink':path.symlink_to(retained)
+                elif kind=='hardlink':os.link(retained,path)
+                elif kind=='fifo':os.mkfifo(path,0o600)
+                else:
+                    path.write_bytes(raw)
+                    path.chmod(0o644)
+                try:
+                    with self.assertRaises(JobError):self.launcher.state()
+                    self.assertEqual(raw,retained.read_bytes())
+                finally:path.unlink()
+        self.assertEqual('EXITED',self.launcher.state())
+
+    def test_completion_replacement_during_sync_keeps_original_proof_and_rejects_entry(self):
+        self.completed_child()
+        fsync=os.fsync
+        path=self.launcher.output/'finished.json'
+        archived=self.launcher.output/'original-finished.json'
+        foreign=b'{"foreign":true}\n'
+        def replace(fd):
+            fsync(fd)
+            if fd==self.launcher.directory and path.exists() and not archived.exists():
+                path.rename(archived)
+                path.write_bytes(foreign)
+                path.chmod(0o600)
+        with patch.object(prepared.os,'fsync',side_effect=replace):
+            self.launcher._capture()
+        self.assertTrue(self.launcher.complete.is_set())
+        self.assertEqual(self.launcher.result,json.loads(archived.read_bytes()))
+        with self.assertRaises(JobError):self.launcher.state()
+        self.assertEqual(foreign,path.read_bytes())
 
     def test_intent_commit_failure_before_popen_does_not_block_local_retry(self):
         fsync=os.fsync

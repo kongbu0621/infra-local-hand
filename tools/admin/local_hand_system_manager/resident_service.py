@@ -99,6 +99,11 @@ class ResidentService:
     def execution_state(self, record):
         output=Path(record['output'])
         if (output/'finished.json').exists():
+            launcher=self.launchers.get(record.get('attempt'))
+            if launcher is not None and launcher.complete.is_set():
+                # The name can exist before its directory sync succeeds.
+                # Let the original collector verify/persist its own result.
+                launcher.state()
             return self._captured_execution_state(record)
         intent=(output/'launch-intent.json').exists() or (output/'started.json').exists()
         if record['boot_id']!=self.boot:

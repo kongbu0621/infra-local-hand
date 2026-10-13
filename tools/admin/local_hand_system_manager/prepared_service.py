@@ -21,6 +21,7 @@ import time
 
 from local_hand_jobs import budget, cli, quota_contract as q
 from local_hand_jobs.contract import JobError, strict_loads
+from local_hand_jobs.evidence import _publish_create_only, _same
 from admin.local_hand_quota_observer import controller_guard, q2_config
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import task_service
@@ -80,6 +81,7 @@ class FixedLauncher:
         self.record_lock = threading.Lock()
         self.result = None
         self.failure = None
+        self.publication_failure = None
         self.sequence = 0
         self.started = (self.output/'started.json').exists() or (self.output/'launch-intent.json').exists()
         self.finished = (self.output/'finished.json').exists()
@@ -97,13 +99,53 @@ class FixedLauncher:
             if self.complete.is_set():
                 with self.record_lock:
                     if not self.finished:
-                        task_service.save(self.directory, 'finished.json', self.result)
+                        try:
+                            self._publish_completion()
+                        except (OSError, ValueError) as error:
+                            self.publication_failure = type(error).__name__
+                            raise JobError('IO_UNCERTAIN', 'Controller exited; completion record needs publication') from error
                         self.finished = True
                 return 'EXITED'
             return 'RUNNING'
         if self.started:
             raise JobError('IO_UNCERTAIN', 'A prior launch is unresolved; inspect the original task')
         return 'IDLE'
+
+    def _publish_completion(self):
+        """Publish the captured result without exposing partial or replacing old bytes."""
+        expected = q._canonical(self.result, 2*1024**2)+b'\n'
+        flags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC
+        try:
+            fd = os.open('finished.json', flags, dir_fd=self.directory)
+        except FileNotFoundError:
+            # Failed writes retain their own attempt file. Only a complete,
+            # synced record becomes visible to a restarted reader.
+            temporary = '.finished-'+os.urandom(16).hex()+'.json'
+            task_service.save(self.directory, temporary, self.result)
+            _publish_create_only(Path(temporary), Path('finished.json'),
+                                 source_dir_fd=self.directory, destination_dir_fd=self.directory)
+            fd = os.open('finished.json', flags, dir_fd=self.directory)
+        try:
+            before = os.fstat(fd)
+            q.require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                      and before.st_uid == os.fstat(self.directory).st_uid
+                      and stat.S_IMODE(before.st_mode) == 0o600
+                      and before.st_size == len(expected), 'PREPARED_COMPLETION_IDENTITY')
+            raw = bytearray()
+            while len(raw) <= len(expected):
+                chunk = os.read(fd, min(8192, len(expected)+1-len(raw)))
+                if not chunk:break
+                raw.extend(chunk)
+            q.require(raw == expected, 'PREPARED_COMPLETION_CHANGED')
+            # A previous directory sync may have failed after publication.
+            # Reuse and synchronize that exact result, never rerun the child.
+            os.fsync(fd)
+            os.fsync(self.directory)
+            q.require(_same(os.fstat(fd)) == _same(before)
+                      == _same(os.stat('finished.json', dir_fd=self.directory, follow_symlinks=False)),
+                      'PREPARED_COMPLETION_CHANGED')
+        finally:
+            os.close(fd)
 
     def _capture(self):
         # This worker was started before process delivery. Multiplex both
@@ -137,12 +179,18 @@ class FixedLauncher:
             code = self.process.wait()
             self.result = dict(returncode=code, streams_eof=True, streams=streams)
             self.complete.set()
-            self.state() # Persist exit/EOF even if no client polls again.
         except BaseException as error:
             self.failure = [type(error).__name__]
             for name in ('stdout','stderr'):
                 try:getattr(self.process, name).close()
                 except OSError:pass
+            return
+        try:
+            self.state() # Persist exit/EOF even if no client polls again.
+        except JobError:
+            # Collection succeeded. A later poll can publish those same bytes;
+            # only actual pipe/exit observation failure poisons the collector.
+            pass
 
     def _commit_intent(self, command):
         raw = q._canonical(dict(command=command,
