@@ -122,6 +122,70 @@ class TaskSessionTests(unittest.TestCase):
         self.assertEqual(before, self.channel.outgoing)
         self.assertEqual([], self.f.runner.starts)
 
+    def test_exit_record_contention_before_command_keeps_session_retryable(self):
+        self.session.tick()
+        prepared = self.channel.outgoing[-1]
+        grant = self.f.make_grant("preflight", prepared["snapshot"]["preparation"])
+        self.command("bind", grant.as_dict())
+        self.command("start")
+        execution = self.f.runner.starts[0][1]
+        self.f.runner.finish(execution)
+        self.f.runner.proofs[execution]["execution_id"] = execution
+        self.channel.enqueue(dict(action="snapshot", value=None))
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        inspect = self.f.runner.inspect
+        def observe_then_lock(handle):
+            proof = inspect(handle)
+            writer.execute("BEGIN IMMEDIATE")
+            return proof
+        try:
+            with patch.object(self.f.runner, "inspect", side_effect=observe_then_lock):
+                with self.assertRaises(JobError):self.session.tick()
+            self.assertIsNone(self.session.failure)
+            self.assertEqual(1, len(self.channel.incoming))
+        finally:
+            if writer.in_transaction:writer.execute("ROLLBACK")
+        self.session.tick()
+        self.assertIsNone(self.session.failure)
+        self.assertEqual([], self.channel.incoming)
+        self.assertEqual(1, len(self.f.runner.starts))
+        self.assertEqual(execution, self.channel.outgoing[-1]["pending"]["proof"]["execution_id"])
+
+    def test_initial_preparation_contention_before_reservation_can_continue(self):
+        self._check_initial_preparation_contention(after_reservation=False)
+
+    def test_initial_preparation_contention_reuses_committed_reservation(self):
+        self._check_initial_preparation_contention(after_reservation=True)
+
+    def _check_initial_preparation_contention(self, *, after_reservation):
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        start = self.broker._start
+        def contend(*args):
+            if after_reservation:start(*args)
+            writer.execute("BEGIN IMMEDIATE")
+            if not after_reservation:start(*args)
+        try:
+            with patch.object(self.broker, "_start", side_effect=contend):
+                with self.assertRaises(JobError):self.session.tick()
+            self.assertIsNone(self.session.failure)
+            self.assertEqual([], self.channel.outgoing)
+        finally:
+            if writer.in_transaction:writer.execute("ROLLBACK")
+        reserved = copy.deepcopy(self.f.row()["record"].get("execution_budget"))
+        self.session.tick()
+        self.assertIsNone(self.session.failure)
+        if after_reservation:self.assertEqual(reserved, self.f.row()["record"]["execution_budget"])
+        self.assertEqual(1, sum(event['kind']=='QUOTA_PREPARATION' for event in
+                               self.broker.state.events('job', self.f.identity)))
+        self.assertEqual([], self.f.runner.starts)
+        prepared = self.channel.outgoing[-1]
+        grant = self.f.make_grant("preflight", prepared["snapshot"]["preparation"])
+        self.command("bind", grant.as_dict())
+        self.command("start")
+        self.assertEqual(1, len(self.f.runner.starts))
+
     def test_preparation_is_not_launch_and_bind_waits_for_controller_start(self):
         self.session.tick()
         prepared = self.channel.outgoing[-1]

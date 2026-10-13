@@ -16,6 +16,7 @@ from . import budget, manager_binding, quota_binding, quota_bridge, quota_closur
 from . import quota_contract as q
 from .broker import phase_plan, thaw
 from .contract import JobError
+from .state import LedgerBusy
 
 SCHEMA = "local-hand-task-session/v1"
 PHASES = quota_bridge.JOB_PHASES
@@ -126,6 +127,7 @@ class TaskSession:
         self.preparations = {}
         self.closures = {}
         self.terminal_sent = False
+        self._control_started = False
 
     @classmethod
     def open(cls, path, policy):
@@ -219,6 +221,7 @@ class TaskSession:
                     manager_binding=b.manager_binding)
             self.phase, self.handler, self.started = phase, handler, False
             self.preparations[phase] = prepared
+        self._control_started = True
         self.channel.send(dict(event="prepared", namespace="job", identity=identity, phase=phase,
                                snapshot=snapshot, phase_plan=quota_payload.encode_phase_plan(plan)))
 
@@ -240,13 +243,24 @@ class TaskSession:
             if ("job", self.value["operation_id"]) in self.broker._active:
                 self.broker.tick()
             return
-        # This iteration has not consumed a packet or advanced execution. A
-        # transient read failure must leave the original session retryable;
+        self._control_started = False
+        # Reads and observation of the original execution precede the control
+        # exchange. Failure here has not consumed the next queued command.
         # StateStore still blocks an actually damaged or uncertain ledger.
         row = self.broker.state.get("job", self.value["operation_id"])
+        if row is not None:
+            key = ("job", self.value["operation_id"])
+            if self.value["mode"] == "recover":
+                if key in self.broker._active or key in self.broker._recovering:
+                    self.broker.tick()
+            elif row["record"]["cancel_requested"] or self.started:
+                self.broker.tick()
+                row = self.broker.state.get(*key)
         try:
             self._tick(row)
         except Exception as error:
+            if isinstance(error, LedgerBusy) and not self._control_started:
+                raise  # Local preparation can reuse its original reservation.
             # A failed control exchange never becomes an automatic resubmit.
             # Keep the public read/cancel transports and the original ledger.
             self.failure = type(error).__name__
@@ -261,16 +275,12 @@ class TaskSession:
             self.channel._time()
             return  # Only a real client submission may create this task.
         if self.value["mode"] == "recover":
-            if ("job", identity) in b._active or ("job", identity) in b._recovering:
-                b.tick()
             if ("job", identity) not in b._active and ("job", identity) not in b._recovering:
+                self._control_started = True
                 self.manager.finish_recovery()
                 self.finished = True
             return
         record = row["record"]
-        if record["cancel_requested"] or self.started:
-            b.tick()
-            record = b.state.get("job", identity)["record"]
         stopped = record["lifecycle"] == "TERMINAL" and record["cancel_requested"]
         self.channel._time()
         if stopped:
@@ -278,10 +288,12 @@ class TaskSession:
             awaiting_advance = (self.handler is None and 0 < index < len(PHASES)
                                 and self.phase == PHASES[index - 1])
             if self.handler is None and not self.terminal_sent and not awaiting_advance:
+                self._control_started = True
                 self.channel.send(dict(event="terminal", namespace="job", identity=identity,
                                        task=self._status(record)))
                 self.terminal_sent = True
             if select.select([self.channel.sock], [], [], 0)[0]:
+                self._control_started = True
                 command = self.channel.receive()
                 if command == {"action": "finish", "value": None}:
                     self.finished = True
@@ -308,6 +320,7 @@ class TaskSession:
                 return
             if not select.select([self.channel.sock], [], [], 0)[0]:
                 return
+            self._control_started = True
             command = self.channel.receive()
             index = len(self.closures)
             if index == len(PHASES):
@@ -317,6 +330,7 @@ class TaskSession:
             self._prepare(self._advance(command))
             return
         if select.select([self.channel.sock], [], [], 0)[0]:
+            self._control_started = True
             command = self.channel.receive()
             q.require(type(command) is dict and (command.get("action") != "start" or not self.started),
                       "SESSION_START_REPLAY")

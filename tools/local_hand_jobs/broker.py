@@ -16,7 +16,7 @@ import uuid
 from .contract import DISABLED_JOB_KINDS, JobError, Principal, validate_submit, validate_tool_args
 from . import bootstrap_roots, budget, manager_binding as bindings
 from .resources import ResourceManager
-from .state import encoded
+from .state import LedgerBusy, encoded
 
 
 def thaw(value):
@@ -1206,15 +1206,29 @@ class Broker:
                                 saved[phase] = handle
                                 self.state.update(tx, *key, "SUPERVISOR_IDENTITY_OBSERVED", {"handles": saved})
                     if proof.get("state") == "EXITED":
+                        completed_handle = None
                         if proof.get("future_start_blocked") is True and proof.get("tree_exited") is True:
-                            del self._active[key]
-                        self._complete(*key, proof)
-                        if key[0] == "job":
-                            self._catalog(self.state.get(*key))
+                            completed_handle = self._active.pop(key)
+                        try:
+                            self._complete(*key, proof)
+                        except BaseException:
+                            # A local recording failure is not completion.
+                            # Keep observing the exact original execution;
+                            # never replace its handle or issue another start.
+                            if completed_handle is not None:
+                                self._active[key] = completed_handle
+                            raise
                     elif proof.get("state") == "UNKNOWN":
                         self._unknown(*key, "Supervisor has not established execution identity or exit")
+                except LedgerBusy:
+                    raise  # Keep the original execution and last durable observation.
                 except Exception:
                     self._unknown(*key, "Supervisor observation failed")
+                else:
+                    if proof.get("state") == "EXITED" and key[0] == "job":
+                        # The execution transition is already durable. A
+                        # derived catalog read cannot make that result unknown.
+                        self._catalog(self.state.get(*key))
                 continue
             if (record["outcome"] == "UNKNOWN" and record["phase"] != "AWAITING_SEAL") or (record["lifecycle"] != "ACCEPTED" and record["phase"] not in ("PREFLIGHT_COMPLETE", "AWAITING_SEAL")):
                 continue
@@ -1239,6 +1253,8 @@ class Broker:
             try:
                 self._start(*key, phase)
             except JobError as error:
+                if isinstance(error, LedgerBusy) and key not in self._active:
+                    raise  # The first execution transaction never began.
                 if not isinstance(error, budget.BudgetExhausted) or not self._budget_blocked(*key):
                     self._unknown(*key, "Startup binding or supervisor acknowledgement is unresolved")
             except Exception:

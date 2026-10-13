@@ -14,6 +14,13 @@ import time
 from .contract import JobError
 
 
+class LedgerBusy(JobError):
+    """Lock contention with no possible write commit from this transaction.
+
+    Callers must still account for any earlier execution or consumed command.
+    """
+
+
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
@@ -171,6 +178,8 @@ class StateStore:
                     # BEGIN still retain the original uncertainty barrier.
                     if retryable_contention and not self._db.in_transaction:
                         self.healthy = True
+                if retryable_contention and self.healthy:
+                    raise LedgerBusy("IO_UNCERTAIN", "Ledger is busy; this transaction committed no writes") from exc
                 raise JobError("IO_UNCERTAIN", "Ledger transaction outcome is unresolved") from exc
             except BaseException:
                 try:

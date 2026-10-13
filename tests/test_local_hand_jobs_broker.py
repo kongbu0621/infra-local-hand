@@ -205,6 +205,150 @@ class BrokerTests(unittest.TestCase):
         self.assertCode('IO_UNCERTAIN',self.submit)
         self.assertEqual(1,reader.execute("SELECT value FROM counters WHERE key='generation'").fetchone()[0])
 
+    def test_exit_record_contention_retains_original_handle_until_commit(self):
+        self.submit()
+        self.broker.tick()
+        execution = self.runner.starts[0][1]
+        key = ("job", self.request["operation_id"])
+        original = copy.deepcopy(self.broker._active[key])
+        self.runner.finish(execution)
+        writer = sqlite3.connect(self.db.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        inspect = self.runner.inspect
+        def observe_then_lock(handle):
+            proof = inspect(handle)
+            writer.execute("BEGIN IMMEDIATE")
+            return proof
+        try:
+            with mock.patch.object(self.runner, "inspect", side_effect=observe_then_lock):
+                with self.assertRaises(JobError):self.broker.tick()
+        finally:
+            if writer.in_transaction:writer.execute("ROLLBACK")
+        self.assertEqual(original, self.broker._active.get(key))
+        self.assertTrue(self.db.healthy)
+        self.assertEqual(1, len(self.runner.starts))
+        self.broker.tick()
+        self.assertEqual("PREFLIGHT_COMPLETE", self.status()["phase"])
+        self.assertNotIn(key, self.broker._active)
+        self.broker.tick()
+        self.assertEqual(["preflight", "business"], [item[2]["phase"] for item in self.runner.starts])
+
+    def test_post_commit_catalog_read_failure_preserves_completed_phase(self):
+        self._check_post_commit_catalog_read_failure("preflight")
+
+    def test_post_commit_catalog_read_failure_preserves_business_success(self):
+        self._check_post_commit_catalog_read_failure("business")
+
+    def _check_post_commit_catalog_read_failure(self, phase):
+        self.submit()
+        self.broker.tick()
+        if phase == "business":
+            self.runner.finish(self.runner.starts[0][1])
+            self.broker.tick()
+            self.broker.tick()
+        self.runner.finish(self.runner.starts[-1][1])
+        writer = sqlite3.connect(self.db.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        complete, get = self.broker._complete, self.db.get
+        def complete_then_lock(*args):
+            complete(*args)
+            writer.execute("BEGIN IMMEDIATE")
+        def read_then_unlock(namespace, identity, tx=None):
+            if tx is None and writer.in_transaction:
+                try:return get(namespace, identity)
+                finally:writer.execute("ROLLBACK")
+            return get(namespace, identity, tx)
+        try:
+            with mock.patch.object(self.broker, "_complete", side_effect=complete_then_lock), \
+                 mock.patch.object(self.db, "get", side_effect=read_then_unlock):
+                with self.assertRaises(JobError) as caught:self.broker.tick()
+                self.assertEqual(sqlite3.SQLITE_BUSY, caught.exception.__cause__.sqlite_errorcode)
+        finally:
+            if writer.in_transaction:writer.execute("ROLLBACK")
+        status = self.status()
+        expected = (("PREFLIGHT_COMPLETE", "RUNNING", "PENDING") if phase == "preflight" else
+                    ("EXITED", "TERMINAL", "SUCCEEDED"))
+        self.assertEqual(expected,
+                         (status["phase"], status["lifecycle"], status["outcome"]))
+        self.assertEqual(0, sum(event['kind']=='EXECUTION_UNCERTAIN' for event in
+                               self.db.events('job', self.request['operation_id'])))
+        self.broker.tick()
+        self.assertEqual(["preflight", "business"], [item[2]["phase"] for item in self.runner.starts])
+
+    def test_exit_commit_failure_retains_handle_but_blocks_further_execution(self):
+        self.submit()
+        self.broker.tick()
+        self.runner.finish(self.runner.starts[0][1])
+        self.broker.tick()
+        self.broker.tick()
+        execution = self.runner.starts[-1][1]
+        self.runner.finish(execution)
+        key = ("job", self.request["operation_id"])
+        original = copy.deepcopy(self.broker._active[key])
+        self.db._db.execute("PRAGMA journal_mode=DELETE")
+        reader = sqlite3.connect(self.db.path, isolation_level=None)
+        self.addCleanup(reader.close)
+        inspect = self.runner.inspect
+        def observe_then_lock(handle):
+            proof = inspect(handle)
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM operations").fetchall()
+            return proof
+        try:
+            with mock.patch.object(self.runner, "inspect", side_effect=observe_then_lock):
+                with self.assertRaises(JobError):self.broker.tick()
+        finally:
+            if reader.in_transaction:reader.execute("ROLLBACK")
+        self.assertEqual(original, self.broker._active.get(key))
+        self.assertFalse(self.db.healthy)
+        self.assertCode("IO_UNCERTAIN", self.broker.tick)
+        self.assertEqual(1, reader.execute("SELECT count(*) FROM leases").fetchone()[0])
+        self.assertEqual(2, len(self.runner.starts))
+
+    def test_start_transaction_contention_does_not_create_unknown_execution(self):
+        self.submit()
+        before = self.db.events("job", self.request["operation_id"])
+        writer = sqlite3.connect(self.db.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        start = self.broker._start
+        def contend(*args):
+            writer.execute("BEGIN IMMEDIATE")
+            try:return start(*args)
+            finally:writer.execute("ROLLBACK")
+        with mock.patch.object(self.broker, "_start", side_effect=contend):
+            with self.assertRaises(JobError):self.broker.tick()
+        self.assertEqual(before, self.db.events("job", self.request["operation_id"]))
+        self.assertEqual("ACCEPTED", self.status()["lifecycle"])
+        self.assertEqual([], self.runner.starts)
+        self.broker.tick()
+        self.assertEqual(1, len(self.runner.starts))
+
+    def test_launch_ack_contention_keeps_original_execution_without_second_start(self):
+        self.submit()
+        writer = sqlite3.connect(self.db.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        start = self.runner.start
+        def start_then_lock(*args):
+            handle = start(*args)
+            writer.execute("BEGIN IMMEDIATE")
+            return handle
+        try:
+            with mock.patch.object(self.runner, "start", side_effect=start_then_lock):
+                with self.assertRaises(JobError):self.broker.tick()
+        finally:
+            if writer.in_transaction:writer.execute("ROLLBACK")
+        execution = self.runner.starts[0][1]
+        self.assertEqual(execution, self.broker._active['job', self.request['operation_id']]['execution_id'])
+        self.submit()
+        self.broker.tick()
+        self.assertEqual(1, len(self.runner.starts))
+        self.cancel()
+        self.runner.finish(execution)
+        self.broker.tick()
+        self.assertEqual("CANCELLED", self.status()["outcome"])
+        self.assertEqual([execution], self.runner.stops)
+        self.assertEqual(1, len(self.runner.starts))
+
     def test_new_nas_job_is_rejected_before_planning_or_reserving_resources(self):
         nas = dict(self.request, kind="ledger.nas.roundtrip",
                    inputs={"prepared_ref": "prepared", "storage_ref": "storage"})
