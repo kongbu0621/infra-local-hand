@@ -5,6 +5,7 @@ Quota grants and process exit proofs are modeled here; this is not a host run.
 import copy
 import os
 from pathlib import Path
+import select
 import socket
 import sys
 import time
@@ -15,7 +16,7 @@ from local_hand_jobs.contract import JobError, request_digest
 
 if sys.platform.startswith("linux"):
     from local_hand_jobs.task_session import TaskSession
-    from local_hand_jobs import quota_closure
+    from local_hand_jobs import budget, quota_bridge, quota_closure
     from local_hand_jobs.broker import Broker
     from local_hand_jobs.cli import MaintenanceServer, request as local_request
     from local_hand_jobs.state import StateStore
@@ -106,6 +107,114 @@ class TaskSessionTests(unittest.TestCase):
         self.assertEqual([], self.f.runner.starts)
         self.assertIsNone(self.session.failure)
         self.command("finish")
+        self.assertTrue(self.session.finished)
+
+    def test_cancel_between_closed_phase_and_advance_keeps_real_channel_in_order(self):
+        self._cancel_at_closed_phase(queued=False)
+
+    def test_cancel_with_advance_already_in_flight_keeps_real_channel_in_order(self):
+        self._cancel_at_closed_phase(queued=True)
+
+    def test_cancel_after_business_closure_preserves_success_without_starting_evidence(self):
+        self._cancel_at_closed_phase(queued=True, phase="business")
+
+    def test_cancel_after_advance_before_preparation_keeps_real_channel_in_order(self):
+        self._cancel_at_closed_phase(queued=True, during_prepare=True)
+
+    def test_cancel_before_initial_preparation_does_not_freeze_session(self):
+        prepare = self.session._prepare
+        def cancel_before_prepare(phase):
+            self.broker.cancel(self.f.identity, self.f.f.request["request_digest"],
+                               {"kind": "job"}, self.f.f.owner)
+            prepare(phase)
+        with patch.object(self.session, "_prepare", side_effect=cancel_before_prepare):
+            self.session.tick()
+        self.session.tick()
+        self.assertEqual("terminal", self.channel.outgoing[-1]["event"])
+        self.assertEqual("CANCELLED", self.channel.outgoing[-1]["task"]["outcome"])
+        self.assertIsNone(self.session.failure)
+        self.assertFalse(self.f.row()["record"].get("quota_preparations"))
+        self.assertEqual([], self.f.runner.starts)
+        self.command("finish")
+        self.assertTrue(self.session.finished)
+
+    def test_cancelled_transition_still_rejects_changed_closure_digest(self):
+        self.session.tick()
+        fence, _ = self.f.pending("preflight")
+        self.command("close", fence)
+        starts = len(self.f.runner.starts)
+        self.broker.cancel(self.f.identity, self.f.f.request["request_digest"],
+                           {"kind": "job"}, self.f.f.owner)
+        with self.assertRaises(JobError) as caught:
+            self.command("advance", {"from": "preflight", "to": "business",
+                                    "closure_digest": "0" * 64})
+        self.assertIn("SESSION_ADVANCE", str(caught.exception.__cause__))
+        self.assertEqual([], self.channel.phases)
+        self.assertEqual(starts, len(self.f.runner.starts))
+        self.assertEqual({"preflight"}, set(self.f.row()["record"]["quota_preparations"]))
+        self.assertEqual("CANCELLED", self.f.row()["record"]["outcome"])
+
+    def _cancel_at_closed_phase(self, *, queued, phase="preflight", during_prepare=False):
+        self.session.tick()
+        phases = ("preflight", "business", "evidence")
+        index = phases.index(phase)
+        for current in phases[:index+1]:
+            fence, _ = self.f.pending(current)
+            self.command("close", fence)
+            closed = self.f.row()["record"]["quota_closed"][current]
+            self.f.chain.retain_closure(current, closed)
+            if current != phase:
+                self.command("advance", {"from": current, "to": phase,
+                             "closure_digest": quota_closure.digest(closed)})
+        starts = len(self.f.runner.starts)
+        self.channel.close()
+        left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        clock = budget.current_clock()
+        options = dict(peer=(os.getpid(), os.getuid(), os.getgid()), session="a"*64,
+                       boot_id=clock["boot_id"], deadline_ns=clock["boottime_ns"]+60_000_000_000, version=2)
+        self.channel = quota_bridge.Channel(left, **options)
+        controller = quota_bridge.Channel(right, **options)
+        self.addCleanup(controller.close)
+        self.session.channel = self.channel
+        for current in phases[1:index+1]:
+            self.channel.advance_phase(current)
+            controller.advance_phase(current)
+        following = phases[index+1]
+        advance = dict(action="advance", value={"from": phase, "to": following,
+                       "closure_digest": quota_closure.digest(closed)})
+        def cancel():
+            self.broker.cancel(self.f.identity, self.f.f.request["request_digest"], {"kind": "job"}, self.f.f.owner)
+        if not during_prepare:
+            cancel()
+        if queued:
+            controller.send(advance)
+            controller.advance_phase(following)
+        else:
+            self.session.tick()
+            self.assertEqual([], select.select([controller.sock], [], [], 0)[0],
+                             "No old-phase reply may race the controller's phase advance")
+            controller.send(advance)
+            controller.advance_phase(following)
+        if during_prepare:
+            prepare = self.session._prepare
+            def cancel_before_prepare(current):
+                cancel()
+                prepare(current)
+            with patch.object(self.session, "_prepare", side_effect=cancel_before_prepare):
+                self.session.tick()
+            self.session.tick()
+        else:
+            self.session.tick()
+        terminal = controller.receive()
+        self.assertEqual("terminal", terminal["event"])
+        self.assertEqual("CANCELLED" if phase == "preflight" else "SUCCEEDED", terminal["task"]["outcome"])
+        self.assertTrue(terminal["task"]["cancel_requested"])
+        self.assertIsNone(self.session.failure)
+        self.assertEqual(starts, len(self.f.runner.starts))
+        self.assertEqual(set(phases[:index+1]), set(self.f.row()["record"]["handles"]))
+        self.assertEqual(set(phases[:index+1]), set(self.f.row()["record"]["quota_preparations"]))
+        controller.send(dict(action="finish", value=None))
+        self.session.tick()
         self.assertTrue(self.session.finished)
 
     def test_wrong_task_rejected_before_creating_a_second_row_or_leases(self):

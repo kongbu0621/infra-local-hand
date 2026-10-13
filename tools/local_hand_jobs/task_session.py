@@ -197,25 +197,41 @@ class TaskSession:
 
     def _prepare(self, phase):
         b, identity = self.broker, self.value["operation_id"]
-        b._start("job", identity, phase)
-        handler = quota_bridge.Phase(b, "job", identity, phase, version=2)
-        snapshot = handler.snapshot()
-        with b.fence, b.state.transaction() as tx:
-            row = b.state.get("job", identity, tx)
-            prepared = quota_binding.original(tx, row, phase, "QUOTA_PREPARATION", "quota_preparations")
-            q.require(prepared["session"] == b._quota_session and
-                      prepared == snapshot["preparation"] and not row["record"].get("recovered"),
-                      "SESSION_PREPARATION_CHANGED")
-            for earlier, closed in self.closures.items():
-                q.require(quota_binding.original(tx, row, earlier, "QUOTA_PHASE_CLOSED", "quota_closed")
-                          == closed, "SESSION_CLOSURE_CHANGED")
-            plan = phase_plan(row, phase, prepared["budget"], allocation=prepared["allocation"],
-                evidence_store_root=str(b.evidence.root) if phase == "evidence" else None,
-                manager_binding=b.manager_binding)
-        self.phase, self.handler, self.started = phase, handler, False
-        self.preparations[phase] = prepared
+        with b.fence:
+            # Cancellation may commit after the coordinator's first snapshot
+            # or while the administrator's advance packet is in flight.
+            if b.state.get("job", identity)["record"]["cancel_requested"]:
+                return  # The next tick publishes the original stopped state.
+            b._start("job", identity, phase)
+            handler = quota_bridge.Phase(b, "job", identity, phase, version=2)
+            snapshot = handler.snapshot()
+            with b.state.transaction() as tx:
+                row = b.state.get("job", identity, tx)
+                prepared = quota_binding.original(tx, row, phase, "QUOTA_PREPARATION", "quota_preparations")
+                q.require(prepared["session"] == b._quota_session and
+                          prepared == snapshot["preparation"] and not row["record"].get("recovered"),
+                          "SESSION_PREPARATION_CHANGED")
+                for earlier, closed in self.closures.items():
+                    q.require(quota_binding.original(tx, row, earlier, "QUOTA_PHASE_CLOSED", "quota_closed")
+                              == closed, "SESSION_CLOSURE_CHANGED")
+                plan = phase_plan(row, phase, prepared["budget"], allocation=prepared["allocation"],
+                    evidence_store_root=str(b.evidence.root) if phase == "evidence" else None,
+                    manager_binding=b.manager_binding)
+            self.phase, self.handler, self.started = phase, handler, False
+            self.preparations[phase] = prepared
         self.channel.send(dict(event="prepared", namespace="job", identity=identity, phase=phase,
                                snapshot=snapshot, phase_plan=quota_payload.encode_phase_plan(plan)))
+
+    def _advance(self, command):
+        index = len(self.closures)
+        q.require(0 < index < len(PHASES), "SESSION_ADVANCE")
+        previous, following = PHASES[index - 1], PHASES[index]
+        q.require(command == dict(action="advance", value={"from": previous, "to": following,
+                  "closure_digest": quota_closure.digest(self.closures[previous])}), "SESSION_ADVANCE")
+        # This advances transport accounting, not permission to run a phase.
+        self.channel.advance_phase(following)
+        self.phase = following
+        return following
 
     def tick(self):
         if self.closed or self.finished:
@@ -255,7 +271,10 @@ class TaskSession:
         stopped = record["lifecycle"] == "TERMINAL" and record["cancel_requested"]
         self.channel._time()
         if stopped:
-            if self.handler is None and not self.terminal_sent:
+            index = len(self.closures)
+            awaiting_advance = (self.handler is None and 0 < index < len(PHASES)
+                                and self.phase == PHASES[index - 1])
+            if self.handler is None and not self.terminal_sent and not awaiting_advance:
                 self.channel.send(dict(event="terminal", namespace="job", identity=identity,
                                        task=self._status(record)))
                 self.terminal_sent = True
@@ -263,6 +282,14 @@ class TaskSession:
                 command = self.channel.receive()
                 if command == {"action": "finish", "value": None}:
                     self.finished = True
+                elif awaiting_advance:
+                    # The peer advances immediately after sending this packet.
+                    # Reply only after matching that transport phase, without
+                    # preparing or delivering the now-cancelled next phase.
+                    self._advance(command)
+                    self.channel.send(dict(event="terminal", namespace="job", identity=identity,
+                                           task=self._status(record)))
+                    self.terminal_sent = True
                 else:
                     # Cancellation can commit while the administrator's bind
                     # or start packet is in flight. Reply with the real stopped
@@ -284,11 +311,7 @@ class TaskSession:
                 q.require(command == {"action": "finish", "value": None}, "SESSION_FINISH")
                 self.finished = True
                 return
-            previous, following = PHASES[index - 1], PHASES[index]
-            q.require(command == dict(action="advance", value={"from": previous, "to": following,
-                      "closure_digest": quota_closure.digest(self.closures[previous])}), "SESSION_ADVANCE")
-            self.channel.advance_phase(following)
-            self._prepare(following)
+            self._prepare(self._advance(command))
             return
         if select.select([self.channel.sock], [], [], 0)[0]:
             command = self.channel.receive()
