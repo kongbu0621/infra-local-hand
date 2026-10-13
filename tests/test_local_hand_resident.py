@@ -470,9 +470,13 @@ class PreparationTests(unittest.TestCase):
         with patch.object(self.service,'_prepare_worker'):
             self.assertEqual('PREPARING',self.service.call(self.args)['state'])
             self.service.worker.join(2)
-            with self.assertRaises(JobError) as caught:
-                self.service.call(dict(self.args,operation_id=str(uuid.uuid4())))
-        self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+            before=set(Path(self.config['private_root']).iterdir())
+            for _ in range(3):
+                with self.assertRaises(JobError) as caught:
+                    self.service.call(dict(self.args,operation_id=str(uuid.uuid4())))
+                self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+            self.assertEqual(before,set(Path(self.config['private_root']).iterdir()))
+            self.assertEqual(1,len(self.service.records))
 
 
 class GeneratedInputTests(unittest.TestCase):

@@ -153,11 +153,21 @@ class StateStore:
                 yield self._db
                 self._db.execute("COMMIT")
             except sqlite3.Error as exc:
+                code = getattr(exc, "sqlite_errorcode", None)
+                retryable_read = (self.read_only and self.healthy and type(code) is int
+                                  and (code & 0xff) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED))
                 self.healthy = False
                 try:
-                    self._db.execute("ROLLBACK")
+                    if self._db.in_transaction:
+                        self._db.execute("ROLLBACK")
                 except sqlite3.Error:
                     pass
+                else:
+                    # The SQLite connection itself forbids writes. Once its
+                    # read transaction has ended, lock contention is not an
+                    # unknown commit and must not permanently disable queries.
+                    if retryable_read and not self._db.in_transaction:
+                        self.healthy = True
                 raise JobError("IO_UNCERTAIN", "Ledger transaction outcome is unresolved") from exc
             except BaseException:
                 try:

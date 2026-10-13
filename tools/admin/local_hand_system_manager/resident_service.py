@@ -186,11 +186,11 @@ class ResidentService:
             if record is None and len(self.records)>=self.config['max_tasks']:
                 raise JobError('LIMIT_EXCEEDED','Retained task capacity is full')
             operation_root=self.root/operation
-            operation_root.mkdir(mode=0o700,exist_ok=True)
             used=[int(p.name.split('-')[-1]) for p in self.root.glob('*/attempt-*') if p.is_dir()]
             serial=max(used,default=0)+1
             if self.config['first_project_id']+serial*7-1>self.config['last_project_id']:
                 raise JobError('LIMIT_EXCEEDED','Configured quota project range is full')
+            operation_root.mkdir(mode=0o700,exist_ok=True)
             attempt=operation_root/('attempt-'+str(serial))
             attempt.mkdir(mode=0o700)
             record=dict(operation_id=operation,principal_id=principal,state='PREPARING',attempt=str(attempt),
