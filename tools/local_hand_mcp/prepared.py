@@ -69,6 +69,7 @@ class Launcher:
 class PreparedBroker:
     """Route a single new task to the existing executor; never replay on reads."""
     read_only = False
+    _authorize = Broker._authorize
 
     def __init__(self, retained, policy, request, principal_id, launcher, reader_factory):
         self.retained, self.policy = retained, policy
@@ -127,7 +128,7 @@ class PreparedBroker:
             if self.closed:
                 raise JobError("IO_UNCERTAIN", "Prepared adapter is closed")
             # Authenticate before asking the privileged launcher to do anything.
-            self.policy.authorize(principal, scope)
+            self._authorize(principal, scope)
             Broker._rate(self, principal)
             if name == "lh_capabilities":
                 result = thaw(self.policy.capabilities(principal, **args))

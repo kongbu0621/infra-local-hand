@@ -1,6 +1,7 @@
 """Authenticated preparation and routing for independent retained tasks."""
 from __future__ import annotations
 
+from collections import OrderedDict
 import os
 from pathlib import Path
 import socket
@@ -46,6 +47,7 @@ class ServiceClient:
 
 class ResidentBroker:
     read_only = False
+    _authorize = Broker._authorize
     supported_tools = frozenset({'lh_capabilities', 'lh_job_prepare', 'lh_job_submit', 'lh_job_status',
                                  'lh_evidence_manifest', 'lh_evidence_read_chunk'})
 
@@ -54,6 +56,7 @@ class ResidentBroker:
         self.policy = retained.policy
         self.state, self.authority_lock = retained.state, retained.authority_lock
         self.reader_factory, self.readers = reader_factory, {}
+        self.artifact_routes = OrderedDict()
         self.fence, self._rates = threading.RLock(), {}
         self.closed = False
 
@@ -96,8 +99,45 @@ class ResidentBroker:
                     raise
         raise JobError('NOT_FOUND', 'No owned task or artifact matches')
 
+    def _remember_manifest(self, record, result, principal):
+        # Remember only artifacts returned by an authorized task manifest.
+        # This bounded hint avoids probing unrelated ledgers for each chunk;
+        # the selected reader still verifies ownership and the requested hash.
+        for artifact in result['artifacts']:
+            key = (principal.principal_id, artifact['artifact_id'])
+            self.artifact_routes[key] = (record['operation_id'], record['policy_path'])
+            self.artifact_routes.move_to_end(key)
+            if len(self.artifact_routes) > 256:
+                self.artifact_routes.popitem(last=False)
+
+    def _task_artifact(self, record, args, principal):
+        if record['principal_id'] != principal.principal_id:
+            raise JobError('UNAUTHORIZED', 'Task belongs to another principal')
+        if record['state'] != 'READY':
+            raise JobError('RESOURCE_BUSY', 'Task preparation is not ready; keep the same identity')
+        policy = Policy.from_file(record['policy_path'])
+        policy.authorize(principal, 'lh:evidence')
+        state = self.service.call('status', operation_id=record['operation_id'],
+                                  principal_id=principal.principal_id)['state']
+        if state == 'IDLE':
+            raise JobError('NOT_FOUND', 'Task has not been submitted')
+        if state == 'RUNNING':
+            return cli.request(Path(policy.broker_root) / 'maintenance.sock',
+                               'lh_evidence_read_chunk', args, timeout=3)
+        if state not in {'EXITED', 'UNRESOLVED'}:
+            raise JobError('IO_UNCERTAIN', 'Task execution state needs inspection')
+        return self._reader(record['policy_path']).call('lh_evidence_read_chunk', args, principal)
+
     def _artifact(self, args, principal):
         from local_hand_jobs.evidence import EvidenceError
+        key = (principal.principal_id, args['artifact_id'])
+        if key in self.artifact_routes:
+            operation, policy_path = self.artifact_routes[key]
+            record = self._record(operation)
+            if record is None or record.get('policy_path') != policy_path:
+                raise JobError('CONFLICT', 'Artifact task binding changed; query its manifest again')
+            self.artifact_routes.move_to_end(key)
+            return self._task_artifact(record, args, principal)
         try:
             return self._history('lh_evidence_read_chunk', args, principal)
         except (JobError, EvidenceError) as error:
@@ -110,15 +150,7 @@ class ResidentBroker:
             if record.get('state') != 'READY' or record.get('principal_id') != principal.principal_id:
                 continue
             try:
-                state = self.service.call('status', operation_id=record['operation_id'],
-                                          principal_id=principal.principal_id)['state']
-                if state == 'IDLE':
-                    continue
-                if state == 'RUNNING':
-                    policy = Policy.from_file(record['policy_path'])
-                    return cli.request(Path(policy.broker_root) / 'maintenance.sock',
-                                       'lh_evidence_read_chunk', args, timeout=3)
-                return self._reader(record['policy_path']).call('lh_evidence_read_chunk', args, principal)
+                return self._task_artifact(record, args, principal)
             except (JobError, EvidenceError) as error:
                 if error.code != 'NOT_FOUND':
                     raise
@@ -131,7 +163,9 @@ class ResidentBroker:
                 raise JobError('IO_UNCERTAIN', 'Resident adapter closed')
             if name not in self.supported_tools:
                 raise JobError('UNSUPPORTED', 'This entry does not offer that operation')
-            self.policy.authorize(principal, TOOL_SCOPES[name])
+            # Keep the entry authority's durable revocations effective even
+            # when this request routes to a newly prepared independent ledger.
+            self._authorize(principal, TOOL_SCOPES[name])
             Broker._rate(self, principal)
             if name == 'lh_capabilities':
                 result = thaw(self.policy.capabilities(principal, **args))
@@ -181,19 +215,23 @@ class ResidentBroker:
                 state = self.service.call('start', operation_id=operation,
                     principal_id=principal.principal_id, request_digest=args['request_digest'])['state']
             if state == 'RUNNING':
-                return cli.request(Path(policy.broker_root) / 'maintenance.sock', name, args, timeout=3)
-            if state not in {'EXITED', 'UNRESOLVED'}:
+                result = cli.request(Path(policy.broker_root) / 'maintenance.sock', name, args, timeout=3)
+            elif state not in {'EXITED', 'UNRESOLVED'}:
                 raise JobError('IO_UNCERTAIN', 'Task execution state needs inspection')
-            reader = self._reader(record['policy_path'])
-            if name == 'lh_job_submit':
-                row = reader.state.get('job', operation)
-                if row is None:
-                    raise JobError('IO_UNCERTAIN', 'Controller ended without a committed task')
-                if row['digest'] != args['request_digest'] or row['principal'] != principal.principal_id:
-                    raise JobError('CONFLICT', 'Committed task identity changed')
-                reader._authorize(principal, 'lh:submit', owner=row['principal'])
-                return reader._view(row)
-            return reader.call(name, args, principal)
+            else:
+                reader = self._reader(record['policy_path'])
+                if name == 'lh_job_submit':
+                    row = reader.state.get('job', operation)
+                    if row is None:
+                        raise JobError('IO_UNCERTAIN', 'Controller ended without a committed task')
+                    if row['digest'] != args['request_digest'] or row['principal'] != principal.principal_id:
+                        raise JobError('CONFLICT', 'Committed task identity changed')
+                    reader._authorize(principal, 'lh:submit', owner=row['principal'])
+                    return reader._view(row)
+                result = reader.call(name, args, principal)
+            if name == 'lh_evidence_manifest':
+                self._remember_manifest(record, result, principal)
+            return result
 
     def close(self):
         with self.fence:

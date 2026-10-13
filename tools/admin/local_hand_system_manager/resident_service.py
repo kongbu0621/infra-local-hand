@@ -138,10 +138,15 @@ class ResidentService:
     def _busy(self, except_operation=None):
         if self.worker is not None and self.worker.is_alive():return True
         for record in self.records.values():
-            if (record['state']!='READY' and (Path(record['attempt'])/'preparation-delivery.json').exists()
-                    and not (Path(record['attempt'])/'preparation-exit.json').exists()
-                    and self._preparation_active(record)):
-                return True
+            attempt=Path(record['attempt'])
+            if record['state']!='READY' and (attempt/'preparation-delivery.json').exists():
+                # A failed/killed systemd-run waiter may leave its service
+                # running. Only a successful --wait exit proves completion;
+                # otherwise observe the original unit before admitting work.
+                exit_path=attempt/'preparation-exit.json'
+                code=load(exit_path).get('returncode') if exit_path.exists() else None
+                if not (type(code) is int and code==0) and self._preparation_active(record):
+                    return True
         return any(record['state']=='READY' and operation!=except_operation
                    and self.execution_state(record)=='RUNNING' for operation,record in self.records.items())
 

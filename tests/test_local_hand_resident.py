@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import sqlite3
 import sys
 from pathlib import Path
 import tempfile
@@ -28,6 +29,8 @@ class ResidentTests(unittest.TestCase):
         self.policy=Policy(policy_fixture('/synthetic-resident'))
         self.owner=Principal('owner',frozenset(TOOL_SCOPES.values()))
         self.retained=Mock(policy=self.policy)
+        db=sqlite3.connect(':memory:');db.execute('CREATE TABLE revocations(principal TEXT)')
+        self.addCleanup(db.close);self.retained.state.transaction.return_value=db
         self.service=Mock()
         self.reader=Mock()
         self.factory=Mock(return_value=self.reader)
@@ -151,6 +154,79 @@ class ResidentTests(unittest.TestCase):
         self.assertEqual({'outcome':'SUCCEEDED'},self.call('lh_job_status',args))
         self.factory.assert_called_once_with('/next-policy')
 
+    def test_manifest_routes_its_artifact_without_opening_unrelated_history(self):
+        artifact=str(uuid.uuid4())+'.zip'
+        args=dict(artifact_id=artifact,expected_sha256='a'*64,offset=0)
+        self.service.call.return_value={'state':'EXITED'}
+        self.reader.call.side_effect=[{'artifacts':[{'artifact_id':artifact}]},{'artifact_id':artifact}]
+        self.call('lh_evidence_manifest',{'operation_id':self.request['operation_id']})
+        self.retained.call.side_effect=OSError('unrelated historical evidence unavailable')
+        self.assertEqual({'artifact_id':artifact},self.call('lh_evidence_read_chunk',args))
+        self.retained.call.assert_not_called()
+        self.reader.call.assert_called_with('lh_evidence_read_chunk',args,self.owner)
+
+    def test_artifact_hint_never_bypasses_an_unavailable_admission_ledger(self):
+        artifact=str(uuid.uuid4())+'.zip'
+        self.service.call.return_value={'state':'EXITED'}
+        self.reader.call.return_value={'artifacts':[{'artifact_id':artifact}]}
+        self.call('lh_evidence_manifest',{'operation_id':self.request['operation_id']})
+        self.reader.call.reset_mock();self.service.call.reset_mock()
+        self.retained.state.transaction.side_effect=JobError('IO_UNCERTAIN','admission ledger unavailable')
+        with self.assertRaises(JobError) as caught:
+            self.call('lh_evidence_read_chunk',dict(artifact_id=artifact,expected_sha256='a'*64,offset=0))
+        self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+        self.reader.call.assert_not_called();self.service.call.assert_not_called()
+
+    def test_manifest_hint_rechecks_owner_binding_and_task_policy(self):
+        artifact=str(uuid.uuid4())+'.zip'
+        args=dict(artifact_id=artifact,expected_sha256='a'*64,offset=0)
+        self.service.call.return_value={'state':'EXITED'}
+        self.reader.call.return_value={'artifacts':[{'artifact_id':artifact}]}
+        self.call('lh_evidence_manifest',{'operation_id':self.request['operation_id']})
+        self.reader.call.reset_mock();self.service.call.reset_mock()
+        for change,code in (({'principal_id':'other'},'UNAUTHORIZED'),
+                            ({'policy_path':'/replacement-policy'},'CONFLICT'),
+                            ({'state':'PREPARING'},'RESOURCE_BUSY')):
+            self.lookup.return_value=dict(self.record,**change)
+            with self.assertRaises(JobError) as caught:self.call('lh_evidence_read_chunk',args)
+            self.assertEqual(code,caught.exception.code)
+        self.lookup.return_value=self.record
+        config=policy_fixture('/synthetic-resident')
+        config['principals']['owner']['scopes'].remove('lh:evidence')
+        with patch('local_hand_mcp.resident.Policy.from_file',return_value=Policy(config)):
+            with self.assertRaises(JobError) as caught:self.call('lh_evidence_read_chunk',args)
+        self.assertEqual('UNAUTHORIZED',caught.exception.code)
+        self.reader.call.assert_not_called();self.service.call.assert_not_called()
+
+    def test_manifest_hint_is_principal_bound_and_survives_a_temporary_read_error(self):
+        artifact=str(uuid.uuid4())+'.zip'
+        args=dict(artifact_id=artifact,expected_sha256='a'*64,offset=0)
+        self.service.call.return_value={'state':'EXITED'}
+        self.reader.call.return_value={'artifacts':[{'artifact_id':artifact}]}
+        self.call('lh_evidence_manifest',{'operation_id':self.request['operation_id']})
+        self.service.call.reset_mock();self.reader.call.reset_mock()
+        self.retained.call.side_effect=JobError('UNAUTHORIZED','foreign artifact')
+        with self.assertRaises(JobError):
+            self.call('lh_evidence_read_chunk',args,Principal('other',self.owner.scopes))
+        self.reader.call.assert_not_called();self.service.call.assert_not_called()
+        self.service.call.side_effect=[JobError('IO_UNCERTAIN','temporary status failure'),{'state':'EXITED'}]
+        with self.assertRaises(JobError):self.call('lh_evidence_read_chunk',args)
+        self.reader.call.return_value={'artifact_id':artifact}
+        self.assertEqual({'artifact_id':artifact},self.call('lh_evidence_read_chunk',args))
+        self.assertEqual(['status','status'],[item.args[0] for item in self.service.call.call_args_list])
+
+    def test_manifest_pages_keep_bounded_routes_and_evicted_artifacts_use_normal_lookup(self):
+        artifacts=[{'artifact_id':str(uuid.uuid4())+'.zip'} for _ in range(300)]
+        self.service.call.return_value={'state':'EXITED'}
+        for start in range(0,len(artifacts),100):
+            self.reader.call.return_value={'artifacts':artifacts[start:start+100]}
+            self.call('lh_evidence_manifest',{'operation_id':self.request['operation_id']})
+        self.assertLessEqual(len(self.broker.artifact_routes),256)
+        args=dict(artifact_id=artifacts[0]['artifact_id'],expected_sha256='a'*64,offset=0)
+        self.retained.call.return_value={'artifact_id':args['artifact_id']}
+        self.assertEqual({'artifact_id':args['artifact_id']},self.call('lh_evidence_read_chunk',args))
+        self.retained.call.assert_called_once_with('lh_evidence_read_chunk',args,self.owner)
+
 
 class PreparationTests(unittest.TestCase):
     def setUp(self):
@@ -187,6 +263,62 @@ class PreparationTests(unittest.TestCase):
             for _ in range(3):self.assertEqual('PREPARING',self.service.call(self.args)['state'])
             self.assertEqual(1,len(list(Path(self.config['private_root']).glob('*/attempt-*'))))
             release.set();self.service.worker.join(2)
+
+    def test_failed_waiter_cannot_release_a_still_active_preparation(self):
+        operation=self.args['operation_id'];root=Path(self.config['private_root'])/operation
+        attempt=root/'attempt-1';attempt.mkdir(parents=True)
+        (attempt/'preparation-delivery.json').write_text('{}')
+        original=json.dumps({'returncode':-9})
+        (attempt/'preparation-exit.json').write_text(original)
+        record=dict(state='FAILED',operation_id=operation,principal_id='owner',attempt=str(attempt),
+            boot_id='boot-one',serial=1,prepare_unit='original.service')
+        self.service._save(record)
+        other=dict(self.args,operation_id=str(uuid.uuid4()))
+        with patch.object(self.service,'_preparation_active',return_value=True) as active, \
+             patch.object(self.service,'_prepare_worker') as worker:
+            for args in (dict(self.args,retry_failed=True),other):
+                with self.assertRaises(JobError) as caught:self.service.call(args)
+                self.assertEqual('RESOURCE_BUSY',caught.exception.code)
+            worker.assert_not_called()
+            active.return_value=False
+            self.assertEqual('PREPARING',self.service.call(dict(self.args,retry_failed=True))['state'])
+            self.service.worker.join(2)
+        self.assertEqual(original,(attempt/'preparation-exit.json').read_text())
+        self.assertEqual(operation,worker.call_args.args[0]['operation_id'])
+
+    def test_failed_preparation_waiter_also_blocks_business_start_until_unit_exits(self):
+        record=self.ready_record();self.service._save(record)
+        attempt=Path(self.temp.name)/'failed-attempt';attempt.mkdir()
+        (attempt/'preparation-delivery.json').write_text('{}')
+        (attempt/'preparation-exit.json').write_text('{"returncode":1}')
+        self.service.records[str(uuid.uuid4())]=dict(state='FAILED',attempt=str(attempt))
+        args=dict(action='start',operation_id=record['operation_id'],principal_id='owner',request_digest='a'*64)
+        with patch.object(self.service,'execution_state',return_value='IDLE'), \
+             patch.object(self.service,'_preparation_active',return_value=True) as active, \
+             patch.object(self.service,'_launcher') as launcher:
+            with self.assertRaises(JobError) as caught:self.service.call(args)
+            self.assertEqual('RESOURCE_BUSY',caught.exception.code)
+            launcher.assert_not_called()
+            active.return_value=False
+            launcher.return_value.start.return_value='RUNNING'
+            self.assertEqual({'state':'RUNNING'},self.service.call(args))
+            launcher.return_value.start.assert_called_once()
+
+    def test_temporary_preparation_observation_failure_does_not_permanently_block_retry(self):
+        attempt=Path(self.temp.name)/'failed-attempt';attempt.mkdir()
+        (attempt/'preparation-delivery.json').write_text('{}')
+        (attempt/'preparation-exit.json').write_text('{"returncode":1}')
+        self.service.records[str(uuid.uuid4())]=dict(state='FAILED',attempt=str(attempt))
+        with patch.object(self.service,'_preparation_active',
+                side_effect=[JobError('IO_UNCERTAIN','temporary manager failure'),False]), \
+             patch.object(self.service,'_prepare_worker') as worker:
+            with self.assertRaises(JobError) as caught:self.service.call(self.args)
+            self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+            worker.assert_not_called()
+            self.assertFalse((Path(self.config['private_root'])/self.args['operation_id']).exists())
+            self.assertEqual('PREPARING',self.service.call(self.args)['state'])
+            self.service.worker.join(2)
+            worker.assert_called_once()
 
     def test_unknown_principal_rejected_before_task_files(self):
         with self.assertRaises(JobError):self.service.call(dict(self.args,principal_id='other'))

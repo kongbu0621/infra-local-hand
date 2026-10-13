@@ -1,5 +1,6 @@
 """Prepared adapter admission and retries; execution is covered by TaskService."""
 import copy
+import sqlite3
 import time
 import unittest
 import uuid
@@ -19,6 +20,10 @@ class PreparedTests(unittest.TestCase):
             profile_ref='fixture', expected=self.policy.expected('fixture'), inputs={}, expires_at=int(time.time())+120)
         self.request['request_digest'] = request_digest(self.request)
         self.retained = Mock()
+        db = sqlite3.connect(':memory:')
+        db.execute('CREATE TABLE revocations(principal TEXT)')
+        self.addCleanup(db.close)
+        self.retained.state.transaction.return_value = db
         self.retained.state.get.return_value = None
         self.launcher = Mock()
         self.reader = Mock()

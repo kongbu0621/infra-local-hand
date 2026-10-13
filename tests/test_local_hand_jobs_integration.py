@@ -17,6 +17,8 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -313,6 +315,76 @@ class JobIntegrationTests(unittest.TestCase):
         via_maintenance = local_request(socket_path, "lh_job_submit", original)
         self.assertEqual(via_maintenance["outputs"], prepared["outputs"])
         self.assertEqual(len(self.manager.started), before)
+
+    def test_resident_manifest_then_download_survives_controller_exit_and_broken_history(self):
+        from local_hand_jobs.evidence import EvidenceError
+        from local_hand_mcp.resident import ResidentBroker
+        inspected=self.run_job('resident-inspect','host.inspect')
+        operation=inspected['operation_id'];before=len(self.manager.started)
+        self.maintenance=MaintenanceServer(self.broker,Path(self.policy.broker_root)/'maintenance.sock',
+                                           {os.getuid():self.owner})
+        try:self.maintenance.start()
+        except JobError as error:
+            if isinstance(error.__cause__,PermissionError):
+                self.skipTest('UNSUPPORTED: this host forbids the real Unix maintenance socket')
+            raise
+        retained=Mock(policy=self.policy,state=self.state)
+        retained.call.side_effect=OSError('unrelated retained evidence unavailable')
+        service=Mock();service.call.return_value={'state':'RUNNING'}
+        adapter=ResidentBroker(retained,{'retained':[]},service,lambda _:self.broker)
+        record=dict(operation_id=operation,principal_id='owner',state='READY',policy_path='/synthetic-policy')
+        with patch.object(adapter,'_record',return_value=record), \
+             patch('local_hand_mcp.resident.Policy.from_file',return_value=self.policy):
+            # Real paginated manifests cross the Unix API while it is active.
+            artifacts=[];args=dict(operation_id=operation,page_size=1)
+            while True:
+                page=adapter.call('lh_evidence_manifest',args,self.owner)
+                artifacts.extend(page['artifacts'])
+                if page['next_cursor'] is None:break
+                args['cursor']=page['next_cursor']
+            self.maintenance.close();self.maintenance=None
+            service.call.return_value={'state':'EXITED'}
+            self.broker.read_only=True
+            callback=lambda name,args:adapter.call(name,args,self.owner)
+            client=EvidenceClient(callback)
+            writer=BoundedFileWriter(self.root/'resident-downloads',max_bytes=2*1024*1024)
+            self.assertEqual({'zip','manifest','seal'},{item['role'] for item in artifacts})
+            for artifact in artifacts:
+                delivered=client.download(artifact,writer)
+                self.assertEqual(artifact['sha256'],_hash(delivered.read_bytes()))
+            bad=dict(artifact_id=artifacts[0]['artifact_id'],expected_sha256='0'*64,offset=0)
+            with self.assertRaises(EvidenceError) as caught:callback('lh_evidence_read_chunk',bad)
+            self.assertEqual('CONFLICT',caught.exception.code)
+            self.broker.revoke('owner')
+            with self.assertRaises(JobError) as caught:
+                callback('lh_evidence_read_chunk',dict(bad,expected_sha256=artifacts[0]['sha256']))
+            self.assertEqual('UNAUTHORIZED',caught.exception.code)
+        retained.call.assert_not_called()
+        self.assertEqual(before,len(self.manager.started))
+        self.assertTrue(all(call.args[0]=='status' for call in service.call.call_args_list))
+
+    def test_adapter_revocation_blocks_preparation_and_launch_before_delivery(self):
+        from local_hand_jobs.contract import request_digest
+        from local_hand_mcp.prepared import PreparedBroker
+        from local_hand_mcp.resident import ResidentBroker
+        request=dict(schema_version='lh-job-v1',operation_id=str(uuid.uuid4()),kind='host.inspect',
+            profile_ref='fixture',expected=self.policy.expected('fixture'),inputs={},expires_at=int(time.time())+300)
+        request['request_digest']=request_digest(request)
+        launcher=Mock();service=Mock()
+        self.broker.authority_lock=None # normally attached by create_broker
+        prepared=PreparedBroker(self.broker,self.policy,request,'owner',launcher,Mock())
+        resident=ResidentBroker(self.broker,dict(profile_ref='fixture',retained=[]),service,Mock())
+        self.broker.revoke('owner')
+        with patch.object(resident,'_record',return_value=None):
+            cases=[(resident,'lh_job_prepare',{k:request[k] for k in ('operation_id','kind','profile_ref')}),
+                   (prepared,'lh_job_submit',request)]
+            rejected=[]
+            for adapter,name,args in cases:
+                try:adapter.call(name,args,self.owner)
+                except JobError as error:rejected.append(error.code)
+                else:rejected.append(None)
+            self.assertEqual(['UNAUTHORIZED','UNAUTHORIZED'],rejected)
+        service.call.assert_not_called();launcher.call.assert_not_called()
 
     def test_discovery_and_real_registry_reject_foreign_prepared_use(self):
         prepared = self.run_job("prepare", "ledger.prepare", {"source_ref": "source", "build_cache_ref": "cache"})
