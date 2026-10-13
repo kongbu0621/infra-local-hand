@@ -324,6 +324,67 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaises(JobError):self.service.call(dict(self.args,principal_id='other'))
         self.assertEqual([],list(Path(self.config['private_root']).iterdir()))
 
+    def test_failed_execution_waiter_blocks_new_work_until_controller_exit_is_observed(self):
+        original=self.ready_record();output=Path(original['output']);output.mkdir(parents=True)
+        proof=json.dumps(dict(returncode=-9,streams_eof=True))
+        (output/'finished.json').write_text(proof)
+        self.service._save(original)
+        self.args['operation_id']=str(uuid.uuid4())
+        candidate=self.ready_record();self.service._save(candidate)
+        start=dict(action='start',operation_id=candidate['operation_id'],principal_id='owner',request_digest='a'*64)
+        prepare=dict(self.args,operation_id=str(uuid.uuid4()))
+        with patch.object(self.service,'_unit_active',return_value=True) as active, \
+             patch.object(self.service,'_launcher') as launcher, \
+             patch.object(self.service,'_prepare_worker') as worker:
+            launcher.return_value.state.return_value='IDLE'
+            launcher.return_value.start.return_value='RUNNING'
+            for request in (prepare,start):
+                with self.assertRaises(JobError) as caught:self.service.call(request)
+                self.assertEqual('RESOURCE_BUSY',caught.exception.code)
+            active.side_effect=JobError('IO_UNCERTAIN','temporary controller observation failure')
+            with self.assertRaises(JobError) as caught:self.service.call(prepare)
+            self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+            worker.assert_not_called();launcher.return_value.start.assert_not_called()
+            self.assertFalse((Path(self.config['private_root'])/prepare['operation_id']).exists())
+            active.side_effect=None;active.return_value=False
+            self.assertEqual({'state':'RUNNING'},self.service.call(start))
+            launcher.return_value.start.assert_called_once()
+        self.assertEqual(proof,(output/'finished.json').read_text())
+
+    def test_newly_captured_failed_waiter_also_observes_original_controller(self):
+        record=self.ready_record();output=Path(record['output']);output.mkdir(parents=True)
+        def finish():
+            (output/'finished.json').write_text(json.dumps(dict(returncode=1,streams_eof=True)))
+            return 'EXITED'
+        with patch.object(self.service,'_launcher') as launcher, \
+             patch.object(self.service,'_unit_active',return_value=True) as active:
+            launcher.return_value.state.side_effect=finish
+            self.assertEqual('RUNNING',self.service.execution_state(record))
+            active.assert_called_once_with(record)
+
+    def test_immediate_failed_start_does_not_hide_a_live_controller(self):
+        record=self.ready_record();output=Path(record['output']);output.mkdir(parents=True)
+        self.service._save(record)
+        def finish():
+            (output/'finished.json').write_text(json.dumps(dict(returncode=1,streams_eof=True)))
+            return 'EXITED'
+        with patch.object(self.service,'_launcher') as launcher, \
+             patch.object(self.service,'_unit_active',return_value=True) as active:
+            launcher.return_value.state.return_value='IDLE'
+            launcher.return_value.start.side_effect=finish
+            self.assertEqual({'state':'RUNNING'},self.service.call(dict(action='start',
+                operation_id=record['operation_id'],principal_id='owner',request_digest='a'*64)))
+            launcher.return_value.start.assert_called_once()
+            active.assert_called_once_with(record)
+
+    def test_successful_waiter_and_previous_boot_do_not_need_a_live_unit(self):
+        record=self.ready_record();output=Path(record['output']);output.mkdir(parents=True)
+        with patch.object(self.service,'_unit_active',side_effect=AssertionError('unnecessary unit lookup')):
+            for code,boot in ((0,'boot-one'),(-9,'previous-boot')):
+                with self.subTest(code=code,boot=boot):
+                    (output/'finished.json').write_text(json.dumps(dict(returncode=code,streams_eof=True)))
+                    self.assertEqual('EXITED',self.service.execution_state(dict(record,boot_id=boot)))
+
     def test_restart_preserves_failed_identity_and_failure_record(self):
         with patch.object(admin.provision_task,'task_input',side_effect=OSError('local')):
             self.service.call(self.args);self.service.worker.join(3)

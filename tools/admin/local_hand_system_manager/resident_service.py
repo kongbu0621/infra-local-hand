@@ -99,20 +99,29 @@ class ResidentService:
     def execution_state(self, record):
         output=Path(record['output'])
         if (output/'finished.json').exists():
-            proof=load(output/'finished.json')
-            q.require(type(proof.get('returncode')) is int and proof.get('streams_eof') is True,'RESIDENT_EXIT_PROOF')
-            return 'EXITED'
+            return self._captured_execution_state(record)
         intent=(output/'launch-intent.json').exists() or (output/'started.json').exists()
         if record['boot_id']!=self.boot:
             return 'UNRESOLVED' if intent else 'IDLE'
         launcher=self._launcher(record)
-        try:return launcher.state()
+        try:state=launcher.state()
         except JobError as error:
             if error.code!='IO_UNCERTAIN':raise
             # A daemon restart loses the pipe collector, not the original task.
             # Reattach only its API for queries/submission deduplication. Never
             # issue another controller start for a retained launch intent.
             return 'RUNNING' if self._unit_active(record) else 'UNRESOLVED'
+        return self._captured_execution_state(record) if state=='EXITED' else state
+
+    def _captured_execution_state(self, record):
+        proof=load(Path(record['output'])/'finished.json')
+        q.require(type(proof.get('returncode')) is int and proof.get('streams_eof') is True,'RESIDENT_EXIT_PROOF')
+        # Nonzero waiter exit plus EOF does not prove that its systemd unit
+        # stopped. Keep routing to a live controller and fence new work until
+        # it has stopped; an observation failure remains retryable uncertainty.
+        if proof['returncode']!=0 and record['boot_id']==self.boot and self._unit_active(record):
+            return 'RUNNING'
+        return 'EXITED'
 
     def _has_committed_task(self, record):
         policy=load(record['launch_path'])['policy']
@@ -284,6 +293,7 @@ class ResidentService:
                     if self._busy(except_operation=operation):
                         raise JobError('RESOURCE_BUSY','Another task is active')
                     state=self._launcher(record).start()
+                    if state=='EXITED':state=self._captured_execution_state(record)
             return dict(state=state)
 
 
