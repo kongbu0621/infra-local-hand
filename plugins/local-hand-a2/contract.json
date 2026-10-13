@@ -2,7 +2,7 @@
   "schema_version": "lh-plugin-contract-v1",
   "plugin_version": "0.1.0",
   "job_schema_version": "lh-job-v1",
-  "tool_schema_digest": "22251ebc3567a3a2792c07b5a15f1fc25d2cb4794a1fcf73ffdf967b65094331",
+  "tool_schema_digest": "2a8593ad78b057d69976bcfc6e07723be3bd81abd1eb5b01625fe57630625f06",
   "backend_contract_compatibility": {
     "minimum": "lh-job-v1",
     "maximum": "lh-job-v1",
@@ -23,6 +23,31 @@
         }
       },
       "required": [],
+      "additionalProperties": false
+    },
+    "lh_job_prepare": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
+        },
+        "kind": {
+          "const": "host.inspect"
+        },
+        "profile_ref": {
+          "type": "string",
+          "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,127})$"
+        },
+        "retry_failed": {
+          "const": true
+        }
+      },
+      "required": [
+        "operation_id",
+        "kind",
+        "profile_ref"
+      ],
       "additionalProperties": false
     },
     "lh_job_submit": {

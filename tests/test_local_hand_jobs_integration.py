@@ -272,7 +272,9 @@ class JobIntegrationTests(unittest.TestCase):
         self.assertFalse(observation["cancel_requested"])
         # Query through the workflow rather than test-only direct ledger access.
         self.client.observe(job_key="inspect")
-        self.assertEqual({name for name, _ in self.calls}, set(TOOL_SCOPES))
+        # This fixture opens the existing per-session broker. Automatic task
+        # preparation is provided by the separately exercised resident adapter.
+        self.assertEqual({name for name, _ in self.calls}, set(TOOL_SCOPES) - {"lh_job_prepare"})
         self.assertTrue(self.broker.is_registered(artifact["seal_id"], artifact["seal_sha256"]))
 
     def test_restart_restores_prepared_catalog_and_cross_client_deduplication(self):

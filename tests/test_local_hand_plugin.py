@@ -73,11 +73,12 @@ class PluginDistributionTests(unittest.TestCase):
         self.assertEqual(json.loads((PLUGIN / "mcp.json").read_text()), {
             "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", "mcpServers": {}})
 
-    def test_distribution_contract_is_the_actual_seven_tool_contract(self):
+    def test_distribution_contract_matches_tools_including_task_preparation(self):
         frozen = json.loads((PLUGIN / "contract.json").read_text())
         self.assertEqual(frozen["tools"], TOOL_SCHEMAS)
         self.assertEqual(frozen["tool_schema_digest"], TOOL_SCHEMA_DIGEST)
-        self.assertEqual(len(frozen["tools"]), 7)
+        self.assertEqual(len(frozen["tools"]), 8)
+        self.assertEqual(frozen["tools"]["lh_job_prepare"]["properties"]["kind"], {"const": "host.inspect"})
         self.assertTrue(frozen["backend_contract_compatibility"]["digest_match_required"])
         self.assertEqual(frozen["connection_status"], "UNCONFIGURED_E4_REQUIRED")
 
@@ -107,14 +108,12 @@ class PluginDistributionTests(unittest.TestCase):
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.host = HostCallback()
         self.admission = {"authority_id": "synthetic-authority", "profiles": {"fixture": copy.deepcopy(EXPECTED)}}
         self.client = workflow.Workflow(self.host, Path(self.tmp.name) / "journal", self.admission,
                                         sleep=lambda _: None)
         self.client.preflight()
-
-    def tearDown(self):
-        self.tmp.cleanup()
 
     def reserve(self, key="inspect"):
         record = self.client.reserve_job(key, kind="host.inspect", profile_ref="fixture", inputs={})
