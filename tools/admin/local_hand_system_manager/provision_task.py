@@ -77,7 +77,7 @@ def task_input(config, operation, principal, serial):
             raise ValueError('PROVISION_FREE_CAPACITY')
     ident = plan['settings']['identity']
     preparation = uuid.uuid4().hex
-    ident.update(id=preparation, operation_id=operation, authority_id='lhsvc-' + preparation, ledger_id='lhsvc-' + preparation, profile_ref=config['profile_ref'], install_uuid=config['install_uuid'], epoch=uuid.uuid4().hex, slot_generation=uuid.uuid4().hex, expires_at=int(time.time()) + config['request_ttl_seconds'], session=os.urandom(32).hex, principal_id=principal)
+    ident.update(id=preparation, operation_id=operation, authority_id='lhsvc-' + preparation, ledger_id='lhsvc-' + preparation, profile_ref=config['profile_ref'], install_uuid=config['install_uuid'], epoch=uuid.uuid4().hex, slot_generation=uuid.uuid4().hex, expires_at=int(time.time()) + config['request_ttl_seconds'], session=os.urandom(32).hex(), principal_id=principal)
     plan['preparation_id'] = preparation
     for (key, suffix) in (('target', ''), ('supervisor', '-supervisor')):
         plan['settings']['controllers'][key]['unit'] = 'lhqsvc' + token + 'a' + str(serial) + suffix + '.service'

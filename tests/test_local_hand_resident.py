@@ -7,12 +7,14 @@ import threading
 import time
 import unittest
 import uuid
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES, request_digest
 from local_hand_jobs.policy import Policy
 from local_hand_mcp.resident import ResidentBroker
 from admin.local_hand_system_manager import resident_service as admin
+from admin.local_hand_system_manager import provision_task
 from test_local_hand_jobs_policy import policy_fixture
 
 
@@ -162,3 +164,36 @@ class PreparationTests(unittest.TestCase):
         with patch.object(self.service,'_unit_active',return_value=False), \
              patch.object(self.service,'_has_committed_task',return_value=True):
             self.assertFalse(self.service._replaceable(record))
+
+
+class GeneratedInputTests(unittest.TestCase):
+    def test_server_generated_request_material_is_serializable_and_unique(self):
+        template=dict(plan=dict(host=dict(hostname='guest',dmi_vendor='QEMU',dmi_product='fixture'),
+            mounts=dict(quota=dict(uuid='quota-id',source='/dev/fixture',path='/fixture')),
+            settings=dict(identity={},controllers=dict(target={},supervisor={}),original_budgets=dict(wall_seconds=72)),
+            roots=[{} for _ in range(7)]),observed=dict(parents={},system_geometry=dict(
+                schema='fixture',retained_ordinary_parent=dict(parent=dict(path='/old'),
+                memory_bytes=7,memory_swap_max=7,tasks_max=7,cpu_quota_per_sec_usec=1000000))))
+        config=dict(template=template,installation=dict(source=dict(commit='a'*40)),bases={},mounts=[],
+            profile_ref='host-inspect',install_uuid=str(uuid.uuid4()),request_ttl_seconds=3600,first_project_id=15000)
+        def read(path,*args,**kwargs):
+            path=str(path)
+            if path.endswith('hostname'):return 'guest'
+            if path.endswith('sys_vendor'):return 'QEMU'
+            if path.endswith('product_name'):return 'fixture'
+            if path.endswith('cpu.max'):return '100000 100000'
+            return '7'
+        info=SimpleNamespace(st_dev=7,st_ino=7,st_rdev=7)
+        with patch.object(provision_task.Path,'read_text',read), \
+             patch.object(provision_task.os,'stat',return_value=info), \
+             patch.object(provision_task.budget,'current_clock',return_value={'boot_id':'new-boot'}):
+            values=[provision_task.task_input(config,str(uuid.uuid4()),'owner',serial) for serial in (1,2)]
+        for value in values:
+            self.assertEqual(value,json.loads(json.dumps(value)))
+            identity=value['plan']['settings']['identity']
+            self.assertRegex(identity['session'],r'^[0-9a-f]{64}$')
+            self.assertEqual('new-boot',value['plan']['host']['boot_id'])
+            self.assertEqual(template['plan']['settings']['original_budgets'],value['plan']['settings']['original_budgets'])
+        self.assertNotEqual(values[0]['plan']['settings']['identity']['authority_id'],values[1]['plan']['settings']['identity']['authority_id'])
+        self.assertTrue({x['project_id'] for x in values[0]['plan']['roots']}.isdisjoint(
+            {x['project_id'] for x in values[1]['plan']['roots']}))
