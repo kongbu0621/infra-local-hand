@@ -227,6 +227,7 @@ class PreparationTests(unittest.TestCase):
         root=Path(self.config['private_root'])/operation;root.mkdir()
         return dict(state='READY',operation_id=operation,principal_id='owner',
             attempt=str(root/'attempt-1'),boot_id='boot-one',policy_path='/synthetic-policy',
+            output=str(root/'attempt-1'/'execution'),
             request=dict(operation_id=operation,request_digest='a'*64,expires_at=int(time.time())+300))
 
     def test_restart_repairs_catalog_after_private_commit_before_publication(self):
@@ -247,6 +248,43 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual('READY',self.service.call(self.args)['state'])
         worker.assert_not_called()
         self.assertEqual(record['request'],json.loads(path.read_text())['request'])
+
+    def test_successful_preparation_retry_polls_preserve_the_ready_request(self):
+        record=self.ready_record();Path(record['attempt']).mkdir();self.service._save(record)
+        with patch.object(self.service,'_prepare_worker') as worker, \
+             patch.object(self.service,'execution_state',return_value='IDLE'):
+            for _ in range(3):
+                response=self.service.call(dict(self.args,retry_failed=True))
+                self.assertEqual('READY',response['state'])
+                self.assertEqual(record['request'],response['request'])
+        worker.assert_not_called()
+        self.assertEqual(record,self.service.records[record['operation_id']])
+        self.assertEqual(1,len(list(Path(self.config['private_root']).glob('*/attempt-*'))))
+
+    def test_stale_unsubmitted_request_can_still_be_prepared_for_the_same_uuid(self):
+        record=self.ready_record();Path(record['attempt']).mkdir()
+        record['boot_id']='previous-boot';self.service._save(record)
+        with patch.object(self.service,'_prepare_worker') as worker:
+            response=self.service.call(self.args);self.service.worker.join(2)
+        self.assertEqual('PREPARING',response['state'])
+        self.assertEqual(record['operation_id'],worker.call_args.args[0]['operation_id'])
+        self.assertNotEqual(record['attempt'],worker.call_args.args[0]['attempt'])
+
+    def test_explicit_retry_replaces_only_a_proved_uncommitted_execution_failure(self):
+        record=self.ready_record();output=Path(record['output']);output.mkdir(parents=True)
+        (output/'launch-intent.json').write_text('{}')
+        (output/'finished.json').write_text(json.dumps(dict(returncode=1,streams_eof=True)))
+        self.service._save(record)
+        with patch.object(self.service,'_unit_active',return_value=False), \
+             patch.object(self.service,'_has_committed_task',return_value=True) as committed, \
+             patch.object(self.service,'_prepare_worker') as worker, \
+             patch.object(self.service,'execution_state',return_value='EXITED'):
+            self.assertEqual('READY',self.service.call(dict(self.args,retry_failed=True))['state'])
+            worker.assert_not_called()
+            committed.return_value=False
+            self.assertEqual('PREPARING',self.service.call(dict(self.args,retry_failed=True))['state'])
+            self.service.worker.join(2)
+            worker.assert_called_once()
 
     def test_recovered_preparation_admission_failure_can_retry_same_identity(self):
         operation=self.args['operation_id'];root=Path(self.config['private_root'])/operation

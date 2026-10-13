@@ -121,9 +121,12 @@ class ResidentService:
             return db.execute("select 1 from operations where namespace='job' and id=?",
                               (record['operation_id'],)).fetchone() is not None
 
-    def _replaceable(self, record):
+    def _replaceable(self, record, *, failed_only=False):
         output=Path(record['output'])
-        if not (output/'launch-intent.json').exists() and not (output/'started.json').exists():return True
+        if not (output/'launch-intent.json').exists() and not (output/'started.json').exists():
+            # A retry poll after successful preparation must keep the exact
+            # READY request. Unsubmitted tasks are replaced only when stale.
+            return not failed_only
         # A proved pre-admission failure may be prepared again. A committed job,
         # missing exit capture or unknown write is never replaced.
         finished=output/'finished.json'
@@ -169,7 +172,7 @@ class ResidentService:
                         record=dict(record,state='FAILED');self._save(record)
                 if record['state']=='READY':
                     stale=record['boot_id']!=self.boot or record['request']['expires_at']<=time.time()
-                    if not (stale or args.get('retry_failed')) or not self._replaceable(record):
+                    if not (stale or args.get('retry_failed')) or not self._replaceable(record,failed_only=not stale):
                         self._catalog(record)
                         return dict(operation_id=operation,state='READY',request=record['request'])
                 if record['state']=='FAILED' and not args.get('retry_failed'):
