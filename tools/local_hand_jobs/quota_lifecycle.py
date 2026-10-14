@@ -159,6 +159,7 @@ def observe(manager, part, unknown):
             q.require(same.returncode == 0 and same.stdout.decode().strip() == inv, "ORIGINAL_INVOCATION_CHANGED")
             part["quota_stop_observation"] = dict(values)
             part["quota_cancel_stop"] = bool(requested)
+            part["quota_deadline_stop"] = bool(expired)
             part["quota_stop_ok"] = manager._command("stop", part["unit"]).returncode == 0
             return {**unknown("stop requested; original unit exit and pipe EOF remain unproven"), "identity": identity}
         if not terminal:
@@ -180,7 +181,7 @@ def observe(manager, part, unknown):
             identity = _loaded_identity(part, terminal)
             q.require(_terminal(terminal), "ORIGINAL_TERMINAL_UNPROVEN")
         else:
-            q.require(part.get("quota_cancel_stop") is True
+            q.require((part.get("quota_cancel_stop") is True or part.get("quota_deadline_stop") is True)
                       and type(part.get("quota_stop_observation")) is dict, "ORIGINAL_UNIT_MISSING")
             identity = _loaded_identity(part, part["quota_stop_observation"])
     _, empty = parent(part["cgroup_parent"], part["quota_parent"])
@@ -200,7 +201,8 @@ def observe(manager, part, unknown):
     if terminal is not None and terminal["ExecMainCode"] == "1" and terminal["ExecMainStatus"].isdigit():
         code = int(terminal["ExecMainStatus"])
     else:
-        q.require(part.get("quota_cancel_stop") is True, "ORIGINAL_EXIT_STATUS")
+        q.require(part.get("quota_cancel_stop") is True or part.get("quota_deadline_stop") is True,
+                  "ORIGINAL_EXIT_STATUS")
     q.require(cap.eof == {"stdout", "stderr"} and cap.error is None
               and part["launch"].poll() is not None
               and (code is None or part["launch"].poll() == code), "ORIGINAL_CLIENT_EOF_UNPROVEN")

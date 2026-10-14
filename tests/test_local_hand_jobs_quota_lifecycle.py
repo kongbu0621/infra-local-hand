@@ -191,6 +191,25 @@ class LifecycleTests(unittest.TestCase):
                 self.assertNotIn("quota_final",part)
                 self.assertNotIn("quota_exit",part)
 
+    def test_cancel_after_deadline_stop_keeps_the_original_exit_facts(self):
+        part,props,manager,calls=self.setup_part()
+        props.update(SubState="running",ExecMainCode="0")
+        with mock.patch.object(budget,"current_clock",return_value={
+                "boot_id":BOOT,"boottime_ns":part["phase_deadline_boottime_ns"]}):
+            life.observe(manager,part,runner._unknown)  # Timeout wins the stop race.
+            self.unload(props)
+            with self.assertRaisesRegex(q.QuotaError,"ORIGINAL_DEADLINE"):
+                life.observe(manager,part,runner._unknown)
+            self.assertNotIn("quota_final",part)
+            part["stop_requested"]=True  # The user cancels before exit is collected.
+            proof=life.observe(manager,part,runner._unknown)
+        self.assertEqual("EXITED",proof["state"])
+        self.assertTrue(proof["deadline_expired"])
+        self.assertIsNone(proof["exit_code"])
+        self.assertEqual("UNKNOWN",proof["result"]["outcome"])
+        self.assertNotIn("quota_exit",part)
+        self.assertEqual(1,sum(c[0]=="stop" for c in calls))
+
     def test_cancel_rejects_replaced_identity_and_configuration_before_stopping(self):
         for fault in ("invocation", "cgroup", "restart", "boot"):
             with self.subTest(fault=fault):
