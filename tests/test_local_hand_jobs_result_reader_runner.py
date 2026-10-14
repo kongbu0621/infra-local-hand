@@ -360,6 +360,27 @@ class ResultReaderRunnerTests(unittest.TestCase):
             self.assertFalse(proof["effects_checked"])
             self.assertEqual("UNKNOWN", proof["result"]["outcome"])
 
+    def test_recovered_undelivered_helper_preserves_no_business_start(self):
+        with admitted_plan() as (manager, identity, plan):
+            plan["supervision_version"] = 3
+            with patch.object(runner.subprocess, "Popen", side_effect=AssertionError("recovery launch")), \
+                    patch.object(result_reader, "_read_result", side_effect=AssertionError("recovery result read")):
+                handle = manager.reattach(identity, plan, threading.Event())
+                def exited(part):
+                    absent = part["stage"] != "bootstrap"
+                    return dict(state="EXITED", future_start_blocked=True, tree_exited=True,
+                        collectors_stopped=False, writers_stopped=True, effects_checked=False,
+                        launch_prevented=absent, exit_code=None if absent else 0,
+                        identity=None if absent else dict(unit=part["unit"]),
+                        result=dict(outcome="UNKNOWN", helper_started=not absent, business_started=False))
+                with patch.object(manager, "_inspect_unit", side_effect=exited):
+                    proof = manager.inspect(handle)
+                self.assertEqual("EXITED", proof["state"])
+                self.assertTrue(proof["launch_prevented"])
+                self.assertEqual(dict(outcome="UNKNOWN", helper_started=False, business_started=False), proof["result"])
+                self.assertIsNone(proof["exit_code"])
+                self.assertIsNone(proof["identity"])
+
     def test_recovered_stage_rejects_claimed_old_collector_completion(self):
         proof = dict(state="EXITED", future_start_blocked=True, tree_exited=True,
                      writers_stopped=True, collectors_stopped=True)

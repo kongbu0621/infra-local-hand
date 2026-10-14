@@ -745,7 +745,29 @@ class Gateway:
                 self._parent(empty=True)
                 self.recovery_finished = True
                 return dict(closed=True), ()
-            item, part = self._get(body["ref"])
+            item, part = self._get(body["ref"], delivered=not (self.recovery_only and op == "observe"))
+            if part is None:
+                # The surviving gateway records a part before StartTransientUnit.
+                # No part therefore proves this exact registered stage was not
+                # delivered. Verify its deterministic unit is absent as well;
+                # absence alone must never erase an uncertain delivery receipt.
+                unit = _unit(item["execution"]["execution_id"], body["ref"]["stage"])
+                result = self._command("show", unit, "--all",
+                    "--property=" + ",".join((*life.FIELDS, "MainPID", "ControlPID")))
+                values = _properties(result["stdout"].encode())
+                q.require(result["returncode"] == 0 and values.get("Id") == unit
+                          and values.get("LoadState") == "not-found"
+                          and values.get("ActiveState") == "inactive" and values.get("SubState") == "dead"
+                          and values.get("InvocationID") == values.get("ControlGroup") == ""
+                          and values.get("MainPID") == values.get("ControlPID") == "0"
+                          and values.get("Job") in ("", "0"), "SYSTEM_UNDELIVERED_UNIT_PRESENT")
+                fields = (life.FIELDS if body["view"] == "full" else
+                    ("Id", "LoadState", "ActiveState", "SubState", "InvocationID", "ControlGroup", "Job"))
+                result["stdout"] = ("\n" if body["view"] == "invocation" else
+                    "\n".join(key + "=" + values[key] for key in fields) + "\n")
+                result["recovery_history"] = dict(not_delivered=True, invocation_id=None,
+                    stop_ok=False, sealed=False, identity=None, terminal=None)
+                return result, ()
             if "token" in body:
                 q.require(body["token"] == part["token"], "SYSTEM_CLIENT_TOKEN")
             if op == "observe":

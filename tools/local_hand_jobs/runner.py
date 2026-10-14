@@ -979,10 +979,13 @@ class _SystemdExecutionCore:
                 # exit facts. Its local client may remain, so collector exit
                 # stays unproven; no seal/result success may be inferred. This
                 # still permits a separately authorized reconciliation round.
-                return {**self._unavailable_result(second,
+                recovered = {**self._unavailable_result(second,
                             "result transport was lost on restart; local collector exit is unproven and no reader replay is authorized"),
                         "collectors_stopped": False, "helper_exit_proof": second,
                         "result_reader_exit_proof": third}
+                if second.get("launch_prevented") is True:
+                    recovered["result"] = dict(outcome="UNKNOWN", helper_started=False, business_started=False)
+                return recovered
             if second.get("state") == "EXITED":
                 second["effects_checked"] = (second.get("effects_checked") is True and
                     first.get("result", {}).get("bootstrap_prepared") is True)

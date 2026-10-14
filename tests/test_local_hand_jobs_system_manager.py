@@ -296,6 +296,41 @@ class SystemManagerTests(unittest.TestCase):
         self.assertEqual(2, sum(op == "launch" for op, _ in channel.calls))  # first fixture + one lost reply
         self.assertTrue(channel.closed)
 
+    def test_recovery_never_delivered_stage_requires_gateway_and_actual_absence(self):
+        manager, _, part, channel = self.fixture()
+        for stream in (part["launch"].stdout, part["launch"].stderr): stream.close()
+        part.update(launch=None, recovered=True)
+        manager.recovery = True; channel.recovery = True
+        channel.props.update(LoadState="not-found", ActiveState="inactive", SubState="dead",
+                             ControlGroup="", InvocationID="", Job="")
+        request = channel.request
+        def absent(operation, **body):
+            value, fds = request(operation, **body)
+            value["recovery_history"] = dict(not_delivered=True, invocation_id=None,
+                stop_ok=False, sealed=False, identity=None, terminal=None)
+            return value, fds
+        channel.request = absent
+        with mock.patch.object(life, "parent", return_value=(part["quota_parent"], False)):
+            with self.assertRaisesRegex(q.QuotaError, "ORIGINAL_EXIT_UNPROVEN"):
+                manager._inspect_unit(part)
+        channel.props["LoadState"] = "loaded"
+        with self.assertRaisesRegex(q.QuotaError, "ORIGINAL_UNDELIVERED_UNIT_CHANGED"):
+            manager._inspect_unit(part)
+        channel.props["LoadState"] = "not-found"
+        proof = manager._inspect_unit(part)
+        self.assertEqual("EXITED", proof["state"])
+        self.assertTrue(proof["launch_prevented"])
+        self.assertIsNone(proof["identity"])
+        self.assertIsNone(proof["exit_code"])
+        self.assertFalse(proof["collectors_stopped"])
+        self.assertEqual(dict(outcome="UNKNOWN", helper_started=False, business_started=False), proof["result"])
+        self.assertEqual(["observe"] * 3, [name for name, _ in channel.calls[1:]])
+        part.pop("recovery_final")
+        part["launch_acked"] = True
+        with self.assertRaises(runner.RunnerError):
+            manager._inspect_unit(part)
+        self.assertTrue(channel.closed)
+
     def test_recovery_does_not_reconstruct_lost_pipes_or_redeliver(self):
         manager, handle, part, channel = self.fixture()
         manager.recovery = True; channel.recovery = True

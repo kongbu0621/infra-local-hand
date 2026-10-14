@@ -121,6 +121,40 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(({"armed": True}, ()), gateway.dispatch("recovery_arm", {"plan": plan}))
         return plan
 
+    def test_recovery_observes_only_registered_never_delivered_stage_absence(self):
+        gateway, item = self.gateway()
+        gateway.recovery_only = True
+        gateway._recovery_time = mock.Mock()
+        ref = dict(execution_id=item["execution"]["execution_id"], phase="preflight", stage="result_reader")
+        unit = server._unit(ref["execution_id"], ref["stage"])
+        fields = dict.fromkeys(server.life.FIELDS, "")
+        fields.update(Id=unit, LoadState="not-found", ActiveState="inactive", SubState="dead",
+                      MainPID="0", ControlPID="0")
+        gateway._command = mock.Mock(side_effect=lambda *args: dict(returncode=0, stderr="",
+            stdout="".join(k + "=" + v + "\n" for k, v in fields.items())))
+        result, fds = gateway.dispatch("observe", dict(ref=ref, view="full"))
+        self.assertTrue(result["recovery_history"]["not_delivered"])
+        self.assertIsNone(result["recovery_history"]["invocation_id"])
+        self.assertEqual((), fds)
+        self.assertEqual({}, gateway.parts)
+        for key, value in (("LoadState", "loaded"), ("InvocationID", "b" * 32),
+                           ("ControlGroup", "/occupied"), ("Job", "1"), ("MainPID", "3"),
+                           ("ControlPID", "3"), ("Id", "other")):
+            with self.subTest(key=key):
+                previous = fields[key]; fields[key] = value
+                with self.assertRaisesRegex(q.QuotaError, "SYSTEM_UNDELIVERED_UNIT_PRESENT"):
+                    gateway.dispatch("observe", dict(ref=ref, view="full"))
+                fields[key] = previous
+        for phase, execution, error in (("business", ref["execution_id"], "SYSTEM_PHASE_UNREGISTERED"),
+                ("preflight", "another-task", "SYSTEM_EXECUTION_REFERENCE")):
+            with self.assertRaisesRegex(q.QuotaError, error):
+                gateway.dispatch("observe", dict(ref=dict(ref, phase=phase, execution_id=execution), view="full"))
+        with self.assertRaisesRegex(q.QuotaError, "SYSTEM_STAGE_UNDELIVERED"):
+            gateway.dispatch("stop", dict(ref=ref, invocation_id="b" * 32))
+        gateway.recovery_only = False
+        with self.assertRaisesRegex(q.QuotaError, "SYSTEM_STAGE_UNDELIVERED"):
+            gateway.dispatch("observe", dict(ref=ref, view="full"))
+
     def test_commands_rebuilt_from_exact_grant_and_predecessor_no_input_argv(self):
         gateway, item = self.gateway()
         execution = item["execution"]

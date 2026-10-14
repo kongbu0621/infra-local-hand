@@ -227,7 +227,16 @@ class SystemManager(_SystemdExecutionCore):
     @staticmethod
     def _adopt_recovery_history(part, history):
         """Retain only the root gateway's original stop/terminal observation."""
-        q._keys(history, {"invocation_id", "stop_ok", "sealed", "identity", "terminal"})
+        fields = {"invocation_id", "stop_ok", "sealed", "identity", "terminal"}
+        if "not_delivered" in history:
+            q._keys(history, fields | {"not_delivered"})
+            q.require(history == dict(not_delivered=True, invocation_id=None, stop_ok=False,
+                                     sealed=False, identity=None, terminal=None)
+                      and part.get("invocation_id") is None and not part.get("launch_acked")
+                      and not part.get("stop_acked"), "SYSTEM_RECOVERY_HISTORY")
+            part["recovery_not_delivered"] = True
+            return
+        q._keys(history, fields)
         invocation = history["invocation_id"]
         q.require(invocation is None or type(invocation) is str and
                   re.fullmatch(r"[0-9a-f]{32}", invocation),

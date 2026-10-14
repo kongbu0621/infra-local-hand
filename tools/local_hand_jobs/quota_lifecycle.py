@@ -303,6 +303,28 @@ def observe_recovered(manager, part, unknown):
         values.setdefault(hook, "")
     q._keys(values, set(FIELDS))
 
+    if part.get("recovery_not_delivered") is True:
+        q.require(values["LoadState"] == "not-found" and values["Id"] == part["unit"]
+                  and values["InvocationID"] == values["ControlGroup"] == ""
+                  and values["ActiveState"] == "inactive" and values["SubState"] == "dead"
+                  and values["Job"] in ("", "0") and part.get("invocation_id") is None
+                  and not part.get("launch_acked") and not part.get("stop_acked"),
+                  "ORIGINAL_UNDELIVERED_UNIT_CHANGED")
+        _, empty = parent(part["cgroup_parent"], parent_pin)
+        after = budget.current_clock()
+        q.require(empty and after["boot_id"] == part["boot_id"], "ORIGINAL_EXIT_UNPROVEN")
+        # There was no invocation or result. Preserve that distinction from a
+        # delivered unit's exit and from reacquiring its lost anonymous pipes.
+        proof = dict(state="EXITED", launch_prevented=True, future_start_blocked=True,
+            tree_exited=True, collectors_stopped=False, writers_stopped=True, effects_checked=False,
+            exit_code=None, execution_id=part["execution_id"], unit=part["unit"], identity=None,
+            facts={}, result=dict(outcome="UNKNOWN", helper_started=False, business_started=False),
+            observed_ns=after["boottime_ns"], proof_digest=close.digest(dict(
+                not_delivered=True, after=values, parent=parent_pin, manager_binding=bound)),
+            missing=["Original gateway confirms this stage was never delivered; no result exists"])
+        part["recovery_final"] = proof
+        return proof
+
     if values["LoadState"] == "loaded":
         identity = _loaded_identity(part, values)
         part["invocation_id"] = identity["invocation_id"]
