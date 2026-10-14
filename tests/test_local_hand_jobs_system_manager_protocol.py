@@ -1,11 +1,14 @@
 """Real private socket/credential/FD checks; no systemd qualification claim."""
 import array
+import errno
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 
 if sys.platform.startswith("linux"):
     from local_hand_jobs import budget, quota_contract as q
@@ -83,6 +86,31 @@ class ProtocolTests(unittest.TestCase):
         a.peer_start_ticks += 1
         with self.assertRaisesRegex(q.QuotaError, "SYSTEM_PEER_CHANGED"): a.request("support")
         self.assertTrue(a.poisoned)
+
+    def test_peer_reaped_between_pidfd_and_proc_read_is_a_proved_peer_exit(self):
+        left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        self.addCleanup(left.close); self.addCleanup(right.close)
+        child = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(10)"], pass_fds=(right.fileno(),))
+        self.addCleanup(lambda: child.poll() is None and child.kill())
+        now = budget.current_clock()
+        channel = wire.Channel(left, peer=(child.pid, os.getuid(), os.getgid()),
+            peer_start_ticks=wire.start_ticks(child.pid), session_id="a"*64, boot_id=now["boot_id"],
+            deadline_ns=now["boottime_ns"]+5_000_000_000)
+        self.addCleanup(channel.close)
+        original = wire.start_ticks
+        def reap(pid):
+            child.terminate(); child.wait(timeout=2)
+            return original(pid)
+        with patch.object(wire, "start_ticks", side_effect=reap):
+            with self.assertRaisesRegex(q.QuotaError, "SYSTEM_PEER_CHANGED") as caught:channel._time()
+        self.assertIsInstance(caught.exception.__cause__, FileNotFoundError)
+        self.assertIsNotNone(child.returncode)
+
+    def test_live_peer_proc_error_is_not_reclassified_as_exit(self):
+        channel, _ = self.pair()
+        for error in (FileNotFoundError(errno.ENOENT, "missing"), PermissionError(errno.EACCES, "denied")):
+            with self.subTest(error=type(error).__name__), patch.object(wire, "start_ticks", side_effect=error):
+                with self.assertRaises(type(error)):channel._time()
 
     def test_original_peer_alive_but_closed_channel_cannot_deliver(self):
         a, b = self.pair()

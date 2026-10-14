@@ -1,5 +1,6 @@
 """Fixed command/intent models and real pipe EOF, not host qualification."""
 import copy
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -22,6 +23,42 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux fixed system gateway")
 class GatewayTests(unittest.TestCase):
+    def test_original_client_exit_during_proc_read_requires_its_pidfd(self):
+        for exited in (False, True):
+            with self.subTest(exited=exited):
+                gateway, _ = self.gateway()
+                child = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(10)"])
+                descriptor = os.pidfd_open(child.pid)
+                part = dict(process=child, pidfd=descriptor, token="a"*64, start_ticks=wire.start_ticks(child.pid))
+                original = wire.start_ticks
+                def read(pid):
+                    if exited:
+                        child.terminate(); child.wait(timeout=2)
+                        return original(pid)
+                    raise FileNotFoundError(errno.ENOENT, "unexplained missing proc entry")
+                try:
+                    with mock.patch.object(wire, "start_ticks", side_effect=read):
+                        if exited:
+                            result = gateway._state(part)
+                            self.assertEqual(child.returncode, result["returncode"])
+                            self.assertNotEqual(0, result["returncode"])
+                        else:
+                            with self.assertRaises(FileNotFoundError):gateway._state(part)
+                finally:
+                    if child.poll() is None:child.terminate()
+                    child.wait(timeout=2); os.close(descriptor)
+
+    def test_gateway_failure_log_records_locations_without_exception_payload(self):
+        gateway, _ = self.gateway()
+        gateway.channel.sock, gateway.channel.close = object(), mock.Mock()
+        with mock.patch.object(server.select, "select", side_effect=FileNotFoundError(errno.ENOENT, "/private/token-value")), \
+                self.assertLogs("local_hand_jobs.system_manager", level="ERROR") as logs:
+            gateway.serve()
+        self.assertEqual("FileNotFoundError", gateway.failure)
+        self.assertIn('"action":"wait"', logs.output[0])
+        self.assertIn('"function":"serve"', logs.output[0])
+        self.assertNotIn("/private/token-value", logs.output[0])
+
     def gateway(self):
         # OS admission is intentionally not modeled as a real supported host.
         gateway = server.Gateway.__new__(server.Gateway)

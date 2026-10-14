@@ -7,6 +7,7 @@ read-only anonymous pipes. Any uncertain exchange permanently consumes the FD.
 from __future__ import annotations
 
 import array
+import errno
 import fcntl
 import os
 import select
@@ -140,8 +141,17 @@ class Channel:
         q.require(not self.poisoned and self.owner == os.getpid() and
                   now["boot_id"] == self.boot_id and now["boottime_ns"] < self.end,
                   "SYSTEM_CHANNEL_UNAVAILABLE")
-        q.require(self.pidfd >= 0 and not select.select([self.pidfd], [], [], 0)[0]
-                  and start_ticks(self.peer[0]) == self.peer_start_ticks, "SYSTEM_PEER_CHANGED")
+        q.require(self.pidfd >= 0 and not select.select([self.pidfd], [], [], 0)[0], "SYSTEM_PEER_CHANGED")
+        try:
+            same = start_ticks(self.peer[0]) == self.peer_start_ticks
+        except OSError as error:
+            # The original peer can exit and be reaped after the pidfd poll
+            # but before procfs is read. Only that same pidfd proves this case;
+            # a missing proc entry for a still-live peer remains an error.
+            if error.errno in (errno.ENOENT, errno.ESRCH) and select.select([self.pidfd], [], [], 0)[0]:
+                raise q.QuotaError("SYSTEM_PEER_CHANGED") from error
+            raise
+        q.require(same, "SYSTEM_PEER_CHANGED")
         poller = select.poll()
         poller.register(self.sock, select.POLLERR | select.POLLHUP | select.POLLNVAL)
         q.require(not poller.poll(0), "SYSTEM_CHANNEL_DISCONNECTED")

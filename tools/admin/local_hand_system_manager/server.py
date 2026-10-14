@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import array
 import copy
+import errno
 import fcntl
 import hashlib
 import os
@@ -27,7 +28,7 @@ import time
 
 from local_hand_jobs import (bootstrap, budget, manager_binding as mb, quota_contract as q,
                              quota_grant as g, quota_lifecycle as life, result_reader, runner)
-from local_hand_jobs import system_manager_protocol as wire
+from local_hand_jobs import diagnostics, system_manager_protocol as wire
 from admin.local_hand_quota_observer import q2_config, q2_runtime
 from admin.local_hand_quota_observer.q2_journal import Journal
 from admin.local_hand_quota_observer.protected_inputs import open_protected
@@ -425,7 +426,13 @@ class Gateway:
         process = part["process"]
         code = process.poll()
         if code is None:
-            q.require(wire.start_ticks(process.pid) == part["start_ticks"], "SYSTEM_CLIENT_CHANGED")
+            try:
+                q.require(wire.start_ticks(process.pid) == part["start_ticks"], "SYSTEM_CLIENT_CHANGED")
+            except OSError as error:
+                code = process.poll()
+                if (error.errno not in (errno.ENOENT, errno.ESRCH) or code is None
+                        or part.get("pidfd", -1) < 0 or not select.select([part["pidfd"]], [], [], 0)[0]):
+                    raise
         return dict(token=part["token"], pid=process.pid, start_ticks=part["start_ticks"], returncode=code)
 
     def _show(self, part):
@@ -779,15 +786,20 @@ class Gateway:
         with self.lock:
             q.require(not self._serving and not self.closed, "SYSTEM_GATEWAY_SERVE")
             self._serving = True
+        action, phase = "wait", None
         try:
             # A successful arm ACK is the exact crash injection barrier.  Stop
             # consuming the old peer before any later observer RPC can move the
             # retained identity; the launcher will next kill that exact peer.
             while (not self.closed and not self.recovery_finished
                    and not (self.recovery_armed and not self.recovery_only)):
+                action = "wait"
                 if not select.select([self.channel.sock], [], [], 0.025)[0]:
                     self._time(); continue
+                action = "receive"
                 request = self.channel.receive_request()
+                action = request["op"]
+                phase = request["body"].get("ref", {}).get("phase")
                 try:
                     result, fds = self.dispatch(request["op"], request["body"])
                 except Exception:
@@ -795,9 +807,14 @@ class Gateway:
                     raise
                 if self.recovery_only:
                     self._recovery_time()
+                action = "respond"
                 self._respond(request, result, fds=fds)
         except Exception as error:
             if not self.closed:
+                selected = phase if phase in self.phases else next(reversed(self.phases), None)
+                diagnostics.failure("system_manager", error,
+                    operation_id=self.phases.get(selected, {}).get("execution", {}).get("operation_id"),
+                    phase=selected, action=action)
                 code = str(error)
                 self.failure = code if len(code) <= 96 and code.replace("_", "").isalnum() else type(error).__name__
             self.channel.close()
