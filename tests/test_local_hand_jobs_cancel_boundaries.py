@@ -114,6 +114,136 @@ class CancelBoundaryTests(unittest.TestCase):
                     b.close_observation("job", f.identity, phase, fence)
                     self.assertEqual(events, b.state.events("job", f.identity))
 
+    def test_cancel_after_recovery_reuses_pending_exit_without_losing_collector_proof(self):
+        for phase in ("business", "evidence"):
+            with self.subTest(phase=phase):
+                f, _, proof = self.pending_result(phase, failed=True)
+                before = copy.deepcopy(f.row())
+                starts = copy.deepcopy(f.runner.starts)
+                # A new process cannot recover the old anonymous result pipe.
+                # The original process already persisted its complete exit.
+                lost = dict(proof, collectors_stopped=False, helper_result_verified=False,
+                            result=dict(outcome="UNKNOWN", helper_started=True))
+                replacement = SimpleNamespace(reattach=Mock(side_effect=lambda handle, plan: handle),
+                    inspect=Mock(return_value=lost), stop=Mock(return_value=lost))
+                b = Broker(f.broker.state, f.broker.policy, f.broker.registry, replacement,
+                           evidence=f.broker.evidence, quota_required=True)
+                b.recover()
+                self.assertEqual("RECONCILE_REQUIRED", f.row()["record"]["lifecycle"])
+                self.assertEqual(proof, f.row()["record"]["exit_proof"])
+                events = b.state.events("job", f.identity)
+                b.tick()
+                self.assertEqual(events, b.state.events("job", f.identity))
+                cancel = dict(operation_id=f.identity, expected_request_digest=before["digest"], target={"kind":"job"})
+                b.call("lh_job_cancel", cancel, f.f.owner)
+                b.tick(); b.tick()
+                record = f.row()["record"]
+                self.assertEqual("TERMINAL", record["lifecycle"])
+                self.assertEqual("UNKNOWN" if phase == "business" else "SUCCEEDED", record["outcome"])
+                self.assertEqual(proof, record["exit_proof"])
+                self.assertTrue(record["execution_resources_released"])
+                for field in ("quota_pending", "quota_closed", "delivery_intents", "handles", "execution_budget"):
+                    self.assertEqual(before["record"][field], record[field])
+                self.assertEqual(starts, f.runner.starts)
+                replacement.reattach.assert_not_called()
+                replacement.inspect.assert_not_called()
+                replacement.stop.assert_not_called()
+                events = b.state.events("job", f.identity)
+                b.call("lh_job_cancel", cancel, f.f.owner); b.tick(); b.recover()
+                self.assertEqual(events, b.state.events("job", f.identity))
+
+    def test_recovery_still_observes_incomplete_pending_exit(self):
+        changes = [{flag:False} for flag in ("collectors_stopped", "writers_stopped")]
+        changes += [{"execution_id":"foreign"}]
+        for change in changes:
+            with self.subTest(change=change):
+                f, _, _ = self.pending_result("business", failed=True, amend=lambda p:p.update(change))
+                replacement = SimpleNamespace(reattach=Mock(side_effect=lambda handle, plan:handle))
+                b = Broker(f.broker.state, f.broker.policy, f.broker.registry, replacement,
+                           evidence=f.broker.evidence, quota_required=True)
+                b.recover()
+                replacement.reattach.assert_called_once()
+                self.assertIn(("job", f.identity), b._active)
+                self.assertIsNone(f.row()["record"]["exit_proof"])
+                self.assertNotEqual("TERMINAL", f.row()["record"]["lifecycle"])
+
+    def test_recovered_cancel_preserves_verified_result_without_inventing_closure_or_seal(self):
+        for phase, outcome, exit_code in (("business", "SUCCEEDED", 0), ("business", "SUCCEEDED", 1),
+                ("business", "FAILED", 1), ("business", "CANCELLED", 1), ("evidence", "SUCCEEDED", 0)):
+            with self.subTest(phase=phase, outcome=outcome, exit_code=exit_code):
+                def amend(proof):
+                    proof["result"]["outcome"] = outcome
+                    # Preserve a result even if the helper's final publication failed.
+                    proof["exit_code"] = exit_code
+                f, _, proof = self.pending_result(phase, amend=amend)
+                before = copy.deepcopy(f.row())
+                replacement = SimpleNamespace(reattach=Mock())
+                b = Broker(f.broker.state, f.broker.policy, f.broker.registry, replacement,
+                           evidence=f.broker.evidence, quota_required=True)
+                b.recover()
+                self.assertEqual("RECONCILE_REQUIRED", f.row()["record"]["lifecycle"])
+                b.cancel(f.identity, before["digest"], {"kind":"job"}, f.f.owner)
+                b.tick()
+                record = f.row()["record"]
+                self.assertEqual(("TERMINAL", "EXITED", outcome),
+                    (record["lifecycle"], record["phase"], record["outcome"]))
+                self.assertEqual(proof, record["exit_proof"])
+                self.assertEqual(proof["result"]["business_started"] if phase == "business" else
+                                 before["record"]["business_started"], record["business_started"])
+                self.assertEqual("DURABILITY_UNKNOWN" if phase == "evidence" or outcome == "SUCCEEDED" and exit_code != 0
+                                 else "STAGING", record["evidence"])
+                self.assertTrue(record["execution_resources_released"])
+                self.assertFalse(record.get("seals"))
+                for field in ("quota_pending", "quota_closed", "delivery_intents", "execution_budget"):
+                    self.assertEqual(before["record"][field], record[field])
+                with b.state.transaction() as tx:
+                    self.assertEqual(0, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (f.identity,)).fetchone()[0])
+                    self.assertEqual(12 if phase == "evidence" else 6, tx.execute("SELECT count(*) FROM leases").fetchone()[0])
+                replacement.reattach.assert_not_called()
+                events = b.state.events("job", f.identity)
+                b.tick(); b.recover(); b.cancel(f.identity, before["digest"], {"kind":"job"}, f.f.owner)
+                self.assertEqual(events, b.state.events("job", f.identity))
+
+    def test_recovered_result_cannot_bypass_original_identity_or_reader_exit(self):
+        changes = (
+            lambda p:p["result"].update(execution_id="foreign"),
+            lambda p:p["result"].update(phase="evidence"),
+            lambda p:p["result"].update(effects_checked=False),
+            lambda p:p["result"].update(outcome="UNKNOWN"),
+            lambda p:p["result_reader_exit_proof"].update(collectors_stopped=False),
+            lambda p:p["result_reader_exit_proof"]["identity"].update(boot_id="foreign"),
+        )
+        for index, amend in enumerate(changes):
+            with self.subTest(change=index):
+                f, _, _ = self.pending_result("business", amend=amend)
+                b = Broker(f.broker.state, f.broker.policy, f.broker.registry, SimpleNamespace(reattach=Mock()),
+                           evidence=f.broker.evidence, quota_required=True)
+                b.recover(); b.cancel(f.identity, f.row()["digest"], {"kind":"job"}, f.f.owner)
+                before = copy.deepcopy(f.row())
+                with b.state.transaction() as tx:leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                b.tick()
+                self.assertEqual(before, f.row())
+                self.assertNotEqual("TERMINAL", f.row()["record"]["lifecycle"])
+                with b.state.transaction() as tx:
+                    self.assertEqual(leases, [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+
+    def test_recovery_rejects_changed_or_missing_original_pending_exit(self):
+        for change in ("missing_snapshot", "changed_proof"):
+            with self.subTest(change=change):
+                f, _, _ = self.pending_result("business", failed=True)
+                pending = copy.deepcopy(f.row()["record"]["quota_pending"])
+                with f.broker.state.transaction() as tx:
+                    if change == "missing_snapshot":pending.pop("business")
+                    else:pending["business"]["proof"]["collectors_stopped"] = False
+                    f.broker.state.update(tx, "job", f.identity, "TEST_CORRUPTION", {"quota_pending":pending})
+                before = copy.deepcopy(f.row())
+                replacement = SimpleNamespace(reattach=Mock())
+                b = Broker(f.broker.state, f.broker.policy, f.broker.registry, replacement,
+                           evidence=f.broker.evidence, quota_required=True)
+                with self.assertRaises(JobError):b.recover()
+                self.assertEqual(before, f.row())
+                replacement.reattach.assert_not_called()
+
     def test_verified_failure_requires_exact_result_identity_and_reader_exit(self):
         mutations = {
             "foreign_execution": lambda p: p["result"].update(execution_id="foreign"),

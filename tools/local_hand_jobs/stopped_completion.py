@@ -32,7 +32,8 @@ def complete_cancelled_inspection(broker, tx, row):
     The fixed inspection has no external write stages. Its owned local files
     remain protected, so a proved stopped writer can release the execution
     lease. Neither its exit code nor cancellation establishes a business result:
-    keep UNKNOWN, the original start facts, collector proof and missing result.
+    keep UNKNOWN unless recovery retained an exact verified result. Preserve
+    the original start facts, collector proof and any missing result evidence.
     """
     return _complete_stopped_phase(broker, tx, row, helper_delivered=True)
 
@@ -127,6 +128,7 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
             or (helper_delivered is False and count > 1) or (helper_delivered is True and count < 2)
             or deliveries != record.get("delivery_intents")):
         return False
+    retained_result = None
     if count <= 1:
         if proof.get("result", {}).get("business_started") is not False:
             return False
@@ -136,9 +138,15 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
         failed_result = (count == 3 and proof.get("helper_result_verified") is True
             and result.get("execution_id") == execution and result.get("phase") == phase
             and result.get("effects_checked") is False and result.get("outcome") in ("FAILED", "CANCELLED", "UNKNOWN"))
-        if (not (missing_result or failed_result) or proof.get("effects_checked") is not False
+        recovered_result = (record.get("recovered") is True and count == 3
+            and proof.get("helper_result_verified") is True and proof.get("effects_checked") is True
+            and result.get("execution_id") == execution and result.get("phase") == phase
+            and result.get("effects_checked") is True and result.get("outcome") in ("SUCCEEDED", "FAILED", "CANCELLED"))
+        if (not (recovered_result or (missing_result or failed_result) and proof.get("effects_checked") is False)
                 or result.get("helper_started") is not True):
             return False
+        if recovered_result:
+            retained_result = result
         # A verified failure report does not prove business effects, but it
         # cannot keep this fixed inspection's already stopped local writers
         # holding the execution lease. Retain the report verbatim in the proof.
@@ -174,6 +182,21 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
                                   if helper_delivered else {"business_not_started": True})},
     }
     event = "INSPECTION_CANCELLED" if helper_delivered else "BUSINESS_START_STOPPED"
+    if phase == "business" and retained_result is not None:
+        # Only recovery lacks the original control transport for ordinary
+        # closure. Cancellation may finish its already observed business, but
+        # cannot manufacture the missing closure or publish a new seal.
+        changes.update(outcome=retained_result["outcome"],
+            business_started=retained_result.get("business_started", record.get("business_started")),
+            side_effects=retained_result.get("side_effects", "CHECKED"),
+            gaps=["Management phase closure was interrupted; original business result retained without evidence sealing"],
+            stopped_completion=dict(execution_id=execution, proof_digest=quota_closure.digest(proof),
+                                    business_result_preserved=True))
+        expected_exit = 0 if retained_result["outcome"] == "SUCCEEDED" else 1
+        if proof.get("exit_code") != expected_exit:
+            from .broker import REPORT_DURABILITY_GAP
+            changes["evidence"] = "DURABILITY_UNKNOWN"
+            changes["gaps"].append(REPORT_DURABILITY_GAP)
     if phase == "evidence":
         changes.update(outcome=record["business_outcome"], business_started=record.get("business_started"),
             side_effects=record["side_effects"], evidence="STAGING" if count <= 1 else "DURABILITY_UNKNOWN",

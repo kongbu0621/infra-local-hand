@@ -521,6 +521,46 @@ class TaskSessionTests(unittest.TestCase):
             self.session.tick()
             tick.assert_called_once()
 
+    def test_cancel_after_recovery_with_pending_exit_through_live_coordinator(self):
+        from test_local_hand_jobs_cancel_boundaries import CancelBoundaryTests
+        fixture = CancelBoundaryTests()
+        self.addCleanup(fixture.doCleanups)
+        f, _, proof = fixture.pending_result("business", failed=True)
+        replacement = Mock()
+        replacement.reattach.side_effect = AssertionError("Durable exit must not be reattached")
+        b = Broker(f.broker.state, f.broker.policy, f.broker.registry, replacement,
+                   evidence=f.broker.evidence, quota_required=True)
+        self.addCleanup(b.close)
+        manager = Mock()
+        session = TaskSession(dict(mode="recover", operation_id=f.identity,
+            request_digest=f.row()["digest"], principal_id=f.f.owner.principal_id), manager, None)
+        session.attach(b)
+        b.start()
+        deadline = time.monotonic() + 3
+        while not session.finished and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertTrue(session.finished)
+        manager.finish_recovery.assert_called_once()
+        endpoint = Path(f.f.temp.name) / "recovered-pending-exit.sock"
+        server = MaintenanceServer(b, endpoint, {os.geteuid():f.f.owner})
+        server.start(); self.addCleanup(server.close)
+        cancel = dict(operation_id=f.identity, expected_request_digest=f.row()["digest"], target={"kind":"job"})
+        local_request(endpoint, "lh_job_cancel", cancel)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            status = local_request(endpoint, "lh_job_status", {"operation_id":f.identity})
+            if status["lifecycle"] == "TERMINAL":break
+            time.sleep(.01)
+        self.assertEqual(("TERMINAL", "EXITED", "UNKNOWN"),
+            (status["lifecycle"], status["phase"], status["outcome"]))
+        self.assertEqual(proof, f.row()["record"]["exit_proof"])
+        self.assertTrue(f.row()["record"]["execution_resources_released"])
+        self.assertEqual(status["event_seq"], local_request(endpoint, "lh_job_cancel", cancel)["event_seq"])
+        replacement.reattach.assert_not_called()
+        replacement.start.assert_not_called()
+        replacement.stop.assert_not_called()
+        manager.finish_recovery.assert_called_once()
+
     def test_cancel_after_failed_control_exchange_finishes_retained_exit(self):
         for phase in ("preflight", "business", "evidence"):
             with self.subTest(phase=phase):

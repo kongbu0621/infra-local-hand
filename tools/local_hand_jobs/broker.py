@@ -438,6 +438,7 @@ class Broker:
 
     def recover(self):
         """Crash recovery records uncertainty; never reissues a persisted intent."""
+        from . import quota_binding
         from .stopped_completion import complete_stopped_execution
         from .evidence_recovery import release_completed_evidence
         # A committed closure already has the complete original exit evidence.
@@ -457,6 +458,22 @@ class Broker:
                 if release_completed_evidence(self, tx, row):
                     continue
                 if record["lifecycle"] != "TERMINAL" and record["phase"] != "QUEUED":
+                    phase = record["phase"].lower()
+                    handle = record.get("handles", {}).get(phase)
+                    retained_exit = None
+                    key = (row["namespace"], row["id"])
+                    if (handle is not None and key not in self._active and key not in self._recovering
+                            and quota_binding.admission_version(tx, row) == 1
+                            and (phase in record.get("quota_pending", {})
+                                 or quota_binding.recorded(tx, row, phase, "QUOTA_EXIT_PENDING"))):
+                        bindings.check(self.manager_binding, handle.get("manager_binding"))
+                        proof = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")["proof"]
+                        execution = row["namespace"] + "-" + row["id"] + "-" + phase
+                        if (proof.get("state") == "EXITED" and proof.get("execution_id") == execution
+                                and handle.get("execution_id") == execution
+                                and all(proof.get(flag) is True for flag in
+                                        ("future_start_blocked", "tree_exited", "collectors_stopped", "writers_stopped"))):
+                            retained_exit = proof
                     changes = {
                         "lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN",
                         "recovered": True,
@@ -472,11 +489,19 @@ class Broker:
                         changes["evidence"] = "DURABILITY_UNKNOWN"
                     if record["phase"] in ("PREFLIGHT", "BUSINESS", "RECONCILE", "EVIDENCE"):
                         # Older ledgers could carry the previous phase's proof
-                        # through a new intent. Reobserve this exact execution.
-                        changes["exit_proof"] = None
+                        # through a new intent. Only this exact phase's durable
+                        # exit can survive recovery without fresh observation.
+                        changes["exit_proof"] = retained_exit
+                    if retained_exit is not None:
+                        changes["gaps"] = ["Original exit retained; management phase closure remains incomplete"]
                     self.state.update(tx, row["namespace"], row["id"], "RECOVERY_BARRIER", changes)
-                    phase = record["phase"].lower()
-                    handle = record.get("handles", {}).get(phase)
+                    if retained_exit is not None:
+                        # Reattaching cannot improve an already durable exit;
+                        # lost anonymous pipes would instead weaken its proof.
+                        # Keep closure pending, and let cancellation consume
+                        # the original facts without replaying any stage.
+                        complete_stopped_execution(self, tx, self.state.get(*key, tx))
+                        continue
                     if handle is not None:
                         bindings.check(self.manager_binding, handle.get("manager_binding"))
                         plan = dict(row["plan"], phase=phase)
