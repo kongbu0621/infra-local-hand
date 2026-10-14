@@ -21,7 +21,9 @@ class EvidenceFixture:
     def __init__(self, root: Path, payload: bytes = b"retained command output\n"):
         self.source = root / "source"
         self.source.mkdir(mode=0o700)
-        (self.source / "stdout.log").write_bytes(payload)
+        output = self.source / "stdout.log"
+        output.write_bytes(payload)
+        output.chmod(0o600)
         self.snapshot = FrozenSnapshot(OP, 7, self.source, ("stdout.log",),
             QuiescenceProof("owned-execution", 7, True, True, True, True),
             {"source_sha256": "a" * 64, "retention": "COMPLETE"}, broker_events=(
@@ -720,8 +722,10 @@ class EvidenceTests(unittest.TestCase):
 
     def test_nested_inventory_cleanup_preserves_primary_and_closes_each_descriptor_once(self):
         nested = self.fixture.source / "nested" / "inner"
-        nested.mkdir(parents=True, mode=0o700)
+        nested.parent.mkdir(mode=0o700)
+        nested.mkdir(mode=0o700)
         (nested / "payload").write_bytes(b"retained original bytes")
+        (nested / "payload").chmod(0o600)
         real_open, real_close, real_regular = os.open, os.close, evidence._regular
         for kind in ("conflict", "budget", "io", "healthy"):
             with self.subTest(kind=kind):
