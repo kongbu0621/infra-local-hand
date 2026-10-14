@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import re
+import ssl
 import time
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -25,6 +26,15 @@ MAX_KEYS = 32
 STARTUP_METADATA_RETRY_DELAYS = (1, 2, 4, 8, 8)
 STARTUP_METADATA_TIMEOUT = 60
 _TRANSIENT_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+_TRANSPORT_STAGES = {
+    "connection.connect_tcp": "tcp",
+    "connection.start_tls": "tls",
+    **{f"{protocol}.{event}": stage for protocol in ("http11", "http2")
+       for event, stage in (("send_request_headers", "request_headers"),
+                            ("send_request_body", "request_body"),
+                            ("receive_response_headers", "response_headers"),
+                            ("receive_response_body", "response_body"))},
+}
 _LOG = logging.getLogger(__name__)
 _TOKEN_PART = re.compile(r"[A-Za-z0-9_-]+\Z")
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
@@ -57,6 +67,18 @@ def _exception_location(error: BaseException) -> str:
         if error is None:
             break
     return "/".join(chain)
+
+
+def _certificate_failure(error: BaseException) -> bool:
+    seen = set()
+    for _ in range(10):
+        if isinstance(error, ssl.SSLCertVerificationError):
+            return True
+        if error is None or id(error) in seen:
+            break
+        seen.add(id(error))
+        error = error.__cause__ or error.__context__
+    return False
 
 
 def _url(value: object) -> str:
@@ -249,7 +271,18 @@ class JWTVerifier:
         kind = "metadata" if url == self.config.metadata_url else "jwks"
         progress = _LOG.info if kind == "metadata" else _LOG.debug
         started = time.monotonic()
-        stage, reason, received = "connect", "transport", 0
+        stage, reason, received = "request", "transport", 0
+
+        async def trace(name, info):
+            nonlocal stage
+            # Trace payloads contain private hosts, headers and TLS objects.
+            # Admit only fixed event names; never stringify their payloads.
+            event, _, state = name.rpartition(".")
+            if event in _TRANSPORT_STAGES and state in {"started", "complete", "failed"}:
+                stage = _TRANSPORT_STAGES[event]
+                progress("Auth transport: document=%s stage=%s event=%s elapsed_ms=%d",
+                         kind, stage, state, (time.monotonic() - started) * 1000)
+
         progress("Auth document read: document=%s stage=request timeout_seconds=%s",
                  kind, self.config.request_timeout_seconds)
         try:
@@ -260,7 +293,7 @@ class JWTVerifier:
                 ) as client:
                     async with client.stream("GET", url, headers={
                         "Accept": "application/json", "Accept-Encoding": "identity",
-                    }) as response:
+                    }, extensions={"trace": trace}) as response:
                         stage, reason = "headers", "http_status"
                         progress("Auth document read: document=%s stage=headers http_status=%d elapsed_ms=%d",
                                  kind, response.status_code, (time.monotonic() - started) * 1000)
@@ -297,6 +330,10 @@ class JWTVerifier:
                          kind, stage, error.reason, (time.monotonic() - started) * 1000)
             raise
         except (httpx2.TransportError, TimeoutError) as error:
+            if _certificate_failure(error) or isinstance(error, (httpx2.UnsupportedProtocol, httpx2.LocalProtocolError)):
+                _LOG.error("Auth document rejected: document=%s stage=%s reason=tls_or_local_protocol errors=%s elapsed_ms=%d",
+                           kind, stage, _exception_location(error), (time.monotonic() - started) * 1000)
+                raise _deny() from None
             _LOG.warning("Auth document unavailable: document=%s stage=%s errors=%s bytes=%d elapsed_ms=%d",
                          kind, stage, _exception_location(error), received, (time.monotonic() - started) * 1000)
             raise _DocumentUnavailable("transport_or_timeout") from None

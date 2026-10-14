@@ -245,7 +245,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private connection details", " ".join(logs.output))
         self.assertNotIn("private OS details", " ".join(logs.output))
         self.assertNotIn("issuer.example", " ".join(logs.output))
-        self.assertIn("stage=connect", " ".join(logs.output))
+        self.assertIn("stage=request", " ".join(logs.output))
         self.assertIn("ConnectError/ConnectionRefusedError(errno=111)", " ".join(logs.output))
         self.assertIn("stage=headers reason=http_503", " ".join(logs.output))
 
@@ -257,6 +257,97 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("UNAUTHORIZED", caught.exception.code)
         self.assertEqual(6, len(self.issuer.calls))
         self.assertEqual(5, sleep.await_count)
+
+    async def test_retryable_http_statuses_do_not_retry_invalid_identity_after_recovery(self):
+        import httpx2
+
+        for status in (408, 429, 500, 502, 503, 504):
+            calls = []
+            def respond(request):
+                calls.append(request)
+                return (httpx2.Response(status) if len(calls) == 1 else httpx2.Response(
+                    200, json={**self.issuer.metadata, "issuer": "https://other.example"}))
+            verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(respond))
+            with self.subTest(status=status), patch("local_hand_mcp.auth.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                with self.assertRaises(JobError):
+                    await verifier.validate_issuer_metadata()
+                self.assertEqual(2, len(calls))
+                sleep.assert_awaited_once_with(1)
+
+    async def test_tls_certificate_rejection_is_not_a_transient_startup_error(self):
+        import httpx2
+        import ssl
+
+        calls = []
+        async def respond(request):
+            calls.append(request)
+            await request.extensions['trace']('connection.start_tls.started', {'server_hostname': 'private.example'})
+            raise httpx2.ConnectError('private certificate details') from ssl.SSLCertVerificationError(1, 'private hostname')
+        verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(respond))
+        with patch("local_hand_mcp.auth.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            with self.assertLogs("local_hand_mcp.auth", level="INFO") as logs:
+                with self.assertRaises(JobError):
+                    await verifier.validate_issuer_metadata()
+        sleep.assert_not_awaited()
+        self.assertEqual(1, len(calls))
+        output = ' '.join(logs.output)
+        self.assertIn('stage=tls reason=tls_or_local_protocol', output)
+        self.assertIn('SSLCertVerificationError', output)
+        self.assertNotIn('private', output)
+
+    async def test_headers_failure_and_partial_body_failure_have_distinct_logs_and_close_streams(self):
+        import httpx2
+
+        for stage in ('response_headers', 'response_body'):
+            calls, closed = [], []
+            class BrokenBody(httpx2.AsyncByteStream):
+                def __init__(self, trace):
+                    self.trace = trace
+                async def __aiter__(self):
+                    await self.trace('http11.receive_response_body.started', {'request': 'private credentials'})
+                    yield b' ' * 4096
+                    raise httpx2.ReadError('private response detail')
+                async def aclose(self):
+                    closed.append(True)
+            async def respond(request):
+                calls.append(request)
+                if len(calls) > 1:
+                    return self.issuer.handle(request)
+                trace = request.extensions['trace']
+                await trace('connection.connect_tcp.complete', {'host': 'private.example'})
+                await trace('http11.receive_response_headers.started', {'request': 'private credentials'})
+                if stage == 'response_headers':
+                    raise httpx2.ReadTimeout('private header timeout')
+                return httpx2.Response(200, stream=BrokenBody(trace))
+            verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(respond))
+            with self.subTest(stage=stage), patch("local_hand_mcp.auth.asyncio.sleep", new_callable=AsyncMock):
+                with self.assertLogs("local_hand_mcp.auth", level="INFO") as logs:
+                    await verifier.validate_issuer_metadata()
+                output = ' '.join(logs.output)
+                self.assertIn('stage=' + stage + ' errors=Read', output)
+                self.assertNotIn('private', output)
+                self.assertEqual(2, len(calls))
+                if stage == 'response_body':
+                    self.assertEqual([True], closed)
+                    self.assertIn('bytes=4096', output)
+
+    async def test_deadline_and_cancellation_also_interrupt_retry_backoff(self):
+        self.issuer.status = 503
+        with patch("local_hand_mcp.auth.STARTUP_METADATA_TIMEOUT", .02):
+            with self.assertRaises(JobError):
+                await self.issuer.verifier.validate_issuer_metadata()
+        self.assertEqual(1, len(self.issuer.calls))
+        waiting = asyncio.Event()
+        async def backoff(delay):
+            waiting.set()
+            await asyncio.Event().wait()
+        with patch("local_hand_mcp.auth.asyncio.sleep", side_effect=backoff):
+            task = asyncio.create_task(self.issuer.verifier.validate_issuer_metadata())
+            await asyncio.wait_for(waiting.wait(), 1)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        self.assertEqual(2, len(self.issuer.calls))
 
     async def test_startup_does_not_retry_invalid_metadata_or_permanent_http_errors(self):
         import httpx2

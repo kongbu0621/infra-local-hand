@@ -417,7 +417,7 @@ def main(argv=None) -> int:
         if not logger.handlers:
             handler = logging.StreamHandler()
             handler.setFormatter(logging.Formatter(
-                "%(asctime)s %(levelname)s pid=%(process)d %(name)s:%(lineno)d %(message)s",
+                "%(asctime)s %(levelname)s pid=%(process)d %(name)s %(filename)s:%(lineno)d %(message)s",
                 datefmt="%Y-%m-%dT%H:%M:%S%z"))
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
