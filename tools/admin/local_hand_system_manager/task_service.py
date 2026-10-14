@@ -167,6 +167,7 @@ class TaskService:
         self.captures = []
         self.capture_stop = threading.Event()
         self.socket_pin = None
+        self.interrupted_management = None
         self.closed = False
 
     def _spawn(self, command, fds):
@@ -329,8 +330,15 @@ class TaskService:
                     self.channel.send(dict(action="finish", value=None))
                     return result
                 save(self.intents, "phase-" + phase + ".json", result)
+            except BaseException:
+                # Keep the original management pair and its open RunRecord.
+                # Recovery must finish it after proving ordinary writers have
+                # stopped; dropping it leaves --pipe clients in this cgroup.
+                self.interrupted_management = (phase, coordinator, record)
+                raise
             finally:
-                record.close()
+                if self.interrupted_management is None:
+                    record.close()
             self.gateway.close_phase(result["fence"])
             configs.append(config)
             previous[phase] = plan
@@ -403,7 +411,21 @@ finally:os.close(fd)
             self._remember_socket()
             self.manager_channel._time()
             threading.Event().wait(0.05)
+        self.finish_recovered_management()
         return dict(status="RECOVERY_RECORDED", operation_id=self.request["operation_id"], start_replayed=False)
+
+    def finish_recovered_management(self):
+        pending = self.interrupted_management
+        if pending is None:
+            return
+        q.require(self.gateway.recovery_only and self.gateway.recovery_finished,
+                  "TASK_RECOVERY_EXIT_UNPROVEN")
+        phase, coordinator, record = pending
+        result = finish_stopped_management(coordinator)
+        save(self.intents, "recovered-management-" + phase + ".json",
+             dict(status="RECOVERY_MANAGEMENT_CLOSED", phase=phase, management=result))
+        record.close()
+        self.interrupted_management = None
 
     def retain_failure(self, error):
         """Keep the triggering error before a recovery attempt can replace it."""
@@ -465,6 +487,9 @@ finally:os.close(fd)
             if fd >= 0:
                 attempt(lambda fd=fd: os.close(fd))
                 setattr(self, name, -1)
+        if self.interrupted_management is not None:
+            attempt(self.interrupted_management[2].close)
+            self.interrupted_management = None
         if failure is not None:
             raise failure
 

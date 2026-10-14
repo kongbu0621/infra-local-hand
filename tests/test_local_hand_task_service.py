@@ -20,6 +20,51 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrator task service")
 class TaskServiceTests(unittest.TestCase):
+    def test_interrupted_coordinator_keeps_original_management_until_proved_recovery(self):
+        service = task_service.TaskService.__new__(task_service.TaskService)
+        service.interrupted_management = None
+        service.request = {"operation_id":"original"}
+        service.value = {"controller_envelope":{}}
+        service.chain = {}; service.plan = {}; service.intents = 9
+        service.policy = Mock(config={"process_manager":{"manager_binding":{}}})
+        service.gateway = Mock(recovery_only=True, recovery_finished=False)
+        service.channel = Mock()
+        service.channel.peer = (123, 1234, 1234)
+        service.channel.receive.return_value = dict(event="prepared", namespace="job", identity="original",
+            phase="preflight", snapshot={"preparation":{"session":"original-session"}}, phase_plan={})
+        service._remember_socket = Mock()
+        record = Mock()
+        coordinator = Mock(management_closed=False)
+        coordinator.management.used = True
+        coordinator.management.finish_stopped.return_value = {"original":"stopped-proof"}
+        interrupted = ValueError("BRIDGE_PEER_EXITED")
+        coordinator.run.side_effect = interrupted
+        with patch.object(task_service.select, "select", return_value=([service.channel.sock], [], [])), \
+                patch.object(task_service.q2_chain, "build_grant"), \
+                patch.object(task_service, "checked_plan", return_value={}), \
+                patch.object(task_service.runner, "_quota_prepared_execution", return_value={}), \
+                patch.object(task_service.runner, "quota_bootstrap_argv", return_value=[]), \
+                patch.object(task_service.q2_chain, "install", return_value={"config":{},"management_record":"original"}), \
+                patch.object(task_service.q2_management, "controller"), \
+                patch.object(task_service.q2_management, "RunRecord", return_value=record), \
+                patch.object(task_service, "Coordinator", return_value=coordinator):
+            with self.assertRaises(ValueError) as raised:service.run()
+        self.assertIs(interrupted, raised.exception)
+        self.assertEqual(("preflight", coordinator, record), service.interrupted_management)
+        record.close.assert_not_called()
+        with self.assertRaisesRegex(q.QuotaError, "TASK_RECOVERY_EXIT_UNPROVEN"):
+            service.finish_recovered_management()
+        coordinator.management.finish_stopped.assert_not_called()
+        service.gateway.recovery_finished = True
+        with patch.object(task_service, "save") as save:
+            service.finish_recovered_management()
+            service.finish_recovered_management()
+        coordinator.management.finish_stopped.assert_called_once()
+        save.assert_called_once_with(9, "recovered-management-preflight.json", dict(
+            status="RECOVERY_MANAGEMENT_CLOSED", phase="preflight", management={"original":"stopped-proof"}))
+        record.close.assert_called_once()
+        self.assertIsNone(service.interrupted_management)
+
     def test_second_api_failure_retries_same_task_recovery_without_rerunning_execution(self):
         service = Mock()
         service.value = {"controller_envelope":{"deadline_ns":100}}
