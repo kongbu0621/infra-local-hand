@@ -409,8 +409,13 @@ class Policy:
                 if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() or before.st_mode & 0o077 or before.st_nlink != 1:
                     raise _bad()
                 check_parents()
-                raw = os.read(descriptor, 65537)
-                if len(raw) != min(before.st_size, 65537):
+                # Protected configuration may carry a complete project blob
+                # inventory; public tool requests retain their 64 KiB bound.
+                maximum = 512 * 1024
+                if before.st_size > maximum:
+                    raise JobError("LIMIT_EXCEEDED", "Private admission exceeds 512 KiB")
+                raw = os.read(descriptor, maximum + 1)
+                if len(raw) != before.st_size:
                     raise JobError("IO_UNCERTAIN", "Private admission read is incomplete")
                 after = os.fstat(descriptor)
                 current = target.lstat()
@@ -430,7 +435,7 @@ class Policy:
                     # descriptor number that close may already have released.
                     if not body_failed:
                         raise
-            policy = cls(strict_loads(raw))
+            policy = cls(strict_loads(raw, maximum_bytes=maximum))
             policy.validate_paths()
             return policy
         except OSError:

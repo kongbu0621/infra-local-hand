@@ -108,19 +108,19 @@ def _tree(value: Any, depth: int = 0) -> None:
         raise _invalid("Floating point and unsupported JSON values are forbidden")
 
 
-def strict_loads(raw: bytes | str) -> Any:
+def strict_loads(raw: bytes | str, *, maximum_bytes: int = MAX_REQUEST_BYTES) -> Any:
     """Decode a bounded raw JSON request without lossy parser behavior."""
     if isinstance(raw, bytes):
-        if len(raw) > MAX_REQUEST_BYTES:
-            raise JobError("LIMIT_EXCEEDED", "Request body exceeds 64 KiB")
+        if len(raw) > maximum_bytes:
+            raise JobError("LIMIT_EXCEEDED", "JSON body exceeds its byte limit")
         try:
             text = raw.decode("utf-8", errors="strict")
         except UnicodeError:
             raise _invalid("Request body is not valid UTF-8") from None
     elif isinstance(raw, str):
         try:
-            if len(raw.encode("utf-8", errors="strict")) > MAX_REQUEST_BYTES:
-                raise JobError("LIMIT_EXCEEDED", "Request body exceeds 64 KiB")
+            if len(raw.encode("utf-8", errors="strict")) > maximum_bytes:
+                raise JobError("LIMIT_EXCEEDED", "JSON body exceeds its byte limit")
         except UnicodeError:
             raise _invalid("Request body is not valid UTF-8") from None
         text = raw

@@ -456,6 +456,27 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with self.assertRaises(JobError):
             self.registry.resolve(request, self.policy, principal=self.owner)
 
+    def test_private_inventory_may_exceed_public_request_limit(self):
+        from local_hand_jobs.contract import strict_loads
+        for name in ("broker", "authority", "work", "evidence", "temporary", "source", "cache"):
+            (self.root / name).mkdir(mode=0o700)
+        for name in ("python", "broker.py"):
+            (self.root / name).write_bytes(b"synthetic fixture bytes")
+            (self.root / name).chmod(0o600)
+        config=copy.deepcopy(self.config)
+        config['profiles']['fixture']['sources']['source']['blobs'].update(
+            {f'tests/file_{i:04d}.py':'a'*40 for i in range(1500)})
+        raw=json.dumps(config).encode();self.assertGreater(len(raw),65536)
+        path=self.root/'inventory-policy.json';path.write_bytes(raw);path.chmod(0o600)
+        self.assertEqual(Policy(config).policy_digest,Policy.from_file(path).policy_digest)
+        with self.assertRaises(JobError):strict_loads(raw)
+        with self.assertRaises(JobError):strict_loads(b'{"a":1,"a":2}',maximum_bytes=512*1024)
+        path.write_bytes(raw+b' '*(512*1024-len(raw)))
+        self.assertEqual(Policy(config).policy_digest,Policy.from_file(path).policy_digest)
+        path.write_bytes(b' '* (512*1024+1))
+        with self.assertRaises(JobError) as caught:Policy.from_file(path)
+        self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+
     def test_file_loader_rejects_public_config_symlink_and_path_symlink(self):
         path = self.root / "policy.json"
         path.write_text(json.dumps(self.config))

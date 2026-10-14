@@ -202,6 +202,14 @@ class ResidentService:
                         record=dict(record,state='FAILED');self._save(record)
                 if record['state']=='READY':
                     stale=record['boot_id']!=self.boot or record['request']['expires_at']<=time.time()
+                    if (args.get('retry_failed') and self.config.get('installation',{}).get('source')
+                            and record.get('launch_path')):
+                        original=load(record['launch_path'])['policy']
+                        # A local admission failure before execution may use
+                        # the repaired installation under the same UUID. Keep
+                        # completed or possibly delivered work on its version.
+                        stale = stale or (original['source_commit']!=self.config['installation']['source']['commit']
+                                          and not self._has_committed_task(record))
                     if not (stale or args.get('retry_failed')) or not self._replaceable(record,failed_only=not stale):
                         self._catalog(record)
                         return dict(operation_id=operation,state='READY',request=record['request'])

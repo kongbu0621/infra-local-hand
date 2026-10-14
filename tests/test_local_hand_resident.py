@@ -605,6 +605,23 @@ class PreparationTests(unittest.TestCase):
             output=str(root/'attempt-1'/'execution'),
             request=dict(operation_id=operation,kind='host.inspect',inputs={},request_digest='a'*64,expires_at=int(time.time())+300))
 
+    def test_repaired_installation_can_reprepare_unsubmitted_uuid_but_never_committed_work(self):
+        record=self.ready_record();record['launch_path']=str(Path(self.temp.name)/'launch.json')
+        Path(record['attempt']).mkdir()
+        Path(record['launch_path']).write_text(json.dumps(dict(policy=dict(source_commit='a'*40))))
+        self.service._save(record)
+        self.config['installation']=dict(source=dict(commit='b'*40))
+        with patch.object(self.service,'_has_committed_task',return_value=True) as committed, \
+             patch.object(self.service,'_busy',return_value=False), \
+             patch.object(self.service,'_prepare_worker') as worker:
+            args=dict(self.args,retry_failed=True)
+            self.assertEqual('READY',self.service.call(args)['state']);worker.assert_not_called()
+            committed.return_value=False
+            self.assertEqual('PREPARING',self.service.call(args)['state'])
+            self.service.worker.join(2);worker.assert_called_once()
+            self.assertEqual(record['operation_id'],worker.call_args.args[0]['operation_id'])
+            self.assertNotEqual(record['attempt'],worker.call_args.args[0]['attempt'])
+
     def test_workspace_read_checks_inventory_and_size_without_task_creation(self):
         raw=b'VALUE = 1\n'
         self.config['workspace']=dict(sources={'project':dict(root='/protected-source',commit='c'*40,
