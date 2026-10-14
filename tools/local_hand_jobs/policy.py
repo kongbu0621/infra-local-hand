@@ -410,7 +410,7 @@ class Policy:
                     raise _bad()
                 check_parents()
                 # Protected configuration may carry a complete project blob
-                # inventory; public tool requests retain their 64 KiB bound.
+                # inventory, with the same 512 KiB cap as public requests.
                 maximum = 512 * 1024
                 if before.st_size > maximum:
                     raise JobError("LIMIT_EXCEEDED", "Private admission exceeds 512 KiB")

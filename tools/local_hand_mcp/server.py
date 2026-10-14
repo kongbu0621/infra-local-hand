@@ -20,9 +20,9 @@ import time
 from urllib.parse import urlsplit
 import uuid
 
-from local_hand_jobs.contract import JobError, TOOL_SCHEMAS, TOOL_SCOPES, strict_loads, validate_tool_args
+from local_hand_jobs.contract import MAX_REQUEST_BYTES, JobError, TOOL_SCHEMAS, TOOL_SCOPES, strict_loads, validate_tool_args
 
-MAX_BODY = 64 * 1024
+MAX_BODY = MAX_REQUEST_BYTES
 MAX_RESPONSE = 512 * 1024
 BODY_SECONDS = 5
 CONTROL_SECONDS = 5
@@ -226,7 +226,7 @@ class _StrictBody:
                         return
                     body.extend(event.get("body", b""))
                     if len(body) > MAX_BODY:
-                        return await _json_error(send, 413, "LIMIT_EXCEEDED", "Request body exceeds 64 KiB")
+                        return await _json_error(send, 413, "LIMIT_EXCEEDED", "Request body exceeds 512 KiB")
                     if not event.get("more_body", False):
                         break
         except TimeoutError:

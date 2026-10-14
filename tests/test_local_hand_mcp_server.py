@@ -286,6 +286,16 @@ class ServerTests(unittest.TestCase):
                 self.assertIn(response.status_code, {400, 413}, response.text)
         self.assertEqual([], self.broker.calls)
 
+    def test_http_request_accepts_exact_512_kib_then_rejects_one_extra_byte(self):
+        raw=b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+        raw+=b' '*(512*1024-len(raw))
+        response=self.client.post('/mcp',content=raw,headers=self.headers)
+        self.assertEqual(200,response.status_code,response.text)
+        self.assertIn('tools',response.json()['result'])
+        response=self.client.post('/mcp',content=raw+b' ',headers=self.headers)
+        self.assertEqual(413,response.status_code,response.text)
+        self.assertEqual([],self.broker.calls)
+
     def test_tool_scope_error_and_local_revocation_return_standard_challenges(self):
         read_only = {**self.headers, "Authorization": "Bearer " + self.issuer.token(claims={"scope": "lh:read"})}
         tools = self.rpc("tools/list", headers=read_only).json()["result"]["tools"]

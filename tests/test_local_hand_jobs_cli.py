@@ -57,6 +57,13 @@ class CliTests(unittest.TestCase):
         server.start(); self.addCleanup(server.close)
         return server
 
+    def test_local_request_accepts_exact_512_kib_then_rejects_one_extra_byte(self):
+        raw=json.dumps(dict(tool='lh_job_status',arguments=dict(operation_id='synthetic'))).encode()
+        raw+=b' '*(512*1024-len(raw))
+        self.assertEqual('UNKNOWN',self.handle(raw)['result']['outcome'])
+        self.assertEqual('LIMIT_EXCEEDED',self.handle(raw+b' ')['error']['code'])
+        self.assertEqual(1,len(self.broker.calls))
+
     def test_same_broker_and_os_peer_identity(self):
         raw = json.dumps({"tool": "lh_job_status", "arguments": {"operation_id": "synthetic"}}).encode()
         result = self.handle(raw)["result"]

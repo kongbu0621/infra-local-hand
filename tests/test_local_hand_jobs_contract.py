@@ -7,7 +7,7 @@ import subprocess
 import unittest
 
 from local_hand_jobs.contract import (DISABLED_JOB_KINDS, KINDS, SUITES, Principal, JobError, MAX_SAFE_INTEGER,
-    TOOL_SCHEMAS, TOOL_SCHEMA_DIGEST, canonical_bytes, request_digest, strict_loads,
+    MAX_REQUEST_BYTES, TOOL_SCHEMAS, TOOL_SCHEMA_DIGEST, canonical_bytes, request_digest, strict_loads,
     validate_submit, validate_tool_args)
 
 
@@ -71,12 +71,20 @@ class StrictJobContractTests(unittest.TestCase):
 
     def test_nested_size_and_integer_limits_are_enforced_before_large_parse(self):
         self.assertEqual(strict_loads("[" * 8 + "0" + "]" * 8), [[[[[[[[0]]]]]]]])
-        for raw in ("[" * 9 + "0" + "]" * 9, " " * 65537, '{"a":9007199254740992}',
+        for raw in ("[" * 9 + "0" + "]" * 9, " " * (MAX_REQUEST_BYTES+1), '{"a":9007199254740992}',
                     '{"a":' + "9" * 10000 + '}'):
             with self.subTest(length=len(raw)), self.assertRaises(JobError):
                 strict_loads(raw)
         self.assertEqual(strict_loads('{"a":9007199254740991}')["a"], MAX_SAFE_INTEGER)
         self.assertEqual(strict_loads('{"a":"[\\\"{\\\"}]"}')["a"], '["{"}]')
+
+    def test_raw_json_accepts_exact_512_kib_and_rejects_one_extra_byte(self):
+        raw=b'{}'+b' '*(512*1024-2)
+        self.assertEqual({},strict_loads(raw))
+        self.assertEqual({},strict_loads(raw.decode()))
+        for value in (raw+b' ',(raw+b' ').decode()):
+            with self.assertRaises(JobError) as caught:strict_loads(value)
+            self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
 
     def test_booleans_null_arrays_and_unsafe_numbers_never_become_submit_values(self):
         for value in (True, False, None, [], {}, 1.0, -1, MAX_SAFE_INTEGER + 1):

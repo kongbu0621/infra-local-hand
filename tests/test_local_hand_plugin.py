@@ -77,8 +77,10 @@ class PluginDistributionTests(unittest.TestCase):
         frozen = json.loads((PLUGIN / "contract.json").read_text())
         self.assertEqual(frozen["tools"], TOOL_SCHEMAS)
         self.assertEqual(frozen["tool_schema_digest"], TOOL_SCHEMA_DIGEST)
-        self.assertEqual(len(frozen["tools"]), 8)
-        self.assertEqual(frozen["tools"]["lh_job_prepare"]["properties"]["kind"], {"const": "host.inspect"})
+        self.assertEqual(len(frozen["tools"]), 9)
+        self.assertEqual({item['properties']['kind']['const'] for item in frozen['tools']['lh_job_prepare']['oneOf']},
+                         {'host.inspect','workspace.edit'})
+        self.assertIn('lh_workspace_read',frozen['tools'])
         self.assertTrue(frozen["backend_contract_compatibility"]["digest_match_required"])
         self.assertEqual(frozen["connection_status"], "UNCONFIGURED_E4_REQUIRED")
 

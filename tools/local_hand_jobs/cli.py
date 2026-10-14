@@ -68,7 +68,7 @@ def _send_frame(connection, value, *, deadline=None, limit=MAX_RESPONSE_BYTES):
 def _response(raw):
     """Decode bounded responses without losing keys; finite timestamps are valid.
 
-    Request decoding deliberately rejects floats and has a smaller byte limit,
+    Request decoding deliberately rejects floats,
     so it cannot be reused for evidence chunks or status observation times.
     """
     def unique(pairs):
