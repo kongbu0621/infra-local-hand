@@ -23,7 +23,7 @@ import time
 import uuid
 
 from local_hand_jobs import budget, cli, quota_contract as q
-from local_hand_jobs.contract import JobError, canonical_bytes, strict_loads, validate_tool_args
+from local_hand_jobs.contract import JobError, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
 from local_hand_jobs.task_session import read_descriptor
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import provision_task, task_service
@@ -308,10 +308,10 @@ class ResidentService:
                 if (args['profile_ref']!=self.config['profile_ref'] or source is None
                         or args['relative_path'] not in source['blobs']):
                     raise JobError('UNAUTHORIZED','Workspace source or file is not admitted')
-                try:raw=read_protected(str(Path(source['root'])/args['relative_path']),4096)
+                try:raw=read_protected(str(Path(source['root'])/args['relative_path']),MAX_WORKSPACE_TEXT_BYTES)
                 except ValueError as error:
                     if str(error)=='INPUT_BYTE_LIMIT':
-                        raise JobError('LIMIT_EXCEEDED','Workspace file exceeds 4 KiB') from None
+                        raise JobError('LIMIT_EXCEEDED','Workspace file exceeds 120 KiB of UTF-8 text') from None
                     raise
                 if hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()!=source['blobs'][args['relative_path']]:
                     raise JobError('CONFLICT','Workspace source file changed')
@@ -319,7 +319,8 @@ class ResidentService:
                 except UnicodeError:raise JobError('UNSUPPORTED','Workspace file is not UTF-8 text') from None
                 result=dict(source_ref=args['source_ref'],source_commit=source['commit'],relative_path=args['relative_path'],
                             sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw),content=content)
-                if len(canonical_bytes(result))>12000:raise JobError('LIMIT_EXCEEDED','Workspace text exceeds the response budget')
+                if len(canonical_bytes(dict(result=result)))>cli.MAX_RESPONSE_BYTES:
+                    raise JobError('LIMIT_EXCEEDED','Workspace text exceeds the 512 KiB response budget after JSON escaping')
                 return result
             if action=='prepare':
                 q.require({'action','principal_id','operation_id','kind','profile_ref'}<=set(request)
@@ -405,11 +406,11 @@ def serve(config):
                 try:
                     _,uid,gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
                     if (uid,gid)!=(config['uid'],config['gid']):raise JobError('UNAUTHORIZED','Peer is not admitted')
-                    result=service.call(strict_loads(cli._read_frame(connection,16384,deadline=end)))
+                    result=service.call(strict_loads(cli._read_frame(connection,cli.MAX_REQUEST_BYTES,deadline=end)))
                     response=dict(result=result)
                 except JobError as error:response=dict(error=error.as_dict())
                 except Exception:response=dict(error=dict(code='IO_UNCERTAIN',message='Task service needs state inspection'))
-                try:cli._send_frame(connection,response,deadline=end,limit=16384)
+                try:cli._send_frame(connection,response,deadline=end,limit=cli.MAX_RESPONSE_BYTES)
                 except (OSError,JobError):pass
 
 

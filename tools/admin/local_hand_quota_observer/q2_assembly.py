@@ -113,9 +113,9 @@ def build_grant(template, snapshot, *, session, clock):
 
 def _argv(template, grant, argv, now_ns):
     value = template.data(); peer = value["peer"]
-    q.require(type(argv) is list and len(argv) == 5 and argv[:4] ==
+    q.require(type(argv) is list and 5 <= len(argv) <= 12 and argv[:4] ==
               [peer["executable"]["path"], "-I", peer["runner"]["path"], "--bootstrap"], "ASSEMBLY_BOOTSTRAP_ARGV")
-    try: payload = bootstrap.decode_payload(argv[4])
+    try: payload = bootstrap.decode_arguments(argv[4:])
     except JobError: raise q.QuotaError("ASSEMBLY_BOOTSTRAP_PAYLOAD") from None
     q._keys(payload, {"version", "execution", "allocation", "observation"})
     q.require(type(payload["version"]) is int and payload["version"] == 2
@@ -123,7 +123,8 @@ def _argv(template, grant, argv, now_ns):
               and payload["observation"] == grant.as_dict(), "ASSEMBLY_BOOTSTRAP_BINDING")
     g.check_execution(grant, payload["execution"], payload["allocation"], now_ns=now_ns)
     raw = b"\0".join(argument.encode("utf-8") for argument in argv) + b"\0"
-    q.require(len(raw) <= 131072 and all("\0" not in argument for argument in argv), "ASSEMBLY_COMMAND_LIMIT")
+    q.require(len(raw) <= bootstrap.MAX_COMMAND_BYTES and all("\0" not in argument for argument in argv), "ASSEMBLY_COMMAND_LIMIT")
+    bootstrap.check_argv(argv, {})
     return hashlib.sha256(raw).hexdigest()
 
 

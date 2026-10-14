@@ -139,6 +139,8 @@ class SyntheticManager:
         (evidence_root / "commands.json").write_text(json.dumps(transcript, sort_keys=True))
         (evidence_root / "stdout.log").write_bytes(b"SYNTHETIC_MANAGER: fixed-program result fixture\n")
         (evidence_root / "stderr.log").write_bytes(b"")
+        for name in ("commands.json", "stdout.log", "stderr.log"):
+            (evidence_root / name).chmod(0o600)
         bindings = copy.deepcopy(execution["bindings"])
         bindings["environment_fingerprint"] = _hash(b"synthetic integration environment")
         result = {"outcome": "SUCCEEDED", "business_started": plan["phase"] == "business",
@@ -276,7 +278,8 @@ class JobIntegrationTests(unittest.TestCase):
         self.client.observe(job_key="inspect")
         # This fixture opens the existing per-session broker. Automatic task
         # preparation is provided by the separately exercised resident adapter.
-        self.assertEqual({name for name, _ in self.calls}, set(TOOL_SCOPES) - {"lh_job_prepare"})
+        # Preparation and workspace reads belong to the resident adapter.
+        self.assertEqual({name for name, _ in self.calls}, set(TOOL_SCOPES) - {"lh_job_prepare", "lh_workspace_read"})
         self.assertTrue(self.broker.is_registered(artifact["seal_id"], artifact["seal_sha256"]))
 
     def test_restart_restores_prepared_catalog_and_cross_client_deduplication(self):

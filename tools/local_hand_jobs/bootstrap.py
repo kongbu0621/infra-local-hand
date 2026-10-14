@@ -18,6 +18,9 @@ from .contract import JobError
 
 MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_ENCODED_BYTES = ((MAX_PAYLOAD_BYTES + 2) // 3) * 4
+ARGUMENT_CHUNK_BYTES = 64 * 1024
+MAX_EXTENDED_ENCODED_BYTES = 512 * 1024
+MAX_COMMAND_BYTES = MAX_EXTENDED_ENCODED_BYTES + 16 * 1024
 _SECRET_KEYS = frozenset(("token", "access_token", "refresh_token", "secret", "password",
                           "authorization", "cookie", "private_key", "client_secret"))
 _ENVIRONMENT_KEYS = frozenset(("PATH", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP",
@@ -78,6 +81,22 @@ def decode_payload(encoded):
     except (ValueError, UnicodeError, RecursionError) as error:
         raise JobError("UNSUPPORTED", "Bootstrap plan JSON is invalid") from error
     return value
+
+
+def payload_arguments(encoded):
+    """Split the bounded Q2 payload below Linux's per-argument execve limit."""
+    if not isinstance(encoded, str) or not 0 < len(encoded) <= MAX_EXTENDED_ENCODED_BYTES:
+        raise JobError("LIMIT_EXCEEDED", "Bootstrap arguments exceed their bounded transport")
+    return [encoded[index:index + ARGUMENT_CHUNK_BYTES]
+            for index in range(0, len(encoded), ARGUMENT_CHUNK_BYTES)]
+
+
+def decode_arguments(parts):
+    if (not isinstance(parts, list) or not 1 <= len(parts) <= 8
+            or any(not isinstance(part, str) or not part for part in parts)
+            or sum(map(len, parts)) > MAX_EXTENDED_ENCODED_BYTES):
+        raise JobError("LIMIT_EXCEEDED", "Bootstrap arguments exceed their bounded transport")
+    return decode_payload("".join(parts))
 
 
 def check_argv(command, environment):

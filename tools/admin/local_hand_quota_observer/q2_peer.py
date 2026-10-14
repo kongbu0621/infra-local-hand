@@ -5,7 +5,7 @@ import select
 import socket
 import struct
 
-from local_hand_jobs import quota_contract as q
+from local_hand_jobs import bootstrap, quota_contract as q
 from . import q2_config as c, q2_runtime as runtime
 from .systemd_runtime import _fixed_read, _boot_id
 
@@ -44,7 +44,7 @@ def inspect(config, connection):
             q.require((info.st_dev, info.st_ino) == (fixed["device"], fixed["inode"]), "PEER_EXECUTABLE_CHANGED")
         finally:
             os.close(fd)
-        q.require(hashlib.sha256(_fixed_read(base + "/cmdline", 131072)).hexdigest() == policy["command_sha256"], "PEER_COMMAND")
+        q.require(hashlib.sha256(_fixed_read(base + "/cmdline", bootstrap.MAX_COMMAND_BYTES)).hexdigest() == policy["command_sha256"], "PEER_COMMAND")
         status = dict(line.split(":", 1) for line in _fixed_read(base + "/status", 16384).decode("ascii").splitlines())
         q.require([int(x) for x in status["Uid"].split()] == [uid] * 4
                   and [int(x) for x in status["Gid"].split()] == [gid] * 4, "PEER_IDS")

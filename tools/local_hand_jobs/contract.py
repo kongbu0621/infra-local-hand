@@ -14,7 +14,11 @@ from typing import Any, Mapping
 SCHEMA_VERSION = "lh-job-v1"
 MAX_SAFE_INTEGER = 2**53 - 1
 MAX_REQUEST_BYTES = 512 * 1024
-MAX_CANONICAL_BYTES = 16 * 1024
+MAX_CANONICAL_BYTES = 128 * 1024
+# Reserve 8 KiB for the fixed submission envelope. These budgets count the
+# existing canonical JSON encoding (including escapes), not Python characters.
+MAX_INPUT_BYTES = 120 * 1024
+MAX_WORKSPACE_TEXT_BYTES = MAX_INPUT_BYTES
 MAX_DEPTH = 8
 KINDS = (
     "host.inspect", "ledger.prepare", "ledger.test.source",
@@ -176,7 +180,7 @@ EXPECTED_SCHEMA = _object({"node_id": REF, "install_uuid": UUID, "deployment_epo
 INPUT_SCHEMAS = {
     "host.inspect": _object({}),
     "workspace.edit": _object({"source_ref": REF, "relative_path": {"type": "string", "maxLength": 256},
-        "expected_sha256": DIGEST, "content": {"type": "string", "maxLength": 4096}, "validation_ref": REF}),
+        "expected_sha256": DIGEST, "content": {"type": "string", "maxLength": MAX_WORKSPACE_TEXT_BYTES}, "validation_ref": REF}),
     "ledger.prepare": _object({"source_ref": REF, "build_cache_ref": REF}),
     "ledger.test.source": _object({"prepared_ref": REF}),
     "ledger.test.resources": _object({"prepared_ref": REF, "suite": {"type": "string", "enum": list(SUITES)}}),
@@ -264,7 +268,7 @@ def _submit_without_digest(request: Any) -> dict:
         _workspace_inputs(candidate["inputs"])
     candidate.pop("request_digest")
     if len(canonical_bytes(candidate)) > MAX_CANONICAL_BYTES:
-        raise JobError("LIMIT_EXCEEDED", "Canonical submission exceeds 16 KiB")
+        raise JobError("LIMIT_EXCEEDED", "Canonical submission exceeds 128 KiB")
     return candidate
 
 
@@ -304,8 +308,8 @@ def validate_tool_args(tool_name: str, arguments: Any) -> dict:
 
 def _workspace_inputs(inputs):
     _workspace_path(inputs['relative_path'])
-    if len(canonical_bytes(inputs)) > 12 * 1024:
-        raise JobError("LIMIT_EXCEEDED", "Workspace edit exceeds its bounded request budget")
+    if len(canonical_bytes(inputs)) > MAX_INPUT_BYTES:
+        raise JobError("LIMIT_EXCEEDED", "Canonical workspace inputs exceed 120 KiB (including JSON escapes)")
 
 
 def _workspace_path(relative_path):

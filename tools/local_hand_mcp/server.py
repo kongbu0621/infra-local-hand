@@ -31,7 +31,7 @@ _READ_ONLY = frozenset({"lh_capabilities", "lh_workspace_read", "lh_job_status",
 _REQUEST_ID = ContextVar("local_hand_mcp_request_id", default="none")
 _REQUEST_LOG = logging.getLogger("local_hand_mcp.requests")
 _DESCRIPTIONS = {
-    "lh_workspace_read": "读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交。文件最多 4 KiB；只能使用 capabilities 给出的来源引用及仓库相对路径。读取不会准备或提交任务。",
+    "lh_workspace_read": "读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交。文件最多 120 KiB，JSON 转义后的响应最多 512 KiB；替换任务的完整 inputs 按规范化 JSON（含转义）限 120 KiB。只能使用 capabilities 给出的来源引用及仓库相对路径。读取不会准备或提交任务。",
     "lh_capabilities": "查看当前获准使用的功能、资源引用和身份绑定。若返回 prepared_request，原样提交该请求一次，并保留其任务标识。",
     "lh_job_submit": "提交一个确定的任务并持久保存记录。返回结果不确定时，保留原 operation_id，沿同一任务查询。",
     "lh_job_prepare": "使用新的任务 UUID 准备获准的任务。host.inspect 检查本机；workspace.edit 在任务独立副本中按原文件摘要修改，并运行固定验证，返回封存的差异与结果。先查询 capabilities 获取来源和验证引用。PREPARING 时用原参数和同一 UUID 查询；READY 后原样提交返回的请求。FAILED 记录保留，解决原因后可用 retry_failed=true 重试。准备本身不执行业务。",

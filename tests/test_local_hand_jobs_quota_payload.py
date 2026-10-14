@@ -4,7 +4,10 @@ import copy
 import json
 import random
 import struct
+import subprocess
+import sys
 import unittest
+from unittest.mock import patch
 import zlib
 
 from local_hand_jobs import bootstrap, quota_payload as codec
@@ -77,6 +80,28 @@ class QuotaPayloadTests(unittest.TestCase):
                 codec.encode_bootstrap(value)
             with self.subTest(field=field), self.assertRaises(JobError):
                 bootstrap.decode_payload(envelope(codec._raw(value)))
+
+    def test_incompressible_large_input_crosses_real_argv_and_runner_parser(self):
+        from local_hand_jobs import runner
+        value=payload()
+        rng=random.Random(206)
+        value['execution']['inputs']={'content':''.join(rng.choices(
+            'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&()*+,-./:;<=>?@[]^_`{|}~',k=120000))}
+        encoded=codec.encode_bootstrap(value)
+        self.assertGreater(len(encoded),bootstrap.MAX_ENCODED_BYTES)
+        parts=bootstrap.payload_arguments(encoded)
+        self.assertGreater(len(parts),1)
+        command=[sys.executable,'-c',
+            'import sys; from local_hand_jobs.bootstrap import decode_arguments; '
+            'assert len(decode_arguments(sys.argv[1:])["execution"]["inputs"]["content"]) == 120000',*parts]
+        bootstrap.check_argv(command,{})
+        process=subprocess.run(command,capture_output=True,timeout=10)
+        self.assertEqual(0,process.returncode,process.stderr.decode())
+        with patch.object(bootstrap,'prepare',return_value=0) as prepare:
+            self.assertEqual(0,runner.main(['--bootstrap',*parts]))
+            prepare.assert_called_once_with(value)
+        for bad in ([],parts+['x'],['x']*9,['x'*(codec.MAX_ENCODED_BYTES+1)]):
+            with self.subTest(length=len(bad)),self.assertRaises(JobError):bootstrap.decode_arguments(bad)
 
     def test_receipt_marker_and_directory_are_debited_before_launch(self):
         value = payload()
@@ -160,7 +185,7 @@ class QuotaPayloadTests(unittest.TestCase):
             codec.encode_bootstrap(value)
         value = payload()
         rng = random.Random(901)
-        value["execution"]["broker_events"][0]["data_json"] = rng.randbytes(100000).hex()
+        value["execution"]["broker_events"][0]["data_json"] = rng.randbytes(400000).hex()
         self.assertLess(len(codec._raw(value)), codec.MAX_DECODED_BYTES)
         with self.assertRaises(JobError):
             codec.encode_bootstrap(value)

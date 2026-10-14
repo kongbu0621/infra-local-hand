@@ -15,7 +15,7 @@ from . import bootstrap
 from .contract import JobError
 
 MAX_DECODED_BYTES = 2 * 1024 * 1024
-MAX_ENCODED_BYTES = bootstrap.MAX_ENCODED_BYTES
+MAX_ENCODED_BYTES = bootstrap.MAX_EXTENDED_ENCODED_BYTES
 BOOTSTRAP_PREFIX = "lhq2-bootstrap-z1:"
 PLAN_PREFIX = "lhq2-plan-z1:"
 PLAN_SCHEMA = "local-hand-q2-phase-plan/v2"

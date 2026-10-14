@@ -15,12 +15,13 @@ import stat
 from . import budget, diagnostics, manager_binding, quota_binding, quota_bridge, quota_closure, quota_payload
 from . import quota_contract as q
 from .broker import phase_plan, thaw
-from .contract import JobError
+from .contract import JobError, MAX_REQUEST_BYTES
 from .state import LedgerBusy
 
 SCHEMA = "local-hand-task-session/v1"
 PHASES = quota_bridge.JOB_PHASES
-LIMIT = 65536
+# READY catalog entries contain the full public request.
+LIMIT = MAX_REQUEST_BYTES
 
 
 def read_descriptor(path):

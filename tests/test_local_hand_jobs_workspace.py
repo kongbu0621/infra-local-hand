@@ -12,7 +12,8 @@ import unittest
 from unittest.mock import patch
 
 from local_hand_jobs import workspace_jobs as workspace
-from local_hand_jobs.contract import JobError, Principal, canonical_bytes, request_digest, validate_tool_args
+from local_hand_jobs.contract import (JobError, Principal, MAX_CANONICAL_BYTES, MAX_INPUT_BYTES,
+    MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, request_digest, validate_tool_args)
 from local_hand_jobs.policy import Policy, thaw
 from local_hand_jobs.registry import Registry
 from test_local_hand_jobs_contract import submit_fixture
@@ -91,7 +92,41 @@ class WorkspaceTests(unittest.TestCase):
             with self.subTest(relative=relative),self.assertRaises(JobError):
                 validate_tool_args('lh_job_prepare',dict(args,inputs=dict(self.inputs,relative_path=relative)))
         with self.assertRaises(JobError):
-            validate_tool_args('lh_job_prepare',dict(args,inputs=dict(self.inputs,content='x'*4097)))
+            validate_tool_args('lh_job_prepare',dict(args,inputs=dict(self.inputs,content='x'*(MAX_WORKSPACE_TEXT_BYTES+1))))
+
+    def test_input_byte_boundary_includes_unicode_and_json_escapes(self):
+        empty=dict(self.inputs,content='')
+        available=MAX_INPUT_BYTES-len(canonical_bytes(empty))
+        for character in ('x','中','😀','"','\\','\n','\x00'):
+            width=len(canonical_bytes(dict(text=character)))-len(canonical_bytes(dict(text='')))
+            content=character*(available//width)+'x'*(available%width)
+            inputs=dict(empty,content=content)
+            with self.subTest(character=repr(character)):
+                self.assertEqual(MAX_INPUT_BYTES,len(canonical_bytes(inputs)))
+                request=submit_fixture('workspace.edit',**inputs)
+                self.assertLess(len(canonical_bytes(request)),MAX_CANONICAL_BYTES)
+                self.assertEqual(request,validate_tool_args('lh_job_submit',request))
+                args=dict(operation_id=request['operation_id'],kind='workspace.edit',profile_ref='fixture',inputs=inputs)
+                self.assertEqual(args,validate_tool_args('lh_job_prepare',args))
+                with self.assertRaises(JobError) as caught:
+                    validate_tool_args('lh_job_prepare',dict(args,inputs=dict(inputs,content=content+'x')))
+                self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+
+    def test_large_real_edit_keeps_complete_diff_and_fixed_validation(self):
+        content='VALUE = 2\n# '+('x'*110000)+'\n'
+        request=dict(self.request,inputs=dict(self.inputs,content=content))
+        request['request_digest']=request_digest(request)
+        self.plan['inputs']=validate_tool_args('lh_job_submit',request)['inputs']
+        self.plan['budgets']['log_bytes']=512*1024
+        result=workspace.prepare_edit(self.plan,self.directory)
+        stage=self.plan['stages'][0]
+        process=subprocess.run(stage['argv'],cwd=stage['cwd'],env=stage['env'],capture_output=True,timeout=10)
+        self.assertEqual(0,process.returncode,process.stderr.decode())
+        finished=workspace.finish_edit(self.plan,self.directory,result,True)
+        self.assertTrue(finished['edited_file_unchanged_by_validation'])
+        self.assertEqual(content,(self.directory/'workspace-after.txt').read_text())
+        self.assertIn('+# '+('x'*110000),(self.directory/'workspace-final.patch').read_text())
+        self.assertEqual(self.original,(self.source/'sample.py').read_bytes())
 
     def test_source_and_validation_are_server_granted(self):
         for field,value in (('source_ref','foreign'),('relative_path','unknown.py'),('validation_ref','shell')):

@@ -40,8 +40,8 @@ def build_plan(request, profile):
         stages=[dict(name="workspace-validation", argv=[base["python"], "-I", "-B", "-c", code, relative, *modules],
                      cwd=destination, env=base["environment"])])
     if "manifest" in source:
-        # Keep the existing 64 KiB helper transport bound even for a complete
-        # project. The held inventory is bound by the policy's exact digest.
+        # Keep the complete project inventory outside the bounded helper
+        # transport. The held inventory is bound by the policy's exact digest.
         base['source']={key:source[key] for key in ('root','commit','manifest')}
         base['readonly'].append(source['manifest']['path'])
     return base

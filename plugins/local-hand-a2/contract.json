@@ -2,7 +2,7 @@
   "schema_version": "lh-plugin-contract-v1",
   "plugin_version": "0.1.0",
   "job_schema_version": "lh-job-v1",
-  "tool_schema_digest": "36429c8cd8c6632d135b47c310bd0822eed753a701ad01bdf3e7e9a5489207e9",
+  "tool_schema_digest": "c3c5c53fe16362ba5a3bd4d13d60c5e4418b36341b2ed0bf3c1be98ca59c823b",
   "backend_contract_compatibility": {
     "minimum": "lh-job-v1",
     "maximum": "lh-job-v1",
@@ -107,7 +107,7 @@
                 },
                 "content": {
                   "type": "string",
-                  "maxLength": 4096
+                  "maxLength": 122880
                 },
                 "validation_ref": {
                   "type": "string",
@@ -676,7 +676,7 @@
                 },
                 "content": {
                   "type": "string",
-                  "maxLength": 4096
+                  "maxLength": 122880
                 },
                 "validation_ref": {
                   "type": "string",

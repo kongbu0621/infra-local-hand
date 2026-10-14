@@ -6,6 +6,7 @@ no systemd, quota, namespace or Q3 host success is claimed by these tests.
 import copy
 import hashlib
 import os
+import random
 from pathlib import Path
 import sys
 import tempfile
@@ -183,6 +184,20 @@ class PersistenceTests(unittest.TestCase):
                 command[4] = bootstrap.encode_payload(payload)
             with self.subTest(fault=fault), self.assertRaises(ValueError): self.install(bootstrap_argv=command)
             self.assertEqual([], list((self.root/"output").iterdir()))
+
+    def test_chunked_large_bootstrap_is_bound_by_complete_command_digest(self):
+        from local_hand_jobs import quota_payload
+        payload=bootstrap.decode_payload(self.commands[4])
+        payload['execution']['inputs']={'content':random.Random(517).randbytes(90000).hex()}
+        # Codec round trips and actual execve are covered in quota_payload;
+        # this test isolates the assembly's binding of every argv chunk.
+        encoded=quota_payload._pack(payload,quota_payload.BOOTSTRAP_PREFIX)
+        command=self.commands[:4]+bootstrap.payload_arguments(encoded)
+        with mock.patch.object(bootstrap,'decode_arguments',return_value=payload), \
+             mock.patch.object(g,'check_execution'):
+            digest=a._argv(template(self.value),self.grant,command,self.clock['boottime_ns'])
+        self.assertGreater(len(command),5)
+        self.assertEqual(hashlib.sha256(b'\0'.join(x.encode() for x in command)+b'\0').hexdigest(),digest)
 
     def test_fsync_failure_leaves_permanent_reservation_and_no_replay(self):
         real = a.os.fsync; calls = []

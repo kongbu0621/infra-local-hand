@@ -534,7 +534,8 @@ def quota_bootstrap_argv(execution, grant, *, script=None, now_ns):
            or re.search(r"[\s\\%$]", path) for path in (script, execution["python"])):
         raise RunnerError("UNSUPPORTED", "systemd executable paths must not contain specifiers")
     payload = quota_bootstrap.bind_payload(execution, execution["bootstrap_allocation"], grant, now_ns=now_ns)
-    return [execution["python"], "-I", script, "--bootstrap", quota_payload.encode_bootstrap(payload)]
+    return [execution["python"], "-I", script, "--bootstrap",
+            *bootstrap.payload_arguments(quota_payload.encode_bootstrap(payload))]
 
 
 class _SystemdExecutionCore:
@@ -1975,11 +1976,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Private fixed runner helper; not a caller command interface")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--helper")
-    mode.add_argument("--bootstrap")
+    mode.add_argument("--bootstrap", nargs="+")
     mode.add_argument("--result-reader")
     args = parser.parse_args(argv)
     if args.bootstrap is not None:
-        return bootstrap.prepare(bootstrap.decode_payload(args.bootstrap))
+        return bootstrap.prepare(bootstrap.decode_arguments(args.bootstrap))
     if args.result_reader is not None:
         return result_reader.run(result_reader.decode_payload(args.result_reader))
     path = Path(args.helper)

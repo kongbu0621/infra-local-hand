@@ -2,8 +2,10 @@
 import copy
 import hashlib
 import json
+import os
 import socket
 import sqlite3
+import struct
 import sys
 from pathlib import Path
 import tempfile
@@ -17,14 +19,63 @@ from unittest.mock import Mock, patch
 if not sys.platform.startswith('linux'):
     raise unittest.SkipTest('Linux resident task service')
 
-from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES, request_digest
+from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES, MAX_WORKSPACE_TEXT_BYTES, request_digest
 from local_hand_jobs.policy import Policy
 from local_hand_jobs.cli import request as socket_request
 from local_hand_jobs import cli
 from local_hand_mcp.resident import ResidentBroker
+from local_hand_mcp.resident import ServiceClient
 from admin.local_hand_system_manager import resident_service as admin
 from admin.local_hand_system_manager import provision_task
 from test_local_hand_jobs_policy import policy_fixture
+
+
+class ResidentTransportSizeTests(unittest.TestCase):
+    def test_large_preparation_round_trip_over_actual_socket(self):
+        client,server=socket.socketpair()
+        self.addCleanup(client.close);self.addCleanup(server.close)
+        content='中'*19000
+        received=[];errors=[]
+        def serve():
+            try:
+                received.append(json.loads(cli._read_frame(server,cli.MAX_REQUEST_BYTES)))
+                cli._send_frame(server,dict(result=dict(content=content)))
+            except BaseException as error:errors.append(error)
+        thread=threading.Thread(target=serve,daemon=True);thread.start()
+        class AdmittedSocket:
+            # Only root credentials/connect are modeled; framing and transfer
+            # use a real stream socket in both directions.
+            def __enter__(self):return self
+            def __exit__(self,*args):client.close()
+            def connect(self,path):pass
+            def getsockopt(self,*args):return struct.pack('3i',1,0,0)
+            def __getattr__(self,name):return getattr(client,name)
+        with patch('local_hand_mcp.resident.read_descriptor',return_value={'socket':{'path':'/admitted'}}), \
+             patch('local_hand_mcp.resident.Launcher'), \
+             patch('local_hand_mcp.resident.socket.socket',return_value=AdmittedSocket()):
+            self.assertEqual(dict(content=content),ServiceClient('/descriptor').call('prepare',content=content))
+        thread.join(2);self.assertFalse(thread.is_alive());self.assertFalse(errors)
+        self.assertEqual([dict(action='prepare',content=content)],received)
+
+    def test_catalog_accepts_512_kib_and_refuses_one_more_byte(self):
+        from local_hand_jobs import task_session
+        from local_hand_jobs import quota_contract
+        real_fstat=os.fstat
+        def admitted(fd):
+            info=real_fstat(fd)
+            # Model root ownership and protected ancestors in unprivileged CI.
+            values={key:getattr(info,key) for key in dir(info) if key.startswith('st_')}
+            values.update(st_uid=0,st_mode=info.st_mode&~0o022)
+            return SimpleNamespace(**values)
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'catalog.json'
+            raw=b'{"request":{"content":"'+b'x'*100000+b'"}}'
+            path.write_bytes(raw+b' '*(512*1024-len(raw)))
+            with patch.object(task_session.os,'fstat',side_effect=admitted):
+                self.assertEqual('x'*100000,task_session.read_descriptor(path)['request']['content'])
+                with path.open('ab') as stream:stream.write(b' ')
+                with self.assertRaisesRegex(quota_contract.QuotaError,'SESSION_SIZE'):
+                    task_session.read_descriptor(path)
 
 
 class ResidentTests(unittest.TestCase):
@@ -630,7 +681,7 @@ class PreparationTests(unittest.TestCase):
         with patch.object(admin,'read_protected',return_value=raw) as read:
             value=self.service.call(args)
             self.assertEqual(raw.decode(),value['content']);self.assertEqual(hashlib.sha256(raw).hexdigest(),value['sha256'])
-            read.assert_called_once_with('/protected-source/sample.py',4096)
+            read.assert_called_once_with('/protected-source/sample.py',MAX_WORKSPACE_TEXT_BYTES)
             read.return_value=b'changed'
             with self.assertRaises(JobError) as caught:self.service.call(args)
             self.assertEqual('CONFLICT',caught.exception.code)
@@ -642,6 +693,21 @@ class PreparationTests(unittest.TestCase):
             read.assert_not_called()
         self.assertFalse(self.service.records);self.assertIsNone(self.service.worker)
         self.assertEqual([],list(Path(self.config['private_root']).iterdir()))
+
+    def test_workspace_read_large_utf8_and_response_escape_limit(self):
+        args=dict(action='workspace_read',principal_id='owner',profile_ref='fixture',source_ref='project',relative_path='sample.py')
+        for content in ('x'*MAX_WORKSPACE_TEXT_BYTES,'中'*(MAX_WORKSPACE_TEXT_BYTES//3),'\x00'*MAX_WORKSPACE_TEXT_BYTES):
+            raw=content.encode()
+            self.config['workspace']=dict(sources={'project':dict(root='/protected-source',commit='c'*40,
+                blobs={'sample.py':hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()})})
+            with self.subTest(character=repr(content[0])),patch.object(admin,'read_protected',return_value=raw):
+                if content[0]=='\x00':
+                    with self.assertRaises(JobError) as caught:self.service.call(args)
+                    self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+                else:
+                    value=self.service.call(args)
+                    self.assertEqual(content,value['content']);self.assertEqual(MAX_WORKSPACE_TEXT_BYTES,value['bytes'])
+        self.assertFalse(self.service.records);self.assertIsNone(self.service.worker)
 
     def test_workspace_preparation_binds_inputs_before_worker_and_rejects_changed_poll(self):
         inputs=dict(source_ref='project',relative_path='sample.py',expected_sha256='a'*64,content='VALUE=2\n',validation_ref='core')

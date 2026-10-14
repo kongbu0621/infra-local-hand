@@ -36,8 +36,8 @@ class ServiceClient:
                 if (uid, gid) != (0, 0):
                     raise JobError('UNAUTHORIZED', 'Task service identity changed')
                 guard._check()
-                cli._send_frame(connection, dict(action=action, **arguments), deadline=end, limit=16384)
-                response = cli._response(cli._read_frame(connection, 16384, deadline=end))
+                cli._send_frame(connection, dict(action=action, **arguments), deadline=end, limit=cli.MAX_REQUEST_BYTES)
+                response = cli._response(cli._read_frame(connection, cli.MAX_RESPONSE_BYTES, deadline=end))
                 if 'error' in response:
                     raise JobError(response['error']['code'], response['error']['message'])
                 return response['result']
