@@ -255,6 +255,25 @@ class TaskSessionTests(unittest.TestCase):
         self.command("finish")
         self.assertTrue(self.session.finished)
 
+    def test_cancel_with_original_close_inflight_returns_stopped_snapshot(self):
+        self.session.tick()
+        complete = chain_fixtures.complete
+        def identified(grant, **options):
+            value = complete(grant, **options)
+            value[1]["execution_id"] = "job-" + self.f.identity + "-preflight"
+            return value
+        with patch.object(chain_fixtures, "complete", side_effect=identified):
+            fence, _ = self.f.pending("preflight")
+        self.broker.cancel(self.f.identity, self.f.f.request["request_digest"], {"kind": "job"}, self.f.f.owner)
+        reply = self.command("close", fence)
+        self.assertEqual("TERMINAL", reply["task"]["lifecycle"])
+        self.assertTrue(reply["task"]["cancel_requested"])
+        self.assertIsNone(reply["closed"])
+        self.assertIsNotNone(reply["pending"])
+        self.assertIsNone(self.session.failure)
+        self.command("finish")
+        self.assertTrue(self.session.finished)
+
     def test_cancelled_transition_still_rejects_changed_closure_digest(self):
         self.session.tick()
         fence, _ = self.f.pending("preflight")
@@ -407,19 +426,32 @@ class TaskSessionTests(unittest.TestCase):
     def test_business_helper_cancel_stops_controller_without_ordinary_three_stage_closure(self):
         self.check_business_cancel(helper=True)
 
-    def check_business_cancel(self, *, helper):
+    def test_business_reader_cancel_answers_controller_and_finishes(self):
+        self.check_business_cancel(helper=True, reader=True)
+
+    def test_evidence_cancel_at_each_stage_answers_controller_and_preserves_business(self):
+        for helper, reader in ((False, False), (True, False), (True, True)):
+            with self.subTest(helper=helper, reader=reader):
+                case = TaskSessionTests()
+                case.setUp(); self.addCleanup(case.doCleanups)
+                case.check_business_cancel(helper=helper, reader=reader, phase="evidence")
+
+    def check_business_cancel(self, *, helper, reader=False, phase="business"):
         self.session.tick()
-        fence, _ = self.f.pending("preflight")
-        self.command("close", fence)
-        closed = self.f.row()["record"]["quota_closed"]["preflight"]
-        self.f.chain.retain_closure("preflight", closed)
-        self.command("advance", {"from": "preflight", "to": "business",
-                                 "closure_digest": quota_closure.digest(closed)})
+        previous = ("preflight",) if phase == "business" else ("preflight", "business")
+        for index, current in enumerate(previous):
+            fence, _ = self.f.pending(current)
+            self.command("close", fence)
+            closed = self.f.row()["record"]["quota_closed"][current]
+            self.f.chain.retain_closure(current, closed)
+            following = previous[index+1] if index+1 < len(previous) else phase
+            self.command("advance", {"from": current, "to": following,
+                                     "closure_digest": quota_closure.digest(closed)})
         prepared = self.channel.outgoing[-1]["snapshot"]["preparation"]
-        grant = self.f.make_grant("business", prepared)
+        grant = self.f.make_grant(phase, prepared)
         self.command("bind", grant.as_dict())
         self.command("start")
-        execution = "job-" + self.f.identity + "-business"
+        execution = "job-" + self.f.identity + "-" + phase
         self.assertTrue(self.broker._guard_start(execution, lambda: True, stage="bootstrap"))
         if helper:
             import hashlib
@@ -431,6 +463,11 @@ class TaskSessionTests(unittest.TestCase):
                                  "writers_stopped", "effects_checked"), True),
                 result=dict(bootstrap_prepared=True, quota_observation=observed(grant)))
             self.assertTrue(self.broker._guard_start(execution, lambda: True, stage="helper", bootstrap_proof=bootstrap))
+        if reader:
+            unit = "lhj-" + hashlib.sha256(execution.encode()).hexdigest() + ".service"
+            proof = dict(bootstrap, unit=unit, identity=dict(boot_id=chain_fixtures.BOOT,
+                invocation_id="e"*32, cgroup="/synthetic-job.slice/" + unit))
+            self.assertTrue(self.broker._guard_start(execution, lambda: True, stage="result_reader", helper_proof=proof))
         self.broker.cancel(self.f.identity, self.f.f.request["request_digest"], {"kind": "job"}, self.f.f.owner)
         self.f.runner.finish(execution, exit_code=1,
             writers_stopped=True, collectors_stopped=True,
@@ -439,9 +476,13 @@ class TaskSessionTests(unittest.TestCase):
         if helper:
             self.f.runner.proofs[execution].update(exit_code=0, effects_checked=False,
                 helper_result_verified=False, result=dict(outcome="UNKNOWN", helper_started=True))
+        if reader:
+            unit = "lhj-" + hashlib.sha256((execution + ":result_reader").encode()).hexdigest() + ".service"
+            self.f.runner.proofs[execution]["result_reader_exit_proof"] = dict(bootstrap, unit=unit, exit_code=1,
+                identity=dict(boot_id=chain_fixtures.BOOT, invocation_id="f"*32, cgroup="/synthetic-job.slice/" + unit))
         reply = self.command("snapshot")
         self.assertEqual("TERMINAL", reply["task"]["lifecycle"])
-        self.assertEqual("UNKNOWN" if helper else "CANCELLED", reply["task"]["outcome"])
+        self.assertEqual("SUCCEEDED" if phase == "evidence" else "UNKNOWN" if helper else "CANCELLED", reply["task"]["outcome"])
         self.assertEqual(not helper, reply["observation"] is None)
         self.assertIsNone(reply["closed"])
         self.assertIsNotNone(reply["pending"])
@@ -454,10 +495,10 @@ class TaskSessionTests(unittest.TestCase):
         self.command("finish")
         self.assertTrue(self.session.finished)
         self.assertIsNone(self.session.failure)
-        self.assertEqual(2, len(self.f.runner.starts))
+        self.assertEqual(len(previous)+1, len(self.f.runner.starts))
         deliveries = self.f.row()["record"]["delivery_intents"]
         self.assertEqual(helper, execution + ":helper" in deliveries)
-        self.assertNotIn(execution + ":result_reader", deliveries)
+        self.assertEqual(reader, execution + ":result_reader" in deliveries)
 
     def test_control_failure_logs_os_cause_without_exception_text(self):
         self.session.tick()

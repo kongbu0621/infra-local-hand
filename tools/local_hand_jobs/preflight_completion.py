@@ -56,8 +56,8 @@ def complete_stopped_preflight(broker, tx, row):
                 raise JobError("IO_UNCERTAIN", "Original preflight delivery history changed")
             deliveries = current
     allowed = [execution + ":" + stage for stage in ("bootstrap", "helper", "result_reader")]
-    if (not deliveries or deliveries != allowed[:len(deliveries)]
-            or deliveries != record.get("delivery_intents")):
+    if ((not deliveries and proof.get("launch_prevented") is not True) or deliveries != allowed[:len(deliveries)]
+            or deliveries != record.get("delivery_intents", [])):
         return False
     for item in broker.state.all(tx):
         if item["namespace"] == "reconcile" and item["parent"] == row["id"] and item["record"]["lifecycle"] != "TERMINAL":

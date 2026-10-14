@@ -199,12 +199,31 @@ def observe(manager, part, unknown):
               and part["launch"].poll() is not None
               and (code is None or part["launch"].poll() == code), "ORIGINAL_CLIENT_EOF_UNPROVEN")
     result = dict(outcome="UNKNOWN")
+    missing = []
     if "quota_pipe" in part and code is not None:
-        result = dict(outcome="SUCCEEDED" if code == 0 else "FAILED", bootstrap_prepared=code == 0,
-                      business_started=False, helper_started=True,
-                      quota_observation=part["quota_pipe"].finish(part["quota_grant"], now_ns=now["boottime_ns"]))
+        try:
+            observation = part["quota_pipe"].finish(part["quota_grant"], now_ns=now["boottime_ns"])
+        except q.QuotaError as error:
+            cancel = part.get("cancel_event")
+            if (error.code not in {"RECEIPT_EOF", "RECEIPT_FRAME"}
+                    or not (part.get("stop_requested") or cancel is not None and cancel.is_set())):
+                raise
+            # A cancelled bootstrap can exit before emitting a quota receipt.
+            # Its OS exit/EOF is still proved above; no helper may use this as
+            # preparation or quota admission, and its partial files remain held.
+            result.update(bootstrap_prepared=False, business_started=False, helper_started=True)
+            missing.append("Bootstrap receipt unavailable after cancellation; preparation remains unverified")
+        else:
+            result = dict(outcome="SUCCEEDED" if code == 0 else "FAILED", bootstrap_prepared=code == 0,
+                          business_started=False, helper_started=True, quota_observation=observation)
     elif part.get("reader") is not None:
-        part["reader"].finish()
+        try:
+            part["reader"].finish()
+        except (JobError, ValueError) as error:
+            # Result validation is distinct from original process/pipe exit.
+            # Keep the failure so the runner cannot promote an incomplete result.
+            part["pipe_error"] = "Result validation failed: " + type(error).__name__
+            missing.append(part["pipe_error"])
     evidence = dict(identity=identity, terminal=terminal, after=values, transport=cap.record(part["launch"]),
                     parent=part["quota_parent"])
     if terminal is None:
@@ -225,7 +244,7 @@ def observe(manager, part, unknown):
     proof = dict(state="EXITED", future_start_blocked=True, tree_exited=True, collectors_stopped=True,
                  writers_stopped=True, effects_checked=result.get("bootstrap_prepared", False),
                  exit_code=code, execution_id=part["execution_id"], unit=part["unit"], facts={}, result=result,
-                 identity=identity, missing=[])
+                 identity=identity, missing=missing)
     part["quota_final"] = proof
     return proof
 

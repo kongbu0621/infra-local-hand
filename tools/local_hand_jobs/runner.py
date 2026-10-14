@@ -1143,11 +1143,19 @@ class _SystemdExecutionCore:
             return third
         if not self._finish_reader_transport(part):
             return _unknown("result reader exited; its local collector has not stopped")
+        # An interrupted/invalid result still has the reader's original exit
+        # evidence. Losing it would leave cancellation unable to prove that all
+        # delivered stages stopped. Never turn that exit into a verified result.
+        unavailable = dict(self._unavailable_result(helper_proof,
+            part.get("pipe_error") or "result reader did not exit successfully"), result_reader_exit_proof=third)
+        if "quota_observation_grant" in handle:
+            unavailable["quota_stage_exits"] = {key: _plain(handle[name].get("quota_exit"))
+                for key, name in (("bootstrap", "bootstrap"), ("helper", "helper"), ("reader", "result_reader"))}
         if third.get("exit_code") != 0 or part.get("pipe_error"):
-            return self._unavailable_result(helper_proof, part.get("pipe_error") or "result reader did not exit successfully")
+            return unavailable
         result = part["reader"].result
         if not isinstance(result, dict):
-            return self._unavailable_result(helper_proof, "result reader did not return a complete verified result")
+            return dict(unavailable, missing=["result reader did not return a complete verified result"])
         # Reader success proves observation, not successful execution. Retain
         # the original helper exit code even when its final fsync failed.
         proof = {**helper_proof, "effects_checked": result.get("effects_checked", False),
@@ -1393,13 +1401,18 @@ class _SystemdExecutionCore:
 
     def _inspect_unit(self, handle):
         self._check_manager_binding(handle)
+        if handle["cancel_before_launch"]:
+            if handle.get("delivery_attempted") or handle.get("launch") is not None:
+                raise RunnerError("IO_UNCERTAIN", "Prevented launch has a delivery receipt")
+            # The durable start guard refused before Popen. No pipe exists and
+            # no OS unit should be queried or adopted for this execution.
+            return {**_unknown(), "state": "EXITED", "future_start_blocked": True, "tree_exited": True,
+                "collectors_stopped": True, "writers_stopped": True, "effects_checked": True, "missing": [],
+                "execution_id": handle["execution_id"], "launch_prevented": True,
+                "result": {"outcome": "CANCELLED", "business_started": False, "helper_started": False}}
         if "quota_transport" in handle:
             from . import quota_lifecycle
             return quota_lifecycle.observe(self, handle, _unknown)
-        if handle["cancel_before_launch"]:
-            return {**_unknown(), "state": "EXITED", "future_start_blocked": True, "tree_exited": True,
-                "collectors_stopped": True, "writers_stopped": True, "effects_checked": True, "missing": [],
-                "result": {"outcome": "CANCELLED", "business_started": False, "helper_started": False}}
         if Path("/proc/sys/kernel/random/boot_id").read_text().strip() != handle["boot_id"]:
             return _unknown("boot identity changed; reconcile durable ownership")
         if handle.get("quota_verified_proof") is not None:

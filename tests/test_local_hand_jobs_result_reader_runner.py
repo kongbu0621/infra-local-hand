@@ -156,6 +156,18 @@ def reader_lifecycle(*, phase="preflight", helper_exit=0, guard=None):
 
 
 class ResultReaderRunnerTests(unittest.TestCase):
+    def test_cancel_before_quota_bootstrap_delivery_needs_no_process_or_pipe(self):
+        from local_hand_jobs.quota_lifecycle import Transport
+        with reader_lifecycle(guard=lambda *args, **kwargs: None) as flow:
+            part = flow.handle["bootstrap"]
+            part["quota_transport"] = Transport(65536)
+            self.assertIsNone(part["launch"])
+            proof = flow.manager._inspect_unit(part)
+            self.assertEqual("EXITED", proof["state"])
+            self.assertTrue(proof["launch_prevented"])
+            self.assertEqual(flow.identity["execution_id"], proof["execution_id"])
+            self.assertEqual([], flow.launches)
+
     def test_h11_delivery_barrier_precedes_every_reader_observe_and_pipe_read(self):
         """Even an already-exited short reader cannot finish in its delivery tick."""
         with reader_lifecycle() as flow:
@@ -229,6 +241,23 @@ class ResultReaderRunnerTests(unittest.TestCase):
                 self.assertFalse(proof.get("helper_result_verified", False))
                 self.assertNotEqual(proof.get("result", {}).get("outcome"), "SUCCEEDED")
                 self.assertEqual(flow.clients[0].kills, 0)
+
+    def test_interrupted_reader_retains_its_exit_proof_without_promoting_helper_zero(self):
+        with reader_lifecycle(phase="business") as flow:
+            flow.inspect()
+            flow.cancel.set()
+            flow.reader_state, flow.reader_exit = "EXITED", 1
+            proof = flow.inspect()
+            self.assertEqual("UNKNOWN", proof["result"]["outcome"])
+            self.assertFalse(proof["helper_result_verified"])
+            self.assertFalse(proof["effects_checked"])
+            self.assertEqual(0, proof["exit_code"])
+            reader = proof["result_reader_exit_proof"]
+            self.assertEqual(1, reader["exit_code"])
+            self.assertEqual(flow.handle["result_reader"]["unit"], reader["unit"])
+            self.assertTrue(all(reader[k] is True for k in
+                ("future_start_blocked", "tree_exited", "collectors_stopped", "writers_stopped")))
+            self.assertEqual(3, len(flow.launches))
 
     def test_recovery_observes_and_stops_three_identities_despite_first_failure(self):
         with admitted_plan() as (manager, identity, plan):

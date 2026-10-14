@@ -10,6 +10,7 @@ import unittest
 from unittest import mock
 
 from local_hand_jobs import budget, quota_contract as q
+from local_hand_jobs.contract import JobError
 from q2_fixtures import BOOT, SECOND
 if sys.platform.startswith("linux"):
     from local_hand_jobs import quota_lifecycle as life, runner
@@ -54,6 +55,39 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(all(part["quota_exit"][key] for key in q.EXIT_FLAGS))
         self.assertEqual(1,sum(args[0]=="stop" for args in calls))
         self.assertEqual(result,life.observe(manager,part,runner._unknown))
+
+    def test_cancelled_reader_missing_result_preserves_real_exit_and_eof(self):
+        part,props,manager,_=self.setup_part()
+        part.update(stage="result_reader", stop_requested=True,
+                    reader=mock.Mock(finish=mock.Mock(side_effect=JobError("IO_UNCERTAIN", "Incomplete result"))))
+        life.observe(manager,part,runner._unknown)
+        proof=life.observe(manager,part,runner._unknown)
+        self.assertEqual("EXITED",proof["state"])
+        self.assertEqual("UNKNOWN",proof["result"]["outcome"])
+        self.assertFalse(proof["effects_checked"])
+        self.assertIn("pipe_error",part)
+        self.assertEqual({"stdout","stderr"},part["quota_transport"].eof)
+
+    def test_cancelled_bootstrap_missing_receipt_never_claims_preparation(self):
+        part,props,manager,_=self.setup_part()
+        part.update(stage="bootstrap", stop_requested=True, quota_grant=object(),
+                    quota_pipe=mock.Mock(finish=mock.Mock(side_effect=q.QuotaError("RECEIPT_EOF"))))
+        life.observe(manager,part,runner._unknown)
+        proof=life.observe(manager,part,runner._unknown)
+        self.assertEqual("EXITED",proof["state"])
+        self.assertFalse(proof["effects_checked"])
+        self.assertFalse(proof["result"]["bootstrap_prepared"])
+        self.assertNotIn("quota_observation",proof["result"])
+        self.assertTrue(proof["missing"])
+
+    def test_cancelled_bootstrap_does_not_hide_receipt_identity_failure(self):
+        part,props,manager,_=self.setup_part()
+        part.update(stage="bootstrap", stop_requested=True, quota_grant=object(),
+                    quota_pipe=mock.Mock(finish=mock.Mock(side_effect=q.QuotaError("BOOTSTRAP_OBSERVATION"))))
+        life.observe(manager,part,runner._unknown)
+        with self.assertRaisesRegex(q.QuotaError,"BOOTSTRAP_OBSERVATION"):
+            life.observe(manager,part,runner._unknown)
+        self.assertNotIn("quota_final",part)
 
     def test_running_stage_honors_stop_request_before_deadline(self):
         for request in ("stop_requested", "cancel_event"):

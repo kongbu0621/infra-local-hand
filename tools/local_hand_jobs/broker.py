@@ -1179,7 +1179,7 @@ class Broker:
             rows = self.state.all(tx)
         for row in rows:
             key, record = (row["namespace"], row["id"]), row["record"]
-            if (key not in self._active and key not in self._recovering and record["phase"] in ("PREFLIGHT", "BUSINESS")
+            if (key not in self._active and key not in self._recovering and record["phase"] in ("PREFLIGHT", "BUSINESS", "EVIDENCE")
                     and record["phase"].lower() in record.get("quota_pending", {})
                     and (record["cancel_requested"] or record.get("recovered"))):
                 with self.fence, self.state.transaction() as tx:

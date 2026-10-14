@@ -321,11 +321,11 @@ class TaskSession:
                                            task=self._status(record)))
                     self.terminal_sent = True
                 else:
-                    # Cancellation can commit while the administrator's bind
-                    # or start packet is in flight. Reply with the real stopped
+                    # Cancellation can commit while the administrator's bind,
+                    # start or close packet is in flight. Reply with the real stopped
                     # state without applying that packet or launching a stage.
                     q.require(type(command) is dict and set(command) == {"action", "value"}
-                              and command["action"] in ("snapshot", "bind", "start")
+                              and command["action"] in ("snapshot", "bind", "start", "close")
                               and self.handler is not None, "SESSION_STOPPED")
                     self.channel.send(dict(self.handler.snapshot(), task=self._status(record)))
             return
