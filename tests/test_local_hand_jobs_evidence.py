@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -12,6 +14,7 @@ from unittest import mock
 import zipfile
 
 from local_hand_jobs import evidence
+from local_hand_jobs.contract import Principal
 from local_hand_jobs.evidence import EvidenceError, EvidenceStore, FrozenSnapshot, QuiescenceProof
 
 OP = "2b909984-2ac7-41ab-8d96-9febc473284d"
@@ -874,6 +877,49 @@ class EvidenceTests(unittest.TestCase):
         self.fixture.store.seal(OP)
         self.assertCode("CONFLICT", lambda: self.fixture.store.manifest(OP, principal="reader",
                        cursor=first["next_cursor"]))
+
+    def test_manifest_cursor_accepts_equal_principals_with_different_set_order(self):
+        # This real scope ordering collision is reproducible with Python's
+        # fixed hash seed; other interpreter seeds may conceal the defect.
+        if os.environ.get("PYTHONHASHSEED") != "0":
+            result = subprocess.run([sys.executable, "-m", "unittest", self.id()],
+                env=dict(os.environ, PYTHONHASHSEED="0", PYTHONPATH=os.pathsep.join(sys.path)),
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return
+        scopes = ["lh:cancel", "lh:evidence", "lh:inspect", "lh:read", "lh:reconcile", "lh:submit"]
+        original = Principal("reader", frozenset(scopes))
+        refreshed = Principal("reader", frozenset(scopes[:4] + list(reversed(scopes[4:]))))
+        self.assertEqual(original, refreshed)
+        self.assertNotEqual(str(original), str(refreshed))
+        self.fixture.sealed()
+        self.fixture.store.authorize = lambda p, operation: self.fixture.authorize(p.principal_id, operation)
+        first = self.fixture.store.manifest(OP, principal=original, page_size=1)
+        expected = self.fixture.store.manifest(OP, principal=original, page_size=1, cursor=first["next_cursor"])
+        actual = self.fixture.store.manifest(OP, principal=refreshed, page_size=1, cursor=first["next_cursor"])
+        self.assertEqual(actual, expected)
+        self.assertNotEqual(actual["artifacts"], first["artifacts"])
+
+    def test_manifest_cursor_keeps_subject_scopes_and_current_authorization_bound(self):
+        self.fixture.sealed()
+        def authorize(principal, operation):
+            if "lh:evidence" not in principal.scopes:
+                raise EvidenceError("UNAUTHORIZED", "evidence scope missing")
+            # Both users are admitted in this synthetic store; the cursor must
+            # still remain bound to its original caller and exact grant set.
+            self.fixture.authorize("reader", operation)
+        self.fixture.store.authorize = authorize
+        original = Principal("reader", frozenset({"lh:read", "lh:evidence"}))
+        first = self.fixture.store.manifest(OP, principal=original, page_size=1)
+        for changed in (Principal("another-reader", original.scopes),
+                        Principal("reader", frozenset({"lh:evidence"}))):
+            self.assertCode("CONFLICT", lambda: self.fixture.store.manifest(OP, principal=changed,
+                            cursor=first["next_cursor"]))
+        self.assertCode("UNAUTHORIZED", lambda: self.fixture.store.manifest(OP,
+                        principal=Principal("reader", frozenset({"lh:read"})), cursor=first["next_cursor"]))
+        self.fixture.authorized = False
+        self.assertCode("UNAUTHORIZED", lambda: self.fixture.store.manifest(OP, principal=original,
+                        cursor=first["next_cursor"]))
 
     def test_registered_index_isolated_from_incomplete_or_unrelated_publications(self):
         artifact = self.fixture.sealed()

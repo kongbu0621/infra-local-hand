@@ -22,7 +22,7 @@ import uuid
 import zipfile
 from typing import Any, Callable, Iterator
 
-from .contract import JobError
+from .contract import JobError, Principal
 
 MAX_RESPONSE = 512 * 1024
 DEFAULT_CHUNK = 64 * 1024
@@ -836,7 +836,12 @@ class EvidenceStore:
                  for r in records for a in r["artifacts"]]
         version = _hash(_json(items))
         offset = 0
-        binding = {"operation_id": operation_id, "principal": str(principal), "version": version}
+        # Equal authenticated principals can have different frozenset reprs
+        # after scope reordering. Bind semantic identity and grants instead;
+        # current authorization is still checked on every page.
+        subject = ({"principal_id": principal.principal_id, "scopes": sorted(principal.scopes)}
+                   if isinstance(principal, Principal) else str(principal))
+        binding = {"operation_id": operation_id, "principal": subject, "version": version}
         if cursor is not None:
             try:
                 if not isinstance(cursor, str) or len(cursor) > 2048 or not re.fullmatch(r"[A-Za-z0-9_-]+", cursor):
