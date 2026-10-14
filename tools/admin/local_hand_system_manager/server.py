@@ -755,6 +755,12 @@ class Gateway:
                 result = self._command("show", unit, "--all",
                     "--property=" + ",".join((*life.FIELDS, "MainPID", "ControlPID")))
                 values = _properties(result["stdout"].encode())
+                # systemd omits empty Exec* arrays even with --all, including
+                # when a deterministic unit has never existed. Match _show's
+                # normalization; identity, PID and cgroup fields stay mandatory.
+                for hook in ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"):
+                    values.setdefault(hook, "")
+                q._keys(values, set(life.FIELDS) | {"MainPID", "ControlPID"})
                 q.require(result["returncode"] == 0 and values.get("Id") == unit
                           and values.get("LoadState") == "not-found"
                           and values.get("ActiveState") == "inactive" and values.get("SubState") == "dead"

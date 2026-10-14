@@ -130,6 +130,9 @@ class GatewayTests(unittest.TestCase):
         fields = dict.fromkeys(server.life.FIELDS, "")
         fields.update(Id=unit, LoadState="not-found", ActiveState="inactive", SubState="dead",
                       MainPID="0", ControlPID="0")
+        # Actual systemd 255 output for an absent stage omits these arrays.
+        for hook in ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload"):
+            fields.pop(hook)
         gateway._command = mock.Mock(side_effect=lambda *args: dict(returncode=0, stderr="",
             stdout="".join(k + "=" + v + "\n" for k, v in fields.items())))
         result, fds = gateway.dispatch("observe", dict(ref=ref, view="full"))
