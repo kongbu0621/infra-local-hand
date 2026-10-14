@@ -410,6 +410,18 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         _require_optional()
+        # Enable only our sanitized authentication diagnostics. Raising the
+        # root/HTTP-client level would also log private issuer URLs.
+        import logging
+        logger = logging.getLogger("local_hand_mcp.auth")
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s %(levelname)s pid=%(process)d %(name)s:%(lineno)d %(message)s",
+                datefmt="%Y-%m-%dT%H:%M:%S%z"))
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
         from local_hand_mcp.auth import AuthConfig, JWTVerifier
         from local_hand_jobs.cli import create_broker, MaintenanceServer, close_service
         from local_hand_jobs.contract import Principal

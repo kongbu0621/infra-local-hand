@@ -10,6 +10,7 @@ import base64
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import re
 import time
 from types import MappingProxyType
@@ -21,6 +22,10 @@ from local_hand_jobs.contract import JobError, Principal, strict_loads
 MAX_AUTH_DOCUMENT = 65536
 MAX_TOKEN = 16384
 MAX_KEYS = 32
+STARTUP_METADATA_RETRY_DELAYS = (1, 2, 4, 8, 8)
+STARTUP_METADATA_TIMEOUT = 60
+_TRANSIENT_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+_LOG = logging.getLogger(__name__)
 _TOKEN_PART = re.compile(r"[A-Za-z0-9_-]+\Z")
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _SCOPE = re.compile(r"[A-Za-z0-9:._-]{1,128}\Z")
@@ -29,6 +34,29 @@ _ALGORITHMS = frozenset({"RS256", "ES256"})
 
 def _deny() -> JobError:
     return JobError("UNAUTHORIZED", "Access token could not be verified")
+
+
+class _DocumentUnavailable(JobError):
+    """A retryable read failure; no endpoint or transport details escape."""
+
+    def __init__(self, reason: str):
+        super().__init__("UNAUTHORIZED", "Access token could not be verified")
+        self.reason = reason
+
+
+def _exception_location(error: BaseException) -> str:
+    """Keep exception types and numeric OS codes, never messages or URLs."""
+    chain = []
+    for _ in range(5):
+        name = type(error).__name__
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name):
+            name = "Exception"
+        code = getattr(error, "errno", None)
+        chain.append(name + (f"(errno={code})" if type(code) is int else ""))
+        error = error.__cause__ or error.__context__
+        if error is None:
+            break
+    return "/".join(chain)
 
 
 def _url(value: object) -> str:
@@ -218,6 +246,12 @@ class JWTVerifier:
     async def _document(self, url: str) -> dict[str, Any]:
         import httpx2
 
+        kind = "metadata" if url == self.config.metadata_url else "jwks"
+        progress = _LOG.info if kind == "metadata" else _LOG.debug
+        started = time.monotonic()
+        stage, reason, received = "connect", "transport", 0
+        progress("Auth document read: document=%s stage=request timeout_seconds=%s",
+                 kind, self.config.request_timeout_seconds)
         try:
             async with asyncio.timeout(self.config.request_timeout_seconds):
                 async with httpx2.AsyncClient(
@@ -227,37 +261,95 @@ class JWTVerifier:
                     async with client.stream("GET", url, headers={
                         "Accept": "application/json", "Accept-Encoding": "identity",
                     }) as response:
+                        stage, reason = "headers", "http_status"
+                        progress("Auth document read: document=%s stage=headers http_status=%d elapsed_ms=%d",
+                                 kind, response.status_code, (time.monotonic() - started) * 1000)
+                        if response.status_code in _TRANSIENT_HTTP_STATUS:
+                            raise _DocumentUnavailable("http_" + str(response.status_code))
                         if response.status_code != 200:
                             raise _deny()
                         # Bound bytes before a decoder can inflate a tiny
                         # response into an arbitrarily large in-memory chunk.
                         # A server ignoring identity negotiation is rejected.
+                        reason = "content_encoding"
                         if any(value.strip().lower() != "identity" for value in
                                response.headers.get_list("content-encoding")):
                             raise _deny()
+                        stage, reason = "body", "size_limit"
                         body = bytearray()
                         async for chunk in response.aiter_bytes(chunk_size=4096):
+                            received += len(chunk)
                             if len(body) + len(chunk) > MAX_AUTH_DOCUMENT:
                                 raise _deny()
                             body.extend(chunk)
+            progress("Auth document read: document=%s stage=body_complete bytes=%d elapsed_ms=%d",
+                     kind, received, (time.monotonic() - started) * 1000)
+            stage, reason = "decode", "invalid_json"
             decoded = strict_loads(bytes(body))
+            reason = "document_shape"
             if not isinstance(decoded, dict):
                 raise _deny()
+            progress("Auth document read: document=%s stage=decoded elapsed_ms=%d",
+                     kind, (time.monotonic() - started) * 1000)
             return decoded
-        except Exception:
+        except _DocumentUnavailable as error:
+            _LOG.warning("Auth document unavailable: document=%s stage=%s reason=%s elapsed_ms=%d",
+                         kind, stage, error.reason, (time.monotonic() - started) * 1000)
+            raise
+        except (httpx2.TransportError, TimeoutError) as error:
+            _LOG.warning("Auth document unavailable: document=%s stage=%s errors=%s bytes=%d elapsed_ms=%d",
+                         kind, stage, _exception_location(error), received, (time.monotonic() - started) * 1000)
+            raise _DocumentUnavailable("transport_or_timeout") from None
+        except asyncio.CancelledError:
+            _LOG.info("Auth document read cancelled: document=%s stage=%s bytes=%d elapsed_ms=%d",
+                      kind, stage, received, (time.monotonic() - started) * 1000)
+            raise
+        except Exception as error:
+            _LOG.warning("Auth document rejected: document=%s stage=%s reason=%s errors=%s bytes=%d elapsed_ms=%d",
+                         kind, stage, reason, _exception_location(error), received, (time.monotonic() - started) * 1000)
+            raise _deny() from None
+
+    async def _startup_metadata(self) -> dict[str, Any]:
+        # network-online does not establish that an external issuer is ready.
+        # Retry only this read during startup, before the ASGI lifespan yields.
+        # Token/JWKS reads retain their existing cooldown and failure behavior.
+        delays = STARTUP_METADATA_RETRY_DELAYS
+        try:
+            async with asyncio.timeout(STARTUP_METADATA_TIMEOUT):
+                for attempt in range(len(delays) + 1):
+                    try:
+                        _LOG.info("Issuer metadata startup: stage=attempt attempt=%d/%d deadline_seconds=%d",
+                                  attempt + 1, len(delays) + 1, STARTUP_METADATA_TIMEOUT)
+                        return await self._document(self.config.metadata_url)
+                    except _DocumentUnavailable as error:
+                        if attempt == len(delays):
+                            _LOG.error("Issuer metadata unavailable after %d startup attempts (%s)",
+                                       attempt + 1, error.reason)
+                            raise
+                        _LOG.warning("Issuer metadata unavailable during startup (%s); "
+                                     "retry %d/%d in %ss", error.reason,
+                                     attempt + 1, len(delays), delays[attempt])
+                        await asyncio.sleep(delays[attempt])
+        except TimeoutError:
+            _LOG.error("Issuer metadata startup deadline reached")
             raise _deny() from None
 
     async def validate_issuer_metadata(self) -> None:
         """Refuse first linkage when discovery does not match admitted PKCE flow."""
-        metadata = await self._document(self.config.metadata_url)
+        started = time.monotonic()
+        metadata = await self._startup_metadata()
         expected = {name: getattr(self.config, name) for name in
                     ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri")}
-        if any(metadata.get(name) != value for name, value in expected.items()):
-            raise _deny()
+        for name, value in expected.items():
+            if metadata.get(name) != value:
+                _LOG.error("Issuer metadata rejected: stage=validation field=%s reason=mismatch", name)
+                raise _deny()
+        _LOG.info("Issuer metadata checked: stage=validation fields=issuer,authorization_endpoint,token_endpoint,jwks_uri")
         for key, value in (("response_types_supported", "code"),
                            ("grant_types_supported", "authorization_code"),
                            ("code_challenge_methods_supported", "S256")):
             if type(metadata.get(key)) is not list or value not in metadata[key]:
+                _LOG.error("Issuer metadata rejected: stage=validation field=%s reason=required_value_missing", key)
                 raise _deny()
         # This resource server never exchanges authorization codes. Client
         # authentication is configured for the predefined OAuth client, not
@@ -266,7 +358,9 @@ class JWTVerifier:
         scopes = metadata.get("scopes_supported")
         if (type(scopes) is not list or any(not isinstance(scope, str) for scope in scopes)
                 or not set(self.config.scopes) <= set(scopes)):
+            _LOG.error("Issuer metadata rejected: stage=validation field=scopes_supported reason=missing_or_invalid")
             raise _deny()
+        _LOG.info("Issuer metadata validated: stage=complete elapsed_ms=%d", (time.monotonic() - started) * 1000)
 
     async def _key(self, kid: str, algorithm: str):
         import jwt

@@ -12,7 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from local_hand_jobs.contract import JobError
@@ -222,6 +222,107 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.issuer.metadata["jwks_uri"] = "https://attacker.example/keys"
         with self.assertRaises(JobError):
             await self.issuer.verifier.validate_issuer_metadata()
+
+    async def test_startup_recovers_transient_metadata_failures_at_the_same_url(self):
+        import httpx2
+
+        calls = []
+
+        def respond(request):
+            calls.append(str(request.url))
+            if len(calls) == 1:
+                raise httpx2.ConnectError("private connection details", request=request) from OSError(111, "private OS details")
+            if len(calls) == 2:
+                return httpx2.Response(503)
+            return self.issuer.handle(request)
+
+        verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(respond))
+        with patch("local_hand_mcp.auth.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            with self.assertLogs("local_hand_mcp.auth", level="WARNING") as logs:
+                await verifier.validate_issuer_metadata()
+        self.assertEqual([self.issuer.config.metadata_url] * 3, calls)
+        self.assertEqual([1, 2], [call.args[0] for call in sleep.await_args_list])
+        self.assertNotIn("private connection details", " ".join(logs.output))
+        self.assertNotIn("private OS details", " ".join(logs.output))
+        self.assertNotIn("issuer.example", " ".join(logs.output))
+        self.assertIn("stage=connect", " ".join(logs.output))
+        self.assertIn("ConnectError/ConnectionRefusedError(errno=111)", " ".join(logs.output))
+        self.assertIn("stage=headers reason=http_503", " ".join(logs.output))
+
+    async def test_startup_metadata_unavailability_has_a_finite_attempt_budget(self):
+        self.issuer.status = 503
+        with patch("local_hand_mcp.auth.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            with self.assertRaises(JobError) as caught:
+                await self.issuer.verifier.validate_issuer_metadata()
+        self.assertEqual("UNAUTHORIZED", caught.exception.code)
+        self.assertEqual(6, len(self.issuer.calls))
+        self.assertEqual(5, sleep.await_count)
+
+    async def test_startup_does_not_retry_invalid_metadata_or_permanent_http_errors(self):
+        import httpx2
+
+        responses = [httpx2.Response(status) for status in (301, 401, 403, 404)]
+        responses += [httpx2.Response(200, content=b"not json"),
+                      httpx2.Response(200, json={**self.issuer.metadata, "issuer": "https://other.example"}),
+                      httpx2.Response(200, json={**self.issuer.metadata, "code_challenge_methods_supported": ["plain"]})]
+        for response in responses:
+            calls = []
+
+            def respond(request):
+                calls.append(request)
+                return response
+
+            verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(respond))
+            with self.subTest(status=response.status_code), patch(
+                    "local_hand_mcp.auth.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                with self.assertRaises(JobError):
+                    await verifier.validate_issuer_metadata()
+                sleep.assert_not_awaited()
+                self.assertEqual(1, len(calls))
+
+    async def test_startup_deadline_and_cancellation_stop_pending_metadata_reads(self):
+        import httpx2
+
+        entered, closed = asyncio.Event(), asyncio.Event()
+
+        async def blocked(request):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+
+        verifier = JWTVerifier(self.issuer.config, http_transport=httpx2.MockTransport(blocked))
+        began = asyncio.get_running_loop().time()
+        with patch("local_hand_mcp.auth.STARTUP_METADATA_TIMEOUT", 0.02):
+            with self.assertRaises(JobError):
+                await verifier.validate_issuer_metadata()
+        self.assertLess(asyncio.get_running_loop().time() - began, 0.5)
+        self.assertTrue(closed.is_set())
+        entered.clear()
+        closed.clear()
+        task = asyncio.create_task(verifier.validate_issuer_metadata())
+        await asyncio.wait_for(entered.wait(), 1)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(closed.is_set())
+
+    async def test_metadata_logs_identify_read_and_validation_stages_without_values(self):
+        with self.assertLogs("local_hand_mcp.auth", level="INFO") as logs:
+            await self.issuer.verifier.validate_issuer_metadata()
+        output = " ".join(logs.output)
+        for stage in ("attempt", "request", "headers", "body_complete", "decoded", "validation", "complete"):
+            self.assertIn("stage=" + stage, output)
+        self.assertIn("http_status=200", output)
+        self.assertIn("elapsed_ms=", output)
+        self.assertNotIn("issuer.example", output)
+        self.issuer.metadata["jwks_uri"] = "https://private.example/keys"
+        with self.assertLogs("local_hand_mcp.auth", level="ERROR") as logs:
+            with self.assertRaises(JobError):
+                await self.issuer.verifier.validate_issuer_metadata()
+        self.assertIn("stage=validation field=jwks_uri reason=mismatch", " ".join(logs.output))
+        self.assertNotIn("private.example", " ".join(logs.output))
 
     async def test_public_client_discovery_does_not_require_none_auth_method(self):
         for methods in (["private_key_jwt", "client_secret_basic", "client_secret_post"], None):

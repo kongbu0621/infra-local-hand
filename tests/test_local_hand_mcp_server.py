@@ -470,7 +470,7 @@ class ServerTests(unittest.TestCase):
                 for resource in resources:
                     resource.close.assert_called_once()
 
-    def test_real_loopback_listener_uses_the_same_signed_transport(self):
+    def test_real_loopback_listener_waits_for_issuer_then_uses_signed_transport(self):
         import httpx2
         import uvicorn
         from local_hand_mcp.auth import AuthConfig, JWTVerifier
@@ -481,17 +481,32 @@ class ServerTests(unittest.TestCase):
             fixture = SyntheticIssuer()
             fixture.configuration["resource"] = f"http://127.0.0.1:{port}/mcp"
             fixture.config = AuthConfig.from_dict(fixture.configuration)
-            fixture.verifier = JWTVerifier(fixture.config, http_transport=fixture.transport)
+            unavailable = threading.Event()
+            metadata_calls = []
+
+            def respond(request):
+                if str(request.url) == fixture.config.metadata_url:
+                    metadata_calls.append(request)
+                    if len(metadata_calls) == 1:
+                        unavailable.set()
+                        return httpx2.Response(503)
+                return fixture.handle(request)
+
+            fixture.verifier = JWTVerifier(fixture.config, http_transport=httpx2.MockTransport(respond))
             broker = MemoryBroker()
             server = uvicorn.Server(uvicorn.Config(create_app(broker, fixture.verifier),
                                     host="127.0.0.1", port=port, access_log=False, log_level="error"))
             thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
             thread.start()
             try:
-                deadline = time.monotonic() + 3
+                self.assertTrue(unavailable.wait(timeout=2))
+                self.assertFalse(server.started)
+                self.assertEqual([], broker.calls)
+                deadline = time.monotonic() + 5
                 while not server.started and thread.is_alive() and time.monotonic() < deadline:
                     time.sleep(0.01)
                 self.assertTrue(server.started, "Isolated loopback listener did not start")
+                self.assertEqual(2, len(metadata_calls))
                 with httpx2.Client(trust_env=False, timeout=2) as client:
                     response = client.post(fixture.config.resource,
                         headers={"Authorization": "Bearer " + fixture.token(), "Accept": "application/json, text/event-stream"},
