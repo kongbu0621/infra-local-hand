@@ -477,6 +477,27 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with self.assertRaises(JobError) as caught:Policy.from_file(path)
         self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
 
+    def test_workspace_source_may_be_root_owned_readonly_but_work_roots_stay_private(self):
+        for name in ("broker", "authority", "work", "evidence", "temporary", "source", "cache"):
+            (self.root / name).mkdir(mode=0o700)
+        for name in ("python", "broker.py"):
+            (self.root / name).write_bytes(b"synthetic fixture bytes")
+            (self.root / name).chmod(0o600)
+        config=copy.deepcopy(self.config)
+        source=config['profiles']['fixture']['sources']['source']
+        source['blobs']['tests/test_sample.py']='a'*40
+        source['validations']={'core':['test_sample']}
+        policy=Policy(config);actual=Path.lstat
+        def metadata(path):
+            info=actual(path)
+            if path==self.root/'source':
+                values=list(info);values[0]=stat.S_IFDIR|0o755;values[4]=0
+                return os.stat_result(values)
+            return info
+        with patch.object(Path,'lstat',metadata):policy.validate_paths()
+        (self.root/'work').chmod(0o755)
+        with patch.object(Path,'lstat',metadata),self.assertRaises(JobError):policy.validate_paths()
+
     def test_file_loader_rejects_public_config_symlink_and_path_symlink(self):
         path = self.root / "policy.json"
         path.write_text(json.dumps(self.config))

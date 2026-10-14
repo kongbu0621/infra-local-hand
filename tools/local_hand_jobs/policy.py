@@ -445,10 +445,12 @@ class Policy:
         """Startup-only metadata admission, before any request service starts."""
         directories = [self.broker_root, self.authority_root]
         files = [self.execution_entrypoint]
+        protected_sources = set()
         for profile in self.profiles.values():
             directories.extend(profile[key] for key in ("work_root", "evidence_root", "temporary_root"))
             files.append(profile["python"])
             directories.extend(item["root"] for category in ("sources", "build_caches") for item in profile[category].values())
+            protected_sources.update(item['root'] for item in profile['sources'].values() if 'validations' in item)
             # Do not touch NAS here: source/content and mounts require registered
             # supervised preflight. Only lexical path admission occurs at load.
         try:
@@ -462,7 +464,9 @@ class Policy:
                         raise _bad()
                 info = path.lstat()
                 if value in directories:
-                    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                    immutable_source = value in protected_sources and info.st_uid == 0 and not info.st_mode & 0o022
+                    private_owned = info.st_uid == os.geteuid() and not info.st_mode & 0o077
+                    if not stat.S_ISDIR(info.st_mode) or not (immutable_source or private_owned):
                         raise _bad()
                 elif (not stat.S_ISREG(info.st_mode) or info.st_mode & 0o022
                       or info.st_uid not in {0, os.geteuid()}):
