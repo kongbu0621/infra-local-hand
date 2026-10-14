@@ -462,6 +462,54 @@ class TaskSessionTests(unittest.TestCase):
         self.assertFalse(self.f.row()["record"]["handles"])
         self.assertNotIn("quota_preparations", self.f.row()["record"])
 
+    def test_cancel_after_recovery_handshake_finishes_same_task_without_new_control(self):
+        for phase in ("preflight", "business"):
+            with self.subTest(phase=phase):
+                case = TaskSessionTests()
+                case.setUp(); self.addCleanup(case.doCleanups)
+                for current in ("preflight", "business")[:1 if phase == "preflight" else 2]:
+                    case.f.close(current)
+                old = case.f.row()
+                recovered = Broker(case.broker.state, case.broker.policy, case.broker.registry,
+                                   case.f.runner, evidence=case.broker.evidence, quota_required=True)
+                manager = Mock()
+                session = TaskSession(dict(case.session.value, mode="recover"), manager, None)
+                case.addCleanup(session.close)
+                session.attach(recovered)
+                session.recover()
+                session.tick()
+                self.assertTrue(session.finished)
+                manager.finish_recovery.assert_called_once()
+                before = copy.deepcopy(case.f.row())
+                starts = copy.deepcopy(case.f.runner.starts)
+                events = recovered.state.events("job", case.f.identity)
+                self.assertEqual("RECONCILE_REQUIRED", before["record"]["lifecycle"])
+                session.tick()
+                self.assertEqual(events, recovered.state.events("job", case.f.identity))
+                endpoint = Path(case.f.f.temp.name) / "cancel-after-recovery.sock"
+                server = MaintenanceServer(recovered, endpoint, {os.geteuid():case.f.f.owner})
+                server.start(); case.addCleanup(server.close)
+                cancel = dict(operation_id=case.f.identity, expected_request_digest=old["digest"], target={"kind":"job"})
+                local_request(endpoint, "lh_job_cancel", cancel)
+                with patch.object(recovered, "_start", side_effect=AssertionError("Recovery launched work")):
+                    session.tick(); session.tick()
+                status = local_request(endpoint, "lh_job_status", {"operation_id":case.f.identity})
+                self.assertEqual("TERMINAL", status["lifecycle"])
+                self.assertEqual("CANCELLED" if phase == "preflight" else "SUCCEEDED", status["outcome"])
+                self.assertEqual(starts, case.f.runner.starts)
+                self.assertEqual(before["record"]["exit_proof"], case.f.row()["record"]["exit_proof"])
+                self.assertEqual(old["record"]["delivery_intents"], case.f.row()["record"]["delivery_intents"])
+                self.assertEqual(old["record"]["quota_closed"], case.f.row()["record"]["quota_closed"])
+                with recovered.state.transaction() as tx:
+                    self.assertEqual(0, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (case.f.identity,)).fetchone()[0])
+                    self.assertEqual(6, tx.execute("SELECT count(*) FROM leases").fetchone()[0])
+                events = recovered.state.events("job", case.f.identity)
+                repeated = local_request(endpoint, "lh_job_cancel", cancel)
+                session.tick()
+                self.assertEqual(status["event_seq"], repeated["event_seq"])
+                self.assertEqual(events, recovered.state.events("job", case.f.identity))
+                manager.finish_recovery.assert_called_once()
+
     def test_failed_control_exchange_retains_cancel_observation(self):
         self.session.tick()
         self.channel.enqueue({"action": "unrecognized", "value": None})

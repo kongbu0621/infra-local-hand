@@ -242,14 +242,15 @@ class TaskSession:
         return following
 
     def tick(self):
-        if self.closed or self.finished:
+        if self.closed:
             return
-        if self.failure is not None:
+        if self.finished or self.failure is not None:
             key = ("job", self.value["operation_id"])
             row = self.broker.state.get(*key)
-            # Failed control transport cannot replay commands, but a durable
-            # cancellation must still consume a retained exit after the live
-            # handle was removed. The broker's cancel fence forbids new starts.
+            # Ending the control exchange does not end the task's API window.
+            # A later durable cancellation must still consume retained exits,
+            # without replaying commands or repeating the recovery handshake.
+            # The broker's cancel fence forbids new starts.
             if (key in self.broker._active or key in self.broker._recovering
                     or row is not None and row["record"]["cancel_requested"]
                     and row["record"]["lifecycle"] != "TERMINAL"):
