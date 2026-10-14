@@ -21,7 +21,7 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"),"Linux administrator supervision")
 class ManagementTests(unittest.TestCase):
-    def setup_manager(self):
+    def setup_manager(self, child_code="pass"):
         cfg=config();events=[]
         env=dict(deadline_ns=10*SECOND,output_bytes=32768)
         owner=dict(boot_id=BOOT,unit="outer.service",invocation_id="e"*32,cgroup="/outer.slice/outer.service",observed_ns=SECOND)
@@ -42,13 +42,84 @@ class ManagementTests(unittest.TestCase):
         manager._show=show;manager._command=command;manager._parent_empty=lambda binding:True
         original=Capture.start
         def launch(cap,argv):
-            original(cap,[sys.executable,"-I","-c","pass"])
+            original(cap,[sys.executable,"-I","-c",child_code])
             cap.process.wait(timeout=2);cap.pump()
             self.addCleanup(cap.close_pipes)
         for patch in (mock.patch.object(m,"boottime_ns",return_value=2*SECOND),
                       mock.patch.object(m,"_boot_id",return_value=BOOT),mock.patch.object(Capture,"start",launch)):
             patch.start();self.addCleanup(patch.stop)
         return manager,events
+
+    def stopped_manager(self):
+        manager, events = self.setup_manager("raise SystemExit(7)")
+        manager.begin(); manager.launch("admission")
+        show = manager._show
+        def running(binding, **options):
+            value = show(binding, **options)
+            if value["ActiveState"] == "active":value["SubState"] = "running"
+            return value
+        manager._show = running
+        self.assertIsNone(manager.poll())  # Bind both original invocations.
+        return manager, events
+
+    def test_cancel_stops_original_units_and_drains_without_repeated_manager_polls(self):
+        manager, events = self.stopped_manager()
+        pin = manager.installation.active().as_dict()["query_parent"]
+        with mock.patch.object(manager, "_show", wraps=manager._show) as show, \
+             mock.patch.object(manager, "_command", wraps=manager._command) as command, \
+             mock.patch.object(m.quota_lifecycle, "parent", side_effect=[(pin, False), (pin, False), (pin, True)]), \
+             mock.patch.object(m.time, "sleep"):
+            result = manager.finish_stopped()
+            self.assertIs(result, manager.finish_stopped())
+        self.assertEqual(4, show.call_count)
+        self.assertEqual(2, command.call_count)
+        self.assertEqual("STOPPED", events[-1][0])
+        self.assertNotIn("CLOSED", [kind for kind, _ in events])
+        self.assertEqual("local-hand-quota-management-stopped/v1", result["schema"])
+        self.assertTrue(result["query_empty"] and result["management_empty"])
+        for stage in result["stages"].values():
+            self.assertEqual(7, stage["returncode"])  # Original nonzero exit survives.
+            self.assertEqual(["stderr", "stdout"], stage["eof"])
+        self.assertEqual(2, sum(kind == "DELIVERY" for kind, _ in events))
+
+    def test_cancel_rejects_changed_identity_before_stopping_a_unit(self):
+        manager, events = self.stopped_manager()
+        manager.runs["listener"]["invocation"] = "f" * 32
+        with mock.patch.object(manager, "_command", wraps=manager._command) as command:
+            with self.assertRaisesRegex(ValueError, "INVOCATION_CHANGED"):
+                manager.finish_stopped()
+        command.assert_not_called()
+        self.assertNotIn("STOPPED", [kind for kind, _ in events])
+
+    def test_cancel_missing_eof_keeps_original_deadline_and_cannot_claim_stopped(self):
+        manager, events = self.stopped_manager()
+        pin = manager.installation.active().as_dict()["query_parent"]
+        cap = manager.runs["listener"]["capture"]
+        cap.eof.clear()
+        clock = iter([2*SECOND, 2*SECOND, 2*SECOND, manager.end])
+        with mock.patch.object(cap, "pump"), mock.patch.object(m, "boottime_ns", side_effect=lambda:next(clock)), \
+             mock.patch.object(m.quota_lifecycle, "parent", return_value=(pin, True)), mock.patch.object(m.time, "sleep"):
+            with self.assertRaisesRegex(ValueError, "MANAGEMENT_STOP_DEADLINE"):
+                manager.finish_stopped()
+        self.assertNotIn("STOPPED", [kind for kind, _ in events])
+
+    def test_cancelled_management_record_is_durable_and_not_normal_closure(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as directory:
+            path=Path(directory)/"record";path.touch(mode=0o600);info=path.stat()
+            pin=dict(path=str(path),device=info.st_dev,inode=info.st_ino)
+            with mock.patch.object(m.c,"open_protected",side_effect=fixture_open):
+                log=m.RunRecord(pin)
+                try:
+                    log("INTENT", {"original": True})
+                    for role in ("listener", "admission"):
+                        log("DELIVERY", {"role": role});log("INVOCATION", {"role": role})
+                    log("STOPPED", {"original_returncodes": [7, 7]})
+                    with self.assertRaisesRegex(ValueError, "MANAGEMENT_RECORD_CLOSED"):
+                        log("CLOSED", {})
+                finally:log.close()
+            saved=[json.loads(line) for line in path.read_text().splitlines()]
+            self.assertEqual("STOPPED", saved[-1]["kind"])
+            self.assertEqual([7, 7], saved[-1]["value"]["original_returncodes"])
 
     def test_joint_management_capture_binds_both_units_and_never_relaunches(self):
         manager,events=self.setup_manager()

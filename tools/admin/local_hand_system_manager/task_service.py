@@ -111,6 +111,7 @@ def checked_plan(base, prepared, grant, previous, binding):
 class TaskStopped(Exception):
     def __init__(self, snapshot):
         self.snapshot = snapshot
+        super().__init__("Original task stopped; retained snapshot available")
 
 
 def finish_stopped_management(coordinator):
@@ -118,10 +119,7 @@ def finish_stopped_management(coordinator):
         q.require(coordinator.management_result is not None, "TASK_MANAGEMENT_CLOSURE_MISSING")
         return coordinator.management_result
     if coordinator.management.used:
-        while coordinator.management.poll() is None:
-            coordinator._pump()
-            threading.Event().wait(0.05)
-        return coordinator.management.finish()
+        return coordinator.management.finish_stopped()
     return None
 
 

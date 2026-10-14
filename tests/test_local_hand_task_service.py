@@ -18,6 +18,19 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrator task service")
 class TaskServiceTests(unittest.TestCase):
+    def test_cancel_uses_bounded_stop_path_and_hides_snapshot_in_exception_text(self):
+        coordinator = Mock(management_closed=False)
+        coordinator.management.used = True
+        result = task_service.finish_stopped_management(coordinator)
+        self.assertIs(result, coordinator.management.finish_stopped.return_value)
+        coordinator.management.poll.assert_not_called()
+        coordinator.management.finish.assert_not_called()
+        snapshot = {"token": "private-secret", "path": "/private/host"}
+        error = task_service.TaskStopped(snapshot)
+        self.assertIs(snapshot, error.snapshot)
+        self.assertNotIn("private-secret", str(error))
+        self.assertNotIn("/private/host", str(error))
+
     def test_cancel_after_management_closure_reuses_proof_without_second_finish(self):
         coordinator = Mock(management_closed=True, management_result={"original": "closure"})
         coordinator.management.finish.side_effect = ValueError("MANAGEMENT_RECORD_CLOSED")

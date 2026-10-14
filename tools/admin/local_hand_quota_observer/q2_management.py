@@ -10,9 +10,10 @@ import hashlib
 import fcntl
 import os
 from pathlib import PurePosixPath
+import time
 from types import SimpleNamespace
 
-from local_hand_jobs import quota_closure as close, quota_contract as q, quota_grant as g
+from local_hand_jobs import quota_closure as close, quota_contract as q, quota_grant as g, quota_lifecycle
 from . import controller_guard as guard, q2_config as c, q2_runtime as runtime
 from .systemd_runtime import Capture, boottime_ns, _boot_id
 
@@ -100,6 +101,7 @@ class Management(runtime.UnitTransport):
         self.config = SimpleNamespace(systemctl_path=installation.data()["programs"]["systemctl"]["path"],
             query_slice=PurePosixPath(p["path"]).name, cgroup_parent_device=p["device"], cgroup_parent_inode=p["inode"])
         self.controls = []; self.launcher = None; self.runs = {}; self.used = False; self.failure = None
+        self.stopped_result = None
         self.end = min(envelope["deadline_ns"], runtime.deadline(installation, "listener"))
 
     def _command(self, arguments, *, absolute_end_ns):
@@ -205,6 +207,69 @@ class Management(runtime.UnitTransport):
         q.require(_boot_id() == self.owner["boot_id"] and boottime_ns() < self.end, "MANAGEMENT_DEADLINE")
         return result
 
+    def finish_stopped(self):
+        """Stop the original management pair without claiming ordinary success.
+
+        Called only after the task's ordinary stop proof. No new manager launch,
+        query, deadline or command budget is created. At most three controls per
+        original unit are needed; waiting for client EOF uses only pipe reads.
+        """
+        if self.stopped_result is not None:
+            return self.stopped_result
+        q.require(self.used and not self.failure and set(self.runs) == {"listener", "admission"},
+                  "MANAGEMENT_STOP_UNBOUND")
+        q.require(all(part["invocation"] is not None for part in self.runs.values()), "MANAGEMENT_STOP_UNBOUND")
+        stages = {}
+        for role, part in self.runs.items():
+            q.require(_boot_id() == self.owner["boot_id"] and boottime_ns() < self.end, "MANAGEMENT_STOP_DEADLINE")
+            binding = self.binding(role)
+            if not part["stop_ok"]:
+                q.require(not part["stop_attempted"], "MANAGEMENT_STOP_UNCERTAIN")
+                before = self._show(binding, absolute_end_ns=self.end)
+                self._unit_identity(binding, before, invocation=part["invocation"])
+                part["stop_attempted"] = True
+                self._command(("stop", binding.unit), absolute_end_ns=self.end)
+                part["stop_ok"] = True
+            else:
+                before = part["terminal"]
+            after = part["after"] or self._show(binding, absolute_end_ns=self.end)
+            q.require(after["Id"] == binding.unit and after["Job"] in ("", "0"), "MANAGEMENT_STOP_UNRESOLVED")
+            if after["LoadState"] == "loaded":
+                self._unit_identity(binding, after, invocation=part["invocation"])
+                q.require(after["ActiveState"] in ("inactive", "failed"), "MANAGEMENT_STOP_UNRESOLVED")
+            else:
+                q.require(after["LoadState"] == "not-found", "MANAGEMENT_STOP_UNRESOLVED")
+            part["after"] = after
+            stages[role] = dict(unit=binding.unit, invocation_id=part["invocation"], before=before, after=after)
+        captures = [*self.controls, *(part["capture"] for part in self.runs.values())]
+        query_parent = self.installation.active().as_dict()["query_parent"]
+        # A query already dispatched by admission may still be finishing under
+        # its original unit deadline. Stopped dispatchers cannot start another.
+        while True:
+            q.require(_boot_id() == self.owner["boot_id"] and boottime_ns() < self.end, "MANAGEMENT_STOP_DEADLINE")
+            for cap in captures:
+                cap.pump()
+                q.require(cap.error is None, "MANAGEMENT_STOP_CAPTURE")
+            query_identity, query_empty = quota_lifecycle.parent("/sys/fs/cgroup" + query_parent["path"], query_parent)
+            if all(cap.done for cap in captures) and query_empty and self._parent_empty(self.binding("listener")):
+                break
+            time.sleep(0.01)
+        for role, part in self.runs.items():
+            cap = part["capture"]
+            stages[role].update(returncode=cap.process.returncode, eof=sorted(cap.eof),
+                stdout_sha256=hashlib.sha256(cap.stdout).hexdigest(), stderr_sha256=hashlib.sha256(cap.stderr).hexdigest())
+        for cap in captures:
+            cap.close_pipes()
+        q.require(all(cap.done for cap in captures), "MANAGEMENT_STOP_CAPTURE")
+        q.require(_boot_id() == self.owner["boot_id"] and boottime_ns() < self.end, "MANAGEMENT_STOP_DEADLINE")
+        result = dict(schema="local-hand-quota-management-stopped/v1", config_digest=self.installation.digest,
+            request_digest=self.installation.active().request.digest, controller=self.owner, observed_ns=boottime_ns(),
+            stages=stages, query_parent=query_identity, query_empty=True, management_empty=True,
+            control_calls=len(self.controls))
+        self.persist("STOPPED", result)
+        self.stopped_result = result
+        return result
+
 
 def assemble(grant, receipt, peer, ordinary, management, parents, *, now_ns):
     """Combine already retained facts; caller authenticates their protected files."""
@@ -262,7 +327,7 @@ class RunRecord:
                 q.require(self.total > 0 and role in ("listener", "admission"), "MANAGEMENT_RECORD_ORDER")
                 q.require(role not in (self.delivered if kind == "DELIVERY" else self.invocations)
                     and (kind != "INVOCATION" or role in self.delivered), "MANAGEMENT_RECORD_ORDER")
-            elif kind == "CLOSED":
+            elif kind in ("CLOSED", "STOPPED"):
                 q.require(self.invocations == {"listener", "admission"}, "MANAGEMENT_RECORD_ORDER")
             else:
                 raise q.QuotaError("MANAGEMENT_RECORD_KIND")
@@ -274,7 +339,7 @@ class RunRecord:
             self.total += len(raw); self.previous = hashlib.sha256(raw).hexdigest()
             if kind == "DELIVERY":self.delivered.add(role)
             if kind == "INVOCATION":self.invocations.add(role)
-            if kind == "CLOSED":self.finished = True
+            if kind in ("CLOSED", "STOPPED"):self.finished = True
         except BaseException:
             self.poisoned = True
             raise
