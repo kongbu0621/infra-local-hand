@@ -668,6 +668,7 @@ class Gateway:
             if op == "inventory":
                 self._parent()
                 result = self._command("list-units", "lhj-*.service", "--all", "--plain", "--no-legend")
+                q.require(result["returncode"] == 0, "SYSTEM_INVENTORY_UNKNOWN")
                 lines = [line for line in result["stdout"].splitlines() if line.strip()]
                 names = [line.split()[0] for line in lines]
                 q.require(len(names) == len(set(names)), "SYSTEM_INVENTORY_LIMIT")
@@ -676,17 +677,26 @@ class Gateway:
                     if unit in known:
                         self._show(known[unit])
                         continue
-                    # Retained failed units are history, not a permanent lock
+                    # Retained stopped units are history, not a permanent lock
                     # on new work. Never adopt or modify them; verify that no
                     # process, cgroup or pending job remains before filtering.
                     q.require(re.fullmatch(r"lhj-[0-9a-f]{64}\.service", unit), "SYSTEM_INVENTORY_UNKNOWN")
                     observed = self._command("show", unit,
-                        "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlGroup,Job")
+                        "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlGroup,Job,"
+                        "RemainAfterExit,ControlPID,ExecMainCode,ExecMainStatus")
                     fields = _properties(observed["stdout"].encode())
+                    state = (fields.get("ActiveState"), fields.get("SubState"))
+                    stopped = state in (("inactive", "dead"), ("failed", "failed"))
+                    # RemainAfterExit preserves a successful unit as active /
+                    # exited even though its processes and cgroup are gone.
+                    # Filter that empty record without stopping/adopting it or
+                    # changing the historical task's outcome and exit proof.
+                    retained_exit = (state == ("active", "exited")
+                        and fields.get("RemainAfterExit") == "yes" and fields.get("ControlPID") == "0"
+                        and fields.get("ExecMainCode") == "1" and fields.get("ExecMainStatus") == "0")
                     q.require(observed["returncode"] == 0 and fields.get("Id") == unit
                               and fields.get("LoadState") in ("loaded", "not-found")
-                              and fields.get("ActiveState") in ("inactive", "failed")
-                              and fields.get("SubState") in ("dead", "failed")
+                              and (stopped or retained_exit)
                               and fields.get("MainPID") == "0" and fields.get("ControlGroup") == ""
                               and fields.get("Job") in ("", "0"), "SYSTEM_INVENTORY_UNKNOWN")
                 selected = [line for line in lines if line.split()[0] in known]

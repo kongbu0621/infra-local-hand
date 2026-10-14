@@ -269,6 +269,35 @@ class GatewayTests(unittest.TestCase):
                 gateway.dispatch("inventory", {})
             fields[key] = previous
 
+    def test_retained_successful_remain_after_exit_unit_is_history_only(self):
+        gateway, _ = self.gateway()
+        unit = "lhj-" + "f" * 64 + ".service"
+        fields = dict(Id=unit, LoadState="loaded", ActiveState="active", SubState="exited",
+                      MainPID="0", ControlGroup="", Job="", RemainAfterExit="yes",
+                      ControlPID="0", ExecMainCode="1", ExecMainStatus="0")
+        def command(*args):
+            return dict(returncode=0, stderr="", stdout=(unit + " loaded active exited retained\n"
+                if args[0] == "list-units" else "".join(k + "=" + v + "\n" for k, v in fields.items())))
+        gateway._command = mock.Mock(side_effect=command)
+        result, _ = gateway.dispatch("inventory", {})
+        self.assertEqual("", result["stdout"])
+        self.assertEqual({}, gateway.parts)
+        self.assertEqual(["list-units", "show"], [call.args[0] for call in gateway._command.call_args_list])
+        for key, value in (("MainPID", "123"), ("ControlPID", "123"), ("ControlGroup", "/occupied"),
+                           ("Job", "4"), ("RemainAfterExit", "no"), ("SubState", "running"),
+                           ("ExecMainCode", "2"), ("ExecMainStatus", "1"), ("Id", "other")):
+            with self.subTest(key=key):
+                previous = fields[key]; fields[key] = value
+                with self.assertRaisesRegex(q.QuotaError, "SYSTEM_INVENTORY_UNKNOWN"):
+                    gateway.dispatch("inventory", {})
+                fields[key] = previous
+
+    def test_failed_inventory_query_is_not_an_empty_inventory(self):
+        gateway, _ = self.gateway()
+        gateway._command = mock.Mock(return_value=dict(returncode=1, stdout="", stderr="unavailable"))
+        with self.assertRaisesRegex(q.QuotaError, "SYSTEM_INVENTORY_UNKNOWN"):
+            gateway.dispatch("inventory", {})
+
     def test_actual_root_client_and_two_pipe_eofs_are_required_for_seal(self):
         gateway, item = self.gateway()
         process = subprocess.Popen([sys.executable, "-c", "import sys;sys.stdout.write('out');sys.stderr.write('err')"],
