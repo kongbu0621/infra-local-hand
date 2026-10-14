@@ -623,11 +623,13 @@ class GeneratedInputTests(unittest.TestCase):
     def test_server_generated_request_material_is_serializable_and_unique(self):
         template=dict(plan=dict(host=dict(hostname='guest',dmi_vendor='QEMU',dmi_product='fixture'),
             mounts=dict(quota=dict(uuid='quota-id',source='/dev/fixture',path='/fixture')),
+            directories=dict(control=dict(path='/old/control'),state=dict(path='/old/state')),
             settings=dict(identity={},controllers=dict(target={},supervisor={}),original_budgets=dict(wall_seconds=72)),
             roots=[{} for _ in range(7)]),observed=dict(parents={},system_geometry=dict(
                 schema='fixture',retained_ordinary_parent=dict(parent=dict(path='/old'),
                 memory_bytes=7,memory_swap_max=7,tasks_max=7,cpu_quota_per_sec_usec=1000000))))
-        config=dict(template=template,installation=dict(source=dict(commit='a'*40)),bases={},mounts=[],
+        config=dict(template=template,installation=dict(source=dict(commit='a'*40)),
+            bases={'/old':'/'+'r'*39},mounts=[],minimum_free_bytes=1,
             profile_ref='host-inspect',install_uuid=str(uuid.uuid4()),request_ttl_seconds=3600,first_project_id=15000)
         def read(path,*args,**kwargs):
             path=str(path)
@@ -637,11 +639,15 @@ class GeneratedInputTests(unittest.TestCase):
             if path.endswith('cpu.max'):return '100000 100000'
             return '7'
         info=SimpleNamespace(st_dev=7,st_ino=7,st_rdev=7)
+        operation=str(uuid.uuid4())
+        serials=(1,9,10,32,99,100)
         with patch.object(provision_task.Path,'read_text',read), \
              patch.object(provision_task.os,'stat',return_value=info), \
+             patch.object(provision_task.os,'statvfs',return_value=SimpleNamespace(f_bavail=10000,f_frsize=4096,f_favail=10000)), \
              patch.object(provision_task.budget,'current_clock',return_value={'boot_id':'new-boot'}):
-            values=[provision_task.task_input(config,str(uuid.uuid4()),'owner',serial) for serial in (1,2)]
+            values=[provision_task.task_input(config,operation,'owner',serial) for serial in serials]
         for value in values:
+            provision_task.check_endpoint_lengths(value['plan'])
             self.assertEqual(value,json.loads(json.dumps(value)))
             self.assertTrue(value['cancellation'])
             self.assertEqual({'lh:inspect','lh:submit','lh:read','lh:cancel','lh:evidence'},set(value['scopes']))
@@ -652,3 +658,37 @@ class GeneratedInputTests(unittest.TestCase):
         self.assertNotEqual(values[0]['plan']['settings']['identity']['authority_id'],values[1]['plan']['settings']['identity']['authority_id'])
         self.assertTrue({x['project_id'] for x in values[0]['plan']['roots']}.isdisjoint(
             {x['project_id'] for x in values[1]['plan']['roots']}))
+        self.assertEqual(len(serials),len({v['plan']['directories']['control']['path'] for v in values}))
+        self.assertEqual('/old/control',template['plan']['directories']['control']['path'])
+
+    def test_endpoint_limit_covers_control_api_and_preserves_path_rules(self):
+        control_name='/preflight-ctl.sock'
+        api_name='/maintenance.sock'
+        for role,ending in (('control',control_name),('state',api_name)):
+            for prefix in ('/', '/nested/'):
+                path=prefix+'a'*(107-len(prefix.encode())-len(ending))
+                plan={'directories':{'control':{'path':'/control'},'state':{'path':'/state'}}}
+                plan['directories'][role]['path']=path
+                provision_task.check_endpoint_lengths(plan)
+                plan['directories'][role]['path']+='a'
+                with self.assertRaisesRegex(ValueError,'ENDPOINT_LENGTH'):
+                    provision_task.check_endpoint_lengths(plan)
+        plan={'directories':{'control':{'path':'/中'},'state':{'path':'/state'}}}
+        with self.assertRaisesRegex(ValueError,'PATH'):
+            provision_task.check_endpoint_lengths(plan)
+
+    def test_overlong_endpoint_fails_before_directory_or_quota_creation(self):
+        plan=dict(host={'boot_id':'boot'},directories=dict(control={'path':'/'+'a'*100},state={'path':'/state'}))
+        installation=dict(source={'commit':'a'*40},installed={'payload_digest':'b'*64,'package_root':'/installed'})
+        helpers=[Mock(),Mock(),Mock()]
+        with patch.object(provision_task.os,'geteuid',return_value=0), \
+             patch.object(provision_task.budget,'current_clock',return_value={'boot_id':'boot'}), \
+             patch.object(provision_task,'verify_release'), \
+             patch.object(provision_task,'_helper',side_effect=helpers), \
+             patch.object(provision_task.os,'open') as opened, \
+             patch.object(provision_task.Path,'mkdir') as mkdir:
+            with self.assertRaisesRegex(ValueError,'ENDPOINT_LENGTH'):
+                provision_task.prepare(dict(plan=plan,installation=installation))
+        helpers[1].validate_plan.assert_called_once_with(plan)
+        helpers[0].Quota.assert_not_called()
+        opened.assert_not_called();mkdir.assert_not_called()

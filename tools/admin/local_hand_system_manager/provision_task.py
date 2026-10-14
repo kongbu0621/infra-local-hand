@@ -19,7 +19,9 @@ def task_input(config, operation, principal, serial):
     v['installation'] = installation
     plan['candidate'] = installation['source']
     token = uuid.UUID(operation).hex
-    suffix = 'task-' + token + '-' + str(serial)
+    # Keep the complete task UUID and attempt number, but leave room for the
+    # longest Unix socket name when the attempt counter reaches two digits.
+    suffix = token + '-' + str(serial)
     replacements = {old: str(Path(new) / suffix) for (old, new) in config['bases'].items()}
 
     def relocate(value):
@@ -102,6 +104,15 @@ def _helper(installation, name):
     exec(compile(raw, str(path), 'exec'), module.__dict__)
     return module
 
+def check_endpoint_lengths(plan):
+    directories = plan['directories']
+    endpoints = [directories['state']['path'] + '/maintenance.sock']
+    for phase in ('preflight', 'business', 'evidence'):
+        endpoints.extend(directories['control']['path'] + '/' + phase + ending
+                         for ending in ('.sock', '-ctl.sock'))
+    for endpoint in endpoints:
+        q.require(len(q.canonical_path(endpoint).encode()) <= 107, 'ENDPOINT_LENGTH')
+
 def prepare(v):
     plan = copy.deepcopy(v['plan'])
     installation = v['installation']
@@ -113,6 +124,9 @@ def prepare(v):
     driver = _helper(installation, 'q2_prepare_driver')
     a = _helper(installation, 'q2_prepare_assembly')
     driver.validate_plan(plan)
+    # Reject an unusable endpoint before creating directories or assigning
+    # quotas. The later chain validation is too late to avoid partial setup.
+    check_endpoint_lengths(plan)
 
     def guard():
         q.require(time.monotonic() < deadline, 'PROVISION_DEADLINE')
