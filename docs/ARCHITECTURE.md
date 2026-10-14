@@ -3,6 +3,10 @@
 - Authority: Owner；Status: DRAFT / 待确认；对应 [R01–R12](REQUIREMENTS.md)。
 - 提议只改变产品封装、配置准入及构建来源绑定；Task/Result v1 和八种动作保持兼容。
 
+本文保留 S1 的 Task/Result v1 与 Git mailbox 架构范围。后续实现已增加 MCP Server
+和作业后端；客户端、Server、MCP、Tailscale 的关系及当前源码入口，见
+[README 的通信关系说明](../README.md#客户端servermcp-与-tailscale-是什么关系)。
+
 ## A01 职责和依赖
 
 控制端把意图转换为有限任务；Transport Adapter 负责投递和收取；Worker 校验任务并调度本机能力；Platform Adapter 处理服务、路径和进程；配置准入确定允许的资源。控制端或模型不能通过任务自行改变准入配置。SOP 保留治理和历史证据；新仓库拥有通用执行实现和公开产品文档。
@@ -42,7 +46,7 @@ Result schema 为 `local-hand-result/v1`，顶层精确十四项：`schema_versi
 
 部署者显式给出 SSH remote、精确允许的 remote 拼写和 branch；共享校验器验证它们一致且属于支持的 SSH 语法。拒绝 ext/file/http、本地路径、选项注入、控制字符及未经允许的 host/user/repository。SSH key、known_hosts、Git/SSH/Python 的绝对路径由安装绑定提供，凭据内容不进入配置模板、包或结果。Git 环境、hooks、filters、fsmonitor 与 remote 展示仍执行原有加固。安全语义的改变不能伪装成“替换常量”。
 
-不存在本阶段 MCP 服务器或公网 relay 实现。ChatGPT 已可通过受控 mailbox 协议交互；给 adapter 取名不等于部署了新连接。未来 transport 必须保持任务关联和外部授权语义，并重新评估威胁边界。
+S1 首阶段不包含 MCP 服务器或公网 relay 实现；此处记录该阶段的边界。ChatGPT 当时通过受控 mailbox 协议交互。后续 MCP 实现见上方 README 链接；新增传输仍须保持任务关联和外部授权语义，实际连接状态由部署及调用验证确认。
 
 ## A04 文件、验证与一致性
 

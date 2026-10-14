@@ -12,6 +12,64 @@
 鉴权、任务身份、数据保护、资源上限和结果完整性属于核心保障。
 MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 
+## 客户端、Server、MCP 与 Tailscale 是什么关系
+
+**Local Hand Server 负责接收和处理请求；MCP 规定双方怎样通信；Tailscale 提供网络连接入口。**
+
+| 名称 | 在这里是什么意思 |
+| --- | --- |
+| 客户端（Client） | 发出请求并接收结果的程序。通过 ChatGPT 操作 Local Hand 时，ChatGPT 发起工具调用的那一端就是客户端。浏览器是用户操作 ChatGPT 的界面。 |
+| 服务端（Server） | 在本机环境中运行、等待并处理请求的后台程序。这里指 Local Hand 服务，可以运行在已有电脑或其虚拟机中。 |
+| MCP | Model Context Protocol，一套通信规则，规定如何发现工具、调用工具和返回结果。 |
+| MCP Server | 支持 MCP 通信的服务端。Local Hand 的网络服务入口就是一个 MCP Server，背后连接本地作业后端。 |
+| Tailscale | 部署时可选的网络入口，把请求转发到 Local Hand。任务管理和执行由 Local Hand 实现，MCP 规则也不绑定 Tailscale。 |
+
+使用 Tailscale 入口时，关系如下；调用方需要能够访问这个入口：
+
+```mermaid
+flowchart LR
+    U["你：通过浏览器使用 ChatGPT"] --> C["ChatGPT：发起工具调用"]
+    C <-->|"MCP 请求与结果（HTTPS）"| G["Tailscale 入口"]
+    G <-->|"转发请求与结果"| S["Local Hand MCP Server"]
+    S <-->|"提交、查询、取消"| B["本地作业后端"]
+    B --> T["本地任务进程"]
+```
+
+例如，你说“查询任务状态”：
+
+1. ChatGPT 按 MCP 规则调用 `lh_job_status`，携带原任务的 `operation_id`。
+2. 网络入口把请求转发给 Local Hand MCP Server。
+3. 服务端校验身份、权限和参数，再由作业后端查询该任务。
+4. 服务端按 MCP 规则返回结果，ChatGPT 再把结果告诉你。查询本身不会重新执行任务。
+
+网络入口的访问范围由部署配置决定：Tailscale **Serve** 面向 Tailscale 私网，
+**Funnel** 可以向公网提供入口，区别见 [Tailscale 官方说明](https://tailscale.com/docs/features/tailscale-funnel/how-to/host-websites)。
+仅有 `ts.net` 地址或服务处于运行状态，不能证明外部 ChatGPT 已能访问；
+需要分别确认网络可达和 OAuth 授权。Local Hand 会继续校验调用者身份及每项工具的权限。
+连接中断只表示客户端暂时无法取得响应，不能据此认定任务取消或失败；
+恢复连接后应沿原 `operation_id` 查询，避免重复提交业务。
+
+### Server 的源码在哪里
+
+服务用 Python 实现，MCP SDK 处理工具声明与协议消息，Uvicorn 提供 HTTP 服务。
+安装后的命令 `local-hand-mcp` 在 [pyproject.toml](pyproject.toml) 中映射到
+`local_hand_mcp.server:main`。`main()` 加载配置、认证器和后端，调用
+`uvicorn.run(create_app(...), host="127.0.0.1", port=args.port, ...)` 启动本机监听；
+外部 HTTPS 入口负责转发到配置的端口。
+
+| 源码 | 职责与阅读入口 |
+| --- | --- |
+| [server.py](tools/local_hand_mcp/server.py) | `main()` 启动服务；`create_app()` 注册工具、处理 MCP 请求并返回结果。 |
+| [auth.py](tools/local_hand_mcp/auth.py) | `JWTVerifier` 验证访问令牌和调用者身份。 |
+| [resident.py](tools/local_hand_mcp/resident.py) | `ResidentBroker.call()` 将常驻入口的请求送到对应任务或历史结果。 |
+| [resident_service.py](tools/admin/local_hand_system_manager/resident_service.py) | `ResidentService` 准备任务资源；管理服务通过受保护的本地 socket 接收请求。 |
+| [task_service.py](tools/admin/local_hand_system_manager/task_service.py) | `TaskService` 启动并管理一个任务的服务及阶段执行。 |
+| [broker.py](tools/local_hand_jobs/broker.py) | `Broker` 管理提交、取消、状态、资源及持久账本，防止同一任务重复执行。 |
+| [runner.py](tools/local_hand_jobs/runner.py) | `Runner` 与进程管理器管理实际执行进程、停止和结果收集。 |
+
+先读 `server.py` 的 `main()` 和 `create_app()`，再顺着 `ResidentBroker.call()`
+查看任务路由，就能把网络入口与实际执行连起来。
+
 ## 核心实际状态（2026-10-13）
 
 **正式 Broker/MCP 核心链已实测：提交、执行、取消、同任务恢复和证据读取。**
