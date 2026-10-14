@@ -114,6 +114,23 @@ class ResidentBroker:
             if len(self.artifact_routes) > 256:
                 self.artifact_routes.popitem(last=False)
 
+    def _running_request(self, record, policy, name, args, principal):
+        try:
+            return cli.request(Path(policy.broker_root) / 'maintenance.sock', name, args, timeout=3)
+        except JobError as error:
+            if error.code != 'IO_UNCERTAIN' or name not in {
+                    'lh_job_status', 'lh_evidence_manifest', 'lh_evidence_read_chunk'}:
+                raise
+            # The controller may finish between the route observation and the
+            # socket request. Re-observe once; only read the same retained task
+            # after the service no longer identifies a live controller. Never
+            # replay submission/cancellation or conceal an explicit refusal.
+            state = self.service.call('status', operation_id=record['operation_id'],
+                                      principal_id=principal.principal_id)['state']
+            if state not in {'EXITED', 'UNRESOLVED'}:
+                raise
+            return self._reader(record['policy_path']).call(name, args, principal)
+
     def _task_artifact(self, record, args, principal):
         if record['principal_id'] != principal.principal_id:
             raise JobError('UNAUTHORIZED', 'Task belongs to another principal')
@@ -126,8 +143,7 @@ class ResidentBroker:
         if state == 'IDLE':
             raise JobError('NOT_FOUND', 'Task has not been submitted')
         if state == 'RUNNING':
-            return cli.request(Path(policy.broker_root) / 'maintenance.sock',
-                               'lh_evidence_read_chunk', args, timeout=3)
+            return self._running_request(record, policy, 'lh_evidence_read_chunk', args, principal)
         if state not in {'EXITED', 'UNRESOLVED'}:
             raise JobError('IO_UNCERTAIN', 'Task execution state needs inspection')
         return self._reader(record['policy_path']).call('lh_evidence_read_chunk', args, principal)
@@ -219,7 +235,7 @@ class ResidentBroker:
                 state = self.service.call('start', operation_id=operation,
                     principal_id=principal.principal_id, request_digest=args['request_digest'])['state']
             if state == 'RUNNING':
-                result = cli.request(Path(policy.broker_root) / 'maintenance.sock', name, args, timeout=3)
+                result = self._running_request(record, policy, name, args, principal)
             elif state not in {'EXITED', 'UNRESOLVED'}:
                 raise JobError('IO_UNCERTAIN', 'Task execution state needs inspection')
             else:

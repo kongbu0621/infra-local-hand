@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import socket
 import sqlite3
 import sys
 from pathlib import Path
@@ -18,6 +19,8 @@ if not sys.platform.startswith('linux'):
 
 from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES, request_digest
 from local_hand_jobs.policy import Policy
+from local_hand_jobs.cli import request as socket_request
+from local_hand_jobs import cli
 from local_hand_mcp.resident import ResidentBroker
 from admin.local_hand_system_manager import resident_service as admin
 from admin.local_hand_system_manager import provision_task
@@ -124,6 +127,113 @@ class ResidentTests(unittest.TestCase):
         with self.assertRaises(JobError):self.call('lh_job_status',args)
         self.call('lh_job_status',args)
         self.reader.call.assert_called_once_with('lh_job_status',args,self.owner)
+
+    def test_read_crossing_controller_exit_uses_same_retained_task(self):
+        artifact=str(uuid.uuid4())+'.seal'
+        self.broker.artifact_routes[('owner',artifact)]=(self.request['operation_id'],self.record['policy_path'])
+        cases=(('lh_job_status',dict(operation_id=self.request['operation_id']),{'outcome':'SUCCEEDED'}),
+               ('lh_evidence_manifest',dict(operation_id=self.request['operation_id']),{'artifacts':[{'artifact_id':artifact}]}),
+               ('lh_evidence_read_chunk',dict(artifact_id=artifact,expected_sha256='a'*64,offset=0),{'artifact_id':artifact}))
+        with tempfile.TemporaryDirectory() as root:
+            policy=Policy(policy_fixture(root))
+            path=Path(policy.broker_root)/'maintenance.sock';path.parent.mkdir()
+            for name,args,result in cases:
+                for state in ('EXITED','UNRESOLVED'):
+                    with self.subTest(tool=name,state=state):
+                        # The status observation precedes a real listener closing.
+                        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as listener:
+                            listener.bind(str(path));listener.listen(1)
+                        self.service.call.reset_mock()
+                        self.service.call.side_effect=[{'state':'RUNNING'},{'state':state}]
+                        self.local.reset_mock();self.local.side_effect=socket_request
+                        self.reader.call.reset_mock();self.reader.call.return_value=result
+                        try:
+                            with patch('local_hand_mcp.resident.Policy.from_file',return_value=policy):
+                                self.assertEqual(result,self.call(name,args))
+                            self.local.assert_called_once_with(path,name,args,timeout=3)
+                            self.reader.call.assert_called_once_with(name,args,self.owner)
+                            self.assertEqual(['status','status'],[c.args[0] for c in self.service.call.call_args_list])
+                        finally:
+                            path.unlink()
+
+    def test_read_handoff_is_bounded_and_preserves_refusals(self):
+        args=dict(operation_id=self.request['operation_id'])
+        for state in ('RUNNING','IDLE','UNRECOGNIZED'):
+            with self.subTest(state=state):
+                failure=JobError('IO_UNCERTAIN','original read failure')
+                self.service.call.reset_mock();self.local.reset_mock()
+                self.service.call.side_effect=[{'state':'RUNNING'},{'state':state}]
+                self.local.side_effect=failure
+                with self.assertRaises(JobError) as caught:self.call('lh_job_status',args)
+                self.assertIs(failure,caught.exception)
+                self.assertEqual(2,self.service.call.call_count);self.local.assert_called_once()
+        for code in ('UNAUTHORIZED','CONFLICT','NOT_SEALED'):
+            with self.subTest(code=code):
+                self.service.call.reset_mock();self.local.reset_mock()
+                self.service.call.side_effect=None;self.service.call.return_value={'state':'RUNNING'}
+                failure=JobError(code,'original refusal');self.local.side_effect=failure
+                with self.assertRaises(JobError) as caught:self.call('lh_job_status',args)
+                self.assertIs(failure,caught.exception)
+                self.service.call.assert_called_once();self.local.assert_called_once()
+        self.factory.assert_not_called()
+
+    def test_uncertain_writes_never_use_read_handoff(self):
+        for name,args in (('lh_job_submit',self.request),('lh_job_cancel',self.cancel_args())):
+            with self.subTest(tool=name):
+                self.service.call.reset_mock();self.local.reset_mock()
+                self.service.call.side_effect=[{'state':'RUNNING'},{'state':'EXITED'}]
+                failure=JobError('IO_UNCERTAIN','response lost');self.local.side_effect=failure
+                with self.assertRaises(JobError) as caught:self.call(name,args)
+                self.assertIs(failure,caught.exception)
+                self.service.call.assert_called_once();self.local.assert_called_once()
+        self.factory.assert_not_called()
+
+    def test_read_response_lost_after_dispatch_uses_retained_result_once(self):
+        args=dict(operation_id=self.request['operation_id']);received=[];failures=[]
+        with tempfile.TemporaryDirectory() as root:
+            policy=Policy(policy_fixture(root))
+            path=Path(policy.broker_root)/'maintenance.sock';path.parent.mkdir()
+            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as listener:
+                listener.bind(str(path));listener.listen(1);listener.settimeout(3)
+                def original_controller():
+                    try:
+                        connection,_=listener.accept()
+                        with connection:
+                            received.append(json.loads(cli._read_frame(connection,cli.MAX_REQUEST_BYTES,
+                                                                       deadline=time.monotonic()+3)))
+                            # The read was accepted but no response survived exit.
+                    except BaseException as error:
+                        failures.append(error)
+                worker=threading.Thread(target=original_controller);worker.start()
+                self.service.call.side_effect=[{'state':'RUNNING'},{'state':'EXITED'}]
+                self.local.side_effect=socket_request
+                self.reader.call.return_value={'outcome':'SUCCEEDED','event_seq':58}
+                try:
+                    with patch('local_hand_mcp.resident.Policy.from_file',return_value=policy):
+                        self.assertEqual(self.reader.call.return_value,self.call('lh_job_status',args))
+                finally:
+                    worker.join(4)
+                self.assertFalse(worker.is_alive());self.assertEqual([],failures)
+                self.assertEqual([{'tool':'lh_job_status','arguments':args}],received)
+                self.local.assert_called_once()
+                self.reader.call.assert_called_once_with('lh_job_status',args,self.owner)
+
+    def test_handoff_status_failure_or_reader_refusal_is_not_hidden(self):
+        args=dict(operation_id=self.request['operation_id'])
+        self.local.side_effect=JobError('IO_UNCERTAIN','controller closed')
+        for code in ('IO_UNCERTAIN','UNAUTHORIZED'):
+            with self.subTest(status_error=code):
+                failure=JobError(code,'status failed')
+                self.service.call.side_effect=[{'state':'RUNNING'},failure]
+                with self.assertRaises(JobError) as caught:self.call('lh_job_status',args)
+                self.assertIs(failure,caught.exception)
+                self.factory.assert_not_called()
+        for code in ('UNAUTHORIZED','CONFLICT','IO_UNCERTAIN'):
+            with self.subTest(reader_error=code):
+                self.service.call.side_effect=[{'state':'RUNNING'},{'state':'EXITED'}]
+                failure=JobError(code,'retained read refused');self.reader.call.side_effect=failure
+                with self.assertRaises(JobError) as caught:self.call('lh_job_status',args)
+                self.assertIs(failure,caught.exception)
 
     def cancel_args(self):
         return dict(operation_id=self.request['operation_id'],
