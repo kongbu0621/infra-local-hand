@@ -414,7 +414,16 @@ class Policy:
                 maximum = 512 * 1024
                 if before.st_size > maximum:
                     raise JobError("LIMIT_EXCEEDED", "Private admission exceeds 512 KiB")
-                raw = os.read(descriptor, maximum + 1)
+                # A successful read may return fewer bytes than requested.
+                # Retain the original descriptor and a finite byte budget;
+                # short reads are not evidence that the file was truncated.
+                chunks = bytearray()
+                while len(chunks) <= before.st_size:
+                    part = os.read(descriptor, min(65536, before.st_size + 1 - len(chunks)))
+                    if not part:
+                        break
+                    chunks.extend(part)
+                raw = bytes(chunks)
                 if len(raw) != before.st_size:
                     raise JobError("IO_UNCERTAIN", "Private admission read is incomplete")
                 after = os.fstat(descriptor)

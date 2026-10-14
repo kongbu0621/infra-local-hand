@@ -473,6 +473,36 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with self.assertRaises(JobError):strict_loads(b'{"a":1,"a":2}',maximum_bytes=512*1024)
         path.write_bytes(raw+b' '*(512*1024-len(raw)))
         self.assertEqual(Policy(config).policy_digest,Policy.from_file(path).policy_digest)
+        real_read = os.read
+        with patch('local_hand_jobs.policy.os.read',
+                   side_effect=lambda fd, size: real_read(fd, min(size, 4093))) as reads:
+            self.assertEqual(Policy(config).policy_digest, Policy.from_file(path).policy_digest)
+        self.assertGreater(reads.call_count, 100)
+        self.assertTrue(all(call.args[1] <= 65536 for call in reads.call_args_list))
+        # Short reads must not hide real truncation, growth, or a same-size
+        # rewrite between chunks. None may become a new admitted policy.
+        original = path.read_bytes()
+        for change in ('truncate', 'grow', 'rewrite'):
+            path.write_bytes(original)
+            changed = []
+            def read_then_change(fd, size):
+                part = real_read(fd, min(size, 4093))
+                if not changed:
+                    changed.append(True)
+                    if change == 'truncate':
+                        path.write_bytes(original[:4093])
+                    elif change == 'grow':
+                        with path.open('ab') as stream:
+                            stream.write(b' ')
+                    else:
+                        path.write_bytes(original)
+                        metadata = path.stat()
+                        os.utime(path, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000_000))
+                return part
+            with self.subTest(change=change), \
+                 patch('local_hand_jobs.policy.os.read', side_effect=read_then_change), \
+                 self.assertRaises(JobError):
+                Policy.from_file(path)
         path.write_bytes(b' '* (512*1024+1))
         with self.assertRaises(JobError) as caught:Policy.from_file(path)
         self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
@@ -616,8 +646,8 @@ class PolicyAndRegistryTests(unittest.TestCase):
         with patch("os.read", side_effect=read_prefix), patch.object(Policy, "validate_paths") as validate:
             with self.assertRaises(JobError) as caught:
                 Policy.from_file(path)
-        self.assertEqual(caught.exception.code, "IO_UNCERTAIN")
-        self.assertEqual(observed, [len(raw)])
+        self.assertEqual(caught.exception.code, "INVALID_REQUEST")
+        self.assertEqual(observed, [len(raw), len(b" invalid trailing content"), 0])
         validate.assert_not_called()
 
     def test_config_cleanup_preserves_rejection_and_reports_healthy_close_failure(self):
