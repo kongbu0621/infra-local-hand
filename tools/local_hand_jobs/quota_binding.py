@@ -83,6 +83,27 @@ def original(tx, row, phase, kind, field):
     return value
 
 
+def exit_recorded_during_recovery(tx, row, phase):
+    """Prove that the immutable exit followed recovery of this exact intent.
+
+    A later mutable ``recovered`` label cannot give an ordinary incomplete
+    exit the provenance of an observation made by the retained manager.
+    Callers must first validate the unique original QUOTA_EXIT_PENDING value.
+    """
+    intended = recovered = False
+    for event in tx.execute("SELECT kind,data_json FROM events WHERE namespace=? AND id=? "
+            "AND kind IN ('EXECUTION_INTENT','RECOVERY_BARRIER','QUOTA_EXIT_PENDING') ORDER BY seq",
+            (row["namespace"], row["id"])):
+        data = json.loads(event["data_json"])
+        if event["kind"] == "EXECUTION_INTENT":
+            intended, recovered = data.get("phase") == phase.upper(), False
+        elif event["kind"] == "RECOVERY_BARRIER":
+            recovered = intended and data.get("recovered") is True
+        elif data.get("quota_event_phase") == phase:
+            return recovered
+    return False
+
+
 def admission_version(tx, row):
     kind = "ADMISSION_BOUND" if row["namespace"] == "job" else "OBSERVATION_BOUND"
     event = tx.execute("SELECT data_json FROM events WHERE namespace=? AND id=? AND kind=? ORDER BY seq LIMIT 1",

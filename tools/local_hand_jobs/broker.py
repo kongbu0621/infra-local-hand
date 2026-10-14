@@ -488,10 +488,16 @@ class Broker:
                         bindings.check(self.manager_binding, handle.get("manager_binding"))
                         proof = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")["proof"]
                         execution = row["namespace"] + "-" + row["id"] + "-" + phase
+                        recovered_exit = (row["namespace"] == "job" and row["request"]["kind"] == "host.inspect"
+                            and phase in ("business", "evidence") and record.get("recovered") is True
+                            and self.task_session is not None and self.task_session.value["mode"] == "recover"
+                            and proof.get("collectors_stopped") is False
+                            and quota_binding.exit_recorded_during_recovery(tx, row, phase))
                         if (proof.get("state") == "EXITED" and proof.get("execution_id") == execution
                                 and handle.get("execution_id") == execution
                                 and all(proof.get(flag) is True for flag in
-                                        ("future_start_blocked", "tree_exited", "collectors_stopped", "writers_stopped"))):
+                                        ("future_start_blocked", "tree_exited", "writers_stopped"))
+                                and (proof.get("collectors_stopped") is True or recovered_exit)):
                             retained_exit = proof
                     changes = {
                         "lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN",
@@ -517,8 +523,11 @@ class Broker:
                     if retained_exit is not None:
                         # Reattaching cannot improve an already durable exit;
                         # lost anonymous pipes would instead weaken its proof.
-                        # Keep closure pending, and let cancellation consume
-                        # the original facts without replaying any stage.
+                        # Keep closure pending. A recovery-only task session
+                        # must still obtain the surviving manager's finish
+                        # acknowledgement before consuming an exit whose
+                        # collectors were lost. A second API crash must not
+                        # replace that immutable proof with a later timestamp.
                         complete_stopped_execution(self, tx, self.state.get(*key, tx))
                         continue
                     if handle is not None:
