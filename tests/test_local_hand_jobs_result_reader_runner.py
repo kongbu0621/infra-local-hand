@@ -156,6 +156,20 @@ def reader_lifecycle(*, phase="preflight", helper_exit=0, guard=None):
 
 
 class ResultReaderRunnerTests(unittest.TestCase):
+    def test_late_reader_exit_cannot_promote_even_a_complete_result(self):
+        with reader_lifecycle(phase="business") as flow:
+            flow.inspect()
+            flow.clients[-1].send(flow.wire())
+            flow.reader_state = "EXITED"
+            flow.reader_overrides = {"deadline_expired": True}
+            flow.cancel.set()
+            proof = flow.inspect()
+            self.assertEqual("EXITED", proof["state"])
+            self.assertFalse(proof["helper_result_verified"])
+            self.assertFalse(proof["effects_checked"])
+            self.assertEqual("UNKNOWN", proof["result"]["outcome"])
+            self.assertTrue(proof["result_reader_exit_proof"]["deadline_expired"])
+
     def test_cancel_before_quota_bootstrap_delivery_needs_no_process_or_pipe(self):
         from local_hand_jobs.quota_lifecycle import Transport
         with reader_lifecycle(guard=lambda *args, **kwargs: None) as flow:

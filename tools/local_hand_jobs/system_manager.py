@@ -386,6 +386,11 @@ class SystemManager(_SystemdExecutionCore):
         proof = super()._inspect_unit(part)
         if proof.get("state") != "EXITED" or part.get("cancel_before_launch"):
             return proof
+        if proof.get("deadline_expired") is True:
+            # The shared observer proved only cancelled OS/pipe exit. Keep the
+            # original administrator seal deadline and leave quota unclosed;
+            # sending an expired seal would poison the still-live stop channel.
+            return proof
         if not part.get("system_sealed"):
             client = part.get("launch")
             if (client is None or not part.get("pipe_closed") or

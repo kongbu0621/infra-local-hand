@@ -141,6 +141,56 @@ class LifecycleTests(unittest.TestCase):
                     with self.assertRaises(q.QuotaError):life.observe(manager,part,runner._unknown)
                 self.assertNotIn("quota_exit",part)
 
+    def test_cancel_exit_after_runtime_deadline_does_not_claim_quota_closure(self):
+        for stage in ("bootstrap", "helper", "result_reader"):
+            with self.subTest(stage=stage):
+                part,props,manager,calls=self.setup_part()
+                part.update(stage=stage, stop_requested=True)
+                props.update(SubState="running", ExecMainCode="0")
+                consumer=mock.Mock()
+                if stage=="bootstrap":part.update(quota_pipe=consumer, quota_grant=object())
+                if stage=="result_reader":part["reader"]=consumer
+                life.observe(manager,part,runner._unknown)
+                self.unload(props)
+                deadline=part["phase_deadline_boottime_ns"]
+                with mock.patch.object(budget,"current_clock",return_value={"boot_id":BOOT,"boottime_ns":deadline}):
+                    proof=life.observe(manager,part,runner._unknown)
+                self.assertEqual("EXITED",proof["state"])
+                self.assertTrue(proof["deadline_expired"])
+                self.assertTrue(all(proof[k] is True for k in ("tree_exited","future_start_blocked","writers_stopped","collectors_stopped")))
+                self.assertFalse(proof["effects_checked"])
+                self.assertEqual("UNKNOWN",proof["result"]["outcome"])
+                self.assertEqual(deadline,part["phase_deadline_boottime_ns"])
+                self.assertNotIn("quota_exit",part)
+                consumer.finish.assert_not_called()
+                self.assertEqual(1,sum(c[0]=="stop" for c in calls))
+
+    def test_late_cancel_still_requires_identity_stop_ack_tree_and_original_streams(self):
+        for fault in ("invocation", "stop_ack", "occupied", "eof", "client", "boot", "pipe_error"):
+            with self.subTest(fault=fault), contextlib.ExitStack() as stack:
+                part,props,manager,_=self.setup_part()
+                part["stop_requested"]=True
+                life.observe(manager,part,runner._unknown)
+                now=part["phase_deadline_boottime_ns"]+SECOND
+                stack.enter_context(mock.patch.object(budget,"current_clock",return_value={"boot_id":BOOT,"boottime_ns":now}))
+                if fault=="invocation":props["InvocationID"]="b"*32
+                if fault=="stop_ack":part["quota_stop_ok"]=False
+                if fault=="occupied":stack.enter_context(mock.patch.object(life,"parent",return_value=(part["quota_parent"],False)))
+                if fault=="eof":
+                    part["quota_transport"].eof={"stdout"}
+                    stack.enter_context(mock.patch.object(part["quota_transport"],"pump"))
+                if fault=="client":part["launch"].returncode=-9
+                if fault=="boot":part["boot_id"]="0"*36
+                if fault=="pipe_error":part["quota_transport"].error="PIPE_READ_UNCERTAIN"
+                try:
+                    result=life.observe(manager,part,runner._unknown)
+                except q.QuotaError:
+                    pass
+                else:
+                    self.assertNotEqual("EXITED",result["state"])
+                self.assertNotIn("quota_final",part)
+                self.assertNotIn("quota_exit",part)
+
     def test_cancel_rejects_replaced_identity_and_configuration_before_stopping(self):
         for fault in ("invocation", "cgroup", "restart", "boot"):
             with self.subTest(fault=fault):

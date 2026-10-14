@@ -222,6 +222,20 @@ class SystemManagerTests(unittest.TestCase):
         channel.finish()
         self.assertEqual("EXITED", manager._inspect_unit(part)["state"])
 
+    def test_late_cancel_proves_exit_without_requesting_an_expired_root_seal(self):
+        manager, handle, part, channel = self.fixture()
+        part["stop_requested"] = True
+        self.assertEqual("UNKNOWN", manager._inspect_unit(part)["state"])
+        with mock.patch.object(budget, "current_clock", return_value={
+                "boot_id": BOOT, "boottime_ns": part["phase_deadline_boottime_ns"]}):
+            proof = manager._inspect_unit(part)
+        self.assertEqual("EXITED", proof["state"])
+        self.assertTrue(proof["deadline_expired"])
+        self.assertNotIn("quota_exit", part)
+        self.assertNotIn("system_sealed", part)
+        self.assertNotIn("seal", [op for op, _ in channel.calls])
+        self.assertFalse(channel.closed)
+
     def test_lost_seal_ack_never_reuses_cached_local_success_or_resends(self):
         manager, handle, part, channel = self.fixture()
         channel.fail = "seal"

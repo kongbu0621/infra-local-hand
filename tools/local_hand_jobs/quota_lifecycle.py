@@ -186,7 +186,13 @@ def observe(manager, part, unknown):
     _, empty = parent(part["cgroup_parent"], part["quota_parent"])
     now = budget.current_clock()
     q.require(now["boot_id"] == part["boot_id"], "BOOT_CHANGED")
-    q.require(not expired and now["boottime_ns"] < part["phase_deadline_boottime_ns"], "ORIGINAL_DEADLINE")
+    late = now["boottime_ns"] >= part["phase_deadline_boottime_ns"]
+    cancel = part.get("cancel_event")
+    requested = part.get("stop_requested") or (cancel is not None and cancel.is_set())
+    # Execution admission expires at the original runtime deadline. A later
+    # cancellation observation can still prove OS exit, within the existing
+    # controller/channel bounds, but cannot close quota or verify a result.
+    q.require(not late or requested, "ORIGINAL_DEADLINE")
     q.require(part.get("quota_stop_ok") and values["ActiveState"] in ("inactive", "failed")
         and values["Job"] in ("", "0") and empty, "ORIGINAL_EXIT_UNPROVEN")
     terminal = part.get("quota_terminal")
@@ -200,7 +206,12 @@ def observe(manager, part, unknown):
               and (code is None or part["launch"].poll() == code), "ORIGINAL_CLIENT_EOF_UNPROVEN")
     result = dict(outcome="UNKNOWN")
     missing = []
-    if "quota_pipe" in part and code is not None:
+    if late:
+        result["helper_started"] = True
+        if part.get("stage") == "bootstrap":
+            result.update(bootstrap_prepared=False, business_started=False)
+        missing.append("Cancellation exit observed after runtime deadline; result and quota closure remain unverified")
+    elif "quota_pipe" in part and code is not None:
         try:
             observation = part["quota_pipe"].finish(part["quota_grant"], now_ns=now["boottime_ns"])
         except q.QuotaError as error:
@@ -240,11 +251,13 @@ def observe(manager, part, unknown):
             cap.error = "PIPE_CLOSE_UNCERTAIN"
     q.require(cap.error is None, "ORIGINAL_CLIENT_CLOSE_UNPROVEN")
     part["pipe_closed"] = part["client_stopped"] = True
-    part["quota_exit"] = stage
+    if not late:
+        part["quota_exit"] = stage
     proof = dict(state="EXITED", future_start_blocked=True, tree_exited=True, collectors_stopped=True,
                  writers_stopped=True, effects_checked=result.get("bootstrap_prepared", False),
                  exit_code=code, execution_id=part["execution_id"], unit=part["unit"], facts={}, result=result,
-                 identity=identity, missing=missing)
+                 identity=identity, missing=missing,
+                 **({"deadline_expired": True} if late else {}))
     part["quota_final"] = proof
     return proof
 

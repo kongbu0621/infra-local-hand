@@ -132,6 +132,7 @@ class Runner:
                     proof = _unknown()
                     proof.update(state="EXITED", future_start_blocked=True, tree_exited=True,
                                  collectors_stopped=True, writers_stopped=True, effects_checked=True,
+                                 execution_id=item.handle["execution_id"], launch_prevented=True,
                                  exit_code=None, result={"outcome": "FAILED", "error": "IO_UNCERTAIN",
                                                         "business_started": False, "helper_started": False},
                                  missing=[])
@@ -243,6 +244,7 @@ class Runner:
                 proof = _unknown()
                 proof.update(state="EXITED", future_start_blocked=True, tree_exited=True,
                              collectors_stopped=True, writers_stopped=True, effects_checked=True,
+                             execution_id=item.handle["execution_id"], launch_prevented=True,
                              exit_code=None, result={"outcome": "CANCELLED", "business_started": False, "helper_started": False}, missing=[])
                 with item.lock: item.proof = proof
                 return
@@ -336,6 +338,7 @@ class Runner:
             if isinstance(error, _NoStartError) and not item.launch_complete and not item.plan.get("_reattach"):
                 proof.update(state="EXITED", future_start_blocked=True, tree_exited=True,
                              collectors_stopped=True, writers_stopped=True, effects_checked=True,
+                             execution_id=item.handle["execution_id"], launch_prevented=True,
                              result={"outcome": "FAILED", "error": error.code, "business_started": False, "helper_started": False}, missing=[])
             with item.lock: item.proof = proof
         except BaseException:
@@ -1147,11 +1150,13 @@ class _SystemdExecutionCore:
         # evidence. Losing it would leave cancellation unable to prove that all
         # delivered stages stopped. Never turn that exit into a verified result.
         unavailable = dict(self._unavailable_result(helper_proof,
-            part.get("pipe_error") or "result reader did not exit successfully"), result_reader_exit_proof=third)
+            part.get("pipe_error") or ("Result reader exit observed after runtime deadline; result remains unverified"
+                if third.get("deadline_expired") is True else "result reader did not exit successfully")),
+            result_reader_exit_proof=third)
         if "quota_observation_grant" in handle:
             unavailable["quota_stage_exits"] = {key: _plain(handle[name].get("quota_exit"))
                 for key, name in (("bootstrap", "bootstrap"), ("helper", "helper"), ("reader", "result_reader"))}
-        if third.get("exit_code") != 0 or part.get("pipe_error"):
+        if third.get("exit_code") != 0 or part.get("pipe_error") or third.get("deadline_expired") is True:
             return unavailable
         result = part["reader"].result
         if not isinstance(result, dict):

@@ -3,14 +3,58 @@ import copy
 import hashlib
 import unittest
 
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
+from local_hand_jobs import runner
 from local_hand_jobs.contract import JobError
 from test_local_hand_jobs_quota_binding import observed
 import test_local_hand_jobs_quota_resident_chain as fixtures
 
 
 class CancelBoundaryTests(unittest.TestCase):
+    def test_cancel_before_observer_enters_manager_finishes_original_task(self):
+        for phase in ("preflight", "business", "evidence"):
+            for failure in ("cancel", "observer_start", "manager_no_start"):
+                with self.subTest(phase=phase, failure=failure):
+                    f = fixtures.ResidentChainTests()
+                    f.setUp(); self.addCleanup(f.doCleanups)
+                    for earlier in ("preflight", "business")[:("preflight", "business", "evidence").index(phase)]:
+                        f.close(earlier)
+                    prepared = f.prepare(phase)
+                    grant = f.make_grant(phase, prepared)
+                    f.broker.bind_observation("job", f.identity, phase, grant.wire)
+                    manager = SimpleNamespace(start=Mock(side_effect=runner._NoStartError("UNSUPPORTED", "not delivered")))
+                    actual = runner.Runner(manager)
+                    self.addCleanup(actual.close)
+                    f.broker.runner = actual
+                    held = []
+                    with patch.object(actual, "_launch_supervisor", side_effect=lambda item, name: held.append(item)):
+                        f.broker._start("job", f.identity, phase)
+                    item, = held
+                    f.broker.cancel(f.identity, f.f.request["request_digest"], {"kind": "job"}, f.f.owner)
+                    if failure == "cancel":
+                        actual.stop(item.handle)
+                        actual._supervise(item)
+                    elif failure == "observer_start":
+                        with patch.object(runner.threading.Thread, "start", side_effect=RuntimeError("thread unavailable")):
+                            actual._launch_supervisor(item, "test-observer")
+                    else:
+                        actual._supervise(item)
+                    before = copy.deepcopy(f.row()["record"].get("delivery_intents", []))
+                    f.broker.tick()
+                    record = f.row()["record"]
+                    self.assertEqual(("TERMINAL", "EXITED"), (record["lifecycle"], record["phase"]))
+                    self.assertEqual("SUCCEEDED" if phase == "evidence" else "CANCELLED", record["outcome"])
+                    self.assertTrue(record["execution_resources_released"])
+                    self.assertTrue(record["exit_proof"]["launch_prevented"])
+                    self.assertEqual(item.handle["execution_id"], record["exit_proof"]["execution_id"])
+                    self.assertEqual(before, record.get("delivery_intents", []))
+                    self.assertEqual(1 if failure == "manager_no_start" else 0, manager.start.call_count)
+                    events = f.broker.state.events("job", f.identity)
+                    f.broker.tick()
+                    self.assertEqual(events, f.broker.state.events("job", f.identity))
+
     def stopped(self, phase, stage):
         f = fixtures.ResidentChainTests()
         f.setUp()
