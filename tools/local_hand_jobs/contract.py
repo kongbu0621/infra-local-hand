@@ -18,8 +18,9 @@ MAX_CANONICAL_BYTES = 16 * 1024
 MAX_DEPTH = 8
 KINDS = (
     "host.inspect", "ledger.prepare", "ledger.test.source",
-    "ledger.test.resources", "ledger.test.installed_local", "ledger.nas.roundtrip",
+    "ledger.test.resources", "ledger.test.installed_local", "ledger.nas.roundtrip", "workspace.edit",
 )
+OPTIONAL_KINDS = frozenset({"workspace.edit"})
 # Retain the wire kind for historical records, but do not offer or admit new
 # NAS work while its execution adapter is unavailable and core work is pending.
 DISABLED_JOB_KINDS = frozenset(("ledger.nas.roundtrip",))
@@ -174,6 +175,8 @@ EXPECTED_SCHEMA = _object({"node_id": REF, "install_uuid": UUID, "deployment_epo
                            "profile_digest": DIGEST, "policy_digest": DIGEST, "registry_digest": DIGEST})
 INPUT_SCHEMAS = {
     "host.inspect": _object({}),
+    "workspace.edit": _object({"source_ref": REF, "relative_path": {"type": "string", "maxLength": 256},
+        "expected_sha256": DIGEST, "content": {"type": "string", "maxLength": 4096}, "validation_ref": REF}),
     "ledger.prepare": _object({"source_ref": REF, "build_cache_ref": REF}),
     "ledger.test.source": _object({"prepared_ref": REF}),
     "ledger.test.resources": _object({"prepared_ref": REF, "suite": {"type": "string", "enum": list(SUITES)}}),
@@ -195,8 +198,15 @@ CANCEL_TARGET_SCHEMA = {"oneOf": [
 ]}
 TOOL_SCHEMAS = {
     "lh_capabilities": _object({"cursor": _CURSOR, "page_size": _PAGE}, ()),
-    "lh_job_prepare": _object({"operation_id": UUID4, "kind": {"const": "host.inspect"}, "profile_ref": REF,
-                                "retry_failed": {"const": True}}, ("operation_id", "kind", "profile_ref")),
+    "lh_workspace_read": _object({"profile_ref": REF, "source_ref": REF,
+                                  "relative_path": {"type": "string", "maxLength": 256}}),
+    "lh_job_prepare": {"type": "object", "oneOf": [
+        _object({"operation_id": UUID4, "kind": {"const": "host.inspect"}, "profile_ref": REF,
+                 "retry_failed": {"const": True}}, ("operation_id", "kind", "profile_ref")),
+        _object({"operation_id": UUID4, "kind": {"const": "workspace.edit"}, "profile_ref": REF,
+                 "inputs": INPUT_SCHEMAS["workspace.edit"], "retry_failed": {"const": True}},
+                ("operation_id", "kind", "profile_ref", "inputs")),
+    ]},
     # Advertise only enabled submissions; SUBMIT_SCHEMA still decodes retained
     # requests with their original identity for broker/CLI history handling.
     "lh_job_submit": {"type": "object", "oneOf": [
@@ -212,6 +222,7 @@ TOOL_SCHEMAS = {
         ("artifact_id", "offset", "expected_sha256")),
 }
 TOOL_SCOPES = {
+    "lh_workspace_read": "lh:read",
     "lh_capabilities": "lh:inspect", "lh_job_prepare": "lh:submit", "lh_job_submit": "lh:submit", "lh_job_status": "lh:read",
     "lh_job_cancel": "lh:cancel", "lh_job_reconcile": "lh:reconcile",
     "lh_evidence_manifest": "lh:evidence", "lh_evidence_read_chunk": "lh:evidence",
@@ -230,7 +241,7 @@ def _matches(value: Any, schema: Mapping[str, Any]) -> bool:
         return not (value.keys() - schema["properties"].keys()) and all(
             _matches(item, schema["properties"][key]) for key, item in value.items())
     if typ == "string":
-        return type(value) is str and ("enum" not in schema or value in schema["enum"]) and (
+        return type(value) is str and len(value) <= schema.get("maxLength", MAX_REQUEST_BYTES) and ("enum" not in schema or value in schema["enum"]) and (
             "pattern" not in schema or re.fullmatch(schema["pattern"], value) is not None)
     if typ == "integer":
         return type(value) is int and schema.get("minimum", -MAX_SAFE_INTEGER) <= value <= schema.get("maximum", MAX_SAFE_INTEGER)
@@ -249,6 +260,8 @@ def _submit_without_digest(request: Any) -> dict:
     _tree(candidate)
     if not _matches(candidate, SUBMIT_SCHEMA):
         raise _invalid()
+    if candidate["kind"] == "workspace.edit":
+        _workspace_inputs(candidate["inputs"])
     candidate.pop("request_digest")
     if len(canonical_bytes(candidate)) > MAX_CANONICAL_BYTES:
         raise JobError("LIMIT_EXCEEDED", "Canonical submission exceeds 16 KiB")
@@ -282,7 +295,26 @@ def validate_tool_args(tool_name: str, arguments: Any) -> dict:
     _tree(arguments)
     if not _matches(arguments, TOOL_SCHEMAS[tool_name]):
         raise _invalid()
+    if tool_name == "lh_job_prepare" and arguments["kind"] == "workspace.edit":
+        _workspace_inputs(arguments["inputs"])
+    if tool_name == "lh_workspace_read":
+        _workspace_path(arguments['relative_path'])
     return json.loads(canonical_bytes(arguments))
+
+
+def _workspace_inputs(inputs):
+    _workspace_path(inputs['relative_path'])
+    if len(canonical_bytes(inputs)) > 12 * 1024:
+        raise JobError("LIMIT_EXCEEDED", "Workspace edit exceeds its bounded request budget")
+
+
+def _workspace_path(relative_path):
+    from local_hand.paths import _canonical_relative_posix
+    from local_hand.protocol import LocalHandError
+    try:
+        _canonical_relative_posix(relative_path, "relative_path")
+    except LocalHandError:
+        raise _invalid("Workspace file must be a canonical relative path outside Git metadata") from None
 
 
 TOOL_SCHEMA_DIGEST = hashlib.sha256(canonical_bytes(TOOL_SCHEMAS)).hexdigest()

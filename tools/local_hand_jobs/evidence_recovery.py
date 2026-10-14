@@ -23,7 +23,7 @@ def release_completed_evidence(broker, tx, row):
     """
     record = row["record"]
     proof = record.get("exit_proof") or {}
-    if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
+    if (row["namespace"] != "job" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
             or record["lifecycle"] != "TERMINAL" or record["phase"] != "EXITED"
             or record["evidence"] != "SEALED" or record.get("execution_resources_released")
             or record["outcome"] not in ("SUCCEEDED", "FAILED", "CANCELLED")

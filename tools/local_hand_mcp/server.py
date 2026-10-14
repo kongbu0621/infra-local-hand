@@ -1,4 +1,4 @@
-"""Seven-tool Streamable HTTP adapter for the single Local Hand broker.
+"""Streamable HTTP tools for the single Local Hand broker.
 
 Imports remain optional so base installations retain the existing worker/CLI.
 The official SDK owns MCP transport; this adapter adds a strict raw-byte gate and
@@ -27,13 +27,14 @@ MAX_RESPONSE = 512 * 1024
 BODY_SECONDS = 5
 CONTROL_SECONDS = 5
 MAX_CONTROL_REQUESTS = 32
-_READ_ONLY = frozenset({"lh_capabilities", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"})
+_READ_ONLY = frozenset({"lh_capabilities", "lh_workspace_read", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"})
 _REQUEST_ID = ContextVar("local_hand_mcp_request_id", default="none")
 _REQUEST_LOG = logging.getLogger("local_hand_mcp.requests")
 _DESCRIPTIONS = {
+    "lh_workspace_read": "读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交。文件最多 4 KiB；只能使用 capabilities 给出的来源引用及仓库相对路径。读取不会准备或提交任务。",
     "lh_capabilities": "查看当前获准使用的功能、资源引用和身份绑定。若返回 prepared_request，原样提交该请求一次，并保留其任务标识。",
     "lh_job_submit": "提交一个确定的任务并持久保存记录。返回结果不确定时，保留原 operation_id，沿同一任务查询。",
-    "lh_job_prepare": "使用新的任务 UUID 自动准备 host.inspect。状态为 PREPARING（准备中）时沿同一 UUID 查询；READY（就绪）后原样提交返回的请求。FAILED（失败）记录会保留，解决原因后可用 retry_failed=true 重试准备。准备操作本身不执行任务。",
+    "lh_job_prepare": "使用新的任务 UUID 准备获准的任务。host.inspect 检查本机；workspace.edit 在任务独立副本中按原文件摘要修改，并运行固定验证，返回封存的差异与结果。先查询 capabilities 获取来源和验证引用。PREPARING 时用原参数和同一 UUID 查询；READY 后原样提交返回的请求。FAILED 记录保留，解决原因后可用 retry_failed=true 重试。准备本身不执行业务。",
     "lh_job_status": "查询属于当前用户的任务状态，或指定核对轮次的状态。",
     "lh_job_cancel": "使用原请求摘要和明确目标申请取消；取消整个任务时指定 target.kind=job。随后沿同一 operation_id 查询并确认退出，收到取消回执不代表进程已停止。可安全重复取消，已完成的目标保留并返回原结果。",
     "lh_job_reconcile": "使用固定的核对 ID 检查原任务已产生的影响，不重新执行业务。",
@@ -67,6 +68,8 @@ _STATUS_SCHEMA = {
 _OUTPUT_SCHEMAS = {name: _STATUS_SCHEMA for name in
                    ("lh_job_submit", "lh_job_status", "lh_job_cancel", "lh_job_reconcile")}
 _OUTPUT_SCHEMAS.update({
+    "lh_workspace_read": {"type":"object","required":["source_ref","source_commit","relative_path","sha256","bytes","content"],
+        "properties":{**{key:_STRING for key in ('source_ref','source_commit','relative_path','sha256','content')},'bytes':_INTEGER}},
     "lh_job_prepare": {"type": "object", "required": ["operation_id", "state"],
         "properties": {"operation_id": _STRING, "state": {"enum": ["PREPARING", "READY", "FAILED"]},
             "retryable": {"type": "boolean"}, "request": TOOL_SCHEMAS["lh_job_submit"]}},
@@ -82,7 +85,7 @@ _OUTPUT_SCHEMAS.update({
             "profiles": {"type": "array", "maxItems": 100, "items": {"type": "object", "properties": {
                 "profile_ref": _STRING, "expected": {"type": "object"},
                 **{key: {"type": "array", "items": _STRING} for key in
-                   ("allowed_kinds", "source_refs", "build_cache_refs", "storage_refs", "prepared_refs")},
+                   ("allowed_kinds", "source_refs", "validation_refs", "build_cache_refs", "storage_refs", "prepared_refs")},
                 "budgets": {"type": "object"}}}}, "next_cursor": {"type": ["string", "null"]}}},
     "lh_evidence_manifest": {"type": "object", "required": ["schema_version", "operation_id", "catalog_digest", "artifacts"],
         "properties": {"schema_version": _STRING, "operation_id": _STRING, "catalog_digest": _STRING,
@@ -272,7 +275,7 @@ def create_app(broker, verifier):
         name: schema for name, schema in TOOL_SCHEMAS.items()
         if TOOL_SCOPES[name] in config.scopes
         and (not getattr(broker, "read_only", False) or name in _READ_ONLY)
-        and name in getattr(broker, "supported_tools", set(TOOL_SCHEMAS) - {"lh_job_prepare"})
+        and name in getattr(broker, "supported_tools", set(TOOL_SCHEMAS) - {"lh_job_prepare", "lh_workspace_read"})
     }
     enabled_scopes = sorted({TOOL_SCOPES[name] for name in enabled_tools})
     output_validators = {name: Draft202012Validator(schema) for name, schema in _OUTPUT_SCHEMAS.items()}

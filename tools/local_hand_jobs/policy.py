@@ -17,7 +17,7 @@ import threading
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from .contract import (DIGEST_PATTERN, DISABLED_JOB_KINDS, KINDS, MAX_SAFE_INTEGER, REF_PATTERN,
+from .contract import (DIGEST_PATTERN, DISABLED_JOB_KINDS, KINDS, OPTIONAL_KINDS, MAX_SAFE_INTEGER, REF_PATTERN,
                        SCHEMA_VERSION, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, UUID_PATTERN,
                        JobError, Principal, canonical_bytes, strict_loads)
 
@@ -174,7 +174,11 @@ class Policy:
             _ref(ref)
             _keys(profile, {"work_root", "evidence_root", "temporary_root", "python", "sources", "build_caches",
                 "storages", "budgets", "resource_ids"}, {"execution_admission", "display_name",
-                "bootstrap_slots", "bootstrap_evidence_store"})
+                "bootstrap_slots", "bootstrap_evidence_store", "workspace_git"})
+            if "workspace_git" in profile:
+                _keys(profile["workspace_git"], {"path", "sha256"})
+                readonly.append(_path(profile["workspace_git"]["path"]))
+                _digest(profile["workspace_git"]["sha256"])
             for field in ("work_root", "evidence_root", "temporary_root", "python"):
                 _path(profile[field])
             roots = [profile[field] for field in ("work_root", "evidence_root", "temporary_root")]
@@ -202,11 +206,26 @@ class Policy:
                 for input_ref, item in profile[category].items():
                     _ref(input_ref)
                     if category == "sources":
-                        _keys(item, {"root", "commit", "blobs"})
+                        _keys(item, {"root", "commit", "blobs"}, {"validations", "manifest"})
                         _path(item["root"])
                         readonly.append(item["root"])
                         _digest(item["commit"], 40)
                         _file_names(item["blobs"], 40)
+                        if "manifest" in item:
+                            _keys(item["manifest"], {"path", "sha256"})
+                            readonly.append(_path(item["manifest"]["path"]))
+                            _digest(item["manifest"]["sha256"])
+                            if hashlib.sha256(canonical_bytes({"commit": item["commit"], "blobs": item["blobs"]})).hexdigest() != item["manifest"]["sha256"]:
+                                raise _bad()
+                        if "validations" in item:
+                            if type(item["validations"]) is not dict or not item["validations"]:
+                                raise _bad()
+                            for validation, modules in item["validations"].items():
+                                _ref(validation)
+                                if (type(modules) is not list or not 1 <= len(modules) <= 16
+                                        or any(type(name) is not str or re.fullmatch(r"test_[a-z0-9_]+", name) is None
+                                               or "tests/" + name + ".py" not in item["blobs"] for name in modules)):
+                                    raise _bad()
                     elif category == "build_caches":
                         _keys(item, {"root", "files"})
                         _path(item["root"])
@@ -232,7 +251,9 @@ class Policy:
                         writable.append(item["archive_root"])
                         readonly.append(item["config"])
                         archives.append((item["archive_root"], item["resource_id"], binding))
-            _keys(profile["budgets"], set(KINDS) | {"reconcile"})
+            # Older retained policies remain readable without gaining a new
+            # job grant or changing their original policy/request digest.
+            _keys(profile["budgets"], (set(KINDS) - OPTIONAL_KINDS) | {"reconcile"}, OPTIONAL_KINDS)
             for kind, budget in profile["budgets"].items():
                 _keys(budget, BUDGET_FIELDS)
                 for field, value in budget.items():
@@ -288,6 +309,8 @@ class Policy:
                 _keys(access, {"kinds", "source_refs", "build_cache_refs", "storage_refs", "prepared_refs", "prepared_access"})
                 _refs(access["kinds"], set(KINDS))
                 profile = config["profiles"][profile_ref]
+                if not set(access["kinds"]) <= set(profile["budgets"]):
+                    raise _bad()
                 for field, category in (("source_refs", "sources"), ("build_cache_refs", "build_caches"), ("storage_refs", "storages")):
                     _refs(access[field], set(profile[category]))
                 _refs(access["prepared_refs"])

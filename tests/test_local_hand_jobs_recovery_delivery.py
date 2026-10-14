@@ -16,8 +16,9 @@ import test_local_hand_jobs_quota_resident_chain as fixtures
 
 
 class RecoveryDeliveryTests(unittest.TestCase):
-    def interrupted(self, phase, stage, *, amend=None):
+    def interrupted(self, phase, stage, *, amend=None, kind="host.inspect"):
         f = fixtures.ResidentChainTests()
+        f.kind = kind
         f.setUp(); self.addCleanup(f.doCleanups)
         phases = ("preflight", "business", "evidence")
         stages = ("bootstrap", "helper", "result_reader")
@@ -77,6 +78,21 @@ class RecoveryDeliveryTests(unittest.TestCase):
             request_digest=f.row()["digest"], principal_id=f.f.owner.principal_id), Mock(), None)
         self.addCleanup(session.close); session.attach(b)
         return f, b, session, proof
+
+    def test_workspace_recovery_reuses_same_task_without_replaying_edit(self):
+        f, b, session, proof = self.interrupted("business", "result_reader", kind="workspace.edit")
+        before = copy.deepcopy(f.row())
+        with patch.object(b, "_start", side_effect=AssertionError("H11 replayed workspace edit")):
+            session.recover(); session.tick()
+        row = f.row()
+        self.assertEqual(("TERMINAL", "EXITED", "UNKNOWN"),
+            tuple(row["record"][key] for key in ("lifecycle", "phase", "outcome")))
+        for key in ("request", "digest", "plan"):
+            self.assertEqual(before[key], row[key])
+        self.assertEqual(proof, row["record"]["exit_proof"])
+        events = b.state.events("job", f.identity)
+        session.recover(); session.tick()
+        self.assertEqual(events, b.state.events("job", f.identity))
 
     def test_recovery_after_intent_before_delivery_finishes_without_replay(self):
         for phase in ("preflight", "business", "evidence"):

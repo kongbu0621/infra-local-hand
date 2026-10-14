@@ -18,7 +18,7 @@ from unittest import mock
 
 from local_hand_jobs import budget, quota_bridge, quota_closure, quota_contract, quota_grant
 from local_hand_jobs.broker import Broker
-from local_hand_jobs.contract import JobError
+from local_hand_jobs.contract import JobError, request_digest
 from q2_fixtures import BOOT, SECOND, capacity, encoded, grant_data
 from test_e3_quota_q2_closure import complete
 from test_local_hand_jobs_quota_binding import Registry, observed
@@ -34,17 +34,23 @@ class ChainRegistry(Registry):
     def resolve(self, request, policy, *, principal=None):
         plan = super().resolve(request, policy, principal=principal)
         plan["budgets"].update(memory_bytes=32*1024**2, processes=16, log_bytes=96*1024)
-        plan["execution"].update(python="/usr/bin/python3", kind="host.inspect",
+        plan["execution"].update(python="/usr/bin/python3", kind=request["kind"],
             operation_id=request["operation_id"], readonly=[], storage={}, stages=[],
             writable=list(plan["execution"]["roots"].values()))
         return plan
 
 
 class ResidentChainTests(unittest.TestCase):
+    kind = "host.inspect"
+
     def setUp(self):
         self.f = fixtures.BrokerTests()
         self.f.setUp()
         self.addCleanup(self.f.doCleanups)
+        if self.kind == "workspace.edit":
+            self.f.request.update(kind=self.kind, inputs=dict(source_ref="project", relative_path="sample.py",
+                expected_sha256="a"*64, content="VALUE = 2\n", validation_ref="core"))
+            self.f.request["request_digest"] = request_digest(self.f.request)
         self.now = 100 * SECOND
         patch = self.clock_patch = mock.patch.object(budget, "current_clock", side_effect=lambda: {
             "boot_id": BOOT, "boottime_ns": self.now})

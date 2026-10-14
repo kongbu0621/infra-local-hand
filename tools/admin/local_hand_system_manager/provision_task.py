@@ -11,7 +11,7 @@ from local_hand_jobs import budget, cli, quota_contract as q
 from local_hand_jobs.deployment import verify_release
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 
-def task_input(config, operation, principal, serial):
+def task_input(config, operation, principal, serial, *, workspace_inputs=None):
     """Refresh boot/cgroup observations and allocate names within fixed roots."""
     v = copy.deepcopy(config['template'])
     plan = v['plan']
@@ -35,6 +35,14 @@ def task_input(config, operation, principal, serial):
             return [relocate(x) for x in value]
         return value
     plan = relocate(plan)
+    if workspace_inputs is not None:
+        workspace = config['workspace']
+        plan['settings']['original_budgets'] = copy.deepcopy(workspace['budgets'])
+        plan['settings']['limits'] = copy.deepcopy(workspace['limits'])
+        for root in plan['roots']:
+            root.update(workspace['quotas'][root['role']])
+        v['workspace'] = dict(inputs=copy.deepcopy(workspace_inputs),
+                              sources=copy.deepcopy(workspace['sources']), git=copy.deepcopy(workspace['git']))
     v['plan'] = plan
     v['bases'] = sorted(replacements.values())
     host = plan['host']
@@ -244,7 +252,7 @@ def prepare(v):
     q.require([r for r in after if r['project'] not in newids] == before, 'PROVISION_RETAINED_QUOTA_CHANGED')
     authority = dict(schema='local-hand-q2-preparation-authority/v1', scope=plan['scope'], baseline=plan['baseline'], plan_sha256=hashlib.sha256(driver.encoded(plan)).hexdigest(), preparation_id=plan['preparation_id'], receipt_sha256=hashlib.sha256(driver.encoded(observed)).hexdigest())
     (facts, authority, manifest) = driver.facts_from_observed(plan, observed, children, authority)
-    assembled = a.assemble(facts)
+    assembled = a.assemble(facts, workspace=v['workspace']) if 'workspace' in v else a.assemble(facts)
     if v.get('transport') == 'mcp':
         assembled['policy']['execution_entrypoint'] = installation['installed']['package_root'] + '/local_hand_mcp/server.py'
     if v.get('cancellation') is True:

@@ -51,6 +51,16 @@ class ResidentTests(unittest.TestCase):
 
     def call(self,name,args,principal=None):return self.broker.call(name,args,principal or self.owner)
 
+    def test_workspace_read_requires_read_authority_and_never_launches(self):
+        self.broker.config['workspace']=dict(source_refs=['project'],validation_refs=['core'],budgets={})
+        args=dict(profile_ref='fixture',source_ref='project',relative_path='sample.py')
+        with self.assertRaises(JobError):
+            self.call('lh_workspace_read',args,Principal('owner',frozenset({'lh:submit'})))
+        self.service.call.assert_not_called()
+        self.call('lh_workspace_read',args,Principal('owner',frozenset({'lh:read'})))
+        self.service.call.assert_called_once_with('workspace_read',principal_id='owner',**args)
+        self.local.assert_not_called();self.factory.assert_not_called()
+
     def test_preparation_needs_submit_scope_and_admitted_profile(self):
         args=dict(operation_id=self.request['operation_id'],kind='host.inspect',profile_ref='fixture')
         for selected,principal in ((args,Principal('owner',frozenset({'lh:read'}))),
@@ -593,7 +603,45 @@ class PreparationTests(unittest.TestCase):
         return dict(state='READY',operation_id=operation,principal_id='owner',
             attempt=str(root/'attempt-1'),boot_id='boot-one',policy_path='/synthetic-policy',
             output=str(root/'attempt-1'/'execution'),
-            request=dict(operation_id=operation,request_digest='a'*64,expires_at=int(time.time())+300))
+            request=dict(operation_id=operation,kind='host.inspect',inputs={},request_digest='a'*64,expires_at=int(time.time())+300))
+
+    def test_workspace_read_checks_inventory_and_size_without_task_creation(self):
+        raw=b'VALUE = 1\n'
+        self.config['workspace']=dict(sources={'project':dict(root='/protected-source',commit='c'*40,
+            blobs={'sample.py':hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()})})
+        args=dict(action='workspace_read',principal_id='owner',profile_ref='fixture',source_ref='project',relative_path='sample.py')
+        with patch.object(admin,'read_protected',return_value=raw) as read:
+            value=self.service.call(args)
+            self.assertEqual(raw.decode(),value['content']);self.assertEqual(hashlib.sha256(raw).hexdigest(),value['sha256'])
+            read.assert_called_once_with('/protected-source/sample.py',4096)
+            read.return_value=b'changed'
+            with self.assertRaises(JobError) as caught:self.service.call(args)
+            self.assertEqual('CONFLICT',caught.exception.code)
+            read.side_effect=ValueError('INPUT_BYTE_LIMIT')
+            with self.assertRaises(JobError) as caught:self.service.call(args)
+            self.assertEqual('LIMIT_EXCEEDED',caught.exception.code)
+            read.reset_mock()
+            with self.assertRaises(JobError):self.service.call(dict(args,source_ref='foreign'))
+            read.assert_not_called()
+        self.assertFalse(self.service.records);self.assertIsNone(self.service.worker)
+        self.assertEqual([],list(Path(self.config['private_root']).iterdir()))
+
+    def test_workspace_preparation_binds_inputs_before_worker_and_rejects_changed_poll(self):
+        inputs=dict(source_ref='project',relative_path='sample.py',expected_sha256='a'*64,content='VALUE=2\n',validation_ref='core')
+        self.config['workspace']=dict(sources={'project':dict(blobs={'sample.py':'b'*40},validations={'core':['test_sample']})})
+        args=dict(self.args,kind='workspace.edit',inputs=inputs)
+        entered=threading.Event();release=threading.Event()
+        def wait(record):entered.set();release.wait(3)
+        with patch.object(self.service,'_prepare_worker',side_effect=wait) as worker:
+            try:
+                self.assertEqual('PREPARING',self.service.call(args)['state']);self.assertTrue(entered.wait(1))
+                self.assertEqual('PREPARING',self.service.call(args)['state'])
+                with self.assertRaises(JobError) as caught:
+                    self.service.call(dict(args,inputs=dict(inputs,content='VALUE=3\n')))
+                self.assertEqual('CONFLICT',caught.exception.code)
+                worker.assert_called_once()
+                self.assertEqual(inputs,worker.call_args.args[0]['inputs'])
+            finally:release.set();self.service.worker.join(2)
 
     def test_restart_repairs_catalog_after_private_commit_before_publication(self):
         record=self.ready_record()

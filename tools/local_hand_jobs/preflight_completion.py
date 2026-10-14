@@ -20,7 +20,7 @@ def complete_stopped_preflight(broker, tx, row):
     must already establish stopped writers and blocked future starts.
     """
     record = row["record"]
-    if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
+    if (row["namespace"] != "job" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
             or record["phase"] not in ("PREFLIGHT", "EXITED") or record["lifecycle"] == "TERMINAL"
             or not (record["cancel_requested"] or record.get("recovered"))
             or record.get("business_started") is not False

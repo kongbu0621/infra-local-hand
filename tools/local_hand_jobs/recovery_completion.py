@@ -12,7 +12,7 @@ def complete_between_phases(broker, tx, row):
     phases = {"PREFLIGHT_COMPLETE": ("preflight",), "AWAITING_SEAL": ("preflight", "business")}
     previous = phases.get(record["phase"])
     session = broker.task_session
-    if (previous is None or record["lifecycle"] == "TERMINAL" or row["request"]["kind"] != "host.inspect"
+    if (previous is None or record["lifecycle"] == "TERMINAL" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
             or record.get("recovered") is not True or session is None or session.value["mode"] != "recover"
             or not session._recovery_acknowledged):
         return False

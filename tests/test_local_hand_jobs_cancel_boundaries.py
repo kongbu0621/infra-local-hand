@@ -421,8 +421,9 @@ class CancelBoundaryTests(unittest.TestCase):
                     f.broker.tick()
                     self.assertEqual(events, f.broker.state.events("job", f.identity))
 
-    def stopped(self, phase, stage):
+    def stopped(self, phase, stage, *, kind="host.inspect"):
         f = fixtures.ResidentChainTests()
+        f.kind = kind
         f.setUp()
         self.addCleanup(f.doCleanups)
         for previous in ("preflight", "business", "evidence")[:("preflight", "business", "evidence").index(phase)]:
@@ -460,8 +461,8 @@ class CancelBoundaryTests(unittest.TestCase):
         f.runner.proofs[execution] = proof
         return f, proof
 
-    def check_completion(self, phase, stage):
-        f, proof = self.stopped(phase, stage)
+    def check_completion(self, phase, stage, *, kind="host.inspect"):
+        f, proof = self.stopped(phase, stage, kind=kind)
         b = f.broker
         before = copy.deepcopy(f.row())
         with b.state.transaction() as tx:
@@ -488,6 +489,11 @@ class CancelBoundaryTests(unittest.TestCase):
             self.assertEqual("STAGING" if stage == "bootstrap" else "DURABILITY_UNKNOWN", record["evidence"])
             self.assertEqual(before["record"]["business_exit_proof"], record["business_exit_proof"])
             self.assertFalse(record.get("seals"))
+
+    def test_workspace_cancel_retains_private_copy_and_never_replays_edit(self):
+        for stage in ("helper", "result_reader"):
+            with self.subTest(stage=stage):
+                self.check_completion("business", stage, kind="workspace.edit")
 
     def test_business_reader_cancellation_finishes_without_claiming_a_result(self):
         self.check_completion("business", "result_reader")

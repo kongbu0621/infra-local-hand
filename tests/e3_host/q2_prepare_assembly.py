@@ -108,7 +108,7 @@ def _system_geometry(value, ordinary, controllers, boot_id, authority_id):
     return copy.deepcopy(value)
 
 
-def assemble(facts):
+def assemble(facts, *, workspace=None):
     """Return private policy + resident/chain/launcher/static-supervisor objects.
 
     Exact input groups are checked below. Observed roots contain quota-contract
@@ -225,6 +225,8 @@ def assemble(facts):
     profile.update(python=install["programs"]["python"]["path"], sources={}, build_caches={}, storages={},
         budgets=budgets, resource_ids=["q2-" + ident["id"]], bootstrap_slots=slots,
         bootstrap_evidence_store={key: f["store"][key] for key in ("path", "device", "inode", "uid")})
+    if workspace is not None:
+        profile.update(sources=copy.deepcopy(workspace["sources"]), workspace_git=copy.deepcopy(workspace["git"]))
     scopes = ["lh:submit", "lh:read", "lh:evidence"]
     if cancellation:
         scopes.append("lh:cancel")
@@ -232,7 +234,8 @@ def assemble(facts):
         ("authority_id", "node_id", "install_uuid", "deployment_epoch", "generation")},
         broker_root=paths["broker_root"], authority_root=paths["authority_root"], forbidden_roots=paths["forbidden_roots"],
         limits=f["limits"], profiles={ident["profile_ref"]: profile}, principals={ident["principal_id"]: dict(scopes=scopes,
-        profiles={ident["profile_ref"]: dict(kinds=["host.inspect"], source_refs=[], build_cache_refs=[], storage_refs=[],
+        profiles={ident["profile_ref"]: dict(kinds=["workspace.edit"] if workspace is not None else ["host.inspect"],
+        source_refs=list(profile["sources"]), build_cache_refs=[], storage_refs=[],
         prepared_refs=[], prepared_access="owned")})}, installed_payload_digest=install["payload_digest"],
         execution_entrypoint=install["package_root"] + "/local_hand_jobs/cli.py", source_commit=source["commit"],
         local_peers={str(ordinary["uid"]): ident["principal_id"]}, process_manager=dict(uid=ordinary["uid"],
@@ -243,6 +246,8 @@ def assemble(facts):
     policy = p.Policy(config)
     request = dict(schema_version="lh-job-v1", operation_id=ident["operation_id"], kind="host.inspect",
         profile_ref=ident["profile_ref"], expected=policy.expected(ident["profile_ref"]), inputs={}, expires_at=ident["expires_at"])
+    if workspace is not None:
+        request.update(kind="workspace.edit", inputs=copy.deepcopy(workspace["inputs"]))
     request["request_digest"] = contract.request_digest(request)
     plan = p.thaw(Registry().resolve(request, policy, principal=contract.Principal(ident["principal_id"], frozenset(scopes))))
     capacity = g.decode_capacity(q._canonical(f["capacity"], g.GRANT_LIMIT))

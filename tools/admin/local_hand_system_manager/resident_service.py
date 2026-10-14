@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from contextlib import closing
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,7 +23,7 @@ import time
 import uuid
 
 from local_hand_jobs import budget, cli, quota_contract as q
-from local_hand_jobs.contract import JobError, strict_loads, validate_tool_args
+from local_hand_jobs.contract import JobError, canonical_bytes, strict_loads, validate_tool_args
 from local_hand_jobs.task_session import read_descriptor
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import provision_task, task_service
@@ -174,10 +175,20 @@ class ResidentService:
         operation=args['operation_id']
         if args['profile_ref']!=self.config['profile_ref']:
             raise JobError('UNAUTHORIZED','Preparation profile differs')
+        if args['kind']=='workspace.edit':
+            workspace=self.config.get('workspace',{})
+            source=workspace.get('sources',{}).get(args['inputs']['source_ref'])
+            if (source is None or args['inputs']['validation_ref'] not in source.get('validations',{})
+                    or args['inputs']['relative_path'] not in source['blobs']):
+                raise JobError('UNAUTHORIZED','Workspace source, file or validation is not admitted')
         with self.fence:
             record=self.records.get(operation)
             if record is not None:
                 self._owned(operation,principal)
+                selected=record.get('request',record)
+                if (selected.get('kind','host.inspect')!=args['kind']
+                        or selected.get('inputs',{})!=args.get('inputs',{})):
+                    raise JobError('CONFLICT','Prepared task input changed; keep its original identity')
                 if record['state']=='PREPARING':
                     if self.worker is not None and self.worker.is_alive():
                         return dict(operation_id=operation,state='PREPARING')
@@ -209,6 +220,8 @@ class ResidentService:
             attempt.mkdir(mode=0o700)
             record=dict(operation_id=operation,principal_id=principal,state='PREPARING',attempt=str(attempt),
                 serial=serial,boot_id=self.boot,prepare_unit='lhprepare'+uuid.UUID(operation).hex+'a'+str(serial)+'.service')
+            if args['kind']=='workspace.edit':
+                record.update(kind=args['kind'],inputs=args['inputs'])
             self._save(record)
             self.worker=threading.Thread(target=self._prepare_worker,args=(record,),daemon=True)
             self.worker.start()
@@ -219,6 +232,8 @@ class ResidentService:
         launch=prepared['launch'];request=launch['request']
         q.require(request['operation_id']==record['operation_id'] and launch['principal_id']==record['principal_id'],
                   'RESIDENT_PREPARED_IDENTITY')
+        q.require(request['kind']==record.get('kind','host.inspect')
+                  and request['inputs']==record.get('inputs',{}),'RESIDENT_PREPARED_INPUTS')
         admission=task_service.TaskService(launch)
         admission.close()
         output=Path(record['attempt'])/'execution'
@@ -232,7 +247,8 @@ class ResidentService:
     def _prepare_worker(self, record):
         attempt=Path(record['attempt'])
         try:
-            value=provision_task.task_input(self.config,record['operation_id'],record['principal_id'],record['serial'])
+            extra={'workspace_inputs':record['inputs']} if record.get('kind')=='workspace.edit' else {}
+            value=provision_task.task_input(self.config,record['operation_id'],record['principal_id'],record['serial'],**extra)
             publish(attempt/'input.json',value)
             installation=self.config['installation'];programs=installation['installed']['programs']
             command=[programs['systemd_run']['path'],'--quiet','--wait','--pipe','--unit='+record['prepare_unit'],
@@ -277,9 +293,29 @@ class ResidentService:
             action=request.get('action');principal=request.get('principal_id')
             if principal not in self.config['principals']:
                 raise JobError('UNAUTHORIZED','Principal is not admitted')
+            if action=='workspace_read':
+                q.require(set(request)=={'action','principal_id','profile_ref','source_ref','relative_path'},'RESIDENT_REQUEST')
+                args=validate_tool_args('lh_workspace_read',{k:v for k,v in request.items() if k not in {'action','principal_id'}})
+                source=self.config.get('workspace',{}).get('sources',{}).get(args['source_ref'])
+                if (args['profile_ref']!=self.config['profile_ref'] or source is None
+                        or args['relative_path'] not in source['blobs']):
+                    raise JobError('UNAUTHORIZED','Workspace source or file is not admitted')
+                try:raw=read_protected(str(Path(source['root'])/args['relative_path']),4096)
+                except ValueError as error:
+                    if str(error)=='INPUT_BYTE_LIMIT':
+                        raise JobError('LIMIT_EXCEEDED','Workspace file exceeds 4 KiB') from None
+                    raise
+                if hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()!=source['blobs'][args['relative_path']]:
+                    raise JobError('CONFLICT','Workspace source file changed')
+                try:content=raw.decode('utf-8',errors='strict')
+                except UnicodeError:raise JobError('UNSUPPORTED','Workspace file is not UTF-8 text') from None
+                result=dict(source_ref=args['source_ref'],source_commit=source['commit'],relative_path=args['relative_path'],
+                            sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw),content=content)
+                if len(canonical_bytes(result))>12000:raise JobError('LIMIT_EXCEEDED','Workspace text exceeds the response budget')
+                return result
             if action=='prepare':
                 q.require({'action','principal_id','operation_id','kind','profile_ref'}<=set(request)
-                          <={'action','principal_id','operation_id','kind','profile_ref','retry_failed'},'RESIDENT_REQUEST')
+                          <={'action','principal_id','operation_id','kind','profile_ref','retry_failed','inputs'},'RESIDENT_REQUEST')
                 args=validate_tool_args('lh_job_prepare',{k:v for k,v in request.items() if k not in {'action','principal_id'}})
                 return self.prepare(args,principal)
             if action not in {'status','start'}:raise JobError('UNSUPPORTED','Unknown task service action')
@@ -361,7 +397,7 @@ def serve(config):
                 try:
                     _,uid,gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
                     if (uid,gid)!=(config['uid'],config['gid']):raise JobError('UNAUTHORIZED','Peer is not admitted')
-                    result=service.call(strict_loads(cli._read_frame(connection,8192,deadline=end)))
+                    result=service.call(strict_loads(cli._read_frame(connection,16384,deadline=end)))
                     response=dict(result=result)
                 except JobError as error:response=dict(error=error.as_dict())
                 except Exception:response=dict(error=dict(code='IO_UNCERTAIN',message='Task service needs state inspection'))

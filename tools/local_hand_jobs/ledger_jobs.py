@@ -400,8 +400,8 @@ def verify_inputs(plan):
 
 def copy_verified_source(plan):
     if plan["kind"] == "host.inspect": return
-    original = plan["source"]["root"] if plan["kind"] == "ledger.prepare" else plan["prepared"]["source_root"]
-    blobs = plan["source"]["blobs"] if plan["kind"] == "ledger.prepare" else plan["prepared"]["source_blobs"]
+    original = plan["source"]["root"] if plan["kind"] in ("ledger.prepare", "workspace.edit") else plan["prepared"]["source_root"]
+    blobs = plan["source"]["blobs"] if plan["kind"] in ("ledger.prepare", "workspace.edit") else plan["prepared"]["source_blobs"]
     destination = Path(plan["roots"]["work"]) / "source"
     if destination.exists(): raise LedgerPlanError("job source copy already exists")
     destination.mkdir(mode=0o700)

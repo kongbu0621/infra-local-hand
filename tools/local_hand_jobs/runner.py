@@ -1815,8 +1815,12 @@ def _helper(plan):
         if plan.get("storage"):
             output["facts"]["storage_mount"] = _verify_storage_namespace(plan)
         if phase == "preflight":
-            output["facts"].update(ledger_jobs.verify_inputs(plan))
-            interpreters = [plan["python"]] if plan["kind"] in ("host.inspect", "ledger.prepare") else [plan["prepared"]["build_python"], plan["prepared"]["runtime_python"]]
+            if plan["kind"] == "workspace.edit":
+                from . import workspace_jobs
+                output["facts"].update(workspace_jobs.verify_inputs(plan))
+            else:
+                output["facts"].update(ledger_jobs.verify_inputs(plan))
+            interpreters = [plan["python"]] if plan["kind"] in ("host.inspect", "ledger.prepare", "workspace.edit") else [plan["prepared"]["build_python"], plan["prepared"]["runtime_python"]]
             for python in sorted(set(interpreters)): check_interpreter(python)
             output.update(outcome="SUCCEEDED", effects_checked=True)
         elif phase == "evidence":
@@ -1860,7 +1864,11 @@ def _helper(plan):
         elif phase == "business":
             # Recheck pinned inputs immediately before copying and running; the
             # source mappings remain read-only in this namespace for all stages.
-            output["facts"].update(ledger_jobs.verify_inputs(plan))
+            if plan["kind"] == "workspace.edit":
+                from . import workspace_jobs
+                output["facts"].update(workspace_jobs.verify_inputs(plan))
+            else:
+                output["facts"].update(ledger_jobs.verify_inputs(plan))
             if plan["kind"] == "host.inspect":
                 # This fixed business observation runs inside the helper; it
                 # is still execution even though it spawns no separate child.
@@ -1871,7 +1879,10 @@ def _helper(plan):
                 output.update(outcome="SUCCEEDED", effects_checked=True)
             else:
                 output["business_started"] = True
-                ledger_jobs.copy_verified_source(plan)
+                if plan["kind"] == "workspace.edit":
+                    workspace_result = workspace_jobs.prepare_edit(plan, directory)
+                else:
+                    ledger_jobs.copy_verified_source(plan)
                 checked = set()
                 for stage in plan["stages"]:
                     python = stage["argv"][0]
@@ -1883,6 +1894,11 @@ def _helper(plan):
                     if observed["outcome"] != "SUCCEEDED": break
                 else:
                     output["outcome"] = "SUCCEEDED"
+                if plan["kind"] == "workspace.edit":
+                    output["workspace"] = workspace_jobs.finish_edit(plan, directory, workspace_result,
+                                                                      output["outcome"] == "SUCCEEDED")
+                    if not output["workspace"]["edited_file_unchanged_by_validation"]:
+                        output["outcome"] = "FAILED"
                 if plan["kind"] == "ledger.test.resources" and output["outcome"] == "SUCCEEDED":
                     suite = plan["inputs"]["suite"]
                     details = ledger_jobs.resource_result(suite, (directory / (suite + ".stdout")).read_text(), (directory / (suite + ".stderr")).read_text(), 0)

@@ -123,7 +123,7 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
     previous = ["preflight"] if phase == "business" else ["preflight", "business"]
     expected_phases = previous + [phase]
     closed_phases = expected_phases if record["phase"] == "EXITED" else previous
-    if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
+    if (row["namespace"] != "job" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
             or record["phase"] not in (phase.upper(), "EXITED") or record["lifecycle"] == "TERMINAL"
             or not (record["cancel_requested"] is True or recovery)
             or (helper_delivered is False and record.get("business_started") is True)
@@ -135,11 +135,13 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
             or ("job", row["id"]) in broker._recovering):
         return False
     if helper_delivered is not False:
+        from .workspace_jobs import local_effects_only
         execution_plan = row["plan"]["execution"]
-        if (row["plan"]["kind"] != "host.inspect" or execution_plan.get("kind") != "host.inspect"
+        inspection = not (row["plan"]["kind"] != "host.inspect" or execution_plan.get("kind") != "host.inspect"
                 or execution_plan.get("stages") != []
                 or any(execution_plan.get(key) for key in ("source", "storage", "build_cache", "prepared"))
-                or sorted(execution_plan.get("writable", [])) != sorted(execution_plan["roots"].values())):
+                or sorted(execution_plan.get("writable", [])) != sorted(execution_plan["roots"].values()))
+        if not inspection and not (row['request']['kind']=='workspace.edit' and local_effects_only(row['plan'])):
             return False
     if quota_binding.admission_version(tx, row) != 1:
         return False

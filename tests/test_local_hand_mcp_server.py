@@ -207,7 +207,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         response = self.rpc("tools/list")
         tools = response.json()["result"]["tools"]
-        expected_schemas = {k:v for k,v in TOOL_SCHEMAS.items() if k != "lh_job_prepare"}
+        expected_schemas = {k:v for k,v in TOOL_SCHEMAS.items() if k not in {"lh_job_prepare", "lh_workspace_read"}}
         self.assertEqual(set(expected_schemas), {tool["name"] for tool in tools})
         published = {tool["name"]: tool["inputSchema"] for tool in tools}
         self.assertNotIn("ledger.nas.roundtrip", json.dumps(published))

@@ -36,7 +36,7 @@ class ServiceClient:
                 if (uid, gid) != (0, 0):
                     raise JobError('UNAUTHORIZED', 'Task service identity changed')
                 guard._check()
-                cli._send_frame(connection, dict(action=action, **arguments), deadline=end, limit=8192)
+                cli._send_frame(connection, dict(action=action, **arguments), deadline=end, limit=16384)
                 response = cli._response(cli._read_frame(connection, 16384, deadline=end))
                 if 'error' in response:
                     raise JobError(response['error']['code'], response['error']['message'])
@@ -48,7 +48,7 @@ class ServiceClient:
 class ResidentBroker:
     read_only = False
     _authorize = Broker._authorize
-    supported_tools = frozenset({'lh_capabilities', 'lh_job_prepare', 'lh_job_submit', 'lh_job_status', 'lh_job_cancel',
+    supported_tools = frozenset({'lh_capabilities', 'lh_workspace_read', 'lh_job_prepare', 'lh_job_submit', 'lh_job_status', 'lh_job_cancel',
                                  'lh_evidence_manifest', 'lh_evidence_read_chunk'})
 
     def __init__(self, retained, config, service, reader_factory):
@@ -63,7 +63,7 @@ class ResidentBroker:
     @classmethod
     def open(cls, retained, descriptor):
         config = read_descriptor(descriptor)
-        if (set(config) != {'schema', 'service', 'catalog', 'profile_ref', 'authority_id', 'budgets', 'retained'}
+        if (set(config) - {'workspace'} != {'schema', 'service', 'catalog', 'profile_ref', 'authority_id', 'budgets', 'retained'}
                 or config['schema'] != 'local-hand-resident-adapter/v1'):
             raise JobError('UNAUTHORIZED', 'Invalid resident adapter configuration')
         return cls(retained, config, ServiceClient(config['service']),
@@ -187,11 +187,19 @@ class ResidentBroker:
             # when this request routes to a newly prepared independent ledger.
             self._authorize(principal, TOOL_SCOPES[name])
             Broker._rate(self, principal)
+            if name == 'lh_workspace_read':
+                if not self.config.get('workspace'):
+                    raise JobError('UNSUPPORTED','This entry has no admitted project source')
+                return self.service.call('workspace_read',principal_id=principal.principal_id,**args)
             if name == 'lh_capabilities':
                 result = thaw(self.policy.capabilities(principal, **args))
+                workspace=self.config.get('workspace')
                 result.update(authority_id=self.config['authority_id'], tool_schema_digest=TOOL_SCHEMA_DIGEST,
-                    profiles=[dict(profile_ref=self.config['profile_ref'], allowed_kinds=['host.inspect'],
-                                   budgets=self.config['budgets'])], next_cursor=None,
+                    profiles=[dict(profile_ref=self.config['profile_ref'],
+                                   allowed_kinds=['host.inspect']+(['workspace.edit'] if workspace else []),
+                                   source_refs=workspace['source_refs'] if workspace else [],
+                                   validation_refs=workspace['validation_refs'] if workspace else [],
+                                   budgets=dict(self.config['budgets'],**({'workspace.edit':workspace['budgets']} if workspace else {})))], next_cursor=None,
                     preparation=dict(tool='lh_job_prepare', profile_ref=self.config['profile_ref'],
                                      kind='host.inspect', max_active=1))
                 return result

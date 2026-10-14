@@ -192,6 +192,13 @@ class Registry:
         profile["budgets"] = budget
         profile["resources"] = profile["resource_ids"]
         inputs, prepared, prerequisites = request["inputs"], None, []
+        if request["kind"] == "workspace.edit":
+            from . import workspace_jobs
+            try:
+                profile["source"] = profile["sources"][inputs["source_ref"]]
+                execution = workspace_jobs.build_plan(request, profile)
+            except (KeyError, ValueError) as error:
+                raise JobError("UNSUPPORTED", "Workspace source or fixed validation is not admitted") from error
         if request["kind"] == "ledger.prepare":
             try:
                 profile["source"] = profile["sources"][inputs["source_ref"]]
@@ -214,7 +221,8 @@ class Registry:
                 raise JobError("UNSUPPORTED", "Stable cross-stage NAS mount binding has not been admitted")
             prerequisites = self._prerequisites(request, prepared, principal)
         try:
-            execution = build_plan(request, profile, prepared, prerequisites)
+            if request["kind"] != "workspace.edit":
+                execution = build_plan(request, profile, prepared, prerequisites)
         except (LedgerPlanError, KeyError, TypeError, ValueError):
             raise JobError("UNSUPPORTED", "Admitted inputs cannot resolve the fixed execution plan") from None
         execution["bindings"].update({"expected": request["expected"],
