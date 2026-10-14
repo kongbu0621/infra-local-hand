@@ -10,7 +10,7 @@
 
 旧作业记录仍可查询、取消及核对，现有协议保留历史类型。
 鉴权、任务身份、数据保护、资源上限和结果完整性属于核心保障。
-MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
+MCP 与本地 CLI 复用作业后端和任务契约，都受后端的身份、权限及资源检查约束。
 
 ## 客户端、Server、MCP 与 Tailscale 是什么关系
 
@@ -18,21 +18,23 @@ MCP 与本地 CLI 共用同一个作业后端，入口限制一致。
 
 | 名称 | 在这里是什么意思 |
 | --- | --- |
-| 客户端（Client） | 发出请求并接收结果的程序。通过 ChatGPT 操作 Local Hand 时，ChatGPT 发起工具调用的那一端就是客户端。浏览器是用户操作 ChatGPT 的界面。 |
+| 客户端（Client） | 发出请求并接收结果的程序。通过 ChatGPT 操作 Local Hand 时，具体指 ChatGPT 中负责连接 Local Hand、发起工具调用的组件。浏览器是用户操作 ChatGPT 的界面。 |
 | 服务端（Server） | 在本机环境中运行、等待并处理请求的后台程序。这里指 Local Hand 服务，可以运行在已有电脑或其虚拟机中。 |
 | MCP | Model Context Protocol，一套通信规则，规定如何发现工具、调用工具和返回结果。 |
 | MCP Server | 支持 MCP 通信的服务端。Local Hand 的网络服务入口就是一个 MCP Server，背后连接本地作业后端。 |
 | Tailscale | 部署时可选的网络入口，把请求转发到 Local Hand。任务管理和执行由 Local Hand 实现，MCP 规则也不绑定 Tailscale。 |
 
-使用 Tailscale 入口时，关系如下；调用方需要能够访问这个入口：
+按 [MCP 的正式术语](https://modelcontextprotocol.io/docs/learn/architecture)，ChatGPT 这类 AI 应用称为
+Host（宿主应用），其中连接 MCP Server 的组件称为 Client（客户端）。下图把这层关系展开。
+图中省略了宿主机与虚拟机之间可能存在的端口转发；调用方需要能够访问配置的网络入口。
 
 ```mermaid
 flowchart LR
-    U["你：通过浏览器使用 ChatGPT"] --> C["ChatGPT：发起工具调用"]
+    U["你：通过浏览器使用 ChatGPT"] --> C["ChatGPT 中的 MCP 客户端"]
     C <-->|"MCP 请求与结果（HTTPS）"| G["Tailscale 入口"]
     G <-->|"转发请求与结果"| S["Local Hand MCP Server"]
     S <-->|"提交、查询、取消"| B["本地作业后端"]
-    B --> T["本地任务进程"]
+    B <-->|"启动、停止与结果收集"| T["本地任务进程"]
 ```
 
 例如，你说“查询任务状态”：
@@ -44,18 +46,24 @@ flowchart LR
 
 网络入口的访问范围由部署配置决定：Tailscale **Serve** 面向 Tailscale 私网，
 **Funnel** 可以向公网提供入口，区别见 [Tailscale 官方说明](https://tailscale.com/docs/features/tailscale-funnel/how-to/host-websites)。
-仅有 `ts.net` 地址或服务处于运行状态，不能证明外部 ChatGPT 已能访问；
+本机浏览器能打开登录页、拥有 `ts.net` 地址或服务处于运行状态，都不能单独证明 ChatGPT 的工具调用端已能访问 MCP 入口；
 需要分别确认网络可达和 OAuth 授权。Local Hand 会继续校验调用者身份及每项工具的权限。
 连接中断只表示客户端暂时无法取得响应，不能据此认定任务取消或失败；
-恢复连接后应沿原 `operation_id` 查询，避免重复提交业务。
+恢复连接后应沿原 `operation_id` 查询。取消请求已受理也不等于进程已退出，需要继续查询退出证明。
+后端按原任务 ID 和请求摘要识别重复提交；换一个任务 ID 会被视为新的任务，不能用它重试结果未知的业务。
 
 ### Server 的源码在哪里
 
 服务用 Python 实现，MCP SDK 处理工具声明与协议消息，Uvicorn 提供 HTTP 服务。
-安装后的命令 `local-hand-mcp` 在 [pyproject.toml](pyproject.toml) 中映射到
-`local_hand_mcp.server:main`。`main()` 加载配置、认证器和后端，调用
-`uvicorn.run(create_app(...), host="127.0.0.1", port=args.port, ...)` 启动本机监听；
-外部 HTTPS 入口负责转发到配置的端口。
+本项目的 MCP 网络入口使用 Streamable HTTP 传输，也就是通过 HTTP 交换 MCP 消息，
+并验证访问令牌；本地 CLI 则通过 Unix socket 和操作系统身份映射访问后端。
+两者共享任务逻辑，传输方式和入口鉴权方式各不相同。
+
+命令 `local-hand-mcp` 在 [pyproject.toml](pyproject.toml) 中映射到
+`local_hand_mcp.server:main`；启用该入口需要安装项目固定的 `[mcp]` 可选依赖。
+`main()` 加载配置、认证器和后端，由 `create_app()` 创建应用，再调用 `uvicorn.run()`
+监听 `127.0.0.1`，端口由必填的 `--port` 参数指定。外部 HTTPS 入口转发到配置的端口。
+这里的“本地”指任务执行位置；客户端仍然可以通过网络访问这个服务。
 
 | 源码 | 职责与阅读入口 |
 | --- | --- |
@@ -64,13 +72,19 @@ flowchart LR
 | [resident.py](tools/local_hand_mcp/resident.py) | `ResidentBroker.call()` 将常驻入口的请求送到对应任务或历史结果。 |
 | [resident_service.py](tools/admin/local_hand_system_manager/resident_service.py) | `ResidentService` 准备任务资源；管理服务通过受保护的本地 socket 接收请求。 |
 | [task_service.py](tools/admin/local_hand_system_manager/task_service.py) | `TaskService` 启动并管理一个任务的服务及阶段执行。 |
-| [broker.py](tools/local_hand_jobs/broker.py) | `Broker` 管理提交、取消、状态、资源及持久账本，防止同一任务重复执行。 |
+| [broker.py](tools/local_hand_jobs/broker.py) | `Broker` 管理提交、取消、状态、资源及持久账本；相同任务 ID 与摘要复用已有记录，相同 ID 携带不同请求会被拒绝。 |
 | [runner.py](tools/local_hand_jobs/runner.py) | `Runner` 与进程管理器管理实际执行进程、停止和结果收集。 |
 
 先读 `server.py` 的 `main()` 和 `create_app()`，再顺着 `ResidentBroker.call()`
 查看任务路由，就能把网络入口与实际执行连起来。
+在 `--resident` 常驻模式下，MCP API 与负责准备资源、启动任务的管理服务分别运行，
+通过受保护的本地 socket 通信；表中的模块并不都运行在同一个 Server 进程里。
 
-## 核心实际状态（2026-10-13）
+## 核心现场历史记录（截至 2026-10-13）
+
+以下保留截至该日的实现版本和现场结果。其中的能力范围、容量配置及“尚未验证”描述
+仅代表当时状态，不是今天的配置清单。当前实际可调用工具与允许作业，以运行服务的工具列表、
+`lh_capabilities` 返回及部署配置为准；实现是否存在也不能替代现场验收结果。
 
 **正式 Broker/MCP 核心链已实测：提交、执行、取消、同任务恢复和证据读取。**
 
