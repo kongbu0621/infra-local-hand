@@ -21,7 +21,7 @@ def complete_stopped_preflight(broker, tx, row):
     """
     record = row["record"]
     if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
-            or record["phase"] != "PREFLIGHT" or record["lifecycle"] == "TERMINAL"
+            or record["phase"] not in ("PREFLIGHT", "EXITED") or record["lifecycle"] == "TERMINAL"
             or not (record["cancel_requested"] or record.get("recovered"))
             or record.get("business_started") is not False
             or set(record.get("handles", {})) != {"preflight"}
@@ -34,6 +34,12 @@ def complete_stopped_preflight(broker, tx, row):
         return False
     pending = quota_binding.original(tx, row, "preflight", "QUOTA_EXIT_PENDING", "quota_pending")
     proof = pending["proof"]
+    if record["phase"] == "EXITED":
+        if set(record.get("quota_closed", {})) != {"preflight"}:
+            return False
+        quota_binding.original(tx, row, "preflight", "QUOTA_PHASE_CLOSED", "quota_closed")
+        if record.get("exit_proof") != proof:
+            raise JobError("IO_UNCERTAIN", "Original completed preflight exit changed before cancellation")
     execution = "job-" + row["id"] + "-preflight"
     if (record["handles"]["preflight"].get("execution_id") != execution
             or proof.get("execution_id") != execution or proof.get("state") != "EXITED"

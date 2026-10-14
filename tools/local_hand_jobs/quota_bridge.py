@@ -14,6 +14,7 @@ import socket
 import struct
 
 from . import budget, quota_binding as binding, quota_contract as q, quota_grant as g
+from .state import LedgerBusy
 
 LIMIT = 2 * 1024 * 1024
 CHUNK = 16384
@@ -236,6 +237,12 @@ class Phase:
                 b.close_observation(self.namespace,self.identity,self.phase,value)
             else:raise q.QuotaError('BRIDGE_ACTION')
             return self.snapshot()
+        except LedgerBusy:
+            # A close is an idempotent ledger publication, with no launch or
+            # transport write. Its exact consumed command may finish later.
+            if command.get('action') != 'close':
+                self.failed = True
+            raise
         except BaseException:
             self.failed = True
             raise

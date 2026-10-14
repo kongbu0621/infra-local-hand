@@ -440,6 +440,14 @@ class Broker:
         """Crash recovery records uncertainty; never reissues a persisted intent."""
         from .stopped_completion import complete_stopped_execution
         from .evidence_recovery import release_completed_evidence
+        # A committed closure already has the complete original exit evidence.
+        # Finish its interrupted ledger publication before considering reattach.
+        with self.state.transaction() as tx:
+            retained = self.state.all(tx)
+        for row in retained:
+            key = (row["namespace"], row["id"])
+            if key not in self._active and key not in self._recovering:
+                self._resume_closed_completion(*key, row["record"]["phase"].lower())
         reconnect = []
         with self.fence, self.state.transaction() as tx:
             for row in self.state.all(tx):
@@ -757,16 +765,44 @@ class Broker:
             if existing is not None:
                 original = quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
                 q.require(original["fence"] == value, "PHASE_FENCE_CONFLICT")
-                return
-            q.require(row["record"]["phase"].lower() == phase, "PHASE_CHANGED")
-            self.state.update(tx, namespace, identity, "QUOTA_PHASE_CLOSED", {
-                "quota_event_phase": phase, "quota_closed": dict(row["record"].get("quota_closed", {}),
-                    **{phase: {"phase": phase, "fence": value}}),
-                "gaps": [gap for gap in row["record"].get("gaps", [])
-                         if gap != "Original management and ordinary phase closure is pending"]})
+            else:
+                q.require(row["record"]["phase"].lower() == phase, "PHASE_CHANGED")
+                self.state.update(tx, namespace, identity, "QUOTA_PHASE_CLOSED", {
+                    "quota_event_phase": phase, "quota_closed": dict(row["record"].get("quota_closed", {}),
+                        **{phase: {"phase": phase, "fence": value}}),
+                    "gaps": [gap for gap in row["record"].get("gaps", [])
+                             if gap != "Original management and ordinary phase closure is pending"]})
         # The two journals are deliberately not claimed to commit atomically.
         # A crash here retains closure and pending proof without another launch.
-        self._complete(namespace, identity, pending)
+        self._resume_closed_completion(namespace, identity, phase)
+
+    def _resume_closed_completion(self, namespace, identity, phase):
+        """Publish a committed phase exactly once, without fresh OS observation."""
+        from . import quota_binding, quota_closure
+        if phase not in ("preflight", "business", "reconcile", "evidence"):
+            return False
+        with self.fence:
+            with self.state.transaction() as tx:
+                row = self.state.get(namespace, identity, tx)
+                if (row is None or row["record"]["lifecycle"] == "TERMINAL"
+                        or row["record"]["phase"].lower() != phase):
+                    return False
+                record = row["record"]
+                if phase not in record.get("quota_closed", {}):
+                    if quota_binding.recorded(tx, row, phase, "QUOTA_PHASE_CLOSED"):
+                        raise JobError("IO_UNCERTAIN", "Original phase closure snapshot is missing")
+                    return False
+                if quota_binding.admission_version(tx, row) != 1:
+                    raise JobError("IO_UNCERTAIN", "Original quota closure admission is missing")
+                closed = quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")["fence"]
+                pending = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")["proof"]
+                execution = namespace + "-" + identity + "-" + phase
+                if (closed.get("execution_id") != execution
+                        or record.get("handles", {}).get(phase, {}).get("execution_id") != execution
+                        or closed.get("ordinary_digest") != quota_closure.digest(pending)):
+                    raise JobError("IO_UNCERTAIN", "Original closed phase differs from its pending exit")
+            self._complete(namespace, identity, pending)
+        return True
 
     def _start(self, namespace, identity, phase):
         # Slow preflight facts are produced by the runner; no filesystem access here.
@@ -1179,8 +1215,14 @@ class Broker:
             rows = self.state.all(tx)
         for row in rows:
             key, record = (row["namespace"], row["id"]), row["record"]
-            if (key not in self._active and key not in self._recovering and record["phase"] in ("PREFLIGHT", "BUSINESS", "EVIDENCE")
-                    and record["phase"].lower() in record.get("quota_pending", {})
+            if (key not in self._active and key not in self._recovering
+                    and self._resume_closed_completion(*key, record["phase"].lower())):
+                if key[0] == "job":
+                    self._catalog(self.state.get(*key))
+                continue
+            if (key not in self._active and key not in self._recovering and record["phase"] in ("PREFLIGHT", "BUSINESS", "EVIDENCE", "EXITED")
+                    and (record["phase"].lower() in record.get("quota_pending", {})
+                         or record["phase"] == "EXITED" and record.get("quota_pending"))
                     and (record["cancel_requested"] or record.get("recovered"))):
                 with self.fence, self.state.transaction() as tx:
                     if complete_stopped_execution(self, tx, self.state.get(*key, tx)):

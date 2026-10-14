@@ -129,6 +129,8 @@ class TaskSession:
         self.terminal_sent = False
         self._control_started = False
         self._action = "idle"
+        self._pending_close = None
+        self._close_retry_logged = False
 
     @classmethod
     def open(cls, path, policy):
@@ -257,7 +259,7 @@ class TaskSession:
             if self.value["mode"] == "recover":
                 if key in self.broker._active or key in self.broker._recovering:
                     self.broker.tick()
-            elif row["record"]["cancel_requested"] or self.started:
+            elif self._pending_close is None and (row["record"]["cancel_requested"] or self.started):
                 self.broker.tick()
                 row = self.broker.state.get(*key)
         try:
@@ -266,6 +268,15 @@ class TaskSession:
         except Exception as error:
             if isinstance(error, LedgerBusy) and not self._control_started:
                 raise  # Local preparation can reuse its original reservation.
+            if isinstance(error, LedgerBusy) and self._action == "close" and self._pending_close is not None:
+                # Keep the exact consumed close until its durable publication
+                # can reply. No control packet has been sent and no stage is
+                # launched. The original channel deadline still bounds retry.
+                if not self._close_retry_logged:
+                    diagnostics.failure("task_session", error, operation_id=self.value["operation_id"],
+                                        phase=self.phase, action="close_retry", control_started=True)
+                    self._close_retry_logged = True
+                raise
             # A failed control exchange never becomes an automatic resubmit.
             # Keep the public read/cancel transports and the original ledger.
             diagnostics.failure("task_session", error, operation_id=self.value["operation_id"],
@@ -298,7 +309,7 @@ class TaskSession:
         record = row["record"]
         stopped = record["lifecycle"] == "TERMINAL" and record["cancel_requested"]
         self.channel._time()
-        if stopped:
+        if stopped and self._pending_close is None:
             index = len(self.closures)
             awaiting_advance = (self.handler is None and 0 < index < len(PHASES)
                                 and self.phase == PHASES[index - 1])
@@ -344,13 +355,21 @@ class TaskSession:
                 return
             self._prepare(self._advance(command))
             return
-        if select.select([self.channel.sock], [], [], 0)[0]:
+        if self._pending_close is not None or select.select([self.channel.sock], [], [], 0)[0]:
             self._control_started = True
-            command = self._receive()
+            if self._pending_close is not None:
+                command = self._pending_close
+                self._action = "close"
+            else:
+                command = self._receive()
+                self._close_retry_logged = False
             q.require(type(command) is dict and (command.get("action") != "start" or not self.started),
                       "SESSION_START_REPLAY")
+            if command.get("action") == "close":
+                self._pending_close = command
             reply = self.handler.handle(command)
             self.channel.send(dict(reply, task=self._status(b.state.get("job", identity)["record"])))
+            self._pending_close = None
             if command["action"] == "start":
                 self.started = True
             if reply["closed"] is not None:

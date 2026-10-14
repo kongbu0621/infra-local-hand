@@ -1,18 +1,186 @@
 """Cancellation timing boundaries with a real ledger and modeled OS proofs."""
 import copy
 import hashlib
+import sqlite3
 import unittest
 
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from local_hand_jobs import runner
+from local_hand_jobs.broker import Broker
+from local_hand_jobs.state import LedgerBusy
 from local_hand_jobs.contract import JobError
 from test_local_hand_jobs_quota_binding import observed
 import test_local_hand_jobs_quota_resident_chain as fixtures
 
 
 class CancelBoundaryTests(unittest.TestCase):
+    def pending_result(self, phase, *, failed=False, amend=None):
+        f = fixtures.ResidentChainTests()
+        f.setUp(); self.addCleanup(f.doCleanups)
+        for earlier in ("preflight", "business")[:("preflight", "business", "evidence").index(phase)]:
+            f.close(earlier)
+        complete = fixtures.complete
+        def verified(grant, **options):
+            value = complete(grant, **options)
+            execution = "job-" + f.identity + "-" + phase
+            value[1].update(execution_id=execution, helper_result_verified=True,
+                effects_checked=not failed, exit_code=1 if failed else 0,
+                result=dict(execution_id=execution, phase=phase, outcome="FAILED" if failed else "SUCCEEDED",
+                            effects_checked=not failed, business_started=phase == "business", helper_started=True,
+                            facts={}, **({"error": "LedgerPlanError"} if failed else {})))
+            # The real runner carries the reader's independent exit identity.
+            reader = value[1]["quota_stage_exits"]["reader"]
+            identity = reader["identity"]
+            value[1]["result_reader_exit_proof"] = dict(execution_id=execution, unit=identity["unit"],
+                identity={k:identity[k] for k in ("boot_id", "invocation_id", "cgroup")},
+                state="EXITED", exit_code=0, **dict.fromkeys(("future_start_blocked", "tree_exited",
+                    "writers_stopped", "collectors_stopped"), True))
+            if amend is not None:
+                amend(value[1])
+            return value
+        with patch.object(fixtures, "complete", side_effect=verified):
+            fence, proof = f.pending(phase)
+        return f, fence, proof
+
+    def test_cancellation_after_verified_failure_releases_only_execution_resources(self):
+        for phase, closed in [(p, c) for p in ("preflight", "business", "evidence") for c in (False, True)]:
+            with self.subTest(phase=phase, closed=closed):
+                f, fence, proof = self.pending_result(phase, failed=True)
+                b = f.broker
+                if closed:
+                    b.close_observation("job", f.identity, phase, fence)
+                before = copy.deepcopy(f.row())
+                with b.state.transaction() as tx:
+                    leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                b.cancel(f.identity, before["digest"], {"kind":"job"}, f.f.owner)
+                b.tick(); b.tick()  # AWAITING_SEAL first records the blocked evidence start.
+                record = f.row()["record"]
+                self.assertEqual(("TERMINAL", "EXITED"), (record["lifecycle"], record["phase"]))
+                self.assertEqual({"preflight":"CANCELLED", "business":"UNKNOWN", "evidence":"SUCCEEDED"}[phase], record["outcome"])
+                self.assertEqual(proof, record["exit_proof"])
+                self.assertEqual("FAILED", record["exit_proof"]["result"]["outcome"])
+                self.assertEqual(before["record"].get("quota_closed", {}), record.get("quota_closed", {}))
+                self.assertEqual(before["record"]["delivery_intents"], record["delivery_intents"])
+                with b.state.transaction() as tx:
+                    self.assertEqual([r for r in leases if r[1] != f.identity],
+                        [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+                events = b.state.events("job", f.identity)
+                b.tick(); b.cancel(f.identity, before["digest"], {"kind":"job"}, f.f.owner)
+                self.assertEqual(events, b.state.events("job", f.identity))
+
+    def test_cancelled_closure_retries_publication_after_real_ledger_contention(self):
+        for phase in ("business", "evidence"):
+            for resume in ("tick", "same_close", "recover", "new_broker"):
+                with self.subTest(phase=phase, resume=resume):
+                    f, fence, proof = self.pending_result(phase)
+                    b = f.broker
+                    b.cancel(f.identity, f.row()["digest"], {"kind":"job"}, f.f.owner)
+                    writer = sqlite3.connect(b.state.path, isolation_level=None)
+                    self.addCleanup(writer.close)
+                    complete = b._complete
+                    def locked(*args):
+                        writer.execute("BEGIN IMMEDIATE")
+                        try:return complete(*args)
+                        finally:writer.execute("ROLLBACK")
+                    with patch.object(b, "_complete", side_effect=locked), self.assertRaises(LedgerBusy):
+                        b.close_observation("job", f.identity, phase, fence)
+                    before = copy.deepcopy(f.row())
+                    self.assertIn(phase, before["record"]["quota_closed"])
+                    self.assertNotEqual("TERMINAL", before["record"]["lifecycle"])
+                    starts = copy.deepcopy(f.runner.starts)
+                    if resume == "same_close":
+                        b.close_observation("job", f.identity, phase, fence)
+                    elif resume == "new_broker":
+                        other = Broker(b.state, b.policy, b.registry, f.runner, evidence=b.evidence, quota_required=True)
+                        self.assertNotEqual(b._quota_session, other._quota_session)
+                        with patch.object(f.runner, "reattach", create=True,
+                                          side_effect=AssertionError("Closed execution reattached")) as reattach:
+                            other.recover()
+                            reattach.assert_not_called()
+                    else:
+                        getattr(b, resume)()
+                    record = f.row()["record"]
+                    self.assertEqual(("TERMINAL", "EXITED", "SUCCEEDED"),
+                        (record["lifecycle"], record["phase"], record["outcome"]))
+                    self.assertEqual("SEALED" if phase == "evidence" else "STAGING", record["evidence"])
+                    self.assertEqual(starts, f.runner.starts)
+                    self.assertEqual(before["record"]["quota_closed"], record["quota_closed"])
+                    events = b.state.events("job", f.identity)
+                    self.assertEqual(("preflight", "business", "evidence").index(phase)+1,
+                        sum(e["kind"] == "QUOTA_PHASE_CLOSED" for e in events))
+                    b.tick(); b.recover()
+                    b.close_observation("job", f.identity, phase, fence)
+                    self.assertEqual(events, b.state.events("job", f.identity))
+
+    def test_verified_failure_requires_exact_result_identity_and_reader_exit(self):
+        mutations = {
+            "foreign_execution": lambda p: p["result"].update(execution_id="foreign"),
+            "foreign_phase": lambda p: p["result"].update(phase="preflight"),
+            "unchecked_reader": lambda p: p["result_reader_exit_proof"].update(collectors_stopped=False),
+            "foreign_reader_boot": lambda p: p["result_reader_exit_proof"]["identity"].update(boot_id="other"),
+            "live_writer": lambda p: p.update(writers_stopped=False),
+            "contradictory_effects": lambda p: p["result"].update(effects_checked=True),
+        }
+        for name, amend in mutations.items():
+            with self.subTest(mutation=name):
+                f, _, _ = self.pending_result("business", failed=True, amend=amend)
+                b = f.broker
+                b.cancel(f.identity, f.row()["digest"], {"kind":"job"}, f.f.owner)
+                before = copy.deepcopy(f.row())
+                with b.state.transaction() as tx:
+                    leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                b.tick()
+                self.assertEqual(before, f.row())
+                self.assertNotEqual("TERMINAL", f.row()["record"]["lifecycle"])
+                with b.state.transaction() as tx:
+                    self.assertEqual(leases, [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+
+    def test_closed_publication_rejects_changed_retained_evidence(self):
+        for field in ("quota_closed", "quota_pending", "handles"):
+            with self.subTest(field=field):
+                f, fence, _ = self.pending_result("business")
+                b = f.broker
+                b.cancel(f.identity, f.row()["digest"], {"kind":"job"}, f.f.owner)
+                with patch.object(b, "_complete", side_effect=RuntimeError("publication interrupted")):
+                    with self.assertRaises(RuntimeError):
+                        b.close_observation("job", f.identity, "business", fence)
+                changed = copy.deepcopy(f.row()["record"][field])
+                if field == "handles":
+                    changed["business"]["execution_id"] = "foreign"
+                else:
+                    changed.pop("business")
+                with b.state.transaction() as tx:
+                    b.state.update(tx, "job", f.identity, "TEST_CORRUPTION", {field:changed})
+                before = copy.deepcopy(f.row())
+                starts = copy.deepcopy(f.runner.starts)
+                events = b.state.events("job", f.identity)
+                with self.assertRaises(JobError):
+                    b.tick()
+                self.assertEqual(before, f.row())
+                self.assertEqual(starts, f.runner.starts)
+                self.assertEqual(events, b.state.events("job", f.identity))
+
+    def test_cancel_after_closure_rejects_changed_original_exit(self):
+        for phase in ("preflight", "business", "evidence"):
+            with self.subTest(phase=phase):
+                f, fence, _ = self.pending_result(phase, failed=True)
+                b = f.broker
+                b.close_observation("job", f.identity, phase, fence)
+                b.cancel(f.identity, f.row()["digest"], {"kind":"job"}, f.f.owner)
+                if phase == "business":
+                    b.tick()  # Record blocked evidence start before testing the EXITED snapshot.
+                self.assertEqual("EXITED", f.row()["record"]["phase"])
+                changed = copy.deepcopy(f.row()["record"]["exit_proof"])
+                changed["exit_code"] = 77
+                with b.state.transaction() as tx:
+                    b.state.update(tx, "job", f.identity, "TEST_CORRUPTION", {"exit_proof":changed})
+                before = copy.deepcopy(f.row())
+                with self.assertRaises(JobError):
+                    b.tick()
+                self.assertEqual(before, f.row())
+
     def test_cancel_before_observer_enters_manager_finishes_original_task(self):
         for phase in ("preflight", "business", "evidence"):
             for failure in ("cancel", "observer_start", "manager_no_start"):

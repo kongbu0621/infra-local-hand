@@ -66,13 +66,14 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
     record = row["record"]
     previous = ["preflight"] if phase == "business" else ["preflight", "business"]
     expected_phases = previous + [phase]
+    closed_phases = expected_phases if record["phase"] == "EXITED" else previous
     if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
-            or record["phase"] != phase.upper() or record["lifecycle"] == "TERMINAL"
+            or record["phase"] not in (phase.upper(), "EXITED") or record["lifecycle"] == "TERMINAL"
             or record["cancel_requested"] is not True
             or (helper_delivered is False and record.get("business_started") is True)
             or set(record.get("handles", {})) != set(expected_phases)
             or set(record.get("quota_preparations", {})) != set(expected_phases)
-            or set(record.get("quota_closed", {})) != set(previous)
+            or set(record.get("quota_closed", {})) != set(closed_phases)
             or phase not in record.get("quota_pending", {})
             or ("job", row["id"]) in broker._active
             or ("job", row["id"]) in broker._recovering):
@@ -86,11 +87,13 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
             return False
     if quota_binding.admission_version(tx, row) != 1:
         return False
-    for earlier in previous:
+    for earlier in closed_phases:
         quota_binding.original(tx, row, earlier, "QUOTA_PHASE_CLOSED", "quota_closed")
     for current in expected_phases:
         quota_binding.original(tx, row, current, "QUOTA_PREPARATION", "quota_preparations")
     proof = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")["proof"]
+    if record["phase"] == "EXITED" and record.get("exit_proof") != proof:
+        raise JobError("IO_UNCERTAIN", "Original completed exit proof changed before cancellation")
     execution = "job-" + row["id"] + "-" + phase
     if (record["handles"][phase].get("execution_id") != execution
             or proof.get("execution_id") != execution or proof.get("state") != "EXITED"
@@ -128,10 +131,17 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
         if proof.get("result", {}).get("business_started") is not False:
             return False
     else:
-        if (proof.get("helper_result_verified") is not False or proof.get("effects_checked") is not False
-                or proof.get("result", {}).get("outcome") != "UNKNOWN"
-                or proof.get("result", {}).get("helper_started") is not True):
+        result = proof.get("result", {})
+        missing_result = proof.get("helper_result_verified") is False and result.get("outcome") == "UNKNOWN"
+        failed_result = (count == 3 and proof.get("helper_result_verified") is True
+            and result.get("execution_id") == execution and result.get("phase") == phase
+            and result.get("effects_checked") is False and result.get("outcome") in ("FAILED", "CANCELLED", "UNKNOWN"))
+        if (not (missing_result or failed_result) or proof.get("effects_checked") is not False
+                or result.get("helper_started") is not True):
             return False
+        # A verified failure report does not prove business effects, but it
+        # cannot keep this fixed inspection's already stopped local writers
+        # holding the execution lease. Retain the report verbatim in the proof.
         quota_binding.original(tx, row, phase, "QUOTA_OBSERVED", "quota_observed")
     if count == 3 and not _reader_exited(broker, proof, execution, row, phase):
         return False
@@ -158,7 +168,7 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
         "business_started": record.get("business_started") if helper_delivered else False,
         "exit_proof": proof, "side_effects": "RETAINED_LOCAL_FILES" if helper_delivered else "NONE",
         "execution_resources_released": True, "artifacts_retained": True,
-        "gaps": ["Business result was not collected before cancellation; owned files retained"] if helper_delivered else [],
+        "gaps": ["Business effects remain unverified after cancellation; original result and owned files retained"] if helper_delivered else [],
         "stopped_completion": {"execution_id": execution, "proof_digest": quota_closure.digest(proof),
                                **({"business_result_unknown": True, "effect_scope": "OWNED_LOCAL_FILES"}
                                   if helper_delivered else {"business_not_started": True})},

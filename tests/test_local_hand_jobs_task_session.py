@@ -274,6 +274,77 @@ class TaskSessionTests(unittest.TestCase):
         self.command("finish")
         self.assertTrue(self.session.finished)
 
+    def test_close_publication_contention_replies_once_and_cancellation_finishes(self):
+        self.session.tick()
+        fence, _ = self.f.pending("preflight")
+        self.command("close", fence)
+        closed = self.f.row()["record"]["quota_closed"]["preflight"]
+        self.f.chain.retain_closure("preflight", closed)
+        self.command("advance", {"from":"preflight", "to":"business",
+                                "closure_digest":quota_closure.digest(closed)})
+        fence, _ = self.f.pending("business")
+        starts = copy.deepcopy(self.f.runner.starts)
+        replies = copy.deepcopy(self.channel.outgoing)
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        complete = self.broker._complete
+        def locked(*args):
+            writer.execute("BEGIN IMMEDIATE")
+            try:return complete(*args)
+            finally:writer.execute("ROLLBACK")
+        with patch.object(self.broker, "_complete", side_effect=locked):
+            with self.assertRaises(JobError):
+                self.command("close", fence)
+        self.assertIn("business", self.f.row()["record"]["quota_closed"])
+        self.assertEqual([], self.channel.incoming)
+        self.assertEqual(replies, self.channel.outgoing)
+        self.assertIsNone(self.session.failure)
+        self.assertFalse(self.session.handler.failed)
+        self.broker.cancel(self.f.identity, self.f.row()["digest"], {"kind":"job"}, self.f.f.owner)
+        self.session.tick()
+        reply = self.channel.outgoing[-1]
+        self.assertEqual(len(replies)+1, len(self.channel.outgoing))
+        self.assertEqual(fence, reply["closed"]["fence"])
+        self.assertEqual("TERMINAL", reply["task"]["lifecycle"])
+        self.assertIsNone(self.session.failure)
+        self.command("advance", {"from":"business", "to":"evidence",
+                                "closure_digest":quota_closure.digest(reply["closed"])})
+        self.assertEqual("terminal", self.channel.outgoing[-1]["event"])
+        self.command("finish")
+        self.assertTrue(self.session.finished)
+        self.assertEqual(starts, self.f.runner.starts)
+        self.assertNotIn("evidence", self.f.row()["record"]["handles"])
+        self.assertEqual(2, sum(e["kind"] == "QUOTA_PHASE_CLOSED"
+                               for e in self.broker.state.events("job", self.f.identity)))
+
+    def test_close_reply_contention_waits_for_original_advance_before_next_preparation(self):
+        self.session.tick()
+        fence, _ = self.f.pending("preflight")
+        self.session.started = True
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        snapshot = self.session.handler.snapshot
+        def locked():
+            writer.execute("BEGIN IMMEDIATE")
+            try:return snapshot()
+            finally:writer.execute("ROLLBACK")
+        with patch.object(self.session.handler, "snapshot", side_effect=locked):
+            with self.assertRaises(JobError):
+                self.command("close", fence)
+        self.assertEqual("PREFLIGHT_COMPLETE", self.f.row()["record"]["phase"])
+        starts = copy.deepcopy(self.f.runner.starts)
+        self.session.tick()
+        reply = self.channel.outgoing[-1]
+        self.assertEqual(fence, reply["closed"]["fence"])
+        self.assertIsNone(self.session.failure)
+        self.assertEqual({"preflight"}, set(self.f.row()["record"]["quota_preparations"]))
+        self.assertEqual(starts, self.f.runner.starts)
+        self.f.chain.retain_closure("preflight", reply["closed"])
+        self.command("advance", {"from":"preflight", "to":"business",
+                                "closure_digest":quota_closure.digest(reply["closed"])})
+        self.assertEqual("business", self.channel.outgoing[-1]["phase"])
+        self.assertEqual(starts, self.f.runner.starts)
+
     def test_cancelled_transition_still_rejects_changed_closure_digest(self):
         self.session.tick()
         fence, _ = self.f.pending("preflight")
