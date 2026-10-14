@@ -83,7 +83,8 @@ def task_input(config, operation, principal, serial):
         plan['settings']['controllers'][key]['unit'] = 'lhqsvc' + token + 'a' + str(serial) + suffix + '.service'
     for (index, root) in enumerate(plan['roots']):
         root['project_id'] = config['first_project_id'] + (serial - 1) * 7 + index
-    v.update(transport='broker', mcp=None, cancellation=False, scopes=['lh:inspect', 'lh:submit', 'lh:read', 'lh:evidence'])
+    v.update(transport='broker', mcp=None, cancellation=True,
+             scopes=['lh:inspect', 'lh:submit', 'lh:read', 'lh:cancel', 'lh:evidence'])
     v.pop('helpers', None)
     v.pop('auth', None)
     return v

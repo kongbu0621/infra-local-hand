@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.cli import MaintenanceServer, request
-from local_hand_jobs.contract import JobError
+from local_hand_jobs.contract import JobError, Principal
 from local_hand_jobs.state import StateStore
 import test_local_hand_jobs_broker as fixtures
 
@@ -51,6 +51,63 @@ class ReadOnlyTests(unittest.TestCase):
                 tx.execute("UPDATE counters SET value=value+1 WHERE key='generation'")
         with self.f.db.transaction() as tx:
             self.assertEqual(1, tx.execute("SELECT value FROM counters WHERE key='generation'").fetchone()[0])
+
+    def test_retained_cancellation_acknowledges_only_a_valid_terminal_target_without_writes(self):
+        args=dict(operation_id=self.f.request['operation_id'],
+                  expected_request_digest=self.f.request['request_digest'],target={'kind':'job'})
+        with self.assertRaises(JobError) as caught:self.broker.cancel(principal=self.f.owner,**args)
+        self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+        self.assertFalse(self.f.status()['cancel_requested'])
+        original=self.f.cancel()
+        before=self.f.db.events('job',args['operation_id'])
+        for _ in range(2):self.assertEqual(original,self.broker.cancel(principal=self.f.owner,**args))
+        for changed,principal,code in (
+                (dict(args,expected_request_digest='f'*64),self.f.owner,'CONFLICT'),
+                (dict(args,target={'kind':'reconcile','reconcile_id':'12345678-1234-4234-8234-123456789abc'}),self.f.owner,'NOT_FOUND'),
+                (args,Principal('other',self.f.owner.scopes),'UNAUTHORIZED'),
+                (args,Principal('owner',frozenset({'lh:read'})),'UNAUTHORIZED')):
+            with self.assertRaises(JobError) as caught:self.broker.cancel(principal=principal,**changed)
+            self.assertEqual(code,caught.exception.code)
+        self.assertEqual(before,self.f.db.events('job',args['operation_id']))
+        self.assertEqual([],self.f.runner.starts)
+
+    def test_resident_cancel_reaches_real_socket_and_durable_broker_then_retained_reader(self):
+        from local_hand_mcp.resident import ResidentBroker
+        self.f.broker.tick()
+        self.f.policy.broker_root=Path(self.f.temp.name)
+        self.broker.authority_lock=None
+        server=MaintenanceServer(self.f.broker,Path(self.f.temp.name)/'maintenance.sock',{os.getuid():self.f.owner})
+        self.addCleanup(server.close);server.start()
+        service=Mock();service.call.return_value={'state':'RUNNING'}
+        adapter=ResidentBroker(self.broker,{'retained':[]},service,Mock(return_value=self.broker))
+        record=dict(operation_id=self.f.request['operation_id'],principal_id='owner',state='READY',
+                    request=self.f.request,policy_path='/synthetic-policy')
+        args=dict(operation_id=self.f.request['operation_id'],
+                  expected_request_digest=self.f.request['request_digest'],target={'kind':'job'})
+        with patch.object(adapter,'_record',return_value=record), \
+             patch('local_hand_mcp.resident.Policy.from_file',return_value=self.f.policy):
+            with self.assertRaises(JobError) as caught:
+                adapter.call('lh_job_cancel',dict(args,expected_request_digest='f'*64),self.f.owner)
+            self.assertEqual('CONFLICT',caught.exception.code)
+            self.assertFalse(self.f.status()['cancel_requested'])
+            result=adapter.call('lh_job_cancel',args,self.f.owner)
+            self.assertTrue(result['cancel_requested'])
+            self.assertNotEqual('TERMINAL',result['lifecycle'])
+            events=self.f.db.events('job',args['operation_id'])
+            self.assertEqual(result,adapter.call('lh_job_cancel',args,self.f.owner))
+            self.assertEqual(events,self.f.db.events('job',args['operation_id']))
+            self.f.broker.tick()
+            self.assertTrue(self.f.runner.stops)
+            self.f.runner.finish(self.f.runner.starts[0][1])
+            self.f.broker.tick();self.f.broker.tick()
+            self.assertEqual(1,len(self.f.runner.starts))
+            self.assertEqual('TERMINAL',self.f.status()['lifecycle'])
+            self.assertEqual('CANCELLED',self.f.status()['outcome'])
+            service.call.return_value={'state':'EXITED'}
+            events=self.f.db.events('job',args['operation_id'])
+            self.assertEqual('CANCELLED',adapter.call('lh_job_cancel',args,self.f.owner)['outcome'])
+            self.assertEqual(events,self.f.db.events('job',args['operation_id']))
+        self.assertTrue(all(item.args[0]=='status' for item in service.call.call_args_list))
 
     def test_read_only_cannot_create_a_ledger(self):
         path = Path(self.f.temp.name) / "missing.sqlite"

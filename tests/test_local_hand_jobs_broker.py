@@ -902,8 +902,16 @@ class BrokerTests(unittest.TestCase):
             "seal_id": "synthetic-seal", "seal_sha256": "a" * 64,
             "event_seq": self.status()["event_seq"], "complete": True})
         before = copy.deepcopy(registry.observations[self.request["operation_id"]])
+        original = self.status()
+        events = self.db.events('job',self.request['operation_id'])
         with mock.patch("local_hand_jobs.state.time.time", return_value=before["observed_at"] + 7200):
-            self.cancel()
+            for _ in range(2):
+                result = self.cancel()
+                self.assertFalse(result['cancel_requested'])
+                self.assertEqual(original['event_seq'],result['event_seq'])
+                self.assertEqual('SUCCEEDED',result['outcome'])
+        self.assertEqual(events,self.db.events('job',self.request['operation_id']))
+        self.assertEqual(original,self.status())
         restored = CatalogFixture()
         Broker(self.db, self.policy, restored, SupervisorFixture())
         after = restored.observations[self.request["operation_id"]]

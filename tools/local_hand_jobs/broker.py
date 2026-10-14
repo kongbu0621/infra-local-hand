@@ -346,8 +346,6 @@ class Broker:
                                tree_exited=proof.get("tree_exited"), effects_checked=proof.get("effects_checked"))
 
     def cancel(self, operation_id, expected_request_digest, target, principal):
-        if self.read_only:
-            raise JobError("UNSUPPORTED", "This service only reads retained task results")
         namespace = target["kind"]
         identity = operation_id if namespace == "job" else target["reconcile_id"]
         with self.fence, self.state.transaction() as tx:
@@ -358,6 +356,14 @@ class Broker:
             if row["parent"] != operation_id:
                 raise JobError("CONFLICT", "Cancellation target belongs to another operation")
             record = row["record"]
+            # A completed target has nothing left to cancel. In particular, a
+            # late request must not rewrite a successful sealed result. The
+            # resident adapter also uses this path with a read-only ledger;
+            # all identity and authorization checks above still apply.
+            if record["lifecycle"] == "TERMINAL":
+                return self._view(row)
+            if self.read_only:
+                raise JobError("IO_UNCERTAIN", "No live task controller; cancellation has not been recorded")
             if not record["cancel_requested"]:
                 changes = {"cancel_requested": True}
                 if record["phase"] == "QUEUED":

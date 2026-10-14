@@ -125,6 +125,8 @@ class ServerTests(unittest.TestCase):
             tools = {tool["name"]: tool for tool in response.json()["result"]["tools"]}
             self.assertEqual(set(ResidentBroker.supported_tools), set(tools))
             self.assertEqual([{"type": "oauth2", "scopes": ["lh:submit"]}], tools["lh_job_prepare"]["securitySchemes"])
+            self.assertEqual([{"type": "oauth2", "scopes": ["lh:cancel"]}], tools["lh_job_cancel"]["securitySchemes"])
+            self.assertNotIn('lh_job_reconcile',tools)
             args = dict(operation_id=operation, kind="host.inspect", profile_ref="fixture")
             response = client.post("/mcp", json=dict(jsonrpc="2.0", id=2, method="tools/call",
                 params=dict(name="lh_job_prepare", arguments=args)), headers=self.headers)
@@ -132,6 +134,20 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(result["isError"])
             self.assertEqual(broker.output, result["structuredContent"])
             self.assertEqual("project-owner", broker.calls[0][2].principal_id)
+            cancel=dict(operation_id=operation,expected_request_digest='a'*64,target={'kind':'job'})
+            response=client.post('/mcp',json=dict(jsonrpc='2.0',id=3,method='tools/call',
+                params=dict(name='lh_job_cancel',arguments=cancel)),headers={**self.headers,
+                    'Authorization':'Bearer '+self.issuer.token(claims={'scope':'lh:read'})})
+            result=response.json()['result']
+            self.assertEqual('UNAUTHORIZED',result['structuredContent']['error']['code'])
+            self.assertIn('lh:cancel',result['_meta']['mcp/www_authenticate'][0])
+            self.assertEqual(1,len(broker.calls))
+            broker.output=dict(operation_id=operation,request_digest='a'*64,lifecycle='RUNNING',
+                               outcome='PENDING',evidence='STAGING',phase='PREFLIGHT',cancel_requested=True)
+            response=client.post('/mcp',json=dict(jsonrpc='2.0',id=4,method='tools/call',
+                params=dict(name='lh_job_cancel',arguments=cancel)),headers=self.headers)
+            self.assertFalse(response.json()['result']['isError'])
+            self.assertEqual(('lh_job_cancel',cancel),broker.calls[-1][:2])
 
     def test_real_sdk_initialization_tools_and_principal_mapping(self):
         response = self.rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},

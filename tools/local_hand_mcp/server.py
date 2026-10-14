@@ -29,7 +29,7 @@ _DESCRIPTIONS = {
     "lh_job_submit": "Durably submit one fixed job; preserve its operation ID across uncertain replies.",
     "lh_job_prepare": "Automatically prepare a new host.inspect using a fresh operation UUID. Poll that same UUID while PREPARING; when READY, submit the returned request unchanged. FAILED is retained; retry_failed=true retries preparation after its cause is resolved. Preparation does not execute the job.",
     "lh_job_status": "Read one owned job or the exact requested reconciliation round.",
-    "lh_job_cancel": "Durably request cancellation of the explicitly selected execution identity.",
+    "lh_job_cancel": "Request cancellation using the original request digest and explicit target (kind=job for the task). Poll the same operation ID to confirm exit; a cancellation receipt alone is not exit proof. Repeated cancellation is safe; completed targets return their original result.",
     "lh_job_reconcile": "Observe original effects under a stable reconciliation ID; never rerun business work.",
     "lh_evidence_manifest": "Read a page of an owned, durably sealed evidence manifest.",
     "lh_evidence_read_chunk": "Read a bounded authenticated evidence chunk for host-side file assembly.",

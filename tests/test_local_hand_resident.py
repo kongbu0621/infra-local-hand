@@ -125,6 +125,68 @@ class ResidentTests(unittest.TestCase):
         self.call('lh_job_status',args)
         self.reader.call.assert_called_once_with('lh_job_status',args,self.owner)
 
+    def cancel_args(self):
+        return dict(operation_id=self.request['operation_id'],
+                    expected_request_digest=self.request['request_digest'],target={'kind':'job'})
+
+    def test_running_cancel_routes_original_identity_and_never_starts_a_controller(self):
+        args=self.cancel_args()
+        self.service.call.return_value={'state':'RUNNING'}
+        self.local.return_value={'cancel_requested':True,'lifecycle':'RUNNING'}
+        self.assertEqual(self.local.return_value,self.call('lh_job_cancel',args))
+        self.local.assert_called_once_with(Path(self.policy.broker_root)/'maintenance.sock',
+                                           'lh_job_cancel',args,timeout=3)
+        self.assertEqual(['status'],[item.args[0] for item in self.service.call.call_args_list])
+        self.factory.assert_not_called()
+
+    def test_cancel_requires_entry_and_task_grants_and_owner_before_delivery(self):
+        args=self.cancel_args()
+        for principal in (Principal('owner',frozenset({'lh:read'})),Principal('other',self.owner.scopes)):
+            with self.assertRaises(JobError) as caught:self.call('lh_job_cancel',args,principal)
+            self.assertEqual('UNAUTHORIZED',caught.exception.code)
+        config=policy_fixture('/synthetic-resident')
+        config['principals']['owner']['scopes'].remove('lh:cancel')
+        with patch('local_hand_mcp.resident.Policy.from_file',return_value=Policy(config)):
+            with self.assertRaises(JobError) as caught:self.call('lh_job_cancel',args)
+        self.assertEqual('UNAUTHORIZED',caught.exception.code)
+        self.service.call.assert_not_called();self.local.assert_not_called()
+
+    def test_cancel_before_submission_or_during_preparation_does_not_launch(self):
+        args=self.cancel_args();self.service.call.return_value={'state':'IDLE'}
+        with self.assertRaises(JobError) as caught:self.call('lh_job_cancel',args)
+        self.assertEqual('NOT_FOUND',caught.exception.code)
+        self.record['state']='PREPARING'
+        with self.assertRaises(JobError) as caught:self.call('lh_job_cancel',args)
+        self.assertEqual('RESOURCE_BUSY',caught.exception.code)
+        self.assertEqual(['status'],[item.args[0] for item in self.service.call.call_args_list])
+        self.local.assert_not_called();self.factory.assert_not_called()
+
+    def test_cancel_response_loss_never_redelivers_or_restarts_and_status_remains_usable(self):
+        args=self.cancel_args();self.service.call.return_value={'state':'RUNNING'}
+        self.local.side_effect=[JobError('IO_UNCERTAIN','lost cancellation receipt'),{'cancel_requested':True}]
+        with self.assertRaises(JobError):self.call('lh_job_cancel',args)
+        self.assertEqual({'cancel_requested':True},self.call('lh_job_status',{'operation_id':args['operation_id']}))
+        self.assertEqual(['lh_job_cancel','lh_job_status'],[item.args[1] for item in self.local.call_args_list])
+        self.assertTrue(all(item.args[0]=='status' for item in self.service.call.call_args_list))
+
+    def test_exited_or_unresolved_cancel_uses_only_retained_terminal_check(self):
+        args=self.cancel_args();self.reader.cancel.return_value={'lifecycle':'TERMINAL','outcome':'CANCELLED'}
+        for state in ('EXITED','UNRESOLVED'):
+            self.service.call.return_value={'state':state}
+            self.assertEqual(self.reader.cancel.return_value,self.call('lh_job_cancel',args))
+        self.reader.cancel.assert_called_with(principal=self.owner,**args)
+        self.reader.call.assert_not_called();self.local.assert_not_called()
+        self.assertTrue(all(item.args[0]=='status' for item in self.service.call.call_args_list))
+
+    def test_historical_cancel_falls_through_only_on_missing_original_task(self):
+        args=self.cancel_args();self.lookup.return_value=None
+        self.broker.config['retained']=['/older-policy']
+        self.retained.cancel.side_effect=JobError('NOT_FOUND','not here')
+        self.reader.cancel.return_value={'lifecycle':'TERMINAL','outcome':'SUCCEEDED'}
+        self.assertEqual(self.reader.cancel.return_value,self.call('lh_job_cancel',args))
+        self.reader.cancel.assert_called_once_with(principal=self.owner,**args)
+        self.service.call.assert_not_called();self.local.assert_not_called()
+
     def test_retained_result_does_not_open_an_unrelated_broken_reader(self):
         self.lookup.return_value=None
         self.broker.config['retained']=['/unrelated-policy']
@@ -581,6 +643,8 @@ class GeneratedInputTests(unittest.TestCase):
             values=[provision_task.task_input(config,str(uuid.uuid4()),'owner',serial) for serial in (1,2)]
         for value in values:
             self.assertEqual(value,json.loads(json.dumps(value)))
+            self.assertTrue(value['cancellation'])
+            self.assertEqual({'lh:inspect','lh:submit','lh:read','lh:cancel','lh:evidence'},set(value['scopes']))
             identity=value['plan']['settings']['identity']
             self.assertRegex(identity['session'],r'^[0-9a-f]{64}$')
             self.assertEqual('new-boot',value['plan']['host']['boot_id'])

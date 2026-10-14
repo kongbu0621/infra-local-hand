@@ -48,7 +48,7 @@ class ServiceClient:
 class ResidentBroker:
     read_only = False
     _authorize = Broker._authorize
-    supported_tools = frozenset({'lh_capabilities', 'lh_job_prepare', 'lh_job_submit', 'lh_job_status',
+    supported_tools = frozenset({'lh_capabilities', 'lh_job_prepare', 'lh_job_submit', 'lh_job_status', 'lh_job_cancel',
                                  'lh_evidence_manifest', 'lh_evidence_read_chunk'})
 
     def __init__(self, retained, config, service, reader_factory):
@@ -93,6 +93,10 @@ class ResidentBroker:
         for path in (None, *self.config['retained']):
             reader = self.retained if path is None else self._reader(path)
             try:
+                if name == 'lh_job_cancel':
+                    # Retained readers can acknowledge an already terminal
+                    # target; they cannot write a new cancellation or execute.
+                    return reader.cancel(principal=principal, **args)
                 return reader.call(name, args, principal)
             except (JobError, EvidenceError) as error:
                 if error.code != 'NOT_FOUND':
@@ -228,6 +232,8 @@ class ResidentBroker:
                         raise JobError('CONFLICT', 'Committed task identity changed')
                     reader._authorize(principal, 'lh:submit', owner=row['principal'])
                     return reader._view(row)
+                if name == 'lh_job_cancel':
+                    return reader.cancel(principal=principal, **args)
                 result = reader.call(name, args, principal)
             if name == 'lh_evidence_manifest':
                 self._remember_manifest(record, result, principal)
