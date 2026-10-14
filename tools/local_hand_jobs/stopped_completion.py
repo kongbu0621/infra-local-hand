@@ -59,8 +59,45 @@ def complete_recovered_execution(broker, tx, row):
             or _complete_stopped_phase(broker, tx, row, helper_delivered=None, phase="evidence", recovery=True))
 
 
+def _never_delivered(proof, execution, row, phase, stage):
+    """Recognize the original gateway's persisted absence proof, not an intent.
+
+    Only recovery produces this proof after checking the original empty parent
+    and absent deterministic unit. No invocation or result may be invented to
+    satisfy the delivered-stage exit path; contradictory saved receipts fail.
+    """
+    if type(proof) is not dict:
+        return False
+    suffix = "" if stage == "helper" else ":" + stage
+    unit = "lhj-" + hashlib.sha256((execution + suffix).encode()).hexdigest() + ".service"
+    original = row["record"]["handles"][phase].get("manager", {}).get(stage) or {}
+    result = proof.get("result")
+    digest = proof.get("proof_digest")
+    return (proof.get("execution_id") == execution and proof.get("unit") == unit
+            and proof.get("state") == "EXITED" and proof.get("launch_prevented") is True
+            and all(proof.get(key) is True for key in
+                    ("future_start_blocked", "tree_exited", "writers_stopped"))
+            and proof.get("collectors_stopped") is False and proof.get("effects_checked") is False
+            and "identity" in proof and proof["identity"] is None
+            and "exit_code" in proof and proof["exit_code"] is None
+            and type(proof.get("observed_ns")) is int and proof["observed_ns"] > 0
+            and isinstance(digest, str) and len(digest) == 64
+            and all(ch in "0123456789abcdef" for ch in digest)
+            and type(result) is dict and result.get("outcome") == "UNKNOWN"
+            and result.get("helper_started") is False and result.get("business_started") is False
+            and original.get("invocation_id") is None
+            and not original.get("launch_acked") and not original.get("stop_acked")
+            and all(original.get(key) in (None, value) for key, value in
+                    (("unit", unit), ("execution_id", execution),
+                     ("boot_id", row["record"]["quota_preparations"][phase]["budget"]["boot_id"]))))
+
+
 def _reader_exited(broker, proof, execution, row, phase, *, recovery=False):
     reader = proof.get("result_reader_exit_proof", {})
+    if recovery and _never_delivered(reader, execution, row, phase, "result_reader"):
+        return proof.get("helper_result_verified") is False
+    if type(reader) is not dict or type(reader.get("identity")) is not dict:
+        return False
     unit = "lhj-" + hashlib.sha256((execution + ":result_reader").encode()).hexdigest() + ".service"
     identity = reader.get("identity", {})
     original = row["record"]["handles"][phase].get("manager", {}).get("result_reader") or {}
@@ -143,13 +180,18 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
              for earlier in previous for stage in ("bootstrap", "helper", "result_reader")]
     count = len(deliveries) - len(prior)
     allowed = prior + [execution + ":" + stage for stage in ("bootstrap", "helper", "result_reader")[:count]]
+    helper_absent = recovery and _never_delivered(proof, execution, row, phase, "helper")
     if (phases != [p.upper() for p in expected_phases] or not 0 <= count <= 3 or deliveries != allowed
             or (count == 0 and proof.get("launch_prevented") is not True)
-            or (helper_delivered is False and count > 1) or (helper_delivered is True and count < 2)
+            or (helper_delivered is False and count > 1 and not helper_absent)
+            or (helper_delivered is True and (count < 2 or helper_absent))
+            or (helper_absent and (count > 2 or proof.get("helper_result_verified") is not False
+                or not _never_delivered(proof.get("result_reader_exit_proof"),
+                                        execution, row, phase, "result_reader")))
             or deliveries != record.get("delivery_intents")):
         return False
     retained_result = None
-    if count <= 1:
+    if count <= 1 or helper_absent:
         if proof.get("result", {}).get("business_started") is not False:
             return False
     else:
@@ -170,6 +212,9 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
         # A verified failure report does not prove business effects, but it
         # cannot keep this fixed inspection's already stopped local writers
         # holding the execution lease. Retain the report verbatim in the proof.
+    if count >= 2:
+        # Helper intent still requires the original bootstrap observation,
+        # even when its subsequent manager delivery never happened.
         quota_binding.original(tx, row, phase, "QUOTA_OBSERVED", "quota_observed")
     if count == 3 and not _reader_exited(broker, proof, execution, row, phase, recovery=recovery):
         return False
@@ -219,7 +264,7 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
             changes["gaps"].append(REPORT_DURABILITY_GAP)
     if phase == "evidence":
         changes.update(outcome=record["business_outcome"], business_started=record.get("business_started"),
-            side_effects=record["side_effects"], evidence="STAGING" if count <= 1 else "DURABILITY_UNKNOWN",
+            side_effects=record["side_effects"], evidence="STAGING" if count <= 1 or helper_absent else "DURABILITY_UNKNOWN",
             gaps=["Evidence collection was cancelled; original business result and files retained"],
             stopped_completion=dict(execution_id=execution, proof_digest=quota_closure.digest(proof),
                                     business_result_preserved=True))
