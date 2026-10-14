@@ -223,6 +223,9 @@ class TaskSessionTests(unittest.TestCase):
         self.assertFalse(self.f.row()["record"]["handles"])
         self.assertEqual([], self.f.runner.starts)
         self.assertIsNone(self.session.failure)
+        with self.broker.state.transaction() as tx:
+            self.assertEqual(0, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (self.f.identity,)).fetchone()[0])
+            self.assertEqual(6, tx.execute("SELECT count(*) FROM leases").fetchone()[0])
         self.command("finish")
         self.assertTrue(self.session.finished)
 
@@ -834,6 +837,13 @@ class TaskSessionTests(unittest.TestCase):
         self.assertEqual(self.f.identity, accepted["operation_id"])
         duplicate = local_request(path, "lh_job_submit", self.f.f.request)
         self.assertEqual(accepted["request_digest"], duplicate["request_digest"])
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            record = state.get("job", self.f.identity)["record"]
+            if "preflight" in record.get("quota_preparations", {}):
+                break
+            time.sleep(0.01)
+        self.assertIn("preflight", record.get("quota_preparations", {}))
         local_request(path, "lh_job_cancel", dict(operation_id=self.f.identity,
             expected_request_digest=accepted["request_digest"], target={"kind": "job"}))
         deadline = time.monotonic() + 2
@@ -846,6 +856,8 @@ class TaskSessionTests(unittest.TestCase):
         self.assertFalse(state.get("job", self.f.identity)["record"]["handles"])
         with state.transaction() as tx:
             self.assertEqual(1, len(state.all(tx)))
+            self.assertEqual(0, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (self.f.identity,)).fetchone()[0])
+            self.assertEqual(6, tx.execute("SELECT count(*) FROM leases").fetchone()[0])
 
 
 if __name__ == "__main__":

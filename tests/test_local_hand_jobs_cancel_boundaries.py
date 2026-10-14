@@ -16,6 +16,74 @@ import test_local_hand_jobs_quota_resident_chain as fixtures
 
 
 class CancelBoundaryTests(unittest.TestCase):
+    def test_cancel_prepared_phase_releases_execution_but_retains_all_directory_leases(self):
+        for phase in ("preflight", "business", "evidence"):
+            for bound in (False, True):
+                with self.subTest(phase=phase, bound=bound):
+                    f = fixtures.ResidentChainTests()
+                    f.setUp(); self.addCleanup(f.doCleanups)
+                    for earlier in ("preflight", "business")[:("preflight", "business", "evidence").index(phase)]:
+                        f.close(earlier)
+                    prepared = f.prepare(phase)
+                    if bound:
+                        grant = f.make_grant(phase, prepared)
+                        f.broker.bind_observation("job", f.identity, phase, grant.wire)
+                    before = copy.deepcopy(f.row())
+                    starts = copy.deepcopy(f.runner.starts)
+                    with f.broker.state.transaction() as tx:
+                        leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                    cancel = dict(operation_id=f.identity, expected_request_digest=before["digest"], target={"kind":"job"})
+                    f.broker.call("lh_job_cancel", cancel, f.f.owner)
+                    f.broker.tick()
+                    record = f.row()["record"]
+                    self.assertEqual("TERMINAL", record["lifecycle"])
+                    self.assertEqual("SUCCEEDED" if phase == "evidence" else "CANCELLED", record["outcome"])
+                    self.assertEqual(starts, f.runner.starts)
+                    for field in ("handles", "delivery_intents", "quota_preparations", "quota_closed", "execution_budget"):
+                        self.assertEqual(before["record"].get(field), record.get(field))
+                    with f.broker.state.transaction() as tx:
+                        self.assertEqual([r for r in leases if r[1] != f.identity],
+                            [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+                    events = f.broker.state.events("job", f.identity)
+                    f.broker.call("lh_job_cancel", cancel, f.f.owner); f.broker.tick()
+                    self.assertEqual(events, f.broker.state.events("job", f.identity))
+
+    def test_release_cannot_mistake_a_saved_execution_intent_for_preparation_only(self):
+        for erase_handle in (False, True):
+            with self.subTest(erase_handle=erase_handle):
+                f = fixtures.ResidentChainTests()
+                f.setUp(); self.addCleanup(f.doCleanups)
+                prepared = f.prepare("preflight")
+                grant = f.make_grant("preflight", prepared)
+                f.broker.bind_observation("job", f.identity, "preflight", grant.wire)
+                f.broker._start("job", f.identity, "preflight")
+                with f.broker.state.transaction() as tx:
+                    if erase_handle:
+                        f.broker.state.update(tx, "job", f.identity, "TEST_CORRUPTION", {"handles":{}})
+                    row = f.broker.state.get("job", f.identity, tx)
+                    leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                    f.broker._release(tx, row, dict(future_start_blocked=True, tree_exited=True, effects_checked=True))
+                    self.assertEqual(leases, [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+
+    def test_release_rejects_missing_or_changed_original_preparation(self):
+        for missing in (False, True):
+            with self.subTest(missing=missing):
+                f = fixtures.ResidentChainTests()
+                f.setUp(); self.addCleanup(f.doCleanups)
+                f.prepare("preflight")
+                prepared = copy.deepcopy(f.row()["record"]["quota_preparations"])
+                if missing:prepared.clear()
+                else:prepared["preflight"]["session"] = "foreign"
+                with f.broker.state.transaction() as tx:
+                    f.broker.state.update(tx, "job", f.identity, "TEST_CORRUPTION", {"quota_preparations":prepared})
+                    leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                before = copy.deepcopy(f.row())
+                with self.assertRaises(JobError):
+                    f.broker.cancel(f.identity, before["digest"], {"kind":"job"}, f.f.owner)
+                self.assertEqual(before, f.row())
+                with f.broker.state.transaction() as tx:
+                    self.assertEqual(leases, [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+
     def pending_result(self, phase, *, failed=False, amend=None):
         f = fixtures.ResidentChainTests()
         f.setUp(); self.addCleanup(f.doCleanups)

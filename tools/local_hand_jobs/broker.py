@@ -323,9 +323,28 @@ class Broker:
     def _release(self, tx, row, proof):
         from . import quota_binding
         if quota_binding.admission_version(tx, row) == 1:
-            for phase in row["record"].get("quota_preparations", {}):
+            history = [(event["kind"], json.loads(event["data_json"])) for event in tx.execute(
+                "SELECT kind,data_json FROM events WHERE namespace=? AND id=? AND kind IN "
+                "('QUOTA_PREPARATION','EXECUTION_INTENT','MANAGER_DELIVERY_INTENT') ORDER BY seq",
+                (row["namespace"], row["id"]))]
+            prepared = set(row["record"].get("quota_preparations", {}))
+            prepared.update(data.get("quota_event_phase") for kind, data in history if kind == "QUOTA_PREPARATION")
+            for phase in prepared:
+                quota_binding.original(tx, row, phase, "QUOTA_PREPARATION", "quota_preparations")
                 if phase not in row["record"].get("quota_closed", {}):
-                    return  # No refund from ordinary exit or current empty trees.
+                    execution = row["namespace"] + "-" + row["id"] + "-" + phase
+                    if (phase in row["record"].get("handles", {}) or any(
+                            kind == "EXECUTION_INTENT" and (data.get("phase") == phase.upper()
+                                or phase in data.get("handles", {}))
+                            or kind == "MANAGER_DELIVERY_INTENT" and any(
+                                item == execution or item.startswith(execution + ":")
+                                for item in data.get("delivery_intents", []))
+                            for kind, data in history)):
+                        return  # An issued execution still needs its original closure.
+                    # Preparation reserves directories but does not authorize a
+                    # manager delivery. Keep every allocation-owned lease while
+                    # releasing only the proved unstarted execution owner.
+                    continue
                 quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
         # Business and observation rounds share the parent's resource owner.
         # A late result cannot delete another admitted round's reservation.
