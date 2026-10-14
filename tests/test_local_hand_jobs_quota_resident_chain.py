@@ -35,7 +35,8 @@ class ChainRegistry(Registry):
         plan = super().resolve(request, policy, principal=principal)
         plan["budgets"].update(memory_bytes=32*1024**2, processes=16, log_bytes=96*1024)
         plan["execution"].update(python="/usr/bin/python3", kind="host.inspect",
-            operation_id=request["operation_id"], readonly=[], storage={}, stages=[])
+            operation_id=request["operation_id"], readonly=[], storage={}, stages=[],
+            writable=list(plan["execution"]["roots"].values()))
         return plan
 
 

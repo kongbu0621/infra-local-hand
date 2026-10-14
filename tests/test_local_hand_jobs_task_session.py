@@ -402,6 +402,12 @@ class TaskSessionTests(unittest.TestCase):
         self.assertTrue(any(frame["file"] == "quota_bridge.py" and frame["line"] > 0 for frame in cause["frames"]))
 
     def test_business_bootstrap_cancel_answers_pending_snapshot_and_finishes(self):
+        self.check_business_cancel(helper=False)
+
+    def test_business_helper_cancel_stops_controller_without_ordinary_three_stage_closure(self):
+        self.check_business_cancel(helper=True)
+
+    def check_business_cancel(self, *, helper):
         self.session.tick()
         fence, _ = self.f.pending("preflight")
         self.command("close", fence)
@@ -415,22 +421,43 @@ class TaskSessionTests(unittest.TestCase):
         self.command("start")
         execution = "job-" + self.f.identity + "-business"
         self.assertTrue(self.broker._guard_start(execution, lambda: True, stage="bootstrap"))
+        if helper:
+            import hashlib
+            from test_local_hand_jobs_quota_binding import observed
+            self.f.now += chain_fixtures.SECOND
+            bootstrap = dict(execution_id=execution, state="EXITED", exit_code=0,
+                unit="lhj-" + hashlib.sha256((execution + ":bootstrap").encode()).hexdigest() + ".service",
+                **dict.fromkeys(("future_start_blocked", "tree_exited", "collectors_stopped",
+                                 "writers_stopped", "effects_checked"), True),
+                result=dict(bootstrap_prepared=True, quota_observation=observed(grant)))
+            self.assertTrue(self.broker._guard_start(execution, lambda: True, stage="helper", bootstrap_proof=bootstrap))
         self.broker.cancel(self.f.identity, self.f.f.request["request_digest"], {"kind": "job"}, self.f.f.owner)
         self.f.runner.finish(execution, exit_code=1,
             writers_stopped=True, collectors_stopped=True,
             result=dict(outcome="CANCELLED", business_started=False, helper_started=True))
         self.f.runner.proofs[execution]["execution_id"] = execution
+        if helper:
+            self.f.runner.proofs[execution].update(exit_code=0, effects_checked=False,
+                helper_result_verified=False, result=dict(outcome="UNKNOWN", helper_started=True))
         reply = self.command("snapshot")
         self.assertEqual("TERMINAL", reply["task"]["lifecycle"])
-        self.assertEqual("CANCELLED", reply["task"]["outcome"])
-        self.assertIsNone(reply["observation"])
+        self.assertEqual("UNKNOWN" if helper else "CANCELLED", reply["task"]["outcome"])
+        self.assertEqual(not helper, reply["observation"] is None)
         self.assertIsNone(reply["closed"])
         self.assertIsNotNone(reply["pending"])
+        from admin.local_hand_system_manager.task_service import PhaseClient, TaskStopped
+        client = object.__new__(PhaseClient)
+        with patch.object(quota_bridge.Client, "call", return_value=copy.deepcopy(reply)):
+            with self.assertRaises(TaskStopped) as stopped:
+                client.call("snapshot")
+        self.assertEqual(reply, stopped.exception.snapshot)
         self.command("finish")
         self.assertTrue(self.session.finished)
         self.assertIsNone(self.session.failure)
         self.assertEqual(2, len(self.f.runner.starts))
-        self.assertNotIn(execution + ":helper", self.f.row()["record"]["delivery_intents"])
+        deliveries = self.f.row()["record"]["delivery_intents"]
+        self.assertEqual(helper, execution + ":helper" in deliveries)
+        self.assertNotIn(execution + ":result_reader", deliveries)
 
     def test_control_failure_logs_os_cause_without_exception_text(self):
         self.session.tick()
