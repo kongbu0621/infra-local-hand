@@ -25,14 +25,14 @@ CONTROL_SECONDS = 5
 MAX_CONTROL_REQUESTS = 32
 _READ_ONLY = frozenset({"lh_capabilities", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"})
 _DESCRIPTIONS = {
-    "lh_capabilities": "Discover admitted references and bindings. If prepared_request is present, submit that exact request once and retain its identity.",
-    "lh_job_submit": "Durably submit one fixed job; preserve its operation ID across uncertain replies.",
-    "lh_job_prepare": "Automatically prepare a new host.inspect using a fresh operation UUID. Poll that same UUID while PREPARING; when READY, submit the returned request unchanged. FAILED is retained; retry_failed=true retries preparation after its cause is resolved. Preparation does not execute the job.",
-    "lh_job_status": "Read one owned job or the exact requested reconciliation round.",
-    "lh_job_cancel": "Request cancellation using the original request digest and explicit target (kind=job for the task). Poll the same operation ID to confirm exit; a cancellation receipt alone is not exit proof. Repeated cancellation is safe; completed targets return their original result.",
-    "lh_job_reconcile": "Observe original effects under a stable reconciliation ID; never rerun business work.",
-    "lh_evidence_manifest": "Read a page of an owned, durably sealed evidence manifest.",
-    "lh_evidence_read_chunk": "Read a bounded authenticated evidence chunk for host-side file assembly.",
+    "lh_capabilities": "查看当前获准使用的功能、资源引用和身份绑定。若返回 prepared_request，原样提交该请求一次，并保留其任务标识。",
+    "lh_job_submit": "提交一个确定的任务并持久保存记录。返回结果不确定时，保留原 operation_id，沿同一任务查询。",
+    "lh_job_prepare": "使用新的任务 UUID 自动准备 host.inspect。状态为 PREPARING（准备中）时沿同一 UUID 查询；READY（就绪）后原样提交返回的请求。FAILED（失败）记录会保留，解决原因后可用 retry_failed=true 重试准备。准备操作本身不执行任务。",
+    "lh_job_status": "查询属于当前用户的任务状态，或指定核对轮次的状态。",
+    "lh_job_cancel": "使用原请求摘要和明确目标申请取消；取消整个任务时指定 target.kind=job。随后沿同一 operation_id 查询并确认退出，收到取消回执不代表进程已停止。可安全重复取消，已完成的目标保留并返回原结果。",
+    "lh_job_reconcile": "使用固定的核对 ID 检查原任务已产生的影响，不重新执行业务。",
+    "lh_evidence_manifest": "分页查看属于当前用户、已持久封存的证据文件清单。",
+    "lh_evidence_read_chunk": "通过鉴权按限定大小读取证据文件分块，供客户端组装完整文件。",
 }
 
 # Stable public result fields. Nested evidence/identity documents retain their
