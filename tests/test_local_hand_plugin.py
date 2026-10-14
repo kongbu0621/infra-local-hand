@@ -15,7 +15,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from local_hand_jobs.contract import JobError, SCHEMA_VERSION, TOOL_SCHEMA_DIGEST, TOOL_SCHEMAS, canonical_bytes, request_digest
+from local_hand_jobs.contract import (JobError, MAX_INPUT_BYTES, MAX_REQUEST_BYTES, SCHEMA_VERSION,
+    TOOL_SCHEMA_DIGEST, TOOL_SCHEMAS, canonical_bytes, request_digest)
 
 PLUGIN = ROOT / "plugins" / "local-hand-a2"
 spec = importlib.util.spec_from_file_location("local_hand_plugin_workflow", PLUGIN / "scripts" / "workflow.py")
@@ -78,6 +79,7 @@ class PluginDistributionTests(unittest.TestCase):
         self.assertEqual(frozen["tools"], TOOL_SCHEMAS)
         self.assertEqual(frozen["tool_schema_digest"], TOOL_SCHEMA_DIGEST)
         self.assertEqual(len(frozen["tools"]), 9)
+        self.assertEqual(frozen["client_limits"]["max_record_bytes"], MAX_REQUEST_BYTES)
         self.assertEqual({item['properties']['kind']['const'] for item in frozen['tools']['lh_job_prepare']['oneOf']},
                          {'host.inspect','workspace.edit'})
         self.assertIn('lh_workspace_read',frozen['tools'])
@@ -145,6 +147,53 @@ class WorkflowTests(unittest.TestCase):
         self.reserve()
         self.assert_error("CONFLICT", self.client.reserve_job, "inspect", kind="ledger.prepare",
                           profile_ref="fixture", inputs={"source_ref": "source", "build_cache_ref": "cache"})
+
+    def test_large_workspace_identity_survives_lost_receipt_restart_query_and_cancel(self):
+        self.host.page['profiles'][0]['allowed_kinds'].append('workspace.edit')
+        self.client.preflight()
+        for index, unit in enumerate(('x', '中😀"\\\n')):
+            key = 'large-' + str(index)
+            inputs = dict(source_ref='source', relative_path='sample.py', expected_sha256='a'*64,
+                          content='', validation_ref='core')
+            available = MAX_INPUT_BYTES - len(canonical_bytes(inputs))
+            width = len(canonical_bytes({'s': unit})) - len(canonical_bytes({'s': ''}))
+            inputs['content'] = unit * (available // width) + 'x' * (available % width)
+            self.assertEqual(MAX_INPUT_BYTES, len(canonical_bytes(inputs)))
+            first = self.client.reserve_job(key, kind='workspace.edit', profile_ref='fixture', inputs=inputs)
+            path = self.client.journal / self.client._record_name('job', key)
+            original = path.read_bytes()
+            self.assertGreater(len(original), 32768)
+            # The modeled server accepted the request before its reply was lost.
+            self.host.requests[first['request']['operation_id']] = copy.deepcopy(first['request'])
+            self.host.fail_submit_once = True
+            with self.assertRaises(TimeoutError):
+                self.client.submit(key)
+            restarted = workflow.Workflow(self.host, self.client.journal, self.admission, sleep=lambda _: None)
+            restarted.preflight()
+            self.assertEqual(first, restarted.reserve_job(key, kind='workspace.edit', profile_ref='fixture', inputs=inputs))
+            result = restarted.observe(job_key=key)
+            self.assertEqual(first['request']['operation_id'], result['latest']['operation_id'])
+            self.assertEqual(first['request']['request_digest'], result['latest']['request_digest'])
+            cancelled = restarted.cancel_job(key)
+            self.assertEqual(first['request']['request_digest'], cancelled['request_digest'])
+            self.assertEqual(original, path.read_bytes())
+            submits = [args for name, args in self.host.calls if name == 'lh_job_submit'
+                       and args['operation_id'] == first['request']['operation_id']]
+            self.assertEqual([first['request']], submits)
+
+    def test_client_record_accepts_exact_512_kib_and_rejects_one_more_byte(self):
+        record = dict(authority_id=self.admission['authority_id'], padding='')
+        record['padding'] = 'x' * (MAX_REQUEST_BYTES - len(canonical_bytes(record)))
+        self.assertEqual(MAX_REQUEST_BYTES, len(canonical_bytes(record)))
+        self.assertEqual(record, self.client._save('boundary.json', record))
+        restarted = workflow.Workflow(self.host, self.client.journal, self.admission, sleep=lambda _: None)
+        self.assertEqual(record, restarted._read('boundary.json'))
+        self.assert_error('LIMIT_EXCEEDED', self.client._save, 'oversized.json',
+                          dict(record, padding=record['padding'] + 'x'))
+        self.assertFalse((self.client.journal / 'oversized.json').exists())
+        with (self.client.journal / 'boundary.json').open('ab') as stream:
+            stream.write(b' ')
+        self.assert_error('IO_UNCERTAIN', restarted._read, 'boundary.json')
 
     def test_callback_serialization_failures_are_structured_and_do_not_break_retry(self):
         recursive = []
