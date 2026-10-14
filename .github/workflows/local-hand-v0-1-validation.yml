@@ -146,9 +146,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # Linux run 37602140697 passed its checks but reached the 15-minute job
-    # limit during finalization. Keep room for the full suite and artifact upload.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 25 || 15 }}
+    # Linux run 38517512212 passed source tests in 24m, then hit the 25m limit.
+    # Installed-wheel verification also took 4m31s in run 38516303266; allow
+    # both stages, runner variation and evidence upload within a bounded job.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 40 || 15 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -264,10 +265,13 @@ jobs:
       - name: Run platform-scoped source tests (A2 jobs are Linux only)
         shell: python
         run: |
-          import os, subprocess
+          import os, pathlib, subprocess
           # Retain each skip reason so platform coverage is auditable from the
           # exact run, rather than inferred from an aggregate skipped count.
-          command = [os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q", "-rs"]
+          # Keep per-test timings and the slowest locations for timeout diagnosis.
+          report = pathlib.Path(os.environ["LOCAL_HAND_VERIFY_ROOT"]) / "source-tests.xml"
+          command = [os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q", "-rs",
+                     "--durations=20", "--junitxml", str(report)]
           if os.name == "nt":
               # Preserve all previous Windows S1 coverage. New job/Plugin tests
               # require Unix ownership and are not Windows acceptance evidence.
@@ -792,4 +796,5 @@ jobs:
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/commands/
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/installed-acceptance/report.json
             ${{ env.LOCAL_HAND_VERIFY_ROOT }}/root-collector-tests.xml
+            ${{ env.LOCAL_HAND_VERIFY_ROOT }}/source-tests.xml
           if-no-files-found: warn
