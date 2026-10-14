@@ -632,6 +632,85 @@ class TaskSessionTests(unittest.TestCase):
                     self.assertEqual(0 if checked else 1,
                         tx.execute("SELECT count(*) FROM leases WHERE owner=?", (case.f.identity,)).fetchone()[0])
 
+    def test_running_recovery_finishes_without_fabricating_cancellation_or_result(self):
+        from types import SimpleNamespace
+        from test_local_hand_jobs_cancel_boundaries import CancelBoundaryTests
+        for phase in ("business", "evidence"):
+            for lost in (False, True):
+                with self.subTest(phase=phase, collectors_lost=lost):
+                    fixture = CancelBoundaryTests(); self.addCleanup(fixture.doCleanups)
+                    def amend(proof):
+                        if lost:
+                            proof.update(collectors_stopped=False, effects_checked=False, helper_result_verified=False,
+                                         result=dict(outcome="UNKNOWN", helper_started=True))
+                            proof["result_reader_exit_proof"]["collectors_stopped"] = False
+                    f, _, proof = fixture.pending_result(phase, amend=amend)
+                    before = copy.deepcopy(f.row())
+                    replacement = SimpleNamespace(reattach=Mock(side_effect=lambda h,p:h),
+                                                  inspect=Mock(return_value=proof), stop=Mock(return_value=proof))
+                    b = Broker(f.broker.state, f.broker.policy, f.broker.registry, replacement,
+                               evidence=f.broker.evidence, quota_required=True)
+                    session = TaskSession(dict(mode="recover", operation_id=f.identity,
+                        request_digest=before["digest"], principal_id=f.f.owner.principal_id), Mock(), None)
+                    self.addCleanup(session.close); session.attach(b)
+                    with b.state.transaction() as tx:
+                        leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                    with patch.object(b, "_start", side_effect=AssertionError("Recovery replayed work")):
+                        session.recover(); session.tick()
+                    r = f.row()["record"]
+                    self.assertEqual(("TERMINAL", "EXITED", "UNKNOWN" if phase == "business" and lost else "SUCCEEDED"),
+                                     (r["lifecycle"], r["phase"], r["outcome"]))
+                    self.assertFalse(r["cancel_requested"])
+                    self.assertEqual(proof, r["exit_proof"])
+                    self.assertTrue(r["execution_resources_released"])
+                    self.assertFalse(r.get("seals"))
+                    for key in ("request", "digest", "plan", "reserved_bytes"):
+                        self.assertEqual(before[key], f.row()[key])
+                    for key in ("quota_pending", "quota_closed", "delivery_intents", "handles", "execution_budget",
+                                "quota_preparations", "business_outcome", "business_exit_proof", "frozen_snapshot"):
+                        self.assertEqual(before["record"].get(key), r.get(key), key)
+                    with b.state.transaction() as tx:
+                        self.assertEqual([x for x in leases if x[1] != f.identity],
+                                         [tuple(x) for x in tx.execute("SELECT * FROM leases ORDER BY resource")])
+                    events = b.state.events("job", f.identity)
+                    session.recover(); session.tick(); b.cancel(f.identity, before["digest"], {"kind":"job"}, f.f.owner)
+                    self.assertEqual(events, b.state.events("job", f.identity))
+                    session.manager.finish_recovery.assert_called_once()
+
+    def test_running_recovery_keeps_resources_for_unproved_exit_or_wrong_scope(self):
+        from types import SimpleNamespace
+        from test_local_hand_jobs_cancel_boundaries import CancelBoundaryTests
+        for damage in ("writer", "collector_missing", "reader_identity", "execution_identity", "manager", "scope"):
+            with self.subTest(damage=damage):
+                fixture = CancelBoundaryTests(); self.addCleanup(fixture.doCleanups)
+                def amend(proof):
+                    if damage == "writer":proof["writers_stopped"] = False
+                    elif damage == "collector_missing":proof.pop("collectors_stopped")
+                    elif damage == "reader_identity":proof["result_reader_exit_proof"]["identity"]["boot_id"] = "foreign"
+                    elif damage == "execution_identity":proof["execution_id"] = "foreign"
+                f, _, proof = fixture.pending_result("business", amend=amend)
+                b = Broker(f.broker.state, f.broker.policy, f.broker.registry,
+                    SimpleNamespace(reattach=lambda h,p:h, inspect=lambda h:proof), evidence=f.broker.evidence, quota_required=True)
+                session = TaskSession(dict(mode="recover", operation_id=f.identity,
+                    request_digest=f.row()["digest"], principal_id=f.f.owner.principal_id), Mock(), None)
+                self.addCleanup(session.close); session.attach(b); session.recover()
+                if damage == "manager":
+                    session.manager.finish_recovery.side_effect = JobError("IO_UNCERTAIN", "Parent occupied")
+                    with self.assertRaises(JobError):session.tick()
+                elif damage == "scope":
+                    from local_hand_jobs.stopped_completion import complete_recovered_execution
+                    # Admission plans are immutable. Exercise the scope guard
+                    # with a detached candidate, never weaken the ledger trigger.
+                    row = copy.deepcopy(f.row()); row["plan"]["execution"]["stages"] = [{"write":"external"}]
+                    session._recovery_acknowledged = True
+                    with b.state.transaction() as tx:
+                        self.assertFalse(complete_recovered_execution(b, tx, row))
+                else:session.tick()
+                self.assertNotEqual("TERMINAL", f.row()["record"]["lifecycle"])
+                self.assertFalse(f.row()["record"]["cancel_requested"])
+                with b.state.transaction() as tx:
+                    self.assertEqual(1, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (f.identity,)).fetchone()[0])
+
     def test_handover_recovery_rejects_changed_proofs_and_hidden_dispatch(self):
         for damage in ("proof", "closure", "frozen", "preparation", "hidden_dispatch"):
             with self.subTest(damage=damage):

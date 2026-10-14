@@ -209,7 +209,9 @@ class TaskSession:
             record = row["record"]
             if record["lifecycle"] == "TERMINAL" or record["phase"] != "QUEUED":
                 from .recovery_completion import complete_between_phases
-                complete_between_phases(b, tx, row)
+                from .stopped_completion import complete_recovered_execution
+                if not complete_between_phases(b, tx, row):
+                    complete_recovered_execution(b, tx, row)
                 return
             issued = tx.execute("SELECT 1 FROM events WHERE namespace='job' AND id=? AND kind IN "
                 "('EXECUTION_INTENT','LAUNCH_ENQUEUED','MANAGER_DELIVERY_INTENT') LIMIT 1", (identity,)).fetchone()

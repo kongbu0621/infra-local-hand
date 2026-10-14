@@ -41,6 +41,7 @@ _EXTRA_FIELDS = ("Slice", "User", "Group", "NoNewPrivileges", "CapabilityBoundin
     "LimitCPU", "LimitFSIZE", "CPUQuotaPerSecUSec", "CPUQuotaPeriodUSec", "RuntimeMaxUSec", "TimeoutStopUSec",
     "InaccessiblePaths", "ReadOnlyPaths", "ReadWritePaths", "SendSIGKILL")
 _ALL_FIELDS = (*life.FIELDS, *_EXTRA_FIELDS)
+MAX_SERVICE_RECOVERIES = 3
 
 
 def _unit(execution_id, stage):
@@ -280,6 +281,21 @@ class Gateway:
             self.recovery_rebinds = 1
             self.recovery_finished = False
 
+    def check_service_recovery(self):
+        """Check retained authority before spawning another ordinary API."""
+        with self.lock:
+            old = self.channel
+            q.require(not self.closed and not self._serving and self.pending_control is None
+                      and self.peer_pidfd >= 0 and select.select([self.peer_pidfd], [], [], 0)[0]
+                      and self.recovery_rebinds < MAX_SERVICE_RECOVERIES, "SYSTEM_RECOVERY_STATE")
+            q.require(self.failure in (None, "SYSTEM_PEER_CHANGED", "SYSTEM_CHANNEL_DISCONNECTED",
+                                       "SYSTEM_CHANNEL_EOF", "SYSTEM_CHANNEL_UNAVAILABLE"),
+                      "SYSTEM_RECOVERY_IDENTITY_UNRESOLVED")
+            q.require(self.control_bytes + self.retired_wire_bytes + old.total < wire.WIRE_LIMIT
+                      and self.retired_calls + old.sequence < wire.CALL_LIMIT, "SYSTEM_RECOVERY_BUDGET")
+            if not self.parts:
+                self._parent(empty=True)
+
     def rebind_service_recovery(self, channel):
         """Adopt an exited service peer for observation/stop of retained units.
 
@@ -290,28 +306,16 @@ class Gateway:
         with self.lock:
             old = self.channel
             now = budget.current_clock()
-            q.require(not self.closed and not self._serving and self.pending_control is None
-                      and self.peer_pidfd >= 0 and select.select([self.peer_pidfd], [], [], 0)[0]
-                      and self.recovery_rebinds < 3, "SYSTEM_RECOVERY_STATE")
+            self.check_service_recovery()
             q.require(channel.peer[0] != old.peer[0] and channel.peer[1:] == (self.uid, self.gid)
                       and channel.boot_id == now["boot_id"] == self.binding["boot_id"]
                       and channel.end == self.end and now["boottime_ns"] < self.end
                       and channel.sequence == channel.total == 0 and channel.pending is None
                       and channel.session_id != old.session_id, "SYSTEM_RECOVERY_PEER")
-            q.require(self.failure in (None, "SYSTEM_PEER_CHANGED", "SYSTEM_CHANNEL_DISCONNECTED",
-                                       "SYSTEM_CHANNEL_EOF", "SYSTEM_CHANNEL_UNAVAILABLE"),
-                      "SYSTEM_RECOVERY_IDENTITY_UNRESOLVED")
             # Retiring an unanswered packet grants no replay. The new peer is
             # observation-only; launch and publication operations stay closed.
             retired_bytes = self.retired_wire_bytes + old.total
             retired_calls = self.retired_calls + old.sequence
-            q.require(self.control_bytes + retired_bytes < wire.WIRE_LIMIT
-                      and retired_calls < wire.CALL_LIMIT, "SYSTEM_RECOVERY_BUDGET")
-            if not self.parts:
-                # The API may die after admission but before its first launch.
-                # An empty retained inventory is safe only with an empty pinned
-                # execution parent; the replacement still cannot issue launches.
-                self._parent(empty=True)
             self._discard_original_clients()
             if self.failure is not None:
                 self.session_failures.append(self.failure)

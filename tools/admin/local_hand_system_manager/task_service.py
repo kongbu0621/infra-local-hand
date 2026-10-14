@@ -28,7 +28,7 @@ from local_hand_jobs.task_session import SCHEMA
 from admin.local_hand_quota_observer import q2_chain, q2_config, q2_management
 from admin.local_hand_quota_observer.q2_coordinator import Coordinator
 from admin.local_hand_quota_observer.protected_inputs import read_protected
-from .server import Gateway
+from .server import Gateway, MAX_SERVICE_RECOVERIES
 
 PHASES = quota_bridge.JOB_PHASES
 
@@ -349,6 +349,8 @@ class TaskService:
         self.worker.join(timeout=1)
         q.require(not self.worker.is_alive() and self.gateway.peer_pidfd >= 0 and
                   select.select([self.gateway.peer_pidfd], [], [], 0)[0], "TASK_ORIGINAL_EXIT_UNPROVEN")
+        q.require(self.gateway.channel.peer[0] == self.process.pid, "TASK_ORIGINAL_PEER_CHANGED")
+        self.gateway.check_service_recovery()
         if self.socket_pin is not None:
             # Keep the old endpoint inode as crash evidence. Never unlink or
             # rename a replacement endpoint created by another service.
@@ -467,6 +469,29 @@ finally:os.close(fd)
             raise failure
 
 
+def recover_dead_service(service):
+    """Bound repeated API crashes by the original gateway and deadline.
+
+    A failed attempt is retryable only if it installed a new recovery peer
+    which has itself exited. A live or unbound peer, identity error, exhausted
+    budget, or original window expiry never authorizes another spawn.
+    """
+    while True:
+        gateway = service.gateway
+        q.require(service.process.poll() is not None and gateway is not None,
+                  "TASK_ORIGINAL_PROCESS_LIVE")
+        q.require(gateway.recovery_rebinds < MAX_SERVICE_RECOVERIES, "TASK_RECOVERY_LIMIT")
+        q.require(budget.current_clock()["boottime_ns"] < service.value["controller_envelope"]["deadline_ns"],
+                  "TASK_RECOVERY_WINDOW_EXPIRED")
+        generation = gateway.recovery_rebinds
+        try:
+            return service.recover()
+        except Exception as error:
+            service.retain_failure(error)
+            if service.process.poll() is None or gateway.recovery_rebinds == generation:
+                raise
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Start an admitted task's Broker/MCP service")
     parser.add_argument("--launch", required=True)
@@ -483,14 +508,24 @@ def main(argv=None):
             service.retain_failure(error)
             if service.process.poll() is None:
                 raise
-            result = service.recover()
-        print(json.dumps(result, sort_keys=True), flush=True)
+            result = recover_dead_service(service)
         # Keep the API available for result/evidence reads for the remainder
         # of this controller's original bounded window.
         end = value["controller_envelope"]["deadline_ns"]
-        while service.process.poll() is None and budget.current_clock()["boottime_ns"] < end:
+        while budget.current_clock()["boottime_ns"] < end:
+            code = service.process.poll()
+            if code is not None:
+                if code == 0:
+                    break
+                service.retain_failure(ValueError("TASK_API_EXITED_DURING_READ_WINDOW"))
+                result = recover_dead_service(service)
+                continue
+            service._remember_socket()
             threading.Event().wait(0.05)
+        q.require(service.process.poll() in (None, 0), "TASK_API_EXITED")
         service.stop_api()
+        q.require(service.process.poll() == 0, "TASK_API_EXIT_FAILED")
+        print(json.dumps(result, sort_keys=True), flush=True)
         return 0
     except BaseException:
         failed = True

@@ -1,5 +1,7 @@
 """Administrator adapter checks; host supervision/quota remain modeled."""
 import copy
+import contextlib
+import io
 import os
 import select
 import socket
@@ -18,6 +20,68 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrator task service")
 class TaskServiceTests(unittest.TestCase):
+    def test_second_api_failure_retries_same_task_recovery_without_rerunning_execution(self):
+        service = Mock()
+        service.value = {"controller_envelope":{"deadline_ns":100}}
+        service.process.poll.return_value = -9
+        service.gateway.recovery_rebinds = 0
+        service.run.side_effect = ValueError("ORIGINAL_API_EXITED")
+        def recover():
+            service.gateway.recovery_rebinds += 1
+            if service.gateway.recovery_rebinds == 1:raise ValueError("TASK_RECOVERY_INCOMPLETE")
+            service.process.poll.return_value = 0
+            return dict(status="RECOVERY_RECORDED", operation_id="original", start_replayed=False)
+        service.recover.side_effect = recover
+        with patch.object(task_service, "read_protected", return_value=b'{"controller_envelope":{"deadline_ns":100}}'), \
+                patch.object(task_service, "TaskService", return_value=service), \
+                patch.object(task_service.budget, "current_clock", return_value={"boottime_ns":50}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, task_service.main(["--launch", "/private/launch.json"]))
+        service.run.assert_called_once()
+        self.assertEqual(2, service.recover.call_count)
+        self.assertEqual(2, service.retain_failure.call_count)
+        service.close.assert_called_once()
+
+    def test_recovery_is_bounded_and_never_retries_live_or_unbound_peer(self):
+        for failure in ("dead", "live", "unbound", "deadline"):
+            with self.subTest(failure=failure):
+                service = Mock(value={"controller_envelope":{"deadline_ns":100}})
+                service.process.poll.return_value = -9
+                service.gateway.recovery_rebinds = 0
+                def fail():
+                    if failure != "unbound":service.gateway.recovery_rebinds += 1
+                    if failure == "live":service.process.poll.return_value = None
+                    raise ValueError("RETAIN_ORIGINAL_FAILURE")
+                service.recover.side_effect = fail
+                with patch.object(task_service.budget, "current_clock", return_value={"boottime_ns":100 if failure == "deadline" else 50}):
+                    with self.assertRaises(ValueError):task_service.recover_dead_service(service)
+                expected = 3 if failure == "dead" else 0 if failure == "deadline" else 1
+                self.assertEqual(expected, service.recover.call_count)
+                self.assertEqual(expected, service.retain_failure.call_count)
+                service.run.assert_not_called()
+
+    def test_crash_during_read_window_recovers_before_reporting_controller_success(self):
+        service = Mock(value={"controller_envelope":{"deadline_ns":100}})
+        service.process.poll.return_value = -9
+        service.gateway.recovery_rebinds = 0
+        service.run.return_value = dict(status="CHAIN_CLOSED")
+        output = io.StringIO()
+        def recover():
+            self.assertEqual("", output.getvalue())
+            service.gateway.recovery_rebinds += 1
+            service.process.poll.return_value = 0
+            return dict(status="RECOVERY_RECORDED", start_replayed=False)
+        service.recover.side_effect = recover
+        with patch.object(task_service, "read_protected", return_value=b'{"controller_envelope":{"deadline_ns":100}}'), \
+                patch.object(task_service, "TaskService", return_value=service), \
+                patch.object(task_service.budget, "current_clock", return_value={"boottime_ns":50}), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(0, task_service.main(["--launch", "/private/launch.json"]))
+        self.assertIn("RECOVERY_RECORDED", output.getvalue())
+        self.assertEqual(1, len(output.getvalue().splitlines()))
+        service.run.assert_called_once(); service.recover.assert_called_once()
+        service.close.assert_called_once()
+
     def test_cancel_uses_bounded_stop_path_and_hides_snapshot_in_exception_text(self):
         coordinator = Mock(management_closed=False)
         coordinator.management.used = True
@@ -166,6 +230,22 @@ class TaskServiceTests(unittest.TestCase):
                 gateway._parent.assert_called_with(empty=True)
                 self.assertEqual((dict(closed=True), ()), gateway.dispatch("recovery_finish", {}))
                 self.assertTrue(gateway.recovery_finished)
+            # A second dead recovery peer can be replaced without resetting
+            # the original bytes, calls, deadline, or launch prohibition.
+            for index in (2, 3):
+                current_process = processes[-1]
+                gateway.channel.total, gateway.channel.sequence = 17, 2
+                current_process.terminate(); current_process.wait(timeout=2)
+                _, replacement = peer(str(index) * 64)
+                gateway.rebind_service_recovery(replacement)
+                self.assertEqual(index, gateway.recovery_rebinds)
+                self.assertEqual((123 + (index-1)*17, 4 + (index-1)*2),
+                                 (gateway.retired_wire_bytes, gateway.retired_calls))
+                self.assertTrue(gateway.recovery_only)
+                self.assertEqual(gateway.end, replacement.end)
+            processes[-1].terminate(); processes[-1].wait(timeout=2)
+            with self.assertRaisesRegex(ValueError, "SYSTEM_RECOVERY_STATE"):
+                gateway.check_service_recovery()
         finally:
             if getattr(gateway, "peer_pidfd", -1) >= 0:
                 os.close(gateway.peer_pidfd)

@@ -43,7 +43,23 @@ def complete_cancelled_evidence(broker, tx, row):
     return _complete_stopped_phase(broker, tx, row, helper_delivered=None, phase="evidence")
 
 
-def _reader_exited(broker, proof, execution, row, phase):
+def complete_recovered_execution(broker, tx, row):
+    """Finish this fixed inspection after the retained manager confirms exit.
+
+    Recovery loses anonymous collectors, but it does not lose the manager's
+    original unit identities or authority to prove stopped local writers.
+    Keep the collector/result gaps and never manufacture a cancel request.
+    """
+    session = broker.task_session
+    if (session is None or session.value["mode"] != "recover" or not session._recovery_acknowledged
+            or row["record"].get("recovered") is not True):
+        return False
+    return (_complete_stopped_phase(broker, tx, row, helper_delivered=False, recovery=True)
+            or _complete_stopped_phase(broker, tx, row, helper_delivered=True, recovery=True)
+            or _complete_stopped_phase(broker, tx, row, helper_delivered=None, phase="evidence", recovery=True))
+
+
+def _reader_exited(broker, proof, execution, row, phase, *, recovery=False):
     reader = proof.get("result_reader_exit_proof", {})
     unit = "lhj-" + hashlib.sha256((execution + ":result_reader").encode()).hexdigest() + ".service"
     identity = reader.get("identity", {})
@@ -52,7 +68,9 @@ def _reader_exited(broker, proof, execution, row, phase):
     return (reader.get("execution_id") == execution and reader.get("unit") == unit
             and reader.get("state") == "EXITED"
             and all(reader.get(key) is True for key in
-                    ("future_start_blocked", "tree_exited", "writers_stopped", "collectors_stopped"))
+                    ("future_start_blocked", "tree_exited", "writers_stopped"))
+            and (reader.get("collectors_stopped") is True
+                 or recovery and reader.get("collectors_stopped") is False)
             and identity.get("boot_id") == row["record"]["quota_preparations"][phase]["budget"]["boot_id"]
             and parent.startswith("/sys/fs/cgroup/")
             and identity.get("cgroup") == parent.removeprefix("/sys/fs/cgroup") + "/" + unit
@@ -63,14 +81,14 @@ def _reader_exited(broker, proof, execution, row, phase):
                      ("invocation_id", identity.get("invocation_id")))))
 
 
-def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="business"):
+def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="business", recovery=False):
     record = row["record"]
     previous = ["preflight"] if phase == "business" else ["preflight", "business"]
     expected_phases = previous + [phase]
     closed_phases = expected_phases if record["phase"] == "EXITED" else previous
     if (row["namespace"] != "job" or row["request"]["kind"] != "host.inspect"
             or record["phase"] not in (phase.upper(), "EXITED") or record["lifecycle"] == "TERMINAL"
-            or record["cancel_requested"] is not True
+            or not (record["cancel_requested"] is True or recovery)
             or (helper_delivered is False and record.get("business_started") is True)
             or set(record.get("handles", {})) != set(expected_phases)
             or set(record.get("quota_preparations", {})) != set(expected_phases)
@@ -99,7 +117,9 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
     if (record["handles"][phase].get("execution_id") != execution
             or proof.get("execution_id") != execution or proof.get("state") != "EXITED"
             or not all(proof.get(key) is True for key in
-                       ("future_start_blocked", "tree_exited", "writers_stopped", "collectors_stopped"))):
+                       ("future_start_blocked", "tree_exited", "writers_stopped"))
+            or not (proof.get("collectors_stopped") is True
+                    or recovery and proof.get("collectors_stopped") is False)):
         return False
     deliveries, phases = [], []
     for event in tx.execute("SELECT kind,data_json FROM events WHERE namespace='job' AND id=? "
@@ -151,7 +171,7 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
         # cannot keep this fixed inspection's already stopped local writers
         # holding the execution lease. Retain the report verbatim in the proof.
         quota_binding.original(tx, row, phase, "QUOTA_OBSERVED", "quota_observed")
-    if count == 3 and not _reader_exited(broker, proof, execution, row, phase):
+    if count == 3 and not _reader_exited(broker, proof, execution, row, phase, recovery=recovery):
         return False
     if phase == "evidence":
         frozen = [json.loads(event[0]) for event in tx.execute(
@@ -204,5 +224,13 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
             stopped_completion=dict(execution_id=execution, proof_digest=quota_closure.digest(proof),
                                     business_result_preserved=True))
         event = "EVIDENCE_CANCELLED"
+    if recovery:
+        event = phase.upper() + "_RECOVERY_STOPPED"
+        if helper_delivered is False and not record["cancel_requested"]:
+            changes.update(outcome="UNKNOWN", gaps=["API interrupted before business; no business result was produced"])
+        elif phase == "evidence":
+            changes["gaps"] = ["Evidence collection stopped after API interruption; original business result and files retained"]
+        elif retained_result is None:
+            changes["gaps"] = ["Business result collection was interrupted; stopped local writers and owned files retained"]
     broker.state.update(tx, "job", row["id"], event, changes)
     return True
