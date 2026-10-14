@@ -1401,7 +1401,7 @@ class _SystemdExecutionCore:
 
     def _inspect_unit(self, handle):
         self._check_manager_binding(handle)
-        if handle["cancel_before_launch"]:
+        if handle.get("cancel_before_launch") is True:
             if handle.get("delivery_attempted") or handle.get("launch") is not None:
                 raise RunnerError("IO_UNCERTAIN", "Prevented launch has a delivery receipt")
             # The durable start guard refused before Popen. No pipe exists and
