@@ -457,6 +457,54 @@ class TaskSessionTests(unittest.TestCase):
         self.manager.finish_recovery.assert_called_once()
         self.assertFalse(self.channel.outgoing)
 
+    def test_recovery_before_first_execution_finishes_without_replaying_or_releasing_directories(self):
+        for preparation in ("none", "prepared", "bound"):
+            with self.subTest(preparation=preparation):
+                case = TaskSessionTests()
+                case.setUp(); self.addCleanup(case.doCleanups)
+                if preparation != "none":
+                    case.session.tick()
+                    if preparation == "bound":
+                        prepared = case.channel.outgoing[-1]["snapshot"]["preparation"]
+                        case.command("bind", case.f.make_grant("preflight", prepared).as_dict())
+                before = copy.deepcopy(case.f.row())
+                events = case.broker.state.events("job", case.f.identity)
+                with case.broker.state.transaction() as tx:
+                    leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                session = TaskSession(dict(case.session.value, mode="recover"), Mock(), None)
+                case.addCleanup(session.close)
+                session.attach(case.broker)
+                with patch.object(case.broker, "_start", side_effect=AssertionError("Recovery replayed work")):
+                    session.recover(); session.tick()
+                row = case.f.row(); record = row["record"]
+                self.assertEqual(("TERMINAL", "EXITED", "UNKNOWN"),
+                                 (record["lifecycle"], record["phase"], record["outcome"]))
+                self.assertTrue(record["recovered"])
+                self.assertTrue(record["execution_resources_released"])
+                self.assertFalse(record["cancel_requested"])
+                for key in ("request", "digest", "plan", "reserved_bytes"):
+                    self.assertEqual(before[key], row[key])
+                for key in ("handles", "delivery_intents", "execution_budget", "quota_preparations", "quota_bindings"):
+                    self.assertEqual(before["record"].get(key), record.get(key))
+                with case.broker.state.transaction() as tx:
+                    self.assertEqual([r for r in leases if r[1] != case.f.identity],
+                                     [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+                after = case.broker.state.events("job", case.f.identity)
+                self.assertEqual(events, after[:-1])
+                self.assertEqual("RECOVERED_BEFORE_START", after[-1]["kind"])
+                endpoint = Path(case.f.f.temp.name) / "unstarted-recovery.sock"
+                server = MaintenanceServer(case.broker, endpoint, {os.geteuid():case.f.f.owner})
+                server.start(); case.addCleanup(server.close)
+                status = local_request(endpoint, "lh_job_status", {"operation_id":case.f.identity})
+                submitted = local_request(endpoint, "lh_job_submit", case.f.f.request)
+                self.assertEqual(("TERMINAL", "UNKNOWN", status["event_seq"]),
+                                 (submitted["lifecycle"], submitted["outcome"], submitted["event_seq"]))
+                session.recover(); session.tick()
+                case.broker.cancel(case.f.identity, row["digest"], {"kind":"job"}, case.f.f.owner)
+                self.assertEqual(after, case.broker.state.events("job", case.f.identity))
+                session.manager.finish_recovery.assert_called_once()
+                self.assertEqual([], case.f.runner.starts)
+
     def test_recovery_cannot_create_a_fresh_phase_even_when_prior_result_allows_it(self):
         self.session.value = dict(self.session.value, mode="recover")
         with self.assertRaises(JobError) as caught:
@@ -464,6 +512,48 @@ class TaskSessionTests(unittest.TestCase):
         self.assertEqual("UNSUPPORTED", caught.exception.code)
         self.assertFalse(self.f.row()["record"]["handles"])
         self.assertNotIn("quota_preparations", self.f.row()["record"])
+
+    def test_unstarted_recovery_keeps_lease_until_manager_confirms_quiescence(self):
+        self.session.value = dict(self.session.value, mode="recover")
+        self.manager.finish_recovery.side_effect = JobError("IO_UNCERTAIN", "Parent occupied")
+        self.session.recover()
+        with self.assertRaises(JobError):
+            self.session.tick()
+        self.assertNotEqual("TERMINAL", self.f.row()["record"]["lifecycle"])
+        self.assertIsNone(self.f.row()["record"]["exit_proof"])
+        with self.broker.state.transaction() as tx:
+            self.assertEqual(1, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (self.f.identity,)).fetchone()[0])
+
+    def test_unstarted_recovery_retries_local_commit_without_repeating_manager_handshake(self):
+        self.session.value = dict(self.session.value, mode="recover")
+        self.session.recover()
+        writer = sqlite3.connect(self.broker.state.path, isolation_level=None)
+        self.addCleanup(writer.close)
+        self.manager.finish_recovery.side_effect = lambda: writer.execute("BEGIN IMMEDIATE")
+        try:
+            with self.assertRaises(JobError):self.session.tick()
+            self.assertIsNone(self.session.failure)
+            self.assertFalse(self.session.finished)
+        finally:writer.execute("ROLLBACK")
+        self.session.tick()
+        self.manager.finish_recovery.assert_called_once()
+        self.assertTrue(self.session.finished)
+        self.assertEqual("TERMINAL", self.f.row()["record"]["lifecycle"])
+
+    def test_unstarted_recovery_rejects_erased_execution_handle(self):
+        self.session.tick()
+        grant = self.f.make_grant("preflight", self.channel.outgoing[-1]["snapshot"]["preparation"])
+        self.command("bind", grant.as_dict()); self.command("start")
+        self.broker._active.clear()  # Simulate a fresh process after a damaged snapshot.
+        with self.broker.state.transaction() as tx:
+            self.broker.state.update(tx, "job", self.f.identity, "TEST_CORRUPTION", {
+                "phase":"QUEUED", "handles":{}, "delivery_intents":[], "business_started":False, "helper_started":False})
+        self.session.value = dict(self.session.value, mode="recover")
+        self.session.recover()
+        with self.assertRaises(JobError):self.session.tick()
+        self.assertNotEqual("TERMINAL", self.f.row()["record"]["lifecycle"])
+        with self.broker.state.transaction() as tx:
+            self.assertEqual(1, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (self.f.identity,)).fetchone()[0])
 
     def test_cancel_after_recovery_handshake_finishes_same_task_without_new_control(self):
         for phase in ("preflight", "business"):

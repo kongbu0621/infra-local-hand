@@ -131,6 +131,7 @@ class TaskSession:
         self._action = "idle"
         self._pending_close = None
         self._close_retry_logged = False
+        self._recovery_acknowledged = False
 
     @classmethod
     def open(cls, path, policy):
@@ -199,6 +200,34 @@ class TaskSession:
     def recover(self):
         if self.value["mode"] == "recover":
             self.broker.recover()
+
+    def _finish_unstarted_recovery(self):
+        """Close this session's admitted but never dispatched task, without replay."""
+        b, identity = self.broker, self.value["operation_id"]
+        with b.fence, b.state.transaction() as tx:
+            row = b.state.get("job", identity, tx)
+            record = row["record"]
+            if record["lifecycle"] == "TERMINAL" or record["phase"] != "QUEUED":
+                return
+            issued = tx.execute("SELECT 1 FROM events WHERE namespace='job' AND id=? AND kind IN "
+                "('EXECUTION_INTENT','LAUNCH_ENQUEUED','MANAGER_DELIVERY_INTENT') LIMIT 1", (identity,)).fetchone()
+            key = ("job", identity)
+            if (issued is not None or record.get("handles") or record.get("delivery_intents")
+                    or record.get("business_started") is not False or record.get("helper_started") is not False
+                    or key in b._active or key in b._recovering):
+                raise JobError("IO_UNCERTAIN", "Unstarted recovery conflicts with original execution history")
+            # The recovery-only session cannot launch. The original immutable
+            # ledger has no delivery intent; retained preparation is not execution.
+            proof = dict(future_start_blocked=True, tree_exited=True, effects_checked=True)
+            b._release(tx, row, proof)
+            if tx.execute("SELECT 1 FROM leases WHERE owner=? LIMIT 1", (identity,)).fetchone() is not None:
+                raise JobError("IO_UNCERTAIN", "Unstarted recovery still owns execution resources")
+            b.state.update(tx, "job", identity, "RECOVERED_BEFORE_START", {
+                "lifecycle": "TERMINAL", "phase": "EXITED", "outcome": "UNKNOWN", "recovered": True,
+                "exit_proof": proof, "side_effects": "NONE", "execution_resources_released": True,
+                "artifacts_retained": True,
+                "gaps": ["Task API stopped before execution; no business result was produced"],
+            })
 
     def _prepare(self, phase):
         self._action = "prepare_" + phase
@@ -310,8 +339,14 @@ class TaskSession:
             return  # Only a real client submission may create this task.
         if self.value["mode"] == "recover":
             if ("job", identity) not in b._active and ("job", identity) not in b._recovering:
-                self._control_started = True
-                self.manager.finish_recovery()
+                if not self._recovery_acknowledged:
+                    self._control_started = True
+                    self.manager.finish_recovery()
+                    self._recovery_acknowledged = True
+                # The surviving manager has proved its execution parent empty.
+                # Retry local ledger contention without resending its handshake.
+                self._control_started = False
+                self._finish_unstarted_recovery()
                 self.finished = True
             return
         record = row["record"]

@@ -110,10 +110,17 @@ class TaskServiceTests(unittest.TestCase):
         self.assertIn("--auth-config", argv)
 
     def test_natural_service_crash_recovery_requires_real_peer_exit_without_test_arm(self):
+        self.check_service_crash_recovery(unstarted=False)
+
+    def test_unstarted_service_recovery_requires_dead_peer_and_empty_parent(self):
+        self.check_service_crash_recovery(unstarted=True)
+
+    def check_service_crash_recovery(self, *, unstarted):
         fixture = gateway_fixtures.GatewayTests()
         gateway, item = fixture.gateway()
         self.addCleanup(fixture.doCleanups)
-        fixture.arm(gateway, item)
+        if not unstarted:
+            fixture.arm(gateway, item)
         gateway.recovery_armed = gateway.recovery_arm_ack = False
         gateway.recovery_plan = None
         gateway.uid, gateway.gid = os.getuid(), os.getgid()
@@ -140,6 +147,12 @@ class TaskServiceTests(unittest.TestCase):
             old_process.terminate()
             old_process.wait(timeout=2)
             self.assertTrue(select.select([gateway.peer_pidfd], [], [], 1)[0])
+            if unstarted:
+                with patch.object(gateway, "_parent", side_effect=ValueError("SYSTEM_PARENT_OCCUPIED")):
+                    with self.assertRaisesRegex(ValueError, "SYSTEM_PARENT_OCCUPIED"):
+                        gateway.rebind_service_recovery(new)
+                self.assertIs(old, gateway.channel)
+                self.assertFalse(gateway.recovery_only)
             gateway.rebind_service_recovery(new)
             self.assertTrue(gateway.recovery_only)
             self.assertTrue(gateway.service_recovery)
@@ -149,6 +162,10 @@ class TaskServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "SYSTEM_RECOVERY_OPERATION"):
                 gateway.dispatch("launch", dict(ref=reference,
                     bindings=dict(allocation_digest="a" * 64, grant_digest="b" * 64)))
+            if unstarted:
+                gateway._parent.assert_called_with(empty=True)
+                self.assertEqual((dict(closed=True), ()), gateway.dispatch("recovery_finish", {}))
+                self.assertTrue(gateway.recovery_finished)
         finally:
             if getattr(gateway, "peer_pidfd", -1) >= 0:
                 os.close(gateway.peer_pidfd)

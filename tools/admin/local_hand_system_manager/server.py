@@ -292,7 +292,7 @@ class Gateway:
             now = budget.current_clock()
             q.require(not self.closed and not self._serving and self.pending_control is None
                       and self.peer_pidfd >= 0 and select.select([self.peer_pidfd], [], [], 0)[0]
-                      and self.parts and self.recovery_rebinds < 3, "SYSTEM_RECOVERY_STATE")
+                      and self.recovery_rebinds < 3, "SYSTEM_RECOVERY_STATE")
             q.require(channel.peer[0] != old.peer[0] and channel.peer[1:] == (self.uid, self.gid)
                       and channel.boot_id == now["boot_id"] == self.binding["boot_id"]
                       and channel.end == self.end and now["boottime_ns"] < self.end
@@ -307,6 +307,11 @@ class Gateway:
             retired_calls = self.retired_calls + old.sequence
             q.require(self.control_bytes + retired_bytes < wire.WIRE_LIMIT
                       and retired_calls < wire.CALL_LIMIT, "SYSTEM_RECOVERY_BUDGET")
+            if not self.parts:
+                # The API may die after admission but before its first launch.
+                # An empty retained inventory is safe only with an empty pinned
+                # execution parent; the replacement still cannot issue launches.
+                self._parent(empty=True)
             self._discard_original_clients()
             if self.failure is not None:
                 self.session_failures.append(self.failure)
