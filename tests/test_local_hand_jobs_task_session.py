@@ -3,6 +3,7 @@
 Quota grants and process exit proofs are modeled here; this is not a host run.
 """
 import copy
+import json
 import os
 from pathlib import Path
 import select
@@ -381,6 +382,74 @@ class TaskSessionTests(unittest.TestCase):
         with patch.object(self.broker, "tick") as tick:
             self.session.tick()
             tick.assert_called_once()
+
+    def test_control_failure_logs_original_location_without_payload_or_token(self):
+        self.session.tick()
+        secret = "Bearer private-token /private/host/path"
+        self.channel.enqueue({"action": secret, "value": {"token": secret}})
+        with self.assertLogs("local_hand_jobs.task_session", level="ERROR") as logs:
+            with self.assertRaises(JobError):
+                self.session.tick()
+        self.assertNotIn(secret, str(logs.output))
+        value = json.loads(logs.records[0].getMessage().split(" ", 1)[1])
+        self.assertEqual(self.f.identity, value["operation_id"])
+        self.assertEqual("preflight", value["phase"])
+        self.assertEqual("invalid_command", value["action"])
+        self.assertTrue(value["control_started"])
+        cause = value["causes"][0]
+        self.assertEqual("QuotaError", cause["type"])
+        self.assertIn("code", cause)
+        self.assertTrue(any(frame["file"] == "quota_bridge.py" and frame["line"] > 0 for frame in cause["frames"]))
+
+    def test_business_bootstrap_cancel_answers_pending_snapshot_and_finishes(self):
+        self.session.tick()
+        fence, _ = self.f.pending("preflight")
+        self.command("close", fence)
+        closed = self.f.row()["record"]["quota_closed"]["preflight"]
+        self.f.chain.retain_closure("preflight", closed)
+        self.command("advance", {"from": "preflight", "to": "business",
+                                 "closure_digest": quota_closure.digest(closed)})
+        prepared = self.channel.outgoing[-1]["snapshot"]["preparation"]
+        grant = self.f.make_grant("business", prepared)
+        self.command("bind", grant.as_dict())
+        self.command("start")
+        execution = "job-" + self.f.identity + "-business"
+        self.assertTrue(self.broker._guard_start(execution, lambda: True, stage="bootstrap"))
+        self.broker.cancel(self.f.identity, self.f.f.request["request_digest"], {"kind": "job"}, self.f.f.owner)
+        self.f.runner.finish(execution, exit_code=1,
+            writers_stopped=True, collectors_stopped=True,
+            result=dict(outcome="CANCELLED", business_started=False, helper_started=True))
+        self.f.runner.proofs[execution]["execution_id"] = execution
+        reply = self.command("snapshot")
+        self.assertEqual("TERMINAL", reply["task"]["lifecycle"])
+        self.assertEqual("CANCELLED", reply["task"]["outcome"])
+        self.assertIsNone(reply["observation"])
+        self.assertIsNone(reply["closed"])
+        self.assertIsNotNone(reply["pending"])
+        self.command("finish")
+        self.assertTrue(self.session.finished)
+        self.assertIsNone(self.session.failure)
+        self.assertEqual(2, len(self.f.runner.starts))
+        self.assertNotIn(execution + ":helper", self.f.row()["record"]["delivery_intents"])
+
+    def test_control_failure_logs_os_cause_without_exception_text(self):
+        self.session.tick()
+        self.channel.enqueue({"action": "snapshot", "value": None})
+        def broken_snapshot():
+            try:
+                raise OSError(5, "private-token", "/private/host/path")
+            except OSError as cause:
+                raise JobError("IO_UNCERTAIN", "Bearer private-token") from cause
+        with patch.object(self.session.handler, "snapshot", side_effect=broken_snapshot):
+            with self.assertLogs("local_hand_jobs.task_session", level="ERROR") as logs:
+                with self.assertRaises(JobError):
+                    self.session.tick()
+        self.assertNotIn("private-token", str(logs.output))
+        self.assertNotIn("/private/host/path", str(logs.output))
+        value = json.loads(logs.records[0].getMessage().split(" ", 1)[1])
+        self.assertEqual("snapshot", value["action"])
+        self.assertEqual("IO_UNCERTAIN", value["causes"][0]["code"])
+        self.assertEqual(5, value["causes"][1]["errno"])
 
     def test_start_uses_session_coordinator_and_close_releases_channels(self):
         with patch.object(self.session, "recover") as recover, \

@@ -14,7 +14,7 @@ import time
 import uuid
 
 from .contract import DISABLED_JOB_KINDS, JobError, Principal, validate_submit, validate_tool_args
-from . import bootstrap_roots, budget, manager_binding as bindings
+from . import bootstrap_roots, budget, diagnostics, manager_binding as bindings
 from .resources import ResourceManager
 from .state import LedgerBusy, encoded
 
@@ -197,7 +197,7 @@ class Broker:
         for key in ("frozen_snapshot", "prepared_facts", "business_outcome", "business_exit_proof", "delivery_intents",
                     "execution_budget", "budget_grant", "bootstrap_grants", "bootstrap_completed", "helper_completed",
                     "quota_binding_version", "quota_preparations", "quota_bindings", "quota_observed", "quota_event_phase",
-                    "quota_pending", "quota_closed", "preflight_completion"):
+                    "quota_pending", "quota_closed", "preflight_completion", "stopped_completion"):
             result.pop(key, None)
         result["seal_refs"] = [{"seal_id": item["seal_id"], "seal_sha256": item.get("seal_sha256")}
                                for item in result.pop("seals", [])]
@@ -438,13 +438,13 @@ class Broker:
 
     def recover(self):
         """Crash recovery records uncertainty; never reissues a persisted intent."""
-        from .preflight_completion import complete_stopped_preflight
+        from .stopped_completion import complete_stopped_execution
         from .evidence_recovery import release_completed_evidence
         reconnect = []
         with self.fence, self.state.transaction() as tx:
             for row in self.state.all(tx):
                 record = row["record"]
-                if complete_stopped_preflight(self, tx, row):
+                if complete_stopped_execution(self, tx, row):
                     continue
                 if release_completed_evidence(self, tx, row):
                     continue
@@ -1071,8 +1071,8 @@ class Broker:
                         original = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")
                         if original["proof"] != thaw(proof):
                             raise JobError("IO_UNCERTAIN", "Original pending exit proof changed")
-                    from .preflight_completion import complete_stopped_preflight
-                    complete_stopped_preflight(self, tx, self.state.get(namespace, identity, tx))
+                    from .stopped_completion import complete_stopped_execution
+                    complete_stopped_execution(self, tx, self.state.get(namespace, identity, tx))
                     return
                 quota_binding.original(tx, row, phase, "QUOTA_PHASE_CLOSED", "quota_closed")
             if record["phase"] == "EVIDENCE":
@@ -1174,16 +1174,16 @@ class Broker:
 
     def tick(self):
         """One bounded coordinator pass, also usable by deterministic fixture tests."""
-        from .preflight_completion import complete_stopped_preflight
+        from .stopped_completion import complete_stopped_execution
         with self.state.transaction() as tx:
             rows = self.state.all(tx)
         for row in rows:
             key, record = (row["namespace"], row["id"]), row["record"]
-            if (key not in self._active and key not in self._recovering and record["phase"] == "PREFLIGHT"
-                    and "preflight" in record.get("quota_pending", {})
+            if (key not in self._active and key not in self._recovering and record["phase"] in ("PREFLIGHT", "BUSINESS")
+                    and record["phase"].lower() in record.get("quota_pending", {})
                     and (record["cancel_requested"] or record.get("recovered"))):
                 with self.fence, self.state.transaction() as tx:
-                    if complete_stopped_preflight(self, tx, self.state.get(*key, tx)):
+                    if complete_stopped_execution(self, tx, self.state.get(*key, tx)):
                         continue
             if key in self._recovering and key not in self._active:
                 pending = self._recovering[key]
@@ -1195,11 +1195,13 @@ class Broker:
                     self._unknown(*key, "Supervisor recovery attachment is temporarily unavailable")
                     continue
             if key in self._active:
+                action = "stop" if record["cancel_requested"] else "inspect"
                 try:
                     bindings.check(self.manager_binding, self._active[key].get("manager_binding"))
                     proof = (self.runner.stop(self._active[key]) if record["cancel_requested"]
                              else self.runner.inspect(self._active[key]))
                     recovery = proof.get("recovery_handle")
+                    action = "record_observation"
                     if recovery is not None:
                         bindings.check(self.manager_binding, recovery.get("manager_binding"))
                         with self.state.transaction() as tx:
@@ -1216,6 +1218,7 @@ class Broker:
                         if proof.get("future_start_blocked") is True and proof.get("tree_exited") is True:
                             completed_handle = self._active.pop(key)
                         try:
+                            action = "complete_exit"
                             self._complete(*key, proof)
                         except BaseException:
                             # A local recording failure is not completion.
@@ -1228,7 +1231,9 @@ class Broker:
                         self._unknown(*key, "Supervisor has not established execution identity or exit")
                 except LedgerBusy:
                     raise  # Keep the original execution and last durable observation.
-                except Exception:
+                except Exception as error:
+                    diagnostics.failure("broker", error, operation_id=key[1],
+                                        phase=record["phase"], action=action)
                     self._unknown(*key, "Supervisor observation failed")
                 else:
                     if proof.get("state") == "EXITED" and key[0] == "job":
