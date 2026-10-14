@@ -221,6 +221,54 @@ class TaskServiceTests(unittest.TestCase):
     def test_natural_service_crash_recovery_requires_real_peer_exit_without_test_arm(self):
         self.check_service_crash_recovery(unstarted=False)
 
+    def test_completed_chain_can_recover_api_after_original_manager_loop_finishes(self):
+        fixture = gateway_fixtures.GatewayTests()
+        gateway, item = fixture.gateway(); self.addCleanup(fixture.doCleanups)
+        fixture.arm(gateway, item)
+        gateway.recovery_armed = gateway.recovery_arm_ack = False
+        gateway.closed_phases = list(wire.PHASES)
+        original = dict(gateway.parts)
+        gateway.parts = {(phase, stage): dict(original['preflight', stage],
+            unit=phase+'-'+stage, sealed=True, stop_ok=True)
+            for phase in wire.PHASES for stage in wire.STAGES}
+        gateway.uid, gateway.gid = os.getuid(), os.getgid()
+        left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        process = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(10)'],
+                                   pass_fds=(right.fileno(),))
+        right.close(); channels=[]; worker=None
+        def channel(sock, pid, nonce):
+            value=wire.Channel(sock, peer=(pid, os.getuid(), os.getgid()),
+                peer_start_ticks=wire.start_ticks(pid), session_id=nonce,
+                boot_id=gateway.binding['boot_id'], deadline_ns=gateway.end)
+            channels.append(value);return value
+        try:
+            gateway.channel=channel(left,process.pid,'a'*64)
+            gateway.peer_pidfd=os.dup(gateway.channel.pidfd)
+            gateway.serve()
+            self.assertFalse(gateway._serving);self.assertIsNone(gateway.failure)
+            with self.assertRaisesRegex(ValueError,'SYSTEM_RECOVERY_STATE'):
+                gateway.check_service_recovery()  # The original API is still alive.
+            process.terminate();process.wait(timeout=2)
+            left,right=socket.socketpair(socket.AF_UNIX,socket.SOCK_SEQPACKET)
+            replacement=channel(left,os.getpid(),'b'*64)
+            client=channel(right,os.getpid(),'b'*64)
+            gateway.rebind_service_recovery(replacement)
+            worker=task_service.threading.Thread(target=gateway.serve)
+            worker.start()
+            result,fds=client.request('recovery_finish')
+            self.assertEqual({'closed':True},result);self.assertEqual((),fds)
+            worker.join(timeout=1);self.assertFalse(worker.is_alive())
+            self.assertTrue(gateway.recovery_finished);self.assertIsNone(gateway.failure)
+            self.assertEqual(1,gateway.recovery_rebinds)
+            gateway._parent.assert_called_with(empty=True)
+        finally:
+            gateway.closed=True
+            for c in channels:c.close()
+            if worker is not None:worker.join(timeout=1)
+            if process.poll() is None:process.terminate()
+            process.wait(timeout=2)
+            if gateway.peer_pidfd>=0:os.close(gateway.peer_pidfd)
+
     def test_unstarted_service_recovery_requires_dead_peer_and_empty_parent(self):
         self.check_service_crash_recovery(unstarted=True)
 

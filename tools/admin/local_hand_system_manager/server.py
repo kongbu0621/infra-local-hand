@@ -820,6 +820,20 @@ class Gateway:
                 return dict(closed=True, client_state=self._state(part)), ()
             return dict(client_state=self._state(part)), ()
 
+    def _execution_channel_complete(self):
+        """All original phase fences closed; result reads need no manager RPC.
+
+        Keep the channel and peer pidfd for a possible API crash during the
+        remaining read window. A rebound recovery peer still needs its own
+        observation/finish exchange, even when all original phases are closed.
+        The caller holds the gateway lock, also used by close_phase().
+        """
+        if self.recovery_only or self.closed_phases != list(wire.PHASES):
+            return False
+        q.require(self.failure is None and self.pending_control is None
+                  and self.channel.pending is None, "SYSTEM_COMPLETED_CHANNEL_PENDING")
+        return True
+
     def serve(self):
         with self.lock:
             q.require(not self._serving and not self.closed, "SYSTEM_GATEWAY_SERVE")
@@ -832,8 +846,18 @@ class Gateway:
             while (not self.closed and not self.recovery_finished
                    and not (self.recovery_armed and not self.recovery_only)):
                 action = "wait"
-                if not select.select([self.channel.sock], [], [], 0.025)[0]:
-                    self._time(); continue
+                with self.lock:
+                    if self._execution_channel_complete():
+                        break
+                ready = select.select([self.channel.sock], [], [], 0.025)[0]
+                with self.lock:
+                    # The final phase may close while select waits. Check the
+                    # original fences before treating idle deadline expiry as
+                    # a failure, including at the exact read-window boundary.
+                    if self._execution_channel_complete():
+                        break
+                    if not ready:
+                        self._time(); continue
                 action = "receive"
                 request = self.channel.receive_request()
                 action = request["op"]

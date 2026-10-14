@@ -23,6 +23,59 @@ if sys.platform.startswith("linux"):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux fixed system gateway")
 class GatewayTests(unittest.TestCase):
+    def test_closed_execution_channel_finishes_before_read_window_expiry(self):
+        for during_wait in (False, True):
+            with self.subTest(during_wait=during_wait):
+                gateway, _ = self.gateway()
+                gateway.channel.sock = object()
+                gateway.channel.pending = None
+                gateway.channel.close = mock.Mock()
+                if not during_wait:
+                    gateway.closed_phases = list(wire.PHASES)
+                def expire(*args):
+                    gateway.closed_phases = list(wire.PHASES)
+                    return ([], [], [])
+                gateway._time = mock.Mock(side_effect=q.QuotaError("SYSTEM_GATEWAY_UNAVAILABLE"))
+                with mock.patch.object(server.select, "select", side_effect=expire) as wait, \
+                        mock.patch.object(server.diagnostics, "failure") as failure:
+                    gateway.serve()
+                self.assertEqual(int(during_wait), wait.call_count)
+                gateway._time.assert_not_called()
+                gateway.channel.close.assert_not_called()
+                failure.assert_not_called()
+                self.assertFalse(gateway._serving)
+                self.assertIsNone(gateway.failure)
+                self.assertFalse(gateway.closed)
+
+    def test_incomplete_or_recovery_channel_still_reports_expired_deadline(self):
+        for phases, recovery in (([], False), (["preflight"], False),
+                                 (["preflight", "business"], False), (list(wire.PHASES), True)):
+            with self.subTest(phases=phases, recovery=recovery):
+                gateway, _ = self.gateway()
+                gateway.closed_phases, gateway.recovery_only = phases, recovery
+                gateway.channel.sock = object(); gateway.channel.pending = None
+                gateway.channel.close = mock.Mock()
+                gateway._time = mock.Mock(side_effect=q.QuotaError("SYSTEM_GATEWAY_UNAVAILABLE"))
+                with mock.patch.object(server.select, "select", return_value=([], [], [])), \
+                        mock.patch.object(server.diagnostics, "failure") as failure:
+                    gateway.serve()
+                self.assertEqual("SYSTEM_GATEWAY_UNAVAILABLE", gateway.failure)
+                gateway.channel.close.assert_called_once()
+                failure.assert_called_once()
+
+    def test_closed_phases_cannot_hide_unsettled_manager_work(self):
+        for pending in ("request", "control"):
+            with self.subTest(pending=pending):
+                gateway, _ = self.gateway()
+                gateway.closed_phases = list(wire.PHASES)
+                gateway.channel.pending = "observe" if pending == "request" else None
+                gateway.channel.close = mock.Mock()
+                gateway.pending_control = object() if pending == "control" else None
+                with mock.patch.object(server.diagnostics, "failure") as failure:
+                    gateway.serve()
+                self.assertEqual("SYSTEM_COMPLETED_CHANNEL_PENDING", gateway.failure)
+                failure.assert_called_once()
+
     def test_original_client_exit_during_proc_read_requires_its_pidfd(self):
         for exited in (False, True):
             with self.subTest(exited=exited):
