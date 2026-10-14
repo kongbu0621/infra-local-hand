@@ -9,12 +9,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 import importlib.metadata
 import json
+import logging
 from pathlib import Path
 import sys
 import threading
+import time
 from urllib.parse import urlsplit
+import uuid
 
 from local_hand_jobs.contract import JobError, TOOL_SCHEMAS, TOOL_SCOPES, strict_loads, validate_tool_args
 
@@ -24,6 +28,8 @@ BODY_SECONDS = 5
 CONTROL_SECONDS = 5
 MAX_CONTROL_REQUESTS = 32
 _READ_ONLY = frozenset({"lh_capabilities", "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"})
+_REQUEST_ID = ContextVar("local_hand_mcp_request_id", default="none")
+_REQUEST_LOG = logging.getLogger("local_hand_mcp.requests")
 _DESCRIPTIONS = {
     "lh_capabilities": "查看当前获准使用的功能、资源引用和身份绑定。若返回 prepared_request，原样提交该请求一次，并保留其任务标识。",
     "lh_job_submit": "提交一个确定的任务并持久保存记录。返回结果不确定时，保留原 operation_id，沿同一任务查询。",
@@ -111,6 +117,50 @@ async def _json_error(send, status: int, code: str, message: str, *, challenge: 
         headers.append((b"www-authenticate", challenge.encode("ascii")))
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
+
+
+def _request_event(event, **fields):
+    # Only fixed stages, validated tool names, numeric observations and exception
+    # types belong here. Never log headers, arguments, results or exception text.
+    _REQUEST_LOG.info(json.dumps(dict(request_id=_REQUEST_ID.get(), event=event, **fields),
+                                 separators=(",", ":")))
+
+
+class _RequestTrace:
+    """Observe the admitted HTTP route before auth, without reading its body."""
+    def __init__(self, app, path):
+        self.app, self.path = app, path
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") != self.path:
+            return await self.app(scope, receive, send)
+        token = _REQUEST_ID.set(uuid.uuid4().hex)
+        started = time.monotonic()
+        status, size, completed, failure = None, 0, False, None
+        method = scope.get("method")
+        _request_event("http_received", method=method if method in {"GET", "POST", "DELETE", "OPTIONS"} else "OTHER")
+
+        async def observed_send(message):
+            nonlocal status, size, completed
+            await send(message)
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            elif message["type"] == "http.response.body":
+                size += len(message.get("body", b""))
+                completed = not message.get("more_body", False)
+
+        try:
+            return await self.app(scope, receive, observed_send)
+        except BaseException as error:
+            from .auth import _exception_location
+            failure = _exception_location(error)
+            raise
+        finally:
+            try:
+                _request_event("http_finished", status=status, response_bytes=size, completed=completed,
+                               elapsed_ms=round((time.monotonic() - started) * 1000), failure=failure)
+            finally:
+                _REQUEST_ID.reset(token)
 
 
 def validate_rpc(payload: dict) -> None:
@@ -227,7 +277,8 @@ def create_app(broker, verifier):
     enabled_scopes = sorted({TOOL_SCOPES[name] for name in enabled_tools})
     output_validators = {name: Draft202012Validator(schema) for name, schema in _OUTPUT_SCHEMAS.items()}
 
-    def result_error(code: str, message: str, *, required_scope: str | None = None):
+    def result_error(code: str, message: str, *, stage: str, required_scope: str | None = None):
+        _request_event("tool_rejected", stage=stage, code=code)
         metadata = None
         if code == "UNAUTHORIZED":
             metadata = {"mcp/www_authenticate": [verifier.config.challenge(
@@ -255,24 +306,30 @@ def create_app(broker, verifier):
         ])
 
     async def call_tool(context, params):
+        stage = "admission"
+        _request_event("tool_received", tool=params.name if params.name in enabled_tools else "unsupported")
         try:
             if closing.is_set():
                 raise JobError("IO_UNCERTAIN", "MCP transport has closed admission")
             access_token = get_access_token()
+            stage = "authentication"
             principal = verifier.principal(access_token)
+            stage = "arguments"
             arguments = validate_tool_args(params.name, params.arguments or {})
             if params.name not in enabled_tools:
                 raise JobError("UNSUPPORTED", "This deployment does not offer this tool")
             if TOOL_SCOPES[params.name] not in principal.scopes:
                 return result_error("UNAUTHORIZED", "The current token does not grant this tool",
+                                    stage="authorization",
                                     required_scope=TOOL_SCOPES[params.name])
             limits = getattr(getattr(broker, "policy", None), "limits", {})
             control_seconds = min(CONTROL_SECONDS, limits.get("control_response_seconds", CONTROL_SECONDS))
+            stage = "capacity"
             try:
                 async with asyncio.timeout(0.1):
                     await slots.acquire()
             except TimeoutError:
-                return result_error("LIMIT_EXCEEDED", "Control request capacity is occupied")
+                return result_error("LIMIT_EXCEEDED", "Control request capacity is occupied", stage=stage)
 
             async def invoke():
                 try:
@@ -282,7 +339,18 @@ def create_app(broker, verifier):
                         current = verifier.principal(access_token)
                         if closing.is_set():
                             raise JobError("IO_UNCERTAIN", "MCP transport closed before dispatch")
-                        return broker.call(params.name, arguments, current)
+                        began = time.monotonic()
+                        _request_event("broker_started")
+                        failure = None
+                        try:
+                            return broker.call(params.name, arguments, current)
+                        except BaseException as error:
+                            from .auth import _exception_location
+                            failure = _exception_location(error)
+                            raise
+                        finally:
+                            _request_event("broker_finished", elapsed_ms=round((time.monotonic() - began) * 1000),
+                                           failure=failure)
                     return await asyncio.to_thread(dispatch)
                 finally:
                     slots.release()
@@ -306,17 +374,21 @@ def create_app(broker, verifier):
                     done.exception()
 
             task.add_done_callback(consume)
+            stage = "broker_wait"
             try:
                 output = await asyncio.wait_for(asyncio.shield(task), control_seconds)
             except TimeoutError:
-                return result_error("IO_UNCERTAIN", "Receipt is uncertain; query or resend the original identity")
+                return result_error("IO_UNCERTAIN", "Receipt is uncertain; query or resend the original identity", stage=stage)
+            stage = "response_encoding"
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text="Local Hand structured result")],
                 structured_content=output,
             )
             if len(result.model_dump_json(by_alias=True).encode("utf-8")) > MAX_RESPONSE - 1024:
-                return result_error("LIMIT_EXCEEDED", "Response exceeds the fixed size bound")
+                return result_error("LIMIT_EXCEEDED", "Response exceeds the fixed size bound", stage=stage)
+            stage = "response_schema"
             output_validators[params.name].validate(output)
+            _request_event("tool_completed")
             return result
         except JobError as exc:
             # Codes are public protocol; arbitrary exception text/details may
@@ -325,9 +397,11 @@ def create_app(broker, verifier):
                 "UNAUTHORIZED", "CONFLICT", "STALE_DEPLOYMENT", "UNSUPPORTED", "RESOURCE_BUSY",
                 "NOT_FOUND", "NOT_SEALED", "LIMIT_EXCEEDED", "IO_UNCERTAIN",
             } else "IO_UNCERTAIN"
-            return result_error(code, f"Local Hand request rejected: {code}")
-        except Exception:
-            return result_error("IO_UNCERTAIN", "Local Hand request could not be completed")
+            return result_error(code, f"Local Hand request rejected: {code}", stage=stage)
+        except Exception as error:
+            from .auth import _exception_location
+            _request_event("tool_failed", stage=stage, failure=_exception_location(error))
+            return result_error("IO_UNCERTAIN", "Local Hand request could not be completed", stage=stage)
 
     resource = urlsplit(config.resource)
     sdk = Server("infra-local-hand", version="0.2.0a1", on_list_tools=list_tools, on_call_tool=call_tool)
@@ -394,6 +468,7 @@ def create_app(broker, verifier):
         # remains authoritative when transport shutdown interrupts pending I/O.
 
     app.router.lifespan_context = lifespan
+    app.add_middleware(_RequestTrace, path=resource.path or "/mcp")
     return app
 
 
@@ -410,18 +485,18 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         _require_optional()
-        # Enable only our sanitized authentication diagnostics. Raising the
+        # Enable only our sanitized authentication/request diagnostics. Raising the
         # root/HTTP-client level would also log private issuer URLs.
-        import logging
-        logger = logging.getLogger("local_hand_mcp.auth")
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(
-                "%(asctime)s %(levelname)s pid=%(process)d %(name)s %(filename)s:%(lineno)d %(message)s",
-                datefmt="%Y-%m-%dT%H:%M:%S%z"))
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-            logger.propagate = False
+        for name in ("local_hand_mcp.auth", "local_hand_mcp.requests"):
+            logger = logging.getLogger(name)
+            if not logger.handlers:
+                handler = logging.StreamHandler()
+                handler.setFormatter(logging.Formatter(
+                    "%(asctime)s %(levelname)s pid=%(process)d %(name)s %(filename)s:%(lineno)d %(message)s",
+                    datefmt="%Y-%m-%dT%H:%M:%S%z"))
+                logger.addHandler(handler)
+                logger.setLevel(logging.INFO)
+                logger.propagate = False
         from local_hand_mcp.auth import AuthConfig, JWTVerifier
         from local_hand_jobs.cli import create_broker, MaintenanceServer, close_service
         from local_hand_jobs.contract import Principal

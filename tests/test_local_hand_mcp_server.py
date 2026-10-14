@@ -103,6 +103,58 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertEqual(before, len(self.broker.calls))
 
+    def test_request_trace_correlates_parallel_calls_with_reused_rpc_ids(self):
+        barrier = threading.Barrier(3)
+        operations = [f"12345678-1234-4234-8234-123456789ab{x}" for x in range(3)]
+
+        def status(name, arguments, principal):
+            barrier.wait(timeout=3)
+            return dict(operation_id=arguments["operation_id"], request_digest="a" * 64,
+                        lifecycle="TERMINAL", outcome="SUCCEEDED", evidence="SEALED", phase="EXITED")
+
+        with self.assertLogs("local_hand_mcp.requests", level="INFO") as capture, \
+                mock.patch.object(self.broker, "call", side_effect=status), ThreadPoolExecutor(max_workers=3) as pool:
+            responses = list(pool.map(lambda op: self.rpc("tools/call", {
+                "name": "lh_job_status", "arguments": {"operation_id": op},
+                "_meta": {"private": "private-metadata-sentinel"}}), operations))
+        for operation, response in zip(operations, responses):
+            self.assertEqual(200, response.status_code, response.text)
+            self.assertEqual(operation, response.json()["result"]["structuredContent"]["operation_id"])
+        traces = {}
+        for record in capture.records:
+            item = json.loads(record.getMessage())
+            self.assertRegex(item["request_id"], r"^[0-9a-f]{32}$")
+            traces.setdefault(item["request_id"], []).append(item)
+        self.assertEqual(3, len(traces))
+        for events in traces.values():
+            self.assertEqual(["http_received", "tool_received", "broker_started", "broker_finished",
+                              "tool_completed", "http_finished"], [event["event"] for event in events])
+            self.assertTrue(events[-1]["completed"])
+            self.assertEqual(200, events[-1]["status"])
+            self.assertGreater(events[-1]["response_bytes"], 0)
+        emitted = "\n".join(capture.output)
+        for private in (self.headers["Authorization"], "private-metadata-sentinel", *operations):
+            self.assertNotIn(private, emitted)
+
+    def test_request_trace_distinguishes_http_auth_rejection_and_broker_failure(self):
+        with self.assertLogs("local_hand_mcp.requests", level="INFO") as capture:
+            denied = self.rpc("tools/list", headers={**self.headers, "Authorization": "Bearer private-token-sentinel"})
+        events = [json.loads(record.getMessage()) for record in capture.records]
+        self.assertEqual(401, denied.status_code)
+        self.assertEqual(["http_received", "http_finished"], [event["event"] for event in events])
+        self.assertEqual(401, events[-1]["status"])
+        self.assertNotIn("private-token-sentinel", "\n".join(capture.output))
+        with self.assertLogs("local_hand_mcp.requests", level="INFO") as capture, \
+                mock.patch.object(self.broker, "call", side_effect=ValueError("private-path-and-error-sentinel")):
+            response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
+        self.assertEqual("IO_UNCERTAIN", response.json()["result"]["structuredContent"]["error"]["code"])
+        events = [json.loads(record.getMessage()) for record in capture.records]
+        failure = next(event for event in events if event["event"] == "tool_failed")
+        self.assertEqual("broker_wait", failure["stage"])
+        self.assertEqual("ValueError", failure["failure"])
+        self.assertEqual(1, len({event["request_id"] for event in events}))
+        self.assertNotIn("private-path-and-error-sentinel", "\n".join(capture.output))
+
     def test_unknown_start_facts_remain_null_in_status_result(self):
         operation = "12345678-1234-4234-8234-123456789abc"
         self.broker.output = dict(operation_id=operation, request_digest="a" * 64,
@@ -393,12 +445,18 @@ class ServerTests(unittest.TestCase):
             completed.set()
             return output
 
-        with mock.patch.object(self.broker, "call", side_effect=delayed), \
+        with self.assertLogs("local_hand_mcp.requests", level="INFO") as capture, \
+                mock.patch.object(self.broker, "call", side_effect=delayed), \
                 mock.patch("local_hand_mcp.server.CONTROL_SECONDS", 0.05):
             try:
                 response = self.rpc("tools/call", {"name": "lh_capabilities", "arguments": {}})
                 self.assertEqual("IO_UNCERTAIN", response.json()["result"]["structuredContent"]["error"]["code"])
                 self.assertFalse(completed.is_set())
+                events = [json.loads(record.getMessage()) for record in capture.records]
+                rejection = next(event for event in events if event["event"] == "tool_rejected")
+                self.assertEqual("broker_wait", rejection["stage"])
+                self.assertEqual("IO_UNCERTAIN", rejection["code"])
+                self.assertNotIn("tool_completed", [event["event"] for event in events])
             finally:
                 release.set()
             self.assertTrue(completed.wait(timeout=2))
