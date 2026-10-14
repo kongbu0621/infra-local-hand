@@ -555,6 +555,142 @@ class TaskSessionTests(unittest.TestCase):
         with self.broker.state.transaction() as tx:
             self.assertEqual(1, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (self.f.identity,)).fetchone()[0])
 
+    def test_recovery_between_closed_phases_releases_only_execution_and_preserves_results(self):
+        for previous, following in (("preflight", "business"), ("business", "evidence")):
+            for preparation in ("none", "prepared", "bound"):
+                with self.subTest(previous=previous, preparation=preparation):
+                    case = TaskSessionTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                    case.f.close("preflight")
+                    if previous == "business":case.f.close("business")
+                    if preparation != "none":
+                        prepared = case.f.prepare(following)
+                        if preparation == "bound":
+                            case.broker.bind_observation("job", case.f.identity, following,
+                                                        case.f.make_grant(following, prepared).wire)
+                    before = copy.deepcopy(case.f.row())
+                    starts = copy.deepcopy(case.f.runner.starts)
+                    events = case.broker.state.events("job", case.f.identity)
+                    with case.broker.state.transaction() as tx:
+                        leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                    session = TaskSession(dict(case.session.value, mode="recover"), Mock(), None)
+                    case.addCleanup(session.close); session.attach(case.broker)
+                    with patch.object(case.broker, "_start", side_effect=AssertionError("Recovery replayed work")):
+                        session.recover(); session.tick()
+                    row = case.f.row(); record = row["record"]
+                    expected = "UNKNOWN" if previous == "preflight" else before["record"]["business_outcome"]
+                    self.assertEqual(("TERMINAL", "EXITED", expected),
+                                     (record["lifecycle"], record["phase"], record["outcome"]))
+                    self.assertTrue(record["execution_resources_released"])
+                    self.assertFalse(record["cancel_requested"])
+                    self.assertTrue(record["gaps"])
+                    for key in ("request", "digest", "plan", "reserved_bytes"):
+                        self.assertEqual(before[key], row[key])
+                    for key in ("handles", "delivery_intents", "execution_budget", "quota_preparations", "quota_closed",
+                                "quota_pending", "quota_bindings", "business_outcome", "business_exit_proof",
+                                "frozen_snapshot", "exit_proof", "evidence", "seals", "business_started"):
+                        self.assertEqual(before["record"].get(key), record.get(key), key)
+                    with case.broker.state.transaction() as tx:
+                        self.assertEqual([r for r in leases if r[1] != case.f.identity],
+                                         [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+                    after = case.broker.state.events("job", case.f.identity)
+                    self.assertEqual(events, after[:-2])
+                    self.assertEqual(["RECOVERY_BARRIER", "RECOVERED_BETWEEN_PHASES"], [e["kind"] for e in after[-2:]])
+                    endpoint = Path(case.f.f.temp.name) / "phase-recovery.sock"
+                    server = MaintenanceServer(case.broker, endpoint, {os.geteuid():case.f.f.owner})
+                    server.start(); case.addCleanup(server.close)
+                    status = local_request(endpoint, "lh_job_status", {"operation_id":case.f.identity})
+                    self.assertEqual(("TERMINAL", expected), (status["lifecycle"], status["outcome"]))
+                    session.recover(); session.tick()
+                    case.broker.cancel(case.f.identity, row["digest"], {"kind":"job"}, case.f.f.owner)
+                    self.assertEqual(after, case.broker.state.events("job", case.f.identity))
+                    self.assertEqual(starts, case.f.runner.starts)
+                    session.manager.finish_recovery.assert_called_once()
+
+    def test_handover_recovery_preserves_failed_business_and_retains_unchecked_effects(self):
+        original = chain_fixtures.complete
+        for checked in (True, False):
+            with self.subTest(effects_checked=checked):
+                case = TaskSessionTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                case.f.close("preflight")
+                def failed(*args, **kwargs):
+                    result = original(*args, **kwargs)
+                    result[1].update(exit_code=1, effects_checked=checked)
+                    return result
+                with patch.object(chain_fixtures, "complete", side_effect=failed):case.f.close("business")
+                before = copy.deepcopy(case.f.row()["record"])
+                session = TaskSession(dict(case.session.value, mode="recover"), Mock(), None)
+                case.addCleanup(session.close); session.attach(case.broker); session.recover()
+                if checked:session.tick()
+                else:
+                    with self.assertRaises(JobError):session.tick()
+                record = case.f.row()["record"]
+                self.assertEqual("FAILED" if checked else "UNKNOWN", record["outcome"])
+                self.assertEqual(checked, record["lifecycle"] == "TERMINAL")
+                for key in ("business_outcome", "business_exit_proof", "frozen_snapshot"):
+                    self.assertEqual(before[key], record[key])
+                with case.broker.state.transaction() as tx:
+                    self.assertEqual(0 if checked else 1,
+                        tx.execute("SELECT count(*) FROM leases WHERE owner=?", (case.f.identity,)).fetchone()[0])
+
+    def test_handover_recovery_rejects_changed_proofs_and_hidden_dispatch(self):
+        for damage in ("proof", "closure", "frozen", "preparation", "hidden_dispatch"):
+            with self.subTest(damage=damage):
+                case = TaskSessionTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                case.f.close("preflight"); case.f.close("business")
+                prepared = case.f.prepare("evidence")
+                record = copy.deepcopy(case.f.row()["record"])
+                if damage == "hidden_dispatch":
+                    case.broker.bind_observation("job", case.f.identity, "evidence",
+                                                case.f.make_grant("evidence", prepared).wire)
+                    case.broker._start("job", case.f.identity, "evidence")
+                    case.broker._active.clear()
+                elif damage == "proof":record["quota_pending"]["business"]["proof"]["writers_stopped"] = False
+                elif damage == "closure":record["quota_closed"]["business"]["fence"]["execution_id"] = "foreign"
+                elif damage == "frozen":record["frozen_snapshot"]["event_seq"] += 1
+                else:record["quota_preparations"].pop("evidence")
+                with case.broker.state.transaction() as tx:
+                    case.broker.state.update(tx, "job", case.f.identity, "TEST_CORRUPTION", record)
+                    leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+                session = TaskSession(dict(case.session.value, mode="recover"), Mock(), None)
+                case.addCleanup(session.close); session.attach(case.broker)
+                session.recover()
+                before = copy.deepcopy(case.f.row())
+                events = case.broker.state.events("job", case.f.identity)
+                with patch.object(case.broker, "_start", side_effect=AssertionError("Recovery replayed work")):
+                    with self.assertRaises(JobError):session.tick()
+                self.assertNotEqual("TERMINAL", case.f.row()["record"]["lifecycle"])
+                # A failure record may be appended, but no evidence is repaired
+                # and no lease is released to conceal inconsistent history.
+                for key in ("quota_pending", "quota_closed", "quota_preparations", "frozen_snapshot", "handles"):
+                    self.assertEqual(before["record"].get(key), case.f.row()["record"].get(key))
+                self.assertEqual(events, case.broker.state.events("job", case.f.identity)[:len(events)])
+                with case.broker.state.transaction() as tx:
+                    self.assertEqual(leases, [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+
+    def test_handover_recovery_waits_for_manager_and_retries_only_local_busy_commit(self):
+        for failure in ("manager", "ledger_busy"):
+            with self.subTest(failure=failure):
+                case = TaskSessionTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                case.f.close("preflight")
+                manager = Mock()
+                session = TaskSession(dict(case.session.value, mode="recover"), manager, None)
+                case.addCleanup(session.close); session.attach(case.broker); session.recover()
+                writer = sqlite3.connect(case.broker.state.path, isolation_level=None)
+                case.addCleanup(writer.close)
+                manager.finish_recovery.side_effect = (JobError("IO_UNCERTAIN", "Parent occupied")
+                    if failure == "manager" else lambda: writer.execute("BEGIN IMMEDIATE"))
+                try:
+                    with self.assertRaises(JobError):session.tick()
+                finally:
+                    if failure == "ledger_busy":writer.execute("ROLLBACK")
+                self.assertNotEqual("TERMINAL", case.f.row()["record"]["lifecycle"])
+                with case.broker.state.transaction() as tx:
+                    self.assertEqual(1, tx.execute("SELECT count(*) FROM leases WHERE owner=?", (case.f.identity,)).fetchone()[0])
+                if failure == "ledger_busy":
+                    session.tick()
+                    self.assertEqual("TERMINAL", case.f.row()["record"]["lifecycle"])
+                    manager.finish_recovery.assert_called_once()
+
     def test_cancel_after_recovery_handshake_finishes_same_task_without_new_control(self):
         for phase in ("preflight", "business"):
             with self.subTest(phase=phase):
@@ -576,7 +712,7 @@ class TaskSessionTests(unittest.TestCase):
                 before = copy.deepcopy(case.f.row())
                 starts = copy.deepcopy(case.f.runner.starts)
                 events = recovered.state.events("job", case.f.identity)
-                self.assertEqual("RECONCILE_REQUIRED", before["record"]["lifecycle"])
+                self.assertEqual("TERMINAL", before["record"]["lifecycle"])
                 session.tick()
                 self.assertEqual(events, recovered.state.events("job", case.f.identity))
                 endpoint = Path(case.f.f.temp.name) / "cancel-after-recovery.sock"
@@ -588,7 +724,7 @@ class TaskSessionTests(unittest.TestCase):
                     session.tick(); session.tick()
                 status = local_request(endpoint, "lh_job_status", {"operation_id":case.f.identity})
                 self.assertEqual("TERMINAL", status["lifecycle"])
-                self.assertEqual("CANCELLED" if phase == "preflight" else "SUCCEEDED", status["outcome"])
+                self.assertEqual("UNKNOWN" if phase == "preflight" else "SUCCEEDED", status["outcome"])
                 self.assertEqual(starts, case.f.runner.starts)
                 self.assertEqual(before["record"]["exit_proof"], case.f.row()["record"]["exit_proof"])
                 self.assertEqual(old["record"]["delivery_intents"], case.f.row()["record"]["delivery_intents"])

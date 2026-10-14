@@ -202,12 +202,14 @@ class TaskSession:
             self.broker.recover()
 
     def _finish_unstarted_recovery(self):
-        """Close this session's admitted but never dispatched task, without replay."""
+        """Finish recovery before first dispatch or between closed phases."""
         b, identity = self.broker, self.value["operation_id"]
         with b.fence, b.state.transaction() as tx:
             row = b.state.get("job", identity, tx)
             record = row["record"]
             if record["lifecycle"] == "TERMINAL" or record["phase"] != "QUEUED":
+                from .recovery_completion import complete_between_phases
+                complete_between_phases(b, tx, row)
                 return
             issued = tx.execute("SELECT 1 FROM events WHERE namespace='job' AND id=? AND kind IN "
                 "('EXECUTION_INTENT','LAUNCH_ENQUEUED','MANAGER_DELIVERY_INTENT') LIMIT 1", (identity,)).fetchone()
