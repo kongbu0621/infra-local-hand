@@ -2,6 +2,7 @@
 import base64
 import copy
 import json
+from pathlib import Path
 import random
 import struct
 import subprocess
@@ -91,8 +92,9 @@ class QuotaPayloadTests(unittest.TestCase):
         self.assertGreater(len(encoded),bootstrap.MAX_ENCODED_BYTES)
         parts=bootstrap.payload_arguments(encoded)
         self.assertGreater(len(parts),1)
-        command=[sys.executable,'-c',
-            'import sys; from local_hand_jobs.bootstrap import decode_arguments; '
+        command=[sys.executable,'-I','-c',
+            'import sys; sys.path.insert(0,'+repr(str(Path(bootstrap.__file__).resolve().parent.parent))+'); '
+            'from local_hand_jobs.bootstrap import decode_arguments; '
             'assert len(decode_arguments(sys.argv[1:])["execution"]["inputs"]["content"]) == 120000',*parts]
         bootstrap.check_argv(command,{})
         process=subprocess.run(command,capture_output=True,timeout=10)
