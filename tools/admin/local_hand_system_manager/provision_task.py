@@ -148,6 +148,21 @@ def check_capacity_before_allocation(plan, inventory):
             f'PROVISION_CAPACITY_{kind.upper()} required={required} ceiling={total}')
 
 
+def check_base_directory_inventory(before, after):
+    """Allow new unassigned directories, while keeping retained projects fixed."""
+    def without_default_usage(rows):
+        return [{k: value for k, value in row.items()
+                 if row['project'] != 0 or k not in ('space', 'inodes')}
+                for row in rows]
+    q.require(without_default_usage(before) == without_default_usage(after),
+              'PROVISION_RETAINED_QUOTA_CHANGED')
+    old_default = next((row for row in before if row['project'] == 0), None)
+    new_default = next((row for row in after if row['project'] == 0), None)
+    if old_default is not None:
+        q.require(all(new_default[key] >= old_default[key] for key in ('space', 'inodes')),
+                  'PROVISION_RETAINED_QUOTA_CHANGED')
+
+
 def prepare(v):
     plan = copy.deepcopy(v['plan'])
     installation = v['installation']
@@ -224,6 +239,11 @@ def prepare(v):
     save(reservation / 'preparation-plan.json', plan)
     for name in ('setpriv',):
         q.require(hashlib.sha256(Path(plan['tools'][name]['path']).read_bytes()).hexdigest() == plan['tools'][name]['sha256'], 'PROVISION_PROGRAM_CHANGED')
+    # Admission precedes allocation.  The later strict comparison must use a
+    # baseline that includes our newly created unassigned base directories.
+    allocated = quota.inventory(guard)
+    check_base_directory_inventory(before, allocated)
+    before = allocated
     sequence = 0
 
     def event(kind, value):

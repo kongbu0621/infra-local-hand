@@ -844,6 +844,60 @@ class PreparationTests(unittest.TestCase):
 
 
 class GeneratedInputTests(unittest.TestCase):
+    def test_base_directory_growth_preserves_default_limits_and_retained_projects(self):
+        default=dict(project=0,hard=0,soft=0,space=1794048,ihard=0,isoft=0,inodes=435,btime=0,itime=0,valid=63)
+        retained=dict(default,project=15000,hard=65536,ihard=4096,space=4096,inodes=1)
+        before=[default,retained]
+        after=[dict(default,space=1814528,inodes=440),dict(retained)]
+        provision_task.check_base_directory_inventory(before,after)
+        self.assertEqual(435,default['inodes'])
+        for index in (0,1):
+            for field in default:
+                if index==0 and field in ('space','inodes'):
+                    value=default[field]-1
+                else:
+                    value=after[index][field]+1
+                changed=copy.deepcopy(after);changed[index][field]=value
+                with self.subTest(project=index,field=field), self.assertRaisesRegex(ValueError,'PROVISION_RETAINED_QUOTA_CHANGED'):
+                    provision_task.check_base_directory_inventory(before,changed)
+        for changed in (after[:1],after[1:],after+[dict(retained,project=15001)]):
+            with self.assertRaisesRegex(ValueError,'PROVISION_RETAINED_QUOTA_CHANGED'):
+                provision_task.check_base_directory_inventory(before,changed)
+
+    def test_prepare_uses_post_directory_inventory_for_final_retained_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory);quota_base=base/'quota';quota_base.mkdir()
+            setpriv=base/'setpriv';setpriv.write_bytes(b'fixed program')
+            plan=dict(host={'boot_id':'boot'},mounts={'quota':{'path':str(quota_base),'source':'/dev/quota','device':quota_base.stat().st_dev}},
+                directories={name:dict(path=str(base/name),owner='root',mode=0o700) for name in ('reservation','control','state','capture','declarations')},
+                settings={'capacity_management':{'storage_bytes':0,'storage_inodes':0}},roots=[],
+                account={'uid':0,'gid':0},tools={'setpriv':{'path':str(setpriv),'sha256':hashlib.sha256(setpriv.read_bytes()).hexdigest()}},
+                scope='fixture',baseline={},preparation_id='fixture')
+            installation=dict(source={'commit':'a'*40},installed={'payload_digest':'b'*64,'package_root':'/installed'})
+            quota_module,driver,assembly=Mock(),Mock(),Mock();assembly.PHASES=('preflight','business','evidence')
+            def inventory(_):
+                count=len(list(quota_base.iterdir()))
+                return [dict(project=0,space=4096*(1+count),inodes=1+count,hard=0,ihard=0),
+                        dict(project=100,space=4096,inodes=1,hard=1024,ihard=1)]
+            quota_module.Quota.return_value.inventory.side_effect=inventory
+            driver.encoded.side_effect=lambda value:json.dumps(value,sort_keys=True).encode()
+            driver.facts_from_observed.side_effect=RuntimeError('ASSEMBLY_REACHED')
+            lstat=Path.lstat
+            def protected_parent(path,*args,**kwargs):
+                value=lstat(path,*args,**kwargs)
+                return SimpleNamespace(st_mode=value.st_mode & ~0o022)
+            with patch.object(provision_task.os,'geteuid',return_value=0), \
+                 patch.object(provision_task.budget,'current_clock',return_value={'boot_id':'boot'}), \
+                 patch.object(provision_task,'verify_release'), \
+                 patch.object(provision_task,'_helper',side_effect=lambda _,name:{
+                     'q2_prepare':quota_module,'q2_prepare_driver':driver,'q2_prepare_assembly':assembly}[name]), \
+                 patch.object(provision_task.os,'chown'),patch.object(provision_task.os,'fchown'), \
+                 patch.object(provision_task.Path,'lstat',protected_parent):
+                with self.assertRaisesRegex(RuntimeError,'ASSEMBLY_REACHED'):
+                    provision_task.prepare(dict(plan=plan,installation=installation,observed={'parents':{}},bases=[str(quota_base/'new')]))
+            observed=driver.facts_from_observed.call_args.args[1]
+            self.assertEqual(2,observed['capacity_observed']['quota_inventory'][0]['inodes'])
+
     def test_capacity_preflight_counts_retained_limits_and_rejects_each_exhausted_resource(self):
         plan=dict(mounts={'quota':{'path':'/quota','device':7}},
             settings={'capacity_management':{'storage_bytes':4096,'storage_inodes':5}},
