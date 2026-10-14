@@ -381,14 +381,10 @@ def main(argv=None):
     if args.initialize_ledger:
         require(not args.plan and not args.execute and args.sha256 and args.ledger_id, "DRIVER_LEDGER_ARGUMENTS")
         from local_hand_jobs.policy import Policy, thaw
-        policy = Policy.from_file(args.initialize_ledger)
-        fd = os.open(args.initialize_ledger, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-        try:
-            raw = os.read(fd, 65537)
-        finally: os.close(fd)
-        require(len(raw) <= 65536 and sha(raw) == args.sha256, "DRIVER_POLICY_CHANGED")
-        from local_hand_jobs.contract import strict_loads
-        require(Policy(strict_loads(raw)).policy_digest == policy.policy_digest, "DRIVER_POLICY_CHANGED")
+        # Verify the requested file digest inside the same protected 512 KiB
+        # read. Reopening it with a legacy 64 KiB read both rejects admitted
+        # inventories and loses the original descriptor's identity checks.
+        policy = Policy.from_file(args.initialize_ledger, expected_sha256=args.sha256)
         result = helper("q2_prepare_assembly").initialize_ledger(thaw(policy.config), args.ledger_id)
         print(encoded(result).decode(), end=""); return 0
     if not args.plan or not args.sha256 or not args.execute:

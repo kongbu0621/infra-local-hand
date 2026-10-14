@@ -1,6 +1,7 @@
 """One-call bridge exercises real decoders and SQLite over modeled guest facts."""
 import copy
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from unittest import mock
 
 from test_e3_quota_q2_prepare_assembly import facts
@@ -84,6 +86,60 @@ class ModelFiles:
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux receipt assembly")
 class DriverTests(unittest.TestCase):
+    def policy_file(self, root, *, full=False):
+        from test_local_hand_jobs_policy import policy_fixture
+        config=policy_fixture(root)
+        config['process_manager']=dict(uid=os.getuid(),slice='fixture-jobs.slice',cgroup='/sys/fs/cgroup/fixture-jobs.slice')
+        config['profiles']['fixture']['sources']['source']['blobs'].update(
+            {f'tests/file_{index:04d}.py':'a'*40 for index in range(1500)})
+        for name in ('broker','authority','work','evidence','temporary','source','cache'):
+            (root/name).mkdir(mode=0o700)
+        for name in ('python','broker.py'):
+            (root/name).write_bytes(b'fixed fixture');(root/name).chmod(0o600)
+        raw=d.encoded(config)
+        self.assertGreater(len(raw),65536)
+        if full:raw+=b' '*(512*1024-len(raw))
+        path=root/'policy.json';path.write_bytes(raw);path.chmod(0o600)
+        return path,raw
+
+    @unittest.skipUnless(hasattr(os,'getuid') and os.getuid()!=0, 'Ledger initialization requires the ordinary identity')
+    def test_ledger_entry_accepts_large_policy_and_exact_512k_with_short_reads(self):
+        import sqlite3
+        for full in (False,True):
+            with self.subTest(full=full),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);path,raw=self.policy_file(root,full=full)
+                opened=[];real_open,real_read=os.open,os.read
+                def open_once(name,*args,**kwargs):
+                    if Path(name)==path:opened.append(str(name))
+                    return real_open(name,*args,**kwargs)
+                with mock.patch.object(os,'open',side_effect=open_once), \
+                     mock.patch.object(os,'read',side_effect=lambda fd,size:real_read(fd,min(size,4093))) as reads, \
+                     redirect_stdout(io.StringIO()) as output:
+                    code=d.main(['--initialize-ledger',str(path),'--sha256',d.sha(raw),'--ledger-id','size-boundary'])
+                self.assertEqual(0,code);self.assertEqual(1,len(opened))
+                if full:self.assertGreater(reads.call_count,100)
+                self.assertEqual([1,1],json.loads(output.getvalue())['generation'])
+                with sqlite3.connect(root/'broker/jobs.sqlite') as db:
+                    for table in ('operations','events','leases'):
+                        self.assertEqual(0,db.execute('select count(*) from '+table).fetchone()[0])
+
+    def test_ledger_entry_rejects_wrong_bytes_oversize_and_incomplete_read_before_creation(self):
+        from local_hand_jobs.contract import JobError
+        for fault in ('wrong_digest','changed_whitespace','one_byte_over','short_eof'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);path,raw=self.policy_file(root,full=True);expected=d.sha(raw)
+                if fault=='wrong_digest':expected='0'*64
+                elif fault=='changed_whitespace':path.write_bytes(raw[:-1]+b'\n')
+                elif fault=='one_byte_over':path.write_bytes(raw+b' ');expected=d.sha(raw+b' ')
+                calls=[];real_read=os.read
+                def read(fd,size):
+                    calls.append(size)
+                    return b'' if fault=='short_eof' and len(calls)>1 else real_read(fd,min(size,4093))
+                with mock.patch.object(os,'read',side_effect=read), \
+                     self.assertRaises((JobError,ValueError)):
+                    d.main(['--initialize-ledger',str(path),'--sha256',expected,'--ledger-id','size-boundary'])
+                self.assertEqual([],list((root/'broker').iterdir()))
+
     def test_real_receipt_shapes_decode_through_policy_chain_and_handoff(self):
         from local_hand_jobs.state import StateStore
         from local_hand_jobs.policy import Policy

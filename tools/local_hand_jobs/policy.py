@@ -383,8 +383,10 @@ class Policy:
                         raise _bad()
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "Policy":
-        """Open a private regular config with no symlink or writeable ancestors."""
+    def from_file(cls, path: str | Path, *, expected_sha256: str | None = None) -> "Policy":
+        """Admit one protected file, optionally binding its exact original bytes."""
+        if expected_sha256 is not None:
+            _digest(expected_sha256)
         try:
             target = Path(path)
             if not target.is_absolute():
@@ -444,6 +446,9 @@ class Policy:
                     # descriptor number that close may already have released.
                     if not body_failed:
                         raise
+            if expected_sha256 is not None and not hmac.compare_digest(
+                    hashlib.sha256(raw).hexdigest(), expected_sha256):
+                raise JobError("UNAUTHORIZED", "Private admission file digest does not match")
             policy = cls(strict_loads(raw, maximum_bytes=maximum))
             policy.validate_paths()
             return policy
