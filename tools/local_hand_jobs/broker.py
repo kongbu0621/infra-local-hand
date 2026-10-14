@@ -561,6 +561,8 @@ class Broker:
         with self.state.transaction() as tx:
             row = self.state.get(namespace, identity, tx)
             record = row["record"]
+            if record["lifecycle"] == "TERMINAL":
+                return  # A delayed control error cannot reopen a committed exit.
             changes = {"lifecycle": "RECONCILE_REQUIRED", "outcome": "UNKNOWN", "gaps": [gap]}
             if record["phase"] in ("AWAITING_SEAL", "EVIDENCE", "EXITED") and "business_outcome" in record:
                 changes["outcome"] = record["business_outcome"]
@@ -1283,7 +1285,7 @@ class Broker:
                         # derived catalog read cannot make that result unknown.
                         self._catalog(self.state.get(*key))
                 continue
-            if (record["outcome"] == "UNKNOWN" and record["phase"] != "AWAITING_SEAL") or (record["lifecycle"] != "ACCEPTED" and record["phase"] not in ("PREFLIGHT_COMPLETE", "AWAITING_SEAL")):
+            if record["lifecycle"] != "ACCEPTED" and record["phase"] not in ("PREFLIGHT_COMPLETE", "AWAITING_SEAL"):
                 continue
             if record["cancel_requested"]:
                 with self.state.transaction() as tx:
@@ -1301,6 +1303,8 @@ class Broker:
                     if effects_checked:
                         self._release(tx, row, {"future_start_blocked": True, "tree_exited": True, "effects_checked": True})
                 continue
+            if record["outcome"] == "UNKNOWN" and record["phase"] != "AWAITING_SEAL":
+                continue  # Uncertainty blocks new work, not cancellation of a completed preflight.
             phase = ("evidence" if record["phase"] == "AWAITING_SEAL" else "reconcile" if key[0] == "reconcile" else
                      "business" if record["phase"] == "PREFLIGHT_COMPLETE" else "preflight")
             try:

@@ -473,6 +473,107 @@ class TaskSessionTests(unittest.TestCase):
             self.session.tick()
             tick.assert_called_once()
 
+    def test_cancel_after_failed_control_exchange_finishes_retained_exit(self):
+        for phase in ("preflight", "business", "evidence"):
+            with self.subTest(phase=phase):
+                case = TaskSessionTests()
+                case.setUp(); self.addCleanup(case.doCleanups)
+                case._cancel_retained_exit_after_control_failure(phase)
+
+    def test_concurrent_cancel_cannot_be_reopened_by_control_failure(self):
+        unknown = self.broker._unknown
+        retained = {}
+        def cancel_then_record_error(*args):
+            self.broker.cancel(self.f.identity, self.f.row()["digest"], {"kind":"job"}, self.f.f.owner)
+            retained["row"] = copy.deepcopy(self.f.row())
+            retained["events"] = self.broker.state.events("job", self.f.identity)
+            return unknown(*args)
+        with patch.object(self.session, "_prepare", side_effect=OSError("local preparation failed")), \
+                patch.object(self.broker, "_unknown", side_effect=cancel_then_record_error), \
+                self.assertLogs("local_hand_jobs.task_session", level="ERROR"):
+            with self.assertRaises(JobError):
+                self.session.tick()
+        self.assertEqual("TERMINAL", retained["row"]["record"]["lifecycle"])
+        self.assertEqual(retained["row"], self.f.row())
+        self.assertEqual(retained["events"], self.broker.state.events("job", self.f.identity))
+        self.assertEqual([], self.f.runner.starts)
+
+    def test_failed_advance_never_launches_but_still_accepts_later_cancel(self):
+        self.session.tick()
+        fence, _ = self.f.pending("preflight")
+        self.command("close", fence)
+        with self.assertLogs("local_hand_jobs.task_session", level="ERROR"):
+            with self.assertRaises(JobError):
+                self.command("advance", {"from":"preflight", "to":"business", "closure_digest":"0"*64})
+        before = copy.deepcopy(self.f.row())
+        with patch.object(self.broker, "_start", side_effect=AssertionError("Failed session launched")):
+            self.session.tick()
+            self.assertEqual(before, self.f.row())
+            self.broker.cancel(self.f.identity, before["digest"], {"kind":"job"}, self.f.f.owner)
+            self.session.tick()
+        self.assertEqual("TERMINAL", self.f.row()["record"]["lifecycle"])
+        self.assertEqual("CANCELLED", self.f.row()["record"]["outcome"])
+        self.assertEqual({"preflight"}, set(self.f.row()["record"]["handles"]))
+
+    def _cancel_retained_exit_after_control_failure(self, phase):
+        self.session.tick()
+        phases = ("preflight", "business", "evidence")
+        for current in phases[:phases.index(phase)]:
+            fence, _ = self.f.pending(current)
+            self.command("close", fence)
+            closed = self.f.row()["record"]["quota_closed"][current]
+            self.f.chain.retain_closure(current, closed)
+            self.command("advance", {"from":current, "to":phases[phases.index(current)+1],
+                                    "closure_digest":quota_closure.digest(closed)})
+        complete = chain_fixtures.complete
+        def uncollected(grant, **options):
+            value = complete(grant, **options)
+            proof = value[1]
+            execution = "job-" + self.f.identity + "-" + phase
+            proof.update(execution_id=execution, effects_checked=False, helper_result_verified=False,
+                         result=dict(outcome="UNKNOWN", helper_started=True))
+            identity = proof["quota_stage_exits"]["reader"]["identity"]
+            proof["result_reader_exit_proof"] = dict(execution_id=execution, state="EXITED",
+                unit=identity["unit"], identity={k:identity[k] for k in ("boot_id", "invocation_id", "cgroup")},
+                **dict.fromkeys(("future_start_blocked", "tree_exited", "writers_stopped", "collectors_stopped"), True))
+            return value
+        with patch.object(chain_fixtures, "complete", side_effect=uncollected):
+            _, proof = self.f.pending(phase)
+        self.assertNotIn(("job", self.f.identity), self.broker._active)
+        self.channel.enqueue({"action":"unrecognized", "value":None})
+        with self.assertLogs("local_hand_jobs.task_session", level="ERROR"):
+            with self.assertRaises(JobError):
+                self.session.tick()
+        self.assertIsNotNone(self.session.failure)
+        before = copy.deepcopy(self.f.row())
+        starts = copy.deepcopy(self.f.runner.starts)
+        replies = copy.deepcopy(self.channel.outgoing)
+        with self.broker.state.transaction() as tx:
+            leases = [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")]
+        endpoint = Path(self.f.f.temp.name) / "cancel-after-failure.sock"
+        server = MaintenanceServer(self.broker, endpoint, {os.geteuid():self.f.f.owner})
+        server.start(); self.addCleanup(server.close)
+        cancel = dict(operation_id=self.f.identity, expected_request_digest=before["digest"], target={"kind":"job"})
+        local_request(endpoint, "lh_job_cancel", cancel)
+        self.session.tick(); self.session.tick()
+        record = self.f.row()["record"]
+        self.assertEqual(("TERMINAL", "EXITED"), (record["lifecycle"], record["phase"]))
+        self.assertEqual({"preflight":"CANCELLED", "business":"UNKNOWN", "evidence":"SUCCEEDED"}[phase], record["outcome"])
+        self.assertEqual(proof, record["exit_proof"])
+        self.assertEqual(starts, self.f.runner.starts)
+        self.assertEqual(replies, self.channel.outgoing)
+        self.assertEqual(before["record"]["delivery_intents"], record["delivery_intents"])
+        with self.broker.state.transaction() as tx:
+            self.assertEqual([r for r in leases if r[1] != self.f.identity],
+                             [tuple(r) for r in tx.execute("SELECT * FROM leases ORDER BY resource")])
+        events = self.broker.state.events("job", self.f.identity)
+        status = local_request(endpoint, "lh_job_status", {"operation_id":self.f.identity})
+        repeated = local_request(endpoint, "lh_job_cancel", cancel)
+        self.assertEqual("TERMINAL", status["lifecycle"])
+        self.assertEqual(status["event_seq"], repeated["event_seq"])
+        self.session.tick()
+        self.assertEqual(events, self.broker.state.events("job", self.f.identity))
+
     def test_control_failure_logs_original_location_without_payload_or_token(self):
         self.session.tick()
         secret = "Bearer private-token /private/host/path"

@@ -245,7 +245,14 @@ class TaskSession:
         if self.closed or self.finished:
             return
         if self.failure is not None:
-            if ("job", self.value["operation_id"]) in self.broker._active:
+            key = ("job", self.value["operation_id"])
+            row = self.broker.state.get(*key)
+            # Failed control transport cannot replay commands, but a durable
+            # cancellation must still consume a retained exit after the live
+            # handle was removed. The broker's cancel fence forbids new starts.
+            if (key in self.broker._active or key in self.broker._recovering
+                    or row is not None and row["record"]["cancel_requested"]
+                    and row["record"]["lifecycle"] != "TERMINAL"):
                 self.broker.tick()
             return
         self._control_started = False
