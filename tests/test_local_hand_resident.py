@@ -844,6 +844,54 @@ class PreparationTests(unittest.TestCase):
 
 
 class GeneratedInputTests(unittest.TestCase):
+    def test_capacity_preflight_counts_retained_limits_and_rejects_each_exhausted_resource(self):
+        plan=dict(mounts={'quota':{'path':'/quota','device':7}},
+            settings={'capacity_management':{'storage_bytes':4096,'storage_inodes':5}},
+            roots=[{'hard_bytes':8192,'inode_hard_limit':11}])
+        inventory=[{'hard':4,'ihard':7}]
+        # Keep physical usage fixed while moving the ceiling by one unit.
+        required_bytes=3*4096+4*1024+8192+4096+131072
+        required_inodes=13+7+11+5+4
+        for kind in ('bytes','inodes'):
+            for extra in (0,-1):
+                total_bytes=required_bytes+(extra if kind=='bytes' else 0)
+                total_inodes=required_inodes+(extra if kind=='inodes' else 0)
+                fs=SimpleNamespace(f_frsize=1,f_blocks=total_bytes,f_bavail=total_bytes-3*4096,
+                    f_files=total_inodes,f_favail=total_inodes-13)
+                with self.subTest(kind=kind,extra=extra), \
+                     patch.object(provision_task.os,'stat',return_value=SimpleNamespace(st_dev=7)), \
+                     patch.object(provision_task.os,'statvfs',return_value=fs):
+                    if extra==0:
+                        provision_task.check_capacity_before_allocation(plan,inventory)
+                    else:
+                        with self.assertRaisesRegex(ValueError,'PROVISION_CAPACITY_'+kind.upper()):
+                            provision_task.check_capacity_before_allocation(plan,inventory)
+
+    def test_exhausted_preparation_retries_do_not_create_directories_or_assign_quotas(self):
+        plan=dict(host={'boot_id':'boot'},mounts={'quota':{'path':'/quota','source':'/dev/quota','device':7}},
+            directories=dict(control={'path':'/control'},state={'path':'/state'}),
+            settings={'capacity_management':{'storage_bytes':33554432,'storage_inodes':1024}},
+            roots=[{'hard_bytes':180355072,'inode_hard_limit':11008,'project_id':15000}])
+        installation=dict(source={'commit':'a'*40},installed={'payload_digest':'b'*64,'package_root':'/installed'})
+        quota_module,driver,assembly=Mock(),Mock(),Mock()
+        quota_module.Quota.return_value.inventory.return_value=[{'hard':1410048,'ihard':116736}]
+        fs=SimpleNamespace(f_frsize=1,f_blocks=2040373248,f_bavail=1804201984,f_files=131072,f_favail=123109)
+        with patch.object(provision_task.os,'geteuid',return_value=0), \
+             patch.object(provision_task.budget,'current_clock',return_value={'boot_id':'boot'}), \
+             patch.object(provision_task,'verify_release'), \
+             patch.object(provision_task,'_helper',side_effect=lambda _,name:{
+                 'q2_prepare':quota_module,'q2_prepare_driver':driver,'q2_prepare_assembly':assembly}[name]), \
+             patch.object(provision_task.os,'stat',return_value=SimpleNamespace(st_dev=7)), \
+             patch.object(provision_task.os,'statvfs',return_value=fs), \
+             patch.object(provision_task.os,'open') as opened, \
+             patch.object(provision_task.Path,'mkdir') as mkdir:
+            for _ in range(2):
+                with self.assertRaisesRegex(ValueError,'PROVISION_CAPACITY_INODES required=136735 ceiling=131072'):
+                    provision_task.prepare(dict(plan=plan,installation=installation,observed={'parents':{}}))
+        opened.assert_not_called();mkdir.assert_not_called()
+        quota_module.Quota.return_value.call.assert_not_called()
+        assembly.assemble.assert_not_called()
+
     def test_helper_executes_the_verified_bytes_without_reopening_source(self):
         with tempfile.TemporaryDirectory() as root:
             relative='tests/e3_host/fixture.py';path=Path(root)/relative

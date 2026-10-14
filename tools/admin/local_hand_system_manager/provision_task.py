@@ -121,6 +121,33 @@ def check_endpoint_lengths(plan):
     for endpoint in endpoints:
         q.require(len(q.canonical_path(endpoint).encode()) <= 107, 'ENDPOINT_LENGTH')
 
+
+def check_capacity_before_allocation(plan, inventory):
+    """Reject known exhaustion before allocating any task directories or quotas.
+
+    Match the assembly's conservative accounting: physical use, all retained
+    hard limits, the new roots, management storage and the fixed journal base.
+    The later observation/assembly still rechecks capacity after provisioning;
+    this read-only preflight does not reserve space or hide concurrent growth.
+    """
+    from local_hand_jobs import quota_grant
+    mount = plan['mounts']['quota']
+    q.require(os.stat(mount['path']).st_dev == mount['device'], 'PROVISION_MOUNT_CHANGED')
+    fs = os.statvfs(mount['path'])
+    management = plan['settings']['capacity_management']
+    for kind, total, free, field, scale, root_field, base in (
+        ('bytes', fs.f_blocks * fs.f_frsize, fs.f_bavail * fs.f_frsize,
+         'hard', 1024, 'hard_bytes', quota_grant.BASE_BYTES),
+        ('inodes', fs.f_files, fs.f_favail, 'ihard', 1,
+         'inode_hard_limit', quota_grant.BASE_INODES)):
+        q.require(0 <= q.integer(free) <= q.integer(total), 'PROVISION_CAPACITY_OBSERVATION')
+        required = (total - free + sum(q.integer(row[field]) * scale for row in inventory)
+            + sum(q.integer(root[root_field]) for root in plan['roots'])
+            + q.integer(management['storage_' + kind]) + base)
+        q.require(required <= total,
+            f'PROVISION_CAPACITY_{kind.upper()} required={required} ceiling={total}')
+
+
 def prepare(v):
     plan = copy.deepcopy(v['plan'])
     installation = v['installation']
@@ -181,6 +208,11 @@ def prepare(v):
         s = root.stat()
         q.require((s.st_dev, s.st_ino) == (p['device'], p['inode']) and
                   'populated 0' in (root / 'cgroup.events').read_text(), 'PROVISION_PARENT_BUSY_OR_CHANGED')
+    quota = quota_module.Quota(plan['mounts']['quota']['source'])
+    before = quota.inventory(guard)
+    for root in plan['roots']:
+        quota.unused(root['project_id'])
+    check_capacity_before_allocation(plan, before)
     for p in v['bases']:
         directory(p)
     dirs = {}
@@ -192,10 +224,6 @@ def prepare(v):
     save(reservation / 'preparation-plan.json', plan)
     for name in ('setpriv',):
         q.require(hashlib.sha256(Path(plan['tools'][name]['path']).read_bytes()).hexdigest() == plan['tools'][name]['sha256'], 'PROVISION_PROGRAM_CHANGED')
-    quota = quota_module.Quota(plan['mounts']['quota']['source'])
-    before = quota.inventory(guard)
-    for root in plan['roots']:
-        quota.unused(root['project_id'])
     sequence = 0
 
     def event(kind, value):
