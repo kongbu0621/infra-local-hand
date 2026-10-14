@@ -1,4 +1,4 @@
-name: Local Hand v0.1 Validation
+name: Local Hand Core Validation
 
 on:
   pull_request:
@@ -22,6 +22,7 @@ on:
       - "setup.py"
       - "requirements-build.txt"
       - "tools/verify_installed.py"
+      - "tools/ci_scope.py"
       - ".github/workflows/local-hand-v0-1-validation.yml"
   push:
     branches:
@@ -46,8 +47,14 @@ on:
       - "setup.py"
       - "requirements-build.txt"
       - "tools/verify_installed.py"
+      - "tools/ci_scope.py"
       - ".github/workflows/local-hand-v0-1-validation.yml"
   workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Include historical maintenance suites and both-platform installation acceptance
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -63,6 +70,11 @@ jobs:
     outputs:
       runtime_changed: ${{ steps.classify.outputs.runtime_changed }}
       compared_range: ${{ steps.classify.outputs.compared_range }}
+      matrix: ${{ steps.scope.outputs.matrix }}
+      suite: ${{ steps.scope.outputs.suite }}
+      installation: ${{ steps.scope.outputs.installation }}
+      historical: ${{ steps.scope.outputs.historical }}
+      changed_tests: ${{ steps.scope.outputs.changed_tests }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,7 +132,7 @@ jobs:
                   or name.startswith("plugins/local-hand-a2/")
                   or name in {"tools/build_plugin.py", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "tools/run_q1_experiment.py", "tools/launch_q1_experiment.py", "tools/q2_namespace_delivery.py", "requirements-mcp-linux-x86_64-py312.lock"}
                   or name.startswith("tests/")
-                  or name in {"pyproject.toml", "setup.py", "requirements-build.txt", "tools/verify_installed.py"}
+                  or name in {"pyproject.toml", "setup.py", "requirements-build.txt", "tools/verify_installed.py", "tools/ci_scope.py"}
                   or name == ".github/workflows/local-hand-v0-1-validation.yml"
                   for name in names
               )
@@ -137,19 +149,30 @@ jobs:
           print("runtime_changed=", runtime)
           print("compared_range=", compared)
           PY
+      - name: Select core verification scope
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          EXACT_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FULL_SUITE: ${{ inputs.full_suite || false }}
+        run: python tools/ci_scope.py
 
   semantic-core:
     needs: classify-change
     if: needs.classify-change.outputs.runtime_changed == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+      matrix: ${{ fromJSON(needs.classify-change.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    # Linux run 38517512212 passed source tests in 24m, then hit the 25m limit.
-    # Installed-wheel verification also took 4m31s in run 38516303266; allow
-    # both stages, runner variation and evidence upload within a bounded job.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 40 || 15 }}
+    env:
+      LOCAL_HAND_TEST_SUITE: ${{ needs.classify-change.outputs.suite }}
+      LOCAL_HAND_CHANGED_TESTS: ${{ needs.classify-change.outputs.changed_tests }}
+    # Keep the measured full-suite allowance for manual historical validation.
+    # Core-only runs omit historical suites and repeated installation acceptance.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 15 || needs.classify-change.outputs.suite == 'full' && 40 || needs.classify-change.outputs.suite == 'shared' && 25 || 10 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -195,10 +218,18 @@ jobs:
       - name: Compile Local Hand shared core and tests
         shell: python
         run: |
-          import os, subprocess
-          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q", "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp", "tools/admin/local_hand_quota_observer", "tools/probe_e3_host.py", "tools/validate_q1_fixture.py", "tools/run_q1_experiment.py", "tools/launch_q1_experiment.py", "tools/q2_namespace_delivery.py", "plugins", "tests"], check=True)
+          import json, os, pathlib, subprocess, sys
+          sys.path.insert(0, str(pathlib.Path.cwd() / "tools"))
+          from ci_scope import select_tests
+          tests = select_tests(pathlib.Path.cwd(), os.environ["LOCAL_HAND_TEST_SUITE"],
+                               "windows" if os.name == "nt" else "linux",
+                               json.loads(os.environ["LOCAL_HAND_CHANGED_TESTS"]))
+          subprocess.run([os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "compileall", "-q",
+                          "tools/local_hand", "tools/local_hand_connect", "tools/local_hand_jobs", "tools/local_hand_mcp",
+                          "tools/admin/local_hand_quota_observer", "tools/admin/local_hand_system_manager",
+                          "tools/ci_scope.py", *tests], check=True)
       - name: Prepare isolated protected parent for ordinary local-read tests
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.classify-change.outputs.historical == 'true'
         shell: python
         run: |
           import errno, json, os, pathlib, stat, subprocess
@@ -234,7 +265,7 @@ jobs:
               stream.write(f"LOCAL_HAND_Q2_TEST_PARENT={root}\n")
           print("LOCAL_SOURCE_TEST_PARENT " + json.dumps(diagnostics, sort_keys=True))
       - name: Verify root-only collector against isolated real root-owned files
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.classify-change.outputs.historical == 'true'
         shell: python
         run: |
           import os, pathlib, subprocess, xml.etree.ElementTree as ET
@@ -265,19 +296,24 @@ jobs:
       - name: Run platform-scoped source tests (A2 jobs are Linux only)
         shell: python
         run: |
-          import os, pathlib, subprocess
+          import json, os, pathlib, subprocess, sys
+          sys.path.insert(0, str(pathlib.Path.cwd() / "tools"))
+          from ci_scope import select_tests
           # Retain each skip reason so platform coverage is auditable from the
           # exact run, rather than inferred from an aggregate skipped count.
           # Keep per-test timings and the slowest locations for timeout diagnosis.
+          # Synthetic evidence starts non-writable by other users, independent
+          # of the caller's umask. Individual permission-fault tests still apply.
+          if os.name == "posix":
+              os.umask(0o022)
           report = pathlib.Path(os.environ["LOCAL_HAND_VERIFY_ROOT"]) / "source-tests.xml"
           command = [os.environ["LOCAL_HAND_BUILD_PYTHON"], "-m", "pytest", "-q", "-rs",
                      "--durations=20", "--junitxml", str(report)]
-          if os.name == "nt":
-              # Preserve all previous Windows S1 coverage. New job/Plugin tests
-              # require Unix ownership and are not Windows acceptance evidence.
-              command += ["--ignore-glob=tests/test_local_hand_jobs_*.py",
-                          "--ignore-glob=tests/test_local_hand_mcp_*.py",
-                          "--ignore=tests/test_local_hand_plugin.py"]
+          tests = select_tests(pathlib.Path.cwd(), os.environ["LOCAL_HAND_TEST_SUITE"],
+                               "windows" if os.name == "nt" else "linux",
+                               json.loads(os.environ["LOCAL_HAND_CHANGED_TESTS"]))
+          print(json.dumps({"suite": os.environ["LOCAL_HAND_TEST_SUITE"], "test_files": tests}), flush=True)
+          command += tests
           subprocess.run(command, check=True)
       - name: Build separately sealed unconfigured Plugin (Linux)
         if: runner.os == 'Linux'
@@ -289,6 +325,7 @@ jobs:
                           "--output", str(target)], check=True)
           print("Source/packaging checks do not close real cgroup, E4 connection, GX10 or NAS gates.")
       - name: Build and verify an independently installed wheel
+        if: needs.classify-change.outputs.installation == 'true'
         shell: python
         run: |
           import os, pathlib, subprocess, sys
@@ -315,10 +352,10 @@ jobs:
           test -n "${MERGE_BASE}"
           git diff --check "${MERGE_BASE}...${PR_HEAD_SHA}"
       - name: Validate Linux bootstrap syntax
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.classify-change.outputs.installation == 'true'
         run: bash -n tools/local_hand/bootstrap_linux.sh
       - name: Prove Linux repeat-bootstrap smoke identity
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.classify-change.outputs.installation == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -409,7 +446,7 @@ jobs:
           )
           printf '%s\n' 'LINUX_REPEAT_BOOTSTRAP_SMOKE_IDENTITY=PASS'
       - name: Validate Windows bootstrap parses
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           foreach ($path in @('tools/local_hand/bootstrap_windows.ps1', 'tools/local_hand/windows_acl.ps1')) {
@@ -425,7 +462,7 @@ jobs:
             }
           }
       - name: Prove Windows PowerShell 5.1 is rejected explicitly
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: powershell
         run: |
           $rejected = $false
@@ -437,7 +474,7 @@ jobs:
           }
           if (-not $rejected) { throw 'Windows PowerShell 5.1 was not rejected' }
       - name: Execute PowerShell 7 startup contract without mutation
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           $rejected = $false
@@ -449,7 +486,7 @@ jobs:
           }
           if (-not $rejected) { throw 'PowerShell 7 startup contract did not execute' }
       - name: Validate Windows exact ACL replacement
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           $probeRoot = Join-Path $env:RUNNER_TEMP ("local-hand-acl-probe-" + [guid]::NewGuid().ToString("N"))
@@ -488,7 +525,7 @@ jobs:
             Remove-Item $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Prove exact command-scoped Git trust under Local Service
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           $probeRoot = Join-Path $env:ProgramData ("LocalHand-Git-Trust-Probe-" + [guid]::NewGuid().ToString("N"))
@@ -572,7 +609,7 @@ jobs:
             Remove-Item $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Prove Local Service accepts runtime private-key ACL
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           # Match the production parent-path trust boundary. LOCAL SERVICE cannot
@@ -656,7 +693,7 @@ jobs:
             Remove-Item $sourceRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Validate Windows runner propagates native worker exit code
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           $probeRoot = Join-Path $env:RUNNER_TEMP ("local-hand-runner-probe-" + [guid]::NewGuid().ToString("N"))
@@ -753,7 +790,7 @@ jobs:
           }
           exit 0
       - name: Validate Windows Junction roots fail closed
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.classify-change.outputs.installation == 'true'
         shell: pwsh
         run: |
           $probeRoot = Join-Path $env:RUNNER_TEMP ("local-hand-junction-probe-" + [guid]::NewGuid().ToString("N"))

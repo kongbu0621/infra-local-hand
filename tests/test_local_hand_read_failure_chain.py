@@ -10,12 +10,12 @@ from unittest import mock
 from local_hand import bounded_io, mailbox_safety, worker
 from local_hand.protocol import LocalHandError, conflict_filename, task_digest
 from local_hand_connect import controller
-from test_local_hand_state_lookup_chain import StateLookupChainTests
+import test_local_hand_state_lookup_chain as state_lookup_fixtures
 
 @unittest.skipIf(os.name == 'nt', 'POSIX local Git/read-failure fixtures; Windows deferred')
 class ReadFailureChainTests(unittest.TestCase):
     def setUp(self):
-        self.c = StateLookupChainTests()
+        self.c = state_lookup_fixtures.StateLookupChainTests()
         self.c.setUp()
         self.addCleanup(self.c.doCleanups)
 

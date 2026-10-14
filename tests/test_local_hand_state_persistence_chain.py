@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
-from test_local_hand_state_lookup_chain import StateLookupChainTests
+import test_local_hand_state_lookup_chain as state_lookup_fixtures
 from local_hand import mailbox_safety, worker
 from local_hand.protocol import LocalHandError
 from local_hand_connect import controller
@@ -18,7 +18,7 @@ from local_hand_connect import controller
 @unittest.skipIf(os.name == 'nt', 'POSIX persistence injection; Windows deferred')
 class StatePersistenceChainTests(unittest.TestCase):
     def setUp(self):
-        self.chain = StateLookupChainTests()
+        self.chain = state_lookup_fixtures.StateLookupChainTests()
         self.chain.setUp()
         self.addCleanup(self.chain.doCleanups)
 

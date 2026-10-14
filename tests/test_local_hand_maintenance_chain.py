@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 from local_hand import bounded_io,git_safety,worker
 from local_hand.protocol import LocalHandError
-from test_local_hand_state_lookup_chain import StateLookupChainTests
+import test_local_hand_state_lookup_chain as state_lookup_fixtures
 
 @unittest.skipIf(os.name=='nt','POSIX Git Trace2 fixture; Windows deferred')
 class MaintenanceChainTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class MaintenanceChainTests(unittest.TestCase):
                 return {**original(**kwargs), 'GIT_TRACE2_EVENT': str(trace)}
             with mock.patch.dict(os.environ, {'GIT_TRACE2_EVENT': str(trace)}), \
                     mock.patch.object(git_safety, 'sanitized_git_env', side_effect=environment):
-                case = StateLookupChainTests()
+                case = state_lookup_fixtures.StateLookupChainTests()
                 try:
                     case.setUp()
                     case.test_conflict_lookup_error_never_executes_blocked_task()
@@ -39,7 +39,7 @@ class MaintenanceChainTests(unittest.TestCase):
         self.assertFalse(children, f'fixture maintenance can outlive teardown: {children}')
 
     def test_fetch_does_not_launch_automatic_maintenance(self):
-        c=StateLookupChainTests();c.setUp();self.addCleanup(c.doCleanups)
+        c=state_lookup_fixtures.StateLookupChainTests();c.setUp();self.addCleanup(c.doCleanups)
         for name,value in (('maintenance.auto','true'),('maintenance.autoDetach','false'),('gc.autoPackLimit','1')):
             c.f._git(c.f.mailbox,'config','--local',name,value)
         trace=c.f.root/'git-trace.jsonl';original=git_safety.sanitized_git_env

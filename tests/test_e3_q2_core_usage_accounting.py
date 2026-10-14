@@ -11,7 +11,8 @@ if not sys.platform.startswith('linux'):
     pytest.skip('Frozen quota report decoder is Linux-only', allow_module_level=True)
 
 from admin.local_hand_quota_observer import q2_runtime
-from test_e3_quota_q2_runtime import config, ConfigAndRuntimeTests
+from test_e3_quota_q2_runtime import config
+import test_e3_quota_q2_runtime as runtime_fixtures
 
 SPEC = importlib.util.spec_from_file_location('_core_usage_test',
     Path(__file__).parent / 'e3_host/q2_core_delivery_dispatcher.py')
@@ -21,7 +22,7 @@ SPEC.loader.exec_module(d)
 
 def query_fixture():
     cfg = config()
-    bundle, identity = ConfigAndRuntimeTests().bundle(cfg)
+    bundle, identity = runtime_fixtures.ConfigAndRuntimeTests().bundle(cfg)
     terminal = dict(Id=identity['unit'], InvocationID=identity['invocation_id'],
         ControlGroup=identity['cgroup'], LoadState='loaded', Result='success',
         ExecMainCode='1', ExecMainStatus='0')
@@ -243,7 +244,7 @@ def record_case_fixture(monkeypatch, index):
                 request_digest=digest, controller=owner,
                 stages={key: {'identity': value} for key, value in management.items()})))
         files[(parent, 'management.jsonl')] = encode_record(values)
-        bundle, identity = ConfigAndRuntimeTests().bundle(cfg)
+        bundle, identity = runtime_fixtures.ConfigAndRuntimeTests().bundle(cfg)
         identity['invocation_id'] = f'{2000 + index * 100 + phase_index:032x}'
         proof = dict(query=identity, terminal=dict(Id=identity['unit'], InvocationID=identity['invocation_id'],
             ControlGroup=identity['cgroup'], LoadState='loaded', Result='success', ExecMainCode='1', ExecMainStatus='0'),
