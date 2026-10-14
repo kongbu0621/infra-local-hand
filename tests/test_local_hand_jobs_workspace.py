@@ -128,6 +128,14 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn('+# '+('x'*110000),(self.directory/'workspace-final.patch').read_text())
         self.assertEqual(self.original,(self.source/'sample.py').read_bytes())
 
+    def test_isolated_runner_script_loads_workspace_executor(self):
+        from local_hand_jobs import runner
+        code=('import runpy,sys; namespace=runpy.run_path(sys.argv[1]); '
+              'assert namespace["workspace_jobs"].KIND == "workspace.edit"')
+        result=subprocess.run([sys.executable,'-I','-B','-c',code,runner.__file__],
+            capture_output=True,timeout=10)
+        self.assertEqual(0,result.returncode,result.stderr.decode())
+
     def test_source_and_validation_are_server_granted(self):
         for field,value in (('source_ref','foreign'),('relative_path','unknown.py'),('validation_ref','shell')):
             request=dict(self.request,inputs=dict(self.inputs,**{field:value}))

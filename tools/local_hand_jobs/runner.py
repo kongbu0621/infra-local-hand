@@ -27,11 +27,11 @@ import time
 from typing import Mapping
 
 if __package__:
-    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader
+    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader, workspace_jobs
     from .contract import JobError
 else:  # fixed -I script entry: importing only this installed sibling
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader
+    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader, workspace_jobs
     from local_hand_jobs.contract import JobError
 
 
@@ -1817,7 +1817,6 @@ def _helper(plan):
             output["facts"]["storage_mount"] = _verify_storage_namespace(plan)
         if phase == "preflight":
             if plan["kind"] == "workspace.edit":
-                from . import workspace_jobs
                 output["facts"].update(workspace_jobs.verify_inputs(plan))
             else:
                 output["facts"].update(ledger_jobs.verify_inputs(plan))
@@ -1866,7 +1865,6 @@ def _helper(plan):
             # Recheck pinned inputs immediately before copying and running; the
             # source mappings remain read-only in this namespace for all stages.
             if plan["kind"] == "workspace.edit":
-                from . import workspace_jobs
                 output["facts"].update(workspace_jobs.verify_inputs(plan))
             else:
                 output["facts"].update(ledger_jobs.verify_inputs(plan))
