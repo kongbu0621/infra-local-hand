@@ -288,14 +288,21 @@ class WorkspaceApplyTests(unittest.TestCase):
 
     def test_already_applied_sync_failure_stays_unconfirmed_without_rewriting(self):
         self.assertEqual('APPLIED', self.apply()['status'])
-        original = landing._sync_directory
-        def fail_target_sync(path):
-            if path == self.repo:
-                raise OSError('injected target directory fsync failure')
-            return original(path)
-        with patch.object(landing, '_sync_directory', side_effect=fail_target_sync), \
+        original = os.fsync
+        target_identity = (self.repo / 'sample.py').stat()
+        injected = False
+        def fail_target_sync(fd):
+            nonlocal injected
+            # Windows temporary paths may use a short-name alias. Bind the
+            # injected failure to the actual target, independent of spelling.
+            if os.path.samestat(os.fstat(fd), target_identity):
+                injected = True
+                raise OSError('injected target file fsync failure')
+            return original(fd)
+        with patch.object(landing.os, 'fsync', side_effect=fail_target_sync), \
              patch.object(act, 'fs_write_text_cas', side_effect=AssertionError('duplicate write')):
             outcome = self.apply()
+        self.assertTrue(injected)
         self.assertEqual('UNCONFIRMED', outcome['status'])
         self.assertFalse(outcome['write_attempted'])
         self.assertIsNone(outcome['validation'])
