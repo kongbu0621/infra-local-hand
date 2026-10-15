@@ -19,6 +19,7 @@ local-hand-connect = "local_hand_connect.cli:main"
 local-hand-broker = "local_hand_jobs.cli:broker_main"
 local-hand-jobs = "local_hand_jobs.cli:main"
 local-hand-mcp = "local_hand_mcp.server:main"
+local-hand-archive = "local_hand_jobs.artifact_archive:main"
 
 [tool.setuptools]
 package-dir = {"" = "tools"}

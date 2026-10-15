@@ -10,6 +10,7 @@ import base64
 import binascii
 import fcntl
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -663,3 +664,48 @@ class EvidenceClient:
         else:
             writer.close()
             return final
+
+
+def verify_local_bundle(archive: bytes, manifest: bytes, seal_raw: bytes, *,
+                        operation_id: str, seal_id: str, seal_sha256: str,
+                        maximum: int = 64 * 1024 * 1024) -> dict:
+    """Verify retained immutable bytes against a previously authenticated seal.
+
+    The caller owns authentication of the operation/seal binding. This performs
+    no network access and makes no new execution or authenticity claim.
+    """
+    if (any(type(raw) is not bytes for raw in (archive, manifest, seal_raw))
+            or len(archive) > maximum or len(manifest) > 4 * 1024 * 1024
+            or len(seal_raw) > DEFAULT_CHUNK):
+        raise EvidenceError("LIMIT_EXCEEDED", "local evidence exceeds its byte budget")
+    if _hash(seal_raw) != seal_sha256:
+        raise EvidenceError("CONFLICT", "local seal differs from the trusted binding")
+    seal = _decode_json(seal_raw)
+    artifact = dict(artifact_id=seal_id + ".zip", role="zip", size=len(archive),
+                    sha256=_hash(archive), operation_id=operation_id,
+                    seal_id=seal_id, seal_sha256=seal_sha256,
+                    reconcile_id=seal.get("reconcile_id"), event_seq=seal.get("event_seq"))
+
+    def local_seal(_tool, arguments):
+        if arguments["artifact_id"] != seal_id + ".seal":
+            raise EvidenceError("CONFLICT", "unexpected local evidence read")
+        return dict(artifact_id=arguments["artifact_id"], sha256=seal_sha256,
+                    offset=0, total_size=len(seal_raw), length=len(seal_raw), eof=True,
+                    data_base64=base64.b64encode(seal_raw).decode("ascii"),
+                    chunk_sha256=_hash(seal_raw))
+
+    client = EvidenceClient(local_seal)
+    seal = client._seal(artifact)
+    descriptor = next(item for item in seal["artifacts"] if item["role"] == "manifest")
+    if descriptor["size"] != len(manifest) or descriptor["sha256"] != _hash(manifest):
+        raise EvidenceError("CONFLICT", "local manifest differs from the seal")
+    try:
+        with io.BytesIO(archive) as raw:
+            raw.size = len(archive)
+            _validate_directory(raw, seal["member_count"], client.max_members + 1)
+            client._validate_members(raw, seal, maximum)
+    except EvidenceError:
+        raise
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, RuntimeError, zlib.error):
+        raise EvidenceError("CONFLICT", "local archive verification failed") from None
+    return _decode_json(manifest)
