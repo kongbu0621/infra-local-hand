@@ -61,17 +61,18 @@ def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _run_git(repo: Path, args: list[str]):
+def _run_git(repo: Path, args: list[str], *, stored_objects: bool = False):
     env = sanitized_git_env()
     assert_no_execution_filters(repo, env)
     return run_hardened_git(
         repo,
-        args,
+        ["--no-replace-objects", *args] if stored_objects else args,
         allow_ssh=False,
         timeout=GIT_TIMEOUT_SECONDS,
         max_stdout=MAX_GIT_OUTPUT_BYTES,
         max_stderr=MAX_GIT_OUTPUT_BYTES,
         text=False,
+        **({"extra_env": {"GIT_GRAFT_FILE": os.devnull}} if stored_objects else {}),
     )
 
 
@@ -236,9 +237,10 @@ def fs_read_text(profile: NodeProfile, repository: str, relative_path: str) -> d
     }
 
 
-def git_status(profile: NodeProfile, repository: str) -> dict[str, Any]:
+def git_status(profile: NodeProfile, repository: str, *, stored_objects: bool = False) -> dict[str, Any]:
     repo = repository_root(profile, repository)
-    proc = _run_git(repo, ["status", "--porcelain=v1", "-b", "--ignore-submodules=all"])
+    proc = _run_git(repo, ["status", "--porcelain=v1", "-b", "--ignore-submodules=all"],
+                    **({"stored_objects": True} if stored_objects else {}))
     if proc.returncode != 0:
         raise LocalHandError("git_failed", _decode_output(proc.stderr).strip() or "git status failed", "failed")
     return {

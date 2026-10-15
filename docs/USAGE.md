@@ -1,4 +1,67 @@
-# Isolated build and verification
+# Local usage and verification
+
+## Land a verified workspace edit locally
+
+After verifying a completed `workspace.edit` evidence bundle, extract its
+`workspace-result.json`, `workspace-before.txt` and `workspace-after.txt`.
+Use the result member's SHA-256 from the verified manifest. The local entry
+point consumes these verified files; it does not authenticate evidence itself.
+The local Node Profile repository name must match `source_ref`, and its fixed
+validation with the returned `validation_ref` must be explicitly replay-safe.
+
+```sh
+python -m local_hand.workspace_apply --profile LOCAL_PROFILE --repository SOURCE_REF \
+  --result workspace-result.json --result-sha256 VERIFIED_RESULT_SHA256 \
+  --before workspace-before.txt --after workspace-after.txt \
+  --expected-head OBSERVED_FULL_HEAD --output NEW_PRIVATE_ATTEMPT_DIRECTORY
+```
+
+This single-file local operation checks source ancestry, HEAD, index and file
+digests against stored Git objects, ignoring local replace refs and grafts, then
+uses the existing CAS writer and fixed validation runner. Unrelated
+dirty files are allowed. A matching after-image skips the write and validates
+locally after confirming file synchronization. Changed targets and staged reverts
+remain conflicts; no merge or rollback overwrites them.
+Successful completion also synchronizes the final target after validation and
+binds read-back to that same file. Identical bytes from a validator's replacement
+file alone do not confirm that the replacement has been synchronized.
+Git's working tree must match the registered repository directory throughout
+the attempt. Linked worktrees are supported; redirecting `core.worktree` to a
+different directory is a conflict, even when HEAD and file contents match.
+Targets marked `assume-unchanged` or `skip-worktree` are rejected before writing
+because Git can hide their actual changes. The flags are retained; once the
+caller resolves them, a fresh attempt can proceed. Flag changes made during
+validation are also conflicts.
+Each attempt retains before/after content, final diff, validation output and
+`report.json` outside the repository. The final Git diff uses no color, standard
+`a/` and `b/` prefixes and three context lines so repository display preferences
+do not make the patch unusable by ordinary `git apply`; Git configuration is retained.
+A retry uses a fresh output directory and
+checks current bytes first. No remote task is submitted, and no commit or push
+is performed. The output parent must already exist; each attempt directory is new.
+
+The cooperative write lease spans precheck, write, validation and final observation.
+Use `--lease-root` when other Local Hand writers use a configured lease directory;
+all cooperating writers must use the same root. Final checks cover HEAD, index
+entries and their assume-unchanged/skip-worktree flags, target bytes/mode,
+other tracked Git differences, and nonignored untracked
+entry metadata (up to 1000 files). Git observations retain the existing 2 MiB
+output bounds. Validation is trusted local code, not a filesystem sandbox; ignored
+outputs and effects outside the checkout are not covered by these comparisons.
+Pre-existing hidden flags on unrelated paths are retained; those paths do not
+receive independent byte comparisons beyond what Git reports.
+The held lease's repository identity is rechecked before writing, before validation
+and at final observation. Replacing the checkout cannot yield a successful result
+even when its contents match. Attempt directory identity is checked around each
+record publication; detected replacement stops publication and leaves the original
+records in place. These checks do not sandbox a hostile concurrent filesystem writer.
+
+Interruptions, incomplete synchronization and report-storage failures remain
+`UNCONFIRMED`. If publishing a report fails, the CLI return retains the write state
+and error; a pending or visible candidate file is not a persistence acknowledgment.
+Previously completed remote tasks and failed local attempt records are retained.
+
+## Build and install
 
 Use Python 3.12 and a clean committed checkout. Build and runtime environments
 must be newly created directories. Choose a new absolute work directory first;
@@ -11,9 +74,9 @@ python3.12 -m venv /absolute/new-work/build-venv
 /absolute/new-work/build-venv/bin/python -m compileall -q tools tests
 /absolute/new-work/build-venv/bin/python -m build --wheel --no-isolation --outdir /absolute/new-work/dist
 python3.12 -m venv /absolute/new-work/runtime-venv
-/absolute/new-work/runtime-venv/bin/python -m pip install --no-deps /absolute/new-work/dist/infra_local_hand-0.1.0a1-py3-none-any.whl
+/absolute/new-work/runtime-venv/bin/python -m pip install --no-deps /absolute/new-work/dist/infra_local_hand-0.2.0a1-py3-none-any.whl
 cd /absolute/new-work
-/absolute/new-work/runtime-venv/bin/python -I /absolute/checkout/tools/verify_installed.py --wheel /absolute/new-work/dist/infra_local_hand-0.1.0a1-py3-none-any.whl --run-root /absolute/new-work/acceptance
+/absolute/new-work/runtime-venv/bin/python -I /absolute/checkout/tools/verify_installed.py --wheel /absolute/new-work/dist/infra_local_hand-0.2.0a1-py3-none-any.whl --run-root /absolute/new-work/acceptance
 ```
 
 On Windows, venv Python is `Scripts/python.exe`. The source test suite and
