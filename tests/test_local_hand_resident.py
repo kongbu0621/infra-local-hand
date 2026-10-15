@@ -461,6 +461,59 @@ class ResidentTests(unittest.TestCase):
         self.retained.call.assert_called_once_with('lh_evidence_read_chunk',args,self.owner)
 
 
+class LocalA2ResidentTests(unittest.TestCase):
+    setUp = ResidentTests.setUp
+    call = ResidentTests.call
+
+    def arguments(self, runtime='installed-a2'):
+        return dict(operation_id=self.request['operation_id'], kind='ledger.test.local_a2',
+                    profile_ref='fixture', inputs=dict(runtime_ref=runtime))
+
+    def test_optional_capability_is_read_only_and_reveals_only_runtime_refs(self):
+        before=self.call('lh_capabilities',{})
+        self.assertNotIn('runtime_refs',before['profiles'][0])
+        self.assertNotIn('ledger.test.local_a2',before['profiles'][0]['allowed_kinds'])
+        self.broker.config['local_a2']=dict(runtime_refs=['installed-a2'],budgets={'wall_seconds':60})
+        after=self.call('lh_capabilities',{})
+        profile=after['profiles'][0]
+        self.assertEqual(['installed-a2'],profile['runtime_refs'])
+        self.assertEqual(['host.inspect','ledger.test.local_a2'],profile['allowed_kinds'])
+        self.assertEqual({'wall_seconds':60},profile['budgets']['ledger.test.local_a2'])
+        self.assertNotIn('ledger.nas.roundtrip',json.dumps(after))
+        self.service.call.assert_not_called();self.local.assert_not_called()
+
+    def test_prepare_requires_enabled_runtime_and_submit_scope(self):
+        self.broker._record.return_value=None
+        self.retained.state.get.return_value=None
+        with self.assertRaises(JobError):self.call('lh_job_prepare',self.arguments())
+        self.broker.config['local_a2']=dict(runtime_refs=['installed-a2'],budgets={})
+        for args,principal in ((self.arguments('other'),self.owner),
+                (self.arguments(),Principal('owner',frozenset({'lh:read'})))):
+            with self.assertRaises(JobError):self.call('lh_job_prepare',args,principal)
+        self.service.call.assert_not_called()
+        self.call('lh_job_prepare',self.arguments())
+        self.service.call.assert_called_once_with('prepare',principal_id='owner',**self.arguments())
+        self.local.assert_not_called()
+
+    def test_adapter_configuration_rejects_empty_duplicate_or_path_runtime_refs(self):
+        config=dict(self.broker.config,schema='local-hand-resident-adapter/v1',service='/synthetic-service')
+        with patch('local_hand_mcp.resident.read_descriptor',return_value=config):
+            old=ResidentBroker.open(self.retained,'/synthetic-descriptor')
+            self.assertNotIn('local_a2',old.config)
+            config['local_a2']=dict(runtime_refs=['installed-a2'],budgets={})
+            self.assertEqual(['installed-a2'],ResidentBroker.open(self.retained,'/synthetic-descriptor').config['local_a2']['runtime_refs'])
+            for refs in ([],['installed-a2','installed-a2'],['/runtime'],[{}],['a']*101):
+                config['local_a2']['runtime_refs']=refs
+                with self.subTest(refs=refs),self.assertRaises(JobError):
+                    ResidentBroker.open(self.retained,'/synthetic-descriptor')
+        self.service.call.assert_not_called()
+
+    def test_server_output_schema_advertises_runtime_refs(self):
+        from local_hand_mcp.server import _OUTPUT_SCHEMAS
+        properties=_OUTPUT_SCHEMAS['lh_capabilities']['properties']['profiles']['items']['properties']
+        self.assertEqual({'type':'array','items':{'type':'string'}},properties['runtime_refs'])
+
+
 class PreparationTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)

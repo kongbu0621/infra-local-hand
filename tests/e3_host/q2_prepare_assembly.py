@@ -108,7 +108,7 @@ def _system_geometry(value, ordinary, controllers, boot_id, authority_id):
     return copy.deepcopy(value)
 
 
-def assemble(facts, *, workspace=None):
+def assemble(facts, *, workspace=None, local_a2=None):
     """Return private policy + resident/chain/launcher/static-supervisor objects.
 
     Exact input groups are checked below. Observed roots contain quota-contract
@@ -124,6 +124,12 @@ def assemble(facts, *, workspace=None):
     from local_hand_jobs.registry import Registry
     from admin.local_hand_quota_observer import q2_chain, q2_config, controller_guard
 
+    require(workspace is None or local_a2 is None, "PREP_ASSEMBLY_JOB_CONFLICT")
+    if local_a2 is not None:
+        _keys(local_a2, {"inputs", "runtimes"})
+        _keys(local_a2["inputs"], {"runtime_ref"})
+        require(set(local_a2["runtimes"]) == {local_a2["inputs"]["runtime_ref"]},
+                "PREP_ASSEMBLY_RUNTIME_BINDING")
     f = copy.deepcopy(facts)
     h11 = f.get("schema") == H11_SCHEMA
     system = f.get("schema") in (SYSTEM_SCHEMA, H11_SCHEMA, SYSTEM_CANCEL_SCHEMA)
@@ -227,6 +233,8 @@ def assemble(facts, *, workspace=None):
         bootstrap_evidence_store={key: f["store"][key] for key in ("path", "device", "inode", "uid")})
     if workspace is not None:
         profile.update(sources=copy.deepcopy(workspace["sources"]), workspace_git=copy.deepcopy(workspace["git"]))
+    if local_a2 is not None:
+        profile["local_a2_runtimes"] = copy.deepcopy(local_a2["runtimes"])
     scopes = ["lh:submit", "lh:read", "lh:evidence"]
     if cancellation:
         scopes.append("lh:cancel")
@@ -234,12 +242,15 @@ def assemble(facts, *, workspace=None):
         ("authority_id", "node_id", "install_uuid", "deployment_epoch", "generation")},
         broker_root=paths["broker_root"], authority_root=paths["authority_root"], forbidden_roots=paths["forbidden_roots"],
         limits=f["limits"], profiles={ident["profile_ref"]: profile}, principals={ident["principal_id"]: dict(scopes=scopes,
-        profiles={ident["profile_ref"]: dict(kinds=["workspace.edit"] if workspace is not None else ["host.inspect"],
+        profiles={ident["profile_ref"]: dict(kinds=["ledger.test.local_a2"] if local_a2 is not None else
+        ["workspace.edit"] if workspace is not None else ["host.inspect"],
         source_refs=list(profile["sources"]), build_cache_refs=[], storage_refs=[],
         prepared_refs=[], prepared_access="owned")})}, installed_payload_digest=install["payload_digest"],
         execution_entrypoint=install["package_root"] + "/local_hand_jobs/cli.py", source_commit=source["commit"],
         local_peers={str(ordinary["uid"]): ident["principal_id"]}, process_manager=dict(uid=ordinary["uid"],
         slice=Path(ordinary["parent"]["path"]).name, cgroup="/sys/fs/cgroup" + ordinary["parent"]["path"]))
+    if local_a2 is not None:
+        config["principals"][ident["principal_id"]]["profiles"][ident["profile_ref"]]["runtime_refs"] = list(local_a2["runtimes"])
     if system:
         config["schema_version"] = "lh-policy-v2"
         config["process_manager"].update(gid=ordinary["gid"], manager_binding=copy.deepcopy(ordinary["manager_binding"]))
@@ -248,6 +259,8 @@ def assemble(facts, *, workspace=None):
         profile_ref=ident["profile_ref"], expected=policy.expected(ident["profile_ref"]), inputs={}, expires_at=ident["expires_at"])
     if workspace is not None:
         request.update(kind="workspace.edit", inputs=copy.deepcopy(workspace["inputs"]))
+    if local_a2 is not None:
+        request.update(kind="ledger.test.local_a2", inputs=copy.deepcopy(local_a2["inputs"]))
     request["request_digest"] = contract.request_digest(request)
     plan = p.thaw(Registry().resolve(request, policy, principal=contract.Principal(ident["principal_id"], frozenset(scopes))))
     capacity = g.decode_capacity(q._canonical(f["capacity"], g.GRANT_LIMIT))

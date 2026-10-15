@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import OrderedDict
 import os
 from pathlib import Path
+import re
 import socket
 import struct
 import threading
@@ -11,7 +12,7 @@ import time
 
 from local_hand_jobs import cli
 from local_hand_jobs.broker import Broker
-from local_hand_jobs.contract import JobError, TOOL_SCHEMAS, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, validate_tool_args
+from local_hand_jobs.contract import JobError, REF_PATTERN, TOOL_SCHEMAS, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, validate_tool_args
 from local_hand_jobs.policy import Policy, thaw
 from local_hand_jobs.task_session import read_descriptor
 from .prepared import Launcher
@@ -63,9 +64,16 @@ class ResidentBroker:
     @classmethod
     def open(cls, retained, descriptor):
         config = read_descriptor(descriptor)
-        if (set(config) - {'workspace'} != {'schema', 'service', 'catalog', 'profile_ref', 'authority_id', 'budgets', 'retained'}
+        if (set(config) - {'workspace', 'local_a2'} != {'schema', 'service', 'catalog', 'profile_ref', 'authority_id', 'budgets', 'retained'}
                 or config['schema'] != 'local-hand-resident-adapter/v1'):
             raise JobError('UNAUTHORIZED', 'Invalid resident adapter configuration')
+        if 'local_a2' in config:
+            local = config['local_a2']
+            if (type(local) is not dict or set(local) != {'runtime_refs', 'budgets'}
+                    or type(local['runtime_refs']) is not list or not 1 <= len(local['runtime_refs']) <= 100
+                    or any(type(ref) is not str or re.fullmatch(REF_PATTERN, ref) is None for ref in local['runtime_refs'])
+                    or len(set(local['runtime_refs'])) != len(local['runtime_refs']) or type(local['budgets']) is not dict):
+                raise JobError('UNAUTHORIZED', 'Invalid installed local A2 capability configuration')
         return cls(retained, config, ServiceClient(config['service']),
             lambda path: cli.create_broker(path, actual_entrypoint=cli.__file__, read_only=True))
 
@@ -194,19 +202,34 @@ class ResidentBroker:
             if name == 'lh_capabilities':
                 result = thaw(self.policy.capabilities(principal, **args))
                 workspace=self.config.get('workspace')
+                local_a2=self.config.get('local_a2')
+                kinds=['host.inspect']+(['workspace.edit'] if workspace else [])
+                budgets=dict(self.config['budgets'], **({'workspace.edit':workspace['budgets']} if workspace else {}))
+                if local_a2:
+                    kinds.append('ledger.test.local_a2')
+                    budgets['ledger.test.local_a2']=local_a2['budgets']
                 result.update(authority_id=self.config['authority_id'], tool_schema_digest=TOOL_SCHEMA_DIGEST,
                     profiles=[dict(profile_ref=self.config['profile_ref'],
-                                   allowed_kinds=['host.inspect']+(['workspace.edit'] if workspace else []),
+                                   allowed_kinds=kinds,
                                    source_refs=workspace['source_refs'] if workspace else [],
                                    validation_refs=workspace['validation_refs'] if workspace else [],
-                                   budgets=dict(self.config['budgets'],**({'workspace.edit':workspace['budgets']} if workspace else {})))], next_cursor=None,
+                                   budgets=budgets)], next_cursor=None,
                     preparation=dict(tool='lh_job_prepare', profile_ref=self.config['profile_ref'],
                                      kind='host.inspect', max_active=1))
+                if local_a2:
+                    result['profiles'][0]['runtime_refs']=list(local_a2['runtime_refs'])
                 return result
             if name == 'lh_job_prepare':
                 if args['profile_ref'] != self.config['profile_ref']:
                     raise JobError('UNAUTHORIZED', 'Profile is not admitted')
-                if self._record(args['operation_id']) is None:
+                record=self._record(args['operation_id'])
+                allow_new=True
+                if args['kind'] == 'ledger.test.local_a2':
+                    local_a2=self.config.get('local_a2')
+                    allow_new=bool(local_a2 and args['inputs']['runtime_ref'] in local_a2['runtime_refs'])
+                    if not allow_new and record is None:
+                        raise JobError('UNAUTHORIZED', 'Installed local A2 runtime is not admitted')
+                if record is None:
                     # The catalog routes by UUID across deployments. Creating a
                     # new entry for retained history would hide that original
                     # task and defeat same-identity recovery.
@@ -214,7 +237,11 @@ class ResidentBroker:
                         reader = self.retained if path is None else self._reader(path)
                         if reader.state.get('job', args['operation_id']) is not None:
                             raise JobError('CONFLICT', 'Task identity already belongs to retained history')
-                return self.service.call('prepare', principal_id=principal.principal_id, **args)
+                # Withdrawing a registration prevents new attempts, but must
+                # not hide an original READY response or restart recovery. The
+                # root service checks owner and original inputs before polling.
+                query_only={} if allow_new else {'allow_new': False}
+                return self.service.call('prepare', principal_id=principal.principal_id, **args, **query_only)
             if name == 'lh_evidence_read_chunk':
                 return self._artifact(args, principal)
             operation = args['operation_id']

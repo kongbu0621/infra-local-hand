@@ -192,6 +192,12 @@ class Registry:
         profile["budgets"] = budget
         profile["resources"] = profile["resource_ids"]
         inputs, prepared, prerequisites = request["inputs"], None, []
+        if request["kind"] == "ledger.test.local_a2":
+            from . import local_a2_jobs
+            try:
+                execution = local_a2_jobs.build_plan(request, profile)
+            except (KeyError, TypeError, ValueError) as error:
+                raise JobError("UNSUPPORTED", "Installed local A2 runtime is not admitted") from error
         if request["kind"] == "workspace.edit":
             from . import workspace_jobs
             try:
@@ -221,7 +227,7 @@ class Registry:
                 raise JobError("UNSUPPORTED", "Stable cross-stage NAS mount binding has not been admitted")
             prerequisites = self._prerequisites(request, prepared, principal)
         try:
-            if request["kind"] != "workspace.edit":
+            if request["kind"] not in ("workspace.edit", "ledger.test.local_a2"):
                 execution = build_plan(request, profile, prepared, prerequisites)
         except (LedgerPlanError, KeyError, TypeError, ValueError):
             raise JobError("UNSUPPORTED", "Admitted inputs cannot resolve the fixed execution plan") from None

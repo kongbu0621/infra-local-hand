@@ -5,6 +5,7 @@ import json
 
 from . import quota_binding, quota_closure
 from .contract import JobError
+from .preflight_completion import supports_local_completion
 
 
 def complete_between_phases(broker, tx, row):
@@ -12,7 +13,7 @@ def complete_between_phases(broker, tx, row):
     phases = {"PREFLIGHT_COMPLETE": ("preflight",), "AWAITING_SEAL": ("preflight", "business")}
     previous = phases.get(record["phase"])
     session = broker.task_session
-    if (previous is None or record["lifecycle"] == "TERMINAL" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
+    if (previous is None or record["lifecycle"] == "TERMINAL" or not supports_local_completion(row, tx=tx)
             or record.get("recovered") is not True or session is None or session.value["mode"] != "recover"
             or not session._recovery_acknowledged):
         return False

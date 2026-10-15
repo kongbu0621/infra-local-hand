@@ -34,7 +34,7 @@ _DESCRIPTIONS = {
     "lh_workspace_read": "读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交。文件最多 120 KiB，JSON 转义后的响应最多 512 KiB；替换任务的完整 inputs 按规范化 JSON（含转义）限 120 KiB。只能使用 capabilities 给出的来源引用及仓库相对路径。读取不会准备或提交任务。",
     "lh_capabilities": "查看当前获准使用的功能、资源引用和身份绑定。若返回 prepared_request，原样提交该请求一次，并保留其任务标识。",
     "lh_job_submit": "提交一个确定的任务并持久保存记录。返回结果不确定时，保留原 operation_id，沿同一任务查询。",
-    "lh_job_prepare": "使用新的任务 UUID 准备获准的任务。host.inspect 检查本机；workspace.edit 在任务独立副本中按原文件摘要修改，并运行固定验证，返回封存的差异与结果。先查询 capabilities 获取来源和验证引用。PREPARING 时用原参数和同一 UUID 查询；READY 后原样提交返回的请求。FAILED 记录保留，解决原因后可用 retry_failed=true 重试。准备本身不执行业务。",
+    "lh_job_prepare": "使用新的任务 UUID 准备获准的任务。host.inspect 检查本机；workspace.edit 在任务独立副本中按原文件摘要修改并运行固定验证；ledger.test.local_a2 使用 capabilities 列出的 runtime_ref 复用已登记安装环境，执行固定的 Ledger 本地快照和恢复验收，不运行 NAS 作业。先查询 capabilities 获取允许的引用。PREPARING 时用原参数和同一 UUID 查询；READY 后原样提交返回的请求。FAILED 记录保留，解决原因后可用 retry_failed=true 重试。准备本身不执行业务。",
     "lh_job_status": "查询属于当前用户的任务状态，或指定核对轮次的状态。",
     "lh_job_cancel": "使用原请求摘要和明确目标申请取消；取消整个任务时指定 target.kind=job。随后沿同一 operation_id 查询并确认退出，收到取消回执不代表进程已停止。可安全重复取消，已完成的目标保留并返回原结果。",
     "lh_job_reconcile": "使用固定的核对 ID 检查原任务已产生的影响，不重新执行业务。",
@@ -85,7 +85,7 @@ _OUTPUT_SCHEMAS.update({
             "profiles": {"type": "array", "maxItems": 100, "items": {"type": "object", "properties": {
                 "profile_ref": _STRING, "expected": {"type": "object"},
                 **{key: {"type": "array", "items": _STRING} for key in
-                   ("allowed_kinds", "source_refs", "validation_refs", "build_cache_refs", "storage_refs", "prepared_refs")},
+                   ("allowed_kinds", "source_refs", "validation_refs", "runtime_refs", "build_cache_refs", "storage_refs", "prepared_refs")},
                 "budgets": {"type": "object"}}}}, "next_cursor": {"type": ["string", "null"]}}},
     "lh_evidence_manifest": {"type": "object", "required": ["schema_version", "operation_id", "catalog_digest", "artifacts"],
         "properties": {"schema_version": _STRING, "operation_id": _STRING, "catalog_digest": _STRING,

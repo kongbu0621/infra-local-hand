@@ -55,7 +55,7 @@ def _config(root):
                                            "files": {"fixture.whl": _hash(b"synthetic build cache")}}},
                "storages": {}, "budgets": {kind: dict(budget) for kind in (*KINDS, "reconcile")},
                "resource_ids": ["synthetic-project"]}
-    access = {"kinds": [kind for kind in KINDS if kind != "ledger.nas.roundtrip"],
+    access = {"kinds": [kind for kind in KINDS if kind not in {"ledger.nas.roundtrip", "ledger.test.local_a2"}],
               "source_refs": ["source"], "build_cache_refs": ["cache"], "storage_refs": [],
               "prepared_refs": [], "prepared_access": "owned"}
     return {"schema_version": "lh-policy-v1", "authority_id": "synthetic-integration-authority",

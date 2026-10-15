@@ -11,8 +11,10 @@ from local_hand_jobs import budget, cli, quota_contract as q
 from local_hand_jobs.deployment import verify_release
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 
-def task_input(config, operation, principal, serial, *, workspace_inputs=None):
+def task_input(config, operation, principal, serial, *, workspace_inputs=None, local_a2_inputs=None):
     """Refresh boot/cgroup observations and allocate names within fixed roots."""
+    if workspace_inputs is not None and local_a2_inputs is not None:
+        raise ValueError('PROVISION_JOB_CONFLICT')
     v = copy.deepcopy(config['template'])
     plan = v['plan']
     installation = config['installation']
@@ -43,6 +45,19 @@ def task_input(config, operation, principal, serial, *, workspace_inputs=None):
             root.update(workspace['quotas'][root['role']])
         v['workspace'] = dict(inputs=copy.deepcopy(workspace_inputs),
                               sources=copy.deepcopy(workspace['sources']), git=copy.deepcopy(workspace['git']))
+    if local_a2_inputs is not None:
+        from local_hand_jobs.local_a2_jobs import validate_runtime
+        local_a2 = config['local_a2']
+        if set(local_a2_inputs) != {'runtime_ref'} or local_a2_inputs['runtime_ref'] not in local_a2['runtimes']:
+            raise ValueError('PROVISION_RUNTIME_NOT_ADMITTED')
+        runtime = local_a2['runtimes'][local_a2_inputs['runtime_ref']]
+        validate_runtime(runtime)
+        plan['settings']['original_budgets'] = copy.deepcopy(local_a2['budgets'])
+        plan['settings']['limits'] = copy.deepcopy(local_a2['limits'])
+        for root in plan['roots']:
+            root.update(local_a2['quotas'][root['role']])
+        v['local_a2'] = dict(inputs=copy.deepcopy(local_a2_inputs),
+                            runtimes={local_a2_inputs['runtime_ref']: copy.deepcopy(runtime)})
     v['plan'] = plan
     v['bases'] = sorted(replacements.values())
     host = plan['host']
@@ -122,6 +137,35 @@ def check_endpoint_lengths(plan):
         q.require(len(q.canonical_path(endpoint).encode()) <= 107, 'ENDPOINT_LENGTH')
 
 
+def check_local_a2_paths_before_allocation(value, plan):
+    """Reject task allocation inside or around the registered read-only inputs.
+
+    Final policy assembly checks execution roots, but preparation creates base,
+    management and quota directories first. Check that whole planned write set
+    before its first mkdir, without opening any registered runtime path.
+    """
+    if 'local_a2' not in value:
+        return
+    from local_hand_jobs.local_a2_jobs import validate_runtime
+    from local_hand_jobs.ledger_jobs import _path
+    q.require('workspace' not in value, 'PROVISION_JOB_CONFLICT')
+    local = value['local_a2']
+    q.require(type(local) is dict and set(local) == {'inputs', 'runtimes'}
+              and type(local['inputs']) is dict and set(local['inputs']) == {'runtime_ref'}
+              and type(local['runtimes']) is dict
+              and set(local['runtimes']) == {local['inputs']['runtime_ref']},
+              'PROVISION_RUNTIME_BINDING')
+    runtime = validate_runtime(local['runtimes'][local['inputs']['runtime_ref']])
+    protected = [Path(runtime[name]) for name in ('source_root', 'runtime_root', 'runtime_python',
+        'runtime_python_realpath', 'package_root', 'wheel')]
+    planned = [*value['bases'], *(item['path'] for item in plan['directories'].values()),
+               *(item['path'] for item in plan['roots'])]
+    for raw in planned:
+        candidate = Path(_path(raw))
+        q.require(all(not (candidate.is_relative_to(source) or source.is_relative_to(candidate))
+                      for source in protected), 'PROVISION_LOCAL_A2_INPUT_OVERLAP')
+
+
 def check_capacity_before_allocation(plan, inventory):
     """Reject known exhaustion before allocating any task directories or quotas.
 
@@ -174,6 +218,7 @@ def prepare(v):
     driver = _helper(installation, 'q2_prepare_driver')
     a = _helper(installation, 'q2_prepare_assembly')
     driver.validate_plan(plan)
+    check_local_a2_paths_before_allocation(v, plan)
     # Reject an unusable endpoint before creating directories or assigning
     # quotas. The later chain validation is too late to avoid partial setup.
     check_endpoint_lengths(plan)
@@ -300,7 +345,7 @@ def prepare(v):
     q.require([r for r in after if r['project'] not in newids] == before, 'PROVISION_RETAINED_QUOTA_CHANGED')
     authority = dict(schema='local-hand-q2-preparation-authority/v1', scope=plan['scope'], baseline=plan['baseline'], plan_sha256=hashlib.sha256(driver.encoded(plan)).hexdigest(), preparation_id=plan['preparation_id'], receipt_sha256=hashlib.sha256(driver.encoded(observed)).hexdigest())
     (facts, authority, manifest) = driver.facts_from_observed(plan, observed, children, authority)
-    assembled = a.assemble(facts, workspace=v['workspace']) if 'workspace' in v else a.assemble(facts)
+    assembled = a.assemble(facts, **{key: v[key] for key in ('workspace', 'local_a2') if key in v})
     if v.get('transport') == 'mcp':
         assembled['policy']['execution_entrypoint'] = installation['installed']['package_root'] + '/local_hand_mcp/server.py'
     if v.get('cancellation') is True:
