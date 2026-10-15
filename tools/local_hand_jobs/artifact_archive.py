@@ -98,6 +98,15 @@ def _task_name(producer, operation_id):
     return "task-" + _sha(_json([_identity(producer), _identity(operation_id)]))
 
 
+def _task_scope(producer, operation_id):
+    return "local-hand:archive:" + _task_name(producer, operation_id)
+
+
+def _database_identity(path):
+    info = path.lstat()
+    return dict(device=info.st_dev, inode=info.st_ino)
+
+
 @contextmanager
 def _locked_store(store, *, create=False):
     if sys.platform != "linux":
@@ -208,7 +217,9 @@ def _requests(binding, files):
         _fail("Invalid retained archive identity")
     ids = {kind: kind + ":" + token for kind in ("artifact", "version", "root", "manifest")}
     base = dict(profile="bounded-local-v0.1", contract_version="0.1.0",
-                idempotency_scope_ref="local-hand:archive:" + token)
+                idempotency_scope_ref=(_task_scope(binding["producer"], binding["operation_id"])
+                    if binding["schema_version"] == "lh-artifact-request-v2"
+                    else "local-hand:archive:" + token))
     create = dict(base, operation_kind="create_artifact", idempotency_key="create",
                   body={"artifact": dict(artifact_id=ids["artifact"],
                     namespace_ref="local-hand:completed-results", type_ref=TYPE)})
@@ -270,7 +281,7 @@ def _ensure_operation(ledger, raw, *, payloads=None):
 
 
 def _database(root, *, create=False):
-    from .evidence import _open_root
+    from .evidence import _open_root, _sync_directory_ancestry
     api = _ledger_api()
     path = root / "ledger.sqlite"
     for candidate in (path, *(Path(str(path) + s) for s in ("-journal", "-wal", "-shm"))):
@@ -280,22 +291,79 @@ def _database(root, *, create=False):
                     or info.st_uid != os.geteuid() or info.st_mode & 0o077):
                 _fail("Ledger files must be private regular files")
     marker = root / "database-initialized"
+    identity = None
     if os.path.lexists(marker):
         with _open_root(marker, os.geteuid()):
-            if _decode(_read(marker / "format.json", 1024)) != {"schema_version": "lh-artifact-store-v1"}:
+            format_record = _decode(_read(marker / "format.json", 1024))
+            if format_record.get("schema_version") == "lh-artifact-store-v2":
+                identity = format_record["database_identity"]
+                if (not isinstance(identity, dict) or set(identity) != {"device", "inode"}
+                        or any(type(value) is not int or value < 0 for value in identity.values())):
+                    _fail("Invalid archive database identity")
+            elif format_record == {"schema_version": "lh-artifact-store-v1"}:
+                # Preserve the original format file. Legacy stores gain an
+                # identity guard on their first archive/resume with this code.
+                guard = marker / "database-identity"
+                if os.path.lexists(guard):
+                    with _open_root(guard, os.geteuid()):
+                        identity = _decode(_read(guard / "identity.json", 1024))
+            else:
                 _fail("Unsupported archive store format", "UNSUPPORTED")
     if not os.path.lexists(path) and os.path.lexists(marker):
         _fail("Previously initialized Ledger is missing; retain requests and restore the original store")
+    if identity is not None and identity != _database_identity(path):
+        _fail("Ledger file identity changed; retain requests and restore the original database")
     ledger = api.initialize(path) if not os.path.lexists(path) and create else api.open(path)
     try:
+        current_identity = _database_identity(path)
+        if identity is not None and identity != current_identity:
+            _fail("Ledger file identity changed while opening")
         if create and not os.path.lexists(marker):
             # No artifact write is allowed until this initialization fence is
             # durable. Losing a database later must never silently recreate it.
-            _publish_files(root, marker.name, {"format.json": _json({"schema_version": "lh-artifact-store-v1"})})
+            _publish_files(root, marker.name, {"format.json": _json(dict(
+                schema_version="lh-artifact-store-v2", database_identity=current_identity))})
+        elif create and identity is None:
+            _publish_files(marker, "database-identity", {"identity.json": _json(current_identity)})
+        if create:
+            _sync_directory_ancestry(marker / "database-identity"
+                if os.path.lexists(marker / "database-identity") else marker, os.geteuid())
         return ledger
     except BaseException:
         ledger.close()
         raise
+
+
+def _reserve_task(root, binding):
+    """Retain a small independent guard before either database transaction."""
+    from .evidence import _open_root, _sync_directory_ancestry
+    name = "request-" + _task_name(binding["producer"], binding["operation_id"])
+    expected = _json(dict(binding=binding, database_identity=_database_identity(root / "ledger.sqlite")))
+    if os.path.lexists(root / name):
+        with _open_root(root / name, os.geteuid()) as fd:
+            if _read(root / name / "identity.json", 65536) != expected:
+                _fail("Retained task or database identity differs from its original reservation")
+            os.fsync(fd)
+        # Publication may have succeeded before a previous directory sync failed.
+        _sync_directory_ancestry(root, os.geteuid())
+    else:
+        _publish_files(root, name, {"identity.json": expected})
+
+
+def _check_new_task(root, producer, operation_id):
+    if os.path.lexists(root / ("request-" + _task_name(producer, operation_id))):
+        _fail("Original task recovery directory is missing; restore it before continuing")
+    if os.path.lexists(root / "ledger.sqlite") or os.path.lexists(root / "database-initialized"):
+        api = _ledger_api()
+        with _database(root) as ledger:
+            for kind, key in (("create_artifact", "create"), ("append_version", "append")):
+                try:
+                    ledger.get_operation(_task_scope(producer, operation_id), kind, key)
+                except api.LedgerError as error:
+                    if error.code != "NOT_FOUND":
+                        raise
+                else:
+                    _fail("This task already has a committed operation; restore its original requests")
 
 
 def _load_version(ledger, artifact_id, version_id):
@@ -336,7 +404,7 @@ def _resume_locked(root, producer, operation_id):
     directory = root / _task_name(producer, operation_id)
     with _open_root(directory, os.geteuid()) as fd:
         binding = _decode(_read(directory / "binding.json", 65536))
-        if (binding.get("schema_version") != "lh-artifact-request-v1"
+        if (binding.get("schema_version") not in ("lh-artifact-request-v1", "lh-artifact-request-v2")
                 or binding.get("producer") != producer or binding.get("operation_id") != operation_id):
             _fail("Retained task mapping differs")
         files = {name: _read(directory / name, maximum) for name, maximum in LIMITS.items()}
@@ -349,6 +417,7 @@ def _resume_locked(root, producer, operation_id):
             _fail("Retained original request differs")
         os.fsync(fd)
     with _database(root, create=True) as ledger:
+        _reserve_task(root, binding)
         created = _ensure_operation(ledger, create)
         appended = _ensure_operation(ledger, append, payloads=payloads)
         restored, _ = _load_version(ledger, created["result_ref"], appended["result_ref"])
@@ -383,7 +452,8 @@ def archive_result(store, *, producer, status_path, status_sha256, evidence_dir)
                     != {k: v for k, v in source.items() if k != "status_sha256"}):
                 _fail("This task is already bound to different evidence")
         else:
-            binding = dict(schema_version="lh-artifact-request-v1", producer=producer,
+            _check_new_task(root, producer, operation_id)
+            binding = dict(schema_version="lh-artifact-request-v2", producer=producer,
                            operation_id=operation_id, status_sha256=status_sha256, token=uuid.uuid4().hex)
             create, append, _ = _requests(binding, files)
             _publish_files(root, name, dict(files, **{"binding.json": _json(binding),

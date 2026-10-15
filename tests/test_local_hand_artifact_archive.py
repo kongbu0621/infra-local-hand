@@ -242,6 +242,118 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
             self.resume()
         self.assertFalse((self.store / "ledger.sqlite").exists())
 
+    def test_missing_recovery_directory_cannot_create_a_second_version(self):
+        first = self.archive()
+        counts = self.verification()
+        journal = next(self.store.glob("task-*"))
+        retained = self.root / "retained-request"
+        journal.rename(retained)
+        reservation = next(self.store.glob("request-task-*"))
+        for lose_reservation in (False, True):
+            if lose_reservation:
+                reservation.rename(self.root / "retained-reservation")
+            with self.assertRaises(consumer.ArchiveError):
+                self.archive()
+            self.assertFalse(journal.exists())
+            self.assertEqual(self.verification(), counts)
+        retained.rename(journal)
+        recovered = self.resume()
+        self.assertTrue(recovered["reused"])
+        self.assertEqual(recovered["recorded_at"], first["recorded_at"])
+
+    def test_missing_recovery_directory_after_create_commit_cannot_allocate_new_identity(self):
+        original = consumer._ensure_operation
+        def lose_create(ledger, raw, **kwargs):
+            original(ledger, raw, **kwargs)
+            raise OSError("lost create response")
+        with mock.patch.object(consumer, "_ensure_operation", side_effect=lose_create):
+            with self.assertRaises(OSError):
+                self.archive()
+        counts = self.verification()
+        self.assertEqual(counts["counts"]["artifacts"], 1)
+        self.assertEqual(counts["counts"]["versions"], 0)
+        for pattern in ("task-*", "request-task-*"):
+            path = next(self.store.glob(pattern))
+            path.rename(self.root / path.name)
+        with self.assertRaises(consumer.ArchiveError):
+            self.archive()
+        self.assertEqual(self.verification(), counts)
+        for path in self.root.glob("task-*"):
+            path.rename(self.store / path.name)
+        self.assertEqual(self.resume()["status"], "ARCHIVED")
+        self.assertEqual(self.verification()["counts"]["artifacts"], 1)
+
+    def test_replaced_database_is_not_replayed_and_original_can_resume(self):
+        first = self.archive()
+        original = self.root / "original.sqlite"
+        database = self.store / "ledger.sqlite"
+        database.rename(original)
+        self.api.initialize(database).close()
+        empty = self.verification()
+        for call in (self.resume, self.archive, lambda: self.read(first)):
+            with self.assertRaises(consumer.ArchiveError):
+                call()
+            self.assertEqual(self.verification(), empty)
+        database.rename(self.root / "replacement.sqlite")
+        original.rename(database)
+        recovered = self.resume()
+        self.assertTrue(recovered["reused"])
+        self.assertEqual(recovered["recorded_at"], first["recorded_at"])
+        self.read(first)
+
+    def test_reservation_publication_failure_can_resume_without_a_prior_write(self):
+        original = consumer._publish_files
+        def interrupted(parent, name, files):
+            original(parent, name, files)
+            if name.startswith("request-task-"):
+                raise OSError("reservation visible but sync/return failed")
+        with mock.patch.object(consumer, "_publish_files", side_effect=interrupted):
+            with self.assertRaises(OSError):
+                self.archive()
+        self.assertEqual(self.verification()["counts"]["artifacts"], 0)
+        self.assertEqual(self.resume()["status"], "ARCHIVED")
+        self.assertEqual(self.verification()["counts"]["versions"], 1)
+
+    def test_same_operation_from_distinct_producers_has_separate_identity(self):
+        first = self.archive()
+        second = consumer.archive_result(self.store, producer="test:other-instance",
+            status_path=self.status_path, status_sha256=self.digest, evidence_dir=self.evidence)
+        self.assertNotEqual(first["artifact_id"], second["artifact_id"])
+        self.assertNotEqual(first["version_id"], second["version_id"])
+        self.assertEqual(self.verification()["counts"]["versions"], 2)
+        self.assertTrue(self.resume()["reused"])
+        self.read(second)
+
+    def test_legacy_requests_and_database_remain_readable_without_rewriting_history(self):
+        files = dict(self.raw, **{"status.json": self.status_path.read_bytes()})
+        files["source.json"] = consumer._json(consumer._source(files, "test:local-hand", self.digest))
+        binding = dict(schema_version="lh-artifact-request-v1", producer="test:local-hand",
+                       operation_id=OP, status_sha256=self.digest, token="c" * 32)
+        create, append, payloads = consumer._requests(binding, files)
+        with consumer._locked_store(self.store, create=True):
+            consumer._publish_files(self.store, consumer._task_name("test:local-hand", OP),
+                dict(files, **{"binding.json": consumer._json(binding), "create.json": create, "append.json": append}))
+            consumer._publish_files(self.store, "database-initialized", {
+                "format.json": consumer._json(dict(schema_version="lh-artifact-store-v1"))})
+            with self.api.initialize(self.store / "ledger.sqlite") as ledger:
+                consumer._ensure_operation(ledger, create)
+                appended = consumer._ensure_operation(ledger, append, payloads=payloads)
+                ledger_type = type(ledger)
+        original_files = {path: path.read_bytes() for path in self.store.rglob("*") if path.is_file()}
+        counts = self.verification()
+        with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("must not rewrite history")):
+            recovered = self.resume()
+            self.read(recovered)
+        self.assertEqual(recovered["recorded_at"], appended["recorded_at"])
+        self.assertEqual(self.verification(), counts)
+        self.assertEqual(original_files, {path: path.read_bytes() for path in original_files})
+        self.assertTrue((self.store / "database-initialized/database-identity/identity.json").is_file())
+        # The independent reservation also protects older token-scoped requests.
+        next(self.store.glob("task-*")).rename(self.root / "legacy-request")
+        with self.assertRaises(consumer.ArchiveError):
+            self.archive()
+        self.assertEqual(self.verification(), counts)
+
     def test_interruption_after_request_publication_preserves_ids_before_any_ledger_write(self):
         original = consumer._publish_files
         def interrupted(parent, name, files):

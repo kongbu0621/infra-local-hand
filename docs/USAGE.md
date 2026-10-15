@@ -58,6 +58,14 @@ Keep the entire store, including pending directories, after errors. Nonzero exit
 does not imply rollback; repeated successful calls return the same IDs and timestamp
 without another version. A missing initialized database or corrupt payload is an
 error, never an instruction to initialize again, repair history or rerun business.
+The store also binds the database file identity and keeps a separate task
+reservation before writing. Missing recovery directories and replaced databases
+are conflicts; restoring the originals allows the same request to continue.
+New requests use a stable per-task idempotency scope as a second guard against
+lost recovery files. Copying/replacing a database is not a supported store move.
+Existing v1 requests keep their original bytes and operation identities; their
+first archive/resume adds guards without rewriting Ledger records. These guards
+cannot establish whether a legacy database was replaced before that first use.
 
 `read` needs only the store and explicit IDs. It verifies the actual bytes and
 source bindings, then returns the original evidence files and `source.json`.
