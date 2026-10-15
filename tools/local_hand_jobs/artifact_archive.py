@@ -22,6 +22,7 @@ import zipfile
 
 from local_hand.bounded_io import read_regular_file_bounded
 from local_hand.protocol import LocalHandError
+from .contract import JobError
 
 
 MAX_BLOB = 64 * 1024 * 1024
@@ -509,7 +510,7 @@ def main(argv=None):
         # a nonzero exit never means the original task or archive write rolled back.
         result = dict(status="ERROR", code=getattr(error, "code", "UNCONFIRMED"),
                       commit_state=getattr(error, "commit_state", "unknown"),
-                      message=str(error) if isinstance(error, (ArchiveError, LocalHandError))
+                      message=str(error) if isinstance(error, (ArchiveError, LocalHandError, JobError))
                       or hasattr(error, "commit_state") else "Local archive failed; retain the store and reconcile the original request")
         print(_json(result).decode("utf-8"))
         return 1

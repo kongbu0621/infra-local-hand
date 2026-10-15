@@ -1,7 +1,9 @@
 """Optional consumer integration against the installed public Ledger library."""
 import hashlib
+from contextlib import redirect_stdout
 from dataclasses import replace
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -226,6 +228,27 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
         with self.assertRaises(self.api.LedgerError):
             self.read(dict(result, artifact_id="artifact:wrong"), "wrong")
         self.assertFalse((self.root / "wrong").exists())
+
+    def test_cli_reports_safe_directory_error_and_allows_corrected_read(self):
+        result = self.archive()
+        counts = self.verification()
+        parent = self.root / "read-output"
+        parent.mkdir()
+        parent.chmod(0o775)
+        args = ["read", "--store", str(self.store), "--artifact-id", result["artifact_id"],
+                "--version-id", result["version_id"], "--output", str(parent / "readback")]
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(consumer.main(args), 1)
+        error = json.loads(output.getvalue())
+        self.assertEqual(error["code"], "CONFLICT")
+        self.assertIn("directory is not protected", error["message"])
+        self.assertNotIn(str(self.root), output.getvalue())
+        self.assertFalse((parent / "readback").exists())
+        parent.chmod(0o700)
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(consumer.main(args), 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "READ")
+        self.assertEqual(self.verification(), counts)
 
     def test_changed_journal_cannot_replace_original_request(self):
         self.archive()
