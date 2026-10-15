@@ -66,7 +66,9 @@ when the global marker is missing. Each confirmed create/append also gets an
 immutable receipt outside SQLite before the caller reports success. If that
 operation subsequently disappears or its timestamp changes, recovery rejects
 the inconsistency instead of replaying it, including after an in-place database
-rollback that preserves the file identity. A failed receipt publication can
+rollback that preserves the file identity. The Artifact/Version record must also
+retain the same timestamp as its own create/append operation; a disagreement is
+rejected before continuing with another write. A failed receipt publication can
 resume by querying the original operation; it does not require another commit.
 New requests use a stable per-task idempotency scope as a second guard against
 lost recovery files. Copying/replacing a database is not a supported store move.

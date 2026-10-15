@@ -449,6 +449,46 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
         database.write_bytes(complete)
         self.assertEqual(self.resume()["recorded_at"], first["recorded_at"])
 
+    def test_changed_result_timestamp_is_rejected_before_continuing_archive(self):
+        for kind, create_only in (("artifact", False), ("version", False), ("artifact", True)):
+            with self.subTest(kind=kind, create_only=create_only):
+                self.store = self.root / (kind + str(create_only))
+                ensure = consumer._ensure_operation
+                def stop_after_create(ledger, raw, **kwargs):
+                    result = ensure(ledger, raw, **kwargs)
+                    if json.loads(raw)["operation_kind"] == "create_artifact":
+                        raise OSError("interrupted before append")
+                    return result
+                if create_only:
+                    with mock.patch.object(consumer, "_ensure_operation", side_effect=stop_after_create):
+                        with self.assertRaises(OSError):
+                            self.archive()
+                else:
+                    self.archive()
+                database = self.store / "ledger.sqlite"
+                original = database.read_bytes()
+                # Change only the primary record; its operation and external
+                # receipt still retain the original successful timestamp.
+                with sqlite3.connect(database) as connection:
+                    identity, raw = connection.execute(
+                        "SELECT id, data FROM records WHERE kind=?", (kind,)).fetchone()
+                    record = json.loads(raw)
+                    record["recorded_at"] = "2020-01-01T00:00:00.000000Z"
+                    connection.execute("UPDATE records SET data=? WHERE id=?", (json.dumps(record), identity))
+                changed = {path: path.read_bytes() for path in self.store.rglob("*") if path.is_file()}
+                with self.api.open(database) as ledger:
+                    ledger_type = type(ledger)
+                with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("inconsistent history must not write")):
+                    for call in (self.resume, self.archive):
+                        with self.assertRaises(consumer.ArchiveError) as raised:
+                            call()
+                        self.assertEqual(raised.exception.code, "INTEGRITY_FAILURE")
+                        self.assertEqual(changed, {path: path.read_bytes() for path in self.store.rglob("*") if path.is_file()})
+                database.write_bytes(original)
+                self.assertEqual(self.resume()["status"], "ARCHIVED")
+                self.assertEqual(self.verification()["counts"]["versions"], 1)
+                self.assertEqual(self.verification()["counts"]["idempotency_records"], 2)
+
     def test_reservation_publication_failure_can_resume_without_a_prior_write(self):
         original = consumer._publish_files
         def interrupted(parent, name, files):

@@ -283,6 +283,10 @@ def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, req
                 or record["result_ref"] != expected[id_field]
                 or any(previous["result"].get(key) != value for key, value in expected.items())):
             _fail("Stored operation differs from the retained request", "IDEMPOTENCY_CONFLICT")
+        # The public create/append API stamps the primary record and its
+        # operation in the same transaction. Neither may contradict the other.
+        if previous["result"].get("recorded_at") != record["recorded_at"]:
+            _fail("Stored result timestamp differs from its original operation", "INTEGRITY_FAILURE")
         result = dict(status="COMMITTED", commit_state="committed", operation_kind=kind,
                       result_ref=record["result_ref"], recorded_at=record["recorded_at"], replayed=True)
     if (result.get("status") != "COMMITTED" or result.get("commit_state") != "committed"
