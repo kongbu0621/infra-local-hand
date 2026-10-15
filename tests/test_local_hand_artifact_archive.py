@@ -324,6 +324,131 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
         self.assertEqual(recovered["recorded_at"], first["recorded_at"])
         self.read(first)
 
+    def test_reservation_checks_missing_global_marker_before_database_mutation(self):
+        for replacement in (False, True):
+            with self.subTest(replacement=replacement):
+                self.store = self.root / ("missing" if not replacement else "replaced")
+                first = self.archive()
+                database = self.store / "ledger.sqlite"
+                marker = self.store / "database-initialized"
+                saved_database = self.root / (self.store.name + ".sqlite")
+                saved_marker = self.root / (self.store.name + "-marker")
+                database.rename(saved_database)
+                marker.rename(saved_marker)
+                if replacement:
+                    self.api.initialize(database).close()
+                before = {path: path.read_bytes() for path in self.store.rglob("*") if path.is_file()}
+                with self.assertRaises(consumer.ArchiveError):
+                    self.resume()
+                self.assertEqual(database.exists(), replacement)
+                self.assertFalse(marker.exists())
+                self.assertEqual(before, {path: path.read_bytes() for path in self.store.rglob("*") if path.is_file()})
+                if replacement:
+                    database.rename(self.root / "retained-replacement.sqlite")
+                saved_database.rename(database)
+                saved_marker.rename(marker)
+                self.assertEqual(self.resume()["recorded_at"], first["recorded_at"])
+
+    def test_in_place_database_rollback_cannot_replay_confirmed_operations(self):
+        empty = self.root / "empty.sqlite"
+        self.api.initialize(empty).close()
+        snapshots = [empty.read_bytes()]
+        original = consumer._ensure_operation
+        def capture_create(ledger, raw, **kwargs):
+            result = original(ledger, raw, **kwargs)
+            if json.loads(raw)["operation_kind"] == "create_artifact":
+                snapshots.append((self.store / "ledger.sqlite").read_bytes())
+            return result
+        with mock.patch.object(consumer, "_ensure_operation", side_effect=capture_create):
+            first = self.archive()
+        database = self.store / "ledger.sqlite"
+        complete = database.read_bytes()
+        inode = database.stat().st_ino
+        for snapshot in snapshots:
+            database.write_bytes(snapshot)
+            self.assertEqual(database.stat().st_ino, inode)
+            with self.api.open(database) as ledger:
+                ledger_type = type(ledger)
+            with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("confirmed operations must not execute")):
+                for call in (self.resume, self.archive):
+                    with self.assertRaises(consumer.ArchiveError) as raised:
+                        call()
+                    self.assertEqual(raised.exception.code, "INTEGRITY_FAILURE")
+                    self.assertEqual(database.read_bytes(), snapshot)
+        database.write_bytes(complete)
+        recovered = self.resume()
+        self.assertTrue(recovered["reused"])
+        self.assertEqual(recovered["recorded_at"], first["recorded_at"])
+
+    def test_commit_receipt_publication_failure_reconciles_without_repeating_commit(self):
+        for kind in ("create_artifact", "append_version"):
+            for after_publication in (False, True):
+                with self.subTest(kind=kind, after_publication=after_publication):
+                    self.store = self.root / (kind + str(after_publication))
+                    publish = consumer._publish_files
+                    def interrupted(parent, name, files):
+                        if name != kind or after_publication:
+                            publish(parent, name, files)
+                        if name == kind:
+                            raise OSError("commit receipt publication interrupted")
+                    with mock.patch.object(consumer, "_publish_files", side_effect=interrupted):
+                        with self.assertRaises(OSError):
+                            self.archive()
+                    with self.api.open(self.store / "ledger.sqlite") as ledger:
+                        ledger_type = type(ledger)
+                    execute = ledger_type.execute
+                    calls = []
+                    def observed_execute(handle, raw, **kwargs):
+                        calls.append(json.loads(raw)["operation_kind"])
+                        return execute(handle, raw, **kwargs)
+                    with mock.patch.object(ledger_type, "execute", new=observed_execute):
+                        recovered = self.resume()
+                    self.assertEqual(calls, ["append_version"] if kind == "create_artifact" else [])
+                    self.assertEqual(self.verification()["counts"]["versions"], 1)
+                    self.assertEqual(self.verification()["counts"]["idempotency_records"], 2)
+                    self.read(recovered, name=kind + str(after_publication) + "-read")
+
+    def test_append_receipt_protects_missing_create_receipt_from_reexecution(self):
+        first = self.archive()
+        database = self.store / "ledger.sqlite"
+        complete = database.read_bytes()
+        reservation = next(self.store.glob("request-task-*"))
+        (reservation / "create_artifact").rename(self.root / "saved-create-receipt")
+        empty = self.root / "empty.sqlite"
+        self.api.initialize(empty).close()
+        database.write_bytes(empty.read_bytes())
+        with self.api.open(database) as ledger:
+            ledger_type = type(ledger)
+        with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("known create must not execute")):
+            with self.assertRaises(consumer.ArchiveError) as raised:
+                self.resume()
+            self.assertEqual(raised.exception.code, "INTEGRITY_FAILURE")
+            self.assertEqual(database.read_bytes(), empty.read_bytes())
+            database.write_bytes(complete)
+            recovered = self.resume()
+        self.assertEqual(recovered["recorded_at"], first["recorded_at"])
+        self.assertEqual((reservation / "create_artifact/commit.json").read_bytes(),
+                         (self.root / "saved-create-receipt/commit.json").read_bytes())
+
+    def test_changed_commit_timestamp_is_not_accepted_as_original_history(self):
+        first = self.archive()
+        database = self.store / "ledger.sqlite"
+        complete = database.read_bytes()
+        # Coherent, same-inode rollback/rewrite of this fixture's history.
+        with sqlite3.connect(database) as connection:
+            raw = connection.execute("SELECT data FROM operations WHERE kind='append_version'").fetchone()[0]
+            record = json.loads(raw)
+            record["recorded_at"] = "2020-01-01T00:00:00.000000Z"
+            connection.execute("UPDATE operations SET data=? WHERE kind='append_version'",
+                               (json.dumps(record),))
+        changed = database.read_bytes()
+        with self.assertRaises(consumer.ArchiveError) as raised:
+            self.resume()
+        self.assertEqual(raised.exception.code, "INTEGRITY_FAILURE")
+        self.assertEqual(database.read_bytes(), changed)
+        database.write_bytes(complete)
+        self.assertEqual(self.resume()["recorded_at"], first["recorded_at"])
+
     def test_reservation_publication_failure_can_resume_without_a_prior_write(self):
         original = consumer._publish_files
         def interrupted(parent, name, files):

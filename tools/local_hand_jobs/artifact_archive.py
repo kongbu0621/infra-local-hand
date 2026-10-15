@@ -251,17 +251,30 @@ def _fingerprint(request):
         ("contract_version", "idempotency_scope_ref", "operation_kind", "body")}))}
 
 
-def _ensure_operation(ledger, raw, *, payloads=None):
+def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, require_existing=False):
+    from .evidence import _open_root, _sync_directory_ancestry
     api = _ledger_api()
     request = _decode(raw)
     kind = request["operation_kind"]
     result_kind, id_field = ("artifact", "artifact_id") if kind == "create_artifact" else ("version", "version_id")
     expected = request["body"][result_kind]
+    receipt = None
+    receipt_path = receipt_directory / kind if receipt_directory is not None else None
+    if receipt_path is not None and os.path.lexists(receipt_path):
+        with _open_root(receipt_path, os.geteuid()):
+            receipt = _decode(_read(receipt_path / "commit.json", 4096))
+        if receipt.get("request_sha256") != _sha(raw):
+            _fail("Retained commit receipt differs from the original request", "INTEGRITY_FAILURE")
     try:
         previous = ledger.get_operation(request["idempotency_scope_ref"], kind, request["idempotency_key"])
     except api.LedgerError as error:
         if error.code != "NOT_FOUND":
             raise
+        if receipt is not None or require_existing:
+            _fail("Previously confirmed archive operation is missing; restore the original database",
+                  "INTEGRITY_FAILURE")
+        # Only an unconfirmed original request may be executed after NOT_FOUND.
+        result = ledger.execute(raw, **({"payloads": payloads} if payloads is not None else {}))
     else:
         record = previous["idempotency_record"]
         if (any(record[key] != request[key] for key in
@@ -270,14 +283,22 @@ def _ensure_operation(ledger, raw, *, payloads=None):
                 or record["result_ref"] != expected[id_field]
                 or any(previous["result"].get(key) != value for key, value in expected.items())):
             _fail("Stored operation differs from the retained request", "IDEMPOTENCY_CONFLICT")
-        return dict(status="COMMITTED", commit_state="committed", operation_kind=kind,
-                    result_ref=record["result_ref"], recorded_at=record["recorded_at"], replayed=True)
-    # The process holding the cooperative lock owns the synchronous connection.
-    # NOT_FOUND permits only this exact original request, never a new identity.
-    result = ledger.execute(raw, **({"payloads": payloads} if payloads is not None else {}))
+        result = dict(status="COMMITTED", commit_state="committed", operation_kind=kind,
+                      result_ref=record["result_ref"], recorded_at=record["recorded_at"], replayed=True)
     if (result.get("status") != "COMMITTED" or result.get("commit_state") != "committed"
             or result.get("result_ref") != expected[id_field]):
         raise ArchiveError("UNCONFIRMED", "Ledger response did not confirm the original request", "unknown")
+    if receipt_path is not None:
+        confirmed = dict(schema_version="lh-artifact-commit-v1", request_sha256=_sha(raw),
+            result={key: result[key] for key in
+                ("status", "commit_state", "operation_kind", "result_ref", "recorded_at")})
+        if receipt is None:
+            _publish_files(receipt_directory, kind, {"commit.json": _json(confirmed)})
+        else:
+            if receipt != confirmed:
+                _fail("Stored operation differs from its confirmed commit receipt", "INTEGRITY_FAILURE")
+            # A previous publication can be visible despite a failed parent sync.
+            _sync_directory_ancestry(receipt_path, os.geteuid())
     return result
 
 
@@ -335,20 +356,27 @@ def _database(root, *, create=False):
         raise
 
 
-def _reserve_task(root, binding):
+def _reserve_task(root, binding, *, create=True):
     """Retain a small independent guard before either database transaction."""
     from .evidence import _open_root, _sync_directory_ancestry
     name = "request-" + _task_name(binding["producer"], binding["operation_id"])
+    if not create and not os.path.lexists(root / name):
+        return root / name
+    if not os.path.lexists(root / "ledger.sqlite"):
+        _fail("Previously reserved Ledger is missing; restore the original database")
     expected = _json(dict(binding=binding, database_identity=_database_identity(root / "ledger.sqlite")))
     if os.path.lexists(root / name):
         with _open_root(root / name, os.geteuid()) as fd:
             if _read(root / name / "identity.json", 65536) != expected:
                 _fail("Retained task or database identity differs from its original reservation")
-            os.fsync(fd)
+            if create:
+                os.fsync(fd)
         # Publication may have succeeded before a previous directory sync failed.
-        _sync_directory_ancestry(root, os.geteuid())
+        if create:
+            _sync_directory_ancestry(root, os.geteuid())
     else:
         _publish_files(root, name, {"identity.json": expected})
+    return root / name
 
 
 def _check_new_task(root, producer, operation_id):
@@ -417,10 +445,16 @@ def _resume_locked(root, producer, operation_id):
                 or _read(directory / "append.json", 65536) != append):
             _fail("Retained original request differs")
         os.fsync(fd)
+    # Check the independent reservation before initialization can create a
+    # replacement database/marker when the global marker has gone missing.
+    _reserve_task(root, binding, create=False)
     with _database(root, create=True) as ledger:
-        _reserve_task(root, binding)
-        created = _ensure_operation(ledger, create)
-        appended = _ensure_operation(ledger, append, payloads=payloads)
+        reservation = _reserve_task(root, binding)
+        # A retained append confirmation also proves that create must exist,
+        # even if create's own receipt was subsequently lost.
+        created = _ensure_operation(ledger, create, receipt_directory=reservation,
+                                    require_existing=os.path.lexists(reservation / "append_version"))
+        appended = _ensure_operation(ledger, append, payloads=payloads, receipt_directory=reservation)
         restored, _ = _load_version(ledger, created["result_ref"], appended["result_ref"])
         if restored != files:
             _fail("Read-back differs from the original request", "INTEGRITY_FAILURE")

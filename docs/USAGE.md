@@ -61,11 +61,21 @@ error, never an instruction to initialize again, repair history or rerun busines
 The store also binds the database file identity and keeps a separate task
 reservation before writing. Missing recovery directories and replaced databases
 are conflicts; restoring the originals allows the same request to continue.
+An existing task reservation is checked before database initialization, even
+when the global marker is missing. Each confirmed create/append also gets an
+immutable receipt outside SQLite before the caller reports success. If that
+operation subsequently disappears or its timestamp changes, recovery rejects
+the inconsistency instead of replaying it, including after an in-place database
+rollback that preserves the file identity. A failed receipt publication can
+resume by querying the original operation; it does not require another commit.
 New requests use a stable per-task idempotency scope as a second guard against
 lost recovery files. Copying/replacing a database is not a supported store move.
 Existing v1 requests keep their original bytes and operation identities; their
 first archive/resume adds guards without rewriting Ledger records. These guards
 cannot establish whether a legacy database was replaced before that first use.
+Receipts similarly preserve commits first confirmed by this consumer; losing
+both the database history and its external receipts cannot prove an earlier
+commit. Keep the whole store and retain failed attempts.
 
 `read` needs only the store and explicit IDs. It verifies the actual bytes and
 source bindings, then returns the original evidence files and `source.json`.
