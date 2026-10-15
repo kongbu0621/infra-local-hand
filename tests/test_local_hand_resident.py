@@ -483,6 +483,8 @@ class LocalA2ResidentTests(unittest.TestCase):
         self.service.call.assert_not_called();self.local.assert_not_called()
 
     def test_prepare_requires_enabled_runtime_and_submit_scope(self):
+        self.broker._record.return_value=None
+        self.retained.state.get.return_value=None
         with self.assertRaises(JobError):self.call('lh_job_prepare',self.arguments())
         self.broker.config['local_a2']=dict(runtime_refs=['installed-a2'],budgets={})
         for args,principal in ((self.arguments('other'),self.owner),

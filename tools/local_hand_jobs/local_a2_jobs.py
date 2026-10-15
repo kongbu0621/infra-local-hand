@@ -15,7 +15,7 @@ import re
 import zipfile
 
 from . import ledger_jobs
-from .contract import strict_loads
+from .contract import EXPECTED_SCHEMA, _matches, strict_loads
 
 KIND = "ledger.test.local_a2"
 SCRIPT_FILE = "tests/installed_snapshot_walkthrough.py"
@@ -48,6 +48,9 @@ _HASHES = ("runtime_python_sha256", "venv_config_sha256", "wheel_sha256", "conso
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_WHEEL_BYTES = 64 * 1024 * 1024
 SOURCE_EVIDENCE = "CALLER_ASSERTED_NOT_GIT_ATTESTED"
+_STANDARD_DISTUTILS_PTH = (b"import os; var = 'SETUPTOOLS_USE_DISTUTILS'; "
+    b"enabled = os.environ.get(var, 'local') == 'local'; "
+    b"enabled and __import__('_distutils_hack').add_shim(); \n")
 
 
 def _fail(message):
@@ -89,11 +92,17 @@ def descriptor_digest(runtime):
     return hashlib.sha256(json.dumps(validate_runtime(runtime), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def _environment(temporary):
+    # Python 3.11 venvs can retain setuptools' standard startup file. Its
+    # exact admitted statement becomes inert without rebuilding that venv.
+    return dict(ledger_jobs.clean_environment(temporary), SETUPTOOLS_USE_DISTUTILS="stdlib")
+
+
 def _stage(runtime, roots):
     return {"name": "a2-installed-local", "argv": [runtime["runtime_python"], "-I", "-B",
         str(Path(runtime["source_root"]) / SCRIPT_FILE), "--scratch-parent",
         str(Path(roots["work"]) / "local-parent"), "--source-commit", runtime["source_commit"]],
-        "cwd": roots["work"], "env": ledger_jobs.clean_environment(roots["temporary"])}
+        "cwd": roots["work"], "env": _environment(roots["temporary"])}
 
 
 def build_plan(request, profile):
@@ -113,6 +122,7 @@ def build_plan(request, profile):
             if _inside(writable, readonly) or _inside(readonly, writable):
                 _fail("task roots overlap admitted inputs")
     plan.update(kind=KIND, runtime_ref=reference, local_a2_runtime=runtime,
+        environment=_environment(roots["temporary"]),
         stages=[_stage(runtime, roots)], readonly=[runtime[key] for key in
             ("source_root", "runtime_root", "wheel", "runtime_python_realpath")],
         source={}, storage={}, build_cache={}, prepared={}, prerequisites=[],
@@ -147,18 +157,40 @@ def local_effects_only(execution, facts=None):
                     ("source_root", "runtime_root", "wheel", "runtime_python_realpath")]
                 or any(execution.get(name) for name in ("storage", "build_cache", "prepared", "source", "prerequisites"))
                 or execution["budgets"]["nas_bytes"] != 0
-                or dict(execution.get("environment", {})) != ledger_jobs.clean_environment(roots["temporary"])):
+                or dict(execution.get("environment", {})) != _environment(roots["temporary"])):
             return False
         stages = execution["stages"]
         expected = _stage(runtime, roots)
         if len(stages) != 1 or dict(stages[0], argv=list(stages[0]["argv"]), env=dict(stages[0]["env"])) != expected:
             return False
         digest = descriptor_digest(runtime)
-        if dict(execution.get("bindings", {})) != {
+        bindings = execution.get("bindings", {})
+        if not isinstance(bindings, Mapping):
+            return False
+        fixed_bindings = {
                 "source_commit": runtime["source_commit"], "source_commit_evidence": SOURCE_EVIDENCE,
                 "runtime_descriptor_digest": digest, "wheel_digest": runtime["wheel_sha256"],
-                "script_blobs": {SCRIPT_FILE: SOURCE_BLOBS[SCRIPT_FILE]}}:
+                "script_blobs": {SCRIPT_FILE: SOURCE_BLOBS[SCRIPT_FILE]}}
+        if any(bindings.get(name) != value for name, value in fixed_bindings.items()):
             return False
+        # Registry attaches these provenance fields after constructing the fixed
+        # execution. They survive persistence and phase/root remapping. Accept
+        # that complete, validated group, never arbitrary additional bindings.
+        provenance = {"expected", "local_hand_source_commit",
+            "local_hand_installed_payload_digest", "local_hand_execution_entrypoint"}
+        extra = set(bindings) - set(fixed_bindings)
+        if extra:
+            if extra != provenance or not isinstance(bindings["expected"], Mapping):
+                return False
+            expected_binding = dict(bindings["expected"])
+            if (not _matches(expected_binding, EXPECTED_SCHEMA)
+                    or ("expected" in execution and execution["expected"] != expected_binding)):
+                return False
+            for name, length in (("local_hand_source_commit", 40),
+                                 ("local_hand_installed_payload_digest", 64)):
+                if not isinstance(bindings[name], str) or not re.fullmatch(r"[0-9a-f]{%d}" % length, bindings[name]):
+                    return False
+            ledger_jobs._path(bindings["local_hand_execution_entrypoint"])
         if facts is not None and (facts.get("inputs_stable") is not True
                 or facts.get("local_a2_runtime_verified") is not True
                 or facts.get("runtime_descriptor_digest") != digest):
@@ -179,6 +211,17 @@ def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def _verify_startup_directory(site):
+    for index, path in enumerate(Path(site).iterdir()):
+        if index >= 4096:
+            _fail("runtime site inventory exceeds bound")
+        if path.name == "sitecustomize" or path.name.startswith("sitecustomize.") or path.name == "usercustomize" or path.name.startswith("usercustomize."):
+            _fail("runtime startup extensions are not admitted")
+        if path.name.endswith(".pth"):
+            if path.name != "distutils-precedence.pth" or _read(path, 65536) != _STANDARD_DISTUTILS_PTH:
+                _fail("runtime startup extensions are not admitted")
+
+
 def verify_inputs(plan):
     if not local_effects_only(plan):
         _fail("local A2 execution differs from the fixed scratch-only plan")
@@ -188,6 +231,13 @@ def verify_inputs(plan):
         if not path.is_dir() or path.resolve() != path:
             _fail("runtime input directory is linked or absent")
     interpreter = Path(runtime["runtime_python"])
+    shadow_config = interpreter.parent / "pyvenv.cfg"
+    if shadow_config.exists() or shadow_config.is_symlink():
+        _fail("runtime has a shadow venv configuration")
+    for executable in {str(interpreter), runtime["runtime_python_realpath"]}:
+        path_config = Path(executable + "._pth")
+        if path_config.exists() or path_config.is_symlink():
+            _fail("runtime has an overriding Python search-path configuration")
     if str(interpreter.resolve(strict=True)) != runtime["runtime_python_realpath"]:
         _fail("venv interpreter target differs from registration")
     if _sha(_read(runtime["runtime_python_realpath"], 128 * 1024 * 1024)) != runtime["runtime_python_sha256"]:
@@ -205,9 +255,7 @@ def verify_inputs(plan):
     if values.get("include-system-site-packages") != "false":
         _fail("runtime includes system site packages")
     site = Path(runtime["package_root"]).parent
-    if any(site.glob("*.pth")) or any(path.name == name or path.name.startswith(name + ".")
-            for path in site.iterdir() for name in ("sitecustomize", "usercustomize")):
-        _fail("runtime startup extensions are not admitted")
+    _verify_startup_directory(site)
     console = _read(interpreter.parent / "artifact-ledger", 65536)
     if _sha(console) != runtime["console_script_sha256"]:
         _fail("installed console entry bytes differ")
@@ -288,13 +336,75 @@ def finish_run(plan, directory, stage):
             "source_commit_evidence": SOURCE_EVIDENCE, "nas_publish_flow": "NOT_RUN"}
 
 
-# Run by runner's bounded capture, with -S so startup hooks cannot execute
-# before the descriptor checks. The probe imports no Ledger code. Comparing
-# compiled code prevents timestamp-valid and unchecked-hash cache substitution.
+# Run before enabling site processing or importing Ledger. The -S interpreter
+# reports its own version/platform site candidates; the descriptor cannot pick
+# a different, correctly copied package which normal isolated imports ignore.
+_RUNTIME_PATH_PROBE = r'''
+import importlib.machinery, os, pathlib, site, stat, sys
+if not sys.flags.no_site or not sys.flags.isolated or not sys.flags.ignore_environment:
+    raise ValueError('runtime probe must precede isolated site processing')
+package_root = pathlib.Path(sys.argv[1])
+runtime_root = pathlib.Path(sys.argv[3])
+allowed_pth = bytes.fromhex(sys.argv[4])
+if package_root.resolve() != package_root or runtime_root.resolve() != runtime_root:
+    raise ValueError('linked registered runtime path')
+def startup_bytes(path):
+    if path.resolve() != path: raise ValueError('linked startup file')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 65536:
+            raise ValueError('unbounded startup file')
+        raw = stream.read(65537)
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_mode, value.st_nlink,
+            value.st_uid, value.st_gid, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+        if len(raw) != before.st_size or identity(before) != identity(os.fstat(stream.fileno())) or identity(before) != identity(path.stat(follow_symlinks=False)):
+            raise ValueError('runtime startup file changed')
+        return raw
+site_directories = []
+for candidate in site.getsitepackages([str(runtime_root)]):
+    candidate = pathlib.Path(candidate).resolve()
+    if not candidate.is_relative_to(runtime_root):
+        raise ValueError('runtime site directory escaped the venv')
+    if not candidate.exists():
+        continue
+    if not candidate.is_dir():
+        raise ValueError('runtime site candidate is not a directory')
+    if candidate in site_directories:
+        continue
+    for index, entry in enumerate(candidate.iterdir()):
+        if index >= 4096:
+            raise ValueError('runtime site inventory exceeds bound')
+        if entry.name.endswith('.pth'):
+            if entry.name != 'distutils-precedence.pth' or startup_bytes(entry) != allowed_pth:
+                raise ValueError('runtime startup extensions are not admitted')
+        if any(entry.name == name or entry.name.startswith(name + '.')
+               for name in ('sitecustomize', 'usercustomize')):
+            raise ValueError('runtime startup extensions are not admitted')
+    site_directories.append(candidate)
+if package_root.parent not in site_directories:
+    raise ValueError('registered package is outside interpreter site directories')
+search = list(sys.path) + [str(path) for path in site_directories]
+for name in ('sitecustomize', 'usercustomize'):
+    if importlib.machinery.PathFinder.find_spec(name, search) is not None:
+        raise ValueError('unregistered runtime startup module')
+spec = importlib.machinery.PathFinder.find_spec('infra_artifact_ledger', search)
+if (spec is None or spec.origin is None or spec.submodule_search_locations is None
+        or pathlib.Path(spec.origin).resolve() != package_root / '__init__.py'
+        or [pathlib.Path(path).resolve() for path in spec.submodule_search_locations] != [package_root]):
+    raise ValueError('actual Ledger import differs from the registered package')
+'''
+
+
+# The probe imports no Ledger code. Comparing compiled code prevents
+# timestamp-valid and unchecked-hash cache substitution. Keep its two original
+# arguments so bytecode-only regression probes can exercise it independently.
 _BYTECODE_PROBE = r'''
-import importlib.util, io, marshal, os, pathlib, re, stat, sys, types
+import importlib.util, io, marshal, os, pathlib, stat, sys, types
 root = pathlib.Path(sys.argv[1])
 names = set(sys.argv[2].split(','))
+if sys.flags.optimize != 0 or sys.pycache_prefix is not None:
+    raise ValueError('runtime bytecode selection differs from the fixed invocation')
 def read(path):
     if path.resolve() != path: raise ValueError('linked bytecode input')
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -309,13 +419,31 @@ def read(path):
         if len(raw) != info.st_size or identity(info) != identity(after) or identity(after) != identity(path.stat(follow_symlinks=False)):
             raise ValueError('bytecode input changed')
         return raw
+def same_code(actual, expected):
+    # CodeType equality alone omits stack size, qualified name and filename,
+    # including those fields in nested functions. Keep its type-sensitive
+    # constant comparison, then bind every stored code field recursively.
+    if not isinstance(actual, types.CodeType) or actual != expected:
+        return False
+    fields = ('co_argcount', 'co_posonlyargcount', 'co_kwonlyargcount', 'co_nlocals',
+        'co_stacksize', 'co_flags', 'co_code', 'co_names', 'co_varnames',
+        'co_filename', 'co_name', 'co_qualname', 'co_firstlineno', 'co_linetable',
+        'co_exceptiontable', 'co_freevars', 'co_cellvars')
+    if any(getattr(actual, field) != getattr(expected, field) for field in fields):
+        return False
+    return all(same_code(left, right) for left, right in zip(actual.co_consts, expected.co_consts)
+               if isinstance(left, types.CodeType))
 cache = root / '__pycache__'
 if cache.exists() or cache.is_symlink():
     if not cache.is_dir() or cache.resolve() != cache: raise ValueError('linked bytecode cache')
-    pattern = re.compile(r'(.+)\.' + re.escape(sys.implementation.cache_tag) + r'(?:\.opt-([12]))?\.pyc')
-    for path in cache.iterdir():
-        match = pattern.fullmatch(path.name)
-        if match is None or match[1] + '.py' not in names: raise ValueError('unrecognized installed bytecode')
+    # Both fixed business invocations use -I without -O. Inspect only their
+    # exact cache candidates; other interpreter/optimization caches cannot be
+    # selected and remain unread and unchanged, regardless of directory size.
+    for name in sorted(names):
+        source = root / name
+        path = pathlib.Path(importlib.util.cache_from_source(str(source), optimization=''))
+        if not path.exists() and not path.is_symlink():
+            continue
         raw = read(path)
         if len(raw) < 16 or raw[:4] != importlib.util.MAGIC_NUMBER or int.from_bytes(raw[4:8], 'little') not in (0, 1, 3):
             raise ValueError('invalid installed bytecode header')
@@ -323,9 +451,8 @@ if cache.exists() or cache.is_symlink():
         actual = marshal.load(payload)
         if payload.tell() != len(raw) - 16 or not isinstance(actual, types.CodeType):
             raise ValueError('invalid installed bytecode payload')
-        expected = compile(read(root / (match[1] + '.py')), actual.co_filename, 'exec',
-                           dont_inherit=True, optimize=int(match[2] or 0))
-        if actual != expected: raise ValueError('installed bytecode differs from source')
+        expected = compile(read(source), actual.co_filename, 'exec', dont_inherit=True, optimize=0)
+        if not same_code(actual, expected): raise ValueError('installed bytecode differs from source')
 print('LOCAL_A2_BYTECODE_VERIFIED')
 '''
 
@@ -334,9 +461,10 @@ def runtime_probe_stage(plan):
     """Fixed bounded probe consumed only by the supervised runner."""
     if not local_effects_only(plan): _fail("invalid local A2 execution")
     return {"name": "a2-runtime-bytecode", "argv": [plan["local_a2_runtime"]["runtime_python"],
-        "-I", "-S", "-B", "-c", _BYTECODE_PROBE, plan["local_a2_runtime"]["package_root"],
-        ",".join(sorted(Path(name).name for name in MODULE_FILES))],
-        "cwd": plan["roots"]["work"], "env": ledger_jobs.clean_environment(plan["roots"]["temporary"])}
+        "-I", "-S", "-B", "-c", _RUNTIME_PATH_PROBE + _BYTECODE_PROBE,
+        plan["local_a2_runtime"]["package_root"], ",".join(sorted(Path(name).name for name in MODULE_FILES)),
+        plan["local_a2_runtime"]["runtime_root"], _STANDARD_DISTUTILS_PTH.hex()],
+        "cwd": plan["roots"]["work"], "env": _environment(plan["roots"]["temporary"])}
 
 
 def finish_runtime_probe(plan, directory, stage):
@@ -344,6 +472,7 @@ def finish_runtime_probe(plan, directory, stage):
             or stage.get("exit_code") != 0
             or _read(Path(directory) / "a2-runtime-bytecode.stdout", 1024) != b"LOCAL_A2_BYTECODE_VERIFIED\n"
             or _read(Path(directory) / "a2-runtime-bytecode.stderr", 65536)):
-        _fail("installed bytecode did not match verified source")
+        _fail("installed runtime import path or bytecode differs from admission")
     return {"local_a2_runtime_verified": True, "installed_bytecode_verified": True,
+            "installed_import_path_verified": True,
             "runtime_descriptor_digest": descriptor_digest(plan["local_a2_runtime"])}

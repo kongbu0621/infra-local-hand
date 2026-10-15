@@ -222,11 +222,14 @@ class ResidentBroker:
             if name == 'lh_job_prepare':
                 if args['profile_ref'] != self.config['profile_ref']:
                     raise JobError('UNAUTHORIZED', 'Profile is not admitted')
+                record=self._record(args['operation_id'])
+                allow_new=True
                 if args['kind'] == 'ledger.test.local_a2':
                     local_a2=self.config.get('local_a2')
-                    if not local_a2 or args['inputs']['runtime_ref'] not in local_a2['runtime_refs']:
+                    allow_new=bool(local_a2 and args['inputs']['runtime_ref'] in local_a2['runtime_refs'])
+                    if not allow_new and record is None:
                         raise JobError('UNAUTHORIZED', 'Installed local A2 runtime is not admitted')
-                if self._record(args['operation_id']) is None:
+                if record is None:
                     # The catalog routes by UUID across deployments. Creating a
                     # new entry for retained history would hide that original
                     # task and defeat same-identity recovery.
@@ -234,7 +237,11 @@ class ResidentBroker:
                         reader = self.retained if path is None else self._reader(path)
                         if reader.state.get('job', args['operation_id']) is not None:
                             raise JobError('CONFLICT', 'Task identity already belongs to retained history')
-                return self.service.call('prepare', principal_id=principal.principal_id, **args)
+                # Withdrawing a registration prevents new attempts, but must
+                # not hide an original READY response or restart recovery. The
+                # root service checks owner and original inputs before polling.
+                query_only={} if allow_new else {'allow_new': False}
+                return self.service.call('prepare', principal_id=principal.principal_id, **args, **query_only)
             if name == 'lh_evidence_read_chunk':
                 return self._artifact(args, principal)
             operation = args['operation_id']

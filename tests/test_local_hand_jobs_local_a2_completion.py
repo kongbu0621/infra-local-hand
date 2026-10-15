@@ -12,6 +12,8 @@ from local_hand_jobs import local_a2_jobs
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.contract import request_digest
 from local_hand_jobs.preflight_completion import supports_local_completion
+from local_hand_jobs.policy import Policy, thaw
+from local_hand_jobs.registry import Registry
 from local_hand_jobs.task_session import TaskSession
 import test_local_hand_jobs_broker as broker_fixtures
 import test_local_hand_jobs_budget as budget_fixtures
@@ -19,6 +21,7 @@ import test_local_hand_jobs_cancel_boundaries as cancel_fixtures
 import test_local_hand_jobs_quota_resident_chain as chain_fixtures
 import test_local_hand_jobs_recovery_delivery as recovery_fixtures
 from test_local_hand_local_a2_preparation import runtime_fixture
+from test_local_hand_jobs_local_a2_admission import local_a2_policy_fixture
 
 
 class LocalA2CompletionTests(unittest.TestCase):
@@ -28,35 +31,34 @@ class LocalA2CompletionTests(unittest.TestCase):
             runtime_descriptor_digest=local_a2_jobs.descriptor_digest(self.runtime))
         self.plan_damage = None
         original_request = broker_fixtures.BrokerTests.make_request
-        original_resolve = broker_fixtures.RegistryFixture.resolve
-        original_chain_resolve = chain_fixtures.ChainRegistry.resolve
         original_complete = chain_fixtures.complete
         original_finish = broker_fixtures.SupervisorFixture.finish
+        config = local_a2_policy_fixture("/synthetic-completion")
+        config["limits"]["retained_bytes"] = 1024**3
+        profile = config["profiles"]["fixture"]
+        profile["local_a2_runtimes"] = {"ledger-a2": self.runtime}
+        profile["budgets"][local_a2_jobs.KIND] = dict(broker_fixtures.SYNTHETIC_BUDGET,
+            wall_seconds=90, cpu_seconds=30, temporary_bytes=1024**2, memory_bytes=32*1024**2,
+            processes=16, log_bytes=96*1024, reservation_bytes=4*1024**2)
+        config["principals"]["owner"]["profiles"]["fixture"]["runtime_refs"] = ["ledger-a2"]
+        real_policy, real_registry = Policy(config), Registry()
 
         def make_request(fixture):
+            fixture.policy.expected = lambda _: real_policy.expected("fixture")
             value = original_request(fixture)
-            value.update(kind=local_a2_jobs.KIND, inputs={"runtime_ref": "ledger-a2"})
+            fixture.policy.limits = dict(fixture.policy.limits, retained_bytes=1024**3)
+            value.update(kind=local_a2_jobs.KIND, inputs={"runtime_ref": "ledger-a2"},
+                         expected=real_policy.expected("fixture"))
             value["request_digest"] = request_digest(value)
             return value
 
-        def execution(request, budgets):
-            profile = dict(work_root="/synthetic/admitted-work", temporary_root="/synthetic/admitted-temp",
-                evidence_root="/synthetic/admitted-evidence", python="/usr/bin/python3", budgets=budgets,
-                local_a2_runtimes={"ledger-a2": self.runtime})
-            value = local_a2_jobs.build_plan(request, profile)
-            if self.plan_damage is not None:
-                self.plan_damage(value)
-            return value
-
         def resolve(registry, request, policy, **kwargs):
-            plan = original_resolve(registry, request, policy, **kwargs)
-            plan["execution"] = execution(request, plan["budgets"])
-            return plan
-
-        def chain_resolve(registry, request, policy, **kwargs):
-            plan = original_chain_resolve(registry, request, policy, **kwargs)
-            plan["execution"] = execution(request, plan["budgets"])
-            return plan
+            # Preserve the real Registry's expected/deployment bindings and
+            # canonical plan shape through the SQLite round trip.
+            value = thaw(real_registry.resolve(request, real_policy, **kwargs))
+            if self.plan_damage is not None:
+                self.plan_damage(value["execution"])
+            return value
 
         def complete(*args, **kwargs):
             value = original_complete(*args, **kwargs)
@@ -71,7 +73,7 @@ class LocalA2CompletionTests(unittest.TestCase):
         for target, name, replacement in (
             (broker_fixtures.BrokerTests, "make_request", make_request),
             (broker_fixtures.RegistryFixture, "resolve", resolve),
-            (chain_fixtures.ChainRegistry, "resolve", chain_resolve),
+            (chain_fixtures.ChainRegistry, "resolve", resolve),
             (chain_fixtures, "complete", complete),
             (broker_fixtures.SupervisorFixture, "finish", finish),
         ):

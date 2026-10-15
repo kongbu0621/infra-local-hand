@@ -25,7 +25,8 @@ _SECRET_KEYS = frozenset(("token", "access_token", "refresh_token", "secret", "p
                           "authorization", "cookie", "private_key", "client_secret"))
 _ENVIRONMENT_KEYS = frozenset(("PATH", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP",
     "PYTHONNOUSERSITE", "PYTHONDONTWRITEBYTECODE", "PIP_CONFIG_FILE", "PIP_NO_INDEX",
-    "PIP_DISABLE_PIP_VERSION_CHECK", "PIP_NO_CACHE_DIR", "PYTHONPATH", "A2_RESOURCE_TESTS"))
+    "PIP_DISABLE_PIP_VERSION_CHECK", "PIP_NO_CACHE_DIR", "PYTHONPATH", "A2_RESOURCE_TESTS",
+    "SETUPTOOLS_USE_DISTUTILS"))
 
 
 def _check_data(value, depth=0):
@@ -36,7 +37,8 @@ def _check_data(value, depth=0):
             raise JobError("UNSUPPORTED", "Bootstrap transport does not accept credential fields")
         for key, child in value.items():
             if key in ("env", "environment") and (
-                    not isinstance(child, dict) or not set(child) <= _ENVIRONMENT_KEYS):
+                    not isinstance(child, dict) or not set(child) <= _ENVIRONMENT_KEYS
+                    or ("SETUPTOOLS_USE_DISTUTILS" in child and child["SETUPTOOLS_USE_DISTUTILS"] != "stdlib")):
                 raise JobError("UNSUPPORTED", "Bootstrap transport requires the fixed clean environment")
             _check_data(child, depth + 1)
     elif isinstance(value, list):

@@ -122,10 +122,22 @@ arbitrary venv was produced by `ledger.prepare`. The source commit must come fro
 the retained build record; the smoke script itself does not attest a Git commit.
 Preflight verifies fixed source bytes, wheel and installed module contents,
 interpreter and entry point. A bounded probe uses the same interpreter with
-`-I -S -B` to compare existing package bytecode with compilation of the verified
-source. The runtime must exclude system site packages and unregistered Python
-startup hooks. Original files remain read-only; the venv is not rebuilt, copied,
-or cleaned. Private paths and build receipts stay in the deployment.
+`-I -S -B` to verify that the interpreter's actual import search selects the
+registered package before enabling site processing or importing Ledger. It
+compares the 17 modules' current-interpreter, unoptimized bytecode candidates
+with compilation of the verified source, including nested code fields such as
+stack size and qualified names that normal Python code-object equality omits.
+Other interpreter and optimization caches are left unread and unchanged; neither
+fixed business command enables optimization. The runtime must exclude system site packages
+and unregistered startup hooks. The sole permitted `.pth` file is the exact
+standard `distutils-precedence.pth`; the fixed environment sets
+`SETUPTOOLS_USE_DISTUTILS=stdlib` for both the walkthrough and its CLI children,
+so that file does not load `_distutils_hack`. A shadow `bin/pyvenv.cfg` or an
+`._pth` search-path override beside the invoked or resolved interpreter is
+rejected before starting that interpreter. The base interpreter and its standard
+library remain trusted deployment inputs. Original files remain read-only; the
+venv is not rebuilt, copied, or cleaned. Private paths and build receipts stay in
+the deployment.
 
 The same manager `local_a2` object supplies explicit `budgets`, `limits`, and
 per-role `quotas` in the existing resident preparation format. `budgets.nas_bytes`
@@ -134,7 +146,17 @@ adapter descriptor has only `local_a2: {"runtime_refs": [REF], "budgets": BUDGET
 it never receives the private runtime descriptor. Preparation creates a task
 policy with only the selected runtime and grants `runtime_refs` for that task.
 Old deployment descriptors need no new field. Omitting this registration leaves
-the capability unavailable.
+the capability unavailable for new attempts. The resident registration is shared
+by principals admitted by the manager and authorized for submit by the entry
+policy; historical task-specific kind/runtime grants do not define this dynamic
+registry. Each generated task policy grants only its selected runtime to its
+owner. Entry scope checks and durable revocations remain effective.
+
+Removing a runtime registration prevents new attempts. Polling an existing
+preparation with its original owner, UUID and inputs still returns the original
+READY request or retained preparation state, including after an interrupted
+response or restart. This does not refresh an expired request or rerun a failed
+attempt; a new attempt requires the current registration again.
 
 Use the existing private maintenance procedure to install the reviewed Hand
 revision and update these two configurations, preserving historical installs,

@@ -46,8 +46,26 @@ def publish(path, value, mode=0o600):
     finally:os.close(directory)
 
 
+def check_local_a2_management_paths(config):
+    """Keep resident bookkeeping outside every registered read-only runtime.
+
+    This runs before startup publication/locking and before a new preparation's
+    private attempt files. Provisioning separately checks its generated roots.
+    """
+    local=config.get('local_a2')
+    if local is None:
+        return
+    q.require(type(local) is dict and type(local.get('runtimes')) is dict,
+              'RESIDENT_RUNTIME_CONFIGURATION')
+    paths=[config[key] for key in ('private_root','catalog','socket','socket_descriptor') if key in config]
+    for reference,runtime in local['runtimes'].items():
+        value=dict(local_a2=dict(inputs={'runtime_ref':reference},runtimes={reference:runtime}),bases=paths)
+        provision_task.check_local_a2_paths_before_allocation(value,dict(directories={},roots=[]))
+
+
 class ResidentService:
     def __init__(self, config):
+        check_local_a2_management_paths(config)
         self.config=config
         self.root=Path(config['private_root']);self.catalog=Path(config['catalog'])
         self.fence=threading.RLock();self.worker=None;self.launchers={}
@@ -171,7 +189,8 @@ class ResidentService:
         if result.returncode!=0:raise JobError('IO_UNCERTAIN','Cannot observe preparation')
         return result.stdout.strip() in {'active','activating','deactivating','reloading'}
 
-    def prepare(self, args, principal):
+    def prepare(self, args, principal, *, allow_new=True):
+        check_local_a2_management_paths(self.config)
         operation=args['operation_id']
         if args['profile_ref']!=self.config['profile_ref']:
             raise JobError('UNAUTHORIZED','Preparation profile differs')
@@ -183,10 +202,9 @@ class ResidentService:
                 raise JobError('UNAUTHORIZED','Workspace source, file or validation is not admitted')
         if args['kind']=='ledger.test.local_a2':
             runtime=self.config.get('local_a2',{}).get('runtimes',{}).get(args['inputs']['runtime_ref'])
-            if runtime is None:
-                raise JobError('UNAUTHORIZED','Ledger runtime is not admitted')
-            from local_hand_jobs.local_a2_jobs import validate_runtime
-            validate_runtime(runtime)
+            # A removed registration is not authority for a new attempt.
+            # Its existing immutable preparation record remains queryable.
+            allow_new = allow_new and runtime is not None
         with self.fence:
             record=self.records.get(operation)
             if record is not None:
@@ -207,6 +225,9 @@ class ResidentService:
                     else:
                         record=dict(record,state='FAILED');self._save(record)
                 if record['state']=='READY':
+                    if not allow_new:
+                        self._catalog(record)
+                        return dict(operation_id=operation,state='READY',request=record['request'])
                     stale=record['boot_id']!=self.boot or record['request']['expires_at']<=time.time()
                     if (args.get('retry_failed') and self.config.get('installation',{}).get('source')
                             and record.get('launch_path')):
@@ -219,8 +240,13 @@ class ResidentService:
                     if not (stale or args.get('retry_failed')) or not self._replaceable(record,failed_only=not stale):
                         self._catalog(record)
                         return dict(operation_id=operation,state='READY',request=record['request'])
-                if record['state']=='FAILED' and not args.get('retry_failed'):
-                    return dict(operation_id=operation,state='FAILED',retryable=True)
+                if record['state']=='FAILED' and (not args.get('retry_failed') or not allow_new):
+                    return dict(operation_id=operation,state='FAILED',retryable=allow_new)
+            if not allow_new:
+                raise JobError('UNAUTHORIZED','Ledger runtime is not admitted for a new attempt')
+            if args['kind']=='ledger.test.local_a2':
+                from local_hand_jobs.local_a2_jobs import validate_runtime
+                validate_runtime(runtime)
             if self._busy():raise JobError('RESOURCE_BUSY','Another task is preparing or running')
             if record is None and len(self.records)>=self.config['max_tasks']:
                 raise JobError('LIMIT_EXCEEDED','Retained task capacity is full')
@@ -332,9 +358,11 @@ class ResidentService:
                 return result
             if action=='prepare':
                 q.require({'action','principal_id','operation_id','kind','profile_ref'}<=set(request)
-                          <={'action','principal_id','operation_id','kind','profile_ref','retry_failed','inputs'},'RESIDENT_REQUEST')
-                args=validate_tool_args('lh_job_prepare',{k:v for k,v in request.items() if k not in {'action','principal_id'}})
-                return self.prepare(args,principal)
+                          <={'action','principal_id','operation_id','kind','profile_ref','retry_failed','inputs','allow_new'},'RESIDENT_REQUEST')
+                allow_new=request.get('allow_new',True)
+                q.require(type(allow_new) is bool,'RESIDENT_REQUEST')
+                args=validate_tool_args('lh_job_prepare',{k:v for k,v in request.items() if k not in {'action','principal_id','allow_new'}})
+                return self.prepare(args,principal,allow_new=allow_new)
             if action not in {'status','start'}:raise JobError('UNSUPPORTED','Unknown task service action')
             q.require(set(request)=={'action','principal_id','operation_id'}|({'request_digest'} if action=='start' else set()),
                       'RESIDENT_REQUEST')
@@ -387,6 +415,7 @@ def initialize_host(config):
 
 def serve(config):
     q.require(os.getuid()==os.geteuid()==0,'RESIDENT_ADMINISTRATOR')
+    check_local_a2_management_paths(config)
     for key in ('private_root','catalog'):
         path=Path(config[key])
         for item in (path,*path.parents):

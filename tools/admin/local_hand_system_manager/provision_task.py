@@ -137,6 +137,35 @@ def check_endpoint_lengths(plan):
         q.require(len(q.canonical_path(endpoint).encode()) <= 107, 'ENDPOINT_LENGTH')
 
 
+def check_local_a2_paths_before_allocation(value, plan):
+    """Reject task allocation inside or around the registered read-only inputs.
+
+    Final policy assembly checks execution roots, but preparation creates base,
+    management and quota directories first. Check that whole planned write set
+    before its first mkdir, without opening any registered runtime path.
+    """
+    if 'local_a2' not in value:
+        return
+    from local_hand_jobs.local_a2_jobs import validate_runtime
+    from local_hand_jobs.ledger_jobs import _path
+    q.require('workspace' not in value, 'PROVISION_JOB_CONFLICT')
+    local = value['local_a2']
+    q.require(type(local) is dict and set(local) == {'inputs', 'runtimes'}
+              and type(local['inputs']) is dict and set(local['inputs']) == {'runtime_ref'}
+              and type(local['runtimes']) is dict
+              and set(local['runtimes']) == {local['inputs']['runtime_ref']},
+              'PROVISION_RUNTIME_BINDING')
+    runtime = validate_runtime(local['runtimes'][local['inputs']['runtime_ref']])
+    protected = [Path(runtime[name]) for name in ('source_root', 'runtime_root', 'runtime_python',
+        'runtime_python_realpath', 'package_root', 'wheel')]
+    planned = [*value['bases'], *(item['path'] for item in plan['directories'].values()),
+               *(item['path'] for item in plan['roots'])]
+    for raw in planned:
+        candidate = Path(_path(raw))
+        q.require(all(not (candidate.is_relative_to(source) or source.is_relative_to(candidate))
+                      for source in protected), 'PROVISION_LOCAL_A2_INPUT_OVERLAP')
+
+
 def check_capacity_before_allocation(plan, inventory):
     """Reject known exhaustion before allocating any task directories or quotas.
 
@@ -189,6 +218,7 @@ def prepare(v):
     driver = _helper(installation, 'q2_prepare_driver')
     a = _helper(installation, 'q2_prepare_assembly')
     driver.validate_plan(plan)
+    check_local_a2_paths_before_allocation(v, plan)
     # Reject an unusable endpoint before creating directories or assigning
     # quotas. The later chain validation is too late to avoid partial setup.
     check_endpoint_lengths(plan)
