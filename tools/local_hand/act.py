@@ -6,7 +6,8 @@ import os
 import re
 import stat
 import tempfile
-from contextlib import contextmanager
+import threading
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, BinaryIO, Iterator
 
@@ -44,8 +45,23 @@ def _regular_mode_no_follow(path: Path) -> int:
     return stat.S_IMODE(st.st_mode)
 
 
+class _WriteLease:
+    """An in-process capability for reusing this exact held cooperative lock."""
+    def __init__(self, repo):
+        self.repo = repo.resolve()
+        info = self.repo.stat()
+        self.identity = (info.st_dev, info.st_ino)
+        self.owner = (os.getpid(), threading.get_ident())
+        self.active = True
+
+    def held_for(self, repo):
+        info = repo.stat()
+        return (self.active and self.owner == (os.getpid(), threading.get_ident())
+                and self.repo == repo.resolve() and self.identity == (info.st_dev, info.st_ino))
+
+
 @contextmanager
-def _repository_write_lease(repo: Path, lease_root: Path | None) -> Iterator[None]:
+def _repository_write_lease(repo: Path, lease_root: Path | None) -> Iterator[_WriteLease]:
     """Cross-process cooperative lease for Local Hand writers."""
     if lease_root is None:
         lease_root = Path(tempfile.gettempdir()) / "local-hand-write-leases"
@@ -54,6 +70,7 @@ def _repository_write_lease(repo: Path, lease_root: Path | None) -> Iterator[Non
     lock_path = lease_root / f"{key}.lock"
     handle: BinaryIO = lock_path.open("a+b")
     locked = False
+    lease = None
     try:
         if os.name == "nt":
             import msvcrt
@@ -82,8 +99,11 @@ def _repository_write_lease(repo: Path, lease_root: Path | None) -> Iterator[Non
                     f"another Local Hand writer holds the repository lease: {repo}",
                 ) from exc
         locked = True
-        yield
+        lease = _WriteLease(repo)
+        yield lease
     finally:
+        if lease is not None:
+            lease.active = False
         if locked:
             try:
                 if os.name == "nt":
@@ -108,6 +128,7 @@ def fs_write_text_cas(
     content: str,
     *,
     lease_root: Path | None = None,
+    _lease: _WriteLease | None = None,
 ) -> dict[str, Any]:
     if not isinstance(expected_sha256, str) or re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256) is None:
         raise LocalHandError("invalid_expected_sha256", "expected_sha256 must be a 64-character hex digest")
@@ -128,7 +149,10 @@ def fs_write_text_cas(
             "fs.write_text_cas is disabled unless repository.single_writer=true in the Node Profile",
         )
 
-    with _repository_write_lease(repo, lease_root):
+    if _lease is not None and (lease_root is not None or not isinstance(_lease, _WriteLease)
+                               or not _lease.held_for(repo)):
+        raise LocalHandError("workspace_lease_invalid", "CAS requires an active lease for this repository and caller")
+    with nullcontext() if _lease is not None else _repository_write_lease(repo, lease_root):
         target = safe_existing_path(repo, relative_path, expect="file")
         current = _read_cas_target(target)
         current_hash = _sha256(current)
