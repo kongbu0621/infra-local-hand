@@ -25,6 +25,8 @@ remain conflicts; no merge or rollback overwrites them.
 Successful completion also synchronizes the final target after validation and
 binds read-back to that same file. Identical bytes from a validator's replacement
 file alone do not confirm that the replacement has been synchronized.
+On Windows the final synchronization requires a writable handle; failure to open
+or flush that handle remains `UNCONFIRMED` without changing file permissions.
 Git's working tree must match the registered repository directory throughout
 the attempt. Linked worktrees are supported; redirecting `core.worktree` to a
 different directory is a conflict, even when HEAD and file contents match.

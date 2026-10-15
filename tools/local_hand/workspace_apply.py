@@ -118,11 +118,18 @@ def _confirm_existing(repo, target, expected_sha256, expected_mode=None):
     """A matching after-image alone cannot repair an earlier failed fsync."""
     path = safe_existing_path(repo, target, expect="file")
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+        # Windows FlushFileBuffers requires a writable handle. Opening it here
+        # never truncates or writes content, and does not change permissions.
+        flags = os.O_RDWR if os.name == "nt" else os.O_RDONLY
+        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
         fd = os.open(path, flags)
         try:
             before = os.fstat(fd)
-            identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+            # Python 3.12 Windows lstat preserves creation time in st_ctime,
+            # whereas fstat reports change time. Birth time binds both views;
+            # descriptor change time is still compared before/after read-back.
+            identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns,
+                                  getattr(s, "st_birthtime_ns", s.st_ctime_ns))
             if not stat.S_ISREG(before.st_mode) or identity(before) != identity(path.lstat()):
                 _conflict("Existing target identity changed before synchronization")
             if expected_mode is not None and stat.S_IMODE(before.st_mode) != expected_mode:
@@ -133,7 +140,9 @@ def _confirm_existing(repo, target, expected_sha256, expected_mode=None):
             # agree. Equal bytes from a replacement file do not prove its fsync.
             if _sha(read_regular_file_bounded(path, MAX_TEXT_BYTES, "existing_target_unconfirmed")) != expected_sha256:
                 _conflict("Existing target bytes changed during synchronization")
-            if identity(os.fstat(fd)) != identity(before) or identity(path.lstat()) != identity(before):
+            after = os.fstat(fd)
+            if (identity(after) != identity(before) or after.st_ctime_ns != before.st_ctime_ns
+                    or identity(path.lstat()) != identity(before)):
                 _conflict("Existing target changed during synchronization")
         finally:
             os.close(fd)

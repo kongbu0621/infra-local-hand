@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -80,7 +81,7 @@ class WorkspaceApplyTests(unittest.TestCase):
         (self.repo / 'notes.txt').write_bytes(b'private notes\n')
         index = self.git('ls-files', '--stage')
         outcome = self.apply()
-        self.assertEqual('APPLIED', outcome['status'])
+        self.assertEqual('APPLIED', outcome['status'], outcome)
         self.assertEqual(0, outcome['validation']['exit_code'])
         self.assertEqual(self.after, (self.repo / 'sample.py').read_bytes())
         self.assertEqual(index, self.git('ls-files', '--stage'))
@@ -159,7 +160,7 @@ class WorkspaceApplyTests(unittest.TestCase):
         self.assertEqual(self.before, self.before_path.read_bytes())
 
     def test_validator_mutation_is_retained_and_not_reported_as_success(self):
-        self.set_validation("from pathlib import Path; Path('sample.py').write_text('VALUE = 3\\n')")
+        self.set_validation("from pathlib import Path; Path('sample.py').write_bytes(b'VALUE = 3\\n')")
         outcome = self.apply()
         self.assertEqual('CONFLICT', outcome['status'])
         self.assertEqual(b'VALUE = 3\n', (self.repo / 'sample.py').read_bytes())
@@ -214,7 +215,7 @@ class WorkspaceApplyTests(unittest.TestCase):
             '--before', str(self.before_path), '--after', str(self.after_path),
             '--expected-head', self.head, '--output', str(output)]
         first = subprocess.run(command, capture_output=True, timeout=20)
-        self.assertEqual(0, first.returncode, first.stderr.decode())
+        self.assertEqual(0, first.returncode, (first.stdout + first.stderr).decode())
         saved = (output / 'report.json').read_bytes()
         second = subprocess.run(command, capture_output=True, timeout=20)
         self.assertEqual(1, second.returncode)
@@ -246,7 +247,7 @@ class WorkspaceApplyTests(unittest.TestCase):
         self.assertEqual('CONFLICT', outcome['status'])
 
     def test_validator_changes_to_other_files_are_reported(self):
-        self.set_validation("from pathlib import Path; Path('other.txt').write_text('validator changed this\\n')")
+        self.set_validation("from pathlib import Path; Path('other.txt').write_bytes(b'validator changed this\\n')")
         outcome = self.apply()
         self.assertEqual('CONFLICT', outcome['status'])
         self.assertEqual(b'validator changed this\n', (self.repo / 'other.txt').read_bytes())
@@ -332,7 +333,7 @@ class WorkspaceApplyTests(unittest.TestCase):
 
     def test_untracked_file_edit_by_validator_is_not_silent_success(self):
         (self.repo / 'notes.txt').write_bytes(b'original notes\n')
-        self.set_validation("from pathlib import Path; Path('notes.txt').write_text('new notes\\n')")
+        self.set_validation("from pathlib import Path; Path('notes.txt').write_bytes(b'new notes\\n')")
         self.assertEqual('CONFLICT', self.apply()['status'])
         self.assertEqual(b'new notes\n', (self.repo / 'notes.txt').read_bytes())
 
@@ -586,8 +587,42 @@ class WorkspaceApplyTests(unittest.TestCase):
         with patch.object(landing, 'read_regular_file_bounded', side_effect=replace_before_read):
             with self.assertRaises(LocalHandError) as caught:
                 landing._confirm_existing(self.repo, 'sample.py', self.result['after_sha256'])
-        self.assertEqual('workspace_conflict', caught.exception.code)
+        # Windows prevents replacement of this open file. POSIX permits the
+        # rename, so the final identity comparison must detect the replacement.
+        self.assertEqual('write_durability_unconfirmed' if os.name == 'nt' else
+                         'workspace_conflict', caught.exception.code)
         self.assertEqual(self.after, target.read_bytes())
+
+    def test_birthtime_binding_allows_stat_fstat_ctime_semantics_but_detects_changes(self):
+        target = self.repo / 'sample.py'
+        target.write_bytes(self.after)
+        fstat = os.fstat
+        read = landing.read_regular_file_bounded
+        for mutate in (False, True):
+            with self.subTest(change_during_read=mutate):
+                changed = False
+                def descriptor(fd):
+                    info = fstat(fd)
+                    # Model Python 3.12 Windows: lstat ctime is birth time,
+                    # while fstat ctime is change time for this same file.
+                    return SimpleNamespace(**{key: getattr(info, key) for key in
+                        ('st_dev', 'st_ino', 'st_mode', 'st_size', 'st_mtime_ns')},
+                        st_birthtime_ns=getattr(info, 'st_birthtime_ns', info.st_ctime_ns),
+                        st_ctime_ns=info.st_ctime_ns + 1000 + int(changed))
+                def readback(*args):
+                    nonlocal changed
+                    result = read(*args)
+                    changed = mutate
+                    return result
+                with patch.object(landing.os, 'fstat', side_effect=descriptor), \
+                     patch.object(landing, 'read_regular_file_bounded', side_effect=readback):
+                    if mutate:
+                        with self.assertRaises(LocalHandError) as caught:
+                            landing._confirm_existing(self.repo, 'sample.py', self.result['after_sha256'])
+                        self.assertEqual('workspace_conflict', caught.exception.code)
+                    else:
+                        landing._confirm_existing(self.repo, 'sample.py', self.result['after_sha256'])
+                self.assertEqual(self.after, target.read_bytes())
 
     def test_git_worktree_must_match_the_registered_repository(self):
         other = self.root / 'other-worktree'
