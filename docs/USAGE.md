@@ -1,5 +1,97 @@
 # Local usage and verification
 
+## Archive and read a completed result locally
+
+`local-hand-archive` is an optional Linux caller-side consumer of Artifact Ledger.
+It accepts an already completed `SUCCEEDED / SEALED` task and retains the exact
+ZIP, external manifest, seal, original status response and source information.
+For `workspace.edit`, the ZIP includes the patch, before/after bytes and fixed
+validation output. Nothing in the bundle is executed or applied.
+
+Install a verified `infra-artifact-ledger` wheel alongside this package in an
+independent Python 3.12 environment. This integration uses the public
+`bounded-local-v0.1` library API, verified with Ledger `0.2.0a1` from commit
+`6707a1b521c9c4718674620e6c584656bd434e4c`. Build that fixed source using its
+declared build dependencies; install the resulting local wheel with
+`python -m pip install --no-index --no-deps /path/to/verified-ledger.whl`.
+Ledger is not downloaded automatically or required for normal Local Hand use.
+
+Retain the **raw authenticated `lh_job_status` response** (either the result
+object or its successful `structuredContent` wrapper), plus the downloaded
+`evidence.zip`, `evidence.manifest`, and `evidence.seal`. The caller must obtain
+the status SHA-256 from that trusted response; hashing an arbitrary file does
+not authenticate it. The archive verifies its identity, seal, manifest, ZIP
+members and content digests against this supplied trust anchor.
+
+```sh
+local-hand-archive archive --store /absolute/private/archive \
+  --producer local-hand:my-instance --status /absolute/retained/status.json \
+  --status-sha256 TRUSTED_STATUS_SHA256 --evidence-dir /absolute/retained/evidence
+
+local-hand-archive read --store /absolute/private/archive \
+  --artifact-id RETURNED_ARTIFACT_ID --version-id RETURNED_VERSION_ID \
+  --output /absolute/private/new-readback
+
+local-hand-archive resume --store /absolute/private/archive \
+  --producer local-hand:my-instance --operation-id ORIGINAL_OPERATION_ID
+```
+
+The store is a dedicated local directory, separate from execution ledgers and
+source evidence. Use a persistent local filesystem supporting SQLite, directory
+fsync and Linux create-only rename. All cooperating calls take a bounded,
+nonblocking store lock. Do not point another writer directly at `ledger.sqlite`
+or place the store on shared network storage. The output parent must exist;
+read-back publishes a new directory and refuses to overwrite existing output.
+
+`archive` returns one explicit Artifact ID and Version ID. This first consumer
+maps each `(producer, operation_id)` to one immutable completed bundle, with
+random owned IDs retained before either Ledger write. A later observation of
+the same task/seal reuses the first status snapshot; changed request or evidence
+bindings are conflicts. It does not choose a "latest" version, combine different
+tasks into a version history or infer identity from filenames/digests.
+
+If a response is lost, `resume` uses the saved original requests and bytes,
+queries both original operations and checks their fingerprints before continuing.
+It needs no original download directory. Create and append are separate Ledger
+transactions: failure can leave the artifact identity committed without a version.
+Keep the entire store, including pending directories, after errors. Nonzero exit
+does not imply rollback; repeated successful calls return the same IDs and timestamp
+without another version. A missing initialized database or corrupt payload is an
+error, never an instruction to initialize again, repair history or rerun business.
+The store also binds the database file identity and keeps a separate task
+reservation before writing. Missing recovery directories and replaced databases
+are conflicts; restoring the originals allows the same request to continue.
+An existing task reservation is checked before database initialization, even
+when the global marker is missing. Each confirmed create/append also gets an
+immutable receipt outside SQLite before the caller reports success. If that
+operation subsequently disappears or its timestamp changes, recovery rejects
+the inconsistency instead of replaying it, including after an in-place database
+rollback that preserves the file identity. The Artifact/Version record must also
+retain the same timestamp as its own create/append operation; a disagreement is
+rejected before continuing with another write. A failed receipt publication can
+resume by querying the original operation; it does not require another commit.
+New requests use a stable per-task idempotency scope as a second guard against
+lost recovery files. Copying/replacing a database is not a supported store move.
+Existing v1 requests keep their original bytes and operation identities; their
+first archive/resume adds guards without rewriting Ledger records. These guards
+cannot establish whether a legacy database was replaced before that first use.
+Receipts similarly preserve commits first confirmed by this consumer; losing
+both the database history and its external receipts cannot prove an earlier
+commit. Keep the whole store and retain failed attempts.
+
+`read` needs only the store and explicit IDs. It verifies the actual bytes and
+source bindings, then returns the original evidence files and `source.json`.
+JSON responses go to stdout; errors retain the relevant Ledger `commit_state`
+where known. Archival success concerns preservation and read-back, not new
+authentication, task execution, validation execution or knowledge admission.
+This local consumer does not establish A2 NAS recovery, A3's two consumer classes,
+Windows archive support or the full Code Driver loop.
+
+To run the affected checks with the verified optional wheel installed:
+`python -B -m pytest -q tests/test_local_hand_artifact_archive.py tests/test_local_hand_jobs_evidence_client.py`.
+Without that wheel, the consumer integration tests are explicitly skipped;
+the local bundle validation tests still run on Linux.
+
 ## Land a verified workspace edit locally
 
 After verifying a completed `workspace.edit` evidence bundle, extract its
