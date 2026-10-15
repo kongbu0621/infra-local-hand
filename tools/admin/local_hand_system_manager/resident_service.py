@@ -181,6 +181,12 @@ class ResidentService:
             if (source is None or args['inputs']['validation_ref'] not in source.get('validations',{})
                     or args['inputs']['relative_path'] not in source['blobs']):
                 raise JobError('UNAUTHORIZED','Workspace source, file or validation is not admitted')
+        if args['kind']=='ledger.test.local_a2':
+            runtime=self.config.get('local_a2',{}).get('runtimes',{}).get(args['inputs']['runtime_ref'])
+            if runtime is None:
+                raise JobError('UNAUTHORIZED','Ledger runtime is not admitted')
+            from local_hand_jobs.local_a2_jobs import validate_runtime
+            validate_runtime(runtime)
         with self.fence:
             record=self.records.get(operation)
             if record is not None:
@@ -228,7 +234,7 @@ class ResidentService:
             attempt.mkdir(mode=0o700)
             record=dict(operation_id=operation,principal_id=principal,state='PREPARING',attempt=str(attempt),
                 serial=serial,boot_id=self.boot,prepare_unit='lhprepare'+uuid.UUID(operation).hex+'a'+str(serial)+'.service')
-            if args['kind']=='workspace.edit':
+            if args['kind'] in {'workspace.edit','ledger.test.local_a2'}:
                 record.update(kind=args['kind'],inputs=args['inputs'])
             self._save(record)
             self.worker=threading.Thread(target=self._prepare_worker,args=(record,),daemon=True)
@@ -256,6 +262,8 @@ class ResidentService:
         attempt=Path(record['attempt'])
         try:
             extra={'workspace_inputs':record['inputs']} if record.get('kind')=='workspace.edit' else {}
+            if record.get('kind')=='ledger.test.local_a2':
+                extra={'local_a2_inputs':record['inputs']}
             value=provision_task.task_input(self.config,record['operation_id'],record['principal_id'],record['serial'],**extra)
             publish(attempt/'input.json',value)
             installation=self.config['installation'];programs=installation['installed']['programs']

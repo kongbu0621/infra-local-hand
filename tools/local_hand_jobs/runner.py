@@ -27,11 +27,11 @@ import time
 from typing import Mapping
 
 if __package__:
-    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader, workspace_jobs
+    from . import bootstrap, bootstrap_roots, budget, ledger_jobs, local_a2_jobs, manager_binding, result_reader, workspace_jobs
     from .contract import JobError
 else:  # fixed -I script entry: importing only this installed sibling
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, manager_binding, result_reader, workspace_jobs
+    from local_hand_jobs import bootstrap, bootstrap_roots, budget, ledger_jobs, local_a2_jobs, manager_binding, result_reader, workspace_jobs
     from local_hand_jobs.contract import JobError
 
 
@@ -1791,6 +1791,14 @@ def _helper(plan):
         observation = _interpreter_temp_check(python, plan, directory,
             log_limit=remaining_logs, remaining=remaining_time(), observations=output["stages"], deadline=deadline)
         remaining_logs -= sum(observation["bytes_retained"].values())
+    def check_local_a2_runtime():
+        nonlocal remaining_logs
+        output["facts"].update(local_a2_jobs.verify_inputs(plan))
+        observed = _capture_stage(local_a2_jobs.runtime_probe_stage(plan), directory,
+                                  remaining_logs, remaining_time(), deadline)
+        output["stages"].append(observed)
+        remaining_logs -= sum(observed["bytes_retained"].values())
+        output["facts"].update(local_a2_jobs.finish_runtime_probe(plan, directory, observed))
     try:
         # Verify that requested namespace settings actually became effective.
         # systemd documents that user-manager mount isolation needs PrivateUsers.
@@ -1813,14 +1821,21 @@ def _helper(plan):
                        "filesystems": {key: {field: _mount_for(path)[field] for field in ("source", "root", "type")}
                                        for key, path in plan["roots"].items()}}
         output["facts"]["environment_fingerprint"] = hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()
+        if plan["kind"] == local_a2_jobs.KIND:
+            output["facts"]["environment"] = environment
         if plan.get("storage"):
             output["facts"]["storage_mount"] = _verify_storage_namespace(plan)
         if phase == "preflight":
             if plan["kind"] == "workspace.edit":
                 output["facts"].update(workspace_jobs.verify_inputs(plan))
+            elif plan["kind"] == local_a2_jobs.KIND:
+                check_local_a2_runtime()
             else:
                 output["facts"].update(ledger_jobs.verify_inputs(plan))
-            interpreters = [plan["python"]] if plan["kind"] in ("host.inspect", "ledger.prepare", "workspace.edit") else [plan["prepared"]["build_python"], plan["prepared"]["runtime_python"]]
+            if plan["kind"] == local_a2_jobs.KIND:
+                interpreters = [plan["local_a2_runtime"]["runtime_python"]]
+            else:
+                interpreters = [plan["python"]] if plan["kind"] in ("host.inspect", "ledger.prepare", "workspace.edit") else [plan["prepared"]["build_python"], plan["prepared"]["runtime_python"]]
             for python in sorted(set(interpreters)): check_interpreter(python)
             output.update(outcome="SUCCEEDED", effects_checked=True)
         elif phase == "evidence":
@@ -1866,6 +1881,8 @@ def _helper(plan):
             # source mappings remain read-only in this namespace for all stages.
             if plan["kind"] == "workspace.edit":
                 output["facts"].update(workspace_jobs.verify_inputs(plan))
+            elif plan["kind"] == local_a2_jobs.KIND:
+                check_local_a2_runtime()
             else:
                 output["facts"].update(ledger_jobs.verify_inputs(plan))
             if plan["kind"] == "host.inspect":
@@ -1880,6 +1897,8 @@ def _helper(plan):
                 output["business_started"] = True
                 if plan["kind"] == "workspace.edit":
                     workspace_result = workspace_jobs.prepare_edit(plan, directory)
+                elif plan["kind"] == local_a2_jobs.KIND:
+                    local_a2_jobs.prepare_run(plan, directory)
                 else:
                     ledger_jobs.copy_verified_source(plan)
                 checked = set()
@@ -1898,6 +1917,8 @@ def _helper(plan):
                                                                       output["outcome"] == "SUCCEEDED")
                     if not output["workspace"]["edited_file_unchanged_by_validation"]:
                         output["outcome"] = "FAILED"
+                if plan["kind"] == local_a2_jobs.KIND and output["outcome"] == "SUCCEEDED":
+                    output["local_a2"] = local_a2_jobs.finish_run(plan, directory, observed)
                 if plan["kind"] == "ledger.test.resources" and output["outcome"] == "SUCCEEDED":
                     suite = plan["inputs"]["suite"]
                     details = ledger_jobs.resource_result(suite, (directory / (suite + ".stdout")).read_text(), (directory / (suite + ".stderr")).read_text(), 0)
@@ -1943,7 +1964,12 @@ def _helper(plan):
                                       "code": getattr(error, "code", "IO_UNCERTAIN")}
             if phase not in ("business", "reconcile") or output["effects_checked"] is not True:
                 output.update(outcome="FAILED", effects_checked=False, error=type(error).__name__)
-    output["bindings"] = dict(output.get("prepared", {}).get("bindings", plan.get("prepared", {}).get("bindings", {})))
+    output["bindings"] = (dict(plan["bindings"]) if plan["kind"] == local_a2_jobs.KIND else
+        dict(output.get("prepared", {}).get("bindings", plan.get("prepared", {}).get("bindings", {}))))
+    if plan["kind"] == local_a2_jobs.KIND:
+        for name in ("installed_payload_digest", "runtime_python_digest", "console_script_digest"):
+            if name in output["facts"]:
+                output["bindings"][name] = output["facts"][name]
     output["bindings"]["environment_fingerprint"] = output["facts"].get("environment_fingerprint")
     target = Path(plan["result_path"])
     members = []

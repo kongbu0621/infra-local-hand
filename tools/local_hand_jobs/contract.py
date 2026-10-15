@@ -23,8 +23,9 @@ MAX_DEPTH = 8
 KINDS = (
     "host.inspect", "ledger.prepare", "ledger.test.source",
     "ledger.test.resources", "ledger.test.installed_local", "ledger.nas.roundtrip", "workspace.edit",
+    "ledger.test.local_a2",
 )
-OPTIONAL_KINDS = frozenset({"workspace.edit"})
+OPTIONAL_KINDS = frozenset({"workspace.edit", "ledger.test.local_a2"})
 # Retain the wire kind for historical records, but do not offer or admit new
 # NAS work while its execution adapter is unavailable and core work is pending.
 DISABLED_JOB_KINDS = frozenset(("ledger.nas.roundtrip",))
@@ -179,6 +180,7 @@ EXPECTED_SCHEMA = _object({"node_id": REF, "install_uuid": UUID, "deployment_epo
                            "profile_digest": DIGEST, "policy_digest": DIGEST, "registry_digest": DIGEST})
 INPUT_SCHEMAS = {
     "host.inspect": _object({}),
+    "ledger.test.local_a2": _object({"runtime_ref": REF}),
     "workspace.edit": _object({"source_ref": REF, "relative_path": {"type": "string", "maxLength": 256},
         "expected_sha256": DIGEST, "content": {"type": "string", "maxLength": MAX_WORKSPACE_TEXT_BYTES}, "validation_ref": REF}),
     "ledger.prepare": _object({"source_ref": REF, "build_cache_ref": REF}),
@@ -209,6 +211,9 @@ TOOL_SCHEMAS = {
                  "retry_failed": {"const": True}}, ("operation_id", "kind", "profile_ref")),
         _object({"operation_id": UUID4, "kind": {"const": "workspace.edit"}, "profile_ref": REF,
                  "inputs": INPUT_SCHEMAS["workspace.edit"], "retry_failed": {"const": True}},
+                ("operation_id", "kind", "profile_ref", "inputs")),
+        _object({"operation_id": UUID4, "kind": {"const": "ledger.test.local_a2"}, "profile_ref": REF,
+                 "inputs": INPUT_SCHEMAS["ledger.test.local_a2"], "retry_failed": {"const": True}},
                 ("operation_id", "kind", "profile_ref", "inputs")),
     ]},
     # Advertise only enabled submissions; SUBMIT_SCHEMA still decodes retained

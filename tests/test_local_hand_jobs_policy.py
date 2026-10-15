@@ -18,6 +18,8 @@ from test_local_hand_jobs_contract import submit_fixture
 
 def policy_fixture(root):
     root = Path(root)
+    # This existing fixture models a deployment without an installed A2 runtime.
+    kinds = [kind for kind in KINDS if kind != "ledger.test.local_a2"]
     budget = dict(wall_seconds=60, terminate_grace_seconds=2, cpu_seconds=30,
         memory_bytes=1024 * 1024, processes=8, temporary_bytes=4096, nas_bytes=4096,
         log_bytes=4096, reservation_bytes=65536)
@@ -28,8 +30,8 @@ def policy_fixture(root):
         "storages": {"storage": {"config": str(root / "storage-config.json"), "config_digest": "b" * 64,
             "resource_id": "archive-resource", "archive_root": str(root / "synthetic-archive"),
             "stable_mount_binding": {"source": "synthetic-storage:/archive", "root": "/", "type": "nfs4", "device": 5, "inode": 10}}},
-        "budgets": {kind: dict(budget) for kind in (*KINDS, "reconcile")}, "resource_ids": ["fixture-work"]}
-    grant = {"scopes": sorted(set(TOOL_SCOPES.values())), "profiles": {"fixture": {"kinds": list(KINDS),
+        "budgets": {kind: dict(budget) for kind in (*kinds, "reconcile")}, "resource_ids": ["fixture-work"]}
+    grant = {"scopes": sorted(set(TOOL_SCOPES.values())), "profiles": {"fixture": {"kinds": kinds,
         "source_refs": ["source"], "build_cache_refs": ["cache"], "storage_refs": ["storage"], "prepared_refs": [], "prepared_access": "owned"}}}
     return {"schema_version": "lh-policy-v1", "authority_id": "fixture-authority", "node_id": "fixture-node",
         "install_uuid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "deployment_epoch": 1, "generation": 1,
@@ -301,7 +303,7 @@ class PolicyAndRegistryTests(unittest.TestCase):
 
     def test_discovery_only_offers_local_jobs_even_with_legacy_nas_grant(self):
         profile = self.policy.capabilities(self.owner)["profiles"][0]
-        self.assertEqual(set(profile["allowed_kinds"]), set(KINDS) - {"ledger.nas.roundtrip"})
+        self.assertEqual(set(profile["allowed_kinds"]), set(KINDS) - {"ledger.nas.roundtrip", "ledger.test.local_a2"})
         self.assertEqual(set(profile["budgets"]), set(profile["allowed_kinds"]))
         self.assertEqual(profile["storage_refs"], [])
         # Discovery does not rewrite admission identities or historical grants.

@@ -174,11 +174,24 @@ class Policy:
             _ref(ref)
             _keys(profile, {"work_root", "evidence_root", "temporary_root", "python", "sources", "build_caches",
                 "storages", "budgets", "resource_ids"}, {"execution_admission", "display_name",
-                "bootstrap_slots", "bootstrap_evidence_store", "workspace_git"})
+                "bootstrap_slots", "bootstrap_evidence_store", "workspace_git", "local_a2_runtimes"})
             if "workspace_git" in profile:
                 _keys(profile["workspace_git"], {"path", "sha256"})
                 readonly.append(_path(profile["workspace_git"]["path"]))
                 _digest(profile["workspace_git"]["sha256"])
+            if "local_a2_runtimes" in profile:
+                from .local_a2_jobs import validate_runtime
+                runtimes = profile["local_a2_runtimes"]
+                if type(runtimes) is not dict or len(runtimes) > 100:
+                    raise _bad()
+                for runtime_ref, runtime in runtimes.items():
+                    _ref(runtime_ref)
+                    try:
+                        validate_runtime(runtime)
+                    except (ValueError, TypeError, KeyError):
+                        raise _bad() from None
+                    readonly.extend(runtime[key] for key in
+                                    ("source_root", "runtime_root", "wheel", "runtime_python_realpath"))
             for field in ("work_root", "evidence_root", "temporary_root", "python"):
                 _path(profile[field])
             roots = [profile[field] for field in ("work_root", "evidence_root", "temporary_root")]
@@ -306,13 +319,17 @@ class Policy:
             for profile_ref, access in grant["profiles"].items():
                 if profile_ref not in config["profiles"]:
                     raise _bad()
-                _keys(access, {"kinds", "source_refs", "build_cache_refs", "storage_refs", "prepared_refs", "prepared_access"})
+                _keys(access, {"kinds", "source_refs", "build_cache_refs", "storage_refs", "prepared_refs", "prepared_access"},
+                      {"runtime_refs"})
                 _refs(access["kinds"], set(KINDS))
                 profile = config["profiles"][profile_ref]
                 if not set(access["kinds"]) <= set(profile["budgets"]):
                     raise _bad()
                 for field, category in (("source_refs", "sources"), ("build_cache_refs", "build_caches"), ("storage_refs", "storages")):
                     _refs(access[field], set(profile[category]))
+                _refs(access.get("runtime_refs", []), set(profile.get("local_a2_runtimes", {})))
+                if "ledger.test.local_a2" in access["kinds"] and not access.get("runtime_refs"):
+                    raise _bad()
                 _refs(access["prepared_refs"])
                 if access["prepared_access"] not in ("owned", "listed"):
                     raise _bad()
@@ -465,6 +482,12 @@ class Policy:
             files.append(profile["python"])
             directories.extend(item["root"] for category in ("sources", "build_caches") for item in profile[category].values())
             protected_sources.update(item['root'] for item in profile['sources'].values() if 'validations' in item)
+            for runtime in profile.get("local_a2_runtimes", {}).values():
+                directories.extend(runtime[key] for key in ("source_root", "runtime_root"))
+                protected_sources.update(runtime[key] for key in ("source_root", "runtime_root"))
+                # The runtime module separately pins its explicitly admitted
+                # venv interpreter link; do not replace it with system Python.
+                files.extend(runtime[key] for key in ("wheel", "runtime_python_realpath"))
             # Do not touch NAS here: source/content and mounts require registered
             # supervised preflight. Only lexical path admission occurs at load.
         try:
@@ -503,6 +526,9 @@ class Policy:
             for field, allowed in (("source_ref", "source_refs"), ("build_cache_ref", "build_cache_refs"), ("storage_ref", "storage_refs")):
                 if field in request.get("inputs", {}) and request["inputs"][field] not in access[allowed]:
                     raise JobError("UNAUTHORIZED", "Logical input is not granted")
+            runtime_ref = request.get("inputs", {}).get("runtime_ref")
+            if runtime_ref is not None and runtime_ref not in access.get("runtime_refs", ()):
+                raise JobError("UNAUTHORIZED", "Installed runtime is not granted")
             prepared_ref = request.get("inputs", {}).get("prepared_ref")
             if prepared_ref is not None and access["prepared_access"] == "listed" and prepared_ref not in access["prepared_refs"]:
                 raise JobError("UNAUTHORIZED", "Prepared reference is not granted")
@@ -550,6 +576,8 @@ class Policy:
                 "source_refs": list(access["source_refs"]), "build_cache_refs": list(access["build_cache_refs"]),
                 "storage_refs": [], "prepared_refs": prepared_refs,
                 "budgets": {kind: thaw(self.profiles[ref]["budgets"][kind]) for kind in kinds}})
+            if "ledger.test.local_a2" in kinds:
+                profiles[-1]["runtime_refs"] = list(access["runtime_refs"])
         version = hashlib.sha256(canonical_bytes({"principal": principal.principal_id,
                     "policy": self.policy_digest, "profiles": profiles})).hexdigest()
         offset = 0

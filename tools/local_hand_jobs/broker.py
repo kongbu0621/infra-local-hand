@@ -458,6 +458,7 @@ class Broker:
     def recover(self):
         """Crash recovery records uncertainty; never reissues a persisted intent."""
         from . import quota_binding
+        from .preflight_completion import supports_local_completion
         from .stopped_completion import complete_stopped_execution
         from .evidence_recovery import release_completed_evidence
         # A committed closure already has the complete original exit evidence.
@@ -488,7 +489,7 @@ class Broker:
                         bindings.check(self.manager_binding, handle.get("manager_binding"))
                         proof = quota_binding.original(tx, row, phase, "QUOTA_EXIT_PENDING", "quota_pending")["proof"]
                         execution = row["namespace"] + "-" + row["id"] + "-" + phase
-                        recovered_exit = (row["namespace"] == "job" and row["request"]["kind"] in ("host.inspect", "workspace.edit")
+                        recovered_exit = (row["namespace"] == "job" and supports_local_completion(row, tx=tx)
                             and phase in ("business", "evidence") and record.get("recovered") is True
                             and self.task_session is not None and self.task_session.value["mode"] == "recover"
                             and proof.get("collectors_stopped") is False

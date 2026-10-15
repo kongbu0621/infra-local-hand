@@ -92,6 +92,79 @@ To run the affected checks with the verified optional wheel installed:
 Without that wheel, the consumer integration tests are explicitly skipped;
 the local bundle validation tests still run on Linux.
 
+## Run the installed Ledger A2 local check
+
+`ledger.test.local_a2` is an optional fixed job for continuing Ledger's installed
+snapshot/recovery acceptance with an existing runtime. It executes the pinned
+`tests/installed_snapshot_walkthrough.py` once, using that venv's Python with
+`-I -B`, a new task-owned `local-parent`, and the registered source commit. It
+passes no storage configuration and does not enable NAS jobs. The eight required
+calls are API and CLI `create`, `verify`, `restore`, and `check_restore`.
+
+Before preparing a new task, reuse any retained result that already covers the
+same installation and execution environment. Keep an uncertain attempt on its
+original operation ID and query it; do not prepare a replacement just because a
+response was lost. A failed run retains its synthetic directories and logs.
+
+The operator registers the existing runtime in the protected resident manager
+configuration under `local_a2.runtimes[REF]`. Each descriptor has these fields:
+
+| Fields | Binding |
+| --- | --- |
+| `source_root`, `source_commit`, `source_blobs` | Retained Ledger source and actual build-source SHA; all 17 runtime modules plus the fixed smoke script, using `local_a2_jobs.SOURCE_BLOBS` |
+| `runtime_root`, `runtime_python`, `runtime_python_realpath`, `runtime_python_sha256` | Existing isolated venv, its original Python invocation path, and the explicitly resolved interpreter bytes |
+| `venv_config_sha256`, `console_script_sha256` | Existing `pyvenv.cfg` and `bin/artifact-ledger` entry point |
+| `package_root` | Installed `infra_artifact_ledger` package directory inside that venv |
+| `wheel`, `wheel_sha256` | Retained wheel file and SHA-256, compared with source and installed payload |
+
+The descriptor is a trusted operator registration, not a caller claim that an
+arbitrary venv was produced by `ledger.prepare`. The source commit must come from
+the retained build record; the smoke script itself does not attest a Git commit.
+Preflight verifies fixed source bytes, wheel and installed module contents,
+interpreter and entry point. A bounded probe uses the same interpreter with
+`-I -S -B` to compare existing package bytecode with compilation of the verified
+source. The runtime must exclude system site packages and unregistered Python
+startup hooks. Original files remain read-only; the venv is not rebuilt, copied,
+or cleaned. Private paths and build receipts stay in the deployment.
+
+The same manager `local_a2` object supplies explicit `budgets`, `limits`, and
+per-role `quotas` in the existing resident preparation format. `budgets.nas_bytes`
+must be zero; the existing three-phase resource checks remain in force. The ordinary MCP
+adapter descriptor has only `local_a2: {"runtime_refs": [REF], "budgets": BUDGET}`;
+it never receives the private runtime descriptor. Preparation creates a task
+policy with only the selected runtime and grants `runtime_refs` for that task.
+Old deployment descriptors need no new field. Omitting this registration leaves
+the capability unavailable.
+
+Use the existing private maintenance procedure to install the reviewed Hand
+revision and update these two configurations, preserving historical installs,
+task catalogs, ledgers and evidence. Refresh the connected tool schema after the
+service update. Do not use `workspace.edit` to change the running service or to
+execute a shell command. No new maintenance endpoint is required.
+
+Then use the direct MCP tools:
+
+1. Read `lh_capabilities`; require `ledger.test.local_a2` and the intended
+   `runtime_ref` in the returned profile.
+2. Call `lh_job_prepare` with a new UUID, that `profile_ref`,
+   `kind="ledger.test.local_a2"`, and `inputs={"runtime_ref": REF}`. Poll
+   `PREPARING` with the same inputs and UUID. Preparation does not run Ledger.
+3. Submit the exact `READY.request` once, and query that operation until exit and
+   durable sealing. Cancellation and interrupted-response recovery use the
+   existing task tools and original request digest.
+4. Fetch and verify the complete evidence bundle. Require the fixed script's
+   strict PASS report, all eight calls, matching installed identity, and the
+   actual execution filesystem. Record `nas_publish_flow=NOT_RUN` and
+   `nas_loss_exercise=NOT_RUN` separately from the local result.
+
+The scratch parent **inside the execution namespace** must be actual ext4, XFS,
+or Btrfs supported by Ledger. Its production filesystem check rejects overlay
+and tmpfs before creating synthetic data. The registered outer task deadline and
+resource limits remain authoritative; the script's per-operation timeout is not
+a promise about whole-task elapsed time. Source tests and modeled quota/service
+tests do not establish this installed or field result. This job does not replace
+the separate Ledger resource-boundary or NAS acceptance work.
+
 ## Land a verified workspace edit locally
 
 After verifying a completed `workspace.edit` evidence bundle, extract its

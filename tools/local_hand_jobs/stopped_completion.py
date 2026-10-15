@@ -27,9 +27,9 @@ def complete_stopped_business_start(broker, tx, row):
 
 
 def complete_cancelled_inspection(broker, tx, row):
-    """Finish a stopped host.inspect helper without collecting a new result.
+    """Finish a stopped bounded local helper without collecting a new result.
 
-    The fixed inspection has no external write stages. Its owned local files
+    The admitted operation has no external write stages. Its owned local files
     remain protected, so a proved stopped writer can release the execution
     lease. Neither its exit code nor cancellation establishes a business result:
     keep UNKNOWN unless recovery retained an exact verified result. Preserve
@@ -123,7 +123,7 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
     previous = ["preflight"] if phase == "business" else ["preflight", "business"]
     expected_phases = previous + [phase]
     closed_phases = expected_phases if record["phase"] == "EXITED" else previous
-    if (row["namespace"] != "job" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
+    if (row["namespace"] != "job" or not preflight_completion.supports_local_completion(row, tx=tx)
             or record["phase"] not in (phase.upper(), "EXITED") or record["lifecycle"] == "TERMINAL"
             or not (record["cancel_requested"] is True or recovery)
             or (helper_delivered is False and record.get("business_started") is True)
@@ -141,7 +141,9 @@ def _complete_stopped_phase(broker, tx, row, *, helper_delivered, phase="busines
                 or execution_plan.get("stages") != []
                 or any(execution_plan.get(key) for key in ("source", "storage", "build_cache", "prepared"))
                 or sorted(execution_plan.get("writable", [])) != sorted(execution_plan["roots"].values()))
-        if not inspection and not (row['request']['kind']=='workspace.edit' and local_effects_only(row['plan'])):
+        workspace = row["request"]["kind"] == "workspace.edit" and local_effects_only(row["plan"])
+        local_a2 = row["request"]["kind"] == "ledger.test.local_a2"  # bounded plan and facts checked above
+        if not (inspection or workspace or local_a2):
             return False
     if quota_binding.admission_version(tx, row) != 1:
         return False

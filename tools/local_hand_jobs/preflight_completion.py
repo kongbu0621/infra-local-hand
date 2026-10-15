@@ -12,6 +12,33 @@ from . import quota_binding, quota_closure
 from .contract import JobError
 
 
+def supports_local_completion(row, *, tx=None, runtime_verified=True):
+    """Keep legacy completion rules; admit A2 only with its bounded plan proof.
+
+    A preflight stopped before business may lack a runtime verification result.
+    Once business can have run, require facts matching the original completed
+    preflight event as well as the fixed scratch-only execution declaration.
+    This predicate does not prove exit, effects, or a business result; each
+    caller still does.
+    """
+    kind = row["request"]["kind"]
+    if kind in ("host.inspect", "workspace.edit"):
+        return True
+    if kind != "ledger.test.local_a2" or row["plan"].get("kind") != kind:
+        return False
+    from .local_a2_jobs import local_effects_only
+    facts = row["record"].get("facts", {}) if runtime_verified else None
+    if runtime_verified:
+        if type(facts) is not dict or tx is None:
+            return False
+        original = [json.loads(event["data_json"]) for event in tx.execute(
+            "SELECT data_json FROM events WHERE namespace='job' AND id=? AND kind='PREFLIGHT_COMPLETE'",
+            (row["id"],))]
+        if len(original) != 1 or original[0].get("facts") != facts:
+            return False
+    return local_effects_only(row["plan"].get("execution", {}), facts)
+
+
 def complete_stopped_preflight(broker, tx, row):
     """Trusted ledger transition, also usable with a retained installation.
 
@@ -20,7 +47,7 @@ def complete_stopped_preflight(broker, tx, row):
     must already establish stopped writers and blocked future starts.
     """
     record = row["record"]
-    if (row["namespace"] != "job" or row["request"]["kind"] not in ("host.inspect", "workspace.edit")
+    if (row["namespace"] != "job" or not supports_local_completion(row, tx=tx, runtime_verified=False)
             or record["phase"] not in ("PREFLIGHT", "EXITED") or record["lifecycle"] == "TERMINAL"
             or not (record["cancel_requested"] or record.get("recovered"))
             or record.get("business_started") is not False

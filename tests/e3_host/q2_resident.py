@@ -506,7 +506,7 @@ def prepare_request(value, broker):
     require(type(pin["scopes"]) is list and len(set(pin["scopes"])) == len(pin["scopes"])
             and set(pin["scopes"]) == scopes, "RESIDENT_SCOPES")
     request = contract.validate_submit(value["request"])
-    require(request["kind"] in ("host.inspect", "workspace.edit")
+    require(request["kind"] in ("host.inspect", "workspace.edit", "ledger.test.local_a2")
             and fixture_phases(value), "RESIDENT_SYNTHETIC_REQUEST")
     principal = contract.Principal(pin["principal_id"], frozenset(pin["scopes"]))
     broker.submit(request, principal)
