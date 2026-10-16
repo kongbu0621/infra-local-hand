@@ -361,6 +361,13 @@ def startup_bytes(path):
         if len(raw) != before.st_size or identity(before) != identity(os.fstat(stream.fileno())) or identity(before) != identity(path.stat(follow_symlinks=False)):
             raise ValueError('runtime startup file changed')
         return raw
+# Python 3.11/3.12 defer venv prefix setup to site.venv(), which -S
+# deliberately skips. Debian's getsitepackages() consults those prefixes even
+# when passed an explicit root. Reproduce only that already-verified venv
+# binding; calling site.venv() would execute startup hooks before inspection.
+if pathlib.Path(sys.executable).absolute().parent.parent != runtime_root:
+    raise ValueError('runtime interpreter invocation differs from registration')
+sys.prefix = sys.exec_prefix = str(runtime_root)
 site_directories = []
 for candidate in site.getsitepackages([str(runtime_root)]):
     candidate = pathlib.Path(candidate).resolve()
@@ -385,9 +392,23 @@ for candidate in site.getsitepackages([str(runtime_root)]):
 if package_root.parent not in site_directories:
     raise ValueError('registered package is outside interpreter site directories')
 search = list(sys.path) + [str(path) for path in site_directories]
+startup_bytecode = []
 for name in ('sitecustomize', 'usercustomize'):
-    if importlib.machinery.PathFinder.find_spec(name, search) is not None:
+    startup = importlib.machinery.PathFinder.find_spec(name, search)
+    if startup is None:
+        continue
+    # Ubuntu's standard-library hook is inert in an isolated venv without
+    # apport. Admit only its exact source in the trusted stdlib location,
+    # prove the optional import is absent, and check its selected cache below.
+    inert_apport = (b'# install the apport exception handler if available\n'
+        b'try:\n    import apport_python_hook\nexcept ImportError:\n    pass\n'
+        b'else:\n    apport_python_hook.install()\n')
+    if (name != 'sitecustomize' or startup.origin is None or startup.cached is None
+            or pathlib.Path(startup.origin) != pathlib.Path(site.__file__).parent / 'sitecustomize.py'
+            or startup_bytes(pathlib.Path(startup.origin).resolve()) != inert_apport
+            or importlib.machinery.PathFinder.find_spec('apport_python_hook', search) is not None):
         raise ValueError('unregistered runtime startup module')
+    startup_bytecode.append((pathlib.Path(startup.cached), inert_apport))
 spec = importlib.machinery.PathFinder.find_spec('infra_artifact_ledger', search)
 if (spec is None or spec.origin is None or spec.submodule_search_locations is None
         or pathlib.Path(spec.origin).resolve() != package_root / '__init__.py'
@@ -433,6 +454,18 @@ def same_code(actual, expected):
         return False
     return all(same_code(left, right) for left, right in zip(actual.co_consts, expected.co_consts)
                if isinstance(left, types.CodeType))
+def verify_cache(path, source):
+    if not path.exists() and not path.is_symlink():
+        return
+    raw = read(path)
+    if len(raw) < 16 or raw[:4] != importlib.util.MAGIC_NUMBER or int.from_bytes(raw[4:8], 'little') not in (0, 1, 3):
+        raise ValueError('invalid installed bytecode header')
+    payload = io.BytesIO(raw[16:])
+    actual = marshal.load(payload)
+    if payload.tell() != len(raw) - 16 or not isinstance(actual, types.CodeType):
+        raise ValueError('invalid installed bytecode payload')
+    expected = compile(source, actual.co_filename, 'exec', dont_inherit=True, optimize=0)
+    if not same_code(actual, expected): raise ValueError('installed bytecode differs from source')
 cache = root / '__pycache__'
 if cache.exists() or cache.is_symlink():
     if not cache.is_dir() or cache.resolve() != cache: raise ValueError('linked bytecode cache')
@@ -444,15 +477,9 @@ if cache.exists() or cache.is_symlink():
         path = pathlib.Path(importlib.util.cache_from_source(str(source), optimization=''))
         if not path.exists() and not path.is_symlink():
             continue
-        raw = read(path)
-        if len(raw) < 16 or raw[:4] != importlib.util.MAGIC_NUMBER or int.from_bytes(raw[4:8], 'little') not in (0, 1, 3):
-            raise ValueError('invalid installed bytecode header')
-        payload = io.BytesIO(raw[16:])
-        actual = marshal.load(payload)
-        if payload.tell() != len(raw) - 16 or not isinstance(actual, types.CodeType):
-            raise ValueError('invalid installed bytecode payload')
-        expected = compile(read(source), actual.co_filename, 'exec', dont_inherit=True, optimize=0)
-        if not same_code(actual, expected): raise ValueError('installed bytecode differs from source')
+        verify_cache(path, read(source))
+for path, source in globals().get('startup_bytecode', ()):
+    verify_cache(path, source)
 print('LOCAL_A2_BYTECODE_VERIFIED')
 '''
 
