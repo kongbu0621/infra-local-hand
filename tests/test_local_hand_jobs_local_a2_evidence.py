@@ -64,6 +64,13 @@ class HelperManager(integration.SyntheticManager):
 
 
 class LocalA2EvidenceTests(unittest.TestCase):
+    def setUp(self):
+        # HelperManager runs the helper directly, without systemd applying
+        # runner's UMask=0077. Match that boundary and restore the caller's
+        # setting so this test does not depend on the invoking shell.
+        previous_umask = os.umask(0o077)
+        self.addCleanup(os.umask, previous_umask)
+
     def test_real_registry_helper_result_is_sealed_and_read_back_with_all_bindings(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

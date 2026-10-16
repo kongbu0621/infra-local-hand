@@ -397,18 +397,21 @@ for name in ('sitecustomize', 'usercustomize'):
     startup = importlib.machinery.PathFinder.find_spec(name, search)
     if startup is None:
         continue
-    # Ubuntu's standard-library hook is inert in an isolated venv without
-    # apport. Admit only its exact source in the trusted stdlib location,
-    # prove the optional import is absent, and check its selected cache below.
+    # Distributions ship either an empty standard-library customization file
+    # or this hook, inert in an isolated venv without apport. Admit only those
+    # exact sources at the trusted location and check the selected cache below.
     inert_apport = (b'# install the apport exception handler if available\n'
         b'try:\n    import apport_python_hook\nexcept ImportError:\n    pass\n'
         b'else:\n    apport_python_hook.install()\n')
     if (name != 'sitecustomize' or startup.origin is None or startup.cached is None
-            or pathlib.Path(startup.origin) != pathlib.Path(site.__file__).parent / 'sitecustomize.py'
-            or startup_bytes(pathlib.Path(startup.origin).resolve()) != inert_apport
-            or importlib.machinery.PathFinder.find_spec('apport_python_hook', search) is not None):
+            or pathlib.Path(startup.origin) != pathlib.Path(site.__file__).parent / 'sitecustomize.py'):
         raise ValueError('unregistered runtime startup module')
-    startup_bytecode.append((pathlib.Path(startup.cached), inert_apport))
+    startup_source = startup_bytes(pathlib.Path(startup.origin).resolve())
+    if (startup_source not in (b'', inert_apport)
+            or (startup_source == inert_apport
+                and importlib.machinery.PathFinder.find_spec('apport_python_hook', search) is not None)):
+        raise ValueError('unregistered runtime startup module')
+    startup_bytecode.append((pathlib.Path(startup.cached), startup_source))
 spec = importlib.machinery.PathFinder.find_spec('infra_artifact_ledger', search)
 if (spec is None or spec.origin is None or spec.submodule_search_locations is None
         or pathlib.Path(spec.origin).resolve() != package_root / '__init__.py'

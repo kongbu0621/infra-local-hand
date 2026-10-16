@@ -134,11 +134,12 @@ standard `distutils-precedence.pth`; the fixed environment sets
 `SETUPTOOLS_USE_DISTUTILS=stdlib` for both the walkthrough and its CLI children,
 so that file does not load `_distutils_hack`. On Debian/Ubuntu Python 3.11/3.12,
 the probe restores the verified venv prefixes before asking the interpreter for
-site directories, without running site initialization. The exact standard-library
-Apport `sitecustomize.py` is also admitted only when `apport_python_hook` is absent
-from the actual import search and its selected bytecode matches the inert source;
-other startup modules remain rejected. A shadow `bin/pyvenv.cfg` or an
-`._pth` search-path override beside the invoked or resolved interpreter is
+site directories, without running site initialization. A standard-library
+`sitecustomize.py` is admitted only when it is exactly empty, or contains the
+exact Apport hook with `apport_python_hook` absent from the actual import search.
+In either case its selected bytecode must match that inert source; an empty
+source cannot hide executable cached code. Other startup modules remain rejected.
+A shadow `bin/pyvenv.cfg` or an `._pth` search-path override beside the invoked or resolved interpreter is
 rejected before starting that interpreter. The base interpreter and its standard
 library remain trusted deployment inputs. Original files remain read-only; the
 venv is not rebuilt, copied, or cleaned. Private paths and build receipts stay in

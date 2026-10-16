@@ -1,5 +1,7 @@
 """Use a real isolated interpreter to bind the checked package to its import path."""
 from pathlib import Path
+import importlib.util
+import marshal
 import py_compile
 import shutil
 import subprocess
@@ -41,11 +43,20 @@ class LocalA2SiteBindingTests(unittest.TestCase):
         self.plan["bindings"]["runtime_descriptor_digest"] = a2.descriptor_digest(self.plan["local_a2_runtime"])
         return actual, decoy
 
-    def distribution_probe(self):
+    def distribution_probe(self, *, initialize_site=False):
         stage = a2.runtime_probe_stage(self.plan)
         stdlib = self.root / 'stdlib'
         stage['argv'][5] = ('import site, sys\nsite.__file__ = %r\n'
             'sys.path.insert(0, %r)\n' % (str(stdlib / 'site.py'), str(stdlib))) + stage['argv'][5]
+        if initialize_site:
+            stage['argv'][5] += '''
+site.main()
+import infra_artifact_ledger
+assert 'sitecustomize' in sys.modules
+assert 'apport_python_hook' not in sys.modules
+assert sys.prefix != sys.base_prefix
+assert pathlib.Path(infra_artifact_ledger.__file__).resolve() == package_root / '__init__.py'
+'''
         self.probe_count += 1
         directory = self.evidence / ('probe-' + str(self.probe_count))
         directory.mkdir()
@@ -71,6 +82,94 @@ class LocalA2SiteBindingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.distribution_probe()
         self.assertFalse(marker.exists())
+
+    def test_inert_stdlib_symlink_and_cache_match_actual_site_initialization(self):
+        source = self.apport_fixture()
+        target = self.root / 'distribution-sitecustomize.py'
+        source.rename(target)
+        source.symlink_to(target)
+        # The packaged Ubuntu file is a stdlib symlink into /etc; Python
+        # selects the cache beside the original stdlib name, not its target.
+        for cached in (False, True):
+            if cached:
+                py_compile.compile(str(source), doraise=True)
+            before = target.read_bytes()
+            with self.subTest(cached=cached):
+                self.assertTrue(self.distribution_probe(initialize_site=True)['local_a2_runtime_verified'])
+                self.assertEqual(before, target.read_bytes())
+
+    def test_apport_namespace_package_is_rejected_without_initialization(self):
+        source = self.apport_fixture()
+        (source.parent / 'apport_python_hook').mkdir()
+        with self.assertRaises(ValueError):
+            self.distribution_probe()
+
+    def test_empty_stdlib_customization_is_inert_even_when_apport_is_available(self):
+        source = self.apport_fixture()
+        source.write_bytes(b'')
+        marker = self.root / 'unused-apport-executed'
+        (source.parent / 'apport_python_hook.py').write_text(
+            "from pathlib import Path; Path(%r).write_text('unexpected')\n" % str(marker))
+        for cached in (False, True):
+            if cached:
+                py_compile.compile(str(source), doraise=True)
+            with self.subTest(cached=cached):
+                self.assertTrue(self.distribution_probe(initialize_site=True)['local_a2_runtime_verified'])
+                self.assertFalse(marker.exists())
+                self.assertEqual(b'', source.read_bytes())
+
+    def test_empty_stdlib_source_cannot_hide_executable_unchecked_cache(self):
+        source = self.apport_fixture()
+        marker = self.root / 'empty-source-cache-executed'
+        source.write_text("from pathlib import Path; Path(%r).write_text('unexpected')\n" % str(marker))
+        py_compile.compile(str(source), doraise=True,
+                           invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+        source.write_bytes(b'')
+        cache = Path(importlib.util.cache_from_source(str(source)))
+        original = cache.read_bytes()
+        with self.assertRaises(ValueError):
+            self.distribution_probe(initialize_site=True)
+        self.assertFalse(marker.exists())
+        self.assertEqual(original, cache.read_bytes())
+
+    def test_unchecked_startup_cache_cannot_replace_inert_source(self):
+        source = self.apport_fixture()
+        cache = Path(importlib.util.cache_from_source(str(source)))
+        cache.parent.mkdir()
+        marker = self.root / 'cache-executed'
+        payload = compile("from pathlib import Path; Path(%r).write_text('unexpected')\n"
+                          % str(marker), str(source), 'exec')
+        raw = (importlib.util.MAGIC_NUMBER + (1).to_bytes(4, 'little')
+               + importlib.util.source_hash(source.read_bytes()) + marshal.dumps(payload))
+        cache.write_bytes(raw)
+        with self.assertRaises(ValueError):
+            self.distribution_probe(initialize_site=True)
+        self.assertFalse(marker.exists())
+        self.assertEqual(raw, cache.read_bytes())
+
+    def test_linked_startup_cache_is_rejected_and_other_optimization_is_ignored(self):
+        source = self.apport_fixture()
+        cache = Path(importlib.util.cache_from_source(str(source)))
+        py_compile.compile(str(source), doraise=True)
+        target = self.root / 'saved-cache.pyc'
+        cache.rename(target)
+        cache.symlink_to(target)
+        before = target.read_bytes()
+        with self.assertRaises(ValueError):
+            self.distribution_probe()
+        self.assertEqual(before, target.read_bytes())
+        cache.unlink()
+        inactive = Path(importlib.util.cache_from_source(str(source), optimization='1'))
+        inactive.write_bytes(b'inactive damaged cache')
+        self.assertTrue(self.distribution_probe(initialize_site=True)['local_a2_runtime_verified'])
+        self.assertEqual(b'inactive damaged cache', inactive.read_bytes())
+
+    def test_inert_source_in_a_runtime_site_directory_is_still_rejected(self):
+        source = self.apport_fixture()
+        target = Path(self.descriptor['package_root']).parent / 'sitecustomize.py'
+        target.write_bytes(source.read_bytes())
+        with self.assertRaises(ValueError):
+            self.distribution_probe()
 
     def test_stdlib_apport_source_and_selected_cache_must_both_match(self):
         source = self.apport_fixture()
