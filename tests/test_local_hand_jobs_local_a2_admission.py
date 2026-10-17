@@ -1,4 +1,4 @@
-"""Optional installed A2 grants resolve only administrator-pinned runtimes."""
+"""Historical A2 contracts still resolve pinned runtimes; new admission is retired."""
 import copy
 import json
 from pathlib import Path
@@ -79,13 +79,14 @@ class LocalA2AdmissionTests(unittest.TestCase):
             Registry().resolve(self.request(policy), policy, principal=self.owner)
         self.assertEqual("UNAUTHORIZED", caught.exception.code)
 
-    def test_capability_exposes_refs_only_and_remains_principal_scoped(self):
+    def test_retired_capability_is_hidden_even_with_historical_runtime_grants(self):
         config = local_a2_policy_fixture()
         policy = Policy(config)
         page = policy.capabilities(self.owner)
         profile = page["profiles"][0]
-        self.assertIn(KIND, profile["allowed_kinds"])
-        self.assertEqual(["installed-a2"], profile["runtime_refs"])
+        self.assertNotIn(KIND, profile["allowed_kinds"])
+        self.assertNotIn("runtime_refs", profile)
+        self.assertNotIn(KIND, profile["budgets"])
         self.assertNotIn("ledger.nas.roundtrip", profile["allowed_kinds"])
         self.assertEqual([], profile["storage_refs"])
         self.assertNotIn("/synthetic-local-a2", json.dumps(page))

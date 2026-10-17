@@ -26,9 +26,9 @@ KINDS = (
     "ledger.test.local_a2",
 )
 OPTIONAL_KINDS = frozenset({"workspace.edit", "ledger.test.local_a2"})
-# Retain the wire kind for historical records, but do not offer or admit new
-# NAS work while its execution adapter is unavailable and core work is pending.
-DISABLED_JOB_KINDS = frozenset(("ledger.nas.roundtrip",))
+# Retain wire identities for history. NAS admission is unavailable; the fixed
+# local A2 walkthrough was a temporary stage test, not a maintenance API.
+DISABLED_JOB_KINDS = frozenset(("ledger.nas.roundtrip", "ledger.test.local_a2"))
 SUITES = ("a1_resources", "a1_response_boundaries", "a2_snapshot_resources", "a2_semantic_resources")
 REF_PATTERN = r"[a-z0-9][a-z0-9._-]{0,127}"
 UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -202,19 +202,24 @@ CANCEL_TARGET_SCHEMA = {"oneOf": [
     _object({"kind": {"const": "job"}}),
     _object({"kind": {"const": "reconcile"}, "reconcile_id": UUID4}),
 ]}
+# Decode old preparation polls without advertising retired kinds for new work.
+PREPARE_SCHEMA = {"type": "object", "oneOf": [
+    _object({"operation_id": UUID4, "kind": {"const": "host.inspect"}, "profile_ref": REF,
+             "retry_failed": {"const": True}}, ("operation_id", "kind", "profile_ref")),
+    _object({"operation_id": UUID4, "kind": {"const": "workspace.edit"}, "profile_ref": REF,
+             "inputs": INPUT_SCHEMAS["workspace.edit"], "retry_failed": {"const": True}},
+            ("operation_id", "kind", "profile_ref", "inputs")),
+    _object({"operation_id": UUID4, "kind": {"const": "ledger.test.local_a2"}, "profile_ref": REF,
+             "inputs": INPUT_SCHEMAS["ledger.test.local_a2"], "retry_failed": {"const": True}},
+            ("operation_id", "kind", "profile_ref", "inputs")),
+]}
 TOOL_SCHEMAS = {
     "lh_capabilities": _object({"cursor": _CURSOR, "page_size": _PAGE}, ()),
     "lh_workspace_read": _object({"profile_ref": REF, "source_ref": REF,
                                   "relative_path": {"type": "string", "maxLength": 256}}),
     "lh_job_prepare": {"type": "object", "oneOf": [
-        _object({"operation_id": UUID4, "kind": {"const": "host.inspect"}, "profile_ref": REF,
-                 "retry_failed": {"const": True}}, ("operation_id", "kind", "profile_ref")),
-        _object({"operation_id": UUID4, "kind": {"const": "workspace.edit"}, "profile_ref": REF,
-                 "inputs": INPUT_SCHEMAS["workspace.edit"], "retry_failed": {"const": True}},
-                ("operation_id", "kind", "profile_ref", "inputs")),
-        _object({"operation_id": UUID4, "kind": {"const": "ledger.test.local_a2"}, "profile_ref": REF,
-                 "inputs": INPUT_SCHEMAS["ledger.test.local_a2"], "retry_failed": {"const": True}},
-                ("operation_id", "kind", "profile_ref", "inputs")),
+        schema for schema in PREPARE_SCHEMA["oneOf"]
+        if schema["properties"]["kind"]["const"] not in DISABLED_JOB_KINDS
     ]},
     # Advertise only enabled submissions; SUBMIT_SCHEMA still decodes retained
     # requests with their original identity for broker/CLI history handling.
@@ -302,7 +307,8 @@ def validate_tool_args(tool_name: str, arguments: Any) -> dict:
     if tool_name == "lh_job_submit":
         return validate_submit(arguments)
     _tree(arguments)
-    if not _matches(arguments, TOOL_SCHEMAS[tool_name]):
+    schema = PREPARE_SCHEMA if tool_name == "lh_job_prepare" else TOOL_SCHEMAS[tool_name]
+    if not _matches(arguments, schema):
         raise _invalid()
     if tool_name == "lh_job_prepare" and arguments["kind"] == "workspace.edit":
         _workspace_inputs(arguments["inputs"])

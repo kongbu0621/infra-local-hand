@@ -1,4 +1,4 @@
-"""One installed, local-only Ledger A2 walkthrough using an admitted runtime.
+"""Historical temporary Ledger A2 walkthrough; new public admission is retired.
 
 The source commit is a deployment assertion, not a Git attestation. The fixed
 program and all 17 source/wheel/installed Python payloads are checked separately.

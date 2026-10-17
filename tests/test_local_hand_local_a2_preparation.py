@@ -3,7 +3,6 @@ import copy
 import json
 from pathlib import Path
 import sys
-import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -34,46 +33,31 @@ class LocalA2PreparationTests(unittest.TestCase):
         self.config['local_a2'] = dict(runtimes={'ledger-a2': runtime_fixture()})
         self.args.update(kind=local_a2_jobs.KIND, inputs={'runtime_ref': 'ledger-a2'})
 
-    def test_unregistered_runtime_refuses_before_allocating_or_starting(self):
-        with patch.object(self.service, '_prepare_worker') as worker:
+    def test_new_attempt_refused_before_allocating_even_when_registered(self):
+        for reference in ('ledger-a2', 'unknown'):
+            for retry in ({}, {'retry_failed': True}):
+                with self.subTest(reference=reference, retry=retry), \
+                     patch.object(self.service, '_prepare_worker') as worker:
+                    with self.assertRaises(JobError) as caught:
+                        self.service.call(dict(self.args, inputs={'runtime_ref': reference}, **retry))
+                    self.assertEqual('UNSUPPORTED', caught.exception.code)
+                    self.assertEqual({}, self.service.records)
+                    self.assertEqual([], list(Path(self.config['private_root']).iterdir()))
+                    worker.assert_not_called()
+
+    def test_original_preparing_identity_is_polled_without_new_worker(self):
+        record = resident_fixtures.PreparationTests.ready_record(self)
+        record.pop('request')
+        record.update(state='PREPARING', kind=self.args['kind'], inputs=self.args['inputs'])
+        self.service._save(record)
+        with patch.object(self.service, '_preparation_active', return_value=True), \
+             patch.object(self.service, '_prepare_worker') as worker:
+            self.assertEqual('PREPARING', self.service.call(self.args)['state'])
             with self.assertRaises(JobError) as caught:
-                self.service.call(dict(self.args, inputs={'runtime_ref': 'unknown'}))
-        self.assertEqual('UNAUTHORIZED', caught.exception.code)
-        self.assertEqual({}, self.service.records)
-        self.assertEqual([], list(Path(self.config['private_root']).iterdir()))
-        worker.assert_not_called()
-
-    def test_preparing_identity_keeps_runtime_ref_and_does_not_replay(self):
-        entered, release = threading.Event(), threading.Event()
-        def worker(record):
-            entered.set()
-            release.wait(3)
-        with patch.object(self.service, '_prepare_worker', side_effect=worker) as launch:
-            try:
-                self.assertEqual('PREPARING', self.service.call(self.args)['state'])
-                self.assertTrue(entered.wait(1))
-                self.assertEqual('PREPARING', self.service.call(self.args)['state'])
-                record = self.service.records[self.args['operation_id']]
-                self.assertEqual(self.args['inputs'], record['inputs'])
-                self.assertEqual(local_a2_jobs.KIND, record['kind'])
-                self.config['local_a2']['runtimes']['other'] = runtime_fixture()
-                with self.assertRaises(JobError) as caught:
-                    self.service.call(dict(self.args, inputs={'runtime_ref': 'other'}))
-                self.assertEqual('CONFLICT', caught.exception.code)
-                self.assertEqual(1, launch.call_count)
-            finally:
-                release.set()
-                self.service.worker.join(3)
-
-    def test_worker_passes_only_original_fixed_job_inputs_and_retains_failure(self):
-        with patch.object(provision_task, 'task_input', side_effect=OSError('before allocation')) as task:
-            self.service.call(self.args)
-            self.service.worker.join(3)
-        self.assertEqual({'local_a2_inputs': self.args['inputs']}, task.call_args.kwargs)
-        self.assertEqual('FAILED', self.service.call(self.args)['state'])
-        record = self.service.records[self.args['operation_id']]
-        self.assertEqual(self.args['inputs'], record['inputs'])
-        self.assertTrue((Path(record['attempt'])/'preparation-failure.json').exists())
+                self.service.call(dict(self.args, inputs={'runtime_ref': 'other'}))
+            self.assertEqual('CONFLICT', caught.exception.code)
+            self.assertEqual(record, self.service.records[record['operation_id']])
+            worker.assert_not_called()
 
 
 class LocalA2AssemblyTests(unittest.TestCase):

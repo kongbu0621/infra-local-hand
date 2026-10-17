@@ -154,6 +154,8 @@ class PreparedBroker:
                     raise JobError("STALE_DEPLOYMENT", "Prepared request has expired")
                 state = self.launcher.call("start")
             if state == "EXITED":
+                if name == "lh_job_submit":
+                    self._authorize(principal, "lh:read")
                 if self.reader is None:
                     self.reader = self.reader_factory()
                 if name == "lh_job_submit":
@@ -165,6 +167,7 @@ class PreparedBroker:
                     if row["digest"] != args["request_digest"] or row["principal"] != principal.principal_id:
                         raise JobError("CONFLICT", "Committed prepared task identity changed")
                     self.reader._authorize(principal, scope, owner=row["principal"])
+                    self.reader._authorize(principal, "lh:read", owner=row["principal"])
                     return self.reader._view(row)
                 return self.reader.call(name, args, principal)
             if state != "RUNNING":
