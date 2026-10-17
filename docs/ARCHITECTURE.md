@@ -5,7 +5,7 @@
 
 本文保留 S1 的 Task/Result v1 与 Git mailbox 架构范围。后续实现已增加 MCP Server
 和作业后端；客户端、Server、MCP、Tailscale 的关系及当前源码入口，见
-[README 的通信关系说明](../README.md#客户端servermcp-与-tailscale-是什么关系)。
+[使用文档的通信关系说明](USAGE.md#客户端servermcp-与-tailscale-是什么关系)及[源码入口](DEVELOPMENT.md#server-的源码在哪里)。
 
 ## A01 职责和依赖
 
@@ -46,7 +46,7 @@ Result schema 为 `local-hand-result/v1`，顶层精确十四项：`schema_versi
 
 部署者显式给出 SSH remote、精确允许的 remote 拼写和 branch；共享校验器验证它们一致且属于支持的 SSH 语法。拒绝 ext/file/http、本地路径、选项注入、控制字符及未经允许的 host/user/repository。SSH key、known_hosts、Git/SSH/Python 的绝对路径由安装绑定提供，凭据内容不进入配置模板、包或结果。Git 环境、hooks、filters、fsmonitor 与 remote 展示仍执行原有加固。安全语义的改变不能伪装成“替换常量”。
 
-S1 首阶段不包含 MCP 服务器或公网 relay 实现；此处记录该阶段的边界。ChatGPT 当时通过受控 mailbox 协议交互。后续 MCP 实现见上方 README 链接；新增传输仍须保持任务关联和外部授权语义，实际连接状态由部署及调用验证确认。
+S1 首阶段不包含 MCP 服务器或公网 relay 实现；此处记录该阶段的边界。ChatGPT 当时通过受控 mailbox 协议交互。后续 MCP 实现见上方通信说明与源码入口；新增传输仍须保持任务关联和外部授权语义，实际连接状态由部署及调用验证确认。
 
 ## A04 文件、验证与一致性
 

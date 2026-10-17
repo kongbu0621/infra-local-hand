@@ -1,0 +1,14 @@
+%% Relationship source; README uses the paired SVG for stable layout.
+%% Keep nodes, text and directed edges in sync. See ../DEVELOPMENT.md.
+flowchart TD
+    A["调用方<br/>ChatGPT 等应用 / 本地 CLI"]
+    B["接入入口<br/>MCP Server / 本地 socket"]
+    C["Local Hand 作业后端<br/>管理原任务，受控执行<br/>收集状态与结果"]
+    D[("任务账本与证据<br/>保存原任务身份、状态<br/>与封存产物")]
+    E["调用方取回状态与可用证据<br/>核对原任务和内容<br/>继续工作"]
+
+    A -->|"提交 / 查询 / 取消 / 核对"| B
+    B --> C
+    C -->|"持久记录"| D
+    D -->|"读取核对"| C
+    C -->|"经入口返回"| E
