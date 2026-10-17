@@ -1,4 +1,4 @@
-"""Withdrawing future runtime admission preserves original preparation queries."""
+"""Retiring the temporary test preserves original preparation queries."""
 import copy
 from pathlib import Path
 import sys
@@ -25,9 +25,8 @@ class RuntimeAdapterRegistrationTests(unittest.TestCase):
         return dict(operation_id=self.request['operation_id'], kind='ledger.test.local_a2',
                     profile_ref='fixture', inputs={'runtime_ref': 'installed-a2'})
 
-    def test_dynamic_registration_is_shared_by_admitted_submit_principals(self):
-        # A retained task's grants are not the resident dynamic registry. Entry
-        # scopes/revocation and the administrator's registration govern new jobs.
+    def test_old_registration_cannot_reactivate_temporary_job_for_any_principal(self):
+        # Old deployment registration is retained for history, not new work.
         self.broker.policy = Policy(local_a2_policy_fixture('/synthetic-resident'))
         other = Principal('other', self.owner.scopes)
         self.assertNotIn('ledger.test.local_a2',
@@ -35,9 +34,11 @@ class RuntimeAdapterRegistrationTests(unittest.TestCase):
         self.broker.config['local_a2'] = dict(runtime_refs=['installed-a2'], budgets={})
         self.broker._record.return_value = None
         self.retained.state.get.return_value = None
-        self.assertEqual(['installed-a2'], self.call('lh_capabilities', {}, other)['profiles'][0]['runtime_refs'])
-        self.call('lh_job_prepare', self.args(), other)
-        self.service.call.assert_called_once_with('prepare', principal_id='other', **self.args())
+        self.assertNotIn('runtime_refs', self.call('lh_capabilities', {}, other)['profiles'][0])
+        for principal in (self.owner, other):
+            with self.assertRaises(JobError) as caught:self.call('lh_job_prepare', self.args(), principal)
+            self.assertEqual('UNSUPPORTED', caught.exception.code)
+        self.service.call.assert_not_called()
         for denied in (Principal('other', frozenset({'lh:read'})), Principal('unknown', self.owner.scopes)):
             with self.assertRaises(JobError): self.call('lh_job_prepare', self.args(), denied)
 
@@ -79,13 +80,13 @@ class RuntimePreparationRecoveryTests(unittest.TestCase):
         self.assertEqual(record, self.service.records[record['operation_id']])
         worker.assert_not_called(); replace.assert_not_called()
 
-    def test_adapter_withdrawal_prevents_automatic_stale_repreparation_while_manager_still_registered(self):
+    def test_retirement_prevents_stale_repreparation_while_manager_still_registered(self):
         record = self.ready()
         record['request']['expires_at'] = int(time.time()) - 1
         self.service._save(record)
         with patch.object(self.service, '_prepare_worker') as worker, \
              patch.object(self.service, '_replaceable') as replace:
-            returned = self.service.call(dict(self.args, allow_new=False))
+            returned = self.service.call(dict(self.args, retry_failed=True))
         self.assertEqual(record['request'], returned['request'])
         worker.assert_not_called(); replace.assert_not_called()
 
@@ -103,11 +104,10 @@ class RuntimePreparationRecoveryTests(unittest.TestCase):
         self.assertEqual(record['request'], returned['request'])
         recover.assert_called_once_with(preparing); worker.assert_not_called()
 
-    def test_failed_attempt_is_queryable_but_cannot_restart_without_registration(self):
+    def test_failed_attempt_is_queryable_but_cannot_restart_with_old_registration(self):
         record = self.ready()
         record.update(state='FAILED'); record.pop('request')
         self.service._save(record)
-        self.config['local_a2']['runtimes'].clear()
         with patch.object(self.service, '_prepare_worker') as worker:
             returned = self.service.call(dict(self.args, retry_failed=True))
         self.assertEqual(dict(operation_id=record['operation_id'], state='FAILED', retryable=False), returned)

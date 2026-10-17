@@ -12,7 +12,7 @@ import time
 
 from local_hand_jobs import cli
 from local_hand_jobs.broker import Broker
-from local_hand_jobs.contract import JobError, REF_PATTERN, TOOL_SCHEMAS, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, validate_tool_args
+from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, REF_PATTERN, TOOL_SCHEMAS, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, validate_tool_args
 from local_hand_jobs.policy import Policy, thaw
 from local_hand_jobs.task_session import read_descriptor
 from .prepared import Launcher
@@ -202,12 +202,8 @@ class ResidentBroker:
             if name == 'lh_capabilities':
                 result = thaw(self.policy.capabilities(principal, **args))
                 workspace=self.config.get('workspace')
-                local_a2=self.config.get('local_a2')
                 kinds=['host.inspect']+(['workspace.edit'] if workspace else [])
                 budgets=dict(self.config['budgets'], **({'workspace.edit':workspace['budgets']} if workspace else {}))
-                if local_a2:
-                    kinds.append('ledger.test.local_a2')
-                    budgets['ledger.test.local_a2']=local_a2['budgets']
                 result.update(authority_id=self.config['authority_id'], tool_schema_digest=TOOL_SCHEMA_DIGEST,
                     profiles=[dict(profile_ref=self.config['profile_ref'],
                                    allowed_kinds=kinds,
@@ -216,19 +212,14 @@ class ResidentBroker:
                                    budgets=budgets)], next_cursor=None,
                     preparation=dict(tool='lh_job_prepare', profile_ref=self.config['profile_ref'],
                                      kind='host.inspect', max_active=1))
-                if local_a2:
-                    result['profiles'][0]['runtime_refs']=list(local_a2['runtime_refs'])
                 return result
             if name == 'lh_job_prepare':
                 if args['profile_ref'] != self.config['profile_ref']:
                     raise JobError('UNAUTHORIZED', 'Profile is not admitted')
                 record=self._record(args['operation_id'])
-                allow_new=True
-                if args['kind'] == 'ledger.test.local_a2':
-                    local_a2=self.config.get('local_a2')
-                    allow_new=bool(local_a2 and args['inputs']['runtime_ref'] in local_a2['runtime_refs'])
-                    if not allow_new and record is None:
-                        raise JobError('UNAUTHORIZED', 'Installed local A2 runtime is not admitted')
+                allow_new=args['kind'] not in DISABLED_JOB_KINDS
+                if not allow_new and record is None:
+                    raise JobError('UNSUPPORTED', 'This temporary job is retired; only retained tasks are queryable')
                 if record is None:
                     # The catalog routes by UUID across deployments. Creating a
                     # new entry for retained history would hide that original
@@ -237,8 +228,8 @@ class ResidentBroker:
                         reader = self.retained if path is None else self._reader(path)
                         if reader.state.get('job', args['operation_id']) is not None:
                             raise JobError('CONFLICT', 'Task identity already belongs to retained history')
-                # Withdrawing a registration prevents new attempts, but must
-                # not hide an original READY response or restart recovery. The
+                # Retiring new work must not hide an original READY response
+                # or recovery of a preparation that already completed. The
                 # root service checks owner and original inputs before polling.
                 query_only={} if allow_new else {'allow_new': False}
                 return self.service.call('prepare', principal_id=principal.principal_id, **args, **query_only)
@@ -265,6 +256,8 @@ class ResidentBroker:
             if state == 'IDLE':
                 if name != 'lh_job_submit':
                     raise JobError('NOT_FOUND', 'Task has not been submitted')
+                if args['kind'] in DISABLED_JOB_KINDS:
+                    raise JobError('UNSUPPORTED', 'This job kind is not available for new execution')
                 if args['expires_at'] <= time.time():
                     raise JobError('STALE_DEPLOYMENT', 'Prepared request has expired')
                 state = self.service.call('start', operation_id=operation,

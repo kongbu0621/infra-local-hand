@@ -20,7 +20,7 @@ import time
 from urllib.parse import urlsplit
 import uuid
 
-from local_hand_jobs.contract import MAX_REQUEST_BYTES, JobError, TOOL_SCHEMAS, TOOL_SCOPES, strict_loads, validate_tool_args
+from local_hand_jobs.contract import MAX_REQUEST_BYTES, JobError, SUBMIT_SCHEMA, TOOL_SCHEMAS, TOOL_SCOPES, strict_loads, validate_tool_args
 
 MAX_BODY = MAX_REQUEST_BYTES
 MAX_RESPONSE = 512 * 1024
@@ -34,7 +34,7 @@ _DESCRIPTIONS = {
     "lh_workspace_read": "读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交。文件最多 120 KiB，JSON 转义后的响应最多 512 KiB；替换任务的完整 inputs 按规范化 JSON（含转义）限 120 KiB。只能使用 capabilities 给出的来源引用及仓库相对路径。读取不会准备或提交任务。",
     "lh_capabilities": "查看当前获准使用的功能、资源引用和身份绑定。若返回 prepared_request，原样提交该请求一次，并保留其任务标识。",
     "lh_job_submit": "提交一个确定的任务并持久保存记录。返回结果不确定时，保留原 operation_id，沿同一任务查询。",
-    "lh_job_prepare": "使用新的任务 UUID 准备获准的任务。host.inspect 检查本机；workspace.edit 在任务独立副本中按原文件摘要修改并运行固定验证；ledger.test.local_a2 使用 capabilities 列出的 runtime_ref 复用已登记安装环境，执行固定的 Ledger 本地快照和恢复验收，不运行 NAS 作业。先查询 capabilities 获取允许的引用。PREPARING 时用原参数和同一 UUID 查询；READY 后原样提交返回的请求。FAILED 记录保留，解决原因后可用 retry_failed=true 重试。准备本身不执行业务。",
+    "lh_job_prepare": "使用新的任务 UUID 准备获准的任务。host.inspect 检查本机；workspace.edit 在任务独立副本中按原文件摘要修改并运行固定验证。先查询 capabilities 获取允许的引用。PREPARING 时用原参数和同一 UUID 查询；READY 后原样提交返回的请求。FAILED 记录保留，解决原因后可用 retry_failed=true 重试。准备本身不执行业务。",
     "lh_job_status": "查询属于当前用户的任务状态，或指定核对轮次的状态。",
     "lh_job_cancel": "使用原请求摘要和明确目标申请取消；取消整个任务时指定 target.kind=job。随后沿同一 operation_id 查询并确认退出，收到取消回执不代表进程已停止。可安全重复取消，已完成的目标保留并返回原结果。",
     "lh_job_reconcile": "使用固定的核对 ID 检查原任务已产生的影响，不重新执行业务。",
@@ -70,9 +70,11 @@ _OUTPUT_SCHEMAS = {name: _STATUS_SCHEMA for name in
 _OUTPUT_SCHEMAS.update({
     "lh_workspace_read": {"type":"object","required":["source_ref","source_commit","relative_path","sha256","bytes","content"],
         "properties":{**{key:_STRING for key in ('source_ref','source_commit','relative_path','sha256','content')},'bytes':_INTEGER}},
+    # An original READY response can contain a now-retired request kind.
+    # Result decoding must not confuse that history with new admission.
     "lh_job_prepare": {"type": "object", "required": ["operation_id", "state"],
         "properties": {"operation_id": _STRING, "state": {"enum": ["PREPARING", "READY", "FAILED"]},
-            "retryable": {"type": "boolean"}, "request": TOOL_SCHEMAS["lh_job_submit"]}},
+            "retryable": {"type": "boolean"}, "request": SUBMIT_SCHEMA}},
     "lh_capabilities": {"type": "object", "required": ["schema_version", "authority_id", "tool_schema_digest", "profiles"],
         "properties": {"schema_version": _STRING, "supported_versions": {"type": "array", "items": _STRING},
             "authority_id": _STRING, "tool_schema_digest": _STRING, "policy_digest": _STRING,

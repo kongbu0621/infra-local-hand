@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from local_hand_jobs import local_a2_jobs
 from local_hand_jobs.broker import Broker
-from local_hand_jobs.contract import request_digest
+from local_hand_jobs.contract import DISABLED_JOB_KINDS, request_digest
 from local_hand_jobs.preflight_completion import supports_local_completion
 from local_hand_jobs.policy import Policy, thaw
 from local_hand_jobs.registry import Registry
@@ -30,6 +30,22 @@ class LocalA2CompletionTests(unittest.TestCase):
         self.facts = dict(inputs_stable=True, local_a2_runtime_verified=True, installed_bytecode_verified=True,
             runtime_descriptor_digest=local_a2_jobs.descriptor_digest(self.runtime))
         self.plan_damage = None
+        original_submit = Broker.submit
+        historical_admissions = set()
+
+        def admit_historical_fixture(broker, request, principal):
+            # Model an admission before retirement, solely to seed retained work.
+            # Restore current admission rules before cancellation or recovery.
+            identity = request['operation_id']
+            if identity not in historical_admissions:
+                return original_submit(broker, request, principal)
+            historical_admissions.remove(identity)
+            with patch('local_hand_jobs.broker.DISABLED_JOB_KINDS',
+                       DISABLED_JOB_KINDS - {local_a2_jobs.KIND}):
+                return original_submit(broker, request, principal)
+
+        seed = patch.object(Broker, 'submit', admit_historical_fixture)
+        seed.start(); self.addCleanup(seed.stop)
         original_request = broker_fixtures.BrokerTests.make_request
         original_complete = chain_fixtures.complete
         original_finish = broker_fixtures.SupervisorFixture.finish
@@ -50,6 +66,7 @@ class LocalA2CompletionTests(unittest.TestCase):
             value.update(kind=local_a2_jobs.KIND, inputs={"runtime_ref": "ledger-a2"},
                          expected=real_policy.expected("fixture"))
             value["request_digest"] = request_digest(value)
+            historical_admissions.add(value['operation_id'])
             return value
 
         def resolve(registry, request, policy, **kwargs):

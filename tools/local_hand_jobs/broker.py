@@ -278,14 +278,14 @@ class Broker:
                     raise JobError("CONFLICT", "The operation ID already binds different content")
                 return self._view(old)
             self._authorize(principal, "lh:submit", request=request, tx=tx)
+            if request["kind"] in DISABLED_JOB_KINDS:
+                raise JobError("UNSUPPORTED", "This job kind is not available for new execution")
             if self.task_session is not None:
                 self.task_session.admit(request, principal)
             if request["expires_at"] <= time.time():
                 raise JobError("STALE_DEPLOYMENT", "First admission deadline has expired")
             if request["expected"] != thaw(self.policy.expected(request["profile_ref"])):
                 raise JobError("STALE_DEPLOYMENT", "Expected deployment binding does not match")
-            if request["kind"] in DISABLED_JOB_KINDS:
-                raise JobError("UNSUPPORTED", "NAS jobs are disabled; only local core jobs are available")
             plan = thaw(self.registry.resolve(request, self.policy, principal=principal))
             reserved = plan["reservation_bytes"]
             self._capacity(tx, principal, reserved)

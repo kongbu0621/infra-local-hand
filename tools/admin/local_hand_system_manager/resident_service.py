@@ -23,7 +23,7 @@ import time
 import uuid
 
 from local_hand_jobs import budget, cli, quota_contract as q
-from local_hand_jobs.contract import JobError, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
+from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
 from local_hand_jobs.task_session import read_descriptor
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import provision_task, task_service
@@ -200,11 +200,9 @@ class ResidentService:
             if (source is None or args['inputs']['validation_ref'] not in source.get('validations',{})
                     or args['inputs']['relative_path'] not in source['blobs']):
                 raise JobError('UNAUTHORIZED','Workspace source, file or validation is not admitted')
-        if args['kind']=='ledger.test.local_a2':
-            runtime=self.config.get('local_a2',{}).get('runtimes',{}).get(args['inputs']['runtime_ref'])
-            # A removed registration is not authority for a new attempt.
-            # Its existing immutable preparation record remains queryable.
-            allow_new = allow_new and runtime is not None
+        # Old runtime registration cannot reactivate a retired temporary job.
+        # Existing immutable preparations remain queryable with original inputs.
+        allow_new = allow_new and args['kind'] not in DISABLED_JOB_KINDS
         with self.fence:
             record=self.records.get(operation)
             if record is not None:
@@ -243,10 +241,7 @@ class ResidentService:
                 if record['state']=='FAILED' and (not args.get('retry_failed') or not allow_new):
                     return dict(operation_id=operation,state='FAILED',retryable=allow_new)
             if not allow_new:
-                raise JobError('UNAUTHORIZED','Ledger runtime is not admitted for a new attempt')
-            if args['kind']=='ledger.test.local_a2':
-                from local_hand_jobs.local_a2_jobs import validate_runtime
-                validate_runtime(runtime)
+                raise JobError('UNSUPPORTED','This job is not available for new preparation')
             if self._busy():raise JobError('RESOURCE_BUSY','Another task is preparing or running')
             if record is None and len(self.records)>=self.config['max_tasks']:
                 raise JobError('LIMIT_EXCEEDED','Retained task capacity is full')
@@ -374,6 +369,8 @@ class ResidentService:
                 if request['request_digest']!=record['request']['request_digest']:
                     raise JobError('CONFLICT','Task request changed')
                 if state=='IDLE':
+                    if record['request']['kind'] in DISABLED_JOB_KINDS:
+                        raise JobError('UNSUPPORTED','This job kind is not available for new execution')
                     if record['boot_id']!=self.boot or record['request']['expires_at']<=time.time():
                         raise JobError('STALE_DEPLOYMENT','Prepare the unsubmitted task for this boot')
                     if self._busy(except_operation=operation):

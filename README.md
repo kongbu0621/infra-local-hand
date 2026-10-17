@@ -123,7 +123,7 @@ flowchart LR
 3. **沿原任务查询或取消。** 保存完整原请求及 `operation_id`、`request_digest`；响应丢失先查原任务，不能换一个 ID 重试结果未知的业务。取消已受理不等于进程已退出。
 4. **取回并核对结果。** 查询状态；证据封存后，读取 `lh_evidence_manifest` 与 `lh_evidence_read_chunk`，完整组装文件，并按可信返回核对原任务关联、大小和摘要，再决定如何使用结果。
 
-入口模式与当前工具参数见[作业使用说明](docs/USAGE.md#作业入口与运行模式)；取消、恢复和证据的设计约束见[作业架构](docs/a2-execution/ARCHITECTURE.md#ax-a07-mcp-工具和二进制证据r03r04r07r08r09)。固定 Ledger 本地验收的登记及调用示例见[使用说明](docs/USAGE.md#run-the-installed-ledger-a2-local-check)。
+入口模式与当前工具参数见[作业使用说明](docs/USAGE.md#作业入口与运行模式)；取消、恢复和证据的设计约束见[作业架构](docs/a2-execution/ARCHITECTURE.md#ax-a07-mcp-工具和二进制证据r03r04r07r08r09)。
 
 ## 与 Artifact Ledger 配合
 
@@ -137,7 +137,6 @@ Local Hand 负责执行任务和取回结果；[Artifact Ledger](https://github.
 |---|---|
 | 提交、查询、取消、同任务恢复和证据读取 | 已在已有部署完成真实 ChatGPT 入口验证；具体任务的未知结果与证据缺口仍按原记录保留 |
 | `host.inspect`、`workspace.edit` | 检查主机；在登记项目的任务独立副本中修改单文件、运行固定验证并返回结果。具体引用以服务能力列表为准 |
-| `ledger.test.local_a2` | 已有可选固定作业，复用已登记的 Ledger 安装环境执行本地快照恢复检查；需要部署侧启用，不代表现场或 NAS 验收已通过 |
 | NAS 新作业 | 当前被实现屏蔽；历史任务记录仍保留 |
 | 平台 | 核心包有 Linux/Windows 验证；当前作业后端、本地 socket 与管理服务按已有 Linux 部署使用，不能据此宣称所有入口都已跨平台验收 |
 

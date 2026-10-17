@@ -81,7 +81,7 @@ class PluginDistributionTests(unittest.TestCase):
         self.assertEqual(len(frozen["tools"]), 9)
         self.assertEqual(frozen["client_limits"]["max_record_bytes"], MAX_REQUEST_BYTES)
         self.assertEqual({item['properties']['kind']['const'] for item in frozen['tools']['lh_job_prepare']['oneOf']},
-                         {'host.inspect','workspace.edit','ledger.test.local_a2'})
+                         {'host.inspect','workspace.edit'})
         self.assertIn('lh_workspace_read',frozen['tools'])
         self.assertTrue(frozen["backend_contract_compatibility"]["digest_match_required"])
         self.assertEqual(frozen["connection_status"], "UNCONFIGURED_E4_REQUIRED")
