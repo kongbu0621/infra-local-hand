@@ -168,8 +168,11 @@ The command requires the original inode, rejects database sidecars (including
 broken links), verifies the full Ledger and every retained commit receipt, and
 checks the checkpoint again before publishing one immutable filesystem binding.
 It preserves the original format, reservations, requests, database bytes and
-receipts. It never initializes a store or executes an archive operation. A repeat
-with the same unchanged checkpoint reuses the binding. The operation remains
+receipts. Request kinds must match their receipt slots; an append confirmation
+also requires the original create operation, even if its own receipt is missing.
+It never initializes a store, executes an archive operation or recreates a missing
+receipt. A partial archive remains partial; successful binding only establishes
+filesystem continuity. A repeat with the same unchanged checkpoint reuses the binding. The operation remains
 bounded to one trusted local user and cooperating callers holding the store lock.
 Afterward, use `read` with the original Artifact/Version IDs and `resume` with the
 original producer/operation ID; these do not justify repeating the source task.

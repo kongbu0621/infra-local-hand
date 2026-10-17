@@ -304,7 +304,10 @@ def _fingerprint(request):
         ("contract_version", "idempotency_scope_ref", "operation_kind", "body")}))}
 
 
-def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, require_existing=False):
+def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, require_existing=False,
+                      verify_only=False):
+    # Maintenance verification can inspect existing history but must neither
+    # execute an absent operation nor publish a missing confirmation receipt.
     from .evidence import _open_root, _sync_directory_ancestry
     api = _ledger_api()
     request = _decode(raw)
@@ -323,7 +326,7 @@ def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, req
     except api.LedgerError as error:
         if error.code != "NOT_FOUND":
             raise
-        if receipt is not None or require_existing:
+        if receipt is not None or require_existing or verify_only:
             _fail("Previously confirmed archive operation is missing; restore the original database",
                   "INTEGRITY_FAILURE")
         # Only an unconfirmed original request may be executed after NOT_FOUND.
@@ -350,12 +353,14 @@ def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, req
             result={key: result[key] for key in
                 ("status", "commit_state", "operation_kind", "result_ref", "recorded_at")})
         if receipt is None:
-            _publish_files(receipt_directory, kind, {"commit.json": _json(confirmed)})
+            if not verify_only:
+                _publish_files(receipt_directory, kind, {"commit.json": _json(confirmed)})
         else:
             if receipt != confirmed:
                 _fail("Stored operation differs from its confirmed commit receipt", "INTEGRITY_FAILURE")
             # A previous publication can be visible despite a failed parent sync.
-            _sync_directory_ancestry(receipt_path, os.geteuid())
+            if not verify_only:
+                _sync_directory_ancestry(receipt_path, os.geteuid())
     return result
 
 
@@ -624,9 +629,15 @@ def bind_filesystem(store, *, expected_database_sha256):
                         if _decode(_read(task / "binding.json", 65536)) != binding:
                             _fail("Original task binding differs")
                         for kind, filename in (("create_artifact", "create.json"), ("append_version", "append.json")):
-                            if os.path.lexists(reservation / kind):
-                                _ensure_operation(ledger, _read(task / filename, 65536),
-                                    receipt_directory=reservation, require_existing=True)
+                            # Append also proves create must exist, even if its
+                            # receipt was lost. Verification may never repair a
+                            # receipt or select another one via a changed kind.
+                            if (os.path.lexists(reservation / kind) or
+                                    (kind == "create_artifact" and os.path.lexists(reservation / "append_version"))):
+                                raw = _read(task / filename, 65536)
+                                if _decode(raw).get("operation_kind") != kind:
+                                    _fail("Retained request kind differs from its receipt slot", "INTEGRITY_FAILURE")
+                                _ensure_operation(ledger, raw, receipt_directory=reservation, verify_only=True)
         checkpoint()
         if _physical_database_identity(path) != physical:
             _fail("Ledger changed during filesystem binding")

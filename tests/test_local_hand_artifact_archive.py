@@ -234,6 +234,100 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["status"], "FILESYSTEM_BOUND")
         self.assertTrue(self.read(first)["content_verified"])
 
+    def test_filesystem_binding_rejects_crosswired_requests_without_receipt_writes(self):
+        for missing_append_receipt in (False, True):
+            with self.subTest(missing_append_receipt=missing_append_receipt):
+                self.store = self.root / ("crosswired-" + str(missing_append_receipt))
+                self.archive()
+                checkpoint = self.legacy_device_number()
+                task = next(self.store.glob("task-*"))
+                reservation = next(self.store.glob("request-task-*"))
+                # The DB is intact, but a copied append request occupies the
+                # create slot. Its claimed kind must not select another receipt.
+                (task / "create.json").write_bytes((task / "append.json").read_bytes())
+                if missing_append_receipt:
+                    (reservation / "append_version").rename(self.root / "saved-append-receipt")
+                before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                with self.assertRaises(consumer.ArchiveError):
+                    consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
+
+    def test_filesystem_binding_checks_create_implied_by_append_receipt(self):
+        self.archive()
+        self.legacy_device_number()
+        reservation = next(self.store.glob("request-task-*"))
+        (reservation / "create_artifact").rename(self.root / "saved-create-receipt")
+        database = self.store / "ledger.sqlite"
+        with sqlite3.connect(database) as connection:
+            connection.execute("DELETE FROM operations WHERE kind='create_artifact'")
+        # Valid Ledger structure alone does not prove the consumer's original
+        # create exists: imported records need not have a local create operation.
+        self.verification()
+        before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+        with self.assertRaises(consumer.ArchiveError):
+            consumer.bind_filesystem(self.store,
+                expected_database_sha256=hashlib.sha256(database.read_bytes()).hexdigest())
+        self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
+
+    def test_filesystem_binding_preserves_partial_archives_and_missing_receipts(self):
+        for state in ("create-only", "missing-create-receipt", "missing-append-receipt"):
+            with self.subTest(state=state):
+                self.store = self.root / state
+                if state == "create-only":
+                    ensure = consumer._ensure_operation
+                    def stop_after_create(ledger, raw, **kwargs):
+                        result = ensure(ledger, raw, **kwargs)
+                        if json.loads(raw)["operation_kind"] == "create_artifact":
+                            raise OSError("interrupted before append")
+                        return result
+                    with mock.patch.object(consumer, "_ensure_operation", side_effect=stop_after_create):
+                        with self.assertRaises(OSError):
+                            self.archive()
+                else:
+                    self.archive()
+                    reservation = next(self.store.glob("request-task-*"))
+                    kind = "create_artifact" if state == "missing-create-receipt" else "append_version"
+                    (reservation / kind).rename(self.root / ("saved-" + state))
+                checkpoint = self.legacy_device_number()
+                before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                with self.api.open(self.store / "ledger.sqlite") as ledger:
+                    ledger_type = type(ledger)
+                with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("verification cannot execute")):
+                    result = consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                self.assertEqual(result["ledger_writes"], 0)
+                after = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                binding_file = self.store / "database-initialized/filesystem-binding/identity.json"
+                self.assertEqual(set(after) - set(before), {binding_file})
+                self.assertEqual(before, {p: raw for p, raw in after.items() if p != binding_file})
+
+    def test_filesystem_binding_publication_failure_retries_without_replay(self):
+        from local_hand_jobs import evidence
+        for after_rename in (False, True):
+            with self.subTest(after_rename=after_rename):
+                self.store = self.root / ("publish-" + str(after_rename))
+                first = self.archive()
+                checkpoint = self.legacy_device_number()
+                before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                publish = evidence._publish_create_only
+                def interrupted(source, target):
+                    if after_rename:
+                        publish(source, target)
+                    raise OSError("filesystem binding publication interrupted")
+                with mock.patch.object(evidence, "_publish_create_only", side_effect=interrupted):
+                    with self.assertRaises(OSError):
+                        consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                failed = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                with self.api.open(self.store / "ledger.sqlite") as ledger:
+                    ledger_type = type(ledger)
+                with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("retry cannot execute")):
+                    result = consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                self.assertEqual(result["reused"], after_rename)
+                for path, raw in before.items():
+                    self.assertEqual(path.read_bytes(), raw)
+                for path, raw in failed.items():
+                    self.assertEqual(path.read_bytes(), raw)
+                self.assertTrue(self.read(first, "publication-read-" + str(after_rename))["content_verified"])
+
     def test_lost_response_after_either_commit_reconciles_original_requests(self):
         original = consumer._ensure_operation
         for kind in ("create_artifact", "append_version"):
