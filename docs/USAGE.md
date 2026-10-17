@@ -54,7 +54,9 @@ validation output. Nothing in the bundle is executed or applied.
 Install a verified `infra-artifact-ledger` wheel alongside this package in an
 independent Python 3.12 environment. This integration uses the public
 `bounded-local-v0.1` library API, verified with Ledger `0.2.0a1` from commit
-`6707a1b521c9c4718674620e6c584656bd434e4c`. Build that fixed source using its
+`6707a1b521c9c4718674620e6c584656bd434e4c`. The affected consumer suite also passes
+with the 17 Ledger product modules in merged `58b08fa9cb188c48feec45592a0f775c7178fd7a`.
+Build the selected fixed source using its
 declared build dependencies; install the resulting local wheel with
 `python -m pip install --no-index --no-deps /path/to/verified-ledger.whl`.
 Ledger is not downloaded automatically or required for normal Local Hand use.
@@ -134,6 +136,43 @@ To run the affected checks with the verified optional wheel installed:
 `python -B -m pytest -q tests/test_local_hand_artifact_archive.py tests/test_local_hand_jobs_evidence_client.py`.
 Without that wheel, the consumer integration tests are explicitly skipped;
 the local bundle validation tests still run on Linux.
+
+### Filesystem identity after device renumbering
+
+New stores use format v3 and bind the database inode to the filesystem ID returned
+by Linux `fstatvfs`, while keeping the original identity in task reservations.
+This permits a device number change when the same filesystem ID and inode remain.
+The filesystem must provide a nonzero ID that persists across its remounts; this
+change does not establish that property for every Linux filesystem. The
+[Linux interface documentation](https://www.man7.org/linux/man-pages/man2/statfs.2.html)
+explains that filesystem ID semantics vary. Copies/cloned filesystems, inode
+reuse after deletion, and concurrent writers that bypass the store lock remain
+outside the supported identity model. Older consumers reject new v3 stores.
+
+Legacy stores retain their old device/inode checks. If a device number changes,
+do not rewrite the identity files or initialize another database. When you have
+a **trusted, previously retained SHA-256 of the complete current database**, close
+all writers and run this local maintenance command:
+
+```sh
+local-hand-archive bind-filesystem --store /absolute/private/archive \
+  --expected-database-sha256 TRUSTED_DATABASE_CHECKPOINT_SHA256
+```
+
+The digest is an explicit trust anchor, not a hash freshly taken from an unknown
+or possibly rolled-back database. It must describe the intended current history;
+the command cannot discover lost history when both records and external receipts
+are missing. Without that checkpoint, retain the store and investigate its identity.
+
+The command requires the original inode, rejects database sidecars (including
+broken links), verifies the full Ledger and every retained commit receipt, and
+checks the checkpoint again before publishing one immutable filesystem binding.
+It preserves the original format, reservations, requests, database bytes and
+receipts. It never initializes a store or executes an archive operation. A repeat
+with the same unchanged checkpoint reuses the binding. The operation remains
+bounded to one trusted local user and cooperating callers holding the store lock.
+Afterward, use `read` with the original Artifact/Version IDs and `resume` with the
+original producer/operation ID; these do not justify repeating the source task.
 
 ## Run the installed Ledger A2 local check
 

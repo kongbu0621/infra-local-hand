@@ -125,6 +125,115 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
                          (result["artifact_id"], result["version_id"], result["recorded_at"]))
         self.assertEqual(self.verification(), counts)
 
+    def legacy_device_number(self, *, version=2):
+        """Model a prior boot's device number; keep the actual DB inode/bytes."""
+        marker = self.store / "database-initialized"
+        identity = consumer._database_identity(self.store / "ledger.sqlite")
+        identity = dict(identity, device=identity["device"] + 1)
+        if version == 1:
+            (marker / "format.json").write_bytes(consumer._json(dict(schema_version="lh-artifact-store-v1")))
+            (marker / "database-identity").mkdir(mode=0o700)
+            (marker / "database-identity/identity.json").write_bytes(consumer._json(identity))
+        else:
+            (marker / "format.json").write_bytes(consumer._json(dict(
+                schema_version="lh-artifact-store-v2", database_identity=identity)))
+        for reservation in self.store.glob("request-task-*"):
+            saved = json.loads((reservation / "identity.json").read_bytes())
+            saved["database_identity"] = identity
+            (reservation / "identity.json").write_bytes(consumer._json(saved))
+        return hashlib.sha256((self.store / "ledger.sqlite").read_bytes()).hexdigest()
+
+    def test_new_store_survives_device_renumbering_but_rejects_other_filesystem(self):
+        first = self.archive()
+        physical = consumer._physical_database_identity(self.store / "ledger.sqlite")
+        with mock.patch.object(consumer, "_physical_database_identity",
+                               return_value=dict(physical, device=physical["device"] + 1)):
+            self.assertTrue(self.read(first)["content_verified"])
+            self.assertTrue(self.resume()["reused"])
+        with mock.patch.object(consumer, "_physical_database_identity",
+                               return_value=dict(physical, filesystem_id=physical["filesystem_id"] + 1)):
+            with self.assertRaises(consumer.ArchiveError):
+                self.read(first, "wrong-fs")
+
+    def test_new_store_missing_filesystem_binding_cannot_silently_rebind(self):
+        first = self.archive()
+        path = self.store / "database-initialized/format.json"
+        value = json.loads(path.read_bytes()); value.pop("filesystem_binding")
+        path.write_bytes(consumer._json(value))
+        with self.assertRaises(consumer.ArchiveError):
+            self.read(first)
+
+    def test_legacy_trusted_binding_preserves_records_and_restores_exact_read_resume(self):
+        for version in (1, 2):
+            with self.subTest(version=version):
+                self.store = self.root / ("legacy-" + str(version))
+                first = self.archive()
+                checkpoint = self.legacy_device_number(version=version)
+                before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                with self.assertRaises(consumer.ArchiveError):
+                    self.read(first, "not-bound-" + str(version))
+                with mock.patch.object(self.api, "initialize", side_effect=AssertionError("must not initialize")):
+                    result = consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                self.assertFalse(result["reused"])
+                self.assertEqual(result["ledger_writes"], 0)
+                self.assertTrue(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+                self.assertTrue(self.read(first, "bound-" + str(version))["content_verified"])
+                resumed = self.resume()
+                self.assertEqual(resumed["version_id"], first["version_id"])
+                self.assertEqual(resumed["recorded_at"], first["recorded_at"])
+                self.assertTrue(resumed["reused"])
+                for path, raw in before.items():
+                    self.assertEqual(path.read_bytes(), raw, str(path))
+
+    def test_legacy_binding_rejects_wrong_checkpoint_replacement_and_sidecars(self):
+        self.archive()
+        checkpoint = self.legacy_device_number()
+        before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+        with self.assertRaises(consumer.ArchiveError):
+            consumer.bind_filesystem(self.store, expected_database_sha256="0" * 64)
+        for suffix in ("-wal", "-shm", "-journal"):
+            sidecar = Path(str(self.store / "ledger.sqlite") + suffix)
+            sidecar.symlink_to(self.root / "missing")
+            with self.assertRaises(consumer.ArchiveError):
+                consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+            sidecar.unlink()
+        path = self.store / "ledger.sqlite"
+        path.rename(self.root / "original-database")
+        shutil.copy2(self.root / "original-database", path)
+        with self.assertRaises(consumer.ArchiveError):
+            consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+        self.assertFalse((self.store / "database-initialized/filesystem-binding").exists())
+        for path, raw in before.items():
+            self.assertEqual(path.read_bytes(), raw)
+
+    def test_legacy_binding_rejects_missing_confirmed_operation_without_replay(self):
+        original = self.store / "ledger.sqlite"
+        # Keep a valid empty DB checkpoint, then roll back only its bytes after
+        # archiving. A matching caller hash must not overrule an external receipt.
+        self.store.mkdir(mode=0o700)
+        with self.api.initialize(original):
+            pass
+        empty = original.read_bytes()
+        self.archive()
+        self.legacy_device_number()
+        original.write_bytes(empty)
+        checkpoint = hashlib.sha256(empty).hexdigest()
+        with self.assertRaises(consumer.ArchiveError):
+            consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+        self.assertEqual(original.read_bytes(), empty)
+        self.assertFalse((self.store / "database-initialized/filesystem-binding").exists())
+
+    def test_filesystem_binding_cli_in_a_separate_process(self):
+        first = self.archive()
+        checkpoint = self.legacy_device_number()
+        script = "import sys;sys.path.insert(0,sys.argv.pop(1));from local_hand_jobs.artifact_archive import main;raise SystemExit(main())"
+        result = subprocess.run([sys.executable, "-I", "-B", "-c", script,
+            str(Path(consumer.__file__).parents[1]), "bind-filesystem", "--store", str(self.store),
+            "--expected-database-sha256", checkpoint], capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "FILESYSTEM_BOUND")
+        self.assertTrue(self.read(first)["content_verified"])
+
     def test_lost_response_after_either_commit_reconciles_original_requests(self):
         original = consumer._ensure_operation
         for kind in ("create_artifact", "append_version"):
