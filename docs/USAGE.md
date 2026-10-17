@@ -8,7 +8,7 @@
 
 ## 作业入口与运行模式
 
-先确认已部署服务的运行模式，再读取 `lh_capabilities`。MCP 是网络入口，
+先确认已部署服务的运行模式，再读取 `lh_capabilities`。Local Hand 的 MCP Server 提供网络入口，
 `local-hand-jobs` 是本地 socket 客户端；它们可访问同一个后端，工具能力取决于该后端的模式及调用者权限。
 `local-hand-mcp` 的四种启动模式互斥：
 
