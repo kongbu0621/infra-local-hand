@@ -265,8 +265,14 @@ def _source(files, producer, status_sha256):
     return source
 
 
-def _requests(binding, files):
-    token = binding["token"]
+def _request_templates(binding):
+    """Derive request ownership from the retained mapping, not request contents."""
+    if binding.get("schema_version") not in ("lh-artifact-request-v1", "lh-artifact-request-v2"):
+        _fail("Unsupported retained task mapping", "INTEGRITY_FAILURE")
+    _identity(binding.get("producer"))
+    _identity(binding.get("operation_id"))
+    _digest(binding.get("status_sha256"))
+    token = binding.get("token")
     if not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{32}", token) is None:
         _fail("Invalid retained archive identity")
     ids = {kind: kind + ":" + token for kind in ("artifact", "version", "root", "manifest")}
@@ -277,6 +283,19 @@ def _requests(binding, files):
     create = dict(base, operation_kind="create_artifact", idempotency_key="create",
                   body={"artifact": dict(artifact_id=ids["artifact"],
                     namespace_ref="local-hand:completed-results", type_ref=TYPE)})
+    source_ref = "local-hand:" + binding["producer"] + ":" + binding["operation_id"]
+    if len(source_ref) > 512:
+        _fail("Combined source identity exceeds the Ledger reference limit", "LIMIT_EXCEEDED")
+    append = dict(base, operation_kind="append_version", idempotency_key="append",
+        body=dict(version=dict(version_id=ids["version"], artifact_id=ids["artifact"],
+            content_root_ref=ids["root"], parent_version_refs=[], external_source_refs=[source_ref],
+            capture_refs=[], handling_policy_refs=[])))
+    return ids, create, append
+
+
+def _requests(binding, files):
+    ids, create, append = _request_templates(binding)
+    token = binding["token"]
     entries, blobs, payloads = [], [], {}
     for number, name in enumerate(sorted(LIMITS)):
         ref = "blob:" + token + ":" + str(number)
@@ -284,17 +303,11 @@ def _requests(binding, files):
         blobs.append(dict(blob_ref=ref, digest=dict(algorithm="sha256", value=_sha(files[name])),
                           byte_length=len(files[name]), payload_availability="available"))
         payloads[ref] = files[name]
-    source_ref = "local-hand:" + binding["producer"] + ":" + binding["operation_id"]
-    if len(source_ref) > 512:
-        _fail("Combined source identity exceeds the Ledger reference limit", "LIMIT_EXCEEDED")
-    append = dict(base, operation_kind="append_version", idempotency_key="append",
-        body=dict(version=dict(version_id=ids["version"], artifact_id=ids["artifact"],
-            content_root_ref=ids["root"], parent_version_refs=[], external_source_refs=[source_ref],
-            capture_refs=[], handling_policy_refs=[]),
-            content_roots=[dict(content_root_ref=ids["root"], kind="manifest", manifest_ref=ids["manifest"])],
-            manifests=[dict(manifest_ref=ids["manifest"], entries=entries,
-                            digest=dict(algorithm="sha256", value=_sha(_json(dict(entries=entries)))))],
-            blobs=blobs, provenance_links=[]))
+    append["body"].update(
+        content_roots=[dict(content_root_ref=ids["root"], kind="manifest", manifest_ref=ids["manifest"])],
+        manifests=[dict(manifest_ref=ids["manifest"], entries=entries,
+                        digest=dict(algorithm="sha256", value=_sha(_json(dict(entries=entries)))))],
+        blobs=blobs, provenance_links=[])
     return _json(create), _json(append), payloads
 
 
@@ -628,15 +641,21 @@ def bind_filesystem(store, *, expected_database_sha256):
                     with _open_root(task, os.geteuid()):
                         if _decode(_read(task / "binding.json", 65536)) != binding:
                             _fail("Original task binding differs")
-                        for kind, filename in (("create_artifact", "create.json"), ("append_version", "append.json")):
+                        _, create, append = _request_templates(binding)
+                        for kind, filename, expected in (("create_artifact", "create.json", create),
+                                                        ("append_version", "append.json", append)):
                             # Append also proves create must exist, even if its
                             # receipt was lost. Verification may never repair a
                             # receipt or select another one via a changed kind.
                             if (os.path.lexists(reservation / kind) or
                                     (kind == "create_artifact" and os.path.lexists(reservation / "append_version"))):
                                 raw = _read(task / filename, 65536)
-                                if _decode(raw).get("operation_kind") != kind:
-                                    _fail("Retained request kind differs from its receipt slot", "INTEGRITY_FAILURE")
+                                request = _decode(raw)
+                                if (set(request) != set(expected)
+                                        or any(request[key] != value for key, value in expected.items() if key != "body")
+                                        or not isinstance(request["body"], dict)
+                                        or any(request["body"].get(key) != value for key, value in expected["body"].items())):
+                                    _fail("Retained request differs from its original task mapping", "INTEGRITY_FAILURE")
                                 _ensure_operation(ledger, raw, receipt_directory=reservation, verify_only=True)
         checkpoint()
         if _physical_database_identity(path) != physical:

@@ -269,6 +269,62 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
                 expected_database_sha256=hashlib.sha256(database.read_bytes()).hexdigest())
         self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
 
+    def test_filesystem_binding_rejects_requests_from_another_task(self):
+        for case in ("create_artifact", "append_version", "implied-create"):
+            with self.subTest(case=case):
+                self.store = self.root / ("foreign-request-" + case)
+                self.archive()
+                consumer.archive_result(self.store, producer="test:another-hand", status_path=self.status_path,
+                    status_sha256=self.digest, evidence_dir=self.evidence)
+                self.legacy_device_number()
+                task = self.store / consumer._task_name("test:local-hand", OP)
+                other = self.store / consumer._task_name("test:another-hand", OP)
+                reservation = self.store / ("request-" + task.name)
+                other_reservation = self.store / ("request-" + other.name)
+                kind = "create_artifact" if case == "implied-create" else case
+                filename = "create.json" if kind == "create_artifact" else "append.json"
+                original = json.loads((task / filename).read_bytes())
+                (task / filename).write_bytes((other / filename).read_bytes())
+                if case == "implied-create":
+                    (reservation / kind).rename(self.root / "saved-implied-create-receipt")
+                    with sqlite3.connect(self.store / "ledger.sqlite") as connection:
+                        connection.execute("DELETE FROM operations WHERE scope=? AND kind=? AND key=?",
+                            (original["idempotency_scope_ref"], kind, original["idempotency_key"]))
+                else:
+                    (reservation / kind / "commit.json").write_bytes(
+                        (other_reservation / kind / "commit.json").read_bytes())
+                # Each substituted request/receipt pair is valid for the other
+                # task; neither may establish this task's original history.
+                self.verification()
+                before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                with self.assertRaises(consumer.ArchiveError):
+                    consumer.bind_filesystem(self.store,
+                        expected_database_sha256=hashlib.sha256((self.store / "ledger.sqlite").read_bytes()).hexdigest())
+                self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
+
+    def test_filesystem_binding_rejects_changed_mapping_and_allows_repaired_retry(self):
+        self.archive()
+        checkpoint = self.legacy_device_number()
+        task = next(self.store.glob("task-*"))
+        reservation = next(self.store.glob("request-task-*"))
+        mapping = task / "binding.json"
+        guard = reservation / "identity.json"
+        original_mapping, original_guard = mapping.read_bytes(), guard.read_bytes()
+        for field, value in (("token", "f" * 32), ("schema_version", "unknown"),
+                             ("status_sha256", "not-a-digest"), ("token", None)):
+            with self.subTest(field=field, value=value):
+                changed = dict(json.loads(original_mapping), **{field: value})
+                mapping.write_bytes(consumer._json(changed))
+                guard.write_bytes(consumer._json(dict(json.loads(original_guard), binding=changed)))
+                before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                with self.assertRaises(consumer.ArchiveError):
+                    consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
+        mapping.write_bytes(original_mapping)
+        guard.write_bytes(original_guard)
+        self.assertFalse(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+        self.assertTrue(self.resume()["reused"])
+
     def test_filesystem_binding_preserves_partial_archives_and_missing_receipts(self):
         for state in ("create-only", "missing-create-receipt", "missing-append-receipt"):
             with self.subTest(state=state):
@@ -739,6 +795,15 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
         self.assertEqual(self.verification(), counts)
         self.assertEqual(original_files, {path: path.read_bytes() for path in original_files})
         self.assertTrue((self.store / "database-initialized/database-identity/identity.json").is_file())
+        # Filesystem maintenance must accept this unchanged v1 token-scoped
+        # request, rather than reinterpret it with the newer task-scoped key.
+        before_binding = {path: path.read_bytes() for path in self.store.rglob("*") if path.is_file()}
+        checkpoint = hashlib.sha256((self.store / "ledger.sqlite").read_bytes()).hexdigest()
+        with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("binding must not replay")):
+            self.assertFalse(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+            self.assertTrue(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+        self.assertEqual(before_binding, {path: path.read_bytes() for path in before_binding})
+        self.assertEqual(self.verification(), counts)
         # The independent reservation also protects older token-scoped requests.
         next(self.store.glob("task-*")).rename(self.root / "legacy-request")
         with self.assertRaises(consumer.ArchiveError):
