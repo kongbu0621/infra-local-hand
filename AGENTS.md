@@ -1,5 +1,7 @@
 # 执行指引
 
+README 面向使用者；开发过程、阶段记录和任务接续见[开发与接续记录](docs/DEVELOPMENT.md)。维护首页图示时，先读其中的[图示维护约定](docs/DEVELOPMENT.md#图示维护约定)，保持主线、结果落点与真实语义一致。
+
 ## 当前优先级
 
 2026-10-15，Owner 明确纠正主任务与支撑工具的关系：原本是在推进 `infra-artifact-ledger`

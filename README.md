@@ -1,198 +1,80 @@
 # infra-local-hand
 
-受控本地执行器：提交任务、执行、取消、按原任务恢复查询、取回结果。
+受控本地执行器：让 ChatGPT 等应用或本地 CLI 在已配置的机器上提交有限任务，查询或取消执行，中断后沿原任务恢复查询，并取回可核对的结果与证据。
 
-## 当前交付目标（2026-10-15）
+这里的“本地”指任务执行位置。调用方可以通过网络连接服务，实际操作仍受登记的任务类型、项目、权限和资源上限约束。
 
-**主任务是继续 `infra-artifact-ledger` 原来被阻塞的开发与验收；Local Hand 是为解除其
-本地执行、验证和结果取回阻塞而建设的支撑工具。** 这是 Owner 于 2026-10-15 明确纠正的
-推进关系。已有本地 CLI 或本地 Codex 能在原授权范围内推进的 Ledger 工作直接接续；
-Local Hand 只补实际阻塞所需的能力，不要求先完成本仓收尾或建成完整通用执行器，也不需要重新选择另一个“真实项目”。
+**当前版本：`0.2.0a1` alpha · Python 3.12 为当前验证基线。** 从源码构建 wheel；包安装、服务部署和现场验收是分别需要完成的步骤。生产资格尚未完成，仓库暂未附许可证。
 
-[Ledger PR #7](https://github.com/kongbu0621/infra-artifact-ledger/pull/7) 中的 README 与 AGENTS 记录原任务、未完成项和推进顺序；
-本仓记录所需执行能力及其真实边界，两仓接续不以配套 PR 的合并顺序为前提。以 Ledger 原任务实际完成了什么衡量进展，复用仍适用的
-已完成结果，仅补该任务遇到的能力缺口。SOP 和理论提供方法与职责约束，不增加新的前置工程。
+## 它解决什么问题
 
-**H01 → Q4 → H11 核心链继续作为执行基础，无关外围开发暂停。**
+| 使用者的问题 | Local Hand 提供什么 |
+|---|---|
+| 怎么让应用在指定机器上完成一项操作？ | 按登记的任务类型和资源引用准备、提交并执行任务 |
+| 任务是在运行、已经结束，还是结果未知？ | 用原任务 ID 查询执行、业务结果和证据状态 |
+| 连接中断后，怎样继续确认结果？ | 沿同一任务和账本核对，保留未知事实，避免重复执行业务 |
+| 怎样取消任务？ | 记录取消请求、停止原执行，并继续核对退出证明 |
+| 怎样把执行结果带回来？ | 返回状态、文件清单和分块证据，供调用方完整取回并校验 |
 
-- 保留：任务提交和执行、状态查询、运行中取消、同任务恢复、结果及证据读取。
-- 屏蔽：NAS 新作业不出现在可提交能力或 MCP 参数选项中；手工提交也会在计划生成、资源预留和执行前被拒绝。
-- 暂停：与 Ledger 当前任务无关的新插件、连接器、全宿主扫描、诊断平台及重构。
+例如，对一个已登记项目修改单个文件：Local Hand 在任务独立副本中执行修改和固定验证，返回补丁、前后内容与验证输出。调用方核对证据后，再用[本地应用入口](docs/USAGE.md#land-a-verified-workspace-edit-locally)检查并应用到目标副本；任务完成本身不会自动提交或合并 Git。
 
-NAS 新作业被屏蔽是当前 Local Hand 的能力边界，不代表 Ledger 的 A2/NAS 需求被取消；
-接续按各仓已有授权执行，本次优先级调整不扩大目标、部署或数据操作权限，
-没有启用该作业、改变部署或执行任何验收。
+## 从请求到可用结果
 
-旧作业记录仍可查询、取消及核对，现有协议保留历史类型。
-鉴权、任务身份、数据保护、资源上限和结果完整性属于核心保障。
-MCP 与本地 CLI 复用作业后端和任务契约，都受后端的身份、权限及资源检查约束。
+[![调用方经接入入口向 Local Hand 作业后端发起请求；侧边账本与证据保存原任务状态和产物；最下方由调用方取回状态与证据，核对后继续工作。](docs/diagrams/task-results.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
 
-## 当前核心状态（2026-10-15）
+[查看原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
 
-约定的核心流程和单文件项目闭环已有实现及现场证据，可按以下边界完成当前阶段收尾。
-本次复核复用已完成任务和保留证据，经真实连接串行查询原任务，没有重新提交业务。
+图中主线表达职责和结果关系。只有获准提交才可能启动业务；查询、恢复和读取围绕原任务进行，不会重放已执行的业务。返回结果仍可能是失败或未知，证据是否可取回以实际封存状态为准。
 
-| 范围 | 已核实结果与边界 |
-| --- | --- |
-| H01 提交、执行及结果 | 已通过真实 ChatGPT 入口完成提交、三阶段执行及证据取回；复核任务仍为 `TERMINAL / EXITED / SUCCEEDED / SEALED`。 |
-| Q4 运行中取消 | 已通过真实 ChatGPT 入口取消运行中的原任务并证实退出；本次复核的取消任务业务结果仍为 `UNKNOWN`，未核实的效果不改报成功。 |
-| H11 同任务恢复查询 | 已通过真实 ChatGPT 入口恢复查询，并有业务及证据阶段中断后的恢复记录；沿同一账本继续，没有重放业务。缺失采集、效果检查及证据持久性仍按各任务原记录保留。 |
-| 项目读取、修改、测试及返回 | 已完成登记项目中的单文件 `workspace.edit`、固定验证、Git 补丁及封存证据返回；[PR #39](https://github.com/kongbu0621/infra-local-hand/pull/39) 已合入，补齐已核验结果的本地应用、冲突拒绝及重复调用核对。使用范围和信任边界见 [USAGE](docs/USAGE.md)。 |
+任务账本保存执行状态，封存证据保存可供核对的产物。调用方负责决定下一步做什么；Local Hand 按已登记的能力执行，并如实返回已观察到的结果。
 
-已完成任务的结果可通过可选本地命令 `local-hand-archive` 登记到独立 Artifact Ledger，
-返回明确制品 ID 和版本 ID，并按指定版本读回原证据。首次接入支持 Linux 和单个成功封存结果，
-使用既有 Ledger 库；安装、可信输入及重试方式见 [USAGE](docs/USAGE.md#archive-and-read-a-completed-result-locally)。
+## 怎么接入
 
-远端编辑在任务独立副本中执行，本地应用是另一个步骤，要求证据已核验且目标通过版本、索引和内容检查。
-本地应用已在保留的匹配副本中核验；对原开发工作区中已更新的目标，冲突检查拒绝覆盖。
-本次复核确认的是本地安装与既有现场记录，没有重新核验或升级远端执行服务的安装版本。
+| 接入方式 | 入口及职责 |
+|---|---|
+| ChatGPT 等支持 MCP 的应用 | 通过 MCP Server 调用任务工具；客户端需能访问配置的网络入口并完成认证 |
+| 本地 CLI | `local-hand-jobs` 通过受保护的本地 Unix socket 访问作业后端，以操作系统身份映射鉴权 |
+| 部署侧 | 配置允许的任务、项目、验证和预算；管理服务准备资源，MCP 服务处理网络请求 |
 
-本次 `lh_capabilities` 返回 `host.inspect` 和 `workspace.edit`，项目引用为
-`infra-local-hand`，验证引用为 `core`；这是当前部署的有限能力，不代表任意项目或任意命令执行。
-实际调用仍以服务返回和部署配置为准。
+MCP 是通信协议，Local Hand 是执行服务；Tailscale 可以作为部署时的网络入口。术语、通信关系图、网络可达与授权的区别见[连接说明](docs/USAGE.md#客户端servermcp-与-tailscale-是什么关系)。
 
-为接续 Ledger A2，源码新增可选固定作业 `ledger.test.local_a2`：复用部署侧登记的
-Ledger venv 和 wheel，在本任务独立的本地目录运行既有安装态快照恢复脚本，沿原任务链返回
-结果和封存证据。该能力需要先在原执行服务登记并安装；本仓代码与单元验证不表示现场已启用，
-也不表示 Ledger A2 实机或 NAS 已通过。登记及调用步骤见
-[USAGE](docs/USAGE.md#run-the-installed-ledger-a2-local-check)。
+包中还保留 `local-hand-worker` / `local-hand-connect` 的 Task/Result 与 Git mailbox 入口，其配置和权限边界见[使用说明](docs/USAGE.md#explicit-admission)。它与作业后端的 MCP/CLI 入口使用不同协议，不能混用任务参数。
 
-工具调用偶发的 `-32603` **仍未查明根因**：保留记录中，并发只读核验和一次实际文件读取
-均出现过该错误，不能限定为并发故障。已检查的本地 API 日志未观察到对应的失败请求；
-缺少贯通客户端、入口和 API 的关联标识及平台派发日志，尚不能确定故障段。
-有界排查已保留结果；串行查询成功不代表该问题已修复。
-NAS 新作业仍被屏蔽，生产资格尚未完成；按上述已核实边界支持 Ledger 接续，不表示 Ledger A2 或本仓历史需求全部完成。
+## 开始使用
 
-## 客户端、Server、MCP 与 Tailscale 是什么关系
+1. **确认部署与权限。** 已有服务时先读取 `lh_capabilities`，确认允许的作业、项目或运行环境引用。新部署从[构建与安装](docs/USAGE.md#build-and-install)及[服务部署输入](docs/USAGE.md#job-service-deployment-inputs)开始；管理组件需另行部署，安装 wheel 不会自动建立可用的远程服务。
+2. **按入口模式提交确定的任务。** 常驻入口使用新的任务 UUID 调用 `lh_job_prepare`；`PREPARING` 时沿同一 UUID 和参数查询，`READY` 后原样提交返回的 `request`。预备单任务入口则提交能力返回中的原 `prepared_request`；只读入口不能准备或提交新任务。
+3. **沿原任务查询或取消。** 保存完整原请求及 `operation_id`、`request_digest`；响应丢失先查原任务，不能换一个 ID 重试结果未知的业务。取消已受理不等于进程已退出。
+4. **取回并核对结果。** 查询状态；证据封存后，读取 `lh_evidence_manifest` 与 `lh_evidence_read_chunk`，完整组装文件，并按可信返回核对原任务关联、大小和摘要，再决定如何使用结果。
 
-**Local Hand Server 负责接收和处理请求；MCP 规定双方怎样通信；Tailscale 提供网络连接入口。**
+入口模式与当前工具参数见[作业使用说明](docs/USAGE.md#作业入口与运行模式)；取消、恢复和证据的设计约束见[作业架构](docs/a2-execution/ARCHITECTURE.md#ax-a07-mcp-工具和二进制证据r03r04r07r08r09)。固定 Ledger 本地验收的登记及调用示例见[使用说明](docs/USAGE.md#run-the-installed-ledger-a2-local-check)。
 
-| 名称 | 在这里是什么意思 |
-| --- | --- |
-| 客户端（Client） | 发出请求并接收结果的程序。通过 ChatGPT 操作 Local Hand 时，具体指 ChatGPT 中负责连接 Local Hand、发起工具调用的组件。浏览器是用户操作 ChatGPT 的界面。 |
-| 服务端（Server） | 在本机环境中运行、等待并处理请求的后台程序。这里指 Local Hand 服务，可以运行在已有电脑或其虚拟机中。 |
-| MCP | Model Context Protocol，一套通信规则，规定如何发现工具、调用工具和返回结果。 |
-| MCP Server | 支持 MCP 通信的服务端。Local Hand 的网络服务入口就是一个 MCP Server，背后连接本地作业后端。 |
-| Tailscale | 部署时可选的网络入口，把请求转发到 Local Hand。任务管理和执行由 Local Hand 实现，MCP 规则也不绑定 Tailscale。 |
+## 与 Artifact Ledger 配合
 
-按 [MCP 的正式术语](https://modelcontextprotocol.io/docs/learn/architecture)，ChatGPT 这类 AI 应用称为
-Host（宿主应用），其中连接 MCP Server 的组件称为 Client（客户端）。下图把这层关系展开。
-图中省略了宿主机与虚拟机之间可能存在的端口转发；调用方需要能够访问配置的网络入口。
+Local Hand 负责执行任务和取回结果；[Artifact Ledger](https://github.com/kongbu0621/infra-artifact-ledger) 为数字成果保存稳定身份、不可变版本、内容及来源关系。
 
-```mermaid
-flowchart LR
-    U["你：通过浏览器使用 ChatGPT"] --> C["ChatGPT 中的 MCP 客户端"]
-    C <-->|"MCP 请求与结果（HTTPS）"| G["Tailscale 入口"]
-    G <-->|"转发请求与结果"| S["Local Hand MCP Server"]
-    S <-->|"提交、查询、取消"| B["本地作业后端"]
-    B <-->|"启动、停止与结果收集"| T["本地任务进程"]
-```
+可选的 `local-hand-archive` 能将已经成功封存的单个任务结果保存到独立 Ledger，再按返回的制品 ID 和版本 ID 读回原证据。当前消费者支持 Linux；归档不会重新执行任务，也不会自动应用补丁。安装、可信输入与重试方式见[结果归档](docs/USAGE.md#archive-and-read-a-completed-result-locally)。普通 Local Hand 使用不依赖安装 Ledger。
 
-例如，你说“查询任务状态”：
+## 当前能力与边界
 
-1. ChatGPT 按 MCP 规则调用 `lh_job_status`，携带原任务的 `operation_id`。
-2. 网络入口把请求转发给 Local Hand MCP Server。
-3. 服务端校验身份、权限和参数，再由作业后端查询该任务。
-4. 服务端按 MCP 规则返回结果，ChatGPT 再把结果告诉你。查询本身不会重新执行任务。
+| 范围 | 已有能力与限制 |
+|---|---|
+| 提交、查询、取消、同任务恢复和证据读取 | 已在已有部署完成真实 ChatGPT 入口验证；具体任务的未知结果与证据缺口仍按原记录保留 |
+| `host.inspect`、`workspace.edit` | 检查主机；在登记项目的任务独立副本中修改单文件、运行固定验证并返回结果。具体引用以服务能力列表为准 |
+| `ledger.test.local_a2` | 已有可选固定作业，复用已登记的 Ledger 安装环境执行本地快照恢复检查；需要部署侧启用，不代表现场或 NAS 验收已通过 |
+| NAS 新作业 | 当前被实现屏蔽；历史任务记录仍保留 |
+| 平台 | 核心包有 Linux/Windows 验证；当前作业后端、本地 socket 与管理服务按已有 Linux 部署使用，不能据此宣称所有入口都已跨平台验收 |
 
-网络入口的访问范围由部署配置决定：Tailscale **Serve** 面向 Tailscale 私网，
-**Funnel** 可以向公网提供入口，区别见 [Tailscale 官方说明](https://tailscale.com/docs/features/tailscale-funnel/how-to/host-websites)。
-本机浏览器能打开登录页、拥有 `ts.net` 地址或服务处于运行状态，都不能单独证明 ChatGPT 的工具调用端已能访问 MCP 入口；
-需要分别确认网络可达和 OAuth 授权。Local Hand 会继续校验调用者身份及每项工具的权限。
-连接中断只表示客户端暂时无法取得响应，不能据此认定任务取消或失败；
-恢复连接后应沿原 `operation_id` 查询。取消请求已受理也不等于进程已退出，需要继续查询退出证明。
-后端按原任务 ID 和请求摘要识别重复提交；换一个任务 ID 会被视为新的任务，不能用它重试结果未知的业务。
+任务不能携带任意 shell 命令或自行扩大项目、路径与权限范围。身份校验、任务关联、数据保护及资源上限始终生效；任务、日志、凭据和原始证据保存在部署者的私有环境。
 
-### Server 的源码在哪里
+工具调用存在偶发 `-32603` 的保留记录，根因尚未确认；连接错误不等于任务没有执行。已有任务先按原 ID 查询，仍未知的结果如实保留。
 
-服务用 Python 实现，MCP SDK 处理工具声明与协议消息，Uvicorn 提供 HTTP 服务。
-本项目的 MCP 网络入口使用 Streamable HTTP 传输，也就是通过 HTTP 交换 MCP 消息，
-并验证访问令牌；本地 CLI 则通过 Unix socket 和操作系统身份映射访问后端。
-两者共享任务逻辑，传输方式和入口鉴权方式各不相同。
+## 文档
 
-命令 `local-hand-mcp` 在 [pyproject.toml](pyproject.toml) 中映射到
-`local_hand_mcp.server:main`；启用该入口需要安装项目固定的 `[mcp]` 可选依赖。
-`main()` 加载配置、认证器和后端，由 `create_app()` 创建应用，再调用 `uvicorn.run()`
-监听 `127.0.0.1`，端口由必填的 `--port` 参数指定。外部 HTTPS 入口转发到配置的端口。
-这里的“本地”指任务执行位置；客户端仍然可以通过网络访问这个服务。
+| 想了解什么 | 阅读入口 |
+|---|---|
+| 如何安装、连接、应用补丁或归档结果 | [使用说明](docs/USAGE.md) |
+| 作业入口、当前参数及任务设计约束 | [运行模式与工具参数](docs/USAGE.md#作业入口与运行模式) · [作业架构](docs/a2-execution/ARCHITECTURE.md) |
+| 产品需求及早期 Task/Result、Git mailbox 设计 | [需求](docs/REQUIREMENTS.md) · [架构](docs/ARCHITECTURE.md) |
 
-| 源码 | 职责与阅读入口 |
-| --- | --- |
-| [server.py](tools/local_hand_mcp/server.py) | `main()` 启动服务；`create_app()` 注册工具、处理 MCP 请求并返回结果。 |
-| [auth.py](tools/local_hand_mcp/auth.py) | `JWTVerifier` 验证访问令牌和调用者身份。 |
-| [resident.py](tools/local_hand_mcp/resident.py) | `ResidentBroker.call()` 将常驻入口的请求送到对应任务或历史结果。 |
-| [resident_service.py](tools/admin/local_hand_system_manager/resident_service.py) | `ResidentService` 准备任务资源；管理服务通过受保护的本地 socket 接收请求。 |
-| [task_service.py](tools/admin/local_hand_system_manager/task_service.py) | `TaskService` 启动并管理一个任务的服务及阶段执行。 |
-| [broker.py](tools/local_hand_jobs/broker.py) | `Broker` 管理提交、取消、状态、资源及持久账本；相同任务 ID 与摘要复用已有记录，相同 ID 携带不同请求会被拒绝。 |
-| [runner.py](tools/local_hand_jobs/runner.py) | `Runner` 与进程管理器管理实际执行进程、停止和结果收集。 |
-
-先读 `server.py` 的 `main()` 和 `create_app()`，再顺着 `ResidentBroker.call()`
-查看任务路由，就能把网络入口与实际执行连起来。
-在 `--resident` 常驻模式下，MCP API 与负责准备资源、启动任务的管理服务分别运行，
-通过受保护的本地 socket 通信；表中的模块并不都运行在同一个 Server 进程里。
-
-## 核心现场历史记录（截至 2026-10-13）
-
-以下保留截至该日的实现版本和现场结果。其中的能力范围、容量配置及“尚未验证”描述
-仅代表当时状态，不是今天的配置清单。当前实际可调用工具与允许作业，以运行服务的工具列表、
-`lh_capabilities` 返回及部署配置为准；实现是否存在也不能替代现场验收结果。
-
-**正式 Broker/MCP 核心链已实测：提交、执行、取消、同任务恢复和证据读取。**
-
-| 层次 | 已完成与当前边界 |
-| --- | --- |
-| 作业后端 | 已有提交、执行、状态查询、取消、同账本恢复观测和结果读取；CLI/MCP 共用后端。恢复不重放业务，证据不足时保留 UNKNOWN。 |
-| 验收链 | H01 已完成结果和证据收尾；Q4 已观察运行、落账取消并证实停止及双流 EOF；H11 原进程中断后，新进程已从同一账本恢复查询，未重放业务。 |
-| 原现场环境 | 已修复启动内核与 quota 模块不匹配，六项 guest 核验通过；journal 文件系统已扩至 512 MiB，内容保留及运行环境检查通过。 |
-| 正式提交与结果 | CLI 与官方 MCP 客户端分别提交独立 H01；两项均三个阶段闭合，TERMINAL / SUCCEEDED / SEALED，账本各 1 个 operation、58 个 event、12 个目录保护 lease。zip、manifest、seal 均已通过正式入口取回并核对摘要。 |
-| ChatGPT 提交与结果 | `8115973` 已通过现有 OAuth 和网关接收 ChatGPT 对一个预备 `host.inspect` 的真实提交；三阶段闭合，TERMINAL / EXITED / SUCCEEDED / SEALED，退出码 0、无报告缺口，账本 1/58/12。通过真实连接取回 zip、manifest、seal，摘要及包内成员一致；原任务账本未变。 |
-| 常驻自动准备 | `c5cc461` 的常驻入口已由认证 CLI 连续自动准备并提交两个独立 H01；执行 VM 正常重启后，两项服务自动启动，ChatGPT 又通过 `lh_job_prepare` 自动准备并提交一个新 H01。三项均三阶段闭合、SUCCEEDED / SEALED、1/58/12，控制器退出 0、双流 EOF 完整；全部证据已通过真实 ChatGPT 连接取回并核对摘要，四个重启前账本内容保持一致。 |
-| 正式取消与恢复 | Q4 在实际运行中取消，TERMINAL / CANCELLED，账本 1/17/6，控制器正常退出。H11 在原 API 中断后恢复同一任务，TERMINAL / UNKNOWN，账本 1/21/6；业务未启动或重放，丢失的采集事实保持未知。 |
-| 历史原任务 | 此前 H01 为 SUCCEEDED / SEALED，账本 1/50/12；Q4 为 CANCELLED，1/17/6；H11 为 UNKNOWN，1/22/6。这些任务、证据和历史事件保持原样。 |
-| 代码验证 | 相关本地回归及独立安装通过；正式入口修复和现有 CI 见 [PR #35](https://github.com/kongbu0621/infra-local-hand/pull/35)。 |
-
-用户已撤销“一次失败就封死整批任务、禁止重试”等旧规则。修复后继续已批准的核心工作；
-本地错误及只读连接错误允许有界重试，可能已写入的操作先确认完成状态。
-普通修复不重走审批套件，也不强制重复全量测试和安装。当前规则以 [AGENTS.md](AGENTS.md)
-为准；历史记录不构成新的审批门槛，未知结果仍如实保留。
-当前打包核对所选源码和实际载荷，不重验历史审批链或手工维护的旧版本白名单。
-只读及本地无远端影响的失败允许修复后继续；可能执行过的任务先按原身份核对。
-已停止的预检查和已完成的证据恢复不再等待旧验证阶段全部闭合才释放执行占用。
-核心现场配置每分钟允许 60 次请求，避免查询后无法读取证据；鉴权及执行、存储预算仍保留。
-正式 Broker/MCP 入口现通过 `--session` 接入管理员创建的任务会话，复用系统管理器、
-阶段配额授权和同任务恢复；不再固定走返回 UNSUPPORTED 的旧管理器。
-管理员入口为 `admin.local_hand_system_manager.task_service --launch <私有启动配置>`，
-使用已准备的安装、配额和控制器，由真实客户端提交配置中绑定的任务。
-会话面向一个原任务；控制器的原时间窗口内可读取结果，恢复会话只观察和停止原执行。
-窗口结束后可用 `--read-only` 启动结果服务，保留身份和源码核验，以只读 SQLite 打开
-原账本，提供状态及封存证据读取；该模式没有执行管理器，不能提交、取消或调和任务。
-正式取消收尾使用 `2bec792`；MCP 提交执行使用 `cd90ce7`，状态 schema 修复后以
-`5c4dc5d` 读取同一任务的结果和全部证据，未重新提交或执行业务。
-原 MCP 实测使用独立官方 SDK 客户端、真实 HTTP、签名令牌和本机测试签发端；无令牌返回 401。
-随后以 `--prepared-task` 复用现有 ChatGPT/OAuth 和网关完成一个新 H01。能力接口返回
-`prepared_request`，客户端原样提交；固定任务启动器只在认证通过后的提交时启动原执行后端，
-状态查询不启动执行。控制器结束后，同一入口只读返回该任务及保留的原任务结果。
-这次单任务验证后，`--resident` 已接入常驻自动准备服务。客户端从能力接口取得
-`preparation`，以新的任务 UUID 调用 `lh_job_prepare`，READY 后把返回的 `request`
-原样交给 `lh_job_submit`；PREPARING 用同一 UUID 查询准备进度。准备需要 `lh:submit`，
-只读查询不会创建任务。失败准备保留原件，修复后可用 `retry_failed=true` 沿同一任务重试；
-已提交业务及不确定的执行不会因此重放。
-常驻服务按当前启动环境绑定新任务的资源，并继续只读返回已完成任务。现场配置仅开放
-`host.inspect`，同时一个执行会话，最多保留 32 个任务；前一会话退出前返回 RESOURCE_BUSY，
-稍后沿用原任务 UUID 重试。原只读配置和安装保留，开机入口已切换到常驻服务。
-刷新连接后，ChatGPT 已完成重启后新任务的自动准备、提交、执行和完整结果读取；准备一次、
-账本接收一次，绑定当前启动环境，原任务未重放。ChatGPT 的运行中取消及同任务恢复尚未现场验证。
-已退出的历史失败单元经实际状态核对后不再封锁新任务；停止后的单元回收不再要求补造终态快照。
-
-## 使用与开发入口
-
-| 入口 | 内容 |
-| --- | --- |
-| [使用说明](docs/USAGE.md) | 隔离安装、配置和既有任务接口 |
-| [执行约束](AGENTS.md) | 当前核心范围及既有现场边界 |
-| [需求](docs/REQUIREMENTS.md) | 执行器目标与验收条件 |
-| [架构](docs/ARCHITECTURE.md) | 任务、权限和结果边界 |
-| [作业接口](docs/a2-execution/ARCHITECTURE.md) | 受限作业后端、CLI 与 MCP 接口 |
-
-历史方案和验证记录仍保存在 `docs/`；[旧首页完整记录](https://github.com/kongbu0621/infra-local-hand/blob/b0fffefd95335fd8835f0ac5a6b01c3d2ca51654/README.md)可追溯。
-生产资格、更多核心作业类型与 NAS 验收尚未完成。暂不添加许可证；任务、日志、凭据和原始证据保持私有。
+开发过程、阶段记录和任务接续见[开发与接续记录](docs/DEVELOPMENT.md)；参与维护从 [AGENTS.md](AGENTS.md) 开始。

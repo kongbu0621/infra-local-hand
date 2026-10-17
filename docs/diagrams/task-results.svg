@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="900" viewBox="0 0 960 900" role="img" aria-labelledby="title description">
+  <title id="title">Local Hand：从请求到可用结果</title>
+  <desc id="description">调用方通过 MCP Server 或本地 socket 访问 Local Hand 作业后端。后端管理原任务并在授权范围内执行；侧边任务账本与证据保存原任务身份、状态和封存产物。最下方由调用方经入口取回状态与可用证据，核对原任务和内容，继续工作。查询与恢复不会重放业务。</desc>
+  <!-- Editable presentation of task-results.mmd. See ../DEVELOPMENT.md. -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#9aa9b5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 23px; text-anchor: middle; fill: #8bc7ff; }
+      .node { fill: #102c42; stroke: #35566e; stroke-width: 1.6; }
+      .edge { fill: none; stroke: #9aa9b5; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .label { fill: #0d1117; stroke: #6ba8d6; stroke-width: 1.4; }
+      .edge-label { font-size: 20px; }
+      .heading { font-weight: 600; }
+      .storage-text { font-size: 22px; }
+    </style>
+  </defs>
+  <rect width="960" height="900" rx="16" fill="#0d1117"/>
+  <g id="edge-A-B" data-from="A" data-to="B" data-label="提交 / 查询 / 取消 / 核对">
+    <path class="edge" d="M 241 144 V 240"/>
+    <rect class="label" x="93" y="170" width="296" height="38" rx="19"/>
+    <text class="edge-label" x="241" y="196">提交 / 查询 / 取消 / 核对</text>
+  </g>
+  <g id="edge-B-C" data-from="B" data-to="C" data-label="">
+    <path class="edge" d="M 241 352 V 448"/>
+  </g>
+  <g id="edge-C-D" data-from="C" data-to="D" data-label="持久记录">
+    <path class="edge" d="M 446 488 H 630"/>
+    <rect class="label" x="475" y="437" width="126" height="38" rx="19"/>
+    <text class="edge-label" x="538" y="463">持久记录</text>
+  </g>
+  <g id="edge-D-C" data-from="D" data-to="C" data-label="读取核对">
+    <path class="edge" d="M 630 568 H 446"/>
+    <rect class="label" x="475" y="517" width="126" height="38" rx="19"/>
+    <text class="edge-label" x="538" y="543">读取核对</text>
+  </g>
+  <g id="edge-C-E" data-from="C" data-to="E" data-label="经入口返回">
+    <path class="edge" d="M 241 600 V 740"/>
+    <rect class="label" x="156" y="649" width="170" height="38" rx="19"/>
+    <text class="edge-label" x="241" y="675">经入口返回</text>
+  </g>
+  <g id="node-A" data-node="A">
+    <rect class="node" x="36" y="32" width="410" height="112" rx="24"/>
+    <text x="241" y="77"><tspan x="241" class="heading">调用方</tspan><tspan x="241" dy="34">ChatGPT 等应用 / 本地 CLI</tspan></text>
+  </g>
+  <g id="node-B" data-node="B">
+    <rect class="node" x="36" y="240" width="410" height="112" rx="24"/>
+    <text x="241" y="285"><tspan x="241">接入入口</tspan><tspan x="241" dy="34" class="heading">MCP Server / 本地 socket</tspan></text>
+  </g>
+  <g id="node-C" data-node="C">
+    <rect class="node" x="36" y="448" width="410" height="152" rx="24"/>
+    <text x="241" y="489"><tspan x="241" class="heading">Local Hand 作业后端</tspan><tspan x="241" dy="34">管理原任务，受控执行</tspan><tspan x="241" dy="34">收集状态与结果</tspan></text>
+  </g>
+  <g id="node-D" data-node="D">
+    <path class="node" d="M 630 452 A 147 24 0 0 1 924 452 V 580 A 147 24 0 0 1 630 580 Z"/>
+    <ellipse class="node" cx="777" cy="452" rx="147" ry="24"/>
+    <text class="storage-text" x="777" y="507"><tspan x="777" class="heading">任务账本与证据</tspan><tspan x="777" dy="32">保存原任务身份、状态</tspan><tspan x="777" dy="32">与封存产物</tspan></text>
+  </g>
+  <g id="node-E" data-node="E">
+    <rect class="node" x="36" y="740" width="410" height="124" rx="24"/>
+    <text x="241" y="779"><tspan x="241" class="heading">调用方取回状态与可用证据</tspan><tspan x="241" dy="32">核对原任务和内容</tspan><tspan x="241" dy="32">继续工作</tspan></text>
+  </g>
+</svg>
