@@ -2,48 +2,13 @@
 
 ## 客户端、Server、MCP 与 Tailscale 是什么关系
 
-**Local Hand Server 负责接收和处理请求；MCP 规定双方怎样通信；Tailscale 提供网络连接入口。**
-
-| 名称 | 在这里是什么意思 |
-| --- | --- |
-| 客户端（Client） | 发出请求并接收结果的程序。通过 ChatGPT 操作 Local Hand 时，具体指 ChatGPT 中负责连接 Local Hand、发起工具调用的组件。浏览器是用户操作 ChatGPT 的界面。 |
-| 服务端（Server） | 在本机环境中运行、等待并处理请求的后台程序。这里指 Local Hand 服务，可以运行在已有电脑或其虚拟机中。 |
-| MCP | Model Context Protocol，一套通信规则，规定如何发现工具、调用工具和返回结果。 |
-| MCP Server | 支持 MCP 通信的服务端。Local Hand 的网络服务入口就是一个 MCP Server，背后连接本地作业后端。 |
-| Tailscale | 部署时可选的网络入口，把请求转发到 Local Hand。任务管理和执行由 Local Hand 实现，MCP 规则也不绑定 Tailscale。 |
-
-按 [MCP 的正式术语](https://modelcontextprotocol.io/docs/learn/architecture)，ChatGPT 这类 AI 应用称为
-Host（宿主应用），其中连接 MCP Server 的组件称为 Client（客户端）。下图把这层关系展开。
-下图以 Tailscale 作为可选部署入口；图中省略了宿主机与虚拟机之间可能存在的端口转发。
-调用方需要能够访问配置的网络入口。
-
-```mermaid
-flowchart LR
-    U["你：通过浏览器使用 ChatGPT"] --> C["ChatGPT 中的 MCP 客户端"]
-    C <-->|"MCP 请求与结果（HTTPS）"| G["Tailscale 入口"]
-    G <-->|"转发请求与结果"| S["Local Hand MCP Server"]
-    S <-->|"提交、查询、取消"| B["本地作业后端"]
-    B <-->|"启动、停止与结果收集"| T["本地任务进程"]
-```
-
-例如，你说“查询任务状态”：
-
-1. ChatGPT 按 MCP 规则调用 `lh_job_status`，携带原任务的 `operation_id`。
-2. 网络入口把请求转发给 Local Hand MCP Server。
-3. 服务端校验身份、权限和参数，再由作业后端查询该任务。
-4. 服务端按 MCP 规则返回结果，ChatGPT 再把结果告诉你。查询本身不会重新执行任务。
-
-网络入口的访问范围由部署配置决定：Tailscale **Serve** 面向 Tailscale 私网，
-**Funnel** 可以向公网提供入口，区别见 [Tailscale 官方说明](https://tailscale.com/docs/features/tailscale-funnel/how-to/host-websites)。
-本机浏览器能打开登录页、拥有 `ts.net` 地址或服务处于运行状态，都不能单独证明 ChatGPT 的工具调用端已能访问 MCP 入口；
-需要分别确认网络可达和 OAuth 授权。Local Hand 会继续校验调用者身份及每项工具的权限。
-连接中断只表示客户端暂时无法取得响应，不能据此认定任务取消或失败；
-恢复连接后应沿原 `operation_id` 查询。取消请求已受理也不等于进程已退出，需要继续查询退出证明。
-后端按原任务 ID 和请求摘要识别重复提交；换一个任务 ID 会被视为新的任务，不能用它重试结果未知的业务。
+完整的术语解释、通信连接图、“查询任务状态”示例及网络与授权边界见
+[README 的连接说明](../README.md#客户端servermcp-与-tailscale-是什么关系)。
+下面继续介绍具体运行模式、命令参数与部署步骤。
 
 ## 作业入口与运行模式
 
-先确认已部署服务的运行模式，再读取 `lh_capabilities`。MCP 是网络入口，
+先确认已部署服务的运行模式，再读取 `lh_capabilities`。Local Hand 的 MCP Server 提供网络入口，
 `local-hand-jobs` 是本地 socket 客户端；它们可访问同一个后端，工具能力取决于该后端的模式及调用者权限。
 `local-hand-mcp` 的四种启动模式互斥：
 
