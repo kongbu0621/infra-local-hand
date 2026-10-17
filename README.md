@@ -20,9 +20,9 @@
 
 ## 从请求到可用结果
 
-[![调用方经接入入口向 Local Hand 作业后端发起请求；侧边账本与证据保存原任务状态和产物；最下方由调用方取回状态与证据，核对后继续工作。](docs/diagrams/task-results.svg)](docs/diagrams/task-results.svg)
+[![调用方经接入入口向 Local Hand 作业后端发起请求；侧边账本与证据保存原任务状态和产物；最下方由调用方取回状态与证据，核对后继续工作。](docs/diagrams/task-results.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
 
-[查看原图（可缩放）](docs/diagrams/task-results.svg)
+[查看原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
 
 图中主线表达职责和结果关系。只有获准提交才可能启动业务；查询、恢复和读取围绕原任务进行，不会重放已执行的业务。返回结果仍可能是失败或未知，证据是否可取回以实际封存状态为准。
 
