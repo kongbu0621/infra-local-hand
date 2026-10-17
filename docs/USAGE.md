@@ -47,12 +47,12 @@ flowchart LR
 `local-hand-jobs` 是本地 socket 客户端；它们可访问同一个后端，工具能力取决于该后端的模式及调用者权限。
 `local-hand-mcp` 的四种启动模式互斥：
 
-| 服务模式 | 新任务从哪里来 | 使用方式 |
-| --- | --- | --- |
-| `--resident` 常驻入口 | 管理服务按已登记的能力准备资源 | 按 capabilities 的 `preparation`、profile 和获准引用调用 `lh_job_prepare`；`READY` 后将返回的完整 `request` 原样交给 `lh_job_submit` |
-| `--prepared-task` 预备单任务入口 | 部署者已准备一个固定任务 | 获准主体从 capabilities 获取 `prepared_request`，原样提交；保留其中的 UUID，不另行准备新任务 |
-| `--session` 执行会话入口 | 部署者提供已绑定的任务会话及请求 | 按该会话的固定请求提交，不提供常驻自动准备能力 |
-| `--read-only` 保留结果入口 | 沿原 ID 读取已有任务 | 只支持能力、状态和证据查询，不支持准备、提交、取消或核对执行 |
+| 服务模式 | 任务来源与使用方式 |
+| --- | --- |
+| `--resident` | 常驻入口，由管理服务按已登记的能力准备资源。按 capabilities 的 `preparation`、profile 和获准引用调用 `lh_job_prepare`；`READY` 后将返回的完整 `request` 原样交给 `lh_job_submit` |
+| `--prepared-task` | 预备单任务入口，部署者已准备一个固定任务。获准主体从 capabilities 获取 `prepared_request`，原样提交；保留其中的 UUID，不另行准备新任务 |
+| `--session` | 执行会话入口，部署者提供已绑定的任务会话及请求。按该会话的固定请求提交，不提供常驻自动准备能力 |
+| `--read-only` | 保留结果入口，沿原 ID 读取已有任务。只支持能力、状态和证据查询，不支持准备、提交、取消或核对执行 |
 
 独立 `local-hand-broker` 提供 `--session` / `--read-only`；`local-hand-mcp` 还提供与其后端模式一致的维护 socket。
 本地调用者使用部署者配置的 socket 路径和已映射身份，例如只读查询能力：
