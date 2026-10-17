@@ -18,6 +18,39 @@
 
 例如，对一个已登记项目修改单个文件：Local Hand 在任务独立副本中执行修改和固定验证，返回补丁、前后内容与验证输出。调用方核对证据后，再用[本地应用入口](docs/USAGE.md#land-a-verified-workspace-edit-locally)检查并应用到目标副本；任务完成本身不会自动提交或合并 Git。
 
+## 工具 API 一览
+
+下面列出常驻入口支持的 **8 个工具**。这些名称用于 MCP 工具调用；本地 CLI 也可调用所连接后端支持的同名工具。
+实际暴露和可调用的范围取决于运行模式、部署配置及调用者权限，先用 `lh_capabilities` 确认获准的作业与资源引用。
+
+### 查询与读取（5 个）
+
+| 工具名 | 用途与关键结果 |
+|---|---|
+| `lh_capabilities` | 查询获准使用的功能、资源引用和身份绑定；预备单任务入口还可返回原 `prepared_request` |
+| `lh_workspace_read` | 读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交；读取不会准备或提交任务 |
+| `lh_job_status` | 按原 `operation_id` 查询执行、业务结果和证据状态；查询不会重放业务 |
+| `lh_evidence_manifest` | 按任务分页读取已封存的证据清单，包括文件的 `artifact_id`、大小和 SHA-256 |
+| `lh_evidence_read_chunk` | 按 `artifact_id`、偏移量和可信清单中的摘要读取文件分块，返回 Base64 数据供调用方组装并校验 |
+
+### 任务准备与控制（3 个）
+
+| 工具名 | 用途与关键结果 |
+|---|---|
+| `lh_job_prepare` | 为获准任务准备资源和确定的请求，返回 `PREPARING`、`READY` 或 `FAILED`；`READY` 后原样提交返回的 `request`，准备本身不执行业务 |
+| `lh_job_submit` | 提交确定的任务请求并持久保存记录；响应不明时保留原 `operation_id`，先查询原任务 |
+| `lh_job_cancel` | 用原任务 ID、原请求摘要和明确目标申请取消；收到回执后仍需查询并确认退出 |
+
+常驻任务通常按 `lh_capabilities` → `lh_job_prepare` → `lh_job_submit` → `lh_job_status` 调用，
+证据封存后再通过 `lh_evidence_manifest` 和 `lh_evidence_read_chunk` 取回文件。
+
+源码还定义了 `lh_job_reconcile`，用于核对原任务已产生的影响；**当前常驻入口不提供它**。
+它与恢复连接后的状态查询不同，其他入口是否可用以服务暴露的工具及权限为准。
+
+完整参数与必填字段以已连接服务的工具 schema 为准。运行模式、参数和调用约束见
+[作业使用说明](docs/USAGE.md#作业入口与运行模式)；源码定义见
+[contract.py](tools/local_hand_jobs/contract.py) 和 [server.py](tools/local_hand_mcp/server.py)。
+
 ## 从请求到可用结果
 
 [![调用方经接入入口向 Local Hand 作业后端发起请求；侧边账本与证据保存原任务状态和产物；最下方由调用方取回状态与证据，核对后继续工作。](docs/diagrams/task-results.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
