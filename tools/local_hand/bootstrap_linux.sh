@@ -392,7 +392,7 @@ sudo chown -R "$RUN_USER:$RUN_GROUP" "$TARGET_REPO"
 STAGE_ROOT="$(mktemp -d)"
 STAGE_WORKER_ROOT="$STAGE_ROOT/worker"; STAGE_PACKAGE_ROOT="$STAGE_WORKER_ROOT/local_hand"; STAGE_PROFILE="$STAGE_ROOT/node-profile.json"
 mkdir -p "$STAGE_PACKAGE_ROOT"
-PACKAGE_FILES=(__init__.py protocol.py paths.py config.py provenance.py installation.py observe.py act.py validate.py bounded_io.py git_safety.py mailbox_safety.py runtime_lock.py bootstrap_safety.py windows_runner.py worker.py)
+PACKAGE_FILES=(__init__.py protocol.py paths.py config.py provenance.py bytecode.py installation.py observe.py act.py validate.py bounded_io.py git_safety.py mailbox_safety.py runtime_lock.py bootstrap_safety.py windows_runner.py worker.py)
 for f in "${PACKAGE_FILES[@]}"; do [[ -f "$SCRIPT_DIR/$f" ]] || { echo "missing $f" >&2; exit 1; }; install -m0644 "$SCRIPT_DIR/$f" "$STAGE_PACKAGE_ROOT/$f"; done
 cp -- "$PROFILE_SOURCE" "$STAGE_PROFILE"
 [[ "$(sha256sum "$STAGE_PROFILE" | awk '{print $1}')" == "$ADMITTED_PROFILE_SHA" ]] || { echo "profile changed after admission" >&2; exit 1; }

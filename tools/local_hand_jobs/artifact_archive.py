@@ -103,9 +103,62 @@ def _task_scope(producer, operation_id):
     return "local-hand:archive:" + _task_name(producer, operation_id)
 
 
+def _physical_database_identity(path):
+    """Read the file and filesystem identities from the same no-follow handle."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != os.geteuid() or info.st_mode & 0o077):
+            _fail("Ledger files must be private regular files")
+        filesystem = os.fstatvfs(fd).f_fsid
+        if type(filesystem) is not int or filesystem <= 0:
+            _fail("A stable local filesystem identity is required", "UNSUPPORTED")
+        return dict(device=info.st_dev, inode=info.st_ino, filesystem_id=filesystem)
+    finally:
+        os.close(fd)
+
+
+def _filesystem_binding(path):
+    from .evidence import _open_root
+    marker = path.parent / "database-initialized"
+    if not os.path.lexists(marker):
+        return None
+    with _open_root(marker, os.geteuid()):
+        record = _decode(_read(marker / "format.json", 4096))
+        if record.get("schema_version") == "lh-artifact-store-v3":
+            binding = record.get("filesystem_binding")
+        else:
+            guard = marker / "filesystem-binding"
+            if not os.path.lexists(guard):
+                return None
+            with _open_root(guard, os.geteuid()):
+                binding = _decode(_read(guard / "identity.json", 4096))
+    if (not isinstance(binding, dict)
+            or set(binding) != {"schema_version", "database_identity", "filesystem_id", "checkpoint_sha256"}
+            or binding["schema_version"] != "lh-artifact-filesystem-v1"
+            or not isinstance(binding["database_identity"], dict)
+            or set(binding["database_identity"]) != {"device", "inode"}
+            or any(type(v) is not int or v < 0 for v in binding["database_identity"].values())
+            or type(binding["filesystem_id"]) is not int or binding["filesystem_id"] <= 0
+            or (binding["checkpoint_sha256"] is not None and
+                (not isinstance(binding["checkpoint_sha256"], str) or
+                 re.fullmatch(r"[0-9a-f]{64}", binding["checkpoint_sha256"]) is None))):
+        _fail("Invalid archive filesystem binding", "INTEGRITY_FAILURE")
+    return binding
+
+
 def _database_identity(path):
-    info = path.lstat()
-    return dict(device=info.st_dev, inode=info.st_ino)
+    physical = _physical_database_identity(path)
+    binding = _filesystem_binding(path)
+    if binding is not None:
+        if (physical["filesystem_id"] != binding["filesystem_id"]
+                or physical["inode"] != binding["database_identity"]["inode"]):
+            _fail("Ledger filesystem or inode changed; retain the original store")
+        # Keep all original reservation bytes. Device numbers are only locators;
+        # the persisted filesystem ID and inode now establish continuity.
+        return binding["database_identity"]
+    return {key: physical[key] for key in ("device", "inode")}
 
 
 @contextmanager
@@ -212,8 +265,14 @@ def _source(files, producer, status_sha256):
     return source
 
 
-def _requests(binding, files):
-    token = binding["token"]
+def _request_templates(binding):
+    """Derive request ownership from the retained mapping, not request contents."""
+    if binding.get("schema_version") not in ("lh-artifact-request-v1", "lh-artifact-request-v2"):
+        _fail("Unsupported retained task mapping", "INTEGRITY_FAILURE")
+    _identity(binding.get("producer"))
+    _identity(binding.get("operation_id"))
+    _digest(binding.get("status_sha256"))
+    token = binding.get("token")
     if not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{32}", token) is None:
         _fail("Invalid retained archive identity")
     ids = {kind: kind + ":" + token for kind in ("artifact", "version", "root", "manifest")}
@@ -224,6 +283,19 @@ def _requests(binding, files):
     create = dict(base, operation_kind="create_artifact", idempotency_key="create",
                   body={"artifact": dict(artifact_id=ids["artifact"],
                     namespace_ref="local-hand:completed-results", type_ref=TYPE)})
+    source_ref = "local-hand:" + binding["producer"] + ":" + binding["operation_id"]
+    if len(source_ref) > 512:
+        _fail("Combined source identity exceeds the Ledger reference limit", "LIMIT_EXCEEDED")
+    append = dict(base, operation_kind="append_version", idempotency_key="append",
+        body=dict(version=dict(version_id=ids["version"], artifact_id=ids["artifact"],
+            content_root_ref=ids["root"], parent_version_refs=[], external_source_refs=[source_ref],
+            capture_refs=[], handling_policy_refs=[])))
+    return ids, create, append
+
+
+def _requests(binding, files):
+    ids, create, append = _request_templates(binding)
+    token = binding["token"]
     entries, blobs, payloads = [], [], {}
     for number, name in enumerate(sorted(LIMITS)):
         ref = "blob:" + token + ":" + str(number)
@@ -231,17 +303,11 @@ def _requests(binding, files):
         blobs.append(dict(blob_ref=ref, digest=dict(algorithm="sha256", value=_sha(files[name])),
                           byte_length=len(files[name]), payload_availability="available"))
         payloads[ref] = files[name]
-    source_ref = "local-hand:" + binding["producer"] + ":" + binding["operation_id"]
-    if len(source_ref) > 512:
-        _fail("Combined source identity exceeds the Ledger reference limit", "LIMIT_EXCEEDED")
-    append = dict(base, operation_kind="append_version", idempotency_key="append",
-        body=dict(version=dict(version_id=ids["version"], artifact_id=ids["artifact"],
-            content_root_ref=ids["root"], parent_version_refs=[], external_source_refs=[source_ref],
-            capture_refs=[], handling_policy_refs=[]),
-            content_roots=[dict(content_root_ref=ids["root"], kind="manifest", manifest_ref=ids["manifest"])],
-            manifests=[dict(manifest_ref=ids["manifest"], entries=entries,
-                            digest=dict(algorithm="sha256", value=_sha(_json(dict(entries=entries)))))],
-            blobs=blobs, provenance_links=[]))
+    append["body"].update(
+        content_roots=[dict(content_root_ref=ids["root"], kind="manifest", manifest_ref=ids["manifest"])],
+        manifests=[dict(manifest_ref=ids["manifest"], entries=entries,
+                        digest=dict(algorithm="sha256", value=_sha(_json(dict(entries=entries)))))],
+        blobs=blobs, provenance_links=[])
     return _json(create), _json(append), payloads
 
 
@@ -251,7 +317,10 @@ def _fingerprint(request):
         ("contract_version", "idempotency_scope_ref", "operation_kind", "body")}))}
 
 
-def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, require_existing=False):
+def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, require_existing=False,
+                      verify_only=False):
+    # Maintenance verification can inspect existing history but must neither
+    # execute an absent operation nor publish a missing confirmation receipt.
     from .evidence import _open_root, _sync_directory_ancestry
     api = _ledger_api()
     request = _decode(raw)
@@ -270,7 +339,7 @@ def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, req
     except api.LedgerError as error:
         if error.code != "NOT_FOUND":
             raise
-        if receipt is not None or require_existing:
+        if receipt is not None or require_existing or verify_only:
             _fail("Previously confirmed archive operation is missing; restore the original database",
                   "INTEGRITY_FAILURE")
         # Only an unconfirmed original request may be executed after NOT_FOUND.
@@ -297,12 +366,14 @@ def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, req
             result={key: result[key] for key in
                 ("status", "commit_state", "operation_kind", "result_ref", "recorded_at")})
         if receipt is None:
-            _publish_files(receipt_directory, kind, {"commit.json": _json(confirmed)})
+            if not verify_only:
+                _publish_files(receipt_directory, kind, {"commit.json": _json(confirmed)})
         else:
             if receipt != confirmed:
                 _fail("Stored operation differs from its confirmed commit receipt", "INTEGRITY_FAILURE")
             # A previous publication can be visible despite a failed parent sync.
-            _sync_directory_ancestry(receipt_path, os.geteuid())
+            if not verify_only:
+                _sync_directory_ancestry(receipt_path, os.geteuid())
     return result
 
 
@@ -320,8 +391,8 @@ def _database(root, *, create=False):
     identity = None
     if os.path.lexists(marker):
         with _open_root(marker, os.geteuid()):
-            format_record = _decode(_read(marker / "format.json", 1024))
-            if format_record.get("schema_version") == "lh-artifact-store-v2":
+            format_record = _decode(_read(marker / "format.json", 4096))
+            if format_record.get("schema_version") in ("lh-artifact-store-v2", "lh-artifact-store-v3"):
                 identity = format_record["database_identity"]
                 if (not isinstance(identity, dict) or set(identity) != {"device", "inode"}
                         or any(type(value) is not int or value < 0 for value in identity.values())):
@@ -347,8 +418,12 @@ def _database(root, *, create=False):
         if create and not os.path.lexists(marker):
             # No artifact write is allowed until this initialization fence is
             # durable. Losing a database later must never silently recreate it.
+            physical = _physical_database_identity(path)
             _publish_files(root, marker.name, {"format.json": _json(dict(
-                schema_version="lh-artifact-store-v2", database_identity=current_identity))})
+                schema_version="lh-artifact-store-v3", database_identity=current_identity,
+                filesystem_binding=dict(schema_version="lh-artifact-filesystem-v1",
+                    database_identity=current_identity, filesystem_id=physical["filesystem_id"],
+                    checkpoint_sha256=None)))})
         elif create and identity is None:
             _publish_files(marker, "database-identity", {"identity.json": _json(current_identity)})
         if create:
@@ -506,6 +581,96 @@ def resume_archive(store, *, producer, operation_id):
         return _resume_locked(root, producer, operation_id)
 
 
+def bind_filesystem(store, *, expected_database_sha256):
+    """Add a legacy filesystem binding using a caller's trusted DB checkpoint.
+
+    This never initializes a database, changes requests or executes Ledger
+    operations. The old format and every old identity/receipt remain intact.
+    """
+    from .evidence import _open_root, _sync_directory_ancestry
+    api = _ledger_api()
+    expected_database_sha256 = _digest(expected_database_sha256)
+    with _locked_store(store) as root:
+        path = root / "ledger.sqlite"
+        physical = _physical_database_identity(path)
+        # A checkpoint hash of a live WAL database would omit committed data.
+        if any(os.path.lexists(Path(str(path) + suffix)) for suffix in ("-wal", "-shm", "-journal")):
+            _fail("Close all database writers and retain sidecars before binding")
+        def checkpoint():
+            digest = hashlib.sha256()
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                info = os.fstat(fd)
+                if (info.st_dev, info.st_ino) != (physical["device"], physical["inode"]):
+                    _fail("Ledger changed during filesystem binding")
+                while chunk := os.read(fd, 1024 * 1024):
+                    digest.update(chunk)
+                if digest.hexdigest() != expected_database_sha256:
+                    _fail("Ledger differs from the trusted checkpoint", "INTEGRITY_FAILURE")
+            finally:
+                os.close(fd)
+        checkpoint()
+        marker = root / "database-initialized"
+        with _open_root(marker, os.geteuid()):
+            format_record = _decode(_read(marker / "format.json", 4096))
+            if format_record == {"schema_version": "lh-artifact-store-v1"}:
+                with _open_root(marker / "database-identity", os.geteuid()):
+                    identity = _decode(_read(marker / "database-identity/identity.json", 1024))
+            elif format_record.get("schema_version") in ("lh-artifact-store-v2", "lh-artifact-store-v3"):
+                identity = format_record.get("database_identity")
+            else:
+                _fail("Unsupported archive store format", "UNSUPPORTED")
+        if (not isinstance(identity, dict) or set(identity) != {"device", "inode"}
+                or any(type(v) is not int or v < 0 for v in identity.values())
+                or identity["inode"] != physical["inode"]):
+            _fail("Filesystem binding cannot authorize a replaced database")
+        existing = _filesystem_binding(path)
+        if existing is not None and _database_identity(path) != identity:
+            _fail("Filesystem binding differs from the original identity")
+        with api.open(path) as ledger:
+            ledger.verify()
+            for reservation in root.glob("request-task-*"):
+                with _open_root(reservation, os.geteuid()):
+                    saved = _decode(_read(reservation / "identity.json", 65536))
+                    if saved.get("database_identity") != identity:
+                        _fail("Task reservation differs from the original database")
+                    binding = saved["binding"]
+                    task = root / _task_name(binding["producer"], binding["operation_id"])
+                    if reservation.name != "request-" + task.name:
+                        _fail("Task reservation name differs from its binding")
+                    with _open_root(task, os.geteuid()):
+                        if _decode(_read(task / "binding.json", 65536)) != binding:
+                            _fail("Original task binding differs")
+                        _, create, append = _request_templates(binding)
+                        for kind, filename, expected in (("create_artifact", "create.json", create),
+                                                        ("append_version", "append.json", append)):
+                            # Append also proves create must exist, even if its
+                            # receipt was lost. Verification may never repair a
+                            # receipt or select another one via a changed kind.
+                            if (os.path.lexists(reservation / kind) or
+                                    (kind == "create_artifact" and os.path.lexists(reservation / "append_version"))):
+                                raw = _read(task / filename, 65536)
+                                request = _decode(raw)
+                                if (set(request) != set(expected)
+                                        or any(request[key] != value for key, value in expected.items() if key != "body")
+                                        or not isinstance(request["body"], dict)
+                                        or any(request["body"].get(key) != value for key, value in expected["body"].items())):
+                                    _fail("Retained request differs from its original task mapping", "INTEGRITY_FAILURE")
+                                _ensure_operation(ledger, raw, receipt_directory=reservation, verify_only=True)
+        checkpoint()
+        if _physical_database_identity(path) != physical:
+            _fail("Ledger changed during filesystem binding")
+        if any(os.path.lexists(Path(str(path) + suffix)) for suffix in ("-wal", "-shm", "-journal")):
+            _fail("Database sidecars appeared during filesystem binding")
+        if existing is None:
+            _publish_files(marker, "filesystem-binding", {"identity.json": _json(dict(
+                schema_version="lh-artifact-filesystem-v1", database_identity=identity,
+                filesystem_id=physical["filesystem_id"], checkpoint_sha256=expected_database_sha256))})
+        _sync_directory_ancestry(marker, os.geteuid())
+        return dict(status="FILESYSTEM_BOUND", reused=existing is not None,
+                    checkpoint_sha256=expected_database_sha256, ledger_writes=0)
+
+
 def read_version(store, *, artifact_id, version_id, output):
     from .evidence import _open_root
     _ledger_api()
@@ -536,13 +701,17 @@ def main(argv=None):
     resume.add_argument("--store", required=True)
     resume.add_argument("--producer", required=True)
     resume.add_argument("--operation-id", required=True)
+    bind = commands.add_parser("bind-filesystem", help="Bind a legacy store using a trusted database checkpoint")
+    bind.add_argument("--store", required=True)
+    bind.add_argument("--expected-database-sha256", required=True)
     read = commands.add_parser("read", help="Read an exact version into a new private directory")
     for name in ("store", "artifact-id", "version-id", "output"):
         read.add_argument("--" + name, required=True)
     args = vars(parser.parse_args(argv))
     command = args.pop("command")
     try:
-        result = {"archive": archive_result, "resume": resume_archive, "read": read_version}[command](**args)
+        result = {"archive": archive_result, "resume": resume_archive, "read": read_version,
+                  "bind-filesystem": bind_filesystem}[command](**args)
     except Exception as error:
         # Preserve any Ledger commit_state. Generic failures can follow a commit;
         # a nonzero exit never means the original task or archive write rolled back.

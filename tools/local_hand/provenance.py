@@ -13,6 +13,7 @@ import stat
 import sys
 from typing import Any
 
+from .bytecode import MAX_CACHE_BYTES, code_fingerprint
 from .config import read_config, exact_keys
 from .git_safety import run_hardened_git
 from .protocol import LocalHandError
@@ -440,11 +441,20 @@ def _verify_full_payload_bytecode(root: Path) -> None:
                     compiled = compile(raw, filename, "exec", dont_inherit=True,
                                        optimize=int(match[2] or "0"))
                     variants.append(marshal.dumps(compiled))
-                if path.stat().st_size not in {len(item) + 16 for item in variants}:
-                    raise _bad("release bytecode size differs from compiled source")
-                actual = path.read_bytes()
-                if actual[:4] != importlib.util.MAGIC_NUMBER or actual[16:] not in variants:
+                if path.stat().st_size > MAX_CACHE_BYTES + 16:
+                    raise _bad("release bytecode exceeds admission size limit")
+                with path.open("rb") as stream:
+                    actual = stream.read(MAX_CACHE_BYTES + 17)
+                if len(actual) > MAX_CACHE_BYTES + 16 or actual[:4] != importlib.util.MAGIC_NUMBER:
                     raise _bad("release bytecode differs from compiled source")
+                # marshal v4 shares objects according to live refcounts. An
+                # unchanged installed cache can differ after another import.
+                # Keep the exact fast path; otherwise compare bounded structure,
+                # never native-unmarshal an untrusted cache or ignore code fields.
+                if actual[16:] not in variants:
+                    observed = code_fingerprint(actual[16:])
+                    if not any(observed == code_fingerprint(item) for item in variants):
+                        raise _bad("release bytecode differs from compiled source")
             except (OSError, SyntaxError, ValueError) as exc:
                 raise _bad("cannot bind release bytecode to source") from exc
 
