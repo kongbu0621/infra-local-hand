@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import marshal
 import py_compile
 from pathlib import Path
 import shutil
@@ -124,6 +125,42 @@ class DeploymentTests(unittest.TestCase):
         cache.write_bytes(header + changed)
         with self.assertRaises(LocalHandError):
             provenance.full_payload_digest(self.root)
+
+    def test_cache_sharing_and_import_history_do_not_change_release_identity(self):
+        source = self.root / "local_hand_jobs/cli.py"
+        source.write_text("value = 'a synthetic non identifier'\n")
+        self.digest = provenance.full_payload_digest(self.root)
+        self.stamp()
+        for optimize in (0, 1, 2):
+            cache = Path(py_compile.compile(str(source), doraise=True, optimize=optimize))
+            header = cache.read_bytes()[:16]
+            for filename in (str(source), "tools/local_hand_jobs/cli.py", "local_hand_jobs/cli.py"):
+                code = compile(source.read_bytes(), filename, "exec", dont_inherit=True, optimize=optimize)
+                # Both are valid caches; v2 does not share objects, v4 does.
+                # Retaining a constant also changes v4 flags on Python 3.12.
+                for version in (2, 4):
+                    cache.write_bytes(header + marshal.dumps(code, version))
+                    retained = code.co_consts[0]
+                    with mock.patch.object(marshal, "loads", side_effect=AssertionError("untrusted load")):
+                        self.assertEqual(self.verify()["installed_payload_digest"], self.digest)
+                    self.assertIsInstance(retained, str)
+                cache.write_bytes(header + marshal.dumps(code.replace(co_consts=("replaced", None))))
+                with self.assertRaises(JobError):
+                    self.verify()
+                cache.write_bytes(header + marshal.dumps(code))
+
+    def test_bad_cache_size_magic_and_trailing_bytes_rejected(self):
+        source = self.root / "local_hand_jobs/cli.py"
+        cache = Path(py_compile.compile(str(source), doraise=True))
+        original = cache.read_bytes()
+        for changed in (original[:10], b"xxxx" + original[4:], original + b"N"):
+            cache.write_bytes(changed)
+            with self.assertRaises(LocalHandError):
+                provenance.full_payload_digest(self.root)
+        cache.write_bytes(original)
+        with mock.patch.object(provenance, "MAX_CACHE_BYTES", 1):
+            with self.assertRaises(LocalHandError):
+                provenance.full_payload_digest(self.root)
 
 
 if __name__ == "__main__":
