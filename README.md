@@ -25,21 +25,21 @@
 
 ### 查询与读取（5 个）
 
-| 操作 | 工具与关键结果 |
-|---|---|
-| 查能力 | `lh_capabilities`<br/>查询获准使用的功能、资源引用和身份绑定；预备单任务入口还可返回原 `prepared_request` |
-| 读源码 | `lh_workspace_read`<br/>读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交；读取不会准备或提交任务 |
-| 查状态 | `lh_job_status`<br/>按原 `operation_id` 查询执行、业务结果和证据状态；查询不会重放业务 |
-| 列证据 | `lh_evidence_manifest`<br/>按任务分页读取已封存的证据清单，包括文件的 `artifact_id`、大小和 SHA-256 |
-| 读分块 | `lh_evidence_read_chunk`<br/>按 `artifact_id`、偏移量和可信清单中的摘要读取文件分块，返回 Base64 数据供调用方组装并校验 |
+| API 与用途 |
+|---|
+| **查能力** · `lh_capabilities`<br/>查询获准使用的功能、资源引用和身份绑定；预备单任务入口还可返回原 `prepared_request` |
+| **读源码** · `lh_workspace_read`<br/>读取已登记项目来源快照中的 UTF-8 文件，返回原文、SHA-256 和源码提交；读取不会准备或提交任务 |
+| **查状态** · `lh_job_status`<br/>按原 `operation_id` 查询执行、业务结果和证据状态；查询不会重放业务 |
+| **列证据** · `lh_evidence_manifest`<br/>按任务分页读取已封存的证据清单，包括文件的 `artifact_id`、大小和 SHA-256 |
+| **读分块** · `lh_evidence_read_chunk`<br/>按 `artifact_id`、偏移量和可信清单中的摘要读取文件分块，返回 Base64 数据供调用方组装并校验 |
 
 ### 任务准备与控制（3 个）
 
-| 操作 | 工具与关键结果 |
-|---|---|
-| 准备任务 | `lh_job_prepare`<br/>为获准任务准备资源和确定的请求，返回 `PREPARING`、`READY` 或 `FAILED`；`READY` 后原样提交返回的 `request`，准备本身不执行业务 |
-| 提交执行 | `lh_job_submit`<br/>提交确定的任务请求并持久保存记录；响应不明时保留原 `operation_id`，先查询原任务 |
-| 申请取消 | `lh_job_cancel`<br/>用原任务 ID、原请求摘要和明确目标申请取消；收到回执后仍需查询并确认退出 |
+| API 与用途 |
+|---|
+| **准备任务** · `lh_job_prepare`<br/>为获准任务准备资源和确定的请求，返回 `PREPARING`、`READY` 或 `FAILED`；`READY` 后原样提交返回的 `request`，准备本身不执行业务 |
+| **提交执行** · `lh_job_submit`<br/>提交确定的任务请求并持久保存记录；响应不明时保留原 `operation_id`，先查询原任务 |
+| **申请取消** · `lh_job_cancel`<br/>用原任务 ID、原请求摘要和明确目标申请取消；收到回执后仍需查询并确认退出 |
 
 常驻任务通常按 `lh_capabilities` → `lh_job_prepare` → `lh_job_submit` → `lh_job_status` 调用，
 证据封存后再通过 `lh_evidence_manifest` 和 `lh_evidence_read_chunk` 取回文件。
