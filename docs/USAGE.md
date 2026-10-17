@@ -277,8 +277,10 @@ After verifying a completed `workspace.edit` evidence bundle, extract its
 `workspace-result.json`, `workspace-before.txt` and `workspace-after.txt`.
 Use the result member's SHA-256 from the verified manifest. The local entry
 point consumes these verified files; it does not authenticate evidence itself.
-The local Node Profile repository name must match `source_ref`, and its fixed
-validation with the returned `validation_ref` must be explicitly replay-safe.
+The local [Node Profile](#explicit-admission) repository name must match
+`source_ref`, and its fixed validation with the returned `validation_ref` must
+be explicitly replay-safe. This entry reuses the profile format; applying the
+verified result does not submit another task through MCP or the Git mailbox.
 
 ```sh
 python -m local_hand.workspace_apply --profile LOCAL_PROFILE --repository SOURCE_REF \
@@ -400,8 +402,10 @@ dependencies does not provision these components.
 
 ## Explicit admission
 
-This section and **Installation provenance** below describe the legacy
-`local-hand-worker` / `local-hand-connect` Task/Result and Git mailbox entry.
+The Node Profile format below is shared by the legacy `local-hand-worker` /
+`local-hand-connect` entry and the current [local workspace application](#land-a-verified-workspace-edit-locally).
+The mailbox/controller steps here and **Installation provenance** below apply
+to the legacy Task/Result and Git mailbox entry.
 The Node Profile below is not a job broker policy, MCP authentication config or
 resident descriptor. For the MCP / `local-hand-jobs` backend, use the
 [job service deployment inputs](#job-service-deployment-inputs) above.
