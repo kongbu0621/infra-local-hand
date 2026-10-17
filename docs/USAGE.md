@@ -378,7 +378,33 @@ that deployment's existing configuration. `local-hand-mcp --help` lists the
 required policy, mode, authentication and port arguments; it does not verify a
 working deployment.
 
+### Job service deployment inputs
+
+`local-hand-mcp --config` and `local-hand-broker --policy` load a protected job
+policy with schema `lh-policy-v1` or `lh-policy-v2`, including deployment identity,
+principals, resource references and budgets; see [policy.py](../tools/local_hand_jobs/policy.py).
+MCP's separate `--auth-config` uses `lh-mcp-auth-v1` to bind the external issuer,
+resource and authorization settings; see [auth.py](../tools/local_hand_mcp/auth.py).
+For resident mode, `--resident` names a `local-hand-resident-adapter/v1` routing
+descriptor that connects to the existing management service. It is separate from
+both the broker policy and the manager's own configuration.
+
+The preparation and execution components under `tools/admin/` are deployed
+separately by the operator; they are **not included in the wheel's packages**.
+The source entry points are [resident_service.py](../tools/admin/local_hand_system_manager/resident_service.py)
+for persistent preparation and [task_service.py](../tools/admin/local_hand_system_manager/task_service.py)
+for task execution. They require the deployment's configured accounts, protected
+directories, process management and resource setup. Use the existing deployment's
+bound configuration when connecting to it; installing the wheel or its MCP
+dependencies does not provision these components.
+
 ## Explicit admission
+
+This section and **Installation provenance** below describe the legacy
+`local-hand-worker` / `local-hand-connect` Task/Result and Git mailbox entry.
+The Node Profile below is not a job broker policy, MCP authentication config or
+resident descriptor. For the MCP / `local-hand-jobs` backend, use the
+[job service deployment inputs](#job-service-deployment-inputs) above.
 
 Node Profile requires exactly `profile_schema`, `node_id`, `projects_root`,
 `repositories`, `transport_policy`. The schema is `local-hand-profile/v2`.

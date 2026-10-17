@@ -42,7 +42,7 @@ MCP 是通信协议，Local Hand 是执行服务；Tailscale 可以作为部署�
 
 ## 开始使用
 
-1. **确认部署与权限。** 已有服务时先读取 `lh_capabilities`，确认允许的作业、项目或运行环境引用。新部署从[构建与安装](docs/USAGE.md#build-and-install)开始，再配置相应的管理服务、资源和认证；安装 wheel 不会自动建立可用的远程服务。
+1. **确认部署与权限。** 已有服务时先读取 `lh_capabilities`，确认允许的作业、项目或运行环境引用。新部署从[构建与安装](docs/USAGE.md#build-and-install)及[服务部署输入](docs/USAGE.md#job-service-deployment-inputs)开始；管理组件需另行部署，安装 wheel 不会自动建立可用的远程服务。
 2. **按入口模式提交确定的任务。** 常驻入口使用新的任务 UUID 调用 `lh_job_prepare`；`PREPARING` 时沿同一 UUID 和参数查询，`READY` 后原样提交返回的 `request`。预备单任务入口则提交能力返回中的原 `prepared_request`；只读入口不能准备或提交新任务。
 3. **沿原任务查询或取消。** 保存完整原请求及 `operation_id`、`request_digest`；响应丢失先查原任务，不能换一个 ID 重试结果未知的业务。取消已受理不等于进程已退出。
 4. **取回并核对结果。** 查询状态；证据封存后，读取 `lh_evidence_manifest` 与 `lh_evidence_read_chunk`，完整组装文件，并按可信返回核对原任务关联、大小和摘要，再决定如何使用结果。
