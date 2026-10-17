@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -19,8 +20,10 @@ if sys.platform != "linux":
     raise unittest.SkipTest("Local A2 helper requires Linux")
 
 from local_hand_jobs import local_a2_jobs as a2, result_reader, runner
+from local_hand_jobs.contract import DISABLED_JOB_KINDS, request_digest
 from local_hand_jobs.evidence_client import BoundedFileWriter, EvidenceClient, verify_local_bundle
 import test_local_hand_jobs_integration as integration
+from test_local_hand_jobs_contract import submit_fixture
 from test_local_hand_jobs_local_a2_runtime import synthetic_runtime
 
 
@@ -113,7 +116,16 @@ print(json.dumps(report,sort_keys=True))
             case = integration.JobIntegrationTests()
             case.setUp()
             try:
-                status = case.run_job("installed-a2", a2.KIND, {"runtime_ref": "installed-a2"})
+                # Seed an admission from before retirement. All execution,
+                # sealing and retrieval below use the current disabled policy.
+                request = submit_fixture(a2.KIND, runtime_ref="installed-a2")
+                request.update(expected=case.policy.expected('fixture'), expires_at=int(time.time()) + 300)
+                request['request_digest'] = request_digest(request)
+                case.client._save(case.client._record_name('job', 'installed-a2'),
+                    dict(authority_id=case.policy.authority_id, request=request))
+                with patch('local_hand_jobs.broker.DISABLED_JOB_KINDS', DISABLED_JOB_KINDS - {a2.KIND}):
+                    case.broker.submit(request, case.owner)
+                status = case.finish(request['operation_id'])
                 operation = status["operation_id"]
                 row = case.state.get("job", operation)
                 original_plan = row["plan"]["execution"]
@@ -151,9 +163,10 @@ print(json.dumps(report,sort_keys=True))
                     self.assertTrue(any(name.endswith("a2-installed-local.stdout") for name in archive.namelist()))
                     self.assertTrue(any(name.endswith("a2-runtime-bytecode.stdout") for name in archive.namelist()))
                 before = case.state.events("job", operation)
-                repeated = case.client.submit("installed-a2")
+                repeated = case.callback('lh_job_submit', request)
                 for key in ("operation_id", "outcome", "evidence", "seal_refs"):
                     self.assertEqual(status[key], repeated[key])
+                self.assertEqual(status, case.client.observe(job_key='installed-a2')['latest'])
                 self.assertEqual(before, case.state.events("job", operation))
                 self.assertEqual(3, len(case.manager.started))
             finally:

@@ -263,6 +263,18 @@ class ResidentBroker:
                 state = self.service.call('start', operation_id=operation,
                     principal_id=principal.principal_id, request_digest=args['request_digest'])['state']
             if state == 'RUNNING':
+                if name == 'lh_job_submit' and args['kind'] in DISABLED_JOB_KINDS:
+                    # A retained controller can still run the old release. A
+                    # live process is not proof that it committed this request;
+                    # forwarding submit could admit retired work on that release.
+                    self._authorize(principal, 'lh:read')
+                    policy.authorize(principal, 'lh:read')
+                    result = self._running_request(record, policy, 'lh_job_status',
+                        {'operation_id': operation}, principal)
+                    if (result.get('operation_id') != operation
+                            or result.get('request_digest') != args['request_digest']):
+                        raise JobError('CONFLICT', 'Committed task identity changed')
+                    return result
                 result = self._running_request(record, policy, name, args, principal)
             elif state not in {'EXITED', 'UNRESOLVED'}:
                 raise JobError('IO_UNCERTAIN', 'Task execution state needs inspection')

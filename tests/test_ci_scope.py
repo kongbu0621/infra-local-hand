@@ -46,6 +46,7 @@ def test_core_selection_covers_submit_cancel_recover_auth_and_resource_dependenc
         "test_local_hand_mcp_auth.py", "test_local_hand_mcp_server.py",
         "test_local_hand_resident.py", "test_local_hand_task_service.py",
         "test_local_hand_jobs_ledger.py", "test_local_hand_jobs_evidence.py",
+        "test_local_hand_jobs_retired_a2.py",
         "test_e3_quota_q2_runtime.py", "test_e3_quota_q2_management.py",
     ):
         assert "tests/" + name in files
@@ -77,6 +78,7 @@ def test_windows_boundary_and_manual_full_suite_preserve_existing_coverage():
     assert "tests/test_e3_q2_core_serial_continuation.py" in linux
     assert "tests/test_local_hand_hardening_b.py" in windows
     assert "tests/test_local_hand_jobs_task_session.py" not in windows
+    assert "tests/test_local_hand_jobs_retired_a2.py" not in windows
     assert windows < linux
 
 

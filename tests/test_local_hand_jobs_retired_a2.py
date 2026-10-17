@@ -4,7 +4,7 @@ import sys
 import unittest
 from unittest.mock import Mock, patch
 
-from local_hand_jobs.contract import JobError, request_digest
+from local_hand_jobs.contract import JobError, Principal, request_digest
 import test_local_hand_jobs_broker as broker_fixtures
 
 
@@ -86,6 +86,55 @@ if sys.platform.startswith('linux'):
                                                       principal_id='owner')
             self.local.assert_not_called()
 
+        def test_running_old_controller_never_receives_first_submit(self):
+            self.service.call.return_value = {'state': 'RUNNING'}
+            def old_controller(path, name, args, **kwargs):
+                if name == 'lh_job_submit':
+                    return dict(operation_id=self.request['operation_id'],
+                                request_digest=self.request['request_digest'], lifecycle='ACCEPTED')
+                raise JobError('NOT_FOUND', 'Controller started but no request was committed')
+            self.local.side_effect = old_controller
+            with self.assertRaises(JobError) as caught:
+                self.call('lh_job_submit', self.request)
+            self.assertEqual('NOT_FOUND', caught.exception.code)
+            self.assertEqual(['lh_job_status'], [c.args[1] for c in self.local.call_args_list])
+            self.assertEqual(['status'], [c.args[0] for c in self.service.call.call_args_list])
+
+        def test_running_original_submit_becomes_bound_status_query(self):
+            self.service.call.return_value = {'state': 'RUNNING'}
+            result = dict(operation_id=self.request['operation_id'],
+                          request_digest=self.request['request_digest'], outcome='UNKNOWN')
+            self.local.return_value = result
+            self.assertEqual(result, self.call('lh_job_submit', self.request))
+            self.assertEqual('lh_job_status', self.local.call_args.args[1])
+            self.assertEqual({'operation_id': self.request['operation_id']}, self.local.call_args.args[2])
+
+        def test_running_retired_query_requires_read_scope_and_original_binding(self):
+            self.service.call.return_value = {'state': 'RUNNING'}
+            submit_only = Principal('owner', frozenset({'lh:submit'}))
+            with self.assertRaises(JobError) as caught:
+                self.call('lh_job_submit', self.request, submit_only)
+            self.assertEqual('UNAUTHORIZED', caught.exception.code)
+            self.local.assert_not_called()
+            for key in ('operation_id', 'request_digest'):
+                result = {field: self.request[field] for field in ('operation_id', 'request_digest')}
+                result[key] = 'foreign'
+                self.local.return_value = result
+                with self.subTest(key=key), self.assertRaises(JobError) as caught:
+                    self.call('lh_job_submit', self.request)
+                self.assertEqual('CONFLICT', caught.exception.code)
+
+        def test_retired_query_crossing_exit_keeps_original_task(self):
+            self.service.call.side_effect = [{'state': 'RUNNING'}, {'state': 'EXITED'}]
+            self.local.side_effect = JobError('IO_UNCERTAIN', 'Controller exited during query')
+            original = dict(operation_id=self.request['operation_id'],
+                            request_digest=self.request['request_digest'], outcome='UNKNOWN')
+            self.reader.call.return_value = original
+            self.assertEqual(original, self.call('lh_job_submit', self.request))
+            self.reader.call.assert_called_once_with('lh_job_status',
+                {'operation_id': self.request['operation_id']}, self.owner)
+            self.assertEqual(['lh_job_status'], [c.args[1] for c in self.local.call_args_list])
+
         def test_retained_status_and_evidence_still_route_to_original_reader(self):
             self.service.call.return_value = {'state': 'EXITED'}
             args = {'operation_id': self.request['operation_id']}
@@ -142,6 +191,17 @@ if sys.platform.startswith('linux'):
                 self.assertEqual(original, polled['structuredContent'])
                 self.service.call.assert_called_once_with('prepare', principal_id='owner',
                                                           **args, allow_new=False)
+                self.service.call.reset_mock()
+                self.service.call.return_value = {'state': 'RUNNING'}
+                status = dict(operation_id=self.request['operation_id'],
+                    request_digest=self.request['request_digest'], lifecycle='RUNNING',
+                    outcome='UNKNOWN', evidence='STAGING', phase='PREFLIGHT')
+                self.local.return_value = status
+                observed = rpc('tools/call', dict(name='lh_job_submit', arguments=self.request))
+                self.assertFalse(observed.get('isError', False), observed)
+                self.assertEqual(status, observed['structuredContent'])
+                self.assertEqual('lh_job_status', self.local.call_args.args[1])
+                self.assertEqual(['status'], [c.args[0] for c in self.service.call.call_args_list])
 
     class RetiredManagerTests(unittest.TestCase):
         setUp = recovery_fixtures.RuntimePreparationRecoveryTests.setUp
