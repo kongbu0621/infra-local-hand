@@ -43,11 +43,11 @@ MCP 是通信协议，Local Hand 是执行服务；Tailscale 可以作为部署�
 ## 开始使用
 
 1. **确认部署与权限。** 已有服务时先读取 `lh_capabilities`，确认允许的作业、项目或运行环境引用。新部署从[构建与安装](docs/USAGE.md#build-and-install)开始，再配置相应的管理服务、资源和认证；安装 wheel 不会自动建立可用的远程服务。
-2. **准备并提交确定的任务。** 常驻入口使用新的任务 UUID 调用 `lh_job_prepare`；`PREPARING` 时沿同一 UUID 和参数查询，`READY` 后原样提交返回的 `request`。
-3. **沿原任务查询或取消。** 保存 `operation_id`；响应丢失先查原任务，不能换一个 ID 重试结果未知的业务。取消已受理不等于进程已退出。
-4. **取回并核对结果。** 查询状态；证据封存后，读取 `lh_evidence_manifest` 与 `lh_evidence_read_chunk`，完整组装文件并核对摘要，再决定如何使用结果。
+2. **按入口模式提交确定的任务。** 常驻入口使用新的任务 UUID 调用 `lh_job_prepare`；`PREPARING` 时沿同一 UUID 和参数查询，`READY` 后原样提交返回的 `request`。预备单任务入口则提交能力返回中的原 `prepared_request`；只读入口不能准备或提交新任务。
+3. **沿原任务查询或取消。** 保存完整原请求及 `operation_id`、`request_digest`；响应丢失先查原任务，不能换一个 ID 重试结果未知的业务。取消已受理不等于进程已退出。
+4. **取回并核对结果。** 查询状态；证据封存后，读取 `lh_evidence_manifest` 与 `lh_evidence_read_chunk`，完整组装文件，并按可信返回核对原任务关联、大小和摘要，再决定如何使用结果。
 
-任务工具、权限及状态合同见[作业接口](docs/a2-execution/ARCHITECTURE.md#ax-a07-mcp-工具和二进制证据r03r04r07r08r09)。固定 Ledger 本地验收的登记及调用示例见[使用说明](docs/USAGE.md#run-the-installed-ledger-a2-local-check)。
+入口模式与当前工具参数见[作业使用说明](docs/USAGE.md#作业入口与运行模式)；取消、恢复和证据的设计约束见[作业架构](docs/a2-execution/ARCHITECTURE.md#ax-a07-mcp-工具和二进制证据r03r04r07r08r09)。固定 Ledger 本地验收的登记及调用示例见[使用说明](docs/USAGE.md#run-the-installed-ledger-a2-local-check)。
 
 ## 与 Artifact Ledger 配合
 
@@ -74,7 +74,7 @@ Local Hand 负责执行任务和取回结果；[Artifact Ledger](https://github.
 | 想了解什么 | 阅读入口 |
 |---|---|
 | 如何安装、连接、应用补丁或归档结果 | [使用说明](docs/USAGE.md) |
-| 任务、权限、取消、恢复和证据的精确边界 | [作业接口与架构](docs/a2-execution/ARCHITECTURE.md) |
+| 作业入口、当前参数及任务设计约束 | [运行模式与工具参数](docs/USAGE.md#作业入口与运行模式) · [作业架构](docs/a2-execution/ARCHITECTURE.md) |
 | 产品需求及早期 Task/Result、Git mailbox 设计 | [需求](docs/REQUIREMENTS.md) · [架构](docs/ARCHITECTURE.md) |
 
 开发过程、阶段记录和任务接续见[开发与接续记录](docs/DEVELOPMENT.md)；参与维护从 [AGENTS.md](AGENTS.md) 开始。

@@ -41,6 +41,43 @@ flowchart LR
 恢复连接后应沿原 `operation_id` 查询。取消请求已受理也不等于进程已退出，需要继续查询退出证明。
 后端按原任务 ID 和请求摘要识别重复提交；换一个任务 ID 会被视为新的任务，不能用它重试结果未知的业务。
 
+## 作业入口与运行模式
+
+先确认已部署服务的运行模式，再读取 `lh_capabilities`。MCP 是网络入口，
+`local-hand-jobs` 是本地 socket 客户端；它们可访问同一个后端，工具能力取决于该后端的模式及调用者权限。
+`local-hand-mcp` 的四种启动模式互斥：
+
+| 服务模式 | 新任务从哪里来 | 使用方式 |
+| --- | --- | --- |
+| `--resident` 常驻入口 | 管理服务按已登记的能力准备资源 | 按 capabilities 的 `preparation`、profile 和获准引用调用 `lh_job_prepare`；`READY` 后将返回的完整 `request` 原样交给 `lh_job_submit` |
+| `--prepared-task` 预备单任务入口 | 部署者已准备一个固定任务 | 获准主体从 capabilities 获取 `prepared_request`，原样提交；保留其中的 UUID，不另行准备新任务 |
+| `--session` 执行会话入口 | 部署者提供已绑定的任务会话及请求 | 按该会话的固定请求提交，不提供常驻自动准备能力 |
+| `--read-only` 保留结果入口 | 沿原 ID 读取已有任务 | 只支持能力、状态和证据查询，不支持准备、提交、取消或核对执行 |
+
+独立 `local-hand-broker` 提供 `--session` / `--read-only`；`local-hand-mcp` 还提供与其后端模式一致的维护 socket。
+本地调用者使用部署者配置的 socket 路径和已映射身份，例如只读查询能力：
+
+```sh
+local-hand-jobs --socket /absolute/deployment/maintenance.sock lh_capabilities --json '{}'
+```
+
+常驻准备需要新的小写 UUID v4、`kind` 和 `profile_ref`；`workspace.edit` 与 `ledger.test.local_a2`
+还需要各自的 `inputs`。`PREPARING` 时使用原 UUID 和参数继续查询，准备本身不执行业务。
+`FAILED` 时保留返回，修复原因后可用同一 UUID、原参数加 `retry_failed=true` 重试准备。
+提交响应不明时沿原 `operation_id` 查询，不能把准备重试当作业务重放。
+
+保存完整原请求与 `request_digest`。取消使用 `expected_request_digest` 和明确的 `target`；
+取消整个原任务时为 `{"kind":"job"}`，随后查询退出证明。
+重连后的 `lh_job_status` 查询与 `lh_job_reconcile` 核对执行是不同操作；当前常驻入口不提供后者。
+只有已暴露且获准使用该工具的入口才能发起核对，并需保留该轮独立的 `reconcile_id`，使用原任务 ID 和摘要核对原效果。
+证据按清单分页、按块取回；`lh_evidence_read_chunk` 的 `expected_sha256` 来自可信清单，
+最终核对原任务关联、文件大小及完整摘要。
+
+MCP 客户端应读取已安装服务暴露的工具 schema；源码中的当前参数定义见
+[contract.py](../tools/local_hand_jobs/contract.py)，返回结构和工具说明见
+[server.py](../tools/local_hand_mcp/server.py)。[作业架构](a2-execution/ARCHITECTURE.md#ax-a07-mcp-工具和二进制证据r03r04r07r08r09)
+记录设计约束；其中的工具表不包含后来新增的准备与项目读取入口，不能替代当前工具发现结果。
+
 ## Archive and read a completed result locally
 
 `local-hand-archive` is an optional Linux caller-side consumer of Artifact Ledger.
@@ -319,6 +356,27 @@ On Windows, venv Python is `Scripts/python.exe`. The source test suite and
 installed direct-action tests are portable; the installed CLI transport fixture
 is POSIX-specific and reports SKIP on Windows. Preserve its report and logs.
 For a second candidate, retain prior artifacts and use new build/runtime paths.
+
+### MCP runtime dependencies
+
+The commands above install the base wheel with `--no-deps`. The MCP entry also
+needs the optional `[mcp]` runtime dependencies; the base install alone cannot
+start the MCP service. For the verified CPython 3.12 / Linux x86_64 target, install
+the repository's complete hash-locked dependency set into that same new runtime:
+
+```sh
+/absolute/new-work/runtime-venv/bin/python -m pip install --require-hashes -r /absolute/checkout/requirements-mcp-linux-x86_64-py312.lock
+/absolute/new-work/runtime-venv/bin/python -m pip check
+```
+
+The lock includes the versions declared by `[mcp]` in [pyproject.toml](../pyproject.toml).
+Other Python/platform targets need their own resolved lock and verification;
+the Linux x86_64 lock is not portable to every host. Installing dependencies does
+not create a broker policy, execution session, resident manager or external
+authentication configuration. Choose the [entry mode](#作业入口与运行模式), then supply
+that deployment's existing configuration. `local-hand-mcp --help` lists the
+required policy, mode, authentication and port arguments; it does not verify a
+working deployment.
 
 ## Explicit admission
 
