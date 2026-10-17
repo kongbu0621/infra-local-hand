@@ -279,6 +279,12 @@ class ResidentBroker:
             elif state not in {'EXITED', 'UNRESOLVED'}:
                 raise JobError('IO_UNCERTAIN', 'Task execution state needs inspection')
             else:
+                if name == 'lh_job_submit':
+                    # Deduplication returns retained data, just like core
+                    # Broker.submit. Controller exit must not relax the entry
+                    # or task policy's read grant.
+                    self._authorize(principal, 'lh:read')
+                    policy.authorize(principal, 'lh:read')
                 reader = self._reader(record['policy_path'])
                 if name == 'lh_job_submit':
                     row = reader.state.get('job', operation)
@@ -287,6 +293,7 @@ class ResidentBroker:
                     if row['digest'] != args['request_digest'] or row['principal'] != principal.principal_id:
                         raise JobError('CONFLICT', 'Committed task identity changed')
                     reader._authorize(principal, 'lh:submit', owner=row['principal'])
+                    reader._authorize(principal, 'lh:read', owner=row['principal'])
                     return reader._view(row)
                 if name == 'lh_job_cancel':
                     return reader.cancel(principal=principal, **args)

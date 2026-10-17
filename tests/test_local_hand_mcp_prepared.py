@@ -118,6 +118,40 @@ class PreparedTests(unittest.TestCase):
         self.assertEqual('IO_UNCERTAIN', caught.exception.code)
         self.local.assert_not_called()
 
+    def test_completed_submit_keeps_read_permissions_and_revocation_effective(self):
+        from types import MethodType
+        from local_hand_jobs.broker import Broker
+        from local_hand_jobs.policy import thaw
+
+        limited = thaw(self.policy.config)
+        limited['principals']['owner']['scopes'].remove('lh:read')
+        limited = Policy(limited)
+        db = sqlite3.connect(':memory:')
+        db.execute('CREATE TABLE revocations(principal TEXT)')
+        self.addCleanup(db.close)
+        self.reader.state.transaction.return_value = db
+        self.reader._authorize = MethodType(Broker._authorize, self.reader)
+        self.reader.state.get.return_value = dict(digest=self.request['request_digest'], principal='owner')
+        self.launcher.call.return_value = 'EXITED'
+        for denied in ('token', 'entry_grant', 'reader_grant', 'reader_revoked'):
+            self.reader.policy = limited if denied == 'reader_grant' else self.policy
+            if denied == 'reader_revoked':
+                db.execute('INSERT INTO revocations VALUES (?)', ('owner',))
+            principal = (Principal('owner', self.owner.scopes - {'lh:read'})
+                         if denied == 'token' else self.owner)
+            with self.subTest(denied=denied), \
+                 patch.object(self.router, 'policy', limited if denied == 'entry_grant' else self.policy):
+                with self.assertRaises(JobError) as caught:
+                    self.call(principal=principal)
+                self.assertEqual('UNAUTHORIZED', caught.exception.code)
+                self.reader._view.assert_not_called()
+        db.execute('DELETE FROM revocations')
+        self.reader.policy = self.policy
+        self.reader._view.return_value = {'outcome': 'UNKNOWN'}
+        self.assertEqual({'outcome': 'UNKNOWN'}, self.call())
+        self.local.assert_not_called()
+        self.assertTrue(all(c.args[0] == 'status' for c in self.launcher.call.call_args_list))
+
     def test_close_preserves_retained_cleanup_when_new_reader_fails(self):
         self.router.reader = self.reader
         self.reader.close.side_effect = OSError('modeled close failure')

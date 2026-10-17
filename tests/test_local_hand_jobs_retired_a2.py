@@ -86,6 +86,49 @@ if sys.platform.startswith('linux'):
                                                       principal_id='owner')
             self.local.assert_not_called()
 
+        def test_retained_submit_requires_read_at_every_authority(self):
+            import sqlite3
+            from types import MethodType
+            from local_hand_jobs.broker import Broker
+            from local_hand_jobs.policy import thaw
+
+            limited = thaw(self.policy.config)
+            limited['principals']['owner']['scopes'].remove('lh:read')
+            limited = Policy(limited)
+            # Use the real reader authorization and durable revocation check;
+            # only the stored row and execution-state observation are modeled.
+            db = sqlite3.connect(':memory:')
+            db.execute('CREATE TABLE revocations(principal TEXT)')
+            self.addCleanup(db.close)
+            self.reader.state.transaction.return_value = db
+            self.reader._authorize = MethodType(Broker._authorize, self.reader)
+            self.reader.state.get.return_value = dict(digest=self.request['request_digest'], principal='owner')
+            for state in ('EXITED', 'UNRESOLVED'):
+                for denied in ('token', 'entry_grant', 'task_grant', 'reader_grant', 'reader_revoked'):
+                    self.service.call.return_value = {'state': state}
+                    self.reader._view.reset_mock()
+                    self.reader.policy = limited if denied == 'reader_grant' else self.policy
+                    db.execute('DELETE FROM revocations')
+                    if denied == 'reader_revoked':
+                        db.execute('INSERT INTO revocations VALUES (?)', ('owner',))
+                    principal = (Principal('owner', self.owner.scopes - {'lh:read'})
+                                 if denied == 'token' else self.owner)
+                    with self.subTest(state=state, denied=denied), \
+                         patch.object(self.broker, 'policy', limited if denied == 'entry_grant' else self.policy), \
+                         patch('local_hand_mcp.resident.Policy.from_file',
+                               return_value=limited if denied == 'task_grant' else self.policy):
+                        with self.assertRaises(JobError) as caught:
+                            self.call('lh_job_submit', self.request, principal)
+                        self.assertEqual('UNAUTHORIZED', caught.exception.code)
+                        self.reader._view.assert_not_called()
+                db.execute('DELETE FROM revocations')
+                self.reader.policy = self.policy
+                original = dict(operation_id=self.request['operation_id'], outcome='UNKNOWN')
+                self.reader._view.return_value = original
+                self.assertEqual(original, self.call('lh_job_submit', self.request))
+            self.local.assert_not_called()
+            self.assertTrue(all(c.args[0] == 'status' for c in self.service.call.call_args_list))
+
         def test_running_old_controller_never_receives_first_submit(self):
             self.service.call.return_value = {'state': 'RUNNING'}
             def old_controller(path, name, args, **kwargs):
@@ -202,6 +245,22 @@ if sys.platform.startswith('linux'):
                 self.assertEqual(status, observed['structuredContent'])
                 self.assertEqual('lh_job_status', self.local.call_args.args[1])
                 self.assertEqual(['status'], [c.args[0] for c in self.service.call.call_args_list])
+                self.service.call.reset_mock()
+                self.local.reset_mock()
+                self.service.call.return_value = {'state': 'EXITED'}
+                self.reader.state.get.return_value = dict(digest=self.request['request_digest'], principal='owner')
+                self.reader._view.return_value = status
+                headers['Authorization'] = 'Bearer ' + issuer.token(claims={'scope': 'lh:submit'})
+                refused = rpc('tools/call', dict(name='lh_job_submit', arguments=self.request))
+                self.assertTrue(refused['isError'])
+                self.assertEqual('UNAUTHORIZED', refused['structuredContent']['error']['code'])
+                self.reader._view.assert_not_called()
+                headers['Authorization'] = 'Bearer ' + issuer.token()
+                observed = rpc('tools/call', dict(name='lh_job_submit', arguments=self.request))
+                self.assertFalse(observed.get('isError', False), observed)
+                self.assertEqual(status, observed['structuredContent'])
+                self.assertEqual(['status', 'status'], [c.args[0] for c in self.service.call.call_args_list])
+                self.local.assert_not_called()
 
     class RetiredManagerTests(unittest.TestCase):
         setUp = recovery_fixtures.RuntimePreparationRecoveryTests.setUp
