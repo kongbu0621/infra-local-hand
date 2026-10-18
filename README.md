@@ -18,6 +18,19 @@
 
 例如，对一个已登记项目修改单个文件：Local Hand 在任务独立副本中执行修改和固定验证，返回补丁、前后内容与验证输出。调用方核对证据后，再用[本地应用入口](docs/USAGE.md#land-a-verified-workspace-edit-locally)检查并应用到目标副本；任务完成本身不会自动提交或合并 Git。
 
+## 与其他组件的关系
+
+四个组件分别承担任务执行、成果保存、生产协调和运行知识管理。Local Hand 与 Ledger 已有可选归档接入；P、K 仍处于设计阶段，涉及它们的协作属于计划。
+
+| 组件 | 主要职责与本仓关系 |
+| --- | --- |
+| **infra-local-hand** | 执行获准任务，保留原任务状态，返回结果和封存证据；生产目标与后续决策由调用方负责 |
+| [infra-artifact-ledger](https://github.com/kongbu0621/infra-artifact-ledger) | 保存成果身份、版本、内容与来源；本仓可选的 `local-hand-archive` 已能将成功封存的任务结果归档并按准确版本读回 |
+| [control-production-plane（P）](https://github.com/kongbu0621/control-production-plane) | 计划中的调用方：通过本仓公共入口提交、查询和取消任务，协调修复、成果核对与验收 |
+| [domain-operational-knowledge-core（K）](https://github.com/kongbu0621/domain-operational-knowledge-core) | 计划中的间接使用方：由 P 或其他应用将执行结果组织为有来源的经验材料交给 K，支持知识候选、审查与版本管理；K 不直接管理本仓任务 |
+
+应用可直接使用 Local Hand，接入 P 或 K 不是执行任务的前提。现有归档的安装与使用方式见下方[与 Artifact Ledger 配合](#与-artifact-ledger-配合)。
+
 ## 工具 API 一览
 
 下面列出常驻入口支持的 **8 个工具**。这些名称用于 MCP 工具调用；本地 CLI 也可调用所连接后端支持的同名工具。
