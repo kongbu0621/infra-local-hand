@@ -438,5 +438,40 @@ class ArchiveRecoveryTests(fixtures.BundleFixture, unittest.TestCase):
             self.assertTrue(self.bind()['reused'])
         self.assertTrue(self.resume()['reused'])
 
+    def test_checkpoint_excludes_other_cli_readers_and_writers_until_release(self):
+        self.archive()
+        expected = consumer.recovery_checkpoint(self.store)
+        before = self.tree()
+        binding = json.loads((next(self.store.glob('task-*'))/'binding.json').read_bytes())
+        base = [sys.executable, '-I', '-B', '-m', 'local_hand_jobs.artifact_archive']
+        commands = [base + ['recovery-checkpoint', '--store', str(self.store)],
+                    base + ['resume', '--store', str(self.store), '--producer', binding['producer'],
+                            '--operation-id', binding['operation_id']]]
+        original = consumer._file_digest
+        checked = False
+        def while_locked(path, **kwargs):
+            nonlocal checked
+            if not checked:
+                checked = True
+                # Independent CLI processes must honor the lock already held
+                # by the actual checkpoint entrypoint, including read-only calls.
+                for command in commands:
+                    result = subprocess.run(command, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertEqual(json.loads(result.stdout)['code'], 'BUSY')
+            return original(path, **kwargs)
+        with mock.patch.object(consumer, '_file_digest', side_effect=while_locked):
+            self.assertEqual(consumer.recovery_checkpoint(self.store), expected)
+        self.assertTrue(checked)
+        for command in commands:
+            result = subprocess.run(command, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            response = json.loads(result.stdout)
+            if response['status'] == 'RECOVERY_CHECKPOINT': self.assertEqual(response, expected)
+            else:
+                self.assertEqual(response['status'], 'ARCHIVED')
+                self.assertTrue(response['reused'])
+        self.assertEqual(self.tree(), before)
+
 
 if __name__ == '__main__': unittest.main()
