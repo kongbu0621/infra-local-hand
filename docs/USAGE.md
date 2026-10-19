@@ -116,7 +116,7 @@ retain the same timestamp as its own create/append operation; a disagreement is
 rejected before continuing with another write. A failed receipt publication can
 resume by querying the original operation; it does not require another commit.
 New requests use a stable per-task idempotency scope as a second guard against
-lost recovery files. Copying/replacing a database is not a supported store move.
+lost recovery files. Copying/replacing a database alone is not a supported store move; the explicit recovery binding below is required.
 Existing v1 requests keep their original bytes and operation identities; their
 first archive/resume adds guards without rewriting Ledger records. These guards
 cannot establish whether a legacy database was replaced before that first use.
@@ -370,3 +370,26 @@ Do not invoke them for S1 live deployment; service cutover is S2 scope.
 
 Old profiles, controller markers and state directories are not silently
 upgraded. Preserve them and use an explicit separately authorized migration.
+
+### Resume an archive after database restoration
+
+With writers stopped and the original store isolated, capture a trusted checkpoint:
+
+```sh
+local-hand-archive recovery-checkpoint --store /absolute/private/original-archive > checkpoint.json
+```
+
+Retain the returned `checkpoint_sha256` independently. Preserve the entire archive directory, including original requests, receipts and old bindings. Restore the Ledger through its public snapshot API; retain that restore's `database_sha256`. Select and isolate the intended restored instance before enabling writes. Then bind its new physical file explicitly:
+
+```sh
+local-hand-archive bind-restored --store /absolute/private/restored-archive \
+  --checkpoint /absolute/private/checkpoint.json \
+  --expected-checkpoint-sha256 TRUSTED_CHECKPOINT_SHA256 \
+  --expected-database-sha256 VERIFIED_RESTORED_DATABASE_SHA256
+```
+
+The binding checks the complete public Ledger export against the checkpoint, verifies the original consumer files and confirmed operations, and appends one immutable physical binding. It does not execute Ledger writes or finish a partial archive. Old `read`, `resume` and `archive` commands then keep their original identity and duplicate-submission rules. A successful old request returns its original IDs and timestamp; an unconfirmed original request can continue after its state is checked.
+
+If publication loses its response, repeat the same binding before new writes; an already matching binding returns `reused=true`. Once the archive advances, its old checkpoint is no longer a current binding input. Capture a new checkpoint before a later restoration; prior bindings remain preserved. Wrong content, changed consumer files, missing confirmed history, sidecars and replaced files are rejected. `read` and `recovery-checkpoint` can open an existing lock on a read-only mount; they do not create a missing lock. Read output still goes to a new writable directory outside the store.
+
+The checkpoint is a trust input, not authorization or automatic writer isolation. It requires a quiescent dedicated local store and the bounded public Ledger export (including its payload capacity limit). Inventory is limited to 4096 entries and 1 GiB of consumer files; larger archives require a separately designed recovery profile. Existing failed `.pending-` directories remain retained but are not treated as published operations. These commands do not establish online backup, automatic failover, reboot isolation or an additional A3 consumer.

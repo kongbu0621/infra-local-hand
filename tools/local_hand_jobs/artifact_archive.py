@@ -151,6 +151,16 @@ def _filesystem_binding(path):
 def _database_identity(path):
     physical = _physical_database_identity(path)
     binding = _filesystem_binding(path)
+    recovery = path.parent / "database-initialized" / _recovery_name(physical)
+    if os.path.lexists(recovery):
+        from .evidence import _open_root
+        with _open_root(recovery, os.geteuid()):
+            record = _decode(_read(recovery / "identity.json", 4096))
+        _validate_recovery_binding(record)
+        if (record["physical_identity"] != _persistent_identity(physical)
+                or record["database_identity"] != _original_database_identity(path.parent)):
+            _fail("Restored database binding differs from this archive", "INTEGRITY_FAILURE")
+        return record["database_identity"]
     if binding is not None:
         if (physical["filesystem_id"] != binding["filesystem_id"]
                 or physical["inode"] != binding["database_identity"]["inode"]):
@@ -162,14 +172,16 @@ def _database_identity(path):
 
 
 @contextmanager
-def _locked_store(store, *, create=False):
+def _locked_store(store, *, create=False, read_only=False):
     if sys.platform != "linux":
         _fail("Local artifact archives currently support Linux only", "UNSUPPORTED")
     import fcntl
     from .evidence import _open_root, _sync_directory_ancestry
     root = Path(store).absolute()
     with _open_root(root, os.geteuid(), create=create) as directory:
-        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+        if create and read_only:
+            _fail("A read-only call cannot create an archive", "INVALID_INPUT")
+        flags = (os.O_RDONLY if read_only else os.O_RDWR) | os.O_NOFOLLOW | os.O_NONBLOCK
         fd = os.open(".archive.lock", flags | (os.O_CREAT if create else 0), 0o600, dir_fd=directory)
         try:
             info = os.fstat(fd)
@@ -377,16 +389,8 @@ def _ensure_operation(ledger, raw, *, payloads=None, receipt_directory=None, req
     return result
 
 
-def _database(root, *, create=False):
-    from .evidence import _open_root, _sync_directory_ancestry
-    api = _ledger_api()
-    path = root / "ledger.sqlite"
-    for candidate in (path, *(Path(str(path) + s) for s in ("-journal", "-wal", "-shm"))):
-        if os.path.lexists(candidate):
-            info = candidate.lstat()
-            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
-                    or info.st_uid != os.geteuid() or info.st_mode & 0o077):
-                _fail("Ledger files must be private regular files")
+def _original_database_identity(root):
+    from .evidence import _open_root
     marker = root / "database-initialized"
     identity = None
     if os.path.lexists(marker):
@@ -406,6 +410,24 @@ def _database(root, *, create=False):
                         identity = _decode(_read(guard / "identity.json", 1024))
             else:
                 _fail("Unsupported archive store format", "UNSUPPORTED")
+    if identity is not None and (not isinstance(identity, dict) or set(identity) != {"device", "inode"}
+            or any(type(v) is not int or v < 0 for v in identity.values())):
+        _fail("Invalid original database identity", "INTEGRITY_FAILURE")
+    return identity
+
+
+def _database(root, *, create=False):
+    from .evidence import _open_root, _sync_directory_ancestry
+    api = _ledger_api()
+    path = root / "ledger.sqlite"
+    for candidate in (path, *(Path(str(path) + s) for s in ("-journal", "-wal", "-shm"))):
+        if os.path.lexists(candidate):
+            info = candidate.lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or info.st_uid != os.geteuid() or info.st_mode & 0o077):
+                _fail("Ledger files must be private regular files")
+    marker = root / "database-initialized"
+    identity = _original_database_identity(root)
     if not os.path.lexists(path) and os.path.lexists(marker):
         _fail("Previously initialized Ledger is missing; retain requests and restore the original store")
     if identity is not None and identity != _database_identity(path):
@@ -671,6 +693,229 @@ def bind_filesystem(store, *, expected_database_sha256):
                     checkpoint_sha256=expected_database_sha256, ledger_writes=0)
 
 
+def _persistent_identity(physical):
+    return {key: physical[key] for key in ("filesystem_id", "inode")}
+
+
+def _recovery_name(physical):
+    return "recovered-" + _sha(_json(_persistent_identity(physical)))
+
+
+def _validate_recovery_binding(record):
+    if (set(record) != {"schema_version", "database_identity", "physical_identity",
+                       "checkpoint_sha256", "restored_database_sha256"}
+            or record["schema_version"] != "lh-artifact-recovered-v1"
+            or not isinstance(record["database_identity"], dict)
+            or set(record["database_identity"]) != {"device", "inode"}
+            or any(type(v) is not int or v < 0 for v in record["database_identity"].values())
+            or not isinstance(record["physical_identity"], dict)
+            or set(record["physical_identity"]) != {"filesystem_id", "inode"}
+            or any(type(v) is not int or v <= 0 for v in record["physical_identity"].values())):
+        _fail("Invalid restored database binding", "INTEGRITY_FAILURE")
+    _digest(record["checkpoint_sha256"])
+    _digest(record["restored_database_sha256"])
+
+
+def _no_sidecars(path):
+    if any(os.path.lexists(Path(str(path) + suffix)) for suffix in ("-wal", "-shm", "-journal")):
+        _fail("Close database writers and resolve retained sidecars before this read-only check")
+
+
+def _file_digest(path):
+    """Bounded no-follow checkpoint read; never open SQLite for recovery."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != os.geteuid() or before.st_mode & 0o077
+                or before.st_size > 1024 * 1024 * 1024):
+            _fail("Recovery inputs must be private bounded regular files")
+        digest = hashlib.sha256()
+        size = 0
+        while chunk := os.read(fd, 1024 * 1024):
+            size += len(chunk)
+            if size > before.st_size:
+                _fail("Recovery input grew during inspection")
+            digest.update(chunk)
+        def stamp(st):
+            return (st.st_dev, st.st_ino, st.st_mode, st.st_uid, st.st_nlink,
+                    st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+        if (size != before.st_size or stamp(before) != stamp(os.fstat(fd))
+                or stamp(before) != stamp(path.lstat())):
+            _fail("Recovery input changed during inspection")
+        return dict(size=size, sha256=digest.hexdigest())
+    finally:
+        os.close(fd)
+
+
+def _archive_metadata_digest(root, *, ignore=None):
+    """Fingerprint published consumer files, excluding DB, lock and failed staging."""
+    from .evidence import _open_root
+    files = {}
+    visited = total = 0
+    def walk(directory):
+        nonlocal visited, total
+        with _open_root(directory, os.geteuid()):
+            for child in sorted(directory.iterdir()):
+                if (child == ignore or child.name.startswith(".pending-")
+                        or (directory == root and child.name in {"ledger.sqlite", ".archive.lock"})):
+                    continue
+                visited += 1
+                if visited > 4096:
+                    _fail("Archive recovery inventory exceeds 4096 entries", "LIMIT_EXCEEDED")
+                info = child.lstat()
+                if stat.S_ISDIR(info.st_mode):
+                    walk(child)
+                else:
+                    value = _file_digest(child)
+                    total += value["size"]
+                    if total > 1024 * 1024 * 1024:
+                        _fail("Archive recovery metadata exceeds 1 GiB", "LIMIT_EXCEEDED")
+                    files[str(child.relative_to(root))] = value
+    walk(root)
+    return _sha(_json(files))
+
+
+def _verify_recovery_requests(root, ledger):
+    """Check retained requests and confirmations without completing a partial task."""
+    from .evidence import _open_root
+    api = _ledger_api()
+    identity = _original_database_identity(root)
+    tasks = {p.name: p for p in root.iterdir() if p.name.startswith("task-")}
+    reservations = {p.name: p for p in root.iterdir() if p.name.startswith("request-task-")}
+    if any(name.removeprefix("request-") not in tasks for name in reservations):
+        _fail("Recovery point is missing original task files", "INTEGRITY_FAILURE")
+    for name, task in sorted(tasks.items()):
+        with _open_root(task, os.geteuid()):
+            binding = _decode(_read(task / "binding.json", 65536))
+            ids, _, _ = _request_templates(binding)
+            if name != _task_name(binding["producer"], binding["operation_id"]):
+                _fail("Recovery task name differs from its original mapping", "INTEGRITY_FAILURE")
+            files = {n: _read(task / n, maximum) for n, maximum in LIMITS.items()}
+            source = _source(files, binding["producer"], binding["status_sha256"])
+            if source["operation_id"] != binding["operation_id"] or _json(source) != files["source.json"]:
+                _fail("Recovery evidence differs from the original task", "INTEGRITY_FAILURE")
+            create, append, _ = _requests(binding, files)
+            if _read(task / "create.json", 65536) != create or _read(task / "append.json", 65536) != append:
+                _fail("Recovery request differs from its original evidence", "INTEGRITY_FAILURE")
+        reservation = root / ("request-" + name)
+        if os.path.lexists(reservation):
+            with _open_root(reservation, os.geteuid()):
+                if _decode(_read(reservation / "identity.json", 65536)) != dict(binding=binding, database_identity=identity):
+                    _fail("Recovery reservation differs from its original task", "INTEGRITY_FAILURE")
+        append_request = _decode(append)
+        try:
+            ledger.get_operation(append_request["idempotency_scope_ref"], "append_version", append_request["idempotency_key"])
+            append_exists = True
+        except api.LedgerError as error:
+            if error.code != "NOT_FOUND":
+                raise
+            append_exists = False
+        for raw in (create, append):
+            request = _decode(raw)
+            kind = request["operation_kind"]
+            confirmed = (os.path.lexists(reservation / kind) or
+                         (kind == "create_artifact" and (append_exists or os.path.lexists(reservation / "append_version"))))
+            try:
+                ledger.get_operation(request["idempotency_scope_ref"], kind, request["idempotency_key"])
+            except api.LedgerError as error:
+                if error.code != "NOT_FOUND":
+                    raise
+                if confirmed:
+                    _fail("Recovery point lacks a confirmed operation", "INTEGRITY_FAILURE")
+                continue
+            _ensure_operation(ledger, raw, receipt_directory=reservation, verify_only=True)
+            if kind == "append_version" and _load_version(ledger, ids["artifact"], ids["version"])[0] != files:
+                _fail("Recovery payload differs from original evidence", "INTEGRITY_FAILURE")
+
+
+def recovery_checkpoint(store):
+    """Capture a trusted, quiescent archive through the public Ledger export API."""
+    _ledger_api()
+    with _locked_store(store, read_only=True) as root:
+        path = root / "ledger.sqlite"
+        _no_sidecars(path)
+        physical = _physical_database_identity(path)
+        database = _file_digest(path)
+        metadata = _archive_metadata_digest(root)
+        with _database(root) as ledger:
+            ledger.verify()
+            _verify_recovery_requests(root, ledger)
+            bundle_digest = _sha(ledger.export_bundle()["package_utf8"])
+        identity = _original_database_identity(root)
+        if identity is None:
+            _fail("An archive recovery checkpoint requires an existing identity guard")
+        _no_sidecars(path)
+        if (database != _file_digest(path) or physical != _physical_database_identity(path)
+                or metadata != _archive_metadata_digest(root)):
+            _fail("Archive changed during recovery checkpoint")
+        checkpoint = dict(schema_version="lh-artifact-recovery-checkpoint-v1",
+                          database_identity=identity, source_database_sha256=database["sha256"],
+                          archive_metadata_sha256=metadata, ledger_bundle_sha256=bundle_digest)
+        return dict(status="RECOVERY_CHECKPOINT", checkpoint=checkpoint,
+                    checkpoint_sha256=_sha(_json(checkpoint)), ledger_writes=0)
+
+
+def bind_restored(store, *, checkpoint_path, expected_checkpoint_sha256, expected_database_sha256):
+    """Explicitly bind a verified restored file; preserve all original identities."""
+    from .evidence import _open_root, _sync_directory_ancestry
+    api = _ledger_api()
+    expected_checkpoint_sha256 = _digest(expected_checkpoint_sha256)
+    expected_database_sha256 = _digest(expected_database_sha256)
+    envelope = _decode(_read(checkpoint_path, 16384))
+    checkpoint = envelope.get("checkpoint")
+    if (envelope.get("status") != "RECOVERY_CHECKPOINT" or not isinstance(checkpoint, dict)
+            or set(checkpoint) != {"schema_version", "database_identity", "source_database_sha256",
+                                   "archive_metadata_sha256", "ledger_bundle_sha256"}
+            or checkpoint["schema_version"] != "lh-artifact-recovery-checkpoint-v1"
+            or _sha(_json(checkpoint)) != expected_checkpoint_sha256
+            or envelope.get("checkpoint_sha256") != expected_checkpoint_sha256):
+        _fail("Recovery checkpoint differs from the caller's trusted record", "INTEGRITY_FAILURE")
+    for key in ("source_database_sha256", "archive_metadata_sha256", "ledger_bundle_sha256"):
+        _digest(checkpoint[key])
+    with _locked_store(store) as root:
+        path = root / "ledger.sqlite"
+        _no_sidecars(path)
+        physical = _physical_database_identity(path)
+        name = _recovery_name(physical)
+        marker = root / "database-initialized"
+        target = marker / name
+        identity = _original_database_identity(root)
+        if identity is None or identity != checkpoint["database_identity"]:
+            _fail("Restored archive has a different original identity", "INTEGRITY_FAILURE")
+        record = dict(schema_version="lh-artifact-recovered-v1", database_identity=identity,
+                      physical_identity=_persistent_identity(physical),
+                      checkpoint_sha256=expected_checkpoint_sha256,
+                      restored_database_sha256=expected_database_sha256)
+        existing = os.path.lexists(target)
+        if existing:
+            with _open_root(target, os.geteuid()):
+                if _decode(_read(target / "identity.json", 4096)) != record:
+                    _fail("This restored file already has a different recovery binding")
+        def check_inputs():
+            _no_sidecars(path)
+            if (_physical_database_identity(path) != physical
+                    or _file_digest(path)["sha256"] != expected_database_sha256
+                    or _archive_metadata_digest(root, ignore=target) != checkpoint["archive_metadata_sha256"]):
+                _fail("Restored database or consumer files differ from the selected recovery point", "INTEGRITY_FAILURE")
+        check_inputs()
+        # Open the replacement only through the public API. Its complete export
+        # binds every record, operation and payload, including unconfirmed commits.
+        with api.open(path) as ledger:
+            ledger.verify()
+            _verify_recovery_requests(root, ledger)
+            if _sha(ledger.export_bundle()["package_utf8"]) != checkpoint["ledger_bundle_sha256"]:
+                _fail("Restored Ledger history or content differs from the checkpoint", "INTEGRITY_FAILURE")
+        check_inputs()
+        if not existing:
+            _publish_files(marker, name, {"identity.json": _json(record)})
+        _sync_directory_ancestry(target, os.geteuid())
+        if _database_identity(path) != identity:
+            _fail("Restored binding could not be read back", "INTEGRITY_FAILURE")
+        return dict(status="RESTORED_BOUND", reused=existing, checkpoint_sha256=expected_checkpoint_sha256,
+                    restored_database_sha256=expected_database_sha256, ledger_writes=0)
+
+
 def read_version(store, *, artifact_id, version_id, output):
     from .evidence import _open_root
     _ledger_api()
@@ -678,7 +923,8 @@ def read_version(store, *, artifact_id, version_id, output):
     root = Path(store).absolute()
     if output.resolve().is_relative_to(root.resolve()):
         _fail("Read output must be outside the archive store", "INVALID_INPUT")
-    with _locked_store(root) as locked:
+    with _locked_store(root, read_only=True) as locked:
+        _no_sidecars(locked / "ledger.sqlite")
         with _database(locked) as ledger:
             files, source = _load_version(ledger, artifact_id, version_id)
         with _open_root(output.parent, os.geteuid()):
@@ -704,6 +950,13 @@ def main(argv=None):
     bind = commands.add_parser("bind-filesystem", help="Bind a legacy store using a trusted database checkpoint")
     bind.add_argument("--store", required=True)
     bind.add_argument("--expected-database-sha256", required=True)
+    checkpoint = commands.add_parser("recovery-checkpoint", help="Capture a quiescent archive recovery checkpoint")
+    checkpoint.add_argument("--store", required=True)
+    restored = commands.add_parser("bind-restored", help="Explicitly bind a restored archive to its trusted checkpoint")
+    restored.add_argument("--store", required=True)
+    restored.add_argument("--checkpoint", dest="checkpoint_path", required=True)
+    restored.add_argument("--expected-checkpoint-sha256", required=True)
+    restored.add_argument("--expected-database-sha256", required=True)
     read = commands.add_parser("read", help="Read an exact version into a new private directory")
     for name in ("store", "artifact-id", "version-id", "output"):
         read.add_argument("--" + name, required=True)
@@ -711,7 +964,8 @@ def main(argv=None):
     command = args.pop("command")
     try:
         result = {"archive": archive_result, "resume": resume_archive, "read": read_version,
-                  "bind-filesystem": bind_filesystem}[command](**args)
+                  "bind-filesystem": bind_filesystem, "recovery-checkpoint": recovery_checkpoint,
+                  "bind-restored": bind_restored}[command](**args)
     except Exception as error:
         # Preserve any Ledger commit_state. Generic failures can follow a commit;
         # a nonzero exit never means the original task or archive write rolled back.
