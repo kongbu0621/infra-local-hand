@@ -144,6 +144,20 @@ Local Hand 负责执行任务和取回结果；[Artifact Ledger](https://github.
 
 可选的 `local-hand-archive` 能将已经成功封存的单个任务结果保存到独立 Ledger，再按返回的制品 ID 和版本 ID 读回原证据。当前消费者支持 Linux；归档不会重新执行任务，也不会自动应用补丁。安装、可信输入与重试方式见[结果归档](docs/USAGE.md#archive-and-read-a-completed-result-locally)。普通 Local Hand 使用不依赖安装 Ledger。恢复归档数据库时，可通过[恢复检查点与显式绑定](docs/USAGE.md#resume-an-archive-after-database-restoration)核对原内容和回执，再接续原任务；该入口不会重跑业务。
 
+### 日常归档命令速查
+
+以下是本地 `local-hand-archive` 的三个日常命令，与上方 MCP 任务工具分开使用。
+
+| 命令 | 什么时候使用 | 得到什么 |
+| --- | --- | --- |
+| `archive` | 已取得同一成功、已封存任务的完整证据及可信摘要时 | 校验证据并保存成果，返回准确的 Artifact ID、Version ID 和文件摘要 |
+| `resume` | 归档调用中断或结果不明，已确认原归档进程退出后 | 按原 producer 和 operation ID 核对、接续已暂存请求；已有成功写入复用原回执 |
+| `read` | 需要审查、交付或继续使用已归档成果时 | 按指定 Artifact ID 和 Version ID 校验并取回文件，写入一个尚不存在的新目录 |
+
+通常先 `archive`，再用返回的准确版本 `read`。归档结果未知时，先核对原调用并按同一身份 `resume`，不要换任务或归档身份重做。`resume` 依赖原暂存请求；缺少恢复材料时保留失败并核对原输入，不能据此认定从未写入。三个命令都不会重新执行任务；读回成功也不等于补丁已经应用或成果已经验收。
+
+参数、可信输入、失败接续和数据库恢复操作见[结果归档与恢复说明](docs/USAGE.md#archive-and-read-a-completed-result-locally)。
+
 ## 当前能力与边界
 
 | 范围 | 已有能力与限制 |
