@@ -342,5 +342,54 @@ class ArchiveRecoveryTests(fixtures.BundleFixture, unittest.TestCase):
         self.assertEqual(consumer.resume_archive(copied, producer='test:local-hand', operation_id=fixtures.OP), result)
         self.assertEqual(self.tree(), before)
 
+    def test_failed_staging_inventory_stops_before_unbounded_enumeration(self):
+        from contextlib import contextmanager
+        self.archive()
+        checkpoint = consumer.recovery_checkpoint(self.store)
+        before = self.tree()
+        for number in range(4200):
+            (self.store/('.pending-interrupted-' + str(number))).mkdir(mode=0o700)
+        original_scandir = os.scandir
+        visited = 0
+        @contextmanager
+        def scan(path):
+            nonlocal visited
+            with original_scandir(path) as entries:
+                def counted():
+                    nonlocal visited
+                    for entry in entries:
+                        visited += 1
+                        yield entry
+                yield counted()
+        with mock.patch.object(os, 'scandir', side_effect=scan):
+            with self.assertRaises(consumer.ArchiveError) as rejected:
+                consumer.recovery_checkpoint(self.store)
+        self.assertEqual(rejected.exception.code, 'LIMIT_EXCEEDED')
+        self.assertEqual(visited, 4097)
+        self.assertEqual(len(list(self.store.glob('.pending-interrupted-*'))), 4200)
+        self.assertEqual(self.tree(), before)
+        # Retaining failed attempts outside the selected archive permits retry;
+        # failed staging never changes the checkpoint's published-file digest.
+        retained = self.root/'retained-staging'; retained.mkdir(mode=0o700)
+        for path in self.store.glob('.pending-interrupted-*'):
+            path.rename(retained/path.name)
+        self.assertEqual(consumer.recovery_checkpoint(self.store), checkpoint)
+
+    def test_retry_binding_at_inventory_limit_excludes_only_its_new_binding(self):
+        self.prepare()
+        count = sum(1 for _ in self.store.rglob('*'))
+        for number in range(4096-count):
+            (self.store/('.pending-budget-' + str(number))).mkdir(mode=0o700)
+        self.assertFalse(self.bind()['reused'])
+        self.assertTrue(self.bind()['reused'])
+        self.assertTrue(self.read(self.original_result)['content_verified'])
+        # An unrelated additional entry cannot claim the binding's exemption.
+        (self.store/'.pending-over-budget').mkdir(mode=0o700)
+        before = self.tree()
+        with self.assertRaises(consumer.ArchiveError) as rejected:
+            self.bind()
+        self.assertEqual(rejected.exception.code, 'LIMIT_EXCEEDED')
+        self.assertEqual(self.tree(), before)
+
 
 if __name__ == '__main__': unittest.main()

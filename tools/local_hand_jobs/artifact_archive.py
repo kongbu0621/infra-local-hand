@@ -755,14 +755,21 @@ def _archive_metadata_digest(root, *, ignore=None):
     visited = total = 0
     def walk(directory):
         nonlocal visited, total
-        with _open_root(directory, os.geteuid()):
-            for child in sorted(directory.iterdir()):
-                if (child == ignore or child.name.startswith(".pending-")
-                        or (directory == root and child.name in {"ledger.sqlite", ".archive.lock"})):
+        with _open_root(directory, os.geteuid()), os.scandir(directory) as entries:
+            for entry in entries:
+                child = directory / entry.name
+                # Only the one new binding is outside the original inventory;
+                # allow its publication retry even at the original entry limit.
+                if child == ignore:
                     continue
                 visited += 1
                 if visited > 4096:
                     _fail("Archive recovery inventory exceeds 4096 entries", "LIMIT_EXCEEDED")
+                # Failed staging still costs enumeration resources, even though
+                # its unpublished contents are neither traversed nor fingerprinted.
+                if (child.name.startswith(".pending-")
+                        or (directory == root and child.name in {"ledger.sqlite", ".archive.lock"})):
+                    continue
                 info = child.lstat()
                 if stat.S_ISDIR(info.st_mode):
                     walk(child)
@@ -773,7 +780,7 @@ def _archive_metadata_digest(root, *, ignore=None):
                         _fail("Archive recovery metadata exceeds 1 GiB", "LIMIT_EXCEEDED")
                     files[str(child.relative_to(root))] = value
     walk(root)
-    return _sha(_json(files))
+    return _sha(_json(files))  # Canonical keys preserve traversal-order independence.
 
 
 def _verify_recovery_requests(root, ledger, *, operation_count):
