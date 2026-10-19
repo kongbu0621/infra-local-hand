@@ -142,7 +142,7 @@ flowchart LR
 
 Local Hand 负责执行任务和取回结果；[Artifact Ledger](https://github.com/kongbu0621/infra-artifact-ledger) 为数字成果保存稳定身份、不可变版本、内容及来源关系。
 
-可选的 `local-hand-archive` 能将已经成功封存的单个任务结果保存到独立 Ledger，再按返回的制品 ID 和版本 ID 读回原证据。当前消费者支持 Linux；归档不会重新执行任务，也不会自动应用补丁。安装、可信输入与重试方式见[结果归档](docs/USAGE.md#archive-and-read-a-completed-result-locally)。普通 Local Hand 使用不依赖安装 Ledger。
+可选的 `local-hand-archive` 能将已经成功封存的单个任务结果保存到独立 Ledger，再按返回的制品 ID 和版本 ID 读回原证据。当前消费者支持 Linux；归档不会重新执行任务，也不会自动应用补丁。安装、可信输入与重试方式见[结果归档](docs/USAGE.md#archive-and-read-a-completed-result-locally)。普通 Local Hand 使用不依赖安装 Ledger。恢复归档数据库时，可通过[恢复检查点与显式绑定](docs/USAGE.md#resume-an-archive-after-database-restoration)核对原内容和回执，再接续原任务；该入口不会重跑业务。
 
 ## 当前能力与边界
 

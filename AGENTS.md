@@ -1,5 +1,9 @@
 # 执行指引
 
+## 归档消费者的恢复接续（2026-10-19）
+
+`local-hand-archive` 已提供恢复检查点与显式恢复绑定，保留原请求和回执。源码、独立安装与原部署的旧归档接续、准确读回均已验证；当前实例已选择修复版。恢复后的新任务归档及 P 校验通过安装态合成链路，尚未新增真实生产提交。范围与证据见 [开发记录](docs/DEVELOPMENT.md#归档恢复接续入口2026-10-19)，命令见 [使用说明](docs/USAGE.md#resume-an-archive-after-database-restoration)。原服务和 NAS 作业能力边界不因本次消费者接续而改变。
+
 README 面向使用者；开发过程、阶段记录和任务接续见[开发与接续记录](docs/DEVELOPMENT.md)。维护首页图示时，先读其中的[图示维护约定](docs/DEVELOPMENT.md#图示维护约定)，保持主线、结果落点与真实语义一致。
 
 `ledger.test.local_a2` 是阶段性临时合成测试，见[历史留档](docs/history/LEDGER_LOCAL_A2_TEST.md)。
