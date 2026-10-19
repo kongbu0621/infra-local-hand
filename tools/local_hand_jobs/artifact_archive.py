@@ -776,11 +776,12 @@ def _archive_metadata_digest(root, *, ignore=None):
     return _sha(_json(files))
 
 
-def _verify_recovery_requests(root, ledger):
+def _verify_recovery_requests(root, ledger, *, operation_count):
     """Check retained requests and confirmations without completing a partial task."""
     from .evidence import _open_root
     api = _ledger_api()
     identity = _original_database_identity(root)
+    verified_operations = set()
     tasks = {p.name: p for p in root.iterdir() if p.name.startswith("task-")}
     reservations = {p.name: p for p in root.iterdir() if p.name.startswith("request-task-")}
     if any(name.removeprefix("request-") not in tasks for name in reservations):
@@ -801,7 +802,7 @@ def _verify_recovery_requests(root, ledger):
         reservation = root / ("request-" + name)
         if os.path.lexists(reservation):
             with _open_root(reservation, os.geteuid()):
-                if _decode(_read(reservation / "identity.json", 65536)) != dict(binding=binding, database_identity=identity):
+                if _read(reservation / "identity.json", 65536) != _json(dict(binding=binding, database_identity=identity)):
                     _fail("Recovery reservation differs from its original task", "INTEGRITY_FAILURE")
         append_request = _decode(append)
         try:
@@ -825,8 +826,14 @@ def _verify_recovery_requests(root, ledger):
                     _fail("Recovery point lacks a confirmed operation", "INTEGRITY_FAILURE")
                 continue
             _ensure_operation(ledger, raw, receipt_directory=reservation, verify_only=True)
+            verified_operations.add((request["idempotency_scope_ref"], kind, request["idempotency_key"]))
             if kind == "append_version" and _load_version(ledger, ids["artifact"], ids["version"])[0] != files:
                 _fail("Recovery payload differs from original evidence", "INTEGRITY_FAILURE")
+    # This is a dedicated consumer store: checking only surviving directories
+    # misses loss of both a task and its reservation. Every committed operation
+    # must resolve to a retained request. Uncommitted staged requests remain valid.
+    if len(verified_operations) != operation_count:
+        _fail("Recovery point is missing original requests for committed Ledger operations", "INTEGRITY_FAILURE")
 
 
 def recovery_checkpoint(store):
@@ -839,8 +846,8 @@ def recovery_checkpoint(store):
         database = _file_digest(path)
         metadata = _archive_metadata_digest(root)
         with _database(root) as ledger:
-            ledger.verify()
-            _verify_recovery_requests(root, ledger)
+            verification = ledger.verify()
+            _verify_recovery_requests(root, ledger, operation_count=verification["counts"]["idempotency_records"])
             bundle_digest = _sha(ledger.export_bundle()["package_utf8"])
         identity = _original_database_identity(root)
         if identity is None:
@@ -902,8 +909,8 @@ def bind_restored(store, *, checkpoint_path, expected_checkpoint_sha256, expecte
         # Open the replacement only through the public API. Its complete export
         # binds every record, operation and payload, including unconfirmed commits.
         with api.open(path) as ledger:
-            ledger.verify()
-            _verify_recovery_requests(root, ledger)
+            verification = ledger.verify()
+            _verify_recovery_requests(root, ledger, operation_count=verification["counts"]["idempotency_records"])
             if _sha(ledger.export_bundle()["package_utf8"]) != checkpoint["ledger_bundle_sha256"]:
                 _fail("Restored Ledger history or content differs from the checkpoint", "INTEGRITY_FAILURE")
         check_inputs()

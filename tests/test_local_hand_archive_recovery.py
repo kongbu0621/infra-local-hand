@@ -236,5 +236,111 @@ class ArchiveRecoveryTests(fixtures.BundleFixture, unittest.TestCase):
             with self.assertRaises(consumer.ArchiveError):consumer.recovery_checkpoint(self.store)
         self.assertEqual(self.tree(),before)
 
+    def assert_recovery_rejects_retained_metadata(self, checkpoint):
+        before = self.tree()
+        with self.assertRaises(consumer.ArchiveError) as rejected:
+            consumer.recovery_checkpoint(self.store)
+        self.assertEqual(rejected.exception.code, 'INTEGRITY_FAILURE')
+        # Model a checkpoint made by the old verifier, which hashed these files
+        # without proving that every committed operation could resume from them.
+        checkpoint['checkpoint']['archive_metadata_sha256'] = consumer._archive_metadata_digest(self.store)
+        checkpoint['checkpoint_sha256'] = consumer._sha(consumer._json(checkpoint['checkpoint']))
+        path = self.root/'incomplete-checkpoint.json'
+        path.write_bytes(consumer._json(checkpoint))
+        copied = self.root/'incomplete-restore'
+        shutil.copytree(self.store, copied)
+        copied_before = self.tree(copied)
+        with self.assertRaises(consumer.ArchiveError) as rejected:
+            consumer.bind_restored(copied, checkpoint_path=path,
+                expected_checkpoint_sha256=checkpoint['checkpoint_sha256'],
+                expected_database_sha256=consumer._sha((copied/'ledger.sqlite').read_bytes()))
+        self.assertEqual(rejected.exception.code, 'INTEGRITY_FAILURE')
+        self.assertEqual(self.tree(copied), copied_before)
+        self.assertEqual(self.tree(), before)
+
+    def test_recovery_rejects_missing_task_and_reservation_for_committed_operations(self):
+        for complete in (False, True):
+            with self.subTest(complete=complete):
+                self.store = self.root/('complete' if complete else 'create-only')
+                if complete:
+                    self.archive()
+                else:
+                    original = consumer._ensure_operation
+                    def stop_append(ledger, raw, **kwargs):
+                        if json.loads(raw)['operation_kind'] == 'append_version':
+                            raise OSError('append not started')
+                        return original(ledger, raw, **kwargs)
+                    with mock.patch.object(consumer, '_ensure_operation', side_effect=stop_append):
+                        with self.assertRaises(OSError): self.archive()
+                checkpoint = consumer.recovery_checkpoint(self.store)
+                task = next(self.store.glob('task-*'))
+                reservation = next(self.store.glob('request-task-*'))
+                retained_task = self.root/('kept-task-' + str(complete))
+                retained_reservation = self.root/('kept-reservation-' + str(complete))
+                task.rename(retained_task); reservation.rename(retained_reservation)
+                self.assert_recovery_rejects_retained_metadata(checkpoint)
+                (self.root/'incomplete-restore').rename(self.root/('rejected-restore-' + str(complete)))
+                retained_task.rename(task); retained_reservation.rename(reservation)
+                self.assertEqual(consumer.recovery_checkpoint(self.store)['status'], 'RECOVERY_CHECKPOINT')
+                self.assertEqual(self.resume()['reused'], complete)
+
+    def test_recovery_reservation_check_matches_resume_bytes(self):
+        self.archive()
+        checkpoint = consumer.recovery_checkpoint(self.store)
+        path = next(self.store.glob('request-task-*'))/'identity.json'
+        original = path.read_bytes()
+        path.write_text(json.dumps(json.loads(original), indent=2))
+        self.assert_recovery_rejects_retained_metadata(checkpoint)
+        path.write_bytes(original)
+        self.assertEqual(consumer.recovery_checkpoint(self.store)['status'], 'RECOVERY_CHECKPOINT')
+        self.assertTrue(self.resume()['reused'])
+
+    def test_unreserved_pending_task_remains_recoverable(self):
+        self.archive()
+        original = consumer._publish_files
+        def stop_reservation(parent, name, files):
+            if name.startswith('request-task-'):
+                raise OSError('reservation not published; no task writes')
+            return original(parent, name, files)
+        with mock.patch.object(consumer, '_publish_files', side_effect=stop_reservation):
+            with self.assertRaises(OSError):
+                consumer.archive_result(self.store, producer='test:unreserved', status_path=self.status_path,
+                                        status_sha256=self.digest, evidence_dir=self.evidence)
+        before = self.tree()
+        checkpoint = consumer.recovery_checkpoint(self.store)
+        path = self.root/'pending-checkpoint.json'; path.write_bytes(consumer._json(checkpoint))
+        copied = self.root/'pending-restore'; shutil.copytree(self.store, copied)
+        consumer.bind_restored(copied, checkpoint_path=path,
+            expected_checkpoint_sha256=checkpoint['checkpoint_sha256'],
+            expected_database_sha256=consumer._sha((copied/'ledger.sqlite').read_bytes()))
+        self.assertFalse(consumer.resume_archive(copied, producer='test:unreserved', operation_id=fixtures.OP)['reused'])
+        self.assertTrue(consumer.resume_archive(copied, producer='test:unreserved', operation_id=fixtures.OP)['reused'])
+        self.assertEqual(self.tree(), before)
+
+    def test_legacy_token_scoped_requests_survive_verified_recovery(self):
+        files = dict(self.raw, **{'status.json': self.status_path.read_bytes()})
+        files['source.json'] = consumer._json(consumer._source(files, 'test:local-hand', self.digest))
+        binding = dict(schema_version='lh-artifact-request-v1', producer='test:local-hand',
+                       operation_id=fixtures.OP, status_sha256=self.digest, token='c'*32)
+        create, append, payloads = consumer._requests(binding, files)
+        with consumer._locked_store(self.store, create=True):
+            consumer._publish_files(self.store, consumer._task_name('test:local-hand', fixtures.OP),
+                dict(files, **{'binding.json': consumer._json(binding), 'create.json': create, 'append.json': append}))
+            consumer._publish_files(self.store, 'database-initialized', {
+                'format.json': consumer._json(dict(schema_version='lh-artifact-store-v1'))})
+            with self.api.initialize(self.store/'ledger.sqlite') as ledger:
+                consumer._ensure_operation(ledger, create)
+                consumer._ensure_operation(ledger, append, payloads=payloads)
+        result = self.resume()  # Existing legacy upgrade adds guards, not new operations.
+        before = self.tree()
+        checkpoint = consumer.recovery_checkpoint(self.store)
+        path = self.root/'legacy-checkpoint.json'; path.write_bytes(consumer._json(checkpoint))
+        copied = self.root/'legacy-restore'; shutil.copytree(self.store, copied)
+        consumer.bind_restored(copied, checkpoint_path=path,
+            expected_checkpoint_sha256=checkpoint['checkpoint_sha256'],
+            expected_database_sha256=consumer._sha((copied/'ledger.sqlite').read_bytes()))
+        self.assertEqual(consumer.resume_archive(copied, producer='test:local-hand', operation_id=fixtures.OP), result)
+        self.assertEqual(self.tree(), before)
+
 
 if __name__ == '__main__': unittest.main()
