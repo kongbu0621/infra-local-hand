@@ -391,5 +391,52 @@ class ArchiveRecoveryTests(fixtures.BundleFixture, unittest.TestCase):
         self.assertEqual(rejected.exception.code, 'LIMIT_EXCEEDED')
         self.assertEqual(self.tree(), before)
 
+    def test_metadata_byte_budget_rejects_before_reading_oversized_remainder(self):
+        self.store.mkdir(mode=0o700)
+        contents = {'first': b'abcdef', 'second': b'1234567', 'empty': b''}
+        for name, raw in contents.items():
+            path = self.store/name
+            path.write_bytes(raw); path.chmod(0o600)
+        original_read = os.read
+        consumed = 0
+        def measured(fd, size):
+            nonlocal consumed
+            raw = original_read(fd, size)
+            consumed += len(raw)
+            return raw
+        descriptors = len(os.listdir('/proc/self/fd'))
+        # Either enumeration order must reject the second nonempty file before
+        # reading it; no large test files or mocked file sizes are necessary.
+        with mock.patch.object(consumer, 'MAX_RECOVERY_METADATA_BYTES', 12):
+            with mock.patch.object(os, 'read', side_effect=measured):
+                with self.assertRaises(consumer.ArchiveError) as rejected:
+                    consumer._archive_metadata_digest(self.store)
+        self.assertEqual(rejected.exception.code, 'LIMIT_EXCEEDED')
+        self.assertIn(consumed, (6, 7))
+        self.assertEqual(len(os.listdir('/proc/self/fd')), descriptors)
+        self.assertEqual(self.tree(), contents)
+        expected = consumer._sha(consumer._json({name: dict(size=len(raw), sha256=consumer._sha(raw))
+                                               for name, raw in contents.items()}))
+        with mock.patch.object(consumer, 'MAX_RECOVERY_METADATA_BYTES', 13):
+            self.assertEqual(consumer._archive_metadata_digest(self.store), expected)
+        # An exhausted byte budget still permits an empty private regular file.
+        self.assertEqual(consumer._file_digest(self.store/'empty', max_bytes=0)['size'], 0)
+
+    def test_checkpoint_and_binding_enforce_metadata_bytes_without_mutation(self):
+        self.prepare()
+        maximum = sum(len(raw) for name, raw in self.original_files.items()
+                      if name not in ('ledger.sqlite', '.archive.lock'))
+        with mock.patch.object(consumer, 'MAX_RECOVERY_METADATA_BYTES', maximum-1):
+            for check in (lambda: consumer.recovery_checkpoint(self.original_store), self.bind):
+                with self.assertRaises(consumer.ArchiveError) as rejected: check()
+                self.assertEqual(rejected.exception.code, 'LIMIT_EXCEEDED')
+        self.assertEqual(self.tree(), self.before_binding)
+        self.assertEqual(self.tree(self.original_store), self.original_files)
+        with mock.patch.object(consumer, 'MAX_RECOVERY_METADATA_BYTES', maximum):
+            self.assertEqual(consumer.recovery_checkpoint(self.original_store), self.checkpoint)
+            self.assertFalse(self.bind()['reused'])
+            self.assertTrue(self.bind()['reused'])
+        self.assertTrue(self.resume()['reused'])
+
 
 if __name__ == '__main__': unittest.main()

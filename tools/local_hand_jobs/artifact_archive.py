@@ -26,6 +26,7 @@ from .contract import JobError
 
 
 MAX_BLOB = 64 * 1024 * 1024
+MAX_RECOVERY_METADATA_BYTES = 1024 * 1024 * 1024
 LIMITS = {"evidence.zip": MAX_BLOB, "evidence.manifest": 4 * 1024 * 1024,
           "evidence.seal": 65536, "status.json": 1024 * 1024, "source.json": 65536}
 TYPE = {"namespace": "local-hand", "type_id": "completed-evidence", "type_version": "1"}
@@ -721,7 +722,7 @@ def _no_sidecars(path):
         _fail("Close database writers and resolve retained sidecars before this read-only check")
 
 
-def _file_digest(path):
+def _file_digest(path, *, max_bytes=1024 * 1024 * 1024):
     """Bounded no-follow checkpoint read; never open SQLite for recovery."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
@@ -730,6 +731,8 @@ def _file_digest(path):
                 or before.st_uid != os.geteuid() or before.st_mode & 0o077
                 or before.st_size > 1024 * 1024 * 1024):
             _fail("Recovery inputs must be private bounded regular files")
+        if before.st_size > max_bytes:
+            _fail("Archive recovery metadata exceeds 1 GiB", "LIMIT_EXCEEDED")
         digest = hashlib.sha256()
         size = 0
         while chunk := os.read(fd, 1024 * 1024):
@@ -774,10 +777,10 @@ def _archive_metadata_digest(root, *, ignore=None):
                 if stat.S_ISDIR(info.st_mode):
                     walk(child)
                 else:
-                    value = _file_digest(child)
+                    # Reject from the opened file's size before reading payload
+                    # that cannot fit in the remaining inventory byte budget.
+                    value = _file_digest(child, max_bytes=MAX_RECOVERY_METADATA_BYTES - total)
                     total += value["size"]
-                    if total > 1024 * 1024 * 1024:
-                        _fail("Archive recovery metadata exceeds 1 GiB", "LIMIT_EXCEEDED")
                     files[str(child.relative_to(root))] = value
     walk(root)
     return _sha(_json(files))  # Canonical keys preserve traversal-order independence.
