@@ -20,14 +20,14 @@
 
 ## 与其他组件的关系
 
-四个组件分别承担任务执行、成果保存、生产协调和运行知识管理。Local Hand 与 Ledger 已有可选归档接入；P 已有运行记录核心，生产接入仍属计划；K 仍处于设计阶段。
+四个组件分别承担任务执行、成果保存、生产协调和运行知识管理。Local Hand 与 Ledger 已有可选归档接入；P 已接通任务执行、成果读回与候选验收；K 已有知识审查、版本、采用与反馈接口。实际执行、知识准入和生产资格分别核对。
 
 | 组件 | 主要职责与本仓关系 |
 | --- | --- |
 | **infra-local-hand** | 执行获准任务，保留原任务状态，返回结果和封存证据；生产目标与后续决策由调用方负责 |
 | [infra-artifact-ledger](https://github.com/kongbu0621/infra-artifact-ledger) | 保存成果身份、版本、内容与来源；本仓可选的 `local-hand-archive` 已能将成功封存的任务结果归档并按准确版本读回 |
-| [control-production-plane（P）](https://github.com/kongbu0621/control-production-plane) | 计划中的调用方：通过本仓公共入口提交、查询和取消任务，协调修复、成果核对与验收 |
-| [domain-operational-knowledge-core（K）](https://github.com/kongbu0621/domain-operational-knowledge-core) | 计划中的间接使用方：由 P 或其他应用将执行结果组织为有来源的经验材料交给 K，支持知识候选、审查与版本管理；K 不直接管理本仓任务 |
+| [control-production-plane（P）](https://github.com/kongbu0621/control-production-plane) | 已接入的调用方：通过本仓公共入口准备、提交、查询和取消任务，协调修复、成果核对与候选验收；候选验收不等于补丁已应用 |
+| [domain-operational-knowledge-core（K）](https://github.com/kongbu0621/domain-operational-knowledge-core) | 运行知识组件：P 或其他应用通过 K 公共接口采用已审查的准确版本，并回流原任务结果；K 管理候选、审查与知识生命周期，不直接管理本仓任务 |
 
 应用可直接使用 Local Hand，接入 P 或 K 不是执行任务的前提。现有归档的安装与使用方式见下方[与 Artifact Ledger 配合](#与-artifact-ledger-配合)。
 
