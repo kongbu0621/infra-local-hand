@@ -443,7 +443,10 @@ class ArchiveRecoveryTests(fixtures.BundleFixture, unittest.TestCase):
         expected = consumer.recovery_checkpoint(self.store)
         before = self.tree()
         binding = json.loads((next(self.store.glob('task-*'))/'binding.json').read_bytes())
-        base = [sys.executable, '-I', '-B', '-m', 'local_hand_jobs.artifact_archive']
+        # Isolated children must use the same implementation as this test,
+        # whether the parent loaded a source checkout or an installed wheel.
+        script = 'import sys;sys.path.insert(0,sys.argv.pop(1));from local_hand_jobs.artifact_archive import main;raise SystemExit(main())'
+        base = [sys.executable, '-I', '-B', '-c', script, str(Path(consumer.__file__).parents[1])]
         commands = [base + ['recovery-checkpoint', '--store', str(self.store)],
                     base + ['resume', '--store', str(self.store), '--producer', binding['producer'],
                             '--operation-id', binding['operation_id']]]
