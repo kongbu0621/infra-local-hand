@@ -66,6 +66,19 @@
 
 ## 从请求到可用结果
 
+### 多节点独立执行与 NAS 成果存储
+
+**下图是目标架构，尚未完成跨平台多节点实现或部署验收。** 同一产品拟分别部署到独立执行节点，各自只负责本机任务；调用方选择一个或多个连接，分别推进任务。NAS 是独立成果存储节点，可以共用，也可以分别绑定，不是另一个 Local Hand 执行节点。
+
+[![目标架构：多个独立 Local Hand 分别受控执行任务，经原节点返回状态与证据；成果可归档到同一或不同 NAS，各节点的执行状态、身份与权限保持独立。](docs/diagrams/independent-nodes-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/2230786ef3bead0109055f5e9109562c0fc6bfe6/docs/diagrams/independent-nodes-target.svg)
+
+[查看目标架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/2230786ef3bead0109055f5e9109562c0fc6bfe6/docs/diagrams/independent-nodes-target.svg) · [实现方案与验收边界](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md)
+
+节点 A／B／C 和存储 X／Y 都是合成示例，不代表实际设备或固定数量。节点执行与恢复记录保留在各自节点；成果归档是独立分支，共用 NAS 不等于共用任务状态或写权限。释放本地证据内容后，准确读回可能依赖原绑定的 NAS；NAS 离线不能触发业务重跑。
+
+<details>
+<summary>展开当前单节点任务与结果机制</summary>
+
 [![调用方经接入入口向 Local Hand 作业后端发起请求；侧边账本与证据保存原任务状态和产物；最下方由调用方取回状态与证据，核对后继续工作。](docs/diagrams/task-results.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
 
 [查看原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fe3a75fe1133566b8527a0698b7f4a5a01dd4176/docs/diagrams/task-results.svg)
@@ -73,6 +86,8 @@
 图中主线表达职责和结果关系。只有获准提交才可能启动业务；查询、恢复和读取围绕原任务进行，不会重放已执行的业务。返回结果仍可能是失败或未知，证据是否可取回以实际封存状态为准。
 
 任务账本保存执行状态，封存证据保存可供核对的产物。调用方负责决定下一步做什么；Local Hand 按已登记的能力执行，并如实返回已观察到的结果。
+
+</details>
 
 ## 怎么接入
 
@@ -86,8 +101,8 @@
 
 ### 客户端、Server、MCP 与 Tailscale 是什么关系
 
-上一张图说明请求怎样得到可核对的结果；下面这张图展开 ChatGPT 通过网络连接本地执行的路径。
-其中 MCP Server 对应上一张图的接入入口，任务进程由作业后端管理；任务账本与证据见上一张图的侧边。
+上方目标图说明多节点的职责与结果关系；下面这张图展开一个已有部署中 ChatGPT 通过网络连接本地执行的路径。
+其中 MCP Server 对应执行节点的接入入口，任务进程由作业后端管理；原任务状态与证据由该节点维护。
 本地 CLI 则通过上表中的 Unix socket 接入，不需要经过图中的 ChatGPT 客户端或 Tailscale。
 
 **Local Hand Server 负责接收和处理请求；MCP 规定双方怎样通信；Tailscale 可以提供网络连接入口。**
@@ -176,6 +191,7 @@ Local Hand 负责执行任务和取回结果；[Artifact Ledger](https://github.
 | 想了解什么 | 阅读入口 |
 |---|---|
 | 如何安装、连接、应用补丁或归档结果 | [使用说明](docs/USAGE.md) |
+| 多节点独立部署、跨平台适配与 NAS 成果存储的目标设计 | [实现方案与验收边界](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md) |
 | 作业入口、当前参数及任务设计约束 | [运行模式与工具参数](docs/USAGE.md#作业入口与运行模式) · [作业架构](docs/a2-execution/ARCHITECTURE.md) |
 | 产品需求及早期 Task/Result、Git mailbox 设计 | [需求](docs/REQUIREMENTS.md) · [架构](docs/ARCHITECTURE.md) |
 
