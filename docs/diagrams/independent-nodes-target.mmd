@@ -1,0 +1,75 @@
+---
+title: "Local Hand：多节点独立执行，可配置 NAS 成果存储（目标架构）"
+---
+%% Relationship source; the SVG fixes presentation and is rendered to PNG.
+%% Solid: task control, local persistence and results.
+%% Dashed: storage calls; responses use the same authenticated connection.
+%% Synthetic example: A/B -> X and C -> Y; no actual asset mapping or replication.
+%% NAS hosts the controlled receiver and local Ledger stores in this target.
+%% NAS is not an execution node; callers receive results via original nodes.
+%% Local status and retained evidence do not wait for NAS.
+%% After local payload release, authorized content retrieval may require NAS.
+%% Archive access uses the retained index; reads do not recreate pending items.
+flowchart TD
+    CALLER["调用方 · ChatGPT 等应用<br/>选择一个或多个独立连接，分别推进任务"]
+    subgraph NODE_A["执行节点 A · 独立执行节点"]
+        AE["执行节点 A<br/>按部署选择平台<br/>独立 MCP 入口 / 本地 CLI 接口"]
+        AB["Local Hand 作业后端<br/>任务 A · 受控执行<br/>管理进程 · 收集结果<br/>按部署选择平台"]
+        AS[("节点执行状态<br/>恢复与归档索引<br/>原任务 · 本地持久化")]
+        AO["归档接入与有界暂存<br/>封存内容 · 原请求<br/>目标绑定 · 回执"]
+        AR["任务 A · 状态与证据<br/>原节点 + 原任务<br/>业务 / 证据 / 归档分别报告"]
+        AE --> AB
+        AB -->|"持久记录"| AS
+        AS -->|"恢复核对"| AB
+        AB -->|"封存 / 入队"| AO
+        AB -->|"经本机入口"| AR
+        AO -->|"读回"| AR
+    end
+    subgraph NODE_B["执行节点 B · 独立执行节点"]
+        BE["执行节点 B<br/>按部署选择平台<br/>独立 MCP 入口 / 本地 CLI 接口"]
+        BB["Local Hand 作业后端<br/>任务 B · 受控执行<br/>管理进程 · 收集结果<br/>按部署选择平台"]
+        BS[("节点执行状态<br/>恢复与归档索引<br/>原任务 · 本地持久化")]
+        BO["归档接入与有界暂存<br/>封存内容 · 原请求<br/>目标绑定 · 回执"]
+        BR["任务 B · 状态与证据<br/>原节点 + 原任务<br/>业务 / 证据 / 归档分别报告"]
+        BE --> BB
+        BB -->|"持久记录"| BS
+        BS -->|"恢复核对"| BB
+        BB -->|"封存 / 入队"| BO
+        BB -->|"经本机入口"| BR
+        BO -->|"读回"| BR
+    end
+    subgraph NODE_C["执行节点 C · 独立执行节点"]
+        CE["执行节点 C<br/>按部署选择平台<br/>独立 MCP 入口 / 本地 CLI 接口"]
+        CB["Local Hand 作业后端<br/>任务 C · 受控执行<br/>管理进程 · 收集结果<br/>按部署选择平台"]
+        CS[("节点执行状态<br/>恢复与归档索引<br/>原任务 · 本地持久化")]
+        CO["归档接入与有界暂存<br/>封存内容 · 原请求<br/>目标绑定 · 回执"]
+        CR["任务 C · 状态与证据<br/>原节点 + 原任务<br/>业务 / 证据 / 归档分别报告"]
+        CE --> CB
+        CB -->|"持久记录"| CS
+        CS -->|"恢复核对"| CB
+        CB -->|"封存 / 入队"| CO
+        CB -->|"经本机入口"| CR
+        CO -->|"读回"| CR
+    end
+
+    CALLER -->|"连接节点 A · 准备 / 提交 / 查询 / 取消"| AE
+    CALLER -->|"连接节点 B · 准备 / 提交 / 查询 / 取消"| BE
+    CALLER -->|"连接节点 C · 准备 / 提交 / 查询 / 取消"| CE
+    subgraph STORAGE["独立成果存储节点 · 可同 NAS，也可不同 NAS"]
+        SX[("存储节点 X<br/>执行节点 A / B 分库保存 · 凭据与写权限隔离<br/>NAS 内受控入口 → Ledger 成果库<br/>版本 / 内容 / 准确读回 · 库在 NAS 自身本地盘")]
+        SY[("存储节点 Y<br/>执行节点 C 独立成果库<br/>NAS 内受控入口 → Ledger 成果库<br/>版本 / 内容 / 准确读回 · 库在 NAS 自身本地盘")]
+    end
+    AO -.->|"X · 归档 / 核对 / 读回"| SX
+    BO -.->|"X · 归档 / 核对 / 读回"| SX
+    CO -.->|"Y · 归档 / 核对 / 读回"| SY
+    R["调用方分别取回、核对结果，继续各自任务<br/>原节点 + 原任务 + 成果引用；失败 / 未知也如实返回，不自动重跑"]
+    AR -->|"分别经原节点返回"| R
+    BR -->|"分别经原节点返回"| R
+    CR -->|"分别经原节点返回"| R
+
+    %% NAS receiver and outbox are planned; A2 snapshots already exist.
+    %% First archive scope: successful, exited and sealed results only.
+    %% Other outcomes remain on original nodes and are returned truthfully.
+    %% Finite local retention: outage can cause task-specific backpressure.
+    %% Platform profiles are selected per deployment; full chains remain to verify.
+    %% Node labels and count are illustrative, not actual assets or product limits.

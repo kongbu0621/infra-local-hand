@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="1780" viewBox="0 0 2160 1780" role="img" aria-labelledby="title description">
+  <title id="title">Local Hand：多节点独立执行，可配置 NAS 成果存储（目标架构）</title>
+  <desc id="description">合成示例：调用方分别连接独立执行节点 A、B、C；这些标签不指向实际设备，数量不是产品上限，各节点按部署选择平台。各节点受控执行自己的任务，保留执行状态、恢复与长期归档索引、有界待归档成果。白色主线经原节点返回各任务状态和可用证据；本地状态和保留的证据不等待 NAS，释放本地内容后，准确读回可能需要 NAS。绿色虚线是成果存储调用，响应沿原连接返回：示例 A、B 绑定存储节点 X，C 绑定存储节点 Y，也可全部绑定同一 NAS；该绑定不是实际资产映射。各 producer 分库保存，凭据和权限隔离。NAS 内受控接收端与 Ledger 成果库是目标部署，不执行 Local Hand 任务。首版只归档已退出、成功且封存的成果；其他状态留在原节点如实返回。在线归档、平台适配和多节点部署仍待实现或验收；已有 A2 快照不等于在线归档。NAS 离线先保留有界成果，容量不足限制新增任务，不自动重放。</desc>
+  <!-- Relationship source: independent-nodes-target.mmd.
+       Shared wires are drawing aids, not a central router or synchronization barrier.
+       Original README diagram remains unchanged. -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#b6c6d4" stroke-width="1.5"/></marker>
+    <marker id="archive-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#78cbb5" stroke-width="1.5"/></marker>
+    <style>
+      text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 23px; text-anchor: middle; fill: #8bc7ff; }
+      .node { fill: #102c42; stroke: #456a85; stroke-width: 1.6; }
+      .frame { fill: #0f1923; stroke: #35566e; stroke-width: 1.6; stroke-dasharray: 8 6; }
+      .store-frame { fill: #10211f; stroke: #3d6c60; stroke-width: 1.6; stroke-dasharray: 8 6; }
+      .store { fill: #16362f; stroke: #528e7e; stroke-width: 1.7; }
+      .edge, .wire { fill: none; stroke: #b6c6d4; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+      .edge { marker-end: url(#arrow); }
+      .archive { fill: none; stroke: #78cbb5; stroke-width: 2.2; stroke-dasharray: 8 7; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#archive-arrow); }
+      .label { fill: #0d1117; stroke: #6ba8d6; stroke-width: 1.2; }
+      .archive-label { fill: #0d1117; stroke: #528e7e; stroke-width: 1.2; }
+      .heading { font-weight: 600; }
+      .title { font-size: 39px; font-weight: 600; fill: #d7eaff; }
+      .section-title { font-size: 29px; font-weight: 600; }
+      .small { font-size: 20px; } .tiny { font-size: 18px; }
+      .muted { fill: #b0becb; } .status { fill: #edc484; font-size: 22px; }
+      .green { fill: #9cddca; }
+    </style>
+  </defs>
+  <rect width="2160" height="1780" rx="24" fill="#0d1117"/>
+  <text class="title" x="1080" y="61">Local Hand：多节点独立执行，可配置 NAS 成果存储</text>
+  <text class="status" x="1080" y="104">目标架构 · 同一产品版本，按部署选择平台 · 节点数量仅为示例，未完成验收</text>
+  <g id="node-CALLER" data-node="CALLER">
+    <rect class="node" x="680" y="141" width="800" height="115" rx="24"/>
+    <text x="1080" y="188"><tspan x="1080" class="section-title">调用方 · ChatGPT 等应用</tspan><tspan x="1080" dy="39">选择一个或多个独立连接，分别推进任务</tspan></text>
+  </g>
+  <path class="wire" d="M 1080 256 V 282 M 390 282 H 1750"/>
+  <rect class="frame" x="70" y="342" width="640" height="634" rx="26"/>
+  <rect class="frame" x="750" y="342" width="640" height="634" rx="26"/>
+  <rect class="frame" x="1430" y="342" width="640" height="634" rx="26"/>
+  <g data-from="CALLER" data-to="AE" data-label="连接节点 A · 准备 / 提交 / 查询 / 取消"><path class="edge" d="M 390 282 V 362"/><rect class="label" x="115" y="296" width="550" height="37" rx="18"/><text class="small" x="390" y="322">连接节点 A · 准备 / 提交 / 查询 / 取消</text></g>
+  <g data-from="CALLER" data-to="BE" data-label="连接节点 B · 准备 / 提交 / 查询 / 取消"><path class="edge" d="M 1070 282 V 362"/><rect class="label" x="795" y="296" width="550" height="37" rx="18"/><text class="small" x="1070" y="322">连接节点 B · 准备 / 提交 / 查询 / 取消</text></g>
+  <g data-from="CALLER" data-to="CE" data-label="连接节点 C · 准备 / 提交 / 查询 / 取消"><path class="edge" d="M 1750 282 V 362"/><rect class="label" x="1475" y="296" width="550" height="37" rx="18"/><text class="small" x="1750" y="322">连接节点 C · 准备 / 提交 / 查询 / 取消</text></g>
+
+  <g id="instance-a">
+    <g id="node-AE" data-node="AE">
+      <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
+      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 A</tspan><tspan x="390" dy="34">按部署选择平台</tspan><tspan x="390" dy="33" class="small">独立 MCP 入口 / 本地 CLI 接口</tspan></text>
+    </g>
+    <g data-from="AE" data-to="AB" data-label=""><path class="edge" d="M 240 488 V 550"/></g>
+    <g id="node-AB" data-node="AB">
+      <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
+      <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 A · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
+    </g>
+    <g id="node-AS" data-node="AS">
+      <path class="node" d="M 500 577 A 95 18 0 0 1 690 577 V 706 A 95 18 0 0 1 500 706 Z"/><ellipse class="node" cx="595" cy="577" rx="95" ry="18"/>
+      <text x="595" y="621"><tspan x="595" class="heading">节点执行状态</tspan><tspan x="595" dy="33">恢复与归档索引</tspan><tspan x="595" dy="34" class="tiny muted">原任务 · 本地持久化</tspan></text>
+    </g>
+    <g data-from="AB" data-to="AS" data-label="持久记录"><path class="edge" d="M 390 607 H 500"/><text class="tiny" x="445" y="591">持久记录</text></g>
+    <g data-from="AS" data-to="AB" data-label="恢复核对"><path class="edge" d="M 500 689 H 390"/><text class="tiny" x="445" y="672">恢复核对</text></g>
+    <g data-from="AB" data-to="AO" data-label="封存 / 入队"><path class="edge" d="M 390 710 H 428 V 771 H 570 V 815"/><text class="small" x="550" y="754">封存 / 入队</text></g>
+    <g data-from="AB" data-to="AR" data-label="经本机入口"><path class="edge" d="M 240 725 V 815"/><rect class="label" x="158" y="752" width="164" height="36" rx="18"/><text class="small" x="240" y="778">经本机入口</text></g>
+    <g id="node-AO" data-node="AO">
+      <rect class="node" x="450" y="815" width="240" height="130" rx="20"/>
+      <text x="570" y="851"><tspan x="570" class="heading">归档接入与有界暂存</tspan><tspan x="570" dy="35" class="small">封存内容 · 原请求</tspan><tspan x="570" dy="34" class="small">目标绑定 · 回执</tspan></text>
+    </g>
+    <g id="node-AR" data-node="AR">
+      <rect class="node" x="90" y="815" width="300" height="130" rx="20"/>
+      <text x="240" y="851"><tspan x="240" class="heading">任务 A · 状态与证据</tspan><tspan x="240" dy="35" class="small">原节点 + 原任务</tspan><tspan x="240" dy="34" class="tiny muted">业务 / 证据 / 归档分别报告</tspan></text>
+    </g>
+    <g data-from="AO" data-to="AR" data-label="读回"><path class="edge" d="M 450 900 H 390"/><text class="tiny" x="420" y="882">读回</text></g>
+  </g>
+
+  <g id="instance-b" transform="translate(680 0)">
+    <g id="node-BE" data-node="BE">
+      <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
+      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 B</tspan><tspan x="390" dy="34">按部署选择平台</tspan><tspan x="390" dy="33" class="small">独立 MCP 入口 / 本地 CLI 接口</tspan></text>
+    </g>
+    <g data-from="BE" data-to="BB" data-label=""><path class="edge" d="M 240 488 V 550"/></g>
+    <g id="node-BB" data-node="BB">
+      <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
+      <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 B · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
+    </g>
+    <g id="node-BS" data-node="BS">
+      <path class="node" d="M 500 577 A 95 18 0 0 1 690 577 V 706 A 95 18 0 0 1 500 706 Z"/><ellipse class="node" cx="595" cy="577" rx="95" ry="18"/>
+      <text x="595" y="621"><tspan x="595" class="heading">节点执行状态</tspan><tspan x="595" dy="33">恢复与归档索引</tspan><tspan x="595" dy="34" class="tiny muted">原任务 · 本地持久化</tspan></text>
+    </g>
+    <g data-from="BB" data-to="BS" data-label="持久记录"><path class="edge" d="M 390 607 H 500"/><text class="tiny" x="445" y="591">持久记录</text></g>
+    <g data-from="BS" data-to="BB" data-label="恢复核对"><path class="edge" d="M 500 689 H 390"/><text class="tiny" x="445" y="672">恢复核对</text></g>
+    <g data-from="BB" data-to="BO" data-label="封存 / 入队"><path class="edge" d="M 390 710 H 428 V 771 H 570 V 815"/><text class="small" x="550" y="754">封存 / 入队</text></g>
+    <g data-from="BB" data-to="BR" data-label="经本机入口"><path class="edge" d="M 240 725 V 815"/><rect class="label" x="158" y="752" width="164" height="36" rx="18"/><text class="small" x="240" y="778">经本机入口</text></g>
+    <g id="node-BO" data-node="BO">
+      <rect class="node" x="450" y="815" width="240" height="130" rx="20"/>
+      <text x="570" y="851"><tspan x="570" class="heading">归档接入与有界暂存</tspan><tspan x="570" dy="35" class="small">封存内容 · 原请求</tspan><tspan x="570" dy="34" class="small">目标绑定 · 回执</tspan></text>
+    </g>
+    <g id="node-BR" data-node="BR">
+      <rect class="node" x="90" y="815" width="300" height="130" rx="20"/>
+      <text x="240" y="851"><tspan x="240" class="heading">任务 B · 状态与证据</tspan><tspan x="240" dy="35" class="small">原节点 + 原任务</tspan><tspan x="240" dy="34" class="tiny muted">业务 / 证据 / 归档分别报告</tspan></text>
+    </g>
+    <g data-from="BO" data-to="BR" data-label="读回"><path class="edge" d="M 450 900 H 390"/><text class="tiny" x="420" y="882">读回</text></g>
+  </g>
+
+  <g id="instance-c" transform="translate(1360 0)">
+    <g id="node-CE" data-node="CE">
+      <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
+      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 C</tspan><tspan x="390" dy="34">按部署选择平台</tspan><tspan x="390" dy="33" class="small">独立 MCP 入口 / 本地 CLI 接口</tspan></text>
+    </g>
+    <g data-from="CE" data-to="CB" data-label=""><path class="edge" d="M 240 488 V 550"/></g>
+    <g id="node-CB" data-node="CB">
+      <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
+      <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 C · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
+    </g>
+    <g id="node-CS" data-node="CS">
+      <path class="node" d="M 500 577 A 95 18 0 0 1 690 577 V 706 A 95 18 0 0 1 500 706 Z"/><ellipse class="node" cx="595" cy="577" rx="95" ry="18"/>
+      <text x="595" y="621"><tspan x="595" class="heading">节点执行状态</tspan><tspan x="595" dy="33">恢复与归档索引</tspan><tspan x="595" dy="34" class="tiny muted">原任务 · 本地持久化</tspan></text>
+    </g>
+    <g data-from="CB" data-to="CS" data-label="持久记录"><path class="edge" d="M 390 607 H 500"/><text class="tiny" x="445" y="591">持久记录</text></g>
+    <g data-from="CS" data-to="CB" data-label="恢复核对"><path class="edge" d="M 500 689 H 390"/><text class="tiny" x="445" y="672">恢复核对</text></g>
+    <g data-from="CB" data-to="CO" data-label="封存 / 入队"><path class="edge" d="M 390 710 H 428 V 771 H 570 V 815"/><text class="small" x="550" y="754">封存 / 入队</text></g>
+    <g data-from="CB" data-to="CR" data-label="经本机入口"><path class="edge" d="M 240 725 V 815"/><rect class="label" x="158" y="752" width="164" height="36" rx="18"/><text class="small" x="240" y="778">经本机入口</text></g>
+    <g id="node-CO" data-node="CO">
+      <rect class="node" x="450" y="815" width="240" height="130" rx="20"/>
+      <text x="570" y="851"><tspan x="570" class="heading">归档接入与有界暂存</tspan><tspan x="570" dy="35" class="small">封存内容 · 原请求</tspan><tspan x="570" dy="34" class="small">目标绑定 · 回执</tspan></text>
+    </g>
+    <g id="node-CR" data-node="CR">
+      <rect class="node" x="90" y="815" width="300" height="130" rx="20"/>
+      <text x="240" y="851"><tspan x="240" class="heading">任务 C · 状态与证据</tspan><tspan x="240" dy="35" class="small">原节点 + 原任务</tspan><tspan x="240" dy="34" class="tiny muted">业务 / 证据 / 归档分别报告</tspan></text>
+    </g>
+    <g data-from="CO" data-to="CR" data-label="读回"><path class="edge" d="M 450 900 H 390"/><text class="tiny" x="420" y="882">读回</text></g>
+  </g>
+
+  <!-- Result returns share drawing space only. Bridges do not join storage paths. -->
+  <g data-from="AR" data-to="R" data-label="分别经原节点返回"><path class="wire" d="M 240 945 V 1010"/></g>
+  <g data-from="BR" data-to="R" data-label="分别经原节点返回"><path class="wire" d="M 920 945 V 1010"/></g>
+  <g data-from="CR" data-to="R" data-label="分别经原节点返回"><path class="wire" d="M 1600 945 V 1010"/></g>
+  <path class="wire" d="M 50 1010 H 558 Q 570 988 582 1010 H 1238 Q 1250 988 1262 1010 H 1600"/>
+  <path class="edge" d="M 50 1010 V 1600 H 180"/>
+  <text class="small muted" x="84" y="1285" transform="rotate(-90 84 1285)">分别经原节点返回 · 不等待其他节点</text>
+  <rect class="store-frame" x="130" y="1110" width="1940" height="380" rx="26"/>
+  <g data-from="AO" data-to="SX" data-label="X · 归档 / 核对 / 读回" data-kind="storage"><path class="archive" d="M 570 945 V 1160"/><rect class="archive-label" x="395" y="1070" width="350" height="38" rx="19"/><text class="small green" x="570" y="1097">X · 归档 / 核对 / 读回</text></g>
+  <g data-from="BO" data-to="SX" data-label="X · 归档 / 核对 / 读回" data-kind="storage"><path class="archive" d="M 1250 945 V 1130 H 1000 V 1160"/><rect class="archive-label" x="1075" y="1070" width="350" height="38" rx="19"/><text class="small green" x="1250" y="1097">X · 归档 / 核对 / 读回</text></g>
+  <g data-from="CO" data-to="SY" data-label="Y · 归档 / 核对 / 读回" data-kind="storage"><path class="archive" d="M 1930 945 V 1160"/><rect class="archive-label" x="1755" y="1070" width="350" height="38" rx="19"/><text class="small green" x="1930" y="1097">Y · 归档 / 核对 / 读回</text></g>
+  <rect x="370" y="1027" width="1200" height="27" rx="4" fill="#0d1117"/>
+  <text class="small muted" x="970" y="1046">实线：任务与结果　｜　绿色虚线：存储调用，响应沿原连接返回　｜　跨线弧不连接</text>
+  <g id="node-SX" data-node="SX">
+    <path class="store" d="M 300 1180 A 450 20 0 0 1 1200 1180 V 1330 A 450 20 0 0 1 300 1330 Z"/><ellipse class="store" cx="750" cy="1180" rx="450" ry="20"/>
+    <text class="green" x="750" y="1224"><tspan x="750" class="section-title">存储节点 X</tspan><tspan x="750" dy="35">执行节点 A / B 分库保存 · 凭据与写权限隔离</tspan><tspan x="750" dy="34">NAS 内受控入口 → Ledger 成果库</tspan><tspan x="750" dy="32" class="small">版本 / 内容 / 准确读回 · 库在 NAS 自身本地盘</tspan></text>
+  </g>
+  <g id="node-SY" data-node="SY">
+    <path class="store" d="M 1450 1180 A 300 20 0 0 1 2050 1180 V 1330 A 300 20 0 0 1 1450 1330 Z"/><ellipse class="store" cx="1750" cy="1180" rx="300" ry="20"/>
+    <text class="green" x="1750" y="1224"><tspan x="1750" class="section-title">存储节点 Y</tspan><tspan x="1750" dy="35">执行节点 C 独立成果库</tspan><tspan x="1750" dy="34">NAS 内受控入口 → Ledger 成果库</tspan><tspan x="1750" dy="32" class="small">版本 / 内容 / 准确读回 · 库在 NAS 自身本地盘</tspan></text>
+  </g>
+  <text class="green" x="1100" y="1390">独立成果存储节点，不是执行机；合成示例 A、B → X，C → Y；非实际资产映射。</text>
+  <text class="small muted" x="1100" y="1428">在线入口与自动 outbox 为待实现；已有 Ledger A2 快照用于备份 / 恢复，不等于在线归档。</text>
+  <text class="small muted" x="1100" y="1466">首版归档已退出、成功且封存的成果；失败 / 取消 / 未知保留在原节点并如实返回。</text>
+  <g id="node-R" data-node="R">
+    <rect class="node" x="180" y="1535" width="1800" height="130" rx="24"/>
+    <text x="1080" y="1586"><tspan x="1080" class="section-title">调用方分别取回、核对结果，继续各自任务</tspan><tspan x="1080" dy="41">原节点 + 原任务 + 成果引用；失败 / 未知也如实返回，不自动重跑</tspan></text>
+  </g>
+  <text class="small muted" x="1080" y="1712">各机独立启动，不互相代跑；共享 NAS 不共享任务状态或权限。NAS 离线先保留成果，容量不足限制新增任务。</text>
+  <text class="small muted" x="1080" y="1748">本地状态与保留证据不等 NAS；释放本地内容后按原绑定读回。持续规划由调用方负责，各平台须分别验收。</text>
+</svg>
