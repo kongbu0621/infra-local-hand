@@ -107,6 +107,7 @@ def build_grant(template, snapshot, *, session, clock):
     candidate = dict(fixed, request=request, budget=prep["budget"], predecessors=[],
                      management=dict(fixed["management"], issued_ns=clock["boottime_ns"]))
     grant = g.decode_grant(q._canonical(candidate, g.GRANT_LIMIT))
+    g.check_management_runtime(grant.as_dict()["management"])
     g.check_capacity(value["installation"]["capacity"], [grant])
     return grant
 

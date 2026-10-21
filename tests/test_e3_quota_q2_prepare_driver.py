@@ -202,6 +202,57 @@ class DriverTests(unittest.TestCase):
             d.complete(plan,receipt,files=files,command=lambda _:self.fail("command reached"),clock=lambda:self.fail("clock reached"))
         self.assertFalse(files.dirs); self.assertFalse(files.writes)
 
+    def test_impossible_stage_windows_fail_before_any_preparation_effect(self):
+        from test_e3_quota_q2_prepare import ModelBackend, m
+        from test_e3_quota_q2_prepare_contract import fixture as full_plan
+        for stage in ("admission", "query", "collector"):
+            for extra in (-1, 0, 999):
+                plan, receipt = fixture()
+                management = plan["settings"]["management"]
+                management["stages"][stage]["runtime_ns"] = management["stop_ns"] + extra
+                original = copy.deepcopy(plan)
+                files = ModelFiles()
+                with self.subTest(stage=stage, extra=extra):
+                    with self.assertRaisesRegex(ValueError, "^MANAGEMENT_STAGE_RUNTIME$"):
+                        d.complete(plan, receipt, files=files,
+                            command=lambda _: self.fail("command reached"),
+                            clock=lambda: self.fail("clock reached"))
+                    self.assertFalse(files.dirs); self.assertFalse(files.writes)
+                    self.assertEqual(original, plan)
+                    full = full_plan(); full["settings"] = plan["settings"]
+                    backend = ModelBackend()
+                    with self.assertRaisesRegex(ValueError, "^MANAGEMENT_STAGE_RUNTIME$"):
+                        m.prepare(full, backend, validate_settings=lambda _: d.validate_plan(full))
+                    self.assertEqual([], backend.calls)
+                    self.assertIsNone(backend.reservation)
+
+    def test_phase_termination_grace_is_reserved_before_allocation(self):
+        plan, receipt = fixture()
+        settings = plan["settings"]; management = settings["management"]
+        available = (settings["original_budgets"]["wall_seconds"] // 3
+            - settings["original_budgets"]["terminate_grace_seconds"]) * 10**9
+        management["stages"]["collector"]["runtime_ns"] = available - (
+            management["receive_ns"] + management["stop_ns"]
+            + sum(management["stages"][stage]["runtime_ns"] for stage in ("admission", "query")))
+        self.assertEqual(settings, d.validate_settings(settings))
+        management["stages"]["collector"]["runtime_ns"] += 1
+        files = ModelFiles()
+        with self.assertRaisesRegex(ValueError, "^DRIVER_MANAGEMENT_BUDGET$"):
+            d.complete(plan, receipt, files=files,
+                command=lambda _: self.fail("command reached"), clock=lambda: self.fail("clock reached"))
+        self.assertFalse(files.dirs); self.assertFalse(files.writes)
+
+    def test_settings_preflight_does_not_require_an_installed_package(self):
+        settings = fixture()[0]["settings"]
+        script = ('import importlib.util,json,sys; '
+            'spec=importlib.util.spec_from_file_location("driver",sys.argv[1]); '
+            'module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); '
+            'module.validate_settings(json.load(sys.stdin))')
+        result = subprocess.run([sys.executable, "-I", "-B", "-c", script, str(PATH)],
+            input=json.dumps(settings), text=True, capture_output=True, timeout=10)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+
     def test_real_provision_entry_rejects_unfunded_plan_before_reservation(self):
         from test_e3_quota_q2_prepare import ModelBackend, m
         from test_e3_quota_q2_prepare_contract import fixture as full_plan

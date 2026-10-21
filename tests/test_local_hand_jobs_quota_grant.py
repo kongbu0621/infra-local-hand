@@ -7,6 +7,41 @@ from q2_fixtures import BOOT, SECOND, capacity, grant_data, make_grant, encoded
 
 
 class GrantTests(unittest.TestCase):
+    def test_new_management_windows_reserve_stop_and_a_whole_microsecond(self):
+        for name in g.STAGES:
+            for extra in (-1, 0, 1, 999, 1000, 1001):
+                management = grant_data()["management"]
+                for stage in management["stages"].values():
+                    stage["runtime_ns"] = 2 * SECOND
+                management["stages"][name]["runtime_ns"] = management["stop_ns"] + extra
+                original = copy.deepcopy(management)
+                with self.subTest(stage=name, extra=extra):
+                    if extra < 1000:
+                        with self.assertRaisesRegex(q.QuotaError, "^MANAGEMENT_STAGE_RUNTIME$"):
+                            g.check_management_runtime(management)
+                    else:
+                        g.check_management_runtime(management)
+                    self.assertEqual(original, management)
+
+    def test_new_stop_grace_must_survive_systemd_microsecond_conversion(self):
+        for stop in (1, 999, 1000, 1001):
+            management = grant_data()["management"]
+            management["stop_ns"] = stop
+            with self.subTest(stop=stop):
+                if stop < 1000:
+                    with self.assertRaisesRegex(q.QuotaError, "^MANAGEMENT_STOP_GRANULARITY$"):
+                        g.check_management_runtime(management)
+                else:
+                    g.check_management_runtime(management)
+
+    def test_historical_unusable_grant_remains_decodable_without_rewriting(self):
+        data = grant_data()  # Historical fixture has runtime == stop == 1 s.
+        grant = g.decode_grant(encoded(data))
+        self.assertEqual(data, grant.as_dict())
+        with self.assertRaisesRegex(q.QuotaError, "^MANAGEMENT_STAGE_RUNTIME$"):
+            g.check_management_runtime(grant.as_dict()["management"])
+        self.assertEqual(grant.wire, g.decode_grant(grant.wire).wire)
+
     def test_full_origin_and_deterministic_request_with_no_circular_digest(self):
         grant = make_grant()
         value = grant.as_dict()

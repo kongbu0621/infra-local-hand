@@ -209,7 +209,7 @@ def facts(root="/synthetic-q2"):
             endpoint_dir=root+"/control",launcher_output=pin(root+"/launcher-output",520),launcher_declarations=pin(root+"/launcher-declarations",521),
             supervisor_output=pin(root+"/supervisor-output",522),supervisor_declarations=pin(root+"/supervisor-declarations",523)),
         slots=slots,store=store,capacity=capacity,management=dict(receive_ns=10**9,stop_ns=10**9,storage_bytes=1024**2,
-            storage_inodes=32,stages={stage:dict(cpu_ns=10**9,memory_bytes=16*1024**2,pids=4,output_bytes=32768,runtime_ns=10**9)
+            storage_inodes=32,stages={stage:dict(cpu_ns=10**9,memory_bytes=16*1024**2,pids=4,output_bytes=32768,runtime_ns=2*10**9)
             for stage in g.STAGES},accept_ns=10**9,max_connections=4),
         controllers=dict(target=controller("controller",85_000_000),supervisor=controller("supervisor",100_000_000),
             controller_parent=parents["controller"],query_parent=parents["query"],management_parent=parents["management"],supervisor_parent=parents["supervisor"],

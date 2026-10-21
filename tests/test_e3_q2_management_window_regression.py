@@ -54,6 +54,27 @@ def duration_ns(text):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux administrative runtime")
 class ManagementWindowRegressionTests(unittest.TestCase):
+    def test_new_window_check_matches_actual_command_microsecond_boundary(self):
+        for stage, role in (("collector", "listener"), ("admission", "admission"), ("query", "query")):
+            for stop in (1000, 1001, SECOND):
+                for active in (999, 1000, 1001):
+                    value = protected_input()
+                    management = next(iter(value["grants"].values()))["management"]
+                    management["stop_ns"] = stop
+                    management["stages"][stage]["runtime_ns"] = stop + active
+                    cfg = config(value)  # Historical decoding remains unchanged.
+                    with self.subTest(stage=stage, stop=stop, active=active):
+                        if active < 1000:
+                            with self.assertRaisesRegex(q.QuotaError, "^MANAGEMENT_STAGE_RUNTIME$"):
+                                g.check_management_runtime(management)
+                            with self.assertRaisesRegex(q.QuotaError, "^RUNTIME_DEADLINE$"):
+                                runtime.command(cfg, role, now_ns=management["issued_ns"])
+                        else:
+                            g.check_management_runtime(management)
+                            properties = command_properties(cfg, role, management["issued_ns"])
+                            self.assertEqual(str(active // 1000) + "us", properties["RuntimeMaxSec"])
+                            self.assertEqual(str(stop // 1000) + "us", properties["TimeoutStopSec"])
+
     def test_original_decoder_keeps_budget_and_resource_totals(self):
         old = config(protected_input(legacy=True)).active()
         new = config(protected_input()).active()

@@ -92,12 +92,18 @@ def validate_settings(settings):
         c.number(stage["cpu_ns"], 1, 30*10**9); c.number(stage["memory_bytes"], 1, 1024**3)
         c.number(stage["pids"], 1, 64); c.number(stage["output_bytes"], 1, 32768)
         c.number(stage["runtime_ns"], 1, 30*10**9)
+    # This entry also validates before an installed package is available. Keep
+    # the same whole-microsecond/stop-reservation rule as new grant issuance.
+    require(management["stop_ns"] >= 1000, "MANAGEMENT_STOP_GRANULARITY")
+    require(all(stage["runtime_ns"] - management["stop_ns"] >= 1000
+        for stage in management["stages"].values()), "MANAGEMENT_STAGE_RUNTIME")
     require(management["stages"]["collector"]["output_bytes"] == 32768, "DRIVER_RECEIPT_BUDGET")
     minimum_storage = 131072 + sum((stage["output_bytes"] + 4095) // 4096 * 4096 + 8192
         for stage in management["stages"].values())
     require(management["storage_bytes"] >= minimum_storage, "DRIVER_MANAGEMENT_STORAGE")
     require(sum(stage["runtime_ns"] for stage in management["stages"].values()) + management["receive_ns"]
-        + management["stop_ns"] <= budgets["wall_seconds"] // 3 * 10**9, "DRIVER_MANAGEMENT_BUDGET")
+        + management["stop_ns"] <= (budgets["wall_seconds"] // 3
+        - budgets["terminate_grace_seconds"]) * 10**9, "DRIVER_MANAGEMENT_BUDGET")
     controllers = settings["controllers"]
     c.keys(controllers, ("target", "supervisor"))
     for control in controllers.values():

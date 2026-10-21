@@ -143,6 +143,20 @@ def totals(grant):
                for key in ("cpu_ns", "memory_bytes", "pids", "output_bytes")}}
 
 
+def check_management_runtime(management):
+    """Reject impossible *new* management windows before provisioning/issuance.
+
+    RuntimeMaxSec reserves stop grace inside each stage, and systemd commands
+    use whole microseconds. Keep decoding historical grants unchanged: an old
+    unusable window must remain inspectable/recoverable, not be silently fixed.
+    """
+    stop = q.integer(management["stop_ns"], 1)
+    q.require(stop >= 1000, "MANAGEMENT_STOP_GRANULARITY")
+    for name in STAGES:
+        runtime = q.integer(management["stages"][name]["runtime_ns"], 1)
+        q.require(runtime - stop >= 1000, "MANAGEMENT_STAGE_RUNTIME")
+
+
 def decode_capacity(raw):
     value = q._load(raw, GRANT_LIMIT, 6)
     q._keys(value, {"schema", "boot_id", "epoch", "authority_digest", "domains",

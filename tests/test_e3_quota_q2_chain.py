@@ -273,6 +273,26 @@ class DeclarationTests(unittest.TestCase):
         self.assertEqual(first.request.as_dict()["deadline_ns"], later.request.as_dict()["deadline_ns"])
         self.assertEqual(self.value, contract.data())
 
+    def test_new_grant_rejects_impossible_stage_but_historical_chain_still_decodes(self):
+        for name in g.STAGES:
+            value = copy.deepcopy(self.value)
+            management = value["phases"]["preflight"]["grant"]["management"]
+            management["stages"][name]["runtime_ns"] = management["stop_ns"]
+            contract = decoded(value)
+            self.assertEqual(value, contract.data())
+            snap = preparation(value, self.original, "preflight")
+            before = copy.deepcopy(snap)
+            with self.subTest(stage=name):
+                with self.assertRaisesRegex(q.QuotaError, "^MANAGEMENT_STAGE_RUNTIME$"):
+                    chain.build_grant(contract, snap, session=SESSION, clock=clock("preflight"))
+                single = chain.phase_template(contract, "preflight").data()
+                single["purpose"] = "ISOLATED_Q2_PREFLIGHT"
+                template = a.Template(q._canonical(single, c.LIMIT))
+                with self.assertRaisesRegex(q.QuotaError, "^MANAGEMENT_STAGE_RUNTIME$"):
+                    a.build_grant(template, snap, session=SESSION, clock=clock("preflight"))
+                self.assertEqual(before, snap)
+                self.assertEqual(value, contract.data())
+
     def test_snapshot_budget_allocation_session_generation_and_started_state_are_exact(self):
         for fault in ("budget", "limits", "operation", "allocation", "session", "generation", "started", "observation", "pending", "closed"):
             snap = preparation(self.value, self.original, "preflight")
