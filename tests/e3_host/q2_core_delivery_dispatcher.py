@@ -3454,19 +3454,52 @@ def _plan_from_prepared(case, prepared, deadlines):
 
 
 class _CapQuota:
-    """The candidate's bounded Linux project quota observation UAPI only."""
+    """Read-only Linux little-endian LP64 quota UAPI; not platform acceptance.
+
+    This field payload stays self-contained. Native-header tests bind its full
+    layout to the preparation reader without importing another deployed helper.
+    """
+    VALID_ALL = 0x3f
+
     def __init__(self, source):
         import ctypes
         import platform
-        _cap(platform.system() == 'Linux' and platform.machine() == 'x86_64',
+        import sys
+        _cap(platform.system() == 'Linux' and platform.machine() in {'x86_64', 'aarch64'}
+            and sys.byteorder == 'little'
+            and ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_long) == 8
+            and ctypes.sizeof(ctypes.c_int) == ctypes.sizeof(ctypes.c_uint32) == 4
+            and ctypes.sizeof(ctypes.c_uint64) == ctypes.alignment(ctypes.c_uint64) == 8,
             'QUOTA_ABI')
         self.ct = ctypes
         class Block(ctypes.Structure):
             _fields_ = [(name, ctypes.c_uint64) for name in
                 _fields('hard soft space ihard isoft inodes btime itime')]
             _fields_ += [('valid', ctypes.c_uint32), ('project', ctypes.c_uint32)]
+        class FileState(ctypes.Structure):
+            _fields_ = [('inode', ctypes.c_uint64), ('blocks', ctypes.c_uint64),
+                        ('extents', ctypes.c_uint32), ('padding', ctypes.c_uint32)]
+        class State(ctypes.Structure):
+            _fields_ = [
+                ('version', ctypes.c_int8), ('padding1', ctypes.c_uint8),
+                ('flags', ctypes.c_uint16), ('incoredqs', ctypes.c_uint32),
+                ('user', FileState), ('group', FileState), ('project', FileState),
+                ('btime', ctypes.c_int32), ('itime', ctypes.c_int32),
+                ('rtbtime', ctypes.c_int32), ('bwarn', ctypes.c_uint16),
+                ('iwarn', ctypes.c_uint16), ('rtbwarn', ctypes.c_uint16),
+                ('padding3', ctypes.c_uint16), ('padding4', ctypes.c_uint32),
+                ('padding2', ctypes.c_uint64 * 7),
+            ]
+        for kind, size, offsets in (
+            (Block, 72, (0, 8, 16, 24, 32, 40, 48, 56, 64, 68)),
+            (FileState, 24, (0, 8, 16, 20)),
+            (State, 160, (0, 1, 2, 4, 8, 32, 56, 80, 84, 88, 92, 94, 96, 98, 100, 104)),
+        ):
+            _cap(ctypes.sizeof(kind) == size and ctypes.alignment(kind) == 8
+                and tuple(getattr(kind, name).offset for name, _ in kind._fields_) == offsets,
+                'QUOTA_ABI')
         self.Block = Block
-        _cap(ctypes.sizeof(Block) == 72, 'QUOTA_ABI')
+        self.State = State
         self.lib = ctypes.CDLL(None, use_errno=True)
         self.lib.quotactl.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p)
         self.lib.quotactl.restype = ctypes.c_int
@@ -3481,6 +3514,7 @@ class _CapQuota:
 
     def block(self, project):
         value = self.Block(); self.call(0x800007, project, value)
+        _cap(value.valid & self.VALID_ALL == self.VALID_ALL, 'QUOTA_VALID')
         return {key: getattr(value, key) for key, _ in value._fields_ if key != 'project'}
 
     def unused(self, project):
@@ -3505,17 +3539,17 @@ class _CapQuota:
                 if error.errno == errno.ENOENT:
                     return rows
                 raise
+            _cap(value.valid & self.VALID_ALL == self.VALID_ALL, 'QUOTA_VALID')
             _cap(start <= value.project < 2**32 - 1, 'QUOTA_ORDER')
             rows.append({key: getattr(value, key) for key, _ in value._fields_})
             start = value.project + 1
         raise _cap.error('QUOTA_INVENTORY_LIMIT')
 
     def enforcement(self):
-        buffer = self.ct.create_string_buffer(160); buffer[0] = b'\x01'
+        buffer = self.State(); buffer.version = 1
         self.call((ord('X') << 8) | 8, 0, buffer)
-        raw = bytes(buffer); flags = int.from_bytes(raw[2:4], 'little')
-        _cap(raw[0] == 1 and flags & 48 == 48, 'QUOTA_ENFORCEMENT')
-        return flags
+        _cap(buffer.version == 1 and buffer.flags & 48 == 48, 'QUOTA_ENFORCEMENT')
+        return buffer.flags
 
 
 def _capacity_stat(info):

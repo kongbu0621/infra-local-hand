@@ -919,7 +919,7 @@ class GeneratedInputTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'PROVISION_RETAINED_QUOTA_CHANGED'):
                 provision_task.check_base_directory_inventory(before,changed)
 
-    def test_prepare_uses_post_directory_inventory_for_final_retained_check(self):
+    def _prepare_with_directory_inventory(self, final_mutation=None, *, new_project=False):
         with tempfile.TemporaryDirectory() as directory:
             base=Path(directory);quota_base=base/'quota';quota_base.mkdir()
             setpriv=base/'setpriv';setpriv.write_bytes(b'fixed program')
@@ -928,12 +928,29 @@ class GeneratedInputTests(unittest.TestCase):
                 settings={'capacity_management':{'storage_bytes':0,'storage_inodes':0}},roots=[],
                 account={'uid':0,'gid':0},tools={'setpriv':{'path':str(setpriv),'sha256':hashlib.sha256(setpriv.read_bytes()).hexdigest()}},
                 scope='fixture',baseline={},preparation_id='fixture')
+            # Like the real layout, control is on the quota filesystem. Its
+            # launcher_declarations child is created AFTER the base inventory.
+            plan['directories']['control']['path']=str(quota_base/'new'/'control')
+            if new_project:
+                plan['mounts']['quota']['uuid']='fixture'
+                plan['roots']=[dict(path=str(quota_base/'new'/'task'),project_id=20000,
+                                    hard_bytes=1048576,inode_hard_limit=128)]
             installation=dict(source={'commit':'a'*40},installed={'payload_digest':'b'*64,'package_root':'/installed'})
             quota_module,driver,assembly=Mock(),Mock(),Mock();assembly.PHASES=('preflight','business','evidence')
+            quota_module.Quota.return_value.enforcement.return_value=48
+            empty=dict(inodes=1,hard=0,soft=0,ihard=0,isoft=0,btime=0,itime=0)
+            quota_module.Quota.return_value.block.side_effect=[empty,dict(empty,hard=1024,ihard=128)]
+            inventories=[]
             def inventory(_):
-                count=len(list(quota_base.iterdir()))
-                return [dict(project=0,space=4096*(1+count),inodes=1+count,hard=0,ihard=0),
-                        dict(project=100,space=4096,inodes=1,hard=1024,ihard=1)]
+                count=sum(1 for path in quota_base.rglob('*') if not new_project or path.name!='task')
+                rows=[dict(project=0,space=4096*(1+count),inodes=1+count,hard=0,ihard=0),
+                      dict(project=100,space=4096,inodes=1,hard=1024,ihard=1)]
+                if new_project and len(inventories)==2:
+                    rows.append(dict(project=20000,space=4096,inodes=1,hard=1024,ihard=128))
+                if len(inventories)==2 and final_mutation is not None:
+                    final_mutation(rows)
+                inventories.append(copy.deepcopy(rows))
+                return rows
             quota_module.Quota.return_value.inventory.side_effect=inventory
             driver.encoded.side_effect=lambda value:json.dumps(value,sort_keys=True).encode()
             driver.facts_from_observed.side_effect=RuntimeError('ASSEMBLY_REACHED')
@@ -946,12 +963,44 @@ class GeneratedInputTests(unittest.TestCase):
                  patch.object(provision_task,'verify_release'), \
                  patch.object(provision_task,'_helper',side_effect=lambda _,name:{
                      'q2_prepare':quota_module,'q2_prepare_driver':driver,'q2_prepare_assembly':assembly}[name]), \
+                 patch.object(provision_task.fcntl,'ioctl',side_effect=[
+                     struct.pack('=IIIII8s',0,0,0,0,0,b''),0,
+                     struct.pack('=IIIII8s',512,0,0,20000,0,b'')]) as ioctl, \
                  patch.object(provision_task.os,'chown'),patch.object(provision_task.os,'fchown'), \
                  patch.object(provision_task.Path,'lstat',protected_parent):
-                with self.assertRaisesRegex(RuntimeError,'ASSEMBLY_REACHED'):
+                error,message=(RuntimeError,'ASSEMBLY_REACHED') if final_mutation is None else (ValueError,'PROVISION_RETAINED_QUOTA_CHANGED')
+                with self.assertRaisesRegex(error,message):
                     provision_task.prepare(dict(plan=plan,installation=installation,observed={'parents':{}},bases=[str(quota_base/'new')]))
-            observed=driver.facts_from_observed.call_args.args[1]
-            self.assertEqual(2,observed['capacity_observed']['quota_inventory'][0]['inodes'])
+            self.assertEqual(3,len(inventories))
+            self.assertEqual([1,3], [rows[0]['inodes'] for rows in inventories[:2]])
+            if final_mutation is None:
+                self.assertEqual(4,inventories[2][0]['inodes'])
+                observed=driver.facts_from_observed.call_args.args[1]
+                retained=observed['capacity_observed']['quota_inventory']
+                self.assertEqual([row for row in inventories[2] if row['project']!=20000],retained)
+                self.assertEqual([0,100],[row['project'] for row in retained])
+                if new_project:
+                    self.assertEqual([0x801c581f,0x401c5820,0x801c581f],
+                                     [call.args[1] for call in ioctl.call_args_list])
+                    quota_module.Quota.return_value.call.assert_called_once()
+                    self.assertEqual((0x800008,20000),quota_module.Quota.return_value.call.call_args.args[:2])
+            else:
+                driver.facts_from_observed.assert_not_called()
+
+    def test_prepare_accounts_for_control_directory_growth_after_base_snapshot(self):
+        self._prepare_with_directory_inventory()
+
+    def test_final_inventory_excludes_new_quota_but_preserves_old_projects(self):
+        self._prepare_with_directory_inventory(new_project=True)
+
+    def test_final_inventory_still_rejects_retained_changes(self):
+        for index,field,value in ((0,'hard',1),(0,'ihard',1),(0,'space',0),(0,'inodes',0),
+                                  (1,'hard',2048),(1,'ihard',2),(1,'space',8192),(1,'inodes',2)):
+            with self.subTest(project=index,field=field):
+                self._prepare_with_directory_inventory(lambda rows:rows[index].update({field:value}))
+        for mutation in (lambda rows:rows.pop(),lambda rows:rows.append(dict(rows[1],project=101))):
+            with self.subTest(mutation=mutation):
+                self._prepare_with_directory_inventory(mutation)
 
     def test_capacity_preflight_counts_retained_limits_and_rejects_each_exhausted_resource(self):
         plan=dict(mounts={'quota':{'path':'/quota','device':7}},

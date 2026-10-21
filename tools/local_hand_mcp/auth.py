@@ -29,6 +29,7 @@ _TRANSIENT_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 _TRANSPORT_STAGES = {
     "connection.connect_tcp": "tcp",
     "connection.start_tls": "tls",
+    "proxy.start_tls": "tls",
     **{f"{protocol}.{event}": stage for protocol in ("http11", "http2")
        for event, stage in (("send_request_headers", "request_headers"),
                             ("send_request_body", "request_body"),
@@ -40,6 +41,8 @@ _TOKEN_PART = re.compile(r"[A-Za-z0-9_-]+\Z")
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _SCOPE = re.compile(r"[A-Za-z0-9:._-]{1,128}\Z")
 _ALGORITHMS = frozenset({"RS256", "ES256"})
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_DOCUMENT_PROXY = re.compile(r"http://(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]{1,5})/?\Z")
 
 
 def _deny() -> JobError:
@@ -106,6 +109,16 @@ def _positive(value: object, maximum: int) -> int:
     return value
 
 
+def _document_proxy(value: object) -> str | None:
+    """A local CONNECT proxy, never an inherited URL or a TLS bypass."""
+    if value is None:
+        return None
+    matched = _DOCUMENT_PROXY.fullmatch(value) if isinstance(value, str) else None
+    if matched is None or not 1 <= int(matched.group(1)) <= 65535:
+        raise ValueError("Authorization document proxy requires a loopback HTTP URL with an explicit port")
+    return value
+
+
 @dataclass(frozen=True)
 class AuthConfig:
     issuer: str
@@ -124,15 +137,19 @@ class AuthConfig:
     request_timeout_seconds: int
     clock_skew_seconds: int
     maximum_token_seconds: int
+    document_proxy_url: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AuthConfig":
         fields = set(cls.__dataclass_fields__)
-        if not isinstance(data, dict) or set(data) != fields | {"schema_version", "registration"}:
+        allowed = fields | {"schema_version", "registration"}
+        required = allowed - {"document_proxy_url"}
+        if not isinstance(data, dict) or not required <= set(data) <= allowed:
             raise ValueError("Authorization configuration has missing or unknown fields")
         if data["schema_version"] != "lh-mcp-auth-v1" or data["registration"] != "predefined":
             raise ValueError("Only admitted predefined OAuth clients are supported")
-        values = {key: data[key] for key in fields}
+        values = {key: data.get(key) for key in fields}
+        values["document_proxy_url"] = _document_proxy(values["document_proxy_url"])
         for key in ("issuer", "resource", "metadata_url", "authorization_endpoint", "token_endpoint", "jwks_uri"):
             values[key] = _url(values[key])
         issuer = urlsplit(values["issuer"])
@@ -285,11 +302,16 @@ class JWTVerifier:
 
         progress("Auth document read: document=%s stage=request timeout_seconds=%s",
                  kind, self.config.request_timeout_seconds)
+        # HTTPX mounts an explicit proxy above `transport`. Keep constructor
+        # injection isolated: it replaces all I/O, including proxy connections.
+        # Production supplies no transport and uses only the admitted proxy.
+        proxy = (None if self._http_transport is not None or urlsplit(url).hostname in _LOOPBACK_HOSTS
+                 else self.config.document_proxy_url)
         try:
             async with asyncio.timeout(self.config.request_timeout_seconds):
                 async with httpx2.AsyncClient(
                     timeout=self.config.request_timeout_seconds, follow_redirects=False,
-                    trust_env=False, transport=self._http_transport,
+                    trust_env=False, verify=True, proxy=proxy, transport=self._http_transport,
                 ) as client:
                     async with client.stream("GET", url, headers={
                         "Accept": "application/json", "Accept-Encoding": "identity",

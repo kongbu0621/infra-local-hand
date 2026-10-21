@@ -284,7 +284,7 @@ def prepare(v):
     save(reservation / 'preparation-plan.json', plan)
     for name in ('setpriv',):
         q.require(hashlib.sha256(Path(plan['tools'][name]['path']).read_bytes()).hexdigest() == plan['tools'][name]['sha256'], 'PROVISION_PROGRAM_CHANGED')
-    # Admission precedes allocation.  The later strict comparison must use a
+    # Admission precedes allocation. Retained-project comparisons use a
     # baseline that includes our newly created unassigned base directories.
     allocated = quota.inventory(guard)
     check_base_directory_inventory(before, allocated)
@@ -342,7 +342,12 @@ def prepare(v):
     observed['mounts'] = {'quota': mount}
     after = quota.inventory(guard)
     newids = {root['project_id'] for root in roots}
-    q.require([r for r in after if r['project'] not in newids] == before, 'PROVISION_RETAINED_QUOTA_CHANGED')
+    retained = [r for r in after if r['project'] not in newids]
+    # Creating controller/declaration directories and preparation records after
+    # the base snapshot can grow project 0. Its limits and every old nonzero
+    # project must still match; a usage decrease remains unexplained and fails.
+    check_base_directory_inventory(before, retained)
+    observed['capacity_observed']['quota_inventory'] = retained
     authority = dict(schema='local-hand-q2-preparation-authority/v1', scope=plan['scope'], baseline=plan['baseline'], plan_sha256=hashlib.sha256(driver.encoded(plan)).hexdigest(), preparation_id=plan['preparation_id'], receipt_sha256=hashlib.sha256(driver.encoded(observed)).hexdigest())
     (facts, authority, manifest) = driver.facts_from_observed(plan, observed, children, authority)
     assembled = a.assemble(facts, **{key: v[key] for key in ('workspace', 'local_a2') if key in v})

@@ -137,22 +137,59 @@ def create_directory(name, *, mode=0o700, owner=0, gid=0):
 
 
 class Quota:
-    """Linux x86-64 UAPI Q_GETNEXTQUOTA/Q_GETQUOTA and XGETQSTATV only.
+    """Linux little-endian LP64 quota UAPI on x86-64 and aarch64.
 
-    No mutating quota command is callable here. Mutations are separately recorded
-    invocations of the pinned setquota utility, once per new project.
+    Layout admission is not proof of filesystem quota enforcement. Preparation
+    observes quotas here and records mutations through its pinned setquota tool;
+    the protected resident provisioner also uses this layout for Q_SETQUOTA.
+    Neither construction nor ABI validation makes a quota syscall.
     """
+    VALID_ALL = 0x3f  # QIF_ALL: limits, usage and grace timers consumed below.
+
     def __init__(self, device):
         import ctypes
         import platform
-        c.require(sys.platform.startswith("linux") and platform.machine() == "x86_64", "PREPARE_QUOTA_ABI")
+        c.require(sys.platform == "linux" and platform.machine() in {"x86_64", "aarch64"}
+                  and sys.byteorder == "little"
+                  and ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_long) == 8
+                  and ctypes.sizeof(ctypes.c_int) == ctypes.sizeof(ctypes.c_uint32) == 4
+                  and ctypes.sizeof(ctypes.c_uint64) == ctypes.alignment(ctypes.c_uint64) == 8,
+                  "PREPARE_QUOTA_ABI")
         self.ct = ctypes
+
+        # GETNEXTQUOTA adds a project ID in GET/SETQUOTA's final padding.
+        # Native header tests cover both structs, all fields and their constants.
         class Block(ctypes.Structure):
             _fields_ = [(name, ctypes.c_uint64) for name in
                 ("hard", "soft", "space", "ihard", "isoft", "inodes", "btime", "itime")]
             _fields_ += [("valid", ctypes.c_uint32), ("project", ctypes.c_uint32)]
+
+        class FileState(ctypes.Structure):
+            _fields_ = [("inode", ctypes.c_uint64), ("blocks", ctypes.c_uint64),
+                        ("extents", ctypes.c_uint32), ("padding", ctypes.c_uint32)]
+
+        class State(ctypes.Structure):
+            _fields_ = [
+                ("version", ctypes.c_int8), ("padding1", ctypes.c_uint8),
+                ("flags", ctypes.c_uint16), ("incoredqs", ctypes.c_uint32),
+                ("user", FileState), ("group", FileState), ("project", FileState),
+                ("btime", ctypes.c_int32), ("itime", ctypes.c_int32),
+                ("rtbtime", ctypes.c_int32), ("bwarn", ctypes.c_uint16),
+                ("iwarn", ctypes.c_uint16), ("rtbwarn", ctypes.c_uint16),
+                ("padding3", ctypes.c_uint16), ("padding4", ctypes.c_uint32),
+                ("padding2", ctypes.c_uint64 * 7),
+            ]
+
+        for kind, size, offsets in (
+            (Block, 72, (0, 8, 16, 24, 32, 40, 48, 56, 64, 68)),
+            (FileState, 24, (0, 8, 16, 20)),
+            (State, 160, (0, 1, 2, 4, 8, 32, 56, 80, 84, 88, 92, 94, 96, 98, 100, 104)),
+        ):
+            c.require(ctypes.sizeof(kind) == size and ctypes.alignment(kind) == 8
+                      and tuple(getattr(kind, name).offset for name, _ in kind._fields_) == offsets,
+                      "PREPARE_QUOTA_ABI")
         self.Block = Block
-        c.require(ctypes.sizeof(Block) == 72, "PREPARE_QUOTA_ABI")
+        self.State = State
         self.lib = ctypes.CDLL(None, use_errno=True)
         self.lib.quotactl.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p)
         self.lib.quotactl.restype = ctypes.c_int
@@ -166,6 +203,7 @@ class Quota:
 
     def block(self, project):
         result = self.Block(); self.call(0x800007, project, result)
+        c.require(result.valid & self.VALID_ALL == self.VALID_ALL, "PREPARE_QUOTA_VALID")
         return {name: getattr(result, name) for name, _ in result._fields_ if name != "project"}
 
     def unused(self,project):
@@ -186,17 +224,17 @@ class Quota:
             except OSError as error:
                 if error.errno == errno.ENOENT: return rows
                 raise
+            c.require(result.valid & self.VALID_ALL == self.VALID_ALL, "PREPARE_QUOTA_VALID")
             c.require(start <= result.project < 2**32 - 1, "PREPARE_QUOTA_ORDER")
             rows.append({name: getattr(result, name) for name, _ in result._fields_})
             start = result.project + 1
         raise ValueError("PREPARE_QUOTA_INVENTORY_LIMIT")
 
     def enforcement(self):
-        buffer = self.ct.create_string_buffer(160); buffer[0] = b"\x01"
+        buffer = self.State(); buffer.version = 1
         self.call((ord("X") << 8) | 8, 0, buffer)
-        raw = bytes(buffer); flags = int.from_bytes(raw[2:4], sys.byteorder)
-        c.require(raw[0] == 1 and flags & 48 == 48, "PREPARE_QUOTA_ENFORCEMENT")
-        return flags
+        c.require(buffer.version == 1 and buffer.flags & 48 == 48, "PREPARE_QUOTA_ENFORCEMENT")
+        return buffer.flags
 
 
 class LinuxBackend:

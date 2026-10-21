@@ -263,6 +263,7 @@ def test_quota_inventory_has_read_only_ordered_cursor_and_real_structure(monkeyp
         if project > 7: raise OSError(errno.ENOENT, "end of test inventory")
         value.project = 2 if project == 0 else 7
         value.hard, value.ihard = 1024, 128
+        value.valid = 63
     monkeypatch.setattr(quota, "call", observe)
     rows = quota.inventory(Deadline())
     assert [r["project"] for r in rows] == [2, 7]
@@ -284,6 +285,7 @@ def test_quota_inventory_never_promotes_partial_or_late_observations(monkeypatch
             if fault == "late_eof": raise OSError(errno.ENOENT, "late EOF")
             if fault == "late_error": raise OSError(errno.EIO, "late read error")
         value.project = 0 if fault == "backward" else project
+        value.valid = 63
     monkeypatch.setattr(quota, "call", observe)
     expected = "TEST_CAP_DEADLINE" if fault.startswith("late") else "QUOTA_ORDER|INVENTORY_LIMIT"
     with pytest.raises(d.DispatchError, match=expected): quota.inventory(clock)

@@ -104,6 +104,7 @@ class ProtectedReads(unittest.TestCase):
 
     def test_noatime_reads_owned_leaf_without_requiring_ancestor_ownership(self):
         file = self.root / "retained"; file.write_bytes(b"retained")
+        file.chmod(0o600)  # Protected fixture, independent of the caller's umask.
         os.utime(file, ns=(10**9, 2*10**9)); before = file.stat()
         with self.noatime_open(file.name) as opened:
             self.assertEqual(b"retained", m.read(file, 32, owner=os.getuid(), noatime=True))
@@ -200,6 +201,7 @@ class RealFileAndCapture(unittest.TestCase):
             if start == 161:
                 raise OSError(errno.ENOENT, "end")
             result.project = start
+            result.valid = 63
         quota.call = observe
         guard = mock.Mock()
         self.assertEqual(list(range(161)), [r["project"] for r in quota.inventory(guard)])
@@ -214,6 +216,19 @@ class RealFileAndCapture(unittest.TestCase):
             quota.return_value.unused.side_effect=ValueError("PREPARE_PROJECT_BECAME_OCCUPIED")
             with self.assertRaisesRegex(ValueError,"PREPARE_PROJECT_BECAME_OCCUPIED"):b.roots()
         create.assert_not_called();b.command.assert_not_called()
+
+    def test_incomplete_quota_read_is_rejected_before_directory_or_quota_mutation(self):
+        quota = m.Quota("/synthetic/device")
+        quota.call = mock.Mock()  # syscall succeeds without any valid fields
+        b = m.LinuxBackend(fixture())
+        b.command = mock.Mock()
+        with mock.patch.object(m, "Quota", return_value=quota), \
+                mock.patch.object(m, "create_directory") as create:
+            with self.assertRaisesRegex(ValueError, "PREPARE_QUOTA_VALID"):
+                b.roots()
+        create.assert_not_called()
+        b.command.assert_not_called()
+        self.assertEqual([0x800007], [call.args[0] for call in quota.call.call_args_list])
 
     def test_shared_project_after_assignment_does_not_set_limits(self):
         b=m.LinuxBackend(fixture());b.command=mock.Mock()

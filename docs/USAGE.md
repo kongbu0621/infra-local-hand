@@ -331,6 +331,24 @@ For resident mode, `--resident` names a `local-hand-resident-adapter/v1` routing
 descriptor that connects to the existing management service. It is separate from
 both the broker policy and the manager's own configuration.
 
+The protected `lh-mcp-auth-v1` configuration optionally accepts
+`"document_proxy_url": "http://127.0.0.1:3128"` (example port only). This selects
+a local HTTP CONNECT proxy for issuer discovery and JWKS reads; allowed proxy
+hosts are `localhost`, `127.0.0.1` and `[::1]`, with an explicit port from 1 to
+65535 and no credentials, query, fragment or non-root path. Omit the field or
+use `null` for the previous direct-connect behavior. Authorization URLs on those
+loopback hosts always bypass the proxy. TLS certificate verification remains
+enabled, redirects remain disabled, and proxy failure does not fall back to
+direct access. Environment proxy variables are still ignored (`trust_env=False`).
+This setting neither starts the proxy nor configures the browser, MCP client,
+token endpoint requests made by the client, or job subprocesses.
+
+Older releases reject this new configuration field. When rolling back to an
+older release, restore its compatible authentication configuration as well;
+do not change issuer, audience or subject ownership to work around connectivity.
+Check discovery and JWKS under the actual service account before declaring
+authentication ready.
+
 The preparation and execution components under `tools/admin/` are deployed
 separately by the operator; they are **not included in the wheel's packages**.
 The source entry points are [resident_service.py](../tools/admin/local_hand_system_manager/resident_service.py)
