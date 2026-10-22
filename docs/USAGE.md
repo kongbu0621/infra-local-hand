@@ -158,9 +158,49 @@ This local consumer does not establish A2 NAS recovery, A3's two consumer classe
 Windows archive support or the full Code Driver loop.
 
 To run the affected checks with the verified optional wheel installed:
-`python -B -m pytest -q tests/test_local_hand_artifact_archive.py tests/test_local_hand_jobs_evidence_client.py tests/test_local_hand_archive_recovery.py`.
+`python -B -m pytest -q tests/test_local_hand_artifact_archive.py tests/test_local_hand_jobs_evidence_client.py tests/test_local_hand_archive_recovery.py tests/test_local_hand_archive_snapshot.py`.
 Without that wheel, the consumer integration tests are explicitly skipped;
 the local bundle validation tests still run on Linux.
+
+### Read an exact evidence version from a NAS snapshot
+
+`read-snapshot` consumes a previously published Ledger snapshot through Ledger's
+public recovery adapter. It preserves the original Artifact/Version and source
+task identities. The adapter resolves the private storage binding and checks the
+mounted target; Local Hand validates the exact evidence version. This path uses
+Ledger `0.2.0a1` recovery APIs, verified with source
+`78d6c5b07d47898083a47ac85d67cc5966b3760b`.
+
+```sh
+local-hand-archive read-snapshot \
+  --snapshot /absolute/approved-mount/archive/SNAPSHOT_ID \
+  --storage-config /absolute/private/storage-config.json \
+  --expected-manifest-sha256 TRUSTED_SNAPSHOT_MANIFEST_SHA256 \
+  --artifact-id ORIGINAL_ARTIFACT_ID --version-id ORIGINAL_VERSION_ID \
+  --scratch-parent /absolute/private/local-scratch \
+  --output /absolute/private/new-snapshot-readback
+```
+
+Use the manifest digest from the independently retained original snapshot
+receipt. The storage configuration is Ledger's existing mounted-storage schema;
+physical paths and mount identity belong in deployment configuration, not task
+inputs. For a supported local snapshot, omit `--storage-config`.
+
+The output parent and scratch directory must already exist on a supported local
+filesystem. The command first restores and verifies a fresh local database; it
+never opens SQLite on NAS. It retains `ledger.sqlite`, the Ledger restore response
+in `snapshot-receipt/restore.json`, the five verified files in `evidence/`, and the
+completed read response in `read-receipt/result.json`. Existing output is refused.
+Keep partial output after errors; a fresh read may use a new local output
+directory. Storage errors retain Ledger's `publication_state` and `stage`, which
+refer to the local restoration, not a new NAS write.
+
+This command does not publish another snapshot, resume archive writes, bind a
+restored archive or execute the original task. NAS backup and exact read-back are
+the snapshot branch of the [storage-node plan](MULTI_NODE_IMPLEMENTATION_PLAN.md#4-nas-成果归档最小新增实现).
+An authenticated online receiver, automatic outbox and NAS MCP job entry remain
+separate implementation work. Successful read-back does not establish those
+capabilities or NAS power-loss durability.
 
 ### Filesystem identity after device renumbering
 

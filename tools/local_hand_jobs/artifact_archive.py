@@ -957,6 +957,47 @@ def read_version(store, *, artifact_id, version_id, output):
                 files={name: dict(size=len(raw), sha256=_sha(raw)) for name, raw in files.items()})
 
 
+def read_snapshot_version(*, snapshot, expected_manifest_sha256, artifact_id,
+                          version_id, output, scratch_parent, storage_config=None):
+    """Read one exact artifact version through Ledger's snapshot storage adapter.
+
+    Snapshot identity and logical artifact identity are independent. The caller
+    supplies the manifest digest from the original snapshot receipt. A NAS input
+    needs its private storage binding; no NAS database is opened by this consumer.
+    Output is a new local restore directory, retained after success or failure.
+    This does not initialize/rebind an archive store or replay an execution.
+    """
+    api = _ledger_api()
+    from infra_artifact_ledger import recovery
+    expected_manifest_sha256 = _digest(expected_manifest_sha256)
+    artifact_id, version_id = _identity(artifact_id), _identity(version_id)
+    output = Path(output).absolute()
+    config = None if storage_config is None else _decode(_read(storage_config, 16384))
+    restored = recovery.restore(snapshot=snapshot, target_dir=output,
+        expected_manifest_sha256=expected_manifest_sha256,
+        scratch_parent=scratch_parent, storage_config=config)
+    # The public restore API validated a fresh local target and all snapshot
+    # members before publishing it. Preserve its response before further reads.
+    _publish_files(output, "snapshot-receipt", {"restore.json": _json(restored)})
+    database = output / "ledger.sqlite"
+    before = _file_digest(database)
+    if before["sha256"] != restored["data"]["database_sha256"]:
+        _fail("Restored database differs from the snapshot receipt", "INTEGRITY_FAILURE")
+    with api.open(database) as ledger:
+        files, source = _load_version(ledger, artifact_id, version_id)
+    if _file_digest(database) != before:
+        _fail("Restored database changed during content read", "INTEGRITY_FAILURE")
+    _publish_files(output, "evidence", files)
+    result = dict(status="READ", artifact_id=artifact_id, version_id=version_id,
+        content_verified=True, source=source, snapshot_id=restored["data"]["snapshot_id"],
+        manifest_sha256=expected_manifest_sha256, database_sha256=before["sha256"],
+        evidence_directory=str(output / "evidence"),
+        storage_ref=None if config is None else config["storage_ref"],
+        files={name: dict(size=len(raw), sha256=_sha(raw)) for name, raw in files.items()})
+    _publish_files(output, "read-receipt", {"result.json": _json(result)})
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -983,19 +1024,27 @@ def main(argv=None):
     read = commands.add_parser("read", help="Read an exact version into a new private directory")
     for name in ("store", "artifact-id", "version-id", "output"):
         read.add_argument("--" + name, required=True)
+    snapshot_read = commands.add_parser("read-snapshot", help="Read an exact version from a local or NAS Ledger snapshot")
+    for name in ("snapshot", "expected-manifest-sha256", "artifact-id", "version-id", "output", "scratch-parent"):
+        snapshot_read.add_argument("--" + name, required=True)
+    snapshot_read.add_argument("--storage-config", help="Private mounted-storage binding; required for NAS input")
     args = vars(parser.parse_args(argv))
     command = args.pop("command")
     try:
         result = {"archive": archive_result, "resume": resume_archive, "read": read_version,
                   "bind-filesystem": bind_filesystem, "recovery-checkpoint": recovery_checkpoint,
-                  "bind-restored": bind_restored}[command](**args)
+                  "bind-restored": bind_restored, "read-snapshot": read_snapshot_version}[command](**args)
     except Exception as error:
         # Preserve any Ledger commit_state. Generic failures can follow a commit;
         # a nonzero exit never means the original task or archive write rolled back.
         result = dict(status="ERROR", code=getattr(error, "code", "UNCONFIRMED"),
                       commit_state=getattr(error, "commit_state", "unknown"),
                       message=str(error) if isinstance(error, (ArchiveError, LocalHandError, JobError))
-                      or hasattr(error, "commit_state") else "Local archive failed; retain the store and reconcile the original request")
+                      or hasattr(error, "commit_state") or hasattr(error, "publication_state")
+                      else "Local archive failed; retain the store and reconcile the original request")
+        if hasattr(error, "publication_state"):
+            result["publication_state"] = error.publication_state
+            result["stage"] = getattr(error, "stage", None)
         print(_json(result).decode("utf-8"))
         return 1
     print(_json(result).decode("utf-8"))
