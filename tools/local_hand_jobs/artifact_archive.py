@@ -48,6 +48,45 @@ def _json(value):
                       allow_nan=False).encode("utf-8")
 
 
+def _write_cli_channel(stream, encoded):
+    """Deliver UTF-8 without retaining our bytes for an interpreter-exit flush."""
+    if stream is None:
+        raise OSError("Output channel is unavailable")
+    buffer = getattr(stream, "buffer", None)
+    raw = getattr(buffer, "raw", buffer)
+    if type(buffer) in (io.FileIO, io.BufferedWriter, io.BufferedRandom) and type(raw) is io.FileIO:
+        # Flush any caller output first. Bypass only known file buffers so a
+        # failed write cannot leave our response queued for shutdown (exit 120).
+        stream.flush()
+        remaining = memoryview(encoded)
+        while remaining:
+            written = os.write(raw.fileno(), remaining)
+            if written <= 0:
+                raise OSError("Incomplete output write")
+            remaining = remaining[written:]
+        return
+    # Embedded callers and existing tests can supply a text-only StringIO.
+    output, value = (buffer, encoded) if buffer is not None else (stream, encoded.decode("utf-8"))
+    if output.write(value) != len(value):
+        raise OSError("Incomplete output write")
+    output.flush()
+
+
+def _write_cli_response(result):
+    try:
+        _write_cli_channel(sys.stdout, _json(result) + b"\n")
+        return True
+    except (OSError, ValueError):
+        # A response may already be partially delivered. Do not append another
+        # JSON response or change any completed operation or retained receipt.
+        try:
+            _write_cli_channel(sys.stderr, b"local-hand-archive: response channel failed; "
+                b"retain the original inputs, output paths and receipts; inspect them before retrying.\n")
+        except (OSError, ValueError):
+            pass
+        return False
+
+
 def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
@@ -439,6 +478,12 @@ def _database(root, *, create=False):
         current_identity = _database_identity(path)
         if identity is not None and identity != current_identity:
             _fail("Ledger file identity changed while opening")
+        if not os.path.lexists(marker) and any(ledger.verify()["counts"].values()):
+            # An interrupted initialization can leave an empty database here.
+            # A populated snapshot lacks the original consumer requests and
+            # receipts; it must never become a writable archive by adoption.
+            _fail("Nonempty Ledger has no archive identity guard; retain it and restore the complete original archive store",
+                  "INTEGRITY_FAILURE")
         if create and not os.path.lexists(marker):
             # No artifact write is allowed until this initialization fence is
             # durable. Losing a database later must never silently recreate it.
@@ -1055,10 +1100,9 @@ def main(argv=None):
         if hasattr(error, "publication_state"):
             result["publication_state"] = error.publication_state
             result["stage"] = getattr(error, "stage", None)
-        print(_json(result).decode("utf-8"))
+        _write_cli_response(result)
         return 1
-    print(_json(result).decode("utf-8"))
-    return 0
+    return 0 if _write_cli_response(result) else 1
 
 
 if __name__ == "__main__":

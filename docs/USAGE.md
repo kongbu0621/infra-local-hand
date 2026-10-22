@@ -151,9 +151,12 @@ commit. Keep the whole store and retain failed attempts.
 
 `read` needs only the store and explicit IDs. It verifies the actual bytes and
 source bindings, then returns the original evidence files and `source.json`.
-JSON responses go to stdout; errors retain the relevant Ledger `commit_state`
+JSON responses use UTF-8 on stdout; errors retain the relevant Ledger `commit_state`
 where known. Archival success concerns preservation and read-back, not new
 authentication, task execution, validation execution or knowledge admission.
+Output delivery can fail after work has completed. A nonzero exit or missing
+response does not prove that nothing was saved: retain the original store or
+output directory and inspect its requests and receipts before continuing.
 This local consumer does not establish A2 NAS recovery, A3's two consumer classes,
 Windows archive support or the full Code Driver loop.
 
@@ -188,10 +191,18 @@ inputs. For a supported local snapshot, omit `--storage-config`.
 
 The output parent and scratch directory must already exist on a supported local
 filesystem. Output paths containing `..` are rejected before restoration.
+These writable directories must be outside the read-only input, including
+paths that refer to it through another mount. Ledger owns this storage isolation;
+different path strings or mount IDs do not establish different directories.
 The command first restores and verifies a fresh local database; it
 never opens SQLite on NAS. It retains `ledger.sqlite`, the Ledger restore response
 in `snapshot-receipt/restore.json`, the five verified files in `evidence/`, and the
 completed read response in `read-receipt/result.json`. Existing output is refused.
+Use the complete original archive store for subsequent `archive` or `resume`
+calls. A snapshot readback does not contain the consumer's original requests and
+commit receipts. A populated database without its archive initialization marker
+is rejected before another task is staged or committed; an empty database left
+by interrupted initialization can still be resumed.
 Keep partial output after errors; a fresh read may use a new local output
 directory. Storage errors retain Ledger's `publication_state` and `stage`, which
 refer to the local restoration, not a new NAS write.

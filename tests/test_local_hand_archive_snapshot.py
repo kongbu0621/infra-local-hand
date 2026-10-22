@@ -113,6 +113,23 @@ class SnapshotReadTests(fixtures.BundleFixture, unittest.TestCase):
         self.assertEqual(self.tree(self.output), original)
         self.assertTrue(self.read(output=self.root / "second-read")["content_verified"])
 
+    def test_snapshot_readback_cannot_be_adopted_as_a_writable_archive(self):
+        self.read()
+        original = self.tree(self.output)
+        source = self.tree(self.store)
+        with self.assertRaises(consumer.ArchiveError) as caught:
+            consumer.archive_result(self.output, producer="test:another-instance",
+                status_path=self.status_path,
+                status_sha256=consumer._sha(self.status_path.read_bytes()), evidence_dir=self.evidence)
+        self.assertEqual(caught.exception.code, "INTEGRITY_FAILURE")
+        # Acquiring the archive lock may create only that empty coordination file.
+        current = self.tree(self.output)
+        current.pop(".archive.lock", None)
+        self.assertEqual(current, original)
+        self.assertFalse((self.output / "database-initialized").exists())
+        self.assertEqual(self.tree(self.store), source)
+        self.assertTrue(self.read(output=self.root / "fresh-read")["content_verified"])
+
     def test_parent_traversal_output_is_rejected_before_restore(self):
         parent = self.root / "parent"
         parent.mkdir(mode=0o700)
