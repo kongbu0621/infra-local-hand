@@ -1,11 +1,15 @@
 """Real retained ledger/evidence checks with synthetic mount observations."""
 import copy
+from contextlib import contextmanager
 import base64
 import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch, Mock
 
@@ -200,9 +204,8 @@ class RetainedFilesystemTests(unittest.TestCase):
     def observe_mount(self, row=None, metadata=None):
         row = self.mount_row() if row is None else row
         metadata = [self.fs['backing_file'], '0', '0'] if metadata is None else metadata
-        result = Mock(returncode=0, stdout=json.dumps({'filesystems': [row]}).encode())
         with patch.object(reader, 'protected_backing_parent'), \
-             patch.object(reader.subprocess, 'run', return_value=result), \
+             patch.object(reader, 'mount_output', return_value=json.dumps({'filesystems': [row]}).encode()), \
              patch.object(reader, 'small_read', side_effect=metadata):
             return reader.observe_filesystem(self.fs, self.store.stat().st_dev)
 
@@ -325,3 +328,243 @@ class RetainedFilesystemTests(unittest.TestCase):
                     reader.open_reader(path, '/root/synthetic-binding')
             broker = reader.open_reader(path, '/root/synthetic-binding')
             reader.cli.close_service(broker, None)
+
+    def test_invalid_anchor_keeps_original_error_when_close_fails_then_retries(self):
+        config, path, binding = self.prepare_ledger()
+        anchor = Path(config['authority_root']) / 'authority.json'
+        original = anchor.read_bytes()
+        anchor.write_bytes(b'{invalid')
+        inode = anchor.stat().st_ino
+        real_close = os.close
+        injected = False
+
+        def close(fd):
+            nonlocal injected
+            chosen = os.fstat(fd).st_ino == inode and not injected
+            real_close(fd)
+            if chosen:
+                injected = True
+                raise OSError('anchor close failed after release')
+
+        with patch.object(reader, 'read_descriptor', return_value=binding), \
+             patch.object(reader, 'verify_release'), patch.object(reader, 'observe_filesystem'):
+            with patch.object(reader, 'AuthorityLock') as lock, \
+                 patch.object(reader.os, 'close', side_effect=close):
+                with self.assertRaises(JobError) as failed:
+                    reader.open_reader(path, '/root/synthetic-binding')
+                self.assertTrue(failed.exception.__notes__)
+                lock.assert_not_called()
+            self.assertTrue(injected)
+            anchor.write_bytes(original)
+            broker = reader.open_reader(path, '/root/synthetic-binding')
+            reader.cli.close_service(broker, None)
+
+
+class RetainedObservationFailureTests(unittest.TestCase):
+    @contextmanager
+    def process_source(self, code):
+        launch = subprocess.Popen
+        children = []
+        with tempfile.TemporaryDirectory() as temporary:
+            script = Path(temporary) / 'observation.py'
+            script.write_text(code)
+
+            def child(_command, **kwargs):
+                process = launch([sys.executable, '-I', '-B', str(script)], **kwargs)
+                children.append(process)
+                return process
+
+            with patch.object(reader.subprocess, 'Popen', side_effect=child):
+                try:
+                    yield children
+                finally:
+                    self.assertTrue(all(process.poll() is not None for process in children))
+                    self.assertTrue(all(process.stdout.closed for process in children))
+
+    def close_fault(self, *, reuse=False, invalid=False):
+        real_open, real_close = os.open, os.close
+        owned, replaced = set(), []
+        calls = []
+
+        def opened(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            owned.add(fd)
+            return fd
+
+        def closed(fd):
+            calls.append(fd)
+            real_close(fd)
+            owned.discard(fd)
+            # In the invalid branch, fail while unwinding the rejected child.
+            if len(calls) == (2 if invalid else 1):
+                if reuse:
+                    replacement = opened('/dev/null', os.O_RDONLY)
+                    self.assertEqual(fd, replacement)
+                    replaced.append(replacement)
+                raise OSError('injected close failure after release')
+
+        try:
+            with patch.object(reader.os, 'open', side_effect=opened), \
+                 patch.object(reader.os, 'close', side_effect=closed):
+                if invalid:
+                    with patch.object(reader.os, 'fstat', return_value=SimpleNamespace(st_uid=1, st_mode=0o40777)):
+                        with self.assertRaises(JobError) as failed:
+                            reader.protected_backing_parent('/usr/share/image.ext4')
+                    self.assertEqual('CONFLICT', failed.exception.code)
+                    self.assertTrue(failed.exception.__notes__)
+                else:
+                    with self.assertRaises((OSError, JobError)):
+                        reader.protected_backing_parent('/usr/share/image.ext4')
+            self.assertEqual(set(replaced), owned, 'new child leaked or reused descriptor closed')
+            for fd in replaced:
+                os.fstat(fd)
+            self.assertEqual(len(calls), len(set(calls)), 'a released descriptor number was closed twice')
+        finally:
+            for fd in owned:
+                real_close(fd)
+
+    def test_ancestor_close_failure_releases_new_child(self):
+        self.close_fault()
+
+    def test_ancestor_close_failure_never_closes_reused_descriptor(self):
+        self.close_fault(reuse=True)
+
+    def test_ancestor_validation_error_survives_close_failure(self):
+        self.close_fault(invalid=True)
+
+    def test_mount_output_limit_stops_capture_before_child_finishes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            completed = Path(temporary) / 'all-output-consumed'
+            code = ('import os,pathlib; '
+                    '[os.write(1,b"x"*4096) for _ in range(256)]; '
+                    'pathlib.Path(' + repr(str(completed)) + ').write_text("done")')
+            launch = subprocess.Popen
+            children = []
+
+            def child(_command, **kwargs):
+                process = launch([sys.executable, '-I', '-B', '-c', code], **kwargs)
+                children.append(process)
+                return process
+
+            with patch.object(reader, 'protected_backing_parent'), \
+                 patch.object(reader.subprocess, 'Popen', side_effect=child):
+                with self.assertRaises(JobError):
+                    reader.observe_filesystem({'mountpoint': temporary, 'backing_file': '/protected/image'}, 1)
+            self.assertFalse(completed.exists(), 'the whole oversized output was consumed before rejection')
+            self.assertTrue(all(process.poll() is not None for process in children))
+            self.assertTrue(all(process.stdout.closed for process in children))
+
+    def test_mount_capture_exact_limit_overflow_and_stderr_flood(self):
+        for size in (0, 1, reader.MOUNT_OUTPUT_LIMIT, reader.MOUNT_OUTPUT_LIMIT + 1):
+            with self.subTest(size=size):
+                code = f'import os; os.write(2,b"e"*1048576); os.write(1,b"x"*{size})'
+                with self.process_source(code) as children:
+                    if size > reader.MOUNT_OUTPUT_LIMIT:
+                        with self.assertRaises(JobError) as failed:
+                            reader.mount_output('/synthetic')
+                        self.assertEqual('LIMIT_EXCEEDED', failed.exception.code)
+                    else:
+                        self.assertEqual(b'x' * size, reader.mount_output('/synthetic'))
+                    self.assertIsNone(children[0].stderr, 'stderr must not be accumulated')
+
+    def test_escaped_long_mount_target_fits_and_keeps_exact_identity(self):
+        fixture = RetainedFilesystemTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        # Valid Linux component/path lengths; JSON control escaping expands 6x.
+        target = '/' + '/'.join(['\x01' * 240] * 16)
+        row = dict(fixture.mount_row(), target=target)
+        data = json.dumps({'filesystems': [row]}).encode()
+        self.assertLess(len(target.encode()), 4096)
+        self.assertGreater(len(data), 16384)
+        self.assertLess(len(data), reader.MOUNT_OUTPUT_LIMIT)
+        with self.process_source('import os; os.write(1,' + repr(data) + ')'), \
+             patch.object(reader, 'protected_backing_parent'), \
+             patch.object(reader, 'small_read', side_effect=[fixture.fs['backing_file'], '0', '0']):
+            observed = reader.observe_filesystem(dict(fixture.fs, mountpoint=target),
+                                                fixture.store.stat().st_dev)
+        self.assertEqual(target, observed[2])
+
+    def test_mount_nonzero_and_both_timeout_windows_release_child_and_allow_retry(self):
+        cases = (
+            ('raise SystemExit(7)', 'CONFLICT'),
+            ('import time; time.sleep(60)', 'IO_UNCERTAIN'),
+            ('import os,time; os.close(1); time.sleep(60)', 'IO_UNCERTAIN'),
+        )
+        for code, expected in cases:
+            with self.subTest(code=code), self.process_source(code), patch.object(reader, 'MOUNT_TIMEOUT', 0.1):
+                with self.assertRaises(JobError) as failed:
+                    reader.mount_output('/synthetic')
+                self.assertEqual(expected, failed.exception.code)
+            with self.process_source('import os; os.write(1,b"ok")'):
+                self.assertEqual(b'ok', reader.mount_output('/synthetic'))
+
+    def test_mount_launch_and_pipe_failures_release_resources(self):
+        before = set(os.listdir('/proc/self/fd'))
+        with patch.object(reader.subprocess, 'Popen', side_effect=OSError('launch failed')):
+            with self.assertRaises(JobError):
+                reader.mount_output('/synthetic')
+        self.assertEqual(before, set(os.listdir('/proc/self/fd')))
+        with self.process_source('import os,time; os.write(1,b"ready"); time.sleep(60)') as children:
+            real_read = os.read
+
+            def failed_read(fd, size):
+                if children and fd == children[0].stdout.fileno():
+                    raise OSError('pipe read failed')
+                return real_read(fd, size)
+
+            with patch.object(reader.os, 'read', side_effect=failed_read):
+                with self.assertRaises(JobError) as failed:
+                    reader.mount_output('/synthetic')
+                self.assertEqual('IO_UNCERTAIN', failed.exception.code)
+        self.assertEqual(before, set(os.listdir('/proc/self/fd')))
+
+    def test_selector_failure_after_launch_still_reaps_child(self):
+        original = reader.selectors.DefaultSelector
+        with self.process_source('import time; time.sleep(60)'):
+            selector = original()
+            with patch.object(reader.selectors, 'DefaultSelector', return_value=selector), \
+                 patch.object(selector, 'register', side_effect=OSError('registration failed')):
+                with self.assertRaises(JobError):
+                    reader.mount_output('/synthetic')
+            self.assertIsNone(selector.get_map())
+
+    def test_cleanup_failure_cannot_mask_primary_or_report_success(self):
+        original = reader.selectors.DefaultSelector
+        for code, expected in (('raise SystemExit(7)', 'CONFLICT'), ('print("ok")', 'IO_UNCERTAIN')):
+            with self.subTest(code=code), self.process_source(code):
+                selector = original()
+                close = selector.close
+
+                def close_failed():
+                    close()
+                    raise OSError('selector close failed after release')
+
+                with patch.object(reader.selectors, 'DefaultSelector', return_value=selector), \
+                     patch.object(selector, 'close', side_effect=close_failed):
+                    with self.assertRaises(JobError) as failed:
+                        reader.mount_output('/synthetic')
+                    self.assertEqual(expected, failed.exception.code)
+                    if expected == 'CONFLICT':
+                        self.assertTrue(failed.exception.__notes__)
+
+    def test_actual_capture_and_filesystem_validation_then_same_reader_retry(self):
+        fixture = RetainedFilesystemTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        row = fixture.mount_row()
+        valid = json.dumps({'filesystems': [row]}).encode()
+        exact = valid + b' ' * (reader.MOUNT_OUTPUT_LIMIT - len(valid))
+        for data, accepted in ((exact, True), (exact + b' ', False), (b'{', False),
+                               (b'{"filesystems":[],"filesystems":[]}', False),
+                               (b'{"filesystems":[NaN]}', False), (valid, True)):
+            with self.subTest(accepted=accepted, size=len(data)), \
+                 self.process_source('import os; os.write(1,' + repr(data) + ')'), \
+                 patch.object(reader, 'protected_backing_parent'), \
+                 patch.object(reader, 'small_read', side_effect=[fixture.fs['backing_file'], '0', '0']):
+                if accepted:
+                    observed = reader.observe_filesystem(fixture.fs, fixture.store.stat().st_dev)
+                    self.assertEqual(fixture.fs['uuid'], observed[1])
+                else:
+                    with self.assertRaises(JobError):
+                        reader.observe_filesystem(fixture.fs, fixture.store.stat().st_dev)
