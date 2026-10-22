@@ -173,7 +173,8 @@ task identities. The adapter resolves the private storage binding and checks the
 mounted target; Local Hand validates the exact evidence version. This path uses
 Ledger `0.2.0a1` recovery APIs. The initial read-back used Ledger source
 `78d6c5b07d47898083a47ac85d67cc5966b3760b`; the reviewed mount-alias isolation
-fix is in local candidate `d83b665760dfc683fb60bccfcf99189ee231dba2`.
+fix is in `d83b665760dfc683fb60bccfcf99189ee231dba2`, submitted in
+[Ledger PR #15](https://github.com/kongbu0621/infra-artifact-ledger/pull/15).
 Use the paired fixed Ledger build for that protection. These source identities
 are distinct even though the alpha package version is unchanged; see the
 [review and installation record](DEVELOPMENT.md#gx10-成果的-nas-备份与准确读回2026-10-23).
