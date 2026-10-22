@@ -193,7 +193,10 @@ The command requires the original inode, rejects database sidecars (including
 broken links), verifies the full Ledger and every retained commit receipt, and
 checks the checkpoint again before publishing one immutable filesystem binding.
 It preserves the original format, reservations, requests, database bytes and
-receipts. Each confirmed request must match its retained task mapping: request
+receipts. Every existing reservation must match the original bytes required by
+`resume`; changed formatting, extra fields or altered identity types are rejected
+before a new binding is published, including when checking an existing binding.
+Each confirmed request must match its retained task mapping: request
 format, kind, idempotency scope/key, Artifact/Version IDs and source relationship.
 Another task's valid request and receipt cannot stand in for the original ones.
 An append confirmation also requires the original create operation, even if its

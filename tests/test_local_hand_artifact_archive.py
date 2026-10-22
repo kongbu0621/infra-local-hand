@@ -325,6 +325,59 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
         self.assertFalse(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
         self.assertTrue(self.resume()["reused"])
 
+    def test_filesystem_binding_requires_original_reservation_bytes(self):
+        for version in (1, 2):
+            for mutation in ("whitespace", "extra-field", "device-type", "inode-type"):
+                with self.subTest(version=version, mutation=mutation):
+                    self.store = self.root / ("reservation-" + str(version) + "-" + mutation)
+                    first = self.archive()
+                    checkpoint = self.legacy_device_number(version=version)
+                    guard = next(self.store.glob("request-task-*")) / "identity.json"
+                    original = guard.read_bytes()
+                    changed = json.loads(original)
+                    if mutation == "whitespace":
+                        raw = original + b"\n"
+                    elif mutation == "extra-field":
+                        raw = consumer._json(dict(changed, extra=True))
+                    else:
+                        field = mutation.removesuffix("-type")
+                        changed["database_identity"][field] = float(changed["database_identity"][field])
+                        raw = consumer._json(changed)
+                    guard.write_bytes(raw)
+                    before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+                    with self.api.open(self.store / "ledger.sqlite") as ledger:
+                        ledger_type = type(ledger)
+                    with mock.patch.object(ledger_type, "execute", side_effect=AssertionError("binding cannot replay")):
+                        with self.assertRaises(consumer.ArchiveError) as denied:
+                            consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+                        self.assertEqual(denied.exception.code, "INTEGRITY_FAILURE")
+                        self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
+                        guard.write_bytes(original)
+                        self.assertFalse(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+                        self.assertTrue(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+                        resumed = self.resume()
+                    self.assertTrue(resumed["reused"])
+                    self.assertEqual((first["artifact_id"], first["version_id"], first["recorded_at"]),
+                                     (resumed["artifact_id"], resumed["version_id"], resumed["recorded_at"]))
+                    self.assertEqual(original, guard.read_bytes())
+                    self.assertEqual(checkpoint, hashlib.sha256((self.store / "ledger.sqlite").read_bytes()).hexdigest())
+
+    def test_existing_filesystem_binding_still_checks_original_reservation_bytes(self):
+        self.archive()
+        checkpoint = self.legacy_device_number()
+        consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+        guard = next(self.store.glob("request-task-*")) / "identity.json"
+        original = guard.read_bytes()
+        guard.write_bytes(original + b"\n")
+        before = {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()}
+        with self.assertRaises(consumer.ArchiveError) as denied:
+            consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)
+        self.assertEqual(denied.exception.code, "INTEGRITY_FAILURE")
+        self.assertEqual(before, {p: p.read_bytes() for p in self.store.rglob("*") if p.is_file()})
+        guard.write_bytes(original)
+        self.assertTrue(consumer.bind_filesystem(self.store, expected_database_sha256=checkpoint)["reused"])
+        self.assertTrue(self.resume()["reused"])
+
     def test_filesystem_binding_preserves_partial_archives_and_missing_receipts(self):
         for state in ("create-only", "missing-create-receipt", "missing-append-receipt"):
             with self.subTest(state=state):

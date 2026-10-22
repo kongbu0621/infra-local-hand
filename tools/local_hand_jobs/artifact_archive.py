@@ -654,10 +654,16 @@ def bind_filesystem(store, *, expected_database_sha256):
             ledger.verify()
             for reservation in root.glob("request-task-*"):
                 with _open_root(reservation, os.geteuid()):
-                    saved = _decode(_read(reservation / "identity.json", 65536))
+                    saved_raw = _read(reservation / "identity.json", 65536)
+                    saved = _decode(saved_raw)
                     if saved.get("database_identity") != identity:
                         _fail("Task reservation differs from the original database")
-                    binding = saved["binding"]
+                    binding = saved.get("binding")
+                    # resume compares this independent fence byte-for-byte.
+                    # Maintenance must not certify a reservation it cannot use.
+                    if (not isinstance(binding, dict)
+                            or saved_raw != _json(dict(binding=binding, database_identity=identity))):
+                        _fail("Task reservation differs from its original bytes", "INTEGRITY_FAILURE")
                     task = root / _task_name(binding["producer"], binding["operation_id"])
                     if reservation.name != "request-" + task.name:
                         _fail("Task reservation name differs from its binding")

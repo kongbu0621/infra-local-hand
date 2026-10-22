@@ -1,6 +1,7 @@
 """Real retained ledger/evidence checks with synthetic mount observations."""
 import copy
 from contextlib import contextmanager
+from dataclasses import replace
 import base64
 import hashlib
 import json
@@ -24,6 +25,7 @@ from test_local_hand_jobs_policy import policy_fixture
 from test_local_hand_jobs_evidence import EvidenceFixture, OP
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux retained filesystem and ledger identity')
 class RetainedFilesystemTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -223,6 +225,74 @@ class RetainedFilesystemTests(unittest.TestCase):
             with self.subTest(metadata), self.assertRaises(JobError):
                 self.observe_mount(metadata=metadata)
 
+    @contextmanager
+    def synthetic_sysfs(self, backing, *, offset=b'0\n', sizelimit=b'0\n'):
+        """Real bounded metadata reads with a synthetic kernel attribute directory."""
+        directory = self.root / 'sysfs'
+        directory.mkdir(exist_ok=True)
+        for name, raw in (('backing_file', backing), ('offset', offset), ('sizelimit', sizelimit)):
+            (directory / name).write_bytes(raw)
+        with patch.object(reader, 'protected_backing_parent'), \
+             patch.object(reader, 'mount_output', return_value=json.dumps({'filesystems': [self.mount_row()]}).encode()), \
+             patch.object(reader, 'open', side_effect=lambda path, mode: open(directory / Path(path).name, mode), create=True):
+            yield
+
+    def observe_sysfs(self, backing, *, declared=None, **metadata):
+        filesystem = self.fs if declared is None else dict(self.fs, backing_file=declared)
+        with self.synthetic_sysfs(backing, **metadata):
+            return reader.observe_filesystem(filesystem, self.store.stat().st_dev)
+
+    def test_backing_path_whitespace_is_significant_and_cannot_alias_admitted_image(self):
+        for suffix in (' ', '\t', '\r', '\n', '\n\n', '\v', '\f', '\u00a0', '\u2003'):
+            actual = self.fs['backing_file'] + suffix
+            with self.subTest(suffix=repr(suffix)), self.assertRaises(JobError):
+                self.observe_sysfs((actual + '\n').encode())
+        self.observe_sysfs((self.fs['backing_file'] + '\n').encode())
+
+    def test_exact_backing_paths_keep_whitespace_including_terminal_newline(self):
+        for suffix in (' ', '\t', '\r', '\n', '\n\n', '\u00a0', '\u2003'):
+            declared = self.fs['backing_file'] + suffix
+            with self.subTest(suffix=repr(suffix)):
+                result = self.observe_sysfs((declared + '\n').encode(), declared=declared)
+                self.assertEqual(declared, result[3])
+
+    def test_sysfs_attributes_require_complete_framing_and_exact_zero(self):
+        valid = (self.fs['backing_file'] + '\n').encode()
+        for raw in (b'', valid[:-1]):
+            with self.subTest(backing=raw), self.assertRaises(JobError):
+                self.observe_sysfs(raw)
+        for name in ('offset', 'sizelimit'):
+            for raw in (b'0', b' 0\n', b'0 \n', b'0\t\n', b'0\n\n', b'00\n', b'1\n'):
+                with self.subTest(attribute=name, raw=raw), self.assertRaises(JobError):
+                    self.observe_sysfs(valid, **{name: raw})
+        self.observe_sysfs(valid)
+
+    def test_sysfs_capture_limit_counts_the_terminating_newline(self):
+        path = self.root / 'attribute'
+        path.write_bytes(b'x' * 4095 + b'\n')
+        self.assertEqual('x' * 4095, reader.small_read(path))
+        path.write_bytes(b'x' * 4096 + b'\n')
+        with self.assertRaises(JobError):
+            reader.small_read(path)
+        path.write_bytes(b'0\n')
+        self.assertEqual('0', reader.small_read(path))
+
+    def test_sealed_read_rejects_other_backing_path_then_retries_without_mutation(self):
+        artifact = self.seal_on_previous_device()
+        before = {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
+        valid = (self.fs['backing_file'] + '\n').encode()
+        with self.synthetic_sysfs(valid):
+            rebound = self.rebound()
+        arguments = dict(artifact_id=artifact['artifact_id'],
+                         expected_sha256=artifact['sha256'], principal='reader')
+        with self.synthetic_sysfs((self.fs['backing_file'] + ' \n').encode()):
+            with self.assertRaises(JobError):
+                rebound.read_chunk(**arguments)
+        with self.synthetic_sysfs(valid):
+            result = rebound.read_chunk(**arguments)
+        self.assertEqual(artifact['sha256'], hashlib.sha256(base64.b64decode(result['data_base64'])).hexdigest())
+        self.assertEqual(before, {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
+
     def test_unprotected_image_parent_rejected(self):
         with self.assertRaises(JobError):
             reader.protected_backing_parent(str(self.root / 'image.ext4'))
@@ -309,6 +379,117 @@ class RetainedFilesystemTests(unittest.TestCase):
         self.assertEqual(raw, path.read_bytes())
         self.assertEqual(before, dbpath.read_bytes())
 
+    def registered_ledger(self):
+        """Publish synthetic old-device evidence through the real DB callback."""
+        config, path, binding = self.prepare_ledger()
+        database = Path(config['broker_root']) / 'jobs.sqlite'
+        state = StateStore(database, config['authority_id'], 'retained-ledger')
+        broker = None
+        try:
+            with state.transaction() as tx:
+                record = state.update(tx, 'job', OP, 'SYNTHETIC_EXIT',
+                    dict(lifecycle='TERMINAL', phase='EXITED', outcome='UNKNOWN'))
+            sequence = record['event_seq']
+            self.fixture.snapshot = replace(self.fixture.snapshot, event_seq=sequence,
+                quiescence=replace(self.fixture.snapshot.quiescence, event_seq=sequence),
+                broker_events=tuple(state.events('job', OP)))
+            broker = Broker(state, Policy(config), reader.Registry(), None)
+            self.fixture.store.register_seal = broker.register_seal
+            self.fixture.store.is_registered = broker.is_registered
+            self.seal_on_previous_device()
+        finally:
+            if broker is not None:
+                broker.close()
+            state.close()
+        return config, path, binding
+
+    def test_registered_old_device_evidence_uses_real_broker_auth_and_paging(self):
+        config, path, binding = self.registered_ledger()
+        database = Path(config['broker_root']) / 'jobs.sqlite'
+        before = database.read_bytes(), path.read_bytes()
+        originals = {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
+        owner = Principal('owner', frozenset(TOOL_SCOPES.values()))
+        with patch.object(reader, 'read_descriptor', return_value=binding), \
+             patch.object(reader, 'verify_release'), patch.object(reader, 'observe_filesystem'):
+            broker = reader.open_reader(path, '/root/synthetic-binding')
+            try:
+                broker.start()
+                page = broker.call('lh_evidence_manifest', {'operation_id': OP, 'page_size': 1}, owner)
+                artifacts = list(page['artifacts'])
+                while page['next_cursor'] is not None:
+                    page = broker.call('lh_evidence_manifest',
+                        {'operation_id': OP, 'page_size': 1, 'cursor': page['next_cursor']}, owner)
+                    artifacts.extend(page['artifacts'])
+                self.assertEqual(['zip', 'manifest', 'seal'], [a['role'] for a in artifacts])
+                for artifact in artifacts:
+                    arguments = dict(artifact_id=artifact['artifact_id'], expected_sha256=artifact['sha256'],
+                                     offset=0, length=65536)
+                    for principal in (Principal('other', owner.scopes),
+                                      Principal('owner', frozenset({'lh:read'}))):
+                        with self.subTest(role=artifact['role'], principal=principal), \
+                             self.assertRaises(JobError) as denied:
+                            broker.call('lh_evidence_read_chunk', arguments, principal)
+                        self.assertEqual('UNAUTHORIZED', denied.exception.code)
+                    with self.assertRaises(JobError) as denied:
+                        broker.call('lh_evidence_read_chunk', dict(arguments, expected_sha256='0' * 64), owner)
+                    self.assertEqual('CONFLICT', denied.exception.code)
+                    data = bytearray()
+                    # Two real transport-sized reads, including a nonzero offset.
+                    for offset, length in ((0, 1), (1, 65536)):
+                        chunk = broker.call('lh_evidence_read_chunk',
+                            dict(arguments, offset=offset, length=length), owner)
+                        raw = base64.b64decode(chunk['data_base64'])
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), chunk['chunk_sha256'])
+                        data.extend(raw)
+                    self.assertTrue(chunk['eof'])
+                    self.assertEqual(artifact['size'], len(data))
+                    self.assertEqual(artifact['sha256'], hashlib.sha256(data).hexdigest())
+                self.assertIsNone(broker._thread)
+                self.assertTrue(broker.read_only)
+            finally:
+                reader.cli.close_service(broker, None)
+        self.assertEqual(before, (database.read_bytes(), path.read_bytes()))
+        self.assertEqual(originals, {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
+
+    def test_registered_evidence_honors_durable_revocation_during_chunk_read(self):
+        config, path, binding = self.registered_ledger()
+        database = Path(config['broker_root']) / 'jobs.sqlite'
+        owner = Principal('owner', frozenset(TOOL_SCOPES.values()))
+        originals = {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
+        with patch.object(reader, 'read_descriptor', return_value=binding), \
+             patch.object(reader, 'verify_release'), patch.object(reader, 'observe_filesystem'):
+            broker = reader.open_reader(path, '/root/synthetic-binding')
+            writer = StateStore(database, config['authority_id'], 'retained-ledger')
+            try:
+                artifact = broker.call('lh_evidence_manifest', {'operation_id': OP}, owner)['artifacts'][0]
+                events = writer.events('job', OP)
+                authorize = broker.evidence.authorize
+                checks = 0
+
+                def revoked_before_return(principal, operation):
+                    nonlocal checks
+                    checks += 1
+                    if checks == 2:
+                        with writer.transaction() as tx:
+                            tx.execute('INSERT INTO revocations(principal,generation) VALUES(?,?)', ('owner', 1))
+                    authorize(principal, operation)
+
+                arguments = dict(artifact_id=artifact['artifact_id'], expected_sha256=artifact['sha256'],
+                                 offset=0, length=65536)
+                with patch.object(broker.evidence, 'authorize', side_effect=revoked_before_return):
+                    with self.assertRaises(JobError) as denied:
+                        broker.call('lh_evidence_read_chunk', arguments, owner)
+                    self.assertEqual('UNAUTHORIZED', denied.exception.code)
+                self.assertEqual(2, checks)
+                with self.assertRaises(JobError) as denied:
+                    broker.call('lh_evidence_read_chunk', arguments, owner)
+                self.assertEqual('UNAUTHORIZED', denied.exception.code)
+                self.assertEqual(events, writer.events('job', OP))
+            finally:
+                writer.close()
+                reader.cli.close_service(broker, None)
+        self.assertEqual(originals, {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
+
     def test_policy_byte_change_rejected_before_release_and_ledger(self):
         config, path, binding = self.prepare_ledger()
         path.write_bytes(path.read_bytes() + b'\n')
@@ -360,6 +541,7 @@ class RetainedFilesystemTests(unittest.TestCase):
             reader.cli.close_service(broker, None)
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux mount and directory descriptor failures')
 class RetainedObservationFailureTests(unittest.TestCase):
     @contextmanager
     def process_source(self, code):
