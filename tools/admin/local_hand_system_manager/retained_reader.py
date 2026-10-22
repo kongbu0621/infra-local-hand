@@ -9,15 +9,17 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import re
+import selectors
 import stat
 import subprocess
+import time
 
 from local_hand_jobs import cli, manager_binding
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.bootstrap_roots import validate_root
 from local_hand_jobs.contract import JobError, strict_loads
 from local_hand_jobs.deployment import verify_release
-from local_hand_jobs.evidence import EvidenceStore, _open_root
+from local_hand_jobs.evidence import EvidenceStore, _close_descriptors, _open_root
 from local_hand_jobs.policy import Policy
 from local_hand_jobs.registry import Registry
 from local_hand_jobs.resources import AuthorityLock, verify_local_filesystem
@@ -25,6 +27,10 @@ from local_hand_jobs.state import StateStore
 from local_hand_jobs.task_session import read_descriptor
 
 SCHEMA = 'local-hand-retained-filesystem/v1'
+# One exact mount and seven selected fields. A valid near-PATH_MAX target can
+# exceed 16 KiB after JSON escaping; retain bounded capture with that headroom.
+MOUNT_OUTPUT_LIMIT = 256 * 1024
+MOUNT_TIMEOUT = 5
 
 
 def require(ok, message):
@@ -67,16 +73,20 @@ def protected_backing_parent(path):
     # Opening a 0700 root-owned parent O_RDONLY is intentionally impossible for
     # the reader. O_PATH permits metadata checks, never directory enumeration.
     fd = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    failure = None
     try:
         for part in parent.parts[1:]:
             child = os.open(part, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
-            os.close(fd)
-            fd = child
+            previous, fd = fd, child
+            _close_descriptors(previous)
             info = os.fstat(fd)
             require(info.st_uid == 0 and not info.st_mode & 0o022,
                     'Backing image ancestry is not administrator protected')
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        os.close(fd)
+        _close_descriptors(fd, failure=failure)
 
 
 def small_read(path):
@@ -86,15 +96,68 @@ def small_read(path):
     return data.decode('utf-8').strip()
 
 
+def mount_output(mountpoint):
+    """Bound this fixed read-only client's bytes while capturing, then reap it."""
+    process = selector = failure = None
+    captured = bytearray()
+    try:
+        selector = selectors.DefaultSelector()
+        process = subprocess.Popen(['/usr/bin/findmnt', '--json', '-M', mountpoint,
+            '-o', 'SOURCE,TARGET,FSTYPE,OPTIONS,UUID,MAJ:MIN'],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+        os.set_blocking(process.stdout.fileno(), False)
+        selector.register(process.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + MOUNT_TIMEOUT
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise JobError('IO_UNCERTAIN', 'Retained filesystem observation timed out')
+            for key, _ in selector.select(min(remaining, 0.05)):
+                block = os.read(key.fd, min(4096, MOUNT_OUTPUT_LIMIT + 1 - len(captured)))
+                if not block:
+                    selector.unregister(key.fileobj)
+                    continue
+                captured.extend(block)
+                if len(captured) > MOUNT_OUTPUT_LIMIT:
+                    raise JobError('LIMIT_EXCEEDED', 'Retained filesystem observation exceeds byte limit')
+        result = process.wait(timeout=max(0, deadline - time.monotonic()))
+        require(result == 0, 'Retained filesystem could not be observed')
+        return bytes(captured)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        failure = JobError('IO_UNCERTAIN', 'Retained filesystem observation did not complete')
+        raise failure from error
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        cleanup_error = None
+
+        def cleanup(action):
+            nonlocal cleanup_error
+            try:
+                action()
+            except BaseException as error:
+                if cleanup_error is None:
+                    cleanup_error = error
+
+        if process is not None:
+            cleanup(lambda: process.kill() if process.poll() is None else None)
+            cleanup(lambda: process.wait(timeout=1))
+            if process.stdout is not None:
+                cleanup(process.stdout.close)
+        if selector is not None:
+            cleanup(selector.close)
+        if cleanup_error is not None:
+            if failure is not None:
+                failure.add_note('Retained filesystem observation cleanup also failed')
+            else:
+                raise JobError('IO_UNCERTAIN', 'Retained filesystem observation cleanup incomplete') from cleanup_error
+
+
 def observe_filesystem(filesystem, device):
     protected_backing_parent(filesystem['backing_file'])
-    result = subprocess.run(['/usr/bin/findmnt', '--json', '-M', filesystem['mountpoint'],
-        '-o', 'SOURCE,TARGET,FSTYPE,OPTIONS,UUID,MAJ:MIN'],
-        stdin=subprocess.DEVNULL, capture_output=True, timeout=5,
-        env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
-    require(result.returncode == 0 and len(result.stdout) <= 16384,
-            'Retained filesystem could not be observed')
-    value = strict_loads(result.stdout)
+    value = strict_loads(mount_output(filesystem['mountpoint']))
     require(type(value) is dict and type(value.get('filesystems')) is list
             and len(value['filesystems']) == 1, 'Ambiguous retained filesystem mount')
     row = value['filesystems'][0]
@@ -191,6 +254,7 @@ def open_reader(policy_path, binding_path):
     verify_local_filesystem(policy.authority_root)
     anchor = Path(policy.authority_root) / 'authority.json'
     descriptor = os.open(anchor, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    failure = None
     try:
         info = os.fstat(descriptor)
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= 8192,
@@ -198,8 +262,11 @@ def open_reader(policy_path, binding_path):
         registration = strict_loads(os.read(descriptor, 8193))
         require(type(registration) is dict and type(registration.get('ledger_id')) is str,
                 'Missing retained ledger identity')
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        os.close(descriptor)
+        _close_descriptors(descriptor, failure=failure)
     authority = AuthorityLock(anchor, authority_id=policy.authority_id,
                               ledger_id=registration['ledger_id'], state_root=policy.broker_root)
     state = broker = None
