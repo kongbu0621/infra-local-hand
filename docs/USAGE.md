@@ -195,6 +195,10 @@ completed read response in `read-receipt/result.json`. Existing output is refuse
 Keep partial output after errors; a fresh read may use a new local output
 directory. Storage errors retain Ledger's `publication_state` and `stage`, which
 refer to the local restoration, not a new NAS write.
+The command never submits a Ledger transaction, so error responses use
+`commit_state=not_applicable`; a failed read does not make the original archive
+commit unknown. A receipt may become visible before a later synchronization
+error, so its presence alone does not prove that the whole command completed.
 
 This command does not publish another snapshot, resume archive writes, bind a
 restored archive or execute the original task. NAS backup and exact read-back are

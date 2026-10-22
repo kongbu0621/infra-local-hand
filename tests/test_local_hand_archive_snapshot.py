@@ -136,6 +136,38 @@ class SnapshotReadTests(fixtures.BundleFixture, unittest.TestCase):
         self.assertFalse((self.output / "evidence").exists())
         self.assertTrue(self.read(output=self.root / "retry-read")["content_verified"])
 
+    def test_cli_restore_rejection_is_not_an_archive_commit(self):
+        original = self.tree(self.store)
+        arguments = dict(self.arguments, expected_manifest_sha256="0" * 64)
+        args = [value for key, value in arguments.items()
+                for value in ("--" + key.replace("_", "-"), str(value))]
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            self.assertEqual(consumer.main(["read-snapshot", *args]), 1)
+        response = json.loads(stream.getvalue())
+        self.assertEqual(response["code"], "INTEGRITY_FAILURE")
+        self.assertEqual(response["commit_state"], "not_applicable")
+        self.assertEqual(response["publication_state"], "not_published")
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.tree(self.store), original)
+
+    def test_cli_read_failure_keeps_restore_without_suggesting_archive_resume(self):
+        original = self.tree(self.store)
+        args = [value for key, value in self.arguments.items()
+                for value in ("--" + key.replace("_", "-"), str(value))]
+        stream = io.StringIO()
+        with mock.patch.object(consumer, "_load_version", side_effect=OSError("read failed")), \
+                redirect_stdout(stream):
+            self.assertEqual(consumer.main(["read-snapshot", *args]), 1)
+        response = json.loads(stream.getvalue())
+        self.assertEqual(response["commit_state"], "not_applicable")
+        self.assertIn("Snapshot read failed", response["message"])
+        self.assertNotIn("reconcile the original request", response["message"])
+        self.assertTrue((self.output / "snapshot-receipt/restore.json").is_file())
+        self.assertFalse((self.output / "read-receipt").exists())
+        self.assertEqual(self.tree(self.store), original)
+        self.assertTrue(self.read(output=self.root / "retry-cli-read")["content_verified"])
+
     def test_storage_error_fields_survive_cli_and_binding_reaches_adapter(self):
         # Adapter boundary only; this mock is not NAS qualification.
         config = {"storage_ref": "test:private-binding"}
@@ -151,6 +183,7 @@ class SnapshotReadTests(fixtures.BundleFixture, unittest.TestCase):
         self.assertEqual(restore.call_args.kwargs["storage_config"], config)
         response = json.loads(stream.getvalue())
         self.assertEqual(response["code"], "UNSUPPORTED_STORAGE")
+        self.assertEqual(response["commit_state"], "not_applicable")
         self.assertEqual(response["publication_state"], "not_published")
         self.assertEqual(response["stage"], "validate")
         self.assertEqual(response["message"], "Storage binding differs.")

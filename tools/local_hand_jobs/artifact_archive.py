@@ -2,7 +2,8 @@
 
 Linux, one trusted local user and one cooperative writer per store. Inputs are
 retained authenticated tool results; their origin is the caller's responsibility.
-No execution, remote calls, patch application or artifact code loading occurs.
+No source-task execution, patch application or artifact code loading occurs.
+Snapshot storage access is delegated to Ledger's public recovery adapter.
 """
 from __future__ import annotations
 
@@ -1039,13 +1040,18 @@ def main(argv=None):
                   "bind-filesystem": bind_filesystem, "recovery-checkpoint": recovery_checkpoint,
                   "bind-restored": bind_restored, "read-snapshot": read_snapshot_version}[command](**args)
     except Exception as error:
-        # Preserve any Ledger commit_state. Generic failures can follow a commit;
-        # a nonzero exit never means the original task or archive write rolled back.
+        # Snapshot reads never submit an A1 transaction. Their local restore
+        # publication is a separate state, retained below when Ledger supplies it.
+        snapshot_read = command == "read-snapshot"
+        fallback = ("Snapshot read failed; retain any local output and inspect it before reading into a new directory"
+                    if snapshot_read else
+                    "Local archive failed; retain the store and reconcile the original request")
+        # Other commands can fail after a commit; preserve their original state.
         result = dict(status="ERROR", code=getattr(error, "code", "UNCONFIRMED"),
-                      commit_state=getattr(error, "commit_state", "unknown"),
+                      commit_state="not_applicable" if snapshot_read else getattr(error, "commit_state", "unknown"),
                       message=str(error) if isinstance(error, (ArchiveError, LocalHandError, JobError))
                       or hasattr(error, "commit_state") or hasattr(error, "publication_state")
-                      else "Local archive failed; retain the store and reconcile the original request")
+                      else fallback)
         if hasattr(error, "publication_state"):
             result["publication_state"] = error.publication_state
             result["stage"] = getattr(error, "stage", None)
