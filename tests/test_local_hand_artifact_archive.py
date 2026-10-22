@@ -125,6 +125,23 @@ class ArchiveTests(BundleFixture, unittest.TestCase):
                          (result["artifact_id"], result["version_id"], result["recorded_at"]))
         self.assertEqual(self.verification(), counts)
 
+    def test_initialization_guard_failure_can_resume_an_empty_database(self):
+        publish = consumer._publish_files
+        def interrupted(parent, name, files):
+            if name == "database-initialized":
+                raise OSError("interrupted before initialization guard publication")
+            return publish(parent, name, files)
+        with mock.patch.object(consumer, "_publish_files", side_effect=interrupted):
+            with self.assertRaises(OSError):
+                self.archive()
+        self.assertFalse((self.store / "database-initialized").exists())
+        self.assertTrue((self.store / "ledger.sqlite").is_file())
+        self.assertEqual(self.verification()["counts"]["idempotency_records"], 0)
+        result = self.resume()
+        self.assertEqual(result["status"], "ARCHIVED")
+        self.assertEqual(self.verification()["counts"]["idempotency_records"], 2)
+        self.assertEqual(consumer.recovery_checkpoint(self.store)["status"], "RECOVERY_CHECKPOINT")
+
     def legacy_device_number(self, *, version=2):
         """Model a prior boot's device number; keep the actual DB inode/bytes."""
         marker = self.store / "database-initialized"

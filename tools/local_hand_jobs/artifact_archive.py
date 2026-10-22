@@ -2,7 +2,8 @@
 
 Linux, one trusted local user and one cooperative writer per store. Inputs are
 retained authenticated tool results; their origin is the caller's responsibility.
-No execution, remote calls, patch application or artifact code loading occurs.
+No source-task execution, patch application or artifact code loading occurs.
+Snapshot storage access is delegated to Ledger's public recovery adapter.
 """
 from __future__ import annotations
 
@@ -45,6 +46,45 @@ def _fail(message, code="CONFLICT"):
 def _json(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
                       allow_nan=False).encode("utf-8")
+
+
+def _write_cli_channel(stream, encoded):
+    """Deliver UTF-8 without retaining our bytes for an interpreter-exit flush."""
+    if stream is None:
+        raise OSError("Output channel is unavailable")
+    buffer = getattr(stream, "buffer", None)
+    raw = getattr(buffer, "raw", buffer)
+    if type(buffer) in (io.FileIO, io.BufferedWriter, io.BufferedRandom) and type(raw) is io.FileIO:
+        # Flush any caller output first. Bypass only known file buffers so a
+        # failed write cannot leave our response queued for shutdown (exit 120).
+        stream.flush()
+        remaining = memoryview(encoded)
+        while remaining:
+            written = os.write(raw.fileno(), remaining)
+            if written <= 0:
+                raise OSError("Incomplete output write")
+            remaining = remaining[written:]
+        return
+    # Embedded callers and existing tests can supply a text-only StringIO.
+    output, value = (buffer, encoded) if buffer is not None else (stream, encoded.decode("utf-8"))
+    if output.write(value) != len(value):
+        raise OSError("Incomplete output write")
+    output.flush()
+
+
+def _write_cli_response(result):
+    try:
+        _write_cli_channel(sys.stdout, _json(result) + b"\n")
+        return True
+    except (OSError, ValueError):
+        # A response may already be partially delivered. Do not append another
+        # JSON response or change any completed operation or retained receipt.
+        try:
+            _write_cli_channel(sys.stderr, b"local-hand-archive: response channel failed; "
+                b"retain the original inputs, output paths and receipts; inspect them before retrying.\n")
+        except (OSError, ValueError):
+            pass
+        return False
 
 
 def _sha(raw):
@@ -438,6 +478,12 @@ def _database(root, *, create=False):
         current_identity = _database_identity(path)
         if identity is not None and identity != current_identity:
             _fail("Ledger file identity changed while opening")
+        if not os.path.lexists(marker) and any(ledger.verify()["counts"].values()):
+            # An interrupted initialization can leave an empty database here.
+            # A populated snapshot lacks the original consumer requests and
+            # receipts; it must never become a writable archive by adoption.
+            _fail("Nonempty Ledger has no archive identity guard; retain it and restore the complete original archive store",
+                  "INTEGRITY_FAILURE")
         if create and not os.path.lexists(marker):
             # No artifact write is allowed until this initialization fence is
             # durable. Losing a database later must never silently recreate it.
@@ -957,6 +1003,51 @@ def read_version(store, *, artifact_id, version_id, output):
                 files={name: dict(size=len(raw), sha256=_sha(raw)) for name, raw in files.items()})
 
 
+def read_snapshot_version(*, snapshot, expected_manifest_sha256, artifact_id,
+                          version_id, output, scratch_parent, storage_config=None):
+    """Read one exact artifact version through Ledger's snapshot storage adapter.
+
+    Snapshot identity and logical artifact identity are independent. The caller
+    supplies the manifest digest from the original snapshot receipt. A NAS input
+    needs its private storage binding; no NAS database is opened by this consumer.
+    Output is a new local restore directory, retained after success or failure.
+    This does not initialize/rebind an archive store or replay an execution.
+    """
+    api = _ledger_api()
+    from infra_artifact_ledger import recovery
+    expected_manifest_sha256 = _digest(expected_manifest_sha256)
+    artifact_id, version_id = _identity(artifact_id), _identity(version_id)
+    output = Path(output).absolute()
+    # Apply the receipt publisher's path rule before restore can create output.
+    # Do not resolve away components that may traverse a symbolic link.
+    if ".." in output.parts:
+        _fail("Snapshot read output must not contain parent traversal", "INVALID_INPUT")
+    config = None if storage_config is None else _decode(_read(storage_config, 16384))
+    restored = recovery.restore(snapshot=snapshot, target_dir=output,
+        expected_manifest_sha256=expected_manifest_sha256,
+        scratch_parent=scratch_parent, storage_config=config)
+    # The public restore API validated a fresh local target and all snapshot
+    # members before publishing it. Preserve its response before further reads.
+    _publish_files(output, "snapshot-receipt", {"restore.json": _json(restored)})
+    database = output / "ledger.sqlite"
+    before = _file_digest(database)
+    if before["sha256"] != restored["data"]["database_sha256"]:
+        _fail("Restored database differs from the snapshot receipt", "INTEGRITY_FAILURE")
+    with api.open(database) as ledger:
+        files, source = _load_version(ledger, artifact_id, version_id)
+    if _file_digest(database) != before:
+        _fail("Restored database changed during content read", "INTEGRITY_FAILURE")
+    _publish_files(output, "evidence", files)
+    result = dict(status="READ", artifact_id=artifact_id, version_id=version_id,
+        content_verified=True, source=source, snapshot_id=restored["data"]["snapshot_id"],
+        manifest_sha256=expected_manifest_sha256, database_sha256=before["sha256"],
+        evidence_directory=str(output / "evidence"),
+        storage_ref=None if config is None else config["storage_ref"],
+        files={name: dict(size=len(raw), sha256=_sha(raw)) for name, raw in files.items()})
+    _publish_files(output, "read-receipt", {"result.json": _json(result)})
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -983,23 +1074,35 @@ def main(argv=None):
     read = commands.add_parser("read", help="Read an exact version into a new private directory")
     for name in ("store", "artifact-id", "version-id", "output"):
         read.add_argument("--" + name, required=True)
+    snapshot_read = commands.add_parser("read-snapshot", help="Read an exact version from a local or NAS Ledger snapshot")
+    for name in ("snapshot", "expected-manifest-sha256", "artifact-id", "version-id", "output", "scratch-parent"):
+        snapshot_read.add_argument("--" + name, required=True)
+    snapshot_read.add_argument("--storage-config", help="Private mounted-storage binding; required for NAS input")
     args = vars(parser.parse_args(argv))
     command = args.pop("command")
     try:
         result = {"archive": archive_result, "resume": resume_archive, "read": read_version,
                   "bind-filesystem": bind_filesystem, "recovery-checkpoint": recovery_checkpoint,
-                  "bind-restored": bind_restored}[command](**args)
+                  "bind-restored": bind_restored, "read-snapshot": read_snapshot_version}[command](**args)
     except Exception as error:
-        # Preserve any Ledger commit_state. Generic failures can follow a commit;
-        # a nonzero exit never means the original task or archive write rolled back.
+        # Snapshot reads never submit an A1 transaction. Their local restore
+        # publication is a separate state, retained below when Ledger supplies it.
+        snapshot_read = command == "read-snapshot"
+        fallback = ("Snapshot read failed; retain any local output and inspect it before reading into a new directory"
+                    if snapshot_read else
+                    "Local archive failed; retain the store and reconcile the original request")
+        # Other commands can fail after a commit; preserve their original state.
         result = dict(status="ERROR", code=getattr(error, "code", "UNCONFIRMED"),
-                      commit_state=getattr(error, "commit_state", "unknown"),
+                      commit_state="not_applicable" if snapshot_read else getattr(error, "commit_state", "unknown"),
                       message=str(error) if isinstance(error, (ArchiveError, LocalHandError, JobError))
-                      or hasattr(error, "commit_state") else "Local archive failed; retain the store and reconcile the original request")
-        print(_json(result).decode("utf-8"))
+                      or hasattr(error, "commit_state") or hasattr(error, "publication_state")
+                      else fallback)
+        if hasattr(error, "publication_state"):
+            result["publication_state"] = error.publication_state
+            result["stage"] = getattr(error, "stage", None)
+        _write_cli_response(result)
         return 1
-    print(_json(result).decode("utf-8"))
-    return 0
+    return 0 if _write_cli_response(result) else 1
 
 
 if __name__ == "__main__":

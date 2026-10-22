@@ -151,16 +151,77 @@ commit. Keep the whole store and retain failed attempts.
 
 `read` needs only the store and explicit IDs. It verifies the actual bytes and
 source bindings, then returns the original evidence files and `source.json`.
-JSON responses go to stdout; errors retain the relevant Ledger `commit_state`
+JSON responses use UTF-8 on stdout; errors retain the relevant Ledger `commit_state`
 where known. Archival success concerns preservation and read-back, not new
 authentication, task execution, validation execution or knowledge admission.
+Output delivery can fail after work has completed. A nonzero exit or missing
+response does not prove that nothing was saved: retain the original store or
+output directory and inspect its requests and receipts before continuing.
 This local consumer does not establish A2 NAS recovery, A3's two consumer classes,
 Windows archive support or the full Code Driver loop.
 
 To run the affected checks with the verified optional wheel installed:
-`python -B -m pytest -q tests/test_local_hand_artifact_archive.py tests/test_local_hand_jobs_evidence_client.py tests/test_local_hand_archive_recovery.py`.
+`python -B -m pytest -q tests/test_local_hand_artifact_archive.py tests/test_local_hand_jobs_evidence_client.py tests/test_local_hand_archive_recovery.py tests/test_local_hand_archive_snapshot.py`.
 Without that wheel, the consumer integration tests are explicitly skipped;
 the local bundle validation tests still run on Linux.
+
+### Read an exact evidence version from a NAS snapshot
+
+`read-snapshot` consumes a previously published Ledger snapshot through Ledger's
+public recovery adapter. It preserves the original Artifact/Version and source
+task identities. The adapter resolves the private storage binding and checks the
+mounted target; Local Hand validates the exact evidence version. This path uses
+Ledger `0.2.0a1` recovery APIs. The initial read-back used Ledger source
+`78d6c5b07d47898083a47ac85d67cc5966b3760b`; the reviewed mount-alias isolation
+fix is in `d83b665760dfc683fb60bccfcf99189ee231dba2`, submitted in
+[Ledger PR #15](https://github.com/kongbu0621/infra-artifact-ledger/pull/15).
+Use the paired fixed Ledger build for that protection. These source identities
+are distinct even though the alpha package version is unchanged; see the
+[review and installation record](DEVELOPMENT.md#gx10-成果的-nas-备份与准确读回2026-10-23).
+
+```sh
+local-hand-archive read-snapshot \
+  --snapshot /absolute/approved-mount/archive/SNAPSHOT_ID \
+  --storage-config /absolute/private/storage-config.json \
+  --expected-manifest-sha256 TRUSTED_SNAPSHOT_MANIFEST_SHA256 \
+  --artifact-id ORIGINAL_ARTIFACT_ID --version-id ORIGINAL_VERSION_ID \
+  --scratch-parent /absolute/private/local-scratch \
+  --output /absolute/private/new-snapshot-readback
+```
+
+Use the manifest digest from the independently retained original snapshot
+receipt. The storage configuration is Ledger's existing mounted-storage schema;
+physical paths and mount identity belong in deployment configuration, not task
+inputs. For a supported local snapshot, omit `--storage-config`.
+
+The output parent and scratch directory must already exist on a supported local
+filesystem. Output paths containing `..` are rejected before restoration.
+These writable directories must be outside the read-only input, including
+paths that refer to it through another mount. Ledger owns this storage isolation;
+different path strings or mount IDs do not establish different directories.
+The command first restores and verifies a fresh local database; it
+never opens SQLite on NAS. It retains `ledger.sqlite`, the Ledger restore response
+in `snapshot-receipt/restore.json`, the five verified files in `evidence/`, and the
+completed read response in `read-receipt/result.json`. Existing output is refused.
+Use the complete original archive store for subsequent `archive` or `resume`
+calls. A snapshot readback does not contain the consumer's original requests and
+commit receipts. A populated database without its archive initialization marker
+is rejected before another task is staged or committed; an empty database left
+by interrupted initialization can still be resumed.
+Keep partial output after errors; a fresh read may use a new local output
+directory. Storage errors retain Ledger's `publication_state` and `stage`, which
+refer to the local restoration, not a new NAS write.
+The command never submits a Ledger transaction, so error responses use
+`commit_state=not_applicable`; a failed read does not make the original archive
+commit unknown. A receipt may become visible before a later synchronization
+error, so its presence alone does not prove that the whole command completed.
+
+This command does not publish another snapshot, resume archive writes, bind a
+restored archive or execute the original task. NAS backup and exact read-back are
+the snapshot branch of the [storage-node plan](MULTI_NODE_IMPLEMENTATION_PLAN.md#4-nas-成果归档最小新增实现).
+An authenticated online receiver, automatic outbox and NAS MCP job entry remain
+separate implementation work. Successful read-back does not establish those
+capabilities or NAS power-loss durability.
 
 ### Filesystem identity after device renumbering
 
