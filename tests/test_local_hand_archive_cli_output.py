@@ -63,10 +63,16 @@ class CLIOutputTests(unittest.TestCase):
 
     def test_real_file_short_writes_deliver_one_complete_utf8_response(self):
         write = os.write
-        with tempfile.TemporaryFile() as raw, io.TextIOWrapper(raw, encoding="ascii") as output:
+        # TemporaryFile is a NamedTemporaryFile wrapper on Windows. Use a
+        # regular file so these faults reach the real descriptor on both OSes.
+        with tempfile.TemporaryDirectory() as directory, \
+                open(Path(directory) / "response", "w+b") as raw, \
+                io.TextIOWrapper(raw, encoding="ascii") as output:
             errors = io.StringIO()
-            with mock.patch.object(consumer.os, "write", side_effect=lambda fd, data: write(fd, data[:3])):
+            with mock.patch.object(consumer.os, "write",
+                                   side_effect=lambda fd, data: write(fd, data[:3])) as writes:
                 self.assertEqual(self.run_main(output, errors), 0)
+            self.assertGreater(writes.call_count, 1)
             raw.seek(0)
             self.assertEqual(raw.read(), consumer._json(RESULT) + b"\n")
             self.assertEqual(errors.getvalue(), "")
@@ -79,7 +85,9 @@ class CLIOutputTests(unittest.TestCase):
             if len(attempts) == 1:
                 return write(fd, data[:7])
             raise BrokenPipeError("receiver disappeared")
-        with tempfile.TemporaryFile() as raw, io.TextIOWrapper(raw, encoding="utf-8") as output:
+        with tempfile.TemporaryDirectory() as directory, \
+                open(Path(directory) / "response", "w+b") as raw, \
+                io.TextIOWrapper(raw, encoding="utf-8") as output:
             errors = io.StringIO()
             with mock.patch.object(consumer.os, "write", side_effect=fail_after_prefix):
                 self.assertEqual(self.run_main(output, errors), 1)
@@ -89,7 +97,9 @@ class CLIOutputTests(unittest.TestCase):
             self.assertIn("response channel failed", errors.getvalue())
 
     def test_zero_write_stops_without_retrying_or_reporting_success(self):
-        with tempfile.TemporaryFile() as raw, io.TextIOWrapper(raw, encoding="utf-8") as output:
+        with tempfile.TemporaryDirectory() as directory, \
+                open(Path(directory) / "response", "w+b") as raw, \
+                io.TextIOWrapper(raw, encoding="utf-8") as output:
             errors = io.StringIO()
             with mock.patch.object(consumer.os, "write", return_value=0) as write:
                 self.assertEqual(self.run_main(output, errors), 1)

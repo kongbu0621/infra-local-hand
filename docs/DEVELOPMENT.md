@@ -90,6 +90,12 @@ Local Hand 继续使用公共恢复接口，不复制这套存储判断。
 [Ledger #15](https://github.com/kongbu0621/infra-artifact-ledger/pull/15)。授权与上传
 不改写原安装验证；本次未合并 PR、切换服务或重放业务。
 
+上传后的 [CI 39843563545](https://github.com/kongbu0621/infra-local-hand/actions/runs/39843563545)
+中 Linux 通过，Windows 的两项输出故障检查失败。原因是 `TemporaryFile()` 在
+Windows 返回包装对象，未进入所注入的文件描述符写入路径。测试改用临时目录内的
+普通二进制文件，并检查短写实际发生多次；保留部分写入失败及零写入断言，未跳过
+Windows 检查。该修正只影响测试夹具，产品载荷及上述独立安装证明不变。
+
 这是已完成的“本地归档＋NAS 快照保存／读回”过渡能力。持久化范围仍为文件系统
 确认，不代表 NAS 断电持久性。在线认证接收服务、自动 outbox 和 MCP NAS 新作业
 入口仍未开放；本次没有切换运行中的管理/API 服务，也没有释放本地原件。
