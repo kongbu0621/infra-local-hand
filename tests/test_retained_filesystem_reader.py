@@ -223,6 +223,74 @@ class RetainedFilesystemTests(unittest.TestCase):
             with self.subTest(metadata), self.assertRaises(JobError):
                 self.observe_mount(metadata=metadata)
 
+    @contextmanager
+    def synthetic_sysfs(self, backing, *, offset=b'0\n', sizelimit=b'0\n'):
+        """Real bounded metadata reads with a synthetic kernel attribute directory."""
+        directory = self.root / 'sysfs'
+        directory.mkdir(exist_ok=True)
+        for name, raw in (('backing_file', backing), ('offset', offset), ('sizelimit', sizelimit)):
+            (directory / name).write_bytes(raw)
+        with patch.object(reader, 'protected_backing_parent'), \
+             patch.object(reader, 'mount_output', return_value=json.dumps({'filesystems': [self.mount_row()]}).encode()), \
+             patch.object(reader, 'open', side_effect=lambda path, mode: open(directory / Path(path).name, mode), create=True):
+            yield
+
+    def observe_sysfs(self, backing, *, declared=None, **metadata):
+        filesystem = self.fs if declared is None else dict(self.fs, backing_file=declared)
+        with self.synthetic_sysfs(backing, **metadata):
+            return reader.observe_filesystem(filesystem, self.store.stat().st_dev)
+
+    def test_backing_path_whitespace_is_significant_and_cannot_alias_admitted_image(self):
+        for suffix in (' ', '\t', '\r', '\n', '\n\n', '\v', '\f', '\u00a0', '\u2003'):
+            actual = self.fs['backing_file'] + suffix
+            with self.subTest(suffix=repr(suffix)), self.assertRaises(JobError):
+                self.observe_sysfs((actual + '\n').encode())
+        self.observe_sysfs((self.fs['backing_file'] + '\n').encode())
+
+    def test_exact_backing_paths_keep_whitespace_including_terminal_newline(self):
+        for suffix in (' ', '\t', '\r', '\n', '\n\n', '\u00a0', '\u2003'):
+            declared = self.fs['backing_file'] + suffix
+            with self.subTest(suffix=repr(suffix)):
+                result = self.observe_sysfs((declared + '\n').encode(), declared=declared)
+                self.assertEqual(declared, result[3])
+
+    def test_sysfs_attributes_require_complete_framing_and_exact_zero(self):
+        valid = (self.fs['backing_file'] + '\n').encode()
+        for raw in (b'', valid[:-1]):
+            with self.subTest(backing=raw), self.assertRaises(JobError):
+                self.observe_sysfs(raw)
+        for name in ('offset', 'sizelimit'):
+            for raw in (b'0', b' 0\n', b'0 \n', b'0\t\n', b'0\n\n', b'00\n', b'1\n'):
+                with self.subTest(attribute=name, raw=raw), self.assertRaises(JobError):
+                    self.observe_sysfs(valid, **{name: raw})
+        self.observe_sysfs(valid)
+
+    def test_sysfs_capture_limit_counts_the_terminating_newline(self):
+        path = self.root / 'attribute'
+        path.write_bytes(b'x' * 4095 + b'\n')
+        self.assertEqual('x' * 4095, reader.small_read(path))
+        path.write_bytes(b'x' * 4096 + b'\n')
+        with self.assertRaises(JobError):
+            reader.small_read(path)
+        path.write_bytes(b'0\n')
+        self.assertEqual('0', reader.small_read(path))
+
+    def test_sealed_read_rejects_other_backing_path_then_retries_without_mutation(self):
+        artifact = self.seal_on_previous_device()
+        before = {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
+        valid = (self.fs['backing_file'] + '\n').encode()
+        with self.synthetic_sysfs(valid):
+            rebound = self.rebound()
+        arguments = dict(artifact_id=artifact['artifact_id'],
+                         expected_sha256=artifact['sha256'], principal='reader')
+        with self.synthetic_sysfs((self.fs['backing_file'] + ' \n').encode()):
+            with self.assertRaises(JobError):
+                rebound.read_chunk(**arguments)
+        with self.synthetic_sysfs(valid):
+            result = rebound.read_chunk(**arguments)
+        self.assertEqual(artifact['sha256'], hashlib.sha256(base64.b64decode(result['data_base64'])).hexdigest())
+        self.assertEqual(before, {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
+
     def test_unprotected_image_parent_rejected(self):
         with self.assertRaises(JobError):
             reader.protected_backing_parent(str(self.root / 'image.ext4'))

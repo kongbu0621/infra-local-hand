@@ -93,7 +93,10 @@ def small_read(path):
     with open(path, 'rb') as stream:
         data = stream.read(4097)
     require(len(data) <= 4096, 'Filesystem identity metadata exceeds its bound')
-    return data.decode('utf-8').strip()
+    # Loop sysfs attributes append exactly one LF. Whitespace before that LF
+    # belongs to the backing pathname; trimming it can authorize another image.
+    require(data.endswith(b'\n'), 'Filesystem identity metadata is incomplete')
+    return data[:-1].decode('utf-8')
 
 
 def mount_output(mountpoint):
