@@ -14,17 +14,16 @@ import stat
 import subprocess
 import time
 
-from local_hand_jobs import cli, manager_binding
+from local_hand_jobs import cli, manager_binding, quota_contract as q
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.bootstrap_roots import validate_root
-from local_hand_jobs.contract import JobError, strict_loads
+from local_hand_jobs.contract import JobError, MAX_REQUEST_BYTES, strict_loads
 from local_hand_jobs.deployment import verify_release
 from local_hand_jobs.evidence import EvidenceStore, _close_descriptors, _open_root
 from local_hand_jobs.policy import Policy
 from local_hand_jobs.registry import Registry
 from local_hand_jobs.resources import AuthorityLock, verify_local_filesystem
 from local_hand_jobs.state import StateStore
-from local_hand_jobs.task_session import read_descriptor
 
 SCHEMA = 'local-hand-retained-filesystem/v1'
 # One exact mount and six selected fields. A valid near-PATH_MAX target can
@@ -42,6 +41,48 @@ def canonical(path):
     require(type(path) is str and path.startswith('/') and str(Path(path)) == path
             and '..' not in Path(path).parts and path != '/', 'Invalid retained binding path')
     return Path(path)
+
+
+def read_descriptor(path):
+    """Read the original declaration contract without relying on old fd cleanup.
+
+    This compatibility module runs with an already verified installed core;
+    fixing its source task_session reader would not update that installation.
+    Keep the same admission and JSON limits, owning each new fd before closing
+    its parent and retaining the primary error if final cleanup also fails.
+    """
+    path = q.canonical_path(str(path))
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    failure = None
+    try:
+        parts = Path(path).parts[1:]
+        for index, part in enumerate(parts):
+            directory = index < len(parts) - 1
+            child = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+                            | (os.O_DIRECTORY if directory else 0), dir_fd=fd)
+            previous, fd = fd, child
+            _close_descriptors(previous)
+            info = os.fstat(fd)
+            q.require(info.st_uid == 0 and not info.st_mode & 0o022
+                      and (stat.S_ISDIR(info.st_mode) if directory else
+                           stat.S_ISREG(info.st_mode) and info.st_nlink == 1), 'SESSION_PROTECTION')
+        q.require(info.st_size <= MAX_REQUEST_BYTES, 'SESSION_SIZE')
+        raw = bytearray()
+        while len(raw) <= MAX_REQUEST_BYTES:
+            chunk = os.read(fd, min(8192, MAX_REQUEST_BYTES + 1 - len(raw)))
+            if not chunk:
+                break
+            raw.extend(chunk)
+        after = os.fstat(fd)
+        q.require(len(raw) == info.st_size and all(getattr(info, key) == getattr(after, key)
+                  for key in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink',
+                              'st_size', 'st_mtime_ns', 'st_ctime_ns')), 'SESSION_CHANGED')
+        return q._load(bytes(raw), MAX_REQUEST_BYTES, 12)
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        _close_descriptors(fd, failure=failure)
 
 
 def validate(binding, policy_path, policy):
