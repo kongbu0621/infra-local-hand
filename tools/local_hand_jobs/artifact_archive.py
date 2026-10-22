@@ -987,6 +987,7 @@ def bind_restored(store, *, checkpoint_path, expected_checkpoint_sha256, expecte
 
 def read_version(store, *, artifact_id, version_id, output):
     from .evidence import _open_root
+    from .archive_read_paths import assert_output_outside_store
     _ledger_api()
     output = Path(output).absolute()
     root = Path(store).absolute()
@@ -996,7 +997,9 @@ def read_version(store, *, artifact_id, version_id, output):
         _no_sidecars(locked / "ledger.sqlite")
         with _database(locked) as ledger:
             files, source = _load_version(ledger, artifact_id, version_id)
-        with _open_root(output.parent, os.geteuid()):
+        with _open_root(locked, os.geteuid()) as source_fd, \
+                _open_root(output.parent, os.geteuid()) as output_fd:
+            assert_output_outside_store(locked, source_fd, output.parent, output_fd)
             _publish_files(output.parent, output.name, files)
     return dict(status="READ", artifact_id=artifact_id, version_id=version_id,
                 content_verified=True, source=source,
