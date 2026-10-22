@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from local_hand_jobs import quota_contract as q
 from local_hand_jobs.contract import JobError, MAX_REQUEST_BYTES, Principal, TOOL_SCOPES
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux protected declaration descriptors')
 class RetainedBindingReaderTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

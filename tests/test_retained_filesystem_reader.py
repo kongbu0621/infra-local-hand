@@ -25,6 +25,7 @@ from test_local_hand_jobs_policy import policy_fixture
 from test_local_hand_jobs_evidence import EvidenceFixture, OP
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux retained filesystem and ledger identity')
 class RetainedFilesystemTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -540,6 +541,7 @@ class RetainedFilesystemTests(unittest.TestCase):
             reader.cli.close_service(broker, None)
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux mount and directory descriptor failures')
 class RetainedObservationFailureTests(unittest.TestCase):
     @contextmanager
     def process_source(self, code):
