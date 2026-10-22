@@ -1,6 +1,7 @@
 """Real retained ledger/evidence checks with synthetic mount observations."""
 import copy
 from contextlib import contextmanager
+from dataclasses import replace
 import base64
 import hashlib
 import json
@@ -376,6 +377,117 @@ class RetainedFilesystemTests(unittest.TestCase):
             self.assertEqual(2, release.call_count)
         self.assertEqual(raw, path.read_bytes())
         self.assertEqual(before, dbpath.read_bytes())
+
+    def registered_ledger(self):
+        """Publish synthetic old-device evidence through the real DB callback."""
+        config, path, binding = self.prepare_ledger()
+        database = Path(config['broker_root']) / 'jobs.sqlite'
+        state = StateStore(database, config['authority_id'], 'retained-ledger')
+        broker = None
+        try:
+            with state.transaction() as tx:
+                record = state.update(tx, 'job', OP, 'SYNTHETIC_EXIT',
+                    dict(lifecycle='TERMINAL', phase='EXITED', outcome='UNKNOWN'))
+            sequence = record['event_seq']
+            self.fixture.snapshot = replace(self.fixture.snapshot, event_seq=sequence,
+                quiescence=replace(self.fixture.snapshot.quiescence, event_seq=sequence),
+                broker_events=tuple(state.events('job', OP)))
+            broker = Broker(state, Policy(config), reader.Registry(), None)
+            self.fixture.store.register_seal = broker.register_seal
+            self.fixture.store.is_registered = broker.is_registered
+            self.seal_on_previous_device()
+        finally:
+            if broker is not None:
+                broker.close()
+            state.close()
+        return config, path, binding
+
+    def test_registered_old_device_evidence_uses_real_broker_auth_and_paging(self):
+        config, path, binding = self.registered_ledger()
+        database = Path(config['broker_root']) / 'jobs.sqlite'
+        before = database.read_bytes(), path.read_bytes()
+        originals = {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
+        owner = Principal('owner', frozenset(TOOL_SCOPES.values()))
+        with patch.object(reader, 'read_descriptor', return_value=binding), \
+             patch.object(reader, 'verify_release'), patch.object(reader, 'observe_filesystem'):
+            broker = reader.open_reader(path, '/root/synthetic-binding')
+            try:
+                broker.start()
+                page = broker.call('lh_evidence_manifest', {'operation_id': OP, 'page_size': 1}, owner)
+                artifacts = list(page['artifacts'])
+                while page['next_cursor'] is not None:
+                    page = broker.call('lh_evidence_manifest',
+                        {'operation_id': OP, 'page_size': 1, 'cursor': page['next_cursor']}, owner)
+                    artifacts.extend(page['artifacts'])
+                self.assertEqual(['zip', 'manifest', 'seal'], [a['role'] for a in artifacts])
+                for artifact in artifacts:
+                    arguments = dict(artifact_id=artifact['artifact_id'], expected_sha256=artifact['sha256'],
+                                     offset=0, length=65536)
+                    for principal in (Principal('other', owner.scopes),
+                                      Principal('owner', frozenset({'lh:read'}))):
+                        with self.subTest(role=artifact['role'], principal=principal), \
+                             self.assertRaises(JobError) as denied:
+                            broker.call('lh_evidence_read_chunk', arguments, principal)
+                        self.assertEqual('UNAUTHORIZED', denied.exception.code)
+                    with self.assertRaises(JobError) as denied:
+                        broker.call('lh_evidence_read_chunk', dict(arguments, expected_sha256='0' * 64), owner)
+                    self.assertEqual('CONFLICT', denied.exception.code)
+                    data = bytearray()
+                    # Two real transport-sized reads, including a nonzero offset.
+                    for offset, length in ((0, 1), (1, 65536)):
+                        chunk = broker.call('lh_evidence_read_chunk',
+                            dict(arguments, offset=offset, length=length), owner)
+                        raw = base64.b64decode(chunk['data_base64'])
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), chunk['chunk_sha256'])
+                        data.extend(raw)
+                    self.assertTrue(chunk['eof'])
+                    self.assertEqual(artifact['size'], len(data))
+                    self.assertEqual(artifact['sha256'], hashlib.sha256(data).hexdigest())
+                self.assertIsNone(broker._thread)
+                self.assertTrue(broker.read_only)
+            finally:
+                reader.cli.close_service(broker, None)
+        self.assertEqual(before, (database.read_bytes(), path.read_bytes()))
+        self.assertEqual(originals, {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
+
+    def test_registered_evidence_honors_durable_revocation_during_chunk_read(self):
+        config, path, binding = self.registered_ledger()
+        database = Path(config['broker_root']) / 'jobs.sqlite'
+        owner = Principal('owner', frozenset(TOOL_SCOPES.values()))
+        originals = {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()}
+        with patch.object(reader, 'read_descriptor', return_value=binding), \
+             patch.object(reader, 'verify_release'), patch.object(reader, 'observe_filesystem'):
+            broker = reader.open_reader(path, '/root/synthetic-binding')
+            writer = StateStore(database, config['authority_id'], 'retained-ledger')
+            try:
+                artifact = broker.call('lh_evidence_manifest', {'operation_id': OP}, owner)['artifacts'][0]
+                events = writer.events('job', OP)
+                authorize = broker.evidence.authorize
+                checks = 0
+
+                def revoked_before_return(principal, operation):
+                    nonlocal checks
+                    checks += 1
+                    if checks == 2:
+                        with writer.transaction() as tx:
+                            tx.execute('INSERT INTO revocations(principal,generation) VALUES(?,?)', ('owner', 1))
+                    authorize(principal, operation)
+
+                arguments = dict(artifact_id=artifact['artifact_id'], expected_sha256=artifact['sha256'],
+                                 offset=0, length=65536)
+                with patch.object(broker.evidence, 'authorize', side_effect=revoked_before_return):
+                    with self.assertRaises(JobError) as denied:
+                        broker.call('lh_evidence_read_chunk', arguments, owner)
+                    self.assertEqual('UNAUTHORIZED', denied.exception.code)
+                self.assertEqual(2, checks)
+                with self.assertRaises(JobError) as denied:
+                    broker.call('lh_evidence_read_chunk', arguments, owner)
+                self.assertEqual('UNAUTHORIZED', denied.exception.code)
+                self.assertEqual(events, writer.events('job', OP))
+            finally:
+                writer.close()
+                reader.cli.close_service(broker, None)
+        self.assertEqual(originals, {str(p): p.read_bytes() for p in self.store.rglob('*') if p.is_file()})
 
     def test_policy_byte_change_rejected_before_release_and_ledger(self):
         config, path, binding = self.prepare_ledger()
