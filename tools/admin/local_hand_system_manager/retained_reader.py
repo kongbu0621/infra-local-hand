@@ -27,7 +27,7 @@ from local_hand_jobs.state import StateStore
 from local_hand_jobs.task_session import read_descriptor
 
 SCHEMA = 'local-hand-retained-filesystem/v1'
-# One exact mount and seven selected fields. A valid near-PATH_MAX target can
+# One exact mount and six selected fields. A valid near-PATH_MAX target can
 # exceed 16 KiB after JSON escaping; retain bounded capture with that headroom.
 MOUNT_OUTPUT_LIMIT = 256 * 1024
 MOUNT_TIMEOUT = 5
