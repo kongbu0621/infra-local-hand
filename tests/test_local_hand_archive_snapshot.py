@@ -113,6 +113,19 @@ class SnapshotReadTests(fixtures.BundleFixture, unittest.TestCase):
         self.assertEqual(self.tree(self.output), original)
         self.assertTrue(self.read(output=self.root / "second-read")["content_verified"])
 
+    def test_parent_traversal_output_is_rejected_before_restore(self):
+        parent = self.root / "parent"
+        parent.mkdir(mode=0o700)
+        output = parent / ".." / "readback"
+        original = self.tree(Path(self.snapshot["snapshot_path"]))
+        with mock.patch.object(self.recovery, "restore", wraps=self.recovery.restore) as restore:
+            with self.assertRaises(consumer.ArchiveError) as caught:
+                self.read(output=output)
+            self.assertEqual(caught.exception.code, "INVALID_INPUT")
+            restore.assert_not_called()
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.tree(Path(self.snapshot["snapshot_path"])), original)
+
     def test_error_after_restore_retains_copy_and_allows_fresh_read(self):
         with mock.patch.object(consumer, "_load_version", side_effect=OSError("interrupted read")):
             with self.assertRaises(OSError):

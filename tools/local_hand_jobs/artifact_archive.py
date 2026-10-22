@@ -972,6 +972,10 @@ def read_snapshot_version(*, snapshot, expected_manifest_sha256, artifact_id,
     expected_manifest_sha256 = _digest(expected_manifest_sha256)
     artifact_id, version_id = _identity(artifact_id), _identity(version_id)
     output = Path(output).absolute()
+    # Apply the receipt publisher's path rule before restore can create output.
+    # Do not resolve away components that may traverse a symbolic link.
+    if ".." in output.parts:
+        _fail("Snapshot read output must not contain parent traversal", "INVALID_INPUT")
     config = None if storage_config is None else _decode(_read(storage_config, 16384))
     restored = recovery.restore(snapshot=snapshot, target_dir=output,
         expected_manifest_sha256=expected_manifest_sha256,

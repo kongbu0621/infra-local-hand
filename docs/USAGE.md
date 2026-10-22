@@ -187,7 +187,8 @@ physical paths and mount identity belong in deployment configuration, not task
 inputs. For a supported local snapshot, omit `--storage-config`.
 
 The output parent and scratch directory must already exist on a supported local
-filesystem. The command first restores and verifies a fresh local database; it
+filesystem. Output paths containing `..` are rejected before restoration.
+The command first restores and verifies a fresh local database; it
 never opens SQLite on NAS. It retains `ledger.sqlite`, the Ledger restore response
 in `snapshot-receipt/restore.json`, the five verified files in `evidence/`, and the
 completed read response in `read-receipt/result.json`. Existing output is refused.
