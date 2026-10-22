@@ -171,8 +171,12 @@ the local bundle validation tests still run on Linux.
 public recovery adapter. It preserves the original Artifact/Version and source
 task identities. The adapter resolves the private storage binding and checks the
 mounted target; Local Hand validates the exact evidence version. This path uses
-Ledger `0.2.0a1` recovery APIs, verified with source
-`78d6c5b07d47898083a47ac85d67cc5966b3760b`.
+Ledger `0.2.0a1` recovery APIs. The initial read-back used Ledger source
+`78d6c5b07d47898083a47ac85d67cc5966b3760b`; the reviewed mount-alias isolation
+fix is in local candidate `d83b665760dfc683fb60bccfcf99189ee231dba2`.
+Use the paired fixed Ledger build for that protection. These source identities
+are distinct even though the alpha package version is unchanged; see the
+[review and installation record](DEVELOPMENT.md#gx10-成果的-nas-备份与准确读回2026-10-23).
 
 ```sh
 local-hand-archive read-snapshot \
