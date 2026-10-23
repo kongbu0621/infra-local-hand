@@ -164,6 +164,44 @@ class ResidentTests(unittest.TestCase):
         with self.assertRaises(JobError):self.call('lh_job_submit',self.request)
         self.service.call.assert_not_called()
 
+    def test_same_project_grants_do_not_share_task_access(self):
+        other=Principal('other',self.owner.scopes)
+        self.assertEqual(self.policy.principals['owner'],self.policy.principals['other'])
+        for owner,foreign in ((self.owner,other),(other,self.owner)):
+            request=dict(self.request,operation_id=str(uuid.uuid4()),kind='workspace.edit',
+                inputs=dict(source_ref='source',relative_path='sample.py',expected_sha256='a'*64,
+                            content='print(1)\n',validation_ref='core'))
+            request['request_digest']=request_digest(request)
+            # Both users really have the same project/job grant. Ownership is
+            # the only reason one may not operate the other's accepted task.
+            for principal in (owner,foreign):
+                self.policy.authorize(principal,'lh:submit',request=request)
+            record=dict(self.record,operation_id=request['operation_id'],request=request,
+                        principal_id=owner.principal_id)
+            self.lookup.return_value=record
+            operations=(('lh_job_submit',request),
+                ('lh_job_status',dict(operation_id=request['operation_id'])),
+                ('lh_job_cancel',dict(operation_id=request['operation_id'],
+                    expected_request_digest=request['request_digest'],target={'kind':'job'})),
+                ('lh_evidence_manifest',dict(operation_id=request['operation_id'])))
+            for state in ('PREPARING','READY'):
+                record['state']=state
+                for name,args in operations:
+                    with self.subTest(owner=owner.principal_id,state=state,tool=name):
+                        with self.assertRaises(JobError) as caught:self.call(name,args,foreign)
+                        self.assertEqual('UNAUTHORIZED',caught.exception.code)
+            self.service.call.assert_not_called();self.local.assert_not_called()
+            self.factory.assert_not_called();self.reader.call.assert_not_called()
+            self.reader.cancel.assert_not_called()
+        # A refreshed connection mapping to the same stable principal still
+        # reaches its own controller after the refusals.
+        owner=Principal(owner.principal_id,owner.scopes)
+        self.service.call.return_value={'state':'RUNNING'}
+        for name,args in operations:
+            self.local.return_value={'artifacts':[]} if name=='lh_evidence_manifest' else {'owned':True}
+            self.assertEqual(self.local.return_value,self.call(name,args,owner))
+            self.local.assert_called_with(Path(self.policy.broker_root)/'maintenance.sock',name,args,timeout=3)
+
     def test_uncertain_submission_is_followed_by_read_of_same_task(self):
         self.service.call.side_effect=[{'state':'IDLE'},{'state':'RUNNING'},{'state':'RUNNING'}]
         self.local.side_effect=[JobError('IO_UNCERTAIN','lost response'),{'outcome':'SUCCEEDED'}]
@@ -611,6 +649,67 @@ class PreparationTests(unittest.TestCase):
     def test_unknown_principal_rejected_before_task_files(self):
         with self.assertRaises(JobError):self.service.call(dict(self.args,principal_id='other'))
         self.assertEqual([],list(Path(self.config['private_root']).iterdir()))
+
+    def test_shared_project_does_not_grant_another_users_task_after_restart(self):
+        self.config['principals'].append('other')
+        self.config['workspace']=dict(sources={'project':dict(blobs={'sample.py':'b'*40},
+            validations={'core':['test_sample']})})
+        inputs=dict(source_ref='project',relative_path='sample.py',expected_sha256='a'*64,
+            content='VALUE=2\n',validation_ref='core')
+        prepare=dict(self.args,kind='workspace.edit',inputs=inputs)
+        record=self.ready_record();record['request'].update(kind='workspace.edit',inputs=inputs)
+        self.service._save(record)
+        status=dict(action='status',operation_id=record['operation_id'],principal_id='owner')
+        start=dict(status,action='start',request_digest='a'*64)
+        def files():
+            return {str(path.relative_to(self.temp.name)):path.read_bytes()
+                    for path in Path(self.temp.name).rglob('*') if path.is_file()}
+        before=files();records=copy.deepcopy(self.service.records)
+        for restarted in (False,True):
+            service=admin.ResidentService(self.config) if restarted else self.service
+            with self.subTest(restarted=restarted), \
+                 patch.object(service,'execution_state',return_value='IDLE') as execution, \
+                 patch.object(service,'_launcher') as launcher, \
+                 patch.object(service,'_prepare_worker') as worker:
+                # Both principals may use this project. Knowing the exact
+                # request and operation UUID still grants no task authority.
+                for request in (prepare,dict(prepare,retry_failed=True),
+                                dict(prepare,allow_new=False),status,start):
+                    with self.subTest(action=request['action'],request=request),self.assertRaises(JobError) as caught:
+                        service.call(dict(request,principal_id='other'))
+                    self.assertEqual('UNAUTHORIZED',caught.exception.code)
+                execution.assert_not_called();launcher.assert_not_called();worker.assert_not_called()
+                self.assertEqual(records,service.records);self.assertEqual(before,files())
+                self.assertEqual(record['request'],service.call(prepare)['request'])
+                self.assertEqual({'state':'IDLE'},service.call(status))
+                if restarted:
+                    launcher.return_value.start.return_value='RUNNING'
+                    self.assertEqual({'state':'RUNNING'},service.call(start))
+                    launcher.return_value.start.assert_called_once()
+                else:launcher.assert_not_called()
+                worker.assert_not_called()
+
+    def test_other_admitted_user_cannot_recover_or_retry_an_owned_preparation(self):
+        self.config['principals'].append('other')
+        record=self.ready_record();Path(record['attempt']).mkdir()
+        for state in ('PREPARING','FAILED'):
+            record=dict(record,state=state)
+            self.service._save(record)
+            before={str(path):path.read_bytes() for path in Path(self.temp.name).rglob('*') if path.is_file()}
+            with self.subTest(state=state), \
+                 patch.object(self.service,'_preparation_active') as active, \
+                 patch.object(self.service,'_ready') as ready, \
+                 patch.object(self.service,'_prepare_worker') as worker:
+                for retry in (False,True):
+                    with self.assertRaises(JobError) as caught:
+                        request=dict(self.args,principal_id='other')
+                        if retry:request['retry_failed']=True
+                        self.service.call(request)
+                    self.assertEqual('UNAUTHORIZED',caught.exception.code)
+                active.assert_not_called();ready.assert_not_called();worker.assert_not_called()
+                self.assertEqual(record,self.service.records[record['operation_id']])
+                self.assertEqual(before,{str(path):path.read_bytes()
+                    for path in Path(self.temp.name).rglob('*') if path.is_file()})
 
     def test_failed_execution_waiter_blocks_new_work_until_controller_exit_is_observed(self):
         original=self.ready_record();output=Path(original['output']);output.mkdir(parents=True)

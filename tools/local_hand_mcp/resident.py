@@ -101,6 +101,15 @@ class ResidentBroker:
         for path in (None, *self.config['retained']):
             reader = self.retained if path is None else self._reader(path)
             try:
+                if name in {'lh_job_status', 'lh_evidence_manifest'}:
+                    if reader.state.get('job', args['operation_id']) is None:
+                        raise JobError('NOT_FOUND', 'Task is not in this retained ledger')
+                if name == 'lh_evidence_read_chunk' and reader.evidence is not None:
+                    # Select the exact artifact before applying an unrelated
+                    # historical policy that may predate this principal. Only
+                    # a missing artifact permits trying another reader; the
+                    # selected reader still enforces all current authorization.
+                    reader.evidence.owner_of(args['artifact_id'])
                 if name == 'lh_job_cancel':
                     # Retained readers can acknowledge an already terminal
                     # target; they cannot write a new cancellation or execute.
