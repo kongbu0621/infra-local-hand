@@ -84,6 +84,25 @@ class FirstNodeProbeTests(unittest.TestCase):
         self.assertIn("unavailable_after_collection", str(raised.exception))
         self.assertNotIn("success", str(raised.exception))
 
+    def test_existing_response_does_not_prove_the_worker_is_still_active(self):
+        response = dict(sequence=1, pid=123)
+        for state in (dict(ActiveState="failed", MainPID="0"),
+                      dict(ActiveState="inactive", MainPID="0"),
+                      dict(ActiveState="deactivating", MainPID="123"),
+                      dict(LoadState="not-found", ActiveState="inactive", MainPID="0"),
+                      dict(ActiveState="active", MainPID="456")):
+            with self.subTest(state=state), patch.object(probe, "read_json", return_value=response), \
+                 patch.object(probe, "show", return_value=state), self.assertRaises(RuntimeError):
+                probe.await_file(Path("/unused/response.json"), unit="lhp1aaaaaaaaaaaas0.service")
+
+    def test_response_waits_for_active_unit_and_records_the_observation(self):
+        active = dict(ActiveState="active", MainPID="123", InvocationID="a" * 32, ControlGroup="/fixture")
+        with patch.object(probe, "read_json", return_value=dict(sequence=1, pid=123)), \
+             patch.object(probe, "show", side_effect=[dict(ActiveState="activating", MainPID="123"), active]), \
+             patch.object(probe.time, "sleep"):
+            result = probe.await_file(Path("/unused/response.json"), unit="lhp1aaaaaaaaaaaas0.service")
+        self.assertEqual(dict(unit="lhp1aaaaaaaaaaaas0.service", **active), result["unit_observation"])
+
     def test_ready_requires_all_credentials_and_caps_to_be_dropped(self):
         ready = dict(uid=700000, gid=700000, uids=[700000] * 4, gids=[700000] * 4,
                      groups=[], no_new_privs="1", pid=123,
@@ -194,15 +213,24 @@ class FirstNodeProbeTests(unittest.TestCase):
     def test_probe_pipeline_binds_every_response_and_cleans_up(self):
         # Run the real coordinator, replacing only privileged/worker interfaces.
         # Late responses must not satisfy a different worker or command.
-        for corruption in (None, (1, "pid"), (2, "uid"), (3, "pid")):
+        for corruption in (None, (1, "pid"), (2, "uid"), (3, "pid"),
+                           (0, "readiness"), (0, "stop")):
             with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)
                 token = "lhp1aaaaaaaaaaaa"
                 def mapped_path(value):
                     return base if str(value) == "/run" else Path(value)
                 def ready(unit, own, uid):
+                    if corruption == (0, "readiness") and own.name == "2":
+                        raise RuntimeError("third worker failed during readiness")
                     return dict(pid=200 if "r0" in unit else 100 + int(own.name), uid=uid,
                                 cgroup="/" + token + ".slice/" + unit)
+                def show(unit):
+                    if unit.endswith(".slice"):
+                        return {"ControlGroup": "/" + token + ".slice"}
+                    return dict(ActiveState="inactive" if corruption == (0, "stop") else "active",
+                                MainPID="0" if corruption == (0, "stop") else "100",
+                                ControlGroup="/" + token + ".slice/" + unit)
                 def response(path, predicate=lambda value: True, **kwargs):
                     number = int(path.parent.name)
                     command = probe.read_json(base / token / (str(number) + ".command.json"))
@@ -224,7 +252,7 @@ class FirstNodeProbeTests(unittest.TestCase):
                      patch.object(probe, "choose_uids", return_value=list(range(700000, 700005))), \
                      patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 0, "", "")), \
                      patch.object(probe, "verify_ready", side_effect=ready), \
-                     patch.object(probe, "show", return_value={"ControlGroup": "/" + token + ".slice"}), \
+                     patch.object(probe, "show", side_effect=show), \
                      patch.object(probe, "cgroup_limits", return_value={"memory.max": str(512 * 1024**2),
                                   "memory.swap.max": "0", "pids.max": "24", "cpu.max": "50000 100000"}), \
                      patch.object(probe, "stopped", return_value=True), \
@@ -237,6 +265,8 @@ class FirstNodeProbeTests(unittest.TestCase):
                 self.assertFalse((base / token).exists())
                 if not corruption:
                     self.assertEqual(10, len(result["observations"]))
+                if corruption == (0, "readiness"):
+                    self.assertEqual([100, 101], [item["pid"] for item in result["identities"]])
 
     def test_collected_unit_still_checks_original_cgroup(self):
         unit = "lhp1aaaaaaaaaaaas0.service"

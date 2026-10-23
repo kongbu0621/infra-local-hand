@@ -247,22 +247,34 @@ def service_command(unit, slice_name, root, number, uid):
             "--worker", str(root), str(number)]
 
 
+def active_observation(unit, state, pid):
+    if (type(pid) is not int or pid <= 0 or state.get("ActiveState") != "active"
+            or state.get("MainPID") != str(pid)):
+        raise RuntimeError("fixture is not the expected active process: " + unit)
+    return dict(unit=unit, **state)
+
+
 def await_file(path, predicate=lambda value: True, *, unit=None):
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
+        matched = False
         try:
             value = read_json(path, 65536)
-            if predicate(value):
-                return value
+            matched = predicate(value)
         except FileNotFoundError:
             pass
         if unit is not None:
             state = show(unit)
-            if state.get("ActiveState") in {"inactive", "failed"} or state.get("LoadState") == "not-found":
+            if state.get("ActiveState") in {"inactive", "failed", "deactivating"} or state.get("LoadState") == "not-found":
                 if state.get("LoadState") == "not-found":
                     # Collected units expose synthetic defaults, not exit proof.
                     state = {"LoadState": "not-found", "exit_status": "unavailable_after_collection"}
-                raise RuntimeError("fixture exited before response: " + json.dumps(dict(unit=unit, **state)))
+                raise RuntimeError("fixture not active while awaiting response: " + json.dumps(dict(unit=unit, **state)))
+            if matched and state.get("ActiveState") == "active":
+                value["unit_observation"] = active_observation(unit, state, value["pid"])
+                return value
+        elif matched:
+            return value
         time.sleep(0.05)
     raise TimeoutError("fixture response missing: " + str(path))
 
@@ -343,7 +355,9 @@ def probe():
         uids = choose_uids()
         if len(uids) != 5:
             raise RuntimeError("no five unused fixture identities")
-        identities = []
+        # Preserve each completed observation even if a later launch fails and
+        # its fixture files can safely be removed.
+        identities = result["identities"] = []
         for number, uid in enumerate(uids):
             own = root / "tasks" / str(number)
             own.mkdir(mode=0o700)
@@ -357,7 +371,6 @@ def probe():
                 run(["/usr/bin/systemctl", "set-property", "--runtime", slice_name,
                      "MemoryMax=" + str(PARENT_MEMORY_BYTES), "MemorySwapMax=0", "TasksMax=24", "CPUQuota=50%"])
             identities.append(verify_ready(unit, own, uid))
-        result["identities"] = identities
         result["parent_limits"] = cgroup_limits(show(slice_name)["ControlGroup"])
         parent = result["parent_limits"]
         cpu, period = map(int, parent["cpu.max"].split())
@@ -372,6 +385,7 @@ def probe():
             observation = await_file(root / "tasks" / str(number) / "response.json", unit=units[number])
             verify_observation(observation, identities[number], 1)
             result["observations"].append(observation)
+        result["before_stop"] = active_observation(units[0], show(units[0]), identities[0]["pid"])
         run(["/usr/bin/systemctl", "stop", units[0]])
         if not stopped(units[0]):
             raise ValueError("cancelled fixture exit not proven")

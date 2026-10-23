@@ -40,6 +40,11 @@ The probe records real kernel identities and limits, own-file/socket positive
 controls, foreign-file/socket permission refusals and management-socket refusal.
 Every response is bound to the expected PID, UID and command sequence, and must
 contain exactly four file and four socket refusals with integer errno values.
+An existing response file alone is insufficient: the service must still be
+active with that PID when the coordinator observes it. That service observation
+is included in the response record; a still-activating service is awaited within
+the existing deadline. Before the stop check, the original worker must again
+be observed active, so an already exited worker cannot satisfy that check.
 It stops one worker and checks that the other four still answer under their
 original PIDs. Before reusing the stopped worker's UID, it moves that worker's
 files beneath a root-only retained directory; the new worker must be unable to
@@ -50,6 +55,9 @@ Launcher stderr is retained in root-private fixture files (at most 64 KiB each)
 and copied into a failed report before cleanup. A collected or failed launcher
 causes an immediate failure instead of waiting for a missing readiness file;
 exit code alone does not establish its cause.
+Completed identity observations are retained incrementally if a later worker
+fails to start or become ready. Old reports without live service observations
+cannot retrospectively establish this additional observation-time check.
 
 Only fixture units are stopped/reverted. Original fixture cgroups and their
 parent slice must be empty or absent before generated files are removed or
