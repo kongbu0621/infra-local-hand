@@ -151,8 +151,11 @@ commit. Keep the whole store and retain failed attempts.
 
 `read` needs only the store and explicit IDs. It verifies the actual bytes and
 source bindings, then returns the original evidence files and `source.json`.
-JSON responses use UTF-8 on stdout; errors retain the relevant Ledger `commit_state`
-where known. Archival success concerns preservation and read-back, not new
+JSON responses use UTF-8 on stdout. The read-only commands `read`, `read-snapshot`
+and `recovery-checkpoint` use `commit_state=not_applicable` on errors because they
+never submit an archive transaction; local output may still have been published.
+Other commands retain the relevant Ledger `commit_state` where known.
+Archival success concerns preservation and read-back, not new
 authentication, task execution, validation execution or knowledge admission.
 Output delivery can fail after work has completed. A nonzero exit or missing
 response does not prove that nothing was saved: retain the original store or

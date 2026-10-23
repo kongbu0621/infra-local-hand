@@ -1088,15 +1088,18 @@ def main(argv=None):
                   "bind-filesystem": bind_filesystem, "recovery-checkpoint": recovery_checkpoint,
                   "bind-restored": bind_restored, "read-snapshot": read_snapshot_version}[command](**args)
     except Exception as error:
-        # Snapshot reads never submit an A1 transaction. Their local restore
-        # publication is a separate state, retained below when Ledger supplies it.
-        snapshot_read = command == "read-snapshot"
-        fallback = ("Snapshot read failed; retain any local output and inspect it before reading into a new directory"
-                    if snapshot_read else
-                    "Local archive failed; retain the store and reconcile the original request")
+        # These consumers never submit an A1 transaction. A failed read can
+        # still leave local output; it does not make an archive commit unknown.
+        # Preserve Ledger's separate restore publication state when supplied.
+        read_only = command in {"read", "read-snapshot", "recovery-checkpoint"}
+        fallback = {
+            "read-snapshot": "Snapshot read failed; retain any local output and inspect it before reading into a new directory",
+            "read": "Archive read failed; retain any local output and inspect it before reading into a new directory",
+            "recovery-checkpoint": "Recovery checkpoint read failed; retain the original store and retry after resolving the read failure",
+        }.get(command, "Local archive failed; retain the store and reconcile the original request")
         # Other commands can fail after a commit; preserve their original state.
         result = dict(status="ERROR", code=getattr(error, "code", "UNCONFIRMED"),
-                      commit_state="not_applicable" if snapshot_read else getattr(error, "commit_state", "unknown"),
+                      commit_state="not_applicable" if read_only else getattr(error, "commit_state", "unknown"),
                       message=str(error) if isinstance(error, (ArchiveError, LocalHandError, JobError))
                       or hasattr(error, "commit_state") or hasattr(error, "publication_state")
                       else fallback)

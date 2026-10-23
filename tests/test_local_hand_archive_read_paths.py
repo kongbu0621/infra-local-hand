@@ -1,5 +1,5 @@
 """Archive read output isolation across Linux mount views and real CLI use."""
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stdout
 import errno
 import io
 import json
@@ -137,7 +137,7 @@ class ReadPathTests(unittest.TestCase):
                 mock.patch.object(paths, "_mount_id", side_effect=[1, 2, 1, 3]):
             self.assert_rejected("IO_UNCERTAIN")
 
-    def test_projected_identity_uses_visible_object_and_only_missing_is_absent(self):
+    def test_projected_identity_accepts_proven_missing_or_regular_file_views(self):
         child = self.source / "可见 子目录"
         child.mkdir(mode=0o777)
         child.chmod(0o777)  # Observing another object is not permission to write it.
@@ -147,10 +147,22 @@ class ReadPathTests(unittest.TestCase):
         self.assertIsNone(paths._projected_identity(self.source_fd, ("absent",)))
         (self.source / "link").symlink_to(child, target_is_directory=True)
         (self.source / "file").write_text("not a directory")
-        for name in ("link", "file"):
-            with self.subTest(name=name), self.assertRaises(OSError):
-                paths._projected_identity(self.source_fd, (name,))
+        self.assertIsNone(paths._projected_identity(self.source_fd, ("file",)))
+        self.assertIsNone(paths._projected_identity(self.source_fd, ("file", "hidden-child")))
+        with self.assertRaises(OSError):
+            paths._projected_identity(self.source_fd, ("link",))
         # The caller's held FD survives success and every rejected projection.
+        self.assertEqual(os.fstat(self.source_fd).st_ino, self.source_info.st_ino)
+
+    def test_unobservable_non_directory_type_is_not_proof_of_separation(self):
+        (self.source / "file").write_text("visible regular file")
+        for error_number in (errno.EACCES, errno.EIO):
+            with self.subTest(errno=error_number), \
+                    mock.patch.object(paths.os, "stat", side_effect=OSError(error_number, "unobservable")) as stat:
+                with self.assertRaises(OSError) as caught:
+                    paths._projected_identity(self.source_fd, ("file", "hidden-child"))
+                self.assertEqual(caught.exception.errno, error_number)
+                self.assertEqual(stat.call_args.kwargs["follow_symlinks"], False)
         self.assertEqual(os.fstat(self.source_fd).st_ino, self.source_info.st_ino)
 
     def test_proc_reads_are_bounded_even_for_zero_reported_size(self):
@@ -212,6 +224,92 @@ class ArchiveReadPathIntegrationTests(fixtures.BundleFixture, unittest.TestCase)
         return consumer.read_version(self.store, artifact_id=self.archived["artifact_id"],
                                      version_id=self.archived["version_id"], output=self.output)
 
+    def cli(self):
+        response = io.StringIO()
+        arguments = ["read", "--store", str(self.store), "--artifact-id", self.archived["artifact_id"],
+                     "--version-id", self.archived["version_id"], "--output", str(self.output)]
+        with redirect_stdout(response):
+            code = consumer.main(arguments)
+        return code, json.loads(response.getvalue())
+
+    def test_projection_close_failure_is_read_uncertainty_and_can_continue(self):
+        hidden = self.store / "hidden"
+        hidden.mkdir(mode=0o700)
+        parent = self.root / "independent-parent"
+        parent.mkdir(mode=0o700)
+        self.output = parent / "readback"
+        device = self.store.stat().st_dev
+        records = {
+            1: dict(device=(os.major(device), os.minor(device)), root=Path("/"), point=Path("/")),
+            2: dict(device=(os.major(device), os.minor(device)), root=hidden, point=parent),
+        }
+        duplicate, close = os.dup, os.close
+        observed = dict(fd=None, calls=0, injected=False)
+        def duplicate_projection(fd):
+            result = duplicate(fd)
+            observed["fd"] = result
+            return result
+        def fail_close_after_release(fd):
+            if fd == observed["fd"]:
+                observed["calls"] += 1
+                if not observed["injected"]:
+                    close(fd)
+                    observed["injected"] = True
+                    raise OSError(errno.EIO, "close failed after releasing the descriptor")
+            return close(fd)
+        def mount_id(fd):
+            return 1 if Path(os.readlink(f"/proc/self/fd/{fd}")) == self.store else 2
+        before = self.tree()
+        descriptors = set(os.listdir("/proc/self/fd"))
+        with mock.patch.object(paths, "_mounts", return_value=records), \
+                mock.patch.object(paths, "_mount_id", side_effect=mount_id), \
+                mock.patch.object(paths.os, "dup", side_effect=duplicate_projection), \
+                mock.patch.object(paths.os, "close", side_effect=fail_close_after_release):
+            code, response = self.cli()
+        self.assertEqual(code, 1)
+        self.assertEqual(response["code"], "IO_UNCERTAIN")
+        self.assertTrue(observed["injected"])
+        self.assertEqual(observed["calls"], 1)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(self.read()["status"], "READ")
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(response["commit_state"], "not_applicable")
+
+    def test_failure_after_output_publication_does_not_claim_an_archive_commit(self):
+        before = self.tree()
+        publish = consumer._publish_files
+        def published_then_failed(*args, **kwargs):
+            publish(*args, **kwargs)
+            raise OSError(errno.EIO, "late output completion failure")
+        with mock.patch.object(consumer, "_publish_files", side_effect=published_then_failed):
+            code, response = self.cli()
+        self.assertEqual(code, 1)
+        retained = {p.name: p.read_bytes() for p in self.output.iterdir()}
+        self.assertEqual(set(retained), set(consumer.LIMITS))
+        for name, raw in self.raw.items():
+            self.assertEqual(retained[name], raw)
+        self.assertEqual(self.tree(), before)
+        self.output = self.root / "later-read"
+        self.assertEqual(self.read()["status"], "READ")
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(response["commit_state"], "not_applicable")
+        self.assertNotIn("reconcile the original request", response["message"])
+
+    def test_existing_read_output_is_preserved_without_unknown_commit_state(self):
+        self.read()
+        before = self.tree()
+        retained = {p.name: p.read_bytes() for p in self.output.iterdir()}
+        code, response = self.cli()
+        self.assertEqual(code, 1)
+        self.assertEqual({p.name: p.read_bytes() for p in self.output.iterdir()}, retained)
+        self.assertEqual(self.tree(), before)
+        self.output = self.root / "another-read"
+        self.assertEqual(self.read()["status"], "READ")
+        self.assertEqual(response["commit_state"], "not_applicable")
+        self.assertNotIn("reconcile the original request", response["message"])
+
     def test_real_cli_reads_exact_evidence_without_changing_store(self):
         before = self.tree()
         script = ("import sys; sys.path.insert(0, sys.argv.pop(1)); "
@@ -255,6 +353,18 @@ class ArchiveReadPathIntegrationTests(fixtures.BundleFixture, unittest.TestCase)
         self.assertFalse(self.output.exists())
         self.assertEqual(self.tree(), before)
         self.assertEqual(consumer.recovery_checkpoint(self.store), checkpoint)
+
+
+class ReadOnlyFailureCLITests(unittest.TestCase):
+    def test_checkpoint_io_failure_has_no_archive_commit_to_reconcile(self):
+        captured = io.StringIO()
+        with mock.patch.object(consumer, "recovery_checkpoint", side_effect=OSError(errno.EIO, "read failed")), \
+                redirect_stdout(captured):
+            code = consumer.main(["recovery-checkpoint", "--store", "unused"])
+        response = json.loads(captured.getvalue())
+        self.assertEqual(code, 1)
+        self.assertEqual(response["commit_state"], "not_applicable")
+        self.assertNotIn("reconcile the original request", response["message"])
 
 
 if __name__ == "__main__":

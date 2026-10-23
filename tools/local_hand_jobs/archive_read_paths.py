@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import stat
 
 from .evidence import _close_descriptors
 
@@ -79,6 +80,14 @@ def _projected_identity(source_fd, relative_parts):
             except FileNotFoundError:
                 # A higher mount can hide a lower view, including its children.
                 return None
+            except NotADirectoryError:
+                # O_NOFOLLOW | O_DIRECTORY can return ENOTDIR for both a file
+                # and a symlink. Only a confirmed ordinary file proves that
+                # this hidden projection cannot expose the output directory.
+                info = os.stat(component, dir_fd=directory, follow_symlinks=False)
+                if stat.S_ISREG(info.st_mode):
+                    return None
+                raise
             previous, directory = directory, nxt
             _close_descriptors(previous)
         info = os.fstat(directory)
