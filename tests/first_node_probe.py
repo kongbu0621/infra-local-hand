@@ -59,7 +59,7 @@ def run(argv, *, check=True):
 
 def show(unit):
     result = run(["/usr/bin/systemctl", "show", unit, "--no-pager",
-                  "-p", "LoadState", "-p", "ActiveState", "-p", "MainPID",
+                  "-p", "LoadState", "-p", "ActiveState", "-p", "MainPID", "-p", "ControlPID", "-p", "Job",
                   "-p", "ControlGroup", "-p", "InvocationID", "-p", "Result",
                   "-p", "ExecMainCode", "-p", "ExecMainStatus"], check=False)
     fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
@@ -318,13 +318,22 @@ def verify_observation(result, identity, sequence, *, retained=False):
     assert_access(result, retained=retained)
 
 
+def quiescent(state, group, *, service):
+    """No pending manager operation or process may outlive the exit proof."""
+    if (state.get("LoadState") not in {"loaded", "not-found"}
+            or state.get("ActiveState") not in {"inactive", "failed"}
+            or state.get("Job") not in {"", "0"}
+            or state.get("ControlGroup") not in {"", group}):
+        return False
+    return not service or state.get("MainPID") == state.get("ControlPID") == "0"
+
+
 def stopped(unit):
     state = show(unit)
-    if state.get("ActiveState") not in {"inactive", "failed"} or state.get("MainPID") not in {None, "0"}:
-        return False
     # Observe the original fixture cgroup even if --collect removed the unit.
-    group = state.get("ControlGroup") or "/" + unit[:16] + ".slice/" + unit
-    return cgroup_empty(group)
+    # A different observed cgroup cannot replace that original exit boundary.
+    group = "/" + unit[:16] + ".slice/" + unit
+    return quiescent(state, group, service=True) and cgroup_empty(group)
 
 
 def probe():
@@ -444,8 +453,11 @@ def probe():
         if clean:
             try:
                 run(["/usr/bin/systemctl", "stop", slice_name], check=False)
+                result["cleanup"]["parent_unit"] = show(slice_name)
+                result["cleanup"]["parent_quiescent"] = quiescent(
+                    result["cleanup"]["parent_unit"], "/" + slice_name, service=False)
                 result["cleanup"]["parent_empty"] = cgroup_empty("/" + slice_name)
-                if not result["cleanup"]["parent_empty"]:
+                if not (result["cleanup"]["parent_quiescent"] and result["cleanup"]["parent_empty"]):
                     raise RuntimeError("fixture parent exit not proven")
                 if parent_configured:
                     run(["/usr/bin/systemctl", "revert", slice_name])

@@ -169,13 +169,14 @@ class FirstNodeProbeTests(unittest.TestCase):
 
     def test_missing_controller_files_do_not_prove_cgroup_exit(self):
         with tempfile.TemporaryDirectory() as directory:
-            group = Path(directory) / "fixture"
-            group.mkdir()
+            group = Path(directory) / "lhp1aaaaaaaaaaaa.slice" / "lhp1aaaaaaaaaaaas0.service"
+            group.mkdir(parents=True)
             events = group / "cgroup.events"
             def mapped_path(value):
                 return Path(directory + value.removeprefix("/sys/fs/cgroup")) if str(value).startswith("/sys/fs/cgroup") else Path(value)
             with patch.object(probe, "Path", side_effect=mapped_path), \
-                 patch.object(probe, "show", return_value=dict(ActiveState="inactive", MainPID="0", ControlGroup="/fixture")):
+                 patch.object(probe, "show", return_value=dict(LoadState="loaded", ActiveState="inactive",
+                      MainPID="0", ControlPID="0", Job="", ControlGroup="")):
                 events.write_text("populated 1\n")
                 self.assertFalse(probe.stopped("lhp1aaaaaaaaaaaas0.service"))
                 events.unlink()
@@ -205,16 +206,68 @@ class FirstNodeProbeTests(unittest.TestCase):
                  patch.object(probe.os, "geteuid", return_value=0), \
                  patch.object(probe.uuid, "uuid4", return_value=SimpleNamespace(hex="a" * 32)), \
                  patch.object(probe.socket, "socket"), patch.object(probe, "choose_uids", return_value=[]), \
+                 patch.object(probe, "show", return_value=dict(LoadState="loaded", ActiveState="inactive",
+                                                               Job="", ControlGroup="")), \
                  patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 1, "", "stop failed")):
                 result = probe.probe()
             self.assertEqual("CLEANUP_UNCERTAIN", result["status"])
             self.assertTrue((base / "run" / "lhp1aaaaaaaaaaaa").is_dir())
 
+    def test_pending_parent_job_preserves_empty_fixture(self):
+        # A currently empty slice may still have a queued start; do not remove
+        # its limits or files merely because it has no processes at this instant.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            def mapped_path(value):
+                return base if str(value) == "/run" else Path(value)
+            with patch.object(probe, "Path", side_effect=mapped_path), \
+                 patch.object(probe.os, "getuid", return_value=0), \
+                 patch.object(probe.os, "geteuid", return_value=0), \
+                 patch.object(probe.uuid, "uuid4", return_value=SimpleNamespace(hex="a" * 32)), \
+                 patch.object(probe.socket, "socket"), patch.object(probe, "choose_uids", return_value=[]), \
+                 patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 1, "", "stop failed")), \
+                 patch.object(probe, "cgroup_empty", return_value=True), \
+                 patch.object(probe, "show", return_value=dict(LoadState="loaded", ActiveState="inactive",
+                                                               Job="47", ControlGroup="")):
+                result = probe.probe()
+            self.assertEqual("CLEANUP_UNCERTAIN", result["status"])
+            self.assertTrue((base / "lhp1aaaaaaaaaaaa").is_dir())
+
+    def test_stopped_requires_complete_idle_unit_and_original_cgroup(self):
+        unit = "lhp1aaaaaaaaaaaas0.service"
+        group = "/lhp1aaaaaaaaaaaa.slice/" + unit
+        good = dict(LoadState="loaded", ActiveState="inactive", MainPID="0",
+                    ControlPID="0", Job="", ControlGroup=group)
+        invalid = [dict(good, Job="47"), dict(good, ControlPID="101"),
+                   dict(good, ControlGroup="/another-empty-group"), dict(good, LoadState="error")]
+        invalid += [{key: value for key, value in good.items() if key != missing}
+                    for missing in ("MainPID", "ControlPID", "Job", "LoadState", "ControlGroup")]
+        for state in invalid:
+            with self.subTest(state=state), patch.object(probe, "show", return_value=state), \
+                 patch.object(probe, "cgroup_empty", return_value=True):
+                self.assertFalse(probe.stopped(unit))
+        for state in (good, dict(good, LoadState="not-found", ControlGroup=""), dict(good, Job="0")):
+            with self.subTest(state=state), patch.object(probe, "show", return_value=state), \
+                 patch.object(probe, "cgroup_empty", return_value=True) as empty:
+                self.assertTrue(probe.stopped(unit))
+                empty.assert_called_once_with(group)
+
+    def test_stop_observation_requests_job_and_control_process(self):
+        unit = "lhp1aaaaaaaaaaaas0.service"
+        def reply(argv, **kwargs):
+            values = dict(LoadState="loaded", ActiveState="inactive", MainPID="0", ControlPID="101",
+                          Job="47", ControlGroup="", InvocationID="a" * 32, Result="success",
+                          ExecMainCode="0", ExecMainStatus="0")
+            requested = [argv[i + 1] for i, item in enumerate(argv) if item == "-p"]
+            return subprocess.CompletedProcess(argv, 0, "".join(key + "=" + values[key] + "\n" for key in requested), "")
+        with patch.object(probe, "run", side_effect=reply), patch.object(probe, "cgroup_empty", return_value=True):
+            self.assertFalse(probe.stopped(unit))
+
     def test_probe_pipeline_binds_every_response_and_cleans_up(self):
         # Run the real coordinator, replacing only privileged/worker interfaces.
         # Late responses must not satisfy a different worker or command.
         for corruption in (None, (1, "pid"), (2, "uid"), (3, "pid"),
-                           (0, "readiness"), (0, "stop")):
+                           (0, "readiness"), (0, "stop"), (0, "parent")):
             with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)
                 token = "lhp1aaaaaaaaaaaa"
@@ -227,7 +280,8 @@ class FirstNodeProbeTests(unittest.TestCase):
                                 cgroup="/" + token + ".slice/" + unit)
                 def show(unit):
                     if unit.endswith(".slice"):
-                        return {"ControlGroup": "/" + token + ".slice"}
+                        return dict(LoadState="loaded", ActiveState="inactive", Job="47" if corruption == (0, "parent") else "",
+                                    ControlGroup="/" + token + ".slice")
                     return dict(ActiveState="inactive" if corruption == (0, "stop") else "active",
                                 MainPID="0" if corruption == (0, "stop") else "100",
                                 ControlGroup="/" + token + ".slice/" + unit)
@@ -250,7 +304,7 @@ class FirstNodeProbeTests(unittest.TestCase):
                      patch.object(probe.os, "chown"), patch.object(probe.socket, "socket"), \
                      patch.object(probe.uuid, "uuid4", return_value=SimpleNamespace(hex="a" * 32)), \
                      patch.object(probe, "choose_uids", return_value=list(range(700000, 700005))), \
-                     patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 0, "", "")), \
+                     patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as commands, \
                      patch.object(probe, "verify_ready", side_effect=ready), \
                      patch.object(probe, "show", side_effect=show), \
                      patch.object(probe, "cgroup_limits", return_value={"memory.max": str(512 * 1024**2),
@@ -259,6 +313,13 @@ class FirstNodeProbeTests(unittest.TestCase):
                      patch.object(probe, "cgroup_empty", return_value=True), \
                      patch.object(probe, "await_file", side_effect=response):
                     result = probe.probe()
+                if corruption == (0, "parent"):
+                    self.assertEqual("CLEANUP_UNCERTAIN", result["status"])
+                    self.assertFalse(result["cleanup"]["parent_quiescent"])
+                    self.assertTrue(result["cleanup"]["parent_empty"])
+                    self.assertTrue((base / token).is_dir())
+                    self.assertFalse(any("revert" in call.args[0] for call in commands.call_args_list))
+                    continue
                 self.assertEqual("FAILED" if corruption else "PASS", result["status"])
                 self.assertTrue(result["cleanup"]["parent_empty"])
                 self.assertTrue(result["cleanup"]["fixture_removed"])
@@ -270,7 +331,8 @@ class FirstNodeProbeTests(unittest.TestCase):
 
     def test_collected_unit_still_checks_original_cgroup(self):
         unit = "lhp1aaaaaaaaaaaas0.service"
-        with patch.object(probe, "show", return_value=dict(ActiveState="inactive", MainPID="0", ControlGroup="")), \
+        with patch.object(probe, "show", return_value=dict(LoadState="not-found", ActiveState="inactive",
+                     MainPID="0", ControlPID="0", Job="", ControlGroup="")), \
              patch.object(probe, "cgroup_empty", return_value=False) as empty:
             self.assertFalse(probe.stopped(unit))
             empty.assert_called_once_with("/lhp1aaaaaaaaaaaa.slice/" + unit)

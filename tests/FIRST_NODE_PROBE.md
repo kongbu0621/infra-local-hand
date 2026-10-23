@@ -63,6 +63,12 @@ Only fixture units are stopped/reverted. Original fixture cgroups and their
 parent slice must be empty or absent before generated files are removed or
 parent limits reverted. A missing controller file does not prove cgroup absence;
 an existing group without readable exit evidence remains uncertain.
+Exit checks also require complete manager fields, no pending unit job, and zero
+main/control PIDs for services. The returned `ControlGroup` path must be empty
+or match the fixed original fixture path; another empty group cannot substitute for it.
+The parent slice's manager state and quiescence check are recorded separately
+from its current cgroup population. An empty slice with a pending job remains
+uncertain, so its limits and fixture files are retained.
 Uncertain cleanup is reported and
 preserves the remaining fixture. Production service units, accounts, quota
 allocations and existing tasks are not modified. Failure can be investigated
