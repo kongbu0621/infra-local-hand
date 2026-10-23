@@ -11,6 +11,35 @@ from local_hand_jobs import budget, cli, quota_contract as q
 from local_hand_jobs.deployment import verify_release
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 
+def workspace_binding(workspace, inputs):
+    """Bind only this task's source and fixed validation, never the registry.
+
+    Principal/project admission belongs to the manager. This additional bound
+    keeps unrelated registered projects out of the task's ordinary-user policy
+    and filesystem view, including when the owner may use several projects.
+    """
+    source_ref = inputs.get('source_ref')
+    validation_ref = inputs.get('validation_ref')
+    source = workspace.get('sources', {}).get(source_ref)
+    if (source is None or validation_ref not in source.get('validations', {})
+            or inputs.get('relative_path') not in source.get('blobs', {})):
+        raise ValueError('PROVISION_WORKSPACE_NOT_ADMITTED')
+    selected = copy.deepcopy(source)
+    selected['validations'] = {validation_ref: selected['validations'][validation_ref]}
+    return dict(inputs=copy.deepcopy(inputs), sources={source_ref: selected},
+                git=copy.deepcopy(workspace['git']))
+
+
+def check_workspace_binding(value):
+    if 'workspace' not in value:
+        return
+    workspace = value['workspace']
+    q.require(type(workspace) is dict and set(workspace) == {'inputs', 'sources', 'git'},
+              'PROVISION_WORKSPACE_BINDING')
+    q.require(workspace == workspace_binding(workspace, workspace['inputs']),
+              'PROVISION_WORKSPACE_BINDING')
+
+
 def task_input(config, operation, principal, serial, *, workspace_inputs=None, local_a2_inputs=None):
     """Refresh boot/cgroup observations and allocate names within fixed roots."""
     if workspace_inputs is not None and local_a2_inputs is not None:
@@ -43,8 +72,7 @@ def task_input(config, operation, principal, serial, *, workspace_inputs=None, l
         plan['settings']['limits'] = copy.deepcopy(workspace['limits'])
         for root in plan['roots']:
             root.update(workspace['quotas'][root['role']])
-        v['workspace'] = dict(inputs=copy.deepcopy(workspace_inputs),
-                              sources=copy.deepcopy(workspace['sources']), git=copy.deepcopy(workspace['git']))
+        v['workspace'] = workspace_binding(workspace, workspace_inputs)
     if local_a2_inputs is not None:
         from local_hand_jobs.local_a2_jobs import validate_runtime
         local_a2 = config['local_a2']
@@ -208,6 +236,7 @@ def check_base_directory_inventory(before, after):
 
 
 def prepare(v):
+    check_workspace_binding(v)
     plan = copy.deepcopy(v['plan'])
     installation = v['installation']
     if os.geteuid() != 0 or budget.current_clock()['boot_id'] != plan['host']['boot_id']:
