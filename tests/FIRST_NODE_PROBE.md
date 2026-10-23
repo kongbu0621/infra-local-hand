@@ -25,11 +25,14 @@ Five fixed Python workers use distinct unused numeric UIDs/GIDs, without adding
 system accounts. A fixed `setpriv` launcher drops to each numeric identity and
 clears all capability sets before Python runs; the short launcher alone receives
 SETUID, SETGID and SETPCAP. This avoids relying on NSS entries for numeric systemd
-`User=` settings. Actual real/effective/saved/filesystem IDs, empty supplementary groups and all five
+`User=` settings. The system service leaves `User=` unset: systemd 255 can
+drop SETUID on its explicit-UID/seccomp path before exec, while NoNewPrivileges
+prevents restoration for the root launcher. The three-capability bound and
+worker privilege checks remain in force. Actual real/effective/saved/filesystem IDs, empty supplementary groups and all five
 zero capability sets are checked, including the replacement worker after UID reuse.
 Each service has a 64 MiB memory ceiling, four processes, a
 10% CPU quota, a 150-second lifetime and no capabilities. The parent is capped
-at 320 MiB, 24 processes and 50% of one CPU. Workers write only tiny synthetic
+at 512 MiB, 24 processes and 50% of one CPU. Workers write only tiny synthetic
 files and use fixture Unix sockets; they do not call Local Hand or access NAS.
 The first worker is capped before the aggregate slice properties are applied.
 
@@ -64,3 +67,5 @@ The properties follow the host's systemd 255 contracts:
 [hierarchical resource controls](https://www.freedesktop.org/software/systemd/man/255/systemd.resource-control.html).
 Private namespaces, cgroups and read-only mounts do not independently confer
 cross-user data confidentiality; the positive and negative probes are required.
+
+The launcher correction follows the corresponding [systemd 255 execution code](https://github.com/systemd/systemd/blob/v255/src/core/exec-invoke.c#L4431-L4491); local failure and subsequent acceptance remain separate evidence.

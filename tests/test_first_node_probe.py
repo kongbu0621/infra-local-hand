@@ -52,13 +52,15 @@ class FirstNodeProbeTests(unittest.TestCase):
     def test_command_is_bounded_and_has_no_production_unit_target(self):
         command = probe.service_command("lhp1aaaaaaaaaaaas0.service", "lhp1aaaaaaaaaaaa.slice",
                                         Path("/run/lhp1aaaaaaaaaaaa"), 0, 700000)
-        for option in ("--property=User=root", "--reuid=700000", "--regid=700000", "--property=MemoryMax=64M",
+        for option in ("--reuid=700000", "--regid=700000", "--property=MemoryMax=64M",
                        "--property=TasksMax=4", "--property=RuntimeMaxSec=150s",
                        "--property=KillMode=control-group", "--property=NoNewPrivileges=yes",
                        "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all",
                        "--clear-groups", "--property=SupplementaryGroups="):
             self.assertIn(option, command)
         self.assertLess(command.index("/usr/bin/setpriv"), command.index("/usr/bin/python3"))
+        self.assertNotIn("--user", command)
+        self.assertFalse(any(arg.startswith("--property=User=") for arg in command))
         self.assertIn("--property=StandardError=append:/run/lhp1aaaaaaaaaaaa/diagnostics/"
                       "lhp1aaaaaaaaaaaas0.service.stderr", command)
         with self.assertRaises(ValueError):
@@ -71,6 +73,15 @@ class FirstNodeProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, '127'):
                 probe.await_file(Path("/unused/ready.json"), unit="lhp1aaaaaaaaaaaas0.service")
         sleep.assert_not_called()
+
+    def test_collected_unit_default_success_is_not_reported_as_real_exit(self):
+        with patch.object(probe, "read_json", side_effect=FileNotFoundError), \
+             patch.object(probe, "show", return_value=dict(LoadState="not-found", ActiveState="inactive",
+                                                          Result="success", ExecMainStatus="0")):
+            with self.assertRaises(RuntimeError) as raised:
+                probe.await_file(Path("/unused/ready.json"), unit="lhp1aaaaaaaaaaaas0.service")
+        self.assertIn("unavailable_after_collection", str(raised.exception))
+        self.assertNotIn("success", str(raised.exception))
 
     def test_ready_requires_all_credentials_and_caps_to_be_dropped(self):
         ready = dict(uid=700000, gid=700000, uids=[700000] * 4, gids=[700000] * 4,

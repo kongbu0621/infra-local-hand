@@ -26,6 +26,7 @@ import time
 import uuid
 
 LIMIT = 2 * 1024 * 1024
+PARENT_MEMORY_BYTES = 512 * 1024 * 1024
 DENIED = {errno.EACCES, errno.EPERM}
 UNIT = re.compile(r"lhp1[0-9a-f]{12}(?:s[0-4]|r0)?\.(?:service|slice)\Z")
 
@@ -203,9 +204,11 @@ def service_command(unit, slice_name, root, number, uid):
         raise ValueError("fixture unit name required")
     # systemd 255 may require an NSS entry even for numeric User=. Use its
     # existing fixed setpriv launch path: only the short launcher has the three
-    # capabilities needed to drop groups/UID and its bounding set. Python never
-    # runs as root, and the worker checks actual zero capabilities below.
-    properties = dict(User="root", Group="root", SupplementaryGroups="",
+    # capabilities needed to drop groups/UID and its bounding set. Leave User=
+    # unset: systemd 255's explicit-UID/seccomp path drops CAP_SETUID before exec;
+    # NoNewPrivileges then prevents root exec from restoring it. This is always
+    # a system unit, never --user. Python checks non-root, zero capabilities.
+    properties = dict(SupplementaryGroups="",
                       RuntimeMaxSec="150s", TimeoutStopSec="2s", KillMode="control-group",
                       MemoryMax="64M", MemorySwapMax="0", TasksMax="4", CPUQuota="10%",
                       LimitFSIZE="65536", NoNewPrivileges="yes",
@@ -238,6 +241,9 @@ def await_file(path, predicate=lambda value: True, *, unit=None):
         if unit is not None:
             state = show(unit)
             if state.get("ActiveState") in {"inactive", "failed"} or state.get("LoadState") == "not-found":
+                if state.get("LoadState") == "not-found":
+                    # Collected units expose synthetic defaults, not exit proof.
+                    state = {"LoadState": "not-found", "exit_status": "unavailable_after_collection"}
                 raise RuntimeError("fixture exited before response: " + json.dumps(dict(unit=unit, **state)))
         time.sleep(0.05)
     raise TimeoutError("fixture response missing: " + str(path))
@@ -326,13 +332,13 @@ def probe():
                 # Revert only this fresh slice even if the reply is lost.
                 parent_configured = True
                 run(["/usr/bin/systemctl", "set-property", "--runtime", slice_name,
-                     "MemoryMax=320M", "MemorySwapMax=0", "TasksMax=24", "CPUQuota=50%"])
+                     "MemoryMax=" + str(PARENT_MEMORY_BYTES), "MemorySwapMax=0", "TasksMax=24", "CPUQuota=50%"])
             identities.append(verify_ready(unit, own, uid))
         result["identities"] = identities
         result["parent_limits"] = cgroup_limits(show(slice_name)["ControlGroup"])
         parent = result["parent_limits"]
         cpu, period = map(int, parent["cpu.max"].split())
-        if (parent["memory.max"] != str(320 * 1024**2) or parent["memory.swap.max"] != "0"
+        if (parent["memory.max"] != str(PARENT_MEMORY_BYTES) or parent["memory.swap.max"] != "0"
                 or parent["pids.max"] != "24" or cpu * 2 != period):
             raise ValueError("aggregate resource boundary differs")
         if len({x["cgroup"] for x in identities}) != 5:
