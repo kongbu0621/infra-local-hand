@@ -56,6 +56,21 @@
 初次替换暴露 SDK lifespan 的 task-group 必须由同一任务进入和退出，测试宿主已修正这一所有权；
 同 19 项在 `PYTHONWARNINGS=error` 下全部通过。
 
+## 当前实现接续说明（2026-10-23）
+
+上文保留 E1–E3 当时的实现与验证事实。以 `31411551b1f5bbac1f6bdf7b032cd4a0b3bdab22`
+核对现有源码，后续已发生以下变化；新的逐节点部署应采用这些事实及
+[现有多节点方案第 6 节](../MULTI_NODE_IMPLEMENTATION_PLAN.md#6-启动认证与网络独立性)：
+
+- `auth.py` 不以 issuer-wide `token_endpoint_auth_methods_supported` 是否列出 `none`
+  判断预注册 public client；须核对实际客户端登记并验证授权码交换。
+- `server.py` 通过 SDK middleware 同时发布 top-level 与 `_meta.securitySchemes`，
+  不再是上文阶段记录中的仅 `_meta` 形式。
+- 当前启动只核对 issuer metadata，JWKS 在首次令牌验证时读取；启动成功不代表
+  登录、签发、刷新或逐节点独立认证已完成验收。
+
+本次说明不升级依赖，不将历史合成 issuer 变成正式授权服务器，也不改写原测试结果。
+
 ## 直接依据
 
 - [MCP 官方 Python SDK 认证说明](https://github.com/modelcontextprotocol/python-sdk/blob/main/docs/run/authorization.md)
