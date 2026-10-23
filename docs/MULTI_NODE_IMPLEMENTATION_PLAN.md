@@ -266,6 +266,19 @@ NAS 故障可以影响共享它的多个节点的归档，这是明确的共同�
 
 本次细化以源码 `31411551b1f5bbac1f6bdf7b032cd4a0b3bdab22` 为核对基线，保留第 1 节和历史验收原基线。`tools/local_hand_mcp/auth.py` 已提供 `lh-mcp-auth-v1` 的单 issuer／单 client、多 subject 映射；`server.py` 发布受保护资源发现并接入校验。这些是资源服务器能力，尚没有授权服务器安装器或独立认证部署验收。当前全局项目登记、内部授权交接及业务身份隔离的缺口仍按第 3.5 节完成。
 
+按旧实现逐项修改，不另写一套认证协议：
+
+| 已有实现及位置 | 本次保留与调整 |
+|---|---|
+| [AuthConfig／JWTVerifier](../tools/local_hand_mcp/auth.py) | 保留 `lh-mcp-auth-v1`、严格验签、发现与主体映射；每台实例加载自己的可信 issuer／resource／客户端登记。已有单 issuer、多 subject 足以承载该机两个本地主体，不因多机器改成自动信任多个 issuer |
+| [MCP 启动及资源发现](../tools/local_hand_mcp/server.py) | 沿用 `--config`、`--auth-config` 和 `--resident`，只监听回环，由该机入口发布；该机的资源元数据指向自己的 AS。路由、Host／Origin 与 resource 一同核对，不只替换一个 issuer 字符串 |
+| [常驻任务输入](../tools/admin/local_hand_system_manager/provision_task.py)的 `task_input()` | 当前已固定 `transport=broker`、清除任务输入中的 `auth` 并设置 `mcp=None`；继续让常驻前端承担网络认证，不为每个业务任务创建 AS 或复制登录会话 |
+| 同文件的旧 `transport=mcp` 准备路径，以及 [service_command()](../tools/admin/local_hand_system_manager/task_service.py) | 旧路径仅保存外部传入的 `v['auth']` 并传递 `--auth-config`，不是 AS 配置生成器或安装器。保留旧任务绑定及受保护读取；不把该历史分支当成新多主体模式的旁路 |
+| [ResidentBroker](../tools/local_hand_mcp/resident.py)与 [受保护 manager](../tools/admin/local_hand_system_manager/resident_service.py) | 保留原任务 owner、请求与恢复链；按第 3.5 节补当前项目许可和原授权交接。AS 部署不替代这些执行权限检查 |
+| 原上游授权服务的部署文件 | 先定位真实安装／启动清单及无秘密配置生成入口，再基于其准确版本参数化为逐机实例；目前尚未找到该制品，不能把上述资源服务器代码或新模板称为旧 AS 的完整实现 |
+
+旧接入兼容修复继续保留：`1d7de57` 的 public-client discovery、`3552f24` 的混合用途 JWKS、`8ab9650` 的有界 issuer 就绪等待及 `8d23cac` 的显式文档代理。逐机部署复用这些行为和原适用检查，不因更换服务宿主撤销它们，也不由这些兼容代码推定原 AS 的产品或版本。
+
 具体身份服务的上游实现、准确版本／镜像摘要、部署清单、持久化与恢复入口必须能从部署记录定位；`--auth-config` 和测试 issuer 不能代替该服务的部署交付。DNS、证书签发／续期、隧道控制平面等共同外部依赖单独声明，不由另一执行节点隐式承载。NAS 的存储职责不自动赋予其统一登录中心职责。
 
 ### 6.2 部署清单与协议兼容
@@ -282,6 +295,8 @@ NAS 故障可以影响共享它的多个节点的归档，这是明确的共同�
 | 恢复与切换 | 配置版本、状态一致性备份、旧快照的撤权／会话恢复屏障、唯一启用实例、独立维护通道、切换和回退步骤 |
 
 客户端登记中的 token endpoint authentication method 为 `none`，仍须实际登录、授权码兑换和刷新验收；不能以 issuer-wide methods 列表是否列出 `none` 推定这一客户端配置。每个节点分别注册应用，应用 ID 即使同名也不共享凭据、会话或任务权限。
+
+旧配置字段按以下方式演进：`issuer`、`metadata_url`、`authorization_endpoint`、`token_endpoint`、`jwks_uri` 和 `resource` 作为同一节点绑定一起核对；`client_id`、`redirect_uris`、`subject_map`、`scopes` 来自该机实际注册和授权，不能由另一机复制后直接生效。`algorithms` 及 JWKS TTL、刷新冷却、请求超时、时钟偏差、最大令牌寿命沿用已审定配置，确需修改时记录具体差异；`document_proxy_url` 只指向该机获准代理。保持 `schema_version=lh-mcp-auth-v1` 和 `registration=predefined`，不因部署实例增加而改写原格式。原 AS 的上游程序／无秘密模板可复用，私钥、会话及用户权限由每台独立初始化和核实；复制整个数据库再改主机名不符合此方案。
 
 保持当前验证器的真实访问令牌契约：RS256／ES256 白名单、准确 `iss`、等于该节点 resource 的单字符串 `aud`、准确 `client_id`、已映射 `sub`、有效 `iat/nbf/exp` 和获准 `scope`；使用所配置的最大寿命、时钟偏差和文档读取预算。真实上游签发必须逐项满足，不能把 `azp` 当成缺失的 `client_id`，或放宽成接受多个 audience。该部署将应用 client ID 与 MCP resource 区分；ID token 不可当 access token，须用上游真实 ID token 做拒绝验收。当前允许 `JWT`／`at+jwt` 类型，不据此宣称完整实现某一 JWT access-token profile。
 
