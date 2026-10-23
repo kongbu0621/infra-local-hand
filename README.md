@@ -70,11 +70,11 @@
 
 **下图是目标架构，尚未完成跨平台多节点实现或部署验收。** 同一产品拟分别部署到独立执行节点，各自只负责本机任务；调用方选择一个或多个连接，分别推进任务。NAS 是独立成果存储节点，可以共用，也可以分别绑定，不是另一个 Local Hand 执行节点。
 
-[![目标架构：多个独立 Local Hand 分别受控执行任务，经原节点返回状态与证据；成果可归档到同一或不同 NAS，各节点的执行状态、身份与权限保持独立。](docs/diagrams/independent-nodes-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/2230786ef3bead0109055f5e9109562c0fc6bfe6/docs/diagrams/independent-nodes-target.svg)
+[![目标架构：多个独立 Local Hand 分别受控执行任务，经原节点返回状态与证据；成果可归档到同一或不同 NAS，各节点的执行状态、身份与权限保持独立。](docs/diagrams/independent-nodes-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/independent-nodes-target.svg)
 
-[查看目标架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/2230786ef3bead0109055f5e9109562c0fc6bfe6/docs/diagrams/independent-nodes-target.svg) · [实现方案与验收边界](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md)
+[查看目标架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/independent-nodes-target.svg) · [实现方案与验收边界](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md)
 
-节点 A／B／C 和存储 X／Y 都是合成示例，不代表实际设备或固定数量。节点执行与恢复记录保留在各自节点；成果归档是独立分支，共用 NAS 不等于共用任务状态或写权限。释放本地证据内容后，准确读回可能依赖原绑定的 NAS；NAS 离线不能触发业务重跑。
+节点 A／B／C 和存储 X／Y 都是合成示例，不代表实际设备或固定数量。每个节点分别部署身份服务、HTTPS 入口和 Local Hand：紫色支线表示登录、令牌与公钥，任务主线由 MCP 验签授权后进入本机后端；本地 CLI 使用操作系统身份。节点执行与恢复记录保留在各自节点；成果归档是独立分支，共用 NAS 不等于共用任务状态或写权限。释放本地证据内容后，准确读回可能依赖原绑定的 NAS；NAS 离线不能触发业务重跑。
 
 <details>
 <summary>展开当前单节点任务与结果机制</summary>
@@ -99,10 +99,26 @@
 
 包中还保留 `local-hand-worker` / `local-hand-connect` 的 Task/Result 与 Git mailbox 入口，其配置和权限边界见[使用说明](docs/USAGE.md#explicit-admission)。它与作业后端的 MCP/CLI 入口使用不同协议，不能混用任务参数。
 
+### 认证服务在哪里实现
+
+**登录与签发令牌由另行部署的 OAuth/OIDC 身份服务负责；Local Hand 实现的是收到令牌后的校验和任务授权。**
+这里的“外部”指它是独立的软件组件，不表示必须运行在另一台机器。按多节点独立部署目标，每个节点都需要自己的认证和网络入口，不能借另一执行节点完成登录或转发请求。
+
+| 部分 | 实现归属与定位 |
+| --- | --- |
+| 用户登录、授权码交换、令牌签发与刷新、JWKS 公钥发布 | 外部 OAuth/OIDC 身份服务；本仓[不实现授权服务器](docs/a2-execution/MCP_DEPENDENCY_SELECTION.md)。安装 Local Hand 不会安装该服务 |
+| 令牌验签、issuer／audience 检查及主体映射 | 本仓 [auth.py](tools/local_hand_mcp/auth.py)，从受保护配置读取可信身份服务和主体映射 |
+| MCP 认证发现与请求入口 | 本仓 [server.py](tools/local_hand_mcp/server.py)，公布所需身份服务并接入令牌校验；它不托管登录页或签发令牌 |
+| 工具权限与原任务归属 | 本仓 [policy.py](tools/local_hand_jobs/policy.py) 和 [resident.py](tools/local_hand_mcp/resident.py) 等作业入口；登录成功不等于获得任意任务权限 |
+| 具体服务产品、版本、部署位置与恢复配置 | 由部署者另行登记；本项目私有工程记录位于 [engineering-sop 的部署接续](https://github.com/kongbu0621/engineering-sop/blob/main/docs/experiments/local-hand/multi-node-2026-10-20/DEPLOYMENT.md#认证服务归属与部署登记2026-10-23)，该私有链接需要访问权限 |
+
+`--auth-config` 是 Local Hand 对接身份服务的配置，不是身份服务实现或安装器；测试中的合成 issuer 也不是可部署的登录服务。
+本地 Unix socket 入口使用操作系统身份映射，不经过远程 OAuth。配置说明见[服务部署输入](docs/USAGE.md#job-service-deployment-inputs)，独立性要求见[启动、认证与网络独立性](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md#6-启动认证与网络独立性)。
+
 ### 客户端、Server、MCP 与 Tailscale 是什么关系
 
-上方目标图说明多节点的职责与结果关系；下面这张图展开一个已有部署中 ChatGPT 通过网络连接本地执行的路径。
-其中 MCP Server 对应执行节点的接入入口，任务进程由作业后端管理；原任务状态与证据由该节点维护。
+上方目标图说明多节点的职责与结果关系；下面这张图展开远程连接中的登录授权、令牌校验与任务调用。
+身份服务处理登录和令牌，MCP Server 对应执行节点的接入入口，任务进程由作业后端管理；原任务状态与证据由该节点维护。
 本地 CLI 则通过上表中的 Unix socket 接入，不需要经过图中的 ChatGPT 客户端或 Tailscale。
 
 **Local Hand Server 负责接收和处理请求；MCP 规定双方怎样通信；Tailscale 可以提供网络连接入口。**
@@ -113,28 +129,26 @@
 | 服务端（Server） | 在本机环境中运行、等待并处理请求的后台程序。这里指 Local Hand 服务，可以运行在已有电脑或其虚拟机中。 |
 | MCP | Model Context Protocol，一套通信规则，规定如何发现工具、调用工具和返回结果。 |
 | MCP Server | 支持 MCP 通信的服务端。Local Hand 的网络服务入口就是一个 MCP Server，背后连接本地作业后端。 |
+| OAuth/OIDC 身份服务 | 提供登录授权、令牌签发与刷新及验签公钥。它与 Local Hand MCP Server 是不同组件；MCP Server 使用令牌识别调用者，再检查具体权限。 |
 | Tailscale | 部署时可选的网络入口，把请求转发到 Local Hand。任务管理和执行由 Local Hand 实现，MCP 规则也不绑定 Tailscale。 |
 
 按 [MCP 的正式术语](https://modelcontextprotocol.io/docs/learn/architecture)，ChatGPT 这类 AI 应用称为
-Host（宿主应用），其中连接 MCP Server 的组件称为 Client（客户端）。下图把这层关系展开。
-下图以 Tailscale 作为可选部署入口；图中省略了宿主机与虚拟机之间可能存在的端口转发。
-调用方需要能够访问配置的网络入口。
+Host（宿主应用），其中连接 MCP Server 的组件称为 Client（客户端）。下图以 Tailscale 作为可选网络入口；身份服务的具体产品由部署选择。
+客户端和浏览器必须能访问各自所需的认证与服务端点。逐节点独立部署仍是待验收目标，图示不代表现有实例已经完成迁移。
 
-```mermaid
-flowchart LR
-    U["你：通过浏览器使用 ChatGPT"] --> C["ChatGPT 中的 MCP 客户端"]
-    C <-->|"MCP 请求与结果（HTTPS）"| G["Tailscale 入口"]
-    G <-->|"转发请求与结果"| S["Local Hand MCP Server"]
-    S <-->|"提交、查询、取消"| B["本地作业后端"]
-    B <-->|"启动、停止与结果收集"| T["本地任务进程"]
-```
+[![远程认证与任务调用：用户在选定节点的身份服务登录授权，客户端换取令牌并经 HTTPS 入口调用 Local Hand；MCP 验签授权后访问作业后端，最终返回原任务状态与证据。](docs/diagrams/authenticated-connection.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/authenticated-connection.svg)
+
+[查看认证与调用原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/authenticated-connection.svg) · [关系源](docs/diagrams/authenticated-connection.mmd)
+
+登录、授权码交换和令牌刷新不是每次任务调用都重复执行的步骤；每次受保护请求仍须校验令牌和权限。身份服务不转发或执行业务任务，网络入口也不能代替认证。
 
 例如，你说“查询任务状态”：
 
-1. ChatGPT 按 MCP 规则调用 `lh_job_status`，携带原任务的 `operation_id`。
-2. 网络入口把请求转发给 Local Hand MCP Server。
-3. 服务端校验身份、权限和参数，再由作业后端查询该任务。
-4. 服务端按 MCP 规则返回结果，ChatGPT 再把结果告诉你。查询本身不会重新执行任务。
+1. 首次连接或需要重新授权时，完成身份服务登录授权，由客户端换取令牌。
+2. ChatGPT 按 MCP 规则调用 `lh_job_status`，携带访问令牌和原任务的 `operation_id`。
+3. 网络入口把请求转发给 Local Hand MCP Server。
+4. 服务端校验令牌、身份、权限和参数，再由作业后端查询该任务。
+5. 服务端按 MCP 规则返回结果，ChatGPT 再把结果告诉你。查询本身不会重新执行任务。
 
 网络入口的访问范围由部署配置决定：Tailscale **Serve** 面向 Tailscale 私网，
 **Funnel** 可以向公网提供入口，区别见 [Tailscale 官方说明](https://tailscale.com/docs/features/tailscale-funnel/how-to/host-websites)。

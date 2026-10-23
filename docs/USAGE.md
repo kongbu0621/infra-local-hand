@@ -421,6 +421,11 @@ policy with schema `lh-policy-v1` or `lh-policy-v2`, including deployment identi
 principals, resource references and budgets; see [policy.py](../tools/local_hand_jobs/policy.py).
 MCP's separate `--auth-config` uses `lh-mcp-auth-v1` to bind the external issuer,
 resource and authorization settings; see [auth.py](../tools/local_hand_mcp/auth.py).
+Local Hand is the resource server: it validates tokens but does not implement
+the login page, authorization-code exchange, token issuance or refresh service.
+Those belong to a separately deployed OAuth/OIDC identity service; installing
+this package or writing `--auth-config` does not provision it. See the
+[component ownership and authentication flow](../README.md#认证服务在哪里实现).
 For resident mode, `--resident` names a `local-hand-resident-adapter/v1` routing
 descriptor that connects to the existing management service. It is separate from
 both the broker policy and the manager's own configuration.
