@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1500" viewBox="0 0 1480 1500" role="img" aria-labelledby="title description">
+  <title id="title">Local Hand：先认证授权，再调用所选节点，取回原任务结果</title>
+  <desc id="description">用户在所选节点的外部 OAuth/OIDC 身份服务完成登录授权；授权码经浏览器回调到 ChatGPT 客户端，客户端使用授权码与 PKCE 换取令牌，需要时刷新。客户端携带 access token，经目标节点的 HTTPS 或可选 Tailscale 入口调用 Local Hand MCP Server。Hand 从预配 issuer 读取 metadata/JWKS，校验 issuer、audience、签名与有效期，并由作业后端核验 scope 和原任务归属，受控准备、提交、查询或取消。原任务状态与可用证据经原入口返回客户端，用户核对后继续任务。身份服务不执行任务，不接收调用者任意指定的文档 URL；本地 CLI/Unix socket 通过操作系统身份独立授权。身份与入口逐机独立是部署目标，尚不能据此宣称现场隔离验收通过。</desc>
+  <!-- Relationship source: authenticated-connection.mmd.
+       The bottom result box is the caller's outcome, not an additional network hop.
+       Authentication is a setup/refresh branch, not a mandatory step for each tool call. -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#bfd0df" stroke-width="1.5"/></marker>
+    <marker id="auth-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#d6b785" stroke-width="1.5"/></marker>
+    <style>
+      text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 25px; text-anchor: middle; fill: #a9d7ff; }
+      .title { font-size: 34px; font-weight: 600; fill: #e0efff; }
+      .heading { font-size: 29px; font-weight: 600; }
+      .small { font-size: 22px; }
+      .tiny { font-size: 20px; }
+      .muted { fill: #b5c4d0; }
+      .warm { fill: #e4c897; }
+      .node { fill: #102c42; stroke: #527c99; stroke-width: 1.7; }
+      .identity { fill: #342c20; stroke: #987e54; stroke-width: 1.7; }
+      .frame { fill: #101a24; stroke: #40576c; stroke-width: 1.5; stroke-dasharray: 8 6; }
+      .edge { fill: none; stroke: #bfd0df; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .auth { fill: none; stroke: #d6b785; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#auth-arrow); }
+      .documents { fill: none; stroke: #d6b785; stroke-width: 2.2; stroke-dasharray: 7 6; stroke-linejoin: round; marker-end: url(#auth-arrow); }
+      .label { fill: #0d1117; }
+    </style>
+  </defs>
+  <rect width="1480" height="1500" rx="24" fill="#0d1117"/>
+  <text class="title" x="740" y="53">先认证授权，再调用所选节点，取回原任务结果</text>
+  <text class="small warm" x="740" y="94">逐机独立部署目标 · 各实例尚待现场隔离验收</text>
+
+  <rect class="frame" x="40" y="120" width="1400" height="475" rx="24"/>
+  <g id="node-U" data-node="U">
+    <rect class="node" x="100" y="155" width="550" height="110" rx="20"/>
+    <text x="375" y="199"><tspan class="heading" x="375">你：通过浏览器使用 ChatGPT</tspan><tspan x="375" dy="39">选择目标节点的连接</tspan></text>
+  </g>
+  <g id="node-C" data-node="C">
+    <rect class="node" x="100" y="370" width="550" height="185" rx="20"/>
+    <text x="375" y="418"><tspan class="heading" x="375">ChatGPT 中的 MCP 客户端</tspan><tspan x="375" dy="43">接收授权回调、取得并管理令牌</tspan><tspan class="small muted" x="375" dy="47">需要时刷新，不是每次请求都登录</tspan></text>
+  </g>
+  <g id="node-I" data-node="I">
+    <rect class="identity" x="970" y="155" width="430" height="400" rx="20"/>
+    <text class="warm" x="1185" y="202"><tspan class="heading" x="1185">所选节点的身份服务</tspan><tspan x="1185" dy="42">OAuth / OIDC</tspan><tspan class="small" x="1185" dy="46">外部独立软件组件</tspan><tspan class="small" x="1185" dy="36">独立于 Local Hand 代码</tspan><tspan x="1185" dy="47">登录、授权、签发 / 刷新令牌</tspan><tspan class="small" x="1185" dy="40">提供 metadata / JWKS</tspan><tspan class="small" x="1185" dy="40">不执行任务</tspan><tspan class="small muted" x="1185" dy="43">逐机部署，不依赖另一执行机</tspan></text>
+  </g>
+  <g data-from="U" data-to="C" data-label="选择连接与操作"><path class="edge" d="M 375 265 V 370"/><text class="small" x="486" y="324">选择连接与操作</text></g>
+  <g data-from="U" data-to="I" data-label="① 浏览器登录、授权"><path class="auth" d="M 650 211 H 970"/><text class="small warm" x="810" y="193">① 浏览器登录、授权</text></g>
+  <g data-from="I" data-to="C" data-label="② 授权码回调（经浏览器）"><path class="auth" d="M 970 403 H 650"/><text class="small warm" x="810" y="377">② 授权码回调</text><text class="tiny warm" x="810" y="426">（经浏览器）</text></g>
+  <g data-from="C" data-to="I" data-label="③ 授权码 + PKCE 换令牌"><path class="auth" d="M 650 472 H 970"/><text class="small warm" x="810" y="457">③ 授权码 + PKCE 换令牌</text></g>
+  <g data-from="I" data-to="C" data-label="access token 响应"><path class="auth" d="M 970 536 H 650"/><text class="small warm" x="810" y="521">access token 响应</text></g>
+
+  <g data-from="C" data-to="G" data-label="④ access token + MCP 请求（HTTPS）"><path class="edge" d="M 375 555 V 665"/><rect class="label" x="96" y="611" width="558" height="34" rx="9"/><text class="small" x="375" y="636">④ access token + MCP 请求（HTTPS）</text></g>
+  <g id="node-G" data-node="G">
+    <rect class="node" x="100" y="665" width="550" height="105" rx="20"/>
+    <text x="375" y="708"><tspan class="heading" x="375">目标节点的 HTTPS 入口</tspan><tspan x="375" dy="38">反向代理 / 可选 Tailscale 入口</tspan></text>
+  </g>
+  <g data-from="G" data-to="S" data-label="转发请求与结果"><path class="edge" d="M 375 770 V 850"/><text class="small" x="502" y="816">转发请求与结果</text></g>
+  <g id="node-S" data-node="S">
+    <rect class="node" x="100" y="850" width="550" height="150" rx="20"/>
+    <text x="375" y="893"><tspan class="heading" x="375">Local Hand MCP Server</tspan><tspan class="small" x="375" dy="39">核对 issuer、audience、签名和有效期</tspan><tspan class="small muted" x="375" dy="39">按预配 issuer 读取 metadata / JWKS</tspan></text>
+  </g>
+  <g data-from="S" data-to="I" data-label="预配 issuer：读取 metadata / JWKS；响应沿原连接返回">
+    <path class="documents" d="M 650 935 H 870 V 585 H 1185 V 555"/>
+    <text class="small warm" x="1146" y="688"><tspan x="1146">读取认证文档 / 公钥</tspan><tspan x="1146" dy="37">响应沿原连接返回</tspan><tspan class="tiny muted" x="1146" dy="49">URL 来自受保护的部署配置</tspan><tspan class="tiny muted" x="1146" dy="32">不接受请求指定任意 URL</tspan></text>
+  </g>
+  <g data-from="S" data-to="B" data-label="⑤ 身份校验后送作业后端授权"><path class="edge" d="M 375 1000 V 1080"/><rect class="label" x="118" y="1019" width="514" height="35" rx="8"/><text class="small" x="375" y="1044">⑤ 身份校验后送作业后端授权</text></g>
+  <g id="node-B" data-node="B">
+    <rect class="node" x="100" y="1080" width="550" height="140" rx="20"/>
+    <text x="375" y="1121"><tspan class="heading" x="375">本地作业后端</tspan><tspan x="375" dy="39">按 scope 与原任务归属授权</tspan><tspan class="small" x="375" dy="37">受控准备、提交、查询、取消</tspan></text>
+  </g>
+  <g id="node-T" data-node="T">
+    <rect class="node" x="970" y="1080" width="430" height="140" rx="20"/>
+    <text x="1185" y="1121"><tspan class="heading" x="1185">本地任务进程</tspan><tspan x="1185" dy="39">启动、停止与结果收集</tspan><tspan class="small muted" x="1185" dy="37">查询不重新执行任务</tspan></text>
+  </g>
+  <g data-from="B" data-to="T" data-label="启动 / 停止 / 收集"><path class="edge" d="M 650 1150 H 970" marker-start="url(#arrow)"/><text class="small" x="810" y="1126">启动 / 停止 / 收集</text></g>
+  <g data-from="B" data-to="R" data-label="⑥ 原状态与证据，经原入口返回客户端"><path class="edge" d="M 375 1220 V 1320"/><rect class="label" x="96" y="1250" width="558" height="39" rx="8"/><text class="small" x="375" y="1277">⑥ 原状态与证据，经原入口返回客户端</text></g>
+  <g id="node-R" data-node="R">
+    <rect class="node" x="100" y="1320" width="1300" height="110" rx="20"/>
+    <text x="750" y="1363"><tspan class="heading" x="750">你取回并核对结果，继续各自任务</tspan><tspan class="small" x="750" dy="39">原节点 + 原任务：状态与可用证据；结果未知时沿原任务 ID 查询，不自动重提</tspan></text>
+  </g>
+  <text class="tiny muted" x="740" y="1470">本地 CLI / Unix socket 另走操作系统身份与权限；不经过此图的浏览器登录或网络入口。</text>
+</svg>

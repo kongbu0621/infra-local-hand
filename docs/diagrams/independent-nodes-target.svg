@@ -1,12 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="1780" viewBox="0 0 2160 1780" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="2230" viewBox="0 0 2160 2230" role="img" aria-labelledby="title description">
   <title id="title">Local Hand：多节点独立执行，可配置 NAS 成果存储（目标架构）</title>
-  <desc id="description">合成示例：调用方分别连接独立执行节点 A、B、C；这些标签不指向实际设备，数量不是产品上限，各节点按部署选择平台。各节点受控执行自己的任务，保留执行状态、恢复与长期归档索引、有界待归档成果。白色主线经原节点返回各任务状态和可用证据；本地状态和保留的证据不等待 NAS，释放本地内容后，准确读回可能需要 NAS。绿色虚线是成果存储调用，响应沿原连接返回：示例 A、B 绑定存储节点 X，C 绑定存储节点 Y，也可全部绑定同一 NAS；该绑定不是实际资产映射。各 producer 分库保存，凭据和权限隔离。NAS 内受控接收端与 Ledger 成果库是目标部署，不执行 Local Hand 任务。首版只归档已退出、成功且封存的成果；其他状态留在原节点如实返回。在线归档、平台适配和多节点部署仍待实现或验收；已有 A2 快照不等于在线归档。NAS 离线先保留有界成果，容量不足限制新增任务，不自动重放。</desc>
+  <desc id="description">合成示例：调用方分别连接独立执行节点 A、B、C；每台执行机独立部署 HTTPS/网关入口和外部 OAuth/OIDC 身份服务，拥有独立的配置与密钥，登录和令牌刷新不经过另一执行机。紫色虚线为认证支线：身份服务签发访问令牌并提供 JWKS 公钥，Local Hand MCP 资源服务器负责验签与授权；任务不经过身份服务执行。本地 CLI 经受保护本地通道直接访问作业后端，不依赖 OAuth。这些标签不指向实际设备，数量不是产品上限，各节点按部署选择平台。各节点受控执行自己的任务，保留执行状态、恢复与长期归档索引、有界待归档成果。白色主线经原节点返回各任务状态和可用证据；本地状态和保留的证据不等待 NAS，释放本地内容后，准确读回可能需要 NAS。绿色虚线是成果存储调用，响应沿原连接返回：示例 A、B 绑定存储节点 X，C 绑定存储节点 Y，也可全部绑定同一 NAS；该绑定不是实际资产映射。各 producer 分库保存，凭据和权限隔离。NAS 内受控接收端与 Ledger 成果库是目标部署，不执行 Local Hand 任务。首版只归档已退出、成功且封存的成果；其他状态留在原节点如实返回。在线归档、平台适配和多节点部署仍待实现或验收；已有 A2 快照不等于在线归档。NAS 离线先保留有界成果，容量不足限制新增任务，不自动重放。</desc>
   <!-- Relationship source: independent-nodes-target.mmd.
        Shared wires are drawing aids, not a central router or synchronization barrier.
-       Original README diagram remains unchanged. -->
+       Purple dashed paths: authentication exchanges and public keys, not task execution. -->
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#b6c6d4" stroke-width="1.5"/></marker>
     <marker id="archive-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#78cbb5" stroke-width="1.5"/></marker>
+    <marker id="auth-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#d5b1ff" stroke-width="1.5"/></marker>
     <style>
       text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "Segoe UI", sans-serif; font-size: 23px; text-anchor: middle; fill: #8bc7ff; }
       .node { fill: #102c42; stroke: #456a85; stroke-width: 1.6; }
@@ -23,10 +24,14 @@
       .section-title { font-size: 29px; font-weight: 600; }
       .small { font-size: 20px; } .tiny { font-size: 18px; }
       .muted { fill: #b0becb; } .status { fill: #edc484; font-size: 22px; }
+      .auth-wire, .auth { fill: none; stroke: #d5b1ff; stroke-width: 2; stroke-dasharray: 6 6; stroke-linejoin: round; }
+      .auth { marker-end: url(#auth-arrow); }
+      .auth-node { fill: #28223b; stroke: #9475b5; stroke-width: 1.6; }
+      .purple { fill: #dfc4ff; }
       .green { fill: #9cddca; }
     </style>
   </defs>
-  <rect width="2160" height="1780" rx="24" fill="#0d1117"/>
+  <rect width="2160" height="2230" rx="24" fill="#0d1117"/>
   <text class="title" x="1080" y="61">Local Hand：多节点独立执行，可配置 NAS 成果存储</text>
   <text class="status" x="1080" y="104">目标架构 · 同一产品版本，按部署选择平台 · 节点数量仅为示例，未完成验收</text>
   <g id="node-CALLER" data-node="CALLER">
@@ -34,19 +39,39 @@
     <text x="1080" y="188"><tspan x="1080" class="section-title">调用方 · ChatGPT 等应用</tspan><tspan x="1080" dy="39">选择一个或多个独立连接，分别推进任务</tspan></text>
   </g>
   <path class="wire" d="M 1080 256 V 282 M 390 282 H 1750"/>
-  <rect class="frame" x="70" y="342" width="640" height="634" rx="26"/>
-  <rect class="frame" x="750" y="342" width="640" height="634" rx="26"/>
-  <rect class="frame" x="1430" y="342" width="640" height="634" rx="26"/>
-  <g data-from="CALLER" data-to="AE" data-label="连接节点 A · 准备 / 提交 / 查询 / 取消"><path class="edge" d="M 390 282 V 362"/><rect class="label" x="115" y="296" width="550" height="37" rx="18"/><text class="small" x="390" y="322">连接节点 A · 准备 / 提交 / 查询 / 取消</text></g>
-  <g data-from="CALLER" data-to="BE" data-label="连接节点 B · 准备 / 提交 / 查询 / 取消"><path class="edge" d="M 1070 282 V 362"/><rect class="label" x="795" y="296" width="550" height="37" rx="18"/><text class="small" x="1070" y="322">连接节点 B · 准备 / 提交 / 查询 / 取消</text></g>
-  <g data-from="CALLER" data-to="CE" data-label="连接节点 C · 准备 / 提交 / 查询 / 取消"><path class="edge" d="M 1750 282 V 362"/><rect class="label" x="1475" y="296" width="550" height="37" rx="18"/><text class="small" x="1750" y="322">连接节点 C · 准备 / 提交 / 查询 / 取消</text></g>
+  <rect class="frame" x="70" y="382" width="640" height="954" rx="26"/>
+  <rect class="frame" x="750" y="382" width="640" height="954" rx="26"/>
+  <rect class="frame" x="1430" y="382" width="640" height="954" rx="26"/>
+  <g data-from="CALLER" data-to="AE" data-label="连接节点 A · 携访问令牌调用 MCP"><path class="edge" d="M 390 282 V 402"/><rect class="label" x="115" y="296" width="550" height="37" rx="18"/><text class="small" x="390" y="322">连接节点 A · 携访问令牌调用 MCP</text></g>
+  <g data-from="CALLER" data-to="BE" data-label="连接节点 B · 携访问令牌调用 MCP"><path class="edge" d="M 1070 282 V 402"/><rect class="label" x="795" y="296" width="550" height="37" rx="18"/><text class="small" x="1070" y="322">连接节点 B · 携访问令牌调用 MCP</text></g>
+  <g data-from="CALLER" data-to="CE" data-label="连接节点 C · 携访问令牌调用 MCP"><path class="edge" d="M 1750 282 V 402"/><rect class="label" x="1475" y="296" width="550" height="37" rx="18"/><text class="small" x="1750" y="322">连接节点 C · 携访问令牌调用 MCP</text></g>
 
-  <g id="instance-a">
+  <path class="auth-wire" d="M 1480 201 H 2125 V 354 H 1762 Q 1750 332 1738 354 H 1082 Q 1070 332 1058 354 H 700"/>
+  <text class="small purple" x="1790" y="175">认证支线：登录 / 换取或刷新令牌</text>
+  <text class="small purple" x="1790" y="236">经各机自己的 HTTPS 入口</text>
+  <g id="instance-a" transform="translate(0 40)">
     <g id="node-AE" data-node="AE">
       <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
-      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 A</tspan><tspan x="390" dy="34">按部署选择平台</tspan><tspan x="390" dy="33" class="small">独立 MCP 入口 / 本地 CLI 接口</tspan></text>
+      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 A · HTTPS / 网关入口</tspan><tspan x="390" dy="34">独立部署 · 不经过其他执行机</tspan><tspan x="390" dy="33" class="small">按端点路由到本机身份服务或 MCP</tspan></text>
     </g>
-    <g data-from="AE" data-to="AB" data-label=""><path class="edge" d="M 240 488 V 550"/></g>
+    <g data-from="AE" data-to="AM" data-label="携令牌的 MCP 请求"><path class="edge" d="M 240 488 V 590"/></g>
+    <g id="node-AM" data-node="AM">
+      <rect class="node" x="90" y="590" width="300" height="160" rx="22"/>
+      <text x="240" y="623"><tspan x="240" class="heading">Local Hand MCP</tspan><tspan x="240" dy="33">资源服务器</tspan><tspan x="240" dy="33" class="small">令牌验签 · 权限检查</tspan><tspan x="240" dy="33" class="small">准备 / 提交 / 查询 / 取消</tspan></text>
+    </g>
+    <g data-from="CALLER" data-to="AI" data-label="登录 / 换取或刷新令牌（经本机 HTTPS 入口）" data-kind="authentication"><path class="auth" d="M 700 314 V 630 H 690"/></g>
+    <g id="node-AI" data-node="AI">
+      <rect class="auth-node" x="450" y="590" width="240" height="145" rx="22"/>
+      <text class="purple small" x="570" y="620"><tspan x="570" class="heading">外部 OAuth/OIDC</tspan><tspan x="570" dy="29">身份服务 · 本机部署</tspan><tspan x="570" dy="29">登录 · 签发 · 刷新</tspan><tspan x="570" dy="29">独立密钥 · 提供 JWKS</tspan></text>
+    </g>
+    <g data-from="AI" data-to="AM" data-label="JWKS 公钥" data-kind="authentication"><path class="auth" d="M 450 705 H 390"/><text class="tiny purple" x="420" y="687">JWKS</text></g>
+    <g data-from="AM" data-to="AB" data-label="授权请求"><path class="edge" d="M 240 750 V 870"/><text class="small" x="240" y="821">授权请求</text></g>
+    <g id="node-AL" data-node="AL">
+      <rect class="node" x="450" y="777" width="240" height="62" rx="18"/>
+      <text class="small" x="570" y="802"><tspan x="570">本地 CLI · 本机身份</tspan><tspan x="570" dy="25" class="tiny muted">不依赖 OAuth</tspan></text>
+    </g>
+    <g data-from="AL" data-to="AB" data-label="受保护本地通道"><path class="edge" d="M 450 808 H 330 V 870"/><text class="tiny" x="414" y="856">受保护本地通道</text></g>
+    <g transform="translate(0 320)">
     <g id="node-AB" data-node="AB">
       <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
       <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 A · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
@@ -68,14 +93,32 @@
       <text x="240" y="851"><tspan x="240" class="heading">任务 A · 状态与证据</tspan><tspan x="240" dy="35" class="small">原节点 + 原任务</tspan><tspan x="240" dy="34" class="tiny muted">业务 / 证据 / 归档分别报告</tspan></text>
     </g>
     <g data-from="AO" data-to="AR" data-label="读回"><path class="edge" d="M 450 900 H 390"/><text class="tiny" x="420" y="882">读回</text></g>
+    </g>
   </g>
 
-  <g id="instance-b" transform="translate(680 0)">
+  <g id="instance-b" transform="translate(680 40)">
     <g id="node-BE" data-node="BE">
       <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
-      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 B</tspan><tspan x="390" dy="34">按部署选择平台</tspan><tspan x="390" dy="33" class="small">独立 MCP 入口 / 本地 CLI 接口</tspan></text>
+      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 B · HTTPS / 网关入口</tspan><tspan x="390" dy="34">独立部署 · 不经过其他执行机</tspan><tspan x="390" dy="33" class="small">按端点路由到本机身份服务或 MCP</tspan></text>
     </g>
-    <g data-from="BE" data-to="BB" data-label=""><path class="edge" d="M 240 488 V 550"/></g>
+    <g data-from="BE" data-to="BM" data-label="携令牌的 MCP 请求"><path class="edge" d="M 240 488 V 590"/></g>
+    <g id="node-BM" data-node="BM">
+      <rect class="node" x="90" y="590" width="300" height="160" rx="22"/>
+      <text x="240" y="623"><tspan x="240" class="heading">Local Hand MCP</tspan><tspan x="240" dy="33">资源服务器</tspan><tspan x="240" dy="33" class="small">令牌验签 · 权限检查</tspan><tspan x="240" dy="33" class="small">准备 / 提交 / 查询 / 取消</tspan></text>
+    </g>
+    <g data-from="CALLER" data-to="BI" data-label="登录 / 换取或刷新令牌（经本机 HTTPS 入口）" data-kind="authentication"><path class="auth" d="M 700 314 V 630 H 690"/></g>
+    <g id="node-BI" data-node="BI">
+      <rect class="auth-node" x="450" y="590" width="240" height="145" rx="22"/>
+      <text class="purple small" x="570" y="620"><tspan x="570" class="heading">外部 OAuth/OIDC</tspan><tspan x="570" dy="29">身份服务 · 本机部署</tspan><tspan x="570" dy="29">登录 · 签发 · 刷新</tspan><tspan x="570" dy="29">独立密钥 · 提供 JWKS</tspan></text>
+    </g>
+    <g data-from="BI" data-to="BM" data-label="JWKS 公钥" data-kind="authentication"><path class="auth" d="M 450 705 H 390"/><text class="tiny purple" x="420" y="687">JWKS</text></g>
+    <g data-from="BM" data-to="BB" data-label="授权请求"><path class="edge" d="M 240 750 V 870"/><text class="small" x="240" y="821">授权请求</text></g>
+    <g id="node-BL" data-node="BL">
+      <rect class="node" x="450" y="777" width="240" height="62" rx="18"/>
+      <text class="small" x="570" y="802"><tspan x="570">本地 CLI · 本机身份</tspan><tspan x="570" dy="25" class="tiny muted">不依赖 OAuth</tspan></text>
+    </g>
+    <g data-from="BL" data-to="BB" data-label="受保护本地通道"><path class="edge" d="M 450 808 H 330 V 870"/><text class="tiny" x="414" y="856">受保护本地通道</text></g>
+    <g transform="translate(0 320)">
     <g id="node-BB" data-node="BB">
       <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
       <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 B · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
@@ -97,14 +140,32 @@
       <text x="240" y="851"><tspan x="240" class="heading">任务 B · 状态与证据</tspan><tspan x="240" dy="35" class="small">原节点 + 原任务</tspan><tspan x="240" dy="34" class="tiny muted">业务 / 证据 / 归档分别报告</tspan></text>
     </g>
     <g data-from="BO" data-to="BR" data-label="读回"><path class="edge" d="M 450 900 H 390"/><text class="tiny" x="420" y="882">读回</text></g>
+    </g>
   </g>
 
-  <g id="instance-c" transform="translate(1360 0)">
+  <g id="instance-c" transform="translate(1360 40)">
     <g id="node-CE" data-node="CE">
       <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
-      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 C</tspan><tspan x="390" dy="34">按部署选择平台</tspan><tspan x="390" dy="33" class="small">独立 MCP 入口 / 本地 CLI 接口</tspan></text>
+      <text x="390" y="401"><tspan x="390" class="section-title">执行节点 C · HTTPS / 网关入口</tspan><tspan x="390" dy="34">独立部署 · 不经过其他执行机</tspan><tspan x="390" dy="33" class="small">按端点路由到本机身份服务或 MCP</tspan></text>
     </g>
-    <g data-from="CE" data-to="CB" data-label=""><path class="edge" d="M 240 488 V 550"/></g>
+    <g data-from="CE" data-to="CM" data-label="携令牌的 MCP 请求"><path class="edge" d="M 240 488 V 590"/></g>
+    <g id="node-CM" data-node="CM">
+      <rect class="node" x="90" y="590" width="300" height="160" rx="22"/>
+      <text x="240" y="623"><tspan x="240" class="heading">Local Hand MCP</tspan><tspan x="240" dy="33">资源服务器</tspan><tspan x="240" dy="33" class="small">令牌验签 · 权限检查</tspan><tspan x="240" dy="33" class="small">准备 / 提交 / 查询 / 取消</tspan></text>
+    </g>
+    <g data-from="CALLER" data-to="CI" data-label="登录 / 换取或刷新令牌（经本机 HTTPS 入口）" data-kind="authentication"><path class="auth" d="M 700 314 V 630 H 690"/></g>
+    <g id="node-CI" data-node="CI">
+      <rect class="auth-node" x="450" y="590" width="240" height="145" rx="22"/>
+      <text class="purple small" x="570" y="620"><tspan x="570" class="heading">外部 OAuth/OIDC</tspan><tspan x="570" dy="29">身份服务 · 本机部署</tspan><tspan x="570" dy="29">登录 · 签发 · 刷新</tspan><tspan x="570" dy="29">独立密钥 · 提供 JWKS</tspan></text>
+    </g>
+    <g data-from="CI" data-to="CM" data-label="JWKS 公钥" data-kind="authentication"><path class="auth" d="M 450 705 H 390"/><text class="tiny purple" x="420" y="687">JWKS</text></g>
+    <g data-from="CM" data-to="CB" data-label="授权请求"><path class="edge" d="M 240 750 V 870"/><text class="small" x="240" y="821">授权请求</text></g>
+    <g id="node-CL" data-node="CL">
+      <rect class="node" x="450" y="777" width="240" height="62" rx="18"/>
+      <text class="small" x="570" y="802"><tspan x="570">本地 CLI · 本机身份</tspan><tspan x="570" dy="25" class="tiny muted">不依赖 OAuth</tspan></text>
+    </g>
+    <g data-from="CL" data-to="CB" data-label="受保护本地通道"><path class="edge" d="M 450 808 H 330 V 870"/><text class="tiny" x="414" y="856">受保护本地通道</text></g>
+    <g transform="translate(0 320)">
     <g id="node-CB" data-node="CB">
       <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
       <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 C · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
@@ -126,8 +187,10 @@
       <text x="240" y="851"><tspan x="240" class="heading">任务 C · 状态与证据</tspan><tspan x="240" dy="35" class="small">原节点 + 原任务</tspan><tspan x="240" dy="34" class="tiny muted">业务 / 证据 / 归档分别报告</tspan></text>
     </g>
     <g data-from="CO" data-to="CR" data-label="读回"><path class="edge" d="M 450 900 H 390"/><text class="tiny" x="420" y="882">读回</text></g>
+    </g>
   </g>
 
+  <g transform="translate(0 360)">
   <!-- Result returns share drawing space only. Bridges do not join storage paths. -->
   <g data-from="AR" data-to="R" data-label="分别经原节点返回"><path class="wire" d="M 240 945 V 1010"/></g>
   <g data-from="BR" data-to="R" data-label="分别经原节点返回"><path class="wire" d="M 920 945 V 1010"/></g>
@@ -158,4 +221,7 @@
   </g>
   <text class="small muted" x="1080" y="1712">各机独立启动，不互相代跑；共享 NAS 不共享任务状态或权限。NAS 离线先保留成果，容量不足限制新增任务。</text>
   <text class="small muted" x="1080" y="1748">本地状态与保留证据不等 NAS；释放本地内容后按原绑定读回。持续规划由调用方负责，各平台须分别验收。</text>
+  </g>
+  <text class="small purple" x="1080" y="2153">各机拥有独立认证配置、身份数据与签名密钥；身份服务属于外部产品，Local Hand 实现资源端验签和授权。</text>
+  <text class="small muted" x="1080" y="2192">DNS、证书及网络服务仍是显式外部依赖；必须以另一执行机关机时的新登录、刷新和冷启动验证独立性。</text>
 </svg>
