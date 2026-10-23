@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 if sys.platform != "linux":
     raise unittest.SkipTest("Linux-only explicit host fixture")
@@ -128,13 +129,122 @@ class FirstNodeProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.assert_access(result, retained=True)
 
+    def test_incomplete_or_noninteger_access_results_cannot_pass(self):
+        good = dict(own_file=0, own_socket=0, peer_files=[errno.EACCES] * 4,
+                    peer_sockets=[errno.EACCES] * 4, manager_socket=errno.EACCES)
+        bad = [dict(good, peer_files=[]), dict(good, peer_sockets=[errno.EACCES] * 3),
+               dict(good, peer_files=[errno.EACCES] * 5), dict(good, own_file=False)]
+        for result in bad:
+            with self.subTest(result=result), self.assertRaises(ValueError):
+                probe.assert_access(result)
+
+    def test_response_is_bound_to_expected_process_and_command(self):
+        good = dict(sequence=1, pid=123, uid=700000, own_file=0, own_socket=0,
+                    peer_files=[errno.EACCES] * 4, peer_sockets=[errno.EACCES] * 4,
+                    manager_socket=errno.EACCES)
+        identity = dict(pid=123, uid=700000)
+        probe.verify_observation(good, identity, 1)
+        for key, value in (("sequence", 2), ("sequence", True), ("pid", 456), ("uid", 700001)):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                probe.verify_observation(dict(good, **{key: value}), identity, 1)
+
+    def test_missing_controller_files_do_not_prove_cgroup_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            group = Path(directory) / "fixture"
+            group.mkdir()
+            events = group / "cgroup.events"
+            def mapped_path(value):
+                return Path(directory + value.removeprefix("/sys/fs/cgroup")) if str(value).startswith("/sys/fs/cgroup") else Path(value)
+            with patch.object(probe, "Path", side_effect=mapped_path), \
+                 patch.object(probe, "show", return_value=dict(ActiveState="inactive", MainPID="0", ControlGroup="/fixture")):
+                events.write_text("populated 1\n")
+                self.assertFalse(probe.stopped("lhp1aaaaaaaaaaaas0.service"))
+                events.unlink()
+                self.assertFalse(probe.stopped("lhp1aaaaaaaaaaaas0.service"))
+                events.write_text("populated 0\n")
+                self.assertTrue(probe.stopped("lhp1aaaaaaaaaaaas0.service"))
+                events.unlink()
+                group.rmdir()
+                self.assertTrue(probe.stopped("lhp1aaaaaaaaaaaas0.service"))
+
+    def test_populated_parent_preserves_fixture_even_after_leaf_cleanup(self):
+        # Exercise the real probe finally path, with no root privilege or services.
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "run").mkdir()
+            group = base / "cgroup" / "lhp1aaaaaaaaaaaa.slice"
+            group.mkdir(parents=True)
+            (group / "cgroup.events").write_text("populated 1\n")
+            def mapped_path(value):
+                if str(value) == "/run":
+                    return base / "run"
+                if str(value).startswith("/sys/fs/cgroup"):
+                    return Path(str(base / "cgroup") + str(value).removeprefix("/sys/fs/cgroup"))
+                return Path(value)
+            with patch.object(probe, "Path", side_effect=mapped_path), \
+                 patch.object(probe.os, "getuid", return_value=0), \
+                 patch.object(probe.os, "geteuid", return_value=0), \
+                 patch.object(probe.uuid, "uuid4", return_value=SimpleNamespace(hex="a" * 32)), \
+                 patch.object(probe.socket, "socket"), patch.object(probe, "choose_uids", return_value=[]), \
+                 patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 1, "", "stop failed")):
+                result = probe.probe()
+            self.assertEqual("CLEANUP_UNCERTAIN", result["status"])
+            self.assertTrue((base / "run" / "lhp1aaaaaaaaaaaa").is_dir())
+
+    def test_probe_pipeline_binds_every_response_and_cleans_up(self):
+        # Run the real coordinator, replacing only privileged/worker interfaces.
+        # Late responses must not satisfy a different worker or command.
+        for corruption in (None, (1, "pid"), (2, "uid"), (3, "pid")):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                token = "lhp1aaaaaaaaaaaa"
+                def mapped_path(value):
+                    return base if str(value) == "/run" else Path(value)
+                def ready(unit, own, uid):
+                    return dict(pid=200 if "r0" in unit else 100 + int(own.name), uid=uid,
+                                cgroup="/" + token + ".slice/" + unit)
+                def response(path, predicate=lambda value: True, **kwargs):
+                    number = int(path.parent.name)
+                    command = probe.read_json(base / token / (str(number) + ".command.json"))
+                    sequence = command["sequence"]
+                    result = dict(pid=200 if sequence == 3 else 100 + number, uid=700000 + number,
+                                  sequence=sequence, own_file=0, own_socket=0,
+                                  peer_files=[errno.EACCES] * 4, peer_sockets=[errno.EACCES] * 4,
+                                  manager_socket=errno.EACCES)
+                    if sequence == 3:
+                        result.update(retained_file=errno.EACCES, retained_socket=errno.EACCES)
+                    if corruption and sequence == corruption[0]:
+                        result[corruption[1]] += 1
+                    return result
+                with patch.object(probe, "Path", side_effect=mapped_path), \
+                     patch.object(probe.os, "getuid", return_value=0), \
+                     patch.object(probe.os, "geteuid", return_value=0), \
+                     patch.object(probe.os, "chown"), patch.object(probe.socket, "socket"), \
+                     patch.object(probe.uuid, "uuid4", return_value=SimpleNamespace(hex="a" * 32)), \
+                     patch.object(probe, "choose_uids", return_value=list(range(700000, 700005))), \
+                     patch.object(probe, "run", return_value=subprocess.CompletedProcess([], 0, "", "")), \
+                     patch.object(probe, "verify_ready", side_effect=ready), \
+                     patch.object(probe, "show", return_value={"ControlGroup": "/" + token + ".slice"}), \
+                     patch.object(probe, "cgroup_limits", return_value={"memory.max": str(512 * 1024**2),
+                                  "memory.swap.max": "0", "pids.max": "24", "cpu.max": "50000 100000"}), \
+                     patch.object(probe, "stopped", return_value=True), \
+                     patch.object(probe, "cgroup_empty", return_value=True), \
+                     patch.object(probe, "await_file", side_effect=response):
+                    result = probe.probe()
+                self.assertEqual("FAILED" if corruption else "PASS", result["status"])
+                self.assertTrue(result["cleanup"]["parent_empty"])
+                self.assertTrue(result["cleanup"]["fixture_removed"])
+                self.assertFalse((base / token).exists())
+                if not corruption:
+                    self.assertEqual(10, len(result["observations"]))
+
     def test_collected_unit_still_checks_original_cgroup(self):
         unit = "lhp1aaaaaaaaaaaas0.service"
         with patch.object(probe, "show", return_value=dict(ActiveState="inactive", MainPID="0", ControlGroup="")), \
-             patch.object(probe, "cgroup_limits", return_value={"cgroup.events": "populated 1"}) as limits:
+             patch.object(probe, "cgroup_empty", return_value=False) as empty:
             self.assertFalse(probe.stopped(unit))
-            limits.assert_called_once_with("/lhp1aaaaaaaaaaaa.slice/" + unit)
-            limits.return_value = {"cgroup.events": "populated 0"}
+            empty.assert_called_once_with("/lhp1aaaaaaaaaaaa.slice/" + unit)
+            empty.return_value = True
             self.assertTrue(probe.stopped(unit))
 
     def test_unit_observation_failure_remains_uncertain(self):

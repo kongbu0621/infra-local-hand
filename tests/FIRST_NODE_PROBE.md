@@ -38,6 +38,8 @@ The first worker is capped before the aggregate slice properties are applied.
 
 The probe records real kernel identities and limits, own-file/socket positive
 controls, foreign-file/socket permission refusals and management-socket refusal.
+Every response is bound to the expected PID, UID and command sequence, and must
+contain exactly four file and four socket refusals with integer errno values.
 It stops one worker and checks that the other four still answer under their
 original PIDs. Before reusing the stopped worker's UID, it moves that worker's
 files beneath a root-only retained directory; the new worker must be unable to
@@ -49,8 +51,11 @@ and copied into a failed report before cleanup. A collected or failed launcher
 causes an immediate failure instead of waiting for a missing readiness file;
 exit code alone does not establish its cause.
 
-Only fixture units are stopped/reverted. Original fixture cgroups must be empty
-or absent before generated files are removed. Uncertain cleanup is reported and
+Only fixture units are stopped/reverted. Original fixture cgroups and their
+parent slice must be empty or absent before generated files are removed or
+parent limits reverted. A missing controller file does not prove cgroup absence;
+an existing group without readable exit evidence remains uncertain.
+Uncertain cleanup is reported and
 preserves the remaining fixture. Production service units, accounts, quota
 allocations and existing tasks are not modified. Failure can be investigated
 and followed by a fresh fixture; it does not lock the production executor.

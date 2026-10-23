@@ -68,12 +68,30 @@ def show(unit):
     return fields
 
 
-def cgroup_limits(group):
+def cgroup_root(group):
     if not group.startswith("/") or ".." in Path(group).parts:
         raise ValueError("invalid cgroup path")
-    root = Path("/sys/fs/cgroup") / group.lstrip("/")
+    return Path("/sys/fs/cgroup") / group.lstrip("/")
+
+
+def cgroup_limits(group):
+    root = cgroup_root(group)
     return {name: (root / name).read_text().strip()
             for name in ("memory.max", "memory.swap.max", "pids.max", "cpu.max", "cgroup.events")}
+
+
+def cgroup_empty(group):
+    """Missing controller files are not evidence that the group disappeared."""
+    root = cgroup_root(group)
+    try:
+        events = (root / "cgroup.events").read_text()
+    except FileNotFoundError:
+        try:
+            root.stat()
+        except FileNotFoundError:
+            return True
+        return False
+    return "populated 0" in events.splitlines()
 
 
 def inspect_manager(config_path):
@@ -269,13 +287,23 @@ def verify_ready(unit, own, uid):
 
 
 def assert_access(result, *, retained=False):
-    if result["own_file"] != 0 or result["own_socket"] != 0:
+    for key in ("peer_files", "peer_sockets"):
+        if type(result.get(key)) is not list or len(result[key]) != 4:
+            raise ValueError("four peer access observations required")
+    if any(type(result.get(key)) is not int or result[key] != 0 for key in ("own_file", "own_socket")):
         raise ValueError("positive access control failed")
     refusals = [*result["peer_files"], *result["peer_sockets"], result["manager_socket"]]
     if retained:
         refusals += [result["retained_file"], result["retained_socket"]]
-    if any(code not in DENIED for code in refusals):
+    if any(type(code) is not int or code not in DENIED for code in refusals):
         raise ValueError("cross-task access was not refused by permissions")
+
+
+def verify_observation(result, identity, sequence, *, retained=False):
+    expected = dict(pid=identity["pid"], uid=identity["uid"], sequence=sequence)
+    if any(type(result.get(key)) is not int or result[key] != value for key, value in expected.items()):
+        raise ValueError("response does not match the expected process and command")
+    assert_access(result, retained=retained)
 
 
 def stopped(unit):
@@ -284,12 +312,7 @@ def stopped(unit):
         return False
     # Observe the original fixture cgroup even if --collect removed the unit.
     group = state.get("ControlGroup") or "/" + unit[:16] + ".slice/" + unit
-    if group:
-        try:
-            return "populated 0" in cgroup_limits(group)["cgroup.events"].splitlines()
-        except FileNotFoundError:
-            pass
-    return True
+    return cgroup_empty(group)
 
 
 def probe():
@@ -346,18 +369,17 @@ def probe():
         for number in range(5):
             write_json(root / (str(number) + ".command.json"), dict(sequence=1), mode=0o644)
         for number in range(5):
-            observation = await_file(root / "tasks" / str(number) / "response.json")
-            assert_access(observation)
+            observation = await_file(root / "tasks" / str(number) / "response.json", unit=units[number])
+            verify_observation(observation, identities[number], 1)
             result["observations"].append(observation)
         run(["/usr/bin/systemctl", "stop", units[0]])
         if not stopped(units[0]):
             raise ValueError("cancelled fixture exit not proven")
         for number in range(1, 5):
             write_json(root / (str(number) + ".command.json"), dict(sequence=2), mode=0o644)
-            observation = await_file(root / "tasks" / str(number) / "response.json", lambda x: x["sequence"] == 2)
-            if observation["pid"] != identities[number]["pid"]:
-                raise ValueError("other fixture changed after cancellation")
-            assert_access(observation)
+            observation = await_file(root / "tasks" / str(number) / "response.json",
+                                     lambda x: x["sequence"] == 2, unit=units[number])
+            verify_observation(observation, identities[number], 2)
             result["observations"].append(observation)
         # Archive the stopped identity before it can be reused. Its old data
         # remains under a root-only parent, including its old control socket.
@@ -369,8 +391,9 @@ def probe():
         run(service_command(reuse_unit, slice_name, root, 0, uids[0]))
         result["reused_identity"] = verify_ready(reuse_unit, root / "tasks" / "0", uids[0])
         write_json(root / "0.command.json", dict(sequence=3, retained=True), mode=0o644)
-        observation = await_file(root / "tasks" / "0" / "response.json", lambda x: x["sequence"] == 3)
-        assert_access(observation, retained=True)
+        observation = await_file(root / "tasks" / "0" / "response.json",
+                                 lambda x: x["sequence"] == 3, unit=reuse_unit)
+        verify_observation(observation, result["reused_identity"], 3, retained=True)
         result["observations"].append(observation)
         result["status"] = "PASS"
     except Exception as exc:
@@ -407,6 +430,9 @@ def probe():
         if clean:
             try:
                 run(["/usr/bin/systemctl", "stop", slice_name], check=False)
+                result["cleanup"]["parent_empty"] = cgroup_empty("/" + slice_name)
+                if not result["cleanup"]["parent_empty"]:
+                    raise RuntimeError("fixture parent exit not proven")
                 if parent_configured:
                     run(["/usr/bin/systemctl", "revert", slice_name])
                 shutil.rmtree(root)
