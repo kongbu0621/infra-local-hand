@@ -16,6 +16,7 @@ import time
 import uuid
 
 from .contract import JobError, Principal, MAX_REQUEST_BYTES, MAX_SAFE_INTEGER, strict_loads
+from . import forwarded_bounds
 
 MAX_RESPONSE_BYTES = 512 * 1024
 
@@ -335,11 +336,14 @@ class MaintenanceServer:
             if not isinstance(principal, Principal):
                 raise JobError("UNAUTHORIZED", "OS peer has no admitted principal")
             request = strict_loads(_read_frame(connection, MAX_REQUEST_BYTES, deadline=deadline))
+            if type(request) is dict:
+                request, principal = forwarded_bounds.restrict(request, principal)
             if type(request) is not dict or set(request) != {"tool", "arguments"} or not isinstance(request["tool"], str):
                 raise JobError("INVALID_REQUEST", "Local request must name only tool and arguments")
             if self._closed.is_set():
                 raise JobError("IO_UNCERTAIN", "Maintenance transport closed before dispatch")
             _deadline(connection, deadline)
+            principal.require_current()
             result = self.broker.call(request["tool"], request["arguments"], principal)
             _send_frame(connection, {"result": result}, deadline=deadline)
         except JobError as error:
@@ -490,7 +494,7 @@ class MaintenanceServer:
                     pass
 
 
-def request(socket_path, tool, arguments, *, timeout=2):
+def request(socket_path, tool, arguments, *, timeout=2, principal=None):
     """The client has no subprocess, ledger, policy, or execution fallback."""
     connection = None
     failed = True
@@ -499,7 +503,10 @@ def request(socket_path, tool, arguments, *, timeout=2):
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         _deadline(connection, deadline)
         connection.connect(str(socket_path))
-        _send_frame(connection, {"tool": tool, "arguments": arguments}, deadline=deadline, limit=MAX_REQUEST_BYTES)
+        body = {"tool": tool, "arguments": arguments}
+        if principal is not None:
+            body = forwarded_bounds.attach(body, principal)
+        _send_frame(connection, body, deadline=deadline, limit=MAX_REQUEST_BYTES)
         result = _response(_read_frame(connection, MAX_RESPONSE_BYTES, deadline=deadline))
         _deadline(connection, deadline)
         if "error" in result:

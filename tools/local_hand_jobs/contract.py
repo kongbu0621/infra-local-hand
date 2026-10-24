@@ -53,7 +53,7 @@ class JobError(Exception):
 
 @dataclass(frozen=True)
 class Principal:
-    """Identity populated by a verified in-process authenticator, never JSON."""
+    """Verified network/OS identity; forwarded data may only narrow its grants."""
 
     principal_id: str
     scopes: frozenset[str]

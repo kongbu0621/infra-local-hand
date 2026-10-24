@@ -11,6 +11,7 @@ import threading
 import time
 
 from local_hand_jobs import cli
+from local_hand_jobs import forwarded_bounds
 from local_hand_jobs.broker import Broker
 from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, REF_PATTERN, TOOL_SCHEMAS, TOOL_SCOPES, TOOL_SCHEMA_DIGEST, validate_tool_args
 from local_hand_jobs.policy import Policy, thaw
@@ -37,7 +38,14 @@ class ServiceClient:
                 if (uid, gid) != (0, 0):
                     raise JobError('UNAUTHORIZED', 'Task service identity changed')
                 guard._check()
-                cli._send_frame(connection, dict(action=action, **arguments), deadline=end, limit=cli.MAX_REQUEST_BYTES)
+                # Recheck after connection/identity work, immediately before
+                # sending. Bounds are never dropped on refusal or old peers.
+                body = dict(action=action, **arguments)
+                if 'authorization_bounds' in body:
+                    bounds = body['authorization_bounds']
+                    if time.time() >= bounds['expires_at']:
+                        raise JobError('UNAUTHORIZED', 'Authenticated acceptance deadline has expired')
+                cli._send_frame(connection, body, deadline=end, limit=cli.MAX_REQUEST_BYTES)
                 response = cli._response(cli._read_frame(connection, cli.MAX_RESPONSE_BYTES, deadline=end))
                 if 'error' in response:
                     raise JobError(response['error']['code'], response['error']['message'])
@@ -89,6 +97,10 @@ class ResidentBroker:
             raise JobError('IO_UNCERTAIN', 'Task catalog identity changed')
         return value
 
+    def _service_call(self, action, principal, **arguments):
+        body = forwarded_bounds.attach(dict(action=action, principal_id=principal.principal_id, **arguments), principal)
+        return self.service.call(body.pop('action'), **body)
+
     def _reader(self, path):
         if path not in self.readers:
             self.readers[path] = self.reader_factory(path)
@@ -133,7 +145,9 @@ class ResidentBroker:
 
     def _running_request(self, record, policy, name, args, principal):
         try:
-            return cli.request(Path(policy.broker_root) / 'maintenance.sock', name, args, timeout=3)
+            bounds = {'principal': principal} if principal.expires_at is not None else {}
+            principal.require_current()
+            return cli.request(Path(policy.broker_root) / 'maintenance.sock', name, args, timeout=3, **bounds)
         except JobError as error:
             if error.code != 'IO_UNCERTAIN' or name not in {
                     'lh_job_status', 'lh_evidence_manifest', 'lh_evidence_read_chunk'}:
@@ -142,8 +156,7 @@ class ResidentBroker:
             # socket request. Re-observe once; only read the same retained task
             # after the service no longer identifies a live controller. Never
             # replay submission/cancellation or conceal an explicit refusal.
-            state = self.service.call('status', operation_id=record['operation_id'],
-                                      principal_id=principal.principal_id)['state']
+            state = self._service_call('status', principal, operation_id=record['operation_id'])['state']
             if state not in {'EXITED', 'UNRESOLVED'}:
                 raise
             return self._reader(record['policy_path']).call(name, args, principal)
@@ -155,8 +168,7 @@ class ResidentBroker:
             raise JobError('RESOURCE_BUSY', 'Task preparation is not ready; keep the same identity')
         policy = Policy.from_file(record['policy_path'])
         policy.authorize(principal, 'lh:evidence')
-        state = self.service.call('status', operation_id=record['operation_id'],
-                                  principal_id=principal.principal_id)['state']
+        state = self._service_call('status', principal, operation_id=record['operation_id'])['state']
         if state == 'IDLE':
             raise JobError('NOT_FOUND', 'Task has not been submitted')
         if state == 'RUNNING':
@@ -207,7 +219,7 @@ class ResidentBroker:
             if name == 'lh_workspace_read':
                 if not self.config.get('workspace'):
                     raise JobError('UNSUPPORTED','This entry has no admitted project source')
-                return self.service.call('workspace_read',principal_id=principal.principal_id,**args)
+                return self._service_call('workspace_read',principal,**args)
             if name == 'lh_capabilities':
                 result = thaw(self.policy.capabilities(principal, **args))
                 workspace=self.config.get('workspace')
@@ -241,7 +253,7 @@ class ResidentBroker:
                 # or recovery of a preparation that already completed. The
                 # root service checks owner and original inputs before polling.
                 query_only={} if allow_new else {'allow_new': False}
-                return self.service.call('prepare', principal_id=principal.principal_id, **args, **query_only)
+                return self._service_call('prepare', principal, **args, **query_only)
             if name == 'lh_evidence_read_chunk':
                 return self._artifact(args, principal)
             operation = args['operation_id']
@@ -260,7 +272,7 @@ class ResidentBroker:
                 if args != record['request']:
                     raise JobError('CONFLICT', 'Prepared task request changed')
                 policy.authorize(principal, 'lh:submit', request=args)
-            route = self.service.call('status', operation_id=operation, principal_id=principal.principal_id)
+            route = self._service_call('status', principal, operation_id=operation)
             state = route['state']
             if state == 'IDLE':
                 if name != 'lh_job_submit':
@@ -269,8 +281,8 @@ class ResidentBroker:
                     raise JobError('UNSUPPORTED', 'This job kind is not available for new execution')
                 if args['expires_at'] <= time.time():
                     raise JobError('STALE_DEPLOYMENT', 'Prepared request has expired')
-                state = self.service.call('start', operation_id=operation,
-                    principal_id=principal.principal_id, request_digest=args['request_digest'])['state']
+                state = self._service_call('start', principal, operation_id=operation,
+                    request_digest=args['request_digest'])['state']
             if state == 'RUNNING':
                 if name == 'lh_job_submit' and args['kind'] in DISABLED_JOB_KINDS:
                     # A retained controller can still run the old release. A

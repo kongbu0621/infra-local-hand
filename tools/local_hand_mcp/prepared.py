@@ -18,6 +18,7 @@ from local_hand_jobs.broker import Broker
 from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES, validate_submit, validate_tool_args
 from local_hand_jobs.deployment import verify_release
 from local_hand_jobs.policy import Policy, thaw
+from local_hand_jobs import forwarded_bounds
 from local_hand_jobs.task_session import read_descriptor
 
 
@@ -40,7 +41,7 @@ class Launcher:
                 or (info.st_dev, info.st_ino) != (self.pin["device"], self.pin["inode"])):
             raise JobError("UNAUTHORIZED", "Prepared launcher identity changed")
 
-    def call(self, action):
+    def call(self, action, *, principal=None):
         if action not in ("status", "start"):
             raise JobError("UNSUPPORTED", "Unknown prepared launcher action")
         try:
@@ -53,8 +54,11 @@ class Launcher:
                 if (uid, gid) != (0, 0):
                     raise JobError("UNAUTHORIZED", "Prepared launcher is not the administrator")
                 self._check()
-                cli._send_frame(connection, dict(action=action, operation_id=self.request["operation_id"],
-                    request_digest=self.request["request_digest"]), deadline=deadline, limit=4096)
+                body = dict(action=action, operation_id=self.request["operation_id"],
+                            request_digest=self.request["request_digest"])
+                if principal is not None:
+                    body = forwarded_bounds.attach(body, principal)
+                cli._send_frame(connection, body, deadline=deadline, limit=4096)
                 result = cli._response(cli._read_frame(connection, 4096, deadline=deadline))
                 if "error" in result:
                     raise JobError(result["error"]["code"], result["error"]["message"])
@@ -146,13 +150,16 @@ class PreparedBroker:
                 if args != self.request:
                     raise JobError("CONFLICT", "Prepared task request changed")
                 self.policy.authorize(principal, scope, request=args)
-            state = self.launcher.call("status")
+            bounds = {'principal': principal} if principal.expires_at is not None else {}
+            principal.require_current()
+            state = self.launcher.call("status", **bounds)
             if state == "IDLE":
                 if name != "lh_job_submit":
                     raise JobError("NOT_FOUND", "Prepared task has not been submitted")
                 if args["expires_at"] <= time.time():
                     raise JobError("STALE_DEPLOYMENT", "Prepared request has expired")
-                state = self.launcher.call("start")
+                principal.require_current()
+                state = self.launcher.call("start", **bounds)
             if state == "EXITED":
                 if name == "lh_job_submit":
                     self._authorize(principal, "lh:read")
@@ -174,7 +181,8 @@ class PreparedBroker:
                 raise JobError("IO_UNCERTAIN", "Prepared execution did not start")
             # The ordinary account has an explicit local-peer mapping in the
             # private policy. The backend performs its own durable admission.
-            return cli.request(Path(self.policy.broker_root) / "maintenance.sock", name, args, timeout=3)
+            principal.require_current()
+            return cli.request(Path(self.policy.broker_root) / "maintenance.sock", name, args, timeout=3, **bounds)
 
     def close(self):
         with self.fence:

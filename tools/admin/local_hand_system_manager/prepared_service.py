@@ -19,7 +19,7 @@ import subprocess
 import threading
 import time
 
-from local_hand_jobs import budget, cli, quota_contract as q
+from local_hand_jobs import budget, cli, forwarded_bounds, quota_contract as q
 from local_hand_jobs.contract import JobError, strict_loads
 from local_hand_jobs.evidence import _publish_create_only, _same
 from admin.local_hand_quota_observer import controller_guard, q2_config
@@ -281,6 +281,23 @@ class FixedLauncher:
         return self.state()
 
 
+def bounded_request(request, launch):
+    """Only narrow the fixed owner after serve authenticates its OS peer."""
+    from local_hand_jobs.contract import Principal
+    if 'authorization_bounds' in request:
+        owner=launch['principal_id']
+        peer=Principal(owner,frozenset(launch['policy']['principals'][owner]['scopes']))
+        request,principal=forwarded_bounds.restrict(request,peer)
+        scopes={'lh:submit'} if request.get('action')=='start' else {'lh:read','lh:submit','lh:cancel','lh:evidence'}
+        if not scopes.intersection(principal.scopes):
+            raise JobError('UNAUTHORIZED','Forwarded scope does not permit this action')
+    if (set(request)!={'action','operation_id','request_digest'}
+            or request['action'] not in ('start','status')
+            or any(request[k]!=launch['request'][k] for k in ('operation_id','request_digest'))):
+        raise JobError('UNAUTHORIZED','Only the original prepared identity is admitted')
+    return request
+
+
 def serve(config):
     q.require(os.getuid()==os.geteuid()==0, 'PREPARED_ADMINISTRATOR')
     q._keys(config, {'schema','launch_path','launch_sha256','installation','output','socket','descriptor'})
@@ -319,10 +336,7 @@ def serve(config):
                     _,peer_uid,peer_gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
                     if (peer_uid,peer_gid)!=(uid,gid):raise JobError('UNAUTHORIZED','Prepared peer is not admitted')
                     request=strict_loads(cli._read_frame(connection,4096,deadline=end))
-                    if (set(request)!={'action','operation_id','request_digest'}
-                            or request['action'] not in ('start','status')
-                            or any(request[k]!=launch['request'][k] for k in ('operation_id','request_digest'))):
-                        raise JobError('UNAUTHORIZED','Only the original prepared identity is admitted')
+                    request=bounded_request(request,launch)
                     state=launcher.start() if request['action']=='start' else launcher.state()
                     response={'result':{'state':state}}
                 except JobError as error:response={'error':error.as_dict()}

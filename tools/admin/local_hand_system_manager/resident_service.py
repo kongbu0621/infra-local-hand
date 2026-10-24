@@ -22,8 +22,8 @@ import threading
 import time
 import uuid
 
-from local_hand_jobs import budget, cli, quota_contract as q
-from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
+from local_hand_jobs import budget, cli, forwarded_bounds, quota_contract as q
+from local_hand_jobs.contract import DISABLED_JOB_KINDS, JobError, Principal, MAX_WORKSPACE_TEXT_BYTES, canonical_bytes, strict_loads, validate_tool_args
 from local_hand_jobs.task_session import read_descriptor
 from admin.local_hand_quota_observer.protected_inputs import read_protected
 from . import provision_task, task_service
@@ -189,7 +189,7 @@ class ResidentService:
         if result.returncode!=0:raise JobError('IO_UNCERTAIN','Cannot observe preparation')
         return result.stdout.strip() in {'active','activating','deactivating','reloading'}
 
-    def prepare(self, args, principal, *, allow_new=True):
+    def prepare(self, args, principal, *, allow_new=True, authorization=None):
         check_local_a2_management_paths(self.config)
         operation=args['operation_id']
         if args['profile_ref']!=self.config['profile_ref']:
@@ -250,6 +250,8 @@ class ResidentService:
             serial=max(used,default=0)+1
             if self.config['first_project_id']+serial*7-1>self.config['last_project_id']:
                 raise JobError('LIMIT_EXCEEDED','Configured quota project range is full')
+            if authorization is not None:
+                authorization.require_current()
             operation_root.mkdir(mode=0o700,exist_ok=True)
             attempt=operation_root/('attempt-'+str(serial))
             attempt.mkdir(mode=0o700)
@@ -330,6 +332,19 @@ class ResidentService:
             action=request.get('action');principal=request.get('principal_id')
             if principal not in self.config['principals']:
                 raise JobError('UNAUTHORIZED','Principal is not admitted')
+            authorization=None
+            if 'authorization_bounds' in request:
+                # serve() has already authenticated the fixed adapter UID.
+                # Its registered principal and installed task grant remain
+                # the upper bound; JSON cannot introduce a new principal.
+                scopes=self.config.get('template',{}).get('scopes')
+                if type(scopes) is not list:
+                    raise JobError('UNAUTHORIZED','Installed scope grant is unavailable')
+                request,authorization=forwarded_bounds.restrict(request,Principal(principal,frozenset(scopes)))
+                required={'prepare':{'lh:submit'},'start':{'lh:submit'},'workspace_read':{'lh:read'},
+                          'status':{'lh:read','lh:submit','lh:cancel','lh:evidence'}}.get(action,set())
+                if not required.intersection(authorization.scopes):
+                    raise JobError('UNAUTHORIZED','Forwarded scope does not permit this action')
             if action=='workspace_read':
                 q.require(set(request)=={'action','principal_id','profile_ref','source_ref','relative_path'},'RESIDENT_REQUEST')
                 args=validate_tool_args('lh_workspace_read',{k:v for k,v in request.items() if k not in {'action','principal_id'}})
@@ -337,6 +352,7 @@ class ResidentService:
                 if (args['profile_ref']!=self.config['profile_ref'] or source is None
                         or args['relative_path'] not in source['blobs']):
                     raise JobError('UNAUTHORIZED','Workspace source or file is not admitted')
+                if authorization is not None:authorization.require_current()
                 try:raw=read_protected(str(Path(source['root'])/args['relative_path']),MAX_WORKSPACE_TEXT_BYTES)
                 except ValueError as error:
                     if str(error)=='INPUT_BYTE_LIMIT':
@@ -357,7 +373,8 @@ class ResidentService:
                 allow_new=request.get('allow_new',True)
                 q.require(type(allow_new) is bool,'RESIDENT_REQUEST')
                 args=validate_tool_args('lh_job_prepare',{k:v for k,v in request.items() if k not in {'action','principal_id','allow_new'}})
-                return self.prepare(args,principal,allow_new=allow_new)
+                bounds={} if authorization is None else {'authorization':authorization}
+                return self.prepare(args,principal,allow_new=allow_new,**bounds)
             if action not in {'status','start'}:raise JobError('UNSUPPORTED','Unknown task service action')
             q.require(set(request)=={'action','principal_id','operation_id'}|({'request_digest'} if action=='start' else set()),
                       'RESIDENT_REQUEST')
@@ -375,6 +392,7 @@ class ResidentService:
                         raise JobError('STALE_DEPLOYMENT','Prepare the unsubmitted task for this boot')
                     if self._busy(except_operation=operation):
                         raise JobError('RESOURCE_BUSY','Another task is active')
+                    if authorization is not None:authorization.require_current()
                     state=self._launcher(record).start()
                     if state=='EXITED':state=self._captured_execution_state(record)
             return dict(state=state)
