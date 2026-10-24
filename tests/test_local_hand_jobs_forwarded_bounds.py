@@ -204,7 +204,11 @@ class ManagerBoundsTests(unittest.TestCase):
         self.network_request()
         record = fixtures.PreparationTests.ready_record(self)
         self.service._save(record)
-        principal = Principal('owner', frozenset({'lh:submit'}), expires_at=int(time.time()) + 300)
+        # The network deadline must precede the prepared request's expiry.
+        # Separate wall-clock reads can otherwise cross a second and test the
+        # stale preparation refusal instead of the delivery authorization gate.
+        principal = Principal('owner', frozenset({'lh:submit'}),
+                              expires_at=record['request']['expires_at'] - 30)
         body = forwarded_bounds.attach(dict(action='start', principal_id='owner',
             operation_id=record['operation_id'], request_digest=record['request']['request_digest']), principal)
         with patch('time.time', return_value=principal.expires_at - 1) as clock:
