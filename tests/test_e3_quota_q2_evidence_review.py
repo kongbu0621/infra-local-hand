@@ -108,8 +108,11 @@ class RetainedReviewTests(unittest.TestCase):
             path = root / name; path.mkdir(mode=0o700); info = path.stat()
             value[name] = dict(path=str(path), device=info.st_dev, inode=info.st_ino)
         start = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
-        value["launcher"]["controller_envelope"].update(issued_ns=start, deadline_ns=start + 4 * SECOND)
-        value["supervisor_envelope"].update(issued_ns=start, deadline_ns=start + 8 * SECOND)
+        # This fixture verifies retained bytes and real child exit, not startup
+        # latency. Leave bounded room for loaded CI runners while preserving
+        # the real clock, deadline checks and separate cleanup window.
+        value["launcher"]["controller_envelope"].update(issued_ns=start, deadline_ns=start + 20 * SECOND)
+        value["supervisor_envelope"].update(issued_ns=start, deadline_ns=start + 30 * SECOND)
         value["supervisor_envelope"]["controller"]["invocation_id"] = "a" * 32
         value["launcher"]["resident"]["entry"]["path"] = str(PATH.with_name("q2_resident.py"))
         binding = s.validate(value, launcher, dict(boot_id=BOOT, boottime_ns=start))
