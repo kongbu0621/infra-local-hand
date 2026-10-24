@@ -102,10 +102,16 @@ class ResidentService:
     def _unit_active(self, record):
         unit=record.get('controller_unit')
         if not unit:return False
+        return self._observe_unit_active(unit)
+
+    def _observe_unit_active(self, unit):
         result=subprocess.run([self.config['installation']['installed']['programs']['systemctl']['path'],
             'show',unit,'-p','ActiveState','--value'],capture_output=True,text=True,timeout=3)
-        if result.returncode!=0:raise JobError('IO_UNCERTAIN','Cannot observe the original controller')
-        return result.stdout.strip() in {'active','activating','deactivating','reloading'}
+        state=result.stdout.strip()
+        active={'active','activating','deactivating','reloading'}
+        if result.returncode!=0 or state not in active|{'inactive','failed'}:
+            raise JobError('IO_UNCERTAIN','Cannot observe the original system unit')
+        return state in active
 
     def _launcher(self, record):
         key=record['attempt']
@@ -184,10 +190,7 @@ class ResidentService:
                    and self.execution_state(record)=='RUNNING' for operation,record in self.records.items())
 
     def _preparation_active(self, record):
-        result=subprocess.run([self.config['installation']['installed']['programs']['systemctl']['path'],
-            'show',record['prepare_unit'],'-p','ActiveState','--value'],capture_output=True,text=True,timeout=3)
-        if result.returncode!=0:raise JobError('IO_UNCERTAIN','Cannot observe preparation')
-        return result.stdout.strip() in {'active','activating','deactivating','reloading'}
+        return self._observe_unit_active(record['prepare_unit'])
 
     def prepare(self, args, principal, *, allow_new=True, authorization=None):
         check_local_a2_management_paths(self.config)

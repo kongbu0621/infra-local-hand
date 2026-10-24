@@ -590,6 +590,20 @@ class PreparationTests(unittest.TestCase):
         self.service=admin.ResidentService(self.config)
         self.args=dict(action='prepare',operation_id=str(uuid.uuid4()),kind='host.inspect',profile_ref='fixture',principal_id='owner')
 
+    def test_system_unit_observations_reject_unknown_states_and_allow_recovery(self):
+        self.config['installation']={'installed':{'programs':{'systemctl':{'path':'/synthetic/systemctl'}}}}
+        record={'controller_unit':'original.service','prepare_unit':'prepare.service'}
+        for observe in (self.service._unit_active,self.service._preparation_active):
+            for state in ('','unknown','maintenance','refreshing','inactive\nactive'):
+                with self.subTest(observe=observe.__name__,state=state), \
+                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout=state)):
+                    with self.assertRaises(JobError) as caught:observe(record)
+                    self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+            for state in ('inactive','failed','active','activating','deactivating','reloading'):
+                with self.subTest(observe=observe.__name__,state=state), \
+                     patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout=state+'\n')):
+                    self.assertEqual(state not in {'inactive','failed'},observe(record))
+
     def test_failure_is_retained_and_explicit_retry_has_same_operation(self):
         with patch.object(admin.provision_task,'task_input',side_effect=OSError('local pre-admission failure')):
             self.assertEqual('PREPARING',self.service.call(self.args)['state'])
@@ -655,17 +669,20 @@ class PreparationTests(unittest.TestCase):
             launcher.return_value.start.assert_called_once()
 
     def test_temporary_preparation_observation_failure_does_not_permanently_block_retry(self):
+        self.config['installation']={'installed':{'programs':{'systemctl':{'path':'/synthetic/systemctl'}}}}
         attempt=Path(self.temp.name)/'failed-attempt';attempt.mkdir()
         (attempt/'preparation-delivery.json').write_text('{}')
         (attempt/'preparation-exit.json').write_text('{"returncode":1}')
-        self.service.records[str(uuid.uuid4())]=dict(state='FAILED',attempt=str(attempt))
-        with patch.object(self.service,'_preparation_active',
-                side_effect=[JobError('IO_UNCERTAIN','temporary manager failure'),False]), \
+        self.service.records[str(uuid.uuid4())]=dict(state='FAILED',attempt=str(attempt),prepare_unit='original.service')
+        with patch.object(admin.subprocess,'run') as observe, \
              patch.object(self.service,'_prepare_worker') as worker:
-            with self.assertRaises(JobError) as caught:self.service.call(self.args)
-            self.assertEqual('IO_UNCERTAIN',caught.exception.code)
-            worker.assert_not_called()
-            self.assertFalse((Path(self.config['private_root'])/self.args['operation_id']).exists())
+            for code,state in ((0,''),(0,'maintenance'),(1,'inactive')):
+                observe.return_value=Mock(returncode=code,stdout=state)
+                with self.assertRaises(JobError) as caught:self.service.call(self.args)
+                self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+                worker.assert_not_called()
+                self.assertFalse((Path(self.config['private_root'])/self.args['operation_id']).exists())
+            observe.return_value=Mock(returncode=0,stdout='inactive\n')
             self.assertEqual('PREPARING',self.service.call(self.args)['state'])
             self.service.worker.join(2)
             worker.assert_called_once()
@@ -736,7 +753,9 @@ class PreparationTests(unittest.TestCase):
                     for path in Path(self.temp.name).rglob('*') if path.is_file()})
 
     def test_failed_execution_waiter_blocks_new_work_until_controller_exit_is_observed(self):
+        self.config['installation']={'installed':{'programs':{'systemctl':{'path':'/synthetic/systemctl'}}}}
         original=self.ready_record();output=Path(original['output']);output.mkdir(parents=True)
+        original['controller_unit']='original.service'
         proof=json.dumps(dict(returncode=-9,streams_eof=True))
         (output/'finished.json').write_text(proof)
         self.service._save(original)
@@ -744,7 +763,7 @@ class PreparationTests(unittest.TestCase):
         candidate=self.ready_record();self.service._save(candidate)
         start=dict(action='start',operation_id=candidate['operation_id'],principal_id='owner',request_digest='a'*64)
         prepare=dict(self.args,operation_id=str(uuid.uuid4()))
-        with patch.object(self.service,'_unit_active',return_value=True) as active, \
+        with patch.object(admin.subprocess,'run',return_value=Mock(returncode=0,stdout='active\n')) as observe, \
              patch.object(self.service,'_launcher') as launcher, \
              patch.object(self.service,'_prepare_worker') as worker:
             launcher.return_value.state.return_value='IDLE'
@@ -752,12 +771,14 @@ class PreparationTests(unittest.TestCase):
             for request in (prepare,start):
                 with self.assertRaises(JobError) as caught:self.service.call(request)
                 self.assertEqual('RESOURCE_BUSY',caught.exception.code)
-            active.side_effect=JobError('IO_UNCERTAIN','temporary controller observation failure')
-            with self.assertRaises(JobError) as caught:self.service.call(prepare)
-            self.assertEqual('IO_UNCERTAIN',caught.exception.code)
+            for state in ('','maintenance','inactive\nactive'):
+                observe.return_value=Mock(returncode=0,stdout=state)
+                for request in (prepare,start):
+                    with self.assertRaises(JobError) as caught:self.service.call(request)
+                    self.assertEqual('IO_UNCERTAIN',caught.exception.code)
             worker.assert_not_called();launcher.return_value.start.assert_not_called()
             self.assertFalse((Path(self.config['private_root'])/prepare['operation_id']).exists())
-            active.side_effect=None;active.return_value=False
+            observe.return_value=Mock(returncode=0,stdout='inactive\n')
             self.assertEqual({'state':'RUNNING'},self.service.call(start))
             launcher.return_value.start.assert_called_once()
         self.assertEqual(proof,(output/'finished.json').read_text())

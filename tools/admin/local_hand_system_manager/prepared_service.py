@@ -83,6 +83,8 @@ class FixedLauncher:
         self.failure = None
         self.publication_failure = None
         self.local_failure = None
+        self.intent_fd = None
+        self.intent_identity = None
         self.sequence = 0
         self.started = (self.output/'started.json').exists() or (self.output/'launch-intent.json').exists()
         self.finished = (self.output/'finished.json').exists()
@@ -117,17 +119,31 @@ class FixedLauncher:
         # Only paths reached before successful Popen may release this intent.
         # Keep this attempt's identity in memory across a storage outage. A new
         # daemon still treats a surviving intent as unknown and cannot replay it.
-        info = os.stat('launch-intent.json', dir_fd=self.directory, follow_symlinks=False)
-        q.require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-                  and info.st_uid == os.fstat(self.directory).st_uid, 'PREPARED_INTENT_IDENTITY')
-        self.local_failure = dict(prefix=prefix, identity=_same(info)[:-1],
-                                  destination=prefix+'-'+os.urandom(16).hex()+'.json')
+        # Latch the no-delivery proof before metadata or randomness can fail.
+        # Identity comes from our O_EXCL descriptor, never a later name lookup.
+        self.local_failure = dict(prefix=prefix, identity=getattr(self,'intent_identity',None),
+                                  destination=None)
         self._finish_local_failure()
+
+    def _pin_intent(self):
+        fd = self.intent_fd
+        info = os.fstat(fd)
+        q.require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                  and info.st_uid == os.fstat(self.directory).st_uid
+                  and stat.S_IMODE(info.st_mode) == 0o600, 'PREPARED_INTENT_IDENTITY')
+        self.intent_identity = _same(info)[:-1]
+        self.intent_fd = None
+        os.close(fd)
 
     def _finish_local_failure(self):
         pending = getattr(self, 'local_failure', None)
         if pending is None:return
         try:
+            if pending['identity'] is None:
+                if getattr(self,'intent_identity',None) is None:self._pin_intent()
+                pending['identity'] = self.intent_identity
+            if pending['destination'] is None:
+                pending['destination'] = pending['prefix']+'-'+os.urandom(16).hex()+'.json'
             for _ in range(8):
                 try:source = os.stat('launch-intent.json', dir_fd=self.directory, follow_symlinks=False)
                 except FileNotFoundError:break  # A previous rename may precede a failed sync.
@@ -149,6 +165,7 @@ class FixedLauncher:
             except FileNotFoundError:pass
             else:raise ValueError('PREPARED_INTENT_CHANGED')
             self.local_failure = None
+            self.intent_identity = None
         except (OSError, ValueError) as error:
             raise JobError('IO_UNCERTAIN', 'Unstarted attempt retained; failure publication needs retry') from error
 
@@ -245,18 +262,18 @@ class FixedLauncher:
             raise JobError('IO_UNCERTAIN', 'A prior launch intent requires inspection') from error
         except OSError as error:
             raise JobError('IO_UNCERTAIN', 'Launch intent could not be opened; no process was created') from error
+        self.intent_fd = fd
+        self.intent_identity = None
         try:
-            try:
-                os.fchmod(fd, 0o600)
-                pending = memoryview(raw)
-                while pending:
-                    count = os.write(fd, pending)
-                    q.require(count > 0, 'PREPARED_INTENT_WRITE')
-                    pending = pending[count:]
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            os.fchmod(fd, 0o600)
+            pending = memoryview(raw)
+            while pending:
+                count = os.write(fd, pending)
+                q.require(count > 0, 'PREPARED_INTENT_WRITE')
+                pending = pending[count:]
+            os.fsync(fd)
             os.fsync(self.directory)
+            self._pin_intent()
         except (OSError, ValueError) as error:
             # O_EXCL proved this call created the intent, and Popen has not
             # run. Retain these bytes while allowing a later local retry.

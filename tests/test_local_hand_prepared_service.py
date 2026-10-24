@@ -176,6 +176,47 @@ class FixedLaunchTests(unittest.TestCase):
         self.assertEqual(original,(self.launcher.output/('local-start-failed-'+('bb'*16)+'.json')).read_bytes())
         self.assertEqual('IDLE',self.launcher.state())
 
+    def test_initial_retention_metadata_failure_is_retryable_without_delivery(self):
+        original_stat=os.stat
+        def unavailable(path,*args,**kwargs):
+            if path=='launch-intent.json':raise OSError('temporary metadata outage')
+            return original_stat(path,*args,**kwargs)
+        with patch.object(prepared,'controller_command',return_value=['/synthetic/absent']), \
+             patch.object(prepared.budget,'current_clock',return_value={'boot_id':'test-boot'}), \
+             patch.object(prepared.q2_config,'executable',side_effect=lambda _:os.open('/dev/null',os.O_RDONLY)), \
+             patch.object(prepared.subprocess,'Popen',side_effect=OSError('not started')) as popen:
+            with patch.object(prepared.os,'stat',side_effect=unavailable):
+                with self.assertRaises((JobError,OSError)):self.launcher.start()
+                with self.assertRaises(JobError):self.launcher.state()
+            self.assertEqual('IDLE',self.launcher.state())
+            with self.assertRaises(JobError):self.launcher.start()
+            self.assertEqual(2,popen.call_count)
+        self.assertEqual(2,len(list(self.launcher.output.glob('local-start-failed-*.json'))))
+
+    def test_retention_cannot_adopt_intent_replaced_before_first_identity_lookup(self):
+        self.launcher._commit_intent(['/synthetic/undelivered'])
+        path=self.launcher.output/'launch-intent.json';saved=self.launcher.output/'original.json'
+        path.rename(saved);path.write_bytes(b'foreign intent')
+        with self.assertRaises(JobError):self.launcher._retain_unstarted_intent('local-start-failed')
+        with patch.object(prepared.subprocess,'Popen') as popen:
+            with self.assertRaises(JobError):self.launcher.state()
+            with self.assertRaises(JobError):self.launcher.start()
+        popen.assert_not_called()
+        self.assertEqual(b'foreign intent',path.read_bytes())
+
+    def test_descriptor_identity_read_failure_retains_original_handle_until_recovery(self):
+        original_fstat=os.fstat
+        def unavailable(fd):
+            if os.readlink('/proc/self/fd/'+str(fd)).endswith('/launch-intent.json'):
+                raise OSError('temporary descriptor metadata outage')
+            return original_fstat(fd)
+        with patch.object(prepared.os,'fstat',side_effect=unavailable):
+            with self.assertRaises(JobError):self.launcher._commit_intent(['/synthetic/undelivered'])
+        retained_fd=self.launcher.intent_fd
+        self.assertEqual('IDLE',self.launcher.state())
+        with self.assertRaises(OSError):os.fstat(retained_fd)
+        self.assertEqual(1,len(list(self.launcher.output.glob('local-intent-failed-*.json'))))
+
     def test_failed_retention_sync_reuses_same_record_without_redelivery(self):
         self.launcher._commit_intent(['/synthetic/undelivered'])
         with patch.object(prepared.os,'fsync',side_effect=OSError('directory sync unavailable')):
