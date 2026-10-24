@@ -368,35 +368,36 @@ class JWTVerifier:
                          kind, stage, reason, _exception_location(error), received, (time.monotonic() - started) * 1000)
             raise _deny() from None
 
-    async def _startup_metadata(self) -> dict[str, Any]:
+    async def _startup_document(self, url: str) -> dict[str, Any]:
         # network-online does not establish that an external issuer is ready.
-        # Retry only this read during startup, before the ASGI lifespan yields.
+        # Retry only startup reads, before the ASGI lifespan yields.
         # Token/JWKS reads retain their existing cooldown and failure behavior.
+        kind = "metadata" if url == self.config.metadata_url else "jwks"
         delays = STARTUP_METADATA_RETRY_DELAYS
         try:
             async with asyncio.timeout(STARTUP_METADATA_TIMEOUT):
                 for attempt in range(len(delays) + 1):
                     try:
-                        _LOG.info("Issuer metadata startup: stage=attempt attempt=%d/%d deadline_seconds=%d",
-                                  attempt + 1, len(delays) + 1, STARTUP_METADATA_TIMEOUT)
-                        return await self._document(self.config.metadata_url)
+                        _LOG.info("Issuer %s startup: stage=attempt attempt=%d/%d deadline_seconds=%d",
+                                  kind, attempt + 1, len(delays) + 1, STARTUP_METADATA_TIMEOUT)
+                        return await self._document(url)
                     except _DocumentUnavailable as error:
                         if attempt == len(delays):
-                            _LOG.error("Issuer metadata unavailable after %d startup attempts (%s)",
-                                       attempt + 1, error.reason)
+                            _LOG.error("Issuer %s unavailable after %d startup attempts (%s)",
+                                       kind, attempt + 1, error.reason)
                             raise
-                        _LOG.warning("Issuer metadata unavailable during startup (%s); "
-                                     "retry %d/%d in %ss", error.reason,
+                        _LOG.warning("Issuer %s unavailable during startup (%s); "
+                                     "retry %d/%d in %ss", kind, error.reason,
                                      attempt + 1, len(delays), delays[attempt])
                         await asyncio.sleep(delays[attempt])
         except TimeoutError:
-            _LOG.error("Issuer metadata startup deadline reached")
+            _LOG.error("Issuer %s startup deadline reached", kind)
             raise _deny() from None
 
     async def validate_issuer_metadata(self) -> None:
         """Refuse first linkage when discovery does not match admitted PKCE flow."""
         started = time.monotonic()
-        metadata = await self._startup_metadata()
+        metadata = await self._startup_document(self.config.metadata_url)
         expected = {name: getattr(self.config, name) for name in
                     ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri")}
         for name, value in expected.items():
@@ -421,9 +422,67 @@ class JWTVerifier:
             raise _deny()
         _LOG.info("Issuer metadata validated: stage=complete elapsed_ms=%d", (time.monotonic() - started) * 1000)
 
-    async def _key(self, kid: str, algorithm: str):
+    def _signing_keys(self, document: dict[str, Any]) -> Mapping[str, Any]:
         import jwt
 
+        raw_keys = document.get("keys")
+        if type(raw_keys) is not list or not 0 < len(raw_keys) <= MAX_KEYS:
+            raise _deny()
+        keys = {}
+        for item in raw_keys:
+            if not isinstance(item, dict):
+                raise _deny()
+            if any(k in item for k in ("d", "p", "q", "dp", "dq", "qi", "oth", "k")):
+                raise _deny()
+            # Encryption keys may accompany signing keys, but never authorize.
+            if item.get("use") == "enc":
+                continue
+            key_id = item.get("kid")
+            alg = item.get("alg")
+            if (not isinstance(key_id, str) or not _SCOPE.fullmatch(key_id)
+                    or key_id in keys or alg not in self.config.algorithms
+                    or item.get("use", "sig") != "sig"
+                    or item.get("key_ops", ["verify"]) != ["verify"]):
+                raise _deny()
+            key = jwt.PyJWK.from_dict(item, algorithm=alg)
+            if (alg == "RS256" and (key.key_type != "RSA" or not 2048 <= key.key.key_size <= 8192)
+                    or alg == "ES256" and (key.key_type != "EC" or key.key.curve.name != "secp256r1")):
+                raise _deny()
+            # Bind in-process authentication to the exact trusted public key,
+            # rather than merely to a reusable kid.
+            fingerprint = hashlib.sha256(json.dumps(
+                item, sort_keys=True, separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")).hexdigest()
+            keys[key_id] = (key, fingerprint)
+        if not keys:
+            raise _deny()
+        return MappingProxyType(keys)
+
+    async def validate_readiness(self) -> None:
+        """Validate discovery and usable keys before accepting HTTP requests.
+
+        This proves public verification material is available, not that a user
+        has logged in or that the issuer can sign or refresh tokens. Both reads
+        share one total deadline. No bearer token is needed or retained.
+        """
+        try:
+            async with asyncio.timeout(STARTUP_METADATA_TIMEOUT):
+                async with self._lock:
+                    self._key_cache = (MappingProxyType({}), 0.0)
+                    await self.validate_issuer_metadata()
+                    keys = self._signing_keys(await self._startup_document(self.config.jwks_uri))
+                    now = self._clock()
+                    self._key_cache = (keys, now + self.config.jwks_ttl_seconds)
+                    self._refresh_after = now + self.config.refresh_cooldown_seconds
+                    _LOG.info("Issuer readiness validated: discovery and signing keys")
+        except BaseException as error:
+            self._key_cache = (MappingProxyType({}), 0.0)
+            if not isinstance(error, Exception):
+                raise
+            _LOG.error("Issuer readiness rejected: errors=%s", _exception_location(error))
+            raise _deny() from None
+
+    async def _key(self, kid: str, algorithm: str):
         now = self._clock()
         async with self._lock:
             now = self._clock()
@@ -439,37 +498,8 @@ class JWTVerifier:
                 self._refresh_after = now + self.config.refresh_cooldown_seconds
                 try:
                     document = await self._document(self.config.jwks_uri)
-                    raw_keys = document.get("keys")
-                    if type(raw_keys) is not list or not 0 < len(raw_keys) <= MAX_KEYS:
-                        raise _deny()
-                    keys = {}
-                    for item in raw_keys:
-                        if not isinstance(item, dict):
-                            raise _deny()
-                        if any(k in item for k in ("d", "p", "q", "dp", "dq", "qi", "oth", "k")):
-                            raise _deny()
-                        # Issuers can publish encryption keys alongside their
-                        # signing keys. They are never JWT verification keys.
-                        if item.get("use") == "enc":
-                            continue
-                        key_id = item.get("kid")
-                        alg = item.get("alg")
-                        if (not isinstance(key_id, str) or not _SCOPE.fullmatch(key_id)
-                                or key_id in keys or alg not in self.config.algorithms
-                                or item.get("use", "sig") != "sig"
-                                or item.get("key_ops", ["verify"]) != ["verify"]):
-                            raise _deny()
-                        key = jwt.PyJWK.from_dict(item, algorithm=alg)
-                        if (alg == "RS256" and (key.key_type != "RSA" or not 2048 <= key.key.key_size <= 8192)
-                                or alg == "ES256" and (key.key_type != "EC" or key.key.curve.name != "secp256r1")):
-                            raise _deny()
-                        # Bind in-process authentication to this exact trusted
-                        # public-key document, not merely to a reusable kid.
-                        fingerprint = hashlib.sha256(json.dumps(
-                            item, sort_keys=True, separators=(",", ":"), allow_nan=False,
-                        ).encode("utf-8")).hexdigest()
-                        keys[key_id] = (key, fingerprint)
-                    self._key_cache = (MappingProxyType(keys), self._clock() + self.config.jwks_ttl_seconds)
+                    keys = self._signing_keys(document)
+                    self._key_cache = (keys, self._clock() + self.config.jwks_ttl_seconds)
                 except Exception:
                     self._key_cache = (MappingProxyType({}), 0.0)
                     raise _deny() from None

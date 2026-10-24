@@ -458,7 +458,7 @@ def create_app(broker, verifier):
     @asynccontextmanager
     async def lifespan(current):
         try:
-            await verifier.validate_issuer_metadata()
+            await verifier.validate_readiness()
             async with sdk_lifespan(current):
                 try:
                     yield

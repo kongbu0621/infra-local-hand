@@ -448,6 +448,15 @@ do not change issuer, audience or subject ownership to work around connectivity.
 Check discovery and JWKS under the actual service account before declaring
 authentication ready.
 
+MCP startup now validates both discovery and at least one usable signing key
+before accepting HTTP requests. Transient discovery/JWKS read failures receive
+bounded retries within a shared 60-second startup deadline; invalid metadata,
+TLS certificates or key material fail immediately. The first token uses the
+same validated key cache, with the existing TTL and rotation cooldown. This
+public-document check does not prove login, signing, refresh or external routing;
+verify those separately after installation or an authentication configuration
+change. The local task manager remains independent of this network startup.
+
 The preparation and execution components under `tools/admin/` are deployed
 separately by the operator; they are **not included in the wheel's packages**.
 The source entry points are [resident_service.py](../tools/admin/local_hand_system_manager/resident_service.py)
