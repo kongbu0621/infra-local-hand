@@ -137,6 +137,70 @@ class FixedLaunchTests(unittest.TestCase):
             with self.assertRaises(JobError):self.launcher.start()
         popen.assert_not_called()
 
+    def test_repeated_clock_values_cannot_replace_previous_local_failures(self):
+        with patch.object(prepared.time,'time_ns',return_value=123), \
+             patch.object(prepared,'controller_command',side_effect=[['/synthetic/first'],['/synthetic/second']]), \
+             patch.object(prepared.budget,'current_clock',return_value={'boot_id':'test-boot'}), \
+             patch.object(prepared.q2_config,'executable',side_effect=lambda _:os.open('/dev/null',os.O_RDONLY)), \
+             patch.object(prepared.subprocess,'Popen',side_effect=OSError('not started')):
+            with self.assertRaises(JobError):self.launcher.start()
+            originals={p:p.read_bytes() for p in self.launcher.output.glob('local-start-failed-*.json')}
+            with self.assertRaises(JobError):self.launcher.start()
+        self.assertEqual(2,len(list(self.launcher.output.glob('local-start-failed-*.json'))))
+        self.assertTrue(all(p.read_bytes()==raw for p,raw in originals.items()))
+
+    def test_failed_retention_before_process_creation_can_resume_after_storage_recovers(self):
+        with patch.object(prepared,'controller_command',return_value=['/synthetic/absent']), \
+             patch.object(prepared.budget,'current_clock',return_value={'boot_id':'test-boot'}), \
+             patch.object(prepared.q2_config,'executable',side_effect=lambda _:os.open('/dev/null',os.O_RDONLY)), \
+             patch.object(prepared.subprocess,'Popen',side_effect=OSError('not started')) as popen:
+            with patch.object(prepared.os,'rename',side_effect=OSError('storage unavailable')), \
+                 patch.object(prepared,'_publish_create_only',side_effect=OSError('storage unavailable')):
+                with self.assertRaises((JobError,OSError)):self.launcher.start()
+            self.assertEqual(1,popen.call_count)
+            original=(self.launcher.output/'launch-intent.json').read_bytes()
+            self.assertEqual('IDLE',self.launcher.state())
+            self.assertFalse((self.launcher.output/'launch-intent.json').exists())
+            self.assertIn(original,[p.read_bytes() for p in self.launcher.output.glob('local-start-failed-*.json')])
+            with self.assertRaises(JobError):self.launcher.start()
+            self.assertEqual(2,popen.call_count)
+
+    def test_failure_publication_collision_preserves_existing_bytes(self):
+        self.launcher._commit_intent(['/synthetic/undelivered'])
+        original=(self.launcher.output/'launch-intent.json').read_bytes()
+        collision=self.launcher.output/('local-start-failed-'+('aa'*16)+'.json')
+        collision.write_bytes(b'older retained failure')
+        with patch.object(prepared.os,'urandom',side_effect=[bytes.fromhex('aa'*16),bytes.fromhex('bb'*16)]):
+            self.launcher._retain_unstarted_intent('local-start-failed')
+        self.assertEqual(b'older retained failure',collision.read_bytes())
+        self.assertEqual(original,(self.launcher.output/('local-start-failed-'+('bb'*16)+'.json')).read_bytes())
+        self.assertEqual('IDLE',self.launcher.state())
+
+    def test_failed_retention_sync_reuses_same_record_without_redelivery(self):
+        self.launcher._commit_intent(['/synthetic/undelivered'])
+        with patch.object(prepared.os,'fsync',side_effect=OSError('directory sync unavailable')):
+            with self.assertRaises(JobError):self.launcher._retain_unstarted_intent('local-authorization-expired')
+        retained={p:p.read_bytes() for p in self.launcher.output.iterdir()}
+        self.assertFalse((self.launcher.output/'launch-intent.json').exists())
+        with patch.object(prepared,'_publish_create_only') as publish,patch.object(prepared.subprocess,'Popen') as popen:
+            self.assertEqual('IDLE',self.launcher.state())
+            self.assertEqual('IDLE',self.launcher.state())
+        publish.assert_not_called();popen.assert_not_called()
+        self.assertEqual(retained,{p:p.read_bytes() for p in self.launcher.output.iterdir()})
+
+    def test_failure_retention_never_moves_a_replaced_intent(self):
+        self.launcher._commit_intent(['/synthetic/undelivered'])
+        with patch.object(prepared,'_publish_create_only',side_effect=OSError('storage unavailable')):
+            with self.assertRaises(JobError):self.launcher._retain_unstarted_intent('local-start-failed')
+        path=self.launcher.output/'launch-intent.json';saved=self.launcher.output/'original-intent.json'
+        path.rename(saved);path.write_bytes(b'foreign intent')
+        with patch.object(prepared.subprocess,'Popen') as popen:
+            with self.assertRaises(JobError):self.launcher.state()
+            with self.assertRaises(JobError):self.launcher.start()
+        popen.assert_not_called()
+        self.assertEqual(b'foreign intent',path.read_bytes())
+        self.assertEqual([],list(self.launcher.output.glob('local-start-failed-*.json')))
+
     def test_capture_thread_start_failure_precedes_process_delivery_and_allows_retry(self):
         create=subprocess.Popen
         command=[sys.executable,'-c',"print('completed once after local failures')"]

@@ -82,6 +82,7 @@ class FixedLauncher:
         self.result = None
         self.failure = None
         self.publication_failure = None
+        self.local_failure = None
         self.sequence = 0
         self.started = (self.output/'started.json').exists() or (self.output/'launch-intent.json').exists()
         self.finished = (self.output/'finished.json').exists()
@@ -91,6 +92,7 @@ class FixedLauncher:
                       'PREPARED_EXIT_PROOF')
 
     def state(self):
+        self._finish_local_failure()
         if self.failure is not None:
             raise JobError('IO_UNCERTAIN', 'Prepared controller capture needs inspection')
         if self.finished:
@@ -110,6 +112,45 @@ class FixedLauncher:
         if self.started:
             raise JobError('IO_UNCERTAIN', 'A prior launch is unresolved; inspect the original task')
         return 'IDLE'
+
+    def _retain_unstarted_intent(self, prefix):
+        # Only paths reached before successful Popen may release this intent.
+        # Keep this attempt's identity in memory across a storage outage. A new
+        # daemon still treats a surviving intent as unknown and cannot replay it.
+        info = os.stat('launch-intent.json', dir_fd=self.directory, follow_symlinks=False)
+        q.require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                  and info.st_uid == os.fstat(self.directory).st_uid, 'PREPARED_INTENT_IDENTITY')
+        self.local_failure = dict(prefix=prefix, identity=_same(info)[:-1],
+                                  destination=prefix+'-'+os.urandom(16).hex()+'.json')
+        self._finish_local_failure()
+
+    def _finish_local_failure(self):
+        pending = getattr(self, 'local_failure', None)
+        if pending is None:return
+        try:
+            for _ in range(8):
+                try:source = os.stat('launch-intent.json', dir_fd=self.directory, follow_symlinks=False)
+                except FileNotFoundError:break  # A previous rename may precede a failed sync.
+                q.require(_same(source)[:-1] == pending['identity'], 'PREPARED_INTENT_CHANGED')
+                try:
+                    _publish_create_only(Path('launch-intent.json'), Path(pending['destination']),
+                                         source_dir_fd=self.directory, destination_dir_fd=self.directory)
+                    break
+                except FileExistsError:
+                    pending['destination'] = pending['prefix']+'-'+os.urandom(16).hex()+'.json'
+            else:raise OSError('Failure record names collided')
+            retained = os.stat(pending['destination'], dir_fd=self.directory, follow_symlinks=False)
+            # rename changes ctime; all other pinned fields must still match.
+            q.require(_same(retained)[:-1] == pending['identity'], 'PREPARED_INTENT_CHANGED')
+            os.fsync(self.directory)
+            q.require(_same(os.stat(pending['destination'], dir_fd=self.directory, follow_symlinks=False))
+                      == _same(retained), 'PREPARED_INTENT_CHANGED')
+            try:os.stat('launch-intent.json', dir_fd=self.directory, follow_symlinks=False)
+            except FileNotFoundError:pass
+            else:raise ValueError('PREPARED_INTENT_CHANGED')
+            self.local_failure = None
+        except (OSError, ValueError) as error:
+            raise JobError('IO_UNCERTAIN', 'Unstarted attempt retained; failure publication needs retry') from error
 
     def _publish_completion(self):
         """Publish the captured result without exposing partial or replacing old bytes."""
@@ -219,9 +260,7 @@ class FixedLauncher:
         except (OSError, ValueError) as error:
             # O_EXCL proved this call created the intent, and Popen has not
             # run. Retain these bytes while allowing a later local retry.
-            os.rename('launch-intent.json', 'local-intent-failed-'+str(time.time_ns())+'.json',
-                      src_dir_fd=self.directory, dst_dir_fd=self.directory)
-            os.fsync(self.directory)
+            self._retain_unstarted_intent('local-intent-failed')
             raise JobError('IO_UNCERTAIN', 'Launch intent could not be committed; no process was created') from error
 
     def start(self, *, authorization=None):
@@ -256,9 +295,7 @@ class FixedLauncher:
             try:
                 worker.start()
             except BaseException as error:
-                os.rename('launch-intent.json', 'local-start-failed-'+str(time.time_ns())+'.json',
-                          src_dir_fd=self.directory, dst_dir_fd=self.directory)
-                os.fsync(self.directory)
+                self._retain_unstarted_intent('local-start-failed')
                 if isinstance(error, (KeyboardInterrupt, SystemExit)):raise
                 raise JobError('IO_UNCERTAIN', 'Controller capture could not be started; no process was created') from error
             if authorization is not None:
@@ -267,17 +304,13 @@ class FixedLauncher:
                 except JobError:
                     # This attempt owns the intent, and no process has been
                     # delivered. Retain it without blocking a refreshed retry.
-                    os.rename('launch-intent.json', 'local-authorization-expired-'+str(time.time_ns())+'.json',
-                              src_dir_fd=self.directory, dst_dir_fd=self.directory)
-                    os.fsync(self.directory)
+                    self._retain_unstarted_intent('local-authorization-expired')
                     raise
             try:
                 self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})
             except OSError as error:
-                os.rename('launch-intent.json', 'local-start-failed-'+str(time.time_ns())+'.json',
-                          src_dir_fd=self.directory, dst_dir_fd=self.directory)
-                os.fsync(self.directory)
+                self._retain_unstarted_intent('local-start-failed')
                 raise JobError('IO_UNCERTAIN', 'Controller process could not be created') from error
             self.started = True
             delivered = True
