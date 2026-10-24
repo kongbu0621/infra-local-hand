@@ -197,6 +197,8 @@ if sys.platform.startswith('linux'):
             from test_local_hand_mcp_auth import HAS_EXTRA, SyntheticIssuer
             from test_local_hand_mcp_server import ASGIClient
             from local_hand_mcp.server import create_app
+            from local_hand_jobs import forwarded_bounds
+            import time
             if not HAS_EXTRA:
                 self.skipTest('Optional pinned MCP extra is not installed')
             issuer = SyntheticIssuer()
@@ -207,7 +209,10 @@ if sys.platform.startswith('linux'):
             db.execute('CREATE TABLE revocations(principal TEXT)')
             self.addCleanup(db.close)
             self.retained.state.transaction.return_value = db
-            headers = {'Authorization': 'Bearer ' + issuer.token(),
+            cutoff = int(time.time()) + 300
+            network_scopes = frozenset({'lh:inspect', 'lh:submit', 'lh:read', 'lh:cancel', 'lh:evidence'})
+            headers = {'Authorization': 'Bearer ' + issuer.token(claims={
+                           'exp': cutoff, 'scope': ' '.join(sorted(network_scopes))}),
                        'Accept': 'application/json, text/event-stream'}
             with ASGIClient(create_app(self.broker, issuer.verifier), 'http://127.0.0.1:8765') as client:
                 def rpc(method, params=None):
@@ -232,8 +237,13 @@ if sys.platform.startswith('linux'):
                 polled = rpc('tools/call', dict(name='lh_job_prepare', arguments=args))
                 self.assertFalse(polled.get('isError', False), polled)
                 self.assertEqual(original, polled['structuredContent'])
-                self.service.call.assert_called_once_with('prepare', principal_id='owner',
-                                                          **args, allow_new=False)
+                self.service.call.assert_called_once()
+                forwarded = self.service.call.call_args
+                body, admitted = forwarded_bounds.restrict(
+                    dict(action=forwarded.args[0], **forwarded.kwargs), self.owner)
+                self.assertEqual(dict(action='prepare', principal_id='owner', **args, allow_new=False), body)
+                self.assertEqual(network_scopes, admitted.scopes)
+                self.assertEqual(cutoff, admitted.expires_at)
                 self.service.call.reset_mock()
                 self.service.call.return_value = {'state': 'RUNNING'}
                 status = dict(operation_id=self.request['operation_id'],
