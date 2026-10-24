@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1580" viewBox="0 0 1440 1580" role="img" aria-labelledby="title description">
+<title id="title">部署与恢复重构：同一操作接续，分层验证结果</title>
+<desc id="description">设计中，尚未实现、部署或验收。受保护输入经只读计划器进入部署协调器；协调器读写独立持久恢复记录，控制最终准入维护屏障，通过固定监督动作修改文件、服务和网关，由实际状态观察器反馈。CLI 与 MCP 的新准备和首次执行共同检查屏障，已接受任务自然收尾，原任务查询、取消和证据读取不被维护标记禁止。部署不重放业务。本地、公网和客户端各自取得证据，汇入分层报告；公网超时不触发自动重装。支持范围内故障解除后须在预定预算内达到预定终态。</desc>
+<!-- Relationship source: deployment-recovery-target.mmd. Nodes and directed edges are kept in sync. -->
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#bfd0df" stroke-width="1.5"/></marker>
+<style>
+text {font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-size:23px; fill:#d7e6f3; text-anchor:middle;}
+.title {font-size:35px;font-weight:600;fill:#e0efff;}
+.heading {font-size:28px;font-weight:600;}
+.note {font-size:23px;fill:#b5c4d0;}
+.warm {fill:#e4c897;}
+.node {fill:#102c42;stroke:#527c99;stroke-width:1.8;}
+.control {fill:#193e58;stroke:#85b4d6;stroke-width:2.4;}
+.store {fill:#2c2543;stroke:#9d85b9;stroke-width:1.8;}
+.gate {fill:#342c20;stroke:#b49865;stroke-width:1.8;}
+.business {fill:#15372e;stroke:#73a995;stroke-width:1.8;}
+.edge,.warmedge,.businessedge {fill:none;stroke:#bfd0df;stroke-width:2.3;stroke-linejoin:round;marker-end:url(#arrow);}
+.warmedge {stroke:#e4c897;}
+.businessedge {stroke:#9bcbb9;}
+.edge-label {font-size:21px;fill:#bdcedc;}
+</style></defs>
+<rect width="1440" height="1580" rx="24" fill="#0d1117"/>
+<text class="title" x="720" y="55">部署与恢复：同一操作接续，分层验证结果</text>
+<text class="warm" x="720" y="104">设计中 · 当前单节点 Linux / systemd 范围 · 尚未实现、部署或验收</text>
+<rect x="30" y="990" width="1380" height="440" rx="22" fill="#101a24" stroke="#40576c" stroke-dasharray="8 6"/>
+<text class="note" x="720" y="1020">各层独立取证，本地完成不自动证明公网或客户端通过</text>
+<g id="node-A" data-node="A"><rect class="node" x="50" y="150" width="380" height="120" rx="18"/>
+<text class="heading" x="240" y="200">受保护部署输入</text>
+<text class="" x="240" y="238">支持画像 · 清单 · 候选制品</text>
+</g>
+<g id="node-B" data-node="B"><rect class="node" x="530" y="150" width="380" height="120" rx="18"/>
+<text class="heading" x="720" y="200">只读计划器</text>
+<text class="" x="720" y="238">固定动作 · 基线 · 恢复范围</text>
+</g>
+<g id="node-I" data-node="I"><rect class="business" x="1010" y="150" width="380" height="120" rx="18"/>
+<text class="heading" x="1200" y="200">本地 CLI / MCP</text>
+<text class="" x="1200" y="238">准备与首次执行请求</text>
+</g>
+<g id="node-D" data-node="D"><rect class="store" x="50" y="350" width="380" height="150" rx="18"/>
+<text class="heading" x="240" y="396">持久恢复记录与备份</text>
+<text class="" x="240" y="434">意图 · 尝试 · 观察 · 决定</text>
+<text class="" x="240" y="472">独立于任务账本</text>
+</g>
+<g id="node-C" data-node="C"><rect class="control" x="530" y="350" width="380" height="150" rx="18"/>
+<text class="heading" x="720" y="396">部署协调器</text>
+<text class="" x="720" y="434">同一操作接续 · 节点互斥</text>
+<text class="" x="720" y="472">未知先核对，完成不重做</text>
+</g>
+<g id="node-E" data-node="E"><rect class="gate" x="1010" y="350" width="380" height="150" rx="18"/>
+<text class="heading" x="1200" y="396">最终准入维护屏障</text>
+<text class="" x="1200" y="434">统一关闭新准备 / 首次执行</text>
+<text class="" x="1200" y="472">持久所有权 · 验证后释放</text>
+</g>
+<g id="node-G" data-node="G"><rect class="node" x="50" y="620" width="380" height="150" rx="18"/>
+<text class="heading" x="240" y="666">实际状态观察器</text>
+<text class="" x="240" y="704">对象 · 作业 · 实例 · 配置</text>
+<text class="" x="240" y="742">协议与安全后置条件</text>
+</g>
+<g id="node-F" data-node="F"><rect class="node" x="530" y="620" width="380" height="120" rx="18"/>
+<text class="heading" x="720" y="670">固定动作与监督调用</text>
+<text class="" x="720" y="708">文件 · 服务 · 网关适配器</text>
+</g>
+<g id="node-T" data-node="T"><rect class="business" x="1010" y="620" width="380" height="150" rx="18"/>
+<text class="heading" x="1200" y="666">既有任务执行与结果</text>
+<text class="" x="1200" y="704">已接受任务自然收尾</text>
+<text class="" x="1200" y="742">保留原任务账本与证据</text>
+</g>
+<g id="node-Q" data-node="Q"><rect class="business" x="1010" y="840" width="380" height="100" rx="18"/>
+<text class="heading" x="1200" y="880">原任务查询 / 取消 / 读取</text>
+<text class="" x="1200" y="918">维护标记不禁止原有权限</text>
+</g>
+<g id="node-H" data-node="H"><rect class="node" x="50" y="1040" width="380" height="130" rx="18"/>
+<text class="heading" x="240" y="1076">本地部署检查</text>
+<text class="" x="240" y="1114">版本 · 配置 · 协议 · 准入</text>
+<text class="" x="240" y="1152">观察本地实际状态</text>
+</g>
+<g id="node-J" data-node="J"><rect class="node" x="530" y="1040" width="380" height="130" rx="18"/>
+<text class="heading" x="720" y="1076">公网独立检查</text>
+<text class="" x="720" y="1114">网络可达性 · 鉴权路由</text>
+<text class="" x="720" y="1152">观察公网实际入口</text>
+</g>
+<g id="node-K" data-node="K"><rect class="business" x="1010" y="1040" width="380" height="130" rx="18"/>
+<text class="heading" x="1200" y="1076">客户端实际验收</text>
+<text class="" x="1200" y="1114">连接 · 调用 · 原结果取回</text>
+<text class="" x="1200" y="1152">独立的实际调用证据</text>
+</g>
+<g id="node-R" data-node="R"><rect class="store" x="430" y="1280" width="580" height="120" rx="18"/>
+<text class="heading" x="720" y="1330">分层结果与可重建报告</text>
+<text class="" x="720" y="1368">分别绑定版本、时间和证据；未知如实保留</text>
+</g>
+<g data-from="A" data-to="B" data-label="生成计划"><path class="edge" d="M 430 210 H 530"/><text class="edge-label" x="480" y="194">生成计划</text></g>
+<g data-from="B" data-to="C" data-label="核对并接续"><path class="edge" d="M 720 270 V 350"/><text class="edge-label" x="825" y="316">核对并接续</text></g>
+<g data-from="C" data-to="D" data-label="持久写入"><path class="edge" d="M 530 394 H 430"/><text class="edge-label" x="480" y="378">持久写入</text></g>
+<g data-from="D" data-to="C" data-label="恢复读取"><path class="edge" d="M 430 454 H 530"/><text class="edge-label" x="480" y="438">恢复读取</text></g>
+<g data-from="C" data-to="E" data-label="控制维护"><path class="warmedge" d="M 910 424 H 1010"/><text class="edge-label" x="960" y="405">控制维护</text></g>
+<g data-from="I" data-to="E" data-label="最终入口共同检查"><path class="warmedge" d="M 1200 270 V 350"/><rect x="1112" y="293" width="176" height="29" fill="#0d1117"/><text class="edge-label" x="1200" y="316">最终入口共同检查</text></g>
+<g data-from="C" data-to="F" data-label="满足前置条件才执行"><path class="edge" d="M 720 500 V 620"/><rect x="706" y="543" width="198" height="29" fill="#0d1117"/><text class="edge-label" x="805" y="566">满足前置条件才执行</text></g>
+<g data-from="F" data-to="G" data-label="核对效果"><path class="edge" d="M 530 680 H 430"/><text class="edge-label" x="480" y="662">核对效果</text></g>
+<g data-from="G" data-to="C" data-label="反馈实际状态"><path class="edge" d="M 240 620 V 570 H 480 V 480 H 530"/><text class="edge-label" x="260" y="596">反馈实际状态</text></g>
+<g data-from="E" data-to="T" data-label="开放后才接收新任务"><path class="warmedge" d="M 1200 500 V 620"/><rect x="1101" y="543" width="198" height="29" fill="#0d1117"/><text class="edge-label" x="1200" y="566">开放后才接收新任务</text></g>
+<g data-from="Q" data-to="T" data-label="按原任务操作"><path class="businessedge" d="M 1200 840 V 770"/><text class="edge-label" x="1305" y="810">按原任务操作</text></g>
+<g data-from="H" data-to="G" data-label="本地验证反馈"><path class="edge" d="M 240 1040 V 770"/><text class="edge-label" x="130" y="970">本地验证反馈</text></g>
+<g data-from="H" data-to="R" data-label="本地证据"><path class="edge" d="M 240 1170 V 1335 H 430"/><text class="edge-label" x="305" y="1260">本地证据</text></g>
+<g data-from="J" data-to="R" data-label="公网证据"><path class="edge" d="M 720 1170 V 1280"/><text class="edge-label" x="796" y="1230">公网证据</text></g>
+<g data-from="K" data-to="R" data-label="客户端证据"><path class="businessedge" d="M 1200 1170 V 1335 H 1010"/><text class="edge-label" x="1135" y="1260">客户端证据</text></g>
+<text class="note" x="500" y="830">部署只改变受管配置、服务和网关</text>
+<text class="note" x="500" y="870">不重放业务；不恢复旧业务数据库</text>
+<text class="note" x="500" y="910">服务切换可能短时断连，保留本地恢复通路</text>
+<text class="warm" x="720" y="1483">收敛条件：故障解除、证据齐备后，在预定预算内达到预定终态</text>
+<text class="note" x="720" y="1526">完成目标 / 恢复原状态 / 明确冲突拒绝；持续等待不算恢复通过</text>
+</svg>
