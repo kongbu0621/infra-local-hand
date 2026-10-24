@@ -89,6 +89,16 @@
 
 </details>
 
+### 部署与恢复重构（设计中）
+
+**下图是当前单节点部署与恢复的重构设计，尚未实现、部署或验收。** 针对多轮修复仍出现的同类恢复缺陷，方案将部署动作、实际观察与持久记录分开；故障解除后须在预定预算内完成接续，不能把持续等待算作问题收敛。
+
+[![部署与恢复目标架构：协调器依据持久记录和实际观察接续固定动作，维护屏障保护本地与远程最终新准入，本地部署、公网与客户端各自验收。](docs/diagrams/deployment-recovery-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fbe7443a9d68a683fd662ac562189a9ca44eab12/docs/diagrams/deployment-recovery-target.svg)
+
+[查看重构架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fbe7443a9d68a683fd662ac562189a9ca44eab12/docs/diagrams/deployment-recovery-target.svg) · [问题根因、重构方案与收敛条件](docs/DEPLOYMENT_RECOVERY_REFACTOR.md) · [关系源](docs/diagrams/deployment-recovery-target.mmd)
+
+维护屏障共同约束本地 CLI 和 MCP 的最终准备／首次执行；已接受任务自然收尾，原任务查询和成果读取不因维护标记而被禁止，但服务切换可能短时断连。部署恢复使用独立记录，不重放业务；本地部署完成、公网可达和客户端实际调用分别取证。该重构不作为继续已验证功能或 Ledger 主任务的统一前置。
+
 ## 怎么接入
 
 | 接入方式 | 入口及职责 |
@@ -115,7 +125,7 @@
 `--auth-config` 是 Local Hand 对接身份服务的配置，不是身份服务实现或安装器；测试中的合成 issuer 也不是可部署的登录服务。
 本地 Unix socket 入口使用操作系统身份映射，不经过远程 OAuth。配置说明见[服务部署输入](docs/USAGE.md#job-service-deployment-inputs)，独立性要求见[启动、认证与网络独立性](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md#6-启动认证与网络独立性)。
 
-本轮部署方案是每台机器运行一个自己的身份服务实例，供该节点的多个本地主体使用；两个 ChatGPT 账号需要隔离时分别登录两个本地主体，每个主体可获准多个项目。具体的部署清单、兼容要求、启动顺序与身份迁移仍在上述原方案中维护。独立认证及多主体授权尚未完成部署验收。
+本轮部署方案是每台机器运行一个自己的身份服务实例，供该节点的多个本地主体使用；两个 ChatGPT 账号需要隔离时分别登录两个本地主体，每个主体可获准多个项目。具体的部署清单、兼容要求、启动顺序与身份迁移仍在上述原方案中维护。[首节点单 owner 的独立认证、ChatGPT 连接与实际任务调用已有验收记录](docs/DEVELOPMENT.md#首节点-owner-的-chatgpt-网页实际任务验收2026-10-24)；跨节点及多主体隔离仍待验收。
 
 ### 客户端、Server、MCP 与 Tailscale 是什么关系
 
