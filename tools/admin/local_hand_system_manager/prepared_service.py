@@ -224,7 +224,9 @@ class FixedLauncher:
             os.fsync(self.directory)
             raise JobError('IO_UNCERTAIN', 'Launch intent could not be committed; no process was created') from error
 
-    def start(self):
+    def start(self, *, authorization=None):
+        if authorization is not None:
+            authorization.require_current()
         state = self.state()
         if state != 'IDLE':
             return state
@@ -244,6 +246,11 @@ class FixedLauncher:
             # raised after native creation must never adopt a later child.
             if delivered:self._capture()
         worker = threading.Thread(target=capture_after_delivery, daemon=True)
+        # Command construction and executable verification may outlive the
+        # manager's admission check. Keep the original network deadline until
+        # actual delivery, without imposing it on an already running task.
+        if authorization is not None:
+            authorization.require_current()
         self._commit_intent(command)
         try:
             try:
@@ -254,6 +261,16 @@ class FixedLauncher:
                 os.fsync(self.directory)
                 if isinstance(error, (KeyboardInterrupt, SystemExit)):raise
                 raise JobError('IO_UNCERTAIN', 'Controller capture could not be started; no process was created') from error
+            if authorization is not None:
+                try:
+                    authorization.require_current()
+                except JobError:
+                    # This attempt owns the intent, and no process has been
+                    # delivered. Retain it without blocking a refreshed retry.
+                    os.rename('launch-intent.json', 'local-authorization-expired-'+str(time.time_ns())+'.json',
+                              src_dir_fd=self.directory, dst_dir_fd=self.directory)
+                    os.fsync(self.directory)
+                    raise
             try:
                 self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, cwd='/', env={'PATH':'/usr/bin:/bin'})
@@ -284,6 +301,7 @@ class FixedLauncher:
 def bounded_request(request, launch):
     """Only narrow the fixed owner after serve authenticates its OS peer."""
     from local_hand_jobs.contract import Principal
+    principal = None
     if 'authorization_bounds' in request:
         owner=launch['principal_id']
         peer=Principal(owner,frozenset(launch['policy']['principals'][owner]['scopes']))
@@ -295,7 +313,7 @@ def bounded_request(request, launch):
             or request['action'] not in ('start','status')
             or any(request[k]!=launch['request'][k] for k in ('operation_id','request_digest'))):
         raise JobError('UNAUTHORIZED','Only the original prepared identity is admitted')
-    return request
+    return request, principal
 
 
 def serve(config):
@@ -336,8 +354,9 @@ def serve(config):
                     _,peer_uid,peer_gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
                     if (peer_uid,peer_gid)!=(uid,gid):raise JobError('UNAUTHORIZED','Prepared peer is not admitted')
                     request=strict_loads(cli._read_frame(connection,4096,deadline=end))
-                    request=bounded_request(request,launch)
-                    state=launcher.start() if request['action']=='start' else launcher.state()
+                    request,authorization=bounded_request(request,launch)
+                    bounds={} if authorization is None else {'authorization':authorization}
+                    state=launcher.start(**bounds) if request['action']=='start' else launcher.state()
                     response={'result':{'state':state}}
                 except JobError as error:response={'error':error.as_dict()}
                 except (OSError,ValueError,TypeError):

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -14,7 +15,7 @@ if not sys.platform.startswith('linux'):
 
 from admin.local_hand_system_manager import prepared_service as prepared
 from admin.local_hand_system_manager.resident_service import ResidentService
-from local_hand_jobs.contract import JobError
+from local_hand_jobs.contract import JobError, Principal
 
 
 class FixedLaunchTests(unittest.TestCase):
@@ -33,6 +34,90 @@ class FixedLaunchTests(unittest.TestCase):
         item.installation={'installed':{'programs':{'python':{},'systemd_run':{}}}}
         item.launch={'request':{'operation_id':'prepared-operation'},'policy':{
             'broker_root':root.name,'process_manager':{'uid':os.getuid(),'manager_binding':{'boot_id':'test-boot'}}}}
+
+    def test_expiry_during_executable_check_precedes_intent_and_delivery(self):
+        cutoff = int(time.time()) + 100
+        principal = Principal('owner', frozenset({'lh:submit'}), expires_at=cutoff)
+        with patch('time.time', return_value=cutoff - 1) as clock:
+            def executable(_):
+                clock.return_value = cutoff
+                return os.open('/dev/null', os.O_RDONLY)
+            with patch.object(prepared, 'controller_command', return_value=['/synthetic/not-started']), \
+                 patch.object(prepared.budget, 'current_clock', return_value={'boot_id':'test-boot'}), \
+                 patch.object(prepared.q2_config, 'executable', side_effect=executable), \
+                 patch.object(prepared.subprocess, 'Popen') as popen:
+                with self.assertRaises(JobError) as caught:
+                    self.launcher.start(authorization=principal)
+        self.assertEqual('UNAUTHORIZED', caught.exception.code)
+        popen.assert_not_called()
+        self.assertEqual([], list(self.launcher.output.iterdir()))
+
+    def test_expiry_after_intent_or_thread_creation_retains_failure_and_allows_one_retry(self):
+        for stage in ('intent', 'thread'):
+            with self.subTest(stage=stage):
+                fixture = FixedLaunchTests('runTest')
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                item = fixture.launcher
+                cutoff = int(time.time()) + 100
+                principal = Principal('owner', frozenset({'lh:submit'}), expires_at=cutoff)
+                create, start_thread, commit = subprocess.Popen, threading.Thread.start, item._commit_intent
+                workers = []
+                command = [sys.executable, '-c', "print('one refreshed attempt')"]
+                with patch('time.time', return_value=cutoff - 1) as clock:
+                    def publish(argv):
+                        commit(argv)
+                        if stage == 'intent': clock.return_value = cutoff
+                    def start(worker):
+                        workers.append(worker)
+                        start_thread(worker)
+                        if stage == 'thread': clock.return_value = cutoff
+                    with patch.object(prepared, 'controller_command', return_value=command), \
+                         patch.object(prepared.budget, 'current_clock', return_value={'boot_id':'test-boot'}), \
+                         patch.object(prepared.q2_config, 'executable', side_effect=lambda _:os.open('/dev/null',os.O_RDONLY)), \
+                         patch.object(item, '_commit_intent', side_effect=publish), \
+                         patch.object(prepared.threading.Thread, 'start', new=start), \
+                         patch.object(prepared.subprocess, 'Popen', side_effect=create) as popen:
+                        with self.assertRaises(JobError) as caught:
+                            item.start(authorization=principal)
+                        self.assertEqual('UNAUTHORIZED', caught.exception.code)
+                        popen.assert_not_called()
+                        self.assertEqual('IDLE', item.state())
+                        self.assertFalse((item.output/'launch-intent.json').exists())
+                        retained = list(item.output.glob('local-authorization-expired-*.json'))
+                        self.assertEqual(1, len(retained))
+                        original = retained[0].read_bytes()
+                        for worker in workers:
+                            worker.join(1)
+                            self.assertFalse(worker.is_alive())
+                        refreshed = Principal('owner', principal.scopes, expires_at=cutoff + 100)
+                        item.start(authorization=refreshed)
+                        self.assertTrue(item.complete.wait(3))
+                        # Expiry cannot cancel or replay an already delivered process.
+                        clock.return_value = refreshed.expires_at
+                        self.assertEqual('EXITED', item.state())
+                        self.assertEqual('EXITED', item.start())
+                        popen.assert_called_once()
+                        self.assertEqual(original, retained[0].read_bytes())
+                        self.assertEqual(0, item.result['returncode'])
+
+    def test_fixed_receiver_retains_authority_until_process_delivery(self):
+        from local_hand_jobs.forwarded_bounds import attach
+        launch = dict(self.launcher.launch, principal_id='owner')
+        launch['request'] = dict(launch['request'], request_digest='a'*64)
+        launch['policy']['principals'] = {'owner': {'scopes': ['lh:submit', 'lh:read']}}
+        body = dict(action='start', **launch['request'])
+        cutoff = int(time.time()) + 100
+        principal = Principal('owner', frozenset({'lh:submit'}), expires_at=cutoff)
+        request, authorization = prepared.bounded_request(attach(body, principal), launch)
+        self.assertEqual(body, request)
+        self.assertEqual(cutoff, authorization.expires_at)
+        with patch('time.time', return_value=cutoff), patch.object(prepared.subprocess, 'Popen') as popen:
+            with self.assertRaises(JobError) as caught:
+                self.launcher.start(authorization=authorization)
+        self.assertEqual('UNAUTHORIZED', caught.exception.code)
+        popen.assert_not_called()
+        self.assertEqual((body, None), prepared.bounded_request(body, launch))
 
     def test_local_popen_failure_retains_record_and_can_retry_without_remote_execution(self):
         with patch.object(prepared,'controller_command',return_value=['/synthetic/absent']), \

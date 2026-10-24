@@ -13,6 +13,7 @@ from local_hand_jobs.contract import JobError, Principal, TOOL_SCOPES
 from local_hand_mcp.resident import ResidentBroker
 import test_local_hand_resident as fixtures
 import test_local_hand_mcp_prepared as prepared_fixtures
+import test_local_hand_prepared_service as launch_fixtures
 
 
 class BoundsTests(unittest.TestCase):
@@ -218,6 +219,35 @@ class ManagerBoundsTests(unittest.TestCase):
         self.assertEqual('UNAUTHORIZED', caught.exception.code)
         launcher.assert_not_called()
 
+    def test_expiry_inside_fixed_launcher_never_delivers_a_process(self):
+        from admin.local_hand_system_manager import prepared_service as prepared
+        self.network_request()
+        record = fixtures.PreparationTests.ready_record(self)
+        self.service._save(record)
+        launch_fixtures.FixedLaunchTests.setUp(self)
+        self.launcher.launch['request'] = record['request']
+        self.launcher.launch['policy']['process_manager']['manager_binding']['boot_id'] = 'boot-one'
+        cutoff = int(time.time()) + 100
+        principal = Principal('owner', frozenset({'lh:submit'}), expires_at=cutoff)
+        body = forwarded_bounds.attach(dict(action='start', principal_id='owner',
+            operation_id=record['operation_id'], request_digest=record['request']['request_digest']), principal)
+        with patch('time.time', return_value=cutoff - 1) as clock:
+            def command(*args):
+                clock.return_value = cutoff
+                return ['/synthetic/not-started']
+            with patch.object(self.service, 'execution_state', return_value='IDLE'), \
+                 patch.object(self.service, '_busy', return_value=False), \
+                 patch.object(self.service, '_launcher', return_value=self.launcher), \
+                 patch.object(prepared, 'controller_command', side_effect=command), \
+                 patch.object(prepared.q2_config, 'executable', side_effect=lambda _: os.open('/dev/null', os.O_RDONLY)), \
+                 patch.object(prepared.subprocess, 'Popen', side_effect=OSError('must not deliver')) as popen:
+                with self.assertRaises(JobError) as caught:
+                    self.service.call(body)
+        self.assertEqual('UNAUTHORIZED', caught.exception.code)
+        popen.assert_not_called()
+        self.assertFalse((self.launcher.output / 'launch-intent.json').exists())
+        self.assertEqual('IDLE', self.launcher.state())
+
 
 class PreparedBoundsTests(unittest.TestCase):
     setUp = prepared_fixtures.PreparedTests.setUp
@@ -241,6 +271,9 @@ class PreparedBoundsTests(unittest.TestCase):
         with self.assertRaises(JobError):
             bounded_request(read, launch)
         submit = forwarded_bounds.attach(body, Principal('owner', frozenset({'lh:submit'}), expires_at=cutoff))
-        self.assertEqual(body, bounded_request(submit, launch))
+        received, authorization = bounded_request(submit, launch)
+        self.assertEqual(body, received)
+        self.assertEqual(frozenset({'lh:submit'}), authorization.scopes)
+        self.assertEqual(cutoff, authorization.expires_at)
         with patch('time.time', return_value=cutoff), self.assertRaises(JobError):
             bounded_request(submit, launch)

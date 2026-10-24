@@ -393,7 +393,8 @@ class ResidentService:
                     if self._busy(except_operation=operation):
                         raise JobError('RESOURCE_BUSY','Another task is active')
                     if authorization is not None:authorization.require_current()
-                    state=self._launcher(record).start()
+                    bounds={} if authorization is None else {'authorization':authorization}
+                    state=self._launcher(record).start(**bounds)
                     if state=='EXITED':state=self._captured_execution_state(record)
             return dict(state=state)
 
