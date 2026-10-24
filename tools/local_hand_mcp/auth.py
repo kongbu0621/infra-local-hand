@@ -585,7 +585,7 @@ class JWTVerifier:
         """Map only an SDK-authenticated in-process access token to stable identity."""
         if (access_token is None or access_token.subject not in self.config.subject_map
                 or type(access_token.expires_at) is not int
-                or access_token.expires_at + self.config.clock_skew_seconds <= time.time()
+                or access_token.expires_at <= time.time()
                 or access_token.client_id != self.config.client_id
                 or access_token.resource != self.config.resource):
             raise _deny()
@@ -604,4 +604,5 @@ class JWTVerifier:
         if (entry is None or entry[1] != binding["sha256"]
                 or self._clock() >= valid_until):
             raise _deny()
-        return Principal(self.config.subject_map[access_token.subject], frozenset(access_token.scopes))
+        return Principal(self.config.subject_map[access_token.subject], frozenset(access_token.scopes),
+                         expires_at=access_token.expires_at)

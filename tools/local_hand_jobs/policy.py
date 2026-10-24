@@ -514,6 +514,7 @@ class Policy:
     def authorize(self, principal: Principal, scope: str, request: Mapping | None = None, owner: str | None = None) -> None:
         if not isinstance(principal, Principal):
             raise JobError("UNAUTHORIZED", "A verified principal is required")
+        principal.require_current()
         grant = self.principals.get(principal.principal_id)
         if grant is None or scope not in principal.scopes or scope not in grant["scopes"]:
             raise JobError("UNAUTHORIZED", "Current principal does not have the required grant")

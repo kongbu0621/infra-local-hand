@@ -114,6 +114,34 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
                 self.issuer.verifier.principal(access)
         self.assertEqual(caught.exception.code, "UNAUTHORIZED")
 
+    async def test_token_expiry_survives_mapping_until_broker_authorization(self):
+        from local_hand_jobs.policy import Policy
+        from test_local_hand_jobs_policy import policy_fixture
+
+        config = policy_fixture('/synthetic-token-deadline')
+        config['principals']['project-owner'] = config['principals'].pop('owner')
+        config['local_peers'] = {}
+        policy = Policy(config)
+        access = await self.issuer.verifier.authenticate(self.issuer.token())
+        principal = self.issuer.verifier.principal(access)
+        policy.authorize(principal, 'lh:submit')
+        # A resident/broker lock may wait after the SDK dispatch check. The
+        # already mapped identity must retain the original token deadline.
+        with patch('time.time', return_value=access.expires_at):
+            with self.assertRaises(JobError) as caught:
+                policy.authorize(principal, 'lh:submit')
+        self.assertEqual(caught.exception.code, 'UNAUTHORIZED')
+
+    async def test_clock_skew_does_not_extend_dispatch_acceptance_deadline(self):
+        config = AuthConfig.from_dict({**self.issuer.configuration, 'clock_skew_seconds': 5})
+        verifier = JWTVerifier(config, http_transport=self.issuer.transport)
+        now = int(time.time())
+        access = await verifier.authenticate(self.issuer.token(
+            claims={'iat': now - 10, 'nbf': now - 10, 'exp': now - 1}))
+        with self.assertRaises(JobError) as caught:
+            verifier.principal(access)
+        self.assertEqual(caught.exception.code, 'UNAUTHORIZED')
+
     async def test_in_process_authentication_rechecks_current_jwks_admission(self):
         # A body/dispatch queue may outlive the key used by SDK authentication.
         # No new broker call may use a stale verification after current JWKS

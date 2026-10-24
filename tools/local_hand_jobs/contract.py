@@ -5,10 +5,11 @@ mapping cannot recover duplicate keys that a permissive parser has discarded.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import re
+import time
 from typing import Any, Mapping
 
 SCHEMA_VERSION = "lh-job-v1"
@@ -56,12 +57,22 @@ class Principal:
 
     principal_id: str
     scopes: frozenset[str]
+    # A network authenticator's acceptance deadline follows the identity into
+    # broker locks. It is not a token, a new grant, or an accepted job deadline.
+    # OS-authenticated local recovery has no network-token expiration.
+    expires_at: int | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.principal_id, str) or not self.principal_id or len(self.principal_id) > 256:
             raise JobError("UNAUTHORIZED", "Invalid authenticated principal")
         if not isinstance(self.scopes, frozenset) or any(not isinstance(s, str) for s in self.scopes):
             raise JobError("UNAUTHORIZED", "Invalid authenticated scopes")
+        if self.expires_at is not None and (type(self.expires_at) is not int or self.expires_at <= 0):
+            raise JobError("UNAUTHORIZED", "Invalid authenticated acceptance deadline")
+
+    def require_current(self) -> None:
+        if self.expires_at is not None and time.time() >= self.expires_at:
+            raise JobError("UNAUTHORIZED", "Authenticated acceptance deadline has expired")
 
 
 def _invalid(message: str = "Request does not match the fixed contract") -> JobError:

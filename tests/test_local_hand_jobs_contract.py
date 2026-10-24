@@ -176,6 +176,13 @@ const bytes=canonical(value);process.stdout.write(JSON.stringify({bytes,digest:c
         with self.assertRaises(JobError):
             Principal("fixture-owner", ["lh:read"])
 
+    def test_authenticated_deadline_rejects_non_integer_or_nonpositive_values(self):
+        for value in (True, False, 0, -1, 1.5, '123'):
+            with self.subTest(value=value), self.assertRaises(JobError):
+                Principal('fixture-owner', frozenset({'lh:read'}), expires_at=value)
+        # Existing local maintenance identities are not network sessions.
+        Principal('fixture-owner', frozenset({'lh:read'})).require_current()
+
 
 if __name__ == "__main__":
     unittest.main()

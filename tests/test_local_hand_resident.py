@@ -102,6 +102,30 @@ class ResidentTests(unittest.TestCase):
 
     def call(self,name,args,principal=None):return self.broker.call(name,args,principal or self.owner)
 
+    def test_expiry_while_waiting_for_resident_lock_refuses_service_delivery(self):
+        cutoff=int(time.time())+300
+        principal=Principal('owner',frozenset({'lh:submit'}),expires_at=cutoff)
+        attempted=threading.Event();failures=[]
+        def call():
+            attempted.set()
+            try:
+                self.broker.call('lh_job_prepare',dict(operation_id=self.request['operation_id'],
+                    kind='host.inspect',profile_ref='fixture'),principal)
+            except BaseException as error:failures.append(error)
+        with patch('time.time',return_value=cutoff-1) as clock:
+            with self.broker.fence:
+                worker=threading.Thread(target=call,daemon=True);worker.start()
+                self.assertTrue(attempted.wait(2))
+                clock.return_value=cutoff
+            worker.join(2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(failures),1)
+        self.assertIsInstance(failures[0],JobError)
+        self.assertEqual(failures[0].code,'UNAUTHORIZED')
+        self.service.call.assert_not_called()
+        self.local.assert_not_called()
+        self.factory.assert_not_called()
+
     def test_workspace_read_requires_read_authority_and_never_launches(self):
         self.broker.config['workspace']=dict(source_refs=['project'],validation_refs=['core'],budgets={})
         args=dict(profile_ref='fixture',source_ref='project',relative_path='sample.py')
