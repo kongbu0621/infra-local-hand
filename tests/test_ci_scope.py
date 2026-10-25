@@ -60,6 +60,7 @@ def test_deployment_recovery_suites_are_linux_core_and_excluded_on_windows():
         "tests/test_local_hand_startup_guard.py",
         "tests/test_local_hand_mcp_readiness.py",
         "tests/test_local_hand_jobs_deployment.py",
+        "tests/test_local_hand_jobs_retained_verification.py",
         *(path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("test_local_hand_deploy_*.py")),
     }
     assert "tests/test_local_hand_deploy_identity.py" in recovery

@@ -54,6 +54,16 @@ v1 读取使用原私有数据目录的所有者及对应账户身份；明确�
 本轮未取得非交互 root 身份或 Docker socket 权限。已准备固定载荷的私有 root 核验与配置清单入口，
 但在其实际运行前，不将接口跳过、迁移输入缺失、平台故障矩阵或旧部署采用记为完成。
 
+随后 Owner 执行了该私有只读入口：已取得原管理器、MCP、身份服务配置和 Docker 清单，现役服务
+保持原状。root 接口测试首次因核验包遗漏夹具 `contract.json` 而在初始化时失败；原报告保留，
+补齐后同包普通身份检查为 12 通过、1 项 root 检查跳过，需再次按真实 root 身份验证。
+这属于核验包缺项，不能用清单读取成功覆盖接口测试失败。
+
+第一次推送的 [CI](https://github.com/kongbu0621/infra-local-hand/actions/runs/40176797350) 中，Linux 核心
+1844 通过、14 跳过；Windows 在收集新增 Linux 专用测试时导入 `fcntl` 失败。该测试现按既有
+`test_local_hand_jobs_*.py` 命名归类，保证后续 Linux 核心集持续包含它，同时保持 Windows 平台边界；
+CI 选择断言已补上。相关选择和读取检查 29 通过、1 项 root 检查跳过。此修正不改变运行载荷。
+
 后续运行实现
 [`c398f7f`](https://github.com/kongbu0621/infra-local-hand/commit/c398f7f1466b437dd8d3e86976cbbb4bbe59a0a8)
 补全了以下实际入口和约束：

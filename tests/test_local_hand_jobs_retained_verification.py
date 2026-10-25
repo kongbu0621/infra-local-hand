@@ -1,4 +1,4 @@
-"""Real retained SQLite/sealed bytes, bounded readback and authenticated routing."""
+"""Linux job retention: real SQLite/sealed bytes and authenticated routing."""
 import copy
 import hashlib
 import json
