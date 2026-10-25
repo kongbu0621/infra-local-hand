@@ -47,9 +47,15 @@ class PlanningEnvironment:
         if spec["kind"] == "gateway":
             return self._gateway_probe(component)
         path = Path(spec["socket"])
+        # The MCP maintenance listener lives in the original private broker
+        # directory. Its pinned SO_PEERCRED identity owns that directory;
+        # root manager controls keep the administrator-only ancestry rule.
+        parent_owners = {0, self.owner}
+        if spec["kind"] == "mcp":
+            parent_owners.add(spec.get("peer_uid", 0))
         for parent in path.parents:
             info = parent.lstat()
-            if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, self.owner}
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in parent_owners
                     or info.st_mode & 0o022 and not (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)):
                 raise DeployError("UNTRUSTED_PROBE", "Status socket ancestor is not protected")
         info = path.lstat()

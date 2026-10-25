@@ -8,7 +8,9 @@ import hashlib
 import os
 from pathlib import Path
 import pwd
+import socket
 import tempfile
+import threading
 import unittest
 
 from admin.local_hand_deploy.model import DeployError
@@ -133,6 +135,30 @@ class StartupOwnershipTests(unittest.TestCase):
         # Old root-only selections retain their original format and behavior.
         self.selection["members"] = self.selection["members"][:2]
         startup.verify_members(self.selection, owner_uid=self.owner)
+
+    def test_mcp_probe_uses_actual_peer_directory_and_never_the_manager_socket(self):
+        from local_hand_jobs import cli
+        path = self.root / "maintenance.sock"
+        environment = PlanningEnvironment({"owner_uid": 0, "timeout_seconds": 2,
+            "probes": {"mcp": {"kind": "mcp", "socket": str(path), "peer_uid": os.geteuid()}}})
+        proof = {**startup.instance(os.getpid()), "component": "mcp", "protocol_ready": True}
+        errors = []
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(str(path)); listener.listen(); listener.settimeout(2)
+            def respond():
+                try:
+                    with listener.accept()[0] as peer:
+                        peer.settimeout(2)
+                        request = cli._read_frame(peer, 4096)
+                        self.assertEqual(startup.canonical({"action": "deployment_observe"}), request)
+                        cli._send_frame(peer, {"result": proof})
+                except BaseException as error: errors.append(error)
+            worker = threading.Thread(target=respond); worker.start()
+            try: self.assertEqual(proof, environment._probe("mcp")["loaded"])
+            finally: worker.join(3)
+            self.assertEqual([], errors); self.assertFalse(worker.is_alive())
+            environment.profile["probes"]["mcp"]["peer_uid"] = os.geteuid() + 1
+            with self.assertRaises(DeployError): environment._probe("mcp")
 
 
 if __name__ == "__main__":
