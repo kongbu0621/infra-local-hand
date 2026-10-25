@@ -63,6 +63,10 @@ v1 读取使用原私有数据目录的所有者及对应账户身份；明确�
 1844 通过、14 跳过；Windows 在收集新增 Linux 专用测试时导入 `fcntl` 失败。该测试现按既有
 `test_local_hand_jobs_*.py` 命名归类，保证后续 Linux 核心集持续包含它，同时保持 Windows 平台边界；
 CI 选择断言已补上。相关选择和读取检查 29 通过、1 项 root 检查跳过。此修正不改变运行载荷。
+修正提交 `b8e23d6` 的[主干 CI](https://github.com/kongbu0621/infra-local-hand/actions/runs/40177248753)
+已通过：Linux 核心 1844 通过、14 跳过；Windows 共享范围 73 通过、371 项按平台条件跳过。
+跳过项不是该平台的运行验收证据。候选网关上下文已改用现场读回的完整基础镜像摘要生成，并绑定
+私有原配置摘要；这一步未构建镜像或切换容器，仍不能替代 T5/T6/T12/T14 的实际平台验证。
 
 后续运行实现
 [`c398f7f`](https://github.com/kongbu0621/infra-local-hand/commit/c398f7f1466b437dd8d3e86976cbbb4bbe59a0a8)
