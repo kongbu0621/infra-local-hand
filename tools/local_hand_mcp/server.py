@@ -525,8 +525,16 @@ def main(argv=None) -> int:
             auth = AuthConfig.from_file(args.auth_config)
             # Configuration reads and bind share the privileged startup lock.
             # Only the prebound loopback socket is handed to the HTTP server.
-            broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
-                                   **({"read_only": True} if args.read_only or args.prepared_task or args.resident else {}))
+            if guarded is not None and (args.read_only or args.prepared_task or args.resident):
+                from local_hand_jobs.cli import create_retained_broker
+                from local_hand_jobs.deployment import release_identity
+                # guard() has independently matched this executing payload to
+                # the protected current selection. Keep old writer policy intact.
+                broker = create_retained_broker(args.config, actual_entrypoint=__file__,
+                                                reader_identity=release_identity(__file__))
+            else:
+                broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
+                                       **({"read_only": True} if args.read_only or args.prepared_task or args.resident else {}))
             maintenance = listener = None
             failed = False
             try:

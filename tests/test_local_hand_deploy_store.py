@@ -102,5 +102,32 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(DeployError): store.create(plan())
             self.assertEqual([], store.list())
 
+    def test_attempt_budget_reserves_completion_and_database_headroom(self):
+        with self.store.locked():
+            op = self.store.create(plan())
+            reserve = self.store.check_attempt_budget(op)
+            self.assertGreater(reserve['events'], 64)
+            self.assertGreater(reserve['operation_bytes'], 262144)
+            for limits in (replace(self.store.limits, max_events=64, recovery_events=32),
+                           replace(self.store.limits, max_record_bytes=32768),
+                           replace(self.store.limits, max_database_bytes=32768)):
+                # Inspect the bound, without changing the actual store metadata.
+                with mock.patch.object(self.store, 'limits', limits), self.assertRaises(DeployError):
+                    self.store.check_attempt_budget(op)
+
+    def test_observation_budget_does_not_consume_reserved_recovery_events(self):
+        with self.store.locked():
+            op = self.store.create(plan())
+            limits = replace(self.store.limits, max_events=5, recovery_events=3)
+            with mock.patch.object(self.store, 'limits', limits):
+                self.store.save(op, 'WAITING')
+                before = self.store.path.read_bytes()
+                with self.assertRaises(DeployError):
+                    self.store.save(op, 'WAITING')
+                self.assertEqual(before, self.store.path.read_bytes())
+                self.store.save(op, 'DECISION', recovery=True)
+                self.store.save(op, 'RELEASE_INTENT', recovery=True)
+                self.store.save(op, 'RELEASED', recovery=True)
+
 
 if __name__ == '__main__': unittest.main()

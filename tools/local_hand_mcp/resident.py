@@ -82,8 +82,9 @@ class ResidentBroker:
                     or any(type(ref) is not str or re.fullmatch(REF_PATTERN, ref) is None for ref in local['runtime_refs'])
                     or len(set(local['runtime_refs'])) != len(local['runtime_refs']) or type(local['budgets']) is not dict):
                 raise JobError('UNAUTHORIZED', 'Invalid installed local A2 capability configuration')
+        identity = dict(retained.reader_identity, execution_entrypoint=str(Path(cli.__file__).absolute()))
         return cls(retained, config, ServiceClient(config['service']),
-            lambda path: cli.create_broker(path, actual_entrypoint=cli.__file__, read_only=True))
+            lambda path: cli.create_retained_broker(path, actual_entrypoint=cli.__file__, reader_identity=identity))
 
     def start(self):
         self.retained.start()

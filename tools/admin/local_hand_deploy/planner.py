@@ -56,7 +56,7 @@ def validate_profile(profile, source, target):
     allowed = {"schema", "owner_uid", "startup_descriptor", "maintenance_directory",
                "guarded_components", "probes", "systemd", "gateway", "file_limits",
                "timeout_seconds", "output_limit", "filesystem_support"}
-    allowed |= {"security_repair", "gateway_checks", "recovery_from"}
+    allowed |= {"security_repair", "gateway_checks", "recovery_from", "retained_preparations"}
     if (not isinstance(profile, dict) or set(profile) - allowed
             or profile.get("schema") != PROFILE_SCHEMA):
         raise DeployError("UNSUPPORTED_PROFILE", "Unknown deployment support profile")
@@ -177,6 +177,9 @@ def build_plan(manifest, environment=None):
         from .runtime import PlanningEnvironment
         environment = PlanningEnvironment(profile)
     environment.validate_baseline(manifest["node_id"], source, target, file_plan)
+    if hasattr(environment, "preparation_inventory"):
+        # Derived from protected records, never trusted from a manifest field.
+        profile["retained_preparations"] = environment.preparation_inventory()
     actions = []
     for entry in file_plan["files"]:
         original = {key: value for key, value in entry["original"].items() if key != "binding"}

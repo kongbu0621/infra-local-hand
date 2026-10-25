@@ -39,6 +39,11 @@ class Observer(bootstrap.OfflineObserver):
     def verify_target(self, target, candidates=None):
         self.environment._verify_components(target["selection"], candidates)
 
+    def retention(self, target, entries, candidates=None):
+        # These fixtures model legacy closure/file publication, not a complete
+        # installed task reader. Production reader bytes have separate tests.
+        return {"preparations": {}, "results": {"tasks": []}}
+
 
 class BootstrapTests(unittest.TestCase):
     def setUp(self):
@@ -97,6 +102,59 @@ class BootstrapTests(unittest.TestCase):
 
     def plan(self): return bootstrap.build_bootstrap_plan(self.manifest, self.observer)
     def adopt(self, plan): return bootstrap.adopt_bootstrap(self.store, plan, observer=self.observer)
+
+    def test_result_readback_failure_retains_partial_import_and_resumes_same_files(self):
+        plan = self.plan()
+        original = self.observer.retention
+        def fail_after_publication(target, entries, candidates=None):
+            if candidates is None:
+                raise bootstrap.DeployError("BOOTSTRAP_RETENTION", "synthetic result route interruption")
+            return original(target, entries, candidates)
+        with patch.object(self.observer, "retention", side_effect=fail_after_publication):
+            failed = self.adopt(plan)
+        self.assertFalse(failed["released"])
+        self.assertIsNone(failed["decision"])
+        identity = self.config.stat().st_ino
+        self.assertFalse((self.gate_dir / "state.json").exists())
+        recovered = self.adopt(plan)
+        self.assertTrue(recovered["released"])
+        self.assertEqual(identity, self.config.stat().st_ino)
+
+    def test_original_result_drift_refuses_before_any_imported_configuration(self):
+        plan = self.plan()
+        with patch.object(self.observer, "retention", return_value={"changed": True}):
+            failed = self.adopt(plan)
+        self.assertFalse(failed["released"])
+        self.assertFalse(self.config.exists())
+        self.assertTrue(self.adopt(plan)["released"])
+
+    def test_legacy_mcp_retained_routes_are_bound_beyond_current_manager_tasks(self):
+        catalog = self.root / "old-catalog"; catalog.mkdir(mode=0o700)
+        descriptor = self.root / "old-resident.json"
+        self.write(descriptor, {"catalog": str(catalog), "retained": ["/protected/historical-policy"]})
+        config = self.root / "old-mcp.json"
+        self.write(config, {"schema": "gx10-single-owner-mcp/v1", "anchor_policy": "/protected/anchor-policy",
+                            "resident": str(descriptor)})
+        self.manifest['legacy'].append({'kind': 'mcp', 'unit': 'old-mcp.service', 'configuration': str(config)})
+        entries = bootstrap._legacy(self.manifest['legacy'], self.uid)
+        self.assertEqual(['/protected/anchor-policy', '/protected/historical-policy'], entries[-1]['read_policies'])
+        self.write(descriptor, {"catalog": str(catalog), "retained": []})
+        with self.assertRaisesRegex(DeployError, 'historical MCP read bindings changed'):
+            self.observer.observe(entries, self.target)
+
+    def test_bootstrap_cannot_hide_a_historical_ledger_outside_preparation_catalog(self):
+        from types import SimpleNamespace
+        from admin.local_hand_deploy import preparations, retained_reader
+        empty = {'schema': 'local-hand-retained-readback/v1', 'tasks': [], 'bytes_verified': 0}
+        prior = {'schema': empty['schema'], 'tasks': [{'operation_id': 'original-history', 'artifacts': []}], 'bytes_verified': 0}
+        profile = {'owner_uid': self.uid, 'probes': {'mcp': {'kind': 'mcp'}}}
+        observer = bootstrap.OfflineObserver(profile)
+        observer.environment = SimpleNamespace(preparation_inventory=lambda _: {'tasks': []},
+                                                retained_results=lambda *_: empty)
+        with patch.object(preparations, 'inventory', return_value={'tasks': []}), \
+                patch.object(retained_reader, 'offline_readback', return_value=prior), \
+                self.assertRaisesRegex(DeployError, 'omit an original historical read route'):
+            observer.retention(self.target, [{'kind': 'mcp', 'read_policies': ['/protected/old-policy']}])
 
     def record(self, *, launch=False, closed=True):
         operation = "00000000-0000-4000-8000-000000000001"

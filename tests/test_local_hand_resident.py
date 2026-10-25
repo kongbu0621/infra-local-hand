@@ -83,6 +83,8 @@ class ResidentTests(unittest.TestCase):
         self.policy=Policy(policy_fixture('/synthetic-resident'))
         self.owner=Principal('owner',frozenset(TOOL_SCOPES.values()))
         self.retained=Mock(policy=self.policy)
+        self.retained.reader_identity = dict(source_commit='a'*40, installed_payload_digest='b'*64,
+                                            execution_entrypoint=cli.__file__)
         db=sqlite3.connect(':memory:');db.execute('CREATE TABLE revocations(principal TEXT)')
         self.addCleanup(db.close);self.retained.state.transaction.return_value=db
         self.service=Mock()

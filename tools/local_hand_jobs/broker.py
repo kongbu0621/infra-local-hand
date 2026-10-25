@@ -253,6 +253,9 @@ class Broker:
             raise JobError("LIMIT_EXCEEDED", "Admitted queue or retained evidence budget is exhausted")
 
     def _rate(self, principal):
+        from .retained_probe import private_verification
+        if private_verification():
+            return
         with self.fence:
             now = time.monotonic()
             recent = self._rates.setdefault(principal.principal_id, deque())

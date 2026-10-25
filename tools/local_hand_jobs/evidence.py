@@ -393,7 +393,7 @@ class EvidenceStore:
                  max_members: int = 10000, max_source_bytes: int = 256 * 1024 * 1024,
                  max_artifact_bytes: int = 272 * 1024 * 1024,
                  max_seals: int = 1000, owner_uid: int | None = None,
-                 root_identity: dict | None = None):
+                 root_identity: dict | None = None, create: bool = True):
         self.root = Path(root).absolute()
         if any(type(v) is not int or not 0 < v <= 2**53 - 1 for v in
                (max_members, max_source_bytes, max_artifact_bytes, max_seals)):
@@ -404,7 +404,9 @@ class EvidenceStore:
                 or root_identity["uid"] != self.owner or root_identity["inode"] == 0):
             raise EvidenceError("CONFLICT", "evidence root identity is malformed")
         self.root_identity = None if root_identity is None else dict(root_identity)
-        with _open_root(self.root, self.owner, create=self.root_identity is None, identity=self.root_identity):
+        if type(create) is not bool:
+            raise EvidenceError("LIMIT_EXCEEDED", "invalid evidence initialization mode")
+        with _open_root(self.root, self.owner, create=create and self.root_identity is None, identity=self.root_identity):
             pass
         self.snapshot_provider = snapshot_provider
         self.register_seal = register_seal

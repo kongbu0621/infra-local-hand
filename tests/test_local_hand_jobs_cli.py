@@ -93,6 +93,13 @@ class CliTests(unittest.TestCase):
         self.assertEqual("INVALID_REQUEST", self.handle(raw)["error"]["code"])
         self.assertFalse(self.broker.calls)
 
+    def test_nonroot_cannot_enter_private_retained_verification_protocol(self):
+        self.broker.deployment_proof = {'pid': 123, 'protocol_ready': True}
+        with patch.object(SyntheticPeerConnection, 'getsockopt', return_value=struct.pack('3i', 10, 1001, 1001)):
+            result = self.handle(json.dumps({'action': 'deployment_retention_index'}).encode(), {})
+        self.assertEqual('UNAUTHORIZED', result['error']['code'])
+        self.assertEqual([], self.broker.calls)
+
     def test_existing_socket_path_never_deleted(self):
         self.path.write_text("concurrent file")
         with self.assertRaises(JobError):

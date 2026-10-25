@@ -237,13 +237,18 @@ class MaintenanceGate:
             if digest(item["binding"]) != item["binding_digest"]:
                 raise ValueError("binding")
         for key, item in value["compatibility"].items():
-            if (type(item) is not dict or set(item) != {"prepared", "target_deployment_digest", "owner"}
+            if (type(item) is not dict or set(item) - {"prepared", "target_deployment_digest", "owner", "target_loaded"}
+                    or not {"prepared", "target_deployment_digest", "owner"} <= set(item)
                     or key != digest(item["prepared"])
                     or type(item["prepared"]) is not dict):
                 raise ValueError("compatibility")
             _digest(item["target_deployment_digest"])
             _identifier(item["owner"])
             self._validate_prepared(item["prepared"])
+            if "target_loaded" in item:
+                self._validate_loaded(item["target_loaded"])
+                if item["target_loaded"]["deployment_digest"] != item["target_deployment_digest"]:
+                    raise ValueError("compatibility target")
         transition=value["last_transition"]
         if transition is None:
             if value["sequence"] != 1 or value["state"] != "OPEN":raise ValueError("missing transition")
@@ -402,7 +407,7 @@ class MaintenanceGate:
             "deployment_digest", "configuration_digest", "payload_digest", "boot_id"))
         decision = value["compatibility"].get(digest(prepared))
         if not same and not (decision and decision["prepared"] == prepared
-                             and decision["target_deployment_digest"] == loaded["deployment_digest"]):
+                             and decision.get("target_loaded") == loaded):
             raise JobError("STALE_DEPLOYMENT", "Prepared task requires exact deployment compatibility")
 
     @staticmethod
@@ -415,15 +420,22 @@ class MaintenanceGate:
         for key in ("request_digest", "resource_digest", "deployment_digest", "configuration_digest", "payload_digest"):
             _digest(prepared[key])
 
-    def authorize_compatibility(self, owner, prepared, target_deployment_digest):
+    def authorize_compatibility(self, owner, prepared, target_deployment_digest, *, target_loaded):
         _digest(target_deployment_digest)
         self._validate_prepared(prepared)
+        self._validate_loaded(target_loaded)
+        if target_loaded["deployment_digest"] != target_deployment_digest:
+            raise JobError("STALE_DEPLOYMENT", "Compatibility target does not match its loaded binding")
         with self._locked() as directory:
             value = self._read(directory)
             if value["state"] != "CLOSED" or value["owner"] != owner:
                 raise JobError("CONFLICT", "Compatibility decision needs the current maintenance owner")
-            value["compatibility"][digest(prepared)] = dict(owner=owner, prepared=copy.deepcopy(prepared),
-                                                         target_deployment_digest=target_deployment_digest)
+            decision = dict(owner=owner, prepared=copy.deepcopy(prepared),
+                            target_deployment_digest=target_deployment_digest, target_loaded=copy.deepcopy(target_loaded))
+            if value["compatibility"].get(digest(prepared)) == decision:
+                self._confirm(directory)
+                return
+            value["compatibility"][digest(prepared)] = decision
             self._write(directory, value)
 
     def accept(self, kind, operation_id, attempt_id, binding, loaded, *, authorization=None, prepared=None):

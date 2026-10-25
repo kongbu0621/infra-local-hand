@@ -343,6 +343,15 @@ class MaintenanceServer:
                         raise JobError("UNSUPPORTED", "This listener has no guarded deployment proof")
                     _send_frame(connection, {"result": dict(proof)}, deadline=deadline)
                     return
+                if isinstance(request, dict) and request.get("action") in {
+                        "deployment_retention_index", "deployment_retention_read"}:
+                    if not isinstance(getattr(self.broker, "deployment_proof", None), dict):
+                        raise JobError("UNSUPPORTED", "Retained verification requires a guarded runtime")
+                    from .retained_probe import handle
+                    result = handle(self.broker, request)
+                    _send_frame(connection, {"result": {"proof": dict(self.broker.deployment_proof),
+                                                         "readback": result}}, deadline=deadline)
+                    return
             else:
                 raw_request = None
             principal = self.peer_map.get(uid)
@@ -615,14 +624,16 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False, session_p
     from .policy import Policy
     from .task_session import TaskSession
     policy = Policy.from_file(policy_path)
-    verify_release(expected_source_commit=policy.source_commit,
+    identity = verify_release(expected_source_commit=policy.source_commit,
                    expected_payload_digest=policy.installed_payload_digest,
                    expected_entrypoint=policy.execution_entrypoint,
                    actual_entrypoint=actual_entrypoint)
     if read_only:
         if initialize or session_path is not None:
             raise JobError("UNSUPPORTED", "Read-only service cannot initialize or execute a task session")
-        return _compose_broker(policy, None, quota_required=True, read_only=True)
+        broker = _compose_broker(policy, None, quota_required=True, read_only=True)
+        broker.reader_identity = identity
+        return broker
     if session_path is None:
         raise JobError("UNSUPPORTED", "An administrator-created task session is required (--session)")
     session = broker = None
@@ -645,6 +656,31 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False, session_p
         if isinstance(error, (OSError, ValueError)):
             raise JobError("IO_UNCERTAIN", "Task session admission could not be verified") from error
         raise
+
+
+def create_retained_broker(policy_path, *, actual_entrypoint, reader_identity):
+    """Read the supported original ledger schema with an admitted new reader.
+
+    The original policy still controls authority, ownership, paths and evidence.
+    Its writer release is historical data, not the identity of this reader.
+    The caller supplies its independently admitted current runtime identity;
+    there is deliberately no initialize/session/manager/execute option here.
+    """
+    if sys.platform != "linux":
+        raise JobError("UNSUPPORTED", "Retained readers require Linux file identity checks")
+    from .deployment import verify_release
+    from .policy import Policy
+    if not isinstance(reader_identity, dict) or set(reader_identity) != {
+            "source_commit", "installed_payload_digest", "execution_entrypoint"}:
+        raise JobError("PROVENANCE_MISMATCH", "Retained reader needs its admitted runtime identity")
+    identity = verify_release(expected_source_commit=reader_identity["source_commit"],
+                              expected_payload_digest=reader_identity["installed_payload_digest"],
+                              expected_entrypoint=reader_identity["execution_entrypoint"],
+                              actual_entrypoint=actual_entrypoint)
+    policy = Policy.from_file(policy_path)
+    broker = _compose_broker(policy, None, quota_required=True, read_only=True)
+    broker.reader_identity = identity
+    return broker
 
 
 def _compose_broker(policy, manager, *, initialize=False, quota_required=False, read_only=False):
@@ -728,7 +764,8 @@ def _compose_broker(policy, manager, *, initialize=False, quota_required=False, 
             is_registered=broker.is_registered, list_seals=broker.list_seals,
             authorize=authorize_evidence,
             max_source_bytes=policy.limits["retained_bytes"],
-            max_artifact_bytes=policy.limits["retained_bytes"], root_identity=evidence_identity)
+            max_artifact_bytes=policy.limits["retained_bytes"], root_identity=evidence_identity,
+            create=not read_only)
         broker.authority_lock = authority
         return broker
     except BaseException:

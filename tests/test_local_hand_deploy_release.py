@@ -113,6 +113,7 @@ class ReleaseTests(unittest.TestCase):
         manifest["source"]["gateway"] = {"present": True, "running": True}
         manifest["target"]["gateway"] = {"present": True, "running": True}
         observer = Mock()
+        observer.preparation_inventory.return_value = {"schema": "local-hand-retained-preparations/v1", "components": {}, "tasks": []}
         observer.plan_gateway.return_value = [
             {"kind": "gateway_stop", "target": "gateway", "phase": "quiesced_before_files"},
             {"kind": "gateway_start", "target": "gateway", "phase": "after_create"}]

@@ -252,6 +252,40 @@ class Store:
         connection.execute("INSERT INTO events(operation,kind,recorded_ns,document) VALUES (?,?,?,?)",
                            (operation["id"], kind, time.time_ns(), body))
 
+    def check_attempt_budget(self, operation, *, restore=False):
+        """Retain bounded completion/compensation room before another effect.
+
+        This is a logical record budget, not a promise that the disk cannot
+        fail. The node lock excludes another deployment consuming it between
+        this check and the following durable intent.
+        """
+        connection = self._required()
+        if restore:
+            remaining = sum(entry["record"]["state"] != "RESTORED"
+                            for entry in operation.get("compensation", []))
+        else:
+            # Compensation may add stop/reload/start around original files.
+            remaining = min(self.limits.max_steps, len(operation["steps"]) * 3 + 4)
+        events = 12 * remaining + 64
+        count = connection.execute("SELECT count(*) FROM events").fetchone()[0]
+        if count + events > self.limits.max_events:
+            raise DeployError("STATE_LIMIT", "No event budget for completion, compensation and release")
+        raw = len(canonical(operation))
+        # Reserve attempt identities, observations and final readback in the
+        # operation document, separately from append-only event capacity.
+        growth = max(262144, raw) + 8192 * (remaining + 2)
+        if raw + growth > self.limits.max_record_bytes:
+            raise DeployError("STATE_LIMIT", "No operation byte budget for the bounded recovery path")
+        page = connection.execute("PRAGMA page_size").fetchone()[0]
+        pages = connection.execute("PRAGMA page_count").fetchone()[0]
+        free = connection.execute("PRAGMA freelist_count").fetchone()[0]
+        # Leave another complete operation slot for an explicit successor,
+        # plus an overflow-page envelope for all reserved event records.
+        required = 2 * self.limits.max_record_bytes + events * (page * 2)
+        if (pages - free) * page + required > self.limits.max_database_bytes:
+            raise DeployError("STATE_LIMIT", "No database byte budget for linked recovery and release")
+        return {"events": events, "operation_bytes": growth, "database_bytes": required}
+
     def save(self, operation, kind, detail=None, *, recovery=False):
         connection = self._required()
         operation["updated_ns"] = time.time_ns()

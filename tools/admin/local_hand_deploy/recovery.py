@@ -17,7 +17,7 @@ from .services import tree_snapshot
 
 def fixed_profile(profile):
     value = copy.deepcopy(profile)
-    for key in ("recovery_from", "security_repair", "gateway_checks"):
+    for key in ("recovery_from", "security_repair", "gateway_checks", "retained_preparations"):
         value.pop(key, None)
     if value.get("gateway"):
         value["gateway"].pop("compose", None)

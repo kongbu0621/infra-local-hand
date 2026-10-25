@@ -101,16 +101,18 @@ class PreparedBroker:
         # The prepared executor is the installed CLI broker. The retained
         # reader separately verifies the public MCP adapter's entrypoint.
         backend_entrypoint = cli.__file__
-        verify_release(expected_source_commit=policy.source_commit,
-            expected_payload_digest=policy.installed_payload_digest,
-            expected_entrypoint=policy.execution_entrypoint, actual_entrypoint=backend_entrypoint)
+        identity = dict(retained.reader_identity, execution_entrypoint=str(Path(backend_entrypoint).absolute()))
+        verify_release(expected_source_commit=identity['source_commit'],
+            expected_payload_digest=identity['installed_payload_digest'],
+            expected_entrypoint=identity['execution_entrypoint'], actual_entrypoint=backend_entrypoint)
         if (policy.broker_root == retained.policy.broker_root
                 or policy.authority_root == retained.policy.authority_root
                 or policy.config["process_manager"]["uid"] != os.geteuid()):
             raise JobError("UNAUTHORIZED", "Prepared task must use its separate admitted ledger")
         return cls(retained, policy, value["request"], value["principal_id"],
             Launcher(value["launcher"], value["request"]),
-            lambda: cli.create_broker(value["policy_path"], actual_entrypoint=backend_entrypoint, read_only=True))
+            lambda: cli.create_retained_broker(value["policy_path"], actual_entrypoint=backend_entrypoint,
+                                              reader_identity=identity))
 
     def start(self):
         self.retained.start()
@@ -152,7 +154,16 @@ class PreparedBroker:
                 self.policy.authorize(principal, scope, request=args)
             bounds = {'principal': principal} if principal.expires_at is not None else {}
             principal.require_current()
-            state = self.launcher.call("status", **bounds)
+            try:
+                state = self.launcher.call("status", **bounds)
+            except JobError as error:
+                if error.code != "IO_UNCERTAIN" or name not in {
+                        "lh_job_status", "lh_evidence_manifest", "lh_evidence_read_chunk"}:
+                    raise
+                # A lost controller/collector must not hide an original ledger.
+                # The retained reader's authority lock still refuses a live
+                # writer, and this path cannot initialize or dispatch a job.
+                state = "UNRESOLVED"
             if state == "IDLE":
                 if name != "lh_job_submit":
                     raise JobError("NOT_FOUND", "Prepared task has not been submitted")
@@ -160,7 +171,7 @@ class PreparedBroker:
                     raise JobError("STALE_DEPLOYMENT", "Prepared request has expired")
                 principal.require_current()
                 state = self.launcher.call("start", **bounds)
-            if state == "EXITED":
+            if state in {"EXITED", "UNRESOLVED"}:
                 if name == "lh_job_submit":
                     self._authorize(principal, "lh:read")
                 if self.reader is None:

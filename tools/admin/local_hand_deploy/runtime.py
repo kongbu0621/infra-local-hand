@@ -38,7 +38,11 @@ class PlanningEnvironment:
         self.runner = SimpleNamespace(timeout=profile.get("timeout_seconds", 30))
         self._services = self._gateway = None
 
-    def _probe(self, component, *, reconcile=False):
+    def preparation_inventory(self, candidates=None):
+        from .preparations import inventory
+        return inventory(self.profile, candidates=candidates)
+
+    def _probe(self, component, *, reconcile=False, retention=None):
         spec = self.profile["probes"][component]
         if spec["kind"] == "gateway":
             return self._gateway_probe(component)
@@ -58,14 +62,23 @@ class PlanningEnvironment:
             pid, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             if uid != spec.get("peer_uid", 0):
                 raise DeployError("UNTRUSTED_PROBE", "Status peer identity changed")
-            request = {"action": "deployment_status" if reconcile else "deployment_observe"}
+            request = retention if retention is not None else {"action": "deployment_status" if reconcile else "deployment_observe"}
             if os.geteuid() != 0 and spec["kind"] == "resident":
                 request["principal_id"] = spec["principal_id"]
             cli._send_frame(connection, request, deadline=end, limit=4096)
-            response = decode(cli._read_frame(connection, 65536, deadline=end))
+            response = decode(cli._read_frame(connection, cli.MAX_RESPONSE_BYTES if retention is not None else 65536, deadline=end))
         if not isinstance(response, dict) or "error" in response or not isinstance(response.get("result"), dict):
+            if retention is not None and isinstance(response, dict) and isinstance(response.get("error"), dict):
+                from local_hand_jobs.contract import JobError
+                error = response["error"]
+                raise JobError(error.get("code", "IO_UNCERTAIN"), "Original retained read route refused verification")
             raise DeployError("PROBE_FAILED", "Protected status did not return a valid observation")
         result = response["result"]
+        readback = None
+        if retention is not None:
+            if spec["kind"] != "mcp" or set(result) != {"proof", "readback"}:
+                raise DeployError("RETENTION_PROTOCOL", "Retained readback lacks its actual guarded runtime proof")
+            readback, result = result["readback"], result["proof"]
         direct = spec["kind"] == "mcp" and result.get("component") == component
         loaded = result if direct else result.get("loaded")
         if ((not direct and result.get("maintenance_supported") is not True) or not isinstance(loaded, dict)
@@ -76,7 +89,40 @@ class PlanningEnvironment:
         raw = Path(f"/proc/{pid}/stat").read_text()
         if str(loaded.get("start_ticks")) != raw[raw.rindex(")") + 2:].split()[19]:
             raise DeployError("PROBE_INSTANCE_CHANGED", "Status process instance changed")
-        return {"maintenance_supported": True, "loaded": loaded} if direct else result
+        value = {"maintenance_supported": True, "loaded": loaded} if direct else result
+        if retention is not None:
+            value["readback"] = readback
+        return value
+
+    def retained_results(self, selected, candidates=None):
+        from local_hand_jobs.retained_probe import collect, merge_readbacks
+        result = {}
+        candidates = candidates or {}
+        deadline = time.monotonic() + self.profile.get("timeout_seconds", 30)
+        covered_managers = set()
+        for component, probe in self.profile["probes"].items():
+            if probe["kind"] == "mcp":
+                path = self.profile["guarded_components"][component]["configuration"]
+                config = decode(startup.protected_read(candidates.get(path, path), owner_uid=self.owner))
+                covered_managers.update(name for name, peer in self.profile["probes"].items()
+                    if peer["kind"] in {"resident", "prepared"} and peer["socket"] == config.get("manager_socket"))
+        for component, probe in self.profile["probes"].items():
+            if probe["kind"] != "mcp":
+                if (component not in covered_managers and {"prepare", "execute"}.intersection(
+                        self.profile["guarded_components"][component]["entrypoints"])):
+                    from .retained_reader import offline_readback
+                    result[component] = offline_readback(self, component, selected, deadline=deadline, candidates=candidates)
+                continue
+            if not selected["selection"]["components"][component]["running"]:
+                from .retained_reader import offline_readback
+                result[component] = offline_readback(self, component, selected, deadline=deadline, candidates=candidates)
+                continue
+            def call(request):
+                observed = self._probe(component, retention=request)
+                self._match_loaded(observed["loaded"], selected["selection"], component)
+                return observed["readback"]
+            result[component] = collect(call, deadline=deadline)
+        return merge_readbacks(result.values())
 
     def _gateway_instance(self, container_id=None):
         adapter = self.gateway
@@ -416,6 +462,76 @@ class ConcreteEnvironment(PlanningEnvironment):
             raise DeployError("BASELINE_CHANGED", "Maintenance marker does not select the planned source")
         return {"passed": True, "selection_digest": startup.digest(plan["source"]["selection"]), "gate_sequence": state["sequence"]}
 
+    def quiesced_retention(self, op):
+        """Save original bindings before the first effect, including handoff."""
+        from .preparations import decisions
+        baseline = next((origin["checks"]["retained"] for origin in self._origins(op)
+                         if "retained" in origin["checks"]), None)
+        current = self.preparation_inventory()
+        if baseline is not None and current["tasks"] != baseline["preparations"]["tasks"]:
+            raise DeployError("RETENTION_CONFLICT", "Retained preparation changed during deployment")
+        snapshot = current if baseline is None else baseline["preparations"]
+        candidates = {step["action"]["target"]: step["action"]["source"]["path"]
+                      for step in op["plan"]["steps"] if step["kind"] == "file" and step["action"]["source"] is not None}
+        target = self.preparation_inventory(candidates)
+        if target["tasks"] != current["tasks"]:
+            raise DeployError("RETENTION_CONFLICT", "Target task admission would hide or replace original preparations")
+        closure = self.retained_closure(snapshot)
+        choices = decisions(snapshot, op["plan"]["target"]["selection"]["components"],
+                            now=time.time(), boot_id=startup.boot_id(), closed=closure)
+        results = self.retained_results(op["plan"]["source"]) if baseline is None else baseline["results"]
+        return {"preparations": snapshot, "compatibility": choices, "results": results, "closure": closure,
+                "target_deployment_digest": op["plan"]["target"]["deployment_digest"]}
+
+    def retention_decisions(self, op, selected):
+        """Compute current decisions; the coordinator must save before publish."""
+        from .preparations import decisions
+        baseline = op["checks"].get("retained")
+        if baseline is None:
+            return []
+        current = self.preparation_inventory()
+        if current["tasks"] != baseline["preparations"]["tasks"]:
+            raise DeployError("RETENTION_CONFLICT", "Original preparations changed before admission release")
+        return decisions(baseline["preparations"], selected["selection"]["components"],
+                         now=time.time(), boot_id=startup.boot_id(), closed=self.retained_closure(current))
+
+    def retained_closure(self, snapshot):
+        from .preparations import observe_reboot_closure
+        marker = self.gate.snapshot()
+        result, observed = {}, {}
+        for item in snapshot["tasks"]:
+            if item["state"] != "PREPARING" and item.get("execution") != "UNRESOLVED":
+                continue
+            matching = [duty for duty in marker["responsibilities"].values()
+                if duty["operation_id"] == item["operation_id"] and duty["loaded"]["component"] == item["component"]
+                and (duty["kind"] == "prepare" and duty["id"] == item.get("admission_id")
+                     or duty["kind"] == "execute" and duty["binding"].get("prepared") == item.get("prepared"))]
+            if matching and all(duty["state"] == "CLOSED" for duty in matching):
+                result[digest(item)] = {"closed_responsibilities": [duty["id"] for duty in matching]}
+            else:
+                key = (item["component"], item.get("dispatch_boot_id"))
+                if key not in observed:
+                    observed[key] = observe_reboot_closure(self.profile, key[0],
+                        expected_boot=key[1], current_boot=startup.boot_id())
+                result[digest(item)] = observed[key]
+        return result
+
+    def activate_retention(self, op, selected):
+        """Publish only saved exact decisions under the still-closed gate."""
+        choices = op["checks"].get("released_compatibility", [])
+        durable = self.store.get(op["id"])
+        if durable["checks"].get("released_compatibility") != choices:
+            raise DeployError("DECISION_NOT_DURABLE", "Prepared compatibility decisions were not saved")
+        for item in choices:
+            if not item["compatible"]:
+                continue
+            component = item["component"]
+            bound = selected["selection"]["components"][component]
+            loaded = {"node_id": op["plan"]["node_id"], "component": component,
+                      "deployment_digest": selected["deployment_digest"], "boot_id": startup.boot_id(),
+                      **{key: bound[key] for key in ("configuration_digest", "payload_digest")}}
+            self.gate.authorize_compatibility(op["id"], item["prepared"], selected["deployment_digest"], target_loaded=loaded)
+
     def validate_successor(self, op, plan):
         if op["gate_owned"] and not op["released"]:
             from .recovery import validate_link
@@ -606,6 +722,30 @@ class ConcreteEnvironment(PlanningEnvironment):
             # empty set remains sufficient after our own manager stop/reboot;
             # asking its now-stopped socket would deadlock normal recovery.
             return {"quiescent": True, "accepted_responsibilities": 0, "gate_sequence": marker["sequence"]}
+        # Original pipes cannot survive a host boot. Close their admission
+        # custody only after separately proving all original task parents/jobs
+        # empty; do not need a stopped manager socket to recover that fact.
+        from .preparations import observe_reboot_closure
+        boot = startup.boot_id()
+        old = [duty for duty in active if duty["loaded"]["boot_id"] != boot]
+        if old:
+            snapshot = self.preparation_inventory()
+            checked = set()
+            for duty in old:
+                matching = [item for item in snapshot["tasks"] if item["component"] == duty["loaded"]["component"]
+                    and item["operation_id"] == duty["operation_id"]
+                    and (duty["kind"] == "prepare" and duty["id"] == item.get("admission_id")
+                         or duty["kind"] == "execute" and item.get("prepared") == duty["binding"].get("prepared"))]
+                if len(matching) != 1:
+                    raise DeployError("RETAINED_DISPATCH_UNRESOLVED", "Original boot responsibility has no exact task binding")
+                key = (duty["loaded"]["component"], duty["loaded"]["boot_id"])
+                if key not in checked:
+                    observe_reboot_closure(self.profile, key[0], expected_boot=key[1], current_boot=boot)
+                    checked.add(key)
+                self.gate.finish(duty, {"process_exited": True, "writers_stopped": True})
+            active = self.gate.active()
+            if not active:
+                return {"quiescent": True, "accepted_responsibilities": 0, "reboot_closed": len(old)}
         observations = {}
         for component, guard in self.profile["guarded_components"].items():
             if "prepare" in guard["entrypoints"] or "execute" in guard["entrypoints"]:
@@ -719,8 +859,14 @@ class ConcreteEnvironment(PlanningEnvironment):
                     or len(safety["checks"]) != len(self.profile["gateway_checks"]["checks"])
                     or any(item.get("status") != "PASSED" for item in safety["checks"])):
                 raise DeployError("LOCAL_SECURITY_CHECK_FAILED", "Candidate routes have not passed their bound safety checks")
+        baseline = op["checks"].get("retained")
+        if baseline is not None and self.preparation_inventory()["tasks"] != baseline["preparations"]["tasks"]:
+            raise DeployError("RETENTION_CONFLICT", "Selected deployment changed original preparation records")
+        results = {} if op.get("decision") == "ABORTED_NO_CHANGE" and baseline is None else self.retained_results(selected)
+        if baseline is not None and results != baseline["results"]:
+            raise DeployError("RETENTION_CONFLICT", "Selected read routes differ from the original task/evidence readback")
         return {"passed": True, "deployment_digest": selected["deployment_digest"], "loaded": proofs,
-                "security": safety, "observed_ns": time.time_ns()}
+                "security": safety, "retained_results": results, "observed_ns": time.time_ns()}
 
     def publish_stable(self, op):
         durable = self.store.get(op["id"])

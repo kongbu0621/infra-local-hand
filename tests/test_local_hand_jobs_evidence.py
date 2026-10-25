@@ -71,6 +71,18 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, code)
         self.assertNotIn(str(self.root), str(raised.exception))
 
+    def test_retained_reader_does_not_recreate_missing_evidence_root(self):
+        missing = self.root / "missing" / "artifacts"
+        with self.assertRaises(FileNotFoundError):
+            EvidenceStore(missing, snapshot_provider=lambda _: None,
+                          register_seal=lambda _: None, is_registered=lambda *_: False,
+                          create=False)
+        self.assertFalse(missing.parent.exists())
+        # The writer's explicit provisioning behavior remains available.
+        EvidenceStore(missing, snapshot_provider=lambda _: None,
+                      register_seal=lambda _: None, is_registered=lambda *_: False)
+        self.assertTrue(missing.is_dir())
+
     def test_rejected_store_ancestor_does_not_create_through_a_symlink(self):
         unrelated = self.root / "unrelated"
         unrelated.mkdir(mode=0o700)

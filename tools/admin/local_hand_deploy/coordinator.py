@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from local_hand_jobs.contract import JobError
 
 from .model import DeployError, digest
 
@@ -138,7 +139,9 @@ class Coordinator:
     def _wait(self, op, reason, detail=None):
         op["waiting"] = {"reason": reason, "detail": detail or {}, "observed_ns": time.time_ns(),
                          "resume": op["id"]}
-        self.store.save(op, "WAITING", op["waiting"], recovery=True)
+        # Repeated observations must not consume the reserve needed to undo
+        # effects and release the gate after the actual fault is removed.
+        self.store.save(op, "WAITING", op["waiting"])
         return op
 
     def _error(self, op, error):
@@ -167,7 +170,7 @@ class Coordinator:
             if op["direction"] == "ROLLBACK":
                 return self._rollback(op)
             return self._apply(op)
-        except (OSError, RuntimeError, ValueError) as error:
+        except (OSError, RuntimeError, ValueError, JobError) as error:
             # If persistence itself fails there can be no invented success.
             # _error's own failure propagates; the last durable intent survives.
             return self._error(op, error)
@@ -182,6 +185,8 @@ class Coordinator:
         self.store.save(op, "PREPARED")
 
     def _close(self, op):
+        if not op["gate_owned"]:
+            op["record_budget"] = self.store.check_attempt_budget(op)
         state = self.gate.snapshot()
         if state["state"] == "CLOSED" and state["owner"] == op["id"]:
             pass
@@ -226,10 +231,13 @@ class Coordinator:
             for step, record in isolation:
                 if not self._step(op, step, record):
                     return op
-        active = self.gate.active()
         drain = self.environment.drain(op)
+        active = self.gate.active()
         if active or drain.get("quiescent") is not True:
             return self._wait(op, "DRAIN", {"accepted_responsibilities": len(active), "observation": drain})
+        if hasattr(self.environment, "quiesced_retention"):
+            op["checks"]["retained"] = self.environment.quiesced_retention(op)
+            self.store.save(op, "RETAINED_BINDINGS")
         op["phase"] = "QUIESCED"
         self.store.save(op, "QUIESCED")
         self._block(op)
@@ -254,6 +262,7 @@ class Coordinator:
             # forward postconditions; recovery now follows the inverse chain.
             self._refresh_compensation(op)
             return
+        original = digest(op["steps"])
         covered = {}
         for step, record in reversed(list(zip(op["plan"]["steps"], op["steps"]))):
             if record["prepared"] is None or not (record["attempts"] or record["effective"]
@@ -270,7 +279,8 @@ class Coordinator:
             record["effective"] = record["effective"] or observed.get("effective", False)
             if observed.get("state") == "target" and observed.get("closed") is True:
                 covered[key] = step["id"]
-        self.store.save(op, "RECONCILED", recovery=True)
+        if digest(op["steps"]) != original:
+            self.store.save(op, "RECONCILED", recovery=not self._unresolved(op))
 
     def _unresolved(self, op):
         if "compensation" in op:
@@ -287,6 +297,7 @@ class Coordinator:
                 or bool(op["gate_owned"] and op["plan"]["profile"].get("security_repair")))
 
     def _refresh_compensation(self, op):
+        original = digest(op["compensation"])
         covered = {}
         for entry in reversed(op["compensation"]):
             step, record = entry["step"], entry["record"]
@@ -301,7 +312,8 @@ class Coordinator:
                 record["restore_observation"] = observed
                 if observed.get("state") == "target" and observed.get("closed") is True:
                     covered[key] = step["id"]
-        self.store.save(op, "RESTORATION_RECONCILED", recovery=True)
+        if digest(op["compensation"]) != original:
+            self.store.save(op, "RESTORATION_RECONCILED", recovery=not self._unresolved(op))
 
     def _step(self, op, step, record, *, restore=False):
         if not restore and record.get("covered_by"):
@@ -317,10 +329,12 @@ class Coordinator:
         record[observation_key] = observed
         if not restore:
             record["effective"] = record["effective"] or observed.get("effective", False)
-        self.store.save(op, "OBSERVATION", {"step": step["id"], "restore": restore}, recovery=restore)
+        self.store.save(op, "OBSERVATION", {"step": step["id"], "restore": restore},
+                        recovery=restore and observed.get("closed") is True)
         if observed.get("state") == "target" and observed.get("closed") is True:
             # A published file can still need its directory sync after a crash.
             if step["kind"] == "file" and observed.get("synced") is not True:
+                op["record_budget"] = self.store.check_attempt_budget(op, restore=restore)
                 self.store.save(op, "SYNC_INTENT", {"step": step["id"], "restore": restore}, recovery=restore)
                 observed = self.environment.execute(step, record[key], op, None, lambda _: None, previous=previous)
                 record[observation_key] = observed
@@ -339,6 +353,7 @@ class Coordinator:
             self._wait(op, "ATTEMPT_BUDGET", {"step": step["id"]})
             return False
         attempt_id = "a_" + digest({"operation": op["id"], "step": step["id"], "restore": restore, "number": len(attempts)})[:48]
+        op["record_budget"] = self.store.check_attempt_budget(op, restore=restore)
         attempt = {"attempt_id": attempt_id, "binding": None, "command": "not_attempted", "dispatched": False}
         attempts.append(attempt)
         record["state"] = "INTENT_RECORDED"
@@ -374,8 +389,8 @@ class Coordinator:
             return self._decide(op, "ABORTED_NO_CHANGE")
         if not op["gate_owned"]:
             self._close(op)
-        active = self.gate.active()
         drain = self.environment.drain(op)
+        active = self.gate.active()
         if active or drain.get("quiescent") is not True:
             return self._wait(op, "DRAIN", {"accepted_responsibilities": len(active), "observation": drain})
         self._block(op)
@@ -429,6 +444,10 @@ class Coordinator:
         proof = self.environment.release_valid(op)
         if proof.get("passed") is not True:
             return self._wait(op, "DECISION_REQUIRES_LINKED_REPAIR", proof)
+        if hasattr(self.environment, "activate_retention"):
+            op["checks"]["released_compatibility"] = self.environment.retention_decisions(op, selected)
+            self.store.save(op, "COMPATIBILITY_DECISIONS", recovery=True)
+            self.environment.activate_retention(op, selected)
         self.store.save(op, "STABLE_SELECTION_INTENT", recovery=True)
         op["startup"]["current"] = self.environment.publish_stable(op)
         self.store.save(op, "STABLE_SELECTION", recovery=True)

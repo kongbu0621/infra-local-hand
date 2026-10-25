@@ -92,7 +92,7 @@ def _legacy(specifications, owner):
     entries, units, dispatch = [], set(), False
     for spec in specifications:
         kind = spec.get("kind") if isinstance(spec, dict) else None
-        keys = {"kind", "unit", "configuration"} if kind in {"resident", "prepared"} else {"kind", "unit"}
+        keys = {"kind", "unit", "configuration"} if kind in {"resident", "prepared", "mcp"} else {"kind", "unit"}
         if (kind not in {"resident", "prepared", "mcp", "gateway"} or set(spec) != keys
                 or not UNIT.fullmatch(str(spec.get("unit", ""))) or spec["unit"] in units):
             _fail("BOOTSTRAP_SCOPE", "Only fixed old manager, MCP and gateway services are admitted")
@@ -123,6 +123,45 @@ def _legacy(specifications, owner):
                 entry["launch_digest"] = config["launch_sha256"]
             entry["socket"] = _path(config["socket"])
             entry["configuration_digest"] = digest(config)
+        elif kind == "mcp":
+            # The former network reader may also expose historical policies
+            # outside the current manager's preparation directory.
+            config = _read(_path(spec["configuration"]), owner, 2 * 1024 * 1024)
+            entry["configuration_digest"] = digest(config)
+            if config.get("schema") == "gx10-single-owner-mcp/v1":
+                policies = [_path(config["anchor_policy"])]
+                descriptor = _read(_path(config["resident"]), owner, 2 * 1024 * 1024)
+            elif config.get("schema") == "local-hand-mcp-startup/v1":
+                policies = [_path(config["inputs"]["config"])]
+                mode = config["mode"]
+                if mode == "resident":
+                    descriptor = _read(_path(config["inputs"][mode]), owner, 2 * 1024 * 1024)
+                elif mode == "prepared_task":
+                    task = _read(_path(config["inputs"][mode]), owner, 2 * 1024 * 1024)
+                    policies.append(_path(task["policy_path"]))
+                    descriptor = {}
+                elif mode == "read_only":
+                    descriptor = {}
+                else:
+                    _fail("BOOTSTRAP_SCOPE", "Old MCP read mode is not supported")
+            else:
+                _fail("BOOTSTRAP_SCOPE", "Old MCP needs its supported protected read-route configuration")
+            policies.extend(_path(path) for path in descriptor.get("retained", []))
+            if len(policies) > 128:
+                _fail("BOOTSTRAP_SCAN_LIMIT", "Old retained read routes exceed their budget")
+            if "catalog" in descriptor:
+                for path in _children(_path(descriptor["catalog"]), MAX_RECORDS * 4):
+                    if path.suffix != ".json":
+                        continue
+                    record = _read(path, owner)
+                    if record.get("operation_id", "") + ".json" != path.name:
+                        _fail("BOOTSTRAP_SCOPE", "Old MCP catalog identity differs")
+                    if record.get("state") == "READY":
+                        policies.append(_path(record["policy_path"]))
+                    if len(policies) > 256:
+                        _fail("BOOTSTRAP_SCAN_LIMIT", "Old MCP catalog policies exceed their budget")
+            entry["read_policies"] = list(dict.fromkeys(policies))
+            entry["read_routes_digest"] = digest({"descriptor": descriptor, "policies": entry["read_policies"]})
         entries.append(entry)
     if not dispatch:
         _fail("BOOTSTRAP_SCOPE", "Import requires the original dispatch owner, not just a network listener")
@@ -328,8 +367,50 @@ class OfflineObserver:
                if self.profile["probes"][name]["kind"] != "gateway"):
             _fail("BOOTSTRAP_GUARD", "Compatibility payload is not this selected guarded implementation")
 
+    def retention(self, target, entries, candidates=None):
+        """Verify the original data using the admitted, stopped new reader."""
+        preparations = self.environment.preparation_inventory(candidates)
+        from .preparations import inventory
+        original_profile = {"owner_uid": self.owner, "probes": {}, "guarded_components": {}}
+        for index, entry in enumerate(entries):
+            if entry["kind"] not in {"resident", "prepared"}:
+                continue
+            name = f"legacy-{index}"
+            original_profile["probes"][name] = {"kind": entry["kind"]}
+            original_profile["guarded_components"][name] = {
+                "configuration": entry["configuration"], "entrypoints": ["prepare", "execute"]}
+        original = inventory(original_profile)
+        normalize = lambda snapshot: sorted(
+            [{k: v for k, v in task.items() if k != "component"} for task in snapshot["tasks"]],
+            key=lambda task: task["operation_id"])
+        if normalize(original) != normalize(preparations):
+            _fail("BOOTSTRAP_RETENTION", "Guarded manager would hide or replace an original task preparation")
+        results = self.environment.retained_results(target, candidates)
+        from .retained_reader import offline_readback
+        from local_hand_jobs.retained_probe import merge_readbacks
+        policies = list(dict.fromkeys(path for entry in entries for path in entry.get("read_policies", [])))
+        if policies:
+            component = next((name for name, probe in self.profile["probes"].items()
+                              if probe["kind"] == "mcp"), None)
+            if component is None:
+                _fail("BOOTSTRAP_RETENTION", "Original MCP read routes have no guarded replacement")
+            original_results = offline_readback(self.environment, component, target,
+                deadline=time.monotonic() + self.profile.get("timeout_seconds", 30),
+                candidates=candidates, original_policies=policies)
+            if merge_readbacks([results, original_results]) != results:
+                _fail("BOOTSTRAP_RETENTION", "Guarded MCP would omit an original historical read route")
+        readable = {task["operation_id"] for task in results["tasks"]}
+        if any(task.get("execution") == "EXECUTION_RETAINED" and task["operation_id"] not in readable
+               for task in preparations["tasks"]):
+            _fail("BOOTSTRAP_RETENTION", "Compatibility routes omit an originally dispatched task")
+        return {"preparations": preparations, "results": results}
+
     def observe(self, entries, target):
         self.deadline = time.monotonic() + self.profile.get("timeout_seconds", 30)
+        originals = [{key: entry[key] for key in ("kind", "unit", "configuration") if key in entry}
+                     for entry in entries]
+        if _legacy(originals, self.owner) != entries:
+            _fail("BOOTSTRAP_CHANGED", "Original dispatch or historical MCP read bindings changed")
         for entry in entries:
             if "configuration" in entry and digest(_read(entry["configuration"], self.owner, 2 * 1024 * 1024)) != entry["configuration_digest"]:
                 _fail("BOOTSTRAP_CHANGED", "Original dispatch configuration changed")
@@ -419,7 +500,9 @@ def build_bootstrap_plan(manifest, observer=None):
     observer.verify_target(target, candidates)
     with legacy_locks(entries, owner) as bindings:
         observation = observer.observe(entries, target)
-    bootstrap = {"schema": MANIFEST_SCHEMA, "entries": entries, "locks": bindings, "observation": observation}
+        retained = observer.retention(target, entries, candidates)
+    bootstrap = {"schema": MANIFEST_SCHEMA, "entries": entries, "locks": bindings,
+                 "observation": observation, "retained": retained}
     source = {"deployment_digest": digest(bootstrap), "bootstrap": bootstrap}
     return seal_plan({"schema": PLAN_SCHEMA, "request_id": manifest["request_id"], "node_id": manifest["node_id"],
         "source": source, "target": target, "profile": profile,
@@ -461,8 +544,13 @@ def _adopt_bootstrap(store, plan, *, observer=None, implementation=None):
             observation = observer.observe(binding["entries"], target)
             if observation != binding["observation"]:
                 _fail("BOOTSTRAP_CHANGED", "Old duties or guarded definitions changed since the offline plan")
+            candidates = {step["action"]["target"]: step["action"]["source"]["path"] for step in plan["steps"]}
+            retained = observer.retention(target, binding["entries"], candidates)
+            if "retained" not in binding or retained != binding["retained"]:
+                _fail("BOOTSTRAP_RETENTION", "Original data differs from the read-only import plan")
             operation["implementation"] = implementation
             operation["phase"] = "BOOTSTRAP_OFFLINE"
+            operation["checks"]["retained_import"] = retained
             store.save(operation, "BOOTSTRAP_OFFLINE_INTENT", {"legacy_sources_closed": True})
             # Prepare all backups before the first publication. A failed prepare
             # retains bounded partial objects; the file adapter never adopts them
@@ -485,6 +573,8 @@ def _adopt_bootstrap(store, plan, *, observer=None, implementation=None):
             observer.verify_target(target)
             if observer.observe(binding["entries"], target) != binding["observation"]:
                 _fail("BOOTSTRAP_CHANGED", "Old sources reopened before compatibility publication")
+            if observer.retention(target, binding["entries"]) != retained:
+                _fail("BOOTSTRAP_RETENTION", "Published compatibility routes changed the original readback")
             if operation["decision"] is None:
                 operation.update(decision="COMMITTED", decision_id="bootstrap-" + digest({"operation": operation["id"], "target": target})[:32],
                                  phase="BOOTSTRAP_DECIDED")

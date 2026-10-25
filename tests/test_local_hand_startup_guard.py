@@ -331,7 +331,8 @@ class MCPMainTests(unittest.TestCase):
                     patch.object(startup_guard,'guard',guard), \
                     patch('local_hand_mcp.auth.AuthConfig.from_file',return_value=Mock()), \
                     patch('local_hand_mcp.auth.JWTVerifier',return_value=Mock()), \
-                    patch('local_hand_jobs.cli.create_broker',return_value=broker), \
+                    patch('local_hand_jobs.cli.create_retained_broker',return_value=broker), \
+                    patch('local_hand_jobs.deployment.release_identity',return_value={}), \
                     patch('local_hand_jobs.cli.MaintenanceServer',return_value=maintenance_server), \
                     patch('local_hand_jobs.cli.close_service') as close, \
                     patch.object(server,'create_app',return_value=Mock()), \

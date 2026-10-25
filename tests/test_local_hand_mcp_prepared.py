@@ -93,6 +93,30 @@ class PreparedTests(unittest.TestCase):
         self.call()
         self.local.assert_called_once()
 
+    def test_lost_original_controller_keeps_read_only_result_route(self):
+        self.launcher.call.side_effect = JobError('IO_UNCERTAIN', 'original pipes lost')
+        self.reader.call.return_value = {'outcome': 'UNKNOWN'}
+        result = self.call('lh_job_status', {'operation_id': self.request['operation_id']})
+        self.assertEqual({'outcome': 'UNKNOWN'}, result)
+        self.factory.assert_called_once()
+        self.local.assert_not_called()
+        self.assertEqual(['status'], [x.args[0] for x in self.launcher.call.call_args_list])
+        with self.assertRaises(JobError):
+            self.call()
+        self.assertEqual(['status', 'status'], [x.args[0] for x in self.launcher.call.call_args_list])
+
+    def test_lost_original_controller_does_not_bypass_live_writer_or_permission(self):
+        self.launcher.call.side_effect = JobError('IO_UNCERTAIN', 'original pipes lost')
+        self.factory.side_effect = JobError('RESOURCE_BUSY', 'original authority still owned')
+        with self.assertRaises(JobError) as caught:
+            self.call('lh_job_status', {'operation_id': self.request['operation_id']})
+        self.assertEqual('RESOURCE_BUSY', caught.exception.code)
+        self.launcher.call.side_effect = JobError('UNAUTHORIZED', 'principal revoked')
+        self.factory.reset_mock()
+        with self.assertRaises(JobError):
+            self.call('lh_job_status', {'operation_id': self.request['operation_id']})
+        self.factory.assert_not_called()
+
     def test_original_task_and_evidence_keep_their_reader(self):
         self.call('lh_job_status', {'operation_id': str(uuid.uuid4())})
         self.call('lh_evidence_read_chunk', {'artifact_id': str(uuid.uuid4())+'.zip',
