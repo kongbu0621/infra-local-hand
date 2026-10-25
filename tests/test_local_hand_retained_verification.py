@@ -210,6 +210,23 @@ class RetainedReadbackTests(unittest.TestCase):
 
 
 class RetainedCompositionTests(unittest.TestCase):
+    def test_offline_reader_preserves_old_v1_owner_without_inventing_v2_policy(self):
+        from admin.local_hand_deploy.retained_reader import data_identity
+        from admin.local_hand_deploy.model import DeployError
+        import pwd
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            policy = {'broker_root': directory}
+            self.assertEqual((os.geteuid(), pwd.getpwuid(os.geteuid()).pw_gid), data_identity(policy))
+            self.assertEqual({'broker_root': directory}, policy)
+            original = {'uid': os.geteuid(), 'gid': os.getegid()}
+            self.assertEqual((os.geteuid(), os.getegid()), data_identity({**policy, 'process_manager': original}))
+            with self.assertRaises(DeployError):
+                data_identity({**policy, 'process_manager': {**original, 'uid': os.geteuid()+1}})
+            Path(directory).chmod(0o755)
+            with self.assertRaises(DeployError):
+                data_identity(policy)
+
     def test_reader_cleanup_releases_all_resources_and_preserves_primary_error(self):
         closed = []
         def bad_close(name):

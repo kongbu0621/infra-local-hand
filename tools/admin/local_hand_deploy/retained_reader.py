@@ -2,12 +2,34 @@
 import hashlib
 import os
 from pathlib import Path
+import pwd
+import stat
 import subprocess
 import time
 
 from local_hand_jobs import startup
 
 from .model import DeployError, canonical, decode
+
+
+def data_identity(policy):
+    """Original v1 policies predate the required v2 manager/gid binding."""
+    root = Path(policy["broker_root"])
+    info = root.lstat()
+    manager = policy.get("process_manager", {})
+    uid = manager.get("uid", info.st_uid)
+    if (type(uid) is not int or uid < 0 or info.st_uid != uid
+            or not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077):
+        raise DeployError("RETENTION_CONFIGURATION", "Original retained data owner is invalid")
+    descriptor = startup._protected_directory(root, owner_uid=uid)
+    os.close(descriptor)
+    try:
+        gid = manager["gid"] if "gid" in manager else pwd.getpwuid(uid).pw_gid
+    except KeyError as error:
+        raise DeployError("RETENTION_CONFIGURATION", "Original v1 data owner no longer has an account") from error
+    if type(gid) is not int or gid < 0:
+        raise DeployError("RETENTION_CONFIGURATION", "Original retained data group is invalid")
+    return uid, gid
 
 
 def offline_readback(environment, component, selected, *, deadline, candidates=None, original_policies=None):
@@ -50,9 +72,7 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
     # the child performs its full original-policy/path validation again.
     data_owner = manager.get("uid", owner)
     policy = read(policy_path, data_owner)
-    uid, gid = (policy["process_manager"][key] for key in ("uid", "gid"))
-    if any(type(value) is not int or value < 0 for value in (uid, gid)):
-        raise DeployError("RETENTION_CONFIGURATION", "Offline data owner is invalid")
+    uid, gid = data_identity(policy)
     program = installed["programs"]["python"]
     executable = startup.protected_read(program["path"], owner_uid=0, maximum=64 * 1024 * 1024)
     if hashlib.sha256(executable).hexdigest() != program["sha256"]:
@@ -67,8 +87,8 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
     spec = {"mode": mode, "inputs": inputs, "seconds": seconds,
             "reader_identity": {"source_commit": installation["source"]["commit"],
                 "installed_payload_digest": expected, "execution_entrypoint": str(Path(root) / "local_hand_jobs/cli.py")}}
-    # Root never imports candidate Python. The selected reader runs after
-    # dropping to the original data owner, with no groups, listener or shell.
+    # The parent never imports candidate Python. The selected reader runs as
+    # the original data owner, with no extra groups, listener or shell.
     code = ("import sys,os,resource,ctypes; os.umask(0o077); "
             "resource.setrlimit(resource.RLIMIT_CPU,(120,120)); "
             "resource.setrlimit(resource.RLIMIT_FSIZE,(1048576,1048576)); "
