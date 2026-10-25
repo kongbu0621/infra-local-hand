@@ -124,8 +124,8 @@ namespace、socket `SO_PEERCRED` 及返回的实际进程身份共同核对，�
 `tests/test_local_hand_startup_gateway.py`、`tests/test_local_hand_deploy_gateway_probe.py` 和原适配器测试。
 相关回归已通过，包含真实随机 loopback TCP 的双向大报文/半关闭、撤销、过期、并发上限、
 空闲超时及真实 Unix 握手；坏状态探针下停止/补偿、Engine/namespace 的边界用例仍是模型测试。
-宿主没有可用 nginx 二进制或缓存包，当前执行身份也无法访问 Docker socket，因此本轮没有执行镜像构建、
-真实 nginx `-t` 或 Docker 容器生命周期。上述源码、构建入口和真实本地网络证据不冒充这些平台验收。
+上述初始源码验证时，工具身份无法访问 Docker socket，尚未执行镜像构建、真实 nginx `-t` 或 Docker
+容器生命周期；后续本机 root 执行取得的隔离平台证据单列如下。
 
 后续增加显式运行的[隔离 Docker 验收入口](../../tests/e3_host/deployment_recovery_gateway_smoke.py)。
 它使用已核对的安装载荷、管理员投影和已构建的准确 image ID，创建随机命名的测试容器；
@@ -151,6 +151,9 @@ python3 -B tests/e3_host/deployment_recovery_gateway_smoke.py \
   --run-isolated-gateway --image-id "$GATEWAY_IMAGE_ID" --output "$GATEWAY_CHECK_OUTPUT"
 ```
 
-当前已通过同一冻结核验包的配置、受保护文件、状态转换和无宿主端口预检；实际镜像构建与
-容器执行仍待报告，不计入已通过的平台矩阵。现场版本与最新证据见
+2026-10-25，Owner 已在本机 root 终端执行同一冻结核验包：固定镜像构建、真实 nginx 检查与启动、
+四类 Engine 效果后丢失回复接续及重复调用不再下发全部通过；隔离 namespace 内的候选关闭、释放开放、
+阻断撤销亦通过。测试容器已准确清理，现役管理器、MCP 及既有身份服务容器的运行身份未变。
+合成管理器和路由仍不替代真实业务、安全故障完整矩阵或现役迁移。此次依赖安装耗时 639 秒，
+私有调用器已补上阶段与等待提示；既有成功镜像及检查结果直接复用。现场版本与最新证据见
 [部署恢复实现记录](../../docs/DEPLOYMENT_RECOVERY_IMPLEMENTATION.md#原准备与成果精确安装验证)。
