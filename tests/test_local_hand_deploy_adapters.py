@@ -78,6 +78,85 @@ class UnitObservationTests(unittest.TestCase):
         self.assertEqual("disabled", loaded.unit("fixture.service")["UnitFileState"])
 
 
+class ReadOnlyBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.unit = "fixture.service"
+        self.dependency = "data.mount"
+        self.spec = {"read_only_dependencies": [self.dependency],
+                     "read_only_bindings": [self.dependency], "start_job_mode": "ignore-requirements"}
+        self.profile = {"units": {self.unit: self.spec}}
+        self.value = {"LoadState": "loaded", "ActiveState": "inactive", "UnitFileState": "disabled",
+                      "Type": "exec", "KillMode": "control-group", "Restart": "no",
+                      "BindsTo": [self.dependency], "After": [self.dependency], "Job": [0, "/"]}
+        self.dep = {"ActiveState": "active", "Job": [0, "/"]}
+        test = self
+        class Bus:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def unit(self, name):
+                return copy.deepcopy(test.value if name == test.unit else test.dep)
+            def run_job(self, unit, method, emit, *, mode):
+                self.called = (unit, method, mode)
+                return {"result": "done"}
+        self.bus = Bus()
+        self.adapter = SystemdAdapter(self.profile, None, bus_factory=lambda: self.bus)
+
+    def test_declared_binding_is_observed_and_start_cannot_pull_in_dependencies(self):
+        observed = self.adapter._snapshot(self.bus, self.unit, starting=True)
+        self.assertEqual("inactive", observed["active"])
+        self.adapter._perform({"kind": "service_start", "target": self.unit}, lambda _: None)
+        self.assertEqual((self.unit, "StartUnit", "ignore-requirements"), self.bus.called)
+
+    def test_unavailable_dependency_blocks_start_but_allows_stop(self):
+        for change in ({"ActiveState": "inactive"}, {"ActiveState": "failed"}, {"Job": [12, "/job/12"]}):
+            with self.subTest(change=change):
+                self.dep = {"ActiveState": "active", "Job": [0, "/"], **change}
+                with self.assertRaisesRegex(AdapterError, "DEPENDENCY_NOT_READY"):
+                    self.adapter._perform({"kind": "service_start", "target": self.unit}, lambda _: None)
+                self.adapter._perform({"kind": "service_stop", "target": self.unit}, lambda _: None)
+                self.assertEqual((self.unit, "StopUnit", "fail"), self.bus.called)
+
+    def test_binding_inventory_and_order_cannot_drift(self):
+        for change in ({"BindsTo": []}, {"BindsTo": ["other.mount"]}, {"After": []}):
+            with self.subTest(change=change):
+                original = self.value
+                self.value = {**original, **change}
+                with self.assertRaises(AdapterError):
+                    self.adapter._snapshot(self.bus, self.unit)
+                self.value = original
+
+    def test_unrelated_propagation_and_hooks_remain_rejected(self):
+        for change in ({"BoundBy": ["other.service"]}, {"PartOf": ["other.service"]},
+                       {"ExecStartPre": [["/unexpected", ["/unexpected"], False]]}):
+            with self.subTest(change=change):
+                original = self.value
+                self.value = {**original, **change}
+                with self.assertRaisesRegex(AdapterError, "UNDECLARED_SERVICE"):
+                    self.adapter._snapshot(self.bus, self.unit)
+                self.value = original
+
+    def test_profile_cannot_allow_implicit_start_or_undeclared_binding(self):
+        for change in ({"start_job_mode": "fail"}, {"start_job_mode": "replace"},
+                       {"read_only_dependencies": []}, {"read_only_bindings": ["data.mount"] * 2},
+                       {"read_only_bindings": "data.mount"}, {"read_only_bindings": ["shutdown.target"]}):
+            with self.subTest(change=change), self.assertRaises(AdapterError):
+                SystemdAdapter({"units": {self.unit: {**self.spec, **change}}}, None, bus_factory=lambda: self.bus)
+
+    def test_pending_managed_job_is_not_replaced(self):
+        self.value["Job"] = [23, "/job/23"]
+        for kind in ("service_start", "service_stop"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(AdapterError, "SERVICE_JOB_PENDING"):
+                self.adapter._perform({"kind": kind, "target": self.unit}, lambda _: None)
+        self.assertFalse(hasattr(self.bus, "called"))
+
+    def test_transport_rejects_unrestricted_job_modes_before_bus_access(self):
+        bus = SystemdBus.__new__(SystemdBus)
+        for method, mode in (("StartUnit", "replace"), ("StartUnit", "ignore-dependencies"),
+                             ("StopUnit", "ignore-requirements")):
+            with self.subTest(method=method, mode=mode), self.assertRaisesRegex(AdapterError, "SYSTEMD_JOB_MODE"):
+                bus.run_job(self.unit, method, lambda _: None, mode=mode)
+
+
 class SupervisorTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

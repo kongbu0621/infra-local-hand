@@ -181,10 +181,12 @@ class SystemdBus:
             return {"closed": False, "jobs": []}
         return {"closed": True, "jobs": self.jobs()}
 
-    def run_job(self, unit, method, emit):
+    def run_job(self, unit, method, emit, *, mode="fail"):
         """Subscribe before dispatch; job return and JobRemoved are both recorded."""
         if method not in ("StartUnit", "StopUnit"):
             raise AdapterError("SYSTEMD_ACTION")
+        if mode not in ("fail", "ignore-requirements") or (mode != "fail" and method != "StartUnit"):
+            raise AdapterError("SYSTEMD_JOB_MODE")
         completed = []
         callback_errors = []
         callback_type = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p, C.c_void_p)
@@ -209,8 +211,8 @@ class SystemdBus:
         self.slots.append(slot)
         emit({"kind": "bus_binding", "sender": self.unique_name(), "unit": unit})
         self.call("Subscribe")
-        emit({"kind": "dispatching", "unit": unit, "method": method})
-        job_path = self.call(method, (("s", unit), ("s", "fail")))[0]
+        emit({"kind": "dispatching", "unit": unit, "method": method, "job_mode": mode})
+        job_path = self.call(method, (("s", unit), ("s", mode)))[0]
         emit({"kind": "job_accepted", "unit": unit, "job_path": job_path})
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:

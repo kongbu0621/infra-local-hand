@@ -283,6 +283,14 @@ profile 的 `schema` 为 `local-hand-deployment-profile/v1`。必须有
 实际 PID、进程起始 tick、本次开机和加载摘要。MCP 配置摘要采用其实际输入文件集合、模式及端口，
 不套用管理器配置的摘要算法。systemd 画像须给出完整共享 reload 范围及其已加载基线；
 网关画像须给出固定 daemon、服务、镜像、原 Compose、外部网络身份和实际守卫证明。
+
+若固定 systemd 服务有 `BindsTo`，在 `profile.systemd.units[单元名]` 中用 `read_only_bindings`
+完整列出绑定的服务／挂载，同时列入 `read_only_dependencies`，保留实际 `After` 顺序，并设置
+`start_job_mode: "ignore-requirements"`。适配器先核对依赖活动且无待决作业，再只派发该服务的启动；
+依赖在此间停止时也不会被本次请求隐式拉起。依赖缺失时先解决其原维护问题，再接续原部署操作。
+停止仍使用 `fail`，未声明画像仍保持原限制。此模式要求受管服务写入方共用节点维护锁；不能用来
+替代启动守卫、协议就绪检查或放行未声明 hook。无绑定的既有画像默认启动模式为 `fail`。
+
 网关 `probe.kind` 为 `gateway`，`socket` 是容器内受保护状态路径，`peer_uid` 固定为 0；
 宿主从准确容器的 `State.Pid` 定位 `/proc/PID/root` 下的 socket，并复核 PID namespace 和进程身份。
 正在运行的 MCP/网关必须绑定运行中的管理器。网关的守卫 JSON、nginx 配置和 manager socket

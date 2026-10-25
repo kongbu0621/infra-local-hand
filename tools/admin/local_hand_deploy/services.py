@@ -17,11 +17,12 @@ from .systemd_bus import SystemdBus
 
 
 UNIT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,160}\.service\Z")
+BOUND_UNIT = re.compile(r"[A-Za-z0-9-][A-Za-z0-9_.@\\-]{0,240}\.(?:service|mount)\Z")
 POLICIES = {"enabled", "enabled-runtime", "disabled", "static", "absent"}
 STOPPED = {"inactive", "failed"}
-FORBIDDEN_PROPAGATION = ("PartOf", "ConsistsOf", "BindsTo", "BoundBy", "PropagatesStopTo", "StopPropagatedFrom", "OnFailure", "OnSuccess", "TriggeredBy", "Triggers")
+FORBIDDEN_PROPAGATION = ("PartOf", "ConsistsOf", "BoundBy", "PropagatesStopTo", "StopPropagatedFrom", "OnFailure", "OnSuccess", "TriggeredBy", "Triggers")
 HOOKS = ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload", "ExecCondition")
-DEFINITION_FIELDS = ("Type", "Restart", "KillMode", "ExecStart", *HOOKS, *FORBIDDEN_PROPAGATION,
+DEFINITION_FIELDS = ("Type", "Restart", "KillMode", "ExecStart", *HOOKS, *FORBIDDEN_PROPAGATION, "BindsTo",
                      "Requires", "Wants", "Requisite", "Conflicts", "Before", "After", "FragmentPath", "DropInPaths")
 
 
@@ -114,6 +115,16 @@ class SystemdAdapter:
             raise AdapterError("FIXED_SERVICE_SET_REQUIRED")
         if profile.get("manager", "system") not in ("system", "user"):
             raise AdapterError("SYSTEMD_MANAGER_SCOPE")
+        for spec in self.units.values():
+            bindings = spec.get("read_only_bindings", [])
+            if (not isinstance(bindings, list) or len(bindings) > 32
+                    or any(not isinstance(name, str) or not BOUND_UNIT.fullmatch(name) for name in bindings)
+                    or len(set(bindings)) != len(bindings)
+                    or set(bindings) - set(spec.get("read_only_dependencies", []))):
+                raise AdapterError("READ_ONLY_SERVICE_BINDINGS_REQUIRED")
+            mode = spec.get("start_job_mode", "fail")
+            if mode not in ("fail", "ignore-requirements") or (bindings and mode != "ignore-requirements"):
+                raise AdapterError("READ_ONLY_BINDING_JOB_MODE_REQUIRED")
         self.bus_factory = bus_factory or (lambda: SystemdBus(user=profile.get("manager") == "user", timeout=min(runner.timeout / 2, 30)))
         self.guard_check, self.loaded_probe = guard_check, loaded_probe
 
@@ -131,10 +142,15 @@ class SystemdAdapter:
             for key in FORBIDDEN_PROPAGATION:
                 if value.get(key):
                     raise AdapterError("UNDECLARED_SERVICE_PROPAGATION:" + key)
+            bindings = set(value.get("BindsTo", []))
+            if bindings != set(self.units[unit].get("read_only_bindings", [])):
+                raise AdapterError("UNDECLARED_SERVICE_PROPAGATION:BindsTo")
+            if bindings - set(value.get("After", [])):
+                raise AdapterError("SERVICE_BINDING_ORDER_REQUIRED")
             hooks = self.units[unit].get("hooks", {})
             if any([entry[:3] for entry in value.get(key, [])] != hooks.get(key, []) for key in HOOKS):
                 raise AdapterError("UNDECLARED_SERVICE_HOOK")
-            dependencies = set(value.get("Requires", [])) | set(value.get("Wants", [])) | set(value.get("Requisite", []))
+            dependencies = set(value.get("Requires", [])) | set(value.get("Wants", [])) | set(value.get("Requisite", [])) | bindings
             if dependencies - set(self.units[unit].get("read_only_dependencies", [])):
                 raise AdapterError("UNDECLARED_SERVICE_DEPENDENCY")
             if value.get("Restart") not in self.units[unit].get("restart_modes", ["no"]):
@@ -411,5 +427,12 @@ class SystemdAdapter:
                 bus.call("Reload")
                 emit({"kind": "reload_returned"})
                 return {"reload": "returned"}
-            self._snapshot(bus, action["target"], starting=kind == "service_start")
-            return bus.run_job(action["target"], "StartUnit" if kind == "service_start" else "StopUnit", emit)
+            snapshot = self._snapshot(bus, action["target"], starting=kind == "service_start")
+            if snapshot["job"][0]:
+                raise AdapterError("SERVICE_JOB_PENDING")
+            mode = self.units[action["target"]].get("start_job_mode", "fail") if kind == "service_start" else "fail"
+            # The explicit read-only mode keeps ordering and BindsTo stop
+            # semantics, but cannot pull in a dependency that went down after
+            # the readiness observation. The node lock serializes managed jobs;
+            # independent writers must use the same maintenance protocol.
+            return bus.run_job(action["target"], "StartUnit" if kind == "service_start" else "StopUnit", emit, mode=mode)
