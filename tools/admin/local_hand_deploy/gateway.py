@@ -8,6 +8,7 @@ prune or orphan cleanup. This is the finite --no-deps equivalent adapter.
 from __future__ import annotations
 
 import http.client
+from decimal import Decimal, InvalidOperation
 import json
 import os
 from pathlib import Path
@@ -70,6 +71,75 @@ def _quote(value):
     return urllib.parse.quote(value, safe="")
 
 
+def _resource_config(source):
+    """Normalize only the bounded container controls supported by this adapter."""
+    result = {}
+    def memory(value, *, minimum=1, maximum=16 * 1024**3):
+        if type(value) is int:
+            size = value
+        elif isinstance(value, str) and (match := re.fullmatch(r"([1-9][0-9]{0,12})([kKmMgG]?)", value)):
+            size = int(match[1]) * {"": 1, "k": 1024, "m": 1024**2, "g": 1024**3}[match[2].lower()]
+        else:
+            raise AdapterError("GATEWAY_MEMORY_BOUND")
+        if not minimum <= size <= maximum: raise AdapterError("GATEWAY_MEMORY_BOUND")
+        return size
+    if "cpus" in source:
+        try:
+            number = Decimal(str(source["cpus"]))
+            if not number.is_finite() or not 0 < number <= 64:
+                raise ValueError()
+            nano = number * 10**9
+            if nano != nano.to_integral_value():
+                raise ValueError()
+            result["NanoCpus"] = int(nano)
+        except (InvalidOperation, ValueError, OverflowError):
+            raise AdapterError("GATEWAY_CPU_BOUND") from None
+    if "mem_limit" in source:
+        result["Memory"] = memory(source["mem_limit"], minimum=6 * 1024**2)
+    if "pids_limit" in source:
+        value = source["pids_limit"]
+        if type(value) is not int or not 1 <= value <= 4096: raise AdapterError("GATEWAY_PID_BOUND")
+        result["PidsLimit"] = value
+    if "cap_add" in source:
+        values = source["cap_add"]
+        if (not isinstance(values, list) or any(not isinstance(v, str) or v not in {"CHOWN", "SETUID", "SETGID"} for v in values)
+                or len(values) != len(set(values))):
+            raise AdapterError("GATEWAY_CAPABILITY_SCOPE")
+        result["CapAdd"] = values
+    if "group_add" in source:
+        values = source["group_add"]
+        if (not isinstance(values, list) or len(values) > 16
+                or any(not isinstance(v, str) or re.fullmatch(r"[1-9][0-9]{0,9}", v) is None or int(v) > 2**31 - 1 for v in values)
+                or len(values) != len(set(values))):
+            raise AdapterError("GATEWAY_GROUP_SCOPE")
+        result["GroupAdd"] = values
+    if "tmpfs" in source:
+        mounts = source["tmpfs"]
+        if not isinstance(mounts, dict) or set(mounts) != {"/run/local-hand-gateway"}:
+            raise AdapterError("GATEWAY_TMPFS_SCOPE")
+        options = mounts["/run/local-hand-gateway"]
+        if not isinstance(options, str): raise AdapterError("GATEWAY_TMPFS_OPTIONS")
+        parts = options.split(",")
+        size = [part[5:] for part in parts if part.startswith("size=")]
+        if (len(parts) != 6 or len(set(parts)) != 6 or len(size) != 1
+                or not {"rw", "nosuid", "nodev", "noexec", "mode=0755"} <= set(parts)):
+            raise AdapterError("GATEWAY_TMPFS_OPTIONS")
+        memory(size[0], maximum=64 * 1024**2)
+        result["Tmpfs"] = mounts
+    if "logging" in source:
+        config = source["logging"]
+        if (not isinstance(config, dict) or set(config) != {"driver", "options"} or config["driver"] != "local"
+                or not isinstance(config["options"], dict) or set(config["options"]) != {"max-size", "max-file"}):
+            raise AdapterError("GATEWAY_LOG_SCOPE")
+        options = config["options"]
+        if not isinstance(options["max-file"], str) or options["max-file"] not in {str(i) for i in range(1, 11)}:
+            raise AdapterError("GATEWAY_LOG_BOUND")
+        memory(options["max-size"], maximum=64 * 1024**2)
+        if not isinstance(options["max-size"], str): raise AdapterError("GATEWAY_LOG_BOUND")
+        result["LogConfig"] = {"Type": "local", "Config": options}
+    return result
+
+
 class GatewayAdapter:
     def __init__(self, profile, runner, *, engine=None, guard_check=None, route_probe=None):
         self.profile, self.runner = profile, runner
@@ -93,9 +163,11 @@ class GatewayAdapter:
             raise AdapterError("COMPOSE_PROJECT_SERVICE")
         service = compose["services"][self.service]
         supported = {"image", "container_name", "entrypoint", "command", "environment", "volumes", "networks",
-                     "ports", "restart", "read_only", "user", "labels", "depends_on", "cap_drop", "security_opt"}
+                     "ports", "restart", "read_only", "user", "labels", "depends_on", "cap_drop", "security_opt",
+                     "cpus", "mem_limit", "pids_limit", "tmpfs", "logging", "group_add", "cap_add"}
         if set(service) - supported:
             raise AdapterError("UNSUPPORTED_GATEWAY_SERVICE_FIELD")
+        _resource_config(service)
         if service.get("container_name", self.name) != self.name:
             raise AdapterError("GATEWAY_CONTAINER_NAME")
         if not re.fullmatch(r"(?:[^\s]+@)?sha256:[0-9a-f]{64}", service.get("image", "")):
@@ -202,9 +274,22 @@ class GatewayAdapter:
         for field in ("PortBindings", "ReadonlyRootfs", "CapDrop", "SecurityOpt"):
             if (host.get(field) or ({} if field == "PortBindings" else [] if field in ("CapDrop", "SecurityOpt") else False)) != expected_body["HostConfig"][field]:
                 return False
+        for field, expected in _resource_config(source).items():
+            actual = host.get(field)
+            if field in ("CapAdd", "GroupAdd"):
+                if sorted(actual or []) != sorted(expected): return False
+            elif actual != expected:
+                return False
         if host.get("RestartPolicy", {}).get("Name", "no") != source.get("restart", "no"):
             return False
-        actual_mounts = sorted((m.get("Type"), m.get("Source"), m.get("Destination"), not m.get("RW", True)) for m in value.get("Mounts", []))
+        # Engines may also list tmpfs mounts here; their exact map is checked
+        # above in HostConfig, and any listed entries must agree with that map.
+        for mount in value.get("Mounts", []):
+            if mount.get("Type") == "tmpfs" and (mount.get("Destination") not in source.get("tmpfs", {})
+                    or mount.get("Source") not in (None, "") or mount.get("RW") is not True):
+                return False
+        actual_mounts = sorted((m.get("Type"), m.get("Source"), m.get("Destination"), not m.get("RW", True))
+                               for m in value.get("Mounts", []) if m.get("Type") != "tmpfs")
         expected_mounts = sorted(("bind", m["source"], m["target"], True) for m in source.get("volumes", []))
         if actual_mounts != expected_mounts:
             return False
@@ -407,7 +492,7 @@ class GatewayAdapter:
                 "HostConfig": {"Mounts": mounts, "PortBindings": bindings, "ReadonlyRootfs": source.get("read_only", False),
                                "RestartPolicy": {"Name": source.get("restart", "no")}, "AutoRemove": False,
                                "CapDrop": source.get("cap_drop", []), "SecurityOpt": source.get("security_opt", []),
-                               "NetworkMode": next(iter(endpoints), "none")},
+                               "NetworkMode": next(iter(endpoints), "none"), **_resource_config(source)},
                 "NetworkingConfig": {"EndpointsConfig": endpoints}}
         for source_key, destination in (("entrypoint", "Entrypoint"), ("command", "Cmd"), ("user", "User")):
             if source_key in source:

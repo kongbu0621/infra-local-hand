@@ -13,12 +13,14 @@ import argparse
 import copy
 import fcntl
 import hashlib
+import http.server
 import json
 import os
 from pathlib import Path
 import re
 import signal
 import socket
+import socketserver
 import struct
 import subprocess
 import sys
@@ -32,7 +34,7 @@ from admin.local_hand_deploy.supervision import SupervisedRunner
 from local_hand.provenance import full_payload_digest
 from local_hand_jobs import maintenance, startup
 from local_hand_jobs.contract import JobError
-from local_hand_mcp.gateway_guard import configuration_binding
+from local_hand_mcp.gateway_guard import configuration_binding, validate_nginx
 
 
 def save(path, value):
@@ -56,7 +58,42 @@ def wait_for(function, seconds=15):
     raise RuntimeError('Bounded platform observation did not converge') from last
 
 
-def fixture(root):
+def migration_nginx():
+    return '''worker_processes 1; error_log stderr warn;
+events { worker_connections 128; }
+http {
+ access_log off; server_tokens off; client_max_body_size 128k;
+ client_body_temp_path /run/local-hand-gateway/client-body;
+ proxy_temp_path /run/local-hand-gateway/proxy-temp;
+ fastcgi_temp_path /run/local-hand-gateway/fastcgi-temp;
+ uwsgi_temp_path /run/local-hand-gateway/uwsgi-temp;
+ scgi_temp_path /run/local-hand-gateway/scgi-temp;
+ resolver 127.0.0.11 valid=10s ipv6=off;
+ limit_req_zone $binary_remote_addr zone=auth:1m rate=1r/s;
+ upstream mcp_check { server unix:/run/local-hand-mcp-check/http.sock; }
+ server {
+  listen 127.0.0.1:18081; server_name _;
+  set $lh_backend_identity http://127.0.0.1:19090;
+  location / { return 404; }
+  location /realms/example/login-actions/ {
+   limit_req zone=auth burst=2 nodelay; proxy_pass $lh_backend_identity;
+  }
+  location /resources/ { limit_except GET { deny all; } proxy_pass $lh_backend_identity; }
+  location = /.well-known/oauth-authorization-server/realms/example {
+   rewrite ^ /realms/example/.well-known/openid-configuration break;
+   proxy_pass $lh_backend_identity;
+  }
+  location = /mcp {
+   client_max_body_size 512k; proxy_pass http://mcp_check;
+   proxy_http_version 1.1; proxy_set_header Connection "";
+   proxy_buffering off; proxy_request_buffering off;
+  }
+ }
+}
+'''
+
+
+def fixture(root, worker_gid=None):
     """Protected, synthetic inputs. No daemon access or fake platform claims."""
     gate_dir = root / 'gate'; gate_dir.mkdir(mode=0o700)
     gate = maintenance.MaintenanceGate(gate_dir, 'gateway-fixture', owner_uid=os.geteuid())
@@ -75,6 +112,11 @@ def fixture(root):
         manager_socket=str(root / 'manager.sock'), nginx_config=str(nginx),
         public_port=18080, upstream_port=18081,
         status_socket='/run/local-hand-gateway/status.sock')
+    if worker_gid is not None:
+        if type(worker_gid) is not int or not 1 <= worker_gid <= 2**31 - 1:
+            raise ValueError('A positive nonroot worker gid is required')
+        config['worker_group'] = {'name': 'local-hand-mcp', 'gid': worker_gid}
+        nginx.write_text(migration_nginx())
     config_path = root / 'guard.json'; save(config_path, config)
     binding = startup.digest(configuration_binding(config))
     selection = dict(schema=startup.SCHEMA, node_id=config['node_id'],
@@ -133,6 +175,14 @@ def profile_for(root, config, image_id, daemon_id, name):
         entrypoint=['/opt/local-hand/gateway/bin/python', '-B', '-m', 'local_hand_mcp.gateway_guard'],
         command=['--config', str(root / 'guard.json')], environment={}, ports=[], networks={},
         volumes=[dict(type='bind', source=str(root), target=str(root), read_only=True)])
+    if 'worker_group' in config:
+        service.update(read_only=True, cpus=1, mem_limit='64m', pids_limit=32,
+            cap_drop=['ALL'], cap_add=['CHOWN', 'SETUID', 'SETGID'],
+            group_add=[str(config['worker_group']['gid'])], security_opt=['no-new-privileges:true'],
+            tmpfs={'/run/local-hand-gateway': 'rw,nosuid,nodev,noexec,size=16m,mode=0755'},
+            logging={'driver': 'local', 'options': {'max-file': '2', 'max-size': '5m'}})
+        service['volumes'].append(dict(type='bind', source=str(root / 'backend'),
+            target='/run/local-hand-mcp-check', read_only=True))
     return dict(project=name, service='gateway', container_name=name, component='gateway',
         daemon_id=daemon_id, network_ids={}, dependency_container_ids={},
         compose={'name': name, 'services': {'gateway': service}, 'networks': {}})
@@ -151,7 +201,65 @@ def namespace_http(pid, port, path):
     return result.stdout.decode().strip()
 
 
-def run(root, image_id):
+def backend(address):
+    """No business: bounded HTTP echo in a private Unix or isolated TCP listener."""
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_): pass
+        def do_GET(self):
+            self.connection.settimeout(2)
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 <= length <= 600 * 1024: raise ValueError('Fixture body bound')
+            body = self.rfile.read(length)
+            if len(body) != length: raise ValueError('Fixture short body')
+            value = {'path': self.path, 'length': length}
+            if self.connection.family == socket.AF_UNIX:
+                _, uid, gid = struct.unpack('3i', self.connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+                value.update(uid=uid, gid=gid)
+            raw = json.dumps(value).encode()
+            self.send_response(401 if self.command == 'GET' and self.path == '/mcp' else 200)
+            self.send_header('Content-Length', str(len(raw))); self.end_headers(); self.wfile.write(raw)
+        do_POST = do_GET
+    if address == 'tcp':
+        server = http.server.HTTPServer(('127.0.0.1', 19090), Handler)
+    else:
+        server = socketserver.UnixStreamServer(address, Handler)
+        parent = Path(address).parent.stat()
+        os.chown(address, 0, parent.st_gid); os.chmod(address, 0o660)
+    with server:
+        server.serve_forever(poll_interval=.1)
+
+
+def migration_requests(pid, worker_gid):
+    code = '''import http.client,json
+def request(path,method='GET',size=0):
+ c=http.client.HTTPConnection('127.0.0.1',18080,timeout=2)
+ try:
+  c.request(method,path,body=b'x'*size);r=c.getresponse();raw=r.read(8192)
+  return r.status,raw.decode()
+ finally:c.close()
+rows={}
+rows['rewrite']=request('/.well-known/oauth-authorization-server/realms/example')
+rows['method']=request('/resources/test','POST')
+rows['body_default']=request('/resources/test','POST',128*1024+1)
+rows['body_mcp']=request('/mcp','POST',512*1024)
+rows['body_mcp_reject']=request('/mcp','POST',512*1024+1)
+rows['rate']=[request('/realms/example/login-actions/test')[0] for _ in range(8)]
+print(json.dumps(rows))
+'''
+    result = subprocess.run(['/usr/bin/nsenter', '--target', str(pid), '--net',
+        '/usr/bin/python3', '-I', '-B', '-c', code], capture_output=True, timeout=25, check=True)
+    rows = json.loads(result.stdout)
+    assert rows['rewrite'][0] == 200
+    assert json.loads(rows['rewrite'][1])['path'] == '/realms/example/.well-known/openid-configuration'
+    assert rows['method'][0] == 403 and rows['body_default'][0] == 413
+    assert rows['body_mcp'][0] == 200 and rows['body_mcp_reject'][0] == 413
+    mcp = json.loads(rows['body_mcp'][1])
+    assert mcp['length'] == 512 * 1024 and mcp['uid'] != 0 and mcp['gid'] == worker_gid
+    assert rows['rate'][0] == 200 and 503 in rows['rate'] and set(rows['rate']) <= {200, 503}
+    return rows
+
+
+def run(root, image_id, worker_gid=None, selected_nginx=None):
     if os.geteuid() != 0:
         raise RuntimeError('Real isolated Docker acceptance requires root')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id):
@@ -159,7 +267,13 @@ def run(root, image_id):
     engine = DockerEngine(timeout=15)
     daemon = engine.request('GET', '/info')
     name = 'lh-gateway-check-' + uuid.uuid4().hex[:16]
-    gate, config, original = fixture(root)
+    gate, config, original = fixture(root, worker_gid)
+    if selected_nginx is not None:
+        if worker_gid is None: raise ValueError('Selected config check requires the migration profile')
+        raw = startup.protected_read(str(selected_nginx), owner_uid=0, maximum=256*1024)
+        validate_nginx(raw, config['upstream_port'])
+        with (root / 'selected-nginx.conf').open('xb') as stream:
+            os.fchmod(stream.fileno(), 0o600); stream.write(raw)
     profile = profile_for(root, config, image_id, daemon['ID'], name)
     env = PlanningEnvironment({'owner_uid': 0, 'gateway': profile,
         'probes': {'gateway': {'kind': 'gateway', 'socket': config['status_socket'], 'peer_uid': 0}}})
@@ -181,6 +295,7 @@ def run(root, image_id):
         live_service_mutations=False, host_ports_published=False, actions=[], status='RUNNING')
     save(root / 'test-inputs.json', {'profile': profile, 'source': original})
     helper = None
+    backends = []
     owned_id = None
     cleanup_errors = []
     lock = os.open(root / 'node.lock', os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
@@ -224,6 +339,14 @@ def run(root, image_id):
             recovered=result, repeat_without_dispatch=True))
         return result
     try:
+        if worker_gid is not None:
+            directory = root / 'backend'; directory.mkdir(mode=0o750)
+            os.chown(directory, 0, worker_gid)
+            log = (root / 'unix-backend.log').open('xb')
+            with log:
+                backends.append(subprocess.Popen([sys.executable, '-B', str(Path(__file__).resolve()),
+                    '--serve-fixture-backend', str(directory / 'http.sock')], stdout=log, stderr=subprocess.STDOUT))
+            wait_for(lambda: (directory / 'http.sock').is_socket() and backends[-1].poll() is None)
         assert adapter.observe()['kind'] == 'absent'
         helper_log = (root / 'manager.log').open('xb')
         with helper_log:
@@ -242,6 +365,13 @@ def run(root, image_id):
         candidate('start_lost')
         started = perform(actions[1], 'start_lost')
         proof = env._probe('gateway')['loaded']; pid = proof['pid']
+        if worker_gid is not None:
+            log = (root / 'tcp-backend.log').open('xb')
+            with log:
+                backends.append(subprocess.Popen(['/usr/bin/nsenter', '--target', str(pid), '--net',
+                    sys.executable, '-B', str(Path(__file__).resolve()), '--serve-fixture-backend', 'tcp'],
+                    stdout=log, stderr=subprocess.STDOUT))
+            wait_for(lambda: namespace_http(pid, 19090, '/ready') == '200')
         assert proof['container_id'] == owned_id and not proof['public_ready']
         assert namespace_http(pid, 18080, '/mcp') == 'CLOSED'
         assert namespace_http(pid, 18081, '/mcp') == '401'
@@ -252,6 +382,18 @@ def run(root, image_id):
         assert namespace_http(pid, 18080, '/mcp') == '401'
         assert namespace_http(pid, 18080, '/') == '404'
         report['released_public_in_namespace'] = True
+        if worker_gid is not None:
+            report['migration_controls'] = migration_requests(pid, worker_gid)
+            report['container_resource_controls'] = engine.request('GET', '/containers/' + owned_id + '/json')['HostConfig']
+            if selected_nginx is not None:
+                # Only parse the retained real config, in this already bound
+                # isolated container. This does not reload nginx or reach its backends.
+                checked = subprocess.run(['/usr/bin/docker', 'exec', owned_id, '/usr/sbin/nginx',
+                    '-p', '/run/local-hand-gateway/', '-c', str(root / 'selected-nginx.conf'),
+                    '-g', 'daemon off; user nginx local-hand-mcp; pid /run/local-hand-gateway/nginx.pid;', '-t'],
+                    capture_output=True, timeout=15, check=True)
+                report['selected_nginx'] = {'sha256': hashlib.sha256(raw).hexdigest(),
+                    'syntax_passed': True, 'output': (checked.stdout + checked.stderr)[-8192:].decode(errors='replace')}
         gate.close('isolate')
         publish({**stable, 'mode': 'blocked', 'owner': 'isolate'})
         wait_for(lambda: not env._probe('gateway')['loaded']['public_ready'], seconds=5)
@@ -291,12 +433,13 @@ def run(root, image_id):
                 raise RuntimeError('Isolated container is not absent after cleanup')
         except BaseException as error:
             cleanup_errors.append(type(error).__name__ + ': ' + str(error)[:1000])
-        if helper is not None and helper.poll() is None:
-            helper.terminate()
-            try:
-                helper.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                helper.kill(); helper.wait(timeout=3)
+        for process in [helper, *backends]:
+            if process is not None and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.wait(timeout=3)
         os.close(lock)
         report['cleanup_errors'] = cleanup_errors
         if cleanup_errors:
@@ -311,15 +454,20 @@ def main():
     group.add_argument('--run-isolated-gateway', action='store_true')
     group.add_argument('--validate-fixture-only', action='store_true')
     group.add_argument('--serve-fixture-manager', type=Path)
+    group.add_argument('--serve-fixture-backend')
+    parser.add_argument('--migration-worker-gid', type=int)
+    parser.add_argument('--selected-nginx', type=Path)
     parser.add_argument('--image-id')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.serve_fixture_manager:
         manager(args.serve_fixture_manager); return 0
+    if args.serve_fixture_backend:
+        backend(args.serve_fixture_backend); return 0
     if args.validate_fixture_only:
         with tempfile.TemporaryDirectory(prefix='lh-gateway-inputs-') as directory:
             root = Path(directory)
-            gate, config, selection = fixture(root)
+            gate, config, selection = fixture(root, args.migration_worker_gid)
             startup.verify_members(selection, owner_uid=os.geteuid())
             profile = profile_for(root, config, 'sha256:' + 'a' * 64, 'fixture-daemon', 'fixture-gateway')
             adapter = GatewayAdapter(profile, type('Budget', (), {'timeout': 30})())
@@ -349,7 +497,7 @@ def main():
         raise TimeoutError('Isolated gateway check interrupted; attempt exact cleanup')
     signal.signal(signal.SIGTERM, interrupted)
     args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
-    report = run(args.output, args.image_id)
+    report = run(args.output, args.image_id, args.migration_worker_gid, args.selected_nginx)
     print(json.dumps({'status': report['status'], 'report': str(args.output / 'gateway-result.json')}))
     return 0 if report['status'] == 'PASSED' else 1
 

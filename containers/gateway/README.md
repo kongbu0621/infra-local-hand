@@ -38,7 +38,7 @@ Dockerfile 显式替换基础镜像的入口，不执行基础镜像的默认启
 
 ## 固定配置与挂载
 
-守卫 JSON 严格包含以下九个字段；下面的摘要是格式示意，必须换成本次选择的真实值：
+守卫 JSON 必须包含以下九个字段，并可显式增加下述 `worker_group`；其他字段拒绝。下面的摘要是格式示意，必须换成本次选择的真实值：
 
 ```json
 {
@@ -66,7 +66,15 @@ nginx 配置的逻辑绝对路径、内容摘要、两个端口及状态 socket�
   "entrypoint": ["/opt/local-hand/gateway/bin/python", "-B", "-m", "local_hand_mcp.gateway_guard"],
   "command": ["--config", "/etc/local-hand-gateway/guard.json"],
   "user": "0:0",
-  "read_only": false,
+  "read_only": true,
+  "cpus": 1,
+  "mem_limit": "64m",
+  "pids_limit": 32,
+  "cap_drop": ["ALL"],
+  "cap_add": ["CHOWN", "SETUID", "SETGID"],
+  "security_opt": ["no-new-privileges:true"],
+  "tmpfs": {"/run/local-hand-gateway": "rw,nosuid,nodev,noexec,size=16m,mode=0755"},
+  "logging": {"driver": "local", "options": {"max-file": "2", "max-size": "5m"}},
   "environment": {},
   "ports": [{"target": 18080, "published": 28081, "host_ip": "127.0.0.1", "protocol": "tcp"}],
   "volumes": [
@@ -83,9 +91,19 @@ nginx 配置的逻辑绝对路径、内容摘要、两个端口及状态 socket�
 直接 bind 单个守卫 JSON、nginx 配置文件或 manager socket 均不受支持。
 父目录、文件 owner/mode 必须符合受保护启动文件规则。
 
-容器可写层只用于运行目录、PID 和受限临时文件；不要将宿主可写目录交给容器。
-nginx worker 降权到基础镜像的 `nginx` 用户，需要保留 `CHOWN`、`SETUID`、`SETGID`；
-不能同时配置 `cap_drop: ["ALL"]`。不要用环境变量覆盖解释器、Python 模块路径或入口行为。
+只读根文件系统必须配合上述有界 tmpfs；旧的可写层画像仍兼容。PID、socket 与临时文件仅放在
+`/run/local-hand-gateway`，不挂入宿主可写目录。只读画像须将五个 `*_temp_path` 明确配置到
+该目录下的 `client-body`、`proxy-temp`、`fastcgi-temp`、`uwsgi-temp`、`scgi-temp`；后面三个
+只是避开 nginx 已编译模块的默认临时目录，并未开放 FastCGI、uWSGI 或 SCGI 后端语法。
+nginx worker 降权到基础镜像的 `nginx` 用户；PID 1 需要 `CHOWN`、`SETUID`、`SETGID`。
+可先 `cap_drop: ["ALL"]` 再显式加回这三项。不要用环境变量覆盖解释器、Python 模块路径或入口行为。
+
+后端 Unix socket 使用专用组时，守卫可增加 `"worker_group": {"name": "local-hand-mcp", "gid": 1234}`。
+名称与正整数 GID 均纳入启动配置摘要；镜像中必须已存在同名同 GID 组，否则启动拒绝。
+worker 仍使用 nginx UID，以该组为主组；仅设置 Docker `group_add` 不能代替 nginx 降权后的组选择。
+示例 GID 必须替换为实际 socket 组，不修改原 socket 权限。未设置该项的旧配置保留原配置摘要。
+适配器支持正数 CPU／内存／PID 限制、有限附加组、固定运行目录 tmpfs 和有界 local 日志轮转；
+创建时映射到 Engine，观察时逐项核对显式选择值，漂移不算接管成功。
 共享 manager 必须先完成启动，才能给 MCP/网关候选提供启动许可。
 
 旧未受守卫的部署首次接入时，先按
@@ -106,6 +124,11 @@ nginx worker 降权到基础镜像的 `nginx` 用户，需要保留 `CHOWN`、`S
 必须拒绝。配置文件最多 256 KiB，最多 16384 个 token。拒绝 `include`、额外隐式监听、动态模块、
 脚本、证书、静态文件根、任意日志或临时文件路径。stdout/stderr 的容器日志保留策略由所选宿主管理。
 配置只描述已有后端的 HTTP/Unix socket 代理，不创建后端、网络或卷。
+有限语法保留认证入口所需的字节／k／m 请求体限制、`limit_req_zone`／`limit_req`、
+`limit_except GET { deny all; }` 与精确 location 内的固定发现路径改写。
+Docker DNS 仅允许 `127.0.0.11`、有界有效期及 `ipv6=off`；延迟解析的 `$lh_backend_*`
+变量只能绑定受保护配置中的固定 HTTP 主机和端口，禁止请求头或请求参数决定目标。
+限流按 nginx 看到的 TCP 来源计数；守卫转发为环回连接，因此是聚合限流，不能声称保留客户端独立 IP 配额。
 
 公共转发至一个固定内环回端口，最多 32 个并发连接，每方向最多 64 KiB 缓冲，空闲时限 60 秒，
 单连接总时限一小时；长时间空闲或长流会断开，客户端沿原任务查询/重连，不能因此重提业务。
@@ -157,3 +180,10 @@ python3 -B tests/e3_host/deployment_recovery_gateway_smoke.py \
 合成管理器和路由仍不替代真实业务、安全故障完整矩阵或现役迁移。此次依赖安装耗时 639 秒，
 私有调用器已补上阶段与等待提示；既有成功镜像及检查结果直接复用。现场版本与最新证据见
 [部署恢复实现记录](../../docs/DEPLOYMENT_RECOVERY_IMPLEMENTATION.md#原准备与成果精确安装验证)。
+
+2026-10-26 01:57，准确候选 wheel 的离线替换、新镜像隔离检查及清理已通过，现役身份未变。
+随后为现役配置补齐上述认证控制、worker 组及资源限制；这些新增能力的源码验证与真实镜像验证
+分开记录。隔离入口增加 `--migration-worker-gid`，要求镜像中有匹配的 `local-hand-mcp` 组，
+使用无宿主端口、无外部网络的合成 HTTP／Unix 后端验证改写、方法拒绝、128 KiB／512 KiB
+请求体边界、限流和非 root worker 的实际对端 GID，并由生产适配器核对资源画像。
+该入口不使用真实认证账户、MCP 任务或现役服务，不代替正式迁移与重启验收。

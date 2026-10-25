@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import suppress
+import grp
 import hashlib
 import json
 import os
@@ -46,7 +47,8 @@ def _fail(message):
 def validate_config(config):
     keys = {"schema", "node_id", "deployment_digest", "payload_digest", "manager_socket",
             "nginx_config", "public_port", "upstream_port", "status_socket"}
-    if not isinstance(config, dict) or set(config) != keys or config["schema"] != SCHEMA:
+    if (not isinstance(config, dict) or not keys <= set(config)
+            or set(config) - keys - {"worker_group"} or config["schema"] != SCHEMA):
         _fail("Invalid fixed gateway startup configuration")
     if not isinstance(config["node_id"], str) or not config["node_id"]:
         _fail("Gateway node identity is missing")
@@ -64,6 +66,13 @@ def validate_config(config):
             or config["public_port"] == config["upstream_port"]
             or Path(config["status_socket"]).parent != RUN_DIRECTORY):
         _fail("Gateway listener scope is invalid")
+    if "worker_group" in config:
+        group = config["worker_group"]
+        if (not isinstance(group, dict) or set(group) != {"name", "gid"}
+                or not isinstance(group["name"], str)
+                or re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", group["name"]) is None
+                or type(group["gid"]) is not int or not 1 <= group["gid"] <= 2**31 - 1):
+            _fail("Invalid bound nginx worker group")
     return config
 
 
@@ -90,6 +99,10 @@ def validate_nginx(raw, upstream_port):
         raise JobError("GATEWAY_STARTUP_MISMATCH", "Invalid nginx tokenization") from exc
     index, listeners, default_deny, stderr_log, no_access_log = 0, 0, False, False, False
     sections = {"events": 0, "http": 0, "server": 0}
+    backends, zones, used_backends, used_zones = {}, set(), set(), set()
+    def size(value, maximum):
+        match = re.fullmatch(r"([1-9][0-9]{0,9})([kKmM]?)", value)
+        return bool(match and int(match[1]) * {"": 1, "k": 1024, "m": 1024**2}[match[2].lower()] <= maximum)
     def block(context, *, location=None, prefix=False):
         nonlocal index, listeners, default_deny, stderr_log, no_access_log
         terminal = False
@@ -98,6 +111,7 @@ def validate_nginx(raw, upstream_port):
                 index += 1
                 if context == "root": _fail("Unexpected nginx block end")
                 if context == "location" and not terminal: _fail("Every location must proxy or return")
+                if context == "methods" and not terminal: _fail("Method restriction must deny all other methods")
                 return
             words = []
             while index < len(tokens) and tokens[index] not in {"{", "}", ";"}:
@@ -120,6 +134,8 @@ def validate_nginx(raw, upstream_port):
                             or re.search(r"[\s$;{}]", path)):
                         _fail("Only fixed literal gateway locations are supported")
                     block("location", location=path, prefix=len(args) == 1)
+                elif context == "location" and name == "limit_except" and args == ["GET"]:
+                    block("methods")
                 else:
                     _fail("Unsupported nginx block")
                 continue
@@ -140,21 +156,44 @@ def validate_nginx(raw, upstream_port):
                     if address.startswith("unix:"):
                         path = address[5:]
                         allowed = Path(path).is_absolute() and ".." not in Path(path).parts and not any(c.isspace() for c in path)
+            elif context == "methods":
+                allowed = not terminal and name == "deny" and args == ["all"]
+                terminal = allowed
             else:
                 if context == "server" and name == "listen":
                     allowed = args == ["127.0.0.1:" + str(upstream_port)]
                     listeners += 1
                 elif context == "server" and name == "server_name":
-                    allowed = args == ["_"]
+                    allowed = len(args) == 1 and re.fullmatch(r"_|[A-Za-z0-9][A-Za-z0-9.-]{0,252}", args[0]) is not None
+                elif context == "http" and name == "resolver":
+                    allowed = (len(args) == 3 and args[0] == "127.0.0.11" and args[2] == "ipv6=off"
+                               and re.fullmatch(r"valid=(?:[1-9]|[1-5][0-9]|60)s", args[1]) is not None)
+                elif context == "server" and name == "set":
+                    # Only literal backend addresses under a private variable
+                    # prefix. Request-controlled variables can never select a destination.
+                    allowed = (len(args) == 2 and re.fullmatch(r"\$lh_backend_[a-z][a-z0-9_]{0,31}", args[0]) is not None
+                               and re.fullmatch(r"http://[A-Za-z0-9][A-Za-z0-9_.-]{0,252}:[0-9]{1,5}", args[1]) is not None
+                               and 1 <= int(args[1].rsplit(":", 1)[1]) <= 65535
+                               and args[0] not in backends and len(backends) < 8)
+                    if allowed: backends[args[0]] = args[1]
+                elif context == "http" and name == "limit_req_zone":
+                    zone = re.fullmatch(r"zone=([A-Za-z][A-Za-z0-9_]{0,31}):([1-9]|1[0-6])m", args[1]) if len(args) == 3 else None
+                    rate = re.fullmatch(r"rate=([1-9][0-9]{0,3})r/s", args[2]) if len(args) == 3 else None
+                    allowed = (bool(zone and rate) and args[0] == "$binary_remote_addr"
+                               and int(rate[1]) <= 1000 and zone[1] not in zones and len(zones) < 8)
+                    if allowed: zones.add(zone[1])
+                elif name == "server_tokens":
+                    allowed = args == ["off"]
                 elif name == "access_log":
                     allowed = args == ["off"]
                     if context == "http" and allowed: no_access_log = True
                 elif name == "default_type":
                     allowed = len(args) == 1 and args[0] in {"application/json", "text/plain", "application/octet-stream"}
                 elif name == "client_max_body_size":
-                    allowed = len(args) == 1 and re.fullmatch(r"(?:[1-9]|[1-5][0-9]|6[0-4])[mM]", args[0]) is not None
-                elif name in {"client_body_temp_path", "proxy_temp_path"}:
-                    allowed = args == [str(RUN_DIRECTORY / ("client-body" if name == "client_body_temp_path" else "proxy-temp"))]
+                    allowed = len(args) == 1 and size(args[0], 64 * 1024**2)
+                elif name in {"client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path"}:
+                    directory = "client-body" if name == "client_body_temp_path" else name.removesuffix("_path").replace("_", "-")
+                    allowed = args == [str(RUN_DIRECTORY / directory)]
                 elif context == "location":
                     if name == "return":
                         if terminal: _fail("A gateway location must have exactly one response handler")
@@ -164,7 +203,18 @@ def validate_nginx(raw, upstream_port):
                     elif name == "proxy_pass":
                         if terminal: _fail("A gateway location must have exactly one response handler")
                         allowed = len(args) == 1 and re.fullmatch(r"http://[A-Za-z0-9_.:-]+(?:/[^\s$;{}]*)?", args[0]) is not None
+                        if len(args) == 1 and re.fullmatch(r"\$lh_backend_[a-z][a-z0-9_]{0,31}", args[0]):
+                            allowed = True; used_backends.add(args[0])
                         terminal = allowed
+                    elif name == "rewrite":
+                        allowed = (not prefix and not terminal and len(args) == 3 and args[0] == "^" and args[2] == "break"
+                                   and re.fullmatch(r"/[A-Za-z0-9/_.-]+", args[1]) is not None
+                                   and ".." not in Path(args[1]).parts and not args[1].startswith("//"))
+                    elif name == "limit_req":
+                        zone = re.fullmatch(r"zone=([A-Za-z][A-Za-z0-9_]{0,31})", args[0]) if len(args) == 3 else None
+                        burst = re.fullmatch(r"burst=([1-9][0-9]{0,3})", args[1]) if len(args) == 3 else None
+                        allowed = bool(zone and burst) and int(burst[1]) <= 1024 and args[2] == "nodelay"
+                        if allowed: used_zones.add(zone[1])
                     elif name == "proxy_set_header":
                         allowed = (len(args) == 2 and re.fullmatch(r"[A-Za-z0-9-]{1,64}", args[0]) is not None
                                    and len(args[1]) <= 1024 and not re.search(r"[\r\n]", args[1]))
@@ -175,6 +225,8 @@ def validate_nginx(raw, upstream_port):
             if not allowed: _fail("Unsupported nginx directive or value: " + name)
         if context != "root": _fail("Unclosed nginx block")
     block("root")
+    if not used_backends <= backends.keys() or not used_zones <= zones:
+        _fail("Gateway proxy or rate limit refers to an undeclared binding")
     if any(count != 1 for count in sections.values()) or listeners != 1 or not default_deny or not stderr_log or not no_access_log:
         _fail("Gateway requires one loopback listener, default deny and bounded logging destinations")
     return raw
@@ -187,7 +239,20 @@ def configuration_binding(config, *, read=None):
     validate_nginx(raw, config["upstream_port"])
     return {"inputs": {"nginx_config": {"path": config["nginx_config"], "sha256": hashlib.sha256(raw).hexdigest()}},
             "public_port": config["public_port"], "upstream_port": config["upstream_port"],
-            "status_socket": config["status_socket"]}
+            "status_socket": config["status_socket"],
+            **({"worker_group": config["worker_group"]} if "worker_group" in config else {})}
+
+
+def nginx_identity(config):
+    """Bind the actual image group, including Unix backend access after setgid."""
+    account = pwd.getpwnam("nginx")
+    group = config.get("worker_group")
+    if group is None:
+        return account.pw_uid, account.pw_gid, "nginx"
+    actual = grp.getgrnam(group["name"])
+    if actual.gr_gid != group["gid"]:
+        _fail("Nginx worker group differs from its selected identity")
+    return account.pw_uid, actual.gr_gid, "nginx " + group["name"]
 
 
 class Relay:
@@ -306,15 +371,15 @@ def serve(config_path):
     directory = RUN_DIRECTORY.lstat()
     if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != 0 or directory.st_mode & 0o022:
         _fail("Gateway runtime directory is not protected")
-    nginx_account = pwd.getpwnam("nginx")
-    for name in ("client-body", "proxy-temp"):
+    nginx_uid, nginx_gid, nginx_user = nginx_identity(config)
+    for name in ("client-body", "proxy-temp", "fastcgi-temp", "uwsgi-temp", "scgi-temp"):
         temporary = RUN_DIRECTORY / name
         temporary.mkdir(mode=0o700, exist_ok=True)
         info = temporary.lstat()
-        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, nginx_account.pw_uid)
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, nginx_uid)
                 or stat.S_IMODE(info.st_mode) != 0o700):
             _fail("Gateway temporary directory changed independently")
-        os.chown(temporary, nginx_account.pw_uid, nginx_account.pw_gid, follow_symlinks=False)
+        os.chown(temporary, nginx_uid, nginx_gid, follow_symlinks=False)
     status_path = Path(config["status_socket"])
     if status_path.exists() or status_path.is_symlink():
         info = status_path.lstat()
@@ -339,7 +404,7 @@ def serve(config_path):
     try:
         with startup.remote_gateway_authorization(config["manager_socket"], mode="candidate") as (selected, instance, acknowledge):
             _verify_loaded(raw, config_path, config, binding, selected)
-            argv = [NGINX, "-p", str(RUN_DIRECTORY) + "/", "-c", config["nginx_config"], "-g", "daemon off; user nginx; pid " + str(RUN_DIRECTORY / "nginx.pid") + ";"]
+            argv = [NGINX, "-p", str(RUN_DIRECTORY) + "/", "-c", config["nginx_config"], "-g", "daemon off; user " + nginx_user + "; pid " + str(RUN_DIRECTORY / "nginx.pid") + ";"]
             subprocess.run(argv + ["-t"], check=True, stdin=subprocess.DEVNULL, timeout=10)
             child = subprocess.Popen(argv, stdin=subprocess.DEVNULL, start_new_session=True)
             deadline = time.monotonic() + 10

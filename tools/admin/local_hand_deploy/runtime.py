@@ -339,10 +339,17 @@ class PlanningEnvironment:
         # manager and image validate the same selected bytes, not two aliases.
         for compose in (compose if compose is not None else profile["compose"],):
             service = compose["services"][profile["service"]]
+            from .gateway import _resource_config
+            resources = _resource_config(service)
+            needed = {"CHOWN", "SETUID", "SETGID"}
+            dropped = {str(cap).upper() for cap in service.get("cap_drop", [])}
+            added = set(resources.get("CapAdd", []))
+            missing = (needed if "ALL" in dropped else needed & dropped) - added
             if (service.get("entrypoint") != ["/opt/local-hand/gateway/bin/python", "-B", "-m", "local_hand_mcp.gateway_guard"]
                     or service.get("command") != ["--config", guard_path] or service.get("user") != "0:0"
-                    or service.get("read_only", False) is not False
-                    or {str(cap).upper() for cap in service.get("cap_drop", [])} & {"ALL", "CHOWN", "SETUID", "SETGID"}
+                    or type(service.get("read_only", False)) is not bool
+                    or service.get("read_only", False) and "/run/local-hand-gateway" not in resources.get("Tmpfs", {})
+                    or missing
                     or any(name.startswith("PYTHON") and name not in {"PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED"}
                            for name in service.get("environment", {}))):
                 continue
