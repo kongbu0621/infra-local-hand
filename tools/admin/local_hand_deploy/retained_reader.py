@@ -3,6 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import pwd
+import re
 import stat
 import subprocess
 import time
@@ -10,6 +11,30 @@ import time
 from local_hand_jobs import startup
 
 from .model import DeployError, canonical, decode
+
+
+def reader_result(output):
+    """Keep a bounded reader refusal distinguishable from a malformed reply."""
+    if len(output) > 1024 * 1024:
+        raise DeployError("RETENTION_READ_FAILED", "Selected offline reader response exceeds its bound")
+    response = decode(output)
+    if not isinstance(response, dict):
+        raise DeployError("RETENTION_READ_FAILED", "Selected offline reader returned an invalid response")
+    if set(response) == {"error"}:
+        error = response["error"]
+        if (isinstance(error, dict) and isinstance(error.get("code"), str)
+                and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", error["code"])
+                and isinstance(error.get("message"), str) and len(error["message"]) <= 2048):
+            from local_hand_jobs.contract import JobError
+            # The public summary carries only a stable code. The original
+            # message remains in the exception chain for private diagnosis.
+            cause = JobError(error["code"], error["message"])
+            raise DeployError("RETENTION_READ_FAILED",
+                              "Selected offline reader rejected original retained data (" + error["code"] + ")") from cause
+        raise DeployError("RETENTION_READ_FAILED", "Selected offline reader returned an invalid error")
+    if set(response) != {"result"} or not isinstance(response["result"], dict):
+        raise DeployError("RETENTION_READ_FAILED", "Selected offline reader returned an invalid response")
+    return response["result"]
 
 
 def data_identity(policy):
@@ -111,7 +136,4 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
             raise DeployError("RETENTION_LIMIT", "Offline read-only verifier timed out and exited") from error
         if child.returncode != 0 or len(output) > 1024 * 1024:
             raise DeployError("RETENTION_READ_FAILED", "Selected offline read-only verifier failed")
-    response = decode(output)
-    if "error" in response or not isinstance(response.get("result"), dict):
-        raise DeployError("RETENTION_READ_FAILED", "Selected offline reader rejected original retained data")
-    return response["result"]
+    return reader_result(output)
