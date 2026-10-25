@@ -237,6 +237,14 @@ prepared 描述和网关配置不能借此委托给其他用户，同一路径�
 按该 UID 验证父目录，再检查 socket 文件和实际连接的 `SO_PEERCRED`。管理器 socket 仍保持
 管理员规则，不能用管理器响应替代 MCP 已加载证明。真实 Unix socket 及网关边界补充集 21 项通过。
 
+最终候选实现为 `a28939d`，源码与独立安装同组 **134 项通过、零跳过**；其中的身份夹具使用真实
+文件及 socket，不伪造元数据或对端凭据。包内已核对 1441 个源码文件与 78 个 wheel 载荷文件，
+相同标准库入口的 9 项检查已在普通身份下执行，root 混合 UID 分支尚待现场执行。
+准备脚本同时纠正“现役尚在运行却调用离线读取器”的顺序错误：原 MCP 保留 authority 独占锁；
+完整原成果读取仍由离线闭合后的 `OfflineObserver.retention` 执行。准备成功只表示候选运行环境、
+输入及原任务清单已核验，状态明确为 `RUNTIME_VERIFIED_OFFLINE_ADOPTION_PENDING`。
+不关闭现役服务来凑准备阶段成功，不跳过原成果验收，也不把模型／安装检查扩写为接管或重启完成。
+
 后续运行实现
 [`c398f7f`](https://github.com/kongbu0621/infra-local-hand/commit/c398f7f1466b437dd8d3e86976cbbb4bbe59a0a8)
 补全了以下实际入口和约束：
