@@ -78,7 +78,7 @@ def main():
     try:
         spec = strict_loads(sys.stdin.buffer.read(65537), maximum_bytes=65536)
         if (set(spec) != {"mode", "inputs", "reader_identity", "seconds"}
-                or type(spec["seconds"]) not in (int, float) or not 0 < spec["seconds"] <= 120):
+                or type(spec["seconds"]) is not int or not 0 < spec["seconds"] <= 120):
             raise JobError("UNSUPPORTED", "Invalid fixed offline verification request")
         result = {"result": readback(spec)}
     except JobError as error:

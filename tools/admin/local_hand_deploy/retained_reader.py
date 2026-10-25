@@ -77,7 +77,9 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
     executable = startup.protected_read(program["path"], owner_uid=0, maximum=64 * 1024 * 1024)
     if hashlib.sha256(executable).hexdigest() != program["sha256"]:
         raise DeployError("RETENTION_CONFIGURATION", "Offline interpreter differs from its admitted bytes")
-    seconds = min(120, deadline - time.monotonic())
+    # The shared task protocol intentionally rejects every JSON float.
+    # Round down so the child's integral budget cannot extend the deadline.
+    seconds = min(120, int(deadline - time.monotonic()))
     if seconds <= 0:
         raise DeployError("RETENTION_LIMIT", "Offline verification exhausted its time budget")
     root = installed["package_root"]
