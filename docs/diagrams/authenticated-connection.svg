@@ -1,9 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1500" viewBox="0 0 1480 1500" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1890" viewBox="0 0 1480 1890" role="img" aria-labelledby="title description">
   <title id="title">Local Hand：先认证授权，再调用所选节点，取回原任务结果</title>
-  <desc id="description">用户在所选节点的外部 OAuth/OIDC 身份服务完成登录授权；授权码经浏览器回调到 ChatGPT 客户端，客户端使用授权码与 PKCE 换取令牌，需要时刷新。客户端携带 access token，经目标节点的 HTTPS 或可选 Tailscale 入口调用 Local Hand MCP Server。Hand 从预配 issuer 读取 metadata/JWKS，校验 issuer、audience、签名与有效期，并由作业后端核验 scope 和原任务归属，受控准备、提交、查询或取消。原任务状态与可用证据经原入口返回客户端，用户核对后继续任务。身份服务不执行任务，不接收调用者任意指定的文档 URL；本地 CLI/Unix socket 通过操作系统身份独立授权。身份与入口逐机独立是部署目标，尚不能据此宣称现场隔离验收通过。</desc>
+  <desc id="description">用户在所选节点的外部 OAuth/OIDC 身份服务完成登录授权；授权码经浏览器回调到 ChatGPT 客户端，客户端使用授权码与 PKCE 换取令牌，需要时刷新。客户端携带 access token，经目标节点的 HTTPS 或可选 Tailscale 入口调用 Local Hand MCP Server。Hand 从预配 issuer 读取 metadata/JWKS，校验 issuer、audience、签名与有效期，并由作业后端核验 scope 和原任务归属，受控准备、提交、查询或取消。原任务状态与可用证据经原入口返回客户端，用户核对后继续任务。身份服务不执行任务，不接收调用者任意指定的文档 URL；本地 CLI/Unix socket 通过操作系统身份独立授权。身份与入口逐机独立是部署目标，尚不能据此宣称现场隔离验收通过。橙色 D1、D2、D3 分别标注 HTTPS/网关配置与发布、MCP 服务部署/恢复、本地作业后端维护准入。D1/D2 对应④进入的服务段；D3 对应⑤之后、任务启动前的准备和首次执行最终准入，也覆盖本地 CLI。部署维护是旁路流程，这些编号仅定位管理对象，不是每次调用新增步骤。该重构仅设计当前单节点 Linux/systemd，尚未实现、部署或验收；不重写身份服务和任务执行状态机。</desc>
   <!-- Relationship source: authenticated-connection.mmd.
        The bottom result box is the caller's outcome, not an additional network hop.
-       Authentication is a setup/refresh branch, not a mandatory step for each tool call. -->
+       Authentication is a setup/refresh branch, not a mandatory step for each tool call.
+       Orange D1-D3 locate managed objects; no deployment edge is added to the call path. -->
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#bfd0df" stroke-width="1.5"/></marker>
     <marker id="auth-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#d6b785" stroke-width="1.5"/></marker>
@@ -22,9 +23,15 @@
       .auth { fill: none; stroke: #d6b785; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#auth-arrow); }
       .documents { fill: none; stroke: #d6b785; stroke-width: 2.2; stroke-dasharray: 7 6; stroke-linejoin: round; marker-end: url(#auth-arrow); }
       .label { fill: #0d1117; }
+      .deployment-target { stroke: #f2a65a; stroke-width: 2.5; }
+      .deployment-badge { fill: #4b301d; stroke: #f2a65a; stroke-width: 1.5; }
+      .deployment-number { fill: #ffd4a3; font-size: 24px; font-weight: 700; }
+      .deployment-panel { fill: #241d17; stroke: #f2a65a; stroke-width: 1.7; }
+      .deployment-note { text-anchor: start; font-size: 24px; fill: #d7e6f3; }
+      .deployment-heading { text-anchor: start; font-size: 29px; font-weight: 600; fill: #ffd4a3; }
     </style>
   </defs>
-  <rect width="1480" height="1500" rx="24" fill="#0d1117"/>
+  <rect width="1480" height="1890" rx="24" fill="#0d1117"/>
   <text class="title" x="740" y="53">先认证授权，再调用所选节点，取回原任务结果</text>
   <text class="small warm" x="740" y="94">逐机独立部署目标 · 各实例尚待现场隔离验收</text>
 
@@ -49,12 +56,16 @@
 
   <g data-from="C" data-to="G" data-label="④ access token + MCP 请求（HTTPS）"><path class="edge" d="M 375 555 V 665"/><rect class="label" x="96" y="611" width="558" height="34" rx="9"/><text class="small" x="375" y="636">④ access token + MCP 请求（HTTPS）</text></g>
   <g id="node-G" data-node="G">
-    <rect class="node" x="100" y="665" width="550" height="105" rx="20"/>
+    <rect class="node deployment-target" x="100" y="665" width="550" height="105" rx="20"/>
+    <rect class="deployment-badge" x="115" y="680" width="63" height="35" rx="9"/>
+    <text class="deployment-number" x="146.5" y="706">D1</text>
     <text x="375" y="708"><tspan class="heading" x="375">目标节点的 HTTPS 入口</tspan><tspan x="375" dy="38">反向代理 / 可选 Tailscale 入口</tspan></text>
   </g>
   <g data-from="G" data-to="S" data-label="转发请求与结果"><path class="edge" d="M 375 770 V 850"/><text class="small" x="502" y="816">转发请求与结果</text></g>
   <g id="node-S" data-node="S">
-    <rect class="node" x="100" y="850" width="550" height="150" rx="20"/>
+    <rect class="node deployment-target" x="100" y="850" width="550" height="150" rx="20"/>
+    <rect class="deployment-badge" x="115" y="865" width="63" height="35" rx="9"/>
+    <text class="deployment-number" x="146.5" y="891">D2</text>
     <text x="375" y="893"><tspan class="heading" x="375">Local Hand MCP Server</tspan><tspan class="small" x="375" dy="39">核对 issuer、audience、签名和有效期</tspan><tspan class="small muted" x="375" dy="39">按预配 issuer 读取 metadata / JWKS</tspan></text>
   </g>
   <g data-from="S" data-to="I" data-label="预配 issuer：读取 metadata / JWKS；响应沿原连接返回">
@@ -63,18 +74,31 @@
   </g>
   <g data-from="S" data-to="B" data-label="⑤ 身份校验后送作业后端授权"><path class="edge" d="M 375 1000 V 1080"/><rect class="label" x="118" y="1019" width="514" height="35" rx="8"/><text class="small" x="375" y="1044">⑤ 身份校验后送作业后端授权</text></g>
   <g id="node-B" data-node="B">
-    <rect class="node" x="100" y="1080" width="550" height="140" rx="20"/>
+    <rect class="node" x="100" y="1080" width="550" height="190" rx="20"/>
     <text x="375" y="1121"><tspan class="heading" x="375">本地作业后端</tspan><tspan x="375" dy="39">按 scope 与原任务归属授权</tspan><tspan class="small" x="375" dy="37">受控准备、提交、查询、取消</tspan></text>
+    <rect class="deployment-badge" x="115" y="1210" width="520" height="44" rx="10"/>
+    <text class="deployment-number" x="375" y="1240">D3 · 维护准入：新准备 / 首次执行</text>
   </g>
   <g id="node-T" data-node="T">
     <rect class="node" x="970" y="1080" width="430" height="140" rx="20"/>
     <text x="1185" y="1121"><tspan class="heading" x="1185">本地任务进程</tspan><tspan x="1185" dy="39">启动、停止与结果收集</tspan><tspan class="small muted" x="1185" dy="37">查询不重新执行任务</tspan></text>
   </g>
   <g data-from="B" data-to="T" data-label="启动 / 停止 / 收集"><path class="edge" d="M 650 1150 H 970" marker-start="url(#arrow)"/><text class="small" x="810" y="1126">启动 / 停止 / 收集</text></g>
-  <g data-from="B" data-to="R" data-label="⑥ 原状态与证据，经原入口返回客户端"><path class="edge" d="M 375 1220 V 1320"/><rect class="label" x="96" y="1250" width="558" height="39" rx="8"/><text class="small" x="375" y="1277">⑥ 原状态与证据，经原入口返回客户端</text></g>
+  <g data-from="B" data-to="R" data-label="⑥ 原状态与证据，经原入口返回客户端"><path class="edge" d="M 375 1270 V 1370"/><rect class="label" x="96" y="1300" width="558" height="39" rx="8"/><text class="small" x="375" y="1327">⑥ 原状态与证据，经原入口返回客户端</text></g>
   <g id="node-R" data-node="R">
-    <rect class="node" x="100" y="1320" width="1300" height="110" rx="20"/>
-    <text x="750" y="1363"><tspan class="heading" x="750">你取回并核对结果，继续各自任务</tspan><tspan class="small" x="750" dy="39">原节点 + 原任务：状态与可用证据；结果未知时沿原任务 ID 查询，不自动重提</tspan></text>
+    <rect class="node" x="100" y="1370" width="1300" height="110" rx="20"/>
+    <text x="750" y="1413"><tspan class="heading" x="750">你取回并核对结果，继续各自任务</tspan><tspan class="small" x="750" dy="39">原节点 + 原任务：状态与可用证据；结果未知时沿原任务 ID 查询，不自动重提</tspan></text>
   </g>
-  <text class="tiny muted" x="740" y="1470">本地 CLI / Unix socket 另走操作系统身份与权限；不经过此图的浏览器登录或网络入口。</text>
+  <text class="tiny muted" x="740" y="1520">本地 CLI / Unix socket 另走操作系统身份与权限；不经过此图的浏览器登录或网络入口。</text>
+
+  <g id="deployment-note" data-node="DEPLOY_NOTE">
+    <rect class="deployment-panel" x="100" y="1560" width="1300" height="290" rx="20"/>
+    <text class="deployment-heading" x="140" y="1605">部署 / 恢复旁路：D1–D3 管理对象定位</text>
+    <text class="deployment-note" x="140" y="1644">当前单节点 Linux / systemd；设计尚未实现、部署或验收。</text>
+    <path d="M 140 1664 H 1360" fill="none" stroke="#755033" stroke-width="1.2"/>
+    <text class="deployment-note" x="140" y="1705"><tspan fill="#ffd4a3">D1</tspan> · HTTPS / 网关配置与发布；<tspan fill="#ffd4a3">D2</tspan> · MCP 服务部署 / 恢复，对应④进入的服务段。</text>
+    <text class="deployment-note" x="140" y="1747"><tspan fill="#ffd4a3">D3</tspan> · 后端维护准入：新准备 / 首次执行，含本地 CLI；对应⑤之后、任务启动之前。</text>
+    <text class="deployment-note" x="140" y="1791">橙色 D1–D3 仅定位管理对象，不是每次调用新增步骤。</text>
+    <text class="deployment-note" x="140" y="1829">身份服务与任务执行状态机不属于本次重写。</text>
+  </g>
 </svg>

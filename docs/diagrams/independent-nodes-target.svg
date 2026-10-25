@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="2230" viewBox="0 0 2160 2230" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="2570" viewBox="0 0 2160 2570" role="img" aria-labelledby="title description">
   <title id="title">Local Hand：多节点独立执行，可配置 NAS 成果存储（目标架构）</title>
-  <desc id="description">合成示例：调用方分别连接独立执行节点 A、B、C；每台执行机独立部署 HTTPS/网关入口和外部 OAuth/OIDC 身份服务，拥有独立的配置与密钥，登录和令牌刷新不经过另一执行机。紫色虚线为认证支线：身份服务签发访问令牌并提供 JWKS 公钥，Local Hand MCP 资源服务器负责验签与授权；任务不经过身份服务执行。本地 CLI 经受保护本地通道直接访问作业后端，不依赖 OAuth。这些标签不指向实际设备，数量不是产品上限，各节点按部署选择平台。各节点受控执行自己的任务，保留执行状态、恢复与长期归档索引、有界待归档成果。白色主线经原节点返回各任务状态和可用证据；本地状态和保留的证据不等待 NAS，释放本地内容后，准确读回可能需要 NAS。绿色虚线是成果存储调用，响应沿原连接返回：示例 A、B 绑定存储节点 X，C 绑定存储节点 Y，也可全部绑定同一 NAS；该绑定不是实际资产映射。各 producer 分库保存，凭据和权限隔离。NAS 内受控接收端与 Ledger 成果库是目标部署，不执行 Local Hand 任务。首版只归档已退出、成功且封存的成果；其他状态留在原节点如实返回。在线归档、平台适配和多节点部署仍待实现或验收；已有 A2 快照不等于在线归档。NAS 离线先保留有界成果，容量不足限制新增任务，不自动重放。</desc>
+  <desc id="description">合成示例：调用方分别连接独立执行节点 A、B、C；每台执行机独立部署 HTTPS/网关入口和外部 OAuth/OIDC 身份服务，拥有独立的配置与密钥，登录和令牌刷新不经过另一执行机。紫色虚线为认证支线：身份服务签发访问令牌并提供 JWKS 公钥，Local Hand MCP 资源服务器负责验签与授权；任务不经过身份服务执行。本地 CLI 经受保护本地通道直接访问作业后端，不依赖 OAuth。这些标签不指向实际设备，数量不是产品上限，各节点按部署选择平台。各节点受控执行自己的任务，保留执行状态、恢复与长期归档索引、有界待归档成果。白色主线经原节点返回各任务状态和可用证据；本地状态和保留的证据不等待 NAS，释放本地内容后，准确读回可能需要 NAS。绿色虚线是成果存储调用，响应沿原连接返回：示例 A、B 绑定存储节点 X，C 绑定存储节点 Y，也可全部绑定同一 NAS；该绑定不是实际资产映射。各 producer 分库保存，凭据和权限隔离。NAS 内受控接收端与 Ledger 成果库是目标部署，不执行 Local Hand 任务。首版只归档已退出、成功且封存的成果；其他状态留在原节点如实返回。在线归档、平台适配和多节点部署仍待实现或验收；已有 A2 快照不等于在线归档。NAS 离线先保留有界成果，容量不足限制新增任务，不自动重放。橙色 D1、D2、D3 以节点 A 定位部署与恢复重构涉及的位置：D1 是 HTTPS/网关配置与发布，D2 是 MCP 服务部署与恢复，D3 仅新准备／首次执行的最终维护准入（含 CLI）。重构是节点内单独的部署维护流程，设计尚未实施；首版面向当前单节点 Linux/systemd，B/C 仅存在同类位置，不表示本次多机实施。橙色范围不包含身份服务、NAS、任务账本或任务业务执行。</desc>
   <!-- Relationship source: independent-nodes-target.mmd.
        Shared wires are drawing aids, not a central router or synchronization barrier.
        Purple dashed paths: authentication exchanges and public keys, not task execution. -->
@@ -29,9 +29,15 @@
       .auth-node { fill: #28223b; stroke: #9475b5; stroke-width: 1.6; }
       .purple { fill: #dfc4ff; }
       .green { fill: #9cddca; }
+      .deployment-touch { stroke: #f2a65a; stroke-width: 4; }
+      .deployment-band { fill: #30271d; stroke: #f2a65a; stroke-width: 2.5; }
+      .deployment-badge { fill: #f2a65a; stroke: #f2a65a; stroke-width: 1.5; }
+      .deployment-number { fill: #1c1710; font-size: 20px; font-weight: 700; }
+      .deployment-text { fill: #ffd4a3; }
+      .deployment-legend { fill: #1c1a18; stroke: #f2a65a; stroke-width: 2; }
     </style>
   </defs>
-  <rect width="2160" height="2230" rx="24" fill="#0d1117"/>
+  <rect width="2160" height="2570" rx="24" fill="#0d1117"/>
   <text class="title" x="1080" y="61">Local Hand：多节点独立执行，可配置 NAS 成果存储</text>
   <text class="status" x="1080" y="104">目标架构 · 同一产品版本，按部署选择平台 · 节点数量仅为示例，未完成验收</text>
   <g id="node-CALLER" data-node="CALLER">
@@ -51,12 +57,16 @@
   <text class="small purple" x="1790" y="236">经各机自己的 HTTPS 入口</text>
   <g id="instance-a" transform="translate(0 40)">
     <g id="node-AE" data-node="AE">
-      <rect class="node" x="90" y="362" width="600" height="126" rx="22"/>
+      <rect class="node deployment-touch" x="90" y="362" width="600" height="126" rx="22"/>
+      <rect class="deployment-badge" x="108" y="326" width="58" height="32" rx="10"/>
+      <text class="deployment-number" x="137" y="349">D1</text>
       <text x="390" y="401"><tspan x="390" class="section-title">执行节点 A · HTTPS / 网关入口</tspan><tspan x="390" dy="34">独立部署 · 不经过其他执行机</tspan><tspan x="390" dy="33" class="small">按端点路由到本机身份服务或 MCP</tspan></text>
     </g>
     <g data-from="AE" data-to="AM" data-label="携令牌的 MCP 请求"><path class="edge" d="M 240 488 V 590"/></g>
     <g id="node-AM" data-node="AM">
-      <rect class="node" x="90" y="590" width="300" height="160" rx="22"/>
+      <rect class="node deployment-touch" x="90" y="590" width="300" height="160" rx="22"/>
+      <rect class="deployment-badge" x="108" y="554" width="58" height="32" rx="10"/>
+      <text class="deployment-number" x="137" y="577">D2</text>
       <text x="240" y="623"><tspan x="240" class="heading">Local Hand MCP</tspan><tspan x="240" dy="33">资源服务器</tspan><tspan x="240" dy="33" class="small">令牌验签 · 权限检查</tspan><tspan x="240" dy="33" class="small">准备 / 提交 / 查询 / 取消</tspan></text>
     </g>
     <g data-from="CALLER" data-to="AI" data-label="登录 / 换取或刷新令牌（经本机 HTTPS 入口）" data-kind="authentication"><path class="auth" d="M 700 314 V 630 H 690"/></g>
@@ -74,7 +84,14 @@
     <g transform="translate(0 320)">
     <g id="node-AB" data-node="AB">
       <rect class="node" x="90" y="550" width="300" height="175" rx="22"/>
-      <text x="240" y="590"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="36">任务 A · 受控执行</tspan><tspan x="240" dy="35" class="small">管理进程 · 收集结果</tspan><tspan x="240" dy="34" class="small muted">按部署选择平台</tspan></text>
+      <text x="240" y="579"><tspan x="240" class="heading">Local Hand 作业后端</tspan><tspan x="240" dy="34">任务 A · 受控执行</tspan></text>
+      <text class="small" x="240" y="646">管理进程 · 收集结果</text>
+      <!-- Only final maintenance admission is highlighted, not management or execution. -->
+      <rect class="deployment-band" x="98" y="660" width="284" height="36" rx="10"/>
+      <rect class="deployment-badge" x="58" y="665" width="38" height="26" rx="7"/>
+      <text class="deployment-number" style="font-size:18px" x="77" y="684">D3</text>
+      <text class="tiny deployment-text" x="240" y="685">维护准入：新准备 / 首次执行</text>
+      <text class="small muted" x="240" y="716">按部署选择平台</text>
     </g>
     <g id="node-AS" data-node="AS">
       <path class="node" d="M 500 577 A 95 18 0 0 1 690 577 V 706 A 95 18 0 0 1 500 706 Z"/><ellipse class="node" cx="595" cy="577" rx="95" ry="18"/>
@@ -224,4 +241,14 @@
   </g>
   <text class="small purple" x="1080" y="2153">各机拥有独立认证配置、身份数据与签名密钥；身份服务属于外部产品，Local Hand 实现资源端验签和授权。</text>
   <text class="small muted" x="1080" y="2192">DNS、证书及网络服务仍是显式外部依赖；必须以另一执行机关机时的新登录、刷新和冷启动验证独立性。</text>
+  <g id="node-REFACTOR_NOTE" data-node="REFACTOR_NOTE">
+    <rect class="deployment-legend" x="70" y="2250" width="2020" height="290" rx="24"/>
+    <text class="section-title deployment-text" x="1080" y="2295">橙色 D1–D3：部署与恢复重构在节点 A 的位置（设计，尚未实施）</text>
+    <text class="deployment-text" x="420" y="2341"><tspan x="420" class="heading">D1 · HTTPS / 网关</tspan><tspan x="420" dy="34" class="small">配置与发布</tspan></text>
+    <text class="deployment-text" x="1080" y="2341"><tspan x="1080" class="heading">D2 · MCP 服务</tspan><tspan x="1080" dy="34" class="small">部署 / 恢复</tspan></text>
+    <text class="deployment-text" x="1740" y="2341"><tspan x="1740" class="heading">D3 · 作业后端维护准入</tspan><tspan x="1740" dy="34" class="small">新准备 / 首次执行，含本地 CLI</tspan></text>
+    <text class="small muted" x="1080" y="2424">节点内单独的部署维护流程；橙色只标涉及位置，不是新增业务调用链。</text>
+    <text class="small muted" x="1080" y="2463">首版：当前单节点 Linux / systemd；B、C 仅有同类位置，不表示本次多机实施。</text>
+    <text class="small muted" x="1080" y="2502">范围不含身份服务、NAS、任务账本或任务业务执行；D3 仅新准备／首次执行的最终维护准入（含 CLI）。</text>
+  </g>
 </svg>

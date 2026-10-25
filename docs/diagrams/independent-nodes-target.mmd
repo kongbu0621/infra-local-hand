@@ -12,14 +12,18 @@ title: "Local Hand：多节点独立执行，可配置 NAS 成果存储（目标
 %% Local status and retained evidence do not wait for NAS.
 %% After local payload release, authorized content retrieval may require NAS.
 %% Archive access uses the retained index; reads do not recreate pending items.
+%% Orange D1/D2/D3 locate the separate node-local deployment/recovery workflow.
+%% Node A is the location example, not an actual asset mapping; B/C are analogous only.
+%% First refactor scope: current single-node Linux/systemd, not a multi-machine rollout.
+%% SVG highlights only AB's final maintenance admission, not management or execution.
 flowchart TD
     CALLER["调用方 · ChatGPT 等应用<br/>选择一个或多个独立连接，分别推进任务"]
     subgraph NODE_A["执行节点 A · 独立执行节点"]
-        AE["执行节点 A · HTTPS / 网关入口<br/>独立部署 · 不经过其他执行机<br/>按端点路由到本机身份服务或 MCP"]
-        AM["Local Hand MCP<br/>资源服务器<br/>令牌验签 · 权限检查<br/>准备 / 提交 / 查询 / 取消"]
+        AE["D1 · 执行节点 A · HTTPS / 网关入口<br/>独立部署 · 不经过其他执行机<br/>按端点路由到本机身份服务或 MCP"]
+        AM["D2 · Local Hand MCP<br/>资源服务器<br/>令牌验签 · 权限检查<br/>准备 / 提交 / 查询 / 取消"]
         AI["外部 OAuth/OIDC<br/>身份服务 · 本机部署<br/>登录 · 签发 · 刷新<br/>独立密钥 · 提供 JWKS"]
         AL["本地 CLI · 本机身份<br/>不依赖 OAuth"]
-        AB["Local Hand 作业后端<br/>任务 A · 受控执行<br/>管理进程 · 收集结果<br/>按部署选择平台"]
+        AB["Local Hand 作业后端<br/>任务 A · 受控执行<br/>管理进程 · 收集结果<br/><span style='color:#ffd4a3'>D3 · 维护准入：新准备 / 首次执行</span><br/>按部署选择平台"]
         AS[("节点执行状态<br/>恢复与归档索引<br/>原任务 · 本地持久化")]
         AO["归档接入与有界暂存<br/>封存内容 · 原请求<br/>目标绑定 · 回执"]
         AR["任务 A · 状态与证据<br/>原节点 + 原任务<br/>业务 / 证据 / 归档分别报告"]
@@ -89,6 +93,12 @@ flowchart TD
     AR -->|"分别经原节点返回"| R
     BR -->|"分别经原节点返回"| R
     CR -->|"分别经原节点返回"| R
+
+    REFACTOR_NOTE["橙色 D1–D3：部署与恢复重构在节点 A 的位置（设计，尚未实施）<br/>D1 · HTTPS / 网关：配置与发布<br/>D2 · MCP 服务：部署 / 恢复<br/>D3 · 作业后端维护准入：新准备 / 首次执行，含本地 CLI<br/>节点内单独的部署维护流程；橙色只标涉及位置，不是新增业务调用链。<br/>首版：当前单节点 Linux / systemd；B、C 仅有同类位置，不表示本次多机实施。<br/>范围不含身份服务、NAS、任务账本或任务业务执行；D3 仅新准备／首次执行的最终维护准入（含 CLI）。"]
+    classDef deploymentTouch fill:#102c42,stroke:#f2a65a,stroke-width:4px
+    classDef deploymentLegend fill:#1c1a18,stroke:#f2a65a,color:#ffd4a3,stroke-width:2px
+    class AE,AM deploymentTouch
+    class REFACTOR_NOTE deploymentLegend
 
     %% NAS receiver and outbox are planned; A2 snapshots already exist.
     %% First archive scope: successful, exited and sealed results only.

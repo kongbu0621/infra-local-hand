@@ -3,13 +3,15 @@
 %% Target: each execution node owns its authentication and HTTPS entry dependencies.
 %% This diagram does not claim the deployed nodes have passed isolation acceptance.
 %% Token acquisition/refresh is not repeated for every MCP request.
+%% Orange D1-D3 locate deployment/recovery management targets; they are not call steps.
+%% This deployment/recovery design is not implemented; scope is one Linux/systemd node.
 flowchart TB
     U["你：通过浏览器使用 ChatGPT<br/>选择目标节点的连接"]
     C["ChatGPT 中的 MCP 客户端<br/>接收授权回调、取得并管理令牌<br/>需要时刷新，不是每次请求都登录"]
     I["所选节点的 OAuth / OIDC 身份服务<br/>外部独立软件组件；独立于 Hand 代码<br/>登录、授权、签发 / 刷新令牌<br/>提供 metadata / JWKS；不执行任务<br/>逐机部署目标，不依赖另一执行机"]
-    G["目标节点的 HTTPS 入口<br/>反向代理 / 可选 Tailscale 入口"]
-    S["Local Hand MCP Server<br/>核对 issuer、audience、签名和有效期<br/>按预配 issuer 读取 metadata / JWKS"]
-    B["本地作业后端<br/>按 scope 与原任务归属授权<br/>受控准备、提交、查询、取消"]
+    G["D1 · 目标节点的 HTTPS 入口<br/>反向代理 / 可选 Tailscale 入口"]
+    S["D2 · Local Hand MCP Server<br/>核对 issuer、audience、签名和有效期<br/>按预配 issuer 读取 metadata / JWKS"]
+    B["本地作业后端<br/>按 scope 与原任务归属授权<br/>受控准备、提交、查询、取消<br/><span style='color:#ffd4a3'>D3 · 维护准入：新准备 / 首次执行</span>"]
     T["本地任务进程<br/>启动、停止与结果收集<br/>查询不重新执行任务"]
     R["你取回并核对结果，继续各自任务<br/>原节点 + 原任务：状态与可用证据<br/>结果未知时沿原任务 ID 查询，不自动重提"]
 
@@ -24,6 +26,12 @@ flowchart TB
     S -->|"⑤ 身份校验后送作业后端授权"| B
     B <-->|"启动 / 停止 / 收集"| T
     B -->|"⑥ 原状态与证据，经原入口返回客户端"| R
+
+    DEPLOY_NOTE["部署 / 恢复旁路：设计尚未实现、部署或验收<br/>当前单节点 Linux / systemd 范围<br/>D1：HTTPS / 网关配置与发布；D2：MCP 服务部署 / 恢复<br/>D1 / D2 对应④进入的服务段<br/>D3：本地作业后端维护准入，新准备 / 首次执行共同覆盖本地 CLI<br/>D3 对应⑤之后、任务启动之前<br/>D1–D3 仅定位管理对象，不是每次调用新增步骤<br/>身份服务与任务执行状态机不属于本次重写"]
+    classDef deploymentTarget fill:#102c42,stroke:#f2a65a,stroke-width:2.5px,color:#ffd4a3;
+    classDef deploymentNote fill:#241d17,stroke:#f2a65a,stroke-width:1.7px,color:#ffd4a3;
+    class G,S deploymentTarget;
+    class DEPLOY_NOTE deploymentNote;
 
     %% Local CLI / Unix socket uses OS identity and local permissions independently.
     %% The identity service never accepts a task execution instruction.
