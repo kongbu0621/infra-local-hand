@@ -65,6 +65,7 @@ def test_deployment_recovery_suites_are_linux_core_and_excluded_on_windows():
     }
     assert "tests/test_local_hand_deploy_identity.py" in recovery
     assert "tests/test_local_hand_deploy_checks.py" in recovery
+    assert "tests/test_local_hand_deploy_gateway_migration.py" in recovery
     for suite in ("core", "shared", "full"):
         assert recovery <= set(select_tests(ROOT, suite, "linux"))
         # Explicit changed tests must not override the Unix-only boundary.
