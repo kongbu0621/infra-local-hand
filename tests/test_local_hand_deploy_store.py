@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from admin.local_hand_deploy.model import DeployError, Limits
+from admin.local_hand_deploy.model import DeployError, Limits, seal_plan
 from admin.local_hand_deploy.store import Store
 from test_local_hand_deploy_coordinator import plan
 
@@ -74,6 +74,22 @@ class StoreTests(unittest.TestCase):
         replacement.write_bytes(old); replacement.chmod(0o600)
         replacement.replace(self.store.path)
         with self.assertRaises(DeployError): self.store.list()
+
+    def test_foreign_node_plan_cannot_create_or_link_records(self):
+        foreign = seal_plan({**plan('foreign'), 'node_id': 'another-node'})
+        with self.store.locked():
+            original = self.store.create(plan())
+            before = self.store.path.read_bytes()
+            for name, action in (
+                    ('create', lambda: self.store.create(foreign)),
+                    ('handoff', lambda: self.store.link(original, foreign)),
+                    ('rollback', lambda: self.store.link(original, foreign, rollback=True))):
+                with self.subTest(action=name):
+                    with self.assertRaises(DeployError) as failure:
+                        action()
+                    self.assertEqual('NODE_CONFLICT', failure.exception.code)
+                    self.assertEqual(before, self.store.path.read_bytes())
+                    self.assertEqual([original], self.store.list())
 
     def test_writable_ancestor_is_rejected_even_with_private_child(self):
         untrusted = self.root / 'untrusted'; untrusted.mkdir(mode=0o777); untrusted.chmod(0o777)

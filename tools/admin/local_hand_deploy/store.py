@@ -209,8 +209,15 @@ class Store:
         return [op for op in result if not unfinished or
                 (not op["released"] and not op["handoff_complete"])]
 
-    def create(self, plan, *, predecessor=None):
+    def validate_plan(self, plan):
+        """Bind every incoming plan before observation, persistence or handoff."""
         validate_plan(plan, self.limits)
+        if plan["node_id"] != self.node_id:
+            raise DeployError("NODE_CONFLICT", "Plan belongs to a different node")
+        return plan
+
+    def create(self, plan, *, predecessor=None):
+        self.validate_plan(plan)
         connection = self._required()
         row = connection.execute("SELECT plan_digest,document FROM operations WHERE request_id=?",
                                  (plan["request_id"],)).fetchone()
@@ -262,7 +269,7 @@ class Store:
     def link(self, operation, successor_plan, *, rollback=False):
         """Create successor and immutable link in one transaction, including retries."""
         connection = self._required()
-        validate_plan(successor_plan, self.limits)
+        self.validate_plan(successor_plan)
         key = "rollback_successor" if rollback else "successor"
         original = self.get(operation["id"])
         if original[key]:

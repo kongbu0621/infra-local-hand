@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from .model import DeployError, digest, validate_plan
+from .model import DeployError, digest
 
 
 class Coordinator:
@@ -31,7 +31,7 @@ class Coordinator:
             self.store.save(op, "IMPLEMENTATION_OBSERVED", self.implementation, recovery=True)
 
     def apply(self, plan):
-        validate_plan(plan, self.store.limits)
+        self.store.validate_plan(plan)
         with self.store.locked():
             existing = next((op for op in self.store.list() if op["plan"]["request_id"] == plan["request_id"]), None)
             if existing is None and self.store.list(unfinished=True):
@@ -74,7 +74,7 @@ class Coordinator:
 
     def supersede(self, operation_id, plan):
         """Explicit corrected plan, linked before ownership can be transferred."""
-        validate_plan(plan, self.store.limits)
+        self.store.validate_plan(plan)
         with self.store.locked():
             op = self.store.get(operation_id)
             if hasattr(self.environment, "for_operation"):

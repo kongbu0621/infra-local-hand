@@ -129,6 +129,24 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(DeployError, "different plan"):
             self.coordinator.apply(plan(after="different"))
 
+    def test_foreign_node_handoff_is_rejected_before_observation_or_transfer(self):
+        self.effects.check_ok = False
+        original = self.coordinator.apply(plan())
+        self.assertTrue(original['gate_owned'])
+        before = self.store.path.read_bytes()
+        gate = self.gate.snapshot()
+        changes = list(self.effects.changes)
+        foreign = seal_plan({**plan('foreign'), 'node_id': 'another-node'})
+        with mock.patch.object(self.effects, 'for_operation', wraps=self.effects.for_operation) as observed:
+            with self.assertRaises(DeployError) as failure:
+                self.coordinator.supersede(original['id'], foreign)
+            self.assertEqual('NODE_CONFLICT', failure.exception.code)
+            observed.assert_not_called()
+        self.assertEqual(before, self.store.path.read_bytes())
+        self.assertEqual(gate, self.gate.snapshot())
+        self.assertEqual(changes, self.effects.changes)
+        self.assertEqual([original], self.store.list())
+
     def test_effect_done_response_lost_recovers_without_repeating(self):
         self.effects.fail_after_effect = True
         failed = self.coordinator.apply(plan())
