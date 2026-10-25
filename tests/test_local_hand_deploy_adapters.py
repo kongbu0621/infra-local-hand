@@ -681,6 +681,55 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterError, "ORIGINAL_GATEWAY_CONFIGURATION_BINDING"):
             adapter.plan_restore(actions)
 
+    def test_mount_order_does_not_change_original_stop_observation(self):
+        source = self.profile["compose"]["services"]["gateway"]
+        source["volumes"] = [dict(type="bind", source=self.temp.name, target=target, read_only=True)
+                             for target in ("/fixture", "/backend")]
+        self.engine.container = self.container(self.profile["compose"])
+        self.engine.container["Mounts"] = [dict(Type="bind", Source=self.temp.name,
+            Destination=target, RW=False, Mode="", Propagation="rprivate") for target in ("/fixture", "/backend")]
+        adapter = self.adapter()
+        stop, _ = adapter.plan({"present": False, "running": False})
+        before = copy.deepcopy(stop["before"])
+        # Inspect arrays are not a mount identity. Keep the original record,
+        # while the next Engine response returns the same full objects reversed.
+        self.engine.container["Mounts"] = copy.deepcopy(list(reversed(self.engine.container["Mounts"])))
+        self.assertEqual("original", adapter.observe_action(stop)["outcome"])
+        self.assertEqual(before, stop["before"])
+        # Canonical ordering must retain every field and multiplicity.
+        mounts = copy.deepcopy(self.engine.container["Mounts"])
+        for field, changed in (("Propagation", "rshared"), ("Mode", "ro,z")):
+            with self.subTest(field=field):
+                self.engine.container["Mounts"] = copy.deepcopy(mounts)
+                self.engine.container["Mounts"][0][field] = changed
+                self.assertEqual("conflict", adapter.observe_action(stop)["outcome"])
+        for field, changed in (("RW", True), ("Destination", "/other"), ("Source", "/other")):
+            with self.subTest(field=field):
+                self.engine.container["Mounts"] = copy.deepcopy(mounts)
+                self.engine.container["Mounts"][0][field] = changed
+                with self.assertRaisesRegex(AdapterError, "OUTSIDE_RETAINED"):
+                    adapter.observe_action(stop)
+        self.engine.container["Mounts"] = copy.deepcopy(mounts + mounts[:1])
+        with self.assertRaisesRegex(AdapterError, "OUTSIDE_RETAINED"):
+            adapter.observe_action(stop)
+        self.assertEqual(before, stop["before"])
+
+    def test_conflict_keeps_the_refused_read_without_dispatch(self):
+        self.engine.container = self.container(self.profile["compose"])
+        adapter = self.adapter()
+        stop, _ = adapter.plan({"present": False, "running": False})
+        self.engine.container = copy.deepcopy(self.engine.container)
+        self.engine.container["Id"] = "replacement"
+        path = Path(self.temp.name) / "node.lock"
+        with path.open("w+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with self.assertRaisesRegex(AdapterError, "GATEWAY_OBSERVATION_CONFLICT") as caught:
+                adapter.execute(stop, attempt_id="must-not-dispatch", lock_fd=lock.fileno(),
+                                persist_intent=lambda _: self.fail("Conflicting object must not be dispatched"))
+        self.assertEqual("replacement", caught.exception.observation["id"])
+        self.assertEqual("original", stop["before"]["id"])
+        self.assertTrue(all(method == "GET" for method, _, _ in self.engine.calls))
+
     def test_corrective_chain_retains_intermediate_gateway_spec_for_restore(self):
         original = copy.deepcopy(self.profile["compose"])
         original["services"]["gateway"]["command"] = ["serve", "original"]

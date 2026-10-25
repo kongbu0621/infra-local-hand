@@ -311,11 +311,14 @@ def run(root, image_id, worker_gid=None, selected_nginx=None):
         publish(value)
     def perform(action, attempt):
         recorded = []
+        report['pending_action'] = dict(action=action, attempt=attempt)
         def persist(binding):
             save(root / ('intent-' + attempt + '.json'), binding); recorded.append(binding)
         try:
             result = adapter.execute(action, attempt_id=attempt, lock_fd=lock, persist_intent=persist)
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError) as error:
+            if hasattr(error, 'observation'):
+                report['pending_action']['refused_observation'] = error.observation
             # A start reply can be lost before nginx is ready. The original
             # durable attempt remains the only candidate for observation.
             if not recorded:
@@ -337,6 +340,7 @@ def run(root, image_id, worker_gid=None, selected_nginx=None):
         assert before == sorted(str(p) for p in (root / 'calls').iterdir())
         report['actions'].append(dict(kind=action['kind'], attempt=attempt,
             recovered=result, repeat_without_dispatch=True))
+        report.pop('pending_action', None)
         return result
     try:
         if worker_gid is not None:

@@ -432,13 +432,19 @@ class GatewayAdapter:
         # Losing a live status endpoint must not prevent stopping the exact
         # frozen container. Engine identity/config remain fully checked above;
         # readiness is required for start and final commit, not for isolation.
-        if kind in {"gateway_stop", "gateway_remove"}:
-            def frozen(observation):
-                normalized = {**observation, **self._configuration(observation)}
-                return {key: val for key, val in normalized.items() if key != "route"}
-            original = frozen(value) == frozen(action["before"])
-        else:
-            original = value == action["before"]
+        def frozen(observation):
+            normalized = dict(observation)
+            # Docker inspect may enumerate the same mounts in another order.
+            # Compare the full multiset, including propagation/mode and duplicate
+            # entries; neither discard fields nor rewrite retained observations.
+            if "mounts" in normalized:
+                normalized["mounts"] = sorted(normalized["mounts"], key=lambda mount:
+                    json.dumps(mount, sort_keys=True, separators=(",", ":"), allow_nan=False))
+            if kind in {"gateway_stop", "gateway_remove"}:
+                normalized.update(self._configuration(observation))
+                normalized.pop("route", None)
+            return normalized
+        original = frozen(value) == frozen(action["before"])
         # An acknowledged fixed Engine operation is synchronous at this API
         # boundary. Lost response may be adopted ONLY for its exact target; no
         # retry against original/absent state without daemon-side completion proof.
@@ -459,7 +465,11 @@ class GatewayAdapter:
         if observed["postcondition"] or not observed["closed"]:
             return observed
         if observed["outcome"] == "conflict":
-            raise AdapterError("GATEWAY_OBSERVATION_CONFLICT")
+            error = AdapterError("GATEWAY_OBSERVATION_CONFLICT")
+            # Private callers may retain the actual conflicting read. A later
+            # probe can differ again and cannot explain this refusal reliably.
+            error.observation = observed["observation"]
+            raise error
         if previous is not None and previous.get("binding", previous).get("attempt_id") == attempt_id:
             return observed
         if action["kind"] in ("gateway_create", "gateway_start"):
