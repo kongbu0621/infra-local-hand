@@ -140,12 +140,18 @@ class SystemdBus:
             properties.update(self.properties(path, "org.freedesktop.systemd1.Service"))
         if isinstance(properties.get("InvocationID"), list):
             properties["InvocationID"] = bytes(properties["InvocationID"]).hex()
-        try:
-            properties["UnitFileState"] = self.call("GetUnitFileState", (("s", name),))[0]
-        except AdapterError:
-            if properties.get("LoadState") != "not-found":
-                raise
-            properties["UnitFileState"] = "absent"
+        if name.endswith(".service"):
+            # Managed services need an independently checked enable policy.
+            # Read-only dependencies may have no unit file: system.slice is
+            # loaded/active while GetUnitFileState returns ENOENT. Preserve its
+            # actual Unit properties instead of treating that as an absent or
+            # unreadable dependency (or inventing an enable policy for it).
+            try:
+                properties["UnitFileState"] = self.call("GetUnitFileState", (("s", name),))[0]
+            except AdapterError:
+                if properties.get("LoadState") != "not-found":
+                    raise
+                properties["UnitFileState"] = "absent"
         return properties
 
     def jobs(self):

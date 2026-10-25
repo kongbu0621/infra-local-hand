@@ -16,6 +16,66 @@ import unittest
 from admin.local_hand_deploy.supervision import AdapterError, SupervisedRunner, boot_id, verify_lock
 from admin.local_hand_deploy.services import SystemdAdapter, tree_snapshot, validate_guard
 from admin.local_hand_deploy.gateway import GatewayAdapter
+from admin.local_hand_deploy.systemd_bus import SystemdBus
+
+
+class UnitObservationTests(unittest.TestCase):
+    class Bus(SystemdBus):
+        def __init__(self, properties, file_state_error=None):
+            self.observed = properties
+            self.file_state_error = file_state_error
+            self.methods = []
+
+        def call(self, method, arguments=(), **kwargs):
+            self.methods.append(method)
+            if method == "LoadUnit":
+                return ["/org/freedesktop/systemd1/unit/fixture"]
+            if method == "GetUnitFileState":
+                if self.file_state_error:
+                    raise self.file_state_error
+                return ["disabled"]
+            raise AssertionError(method)
+
+        def properties(self, path, interface):
+            return dict(self.observed) if interface.endswith(".Unit") else {}
+
+    def test_loaded_dependency_without_unit_file_keeps_actual_runtime_state(self):
+        for name in ("system.slice", "fixture.mount", "fixture.target"):
+            with self.subTest(name=name):
+                bus = self.Bus({"LoadState": "loaded", "ActiveState": "active",
+                                "Job": [0, "/"], "UnitFileState": "", "FragmentPath": ""},
+                               AdapterError("SYSTEMD_BUS_ERRNO_2"))
+                observed = bus.unit(name)
+                self.assertEqual("active", observed["ActiveState"])
+                self.assertEqual("", observed["UnitFileState"])
+                self.assertNotIn("GetUnitFileState", bus.methods)
+
+    def test_inactive_dependency_still_blocks_starting_service(self):
+        class Bus(self.Bus):
+            def unit(self, name):
+                if name == "fixture.service":
+                    return {"LoadState": "loaded", "ActiveState": "inactive", "UnitFileState": "disabled",
+                            "Type": "exec", "KillMode": "control-group", "Restart": "no",
+                            "Requires": ["system.slice"]}
+                return super().unit(name)
+        profile = {"units": {"fixture.service": {"read_only_dependencies": ["system.slice"]}}}
+        adapter = SystemdAdapter(profile, None, bus_factory=lambda: None)
+        bus = Bus({"LoadState": "loaded", "ActiveState": "inactive", "Job": [0, "/"], "UnitFileState": ""})
+        with self.assertRaisesRegex(AdapterError, "SHARED_DEPENDENCY_NOT_READY"):
+            adapter._snapshot(bus, "fixture.service", starting=True)
+
+    def test_service_file_state_errors_are_not_suppressed(self):
+        for errno in (2, 13):
+            with self.subTest(errno=errno):
+                bus = self.Bus({"LoadState": "loaded", "ActiveState": "active"},
+                               AdapterError("SYSTEMD_BUS_ERRNO_" + str(errno)))
+                with self.assertRaisesRegex(AdapterError, "SYSTEMD_BUS_ERRNO_" + str(errno)):
+                    bus.unit("fixture.service")
+        missing = self.Bus({"LoadState": "not-found", "ActiveState": "inactive"},
+                           AdapterError("SYSTEMD_BUS_ERRNO_2"))
+        self.assertEqual("absent", missing.unit("fixture.service")["UnitFileState"])
+        loaded = self.Bus({"LoadState": "loaded", "ActiveState": "active", "UnitFileState": "enabled"})
+        self.assertEqual("disabled", loaded.unit("fixture.service")["UnitFileState"])
 
 
 class SupervisorTests(unittest.TestCase):
