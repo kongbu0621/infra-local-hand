@@ -7,6 +7,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
 import tempfile
@@ -78,6 +79,7 @@ class GateTests(unittest.TestCase):
         # The child pauses during its *real* locked publication. Parent closes
         # concurrently; close cannot miss this already-accepted responsibility.
         program='''import json,os,sys
+sys.path.insert(0,sys.argv[3])
 from local_hand_jobs.maintenance import MaintenanceGate
 class Paused(MaintenanceGate):
  def _write(self,fd,value):
@@ -87,24 +89,44 @@ proof=json.loads(sys.argv[2])
 gate.accept('prepare','task-one','process-attempt',{'input':'fixed'},proof)
 print('accepted',flush=True)
 '''
-        child=subprocess.Popen([sys.executable,'-c',program,str(self.root),json.dumps(self.loaded)],
-                               stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        self.addCleanup(lambda:child.poll() is None and child.kill())
-        self.assertEqual('locked',child.stdout.readline().strip())
-        done=threading.Event();results=[]
+        # pytest's configured pythonpath affects this interpreter, not its
+        # children. Bind the actual loaded installation, including when this
+        # test runs against an independent wheel or source projection.
+        package_root=str(Path(maintenance.__file__).resolve().parents[1])
+        environment={key:value for key,value in os.environ.items() if key != 'PYTHONPATH'}
+        child=subprocess.Popen([sys.executable,'-B','-c',program,str(self.root),json.dumps(self.loaded),package_root],
+                               stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
+                               env=environment)
+        done=threading.Event();results=[];errors=[];worker=None
         def close():
             try:results.append(self.gate.close('deploy'))
+            except BaseException as error:errors.append(error)
             finally:done.set()
-        worker=threading.Thread(target=close);worker.start()
-        self.assertFalse(done.wait(.1))
-        output,error=child.communicate('\n',timeout=3)
-        self.assertEqual(0,child.returncode,error)
-        self.assertEqual('accepted',output.strip())
-        self.assertTrue(done.wait(3));worker.join()
-        self.assertEqual('CLOSED',results[0]['state'])
-        self.assertEqual(1,len(self.gate.active()))
-        with self.assertRaises(JobError) as denied:self.receipt(attempt='later')
-        self.assertEqual('MAINTENANCE',denied.exception.code)
+        try:
+            self.assertTrue(select.select([child.stdout],[],[],3)[0], 'child did not reach locked publication')
+            self.assertEqual('locked',child.stdout.readline().strip())
+            worker=threading.Thread(target=close,daemon=True);worker.start()
+            self.assertFalse(done.wait(.1))
+            output,error=child.communicate('\n',timeout=3)
+            self.assertEqual(0,child.returncode,error)
+            self.assertEqual('accepted',output.strip())
+            self.assertTrue(done.wait(3));worker.join(timeout=3)
+            self.assertEqual([],errors)
+            self.assertEqual('CLOSED',results[0]['state'])
+            self.assertEqual(1,len(self.gate.active()))
+            with self.assertRaises(JobError) as denied:self.receipt(attempt='later')
+            self.assertEqual('MAINTENANCE',denied.exception.code)
+        finally:
+            # Kill first so an early assertion also releases the child's real
+            # flock before joining the concurrent closer; reap and close every
+            # pipe even when communicate/another assertion fails.
+            if child.poll() is None:child.kill()
+            try:child.wait(timeout=3)
+            finally:
+                for stream in (child.stdin,child.stdout,child.stderr):stream.close()
+                if worker is not None:
+                    worker.join(timeout=3)
+                    self.assertFalse(worker.is_alive(), 'concurrent closer did not exit')
 
     def test_accepted_preparation_dispatches_after_close_but_cannot_first_execute(self):
         receipt=self.receipt();self.gate.close('deploy')
