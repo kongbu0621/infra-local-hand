@@ -658,7 +658,7 @@ def create_broker(policy_path, *, actual_entrypoint, initialize=False, session_p
         raise
 
 
-def create_retained_broker(policy_path, *, actual_entrypoint, reader_identity):
+def create_retained_broker(policy_path, *, actual_entrypoint, reader_identity, filesystem_bindings=None):
     """Read the supported original ledger schema with an admitted new reader.
 
     The original policy still controls authority, ownership, paths and evidence.
@@ -677,8 +677,14 @@ def create_retained_broker(policy_path, *, actual_entrypoint, reader_identity):
                               expected_payload_digest=reader_identity["installed_payload_digest"],
                               expected_entrypoint=reader_identity["execution_entrypoint"],
                               actual_entrypoint=actual_entrypoint)
-    policy = Policy.from_file(policy_path)
-    broker = _compose_broker(policy, None, quota_required=True, read_only=True)
+    from .retained_filesystem import bindings_snapshot, compose_reader
+    bindings = bindings_snapshot(filesystem_bindings if filesystem_bindings is not None else {})
+    binding = bindings.get(str(policy_path))
+    policy = Policy.from_file(policy_path, **({"expected_sha256": binding["policy_sha256"]} if binding else {}))
+    broker = (compose_reader(policy_path, policy, binding) if binding else
+              _compose_broker(policy, None, quota_required=True, read_only=True))
+    broker.retained_policy_path = str(policy_path)
+    broker.filesystem_bindings = bindings
     broker.reader_identity = identity
     return broker
 

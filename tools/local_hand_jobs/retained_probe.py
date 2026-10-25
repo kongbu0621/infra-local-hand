@@ -79,6 +79,8 @@ def _index(broker, temporary):
                         if len(paths) > MAX_TASKS * 2:
                             raise JobError("LIMIT_EXCEEDED", "Retained policies exceed their fixed bound")
         for path in dict.fromkeys(paths):
+            if path == getattr(broker.retained, "retained_policy_path", None):
+                continue  # The anchor already owns this ledger lock.
             reader = broker.readers.get(path)
             # Never retain a new reader's authority lock merely to inventory
             # an unused READY. That would block its later first execution.

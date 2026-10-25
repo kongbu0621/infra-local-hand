@@ -145,6 +145,24 @@ class BootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(DeployError, 'historical MCP read bindings changed'):
             self.observer.observe(entries, self.target)
 
+    def test_legacy_filesystem_binding_bytes_are_part_of_original_read_routes(self):
+        descriptor = self.root / 'resident.json'
+        self.write(descriptor, {'retained': []})
+        declaration = self.root / 'binding.json'
+        binding = {'schema': 'local-hand-retained-filesystem/v1', 'policy_path': '/protected/anchor',
+                   'policy_sha256': 'e'*64, 'original_root': {}, 'filesystem': {}}
+        self.write(declaration, binding)
+        config = self.root / 'old-mcp.json'
+        self.write(config, {'schema': 'gx10-single-owner-mcp/v1', 'anchor_policy': '/protected/anchor',
+            'resident': str(descriptor), 'retained_reader': {'binding': str(declaration)}})
+        self.manifest['legacy'].append({'kind': 'mcp', 'unit': 'old-mcp.service', 'configuration': str(config)})
+        entries = bootstrap._legacy(self.manifest['legacy'], self.uid)
+        self.assertEqual({'/protected/anchor': binding}, entries[-1]['filesystem_bindings'])
+        binding['policy_sha256'] = 'f'*64
+        self.write(declaration, binding)
+        changed = bootstrap._legacy(self.manifest['legacy'], self.uid)
+        self.assertNotEqual(entries[-1]['read_routes_digest'], changed[-1]['read_routes_digest'])
+
     def test_bootstrap_cannot_hide_a_historical_ledger_outside_preparation_catalog(self):
         from types import SimpleNamespace
         from admin.local_hand_deploy import preparations, retained_reader

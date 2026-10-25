@@ -66,7 +66,8 @@ def readback(spec):
         readers = []
         for path in dict.fromkeys(paths if mode == "policies" else [inputs["config"], *paths]):
             readers.append(temporary(lambda: cli.create_retained_broker(path, actual_entrypoint=cli.__file__,
-                                                                        reader_identity=spec["reader_identity"])))
+                                                                        reader_identity=spec["reader_identity"],
+                                                                        filesystem_bindings=spec.get("filesystem_bindings", {}))))
         if not readers:
             raise JobError("CONFLICT", "Offline verification requires an original policy route")
         router = OfflineReaders(readers[0], readers[1:], entry_authority=mode != "policies")
@@ -77,7 +78,7 @@ def readback(spec):
 def main():
     try:
         spec = strict_loads(sys.stdin.buffer.read(65537), maximum_bytes=65536)
-        if (set(spec) != {"mode", "inputs", "reader_identity", "seconds"}
+        if ((set(spec) - {"filesystem_bindings"}) != {"mode", "inputs", "reader_identity", "seconds"}
                 or type(spec["seconds"]) is not int or not 0 < spec["seconds"] <= 120):
             raise JobError("UNSUPPORTED", "Invalid fixed offline verification request")
         result = {"result": readback(spec)}

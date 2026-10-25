@@ -531,7 +531,8 @@ def main(argv=None) -> int:
                 # guard() has independently matched this executing payload to
                 # the protected current selection. Keep old writer policy intact.
                 broker = create_retained_broker(args.config, actual_entrypoint=__file__,
-                                                reader_identity=release_identity(__file__))
+                                                reader_identity=release_identity(__file__),
+                                                filesystem_bindings=guarded["filesystem_bindings"])
             else:
                 broker = create_broker(args.config, actual_entrypoint=__file__, session_path=args.session,
                                        **({"read_only": True} if args.read_only or args.prepared_task or args.resident else {}))

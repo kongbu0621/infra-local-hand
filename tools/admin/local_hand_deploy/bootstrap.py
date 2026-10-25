@@ -180,10 +180,15 @@ def _legacy(specifications, owner):
             # outside the current manager's preparation directory.
             config = _read(_path(spec["configuration"]), owner, 2 * 1024 * 1024)
             entry["configuration_digest"] = digest(config)
+            filesystem_bindings = {}
             if config.get("schema") == "gx10-single-owner-mcp/v1":
                 policies = [_path(config["anchor_policy"])]
+                if "retained_reader" in config:
+                    binding = _read(_path(config["retained_reader"]["binding"]), owner)
+                    filesystem_bindings = {policies[0]: binding}
                 descriptor = _read(_path(config["resident"]), owner, 2 * 1024 * 1024)
             elif config.get("schema") == "local-hand-mcp-startup/v1":
+                filesystem_bindings = config.get("retained_filesystems", {})
                 policies = [_path(config["inputs"]["config"])]
                 mode = config["mode"]
                 if mode == "resident":
@@ -213,7 +218,10 @@ def _legacy(specifications, owner):
                     if len(policies) > 256:
                         _fail("BOOTSTRAP_SCAN_LIMIT", "Old MCP catalog policies exceed their budget")
             entry["read_policies"] = list(dict.fromkeys(policies))
-            entry["read_routes_digest"] = digest({"descriptor": descriptor, "policies": entry["read_policies"]})
+            from local_hand_jobs.retained_filesystem import bindings_snapshot
+            entry["filesystem_bindings"] = bindings_snapshot(filesystem_bindings)
+            entry["read_routes_digest"] = digest({"descriptor": descriptor, "policies": entry["read_policies"],
+                                                "filesystem_bindings": entry["filesystem_bindings"]})
         entries.append(entry)
     if not dispatch:
         _fail("BOOTSTRAP_SCOPE", "Import requires the original dispatch owner, not just a network listener")
@@ -459,6 +467,12 @@ class OfflineObserver:
         from .retained_reader import offline_readback
         from local_hand_jobs.retained_probe import merge_readbacks
         policies = list(dict.fromkeys(path for entry in entries for path in entry.get("read_policies", [])))
+        filesystem_bindings = {}
+        for entry in entries:
+            for path, binding in entry.get("filesystem_bindings", {}).items():
+                if path in filesystem_bindings and filesystem_bindings[path] != binding:
+                    _fail("BOOTSTRAP_RETENTION", "Original filesystem read bindings conflict")
+                filesystem_bindings[path] = binding
         if policies:
             component = next((name for name, probe in self.profile["probes"].items()
                               if probe["kind"] == "mcp"), None)
@@ -466,7 +480,7 @@ class OfflineObserver:
                 _fail("BOOTSTRAP_RETENTION", "Original MCP read routes have no guarded replacement")
             original_results = offline_readback(self.environment, component, target,
                 deadline=time.monotonic() + self.profile.get("timeout_seconds", 30),
-                candidates=candidates, original_policies=policies)
+                candidates=candidates, original_policies=policies, filesystem_bindings=filesystem_bindings)
             if merge_readbacks([results, original_results]) != results:
                 _fail("BOOTSTRAP_RETENTION", "Guarded MCP would omit an original historical read route")
         readable = {task["operation_id"] for task in results["tasks"]}

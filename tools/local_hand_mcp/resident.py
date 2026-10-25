@@ -84,7 +84,8 @@ class ResidentBroker:
                 raise JobError('UNAUTHORIZED', 'Invalid installed local A2 capability configuration')
         identity = dict(retained.reader_identity, execution_entrypoint=str(Path(cli.__file__).absolute()))
         return cls(retained, config, ServiceClient(config['service']),
-            lambda path: cli.create_retained_broker(path, actual_entrypoint=cli.__file__, reader_identity=identity))
+            lambda path: cli.create_retained_broker(path, actual_entrypoint=cli.__file__, reader_identity=identity,
+                filesystem_bindings=getattr(retained, "filesystem_bindings", {})))
 
     def start(self):
         self.retained.start()
@@ -103,6 +104,8 @@ class ResidentBroker:
         return self.service.call(body.pop('action'), **body)
 
     def _reader(self, path):
+        if path == getattr(self.retained, "retained_policy_path", None):
+            return self.retained
         if path not in self.readers:
             self.readers[path] = self.reader_factory(path)
         return self.readers[path]

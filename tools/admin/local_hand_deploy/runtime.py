@@ -300,7 +300,7 @@ class PlanningEnvironment:
                 continue
             if config.get("schema") == "local-hand-mcp-startup/v1":
                 inputs = config["inputs"]
-                from local_hand_mcp.startup_guard import listener_binding
+                from local_hand_mcp.startup_guard import listener_binding, retention_binding
                 listener = listener_binding(config)
                 bindings = {}
                 for name, input_path in inputs.items():
@@ -308,7 +308,7 @@ class PlanningEnvironment:
                         raise DeployError("UNGUARDED_ENTRY", "MCP input is outside the complete selection")
                     raw = startup.protected_read(candidates.get(input_path, input_path), owner_uid=owners[input_path])
                     bindings[name] = {"path": input_path, "sha256": hashlib.sha256(raw).hexdigest()}
-                config_digest = startup.digest({"inputs": bindings, "mode": config["mode"], **listener})
+                config_digest = startup.digest({"inputs": bindings, "mode": config["mode"], **listener, **retention_binding(config)})
                 manager_sockets = {probe["socket"] for probe in self.profile["probes"].values()
                                    if probe["kind"] in {"resident", "prepared"}}
                 if (config.get("node_id") != selection["node_id"] or config.get("deployment_digest") != selection["deployment_digest"]

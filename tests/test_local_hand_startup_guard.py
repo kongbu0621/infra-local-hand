@@ -163,6 +163,32 @@ class MCPGuardTests(unittest.TestCase):
             for path in (self.member,config,auth,Path(self.args.startup_config))]
         self.publish(self.selection)
 
+    def test_recovery_binding_is_in_selected_digest_and_cannot_change_before_bind(self):
+        declaration = {'schema': 'local-hand-retained-filesystem/v1',
+            'policy_path': self.args.config, 'policy_sha256': 'e'*64,
+            'original_root': {}, 'filesystem': {}}
+        original = startup_guard.input_binding(self.binding, self.args)
+        self.binding['retained_filesystems'] = {self.args.config: declaration}
+        changed = startup_guard.input_binding(self.binding, self.args)
+        self.assertNotEqual(startup.digest(original), startup.digest(changed))
+        config_path = Path(self.args.startup_config)
+        config_path.write_text(json.dumps(self.binding))
+        for member in self.selection['members']:
+            if member['path'] == str(config_path):
+                member['sha256'] = hashlib.sha256(config_path.read_bytes()).hexdigest()
+        with patch.object(startup, 'remote_authorization', self.remote()), \
+             patch.object(startup_guard, 'full_payload_digest', return_value='c'*64):
+            with self.assertRaises(JobError):
+                with startup_guard.guard(self.args):
+                    self.fail('Changed binding must not be admitted by old digest')
+            self.selection['components']['mcp']['configuration_digest'] = startup.digest(changed)
+            with startup_guard.guard(self.args) as guarded:
+                self.assertEqual(self.binding['retained_filesystems'], guarded['filesystem_bindings'])
+                self.binding['retained_filesystems'][self.args.config]['policy_sha256'] = 'f'*64
+                config_path.write_text(json.dumps(self.binding))
+                with self.assertRaises(JobError):
+                    guarded['bind']()
+
     def remote(self, ack=None, exit_error=None):
         @contextmanager
         def selected(_):
@@ -321,7 +347,7 @@ class MCPMainTests(unittest.TestCase):
                         raise JobError('STARTUP_UNKNOWN','missing ACK')
                     events.append('ack')
                     return listener
-                yield {'bind':bind,'proof':{'protocol_ready':False}}
+                yield {'bind':bind,'proof':{'protocol_ready':False},'filesystem_bindings':{'/original':'selected-declaration'}}
                 events.append('guard-released')
             def run(*args,**kwargs):
                 events.append('http-start')
@@ -331,7 +357,7 @@ class MCPMainTests(unittest.TestCase):
                     patch.object(startup_guard,'guard',guard), \
                     patch('local_hand_mcp.auth.AuthConfig.from_file',return_value=Mock()), \
                     patch('local_hand_mcp.auth.JWTVerifier',return_value=Mock()), \
-                    patch('local_hand_jobs.cli.create_retained_broker',return_value=broker), \
+                    patch('local_hand_jobs.cli.create_retained_broker',return_value=broker) as create, \
                     patch('local_hand_jobs.deployment.release_identity',return_value={}), \
                     patch('local_hand_jobs.cli.MaintenanceServer',return_value=maintenance_server), \
                     patch('local_hand_jobs.cli.close_service') as close, \
@@ -340,6 +366,7 @@ class MCPMainTests(unittest.TestCase):
                 result=server.main(['--config','/synthetic','--read-only','--auth-config','/synthetic/auth',
                                     '--port','8765','--startup-config','/synthetic/startup'])
                 self.assertEqual(2 if denied else 0,result)
+                self.assertEqual({'/original':'selected-declaration'},create.call_args.kwargs['filesystem_bindings'])
                 self.assertEqual(['guard-held'] if denied else
                     ['guard-held','ack','guard-released','secondary-open','http-start'],events)
                 self.assertEqual(-1,listener.fileno())

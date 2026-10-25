@@ -16,7 +16,7 @@ from local_hand_jobs.contract import JobError
 
 def invocation_paths(config, args):
     keys = {"schema", "node_id", "deployment_digest", "payload_digest", "manager_socket", "inputs", "mode", "port"}
-    if (not isinstance(config, dict) or not keys <= set(config) or set(config) - keys - {"unix_socket"}
+    if (not isinstance(config, dict) or not keys <= set(config) or set(config) - keys - {"unix_socket", "retained_filesystems"}
             or config["schema"] != "local-hand-mcp-startup/v1"):
         raise JobError("STARTUP_MISMATCH", "Invalid MCP startup configuration")
     mode = next((name for name in ("resident", "prepared_task", "session", "read_only") if getattr(args, name, None)), None)
@@ -100,12 +100,19 @@ def bind_unix(spec):
         cleanup(); raise
 
 
+def retention_binding(config):
+    """These declarations are part of the selected configuration digest."""
+    from local_hand_jobs.retained_filesystem import bindings_snapshot
+    return ({"retained_filesystems": bindings_snapshot(config["retained_filesystems"])}
+            if "retained_filesystems" in config else {})
+
+
 def input_binding(config, args, *, owner_uid=None):
     owner_uid = os.geteuid() if owner_uid is None else owner_uid
     paths = invocation_paths(config, args)
     inputs = {name: {"path": path, "sha256": hashlib.sha256(
         startup.protected_read(path, owner_uid=owner_uid)).hexdigest()} for name, path in paths.items()}
-    return {"inputs": inputs, "mode": config["mode"], **listener_binding(config)}
+    return {"inputs": inputs, "mode": config["mode"], **listener_binding(config), **retention_binding(config)}
 
 
 @contextmanager
@@ -147,7 +154,8 @@ def guard(args):
                     or config["deployment_digest"] != selection["deployment_digest"]
                     or any(proof[key] != expected.get(key) for key in ("configuration_digest", "payload_digest"))):
                 raise JobError("STARTUP_MISMATCH", "MCP loaded configuration or release differs from selection")
-            result = {"proof": proof, "listener": None, "cleanup": None}
+            result = {"proof": proof, "listener": None, "cleanup": None,
+                      "filesystem_bindings": retention_binding(config).get("retained_filesystems", {})}
             def bind():
                 nonlocal listener, cleanup
                 if listener is not None:

@@ -57,7 +57,7 @@ def data_identity(policy):
     return uid, gid
 
 
-def offline_readback(environment, component, selected, *, deadline, candidates=None, original_policies=None):
+def offline_readback(environment, component, selected, *, deadline, candidates=None, original_policies=None, filesystem_bindings=None):
     profile, owner = environment.profile, environment.owner
     candidates = candidates or {}
     def read(path, uid=owner):
@@ -72,6 +72,8 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
         if len(managers) != 1:
             raise DeployError("RETENTION_CONFIGURATION", "Offline reader has no unique admitted installation")
         manager = read(profile["guarded_components"][managers[0]]["configuration"])
+        if filesystem_bindings is None:
+            filesystem_bindings = config.get("retained_filesystems", {})
         mode = config["mode"]
         inputs = {name: candidates.get(path, path) for name, path in config["inputs"].items()}
     else:
@@ -87,6 +89,8 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
         if not isinstance(original_policies, list) or not 1 <= len(original_policies) <= 256:
             raise DeployError("RETENTION_CONFIGURATION", "Original historical routes exceed their fixed bound")
         mode, inputs = "policies", {"policies": original_policies}
+    from local_hand_jobs.retained_filesystem import bindings_snapshot
+    filesystem_bindings = bindings_snapshot(filesystem_bindings if filesystem_bindings is not None else {})
     installation = manager["installation"]
     installed = installation["installed"]
     expected = selected["selection"]["components"][component]["payload_digest"]
@@ -111,7 +115,7 @@ def offline_readback(environment, component, selected, *, deadline, candidates=N
     from local_hand.provenance import full_payload_digest
     if full_payload_digest(Path(root)) != expected:
         raise DeployError("RETENTION_CONFIGURATION", "Offline reader payload changed before launch")
-    spec = {"mode": mode, "inputs": inputs, "seconds": seconds,
+    spec = {"mode": mode, "inputs": inputs, "seconds": seconds, "filesystem_bindings": filesystem_bindings,
             "reader_identity": {"source_commit": installation["source"]["commit"],
                 "installed_payload_digest": expected, "execution_entrypoint": str(Path(root) / "local_hand_jobs/cli.py")}}
     # The parent never imports candidate Python. The selected reader runs as

@@ -112,7 +112,8 @@ class PreparedBroker:
         return cls(retained, policy, value["request"], value["principal_id"],
             Launcher(value["launcher"], value["request"]),
             lambda: cli.create_retained_broker(value["policy_path"], actual_entrypoint=backend_entrypoint,
-                                              reader_identity=identity))
+                                              reader_identity=identity,
+                                              filesystem_bindings=getattr(retained, "filesystem_bindings", {})))
 
     def start(self):
         self.retained.start()
