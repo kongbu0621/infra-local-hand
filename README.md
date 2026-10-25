@@ -70,11 +70,13 @@
 
 **下图是目标架构，尚未完成跨平台多节点实现或部署验收。** 同一产品拟分别部署到独立执行节点，各自只负责本机任务；调用方选择一个或多个连接，分别推进任务。NAS 是独立成果存储节点，可以共用，也可以分别绑定，不是另一个 Local Hand 执行节点。
 
-[![目标架构：多个独立 Local Hand 分别受控执行任务，经原节点返回状态与证据；成果可归档到同一或不同 NAS，各节点的执行状态、身份与权限保持独立。](docs/diagrams/independent-nodes-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/independent-nodes-target.svg)
+[![目标架构：多个独立 Local Hand 分别受控执行任务，经原节点返回状态与证据；成果可归档到同一或不同 NAS，各节点的执行状态、身份与权限保持独立。](docs/diagrams/independent-nodes-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/5a5ee821986a8cf25f8165b61704a3db0bf3ead7/docs/diagrams/independent-nodes-target.svg)
 
-[查看目标架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/independent-nodes-target.svg) · [实现方案与验收边界](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md)
+[查看目标架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/5a5ee821986a8cf25f8165b61704a3db0bf3ead7/docs/diagrams/independent-nodes-target.svg) · [实现方案与验收边界](docs/MULTI_NODE_IMPLEMENTATION_PLAN.md)
 
 节点 A／B／C 和存储 X／Y 都是合成示例，不代表实际设备或固定数量。每个节点分别部署身份服务、HTTPS 入口和 Local Hand：紫色支线表示登录、令牌与公钥，任务主线由 MCP 验签授权后进入本机后端；本地 CLI 使用操作系统身份。节点执行与恢复记录保留在各自节点；成果归档是独立分支，共用 NAS 不等于共用任务状态或写权限。释放本地证据内容后，准确读回可能依赖原绑定的 NAS；NAS 离线不能触发业务重跑。
+
+**橙色 D1–D3 标出下方部署重构涉及的位置。** 节点 A 仅作定位示例：D1 是 HTTPS／网关入口，D2 是 MCP 服务，D3 是作业后端的维护准入。三者的对应关系见[重构在任务链路中的位置](#重构在任务链路中的位置)。
 
 <details>
 <summary>展开当前单节点任务与结果机制</summary>
@@ -93,9 +95,21 @@
 
 **下图是当前单节点部署与恢复的重构设计，尚未实现、部署或验收。** 针对多轮修复仍出现的同类恢复缺陷，方案将部署动作、实际观察与持久记录分开；故障解除后须在预定预算内完成接续，不能把持续等待算作问题收敛。
 
-[![部署与恢复目标架构：协调器依据持久记录和实际观察接续固定动作，维护屏障保护本地与远程最终新准入，本地部署、公网与客户端各自验收。](docs/diagrams/deployment-recovery-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fbe7443a9d68a683fd662ac562189a9ca44eab12/docs/diagrams/deployment-recovery-target.svg)
+#### 重构在任务链路中的位置
 
-[查看重构架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/fbe7443a9d68a683fd662ac562189a9ca44eab12/docs/diagrams/deployment-recovery-target.svg) · [问题根因、重构方案与收敛条件](docs/DEPLOYMENT_RECOVERY_REFACTOR.md) · [关系源](docs/diagrams/deployment-recovery-target.mmd)
+**这张图展开的是执行节点内部的部署、升级与故障恢复流程，涉及另外两图中的 D1–D3 三处。** 它不是认证调用流程中的某一个新增步骤，也不是每次任务调用都要运行的流程。三张图的橙色标记一一对应：
+
+| 标记 | 多节点图中的位置（以节点 A 为例） | 认证调用图中的位置 | 重构图中的对应部件 |
+| --- | --- | --- | --- |
+| **D1** | HTTPS／网关入口 | **④** 请求进入的 HTTPS 入口 | 固定动作与监督调用：发布、核对及恢复网关配置 |
+| **D2** | Local Hand MCP 服务 | **④** 之后的 MCP Server 服务段 | 固定动作与监督调用：部署、切换及恢复 MCP 服务 |
+| **D3** | Local Hand 作业后端的维护准入 | **⑤** 之后、新准备／首次执行前的最终准入点；也约束本地 CLI | 最终准入维护屏障：维护时关闭新准入，验证后开放 |
+
+部署协调器、计划器和持久恢复记录是围绕这些位置工作的管理侧部件，因此没有作为普通任务步骤画进另外两图。重构保留既有身份服务、任务执行与账本、成果归档；已接受任务先自然收尾。首版只覆盖当前单节点 Linux/systemd，节点 A 的标注不表示多节点重构已实现。
+
+[![部署与恢复目标架构：协调器依据持久记录和实际观察接续固定动作，维护屏障保护本地与远程最终新准入，本地部署、公网与客户端各自验收。](docs/diagrams/deployment-recovery-target.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/5a5ee821986a8cf25f8165b61704a3db0bf3ead7/docs/diagrams/deployment-recovery-target.svg)
+
+[查看重构架构原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/5a5ee821986a8cf25f8165b61704a3db0bf3ead7/docs/diagrams/deployment-recovery-target.svg) · [问题根因、重构方案与收敛条件](docs/DEPLOYMENT_RECOVERY_REFACTOR.md) · [关系源](docs/diagrams/deployment-recovery-target.mmd)
 
 维护屏障共同约束本地 CLI 和 MCP 的最终准备／首次执行；已接受任务自然收尾，原任务查询和成果读取不因维护标记而被禁止，但服务切换可能短时断连。部署恢复使用独立记录，不重放业务；本地部署完成、公网可达和客户端实际调用分别取证。该重构不作为继续已验证功能或 Ledger 主任务的统一前置。
 
@@ -148,11 +162,13 @@
 Host（宿主应用），其中连接 MCP Server 的组件称为 Client（客户端）。下图以 Tailscale 作为可选网络入口；身份服务的具体产品由部署选择。
 客户端和浏览器必须能访问各自所需的认证与服务端点。逐节点独立部署仍是待验收目标，图示不代表现有实例已经完成迁移。
 
-[![远程认证与任务调用：用户在选定节点的身份服务登录授权，客户端换取令牌并经 HTTPS 入口调用 Local Hand；MCP 验签授权后访问作业后端，最终返回原任务状态与证据。](docs/diagrams/authenticated-connection.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/authenticated-connection.svg)
+[![远程认证与任务调用：用户在选定节点的身份服务登录授权，客户端换取令牌并经 HTTPS 入口调用 Local Hand；MCP 验签授权后访问作业后端，最终返回原任务状态与证据。](docs/diagrams/authenticated-connection.svg)](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/5a5ee821986a8cf25f8165b61704a3db0bf3ead7/docs/diagrams/authenticated-connection.svg)
 
-[查看认证与调用原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/087e7519fe15a0f8c6010c7eb0d68f26028541a7/docs/diagrams/authenticated-connection.svg) · [关系源](docs/diagrams/authenticated-connection.mmd)
+[查看认证与调用原图（可缩放）](https://raw.githubusercontent.com/kongbu0621/infra-local-hand/5a5ee821986a8cf25f8165b61704a3db0bf3ead7/docs/diagrams/authenticated-connection.svg) · [关系源](docs/diagrams/authenticated-connection.mmd)
 
 登录、授权码交换和令牌刷新不是每次任务调用都重复执行的步骤；每次受保护请求仍须校验令牌和权限。身份服务不转发或执行业务任务，网络入口也不能代替认证。
+
+图中橙色 **D1／D2 位于④的服务端链路，D3 位于⑤之后的后端维护准入**；①–⑥仍是原来的认证与调用顺序。部署重构怎样作用于这三处，见[重构在任务链路中的位置](#重构在任务链路中的位置)。
 
 例如，你说“查询任务状态”：
 
