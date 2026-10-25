@@ -126,3 +126,31 @@ namespace、socket `SO_PEERCRED` 及返回的实际进程身份共同核对，�
 空闲超时及真实 Unix 握手；坏状态探针下停止/补偿、Engine/namespace 的边界用例仍是模型测试。
 宿主没有可用 nginx 二进制或缓存包，当前执行身份也无法访问 Docker socket，因此本轮没有执行镜像构建、
 真实 nginx `-t` 或 Docker 容器生命周期。上述源码、构建入口和真实本地网络证据不冒充这些平台验收。
+
+后续增加显式运行的[隔离 Docker 验收入口](../../tests/e3_host/deployment_recovery_gateway_smoke.py)。
+它使用已核对的安装载荷、管理员投影和已构建的准确 image ID，创建随机命名的测试容器；
+采用 `NetworkMode=none`，没有宿主端口、外部网络或真实业务挂载。独立的合成管理器使用实际
+root Unix 对端身份、维护记录和生产启动授权函数；宿主通过生产观察器核对 Engine PID、
+namespace 与 socket 对端。该管理器不是现役业务管理器。
+
+入口检查候选阶段本地可用而公共监听关闭、稳定决定释放后开放、阻断选择发布后撤销访问；
+真实执行 create/start/stop/remove 后，故意丢弃已经收到的 Engine 回复，检查沿原尝试观察、
+接续及重复调用不再下发。它不声称模拟了 daemon 内部中途崩溃或主机断电。结束时只清理
+本次准确绑定的容器；无法确认身份时保留对象并报告失败，不删除其他实例。
+
+以选定安装目录设置 `PYTHONPATH` 后，先做不访问 Docker 的预检：
+
+```bash
+python3 -B tests/e3_host/deployment_recovery_gateway_smoke.py --validate-fixture-only
+```
+
+在具备本机 root 身份的隔离验收环境中显式运行，输出目录必须尚不存在：
+
+```bash
+python3 -B tests/e3_host/deployment_recovery_gateway_smoke.py \
+  --run-isolated-gateway --image-id "$GATEWAY_IMAGE_ID" --output "$GATEWAY_CHECK_OUTPUT"
+```
+
+当前已通过同一冻结核验包的配置、受保护文件、状态转换和无宿主端口预检；实际镜像构建与
+容器执行仍待报告，不计入已通过的平台矩阵。现场版本与最新证据见
+[部署恢复实现记录](../../docs/DEPLOYMENT_RECOVERY_IMPLEMENTATION.md#原准备与成果精确安装验证)。
