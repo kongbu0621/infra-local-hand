@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from local_hand_jobs.contract import JobError
 
 
 def report(operation, *, admission=None, public=None, client=None):
@@ -32,5 +33,5 @@ def admission_view(gate):
     try:
         value = gate.snapshot()
         return {key: value[key] for key in ("state", "sequence", "owner", "decision_id", "deployment_digest")}
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError, JobError) as exc:
         return {"state": "UNKNOWN", "error": getattr(exc, "code", type(exc).__name__)}

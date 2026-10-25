@@ -403,6 +403,78 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterError, "BLOCKED"):
             validate_guard(proof, {**target, "running": True}, attempt_id="create-stopped", allow_stopped=True)
 
+    def test_stopped_container_observation_does_not_require_live_route_listener(self):
+        self.engine.container = self.container(self.profile["compose"], running=False)
+        def unavailable(_):
+            raise AssertionError("stopped container cannot run its readiness listener")
+        adapter = GatewayAdapter(self.profile, self.runner, engine=self.engine, route_probe=unavailable)
+        observed = adapter.observe()
+        self.assertEqual("stopped", observed["status"])
+        self.assertIsNone(observed["route"])
+        action = {"kind": "gateway_stop", "target": "gateway", "before": observed, "after": {"running": False}}
+        self.assertTrue(adapter.observe_action(action)["postcondition"])
+
+    def test_running_unhealthy_container_can_be_stopped_and_removed_by_exact_engine_identity(self):
+        self.engine.container = self.container(self.profile["compose"], labels={
+            "local-hand.deploy.config": "b" * 64, "local-hand.deploy.deployment": "c" * 64})
+        before = {**self.adapter().observe(), "route": {"protocol_ready": True}}
+        def unavailable(_): raise RuntimeError("actual status endpoint is unavailable")
+        adapter = GatewayAdapter(self.profile, self.runner, engine=self.engine, route_probe=unavailable)
+        action = {"kind": "gateway_stop", "target": "gateway", "before": before, "after": {"running": False}}
+        self.assertEqual("original", adapter.observe_action(action)["outcome"])
+        planned = adapter.plan({"present": False, "running": False})
+        self.assertEqual(["gateway_stop", "gateway_remove"], [step["kind"] for step in planned])
+        original_request = self.engine.request
+        def mutate(method, path, body=None, **kwargs):
+            if method == "POST" and path == "/containers/original/stop?t=10":
+                self.engine.container["State"]["Running"] = False
+                return None
+            if method == "DELETE" and path == "/containers/original?force=false&v=false":
+                self.engine.container = None
+                return None
+            return original_request(method, path, body, **kwargs)
+        self.engine.request = mutate
+        adapter._perform(action, lambda _: None)
+        self.assertTrue(adapter.observe_action(action)["postcondition"])
+        adapter._perform(planned[1], lambda _: None)
+        self.assertTrue(adapter.observe_action(planned[1])["postcondition"])
+
+    def test_unhealthy_stop_still_rejects_changed_container_or_configuration(self):
+        self.engine.container = self.container(self.profile["compose"])
+        before = self.adapter().observe()
+        def unavailable(_): raise RuntimeError("status unavailable")
+        adapter = GatewayAdapter(self.profile, self.runner, engine=self.engine, route_probe=unavailable)
+        action = {"kind": "gateway_stop", "target": "gateway", "before": before, "after": {"running": False}}
+        self.engine.container["Id"] = "independent"
+        self.assertEqual("conflict", adapter.observe_action(action)["outcome"])
+        with self.assertRaisesRegex(AdapterError, "ID_CHANGED"):
+            adapter._perform(action, lambda _: None)
+        self.engine.container["Id"] = "original"
+        self.engine.container["Config"]["Cmd"] = ["changed-command"]
+        with self.assertRaisesRegex(AdapterError, "OUTSIDE_RETAINED"):
+            adapter.observe_action(action)
+        self.assertTrue(all(method == "GET" for method, _, _ in self.engine.calls))
+
+    def test_unhealthy_candidate_compensation_is_planned_but_start_still_requires_route(self):
+        original = copy.deepcopy(self.profile["compose"])
+        original["services"]["gateway"]["command"] = ["serve", "original"]
+        self.profile["original_compose"] = original
+        self.profile["compose"]["services"]["gateway"]["command"] = ["serve", "candidate"]
+        self.engine.container = self.container(original)
+        before = {**self.adapter().observe(), "config_digest": "1" * 64, "deployment_digest": "2" * 64}
+        forward = self.adapter().plan({"running": True, "config_digest": "3" * 64, "deployment_digest": "4" * 64}, before)
+        self.engine.container = self.container(self.profile["compose"], name="candidate", labels={
+            "local-hand.deploy.config": "3" * 64, "local-hand.deploy.deployment": "4" * 64})
+        def unavailable(_): raise RuntimeError("status unavailable")
+        adapter = GatewayAdapter(self.profile, self.runner, engine=self.engine, route_probe=unavailable)
+        restore = adapter.plan_restore(forward)
+        self.assertEqual(["gateway_stop", "gateway_remove", "gateway_create", "gateway_start"], [step["kind"] for step in restore])
+        self.assertEqual("original", adapter.observe_action(restore[0])["outcome"])
+        with self.assertRaisesRegex(RuntimeError, "status unavailable"):
+            adapter.observe_action(forward[-1])
+        with self.assertRaisesRegex(RuntimeError, "status unavailable"):
+            adapter.observe()
+
     def test_restore_retains_original_compose_and_verified_legacy_identity(self):
         original = copy.deepcopy(self.profile["compose"])
         original["services"]["gateway"]["command"] = ["serve", "original"]

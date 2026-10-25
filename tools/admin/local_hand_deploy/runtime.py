@@ -9,6 +9,7 @@ import copy
 import hashlib
 import os
 from pathlib import Path
+import re
 import socket
 import stat
 import struct
@@ -20,7 +21,7 @@ from local_hand_jobs import cli, maintenance, startup
 from . import files
 from .gateway import GatewayAdapter
 from .model import DeployError, PLAN_SCHEMA, canonical, decode, digest, seal_plan
-from .planner import PHASES, validate_profile
+from .planner import action_order, validate_profile
 from .services import SystemdAdapter, tree_snapshot
 from .supervision import SupervisedRunner
 
@@ -39,6 +40,8 @@ class PlanningEnvironment:
 
     def _probe(self, component, *, reconcile=False):
         spec = self.profile["probes"][component]
+        if spec["kind"] == "gateway":
+            return self._gateway_probe(component)
         path = Path(spec["socket"])
         for parent in path.parents:
             info = parent.lstat()
@@ -75,6 +78,55 @@ class PlanningEnvironment:
             raise DeployError("PROBE_INSTANCE_CHANGED", "Status process instance changed")
         return {"maintenance_supported": True, "loaded": loaded} if direct else result
 
+    def _gateway_instance(self, container_id=None):
+        adapter = self.gateway
+        if adapter.engine.request("GET", "/info").get("ID") != adapter.profile["daemon_id"]:
+            raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway daemon identity differs")
+        value = adapter.engine.request("GET", "/containers/" + (container_id or adapter.name) + "/json")
+        selected_id, state = value.get("Id"), value.get("State", {})
+        labels = value.get("Config", {}).get("Labels", {}) or {}
+        if (not isinstance(selected_id, str) or not re.fullmatch(r"[0-9a-f]{64}", selected_id)
+                or container_id is not None and selected_id != container_id
+                or labels.get("com.docker.compose.project") != adapter.project
+                or labels.get("com.docker.compose.service") != adapter.service
+                or state.get("Running") is not True or any(state.get(key) for key in ("Paused", "Restarting", "Dead"))
+                or type(state.get("Pid")) is not int or state["Pid"] <= 1):
+            raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway does not have its fixed running container instance")
+        pid = state["Pid"]
+        instance = startup.instance(pid)
+        namespace = next((line.split()[1:] for line in Path(f"/proc/{pid}/status").read_text().splitlines()
+                          if line.startswith("NSpid:")), [])
+        if (len(namespace) < 2 or namespace[0] != str(pid) or namespace[-1] != "1"
+                or any(os.stat(f"/proc/{pid}/ns/{kind}").st_ino == os.stat(f"/proc/self/ns/{kind}").st_ino
+                       for kind in ("pid", "mnt"))):
+            raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway must be PID 1 in its own container namespaces")
+        return {"container_id": selected_id, "instance": instance}
+
+    def _gateway_probe(self, component):
+        # Resolve through the actual Engine-selected PID 1, never a caller's
+        # container_id or a writable host mount containing a claimed proof.
+        spec = self.profile["probes"][component]
+        selected = self._gateway_instance()
+        expected = selected["instance"]
+        path = Path(f"/proc/{expected['pid']}/root") / spec["socket"].lstrip("/")
+        end = time.monotonic() + min(self.profile.get("timeout_seconds", 30), 10)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(max(0.01, end - time.monotonic()))
+            connection.connect(str(path))
+            pid, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if pid != expected["pid"] or uid != 0:
+                raise DeployError("UNTRUSTED_PROBE", "Gateway status listener is not the actual root container supervisor")
+            cli._send_frame(connection, {"action": "deployment_observe"}, deadline=end, limit=4096)
+            response = decode(cli._read_frame(connection, 65536, deadline=end))
+        loaded = response.get("result") if isinstance(response, dict) and "error" not in response else None
+        if (not isinstance(loaded, dict) or loaded.get("component") != component
+                or loaded.get("protocol_ready") is not True or loaded.get("namespace_pid") != 1
+                or type(loaded.get("public_ready")) is not bool
+                or any(loaded.get(key) != expected[key] for key in ("pid", "start_ticks", "boot_id"))
+                or selected != self._gateway_instance(selected["container_id"])):
+            raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway proof does not match the unchanged actual supervisor")
+        return {"maintenance_supported": True, "loaded": {**loaded, "container_id": selected["container_id"]}}
+
     def _loaded(self, unit):
         component = self.profile["systemd"]["units"][unit]["component"]
         value = self._probe(component)["loaded"]
@@ -107,7 +159,7 @@ class PlanningEnvironment:
             raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway status is not bound to the selected container")
         return {**value, "config_digest": value["configuration_digest"]}
 
-    def _verify_components(self, selection, candidates=None):
+    def _verify_components(self, selection, candidates=None, *, gateway_compose=None):
         candidates = candidates or {}
         members = {item["path"]: item["sha256"] for item in selection["members"]}
         total = 0
@@ -123,6 +175,27 @@ class PlanningEnvironment:
                 raise DeployError("UNGUARDED_ENTRY", "Guard configuration is outside the complete selection")
             config = decode(startup.protected_read(candidates.get(path, path), owner_uid=self.owner))
             expected = selection["components"][component]
+            if config.get("schema") == "local-hand-gateway-startup/v1":
+                from local_hand_mcp.gateway_guard import validate_config, configuration_binding
+                validate_config(config)
+                nginx_path = config["nginx_config"]
+                if nginx_path not in members:
+                    raise DeployError("UNGUARDED_ENTRY", "Gateway configuration is outside the complete selection")
+                binding = configuration_binding(config, read=lambda name: startup.protected_read(
+                    candidates.get(name, name), owner_uid=self.owner))
+                manager_sockets = {probe["socket"] for probe in self.profile["probes"].values()
+                                   if probe["kind"] in {"resident", "prepared"}}
+                if (component != "gateway" or self.profile["probes"][component]["kind"] != "gateway"
+                        or config["status_socket"] != self.profile["probes"][component]["socket"]
+                        or config["node_id"] != selection["node_id"]
+                        or config["deployment_digest"] != selection["deployment_digest"]
+                        or config["payload_digest"] != expected["payload_digest"]
+                        or startup.digest(binding) != expected["configuration_digest"]
+                        or config["manager_socket"] not in manager_sockets):
+                    raise DeployError("UNGUARDED_ENTRY", "Gateway actual inputs do not match its guarded startup selection")
+                self._manager_dependency(config["manager_socket"], selection, expected)
+                self._gateway_input_mounts(config, path, compose=gateway_compose)
+                continue
             if config.get("schema") == "local-hand-mcp-startup/v1":
                 inputs = config.get("inputs")
                 if (not isinstance(inputs, dict) or not {"config", "auth_config"} <= set(inputs)
@@ -145,6 +218,7 @@ class PlanningEnvironment:
                         or config.get("payload_digest") != expected["payload_digest"]
                         or config_digest != expected["configuration_digest"] or config.get("manager_socket") not in manager_sockets):
                     raise DeployError("UNGUARDED_ENTRY", "MCP actual inputs do not match its guarded startup selection")
+                self._manager_dependency(config["manager_socket"], selection, expected)
                 continue
             bound = config.get("maintenance", {})
             if (bound.get("schema") != maintenance.CONFIG_SCHEMA or bound.get("node_id") != selection["node_id"]
@@ -155,11 +229,51 @@ class PlanningEnvironment:
                     or config.get("installation", {}).get("installed", {}).get("payload_digest") != expected["payload_digest"]):
                 raise DeployError("UNGUARDED_ENTRY", "Actual configuration does not bind all selected maintenance/startup guards")
 
+    def _manager_dependency(self, socket_path, selection, expected):
+        managers = [name for name, probe in self.profile["probes"].items()
+                    if probe["kind"] in {"resident", "prepared"} and probe["socket"] == socket_path]
+        if len(managers) != 1 or (expected.get("running") and
+                selection["components"].get(managers[0], {}).get("running") is not True):
+            raise DeployError("UNGUARDED_ENTRY", "A running network listener needs its selected running startup manager")
+
+    def _gateway_input_mounts(self, config, guard_path, *, compose=None):
+        profile = self.profile["gateway"]
+        # Preserve the same absolute names across namespaces so the privileged
+        # manager and image validate the same selected bytes, not two aliases.
+        for compose in (compose if compose is not None else profile["compose"],):
+            service = compose["services"][profile["service"]]
+            if (service.get("entrypoint") != ["/opt/local-hand/gateway/bin/python", "-B", "-m", "local_hand_mcp.gateway_guard"]
+                    or service.get("command") != ["--config", guard_path] or service.get("user") != "0:0"
+                    or service.get("read_only", False) is not False
+                    or {str(cap).upper() for cap in service.get("cap_drop", [])} & {"ALL", "CHOWN", "SETUID", "SETGID"}
+                    or any(name.startswith("PYTHON") and name not in {"PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED"}
+                           for name in service.get("environment", {}))):
+                continue
+            if not any(int(port["target"]) == config["public_port"] for port in service.get("ports", [])):
+                continue
+            mounts = service.get("volumes", [])
+            def covered(name):
+                covering = [mount for mount in mounts
+                            if name == mount["target"] or Path(mount["target"]) in Path(name).parents]
+                if not covering:
+                    return False
+                deepest = max(len(Path(mount["target"]).parts) for mount in covering)
+                selected = [mount for mount in covering if len(Path(mount["target"]).parts) == deepest]
+                # A nested bind wins over a parent bind in the container. Do
+                # not validate the parent while ignoring a substituted input.
+                return (len(selected) == 1 and selected[0].get("read_only") is True
+                        and selected[0]["source"] == selected[0]["target"]
+                        and selected[0]["target"] != name)
+            if all(covered(name) for name in (guard_path, config["nginx_config"], config["manager_socket"])):
+                return
+        raise DeployError("UNGUARDED_ENTRY", "Gateway inputs and manager endpoint need identical protected read-only bindings")
+
     def validate_baseline(self, node_id, source, target, file_plan):
         current = startup.read_selection(self.profile["startup_descriptor"], owner_uid=self.owner)
         if current != source["selection"] or current["node_id"] != node_id:
             raise DeployError("BASELINE_CHANGED", "Stable startup selection changed before planning")
-        self._verify_components(source["selection"])
+        gateway = self.profile.get("gateway", {})
+        self._verify_components(source["selection"], gateway_compose=gateway.get("original_compose", gateway.get("compose")))
         candidates = {entry["target"]: entry["source"]["path"] for entry in file_plan["files"] if entry["source"] is not None}
         target_members = {member["path"] for member in target["selection"]["members"]}
         if any(entry["source"] is None and entry["target"] in target_members for entry in file_plan["files"]):
@@ -446,7 +560,7 @@ class ConcreteEnvironment(PlanningEnvironment):
                     if action["kind"] == "service_daemon_reload":
                         action["retained_files"] = objects
                     result.append({"step": {"id": "pending", "kind": kind, "action": action}, "prepared": _clone(action)})
-        result.sort(key=lambda item: PHASES[item["step"]["action"]["phase"]])
+        result.sort(key=lambda item: action_order(item["step"], self.profile))
         for number, item in enumerate(result):
             item["step"]["id"] = f"compensate-{number:03d}"
         return result
@@ -527,7 +641,10 @@ class ConcreteEnvironment(PlanningEnvironment):
 
     def check_local(self, op, rollback=False):
         selected = self._source(op) if rollback else op["plan"]["target"]
-        self._verify_components(selected["selection"])
+        gateway = self.profile.get("gateway", {})
+        original_gateway = self._origins(op)[0]["plan"]["profile"].get("gateway", {})
+        compose = original_gateway.get("original_compose", original_gateway.get("compose")) if rollback else gateway.get("compose")
+        self._verify_components(selected["selection"], gateway_compose=compose)
         current = self._current_selection()
         proofs = {}
         for component, desired in selected["selection"]["components"].items():
@@ -554,7 +671,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         if selected.get("gateway") is not None:
             value, target = self.gateway.observe(), selected["gateway"]
             if ((value["kind"] == "container") != target.get("present", True)
-                    or (value.get("status") == "running") != target["running"]):
+                    or (value.get("status") == "running") != target["running"]
+                    or value["kind"] == "container" and value.get("compose") != compose):
                 raise DeployError("GATEWAY_POSTCONDITION", "Gateway run/presence state differs from selection")
         return {"passed": True, "deployment_digest": selected["deployment_digest"], "loaded": proofs}
 
@@ -596,5 +714,10 @@ class ConcreteEnvironment(PlanningEnvironment):
                           **{key: original[key] for key in ("mode", "uid", "gid")}})
         source = _clone(op["plan"]["target"])
         source["selection"] = self._current_selection()
+        profile = _clone(self.profile)
+        if "gateway" in profile:
+            original = self._origins(op)[0]["plan"]["profile"]["gateway"]
+            profile["gateway"]["original_compose"] = profile["gateway"]["compose"]
+            profile["gateway"]["compose"] = _clone(original.get("original_compose", original["compose"]))
         return build_plan({"schema": MANIFEST_SCHEMA, "request_id": request_id, "node_id": op["plan"]["node_id"],
-                           "source": source, "target": self._source(op), "files": specs, "profile": self.profile}, self)
+                           "source": source, "target": self._source(op), "files": specs, "profile": profile}, PlanningEnvironment(profile))

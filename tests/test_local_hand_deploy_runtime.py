@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from admin.local_hand_deploy import files
 from admin.local_hand_deploy.model import DeployError, new_operation, seal_plan
@@ -227,6 +229,34 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(DeployError, "MCP startup configuration"):
             PlanningEnvironment(self.profile)._verify_components(selection)
 
+    def test_manager_starts_before_network_listener_in_forward_and_compensation(self):
+        # Deliberately list the dependent first. A failed first MCP start must
+        # not prevent every resume from ever reaching its management listener.
+        self.profile["probes"]["mcp"] = {"kind": "mcp", "socket": str(self.root / "mcp.sock")}
+        self.profile["guarded_components"]["mcp"] = {"configuration": str(self.config), "entrypoints": ["listener"]}
+        self.profile["systemd"] = {"reload_scope": {"roots": []}, "units": {"mcp.service": {"component": "mcp"},
+                                             "manager.service": {"component": "manager"}}}
+        for deployment in (self.source, self.target):
+            deployment["selection"]["components"]["mcp"] = copy.deepcopy(deployment["selection"]["components"]["manager"])
+            deployment["services"] = {"mcp.service": {}, "manager.service": {}}
+        starts = [{"kind": "service_start", "target": unit, "phase": "after_reload"}
+                  for unit in ("mcp.service", "manager.service")]
+        observer = SimpleNamespace(validate_baseline=lambda *_: None, plan_services=lambda *_: copy.deepcopy(starts))
+        plan = build_plan(self.manifest, environment=observer)
+        self.assertEqual(["manager.service", "mcp.service"],
+                         [item["action"]["target"] for item in plan["steps"] if item["kind"] == "service"])
+        store = self.store()
+        environment = ConcreteEnvironment(plan, store, self.gate)
+        environment._services = SimpleNamespace(plan_restore=lambda *_args, **_kwargs: copy.deepcopy(starts))
+        with store.locked():
+            operation = store.create(plan)
+            for step, record in zip(plan["steps"], operation["steps"]):
+                if step["kind"] == "service":
+                    record["prepared"] = copy.deepcopy(step["action"])
+                    record["effective"] = True
+            restored = environment.prepare_compensation(operation)
+        self.assertEqual(["manager.service", "mcp.service"], [item["step"]["action"]["target"] for item in restored])
+
     def unit_plan(self):
         units = self.root / "units"
         units.mkdir(mode=0o700)
@@ -245,6 +275,20 @@ class RuntimeTests(unittest.TestCase):
             {"id": "manager-reload", "kind": "service", "action": {"kind": "service_daemon_reload",
             "target": "manager", "before": before, "after": after, "phase": "after_files", "subeffects": ["manager_reload"]}}]
         return seal_plan(plan), unit
+
+    def test_committed_rollback_reverses_exact_gateway_profiles(self):
+        plan = build_plan(self.manifest)
+        old = {"services": {"gateway": {"image": "retained-original"}}}
+        new = {"services": {"gateway": {"image": "committed-target"}}}
+        plan["profile"]["gateway"] = {"compose": new, "original_compose": old}
+        environment = ConcreteEnvironment(plan, self.store(), self.gate)
+        operation = {"plan": plan, "steps": [], "inherited": []}
+        with patch("admin.local_hand_deploy.planner.build_plan", side_effect=lambda manifest, observer: (manifest, observer)):
+            manifest, observer = environment.restored_plan(operation, "restore-original")
+        self.assertEqual(old, manifest["profile"]["gateway"]["compose"])
+        self.assertEqual(new, manifest["profile"]["gateway"]["original_compose"])
+        self.assertIs(manifest["profile"], observer.profile)
+        self.assertEqual(new, environment.profile["gateway"]["compose"])
 
     def test_reload_retains_exact_failed_preparation_objects(self):
         plan, unit = self.unit_plan()

@@ -203,7 +203,7 @@ class GatewayAdapter:
             return False
         return all(actual_networks[name].get("NetworkID") == network_id for name, network_id in prerequisites["networks"].items())
 
-    def observe(self):
+    def observe(self, *, require_route=True):
         prerequisites = self.prerequisites()
         value = self.engine.request("GET", "/containers/" + _quote(self.name) + "/json", missing=True)
         if value is None:
@@ -223,7 +223,11 @@ class GatewayAdapter:
             status = "transition"
         else:
             status = "running" if state.get("Running") else "stopped"
-        route = self.route_probe(value["Id"]) if self.route_probe is not None else None
+        # A stopped container has no live status listener. Its durable inspect
+        # state is sufficient for create/stop/absence recovery; readiness is
+        # required only for a running instance.
+        route = (self.route_probe(value["Id"]) if require_route and self.route_probe is not None
+                 and status == "running" else None)
         return {"kind": "container", "id": value["Id"], "daemon_id": prerequisites["daemon_id"],
                 "status": status, "image_id": value.get("Image"), "labels": labels,
                 "started_at": state.get("StartedAt"), "finished_at": state.get("FinishedAt"),
@@ -249,9 +253,9 @@ class GatewayAdapter:
         return value
 
     def plan(self, target, baseline=None):
-        before = self.observe() if baseline is None else baseline
         if target.get("running") not in (True, False) or not isinstance(target.get("present", True), bool):
             raise AdapterError("GATEWAY_TARGET")
+        before = self.observe(require_route=target["running"] and target.get("present", True)) if baseline is None else baseline
         if before.get("status") == "transition":
             raise AdapterError("GATEWAY_TRANSITION_PENDING")
         desired = {"present": True, **target}
@@ -288,7 +292,7 @@ class GatewayAdapter:
                for value in configuration.values()):
             raise AdapterError("ORIGINAL_GATEWAY_CONFIGURATION_BINDING_REQUIRED")
         restored = self._using(old["compose"])
-        current = restored.observe() if observations is None else observations
+        current = restored.observe(require_route=False) if observations is None else observations
         current = self._retain_original_binding(current, old)
         return restored.plan({"present": True, "running": old["status"] == "running",
                               **configuration}, current)
@@ -308,8 +312,8 @@ class GatewayAdapter:
         if supervised and not supervised["closed"]:
             return {"outcome": "running", "closed": False, "postcondition": False, "supervision": supervised,
                     "dispatched": None}
-        value = self._retain_original_binding(self.observe(), action["before"])
         kind = action["kind"]
+        value = self._retain_original_binding(self.observe(require_route=kind not in {"gateway_stop", "gateway_remove"}), action["before"])
         result = supervised and supervised.get("result") or {}
         dispatch_recorded = supervised and any(event.get("kind") == "engine_dispatch" for event in supervised["events"])
         completed = previous is None or result.get("status") == "returned" or not dispatch_recorded
@@ -330,7 +334,16 @@ class GatewayAdapter:
                 route = value.get("route") or {}
                 target = (target and value.get("status") == "running" and route.get("container_id") == value["id"]
                           and route.get("config_digest") == action["after"]["config_digest"] and route.get("protocol_ready") is True)
-        original = value == action["before"]
+        # Losing a live status endpoint must not prevent stopping the exact
+        # frozen container. Engine identity/config remain fully checked above;
+        # readiness is required for start and final commit, not for isolation.
+        if kind in {"gateway_stop", "gateway_remove"}:
+            def frozen(observation):
+                normalized = {**observation, **self._configuration(observation)}
+                return {key: val for key, val in normalized.items() if key != "route"}
+            original = frozen(value) == frozen(action["before"])
+        else:
+            original = value == action["before"]
         # An acknowledged fixed Engine operation is synchronous at this API
         # boundary. Lost response may be adopted ONLY for its exact target; no
         # retry against original/absent state without daemon-side completion proof.
@@ -397,8 +410,8 @@ class GatewayAdapter:
         if adapter is not self:
             return adapter._perform(action, emit)
         self.prerequisites(starting=action["kind"] == "gateway_start")
-        value = self.observe()
         kind = action["kind"]
+        value = self.observe(require_route=kind not in {"gateway_stop", "gateway_remove"})
         if kind == "gateway_create":
             if value["kind"] != "absent":
                 raise AdapterError("GATEWAY_CREATE_TARGET_OCCUPIED")

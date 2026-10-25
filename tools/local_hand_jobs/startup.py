@@ -413,3 +413,90 @@ def remote_authorization(socket_path):
             raise JobError("STARTUP_UNKNOWN", "MCP socket startup was not acknowledged")
     finally:
         connection.close()
+
+
+def serve_gateway_authorization(connection, config, gate, *, peer_pid, peer_uid, mode):
+    """Admit only the fixed root gateway, binding its host process identity.
+
+    Container IDs and namespace PIDs are never accepted as identity evidence.
+    The deployment observer separately joins SO_PEERCRED to Engine State.Pid.
+    The existing MCP handshake retains its narrower local-only contract.
+    """
+    if peer_uid != 0 or mode not in {'candidate', 'public'}:
+        raise JobError('UNAUTHORIZED', 'Gateway startup requires its fixed root peer and mode')
+    deadline = time.monotonic() + (1 if mode == 'public' else 30)
+    with gate.admission_lock() as state:
+        path = config['maintenance']['startup_descriptor']
+        if mode == 'public':
+            current = read_selection(path, owner_uid=gate.owner_uid)
+            if (current['mode'] != 'stable'
+                    or current['components'].get('gateway', {}).get('entry') != 'public'
+                    or state['deployment_digest'] != current['deployment_digest']
+                    or state['decision_id'] != current['decision_id']):
+                raise JobError('STARTUP_MISMATCH', 'Public gateway needs the released stable selection')
+        selected = _admit_selection(path, state, 'gateway', peer_pid, owner_uid=gate.owner_uid)
+        host_instance = instance(peer_pid)
+        _frame_send(connection, {'admitted': True, 'selection': selected,
+                                  'host_instance': host_instance}, deadline)
+        request = _frame_read(connection, deadline)
+        if (not isinstance(request, dict) or set(request) != {'action', 'proof'}
+                or request['action'] != 'startup_bound' or not isinstance(request['proof'], dict)):
+            raise JobError('STARTUP_MISMATCH', 'Gateway completion is not bound')
+        proof = request['proof']
+        expected = selected['components']['gateway']
+        if (proof.get('component') != 'gateway' or proof.get('entry') != ('public' if mode == 'public' else 'local')
+                or any(proof.get(key) != value for key, value in host_instance.items())
+                or instance(peer_pid) != host_instance
+                or proof.get('node_id') != selected['node_id']
+                or proof.get('deployment_digest') != selected['deployment_digest']
+                or any(proof.get(key) != expected[key] for key in ('configuration_digest', 'payload_digest'))):
+            raise JobError('STARTUP_MISMATCH', 'Gateway loaded configuration or host instance differs')
+        _frame_send(connection, {'bound': True, 'descriptor_digest': digest(selected)}, deadline)
+
+
+@contextmanager
+def remote_gateway_authorization(socket_path, *, mode='candidate'):
+    """Keep one local/public gateway bind inside the root admission lock."""
+    if mode not in {'candidate', 'public'}:
+        raise JobError('STARTUP_MISMATCH', 'Unsupported fixed gateway startup mode')
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    # Public admission is renewed by the gateway's status loop. Keep a stalled
+    # manager from blocking that local recovery endpoint for a startup window.
+    duration = 1 if mode == 'public' else 30
+    deadline = time.monotonic() + duration
+    try:
+        connection.settimeout(duration)
+        connection.connect(str(socket_path))
+        _, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if uid != 0:
+            raise JobError('STARTUP_MISMATCH', 'Gateway startup manager is not the root service')
+        _frame_send(connection, {'action': 'startup_authorize', 'component': 'gateway', 'mode': mode}, deadline)
+        response = _frame_read(connection, deadline)
+        if (not isinstance(response, dict) or set(response) != {'admitted', 'selection', 'host_instance'}
+                or response.get('admitted') is not True):
+            raise JobError('STARTUP_MISMATCH', 'Gateway startup was not admitted')
+        selected, host = response['selection'], response['host_instance']
+        validate(selected)
+        if (not isinstance(host, dict) or set(host) != {'pid', 'start_ticks', 'boot_id'}
+                or type(host['pid']) is not int or host['pid'] <= 0
+                or type(host['start_ticks']) is not int or host['start_ticks'] <= 0
+                or not isinstance(host['boot_id'], str) or re.fullmatch(r'[0-9a-f-]{36}', host['boot_id']) is None
+                or mode == 'public' and selected['mode'] != 'stable'):
+            raise JobError('STARTUP_MISMATCH', 'Gateway host identity or selection is invalid')
+        acknowledged = False
+        def bound(proof):
+            nonlocal acknowledged
+            if (acknowledged or not isinstance(proof, dict)
+                    or any(proof.get(key) != value for key, value in host.items())):
+                raise JobError('STARTUP_MISMATCH', 'Gateway acknowledgement has a different host instance')
+            _frame_send(connection, {'action': 'startup_bound', 'proof': proof}, deadline)
+            result = _frame_read(connection, deadline)
+            if (not isinstance(result, dict) or set(result) != {'bound', 'descriptor_digest'}
+                    or result.get('bound') is not True or result.get('descriptor_digest') != digest(selected)):
+                raise JobError('STARTUP_MISMATCH', 'Gateway startup acknowledgement is missing')
+            acknowledged = True
+        yield selected, host, bound
+        if not acknowledged:
+            raise JobError('STARTUP_UNKNOWN', 'Gateway socket startup was not acknowledged')
+    finally:
+        connection.close()

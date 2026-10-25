@@ -7,9 +7,11 @@ import os
 import sys
 
 from local_hand_jobs.maintenance import MaintenanceGate
+from local_hand_jobs.contract import JobError
 from local_hand_jobs.startup import protected_read
 
 from .checks import check_public
+from .bootstrap import adopt_bootstrap, build_bootstrap_plan, is_bootstrap, rollback_bootstrap
 from .coordinator import Coordinator
 from .identity import implementation_identity
 from .model import DeployError, decode, validate_plan
@@ -30,6 +32,8 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init-state", help="Explicit create-only initialization; does not open admission")
     commands.add_parser("plan").add_argument("manifest")
+    commands.add_parser("bootstrap-plan", help="Read-only offline compatibility import plan").add_argument("manifest")
+    commands.add_parser("bootstrap-adopt", help="Resume verified stopped compatibility import").add_argument("plan")
     commands.add_parser("apply").add_argument("plan")
     commands.add_parser("status").add_argument("operation", nargs="?")
     for name in ("resume", "rollback"):
@@ -40,9 +44,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         implementation = (implementation_identity() if args.command in
-                          {"apply", "resume", "rollback", "supersede", "init-state"} else None)
+                          {"apply", "resume", "rollback", "supersede", "init-state", "bootstrap-adopt"} else None)
         if args.command == "plan":
             result = build_plan(read_document(args.manifest))
+        elif args.command == "bootstrap-plan":
+            result = build_bootstrap_plan(read_document(args.manifest))
         elif args.command == "check-public":
             result = check_public(read_document(args.specification))
         else:
@@ -61,7 +67,7 @@ def main(argv=None):
                                            owner_uid=profile.get("owner_uid", 0))
                     result.append(report(operation, admission=admission_view(gate)))
             else:
-                if args.command == "apply":
+                if args.command in {"apply", "bootstrap-adopt"}:
                     plan = validate_plan(read_document(args.plan))
                 else:
                     plan = store.get(args.operation)["plan"]
@@ -70,6 +76,18 @@ def main(argv=None):
                 profile = plan["profile"]
                 gate = MaintenanceGate(profile["maintenance_directory"], args.node,
                                        owner_uid=profile.get("owner_uid", 0))
+                if is_bootstrap(plan):
+                    if args.command in {"bootstrap-adopt", "resume"}:
+                        operation = adopt_bootstrap(store, plan, implementation=implementation)
+                    elif args.command == "rollback":
+                        operation = rollback_bootstrap(store, args.operation)
+                    else:
+                        raise DeployError("BOOTSTRAP_SCOPE", "Use bootstrap-adopt/resume or isolated rollback for this import")
+                    result = report(operation, admission=admission_view(gate))
+                    print(json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2))
+                    return 3 if operation["waiting"] else 0
+                if args.command == "bootstrap-adopt":
+                    raise DeployError("BOOTSTRAP_SCOPE", "Expected an offline import plan")
                 coordinator = Coordinator(store, gate, ConcreteEnvironment(plan, store, gate), implementation=implementation)
                 if args.command == "apply":
                     operation = coordinator.apply(plan)
@@ -80,7 +98,7 @@ def main(argv=None):
                 result = report(operation, admission=admission_view(gate))
         print(json.dumps(result, ensure_ascii=True, sort_keys=True, indent=2))
         return 0 if not isinstance(result, dict) or not result.get("recovery", {}).get("waiting") else 3
-    except (OSError, RuntimeError, ValueError) as error:
+    except (OSError, RuntimeError, ValueError, JobError) as error:
         # Private tools may record detailed raw errors separately. Never put
         # source paths, URLs, credentials or command output in this public form.
         print(json.dumps({"status": "NOT_COMPLETED", "error": getattr(error, "code", type(error).__name__)}), file=sys.stderr)

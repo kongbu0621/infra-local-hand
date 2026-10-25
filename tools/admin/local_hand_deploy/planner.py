@@ -19,6 +19,16 @@ PHASES = {"isolate": 0, "quiesced_before_files": 10, "after_stop": 20,
           "files": 30, "after_files": 40, "after_reload": 50, "after_create": 60}
 
 
+def action_order(item, profile):
+    # Both forward and compensating starts must bring up the authorization
+    # manager before MCP, independent of insertion order in a manifest.
+    action = item["action"]
+    component = profile.get("systemd", {}).get("units", {}).get(action.get("target"), {}).get("component")
+    manager_start = (item["kind"] == "service" and action.get("kind") == "service_start"
+                     and profile["probes"].get(component, {}).get("kind") in {"resident", "prepared"})
+    return PHASES[action["phase"]], 0 if manager_start else 1
+
+
 def _path(value):
     if (not isinstance(value, str) or not Path(value).is_absolute()
             or str(Path(value)) != value or ".." in Path(value).parts):
@@ -59,11 +69,14 @@ def validate_profile(profile, source, target):
             raise DeployError("UNGUARDED_ENTRY", "Preparation, first execution and local CLI share one barrier")
         probe = probes[name]
         if (not isinstance(probe, dict) or set(probe) - {"kind", "socket", "principal_id", "peer_uid"}
-                or probe.get("kind") not in {"resident", "prepared", "mcp"}):
+                or probe.get("kind") not in {"resident", "prepared", "mcp", "gateway"}):
             raise DeployError("UNSUPPORTED_PROBE", "Only the protected deployment-status protocol is supported")
         _path(probe.get("socket"))
         if type(probe.get("peer_uid", 0)) is not int or probe.get("peer_uid", 0) < 0:
             raise DeployError("UNSUPPORTED_PROBE", "Invalid status peer")
+        if probe["kind"] == "gateway" and (name != "gateway" or probe.get("peer_uid", 0) != 0
+                or profile.get("gateway", {}).get("component") != name or "principal_id" in probe):
+            raise DeployError("UNSUPPORTED_PROBE", "Gateway status requires its fixed root container supervisor")
     support = profile.get("filesystem_support")
     if (not isinstance(support, dict) or set(support) != {"ordinary_handles", "fsid", "reboot_verified"}
             or any(support[key] is not True for key in support)):
@@ -137,7 +150,7 @@ def build_plan(manifest, environment=None):
             actions.append({"kind": "gateway", "action": action})
     if any(item["action"].get("phase") not in PHASES for item in actions):
         raise DeployError("INVALID_PLAN", "Adapter returned an unknown deployment phase")
-    actions.sort(key=lambda item: PHASES[item["action"]["phase"]])
+    actions.sort(key=lambda item: action_order(item, profile))
     steps = [{"id": f"step-{number:03d}", **item} for number, item in enumerate(actions)]
     return seal_plan({"schema": PLAN_SCHEMA, "request_id": manifest["request_id"],
                       "node_id": manifest["node_id"], "source": source, "target": target,

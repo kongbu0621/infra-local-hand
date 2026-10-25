@@ -602,6 +602,13 @@ def serve(config):
                             raise JobError('UNSUPPORTED','Legacy service has no startup selection authority')
                         startup.serve_authorization(connection,config,service.maintenance_gate,peer_pid=peer_pid)
                         continue
+                    if uid==0 and request in ({'action':'startup_authorize','component':'gateway','mode':'candidate'},
+                                               {'action':'startup_authorize','component':'gateway','mode':'public'}):
+                        if service.maintenance_gate is None:
+                            raise JobError('UNSUPPORTED','Legacy service has no gateway startup authority')
+                        startup.serve_gateway_authorization(connection,config,service.maintenance_gate,
+                            peer_pid=peer_pid,peer_uid=uid,mode=request['mode'])
+                        continue
                     if uid==0 and request in ({'action':'deployment_status'},{'action':'deployment_observe'}):
                         with service.fence:
                             result=(service.deployment_status() if request['action']=='deployment_status'
