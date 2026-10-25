@@ -65,7 +65,7 @@ def _protected_directory(path, *, owner_uid=0):
         raise
 
 
-def protected_read(path, *, owner_uid=0, maximum=MAX_BYTES):
+def protected_read(path, *, owner_uid=0, maximum=MAX_BYTES, required_uid=None):
     path = Path(path)
     directory = None
     try:
@@ -75,6 +75,7 @@ def protected_read(path, *, owner_uid=0, maximum=MAX_BYTES):
             before = os.fstat(fd)
             if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
                     or before.st_uid not in (0, owner_uid) or before.st_mode & 0o022
+                    or required_uid is not None and before.st_uid != required_uid
                     or before.st_size > maximum):
                 raise ValueError("unprotected or oversized file")
             chunks = []; remaining = maximum + 1
@@ -131,7 +132,10 @@ def validate(value):
         raise ValueError("selection schema")
     paths = set()
     for member in value["members"]:
-        if (not isinstance(member, dict) or set(member) != {"path", "sha256"}
+        if (not isinstance(member, dict) or not {"path", "sha256"} <= set(member)
+                or set(member) - {"path", "sha256", "owner_uid"}
+                or "owner_uid" in member and (type(member["owner_uid"]) is not int
+                    or not 0 <= member["owner_uid"] < 2**32 - 1)
                 or not isinstance(member["path"], str) or not Path(member["path"]).is_absolute()
                 or ".." in Path(member["path"]).parts or member["path"] in paths
                 or not isinstance(member["sha256"], str) or _HEX.fullmatch(member["sha256"]) is None):
@@ -170,7 +174,10 @@ def verify_members(value, *, owner_uid=0):
     validate(value)
     total = 0
     for member in value["members"]:
-        raw = protected_read(member["path"], owner_uid=owner_uid)
+        # The privileged selection binds the original data owner explicitly.
+        # Absence retains the legacy administrator-owned configuration rule.
+        raw = protected_read(member["path"], owner_uid=member.get("owner_uid", owner_uid),
+                             required_uid=member.get("owner_uid"))
         total += len(raw)
         if total > 64 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != member["sha256"]:
             raise JobError("STARTUP_MISMATCH", "The complete configuration set differs from the selection")

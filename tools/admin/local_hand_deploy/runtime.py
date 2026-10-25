@@ -210,10 +210,58 @@ class PlanningEnvironment:
     def _verify_components(self, selection, candidates=None, *, gateway_compose=None):
         candidates = candidates or {}
         members = {item["path"]: item["sha256"] for item in selection["members"]}
+        owners = {item["path"]: item.get("owner_uid", self.owner) for item in selection["members"]}
+        # Read control configurations only with the administrator identity.
+        # A member cannot delegate ownership of its own startup authority.
+        configurations = {}
+        control_paths = set()
+        for component, guard in self.profile["guarded_components"].items():
+            path = guard["configuration"]
+            if path not in members or owners[path] != self.owner:
+                raise DeployError("UNGUARDED_ENTRY", "Startup controls require the deployment owner")
+            raw = startup.protected_read(candidates.get(path, path), owner_uid=self.owner)
+            if hashlib.sha256(raw).hexdigest() != members[path]:
+                raise DeployError("CONFIGURATION_CHANGED", "Startup control differs from selection")
+            configurations[component] = decode(raw)
+            control_paths.add(path)
+        policy_owners = {}
+        for config in configurations.values():
+            if config.get("schema") == "local-hand-gateway-startup/v1":
+                control_paths.add(config.get("nginx_config"))
+            if config.get("schema") != "local-hand-mcp-startup/v1":
+                continue
+            inputs = config.get("inputs")
+            if (not isinstance(inputs, dict) or not {"config", "auth_config"} <= set(inputs)
+                    or config.get("mode") not in {"resident", "prepared_task", "read_only"}
+                    or set(inputs) != ({"config", "auth_config"} if config.get("mode") == "read_only"
+                                       else {"config", "auth_config", config.get("mode")})
+                    or any(not isinstance(path, str) for path in inputs.values())):
+                raise DeployError("UNGUARDED_ENTRY", "MCP startup configuration is incomplete")
+            control_paths.update(path for name, path in inputs.items() if name != "config")
+            managers = [name for name, probe in self.profile["probes"].items()
+                        if probe["kind"] in {"resident", "prepared"}
+                        and probe["socket"] == config.get("manager_socket")]
+            if len(managers) != 1 or managers[0] not in configurations:
+                raise DeployError("UNGUARDED_ENTRY", "MCP policy needs one selected manager identity")
+            uid = configurations[managers[0]].get("uid", self.owner)
+            if type(uid) is not int or not 0 <= uid < 2**32 - 1:
+                raise DeployError("UNGUARDED_ENTRY", "Invalid task policy owner")
+            path = inputs["config"]
+            if path in policy_owners and policy_owners[path] != uid:
+                raise DeployError("UNGUARDED_ENTRY", "Policy has conflicting manager identities")
+            policy_owners[path] = uid
+        for member in selection["members"]:
+            path, uid = member["path"], owners[member["path"]]
+            if (path in policy_owners and "owner_uid" in member
+                    and (path in control_paths or policy_owners[path] != uid)
+                    or uid != self.owner and (path in control_paths or policy_owners.get(path) != uid)):
+                raise DeployError("UNGUARDED_ENTRY", "Only the selected task policy may bind its data owner")
         total = 0
-        for path, expected in members.items():
+        for member in selection["members"]:
+            path, expected = member["path"], member["sha256"]
             actual_path = candidates.get(path, path)
-            raw = startup.protected_read(actual_path, owner_uid=self.owner, maximum=4 * 1024 * 1024)
+            raw = startup.protected_read(actual_path, owner_uid=owners[path],
+                                         required_uid=member.get("owner_uid"), maximum=4 * 1024 * 1024)
             total += len(raw)
             if total > 64 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != expected:
                 raise DeployError("CONFIGURATION_CHANGED", "Complete configuration member differs from selection")
@@ -245,21 +293,14 @@ class PlanningEnvironment:
                 self._gateway_input_mounts(config, path, compose=gateway_compose)
                 continue
             if config.get("schema") == "local-hand-mcp-startup/v1":
-                inputs = config.get("inputs")
-                if (not isinstance(inputs, dict) or not {"config", "auth_config"} <= set(inputs)
-                        or set(inputs) - {"config", "auth_config", "resident", "prepared_task"}
-                        or config.get("mode") not in {"resident", "prepared_task", "read_only"}
-                        or set(inputs) != ({"config", "auth_config"} if config.get("mode") == "read_only"
-                                           else {"config", "auth_config", config.get("mode")})
-                        ):
-                    raise DeployError("UNGUARDED_ENTRY", "MCP startup configuration is incomplete")
+                inputs = config["inputs"]
                 from local_hand_mcp.startup_guard import listener_binding
                 listener = listener_binding(config)
                 bindings = {}
                 for name, input_path in inputs.items():
                     if input_path not in members:
                         raise DeployError("UNGUARDED_ENTRY", "MCP input is outside the complete selection")
-                    raw = startup.protected_read(candidates.get(input_path, input_path), owner_uid=self.owner)
+                    raw = startup.protected_read(candidates.get(input_path, input_path), owner_uid=owners[input_path])
                     bindings[name] = {"path": input_path, "sha256": hashlib.sha256(raw).hexdigest()}
                 config_digest = startup.digest({"inputs": bindings, "mode": config["mode"], **listener})
                 manager_sockets = {probe["socket"] for probe in self.profile["probes"].values()
