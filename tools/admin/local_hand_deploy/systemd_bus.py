@@ -72,7 +72,22 @@ class SystemdBus:
         self.lib.sd_bus_flush_close_unref(self.bus)
 
     def _append(self, message, signature, value):
-        if signature == "as":
+        if signature == "a(sv)":
+            # Internal convenience for SetUnitProperties' a(sv): resource
+            # properties are explicitly uint64, never caller-selected variants.
+            self._check(self.lib.sd_bus_message_open_container(message, b"a", b"(sv)"))
+            for name, number in value:
+                if type(number) is not int or not 0 <= number < 2**64:
+                    raise AdapterError("SYSTEMD_ARGUMENT_TYPE")
+                self._check(self.lib.sd_bus_message_open_container(message, b"r", b"sv"))
+                self._append(message, "s", name)
+                self._check(self.lib.sd_bus_message_open_container(message, b"v", b"t"))
+                data = C.c_uint64(number)
+                self._check(self.lib.sd_bus_message_append_basic(message, b"t", C.byref(data)))
+                self._check(self.lib.sd_bus_message_close_container(message))
+                self._check(self.lib.sd_bus_message_close_container(message))
+            self._check(self.lib.sd_bus_message_close_container(message))
+        elif signature == "as":
             self._check(self.lib.sd_bus_message_open_container(message, b"a", b"s"))
             for item in value:
                 self._append(message, "s", item)
