@@ -291,6 +291,18 @@ profile 的 `schema` 为 `local-hand-deployment-profile/v1`。必须有
 停止仍使用 `fail`，未声明画像仍保持原限制。此模式要求受管服务写入方共用节点维护锁；不能用来
 替代启动守卫、协议就绪检查或放行未声明 hook。无绑定的既有画像默认启动模式为 `fail`。
 
+固定受管服务的 `read_only_dependencies` 若引用另一受管服务，计划按该有限依赖图启动、反向停止；
+MCP 对管理器授权协议的依赖也进入顺序。普通停止先关网关，再停 MCP、管理器；补偿使用相同规则。
+环依赖在计划阶段拒绝，外部依赖不会自动成为部署动作。`Requires`／`Requisite` 的反向停止影响须已声明；
+被影响的受管服务须先以自己的停止动作闭合，仍活动、有作业或来自范围外的依赖方会在派发前拒绝。
+`Upholds`／`UpheldBy` 等自动拉起关系未列入支持画像，不能借其绕过上述顺序与启动守卫。
+
+受守卫的常驻管理器启动 hook 使用 `resident_service --config <受保护配置> --check-host`，只核对已经准备好的
+系统切片、用户管理器及实际 cgroup 限额。它不启动资源、不重设限额，也不把旧任务仍存在误判为需要初始化。
+带 `maintenance` 的配置禁止调用 `--initialize-host`。旧初始化入口仍供原部署的显式环境准备使用；
+迁移和重启方案必须另外安排并验证环境准备，不能把改成只读检查等同于已经解决自动开机依赖。
+网络就绪 hook 的精确程序和只读影响仍需列入选定画像。
+
 网关 `probe.kind` 为 `gateway`，`socket` 是容器内受保护状态路径，`peer_uid` 固定为 0；
 宿主从准确容器的 `State.Pid` 定位 `/proc/PID/root` 下的 socket，并复核 PID namespace 和进程身份。
 正在运行的 MCP/网关必须绑定运行中的管理器。网关的守卫 JSON、nginx 配置和 manager socket

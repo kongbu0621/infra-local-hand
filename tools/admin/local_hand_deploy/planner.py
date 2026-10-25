@@ -20,6 +20,7 @@ PHASES = {"isolate": 0, "quiesced_before_files": 10, "after_stop": 20,
 
 
 def validate_schedule(plan):
+    service_order(plan["profile"])
     phases = {"service_stop": {"quiesced_before_files"}, "service_start": {"after_reload"},
               "service_policy_link": {"files"}, "service_daemon_reload": {"after_files"},
               "gateway_stop": {"quiesced_before_files", "isolate"}, "gateway_remove": {"after_stop"},
@@ -35,14 +36,40 @@ def validate_schedule(plan):
         raise DeployError("INVALID_SCHEDULE", "Plan actions are outside the fixed dependency order")
 
 
+def service_order(profile):
+    """Order only the fixed managed set; never turn external dependencies into actions."""
+    units = profile.get("systemd", {}).get("units", {})
+    dependencies = {name: set(spec.get("read_only_dependencies", [])) & set(units)
+                    for name, spec in units.items()}
+    # MCP also depends on the manager's authorization protocol when the unit
+    # does not encode that relationship as a systemd dependency.
+    managers = {name for name, spec in units.items()
+                if profile.get("probes", {}).get(spec.get("component"), {}).get("kind") in {"resident", "prepared"}}
+    for name, spec in units.items():
+        if profile.get("probes", {}).get(spec.get("component"), {}).get("kind") == "mcp":
+            dependencies[name].update(managers)
+    ordered = []
+    while dependencies:
+        ready = sorted(name for name, required in dependencies.items() if not required)
+        if not ready:
+            raise DeployError("UNSUPPORTED_SERVICE_GRAPH", "Fixed managed service dependencies contain a cycle")
+        ordered.extend(ready)
+        for name in ready:
+            del dependencies[name]
+        for required in dependencies.values():
+            required.difference_update(ready)
+    return {name: index for index, name in enumerate(ordered)}
+
+
 def action_order(item, profile):
-    # Both forward and compensating starts must bring up the authorization
-    # manager before MCP, independent of insertion order in a manifest.
     action = item["action"]
-    component = profile.get("systemd", {}).get("units", {}).get(action.get("target"), {}).get("component")
-    manager_start = (item["kind"] == "service" and action.get("kind") == "service_start"
-                     and profile["probes"].get(component, {}).get("kind") in {"resident", "prepared"})
-    return PHASES[action["phase"]], 0 if manager_start else 1
+    ranks = service_order(profile)
+    rank = ranks.get(action.get("target"), 0)
+    if action.get("kind") == "gateway_stop":
+        rank = -len(ranks) - 1
+    elif action.get("kind") == "service_stop":
+        rank = -rank
+    return PHASES[action["phase"]], rank
 
 
 def _path(value):
@@ -60,6 +87,7 @@ def validate_profile(profile, source, target):
     if (not isinstance(profile, dict) or set(profile) - allowed
             or profile.get("schema") != PROFILE_SCHEMA):
         raise DeployError("UNSUPPORTED_PROFILE", "Unknown deployment support profile")
+    service_order(profile)
     for key in ("startup_descriptor", "maintenance_directory"):
         _path(profile.get(key))
     owner = profile.get("owner_uid", 0)

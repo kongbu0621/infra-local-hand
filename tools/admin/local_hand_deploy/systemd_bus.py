@@ -136,8 +136,9 @@ class SystemdBus:
     def unit(self, name):
         path = self.call("LoadUnit", (("s", name),))[0]
         properties = self.properties(path, "org.freedesktop.systemd1.Unit")
-        if properties.get("LoadState") == "loaded" and name.endswith(".service"):
-            properties.update(self.properties(path, "org.freedesktop.systemd1.Service"))
+        interface = {"service": "Service", "slice": "Slice"}.get(name.rsplit(".", 1)[-1])
+        if properties.get("LoadState") == "loaded" and interface is not None:
+            properties.update(self.properties(path, "org.freedesktop.systemd1." + interface))
         if isinstance(properties.get("InvocationID"), list):
             properties["InvocationID"] = bytes(properties["InvocationID"]).hex()
         if name.endswith(".service"):

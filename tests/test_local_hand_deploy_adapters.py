@@ -64,6 +64,16 @@ class UnitObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterError, "SHARED_DEPENDENCY_NOT_READY"):
             adapter._snapshot(bus, "fixture.service", starting=True)
 
+    def test_slice_cgroup_is_read_from_its_type_interface(self):
+        class Bus(self.Bus):
+            def properties(self, path, interface):
+                if interface.endswith(".Slice"):
+                    return {"ControlGroup": "/fixture.slice", "MemoryMax": 1024}
+                return super().properties(path, interface)
+        bus = Bus({"LoadState": "loaded", "ActiveState": "active"})
+        self.assertEqual("/fixture.slice", bus.unit("fixture.slice")["ControlGroup"])
+        self.assertNotIn("GetUnitFileState", bus.methods)
+
     def test_service_file_state_errors_are_not_suppressed(self):
         for errno in (2, 13):
             with self.subTest(errno=errno):
@@ -127,6 +137,7 @@ class ReadOnlyBindingTests(unittest.TestCase):
 
     def test_unrelated_propagation_and_hooks_remain_rejected(self):
         for change in ({"BoundBy": ["other.service"]}, {"PartOf": ["other.service"]},
+                       {"Upholds": ["other.service"]}, {"UpheldBy": ["other.service"]},
                        {"ExecStartPre": [["/unexpected", ["/unexpected"], False]]}):
             with self.subTest(change=change):
                 original = self.value
@@ -134,6 +145,29 @@ class ReadOnlyBindingTests(unittest.TestCase):
                 with self.assertRaisesRegex(AdapterError, "UNDECLARED_SERVICE"):
                     self.adapter._snapshot(self.bus, self.unit)
                 self.value = original
+
+    def test_stop_rejects_external_or_active_reverse_dependencies_without_dispatch(self):
+        self.value["RequiredBy"] = ["child.service"]
+        with self.assertRaisesRegex(AdapterError, "UNDECLARED_SERVICE_STOP_DEPENDENT"):
+            self.adapter._perform({"kind": "service_stop", "target": self.unit}, lambda _: None)
+        self.profile["units"]["child.service"] = {"read_only_dependencies": [self.unit]}
+        for state in ({"ActiveState": "active"}, {"ActiveState": "inactive", "Job": [7, "/job/7"]},
+                      {"ActiveState": "inactive", "ControlPID": 17}):
+            self.dep = {"Job": [0, "/"], **state}
+            with self.assertRaisesRegex(AdapterError, "SERVICE_STOP_DEPENDENT_NOT_CLOSED"):
+                self.adapter._perform({"kind": "service_stop", "target": self.unit}, lambda _: None)
+        self.assertFalse(hasattr(self.bus, "called"))
+        self.dep = {"ActiveState": "inactive", "Job": [0, "/"]}
+        self.adapter._perform({"kind": "service_stop", "target": self.unit}, lambda _: None)
+        self.assertEqual((self.unit, "StopUnit", "fail"), self.bus.called)
+
+    def test_stop_plan_cannot_leave_an_affected_managed_service_running(self):
+        self.profile["units"]["child.service"] = {"read_only_dependencies": [self.unit]}
+        old = {"active": "active", "policy": "disabled", "loaded": {}, "definition_digest": "a" * 64,
+               "links": {}, "stop_dependents": []}
+        baseline = {"jobs": [], "units": {self.unit: {**old, "stop_dependents": ["child.service"]}, "child.service": old}}
+        with self.assertRaisesRegex(AdapterError, "DEPENDENT_STOP_NOT_PLANNED"):
+            self.adapter.plan({self.unit: {"running": False, "policy": "disabled"}}, baseline, _check_global=False)
 
     def test_profile_cannot_allow_implicit_start_or_undeclared_binding(self):
         for change in ({"start_job_mode": "fail"}, {"start_job_mode": "replace"},

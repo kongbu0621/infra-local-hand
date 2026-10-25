@@ -20,7 +20,7 @@ UNIT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,160}\.service\Z")
 BOUND_UNIT = re.compile(r"[A-Za-z0-9-][A-Za-z0-9_.@\\-]{0,240}\.(?:service|mount)\Z")
 POLICIES = {"enabled", "enabled-runtime", "disabled", "static", "absent"}
 STOPPED = {"inactive", "failed"}
-FORBIDDEN_PROPAGATION = ("PartOf", "ConsistsOf", "BoundBy", "PropagatesStopTo", "StopPropagatedFrom", "OnFailure", "OnSuccess", "TriggeredBy", "Triggers")
+FORBIDDEN_PROPAGATION = ("PartOf", "ConsistsOf", "BoundBy", "PropagatesStopTo", "StopPropagatedFrom", "OnFailure", "OnSuccess", "TriggeredBy", "Triggers", "Upholds", "UpheldBy")
 HOOKS = ("ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecReload", "ExecCondition")
 DEFINITION_FIELDS = ("Type", "Restart", "KillMode", "ExecStart", *HOOKS, *FORBIDDEN_PROPAGATION, "BindsTo",
                      "Requires", "Wants", "Requisite", "Conflicts", "Before", "After", "FragmentPath", "DropInPaths")
@@ -177,7 +177,15 @@ class SystemdAdapter:
                 "substate": value.get("SubState"), "invocation_id": value.get("InvocationID"),
                 "pid": value.get("MainPID", 0), "job": value.get("Job", [0, "/"]),
                 "definition_digest": definition_digest(value), "links": links, "loaded": loaded,
+                "stop_dependents": sorted(set(value.get("RequiredBy", [])) | set(value.get("RequisiteOf", []))),
                 "needs_reload": value.get("NeedDaemonReload", False)}
+
+    def _stop_dependents(self, unit, snapshot):
+        dependents = snapshot.get("stop_dependents", [])
+        for dependent in dependents:
+            if (dependent not in self.units or unit not in self.units[dependent].get("read_only_dependencies", [])):
+                raise AdapterError("UNDECLARED_SERVICE_STOP_DEPENDENT")
+        return dependents
 
     def observe(self):
         with self.bus_factory() as bus:
@@ -225,6 +233,7 @@ class SystemdAdapter:
                 old["definition_digest"] != target.get("definition_digest", old["definition_digest"]) or
                 any(loaded.get(key) != target.get(key) for key in ("config_digest", "deployment_digest")))
             if needs_stop:
+                self._stop_dependents(unit, old)
                 actions.append({"kind": "service_stop", "target": unit, "before": old,
                                 "after": {"running": False}, "subeffects": ["stop"], "phase": "quiesced_before_files"})
             # Finite exact links instead of systemctl enable/disable, whose Also=
@@ -242,6 +251,11 @@ class SystemdAdapter:
                     raise AdapterError("SERVICE_TARGET_BINDING_REQUIRED")
                 actions.append({"kind": "service_start", "target": unit, "before": old, "after": target,
                                 "subeffects": ["start"], "phase": "after_reload"})
+        stops = {action["target"] for action in actions if action["kind"] == "service_stop"}
+        for unit in stops:
+            for dependent in self._stop_dependents(unit, before["units"][unit]):
+                if before["units"][dependent]["active"] not in STOPPED and dependent not in stops:
+                    raise AdapterError("DEPENDENT_STOP_NOT_PLANNED")
         return actions
 
     def plan_reload(self, expected_tree):
@@ -430,6 +444,16 @@ class SystemdAdapter:
             snapshot = self._snapshot(bus, action["target"], starting=kind == "service_start")
             if snapshot["job"][0]:
                 raise AdapterError("SERVICE_JOB_PENDING")
+            if kind == "service_stop":
+                # Requires/Requisite reverse edges can make StopUnit stop a
+                # second service. Its own planned stop must already be closed;
+                # discovering an external or still-running dependent is not
+                # permission to stop it implicitly.
+                for dependent in self._stop_dependents(action["target"], snapshot):
+                    current = bus.unit(dependent)
+                    if (current.get("ActiveState") not in STOPPED or current.get("MainPID", 0)
+                            or current.get("ControlPID", 0) or current.get("Job", [0])[0]):
+                        raise AdapterError("SERVICE_STOP_DEPENDENT_NOT_CLOSED")
             mode = self.units[action["target"]].get("start_job_mode", "fail") if kind == "service_start" else "fail"
             # The explicit read-only mode keeps ordering and BindsTo stop
             # semantics, but cannot pull in a dependency that went down after

@@ -533,6 +533,7 @@ def prepare_main(input_path,result_path):
 def initialize_host(config):
     """Start the original execution slices; new tasks bind their current pins."""
     q.require(os.getuid()==os.geteuid()==0,'RESIDENT_ADMINISTRATOR')
+    q.require(config.get('maintenance') is None,'RESIDENT_GUARDED_INITIALIZATION_FORBIDDEN')
     template=config['template'];uid,gid=config['uid'],config['gid']
     systemctl=config['installation']['installed']['programs']['systemctl']['path']
     units=sorted({Path(value['path']).name for value in template['observed']['parents'].values()})
@@ -626,10 +627,15 @@ def serve(config):
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Run the persistent Local Hand preparation service')
     parser.add_argument('--config',required=True)
-    parser.add_argument('--initialize-host',action='store_true')
+    actions=parser.add_mutually_exclusive_group()
+    actions.add_argument('--initialize-host',action='store_true')
+    actions.add_argument('--check-host',action='store_true',help='Check prepared host resources without starting units or changing limits')
     args=parser.parse_args(argv)
     config=load(args.config)
-    if args.initialize_host:initialize_host(config)
+    if args.check_host:
+        from .host_readiness import check_host
+        print(json.dumps(check_host(config),sort_keys=True),flush=True)
+    elif args.initialize_host:initialize_host(config)
     else:serve(config)
 
 

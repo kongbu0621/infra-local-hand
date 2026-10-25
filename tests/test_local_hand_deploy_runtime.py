@@ -12,7 +12,7 @@ from unittest.mock import patch
 from admin.local_hand_deploy import files
 from admin.local_hand_deploy.model import DeployError, new_operation, seal_plan
 from admin.local_hand_deploy.coordinator import Coordinator
-from admin.local_hand_deploy.planner import MANIFEST_SCHEMA, PROFILE_SCHEMA, build_plan
+from admin.local_hand_deploy.planner import MANIFEST_SCHEMA, PROFILE_SCHEMA, action_order, build_plan, service_order, validate_schedule
 from admin.local_hand_deploy.runtime import ConcreteEnvironment, PlanningEnvironment
 from admin.local_hand_deploy.services import tree_snapshot
 from admin.local_hand_deploy.store import Store
@@ -239,12 +239,20 @@ class RuntimeTests(unittest.TestCase):
         for deployment in (self.source, self.target):
             deployment["selection"]["components"]["mcp"] = copy.deepcopy(deployment["selection"]["components"]["manager"])
             deployment["services"] = {"mcp.service": {}, "manager.service": {}}
-        starts = [{"kind": "service_start", "target": unit, "phase": "after_reload"}
-                  for unit in ("mcp.service", "manager.service")]
+        starts = [{"kind": "service_stop", "target": unit, "phase": "quiesced_before_files"}
+                  for unit in ("manager.service", "mcp.service")]
+        starts += [{"kind": "service_start", "target": unit, "phase": "after_reload"}
+                   for unit in ("mcp.service", "manager.service")]
         observer = SimpleNamespace(validate_baseline=lambda *_: None, plan_services=lambda *_: copy.deepcopy(starts))
         plan = build_plan(self.manifest, environment=observer)
-        self.assertEqual(["manager.service", "mcp.service"],
+        expected = ["mcp.service", "manager.service", "manager.service", "mcp.service"]
+        self.assertEqual(expected,
                          [item["action"]["target"] for item in plan["steps"] if item["kind"] == "service"])
+        validate_schedule(plan)
+        broken = copy.deepcopy(plan)
+        broken["steps"][0], broken["steps"][1] = broken["steps"][1], broken["steps"][0]
+        with self.assertRaisesRegex(DeployError, "dependency order"):
+            validate_schedule(broken)
         store = self.store()
         environment = ConcreteEnvironment(plan, store, self.gate)
         environment._services = SimpleNamespace(plan_restore=lambda *_args, **_kwargs: copy.deepcopy(starts))
@@ -255,7 +263,22 @@ class RuntimeTests(unittest.TestCase):
                     record["prepared"] = copy.deepcopy(step["action"])
                     record["effective"] = True
             restored = environment.prepare_compensation(operation)
-        self.assertEqual(["manager.service", "mcp.service"], [item["step"]["action"]["target"] for item in restored])
+        self.assertEqual(expected, [item["step"]["action"]["target"] for item in restored])
+
+    def test_fixed_dependency_order_and_gateway_isolation_do_not_depend_on_manifest_order(self):
+        profile = {"systemd": {"units": {
+            "alpha.service": {"read_only_dependencies": ["middle.service", "external.mount"]},
+            "zulu.service": {}, "middle.service": {"read_only_dependencies": ["zulu.service"]}}}}
+        steps = [{"kind": "service", "action": {"kind": "service_stop", "target": unit,
+                  "phase": "quiesced_before_files"}} for unit in ("zulu.service", "alpha.service", "middle.service")]
+        steps.append({"kind": "gateway", "action": {"kind": "gateway_stop", "target": "gateway",
+                       "phase": "quiesced_before_files"}})
+        self.assertEqual(["gateway", "alpha.service", "middle.service", "zulu.service"],
+                         [s["action"]["target"] for s in sorted(steps, key=lambda s: action_order(s, profile))])
+        self.assertNotIn("external.mount", service_order(profile))
+        profile["systemd"]["units"]["zulu.service"]["read_only_dependencies"] = ["alpha.service"]
+        with self.assertRaisesRegex(DeployError, "contain a cycle"):
+            service_order(profile)
 
     def unit_plan(self):
         units = self.root / "units"
