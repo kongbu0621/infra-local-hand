@@ -54,6 +54,37 @@ def test_core_selection_covers_submit_cancel_recover_auth_and_resource_dependenc
     assert "tests/test_e3_host_probe.py" not in files
 
 
+def test_deployment_recovery_suites_are_linux_core_and_excluded_on_windows():
+    recovery = {
+        "tests/test_local_hand_maintenance_gate.py",
+        "tests/test_local_hand_startup_guard.py",
+        "tests/test_local_hand_mcp_readiness.py",
+        "tests/test_local_hand_jobs_deployment.py",
+        *(path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("test_local_hand_deploy_*.py")),
+    }
+    assert "tests/test_local_hand_deploy_identity.py" in recovery
+    assert "tests/test_local_hand_deploy_checks.py" in recovery
+    for suite in ("core", "shared", "full"):
+        assert recovery <= set(select_tests(ROOT, suite, "linux"))
+        # Explicit changed tests must not override the Unix-only boundary.
+        assert recovery.isdisjoint(select_tests(ROOT, suite, "windows", sorted(recovery)))
+
+
+def test_deployment_recovery_only_changes_keep_linux_core_selection():
+    scope = plan([
+        "tools/admin/local_hand_deploy/cli.py",
+        "tools/local_hand_jobs/maintenance.py",
+        "tools/local_hand_jobs/startup.py",
+        "tools/local_hand_mcp/startup_guard.py",
+        "tests/test_local_hand_deploy_checks.py",
+        "tests/test_local_hand_maintenance_gate.py",
+        "tests/test_local_hand_startup_guard.py",
+    ])
+    assert scope["matrix"] == {"os": ["ubuntu-latest"]}
+    assert scope["suite"] == "core"
+    assert not scope["installation"] and not scope["historical"]
+
+
 def test_changed_test_is_retained_and_deleted_test_is_not_selected():
     scope = plan(["tests/test_local_hand_read_failure_chain.py", "tests/test_removed.py"])
     assert scope["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
