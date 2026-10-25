@@ -356,6 +356,24 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual("COMMITTED", op["decision"])
         self.assertEqual(before, self.gate.snapshot())
 
+    def test_linked_repair_after_release_does_not_reclaim_old_gate_or_effects(self):
+        first = self.coordinator.apply(plan())
+        state = self.gate.snapshot()
+        repaired_plan = plan("security-repair", before="new", after="fixed")
+        linked = self.coordinator.supersede(first["id"], repaired_plan)
+        self.assertTrue(linked["released"])
+        self.assertTrue(linked["handoff_complete"])
+        self.assertEqual(state, self.gate.snapshot())
+        successor = self.store.get(linked["successor"])
+        self.assertFalse(successor.get("inherited"))
+        result = self.coordinator.resume(successor["id"])
+        self.assertTrue(result["released"])
+        self.assertEqual("fixed", self.effects.actual["config"])
+        state = self.gate.snapshot()
+        self.coordinator.resume(first["id"])
+        self.coordinator.rollback(first["id"])
+        self.assertEqual(state, self.gate.snapshot())
+
     def test_report_reconstruction_does_not_infer_public_client_acceptance(self):
         op = self.coordinator.apply(plan())
         output = report(self.store.get(op["id"]))

@@ -490,7 +490,10 @@ def main(argv=None) -> int:
     mode.add_argument("--prepared-task", help="Admitted single task launcher; retain --config history for reads")
     mode.add_argument("--resident", help="Persistent task preparation and routing descriptor")
     parser.add_argument("--auth-config", required=True, help="Private external-issuer admission")
-    parser.add_argument("--port", required=True, type=int, help="Admitted loopback listener port")
+    endpoint = parser.add_mutually_exclusive_group(required=True)
+    endpoint.add_argument("--port", type=int, help="Admitted loopback listener port")
+    endpoint.add_argument("--http-socket", help="Protected Unix HTTP socket for the container gateway")
+    parser.add_argument("--http-socket-mode", type=lambda value: int(value, 8), choices=(0o600, 0o660, 0o666), default=0o660)
     parser.add_argument("--startup-config", help="Protected deployment startup selection binding")
     args = parser.parse_args(argv)
     try:
@@ -512,8 +515,10 @@ def main(argv=None) -> int:
         from local_hand_jobs.contract import Principal
         import uvicorn
 
-        if not 1 <= args.port <= 65535:
+        if args.port is not None and not 1 <= args.port <= 65535:
             raise ValueError("Invalid listener port")
+        if args.http_socket and not args.startup_config:
+            raise ValueError("Unix HTTP listeners require their startup guard")
         from local_hand_mcp.startup_guard import guard
         with ExitStack() as startup_stack:
             guarded = startup_stack.enter_context(guard(args))
@@ -551,7 +556,9 @@ def main(argv=None) -> int:
                 failed = True
                 raise
             finally:
-                if listener is not None:
+                if guarded is not None and guarded.get("cleanup") is not None:
+                    guarded["cleanup"]()
+                elif listener is not None:
                     listener.close()
                 close_service(broker, maintenance, failed=failed)
         return 0

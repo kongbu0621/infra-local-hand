@@ -182,6 +182,44 @@ class MCPGuardTests(unittest.TestCase):
             self.assertGreaterEqual(listener.fileno(),0)
             listener.close()
 
+    def test_guarded_unix_listener_is_bound_and_cleaned_without_tcp_exposure(self):
+        self.args.port=None;self.args.http_socket=str(self.root/'http.sock');self.args.http_socket_mode=0o660
+        self.binding.update(port=None,unix_socket={'path':self.args.http_socket,'mode':0o660})
+        Path(self.args.startup_config).write_text(json.dumps(self.binding))
+        self.selection['components']['mcp']['configuration_digest']=startup.digest(startup_guard.input_binding(self.binding,self.args))
+        for member in self.selection['members']:
+            member['sha256']=hashlib.sha256(Path(member['path']).read_bytes()).hexdigest()
+        with patch.object(startup,'remote_authorization',self.remote()),patch.object(startup_guard,'full_payload_digest',return_value='c'*64):
+            with startup_guard.guard(self.args) as guarded:
+                listener=guarded['bind']()
+                self.assertEqual(socket.AF_UNIX,listener.family)
+                self.assertEqual(self.args.http_socket,listener.getsockname())
+            self.assertEqual(0o660,Path(self.args.http_socket).stat().st_mode & 0o777)
+            with socket.socket(socket.AF_UNIX) as peer:
+                peer.connect(self.args.http_socket)
+                accepted,_=listener.accept();accepted.close()
+            guarded['cleanup']()
+            self.assertFalse(Path(self.args.http_socket).exists())
+
+    def test_unix_listener_rejects_live_peer_and_preserves_foreign_files(self):
+        path=self.root/'http.sock';spec={'path':str(path),'mode':0o600}
+        path.write_bytes(b'original')
+        with self.assertRaises(JobError):startup_guard.bind_unix(spec)
+        self.assertEqual(b'original',path.read_bytes());path.unlink()
+        listener,cleanup=startup_guard.bind_unix(spec)
+        try:
+            with self.assertRaises(JobError):startup_guard.bind_unix(spec)
+        finally:cleanup()
+        stale=socket.socket(socket.AF_UNIX);stale.bind(str(path));path.chmod(0o600);stale.close()
+        listener,cleanup=startup_guard.bind_unix(spec)
+        try:self.assertGreaterEqual(listener.fileno(),0)
+        finally:cleanup()
+
+    def test_unix_cleanup_does_not_remove_independent_replacement(self):
+        path=self.root/'http.sock';listener,cleanup=startup_guard.bind_unix({'path':str(path),'mode':0o600})
+        path.unlink();path.write_bytes(b'replacement');cleanup()
+        self.assertEqual(b'replacement',path.read_bytes())
+
     def test_lost_ack_and_guard_exit_failure_close_prebound_socket(self):
         for ack,exit_error in ((JobError('STARTUP_UNKNOWN','lost ack'),None),
                                (None,JobError('STARTUP_UNKNOWN','lost authorization'))):

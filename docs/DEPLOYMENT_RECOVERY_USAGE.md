@@ -62,6 +62,97 @@ PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
 端点，不隔离服务，也不把公网暂不可达改写成本地部署失败。遇到等待时读报告中的原操作和缺失证明，
 确认旧调用闭合后接续，不能通过重建状态、改请求 ID 或重复业务提交绕过未决结果。
 
+## 私有绑定接入统一入口
+
+私有包只保存数据，不再复制 `install_mcp.py` 的安装、恢复或补偿函数。固定节点文件为
+`{schema: "local-hand-node-binding/v1", node_id, state, profile}`；profile 使用本页定义的实际画像，
+state 为独立部署状态目录，owner_uid 必须对应运行管理员。发行文件为
+`{schema: "local-hand-release/v1", node_id, request_id, target, files}`。
+它可以另外指定本次的 `gateway_compose`、`gateway_checks` 和 `security_repair`，不能携带脚本或命令。
+
+```bash
+umask 077
+PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
+  --binding /protected/node.json release-plan /protected/release.json > /protected/plan.json
+PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
+  --binding /protected/node.json apply /protected/plan.json
+PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
+  --binding /protected/node.json status
+```
+
+`release-plan` 读取当前稳定选择中实际生成的 decision_id，并观察固定服务和网关，生成普通部署计划；
+不能将上次草拟的 target 当作现有基线。节点与发行不一致、启动选择未决、服务仍有作业或画像漂移时拒绝。
+它不修改绑定、不构建镜像、不安装依赖，也不迁移旧实例。旧节点仍先完成下述离线导入条件。
+`--binding` 也可用于原 `resume/rollback/supersede/init-state`，不能同时传入另一组 `--state/--node`。
+发行完成后如要更新固定画像，必须保留原绑定并明确采用新的实际绑定；这里不静默改写部署输入。
+
+原操作已经关门并部分发布时，使用 `repair-plan`，不要把混合文件伪装成稳定 source：
+
+```bash
+PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
+  --binding /protected/node.json repair-plan ORIGINAL_OPERATION /protected/corrected-release.json \
+  > /protected/corrected-plan.json
+PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
+  --binding /protected/node.json supersede ORIGINAL_OPERATION /protected/corrected-plan.json
+PYTHONPATH=tools python3 -B -m admin.local_hand_deploy \
+  --binding /protected/node.json resume SUCCESSOR_OPERATION
+```
+
+后继标识从 `supersede` 报告的 `recovery.successor` 读取。生成修复计划时仅持有原节点锁、以只读
+SQLite 读取原记录，核对原调用闭合、当前启动描述及固定管理范围。普通 `apply` 不能独立执行这种计划。
+文件前置条件绑定接手时的真实对象，恢复目标仍是原链最初的受信配置；失败补偿或已提交后回退均沿
+该原目标恢复。独立修改保留其独立归属，旧备份不能因为交接而覆盖它。原安全隔离责任也不能被丢弃。
+
+共享 systemd 树只接受原画像、记录内发布/补偿效果及准确保留暂存对象；独立树变化明确拒绝。
+修复计划保存当前树作为动作前置条件，保留原 loaded_snapshot，并显式执行受监督 reload；不把磁盘
+观察冒充管理器已经加载。容器修复保留链上有限的原/中间 Compose 规格，仅观察和补偿准确匹配的对象。
+交接前再次核对；观察变化则重新生成修复计划，已经交出的旧命令不能重新取得维护权。
+
+## 安全检查、隔离与结果
+
+需要运行网关的目标必须提供 `profile.gateway_checks`，包含 `authority`（预期公网 Host，不含 scheme）
+及最多八项固定路径 GET。至少覆盖以下四种 `purpose`；检查不携带认证、请求体或任意请求头，不跟随重定向：
+
+| purpose | 预期状态 | 额外约束 |
+| --- | --- | --- |
+| `anonymous_protected` | `[401]` | 指向 MCP 受保护路径；匿名 2xx 即安全失败，不等待 SSE 流结束 |
+| `management_hidden` | `[403]` 或 `[404]` | 指向本部署实际管理路径；成功响应为安全失败 |
+| `issuer_metadata` | `[200]` | `json_equals.issuer` 为准确 issuer |
+| `resource_metadata` | `[200]` | `json_equals` 明确 resource 和单个 authorization_servers |
+
+每项格式为 `{path, statuses, purpose, json_equals?, www_authenticate?}`。候选网关的受保护状态接口
+在容器内读取 nginx 回环监听，宿主仍核对 Engine、PID、开机身份、配置和载荷。全部检查通过后才允许
+稳定发布及释放；这不是公网 DNS/TLS 或 ChatGPT 客户端验收。单个 GET 总时限一秒；检查线程独立且最多一个，
+不因观察阻塞公网许可续期。响应体和路径以摘要留证，未知值不改为通过。
+
+确认安全错误后，在修复发行中提供
+`security_repair: {unsafe_deployment_digest, reason, evidence_digest}`，reason 使用上述四种之一，
+摘要绑定私有原始观察记录，unsafe_deployment_digest 必须为本计划原部署，目标必须为另一个准确部署。
+协调器持久关闭准入及启动描述后，先停止画像内的准确网关，再等待业务自然结束；文件、管理器和 MCP
+变更仍在排空后执行。该隔离覆盖网关新连接及既有连接，不能用于终止任务进程。
+重启时被撤销的公共许可不能自行恢复。已知不安全的原部署不能因补偿而重新 OPEN，也不能成为已提交
+安全修复的直接回退目标；保留关闭责任，继续明确的修复/交接。检查本身始终只读，返回 `isolation: NOT_EXECUTED`。
+
+公网 `check-public` 的各项使用 `url` 替代 `path`，可指定同样的 purpose；只有所有项通过才返回退出码 0。
+未通过或安全失败返回 4，本地等待返回 3，输入/执行错误返回 2。这些退出码不是重新安装指令。
+报告分为部署、准入、公网、客户端、恢复及诊断六层，绑定记录或观察摘要；无外部证据保持 NOT_CHECKED，
+另一部署的客户端成功标为 STALE，不能复制为当前验收。进行中报告的 planned_source 表示计划基线，
+不是混合状态已经核验为原部署的声明。
+
+## 宿主 MCP 与容器网关连接
+
+宿主 `127.0.0.1` 不能直接作为独立网络 namespace 中容器的 MCP 上游。通用 MCP 入口支持
+`--http-socket /protected-runtime/http.sock --http-socket-mode 660`，与 `--port` 二选一；Unix 模式必须
+同时传入 `--startup-config`。守卫配置保留 `port: null`，增加
+`unix_socket: {path: "/protected-runtime/http.sock", mode: 432}`（432 为八进制 660 的十进制 JSON 值）。
+该监听信息进入实际配置摘要，创建监听和配置核对仍持有同一启动准入锁。
+
+socket 父目录须预先存在且受保护，目录须以相同路径只读挂入网关。nginx 的上游可显式使用
+`server unix:/protected-runtime/http.sock;`，通过准确目录/组权限允许 worker 访问。支持 mode 600、660、666；
+如选择 666，其本地访问范围与回环 TCP 类似，HTTP OAuth 仍必需，不能把文件权限当作认证。
+旧普通文件、链接或活动 socket 不会被覆盖；仅准确路径、原 owner/mode 且拒绝连接的残留 socket 可重建。
+退出清理核对本次 inode，不删除独立替换对象。此路径已进入源码与隔离监听回归，真实 Docker 迁移另行验收。
+
 ## 旧部署的受控离线导入
 
 此入口覆盖明确列出的旧 `resident` / `prepared` 管理服务及 MCP、网关自动入口。操作前须按已有

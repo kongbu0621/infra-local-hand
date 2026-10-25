@@ -323,6 +323,18 @@ def serve(config_path):
     stop = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT): signal.signal(signum, lambda *_: stop.set())
     relay, child, status = Relay(config["upstream_port"]), None, socket.socket(socket.AF_UNIX)
+    route_slot = threading.BoundedSemaphore(1)
+    route_threads = []
+    def check_routes(connection, specification, observed):
+        try:
+            from .http_observation import observe_local
+            with connection:
+                checked = observe_local(config["upstream_port"], specification)
+                startup._frame_send(connection, {"result": {**observed, "routes": checked}}, time.monotonic() + 1)
+        except (JobError, OSError, ValueError):
+            pass
+        finally:
+            route_slot.release()
     proof = None
     try:
         with startup.remote_gateway_authorization(config["manager_socket"], mode="candidate") as (selected, instance, acknowledge):
@@ -379,10 +391,29 @@ def serve(config_path):
                             request = startup._frame_read(connection, deadline)
                             if request == {"action": "deployment_observe"}:
                                 startup._frame_send(connection, {"result": proof}, deadline)
-                        except (JobError, OSError): pass
+                            elif (isinstance(request, dict) and set(request) == {"action", "specification"}
+                                  and request["action"] == "deployment_check_routes"):
+                                from .http_observation import validate_local
+                                validate_local(request["specification"])
+                                if route_slot.acquire(blocking=False):
+                                    # One bounded reader, independent of lease renewal
+                                    # and relaying. A read-only check cannot close an
+                                    # otherwise healthy public listener by blocking PID 1.
+                                    duplicate = None
+                                    try:
+                                        duplicate = connection.dup()
+                                        route_threads[:] = [t for t in route_threads if t.is_alive()]
+                                        thread = threading.Thread(target=check_routes,
+                                            args=(duplicate, request["specification"], dict(proof)), daemon=True)
+                                        thread.start(); route_threads.append(thread)
+                                    except BaseException:
+                                        if duplicate is not None: duplicate.close()
+                                        route_slot.release(); raise
+                        except (JobError, OSError, ValueError): pass
             stop.wait(.02)
     finally:
         relay.close_public(); status.close()
+        for thread in route_threads: thread.join(timeout=10)
         if child is not None and child.poll() is None:
             with suppress(ProcessLookupError): os.killpg(child.pid, signal.SIGTERM)
             try: child.wait(timeout=5)

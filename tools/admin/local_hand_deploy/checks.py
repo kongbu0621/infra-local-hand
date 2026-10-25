@@ -11,6 +11,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from local_hand_mcp.http_observation import evaluate, unsafe_headers, validate_check
+
 from .model import DeployError, canonical, decode
 
 REQUEST_SECONDS = 5.0
@@ -33,7 +35,7 @@ def _validate(specification):
     if len(canonical(specification)) > 512 * 1024:
         raise DeployError("INVALID_CHECK", "Public observation expectations exceed their bound")
     for spec in specification["checks"]:
-        if (not isinstance(spec, dict) or set(spec) - {"url", "statuses", "json_equals", "www_authenticate"}
+        if (not isinstance(spec, dict) or set(spec) - {"url", "statuses", "json_equals", "www_authenticate", "purpose"}
                 or not isinstance(spec.get("url"), str) or not 1 <= len(spec["url"]) <= 8192
                 or any(ord(char) <= 32 or ord(char) == 127 for char in spec["url"])
                 or not isinstance(spec.get("statuses"), list) or not 1 <= len(spec["statuses"]) <= 16
@@ -42,6 +44,10 @@ def _validate(specification):
                 or "www_authenticate" in spec and (not isinstance(spec["www_authenticate"], str)
                     or not 1 <= len(spec["www_authenticate"]) <= 8192)):
             raise DeployError("INVALID_CHECK", "Invalid expected public response")
+        try:
+            validate_check(spec)
+        except ValueError as error:
+            raise DeployError("INVALID_CHECK", "Invalid safety observation expectation") from error
         try:
             url = urllib.parse.urlsplit(spec["url"])
             valid_port = url.port is None or 1 <= url.port <= 65535
@@ -63,19 +69,13 @@ def _request(spec):
     except urllib.error.HTTPError as error:
         response = error  # 401 challenges and redirect responses are evidence.
     with response:
+        unsafe = unsafe_headers(spec, response.status)
+        if unsafe:
+            return unsafe
         raw = response.read(MAX_BODY_BYTES + 1)
         if len(raw) > MAX_BODY_BYTES:
             raise ValueError("response exceeds bound")
-        matches = response.status in spec["statuses"]
-        if "json_equals" in spec:
-            body = decode(raw)
-            matches = matches and isinstance(body, dict) and all(
-                key in body and canonical(body[key]) == canonical(value)
-                for key, value in spec["json_equals"].items())
-        if "www_authenticate" in spec:
-            matches = matches and spec["www_authenticate"] in response.headers.get("WWW-Authenticate", "")
-        return dict(status="PASSED" if matches else "FAILED", http_status=response.status,
-                    response_digest=hashlib.sha256(raw).hexdigest())
+        return evaluate(spec, response.status, response.headers, raw)
 
 
 def _child(write_fd, spec, timeout):
@@ -165,8 +165,9 @@ def _isolated(spec, *, timeout=None):
             return {"status": "UNKNOWN", "error": "PROBE_INCOMPLETE"}
         try:
             result = decode(bytes(raw))
-            if (not isinstance(result, dict) or result.get("status") not in {"PASSED", "FAILED", "UNKNOWN"}
-                    or set(result) not in ({"status", "error"}, {"status", "http_status", "response_digest"})):
+            if (not isinstance(result, dict) or result.get("status") not in {"PASSED", "FAILED", "UNKNOWN", "SECURITY_FAILED"}
+                    or set(result) not in ({"status", "error"}, {"status", "http_status", "response_digest"},
+                                          {"status", "http_status", "response_digest", "body_observed"})):
                 raise ValueError("worker result")
             return result
         except (ValueError, RuntimeError):
@@ -189,6 +190,9 @@ def check_public(specification):
         if record.get('error') == 'PROBE_CLEANUP_UNCONFIRMED':
             break  # Do not accumulate workers whose exit has not been proved.
     return {"schema": "local-hand-public-observation/v1", "deployment_digest": specification["deployment_digest"],
-            "status": "PASSED" if len(results) == len(specification["checks"])
+            "observed_ns": time.time_ns(),
+            "specification_digest": hashlib.sha256(canonical(specification)).hexdigest(),
+            "isolation": "NOT_EXECUTED",
+            "status": "SECURITY_FAILED" if any(row["status"] == "SECURITY_FAILED" for row in results) else "PASSED" if len(results) == len(specification["checks"])
                 and all(row["status"] == "PASSED" for row in results) else "NOT_PASSED",
             "client_acceptance": "NOT_CHECKED", "checks": results}

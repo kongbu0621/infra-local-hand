@@ -155,5 +155,13 @@ class PublicCheckTests(unittest.TestCase):
         self.assertEqual('NOT_PASSED', result['status'])
         self.assertEqual('NOT_CHECKED', result['client_acceptance'])
 
+    def test_security_failure_does_not_wait_for_stream_or_claim_isolation(self):
+        class Streaming(Response):
+            def read(self, size=-1): raise AssertionError('Must not wait for an accepted anonymous stream')
+        result = self.observe(Streaming(status=200), self.spec(statuses=[401], purpose='anonymous_protected'))
+        self.assertEqual('SECURITY_FAILED', result['status'])
+        self.assertEqual('NOT_EXECUTED', result['isolation'])
+        self.assertFalse(result['checks'][0]['body_observed'])
+
 
 if __name__ == '__main__': unittest.main()

@@ -80,6 +80,11 @@ class GatewayAdapter:
             api_version=profile.get("api_version", "v1.45"), timeout=min(runner.timeout / 2, 30))
         self.guard_check, self.route_probe = guard_check, route_probe
         self._validate_compose(profile["compose"])
+        retained = profile.get("retained_composes", [])
+        if not isinstance(retained, list) or len(retained) > 32:
+            raise AdapterError("RETAINED_GATEWAY_PROFILE_BOUND")
+        for compose in retained:
+            self._validate_compose(compose)
 
     def _validate_compose(self, compose):
         if not isinstance(compose, dict) or set(compose) - {"name", "services", "networks", "volumes"}:
@@ -169,7 +174,12 @@ class GatewayAdapter:
     def _using(self, compose):
         if compose == self.profile["compose"]:
             return self
-        return GatewayAdapter({**self.profile, "compose": compose, "original_compose": self.profile["compose"]}, self.runner, engine=self.engine,
+        retained = []
+        for value in [self.profile["compose"], self.profile.get("original_compose"), *self.profile.get("retained_composes", [])]:
+            if value is not None and value != compose and value not in retained:
+                retained.append(value)
+        return GatewayAdapter({**self.profile, "compose": compose, "original_compose": self.profile["compose"],
+                               "retained_composes": retained}, self.runner, engine=self.engine,
                               guard_check=self.guard_check, route_probe=self.route_probe)
 
     def _matches_spec(self, value, compose):
@@ -212,7 +222,7 @@ class GatewayAdapter:
         if labels.get("com.docker.compose.project") != self.project or labels.get("com.docker.compose.service") != self.service:
             raise AdapterError("FOREIGN_GATEWAY_CONTAINER")
         matched_compose = None
-        for compose in (self.profile["compose"], self.profile.get("original_compose")):
+        for compose in (self.profile["compose"], self.profile.get("original_compose"), *self.profile.get("retained_composes", [])):
             if compose is not None and self._matches_spec(value, compose):
                 matched_compose = compose
                 break

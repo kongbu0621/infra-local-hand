@@ -33,6 +33,11 @@ class Coordinator:
     def apply(self, plan):
         validate_plan(plan, self.store.limits)
         with self.store.locked():
+            existing = next((op for op in self.store.list() if op["plan"]["request_id"] == plan["request_id"]), None)
+            if existing is None and self.store.list(unfinished=True):
+                raise DeployError("RECOVERY_REQUIRED", "Resume or explicitly hand off the existing operation before creating another")
+            if existing is None and plan["profile"].get("recovery_from"):
+                raise DeployError("RECOVERY_REQUIRED", "A corrective plan must be linked with supersede, not applied independently")
             operation = self.store.create(plan)
             others = [op for op in self.store.list(unfinished=True)
                       if op["id"] != operation["id"] and op["successor"] != operation["id"]]
@@ -78,6 +83,14 @@ class Coordinator:
                 if self.store.get(op["successor"])["plan"]["digest"] != plan["digest"]:
                     raise DeployError("REQUEST_CONFLICT", "A different handoff is already recorded")
                 return self._handoff(op)
+            if hasattr(self.environment, "validate_successor"):
+                self.environment.validate_successor(op, plan)
+            if op["released"]:
+                # The old effect ownership has already ended. A later repair
+                # is linked for history, but cannot reclaim its historical gate
+                # or compensate the already completed deployment's effects.
+                self.store.link(op, plan)
+                return self._handoff(op)
             self._record_implementation(op)
             self._refresh(op)
             if self._unresolved(op):
@@ -90,6 +103,8 @@ class Coordinator:
             return self._handoff(op)
 
     def _inheritance(self, op):
+        if op["released"]:
+            return []
         inherited = list(dict.fromkeys([*op.get("inherited", []), op["id"]])) if self._has_effects(op) else []
         if len(inherited) > 16:
             raise DeployError("STATE_LIMIT", "Recovery chain exceeds its fixed limit")
@@ -105,7 +120,7 @@ class Coordinator:
         if inherited and successor.get("inherited") != inherited:
             successor["inherited"] = inherited
             self.store.save(successor, "INHERITED_EFFECTS", recovery=True)
-        if op["gate_owned"]:
+        if op["gate_owned"] and not op["released"]:
             state = self.gate.snapshot()
             if state["state"] == "CLOSED" and state["owner"] == op["id"]:
                 self.store.save(op, "HANDOFF_INTENT", {"successor": successor["id"]}, recovery=True)
@@ -186,7 +201,9 @@ class Coordinator:
     def _apply(self, op):
         if op["phase"] == "PLANNED":
             op["checks"]["preflight"] = self.environment.preflight(op)
+            op["phase"] = "PREPARING"
             self.store.save(op, "PREFLIGHT")
+        if op["phase"] == "PREPARING":
             self._prepare(op)
             if not op["plan"]["steps"] and op["plan"]["source"]["deployment_digest"] == op["plan"]["target"]["deployment_digest"]:
                 checks = self.environment.check_local(op, rollback=False)
@@ -204,7 +221,7 @@ class Coordinator:
         # adapter's fixed action scope must prove it cannot stop business jobs.
         isolation = [(s, r) for s, r in zip(op["plan"]["steps"], op["steps"])
                      if s["action"].get("phase") == "isolate"]
-        if isolation:
+        if isolation or op["plan"]["profile"].get("security_repair"):
             self._block(op)
             for step, record in isolation:
                 if not self._step(op, step, record):
@@ -266,7 +283,8 @@ class Coordinator:
                     r["observation"].get("closed") is not True) for r in op["steps"])
 
     def _has_effects(self, op):
-        return bool(op.get("inherited")) or any(record["effective"] for record in op["steps"])
+        return (bool(op.get("inherited")) or any(record["effective"] for record in op["steps"])
+                or bool(op["gate_owned"] and op["plan"]["profile"].get("security_repair")))
 
     def _refresh_compensation(self, op):
         covered = {}

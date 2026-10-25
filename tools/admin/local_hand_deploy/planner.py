@@ -19,6 +19,22 @@ PHASES = {"isolate": 0, "quiesced_before_files": 10, "after_stop": 20,
           "files": 30, "after_files": 40, "after_reload": 50, "after_create": 60}
 
 
+def validate_schedule(plan):
+    phases = {"service_stop": {"quiesced_before_files"}, "service_start": {"after_reload"},
+              "service_policy_link": {"files"}, "service_daemon_reload": {"after_files"},
+              "gateway_stop": {"quiesced_before_files", "isolate"}, "gateway_remove": {"after_stop"},
+              "gateway_create": {"after_files"}, "gateway_start": {"after_create"}}
+    for step in plan["steps"]:
+        action = step["action"]
+        allowed = {"files"} if step["kind"] == "file" else phases.get(action.get("kind"), set())
+        if (action.get("phase") not in allowed or step["kind"] != "file" and
+                not action.get("kind", "").startswith(step["kind"] + "_")
+                or action.get("phase") == "isolate" and not plan["profile"].get("security_repair")):
+            raise DeployError("INVALID_SCHEDULE", "Only the fixed gateway stop may run before business drain")
+    if plan["steps"] != sorted(plan["steps"], key=lambda step: action_order(step, plan["profile"])):
+        raise DeployError("INVALID_SCHEDULE", "Plan actions are outside the fixed dependency order")
+
+
 def action_order(item, profile):
     # Both forward and compensating starts must bring up the authorization
     # manager before MCP, independent of insertion order in a manifest.
@@ -40,6 +56,7 @@ def validate_profile(profile, source, target):
     allowed = {"schema", "owner_uid", "startup_descriptor", "maintenance_directory",
                "guarded_components", "probes", "systemd", "gateway", "file_limits",
                "timeout_seconds", "output_limit", "filesystem_support"}
+    allowed |= {"security_repair", "gateway_checks", "recovery_from"}
     if (not isinstance(profile, dict) or set(profile) - allowed
             or profile.get("schema") != PROFILE_SCHEMA):
         raise DeployError("UNSUPPORTED_PROFILE", "Unknown deployment support profile")
@@ -81,6 +98,36 @@ def validate_profile(profile, source, target):
     if (not isinstance(support, dict) or set(support) != {"ordinary_handles", "fsid", "reboot_verified"}
             or any(support[key] is not True for key in support)):
         raise DeployError("MIGRATION_NOT_READY", "The selected filesystem needs verified persistent ordinary handles and filesystem binding")
+    if "gateway_checks" in profile:
+        from local_hand_mcp.http_observation import validate_local
+        try:
+            validate_local(profile["gateway_checks"])
+        except ValueError as error:
+            raise DeployError("INVALID_CHECK", "Gateway safety checks are incomplete") from error
+        if not profile.get("gateway"):
+            raise DeployError("UNSUPPORTED_PROFILE", "Route checks need the fixed guarded gateway")
+    if "recovery_from" in profile:
+        recovery = profile["recovery_from"]
+        if (not isinstance(recovery, dict) or set(recovery) != {"operation", "plan_digest", "selection_digest", "reload_tree"}
+                or any(not isinstance(recovery.get(key), str) or len(recovery[key]) != 64
+                       or any(c not in "0123456789abcdef" for c in recovery[key])
+                       for key in ("plan_digest", "selection_digest"))
+                or not isinstance(recovery["reload_tree"], dict)):
+            raise DeployError("INVALID_RECOVERY", "Recovery must bind the original operation and observed startup and reload state")
+        identity(recovery["operation"])
+    if (target.get("gateway", {}).get("running") and "gateway_checks" not in profile):
+        raise DeployError("INVALID_CHECK", "Opening a gateway requires its bound local safety checks")
+    if "security_repair" in profile:
+        repair = profile["security_repair"]
+        if (not isinstance(repair, dict) or set(repair) != {"unsafe_deployment_digest", "reason", "evidence_digest"}
+                or repair.get("reason") not in {"anonymous_protected", "management_hidden", "issuer_metadata", "resource_metadata"}
+                or repair.get("unsafe_deployment_digest") != source["deployment_digest"]
+                or any(not isinstance(repair.get(key), str) or len(repair[key]) != 64
+                       or any(c not in "0123456789abcdef" for c in repair[key])
+                       for key in ("unsafe_deployment_digest", "evidence_digest"))
+                or not profile.get("gateway") or "gateway_checks" not in profile
+                or target["deployment_digest"] == source["deployment_digest"]):
+            raise DeployError("INVALID_SECURITY_REPAIR", "Security repair needs a new target, exact evidence and guarded route checks")
     return profile
 
 
@@ -147,6 +194,8 @@ def build_plan(manifest, environment=None):
         if source.get("gateway") is None or target.get("gateway") is None:
             raise DeployError("UNSUPPORTED_PROFILE", "Gateway absence must be an explicit target")
         for action in environment.plan_gateway(source, target):
+            if profile.get("security_repair") and action["kind"] == "gateway_stop":
+                action["phase"] = "isolate"
             actions.append({"kind": "gateway", "action": action})
     if any(item["action"].get("phase") not in PHASES for item in actions):
         raise DeployError("INVALID_PLAN", "Adapter returned an unknown deployment phase")

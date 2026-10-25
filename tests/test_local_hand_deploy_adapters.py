@@ -508,6 +508,21 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterError, "ORIGINAL_GATEWAY_CONFIGURATION_BINDING"):
             adapter.plan_restore(actions)
 
+    def test_corrective_chain_retains_intermediate_gateway_spec_for_restore(self):
+        original = copy.deepcopy(self.profile["compose"])
+        original["services"]["gateway"]["command"] = ["serve", "original"]
+        intermediate = copy.deepcopy(original)
+        intermediate["services"]["gateway"]["command"] = ["serve", "intermediate"]
+        self.profile["compose"]["services"]["gateway"]["command"] = ["serve", "corrected"]
+        self.profile.update(original_compose=original, retained_composes=[intermediate])
+        self.engine.container = self.container(intermediate, name="intermediate", labels={
+            "local-hand.deploy.config": "3" * 64, "local-hand.deploy.deployment": "4" * 64})
+        adapter = self.adapter()
+        self.assertEqual(intermediate, adapter.observe()["compose"])
+        restored = adapter._using(original)
+        self.assertEqual(intermediate, restored.observe()["compose"])
+        self.assertTrue(all(method == "GET" for method, _, _ in self.engine.calls))
+
     def test_foreign_container_and_daemon_rejected(self):
         self.engine.container = {"Id": "foreign", "Config": {"Labels": {}}, "State": {"Running": True}}
         with self.assertRaisesRegex(AdapterError, "FOREIGN"):

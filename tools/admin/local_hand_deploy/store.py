@@ -152,7 +152,7 @@ class Store:
             raise
 
     @contextmanager
-    def locked(self):
+    def locked(self, *, readonly=False):
         if self.connection is not None:
             raise DeployError("LOCK_ORDER", "Deployment lock is not reentrant")
         _protected(self.lock_path, owner_uid=self.owner_uid)
@@ -160,7 +160,7 @@ class Store:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.lock_fd = fd
-            self.connection = self._open()
+            self.connection = self._open(readonly=readonly)
             yield self
         except BlockingIOError as exc:
             raise DeployError("DEPLOYMENT_BUSY", "Another deployment or supervised caller owns the node") from exc

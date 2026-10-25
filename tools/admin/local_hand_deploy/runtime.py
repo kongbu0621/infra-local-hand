@@ -21,7 +21,7 @@ from local_hand_jobs import cli, maintenance, startup
 from . import files
 from .gateway import GatewayAdapter
 from .model import DeployError, PLAN_SCHEMA, canonical, decode, digest, seal_plan
-from .planner import action_order, validate_profile
+from .planner import action_order, validate_profile, validate_schedule
 from .services import SystemdAdapter, tree_snapshot
 from .supervision import SupervisedRunner
 
@@ -102,7 +102,7 @@ class PlanningEnvironment:
             raise DeployError("GATEWAY_INSTANCE_CHANGED", "Gateway must be PID 1 in its own container namespaces")
         return {"container_id": selected_id, "instance": instance}
 
-    def _gateway_probe(self, component):
+    def _gateway_probe(self, component, *, checks=None):
         # Resolve through the actual Engine-selected PID 1, never a caller's
         # container_id or a writable host mount containing a claimed proof.
         spec = self.profile["probes"][component]
@@ -116,7 +116,9 @@ class PlanningEnvironment:
             pid, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             if pid != expected["pid"] or uid != 0:
                 raise DeployError("UNTRUSTED_PROBE", "Gateway status listener is not the actual root container supervisor")
-            cli._send_frame(connection, {"action": "deployment_observe"}, deadline=end, limit=4096)
+            request = ({"action": "deployment_observe"} if checks is None else
+                       {"action": "deployment_check_routes", "specification": checks})
+            cli._send_frame(connection, request, deadline=end, limit=32768)
             response = decode(cli._read_frame(connection, 65536, deadline=end))
         loaded = response.get("result") if isinstance(response, dict) and "error" not in response else None
         if (not isinstance(loaded, dict) or loaded.get("component") != component
@@ -203,15 +205,17 @@ class PlanningEnvironment:
                         or config.get("mode") not in {"resident", "prepared_task", "read_only"}
                         or set(inputs) != ({"config", "auth_config"} if config.get("mode") == "read_only"
                                            else {"config", "auth_config", config.get("mode")})
-                        or type(config.get("port")) is not int or not 1 <= config["port"] <= 65535):
+                        ):
                     raise DeployError("UNGUARDED_ENTRY", "MCP startup configuration is incomplete")
+                from local_hand_mcp.startup_guard import listener_binding
+                listener = listener_binding(config)
                 bindings = {}
                 for name, input_path in inputs.items():
                     if input_path not in members:
                         raise DeployError("UNGUARDED_ENTRY", "MCP input is outside the complete selection")
                     raw = startup.protected_read(candidates.get(input_path, input_path), owner_uid=self.owner)
                     bindings[name] = {"path": input_path, "sha256": hashlib.sha256(raw).hexdigest()}
-                config_digest = startup.digest({"inputs": bindings, "mode": config["mode"], "port": config["port"]})
+                config_digest = startup.digest({"inputs": bindings, "mode": config["mode"], **listener})
                 manager_sockets = {probe["socket"] for probe in self.profile["probes"].values()
                                    if probe["kind"] in {"resident", "prepared"}}
                 if (config.get("node_id") != selection["node_id"] or config.get("deployment_digest") != selection["deployment_digest"]
@@ -269,19 +273,24 @@ class PlanningEnvironment:
         raise DeployError("UNGUARDED_ENTRY", "Gateway inputs and manager endpoint need identical protected read-only bindings")
 
     def validate_baseline(self, node_id, source, target, file_plan):
+        if self.profile.get("recovery_from"):
+            raise DeployError("RECOVERY_REQUIRED", "Corrective plans require the existing deployment record")
         current = startup.read_selection(self.profile["startup_descriptor"], owner_uid=self.owner)
         if current != source["selection"] or current["node_id"] != node_id:
             raise DeployError("BASELINE_CHANGED", "Stable startup selection changed before planning")
         gateway = self.profile.get("gateway", {})
         self._verify_components(source["selection"], gateway_compose=gateway.get("original_compose", gateway.get("compose")))
+        self.validate_target(target, file_plan)
+        for component, desired in source["selection"]["components"].items():
+            if desired["running"]:
+                self._match_loaded(self._probe(component)["loaded"], source["selection"], component)
+
+    def validate_target(self, target, file_plan):
         candidates = {entry["target"]: entry["source"]["path"] for entry in file_plan["files"] if entry["source"] is not None}
         target_members = {member["path"] for member in target["selection"]["members"]}
         if any(entry["source"] is None and entry["target"] in target_members for entry in file_plan["files"]):
             raise DeployError("INVALID_PLAN", "A removed target cannot remain in the complete startup selection")
         self._verify_components(target["selection"], candidates)
-        for component, desired in source["selection"]["components"].items():
-            if desired["running"]:
-                self._match_loaded(self._probe(component)["loaded"], source["selection"], component)
 
     @staticmethod
     def _match_loaded(loaded, selection, component):
@@ -301,8 +310,10 @@ class PlanningEnvironment:
                     or (actual["active"] == "active") != expected["running"] or actual["policy"] != expected["policy"]
                     or expected.get("definition_digest", actual["definition_digest"]) != actual["definition_digest"]):
                 raise DeployError("BASELINE_CHANGED", "Actual service state differs from the declared source")
-        actions = self.services.plan(target["services"], baseline)
-        before = self.profile["systemd"]["reload_scope"]["loaded_snapshot"]
+        recovery = self.profile.get("recovery_from")
+        before = (recovery["reload_tree"] if recovery else self.profile["systemd"]["reload_scope"]["loaded_snapshot"])
+        self.services.check_reload_scope(before)
+        actions = self.services.plan(target["services"], baseline, _check_global=not recovery)
         after = copy.deepcopy(before)
         roots = [Path(path) for path in self.profile["systemd"]["reload_scope"]["roots"]]
         def overlay(path, value):
@@ -326,12 +337,17 @@ class PlanningEnvironment:
                     if action["after"]["kind"] == "link" else {})}
                 if not overlay(action["path"], value):
                     raise DeployError("RELOAD_SCOPE_CHANGED", "Enable link is outside the fixed manager tree")
-        if before != after:
+        if recovery:
+            # Observed disk is not claimed to be the manager's loaded tree.
+            # A corrective deployment must explicitly fence and complete reload.
+            actions.append({"kind": "service_daemon_reload", "target": "manager", "before": before,
+                "after": after, "subeffects": ["manager_reload"], "phase": "after_files"})
+        elif before != after:
             actions.append(self.services.plan_reload(after))
         return actions
 
     def plan_gateway(self, source, target):
-        before = self.gateway.observe()
+        before = self.gateway.observe(require_route=False)
         expected = source["gateway"]
         if ((before["kind"] == "container") != expected.get("present", True)
                 or (before.get("status") == "running") != expected["running"]):
@@ -384,13 +400,28 @@ class ConcreteEnvironment(PlanningEnvironment):
 
     def preflight(self, op):
         plan = op["plan"]
+        validate_schedule(plan)
         validate_profile(plan["profile"], plan["source"], plan["target"])
         file_plan = {"files": [step["action"] for step in plan["steps"] if step["kind"] == "file"]}
-        self.validate_baseline(plan["node_id"], plan["source"], plan["target"], file_plan)
+        if plan["profile"].get("recovery_from"):
+            from .recovery import validate_link, RecoveryPlanningEnvironment
+            if not op["predecessor"] or not op["gate_owned"]:
+                raise DeployError("RECOVERY_REQUIRED", "Corrective deployment has not received its linked maintenance responsibility")
+            validate_link(plan, self.store, self.gate, self.store.get(op["predecessor"]), successor=op["id"])
+            RecoveryPlanningEnvironment.validate_baseline(self, plan["node_id"], plan["source"], plan["target"], file_plan)
+        else:
+            self.validate_baseline(plan["node_id"], plan["source"], plan["target"], file_plan)
         state = self.gate.snapshot()
         if state["node_id"] != plan["node_id"] or state["deployment_digest"] != plan["source"]["deployment_digest"]:
             raise DeployError("BASELINE_CHANGED", "Maintenance marker does not select the planned source")
         return {"passed": True, "selection_digest": startup.digest(plan["source"]["selection"]), "gate_sequence": state["sequence"]}
+
+    def validate_successor(self, op, plan):
+        if op["gate_owned"] and not op["released"]:
+            from .recovery import validate_link
+            validate_link(plan, self.store, self.gate, op)
+        elif plan["profile"].get("recovery_from"):
+            raise DeployError("RECOVERY_CONFLICT", "This predecessor has no closed responsibility to transfer")
 
     def prepare(self, step, op, record):
         if step["kind"] == "file":
@@ -599,6 +630,8 @@ class ConcreteEnvironment(PlanningEnvironment):
         saved_value = saved.get("selection") if isinstance(saved, dict) else None
         ours = current.get("owner") == op["id"] and current.get("mode") in {"candidate", "blocked"}
         predecessors = set(op.get("inherited", []))
+        if op.get("predecessor"):
+            predecessors.add(op["predecessor"])
         inherited = current.get("owner") in predecessors and current.get("mode") in {"candidate", "blocked"}
         if current not in (source, saved_value, desired) and not (ours or inherited):
             raise DeployError("STARTUP_CONFLICT", "Startup selection changed outside this recovery chain")
@@ -674,7 +707,20 @@ class ConcreteEnvironment(PlanningEnvironment):
                     or (value.get("status") == "running") != target["running"]
                     or value["kind"] == "container" and value.get("compose") != compose):
                 raise DeployError("GATEWAY_POSTCONDITION", "Gateway run/presence state differs from selection")
-        return {"passed": True, "deployment_digest": selected["deployment_digest"], "loaded": proofs}
+        safety = None
+        if selected.get("gateway", {}).get("running") and not self.profile.get("gateway_checks"):
+            raise DeployError("LOCAL_SECURITY_CHECK_REQUIRED", "A running gateway needs the four route safety checks")
+        if selected.get("gateway", {}).get("running") and self.profile.get("gateway_checks"):
+            loaded = self._gateway_probe(self.profile["gateway"]["component"], checks=self.profile["gateway_checks"])["loaded"]
+            self._match_loaded(loaded, selected["selection"], self.profile["gateway"]["component"])
+            safety = loaded.get("routes")
+            if (not isinstance(safety, dict) or safety.get("specification_digest") != digest(self.profile["gateway_checks"])
+                    or safety.get("passed") is not True or not isinstance(safety.get("checks"), list)
+                    or len(safety["checks"]) != len(self.profile["gateway_checks"]["checks"])
+                    or any(item.get("status") != "PASSED" for item in safety["checks"])):
+                raise DeployError("LOCAL_SECURITY_CHECK_FAILED", "Candidate routes have not passed their bound safety checks")
+        return {"passed": True, "deployment_digest": selected["deployment_digest"], "loaded": proofs,
+                "security": safety, "observed_ns": time.time_ns()}
 
     def publish_stable(self, op):
         durable = self.store.get(op["id"])
@@ -689,6 +735,10 @@ class ConcreteEnvironment(PlanningEnvironment):
 
     def release_valid(self, op):
         selected = op["plan"]["target"] if op["decision"] == "COMMITTED" else self._source(op)
+        unsafe = {origin["plan"]["profile"]["security_repair"]["unsafe_deployment_digest"]
+                  for origin in self._origins(op) if origin["plan"]["profile"].get("security_repair")}
+        if selected["deployment_digest"] in unsafe:
+            return {"passed": False, "reason": "UNSAFE_BASELINE_REQUIRES_REPAIR"}
         current = self._current_selection()
         desired = {**_clone(selected["selection"]), "mode": "stable", "owner": None,
                    "decision_id": op["decision_id"], "permit": None}
@@ -702,19 +752,39 @@ class ConcreteEnvironment(PlanningEnvironment):
         # A rollback of a committed deployment is a new plan, never a rewrite of
         # its historic decision. Build from retained originals after observation.
         from .planner import MANIFEST_SCHEMA, build_plan
+        from .recovery import entries, reload_tree
+        chain = self._origins(op)
+        original_files, latest_files = {}, {}
+        for step, prepared, attempts, effective in entries(chain):
+            if step["kind"] != "file" or not (effective or attempts):
+                continue
+            path = step["action"]["target"]
+            original_files.setdefault(path, prepared)
+            latest_files[path] = (step, prepared, attempts)
+        for step, prepared, attempts in latest_files.values():
+            observed = self.observe(step, prepared, attempts[-1] if attempts else None)
+            if observed["state"] != "target" or not observed["closed"]:
+                raise DeployError("RESTORE_CONFLICT", "Committed file changed outside the original deployment")
         specs = []
-        for step, record in zip(op["plan"]["steps"], op["steps"]):
-            if step["kind"] != "file" or not record["effective"]:
-                continue
-            original = record["prepared"]["original"]
+        for path, prepared in original_files.items():
+            original = prepared["original"]
             if not original.get("exists"):
-                specs.append({"target": step["action"]["target"], "remove": True})
+                specs.append({"target": path, "remove": True})
                 continue
-            specs.append({"target": step["action"]["target"], "source": record["prepared"]["backup"]["path"],
+            files.verify_preparation_objects([prepared["backup"]], owner_uid=self.owner,
+                                             limits=files.FileLimits(**self.profile.get("file_limits", {})))
+            specs.append({"target": path, "source": prepared["backup"]["path"],
                           **{key: original[key] for key in ("mode", "uid", "gid")}})
         source = _clone(op["plan"]["target"])
         source["selection"] = self._current_selection()
         profile = _clone(self.profile)
+        profile.pop("recovery_from", None)
+        if any(origin["plan"]["profile"].get("security_repair") for origin in chain):
+            # An explicit rollback cannot turn a previously unsafe selection
+            # into a new safe target merely by swapping source and target.
+            raise DeployError("UNSAFE_ROLLBACK_TARGET", "Known unsafe baseline requires a corrected linked plan")
+        if profile.get("systemd"):
+            profile["systemd"]["reload_scope"]["loaded_snapshot"] = reload_tree(profile, chain)
         if "gateway" in profile:
             original = self._origins(op)[0]["plan"]["profile"]["gateway"]
             profile["gateway"]["original_compose"] = profile["gateway"]["compose"]
